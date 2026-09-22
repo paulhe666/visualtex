@@ -553,6 +553,67 @@ function delegateKeyboardEvents(keyboardSink, element, delegate) {
   // marker before MathLive handles it, so intentional input is never lost.
   let visualTexChineseCandidateMayReplaySpace = false;
   let visualTexChineseCandidateReplayTimer = 0;
+  // A physical Backslash key is not a character until the platform text-input
+  // system commits it. In macOS Pinyin, WKWebView can report key="\\" on
+  // keydown for the Backslash-position key and then commit the ideographic
+  // comma "、" through beforeinput/input. If the keybinding is executed during
+  // keydown, MathLive enters raw-LaTeX mode before IME owns the character.
+  // Defer this one ambiguous printable key until the keyboard sink reveals the
+  // committed text. Literal "\\" still enters LaTeX mode; remapped punctuation
+  // remains normal math/text input.
+  let visualTexDeferredPhysicalBackslash = null;
+  let visualTexPhysicalBackslashMayReplayInput = false;
+  // A cancelled IME composition may be followed by a stray literal backslash
+  // input without any new physical keydown. The next causal keyboard/input
+  // transaction clears this marker; no wall-clock deadline is needed.
+  let visualTexSuppressOrphanBackslash = false;
+  const visualTexClearDeferredPhysicalBackslash = () => {
+    visualTexDeferredPhysicalBackslash = null;
+  };
+  const visualTexClearPhysicalBackslashReplay = () => {
+    visualTexPhysicalBackslashMayReplayInput = false;
+  };
+  const visualTexDeferPhysicalBackslash = (event) => {
+    visualTexClearDeferredPhysicalBackslash();
+    visualTexDeferredPhysicalBackslash = {
+      key: event.key,
+      code: event.code,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      repeat: event.repeat,
+      location: event.location
+    };
+  };
+  const visualTexCommitDeferredPhysicalBackslash = () => {
+    const pending = visualTexDeferredPhysicalBackslash;
+    if (!pending) return false;
+    visualTexClearDeferredPhysicalBackslash();
+    const event = new KeyboardEvent("keypress", pending);
+    delegate.onKeystroke(event);
+    visualTexClearPhysicalBackslashReplay();
+    visualTexPhysicalBackslashMayReplayInput = true;
+    return true;
+  };
+  const visualTexIsUnmodifiedPhysicalBackslash = (event) =>
+    (event.code === "Backslash" || event.code === "IntlBackslash") &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey;
+  const visualTexShouldDeferPhysicalBackslash = (event) =>
+    !compositionInProgress &&
+    event.key === "\\" &&
+    visualTexIsUnmodifiedPhysicalBackslash(event);
+  const visualTexInputMethodOwnsPhysicalBackslash = (event) =>
+    visualTexIsUnmodifiedPhysicalBackslash(event) && event.key !== "\\";
+  const visualTexIsInputMethodNoiseKeydown = (event) =>
+    event.key === "Unidentified" &&
+    !event.code &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey;
   let focusInProgress = false;
   let blurInProgress = false;
   const controller = new AbortController();
@@ -574,6 +635,7 @@ function delegateKeyboardEvents(keyboardSink, element, delegate) {
   const visualTexEndCompositionTransaction = (data = "") => {
     if (!compositionInProgress) return false;
     compositionInProgress = false;
+    visualTexSuppressOrphanBackslash = data === "";
     visualTexChineseCandidateMayReplaySpace =
       /^[\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’\s]+$/.test(data) &&
       /[^\s]/.test(data);
@@ -655,6 +717,14 @@ function delegateKeyboardEvents(keyboardSink, element, delegate) {
         if (visualTexChineseCandidateReplayTimer)
           clearTimeout(visualTexChineseCandidateReplayTimer);
         visualTexChineseCandidateReplayTimer = 0;
+        // Chromium/WKWebView can emit Unidentified/code="" keydowns inside the
+        // same printable-key transaction. They are input-method plumbing, not a
+        // second user key, so they must not cancel the deferred text decision.
+        if (!visualTexIsInputMethodNoiseKeydown(event)) {
+          visualTexClearDeferredPhysicalBackslash();
+          visualTexClearPhysicalBackslashReplay();
+          visualTexSuppressOrphanBackslash = false;
+        }
       }
       if (compositionInProgress) {
         if (visualTexCompositionOwnsKeyboardEvent(event)) {
@@ -671,6 +741,26 @@ function delegateKeyboardEvents(keyboardSink, element, delegate) {
         keydownEvent = null;
         return;
       }
+      if (visualTexInputMethodOwnsPhysicalBackslash(event)) {
+        // The physical key position is not the committed character. macOS
+        // Pinyin, for example, delivers `beforeinput/input(data="、")` and can
+        // then emit a delayed keydown(key="、", code="Backslash", keyCode=229).
+        // Never reinterpret that semantic IME key as a raw-LaTeX prefix.
+        keydownEvent = null;
+        keypressEvent = null;
+        keyboardSink.textContent = "";
+        return;
+      }
+      if (visualTexShouldDeferPhysicalBackslash(event)) {
+        // A fresh physical Backslash owns a new transaction and therefore is
+        // not the orphan replay guarded after an empty composition end.
+        visualTexSuppressOrphanBackslash = false;
+        visualTexDeferPhysicalBackslash(event);
+        keydownEvent = null;
+        keypressEvent = null;
+        keyboardSink.textContent = "";
+        return;
+      }
       keydownEvent = event;
       keypressEvent = null;
       if (!delegate.onKeystroke(event)) keydownEvent = null;
@@ -685,6 +775,15 @@ function delegateKeyboardEvents(keyboardSink, element, delegate) {
         if (visualTexCompositionOwnsKeyboardEvent(event)) return;
         visualTexEndCompositionTransaction("");
       }
+      if (visualTexDeferredPhysicalBackslash) {
+        keypressEvent = null;
+        if (event.key === "\\") {
+          visualTexCommitDeferredPhysicalBackslash();
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
       if (keydownEvent && keypressEvent) delegate.onKeystroke(keydownEvent);
       keypressEvent = event;
     },
@@ -694,6 +793,9 @@ function delegateKeyboardEvents(keyboardSink, element, delegate) {
     "compositionstart",
     (event) => {
       keyboardSink.textContent = "";
+      visualTexClearDeferredPhysicalBackslash();
+      visualTexClearPhysicalBackslashReplay();
+      visualTexSuppressOrphanBackslash = false;
       visualTexChineseCandidateMayReplaySpace = false;
       if (visualTexChineseCandidateReplayTimer)
         clearTimeout(visualTexChineseCandidateReplayTimer);
@@ -729,7 +831,38 @@ function delegateKeyboardEvents(keyboardSink, element, delegate) {
   );
   keyboardSink.addEventListener(
     "beforeinput",
-    (ev) => ev.stopImmediatePropagation(),
+    (ev) => {
+      const inputData = ev.data != null ? ev.data : "";
+      if (
+        !visualTexDeferredPhysicalBackslash &&
+        !visualTexPhysicalBackslashMayReplayInput &&
+        ev.inputType === "insertText" &&
+        inputData === "\\" &&
+        visualTexSuppressOrphanBackslash
+      ) {
+        visualTexSuppressOrphanBackslash = false;
+        ev.preventDefault();
+      } else if (
+        visualTexDeferredPhysicalBackslash &&
+        ev.inputType === "insertText" &&
+        inputData === "\\"
+      ) {
+        visualTexCommitDeferredPhysicalBackslash();
+        ev.preventDefault();
+      } else if (
+        visualTexPhysicalBackslashMayReplayInput &&
+        ev.inputType === "insertText" &&
+        inputData === "\\"
+      ) {
+        // Some WebKit/Chromium paths replay the same printable payload after
+        // the deferred literal backslash has already been committed. A genuine
+        // second keypress has its own keydown, which clears this marker first.
+        visualTexClearPhysicalBackslashReplay();
+        ev.preventDefault();
+      }
+      if (inputData !== "\\") visualTexSuppressOrphanBackslash = false;
+      ev.stopImmediatePropagation();
+    },
     { signal }
   );
   keyboardSink.addEventListener(
@@ -761,6 +894,38 @@ function delegateKeyboardEvents(keyboardSink, element, delegate) {
         return;
       }
       const inputData = (_a3 = ev.data) != null ? _a3 : "";
+      if (
+        !visualTexDeferredPhysicalBackslash &&
+        !visualTexPhysicalBackslashMayReplayInput &&
+        inputData === "\\" &&
+        visualTexSuppressOrphanBackslash
+      ) {
+        visualTexSuppressOrphanBackslash = false;
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+      if (visualTexDeferredPhysicalBackslash) {
+        if (inputData === "\\") {
+          visualTexCommitDeferredPhysicalBackslash();
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
+        // The platform text-input system remapped the physical key (for
+        // example macOS Pinyin Backslash -> ideographic comma). The committed
+        // text owns the transaction, so discard the pending command prefix.
+        visualTexClearDeferredPhysicalBackslash();
+      }
+      if (visualTexPhysicalBackslashMayReplayInput && inputData === "\\") {
+        visualTexClearPhysicalBackslashReplay();
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+      if (visualTexPhysicalBackslashMayReplayInput)
+        visualTexClearPhysicalBackslashReplay();
+      if (inputData !== "\\") visualTexSuppressOrphanBackslash = false;
       if (visualTexChineseCandidateMayReplaySpace) {
         visualTexChineseCandidateMayReplaySpace = false;
         if (visualTexChineseCandidateReplayTimer)

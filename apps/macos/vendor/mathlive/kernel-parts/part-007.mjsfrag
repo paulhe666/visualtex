@@ -1368,28 +1368,12 @@ var DEFAULT_KEYBINDINGS = [
     ifMode: "text",
     command: ["switchMode", "latex", "", "\\"]
   },
-  // VisualTeX: the physical Backslash key is a command prefix regardless of
-  // the active Windows IME's reported event.key value.
-  {
-    key: "[Backslash]",
-    ifMode: "math",
-    command: ["switchMode", "latex", "", "\\"]
-  },
-  {
-    key: "[Backslash]",
-    ifMode: "text",
-    command: ["switchMode", "latex", "", "\\"]
-  },
-  {
-    key: "[IntlBackslash]",
-    ifMode: "math",
-    command: ["switchMode", "latex", "", "\\"]
-  },
-  {
-    key: "[IntlBackslash]",
-    ifMode: "text",
-    command: ["switchMode", "latex", "", "\\"]
-  },
+  // Do not bind the physical [Backslash]/[IntlBackslash] key codes here.
+  // On macOS the same physical key may be remapped by the active text-input
+  // system (for example Pinyin commits the ideographic comma "、"). The keyboard
+  // delegate defers this ambiguous key until beforeinput/input reveals the
+  // committed text. Only a committed literal "\" reaches the keybindings above
+  // and enters command mode.
   // On UK QWERTY keyboards
   {
     key: "[Tab]",

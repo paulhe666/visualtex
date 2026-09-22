@@ -1729,18 +1729,16 @@ export function EditorWorkspace({
                     </button>
                   </div>
                   <div className="classic-bottom-actions">
-                    {sourceOpen && classicDockOpen && (
-                      <button
-                        type="button"
-                        className="icon-button compact classic-bottom-copy"
-                        data-classic-bottom-copy
-                        onClick={() => void onCopy()}
-                        aria-label={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
-                        title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
-                      >
-                        <Copy size={14} />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="icon-button compact classic-bottom-copy"
+                      data-classic-bottom-copy
+                      onClick={() => void onCopy()}
+                      aria-label={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                    >
+                      <Copy size={14} />
+                    </button>
                     <button
                       type="button"
                       className="icon-button compact classic-bottom-collapse"

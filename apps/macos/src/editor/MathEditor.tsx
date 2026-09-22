@@ -259,6 +259,110 @@ function rawLatexInput(field: MathfieldElement) {
     .join("");
 }
 
+// Opt-in diagnostics for real WKWebView input transactions. Keep the trace in
+// the accessibility tree so the macOS probe can read it from a packaged or
+// development Tauri app without relying on Web Inspector/CDP.
+const VISUALTEX_IME_DIAGNOSTIC_LABEL = "VisualTeX IME Diagnostic Trace";
+const VISUALTEX_IME_DIAGNOSTICS_ENABLED =
+  import.meta.env.VITE_VISUALTEX_IME_DIAGNOSTICS === "1";
+const visualTexImeDiagnosticEntries: string[] = [];
+const visualTexImeDiagnosticEventIds = new WeakMap<Event, number>();
+let visualTexImeDiagnosticSequence = 0;
+let visualTexImeDiagnosticEventSequence = 0;
+
+function visualTexImeDiagnosticEventId(event: Event) {
+  const existing = visualTexImeDiagnosticEventIds.get(event);
+  if (existing) return existing;
+  const next = ++visualTexImeDiagnosticEventSequence;
+  visualTexImeDiagnosticEventIds.set(event, next);
+  return next;
+}
+
+function ensureVisualTexImeDiagnosticElement() {
+  let element = document.querySelector<HTMLTextAreaElement>(
+    `textarea[aria-label="${VISUALTEX_IME_DIAGNOSTIC_LABEL}"]`,
+  );
+  if (element) return element;
+  element = document.createElement("textarea");
+  element.readOnly = true;
+  element.tabIndex = -1;
+  element.setAttribute("aria-label", VISUALTEX_IME_DIAGNOSTIC_LABEL);
+  Object.assign(element.style, {
+    position: "fixed",
+    left: "2px",
+    bottom: "2px",
+    width: "1px",
+    height: "1px",
+    opacity: "0.01",
+    pointerEvents: "none",
+    zIndex: "-1",
+  });
+  document.body.append(element);
+  return element;
+}
+
+function traceVisualTexImeEvent(
+  stage: string,
+  field: MathfieldElement,
+  keyboardSink: HTMLElement | null,
+  event: Event,
+) {
+  if (!VISUALTEX_IME_DIAGNOSTICS_ENABLED) return;
+  const keyboard = event instanceof KeyboardEvent ? event : null;
+  const input = event instanceof InputEvent ? event : null;
+  const composition = event instanceof CompositionEvent ? event : null;
+  let raw = "";
+  try {
+    raw = rawLatexInput(field);
+  } catch {
+    raw = "";
+  }
+  const activeElement = field.shadowRoot?.activeElement;
+  const entry = {
+    seq: ++visualTexImeDiagnosticSequence,
+    stage,
+    eventId: visualTexImeDiagnosticEventId(event),
+    timeStamp: event.timeStamp,
+    now: performance.now(),
+    type: event.type,
+    eventPhase: event.eventPhase,
+    composed: event.composed,
+    bubbles: event.bubbles,
+    cancelable: event.cancelable,
+    key: keyboard?.key ?? "",
+    code: keyboard?.code ?? "",
+    keyCode: keyboard?.keyCode ?? 0,
+    repeat: keyboard?.repeat ?? false,
+    isComposing: keyboard?.isComposing ?? input?.isComposing ?? false,
+    inputType: input?.inputType ?? "",
+    data: input?.data ?? composition?.data ?? null,
+    defaultPrevented: event.defaultPrevented,
+    ctrlKey: keyboard?.ctrlKey ?? false,
+    metaKey: keyboard?.metaKey ?? false,
+    altKey: keyboard?.altKey ?? false,
+    shiftKey: keyboard?.shiftKey ?? false,
+    lineId: field.dataset.visualtexLineId ?? "",
+    value: field.value,
+    raw,
+    mode: field.mode,
+    position: field.position,
+    sinkText: keyboardSink?.textContent ?? "",
+    activePart:
+      activeElement instanceof HTMLElement
+        ? activeElement.getAttribute("part") ?? activeElement.tagName
+        : "",
+  };
+  visualTexImeDiagnosticEntries.push(JSON.stringify(entry));
+  if (visualTexImeDiagnosticEntries.length > 800) {
+    visualTexImeDiagnosticEntries.splice(
+      0,
+      visualTexImeDiagnosticEntries.length - 800,
+    );
+  }
+  ensureVisualTexImeDiagnosticElement().value =
+    visualTexImeDiagnosticEntries.join("\n");
+}
+
 type MathLiveInternalField = {
   _mathfield?: {
     model?: {
@@ -1660,51 +1764,6 @@ function normalizeCompletedDifferentialDisplay(field: MathfieldElement) {
   return true;
 }
 
-type PhysicalBackslashInputKind = "latin-backslash";
-
-function normalizePhysicalBackslashInput(
-  beforeValue: string,
-  afterValue: string,
-  kind: PhysicalBackslashInputKind,
-) {
-  let prefixLength = 0;
-  while (
-    prefixLength < beforeValue.length &&
-    prefixLength < afterValue.length &&
-    beforeValue[prefixLength] === afterValue[prefixLength]
-  ) {
-    prefixLength += 1;
-  }
-
-  let suffixLength = 0;
-  while (
-    suffixLength < beforeValue.length - prefixLength &&
-    suffixLength < afterValue.length - prefixLength &&
-    beforeValue[beforeValue.length - 1 - suffixLength] ===
-      afterValue[afterValue.length - 1 - suffixLength]
-  ) {
-    suffixLength += 1;
-  }
-
-  const insertedEnd = afterValue.length - suffixLength;
-  const inserted = afterValue.slice(prefixLength, insertedEnd);
-  let normalizedInserted = inserted;
-  if (
-    kind === "latin-backslash" &&
-    inserted.length > 1 &&
-    /^\\+$/.test(inserted)
-  ) {
-    normalizedInserted = "\\";
-  }
-
-  if (normalizedInserted === inserted) return afterValue;
-  return (
-    afterValue.slice(0, prefixLength) +
-    normalizedInserted +
-    afterValue.slice(insertedEnd)
-  );
-}
-
 function selectionIsCollapsed(selection: MathSelectionSnapshot) {
   return selection.ranges.every(([start, end]) => start === end);
 }
@@ -2788,14 +2847,6 @@ function FormulaField(props: FormulaFieldProps) {
     );
 
     const imeGuard = new ImeCompositionGuard();
-    let physicalBackslashGuard: {
-      kind: PhysicalBackslashInputKind;
-      beforeValue: string;
-      expiresAt: number;
-      acceptedInput: boolean;
-    } | null = null;
-    let suppressUnarmedBackslashInputUntil = 0;
-    let backslashGuardTimer = 0;
     let pendingAutoExitSetting: InputBehaviorSettingKey | null = null;
     let pendingAutoExitScriptKey: string | null = null;
     const capturePendingAutoExit = () => {
@@ -2814,91 +2865,6 @@ function FormulaField(props: FormulaFieldProps) {
     let restoringRawCommandAnchor = false;
     let compositionDeleteObserved = false;
     let suppressPostCompositionDeleteUntil = 0;
-
-    const armPhysicalBackslashGuard = (
-      kind: PhysicalBackslashInputKind,
-      timeStamp: number,
-    ) => {
-      physicalBackslashGuard = {
-        kind,
-        beforeValue: field.value,
-        expiresAt: timeStamp + 240,
-        acceptedInput: false,
-      };
-      window.clearTimeout(backslashGuardTimer);
-      const expectedGuard = physicalBackslashGuard;
-      backslashGuardTimer = window.setTimeout(() => {
-        if (physicalBackslashGuard === expectedGuard) {
-          physicalBackslashGuard = null;
-        }
-      }, 280);
-    };
-
-    const normalizeGuardedBackslashInput = (timeStamp: number) => {
-      const guard = physicalBackslashGuard;
-      if (!guard || timeStamp > guard.expiresAt) {
-        physicalBackslashGuard = null;
-        return;
-      }
-
-      const activeRawInput = rawLatexInput(field);
-      if (
-        guard.kind === "latin-backslash" &&
-        activeRawInput.length > 1 &&
-        /^\\+$/.test(activeRawInput)
-      ) {
-        // Some WebKit/IME transitions apply the same physical Backslash more
-        // than once directly to MathLive's raw-LaTeX DOM. The public field
-        // value is still unchanged in raw mode, so normalize that DOM through
-        // MathLive commands rather than rebuilding the formula snapshot.
-        restoringRawCommandAnchor = true;
-        try {
-          for (let index = 1; index < activeRawInput.length; index += 1) {
-            field.executeCommand("deleteBackward");
-          }
-        } finally {
-          restoringRawCommandAnchor = false;
-        }
-        // Chromium can emit more than one `char` event for the same physical
-        // Backslash after the first duplicate has already been normalized.
-        // Keep this guard alive until its original deadline so any trailing
-        // event from the same key transaction is normalized as well.
-        guard.acceptedInput = true;
-        suppressUnarmedBackslashInputUntil = Math.max(
-          suppressUnarmedBackslashInputUntil,
-          timeStamp + 180,
-        );
-        return;
-      }
-
-      const rawValue = field.value;
-      const normalizedValue = normalizePhysicalBackslashInput(
-        guard.beforeValue,
-        rawValue,
-        guard.kind,
-      );
-      if (normalizedValue === rawValue) return;
-
-      const previousPosition = field.position;
-      const removedCharacters = rawValue.length - normalizedValue.length;
-      field.setValue(normalizedValue, {
-        mode: "math",
-        format: "latex",
-        insertionMode: "replaceAll",
-        selectionMode: "after",
-        silenceNotifications: true,
-      });
-      const correctedPosition = Math.max(
-        0,
-        Math.min(field.lastOffset, previousPosition - removedCharacters),
-      );
-      field.position = correctedPosition;
-      field.selection = {
-        ranges: [[correctedPosition, correctedPosition]],
-        direction: "none",
-      };
-      physicalBackslashGuard = null;
-    };
 
     const emitEdit = (
       before: ReturnType<typeof captureFieldSnapshot>,
@@ -2925,9 +2891,6 @@ function FormulaField(props: FormulaFieldProps) {
     const handleCompositionStart = () => {
       compositionDeleteObserved = false;
       suppressPostCompositionDeleteUntil = 0;
-      physicalBackslashGuard = null;
-      suppressUnarmedBackslashInputUntil = 0;
-      window.clearTimeout(backslashGuardTimer);
       capturePendingAutoExit();
       propsRef.current.onCommitPending();
       imeGuard.compositionStart();
@@ -2946,10 +2909,7 @@ function FormulaField(props: FormulaFieldProps) {
       suppressPostCompositionDeleteUntil = cancelledByCompositionDelete
         ? event.timeStamp + 160
         : 0;
-      suppressUnarmedBackslashInputUntil =
-        event.data === "" ? event.timeStamp + 260 : 0;
       compositionDeleteObserved = false;
-      normalizeGuardedBackslashInput(event.timeStamp);
 
       // Cancelling an uncommitted macOS IME candidate with Backspace can make
       // WKWebView/MathLive apply the same physical key to the confirmed formula.
@@ -3037,31 +2997,6 @@ function FormulaField(props: FormulaFieldProps) {
           clearPendingAutoExit();
         }
       }
-      if (event.data === "\\") {
-        const guard = physicalBackslashGuard;
-        const guardedLatinInput = Boolean(
-          guard &&
-            guard.kind === "latin-backslash" &&
-            event.timeStamp <= guard.expiresAt,
-        );
-        if (guardedLatinInput && guard) {
-          if (guard.acceptedInput) {
-            clearPendingAutoExit();
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            return;
-          }
-          guard.acceptedInput = true;
-          suppressUnarmedBackslashInputUntil = 0;
-        } else if (
-          event.timeStamp <= suppressUnarmedBackslashInputUntil
-        ) {
-          clearPendingAutoExit();
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          return;
-        }
-      }
     };
   const handleInput = (event: Event) => {
     if (restoringRawCommandAnchor) return;
@@ -3074,7 +3009,6 @@ function FormulaField(props: FormulaFieldProps) {
         }
         return;
       }
-      normalizeGuardedBackslashInput(event.timeStamp);
       const before = lastSnapshotRef.current ?? captureFieldSnapshot(field);
       const isDirectSingleInput =
         event instanceof InputEvent && isSingleDirectInput(event, field);
@@ -3233,20 +3167,7 @@ function FormulaField(props: FormulaFieldProps) {
       });
     };
   const handleKeyDown = (event: KeyboardEvent) => {
-    const isUnmodifiedPhysicalBackslash =
-        event.code === "Backslash" &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey;
       if (event.key === "Escape") rawCommandAnchors.delete(field);
-      // Do not intercept a physical Backslash merely because a Windows IME
-      // reports event.key as the ideographic comma. The MathLive kernel binds
-      // code="Backslash" directly, so it can start command mode consistently.
-      if (isUnmodifiedPhysicalBackslash && event.key === "\\") {
-        suppressUnarmedBackslashInputUntil = 0;
-        armPhysicalBackslashGuard("latin-backslash", event.timeStamp);
-      }
-
       if (
         event.key === "Backspace" &&
         rawCommandAnchors.has(field) &&
@@ -3584,9 +3505,37 @@ function FormulaField(props: FormulaFieldProps) {
     window.addEventListener("keydown", handleWindowRawWrapperKeyDown, true);
     field.addEventListener("keydown", handleKeyDown, true);
     field.addEventListener("keyup", handleKeyUp, true);
-    const keyboardSink = field.shadowRoot?.querySelector<HTMLElement>(
-      '[part="keyboard-sink"]',
-    );
+    const keyboardSink =
+      field.shadowRoot?.querySelector<HTMLElement>('[part="keyboard-sink"]') ??
+      null;
+    const imeDiagnosticEventTypes = [
+      "keydown",
+      "keypress",
+      "compositionstart",
+      "compositionupdate",
+      "compositionend",
+      "beforeinput",
+      "input",
+      "keyup",
+    ] as const;
+    const handleWindowImeDiagnosticEvent = (event: Event) => {
+      if (!event.composedPath().includes(field)) return;
+      traceVisualTexImeEvent("window.capture." + event.type, field, keyboardSink, event);
+    };
+    const handleFieldImeDiagnosticEvent = (event: Event) => {
+      traceVisualTexImeEvent("field.capture." + event.type, field, keyboardSink, event);
+    };
+    const handleSinkImeDiagnosticEvent = (event: Event) => {
+      traceVisualTexImeEvent("sink.capture." + event.type, field, keyboardSink, event);
+    };
+    if (VISUALTEX_IME_DIAGNOSTICS_ENABLED) {
+      ensureVisualTexImeDiagnosticElement();
+      for (const type of imeDiagnosticEventTypes) {
+        window.addEventListener(type, handleWindowImeDiagnosticEvent, true);
+        field.addEventListener(type, handleFieldImeDiagnosticEvent, true);
+        keyboardSink?.addEventListener(type, handleSinkImeDiagnosticEvent, true);
+      }
+    }
     keyboardSink?.addEventListener("input", scheduleInputActivity, true);
     keyboardSink?.addEventListener("keyup", scheduleInputActivity, true);
     field.addEventListener("paste", handlePaste, true);
@@ -3642,7 +3591,6 @@ function FormulaField(props: FormulaFieldProps) {
         EDITOR_LAYOUT_REFRESH_EVENT,
         handleLayoutRefresh,
       );
-      window.clearTimeout(backslashGuardTimer);
       resizeObserver?.disconnect();
       inputMutationObserver?.disconnect();
       syncFrameSizeRef.current = null;
@@ -3656,6 +3604,13 @@ function FormulaField(props: FormulaFieldProps) {
       window.removeEventListener("keydown", handleWindowRawWrapperKeyDown, true);
       field.removeEventListener("keydown", handleKeyDown, true);
       field.removeEventListener("keyup", handleKeyUp, true);
+      if (VISUALTEX_IME_DIAGNOSTICS_ENABLED) {
+        for (const type of imeDiagnosticEventTypes) {
+          window.removeEventListener(type, handleWindowImeDiagnosticEvent, true);
+          field.removeEventListener(type, handleFieldImeDiagnosticEvent, true);
+          keyboardSink?.removeEventListener(type, handleSinkImeDiagnosticEvent, true);
+        }
+      }
       keyboardSink?.removeEventListener("input", scheduleInputActivity, true);
       keyboardSink?.removeEventListener("keyup", scheduleInputActivity, true);
       field.removeEventListener("paste", handlePaste, true);
