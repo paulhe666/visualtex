@@ -1098,6 +1098,10 @@ internal static partial class Program
             {
                 RunWordMathTypeOpenXmlCloneAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-wmf-window-pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeWmfWindowPdfAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "mathtype-window-inventory", StringComparison.OrdinalIgnoreCase))
             {
                 RunMathTypeWindowInventory();

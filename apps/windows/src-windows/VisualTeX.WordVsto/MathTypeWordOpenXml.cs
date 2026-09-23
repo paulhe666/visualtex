@@ -465,6 +465,19 @@ internal static class MathTypeWordOpenXml
         if (!(widthPt > 0) || !(heightPt > 0))
             throw new InvalidDataException(
                 $"Invalid MathType preview size {widthPt}x{heightPt} pt.");
+
+        // Word's on-screen OLE renderer can infer the logical coordinate system
+        // from an Aldus-placeable WMF header, but the Word PDF/print pipeline
+        // requires explicit SETWINDOWORG + SETWINDOWEXT records in the metafile.
+        // Genuine MathType previews contain both. VisualTeX's MathPage/EMF->WMF
+        // creation paths can omit them, which leaves the equation visible in Word
+        // yet completely blank in ExportAsFixedFormat(PDF). Normalize every new
+        // Equation.DSMT4 presentation here, at the single Flat OPC creation
+        // boundary, rather than patching individual insertion/conversion callers.
+        previewWmf =
+            WordFormulaService.EnsureMathTypePlaceableWmfWindowRecords(
+                previewWmf);
+
         var storageIdentity = MathTypeOleStorage.ReadCompoundFileIdentity(compoundFile);
         var oleProgId = string.IsNullOrWhiteSpace(storageIdentity.ProgId)
             ? MathTypeOleInterop.CanonicalProgId
