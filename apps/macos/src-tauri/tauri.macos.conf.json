@@ -14,8 +14,7 @@
       "../office/macos-offline/resources/README.md": "office/macos-offline/resources/README.md",
       "../office/macos-offline/resources/VisualTeX.dotm": "office/macos-offline/resources/VisualTeX.dotm",
       "../office/macos-offline/resources/VisualTeX.ppam": "office/macos-offline/resources/VisualTeX.ppam",
-      "../office/macos-offline/resources/addins.json": "office/macos-offline/resources/addins.json",
-      "../dist-ocr/macos-arm64/": "ocr/offline/macos-arm64/"
+      "../office/macos-offline/resources/addins.json": "office/macos-offline/resources/addins.json"
     }
   }
 }

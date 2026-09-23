@@ -1,0 +1,1842 @@
+        "normal-bold": "",
+        "normal-bolditalic": "\\mathbfit",
+        "ams": "",
+        "ams-up": "\\mathrm",
+        "ams-italic": "\\mathit",
+        "ams-bold": "",
+        "ams-bolditalic": "\\mathbfit",
+        "main": "",
+        "main-up": "\\mathrm",
+        "main-italic": "\\mathit",
+        "main-bold": "",
+        "main-bolditalic": "\\mathbfit"
+        // There are a few rare font families possible, which
+        // are not supported:
+        // mathbbm, mathbbmss, mathbbmtt, mathds, swab, goth
+        // In addition, the 'main' and 'math' font technically
+        // map to \mathnormal{}
+      }[variant];
+      console.assert(command !== void 0);
+    }
+    let trailingSupsub = "";
+    const lastAtom = x[x.length - 1];
+    const hasTrailingSupsub = command && x.length > 0 && (lastAtom.branch("subscript") !== void 0 || lastAtom.branch("superscript") !== void 0);
+    if (hasTrailingSupsub) trailingSupsub = lastAtom.supsubToLatex(options);
+    const arg = joinLatex(
+      x.map((atom, index) => {
+        if (hasTrailingSupsub && index === x.length - 1) {
+          const def = getDefinition(atom.command, atom.mode);
+          if (def == null ? void 0 : def.serialize) return def.serialize(atom, options);
+          if (atom.body && atom.command)
+            return latexCommand(atom.command, atom.bodyToLatex(options));
+          if (atom.body) return atom.bodyToLatex(options);
+          if (!atom.value || atom.value === "\u200B") return "";
+          return atom.command || atom.value;
+        }
+        return atom._serialize(options);
+      })
+    );
+    if (!command) return arg;
+    return latexCommand(command, arg) + trailingSupsub;
+  });
+}
+new MathMode();
+
+// src/core/modes-text.ts
+function emitStringTextRun(run, options) {
+  return run.map((x) => x._serialize(options));
+}
+function emitFontShapeTextRun(run, options) {
+  return getPropertyRuns(run, "fontShape").map((x) => {
+    const s = emitStringTextRun(x, options);
+    const { fontShape } = x[0].style;
+    let command = "";
+    if (fontShape === "it") command = "\\textit";
+    if (fontShape === "sl") command = "\\textsl";
+    if (fontShape === "sc") command = "\\textsc";
+    if (fontShape === "n") command = "\\textup";
+    if (!command && fontShape)
+      return `{${latexCommand("\\fontshape", fontShape)}${joinLatex(s)}}`;
+    return command ? latexCommand(command, joinLatex(s)) : joinLatex(s);
+  });
+}
+function emitFontSeriesTextRun(run, options) {
+  return getPropertyRuns(run, "fontSeries").map((x) => {
+    const s = emitFontShapeTextRun(x, options);
+    const { fontSeries } = x[0].style;
+    let command = "";
+    if (fontSeries === "b") command = "\\textbf";
+    if (fontSeries === "l") command = "\\textlf";
+    if (fontSeries === "m") command = "\\textmd";
+    if (fontSeries && !command)
+      return `{${latexCommand("\\fontseries", fontSeries)}${joinLatex(s)}}`;
+    return command ? latexCommand(command, joinLatex(s)) : joinLatex(s);
+  });
+}
+function emitSizeTextRun(run, options) {
+  return getPropertyRuns(run, "fontSize").map((x) => {
+    var _a3, _b3;
+    const s = emitFontSeriesTextRun(x, options);
+    const command = (_b3 = [
+      "",
+      "\\tiny",
+      "\\scriptsize",
+      "\\footnotesize",
+      "\\small",
+      "\\normalsize",
+      "\\large",
+      "\\Large",
+      "\\LARGE",
+      "\\huge",
+      "\\Huge"
+    ][(_a3 = x[0].style.fontSize) != null ? _a3 : ""]) != null ? _b3 : "";
+    return command ? `${command} ${joinLatex(s)}` : joinLatex(s);
+  });
+}
+function emitFontFamilyTextRun(run, options, needsWrap) {
+  return getPropertyRuns(run, "fontFamily").map((x) => {
+    var _a3;
+    needsWrap = needsWrap && !x.every(
+      (x2) => x2.style.fontFamily || x2.style.fontShape || x2.style.fontSeries || x2.style.fontSize
+    );
+    const s = emitSizeTextRun(x, options);
+    const { fontFamily } = x[0].style;
+    const command = (_a3 = {
+      "roman": "textrm",
+      "monospace": "texttt",
+      "sans-serif": "textsf"
+    }[fontFamily != null ? fontFamily : ""]) != null ? _a3 : "";
+    if (command) return `\\${command}{${joinLatex(s)}}`;
+    if (fontFamily)
+      return `{\\fontfamily{${x[0].style.fontFamily}} ${joinLatex(s)}}`;
+    if (needsWrap) return `\\text{${joinLatex(s)}}`;
+    return joinLatex(s);
+  });
+}
+var TEXT_FONT_CLASS = {
+  "roman": "",
+  "sans-serif": "ML__sans",
+  "monospace": "ML__tt"
+};
+var TextMode = class extends Mode {
+  constructor() {
+    super("text");
+  }
+  createAtom(command, info, style) {
+    if (!info) return null;
+    if (info.definitionType === "symbol") {
+      return new TextAtom(
+        command,
+        String.fromCodePoint(info.codepoint),
+        style != null ? style : {}
+      );
+    }
+    return null;
+  }
+  serialize(run, options) {
+    return emitFontFamilyTextRun(
+      run,
+      __spreadProps(__spreadValues({}, options), {
+        defaultMode: "text"
+      }),
+      options.defaultMode !== "text"
+    );
+  }
+  /**
+   * Return the font-family name
+   */
+  getFont(box, style) {
+    var _a3, _b3, _c2, _d2, _e;
+    const { fontFamily } = style;
+    if (TEXT_FONT_CLASS[fontFamily])
+      box.classes += " " + TEXT_FONT_CLASS[fontFamily];
+    else if (fontFamily) {
+      box.setStyle("font-family", fontFamily);
+    }
+    if (style.fontShape) {
+      box.classes += " ";
+      box.classes += (_a3 = {
+        it: "ML__it",
+        sl: "ML__shape_sl",
+        // Slanted
+        sc: "ML__shape_sc",
+        // Small caps
+        ol: "ML__shape_ol"
+        // Outline
+      }[style.fontShape]) != null ? _a3 : "";
+    }
+    if (style.fontSeries) {
+      const m = style.fontSeries.match(/(.?[lbm])?(.?[cx])?/);
+      if (m) {
+        box.classes += " ";
+        box.classes += (_c2 = {
+          ul: "ML__series_ul",
+          el: "ML__series_el",
+          l: "ML__series_l",
+          sl: "ML__series_sl",
+          m: "",
+          // Medium (default)
+          sb: "ML__series_sb",
+          b: "ML__bold",
+          eb: "ML__series_eb",
+          ub: "ML__series_ub"
+        }[(_b3 = m[1]) != null ? _b3 : ""]) != null ? _c2 : "";
+        box.classes += " ";
+        box.classes += (_e = {
+          uc: "ML__series_uc",
+          ec: "ML__series_ec",
+          c: "ML__series_c",
+          sc: "ML__series_sc",
+          n: "",
+          // Normal (default)
+          sx: "ML__series_sx",
+          x: "ML__series_x",
+          ex: "ML__series_ex",
+          ux: "ML__series_ux"
+        }[(_d2 = m[2]) != null ? _d2 : ""]) != null ? _e : "";
+      }
+    }
+    return "Main-Regular";
+  }
+};
+new TextMode();
+
+// src/core/modes-latex.ts
+var LatexMode = class extends Mode {
+  constructor() {
+    super("latex");
+  }
+  createAtom(command) {
+    return new LatexAtom(command);
+  }
+  serialize(run, _options) {
+    return run.filter((x) => x instanceof LatexAtom && !x.isSuggestion).map((x) => x.value);
+  }
+  getFont() {
+    return null;
+  }
+};
+new LatexMode();
+
+// src/ui/events/keyboard.ts
+function getKeybindingMarkup(keybinding) {
+  var _a3;
+  const useGlyph = /macos|ios/.test(osPlatform());
+  const segments = keybinding.split("+");
+  let result = "";
+  for (const segment of segments) {
+    if (result) {
+      result += useGlyph ? "\u2009" : '<span class="ML__shortcut-join">+</span>';
+    }
+    if (segment.startsWith("[Key")) result += segment.slice(4, 5);
+    else if (segment.startsWith("Key")) result += segment.slice(3, 4);
+    else if (segment.startsWith("[Digit")) result += segment.slice(6, 7);
+    else if (segment.startsWith("Digit")) result += segment.slice(5, 6);
+    else {
+      result += (_a3 = {
+        "cmd": "\u2318",
+        "meta": useGlyph ? "\u2318" : "Ctrl",
+        "shift": useGlyph ? "\u21E7" : "Shift",
+        "alt": useGlyph ? "\u2325" : "Alt",
+        "ctrl": useGlyph ? "\u2303" : "Ctrl",
+        "\n": useGlyph ? "\u23CE" : "Return",
+        "[return]": useGlyph ? "\u23CE" : "Return",
+        "[enter]": useGlyph ? "\u2324" : "Enter",
+        "[tab]": useGlyph ? "\u21E5" : "Tab",
+        // 'Esc':          useSymbol ? '\u238b' : 'esc',
+        "[escape]": "Esc",
+        "[backspace]": useGlyph ? "\u232B" : "Backspace",
+        "[delete]": useGlyph ? "\u2326" : "Del",
+        "[pageup]": useGlyph ? "\u21DE" : "Page Up",
+        "[pagedown]": useGlyph ? "\u21DF" : "Page Down",
+        "[home]": useGlyph ? "\u2912" : "Home",
+        "[end]": useGlyph ? "\u2913" : "End",
+        "[space]": "Space",
+        "[equal]": "=",
+        "[minus]": "-",
+        "[comma]": ",",
+        "[slash]": "/",
+        "[backslash]": "\\",
+        "[bracketleft]": "[",
+        "[bracketright]": "]",
+        "semicolon": ";",
+        "period": ".",
+        "comma": ",",
+        "minus": "-",
+        "equal": "=",
+        "quote": "'",
+        "backslash": "\\",
+        "intlbackslash": "\\",
+        "backquote": "`",
+        "slash": "/",
+        "numpadmultiply": "* &#128290;",
+        "numpaddivide": "/ &#128290;",
+        // Numeric keypad
+        "numpadsubtract": "- &#128290;",
+        "numpadadd": "+ &#128290;",
+        "numpaddecimal": ". &#128290;",
+        "numpadcomma": ", &#128290;",
+        "help": "help",
+        "left": "\u21E0",
+        "up": "\u21E1",
+        "right": "\u21E2",
+        "down": "\u21E3",
+        "[arrowleft]": "\u21E0",
+        "[arrowup]": "\u21E1",
+        "[arrowright]": "\u21E2",
+        "[arrowdown]": "\u21E3"
+      }[segment.toLowerCase()]) != null ? _a3 : segment.toUpperCase();
+    }
+  }
+  return result;
+}
+
+// src/ui/events/utils.ts
+function eventLocation(evt) {
+  if (evt instanceof MouseEvent || evt instanceof PointerEvent)
+    return { x: evt.clientX, y: evt.clientY };
+  if (typeof TouchEvent !== "undefined" && evt instanceof TouchEvent) {
+    const result = [...evt.touches].reduce(
+      (acc, x) => ({ x: acc.x + x.clientX, y: acc.y + x.clientY }),
+      { x: 0, y: 0 }
+    );
+    const l = evt.touches.length;
+    return { x: result.x / l, y: result.y / l };
+  }
+  return void 0;
+}
+function keyboardModifiersFromEvent(ev) {
+  const result = {
+    alt: false,
+    control: false,
+    shift: false,
+    meta: false
+  };
+  if (ev instanceof MouseEvent || ev instanceof PointerEvent || typeof TouchEvent !== "undefined" && ev instanceof TouchEvent || ev instanceof KeyboardEvent) {
+    if (ev.altKey) result.alt = true;
+    if (ev.ctrlKey) result.control = true;
+    if (ev.metaKey) result.meta = true;
+    if (ev.shiftKey) result.shift = true;
+  }
+  return result;
+}
+function equalKeyboardModifiers(a, b) {
+  if (!a && b || a && !b) return false;
+  if (!a || !b) return true;
+  return a.alt === b.alt && a.control === b.control && a.shift === b.shift && a.meta === b.meta;
+}
+var PRINTABLE_KEYCODE = /* @__PURE__ */ new Set([
+  "Backquote",
+  // Japanese keyboard: hankaku/zenkaku/kanji key, which is non-printable
+  "Digit0",
+  "Digit1",
+  "Digit2",
+  "Digit3",
+  "Digit4",
+  "Digit5",
+  "Digit6",
+  "Digit7",
+  "Digit8",
+  "Digit9",
+  "Minus",
+  "Equal",
+  "IntlYen",
+  // Japanese Keyboard. Russian keyboard: \/
+  "KeyQ",
+  // AZERTY keyboard: labeled 'a'
+  "KeyW",
+  // AZERTY keyboard: labeled 'z'
+  "KeyE",
+  "KeyR",
+  "KeyT",
+  "KeyY",
+  // QWERTZ keyboard: labeled 'z'
+  "KeyU",
+  "KeyI",
+  "KeyO",
+  "KeyP",
+  "BracketLeft",
+  "BracketRight",
+  "Backslash",
+  // May be labeled #~ on UK 102 keyboard
+  "KeyA",
+  // AZERTY keyboard: labeled 'q'
+  "KeyS",
+  "KeyD",
+  "KeyF",
+  "KeyG",
+  "KeyH",
+  "KeyJ",
+  "KeyK",
+  "KeyL",
+  "Semicolon",
+  "Quote",
+  "IntlBackslash",
+  // QWERTZ keyboard '><'
+  "KeyZ",
+  // AZERTY: 'w', QWERTZ: 'y'
+  "KeyX",
+  "KeyC",
+  "KeyV",
+  "KeyB",
+  "KeyN",
+  "KeyM",
+  "Comma",
+  "Period",
+  "Slash",
+  "IntlRo",
+  // Japanse keyboard '\ろ'
+  "Space",
+  "Numpad0",
+  "Numpad1",
+  "Numpad2",
+  "Numpad3",
+  "Numpad4",
+  "Numpad5",
+  "Numpad6",
+  "Numpad7",
+  "Numpad8",
+  "Numpad9",
+  "NumpadAdd",
+  "NumpadComma",
+  "NumpadDecimal",
+  "NumpadDivide",
+  "NumpadEqual",
+  "NumpadHash",
+  "NumpadMultiply",
+  "NumpadParenLeft",
+  "NumpadParenRight",
+  "NumpadStar",
+  "NumpadSubstract"
+]);
+function mightProducePrintableCharacter(evt) {
+  if (evt.ctrlKey || evt.metaKey) return false;
+  if (["Dead", "Process"].includes(evt.key)) return false;
+  if (evt.code === "") return true;
+  return PRINTABLE_KEYCODE.has(evt.code);
+}
+function deepActiveElement() {
+  var _a3;
+  let a = document.activeElement;
+  while ((_a3 = a == null ? void 0 : a.shadowRoot) == null ? void 0 : _a3.activeElement) a = a.shadowRoot.activeElement;
+  return a;
+}
+
+// src/ui/utils/scrim.ts
+var Scrim = class _Scrim {
+  static get scrim() {
+    if (!_Scrim._scrim) _Scrim._scrim = new _Scrim();
+    return _Scrim._scrim;
+  }
+  static open(options) {
+    _Scrim.scrim.open(options);
+  }
+  static close() {
+    _Scrim.scrim.close();
+  }
+  static get state() {
+    return _Scrim.scrim.state;
+  }
+  static get element() {
+    return _Scrim.scrim.element;
+  }
+  /**
+   * - If `lightDismiss` is true, the scrim is closed if the
+   * user clicks on the scrim. That's the behavior for menus, for example.
+   * When you need a fully modal situation until the user has made an
+   * explicit choice (validating cookie usage, for example), set
+   * `lightDismiss` to fallse.
+   */
+  constructor(options) {
+    var _a3, _b3;
+    this.lightDismiss = (_a3 = options == null ? void 0 : options.lightDismiss) != null ? _a3 : true;
+    this.translucent = (_b3 = options == null ? void 0 : options.translucent) != null ? _b3 : false;
+    this.state = "closed";
+  }
+  get element() {
+    if (this._element) return this._element;
+    const element = document.createElement("div");
+    element.setAttribute("role", "presentation");
+    element.style.position = "fixed";
+    element.style.contain = "content";
+    element.style.top = "0";
+    element.style.left = "0";
+    element.style.right = "0";
+    element.style.bottom = "0";
+    element.style.zIndex = "var(--scrim-zindex, 10099)";
+    element.style.outline = "none";
+    if (this.translucent) {
+      element.style.background = "rgba(255, 255, 255, .2)";
+      element.style["backdropFilter"] = "contrast(40%)";
+    } else element.style.background = "transparent";
+    this._element = element;
+    return element;
+  }
+  open(options) {
+    var _a3;
+    if (this.state !== "closed") return;
+    this.state = "opening";
+    this.onDismiss = options == null ? void 0 : options.onDismiss;
+    this.savedActiveElement = deepActiveElement();
+    const { element } = this;
+    ((_a3 = options == null ? void 0 : options.root) != null ? _a3 : document.body).appendChild(element);
+    element.addEventListener("click", this);
+    document.addEventListener("touchmove", this, false);
+    document.addEventListener("scroll", this, false);
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    this.savedMarginRight = document.body.style.marginRight;
+    this.savedOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const marginRight = Number.parseFloat(
+      getComputedStyle(document.body).marginRight
+    );
+    document.body.style.marginRight = `${marginRight + scrollbarWidth}px`;
+    const mlkPlate = document.querySelector(".MLK__plate");
+    if (mlkPlate instanceof HTMLElement) {
+      this.savedMlkPaddingRight = mlkPlate.style.paddingRight;
+      const mlkPaddingRight = Number.parseFloat(
+        getComputedStyle(mlkPlate).paddingRight
+      );
+      mlkPlate.style.paddingRight = `${mlkPaddingRight + scrollbarWidth}px`;
+    }
+    if (options == null ? void 0 : options.child) element.append(options.child);
+    this.state = "open";
+  }
+  close() {
+    var _a3, _b3, _c2, _d2, _e;
+    if (this.state !== "open") {
+      console.assert(this.element.parentElement !== null);
+      return;
+    }
+    this.state = "closing";
+    if (typeof this.onDismiss === "function") this.onDismiss();
+    this.onDismiss = void 0;
+    const { element } = this;
+    element.removeEventListener("click", this);
+    document.removeEventListener("touchmove", this, false);
+    document.removeEventListener("scroll", this, false);
+    element.remove();
+    document.body.style.overflow = (_a3 = this.savedOverflow) != null ? _a3 : "";
+    document.body.style.marginRight = (_b3 = this.savedMarginRight) != null ? _b3 : "";
+    const mlkPlate = document.querySelector(".MLK__plate");
+    if (mlkPlate instanceof HTMLElement)
+      mlkPlate.style.paddingRight = (_c2 = this.savedMlkPaddingRight) != null ? _c2 : "";
+    if (deepActiveElement() !== this.savedActiveElement)
+      (_e = (_d2 = this.savedActiveElement) == null ? void 0 : _d2.focus) == null ? void 0 : _e.call(_d2);
+    element.innerHTML = "";
+    this.state = "closed";
+  }
+  handleEvent(ev) {
+    if (this.lightDismiss) {
+      if (ev.target === this._element && ev.type === "click") {
+        this.close();
+        ev.preventDefault();
+        ev.stopPropagation();
+      } else if (ev.target === document && (ev.type === "touchmove" || ev.type === "scroll")) {
+        this.close();
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    }
+  }
+};
+
+// src/editor/keyboard.ts
+function delegateKeyboardEvents(keyboardSink, element, delegate) {
+  let keydownEvent = null;
+  let keypressEvent = null;
+  let compositionInProgress = false;
+  // macOS Pinyin can emit the Space used to confirm a candidate twice: once
+  // as part of the IME transaction and once more as a plain input event after
+  // compositionend. Remember that completed Chinese transaction until the
+  // next event. A genuine later Space has its own keydown, which clears this
+  // marker before MathLive handles it, so intentional input is never lost.
+  let visualTexChineseCandidateMayReplaySpace = false;
+  let visualTexChineseCandidateReplayTimer = 0;
+  // A physical Backslash key is not a character until the platform text-input
+  // system commits it. In macOS Pinyin, WKWebView can report key="\\" on
+  // keydown for the Backslash-position key and then commit the ideographic
+  // comma "、" through beforeinput/input. If the keybinding is executed during
+  // keydown, MathLive enters raw-LaTeX mode before IME owns the character.
+  // Defer this one ambiguous printable key until the keyboard sink reveals the
+  // committed text. Literal "\\" still enters LaTeX mode; remapped punctuation
+  // remains normal math/text input.
+  let visualTexDeferredPhysicalBackslash = null;
+  let visualTexPhysicalBackslashMayReplayInput = false;
+  // A cancelled IME composition may be followed by a stray literal backslash
+  // input without any new physical keydown. The next causal keyboard/input
+  // transaction clears this marker; no wall-clock deadline is needed.
+  let visualTexSuppressOrphanBackslash = false;
+  const visualTexClearDeferredPhysicalBackslash = () => {
+    visualTexDeferredPhysicalBackslash = null;
+  };
+  const visualTexClearPhysicalBackslashReplay = () => {
+    visualTexPhysicalBackslashMayReplayInput = false;
+  };
+  const visualTexDeferPhysicalBackslash = (event) => {
+    visualTexClearDeferredPhysicalBackslash();
+    visualTexDeferredPhysicalBackslash = {
+      key: event.key,
+      code: event.code,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      repeat: event.repeat,
+      location: event.location
+    };
+  };
+  const visualTexCommitDeferredPhysicalBackslash = () => {
+    const pending = visualTexDeferredPhysicalBackslash;
+    if (!pending) return false;
+    visualTexClearDeferredPhysicalBackslash();
+    const event = new KeyboardEvent("keypress", pending);
+    delegate.onKeystroke(event);
+    visualTexClearPhysicalBackslashReplay();
+    visualTexPhysicalBackslashMayReplayInput = true;
+    return true;
+  };
+  const visualTexIsUnmodifiedPhysicalBackslash = (event) =>
+    (event.code === "Backslash" || event.code === "IntlBackslash") &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey;
+  const visualTexShouldDeferPhysicalBackslash = (event) =>
+    !compositionInProgress &&
+    event.key === "\\" &&
+    visualTexIsUnmodifiedPhysicalBackslash(event);
+  const visualTexInputMethodOwnsPhysicalBackslash = (event) =>
+    visualTexIsUnmodifiedPhysicalBackslash(event) && event.key !== "\\";
+  const visualTexIsInputMethodNoiseKeydown = (event) =>
+    event.key === "Unidentified" &&
+    !event.code &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey;
+  let focusInProgress = false;
+  let blurInProgress = false;
+  const controller = new AbortController();
+  const signal = controller.signal;
+  const visualTexCompositionOwnsKeyboardEvent = (event) => {
+    if (!event) return false;
+    if (event.isComposing || event.keyCode === 229) return true;
+    if (event.key === "Process" || event.key === "Dead") return true;
+    if (
+      event.key === "Shift" ||
+      event.key === "Control" ||
+      event.key === "Alt" ||
+      event.key === "Meta" ||
+      event.key === "CapsLock"
+    )
+      return true;
+    return /(Control|Meta|Alt|Shift)(Left|Right)/.test(event.code || "");
+  };
+  const visualTexEndCompositionTransaction = (data = "") => {
+    if (!compositionInProgress) return false;
+    compositionInProgress = false;
+    visualTexSuppressOrphanBackslash = data === "";
+    visualTexChineseCandidateMayReplaySpace =
+      /^[\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’\s]+$/.test(data) &&
+      /[^\s]/.test(data);
+    if (visualTexChineseCandidateReplayTimer)
+      clearTimeout(visualTexChineseCandidateReplayTimer);
+    visualTexChineseCandidateReplayTimer = visualTexChineseCandidateMayReplaySpace
+      ? setTimeout(() => {
+          visualTexChineseCandidateMayReplaySpace = false;
+          visualTexChineseCandidateReplayTimer = 0;
+        }, 250)
+      : 0;
+    keydownEvent = null;
+    keypressEvent = null;
+    keyboardSink.textContent = "";
+    delegate.onCompositionEnd(data);
+    return true;
+  };
+  const visualTexNotifyRecoveredCompositionEnd = (data) => {
+    // When WebView2 replaces a missing compositionend with a final
+    // non-composing input event, MathLive can repair its model internally, but
+    // the host still needs the terminal composition signal to close its own
+    // history/source transaction. Dispatch on the host, not the keyboard sink,
+    // so this cannot re-enter MathLive's native composition listener.
+    let event;
+    try {
+      event = new CompositionEvent("compositionend", {
+        bubbles: true,
+        composed: true,
+        data
+      });
+    } catch (_error) {
+      event = new Event("compositionend", {
+        bubbles: true,
+        composed: true
+      });
+      Object.defineProperty(event, "data", { value: data });
+    }
+    element.dispatchEvent(event);
+  };
+  const visualTexIsReplayedChineseCandidateSpace = (event) =>
+    !compositionInProgress &&
+    visualTexChineseCandidateMayReplaySpace &&
+    (event.key === " " || event.code === "Space");
+  const visualTexConsumeReplayedChineseCandidateSpace = (event) => {
+    if (!visualTexIsReplayedChineseCandidateSpace(event)) return;
+    keydownEvent = null;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  // Capture at the window boundary before application handlers registered on
+  // the math-field host can enqueue the replayed Space.
+  window.addEventListener(
+    "keydown",
+    visualTexConsumeReplayedChineseCandidateSpace,
+    { capture: true, signal }
+  );
+  // The host math-field receives capture listeners before the event descends
+  // into the shadow keyboard sink. Consume the replay here as well, otherwise
+  // an application-level capture handler can queue the Space before the sink
+  // gets a chance to reject it.
+  element.addEventListener(
+    "keydown",
+    visualTexConsumeReplayedChineseCandidateSpace,
+    { capture: true, signal }
+  );
+  keyboardSink.addEventListener(
+    "keydown",
+    (event) => {
+      if (visualTexIsReplayedChineseCandidateSpace(event)) {
+        // WebKit may replay the very Space key that confirmed the candidate
+        // after compositionend. Keep the marker for its following input event.
+        keydownEvent = null;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (!compositionInProgress) {
+        visualTexChineseCandidateMayReplaySpace = false;
+        if (visualTexChineseCandidateReplayTimer)
+          clearTimeout(visualTexChineseCandidateReplayTimer);
+        visualTexChineseCandidateReplayTimer = 0;
+        // Chromium/WKWebView can emit Unidentified/code="" keydowns inside the
+        // same printable-key transaction. They are input-method plumbing, not a
+        // second user key, so they must not cancel the deferred text decision.
+        if (!visualTexIsInputMethodNoiseKeydown(event)) {
+          visualTexClearDeferredPhysicalBackslash();
+          visualTexClearPhysicalBackslashReplay();
+          visualTexSuppressOrphanBackslash = false;
+        }
+      }
+      if (compositionInProgress) {
+        if (visualTexCompositionOwnsKeyboardEvent(event)) {
+          keydownEvent = null;
+          return;
+        }
+        // WebView2/IME can drop compositionend while switching input methods.
+        // A definite non-composition key proves that transaction is stale.
+        // Cancel the old transaction before handling this key so MathLive
+        // cannot remain permanently locked in composition mode.
+        visualTexEndCompositionTransaction("");
+      }
+      if (event.key === "Process" || event.code === "CapsLock" || /(Control|Meta|Alt|Shift)(Left|Right)/.test(event.code)) {
+        keydownEvent = null;
+        return;
+      }
+      if (visualTexInputMethodOwnsPhysicalBackslash(event)) {
+        // The physical key position is not the committed character. macOS
+        // Pinyin, for example, delivers `beforeinput/input(data="、")` and can
+        // then emit a delayed keydown(key="、", code="Backslash", keyCode=229).
+        // Never reinterpret that semantic IME key as a raw-LaTeX prefix.
+        keydownEvent = null;
+        keypressEvent = null;
+        keyboardSink.textContent = "";
+        return;
+      }
+      if (visualTexShouldDeferPhysicalBackslash(event)) {
+        // A fresh physical Backslash owns a new transaction and therefore is
+        // not the orphan replay guarded after an empty composition end.
+        visualTexSuppressOrphanBackslash = false;
+        visualTexDeferPhysicalBackslash(event);
+        keydownEvent = null;
+        keypressEvent = null;
+        keyboardSink.textContent = "";
+        return;
+      }
+      keydownEvent = event;
+      keypressEvent = null;
+      if (!delegate.onKeystroke(event)) keydownEvent = null;
+      else keyboardSink.textContent = "";
+    },
+    { capture: true, signal }
+  );
+  keyboardSink.addEventListener(
+    "keypress",
+    (event) => {
+      if (compositionInProgress) {
+        if (visualTexCompositionOwnsKeyboardEvent(event)) return;
+        visualTexEndCompositionTransaction("");
+      }
+      if (visualTexDeferredPhysicalBackslash) {
+        keypressEvent = null;
+        if (event.key === "\\") {
+          visualTexCommitDeferredPhysicalBackslash();
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
+      if (keydownEvent && keypressEvent) delegate.onKeystroke(keydownEvent);
+      keypressEvent = event;
+    },
+    { capture: true, signal }
+  );
+  keyboardSink.addEventListener(
+    "compositionstart",
+    (event) => {
+      keyboardSink.textContent = "";
+      visualTexClearDeferredPhysicalBackslash();
+      visualTexClearPhysicalBackslashReplay();
+      visualTexSuppressOrphanBackslash = false;
+      visualTexChineseCandidateMayReplaySpace = false;
+      if (visualTexChineseCandidateReplayTimer)
+        clearTimeout(visualTexChineseCandidateReplayTimer);
+      visualTexChineseCandidateReplayTimer = 0;
+      // A second compositionstart without a matching compositionend means the
+      // previous IME transaction was abandoned. Roll it back before starting
+      // the new one instead of layering two transactions on one model.
+      if (compositionInProgress)
+        visualTexEndCompositionTransaction("");
+      compositionInProgress = true;
+      keydownEvent = null;
+      keypressEvent = null;
+      delegate.onCompositionStart(event.data);
+    },
+    { capture: true, signal }
+  );
+  keyboardSink.addEventListener(
+    "compositionupdate",
+    (ev) => {
+      if (!compositionInProgress) return;
+      delegate.onCompositionUpdate(ev.data);
+    },
+    { capture: true, signal }
+  );
+  keyboardSink.addEventListener(
+    "compositionend",
+    (ev) => {
+      keyboardSink.textContent = "";
+      if (!compositionInProgress) return;
+      visualTexEndCompositionTransaction(ev.data);
+    },
+    { capture: true, signal }
+  );
+  keyboardSink.addEventListener(
+    "beforeinput",
+    (ev) => {
+      const inputData = ev.data != null ? ev.data : "";
+      if (
+        !visualTexDeferredPhysicalBackslash &&
+        !visualTexPhysicalBackslashMayReplayInput &&
+        ev.inputType === "insertText" &&
+        inputData === "\\" &&
+        visualTexSuppressOrphanBackslash
+      ) {
+        visualTexSuppressOrphanBackslash = false;
+        ev.preventDefault();
+      } else if (
+        visualTexDeferredPhysicalBackslash &&
+        ev.inputType === "insertText" &&
+        inputData === "\\"
+      ) {
+        visualTexCommitDeferredPhysicalBackslash();
+        ev.preventDefault();
+      } else if (
+        visualTexPhysicalBackslashMayReplayInput &&
+        ev.inputType === "insertText" &&
+        inputData === "\\"
+      ) {
+        // Some WebKit/Chromium paths replay the same printable payload after
+        // the deferred literal backslash has already been committed. A genuine
+        // second keypress has its own keydown, which clears this marker first.
+        visualTexClearPhysicalBackslashReplay();
+        ev.preventDefault();
+      }
+      if (inputData !== "\\") visualTexSuppressOrphanBackslash = false;
+      ev.stopImmediatePropagation();
+    },
+    { signal }
+  );
+  keyboardSink.addEventListener(
+    "input",
+    (ev) => {
+      var _a3;
+      if (compositionInProgress) {
+        if (ev.isComposing || ev.inputType === "insertCompositionText") return;
+        if (ev.inputType === "insertFromPaste") {
+          visualTexEndCompositionTransaction("");
+        } else {
+          // Some WebView2 IME paths deliver the committed text as a final
+          // non-composing input event but omit compositionend. Treat that
+          // event as the missing terminal composition event exactly once.
+          const recoveredCompositionData = (_a3 = ev.data) != null ? _a3 : "";
+          visualTexEndCompositionTransaction(recoveredCompositionData);
+          if (recoveredCompositionData)
+            visualTexNotifyRecoveredCompositionEnd(recoveredCompositionData);
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
+      }
+      keyboardSink.textContent = "";
+      if (ev.inputType === "insertCompositionText") return;
+      if (ev.inputType === "insertFromPaste") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+      const inputData = (_a3 = ev.data) != null ? _a3 : "";
+      if (
+        !visualTexDeferredPhysicalBackslash &&
+        !visualTexPhysicalBackslashMayReplayInput &&
+        inputData === "\\" &&
+        visualTexSuppressOrphanBackslash
+      ) {
+        visualTexSuppressOrphanBackslash = false;
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+      if (visualTexDeferredPhysicalBackslash) {
+        if (inputData === "\\") {
+          visualTexCommitDeferredPhysicalBackslash();
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
+        // The platform text-input system remapped the physical key (for
+        // example macOS Pinyin Backslash -> ideographic comma). The committed
+        // text owns the transaction, so discard the pending command prefix.
+        visualTexClearDeferredPhysicalBackslash();
+      }
+      if (visualTexPhysicalBackslashMayReplayInput && inputData === "\\") {
+        visualTexClearPhysicalBackslashReplay();
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+      if (visualTexPhysicalBackslashMayReplayInput)
+        visualTexClearPhysicalBackslashReplay();
+      if (inputData !== "\\") visualTexSuppressOrphanBackslash = false;
+      if (visualTexChineseCandidateMayReplaySpace) {
+        visualTexChineseCandidateMayReplaySpace = false;
+        if (visualTexChineseCandidateReplayTimer)
+          clearTimeout(visualTexChineseCandidateReplayTimer);
+        visualTexChineseCandidateReplayTimer = 0;
+        if (/^\s+$/.test(inputData)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          return;
+        }
+      }
+      delegate.onInput(inputData);
+      ev.preventDefault();
+      ev.stopPropagation();
+    },
+    { signal }
+  );
+  keyboardSink.addEventListener(
+    "paste",
+    (event) => {
+      keyboardSink.focus({ preventScroll: true });
+      keyboardSink.textContent = "";
+      if (!delegate.onPaste(event)) event.preventDefault();
+      event.stopImmediatePropagation();
+    },
+    { signal }
+  );
+  keyboardSink.addEventListener("cut", (ev) => delegate.onCut(ev), {
+    capture: true,
+    signal
+  });
+  keyboardSink.addEventListener("copy", (ev) => delegate.onCopy(ev), {
+    capture: true,
+    signal
+  });
+  keyboardSink.addEventListener(
+    "blur",
+    (event) => {
+      var _a3, _b3;
+      // Composition is tied to the hidden contenteditable keyboard sink. Once
+      // that sink blurs, keeping the transaction alive is invalid and can
+      // permanently block all future key/input events if WebView2 omits
+      // compositionend during an input-method switch.
+      if (compositionInProgress)
+        visualTexEndCompositionTransaction("");
+      if (((_b3 = (_a3 = event["relatedTarget"]) == null ? void 0 : _a3["_mathfield"]) == null ? void 0 : _b3["element"]) === element) {
+        keyboardSink.focus({ preventScroll: true });
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      let isInsideKeyboard = false;
+      let target = event.relatedTarget;
+      while (target) {
+        if (target.classList.contains("ML__keyboard")) {
+          isInsideKeyboard = true;
+          break;
+        }
+        target = target.parentElement;
+      }
+      if (isInsideKeyboard) {
+        keyboardSink.focus({ preventScroll: true });
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      const scrimState = Scrim.state;
+      if (scrimState === "open" || scrimState === "opening") {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (event.relatedTarget === event.target.getRootNode().host) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (blurInProgress || focusInProgress) return;
+      blurInProgress = true;
+      keydownEvent = null;
+      keypressEvent = null;
+      delegate.onBlur();
+      blurInProgress = false;
+    },
+    { capture: true, signal }
+  );
+  keyboardSink.addEventListener(
+    "focus",
+    (_evt) => {
+      if (blurInProgress || focusInProgress) return;
+      focusInProgress = true;
+      delegate.onFocus();
+      focusInProgress = false;
+    },
+    { capture: true, signal }
+  );
+  return {
+    dispose: () => controller.abort(),
+    cancelComposition: () => {
+      if (!compositionInProgress) return;
+      // Do not rely on blur/focus to make the browser emit compositionend.
+      // Clear MathLive's transaction first, then bounce focus only to dismiss
+      // any native IME candidate UI that may still be open.
+      visualTexEndCompositionTransaction("");
+      if (typeof keyboardSink.blur === "function") keyboardSink.blur();
+      requestAnimationFrame(() => keyboardSink.focus({ preventScroll: true }));
+    },
+    blur: () => {
+      if (typeof keyboardSink.blur === "function") {
+        blurInProgress = true;
+        keyboardSink.blur();
+        blurInProgress = false;
+      }
+    },
+    focus: () => {
+      if (!focusInProgress && typeof keyboardSink.focus === "function") {
+        focusInProgress = true;
+        keyboardSink.focus({ preventScroll: true });
+        focusInProgress = false;
+      }
+    },
+    hasFocus: () => {
+      return deepActiveElement() === keyboardSink;
+    },
+    setAriaLabel: (value) => keyboardSink.setAttribute("aria-label", value),
+    setValue: (value) => {
+      var _a3;
+      if (keyboardSink.textContent === value) return;
+      keyboardSink.textContent = value;
+      keyboardSink.style.left = `-1000px`;
+      (_a3 = window.getSelection()) == null ? void 0 : _a3.selectAllChildren(keyboardSink);
+    },
+    moveTo: (x, y) => {
+      keyboardSink.style.top = `${y}px`;
+      keyboardSink.style.left = `${x}px`;
+    }
+  };
+}
+function keyboardEventToChar(evt) {
+  var _a3;
+  if (!evt || !mightProducePrintableCharacter(evt)) return "";
+  let result;
+  if (evt.key === "Unidentified") {
+    if (evt.target) result = evt.target.value;
+  }
+  result = (_a3 = result != null ? result : evt.key) != null ? _a3 : evt.code;
+  if (/^(Dead|Return|Enter|Tab|Escape|Delete|PageUp|PageDown|Home|End|Help|ArrowLeft|ArrowRight|ArrowUp|ArrowDown)$/.test(
+    result
+  ))
+    result = "";
+  return result;
+}
+function keyboardEventToString(evt) {
+  evt = normalizeKeyboardEvent(evt);
+  const modifiers = [];
+  if (evt.ctrlKey) modifiers.push("ctrl");
+  if (evt.metaKey) modifiers.push("meta");
+  if (evt.altKey) modifiers.push("alt");
+  if (evt.shiftKey) modifiers.push("shift");
+  if (modifiers.length === 0) return `[${evt.code}]`;
+  modifiers.push(`[${evt.code}]`);
+  return modifiers.join("+");
+}
+
+// src/editor/keybindings.ts
+function matchPlatform(p) {
+  if (isBrowser()) {
+    const plat = osPlatform();
+    const isNeg = p.startsWith("!");
+    const isMatch = p.endsWith(plat);
+    if (isNeg && !isMatch) return true;
+    if (!isNeg && isMatch) return true;
+  }
+  if (p === "!other") return false;
+  return p === "other";
+}
+function getCommandForKeybinding(keybindings, mode, evt) {
+  if (keybindings.length === 0) return "";
+  const keystroke = keystrokeModifiersToString(
+    keystrokeModifiersFromString(keyboardEventToString(evt))
+  );
+  const altKeystroke = keystrokeModifiersToString({
+    key: evt.key,
+    shift: evt.shiftKey,
+    alt: evt.altKey,
+    ctrl: evt.ctrlKey,
+    meta: evt.metaKey || evt.ctrlKey && /macos|ios/.test(osPlatform()),
+    cmd: false,
+    win: false
+  });
+  for (let i = keybindings.length - 1; i >= 0; i--) {
+    if (keybindings[i].key === keystroke || keybindings[i].key === altKeystroke) {
+      if (!keybindings[i].ifMode || keybindings[i].ifMode === mode)
+        return keybindings[i].command;
+    }
+  }
+  return "";
+}
+function commandToString(command) {
+  let result = command;
+  if (isArray(result)) {
+    result = result.length > 0 ? result[0] + "(" + result.slice(1).join("") + ")" : "";
+  }
+  return result;
+}
+function getKeybindingsForCommand(keybindings, command) {
+  let result = [];
+  if (typeof command === "string") {
+    const candidate = REVERSE_KEYBINDINGS[command];
+    if (isArray(candidate)) result = candidate.slice();
+    else if (candidate) result.push(candidate);
+  }
+  const normalizedCommand = commandToString(command);
+  const regex = new RegExp(
+    "^" + normalizedCommand.replace("\\", "\\\\").replace("|", "\\|").replace("*", "\\*").replace("$", "\\$").replace("^", "\\^") + "([^*a-zA-Z]|$)"
+  );
+  for (const keybinding of keybindings) {
+    if (regex.test(commandToString(keybinding.command)))
+      result.push(keybinding.key);
+  }
+  return result.map(getKeybindingMarkup);
+}
+function normalizeKeybinding(keybinding, layout) {
+  if (keybinding.ifPlatform && !/^!?(macos|windows|android|ios|chromeos|other)$/.test(
+    keybinding.ifPlatform
+  )) {
+    throw new Error(
+      `Unexpected platform "${keybinding.ifPlatform}" for keybinding ${keybinding.key}`
+    );
+  }
+  if (keybinding.ifLayout !== void 0 && (layout.score === 0 || !keybinding.ifLayout.includes(layout.id)))
+    return void 0;
+  const modifiers = keystrokeModifiersFromString(keybinding.key);
+  let platform2 = keybinding.ifPlatform;
+  if (modifiers.cmd) {
+    if (platform2 && platform2 !== "macos" && platform2 !== "ios") {
+      throw new Error(
+        'Unexpected "cmd" modifier with platform "' + platform2 + '"\n"cmd" modifier can only be used with macOS or iOS platform.'
+      );
+    }
+    if (!platform2) platform2 = osPlatform() === "ios" ? "ios" : "macos";
+    modifiers.win = false;
+    modifiers.cmd = false;
+    modifiers.meta = true;
+  }
+  if (modifiers.win) {
+    if (platform2 && platform2 !== "windows") {
+      throw new Error(
+        'Unexpected "win" modifier with platform "' + platform2 + '"\n"win" modifier can only be used with Windows platform.'
+      );
+    }
+    platform2 = "windows";
+    modifiers.win = false;
+    modifiers.cmd = false;
+    modifiers.meta = true;
+  }
+  if (platform2 && !matchPlatform(platform2)) return void 0;
+  if (/^\[.+\]$/.test(modifiers.key))
+    return __spreadProps(__spreadValues({}, keybinding), { key: keystrokeModifiersToString(modifiers) });
+  const code = getCodeForKey(modifiers.key, layout);
+  if (!code)
+    return __spreadProps(__spreadValues({}, keybinding), { key: keystrokeModifiersToString(modifiers) });
+  if (code.shift && modifiers.shift || code.alt && modifiers.alt) {
+    throw new Error(
+      `The keybinding ${keybinding.key} (${selectorToString(
+        keybinding.command
+      )}) is conflicting with the key combination ${keystrokeModifiersToString(
+        code
+      )} using the ${layout.displayName} keyboard layout`
+    );
+  }
+  code.shift = code.shift || modifiers.shift;
+  code.alt = code.alt || modifiers.alt;
+  code.meta = modifiers.meta;
+  code.ctrl = modifiers.ctrl;
+  return __spreadProps(__spreadValues({}, keybinding), { key: keystrokeModifiersToString(code) });
+}
+function selectorToString(selector) {
+  if (Array.isArray(selector)) {
+    const sel = [...selector];
+    return sel.shift() + "(" + sel.map((x) => typeof x === "string" ? `"${x}"` : x.toString()).join(", ") + ")";
+  }
+  return selector;
+}
+function normalizeKeybindings(keybindings, layout) {
+  const errors = [];
+  const result = [];
+  for (const x of keybindings) {
+    try {
+      const binding = normalizeKeybinding(x, layout);
+      if (!binding) continue;
+      const conflict = result.find(
+        (x2) => x2.key === binding.key && x2.ifMode === binding.ifMode
+      );
+      if (conflict) {
+        throw new Error(
+          `Ambiguous key binding ${x.key} (${selectorToString(
+            x.command
+          )}) matches ${conflict.key} (${selectorToString(
+            conflict.command
+          )}) with the ${layout.displayName} keyboard layout`
+        );
+      }
+      result.push(binding);
+    } catch (error) {
+      if (error instanceof Error) errors.push(error.message);
+    }
+  }
+  return [result, errors];
+}
+
+// src/editor-mathfield/mode-editor-latex.ts
+var LatexModeEditor = class extends ModeEditor {
+  constructor() {
+    super("latex");
+  }
+  createAtom(command) {
+    return new LatexAtom(command);
+  }
+  onPaste(mathfield, data) {
+    if (!data) return false;
+    const text = typeof data === "string" ? data : data.getData("application/x-latex") || data.getData("text/plain");
+    if (text && mathfield.model.contentWillChange({
+      inputType: "insertFromPaste",
+      data: text
+    })) {
+      mathfield.stopCoalescingUndo();
+      mathfield.stopRecording();
+      if (this.insert(mathfield.model, text)) {
+        mathfield.startRecording();
+        mathfield.snapshot("paste");
+        mathfield.model.contentDidChange({ inputType: "insertFromPaste" });
+        requestUpdate(mathfield);
+      }
+      mathfield.startRecording();
+      return true;
+    }
+    return false;
+  }
+  insert(model, text, options) {
+    if (!model.contentWillChange({ data: text, inputType: "insertText" }))
+      return false;
+    if (!options) options = {};
+    if (!options.insertionMode) options.insertionMode = "replaceSelection";
+    if (!options.selectionMode) options.selectionMode = "placeholder";
+    const { silenceNotifications } = model;
+    if (options.silenceNotifications) model.silenceNotifications = true;
+    const saveSilenceNotifications = model.silenceNotifications;
+    model.silenceNotifications = true;
+    if (options.insertionMode === "replaceSelection" && !model.selectionIsCollapsed)
+      model.deleteAtoms(range(model.selection));
+    else if (options.insertionMode === "replaceAll") {
+      model.root.setChildren([], "body");
+      model.position = 0;
+    } else if (options.insertionMode === "insertBefore")
+      model.collapseSelection("backward");
+    else if (options.insertionMode === "insertAfter")
+      model.collapseSelection("forward");
+    const newAtoms = [];
+    for (const c of text)
+      if (COMMAND_MODE_CHARACTERS.test(c)) newAtoms.push(new LatexAtom(c));
+    let cursor = model.at(model.position);
+    if (cursor instanceof LatexGroupAtom) cursor = cursor.lastChild;
+    if (!(cursor.parent instanceof LatexGroupAtom)) {
+      const group = new LatexGroupAtom();
+      cursor.parent.addChildAfter(group, cursor);
+      cursor = group.firstChild;
+    }
+    const lastNewAtom = cursor.parent.addChildrenAfter(newAtoms, cursor);
+    model.silenceNotifications = saveSilenceNotifications;
+    if (options.selectionMode === "before") {
+    } else if (options.selectionMode === "item")
+      model.setSelection(model.anchor, model.offsetOf(lastNewAtom));
+    else if (lastNewAtom) model.position = model.offsetOf(lastNewAtom);
+    model.contentDidChange({ data: text, inputType: "insertText" });
+    model.silenceNotifications = silenceNotifications;
+    return true;
+  }
+};
+function getLatexGroup(model) {
+  return model.atoms.find((x) => x.type === "latexgroup");
+}
+function getLatexGroupBody(model) {
+  var _a3, _b3;
+  const atom = getLatexGroup(model);
+  return (_b3 = (_a3 = atom == null ? void 0 : atom.body) == null ? void 0 : _a3.filter((x) => x.type === "latex")) != null ? _b3 : [];
+}
+function getCommandSuggestionRange(model, options) {
+  var _a3;
+  let start = 0;
+  let found = false;
+  const last = Number.isFinite(options == null ? void 0 : options.before) ? (_a3 = options == null ? void 0 : options.before) != null ? _a3 : 0 : model.lastOffset;
+  while (start <= last && !found) {
+    const atom = model.at(start);
+    found = atom instanceof LatexAtom && atom.isSuggestion;
+    if (!found) start++;
+  }
+  if (!found) return [void 0, void 0];
+  let end = start;
+  let done = false;
+  while (end <= last && !done) {
+    const atom = model.at(end);
+    done = !(atom instanceof LatexAtom && atom.isSuggestion);
+    if (!done) end++;
+  }
+  return [start - 1, end - 1];
+}
+new LatexModeEditor();
+
+// src/editor-mathfield/styling.ts
+function applyStyle2(mathfield, inStyle) {
+  mathfield.flushInlineShortcutBuffer();
+  mathfield.stopCoalescingUndo();
+  const style = validateStyle(mathfield, inStyle);
+  const { model } = mathfield;
+  if (model.selectionIsCollapsed) {
+    if (mathfield.defaultStyle.fontSeries && style.fontSeries === mathfield.defaultStyle.fontSeries)
+      style.fontSeries = "auto";
+    if (style.fontShape && style.fontShape === mathfield.defaultStyle.fontShape)
+      style.fontShape = "auto";
+    if (style.color && style.color === mathfield.defaultStyle.color)
+      style.color = "none";
+    if (style.backgroundColor && style.backgroundColor === mathfield.defaultStyle.backgroundColor)
+      style.backgroundColor = "none";
+    if (style.fontSize && style.fontSize === mathfield.defaultStyle.fontSize)
+      style.fontSize = "auto";
+    mathfield.defaultStyle = __spreadValues(__spreadValues({}, mathfield.defaultStyle), style);
+  } else {
+    mathfield.model.deferNotifications(
+      { content: true, type: "insertText" },
+      () => {
+        model.selection.ranges.forEach(
+          (range2) => applyStyle(model, range2, style, { operation: "toggle" })
+        );
+        mathfield.snapshot("style-change");
+      }
+    );
+  }
+  return true;
+}
+register2(
+  { applyStyle: applyStyle2 },
+  {
+    target: "mathfield",
+    canUndo: true,
+    changeContent: true
+  }
+);
+function validateStyle(mathfield, style) {
+  var _a3, _b3, _c2, _d2, _e, _f, _g, _h, _i, _j;
+  const result = {};
+  if (typeof style.color === "string") {
+    const newColor = (_b3 = mathfield.colorMap((_a3 = style.color) != null ? _a3 : style.verbatimColor)) != null ? _b3 : "none";
+    if (newColor !== style.color)
+      result.verbatimColor = (_c2 = style.verbatimColor) != null ? _c2 : style.color;
+    result.color = newColor;
+  }
+  if (typeof style.backgroundColor === "string") {
+    const newColor = (_e = mathfield.backgroundColorMap(
+      (_d2 = style.backgroundColor) != null ? _d2 : style.verbatimBackgroundColor
+    )) != null ? _e : "none";
+    if (newColor !== style.backgroundColor) {
+      result.verbatimBackgroundColor = (_f = style.verbatimBackgroundColor) != null ? _f : style.backgroundColor;
+    }
+    result.backgroundColor = newColor;
+  }
+  if (typeof style.fontFamily === "string")
+    result.fontFamily = style.fontFamily;
+  if (typeof style.series === "string")
+    result.fontSeries = style.series;
+  if (typeof style.fontSeries === "string")
+    result.fontSeries = style.fontSeries.toLowerCase();
+  if (result.fontSeries) {
+    result.fontSeries = (_g = {
+      bold: "b",
+      medium: "m",
+      normal: "m"
+    }[result.fontSeries]) != null ? _g : result.fontSeries;
+  }
+  if (typeof style.shape === "string")
+    result.fontShape = style.shape;
+  if (typeof style.fontShape === "string")
+    result.fontShape = style.fontShape.toLowerCase();
+  if (result.fontShape) {
+    result.fontShape = (_h = {
+      italic: "it",
+      up: "n",
+      upright: "n",
+      normal: "n"
+    }[result.fontShape]) != null ? _h : result.fontShape;
+  }
+  if (style.variant) result.variant = style.variant.toLowerCase();
+  if (style.variantStyle !== void 0) {
+    result.variantStyle = typeof style.variantStyle === "string" && style.variantStyle !== "" ? style.variantStyle.toLowerCase() : style.variantStyle;
+  }
+  const size = (_i = style.size) != null ? _i : style.fontSize;
+  if (typeof size === "number")
+    result.fontSize = Math.max(1, Math.min(10, size));
+  else if (typeof size === "string") {
+    result.fontSize = (_j = {
+      size1: 1,
+      size2: 2,
+      size3: 3,
+      size4: 4,
+      size5: 5,
+      size6: 6,
+      size7: 7,
+      size8: 8,
+      size9: 9,
+      size10: 10
+    }[size.toLowerCase()]) != null ? _j : {
+      tiny: 1,
+      scriptsize: 2,
+      footnotesize: 3,
+      small: 4,
+      normal: 5,
+      normalsize: 5,
+      large: 6,
+      Large: 7,
+      LARGE: 8,
+      huge: 9,
+      Huge: 10
+    }[size];
+  }
+  return result;
+}
+function defaultInsertStyleHook(mathfield, offset, info) {
+  var _a3, _b3;
+  const model = mathfield.model;
+  if (model.mode === "latex") return {};
+  const bias = mathfield.styleBias;
+  if (bias === "none") return mathfield.defaultStyle;
+  if (model.mode === "text") {
+    return (_b3 = (_a3 = model.at(bias === "right" ? info.after : info.before)) == null ? void 0 : _a3.style) != null ? _b3 : mathfield.defaultStyle;
+  }
+  if (model.mode === "math") {
+    const atom = model.at(bias === "right" ? info.after : info.before);
+    if (!atom) return mathfield.defaultStyle;
+    return __spreadValues(__spreadProps(__spreadValues({}, atom.style), { variant: "normal" }), mathfield.defaultStyle);
+  }
+  return {};
+}
+function computeInsertStyle(mathfield) {
+  let hook = mathfield.options.onInsertStyle;
+  if (hook === null) return {};
+  if (hook === void 0) hook = defaultInsertStyleHook;
+  const model = mathfield.model;
+  const bias = mathfield.styleBias;
+  const atom = model.at(model.position);
+  const before = ungroup(model, atom, bias);
+  const after = ungroup(model, atom.rightSibling, bias);
+  return hook(mathfield, model.position, { before, after });
+}
+function ungroup(model, atom, bias) {
+  var _a3;
+  if (!atom) return -1;
+  if (atom.type === "first" && bias !== "right") return -1;
+  if (atom.type !== "group") return model.offsetOf(atom);
+  if (!atom.body || atom.body.length < 2) return -1;
+  if (((_a3 = atom.body) == null ? void 0 : _a3.length) === 1) return model.offsetOf(atom.body[0]);
+  if (bias !== "right") return model.offsetOf(atom.body[0]);
+  return model.offsetOf(atom.body[atom.body.length - 1]);
+}
+
+// src/editor-mathfield/autocomplete.ts
+function removeSuggestion(mathfield) {
+  const group = getLatexGroupBody(mathfield.model).filter(
+    (x) => x.isSuggestion
+  );
+  if (group.length === 0) return;
+  mathfield.model.position = mathfield.model.offsetOf(group[0].leftSibling);
+  for (const atom of group) atom.parent.removeChild(atom);
+}
+function updateAutocomplete(mathfield, options) {
+  var _a3;
+  const { model } = mathfield;
+  removeSuggestion(mathfield);
+  for (const atom2 of getLatexGroupBody(model)) atom2.isError = false;
+  if (!model.selectionIsCollapsed || mathfield.options.popoverPolicy === "off") {
+    hideSuggestionPopover(mathfield);
+    return;
+  }
+  const commandAtoms = [];
+  let atom = model.at(model.position);
+  while (atom && atom instanceof LatexAtom && /^[a-zA-Z\*]$/.test(atom.value))
+    atom = atom.leftSibling;
+  if (atom && atom instanceof LatexAtom && atom.value === "\\") {
+    commandAtoms.push(atom);
+    atom = atom.rightSibling;
+    while (atom && atom instanceof LatexAtom && /^[a-zA-Z\*]$/.test(atom.value)) {
+      commandAtoms.push(atom);
+      atom = atom.rightSibling;
+    }
+  }
+  const command = commandAtoms.map((x) => x.value).join("");
+  const suggestions = suggest(mathfield, command);
+  if (suggestions.length === 0) {
+    if (/^\\[a-zA-Z\*]+$/.test(command))
+      for (const atom2 of commandAtoms) atom2.isError = true;
+    hideSuggestionPopover(mathfield);
+    return;
+  }
+  const index = (_a3 = options == null ? void 0 : options.atIndex) != null ? _a3 : 0;
+  mathfield.suggestionIndex = index < 0 ? suggestions.length - 1 : index % suggestions.length;
+  const suggestion = suggestions[mathfield.suggestionIndex];
+  if (suggestion !== command) {
+    const lastAtom = commandAtoms[commandAtoms.length - 1];
+    lastAtom.parent.addChildrenAfter(
+      [...suggestion.slice(command.length - suggestion.length)].map(
+        (x) => new LatexAtom(x, { isSuggestion: true })
+      ),
+      lastAtom
+    );
+    render(mathfield, { interactive: true });
+  }
+  showSuggestionPopover(mathfield, suggestions);
+}
+function acceptCommandSuggestion(model) {
+  const [from, to] = getCommandSuggestionRange(model, {
+    before: model.position
+  });
+  if (from === void 0 || to === void 0) return false;
+  let result = false;
+  model.getAtoms([from, to]).forEach((x) => {
+    if (x.isSuggestion) {
+      x.isSuggestion = false;
+      result = true;
+    }
+  });
+  return result;
+}
+function complete(mathfield, completion = "accept", options) {
+  var _a3, _b3;
+  hideSuggestionPopover(mathfield);
+  const latexGroup = getLatexGroup(mathfield.model);
+  if (!latexGroup) return false;
+  if (completion === "accept-suggestion" || completion === "accept-all") {
+    const suggestions = getLatexGroupBody(mathfield.model).filter(
+      (x) => x.isSuggestion
+    );
+    if (suggestions.length !== 0) {
+      for (const suggestion of suggestions) suggestion.isSuggestion = false;
+      mathfield.model.position = mathfield.model.offsetOf(
+        suggestions[suggestions.length - 1]
+      );
+    }
+    if (completion === "accept-suggestion") return suggestions.length !== 0;
+  }
+  const body = getLatexGroupBody(mathfield.model).filter(
+    (x) => !x.isSuggestion
+  );
+  const latex = body.map((x) => x.value).join("");
+  const newPos = latexGroup.leftSibling;
+  latexGroup.parent.removeChild(latexGroup);
+  mathfield.model.position = mathfield.model.offsetOf(newPos);
+  mathfield.switchMode((_a3 = options == null ? void 0 : options.mode) != null ? _a3 : "math");
+  if (completion === "reject") return true;
+  const style = __spreadValues({}, computeInsertStyle(mathfield));
+  if (!/^[a-zA-Z0-9]$/.test(latex) && mathfield.styleBias !== "none") {
+    style.variant = "normal";
+    style.variantStyle = void 0;
+  }
+  ModeEditor.insert(mathfield.model, latex, {
+    selectionMode: ((_b3 = options == null ? void 0 : options.selectItem) != null ? _b3 : false) ? "item" : "placeholder",
+    format: "latex",
+    mode: "math",
+    style
+  });
+  mathfield.snapshot();
+  mathfield.model.announce("replacement");
+  mathfield.switchMode("math");
+  return true;
+}
+
+// src/common/shared-element.ts
+function getSharedElement(id) {
+  var _a3;
+  let result = document.getElementById(id);
+  if (result) {
+    result.dataset.refcount = Number(
+      Number.parseInt((_a3 = result.dataset.refcount) != null ? _a3 : "0") + 1
+    ).toString();
+  } else {
+    result = document.createElement("div");
+    result.setAttribute("aria-hidden", "true");
+    result.dataset.refcount = "1";
+    result.id = id;
+    document.body.append(result);
+  }
+  return result;
+}
+function releaseSharedElement(id) {
+  var _a3;
+  const element = document.getElementById(id);
+  if (!element) return;
+  const refcount = Number.parseInt(
+    (_a3 = element.getAttribute("data-refcount")) != null ? _a3 : "0"
+  );
+  if (refcount <= 1) element.remove();
+  else element.dataset.refcount = Number(refcount - 1).toString();
+}
+
+// src/editor/suggestion-popover.ts
+function escapeHtmlAttr(s) {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function latexToMarkup(mf, latex) {
+  const context = new Context({ from: mf.context });
+  const root = new Atom({
+    mode: "math",
+    type: "root",
+    body: parseLatex(latex, { context })
+  });
+  const box = coalesce(
+    applyInterBoxSpacing(
+      new Box(root.render(context), { classes: "ML__base" }),
+      context
+    )
+  );
+  return makeStruts(box, { classes: "ML__latex" }).toMarkup();
+}
+function showSuggestionPopover(mf, suggestions) {
+  var _a3;
+  if (suggestions.length === 0) {
+    hideSuggestionPopover(mf);
+    return;
+  }
+  let template = "";
+  for (const [i, suggestion] of suggestions.entries()) {
+    const command = suggestion;
+    const commandMarkup = latexToMarkup(mf, suggestion);
+    const keybinding = getKeybindingsForCommand(mf.keybindings, command).join(
+      "<br>"
+    );
+    template += `<li role="button" data-command="${escapeHtmlAttr(command)}" ${i === mf.suggestionIndex ? "class=ML__popover__current" : ""}><span class="ML__popover__latex">${escapeHtmlAttr(command)}</span><span class="ML__popover__command">${commandMarkup}</span>`;
+    if (keybinding)
+      template += `<span class="ML__popover__keybinding">${keybinding}</span>`;
+    template += "</li>";
+  }
+  const panel = createSuggestionPopover(mf, `<ul>${template}</ul>`);
+  if (isSuggestionPopoverVisible()) {
+    (_a3 = panel.querySelector(".ML__popover__current")) == null ? void 0 : _a3.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  setTimeout(() => {
+    var _a4;
+    if (panel && !isSuggestionPopoverVisible()) {
+      panel.classList.add("is-visible");
+      updateSuggestionPopoverPosition(mf);
+      (_a4 = panel.querySelector(".ML__popover__current")) == null ? void 0 : _a4.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, 32);
+}
+function isSuggestionPopoverVisible() {
+  const panel = document.getElementById("mathlive-suggestion-popover");
+  if (!panel) return false;
+  return panel.classList.contains("is-visible");
+}
+function updateSuggestionPopoverPosition(mf, options) {
+  var _a3, _b3, _c2;
+  if (!mf.element || mf.element.mathfield !== mf) return;
+  if (!isSuggestionPopoverVisible()) return;
+  if (((_a3 = mf.model.at(mf.model.position)) == null ? void 0 : _a3.type) !== "latex") {
+    hideSuggestionPopover(mf);
+    return;
+  }
+  if (options == null ? void 0 : options.deferred) {
+    setTimeout(() => updateSuggestionPopoverPosition(mf), 32);
+    return;
+  }
+  const position = getCaretPoint(mf.field);
+  if (!position) return;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+  const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+  const scrollbarHeight = window.innerHeight - document.documentElement.clientHeight;
+  const virtualkeyboardHeight = (_c2 = (_b3 = window.mathVirtualKeyboard) == null ? void 0 : _b3.boundingRect.height) != null ? _c2 : 0;
+  const panel = document.getElementById("mathlive-suggestion-popover");
+  if (position.x + panel.offsetWidth / 2 > viewportWidth - scrollbarWidth) {
+    panel.style.left = `${viewportWidth - panel.offsetWidth - scrollbarWidth}px`;
+  } else if (position.x - panel.offsetWidth / 2 < 0) panel.style.left = "0";
+  else panel.style.left = `${position.x - panel.offsetWidth / 2}px`;
+  const spaceAbove = position.y - position.height;
+  const spaceBelow = viewportHeight - scrollbarHeight - virtualkeyboardHeight - position.y;
+  if (spaceBelow < spaceAbove) {
+    panel.classList.add("ML__popover--reverse-direction");
+    panel.classList.remove("top-tip");
+    panel.classList.add("bottom-tip");
+    panel.style.top = `${position.y - position.height - panel.offsetHeight - 15}px`;
+  } else {
+    panel.classList.remove("ML__popover--reverse-direction");
+    panel.classList.add("top-tip");
+    panel.classList.remove("bottom-tip");
+    panel.style.top = `${position.y + 15}px`;
+  }
+}
+function hideSuggestionPopover(mf) {
+  mf.suggestionIndex = 0;
+  const panel = document.getElementById("mathlive-suggestion-popover");
+  if (panel) releaseSharedElement("mathlive-suggestion-popover");
+}
+function createSuggestionPopover(mf, html) {
+  let panel = document.getElementById("mathlive-suggestion-popover");
+  if (panel) releaseSharedElement("mathlive-suggestion-popover");
+  else {
+    injectStylesheet("suggestion-popover");
+    injectStylesheet("core");
+  }
+  panel = getSharedElement("mathlive-suggestion-popover");
+  panel.addEventListener("pointerdown", (ev) => ev.preventDefault());
+  panel.addEventListener("click", (ev) => {
+    let el = ev.target;
+    while (el && !el.dataset.command) el = el.parentElement;
+    if (!el) return;
+    complete(mf, "reject");
+    ModeEditor.insert(mf.model, el.dataset.command, {
+      selectionMode: "placeholder",
+      format: "latex",
+      mode: "math"
+    });
+    mf.dirty = true;
+    mf.focus();
+  });
+  panel.innerHTML = globalThis.MathfieldElement.createHTML(html);
+  return panel;
+}
+function disposeSuggestionPopover() {
+  if (!document.getElementById("mathlive-suggestion-popover")) return;
+  releaseSharedElement("mathlive-suggestion-popover");
+  releaseStylesheet("suggestion-popover");
+  releaseStylesheet("core");
+}
+
+// src/common/script-url.ts
+function getFileUrl() {
+  const stackTraceFrames = String(new Error().stack).replace(/^Error.*\n/, "").split("\n");
+  if (stackTraceFrames.length === 0) {
+    console.error(
+      `Can't use relative paths to specify assets location because the sourcefile location could not be determined (unexpected stack trace format "${new Error().stack}").`
+    );
+    return "";
+  }
+  let callerFrame = stackTraceFrames[1];
+  let m = callerFrame.match(/http.*\.ts[\?:]/);
+  if (m) {
+    callerFrame = stackTraceFrames[2];
+  }
+  m = callerFrame.match(/(https?:.*):[0-9]+:[0-9]+/);
+  if (!m) {
+    m = callerFrame.match(/at (.*(\.ts))[\?:]/);
+    if (!m) m = callerFrame.match(/at (.*(\.mjs|\.js))[\?:]/);
+  }
+  if (!m) {
+    console.error(stackTraceFrames);
+    console.error(
+      `Can't use relative paths to specify assets location because the source file location could not be determined (unexpected location "${callerFrame}").`
+    );
+    return "";
+  }
+  return m[1];
+}
+var gResolvedScriptUrl = null;
+var _a, _b;
+var gScriptUrl = ((_b = (_a = globalThis == null ? void 0 : globalThis.document) == null ? void 0 : _a.currentScript) == null ? void 0 : _b.src) || getFileUrl();
+async function resolveUrl(url) {
+  if (/^(?:[a-z+]+:)?\/\//i.test(url)) {
+    try {
+      return new URL(url).href;
+    } catch (e) {
+    }
+    if (url.startsWith("//")) {
+      try {
+        return new URL(`${window.location.protocol}${url}`).href;
+      } catch (e) {
+      }
+    }
+    return url;
+  }
+  if (gResolvedScriptUrl === null) {
+    try {
+      const response = await fetch(gScriptUrl, { method: "HEAD" });
+      if (response.status === 200) {
+        gResolvedScriptUrl = response.url;
+        gResolvedScriptUrl = gResolvedScriptUrl.replace(/\/\+esm$/, "/");
+        if (gResolvedScriptUrl.includes("jsdelivr.net/"))
+          gResolvedScriptUrl += "/";
+      }
+    } catch (e) {
+      console.error(`Invalid URL "${url}" (relative to "${gScriptUrl}")`);
+    }
+  }
+  return new URL(url, gResolvedScriptUrl != null ? gResolvedScriptUrl : gScriptUrl).href;
+}
+
+// src/core/fonts.ts
+function makeFontFace(name, source, descriptors = {}) {
+  return new FontFace(
+    name,
+    `url(${source}.woff2) format('woff2')`,
+    descriptors
+  );
+}
+var gFontsState = "not-loaded";
+async function reloadFonts() {
+  gFontsState = "not-loaded";
+  return loadFonts();
+}
+async function loadFonts() {
+  var _a3;
+  if (gFontsState !== "not-loaded") return;
+  gFontsState = "loading";
+  const useStaticFonts = (_a3 = getComputedStyle(document.documentElement).getPropertyValue(
+    "--ML__static-fonts"
+  )) != null ? _a3 : false;
+  if (useStaticFonts) {

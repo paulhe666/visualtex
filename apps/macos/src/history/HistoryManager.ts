@@ -59,7 +59,9 @@ function documentSnapshotsMatch(
     left.lines.every(
       (line, index) =>
         line.id === right.lines[index]?.id &&
-        line.latex === right.lines[index]?.latex,
+        line.latex === right.lines[index]?.latex &&
+        (line.mode ?? "display") ===
+          (right.lines[index]?.mode ?? "display"),
     )
   );
 }

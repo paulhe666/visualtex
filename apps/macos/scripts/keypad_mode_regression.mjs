@@ -175,7 +175,8 @@ async function main() {
         appHeader: Boolean(document.querySelector('.app-header')),
         editorHeaderFormat: Boolean(document.querySelector('.editor-pane-header .editor-code-format-control')),
         topHeaderFormat: Boolean(document.querySelector('.app-header .code-format-control')),
-        keypadButton: Boolean(document.querySelector('.editor-pane-header [data-keypad-mode-toggle]')),
+        editorHeaderKeypadButton: Boolean(document.querySelector('.editor-pane-header [data-keypad-mode-toggle]')),
+        topHeaderKeypadButton: Boolean(document.querySelector('.app-header [data-keypad-mode-toggle]')),
         headerClientWidth: header?.clientWidth ?? 0,
         headerScrollWidth: header?.scrollWidth ?? 0,
       };
@@ -184,7 +185,8 @@ async function main() {
     assert.equal(normalProbe.appHeader, true, "normal mode lost the main application header");
     assert.equal(normalProbe.editorHeaderFormat, false, "normal mode must keep the LaTeX format control out of the editor header");
     assert.equal(normalProbe.topHeaderFormat, true, "normal mode did not restore the LaTeX format control to the main application header");
-    assert.equal(normalProbe.keypadButton, true, "keypad mode button is missing from the editor header");
+    assert.equal(normalProbe.editorHeaderKeypadButton, false, "normal mode duplicated the keypad button in the editor header");
+    assert.equal(normalProbe.topHeaderKeypadButton, true, "keypad mode button is missing from the main application header");
     assert.ok(
       normalProbe.headerScrollWidth <= normalProbe.headerClientWidth + 2,
       `normal editor header overflows at the current compact window size: ${JSON.stringify(normalProbe)}`,
@@ -321,7 +323,12 @@ async function main() {
     // against the real macOS window instead of localStorage/browser bounds.
     await evaluate(`document.querySelector('[data-keypad-mode-toggle]')?.click()`);
     await sleep(120);
-    const keypadProbe = await evaluate(`(() => ({
+    const keypadProbe = await evaluate(`(() => {
+      const header = document.querySelector('.editor-pane-header');
+      const keypadButton = document.querySelector('.editor-pane-header [data-keypad-mode-toggle]');
+      const headerRect = header?.getBoundingClientRect();
+      const keypadButtonRect = keypadButton?.getBoundingClientRect();
+      return ({
       shell: document.querySelector('.app-shell')?.classList.contains('is-keypad-mode') ?? false,
       workspace: document.querySelector('.workspace')?.classList.contains('is-keypad-mode') ?? false,
       appHeader: Boolean(document.querySelector('.app-header')),
@@ -341,19 +348,24 @@ async function main() {
       ocrModel: Boolean(document.querySelector('.canvas-ocr-model')),
       canvasZoom: Boolean(document.querySelector('.canvas-controls')), 
       editor: Boolean(document.querySelector('.keypad-editor-pane-body math-field')),
-      headerClientWidth: document.querySelector('.editor-pane-header')?.clientWidth ?? 0,
-      headerScrollWidth: document.querySelector('.editor-pane-header')?.scrollWidth ?? 0,
+      headerVisible: Boolean(headerRect && headerRect.width > 0 && headerRect.height > 0),
+      keypadButtonVisible: Boolean(keypadButtonRect && keypadButtonRect.width > 0 && keypadButtonRect.height > 0),
+      headerClientWidth: header?.clientWidth ?? 0,
+      headerScrollWidth: header?.scrollWidth ?? 0,
       alignmentWidth: document.querySelector('.formula-alignment-controls')?.getBoundingClientRect().width ?? 0,
       desktopControlsWidth: document.querySelector('.desktop-editor-header-controls')?.getBoundingClientRect().width ?? 0,
       canvasToolsWidth: document.querySelector('.canvas-tool-group')?.getBoundingClientRect().width ?? 0,
       paneTitleWidth: document.querySelector('.pane-title-group')?.getBoundingClientRect().width ?? 0,
-    }))()`);
+      });
+    })()`);
     assert.equal(keypadProbe.shell, true, "app shell did not enter keypad mode");
     assert.equal(keypadProbe.workspace, true, "workspace did not enter keypad mode");
     assert.equal(keypadProbe.appHeader, false, "main application header is still rendered in keypad mode");
     assert.equal(keypadProbe.alignment, true, "formula alignment controls disappeared in keypad mode");
     assert.equal(keypadProbe.format, true, "LaTeX format selector disappeared in keypad mode");
     assert.equal(keypadProbe.keypadButton, true, "keypad exit button disappeared in keypad mode");
+    assert.equal(keypadProbe.headerVisible, true, "keypad editor header is not visible");
+    assert.equal(keypadProbe.keypadButtonVisible, true, "keypad exit button is not visible");
     assert.equal(keypadProbe.editor, true, "visual formula editor disappeared in keypad mode");
     assert.ok(
       keypadProbe.headerScrollWidth <= keypadProbe.headerClientWidth + 2,

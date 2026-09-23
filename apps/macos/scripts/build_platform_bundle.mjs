@@ -13,4 +13,8 @@ function run(command, args) {
 
 run("node", ["scripts/verify_macos_offline_addins.mjs"]);
 run("npm", ["run", "build:desktop"]);
-run("npm", ["run", "prepare:ocr-offline"]);
+if (process.env.VISUALTEX_API_ONLY_OCR !== "1") {
+  run("npm", ["run", "prepare:ocr-offline"]);
+} else {
+  process.stdout.write("Skipping bundled offline OCR runtime for API-only build.\n");
+}

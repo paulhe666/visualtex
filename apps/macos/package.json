@@ -1,7 +1,7 @@
 {
   "name": "visualtex-macos",
   "private": true,
-  "version": "1.2.7",
+  "version": "1.2.8",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -17,11 +17,13 @@
     "tauri:dev": "node scripts/tauri_dev.mjs",
     "register:macos-dev-url": "node scripts/register_macos_dev_url_handler.mjs",
     "tauri:build": "node scripts/tauri_build.mjs",
+    "tauri:build:no-ocr": "node scripts/build_macos_api_only.mjs",
     "test:input-behavior": "npm run build:desktop && node scripts/input_behavior_regression.mjs",
     "test:radical-render": "npm run build:desktop && node scripts/radical_render_regression.mjs",
     "test:formula-hotkeys": "npm run build:desktop && node scripts/formula_hotkey_regression.mjs",
     "test:custom-symbols": "npm run build:desktop && tsx scripts/custom_symbol_registry_regression.mts && node scripts/custom_symbol_noninterference_regression.mjs && node scripts/custom_symbol_glyph_compiler_regression.mjs && node scripts/custom_symbol_designer_ui_regression.mjs && node scripts/custom_symbol_runtime_sync_regression.mjs && cargo test --manifest-path src-tauri/Cargo.toml --lib system_math_glyphs",
     "test:align-cases": "npm run build:desktop && node scripts/align_cases_regression.mjs",
+    "test:core-latex-compatibility": "tsx scripts/core_latex_command_compatibility_regression.mts",
     "test:ocr-multiline": "tsx scripts/ocr_multiline_formula_rows_regression.ts && tsx scripts/ocr_align_copy_acceptance.mts",
     "test:ocr-provider": "tsx scripts/ocr_provider_transport_regression.mts && cargo test --manifest-path src-tauri/Cargo.toml --lib ocr_provider -- --nocapture",
     "test:ocr-editor": "npm run build:desktop && tsx scripts/ocr_multiline_editor_browser_regression.mts",
@@ -68,7 +70,8 @@
     "test:platform-onboarding": "tsx scripts/platform_onboarding_smoke.mjs",
     "test:startup-compatibility": "tsx scripts/startup_compatibility_smoke.mjs",
     "test:startup-browser": "node scripts/startup_browser_regression.mjs",
-    "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh"
+    "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh",
+    "verify:mac-dmg:no-ocr": "bash scripts/verify_macos_api_only_dmg.sh"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",

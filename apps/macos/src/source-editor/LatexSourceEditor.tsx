@@ -81,6 +81,9 @@ interface Props {
   ) => LatexSourceDraftResult;
   onFocusChange?: (focused: boolean) => void;
   onCopy: () => void;
+  externalHistoryOwner?: boolean;
+  forceExternalSync?: boolean;
+  onExternalHistory?: (redo: boolean) => void;
 }
 
 export function LatexSourceEditor({
@@ -94,6 +97,9 @@ export function LatexSourceEditor({
   onLiveChange,
   onFocusChange,
   onCopy,
+  externalHistoryOwner = false,
+  forceExternalSync = false,
+  onExternalHistory,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -107,6 +113,7 @@ export function LatexSourceEditor({
   const formatRef = useRef(format);
   const onLiveChangeRef = useRef(onLiveChange);
   const onFocusChangeRef = useRef(onFocusChange);
+  const onExternalHistoryRef = useRef(onExternalHistory);
   const formatRefreshFrameRef = useRef<number | null>(null);
   const focusReleaseFrameRef = useRef<number | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -117,6 +124,7 @@ export function LatexSourceEditor({
   const isEn = language === "en";
   onLiveChangeRef.current = onLiveChange;
   onFocusChangeRef.current = onFocusChange;
+  onExternalHistoryRef.current = onExternalHistory;
 
   const updateDirty = (value: boolean) => {
     dirtyRef.current = value;
@@ -220,6 +228,45 @@ export function LatexSourceEditor({
       },
     });
 
+    const editorHistoryExtensions = externalHistoryOwner
+      ? [
+          keymap.of([
+            {
+              key: "Mod-z",
+              run: () => {
+                onExternalHistoryRef.current?.(false);
+                return true;
+              },
+            },
+            {
+              key: "Mod-Shift-z",
+              run: () => {
+                onExternalHistoryRef.current?.(true);
+                return true;
+              },
+            },
+            {
+              key: "Mod-y",
+              run: () => {
+                onExternalHistoryRef.current?.(true);
+                return true;
+              },
+            },
+            indentWithTab,
+            ...foldKeymap,
+            ...defaultKeymap,
+          ]),
+        ]
+      : [
+          history(),
+          keymap.of([
+            indentWithTab,
+            ...foldKeymap,
+            ...defaultKeymap,
+            ...historyKeymap,
+          ]),
+        ];
+
     const state = EditorState.create({
       doc: sourceRef.current,
       extensions: [
@@ -228,11 +275,10 @@ export function LatexSourceEditor({
         highlightActiveLineGutter(),
         highlightActiveLine(),
         highlightSpecialChars(),
-        history(),
-        latexLanguageSupport({ enableLinting: false, enableTooltips: false, autoCloseTags: true }),
+        ...editorHistoryExtensions,
+        latexLanguageSupport({ enableLinting: false, enableTooltips: false }),
         visualTeXLatexEditingExtensions,
         syntaxHighlighting(visualTeXLatexHighlightStyle),
-        keymap.of([indentWithTab, ...foldKeymap, ...defaultKeymap, ...historyKeymap]),
         EditorView.contentAttributes.of({
           spellcheck: "false",
           autocapitalize: "off",
@@ -322,11 +368,17 @@ export function LatexSourceEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [theme]);
+  }, [theme, externalHistoryOwner]);
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || sourceFocusedRef.current || syncErrorRef.current) return;
+    if (
+      !view ||
+      (!forceExternalSync && !externalHistoryOwner && sourceFocusedRef.current) ||
+      (!forceExternalSync && syncErrorRef.current)
+    )
+      return;
+    if (forceExternalSync) updateSyncError(null);
     const current = view.state.doc.toString();
     if (current === latex) {
       updateDirty(false);
@@ -339,7 +391,7 @@ export function LatexSourceEditor({
     });
     draftRef.current = latex;
     updateDirty(false);
-  }, [latex]);
+  }, [forceExternalSync, latex]);
 
   useEffect(() => {
     const previousFormat = formatRef.current;

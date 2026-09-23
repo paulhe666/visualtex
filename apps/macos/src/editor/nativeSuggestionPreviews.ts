@@ -212,7 +212,9 @@ registerPreviews("state", [
 for (const command of compatibilityCommands) {
   previewRegistry.set(command.command, {
     latex: command.previewLatex,
-    kind: "arguments",
+    kind: command.insertTemplate.includes("\\placeholder{}")
+      ? "arguments"
+      : "alias",
   });
 }
 

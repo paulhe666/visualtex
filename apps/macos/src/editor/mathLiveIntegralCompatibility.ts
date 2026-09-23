@@ -1,6 +1,5 @@
 import {
   convertLatexToMarkup,
-  type MacroDictionary,
   type MathfieldElement,
 } from "mathlive";
 import "../math/customSymbolRegistration.ts";
@@ -8,7 +7,7 @@ import {
   expandCustomSymbolsForMathLiveMarkup,
   installCustomSymbolGlobalStyle,
 } from "../math/customSymbolRendering.ts";
-import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompatibilityMacros.ts";
+import { expandVisualTexMathLiveCompatibilityMacros } from "../math/mathLiveCompatibilityMacros.ts";
 import {
   OIINT_SIZE1_OVAL_HEIGHT_EM,
   OIINT_SIZE1_OVAL_PATH,
@@ -138,16 +137,25 @@ export function convertVisualTexLatexToMarkup(
   ...args: Parameters<typeof convertLatexToMarkup>
 ) {
   installMathLiveContourIntegralGlobalStyle();
+  installCustomSymbolGlobalStyle();
   const [text, options] = args;
-  installCustomSymbolGlobalStyle(text);
-  const macros: MacroDictionary = {
-    ...VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS,
-    ...(options?.macros ?? {}),
-  };
-  return convertLatexToMarkup(
-    expandCustomSymbolsForMathLiveMarkup(text),
-    { ...options, macros },
+  const callerMacros = options?.macros ?? {};
+  const hasCallerMacros = Object.keys(callerMacros).length > 0;
+  const expandedCompatibility =
+    expandVisualTexMathLiveCompatibilityMacros(
+      text,
+      new Set(Object.keys(callerMacros)),
+    );
+  const expandedSource = expandCustomSymbolsForMathLiveMarkup(
+    expandedCompatibility,
   );
+  if (hasCallerMacros) {
+    return convertLatexToMarkup(expandedSource, options);
+  }
+  // Omit the `macros` property entirely so MathLive keeps its complete private
+  // default macro dictionary. Passing an empty/custom dictionary replaces it.
+  const { macros: _ignoredMacros, ...optionsWithoutMacros } = options ?? {};
+  return convertLatexToMarkup(expandedSource, optionsWithoutMacros);
 }
 
 installMathLiveContourIntegralGlobalStyle();

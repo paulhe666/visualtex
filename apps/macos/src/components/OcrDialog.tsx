@@ -76,6 +76,9 @@ interface OcrDialogProps {
   onInsert: (latex: string) => void;
   onAppend: (latex: string) => void;
   onNotify: (message: string) => void;
+  onProviderConfigurationChange?: (
+    configuration: OcrProviderConfiguration,
+  ) => void;
 }
 
 function readableBytes(bytes: number) {
@@ -183,6 +186,7 @@ export function OcrDialog({
   onInsert,
   onAppend,
   onNotify,
+  onProviderConfigurationChange,
 }: OcrDialogProps) {
   const isEn = language === "en";
   const dialogRef = useRef<HTMLElement>(null);
@@ -288,6 +292,7 @@ export function OcrDialog({
     try {
       const configuration = await getOcrProviderConfiguration();
       setProviderConfiguration(configuration);
+      onProviderConfigurationChange?.(configuration);
       setOpenAiApiKey("");
       setClearOpenAiApiKey(false);
       setMathpixAppKey("");
@@ -312,7 +317,7 @@ export function OcrDialog({
     } finally {
       setProviderLoaded(true);
     }
-  }, []);
+  }, [onProviderConfigurationChange]);
 
   const updateProviderConfiguration = useCallback(
     (update: (current: OcrProviderConfiguration) => OcrProviderConfiguration) => {
@@ -360,6 +365,7 @@ export function OcrDialog({
         },
       });
       setProviderConfiguration(saved);
+      onProviderConfigurationChange?.(saved);
       setOpenAiApiKey("");
       setClearOpenAiApiKey(false);
       setMathpixAppKey("");

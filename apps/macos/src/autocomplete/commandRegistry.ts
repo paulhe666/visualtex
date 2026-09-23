@@ -1,6 +1,7 @@
 import type { LatexCommand } from "../types/command";
-import { additionalCommands } from "./additionalCommands";
-import { compatibilityCommands } from "./compatibilityCommands";
+import { additionalCommands } from "./additionalCommands.ts";
+import { compatibilityCommands } from "./compatibilityCommands.ts";
+import { latestSharedCommands } from "./latestSharedCommands.ts";
 
 const baseCommandRegistry: LatexCommand[] = [
   { id: "frac", command: "\\frac", insertTemplate: "\\frac{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\frac{a}{b}", labelZh: "分式", labelEn: "Fraction", aliases: ["divide", "fraction"], keywords: ["分数", "除法"], category: "structure", defaultPriority: 100, supportedInMathMode: true },
@@ -84,6 +85,8 @@ const baseCommandRegistry: LatexCommand[] = [
   { id: "leq", command: "\\leq", insertTemplate: "\\leq", previewLatex: "\\leq", labelZh: "小于等于", labelEn: "Less or equal", aliases: ["less equal"], keywords: ["小于等于"], category: "relation", defaultPriority: 90, supportedInMathMode: true },
   { id: "geq", command: "\\geq", insertTemplate: "\\geq", previewLatex: "\\geq", labelZh: "大于等于", labelEn: "Greater or equal", aliases: ["greater equal"], keywords: ["大于等于"], category: "relation", defaultPriority: 90, supportedInMathMode: true },
   { id: "propto", command: "\\propto", insertTemplate: "\\propto", previewLatex: "\\propto", labelZh: "正比于", labelEn: "Proportional to", aliases: ["proportional"], keywords: ["正比"], category: "relation", defaultPriority: 82, supportedInMathMode: true },
+  { id: "times", command: "\\times", insertTemplate: "\\times", previewLatex: "\\times", labelZh: "乘号", labelEn: "Multiplication", aliases: ["times", "multiply", "multiplication"], keywords: ["乘号", "乘法"], category: "relation", defaultPriority: 98, supportedInMathMode: true },
+  { id: "div", command: "\\div", insertTemplate: "\\div", previewLatex: "\\div", labelZh: "除号", labelEn: "Division", aliases: ["divide", "division"], keywords: ["除号", "除法"], category: "relation", defaultPriority: 97, supportedInMathMode: true },
 
   { id: "in", command: "\\in", insertTemplate: "\\in", previewLatex: "\\in", labelZh: "属于", labelEn: "Element of", aliases: ["element"], keywords: ["属于"], category: "set", defaultPriority: 100, supportedInMathMode: true },
   { id: "notin", command: "\\notin", insertTemplate: "\\notin", previewLatex: "\\notin", labelZh: "不属于", labelEn: "Not an element", aliases: ["not element"], keywords: ["不属于"], category: "set", defaultPriority: 92, supportedInMathMode: true },
@@ -110,6 +113,7 @@ export const commandRegistry: LatexCommand[] = [
   ...baseCommandRegistry,
   ...compatibilityCommands,
   ...additionalCommands,
+  ...latestSharedCommands,
 ];
 
 export const categoryLabels: Record<string, string> = {
@@ -175,13 +179,13 @@ export const commonCommandIds = [
   "leq",
   "geq",
   "propto",
+  "times",
+  "div",
   "in",
   "subset",
   "rightarrow",
-  "notin",
   "forall",
   "exists",
-  "leftarrow",
 ];
 
 export const calculusCommandIds = [
@@ -221,15 +225,6 @@ export const calculusCommandIds = [
   "prod-finite",
   "productseries",
   "coproduct",
-  "bigcap-limits",
-  "bigcup-limits",
-  "bigsqcup-limits",
-  "bigvee-limits",
-  "bigwedge-limits",
-  "bigodot-limits",
-  "bigoplus-limits",
-  "bigotimes-limits",
-  "biguplus-limits",
   "lim",
   "lim-infty",
   "lim-left",

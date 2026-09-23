@@ -3,6 +3,7 @@ import { safeStorage } from "./runtime/safeStorage";
 
 export const CUSTOM_THEME_STORAGE_KEY = "visualtex.custom-theme.v1";
 const CUSTOM_THEME_CHANNEL = "visualtex-custom-theme";
+export const CUSTOM_THEME_CHANGED_EVENT = "visualtex-custom-theme-changed";
 
 export type ThemePaletteMode = "light" | "dark";
 
@@ -1149,6 +1150,7 @@ export function publishCustomTheme(state: CustomThemeState) {
   if (document.documentElement.dataset.theme === "custom") {
     applyThemePalette("custom");
   }
+  window.dispatchEvent(new CustomEvent(CUSTOM_THEME_CHANGED_EVENT));
   if (typeof BroadcastChannel === "undefined") return;
   let channel: BroadcastChannel | null = null;
   try {

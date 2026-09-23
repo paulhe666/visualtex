@@ -1,3 +1,4 @@
+import { VISUALTEX_CORE_LATEX_ALIASES } from "../math/coreLatexAliases";
 import type { CommandCategory, LatexCommand } from "../types/command";
 
 interface CompatibilityCommandSpec {
@@ -17,7 +18,26 @@ interface CompatibilityCommandSpec {
   sourceSupported?: boolean;
 }
 
+const coreLatexAliasSpecs: CompatibilityCommandSpec[] =
+  VISUALTEX_CORE_LATEX_ALIASES.map((alias) => ({
+    id: `core-alias-${alias.id}`,
+    command: `\\${alias.name}`,
+    insertTemplate: `\\${alias.name}`,
+    previewLatex: alias.previewLatex,
+    labelZh: alias.labelZh,
+    labelEn: alias.labelEn,
+    aliases: alias.aliases,
+    keywords: alias.keywords,
+    category: alias.category,
+    priority: alias.priority,
+  }));
+
 const specs: CompatibilityCommandSpec[] = [
+  ...coreLatexAliasSpecs,
+  { id: "core-pod", command: "\\pod", insertTemplate: "\\pod{\\placeholder{}}", previewLatex: "\\quad(n)", labelZh: "同余括号", labelEn: "Modulo parenthesis", aliases: ["pod"], keywords: ["amsmath", "同余", "模"], category: "relation", priority: 68, rawPlaceholderTemplate: "\\pod{\\placeholder{}}" },
+  { id: "core-substack", command: "\\substack", insertTemplate: "\\substack{\\placeholder{}}", previewLatex: "\\begin{array}{c}i<j\\\\i+j=n\\end{array}", labelZh: "多行下标", labelEn: "Substack", aliases: ["substack"], keywords: ["amsmath", "多行", "下标"], category: "structure", priority: 74, rawPlaceholderTemplate: "\\substack{\\placeholder{}}" },
+  { id: "core-prescript", command: "\\prescript", insertTemplate: "\\prescript{\\placeholder{}}{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\prescript{14}{6}{C}", labelZh: "左上下标", labelEn: "Prescript", aliases: ["prescript"], keywords: ["mathtools", "左上标", "左下标"], category: "structure", priority: 70, rawPlaceholderTemplate: "\\prescript{\\placeholder{}}{\\placeholder{}}{\\placeholder{}}" },
+  { id: "core-sideset", command: "\\sideset", insertTemplate: "\\sideset{_\\placeholder{}^\\placeholder{}}{_\\placeholder{}^\\placeholder{}}{\\placeholder{}}", previewLatex: "\\sideset{_a^b}{_c^d}{\\sum}", labelZh: "算符左右标记", labelEn: "Side-set operator", aliases: ["sideset"], keywords: ["amsmath", "算符", "上下标"], category: "structure", priority: 66 },
   // unicode-math style math alphabet commands. VisualTeX keeps these spellings
   // in source while supplying rendering-only compatibility macros.
   { id: "sym-up", command: "\\symup", insertTemplate: "\\symup{\\placeholder{}}", previewLatex: "\\symup{ABC}", labelZh: "Unicode 数学正体", labelEn: "Unicode math upright", aliases: ["symup"], keywords: ["正体", "unicode math", "字体"], wrapper: true },
@@ -53,14 +73,6 @@ const specs: CompatibilityCommandSpec[] = [
   { id: "legacy-bold", command: "\\bold", insertTemplate: "\\mathbfit{\\placeholder{}}", previewLatex: "\\mathbfit{A\\alpha}", labelZh: "数学粗体简称", labelEn: "Bold math alias", aliases: ["bold"], keywords: ["简称", "粗斜体", "字体"], wrapper: true, canonicalWrapperCommand: "\\mathbfit" },
   { id: "legacy-boldmath", command: "\\boldmath", insertTemplate: "\\mathbfit{\\placeholder{}}", previewLatex: "\\mathbfit{A\\alpha}", labelZh: "粗数学声明", labelEn: "Bold math declaration", aliases: ["boldmath"], keywords: ["粗斜体", "数学版本", "字体"], wrapper: true, canonicalWrapperCommand: "\\mathbfit" },
   { id: "poor-mans-bold", command: "\\pmb", insertTemplate: "\\mathbfit{\\placeholder{}}", previewLatex: "\\mathbfit{A\\alpha}", labelZh: "模拟数学粗体", labelEn: "Poor man's bold", aliases: ["pmb"], keywords: ["粗斜体", "粗体", "字体"], wrapper: true, canonicalWrapperCommand: "\\mathbfit" },
-
-  // MathLive 0.109 does not register the amsmath modulo family even though the
-  // MathJax/OMML export path accepts it. Expose all four source spellings so
-  // command completion, raw-source validation and live rendering agree.
-  { id: "operator-bmod", command: "\\bmod", insertTemplate: "\\bmod", previewLatex: "a\\bmod b", labelZh: "二元模运算", labelEn: "Binary modulo operator", aliases: ["bmod", "modulo"], keywords: ["模", "取模", "余数", "modulo"], category: "relation", priority: 90 },
-  { id: "operator-mod", command: "\\mod", insertTemplate: "\\mod", previewLatex: "a\\equiv b\\mod n", labelZh: "模同余后缀", labelEn: "Modulo congruence suffix", aliases: ["mod"], keywords: ["模", "同余", "modulo"], category: "relation", priority: 84 },
-  { id: "operator-pmod", command: "\\pmod", insertTemplate: "\\pmod{\\placeholder{}}", previewLatex: "a\\equiv b\\pmod n", labelZh: "括号模同余", labelEn: "Parenthesized modulo", aliases: ["pmod"], keywords: ["模", "同余", "括号", "modulo"], category: "relation", priority: 88, wrapper: true },
-  { id: "operator-pod", command: "\\pod", insertTemplate: "\\pod{\\placeholder{}}", previewLatex: "a\\equiv b\\pod n", labelZh: "括号同余参数", labelEn: "Parenthesized congruence argument", aliases: ["pod"], keywords: ["同余", "括号", "modulo"], category: "relation", priority: 76, wrapper: true },
 
   // Common package shorthand commands already supported by the compatibility
   // macro layer. Registering them here makes raw-command completion and Space

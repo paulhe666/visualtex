@@ -20,6 +20,7 @@ const SYSTEM_SCREENSHOT_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_SILENT_OCR_COPY_FORMAT: &str = "display-dollar";
 const ALLOWED_SILENT_OCR_COPY_FORMATS: &[&str] = &[
     "raw",
+    "mixed-inline-display",
     "inline-dollar",
     "inline-text-double-dollar",
     "inline-paren",
@@ -722,6 +723,14 @@ fn format_silent_ocr_latex(lines: &[String], format: &str) -> String {
     }
     match format {
         "raw" => lines.join("\n"),
+        // Silent OCR captures a formula without an editor-row mode. For the
+        // mixed profile, use the profile's display representation so the
+        // result remains unambiguous when pasted outside VisualTeX.
+        "mixed-inline-display" => lines
+            .iter()
+            .map(|line| format!("$$\n{line}\n$$"))
+            .collect::<Vec<_>>()
+            .join("\n\n"),
         "inline-dollar" => lines
             .iter()
             .map(|line| format!("${line}$"))
@@ -1166,6 +1175,10 @@ mod tests {
         );
         assert_eq!(
             format_silent_ocr_latex(&lines, "display-dollar"),
+            "$$\nx=y\n$$\n\n$$\na>b\n$$"
+        );
+        assert_eq!(
+            format_silent_ocr_latex(&lines, "mixed-inline-display"),
             "$$\nx=y\n$$\n\n$$\na>b\n$$"
         );
         assert_eq!(

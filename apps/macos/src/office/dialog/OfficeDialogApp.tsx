@@ -23,10 +23,11 @@ import {
   useEditorStore,
 } from "../../stores/editorStore";
 import {
-  copyFormulaLines,
+  copyFormulaLinesUniversal,
   isLatexCodeFormat,
 } from "../../clipboard/LatexCopyService";
 import type { LatexCodeFormat } from "../../types/formula";
+import { normalizeLatexFormatProfile } from "../../clipboard/latexFormatProfile";
 import {
   applyDocumentTheme,
   normalizeSynchronizedTheme,
@@ -104,6 +105,8 @@ interface InlineOcrState {
 }
 
 const DEFAULT_OCR_MODEL: OcrModelName = "PP-FormulaNet_plus-M";
+const OFFICE_EDITOR_ZOOM_60_MIGRATION_KEY =
+  "visualtex-office-editor-zoom-60-migration-v1";
 const EDITOR_PERSISTENCE_STORAGE_KEY = "visualtex-editor";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const OFFICE_WORD_CREATE_NUMBERED_STORAGE_KEY =
@@ -193,6 +196,13 @@ function syncOfficeEditorSystemSettings(raw?: string | null) {
   applyNumber("classicTileWidth", editor.classicTileWidth, editor.setClassicTileWidth);
   applyNumber("classicDockHeight", editor.classicDockHeight, editor.setClassicDockHeight);
   applyBoolean("keypadMinimizeOnCopy", editor.keypadMinimizeOnCopy, editor.setKeypadMinimizeOnCopy);
+
+  if (persisted.latexFormatProfile && typeof persisted.latexFormatProfile === "object") {
+    const nextProfile = normalizeLatexFormatProfile(persisted.latexFormatProfile);
+    if (JSON.stringify(nextProfile) !== JSON.stringify(editor.latexFormatProfile)) {
+      editor.setLatexFormatProfile(nextProfile);
+    }
+  }
 
   const persistedInputBehavior = persisted.inputBehavior;
   if (persistedInputBehavior && typeof persistedInputBehavior === "object") {
@@ -338,6 +348,7 @@ export function OfficeDialogApp() {
   const exportRunIdRef = useRef(0);
   const activeSessionKeyRef = useRef("");
   const readyReportedSessionKeyRef = useRef("");
+  const initialEditorFocusSessionRef = useRef("");
   const silentCommitSessionKeyRef = useRef("");
   const prewarmReportedRef = useRef(false);
   const latestCompleteExportRef = useRef<{
@@ -370,6 +381,7 @@ export function OfficeDialogApp() {
   });
   const [inlineOcr, setInlineOcr] = useState<InlineOcrState | null>(null);
   const [hydratedSessionKey, setHydratedSessionKey] = useState("");
+  const [presentedSessionKey, setPresentedSessionKey] = useState("");
   const [hydratedPerformanceMs, setHydratedPerformanceMs] = useState(0);
   const inlineOcrBusyRef = useRef(false);
   const inlineOcrCancelRequestedRef = useRef(false);
@@ -390,6 +402,14 @@ export function OfficeDialogApp() {
     session && sessionKey && hydratedSessionKey === sessionKey,
   );
   activeSessionKeyRef.current = sessionKey;
+
+  useEffect(() => {
+    if (readLocalStorage(OFFICE_EDITOR_ZOOM_60_MIGRATION_KEY) === "done") {
+      return;
+    }
+    useEditorStore.getState().setZoom(0.6);
+    writeLocalStorage(OFFICE_EDITOR_ZOOM_60_MIGRATION_KEY, "done");
+  }, []);
 
   useEffect(() => {
     if (!isMacosOfflineTauriTransport() || prewarmReportedRef.current) {
@@ -490,6 +510,7 @@ export function OfficeDialogApp() {
     lastSavedFingerprintRef.current = "";
     readyMessageSentRef.current = false;
     readyReportedSessionKeyRef.current = "";
+    initialEditorFocusSessionRef.current = "";
     finalizingRef.current = false;
     allowNativeCloseRef.current = false;
     nativeCloseRequestInFlightRef.current = false;
@@ -498,6 +519,7 @@ export function OfficeDialogApp() {
     completeExportInFlightRef.current = null;
     historyManager.clear();
     setHydratedSessionKey("");
+    setPresentedSessionKey("");
     setHydratedPerformanceMs(0);
     setToast("");
     setOcrOpen(false);
@@ -542,6 +564,7 @@ export function OfficeDialogApp() {
   const theme = useEditorStore((state) => state.theme);
   const setTheme = useEditorStore((state) => state.setTheme);
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
+  const latexFormatProfile = useEditorStore((state) => state.latexFormatProfile);
   const formulaLetterFont = useEditorStore((state) => state.formulaLetterFont);
   const formulaChineseFont = useEditorStore((state) => state.formulaChineseFont);
   const powerPointDefaultFontSizePt = useEditorStore(
@@ -897,11 +920,13 @@ export function OfficeDialogApp() {
         )
           .then(() => {
             if (activeSessionKeyRef.current !== sessionKey) return;
-            // A formula opened from Office is an editing action. Focus only
-            // after AppKit has made the resident window visible and key; an
-            // earlier MathLive focus can race its first connected frame and
-            // must never block the ready report.
-            window.requestAnimationFrame(() => editorRef.current?.focus());
+            // A same-session autosave may replace the session object and clean
+            // up this effect while AppKit is presenting. The session key, not
+            // that effect instance, owns the native presentation result.
+            // Keep the macOS foreground handshake ahead of the shared initial
+            // focus repair. A parked WebView must never delay the ready report
+            // while waiting for an animation frame or its shadow input.
+            setPresentedSessionKey(sessionKey);
           })
           .catch((reason) => {
             if (activeSessionKeyRef.current !== sessionKey) return;
@@ -935,6 +960,76 @@ export function OfficeDialogApp() {
     sessionKey,
     sessionLoadedPerformanceMs,
   ]);
+
+  useEffect(() => {
+    if (
+      !sessionHydrated ||
+      !sessionKey ||
+      (tauriResidentEditor && presentedSessionKey !== sessionKey) ||
+      initialEditorFocusSessionRef.current === sessionKey
+    ) {
+      return;
+    }
+    // Mark activation complete only after focus is acquired. React StrictMode
+    // can clean up the first effect before its animation frame runs; marking
+    // it at setup would make the second setup skip activation entirely.
+    let disposed = false;
+    const repairTimers: number[] = [];
+    let repairInterval = 0;
+    const focusFirstLine = () => {
+      if (disposed || activeSessionKeyRef.current !== sessionKey) return;
+      window.focus();
+      editorRef.current?.focus({ target: "first", moveToEnd: true });
+      // Match the Windows editor activation path when the MathLive shadow
+      // input finishes mounting one frame after the imperative editor handle.
+      const field = document.querySelector<HTMLElement>("math-field");
+      if (field && document.activeElement !== field) {
+        field.focus({ preventScroll: true });
+      }
+    };
+    const formulaHasFocus = () =>
+      document.activeElement?.tagName === "MATH-FIELD" ||
+      document.activeElement?.classList.contains("vt-core-input") === true;
+    const focusWhenVisible = () => {
+      if (document.visibilityState === "visible") repairFocus();
+    };
+    const stopActivationRepair = () => {
+      window.clearInterval(repairInterval);
+      repairInterval = 0;
+      window.removeEventListener("focus", repairFocus);
+      document.removeEventListener("visibilitychange", focusWhenVisible);
+    };
+    const repairFocus = () => {
+      if (disposed || activeSessionKeyRef.current !== sessionKey) {
+        stopActivationRepair();
+        return;
+      }
+      focusFirstLine();
+      if (formulaHasFocus()) {
+        initialEditorFocusSessionRef.current = sessionKey;
+        stopActivationRepair();
+      }
+    };
+    const frame = window.requestAnimationFrame(() => {
+      repairFocus();
+      if (
+        !disposed &&
+        activeSessionKeyRef.current === sessionKey &&
+        !formulaHasFocus()
+      ) {
+        repairInterval = window.setInterval(repairFocus, 60);
+        repairTimers.push(window.setTimeout(stopActivationRepair, 3000));
+      }
+    });
+    window.addEventListener("focus", repairFocus, { once: true });
+    document.addEventListener("visibilitychange", focusWhenVisible);
+    return () => {
+      disposed = true;
+      window.cancelAnimationFrame(frame);
+      repairTimers.forEach((timer) => window.clearTimeout(timer));
+      stopActivationRepair();
+    };
+  }, [presentedSessionKey, sessionHydrated, sessionKey, tauriResidentEditor]);
 
   const captureSnapshot = useCallback(
     (): DocumentSnapshot =>
@@ -987,7 +1082,13 @@ export function OfficeDialogApp() {
       applyEntry: async (entry, direction) => {
         const target = applyHistoryEntryToEditor(entry, direction);
         if (!target) return;
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        if (
+          entry.type === "add-line" ||
+          entry.type === "remove-line" ||
+          entry.type === "replace-document"
+        ) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        }
         await editorRef.current?.restoreSelection(
           target.lineId,
           target.latex,
@@ -1914,7 +2015,7 @@ export function OfficeDialogApp() {
 
   const handleCopy = async () => {
     try {
-      await copyFormulaLines(lines, latexCodeFormat);
+      await copyFormulaLinesUniversal(lines, latexFormatProfile);
       addHistory(latex);
       setToast(isEn ? "LaTeX copied" : "LaTeX 已复制");
     } catch (reason) {
@@ -2125,13 +2226,10 @@ export function OfficeDialogApp() {
         onPasteImage={editorAvailable ? handleEditorImagePaste : undefined}
         onCopy={handleCopy}
         onReplaceDocument={replaceDocumentWithHistory}
-        ocrSelection={ocrQuickSelection.selection}
-        ocrOptions={ocrQuickSelection.options}
+        ocrRecognizer={ocrQuickSelection.selection}
+        ocrRecognizers={ocrQuickSelection.options}
         ocrBusy={ocrQuickSelection.busy}
-        onOcrOptionsRequest={() => {
-          void ocrQuickSelection.loadConfiguration();
-        }}
-        onOcrSelectionChange={(selection) =>
+        onOcrRecognizerChange={(selection: string) =>
           void ocrQuickSelection.handleSelectionChange(selection)
         }
         ocrOverlay={

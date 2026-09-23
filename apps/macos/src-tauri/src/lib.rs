@@ -17,6 +17,7 @@ mod ocr_offline;
 mod ocr_provider;
 mod office;
 mod quick_ocr;
+mod svg_font_stabilizer;
 mod system_math_glyphs;
 
 const PADDLE_VERSION: &str = "3.3.1";
@@ -330,6 +331,21 @@ fn switch_main_window_mode(
     }
 
     Ok(target)
+}
+
+#[tauri::command]
+fn set_main_window_keypad_mode(app: AppHandle, enabled: bool) -> Result<(), String> {
+    switch_main_window_mode(app, enabled).map(|_| ())
+}
+
+#[tauri::command]
+fn minimize_visualtex_main_window(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "VisualTeX main window is unavailable".to_string())?;
+    window
+        .minimize()
+        .map_err(|error| format!("Unable to minimize VisualTeX: {error}"))
 }
 
 #[tauri::command]
@@ -2089,6 +2105,8 @@ pub fn run() {
             get_app_window_configuration,
             apply_app_window_configuration,
             switch_main_window_mode,
+            set_main_window_keypad_mode,
+            minimize_visualtex_main_window,
             system_math_glyphs::probe_macos_math_fonts,
             system_math_glyphs::extract_macos_math_glyph,
             get_ocr_provider_configuration,

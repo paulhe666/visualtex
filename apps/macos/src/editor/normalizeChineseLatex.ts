@@ -350,12 +350,48 @@ export interface VisualTexAutoEscapeShortcutGroup {
 }
 
 export const visualTexAutoEscapeShortcutGroups: readonly VisualTexAutoEscapeShortcutGroup[] = [
-  { id: "greek", titleZh: "希腊字母", titleEn: "Greek letters", shortcuts: GREEK_INLINE_SHORTCUTS },
-  { id: "operators", titleZh: "基本运算", titleEn: "Basic operators", shortcuts: BASIC_OPERATOR_INLINE_SHORTCUTS },
-  { id: "relations", titleZh: "关系与集合", titleEn: "Relations and sets", shortcuts: RELATION_INLINE_SHORTCUTS },
-  { id: "arrows", titleZh: "箭头", titleEn: "Arrows", shortcuts: ARROW_INLINE_SHORTCUTS },
-  { id: "accents", titleZh: "重音结构", titleEn: "Accents", shortcuts: ACCENT_INLINE_SHORTCUTS },
-  { id: "commands", titleZh: "常用命令", titleEn: "Common commands", shortcuts: COMMON_COMMAND_INLINE_SHORTCUTS },
+  {
+    id: "greek",
+    titleZh: "希腊字母",
+    titleEn: "Greek letters",
+    shortcuts: GREEK_INLINE_SHORTCUTS,
+  },
+  {
+    id: "operators",
+    titleZh: "基本运算",
+    titleEn: "Basic operators",
+    shortcuts: BASIC_OPERATOR_INLINE_SHORTCUTS,
+  },
+  {
+    id: "relations",
+    titleZh: "关系与集合",
+    titleEn: "Relations and sets",
+    shortcuts: RELATION_INLINE_SHORTCUTS,
+  },
+  {
+    id: "arrows",
+    titleZh: "箭头",
+    titleEn: "Arrows",
+    shortcuts: ARROW_INLINE_SHORTCUTS,
+  },
+  {
+    id: "accents",
+    titleZh: "重音结构",
+    titleEn: "Accents",
+    shortcuts: ACCENT_INLINE_SHORTCUTS,
+  },
+  {
+    id: "commands",
+    titleZh: "常用命令",
+    titleEn: "Common commands",
+    shortcuts: COMMON_COMMAND_INLINE_SHORTCUTS,
+  },
+  {
+    id: "differentials",
+    titleZh: "微分变量",
+    titleEn: "Differentials",
+    shortcuts: visualTexUprightInlineShortcuts,
+  },
 ];
 
 export const visualTexAutoEscapeInlineShortcuts: VisualTexInlineShortcutDefinitions = {
@@ -365,6 +401,7 @@ export const visualTexAutoEscapeInlineShortcuts: VisualTexInlineShortcutDefiniti
   ...ARROW_INLINE_SHORTCUTS,
   ...ACCENT_INLINE_SHORTCUTS,
   ...COMMON_COMMAND_INLINE_SHORTCUTS,
+  ...visualTexUprightInlineShortcuts,
 };
 
 const DISABLED_AUTO_ESCAPE_SHORTCUT_KEYS = new Set([
@@ -542,6 +579,9 @@ export function normalizeMathLiveCanonicalUprightCommands(
     "\\mathrm{d}$1",
   );
 }
+
+export const normalizeCanonicalUprightCommands =
+  normalizeMathLiveCanonicalUprightCommands;
 
 const differentialFractionCommands = ["\\dfrac", "\\tfrac", "\\frac"];
 const integralCommandPattern = new RegExp(

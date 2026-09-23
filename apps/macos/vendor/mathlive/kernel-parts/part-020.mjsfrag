@@ -1,0 +1,1537 @@
+      const branch = result[0].parentBranch === "below" ? "above" : "below";
+      const pos = model.offsetOf(genfrac.leftSibling);
+      return model.deferNotifications(
+        { content: true, selection: true, type },
+        () => {
+          var _a3, _b3;
+          const numer = genfrac.removeBranch(branch);
+          if (!(numer.length === 1 && numer[0].type === "placeholder")) {
+            const lastAtom = genfrac.parent.addChildrenAfter(numer, genfrac);
+            (_a3 = genfrac.parent) == null ? void 0 : _a3.removeChild(genfrac);
+            model.position = model.offsetOf(lastAtom);
+          } else {
+            (_b3 = genfrac.parent) == null ? void 0 : _b3.removeChild(genfrac);
+            model.position = Math.max(0, pos);
+          }
+        }
+      );
+    }
+  }
+  return model.deferNotifications(
+    { content: true, selection: true, type },
+    () => {
+      const specialAtomInfo = /* @__PURE__ */ new Map();
+      if (result.length > 0) {
+        const startAtom = result[0];
+        const endAtom = result[result.length - 1];
+        const startAncestors = /* @__PURE__ */ new Set();
+        let p = startAtom.parent;
+        while (p) {
+          if ((p.type === "surd" || p.type === "box" || p.type === "enclose" || p.type === "leftright" || p.type === "genfrac" || p.type === "overunder") && p.parent)
+            startAncestors.add(p);
+          p = p.parent;
+        }
+        const endAncestors = /* @__PURE__ */ new Set();
+        p = endAtom.parent;
+        while (p) {
+          if ((p.type === "surd" || p.type === "box" || p.type === "enclose" || p.type === "leftright" || p.type === "genfrac" || p.type === "overunder") && p.parent)
+            endAncestors.add(p);
+          p = p.parent;
+        }
+        for (const atom of result) {
+          p = atom.parent;
+          while (p) {
+            if ((p.type === "surd" || p.type === "box" || p.type === "enclose" || p.type === "leftright" || p.type === "genfrac" || p.type === "overunder") && p.parent) {
+              if (!specialAtomInfo.has(p)) {
+                specialAtomInfo.set(p, {
+                  containsStart: startAncestors.has(p),
+                  containsEnd: endAncestors.has(p)
+                });
+              }
+              break;
+            }
+            p = p.parent;
+          }
+        }
+      }
+      const startPos = Math.min(...range2);
+      model.deleteAtoms(range2);
+      for (const [specialAtom, info] of specialAtomInfo) {
+        if (!specialAtom.parent) continue;
+        const isBoundaryCrossing = info.containsStart !== info.containsEnd;
+        if (specialAtom.type === "surd" || specialAtom.type === "box" || specialAtom.type === "enclose" || specialAtom.type === "leftright") {
+          const body = specialAtom.branch("body");
+          const bodyEmpty = !body || body.length === 0 || body.length === 1 && body[0].type === "placeholder";
+          if (bodyEmpty) {
+            const pos = model.offsetOf(specialAtom.leftSibling);
+            specialAtom.parent.removeChild(specialAtom);
+            model.position = Math.max(0, pos);
+          } else if (isBoundaryCrossing && !info.containsStart && info.containsEnd) {
+            const pos = model.offsetOf(specialAtom.leftSibling);
+            const content = specialAtom.removeBranch("body");
+            if (content && content.length > 0)
+              specialAtom.parent.addChildrenAfter(content, specialAtom);
+            specialAtom.parent.removeChild(specialAtom);
+            model.position = Math.max(0, pos);
+          }
+        }
+        if (specialAtom.type === "genfrac") {
+          const above = specialAtom.branch("above");
+          const below = specialAtom.branch("below");
+          const aboveEmpty = !above || above.length === 0 || above.length === 1 && above[0].type === "placeholder";
+          const belowEmpty = !below || below.length === 0 || below.length === 1 && below[0].type === "placeholder";
+          if (aboveEmpty && belowEmpty) {
+            const pos = model.offsetOf(specialAtom.leftSibling);
+            specialAtom.parent.removeChild(specialAtom);
+            model.position = Math.max(0, pos);
+          } else if (aboveEmpty && !belowEmpty) {
+            const pos = model.offsetOf(specialAtom.leftSibling);
+            const content = specialAtom.removeBranch("below");
+            if (content && content.length > 0)
+              specialAtom.parent.addChildrenAfter(content, specialAtom);
+            specialAtom.parent.removeChild(specialAtom);
+            model.position = Math.max(0, pos);
+          } else if (!aboveEmpty && belowEmpty) {
+            const pos = model.offsetOf(specialAtom.leftSibling);
+            const content = specialAtom.removeBranch("above");
+            if (content && content.length > 0)
+              specialAtom.parent.addChildrenAfter(content, specialAtom);
+            specialAtom.parent.removeChild(specialAtom);
+            model.position = Math.max(0, pos);
+          } else if (isBoundaryCrossing && !info.containsStart && info.containsEnd) {
+            if (!aboveEmpty && !belowEmpty) {
+              const pos = model.offsetOf(specialAtom.leftSibling);
+              const content = specialAtom.removeBranch("above");
+              if (content && content.length > 0)
+                specialAtom.parent.addChildrenAfter(content, specialAtom);
+              specialAtom.parent.removeChild(specialAtom);
+              model.position = Math.max(0, pos);
+            }
+          }
+        }
+      }
+      if (specialAtomInfo.size === 0) model.position = startPos;
+      if (model.root.hasEmptyBranch("body"))
+        model.mathfield.flushInlineShortcutBuffer();
+    }
+  );
+}
+function deleteRow(model, atom, row, direction) {
+  if (!(atom instanceof ArrayAtom)) return false;
+  if (!atom.isMultiline) return false;
+  if (atom.rows.length === 1) return false;
+  if (atom.rows[row].length > 1) return false;
+  const content = atom.getCell(row, 0);
+  if (!content) return false;
+  atom.removeRow(row);
+  if (direction === "backward") {
+    const prevLine = atom.getCell(row - 1, 0);
+    if (!prevLine) {
+      model.position = model.offsetOf(atom);
+      return true;
+    }
+    if (prevLine.length > 0)
+      model.position = model.offsetOf(prevLine[prevLine.length - 1]);
+    else {
+      model.position = model.offsetOf(atom);
+    }
+    atom.setCell(row - 1, 0, [...prevLine, ...content]);
+  } else {
+    const nextLine = atom.getCell(row, 0);
+    if (!nextLine) {
+      model.position = model.offsetOf(atom);
+      return true;
+    }
+    if (nextLine.length > 0) model.position = model.offsetOf(nextLine[0]);
+    else {
+      model.position = model.offsetOf(atom);
+    }
+    atom.setCell(row, 0, [...content, ...nextLine]);
+  }
+  return true;
+}
+
+// src/editor-model/commands.ts
+function wordBoundaryOffset(model, offset, direction) {
+  var _a3, _b3;
+  if (model.at(offset).mode !== "text") return offset;
+  const dir = direction === "backward" ? -1 : 1;
+  let result;
+  if (LETTER_AND_DIGITS.test(model.at(offset).value)) {
+    let i = offset;
+    let match;
+    do {
+      match = model.at(i).mode === "text" && LETTER_AND_DIGITS.test(model.at(i).value);
+      i += dir;
+    } while (model.at(i) && match);
+    result = model.at(i) ? i - 2 * dir : i - dir;
+  } else if (/\s/.test(model.at(offset).value)) {
+    let i = offset;
+    while (((_a3 = model.at(i)) == null ? void 0 : _a3.mode) === "text" && /\s/.test(model.at(i).value))
+      i += dir;
+    if (!model.at(i)) {
+      result = i - dir;
+    } else {
+      let match = true;
+      do {
+        match = model.at(i).mode === "text" && !/\s/.test(model.at(i).value);
+        i += dir;
+      } while (model.at(i) && match);
+      result = model.at(i) ? i - 2 * dir : i - dir;
+    }
+  } else {
+    let i = offset;
+    while (((_b3 = model.at(i)) == null ? void 0 : _b3.mode) === "text" && !/\s/.test(model.at(i).value))
+      i += dir;
+    result = model.at(i) ? i : i - dir;
+    let match = true;
+    while (model.at(i) && match) {
+      match = model.at(i).mode === "text" && /\s/.test(model.at(i).value);
+      if (match) result = i;
+      i += dir;
+    }
+    result = model.at(i) ? i - 2 * dir : i - dir;
+  }
+  return result - (dir > 0 ? 0 : 1);
+}
+function skip(model, direction, options) {
+  var _a3, _b3, _c2, _d2, _e, _f, _g, _h;
+  const previousPosition = model.position;
+  if (!((_a3 = options == null ? void 0 : options.extend) != null ? _a3 : false)) model.collapseSelection(direction);
+  let atom = model.at(model.position);
+  if (direction === "forward") {
+    if (atom.type === "subsup") {
+      atom = atom.rightSibling;
+      if (!atom) atom = model.at(model.position + 1);
+    } else atom = model.at(model.position + 1);
+  }
+  if (!atom) {
+    model.announce("plonk");
+    return false;
+  }
+  let offset = model.offsetOf(atom);
+  if (atom instanceof TextAtom) {
+    offset = wordBoundaryOffset(model, offset, direction);
+  } else if (atom instanceof LatexAtom) {
+    if (atom.isSuggestion) {
+      console.assert(direction === "forward");
+      while (atom && atom instanceof LatexAtom) {
+        atom.isSuggestion = false;
+        offset = model.offsetOf(atom);
+        atom = atom.rightSibling;
+      }
+    } else if (direction === "forward") {
+      atom = atom.rightSibling;
+      if (!atom || !(atom instanceof LatexAtom)) {
+        model.announce("plonk");
+        return false;
+      }
+      while (atom && atom instanceof LatexAtom && /[a-zA-Z\*]/.test(atom.value)) {
+        offset = model.offsetOf(atom);
+        atom = atom.rightSibling;
+      }
+    } else {
+      atom = atom.leftSibling;
+      if (!atom || !(atom instanceof LatexAtom)) {
+        model.announce("plonk");
+        return false;
+      }
+      while (atom && atom instanceof LatexAtom && /[a-zA-Z\*]/.test(atom.value)) {
+        offset = model.offsetOf(atom);
+        atom = atom.leftSibling;
+      }
+    }
+  } else if (direction === "forward" && atom.type === "mopen") {
+    let level = 0;
+    do {
+      if (atom.type === "mopen") level += 1;
+      else if (atom.type === "mclose") level -= 1;
+      atom = atom.rightSibling;
+    } while (!atom.isLastSibling && level !== 0);
+    offset = model.offsetOf(atom.leftSibling);
+  } else if (direction === "backward" && atom.type === "mclose") {
+    let level = 0;
+    do {
+      if (atom.type === "mopen") level += 1;
+      else if (atom.type === "mclose") level -= 1;
+      atom = atom.leftSibling;
+    } while (!atom.isFirstSibling && level !== 0);
+    offset = model.offsetOf(atom);
+  } else if (direction === "backward") {
+    if (atom.type === "first") {
+      while (offset > 0 && atom.type === "first") {
+        offset -= 1;
+        atom = model.at(offset);
+      }
+    } else {
+      const type = atom.type;
+      if (atom.type === "subsup") {
+        offset = model.offsetOf(model.at(offset).leftSibling);
+      }
+      offset -= 1;
+      let nextType = (_b3 = model.at(offset)) == null ? void 0 : _b3.type;
+      while (offset >= 0 && nextType === type) {
+        if (((_c2 = model.at(offset)) == null ? void 0 : _c2.type) === "subsup")
+          offset = model.offsetOf(model.at(offset).leftSibling);
+        else offset -= 1;
+        nextType = model.at(offset).type;
+      }
+    }
+  } else {
+    const { type } = atom;
+    let nextType = (_d2 = model.at(offset)) == null ? void 0 : _d2.type;
+    const { lastOffset } = model;
+    while (offset <= lastOffset && (nextType === type || nextType === "subsup")) {
+      while (((_e = model.at(offset).rightSibling) == null ? void 0 : _e.type) === "subsup")
+        offset = model.offsetOf(model.at(offset).rightSibling);
+      offset += 1;
+      nextType = (_f = model.at(offset)) == null ? void 0 : _f.type;
+    }
+    offset -= 1;
+  }
+  if ((_g = options == null ? void 0 : options.extend) != null ? _g : false) {
+    if (!model.setSelection(model.anchor, offset)) {
+      model.announce("plonk");
+      return false;
+    }
+    model.announce("move", previousPosition);
+  } else {
+    if (offset === model.position) {
+      model.announce("plonk");
+      return false;
+    }
+    if ((_h = options == null ? void 0 : options.delete) != null ? _h : false) {
+      if (direction === "forward")
+        deleteRange(model, [previousPosition, offset], "deleteWordForward");
+      else {
+        deleteRange(model, [previousPosition, offset], "deleteWordBackward");
+        model.position = offset;
+      }
+    } else {
+      model.position = offset;
+      model.announce("move", previousPosition);
+    }
+  }
+  model.mathfield.stopCoalescingUndo();
+  return true;
+}
+function move(model, direction, options) {
+  var _a3, _b3;
+  options = options != null ? options : { extend: false };
+  model.mathfield.styleBias = direction === "backward" ? "right" : "left";
+  if (direction !== "forward") {
+    const [from, to] = getCommandSuggestionRange(model);
+    if (from !== void 0 && to !== void 0) model.deleteAtoms([from, to]);
+  }
+  if (direction === "upward") return moveUpward(model, options);
+  if (direction === "downward") return moveDownward(model, options);
+  if (options.extend) {
+    let pos2 = nextValidPosition(model, model.position, direction);
+    if (pos2 < 0) pos2 = 0;
+    if (pos2 > model.lastOffset) pos2 = model.lastOffset;
+    const result = model.setSelection(model.anchor, pos2);
+    model.mathfield.stopCoalescingUndo();
+    return result;
+  }
+  if (model.selectionIsPlaceholder) {
+    model.collapseSelection(direction);
+    const result = move(model, direction);
+    model.mathfield.stopCoalescingUndo();
+    return result;
+  }
+  let pos = model.position;
+  const previousPosition = pos;
+  if (model.collapseSelection(direction)) {
+    pos = model.position;
+    if (!isValidPosition(model, pos))
+      pos = nextValidPosition(model, pos, direction);
+  } else pos = nextValidPosition(model, pos, direction);
+  if (pos < 0 || pos > model.lastOffset) {
+    let success = true;
+    if (!model.silenceNotifications) {
+      success = (_b3 = (_a3 = model.mathfield.host) == null ? void 0 : _a3.dispatchEvent(
+        new CustomEvent("move-out", {
+          detail: { direction },
+          cancelable: true,
+          bubbles: true,
+          composed: true
+        })
+      )) != null ? _b3 : true;
+    }
+    if (success) model.announce("plonk");
+    return success;
+  }
+  model.setPositionHandlingPlaceholder(pos);
+  model.mathfield.stopCoalescingUndo();
+  model.announce("move", previousPosition);
+  return true;
+}
+function nextValidPosition(model, pos, direction) {
+  pos = pos + (direction === "forward" ? 1 : -1);
+  if (pos < 0 || pos > model.lastOffset) return pos;
+  if (!isValidPosition(model, pos))
+    return nextValidPosition(model, pos, direction);
+  return pos;
+}
+function visualTexIsMacroInternalCaretBoundary(atom) {
+  if (!atom) return false;
+  let parent = atom.parent;
+  let insideMacroArgument = atom.type === "macro-argument";
+  while (parent && parent.type !== "macro") {
+    if (parent.type === "macro-argument") insideMacroArgument = true;
+    parent = parent.parent;
+  }
+  const macro = parent;
+  if (!macro) return false;
+  // A package macro exposes its tracked arguments as the only editable
+  // interior branches. Everything else in the expansion (delimiters,
+  // punctuation, operators, spacing and structural containers) is rendering
+  // machinery and must not become an invisible or redundant caret stop.
+  return !insideMacroArgument;
+}
+function isValidPosition(model, pos) {
+  var _a3;
+  const atom = model.at(pos);
+  if (
+    atom?.type === "macro-argument" ||
+    (atom?.type === "first" && atom.parent?.type === "macro-argument")
+  )
+    return false;
+  if (visualTexIsMacroInternalCaretBoundary(atom)) return false;
+  let parent = atom.parent;
+  while (parent && !parent.inCaptureSelection) parent = parent.parent;
+  const visualTexEditableCapturedPlaceholder =
+    (atom.type === "placeholder" || atom.type === "prompt") &&
+    parent?.type === "accent";
+  if ((parent == null ? void 0 : parent.inCaptureSelection) && !visualTexEditableCapturedPlaceholder)
+    return false;
+  if ((_a3 = atom.parent) == null ? void 0 : _a3.skipBoundary) {
+    if (!atom.isFirstSibling && atom.isLastSibling) return false;
+    if (atom.type === "first") return false;
+  }
+  if (model.mathfield.hasEditablePrompts && !atom.parentPrompt) return false;
+  return true;
+}
+function getClosestAtomToXPosition(mathfield, search, x) {
+  let prevX = Infinity;
+  let i = 0;
+  for (; i < search.length; i++) {
+    const atom = search[i];
+    const el = mathfield.getHTMLElement(atom);
+    if (!el) continue;
+    const toX = getLocalDOMRect(el).right;
+    const abs = Math.abs(x - toX);
+    if (abs <= prevX) {
+      prevX = abs;
+    } else {
+      break;
+    }
+  }
+  return search[i - 1];
+}
+function moveToClosestAtomVertically(model, fromAtom, toAtoms, extend, direction) {
+  const hasEditablePrompts = model.mathfield.hasEditablePrompts;
+  const editableAtoms = !hasEditablePrompts ? toAtoms : toAtoms.filter((a) => a.type === "prompt" && !a.captureSelection);
+  const fromX = getLocalDOMRect(model.mathfield.getHTMLElement(fromAtom)).right;
+  const targetSelection = model.offsetOf(
+    getClosestAtomToXPosition(model.mathfield, editableAtoms, fromX)
+  ) - (hasEditablePrompts ? 1 : 0);
+  if (extend) {
+    const [left, right] = model.selection.ranges[0];
+    let newSelection;
+    const cmp = direction === "up" ? left : right;
+    if (targetSelection < cmp) {
+      newSelection = {
+        ranges: [[targetSelection, right]],
+        direction: "backward"
+      };
+    } else {
+      newSelection = {
+        ranges: [[left, targetSelection]],
+        direction: "forward"
+      };
+    }
+    model.setSelection(newSelection);
+  } else {
+    model.setPositionHandlingPlaceholder(targetSelection);
+  }
+  model.announce(`move ${direction}`);
+}
+// VisualTeX: vertical navigation follows the atom tree from the innermost
+// structure outward. A script inside a numerator must visit its sibling
+// script before the denominator; once no local branch exists, the same key
+// can continue through the enclosing fraction or matrix row.
+function visualTexSameVerticalBranch(left, right) {
+  if (Array.isArray(left) && Array.isArray(right))
+    return left[0] === right[0] && left[1] === right[1];
+  return left === right;
+}
+function visualTexAtomInVerticalBranch(atom, owner, branch) {
+  let child = atom;
+  while (child?.parent && child.parent !== owner) child = child.parent;
+  return child?.parent === owner && visualTexSameVerticalBranch(child.parentBranch, branch);
+}
+function visualTexVerticalTarget(model, source, owner, branch) {
+  const targetBranch = Array.isArray(branch)
+    ? owner.getCell(branch[0], branch[1])
+    : owner.branch(branch);
+  if (!targetBranch?.length) return null;
+  const sourceElement = model.mathfield.getHTMLElement(source);
+  const sourceRect = sourceElement ? getLocalDOMRect(sourceElement) : null;
+  const sourceX = sourceRect?.right ?? 0;
+  const sourceY = sourceRect ? sourceRect.top + sourceRect.height / 2 : 0;
+  const candidates = [];
+  const start = model.offsetOf(targetBranch[0]);
+  const end = model.offsetOf(targetBranch[targetBranch.length - 1]);
+  if (start < 0 || end < start) return null;
+  for (let offset = start; offset <= end; offset++) {
+    const atom = model.at(offset);
+    if (!atom || atom.type === "first" || !visualTexAtomInVerticalBranch(atom, owner, branch))
+      continue;
+    if (!isValidPosition(model, offset)) continue;
+    if (model.mathfield.hasEditablePrompts && atom.type !== "prompt") continue;
+    const element = model.mathfield.getHTMLElement(atom);
+    if (!element) continue;
+    const rect = getLocalDOMRect(element);
+    if (!rect.height) continue;
+    const x = Math.abs(rect.right - sourceX);
+    const y = Math.abs(rect.top + rect.height / 2 - sourceY);
+    // Prefer a visible leaf over the enclosing fraction/array atom. Within
+    // the destination branch, choose the nearest vertical band first and use
+    // horizontal distance to resolve peers on that band.
+    const structural = atom.children?.length ? 1 : 0;
+    candidates.push({ offset, structural, score: y * 2 + x });
+  }
+  candidates.sort((a, b) => a.structural - b.structural || a.score - b.score || a.offset - b.offset);
+  if (candidates.length) return candidates[0].offset;
+  if (model.mathfield.hasEditablePrompts) return null;
+  return model.offsetOf(targetBranch[0]);
+}
+function visualTexMoveVertical(model, direction, extend) {
+  const source = model.at(model.position);
+  if (!source) return false;
+  const step = direction === "up" ? -1 : 1;
+  const tryBranch = (owner, branch) => {
+    if (!owner || branch === null || branch === void 0) return false;
+    const target = visualTexVerticalTarget(model, source, owner, branch);
+    if (target === null || target === model.position) return false;
+    const moved = extend
+      ? model.setSelection(model.anchor, target)
+      : model.setPositionHandlingPlaceholder(target);
+    if (moved === false) return false;
+    model.mathfield.stopCoalescingUndo();
+    model.announce(`move ${direction}`);
+    return true;
+  };
+
+  for (let child = source; child?.parent; child = child.parent) {
+    const owner = child.parent;
+    const branch = child.parentBranch;
+    if (owner instanceof ArrayAtom && isCellBranch(branch)) {
+      const nextRow = branch[0] + step;
+      if (nextRow >= 0 && nextRow < owner.rows.length &&
+        tryBranch(owner, [nextRow, branch[1]])) return true;
+    } else if (branch === "superscript" || branch === "subscript") {
+      if (branch === "superscript" && step > 0 && owner.branch("subscript") &&
+        tryBranch(owner, "subscript")) return true;
+      if (branch === "subscript" && step < 0 && owner.branch("superscript") &&
+        tryBranch(owner, "superscript")) return true;
+      // Braces and other annotated over/under atoms use script branches for
+      // the label and a body branch for their editable base.
+      if (owner.type === "overunder" &&
+        ((branch === "superscript" && step > 0) ||
+          (branch === "subscript" && step < 0)) &&
+        tryBranch(owner, "body")) return true;
+      // A lone script has a baseline, unlike a fraction's two exclusive rows.
+      if (owner.type === "subsup" && owner.leftSibling &&
+        ((branch === "superscript" && step > 0) ||
+          (branch === "subscript" && step < 0))) {
+        const baseline = model.offsetOf(owner.leftSibling);
+        if (baseline >= 0 && baseline !== model.position &&
+          (extend ? model.setSelection(model.anchor, baseline) :
+            model.setPositionHandlingPlaceholder(baseline)) !== false) {
+          model.mathfield.stopCoalescingUndo();
+          model.announce(`move ${direction}`);
+          return true;
+        }
+      }
+    } else if (branch === "above" && step > 0) {
+      if ((owner.type === "overunder" || owner.type === "surd") &&
+        tryBranch(owner, "body")) return true;
+      if (owner.branch("below") && tryBranch(owner, "below")) return true;
+    } else if (branch === "below" && step < 0) {
+      if (owner.type === "overunder" && owner.branch("body") &&
+        tryBranch(owner, "body")) return true;
+      if (owner.branch("above") && tryBranch(owner, "above")) return true;
+    } else if (branch === "body") {
+      const attached = child.rightSibling;
+      if (attached?.type === "subsup" &&
+        tryBranch(attached, step < 0 ? "superscript" : "subscript")) return true;
+      if (owner.type === "surd" && step < 0 &&
+        tryBranch(owner, "above")) return true;
+      if (owner.type === "overunder" && (
+        tryBranch(owner, step < 0 ? "above" : "below") ||
+        tryBranch(owner, step < 0 ? "superscript" : "subscript")
+      )) return true;
+    }
+  }
+  return false;
+}
+function moveUpward(model, options) {
+  var _a3, _b3;
+  const extend = (_a3 = options == null ? void 0 : options.extend) != null ? _a3 : false;
+  if (visualTexMoveVertical(model, "up", extend)) return true;
+  if (!extend) model.collapseSelection("backward");
+  const handleDeadEnd = () => {
+    var _a4, _b4;
+    let success = true;
+    if (!model.silenceNotifications) {
+      success = (_b4 = (_a4 = model.mathfield.host) == null ? void 0 : _a4.dispatchEvent(
+        new CustomEvent("move-out", {
+          detail: { direction: "upward" },
+          cancelable: true,
+          bubbles: true,
+          composed: true
+        })
+      )) != null ? _b4 : true;
+    }
+    model.announce(success ? "line" : "plonk");
+    return success;
+  };
+  const baseAtom = model.at(model.position);
+  let atom = baseAtom;
+  while (atom && atom.parentBranch !== "below" && !(Array.isArray(atom.parentBranch) && atom.parent instanceof ArrayAtom))
+    atom = atom.parent;
+  if (Array.isArray(atom == null ? void 0 : atom.parentBranch) && atom.parent instanceof ArrayAtom) {
+    const arrayAtom = atom.parent;
+    if (atom.parentBranch[0] < 1) return handleDeadEnd();
+    const rowAbove = atom.parentBranch[0] - 1;
+    const aboveCell = arrayAtom.getCell(rowAbove, atom.parentBranch[1]);
+    const cellHasPrompt = aboveCell.some(
+      (a) => a.type === "prompt" && !a.captureSelection
+    );
+    if (!cellHasPrompt && model.mathfield.hasEditablePrompts)
+      return handleDeadEnd();
+    moveToClosestAtomVertically(model, baseAtom, aboveCell, extend, "up");
+  } else if (atom) {
+    const branch = (_b3 = atom.parent.branch("above")) != null ? _b3 : atom.parent.createBranch("above");
+    const branchHasPrompt = branch.some(
+      (a) => a.type === "prompt" && a.placeholderId
+    );
+    if (!branchHasPrompt && model.mathfield.hasEditablePrompts)
+      return handleDeadEnd();
+    moveToClosestAtomVertically(model, baseAtom, branch, extend, "up");
+  } else return handleDeadEnd();
+  model.mathfield.stopCoalescingUndo();
+  return true;
+}
+function moveDownward(model, options) {
+  var _a3, _b3;
+  const extend = (_a3 = options == null ? void 0 : options.extend) != null ? _a3 : false;
+  if (visualTexMoveVertical(model, "down", extend)) return true;
+  if (!extend) model.collapseSelection("forward");
+  const handleDeadEnd = () => {
+    var _a4, _b4;
+    let success = true;
+    if (!model.silenceNotifications) {
+      success = (_b4 = (_a4 = model.mathfield.host) == null ? void 0 : _a4.dispatchEvent(
+        new CustomEvent("move-out", {
+          detail: { direction: "downward" },
+          cancelable: true,
+          bubbles: true,
+          composed: true
+        })
+      )) != null ? _b4 : true;
+    }
+    model.announce(success ? "line" : "plonk");
+    return success;
+  };
+  const baseAtom = model.at(model.position);
+  let atom = baseAtom;
+  while (atom && atom.parentBranch !== "above" && !(isCellBranch(atom.parentBranch) && atom.parent instanceof ArrayAtom))
+    atom = atom.parent;
+  if (isCellBranch(atom == null ? void 0 : atom.parentBranch) && atom.parent instanceof ArrayAtom) {
+    const arrayAtom = atom.parent;
+    if (atom.parentBranch[0] + 1 > arrayAtom.rows.length - 1)
+      return handleDeadEnd();
+    const rowBelow = atom.parentBranch[0] + 1;
+    const belowCell = arrayAtom.getCell(rowBelow, atom.parentBranch[1]);
+    const cellHasPrompt = belowCell.some(
+      (a) => a.type === "prompt" && !a.captureSelection
+    );
+    if (!cellHasPrompt && model.mathfield.hasEditablePrompts)
+      return handleDeadEnd();
+    moveToClosestAtomVertically(model, baseAtom, belowCell, extend, "down");
+  } else if (atom) {
+    const branch = (_b3 = atom.parent.branch("below")) != null ? _b3 : atom.parent.createBranch("below");
+    const branchHasPrompt = branch.some((a) => a.type === "prompt");
+    if (!branchHasPrompt && model.mathfield.hasEditablePrompts)
+      return handleDeadEnd();
+    moveToClosestAtomVertically(model, baseAtom, branch, extend, "down");
+  } else return handleDeadEnd();
+  return true;
+}
+
+// src/editor-model/commands-move.ts
+function moveAfterParent(model) {
+  const previousPosition = model.position;
+  const parent = model.at(previousPosition).parent;
+  if (!(parent == null ? void 0 : parent.parent)) {
+    model.announce("plonk");
+    return false;
+  }
+  model.position = model.offsetOf(parent);
+  model.mathfield.stopCoalescingUndo();
+  model.announce("move", previousPosition);
+  return true;
+}
+function superscriptDepth(model) {
+  let result = 0;
+  let atom = model.at(model.position);
+  let wasSuperscript = false;
+  while (atom) {
+    if (!atom.hasEmptyBranch("superscript")) {
+      result += 1;
+      wasSuperscript = true;
+    } else if (!atom.hasEmptyBranch("subscript")) wasSuperscript = false;
+    atom = atom.parent;
+  }
+  return wasSuperscript ? result : 0;
+}
+function subscriptDepth(model) {
+  let result = 0;
+  let atom = model.at(model.position);
+  let wasSubscript = false;
+  while (atom) {
+    if (!atom.hasEmptyBranch("subscript")) {
+      result += 1;
+      wasSubscript = true;
+    } else if (!atom.hasEmptyBranch("superscript")) wasSubscript = false;
+    atom = atom.parent;
+  }
+  return wasSubscript ? result : 0;
+}
+function moveToSuperscript(model) {
+  model.collapseSelection();
+  if (superscriptDepth(model) >= model.mathfield.options.scriptDepth[1]) {
+    model.announce("plonk");
+    return false;
+  }
+  let target = model.at(model.position);
+  if (target.subsupPlacement === void 0) {
+    let subsup = target.rightSibling;
+    if ((subsup == null ? void 0 : subsup.type) !== "subsup") {
+      subsup = new SubsupAtom({ style: target.style });
+      target.parent.addChildAfter(subsup, target);
+    }
+    target = subsup;
+  }
+  target.createBranch("superscript");
+  model.setSelection(
+    model.getSiblingsRange(model.offsetOf(target.superscript[0]))
+  );
+  return true;
+}
+function moveToSubscript(model) {
+  model.collapseSelection();
+  if (subscriptDepth(model) >= model.mathfield.options.scriptDepth[0]) {
+    model.announce("plonk");
+    return false;
+  }
+  let target = model.at(model.position);
+  if (target.subsupPlacement === void 0) {
+    let subsup = target.rightSibling;
+    if ((subsup == null ? void 0 : subsup.type) !== "subsup") {
+      subsup = new SubsupAtom({ style: target.style });
+      target.parent.addChildAfter(subsup, target);
+    }
+    target = subsup;
+  }
+  target.createBranch("subscript");
+  model.setSelection(
+    model.getSiblingsRange(model.offsetOf(target.subscript[0]))
+  );
+  return true;
+}
+function getTabbableElements() {
+  function tabbable(element) {
+    const regularTabbables = [];
+    const orderedTabbables = [];
+    const candidates = [
+      ...element.querySelectorAll(`input, select, textarea, a[href], button,
+        [tabindex], audio[controls], video[controls],
+        [contenteditable]:not([contenteditable="false"]), details>summary`)
+    ].filter(isNodeMatchingSelectorTabbable);
+    candidates.forEach((candidate, i) => {
+      const candidateTabindex = getTabindex(candidate);
+      if (candidateTabindex === 0) regularTabbables.push(candidate);
+      else {
+        orderedTabbables.push({
+          documentOrder: i,
+          tabIndex: candidateTabindex,
+          node: candidate
+        });
+      }
+    });
+    return orderedTabbables.sort(
+      (a, b) => a.tabIndex === b.tabIndex ? a.documentOrder - b.documentOrder : a.tabIndex - b.tabIndex
+    ).map((a) => a.node).concat(regularTabbables);
+  }
+  function isNodeMatchingSelectorTabbable(element) {
+    if (!isNodeMatchingSelectorFocusable(element) || isNonTabbableRadio(element) || getTabindex(element) < 0)
+      return false;
+    return true;
+  }
+  function isNodeMatchingSelectorFocusable(node) {
+    if (node.disabled || node.type === "hidden" && node.tagName.toUpperCase() === "INPUT" || isHidden(node))
+      return false;
+    return true;
+  }
+  function getTabindex(node) {
+    var _a3;
+    const tabindexAttr = Number.parseInt(
+      (_a3 = node.getAttribute("tabindex")) != null ? _a3 : "NaN",
+      10
+    );
+    if (!Number.isNaN(tabindexAttr)) return tabindexAttr;
+    if (node.contentEditable === "true") return 0;
+    if ((node.nodeName === "AUDIO" || node.nodeName === "VIDEO") && node.getAttribute("tabindex") === null)
+      return 0;
+    return node.tabIndex;
+  }
+  function isNonTabbableRadio(node) {
+    return node.tagName.toUpperCase() === "INPUT" && node.type === "radio" && !isTabbableRadio(node);
+  }
+  function getCheckedRadio(nodes, form) {
+    for (const node of nodes)
+      if (node.checked && node.form === form) return node;
+    return null;
+  }
+  function isTabbableRadio(node) {
+    var _a3;
+    if (!node.name) return true;
+    const radioScope = (_a3 = node.form) != null ? _a3 : node.ownerDocument;
+    const radioSet = radioScope.querySelectorAll(
+      'input[type="radio"][name="' + node.name + '"]'
+    );
+    const checked = getCheckedRadio(radioSet, node.form);
+    return !checked || checked === node;
+  }
+  function isHidden(element) {
+    if (!isBrowser() || element === document.activeElement || element.contains(document.activeElement))
+      return false;
+    if (getComputedStyle(element).visibility === "hidden") return true;
+    const bounds = element.getBoundingClientRect();
+    if (bounds.width === 0 || bounds.height === 0) return true;
+    while (element) {
+      if (getComputedStyle(element).display === "none") return true;
+      element = element.parentElement;
+    }
+    return false;
+  }
+  if (!isBrowser()) return [];
+  return tabbable(document.body);
+}
+function select(model, target, direction = "forward") {
+  const previousPosition = model.position;
+  if (isArray(target)) {
+    const first = model.offsetOf(target[0]);
+    const last = model.offsetOf(target[target.length - 1]);
+    if (direction === "forward") model.setSelection(first, last);
+    else model.setSelection(last, first);
+    model.announce("move", previousPosition);
+    model.mathfield.stopCoalescingUndo();
+    return true;
+  }
+  if (direction === "forward")
+    return select(model, [target.leftSibling, target]);
+  return select(model, [target, target.leftSibling]);
+}
+function leapTo(model, target) {
+  const previousPosition = model.position;
+  if (typeof target === "number") target = model.at(target);
+  if (target.type === "prompt") {
+    model.setSelection(
+      model.offsetOf(target.firstChild),
+      model.offsetOf(target.lastChild)
+    );
+  } else {
+    const newPosition = model.offsetOf(target);
+    if (target.type === "placeholder")
+      model.setSelection(newPosition - 1, newPosition);
+    else model.position = newPosition;
+  }
+  model.announce("move", previousPosition);
+  model.mathfield.stopCoalescingUndo();
+  return true;
+}
+function leap(model, dir) {
+  var _a3, _b3;
+  const dist = dir === "forward" ? 1 : -1;
+  if (model.at(model.anchor).type === "placeholder") move(model, dir);
+  let origin;
+  const parentPrompt = model.at(model.anchor).parentPrompt;
+  if (parentPrompt) {
+    if (dir === "forward") origin = model.offsetOf(parentPrompt) + 1;
+    else origin = model.offsetOf(parentPrompt.leftSibling);
+  } else origin = Math.max(model.position + dist, 0);
+  const target = leapTarget(model, origin, dir);
+  if (!target || dir === "forward" && model.offsetOf(target) < origin || dir === "backward" && model.offsetOf(target) > origin) {
+    const success = (_b3 = (_a3 = model.mathfield.host) == null ? void 0 : _a3.dispatchEvent(
+      new CustomEvent("move-out", {
+        detail: { direction: dir },
+        cancelable: true,
+        bubbles: true,
+        composed: true
+      })
+    )) != null ? _b3 : true;
+    if (!success) {
+      model.announce("plonk");
+      return false;
+    }
+    const tabbable = getTabbableElements();
+    if (!document.activeElement || tabbable.length <= 1) {
+      model.announce("plonk");
+      return false;
+    }
+    let index = tabbable.indexOf(document.activeElement) + dist;
+    if (index < 0) index = tabbable.length - 1;
+    if (index >= tabbable.length) index = 0;
+    tabbable[index].focus();
+    model.mathfield.stopCoalescingUndo();
+    return true;
+  }
+  leapTo(model, target);
+  return true;
+}
+function leapTarget(model, origin = 0, dir = "forward") {
+  return model.findAtom(
+    (atom) => atom.type === "placeholder" || atom.type === "prompt" || !model.mathfield.readOnly && atom.treeDepth > 2 && atom.isFirstSibling && atom.isLastSibling,
+    origin,
+    dir
+  );
+}
+register2(
+  {
+    moveToOpposite: (model) => {
+      const OPPOSITE_RELATIONS = {
+        superscript: "subscript",
+        subscript: "superscript",
+        above: "below",
+        below: "above"
+      };
+      const cursor = model.at(model.position);
+      const { parent } = cursor;
+      if (!parent) {
+        model.announce("plonk");
+        return false;
+      }
+      const relation = cursor.parentBranch;
+      let oppositeRelation;
+      if (typeof relation === "string")
+        oppositeRelation = OPPOSITE_RELATIONS[relation];
+      if (!oppositeRelation) {
+        const result2 = cursor.subsupPlacement ? moveToSubscript(model) : moveToSuperscript(model);
+        model.mathfield.stopCoalescingUndo();
+        return result2;
+      }
+      if (!parent.branch(oppositeRelation)) {
+        parent.createBranch(oppositeRelation);
+      }
+      const result = model.setSelection(
+        model.getBranchRange(model.offsetOf(parent), oppositeRelation)
+      );
+      model.mathfield.stopCoalescingUndo();
+      return result;
+    },
+    moveBeforeParent: (model) => {
+      const { parent } = model.at(model.position);
+      if (!parent) {
+        model.announce("plonk");
+        return false;
+      }
+      model.position = model.offsetOf(parent);
+      model.mathfield.stopCoalescingUndo();
+      return true;
+    },
+    moveAfterParent: (model) => moveAfterParent(model),
+    moveToNextChar: (model) => move(model, "forward"),
+    moveToPreviousChar: (model) => move(model, "backward"),
+    moveUp: (model) => move(model, "upward"),
+    moveDown: (model) => move(model, "downward"),
+    moveToNextWord: (model) => skip(model, "forward"),
+    moveToPreviousWord: (model) => skip(model, "backward"),
+    moveToGroupStart: (model) => {
+      const pos = model.offsetOf(model.at(model.position).firstSibling);
+      if (pos === model.position) {
+        model.announce("plonk");
+        return false;
+      }
+      model.position = pos;
+      model.mathfield.stopCoalescingUndo();
+      return true;
+    },
+    moveToGroupEnd: (model) => {
+      const pos = model.offsetOf(model.at(model.position).lastSibling);
+      if (pos === model.position) {
+        model.announce("plonk");
+        return false;
+      }
+      model.position = pos;
+      model.mathfield.stopCoalescingUndo();
+      return true;
+    },
+    moveToNextGroup: (model) => {
+      var _a3, _b3, _c2, _d2;
+      if (model.position === model.lastOffset && model.anchor === model.lastOffset)
+        return leap(model, "forward");
+      const atom = model.at(model.position);
+      const mode = atom.mode;
+      if (mode === "text") {
+        if (model.selectionIsCollapsed) {
+          let first = atom;
+          while ((first == null ? void 0 : first.mode) === "text") first = first.leftSibling;
+          let last = atom;
+          while (((_a3 = last.rightSibling) == null ? void 0 : _a3.mode) === "text") last = last.rightSibling;
+          if (first && last) return select(model, [first, last]);
+        }
+        if (atom.rightSibling.mode === "text") {
+          let next = atom;
+          while ((next == null ? void 0 : next.mode) === "text") next = next.rightSibling;
+          if (next) {
+            leapTo(model, (_b3 = next.leftSibling) != null ? _b3 : next);
+            model.mathfield.switchMode("math");
+            return true;
+          }
+          return leapTo(model, model.lastOffset);
+        }
+      }
+      const parentPrompt = model.at(model.anchor).parentPrompt;
+      const origin = parentPrompt ? model.offsetOf(parentPrompt) + 1 : Math.max(model.position + 1, 0);
+      const target = leapTarget(model, origin, "forward");
+      if (target && model.offsetOf(target) < origin)
+        return leap(model, "forward");
+      if (target) return leapTo(model, target);
+      const sibling = findSibling(
+        model,
+        atom,
+        (x) => x.type === "leftright" || x.type === "text",
+        "forward"
+      );
+      if (sibling) {
+        if (sibling.mode === "text") {
+          let last = sibling;
+          while ((last == null ? void 0 : last.mode) === "text") last = last.rightSibling;
+          return select(model, [
+            (_c2 = sibling.leftSibling) != null ? _c2 : sibling,
+            (_d2 = last.leftSibling) != null ? _d2 : last
+          ]);
+        }
+        return select(model, sibling);
+      }
+      const parent = atom.parent;
+      if (parent) {
+        if (parent.type === "leftright" || parent.type === "surd")
+          return select(model, parent);
+        if (atom.parentBranch === "superscript" && parent.subscript)
+          return select(model, parent.subscript);
+        if (atom.parentBranch === "above" && parent.below)
+          return select(model, parent.below);
+        if (atom.parentBranch === "superscript" || atom.parentBranch === "subscript")
+          return leapTo(model, parent);
+        if (atom.parentBranch === "above" || atom.parentBranch === "below")
+          return select(model, parent);
+      }
+      return leapTo(model, model.lastOffset);
+    },
+    moveToPreviousGroup: (model) => {
+      var _a3;
+      if (model.position === 0 && model.anchor === 0)
+        return leap(model, "backward");
+      let atom = model.at(model.position);
+      const mode = atom.mode;
+      if (mode === "text") {
+        if (model.selectionIsCollapsed) {
+          let first = atom;
+          while ((first == null ? void 0 : first.mode) === "text") first = first.leftSibling;
+          let last = atom;
+          while (((_a3 = last.rightSibling) == null ? void 0 : _a3.mode) === "text") last = last.rightSibling;
+          if (first && last) return select(model, [first, last]);
+        }
+        while ((atom == null ? void 0 : atom.mode) === "text") atom = atom.leftSibling;
+        if (atom) return leapTo(model, atom);
+        return leapTo(model, 0);
+      }
+      const parentPrompt = model.at(model.anchor).parentPrompt;
+      const origin = parentPrompt ? model.offsetOf(parentPrompt.leftSibling) : Math.max(model.position - 1, 0);
+      const target = leapTarget(model, origin, "backward");
+      if (target && model.offsetOf(target) > origin)
+        return leap(model, "backward");
+      if (target) return leapTo(model, target);
+      if (mode === "math") {
+        const sibling = findSibling(
+          model,
+          atom,
+          (x) => x.type === "leftright" || x.type === "text",
+          "backward"
+        );
+        if (sibling) {
+          if (sibling.mode === "text") {
+            let first = sibling;
+            while ((first == null ? void 0 : first.mode) === "text") first = first.leftSibling;
+            return select(model, [sibling, first]);
+          }
+          return select(model, sibling);
+        }
+        const parent = atom.parent;
+        if (parent) {
+          if (parent.type === "leftright" || parent.type === "surd")
+            return select(model, parent);
+          if (atom.parentBranch === "subscript" && parent.superscript)
+            return select(model, parent.superscript);
+          if (atom.parentBranch === "below" && parent.above)
+            return select(model, parent.above);
+          if (atom.parentBranch === "superscript" || atom.parentBranch === "subscript")
+            return leapTo(model, parent);
+          if (atom.parentBranch === "above" || atom.parentBranch === "below")
+            return select(model, parent);
+        }
+        return leapTo(model, 0);
+      }
+      return false;
+    },
+    moveToMathfieldStart: (model) => {
+      if (model.selectionIsCollapsed && model.position === 0) {
+        model.announce("plonk");
+        return false;
+      }
+      model.position = 0;
+      model.mathfield.stopCoalescingUndo();
+      return true;
+    },
+    moveToMathfieldEnd: (model) => {
+      if (model.selectionIsCollapsed && model.position === model.lastOffset) {
+        model.announce("plonk");
+        return false;
+      }
+      model.position = model.lastOffset;
+      model.mathfield.stopCoalescingUndo();
+      return true;
+    },
+    moveToSuperscript,
+    moveToSubscript
+  },
+  { target: "model", changeSelection: true }
+);
+register2(
+  {
+    moveToNextPlaceholder: (model) => leap(model, "forward"),
+    moveToPreviousPlaceholder: (model) => leap(model, "backward")
+  },
+  { target: "model", changeSelection: true, audioFeedback: "return" }
+);
+function findSibling(model, atom, pred, dir) {
+  if (dir === "forward") {
+    let result2 = atom.rightSibling;
+    while (result2 && !pred(result2)) result2 = result2.rightSibling;
+    return result2;
+  }
+  let result = atom.leftSibling;
+  while (result && !pred(result)) result = result.leftSibling;
+  return result;
+}
+
+// src/editor-mathfield/smartmode.ts
+function convertLastAtomsToText(model, count, until) {
+  if (typeof count === "function") {
+    until = count;
+    count = Infinity;
+  }
+  if (count === void 0) count = Infinity;
+  let i = model.position;
+  let done = false;
+  let text = "";
+  while (!done) {
+    const atom = model.at(i);
+    done = count === 0 || atom === void 0 || atom.type === "first" || atom.mode !== "math" || !(atom.type && /mord|mpunct|operator/.test(atom.type) || atom.type === "mop" && /[a-zA-Z ]+/.test(atom.value)) || !atom.hasEmptyBranch("superscript") || !atom.hasEmptyBranch("subscript") || typeof until === "function" && !until(atom);
+    if (!done) {
+      atom.mode = "text";
+      atom.command = atom.value;
+      atom.verbatimLatex = void 0;
+      text += atom.value;
+    }
+    i -= 1;
+    count -= 1;
+  }
+  model.contentDidChange({ data: text, inputType: "insertText" });
+}
+function convertLastAtomsToMath(model, count, until) {
+  if (typeof count === "function") {
+    until = count;
+    count = Infinity;
+  }
+  if (count === void 0) count = Infinity;
+  let i = model.position;
+  let done = false;
+  const data = [];
+  while (!done) {
+    const atom = model.at(i);
+    done = count === 0 || !atom || atom.type === "first" || atom.isFirstSibling || atom.mode !== "text" || atom.value === " " || typeof until === "function" && !until(atom);
+    if (!done) {
+      data.push(Atom.serialize([atom], { defaultMode: "math" }));
+      atom.mode = "math";
+    }
+    i -= 1;
+    count -= 1;
+  }
+  removeIsolatedSpace(model);
+  model.contentDidChange({ data: joinLatex(data), inputType: "insertText" });
+}
+function removeIsolatedSpace(model) {
+  var _a3;
+  let i = model.position - 1;
+  while (i >= 0 && ((_a3 = model.at(i)) == null ? void 0 : _a3.mode) === "math") i -= 1;
+  if (i < 0) return;
+  if (model.at(i).mode === "text" && model.at(i).value === " " && model.at(i - 1).mode === "math") {
+    model.at(i - 1).parent.removeChild(model.at(i - 1));
+    const save = model.silenceNotifications;
+    model.silenceNotifications = true;
+    model.position -= 1;
+    model.silenceNotifications = save;
+    model.contentDidChange({ inputType: "deleteContent" });
+  }
+}
+function getTextBeforePosition(model) {
+  let result = "";
+  let i = model.position;
+  let done = false;
+  while (!done) {
+    const atom = model.at(i);
+    done = !(atom && (atom.mode === "text" || atom.mode === "math" && atom.type && /mord|mpunct/.test(atom.type)));
+    if (!done) result = atom.value + result;
+    i -= 1;
+  }
+  return result;
+}
+function smartMode(mathfield, keystroke, evt) {
+  const { model } = mathfield;
+  if (model.mode === "latex") return false;
+  if (!model.at(model.position).isLastSibling) return false;
+  if (!evt || !mightProducePrintableCharacter(evt)) return false;
+  const c = keyboardEventToChar(evt);
+  if (!model.selectionIsCollapsed) {
+    if (mathfield.model.mode === "text") {
+      if (/[/_^]/.test(c)) return true;
+    }
+    return false;
+  }
+  const context = getTextBeforePosition(model) + c;
+  if (mathfield.model.mode === "text") {
+    if (keystroke === "Esc" || /[/\\]/.test(c)) {
+      return true;
+    }
+    if (/[\^_]/.test(c)) {
+      if (/(^|\s)[a-zA-Z][^_]$/.test(context)) {
+        convertLastAtomsToMath(model, 1);
+      }
+      return true;
+    }
+    const lFence = { ")": "(", "}": "{", "]": "[" }[c];
+    const { parent } = model.at(model.position);
+    if (lFence && parent instanceof LeftRightAtom && parent.leftDelim === lFence)
+      return true;
+    if (/(^|[^a-zA-Z])(a|I) $/.test(context)) {
+      return false;
+    }
+    if (/[$€£₤₺¥¤฿¢₡₧₨₹₩₱]/u.test(c)) {
+      return true;
+    }
+    if (/(^|[^a-zA-Z'’])[a-zA-Z] $/.test(context)) {
+      convertLastAtomsToMath(model, 1);
+      return false;
+    }
+    if (/\D\.[^\d\s]$/.test(context)) {
+      convertLastAtomsToMath(model, 1);
+      const atom = model.at(model.position);
+      atom.value = "\u22C5";
+      atom.style.variant = "normal";
+      atom.command = "\\cdot";
+      atom.verbatimLatex = void 0;
+      model.contentDidChange({ data: "\\cdot", inputType: "insertText" });
+      return true;
+    }
+    if (/(^|\s)[a-zA-Z][^a-zA-Z]$/.test(context)) {
+      convertLastAtomsToMath(model, 1);
+      return true;
+    }
+    if (/\.\d$/.test(context)) {
+      convertLastAtomsToMath(model, 1);
+      return true;
+    }
+    if (/\([\d+\-.]$/.test(context)) {
+      convertLastAtomsToMath(model, 1);
+      return true;
+    }
+    if (/\([a-z][,;]$/.test(context)) {
+      convertLastAtomsToMath(model, 2);
+      return true;
+    }
+    if (/[\d+\-=><*|]$/.test(c)) {
+      removeIsolatedSpace(model);
+      return true;
+    }
+  } else {
+    if (keystroke === "[Space]") {
+      convertLastAtomsToText(
+        model,
+        void 0,
+        (a) => /[a-z][:,;.]$/.test(a.value)
+      );
+      return true;
+    }
+    if (/[a-zA-Z]{3,}$/.test(context) && !/(dxd|abc|xyz|uvw)$/.test(context)) {
+      convertLastAtomsToText(model, void 0, (a) => /[a-zA-Z]/.test(a.value));
+      return true;
+    }
+    if (/(^|\W)(if)$/i.test(context)) {
+      convertLastAtomsToText(model, 1);
+      return true;
+    }
+    if (/(\u0393|\u0394|\u0398|\u039B|\u039E|\u03A0|\u03A3|\u03A5|\u03A6|\u03A8|\u03A9|[\u03B1-\u03C9]|\u03D1|\u03D5|\u03D6|\u03F1|\u03F5){3,}$/u.test(
+      context
+    ) && !/(αβγ)$/.test(context)) {
+      convertLastAtomsToText(
+        model,
+        void 0,
+        (a) => /(:|,|;|.|\u0393|\u0394|\u0398|\u039B|\u039E|\u03A0|\u03A3|\u03A5|\u03A6|\u03A8|\u03A9|[\u03B1-\u03C9]|\u03D1|\u03D5|\u03D6|\u03F1|\u03F5)/u.test(
+          a.value
+        )
+      );
+      return true;
+    }
+    if (c === "?") {
+      return true;
+    }
+    if (c === "." && !/[\d-+]\.$/.test(context)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// src/editor-mathfield/keystroke-caption.ts
+function showKeystroke(mathfield, keystroke) {
+  if (!mathfield.isSelectionEditable || !mathfield.keystrokeCaptionVisible)
+    return;
+  const vb = createKeystrokeCaption();
+  const bounds = mathfield.element.getBoundingClientRect();
+  vb.style.left = `${bounds.left}px`;
+  vb.style.top = `${bounds.top - 64}px`;
+  vb.innerHTML = globalThis.MathfieldElement.createHTML(
+    "<span>" + (getKeybindingMarkup(keystroke) || keystroke) + "</span>" + vb.innerHTML
+  );
+  vb.style.visibility = "visible";
+  setTimeout(() => {
+    if (vb.childNodes.length > 0)
+      vb.childNodes[vb.childNodes.length - 1].remove();
+    if (vb.childNodes.length === 0) vb.style.visibility = "hidden";
+  }, 3e3);
+}
+function toggleKeystrokeCaption(mathfield) {
+  mathfield.keystrokeCaptionVisible = !mathfield.keystrokeCaptionVisible;
+  if (!mathfield.keystrokeCaptionVisible) {
+    const panel = getSharedElement("mathlive-keystroke-caption-panel");
+    panel.style.visibility = "hidden";
+  } else {
+    const panel = createKeystrokeCaption();
+    panel.innerHTML = "";
+  }
+  return false;
+}
+function createKeystrokeCaption() {
+  const panel = document.getElementById("mathlive-keystroke-caption-panel");
+  if (panel) return panel;
+  injectStylesheet("keystroke-caption");
+  injectStylesheet("core");
+  return getSharedElement("mathlive-keystroke-caption-panel");
+}
+function disposeKeystrokeCaption() {
+  if (!document.getElementById("mathlive-keystroke-caption-panel")) return;
+  releaseSharedElement("mathlive-keystroke-caption-panel");
+  releaseStylesheet("core");
+  releaseStylesheet("keystroke-caption");
+}
+
+// src/editor-mathfield/keyboard-input.ts
+function visualTexCaretIsInsideTextRun(model) {
+  if (!model.selectionIsCollapsed) return false;
+  const left = model.at(model.position);
+  const right = left?.rightSibling;
+  return Boolean(
+    left?.mode === "text" &&
+    right?.mode === "text" &&
+    left.parent === right.parent &&
+    visualTexSameStructuralBranch(left.parentBranch, right.parentBranch)
+  );
+}
+function visualTexNormalizeTextBoundaryMode(mathfield, forceMath = false) {
+  const { model } = mathfield;
+  if (model.mode !== "text" || !model.selectionIsCollapsed) return false;
+  // MathLive stores a caret at the offset of the atom to its left. A caret is
+  // genuinely inside prose only when both sides belong to the same text run.
+  // Every other text-adjacent position is a math boundary in VisualTeX.
+  if (!forceMath && visualTexCaretIsInsideTextRun(model)) return false;
+  model.mode = "math";
+  return true;
+}
+function onKeystroke(mathfield, evt) {
+  var _a3, _b3, _c2, _d2;
+  const { model } = mathfield;
+  visualTexNormalizeTextBoundaryMode(mathfield);
+  const keystroke = keyboardEventToString(evt);
+  if (evt.isTrusted) {
+    validateKeyboardLayout(evt);
+    const activeLayout = getActiveKeyboardLayout();
+    if (mathfield.keyboardLayout !== activeLayout.id) {
+      mathfield.keyboardLayout = activeLayout.id;
+      mathfield._keybindings = void 0;
+    }
+  }
+  clearTimeout(mathfield.inlineShortcutBufferFlushTimer);
+  mathfield.inlineShortcutBufferFlushTimer = 0;
+  showKeystroke(mathfield, keystroke);
+  if (evt.isTrusted && evt.defaultPrevented) {
+    mathfield.flushInlineShortcutBuffer();
+    return false;
+  }
+  let shortcut;
+  let shortcutLength = 0;
+  let selector = "";
+  let stateIndex = 0;
+  const buffer = mathfield.inlineShortcutBuffer;
+  let placeholderReplaced = false;
+  if (mathfield.isSelectionEditable && model.selectionIsPlaceholder && mightProducePrintableCharacter(evt)) {
+    mathfield.flushInlineShortcutBuffer();
+    model.deleteAtoms(range(model.selection));
+    mathfield.snapshot("delete");
+    placeholderReplaced = true;
+  }
+  if (mathfield.isSelectionEditable) {
+    if (model.mode === "math" && (!model.selectionIsPlaceholder || placeholderReplaced)) {
+      if (keystroke === "[Backspace]") {
+        if (mathfield.undoManager.lastOp === "insert-shortcut")
+          selector = "undo";
+        else buffer.pop();
+      } else if (!mightProducePrintableCharacter(evt)) {
+        mathfield.flushInlineShortcutBuffer();
+      } else {
+        const c = keyboardEventToChar(evt);
+        const keystrokes = [
+          ...(_b3 = (_a3 = buffer[buffer.length - 1]) == null ? void 0 : _a3.keystrokes) != null ? _b3 : [],
+          c
+        ];
+        buffer.push({
+          state: model.getState(),
+          keystrokes,
+          leftSiblings: getLeftSiblings(mathfield)
+        });
+        shortcutLength = 0;
+        let candidate = "";
+        while (!shortcut && shortcutLength < keystrokes.length) {
+          stateIndex = buffer.length - (keystrokes.length - shortcutLength);
+          candidate = keystrokes.slice(shortcutLength).join("");
+          shortcut = getInlineShortcut(
+            buffer[stateIndex].leftSiblings,
+            candidate,
+            mathfield.options.inlineShortcuts
+          );
+          if (!shortcut && /^[a-zA-Z][a-zA-Z0-9]+?([_\^][a-zA-Z0-9\*\+\-]+?)?$/.test(candidate))
+            shortcut = mathfield.options.onInlineShortcut(mathfield, candidate);
+          shortcutLength += 1;
+        }
+        mathfield.flushInlineShortcutBuffer({ defer: true });
+      }
+    }
+    if (mathfield.options.smartMode) {
+      if (shortcut) {
+        mathfield.switchMode("math");
+      } else if (smartMode(mathfield, keystroke, evt)) {
+        mathfield.switchMode({ math: "text", text: "math" }[model.mode]);
+        selector = "";
+      }
+    }
+  }
+  if (!shortcut) {
+    if (!selector) {
+      selector = getCommandForKeybinding(
+        mathfield.keybindings,
+        model.mode,
+        evt
+      );
+    }
+    if (!selector && (keystroke === "[Enter]" || keystroke === "[Return]")) {
+      let success = true;
+      if (model.contentWillChange({ inputType: "insertLineBreak" })) {
+        if (mathfield.host) {
+          success = mathfield.host.dispatchEvent(
+            new Event("change", { bubbles: true, composed: true })
+          );
+        }
+        if (!success && evt.preventDefault) {
+          evt.preventDefault();
+          evt.stopPropagation();
+        } else {
+          if ((_c2 = model.parentEnvironment) == null ? void 0 : _c2.isMultiline)
+            mathfield.executeCommand("addRowAfter");
+          model.contentDidChange({ inputType: "insertLineBreak" });
+        }
+      }
+      return success;
+    }
+    if (keystroke === "[Space]" && model.mode === "latex") {
+      if (complete(mathfield, "accept-all")) {
+        mathfield.dirty = true;
+        mathfield.scrollIntoView();
+        if (evt.preventDefault) {
+          evt.preventDefault();
+          evt.stopPropagation();
+        }
+        return false;
+      }
+    }
+    if ((!selector || keystroke === "[Space]") && model.mode === "math") {
+      if (keystroke === "[Space]") {
+        mathfield.styleBias = "none";
+        mathfield.flushInlineShortcutBuffer();
+        if (mathfield.options.mathModeSpace) {
+          ModeEditor.insert(model, mathfield.options.mathModeSpace, {
+            format: "latex",
+            mode: "math"
+          });
+          mathfield.snapshot("insert-space");
+          selector = "";
+          mathfield.dirty = true;
+          mathfield.scrollIntoView();
+          if (evt.preventDefault) {
+            evt.preventDefault();
+            evt.stopPropagation();
+          }
+          return false;
+        }
+        const nextSibling = model.at(model.position + 1);
+        const previousSibling = model.at(model.position - 1);
+        if ((nextSibling == null ? void 0 : nextSibling.mode) === "text" || (previousSibling == null ? void 0 : previousSibling.mode) === "text") {
+          ModeEditor.insert(model, " ", { mode: "text" });
+          mathfield.snapshot("insert-space");
+          mathfield.dirty = true;
+          mathfield.scrollIntoView();
+          return false;
+        }
+      }
+      if (((_d2 = model.at(model.position)) == null ? void 0 : _d2.isDigit()) && globalThis.MathfieldElement.decimalSeparator === "," && keyboardEventToChar(evt) === ",")
+        selector = "insertDecimalSeparator";
+    }
+  }
+  if (!shortcut && !selector) {
+    if (!model.mathfield.smartFence) {
+      const { parent: parent2 } = model.at(model.position);

@@ -132,7 +132,7 @@ function validateMacroContainer(path, kind, options = {}) {
       packageVersion,
       ...(kind === "Word"
         ? [
-            "word-office-performance-20260801-r90",
+            "word-office-performance-20260801-r93",
             "word-structured-document-import-20260730-r61",
             "VTWordRibbonDocumentImport",
             "word-latex-redraw-20260802-r1",
@@ -144,6 +144,7 @@ function validateMacroContainer(path, kind, options = {}) {
             "VTWordRibbonApplyImageFontSizePreset",
             "VisualTeX_EditImageField",
             "VisualTeX_EditSelectedImageFromNativeMonitor",
+            "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
             "VisualTeX_RunWordNumberedCopyIdentityRegression",
             "VTEnsureVisualTeXImageMacroButton",
             "VTAppendText",

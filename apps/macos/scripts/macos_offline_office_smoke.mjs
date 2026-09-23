@@ -248,7 +248,7 @@ expectIncludes(powerpointScript, "set markerLines to paragraphs of markerText", 
 
 expect(!wordAdapter.includes("Public Sub AutoExec()"), "Word Startup template must not expose AutoExec because Word for Mac can consume Finder's first document-open request before the document is created");
 expectIncludes(wordAdapter, "Public Sub VisualTeX_InitializeWordHost()", "Word must expose explicit host initialization for application health refreshes");
-expectIncludes(wordAdapter, '"word-office-performance-20260801-r90"', "Word health must identify the current native Office build");
+expectIncludes(wordAdapter, '"word-office-performance-20260801-r93"', "Word health must identify the current native Office build");
 const wordHostInitStart = wordAdapter.indexOf("Public Sub VisualTeX_InitializeWordHost()");
 const wordHostInitEnd = wordAdapter.indexOf("End Sub", wordHostInitStart);
 const wordHostInitSource = wordAdapter.slice(wordHostInitStart, wordHostInitEnd);
@@ -260,6 +260,7 @@ expectIncludes(wordAdapter, "Public Sub VisualTeX_PrewarmWordApplication()", "Wo
 expectIncludes(wordAdapter, 'name:="VisualTeX_PrewarmWordApplication"', "Deferred Word resident prewarming must run through Word's idle-time scheduler");
 expectIncludes(wordEvents, "App_DocumentOpen", "Word must observe document-open lifecycle events");
 expectIncludes(wordEvents, "App_NewDocument", "Word must observe new-document lifecycle events");
+expectIncludes(wordEvents, "VTMigrateOpenedDocumentImageMacroButtons Doc", "Word must synchronously migrate an opened document instead of relying on a lossy shared OnTime slot");
 expectIncludes(wordEvents, "VTEnsureApplicationPrewarmScheduled", "DocumentOpen/NewDocument must schedule resident prewarming only after Word has committed a document");
 expectIncludes(wordEvents, "App_WindowBeforeDoubleClick", "Word must use its native application event for double-click editing");
 expectIncludes(wordEvents, "App_WindowSelectionChange", "Word must repair a clicked legacy image-number REF through the native selection-change event");
@@ -275,7 +276,8 @@ expect(!wordAdapter.includes("For index = 1 To VT_WORD_PAYLOAD_MAX_CHUNKS"), "Wo
 expectIncludes(wordAdapter, "VTPrepareWordImageFormulaState", "Word edit opening must resolve image scale state once on the common path");
 expectIncludes(wordAdapter, "Public Sub VisualTeX_EditImageField()", "Word must retain the legacy MacroButton edit entry point for old documents during migration");
 expectIncludes(wordAdapter, "Public Function VTEnsureVisualTeXImageMacroButton", "Every image commit must normalize legacy field wrappers to one plain InlineShape");
-expectIncludes(wordAdapter, 'VT_WORD_IMAGE_MACRO_SCHEMA_VERSION As String = "7"', "The image migration schema must normalize legacy tables/schema-6 direct SEQ into external helpers, restore painted-centre metadata, and install the Return repair contract");
+expectIncludes(wordAdapter, 'VT_WORD_IMAGE_MACRO_SCHEMA_VERSION As String = "8"', "The image migration schema must normalize legacy tables/schema-6 direct SEQ, restore painted-centre metadata and reapply unnumbered display baselines when opening existing documents");
+expectIncludes(wordAdapter, "VTNormalizeUnnumberedDisplayParagraph formulaShape.Range", "The image migration must repair the centred baseline of existing unnumbered display formulas without requiring a click");
 expectIncludes(wordAdapter, 'VT_WORD_NUMBERED_IMAGE_STYLE_NAME As String = _', "Numbered image formulas must use a dedicated Word paragraph style rather than inheriting direct formula formatting on Return");
 expectIncludes(wordAdapter, "equationStyle.NextParagraphStyle = wdStyleNormal", "The numbered-image paragraph style must make Word create a Normal paragraph on Return without a SelectionChange repair");
 expect(!wordEvents.includes("VTNormalizeEmptyParagraphAfterNumberedImage"), "Return after a numbered image formula must be native Word style behavior, not an event-time repair");
@@ -304,6 +306,7 @@ expectIncludes(wordAdapter, "VisualTeX_DoubleClickEditSelected", "Word must expo
 expectIncludes(wordAdapter, "VTTryFindNativeFormulaBookmarkLocally", "The shared Word double-click handler must restrict native-equation hit testing to the actual clicked OMath neighborhood");
 expectIncludes(wordAdapter, "VTTryVisualTeXMetadataShapeAtDoubleClick", "The shared Word double-click handler must validate the clicked image against its actual InlineShape range");
 expectIncludes(wordAdapter, "Public Sub VisualTeX_WriteSelectedDoubleClickScreenBounds()", "The Word compatibility fallback must expose the selected image's real screen bounds for physical hit testing");
+expectIncludes(wordAdapter, "Public Sub VisualTeX_WriteSelectedDoubleClickTargetScreenBounds()", "The Word compatibility fallback must expose the settled image-or-native target bounds before invoking the generic edit macro");
 expectIncludes(wordAdapter, '"handler-native-not-found"', "A Word double-click without a VisualTeX target must be logged and remain a strict no-op");
 expectIncludes(wordAdapter, "VisualTeX_CreateNativeInline", "Word must expose direct inline OMML insertion");
 expectIncludes(wordAdapter, "VisualTeX_CreateNativeDisplay", "Word must expose direct display OMML insertion");
@@ -386,6 +389,11 @@ expectIncludes(wordAdapter, "formulaShape.Height = CSng(targetHeight)", "Image f
 expectIncludes(wordAdapter, "formulaShape.Range.Font.Position = 0", "Display image formula resizing must clear any inherited inline baseline raise");
 expectIncludes(wordAdapter, "VTRefreshNumberedImageFormulaFontLayout", "Every numbered image formula resize must refresh number size, mathematical baseline and tab geometry");
 expectIncludes(wordAdapter, "Private Function VTExpectedNumberedImageFormulaPosition", "All numbered-image position calculations must share the signed painted-centre geometry path");
+expectIncludes(wordAdapter, "Private Sub VTApplyUnnumberedImageFormulaVerticalAlignment", "Unnumbered image displays must vertically center their painted formula against the ordinary paragraph baseline");
+expectIncludes(wordAdapter, "Public Sub VisualTeX_RunWordUnnumberedImageParagraphMarkRegression", "The packaged Word add-in must expose a real-host unnumbered image paragraph-mark regression");
+expectIncludes(wordAdapter, "expectedUnnumberedPosition = VTExpectedImageFormulaPosition", "The real-host Word regression must verify the exact unnumbered image vertical offset");
+expectIncludes(wordAdapter, "paragraphMarkPosition <> 0", "The real-host Word regression must keep the paragraph mark on the ordinary baseline");
+expectIncludes(wordAdapter, 'ElseIf displayMode = "block" And Not numbered Then', "Direct unnumbered image resizing must reapply paragraph-mark centering");
 expect(!wordAdapter.includes("Private Function VTValidatedWordPositionValue"), "The Word regression must not synchronously read and convert transient Font.Position values");
 expectIncludes(wordAdapter, '"The resized image Equation visual-center position"', "Production numbered-image resizing must align the formula object to the visible number line by visual centre");
 expect(!wordAdapter.includes("expectedPosition = CLng(Int( _\n        (CDbl(formulaShape.Height) - requestedFontSizePt)"), "Production numbered-image resizing must not duplicate an unchecked CLng position calculation");
@@ -1673,6 +1681,8 @@ expectIncludes(nativeInteraction, "word_formula_after_double_click(", "The Word 
 expectIncludes(nativeInteraction, "NSEvent::mouseLocation()", "The Word compatibility branch must capture the physical double-click location instead of trusting a stale Word selection");
 expectIncludes(nativeInteraction, "selection.screen_bounds.contains(click_x, click_y)", "The Word compatibility branch must reject Ribbon or paragraph double-clicks outside the formula's real screen rectangle");
 expectIncludes(nativeInteraction, "VisualTeX_WriteSelectedDoubleClickScreenBounds", "The Word compatibility branch must obtain formula bounds through Word's GetPoint-backed VBA probe");
+expectIncludes(nativeInteraction, "word_target_after_double_click(", "The generic Word fallback must verify the settled target against the physical double-click coordinates");
+expectIncludes(nativeInteraction, "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds", "The generic Word fallback must query the actual image-or-native formula target through Word");
 expectIncludes(nativeInteraction, "run_word_image_double_click_edit_macro", "The Word compatibility branch must invoke the strict image-only VBA entry when an older bare InlineShape is double-clicked");
 expectIncludes(nativeInteraction, "crate::office::sessions::OfficeHost::Word", "The native monitor must retain the strict VBA fallback for a native Word OMath when WindowBeforeDoubleClick is unavailable");
 expectIncludes(wordAdapter, "VTNativeEditDispatchDebounced(formulaId)", "The VBA fallback and WindowBeforeDoubleClick must debounce duplicate native Word edit dispatches");
@@ -1929,6 +1939,8 @@ expectIncludes(styles, "var(--formula-toolbar-button-padding, 2px)", "Formula co
 expectIncludes(styles, "var(--formula-row-vertical-inset, 5px)", "Formula characters must consume the visual formula-row top-and-bottom spacing preference");
 expectIncludes(formulaToolbar, "maximumToolbarPreviewInsetRatio - formulaToolButtonPadding * 0.03", "The restored toolbar content inset must affect the real MathPreview fit algorithm");
 expectIncludes(formulaToolbar, "formulaToolButtonSize / 42", "Larger formula buttons must allow simple symbols to scale up while complex formulas remain contained");
+expectIncludes(formulaToolbar, "compactToolbarPreviewMaximumScale", "The compact Office formula toolbar must cap preview growth so symbols stay inside their cells");
+expectIncludes(styles, ".classic-bottom-dock:not(.is-collapsed)", "The narrow Office bottom dock must allocate a separate header row for formatting and view controls");
 expectIncludes(formulaToolbar, "target.scrollBy({ left: pixelDelta", "The horizontal formula toolbar must map every wheel delta directly to continuous horizontal movement without category-boundary gating");
 expectIncludes(formulaToolbar, "scrollToToolbarCategory", "Clicking a category tab must still provide optional smooth navigation to that continuous section");
 expectIncludes(formulaToolbar, 'behavior: "auto"', "Wheel scrolling must remain unsnapped so one gesture can move naturally across multiple categories");
@@ -2110,7 +2122,7 @@ expectIncludes(macFirstRun, "修复 VisualTeX Office 插件", "Missing files aft
 expectIncludes(installer, "powerpoint_script.clone()", "PowerPoint installed status must include its AppleScriptTask resource");
 expectIncludes(installer, 'health.plugin_version.as_deref() == Some(env!("CARGO_PKG_VERSION"))', "Installer must reject stale plug-in health versions");
 expect(!installer.includes("source_revision_matches"), "Runtime health must not reject a current-version add-in only because an optional sourceRevision field is absent");
-expectIncludes(packager, "word-office-performance-20260801-r90", "Packaging must reject a Word DOTM that lacks the current performance revision");
+expectIncludes(packager, "word-office-performance-20260801-r93", "Packaging must reject a Word DOTM that lacks the current performance revision");
 expectIncludes(packager, "const resolvedWordShell = wordShell ? resolve(wordShell) : undefined;", "Word packaging must use the newly compiled DOTM as its default OOXML shell");
 expect(!packager.includes('const existingWordShell = join(resourcesRoot, "VisualTeX.dotm")'), "Word packaging must not silently inherit document.xml and template metadata from the previously packaged DOTM");
 expectIncludes(packager, "powerpoint-office-performance-20260801-r4", "Packaging must reject a PowerPoint PPAM that lacks the current performance revision");

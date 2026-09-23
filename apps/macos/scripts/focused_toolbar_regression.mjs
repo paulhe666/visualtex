@@ -12,10 +12,11 @@ const supportedModes = new Set([
   "continuous-performance",
   "continuous-fps",
   "piecewise-preview",
+  "overlay-layers",
 ]);
 if (!supportedModes.has(mode)) {
   throw new Error(
-    "Usage: node scripts/focused_toolbar_regression.mjs <row-spacing|continuous-layout|continuous-theme|continuous-wheel|continuous-performance|continuous-fps|piecewise-preview>",
+    "Usage: node scripts/focused_toolbar_regression.mjs <row-spacing|continuous-layout|continuous-theme|continuous-wheel|continuous-performance|continuous-fps|piecewise-preview|overlay-layers>",
   );
 }
 
@@ -209,6 +210,256 @@ async function main() {
       }))()`,
       "focused toolbar workspace",
     );
+
+    if (mode === "overlay-layers") {
+      const inspectLayer = (backdropSelector, foregroundSelector) =>
+        evaluate(`(() => {
+          const backdrop = document.querySelector(${JSON.stringify(backdropSelector)});
+          const foreground = document.querySelector(${JSON.stringify(foregroundSelector)});
+          const header = document.querySelector('.app-header');
+          const headerControl = document.querySelector('.settings-toggle') ??
+            header?.querySelector('button');
+          const headerRect = headerControl?.getBoundingClientRect();
+          const foregroundRect = foreground?.getBoundingClientRect();
+          const headerHit = headerRect
+            ? document.elementFromPoint(
+                headerRect.left + headerRect.width / 2,
+                headerRect.top + headerRect.height / 2,
+              )
+            : null;
+          const foregroundHit = foregroundRect
+            ? document.elementFromPoint(
+                foregroundRect.left + foregroundRect.width / 2,
+                foregroundRect.top + foregroundRect.height / 2,
+              )
+            : null;
+          const z = (element) => {
+            const value = element ? Number.parseInt(getComputedStyle(element).zIndex, 10) : NaN;
+            return Number.isFinite(value) ? value : 0;
+          };
+          const rootStyle = getComputedStyle(document.documentElement);
+          return {
+            ready: Boolean(backdrop && foreground && header && headerControl),
+            headerZ: z(header),
+            backdropZ: z(backdrop),
+            foregroundZ: z(foreground),
+            headerCovered: Boolean(
+              (headerHit && (backdrop?.contains(headerHit) || foreground?.contains(headerHit))) ||
+              headerHit?.closest(
+                '.modal-backdrop,.panel-backdrop,.settings-subdialog-backdrop,.office-first-run-backdrop,.onboarding-backdrop,.history-panel'
+              )
+            ),
+            foregroundVisible: Boolean(
+              foregroundHit &&
+              (foreground === foregroundHit || foreground?.contains(foregroundHit))
+            ),
+            headerHitClass: headerHit?.className ?? '',
+            foregroundHitClass: foregroundHit?.className ?? '',
+            backdropRect: backdrop
+              ? (() => {
+                  const rect = backdrop.getBoundingClientRect();
+                  return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+                })()
+              : null,
+            foregroundRect: foregroundRect
+              ? { left: foregroundRect.left, top: foregroundRect.top, right: foregroundRect.right, bottom: foregroundRect.bottom }
+              : null,
+            tokens: {
+              header: Number.parseInt(rootStyle.getPropertyValue('--z-app-header'), 10),
+              context: Number.parseInt(rootStyle.getPropertyValue('--z-context-menu'), 10),
+              modal: Number.parseInt(rootStyle.getPropertyValue('--z-modal'), 10),
+              panel: Number.parseInt(rootStyle.getPropertyValue('--z-panel'), 10),
+              nested: Number.parseInt(rootStyle.getPropertyValue('--z-modal-nested'), 10),
+              toast: Number.parseInt(rootStyle.getPropertyValue('--z-toast'), 10),
+            },
+          };
+        })()`);
+      const assertBlockingLayer = (name, state) => {
+        assert.equal(state.ready, true, `${name}: ${JSON.stringify(state)}`);
+        assert.ok(
+          state.backdropZ > state.headerZ,
+          `${name} backdrop must be above the app header: ${JSON.stringify(state)}`,
+        );
+        assert.equal(
+          state.headerCovered,
+          true,
+          `${name} did not intercept the header control: ${JSON.stringify(state)}`,
+        );
+        assert.equal(
+          state.foregroundVisible,
+          true,
+          `${name} foreground is not the visible hit target: ${JSON.stringify(state)}`,
+        );
+      };
+
+      await evaluate(`document.querySelector('.settings-toggle')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: Boolean(document.querySelector('.settings-dialog')) }))()`,
+        "settings overlay",
+      );
+      const settings = await inspectLayer('.modal-backdrop', '.settings-dialog');
+      assertBlockingLayer('settings', settings);
+      assert.deepEqual(settings.tokens, {
+        header: 120,
+        context: 2050,
+        modal: 2200,
+        panel: 2210,
+        nested: 2300,
+        toast: 2400,
+      });
+      const classLayerAudit = await evaluate(`(() => {
+        const header = document.querySelector('.app-header');
+        const headerZ = Number.parseInt(getComputedStyle(header).zIndex, 10);
+        const classes = {
+          ocr: 'modal-backdrop ocr-modal-backdrop',
+          update: 'modal-backdrop update-backdrop',
+          export: 'modal-backdrop export-dialog-backdrop',
+          help: 'modal-backdrop help-manual-backdrop',
+          customSymbol: 'modal-backdrop custom-symbol-designer-backdrop',
+          onboarding: 'onboarding-backdrop',
+          officeFirstRun: 'office-first-run-backdrop',
+        };
+        return {
+          headerZ,
+          layers: Object.fromEntries(Object.entries(classes).map(([name, className]) => {
+            const probe = document.createElement('div');
+            probe.className = className;
+            probe.style.visibility = 'hidden';
+            probe.style.pointerEvents = 'none';
+            document.body.append(probe);
+            const zIndex = Number.parseInt(getComputedStyle(probe).zIndex, 10);
+            probe.remove();
+            return [name, zIndex];
+          })),
+        };
+      })()`);
+      for (const [name, zIndex] of Object.entries(classLayerAudit.layers)) {
+        assert.equal(
+          zIndex,
+          settings.tokens.modal,
+          `${name} overlay is outside the modal layer: ${JSON.stringify(classLayerAudit)}`,
+        );
+        assert.ok(zIndex > classLayerAudit.headerZ);
+      }
+
+      await evaluate(`document.querySelector('[data-interface-customization-trigger]')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: Boolean(document.querySelector('.settings-subdialog')) }))()`,
+        "settings subdialog overlay",
+      );
+      const settingsSubdialog = await inspectLayer(
+        '.settings-subdialog-backdrop',
+        '.settings-subdialog',
+      );
+      assertBlockingLayer('settings subdialog', settingsSubdialog);
+      assert.ok(settingsSubdialog.backdropZ > settings.backdropZ);
+      await evaluate(`document.querySelector('[data-interface-customization-close]')?.click()`);
+      await evaluate(`document.querySelector('.settings-dialog .dialog-header .icon-button')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: !document.querySelector('.settings-dialog') }))()`,
+        "settings overlay close",
+      );
+
+      await evaluate(`document.querySelector('button.workspace-action[aria-label="公式历史"], button.workspace-action[aria-label="Formula history"]')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: Boolean(document.querySelector('.history-panel.is-open') && document.querySelector('.panel-backdrop')) }))()`,
+        "history overlay",
+      );
+      const history = await inspectLayer('.panel-backdrop', '.history-panel.is-open');
+      assertBlockingLayer('history', history);
+      assert.ok(history.foregroundZ > history.backdropZ, JSON.stringify(history));
+      await evaluate(`document.querySelector('.panel-backdrop')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: !document.querySelector('.history-panel.is-open') && !document.querySelector('.panel-backdrop') }))()`,
+        "history overlay close",
+      );
+
+      await evaluate(`document.querySelector('.workspace-export-trigger')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: Boolean(document.querySelector('.export-dialog')) }))()`,
+        "export overlay",
+      );
+      const exportDialog = await inspectLayer('.export-dialog-backdrop', '.export-dialog');
+      assertBlockingLayer('export', exportDialog);
+      await evaluate(`document.querySelector('.export-dialog button[aria-label="关闭导出窗口"], .export-dialog button[aria-label="Close export dialog"]')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: !document.querySelector('.export-dialog') }))()`,
+        "export overlay close",
+      );
+
+      await evaluate(`document.querySelector('.app-header .menu-button')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: Boolean(document.querySelector('.app-menu-popover')) }))()`,
+        "app menu",
+      );
+      await evaluate(`(() => {
+        [...document.querySelectorAll('.app-menu-popover [role="menuitem"]')]
+          .find((button) => /帮助手册|Help Manual/.test(button.textContent ?? ''))
+          ?.click();
+      })()`);
+      await waitForEvaluation(
+        `(() => ({ ready: Boolean(document.querySelector('.help-manual-dialog')) }))()`,
+        "help overlay",
+      );
+      const help = await inspectLayer('.help-manual-backdrop', '.help-manual-dialog');
+      assertBlockingLayer('help', help);
+      await evaluate(`document.querySelector('.help-manual-dialog button[aria-label="关闭帮助手册"], .help-manual-dialog button[aria-label="Close help manual"]')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: !document.querySelector('.help-manual-dialog') }))()`,
+        "help overlay close",
+      );
+
+      await evaluate(`document.querySelector('.settings-toggle')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: Boolean(document.querySelector('.settings-hotkey-button')) }))()`,
+        "hotkey settings trigger",
+      );
+      await evaluate(`document.querySelector('.settings-hotkey-button')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: Boolean(document.querySelector('.formula-hotkey-manager-dialog')) }))()`,
+        "hotkey manager overlay",
+      );
+      const hotkeys = await inspectLayer(
+        '.formula-hotkey-modal-backdrop',
+        '.formula-hotkey-manager-dialog',
+      );
+      assertBlockingLayer('hotkey manager', hotkeys);
+      assert.equal(hotkeys.backdropZ, hotkeys.tokens.nested);
+      await evaluate(`document.querySelector('.formula-hotkey-manager-dialog button[aria-label="关闭快捷键设置"], .formula-hotkey-manager-dialog button[aria-label="Close hotkey settings"]')?.click()`);
+      await waitForEvaluation(
+        `(() => ({ ready: !document.querySelector('.formula-hotkey-manager-dialog') }))()`,
+        "hotkey manager overlay close",
+      );
+
+      const customDesignerAvailable = await evaluate(
+        `Boolean(document.querySelector('[data-open-custom-symbol-designer]'))`,
+      );
+      let customDesigner = null;
+      if (customDesignerAvailable) {
+        await evaluate(`document.querySelector('[data-open-custom-symbol-designer]')?.click()`);
+        await waitForEvaluation(
+          `(() => ({ ready: Boolean(document.querySelector('.custom-symbol-designer-dialog')) }))()`,
+          "custom symbol designer overlay",
+        );
+        customDesigner = await inspectLayer(
+          '.custom-symbol-designer-backdrop',
+          '.custom-symbol-designer-dialog',
+        );
+        assertBlockingLayer('custom symbol designer', customDesigner);
+        await evaluate(`document.querySelector('.custom-symbol-designer-footer button')?.click()`);
+      }
+
+      console.log(JSON.stringify({
+        settings,
+        settingsSubdialog,
+        classLayerAudit,
+        history,
+        exportDialog,
+        help,
+        hotkeys,
+        customDesigner,
+      }));
+    }
 
     if (mode === "row-spacing") {
       await evaluate(`document.querySelector('.settings-toggle')?.click()`);
@@ -960,6 +1211,9 @@ async function main() {
               (item) => item.dataset.toolbarCategorySection === category,
             );
             const previews = [...(section?.querySelectorAll('.math-preview') ?? [])];
+            const commandIds = [...(section?.querySelectorAll(
+              ':scope > .template-button[data-command-id]',
+            ) ?? [])].map((button) => button.dataset.commandId);
             const insideCount = previews.filter((preview) => {
               const content = preview.querySelector('.math-preview-fit-content');
               const hostBounds = preview.getBoundingClientRect();
@@ -982,6 +1236,7 @@ async function main() {
                 (preview) => preview.dataset.fitReady === 'true',
               ).length,
               insideCount,
+              commandIds,
             }];
           }),
         );
@@ -1103,6 +1358,32 @@ async function main() {
         physicsState.staticCategoryDetails.physics.insideCount,
         physicsState.staticCategoryDetails.physics.previewCount,
       );
+      const physicsCommandIds =
+        physicsState.staticCategoryDetails.physics.commandIds;
+      for (const canonicalId of [
+        'bra',
+        'ket',
+        'expectation',
+        'braket',
+        'commutator',
+        'anticommutator',
+        'outerproduct',
+        'matrixelement',
+      ]) {
+        assert.ok(physicsCommandIds.includes(canonicalId), canonicalId);
+      }
+      for (const duplicateId of [
+        'shortcut-bra',
+        'shortcut-ket',
+        'shortcut-expval',
+        'shortcut-braket',
+        'shortcut-comm',
+        'shortcut-acomm',
+        'shortcut-ketbra',
+        'shortcut-mel',
+      ]) {
+        assert.equal(physicsCommandIds.includes(duplicateId), false, duplicateId);
+      }
       console.log(JSON.stringify({ initialState, shiftedState, arrowState, physicsState }));
     }
 

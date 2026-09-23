@@ -44,7 +44,9 @@ const preserveWord = process.argv.includes("--preserve-word");
 // Compile through the established restart/import/Debug > Compile workflow,
 // while leaving production Startup files and their loaded state unchanged.
 const keepStartupFiles = process.argv.includes("--keep-startup-files");
-const buildLockRoot = join(scratchRoot, "VisualTeXWordBuild.lock");
+const buildLockRoot = resolve(
+  argument("--lock") ?? join(scratchRoot, "VisualTeXWordBuild.lock"),
+);
 const buildLockOwnerPath = join(buildLockRoot, "pid");
 const offlineOfficeRoot = join(repositoryRoot, "office", "macos-offline");
 const wordModuleSources = [
@@ -96,6 +98,16 @@ const normalTemplatePath = join(
   "User Content.localized",
   "Templates.localized",
   "Normal.dotm",
+);
+const wordPreferencesPath = join(
+  homedir(),
+  "Library",
+  "Containers",
+  "com.microsoft.Word",
+  "Data",
+  "Library",
+  "Preferences",
+  "com.microsoft.Word.plist",
 );
 const normalTemplateBackupPath = join(
   scratchRoot,
@@ -191,6 +203,17 @@ function sleep(milliseconds) {
 }
 
 function readVbaTrust() {
+  try {
+    const value = run("/usr/libexec/PlistBuddy", [
+      "-c",
+      "Print :VBAObjectModelIsTrusted",
+      wordPreferencesPath,
+    ]).trim();
+    return { existed: true, enabled: value === "true" || value === "1" };
+  } catch {
+    // Older/non-container Word installs are still covered by the preference
+    // domain lookup below.
+  }
   try {
     return {
       existed: true,
@@ -1268,12 +1291,14 @@ function verifyBuiltVba(path) {
     "App_WindowSelectionChange",
     "VTWordRibbonApplyImageFontSizePreset",
     "VTRefreshNumberedImageFormulaFontLayout",
+    "VisualTeX_RunWordUnnumberedImageParagraphMarkRegression",
     "VisualTeX_EditImageField",
     "VisualTeX_EditSelectedImageFromNativeMonitor",
+    "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
     "VTEnsureVisualTeXImageMacroButton",
     "VTNativeMathFastSignature",
-    "word-office-performance-20260801-r90",
-    "1.2.7",
+    "word-office-performance-20260801-r93",
+    "1.2.8",
   ];
   for (const value of required) {
     const utf8 = Buffer.from(value, "utf8");
@@ -1295,6 +1320,7 @@ const originalVisualTeXAddinInstalled = preserveWord
   ? wordVisualTeXAddinInstalled()
   : null;
 let buildSucceeded = false;
+let vbaTrustChanged = false;
 try {
   if (preserveWord) {
     if (!originalTrust.enabled) {
@@ -1312,7 +1338,10 @@ try {
     closeWordWithoutSaving();
     if (!keepStartupFiles) moveStartupTemplatesOut();
     if (!incrementalBuild && !keepStartupFiles) moveNormalTemplateOut();
-    setVbaTrust(true);
+    if (!originalTrust.enabled) {
+      setVbaTrust(true);
+      vbaTrustChanged = true;
+    }
   }
   rmSync(outputPath, { force: true });
 
@@ -1382,7 +1411,7 @@ try {
     if (buildSucceeded || !keepWordOpenOnError) closeWordWithoutSaving();
     if (!incrementalBuild && !keepStartupFiles) restoreNormalTemplate();
     if (!keepStartupFiles) restoreStartupTemplates();
-    restoreVbaTrust(originalTrust);
+    if (vbaTrustChanged) restoreVbaTrust(originalTrust);
     releaseBuildLock();
   }
 }

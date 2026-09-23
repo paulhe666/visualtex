@@ -1074,6 +1074,8 @@ async function main() {
     );
     assert.equal(state.bottomTabsCentered, true, JSON.stringify(state));
     assert.equal(state.hasDockCollapse, true, JSON.stringify(state));
+    assert.equal(state.hasClassicTopCopy, true, JSON.stringify(state));
+    assert.equal(state.copyBeforeCollapse, true, JSON.stringify(state));
     assert.equal(state.dockCollapsed, false, JSON.stringify(state));
     assert.equal(state.alignmentControlsInHeader, true, JSON.stringify(state));
     assert.equal(state.hasVisualEditorTitle, false, JSON.stringify(state));
@@ -1539,6 +1541,8 @@ async function main() {
     assert.equal(state.hasBottomToolbar, false, JSON.stringify(state));
     assert.equal(state.hasSourcePanel, false, JSON.stringify(state));
     assert.equal(state.hasDockCollapse, true, JSON.stringify(state));
+    assert.equal(state.hasClassicTopCopy, true, JSON.stringify(state));
+    assert.equal(state.copyBeforeCollapse, true, JSON.stringify(state));
 
     await evaluate(`document.querySelector('[data-classic-bottom-collapse]')?.click()`);
     await sleep(100);
@@ -1551,7 +1555,8 @@ async function main() {
     state = await readLayout();
     assert.equal(state.hasBottomToolbar, true, JSON.stringify(state));
     assert.equal(state.hasSourcePanel, false, JSON.stringify(state));
-    assert.equal(state.hasClassicTopCopy, false, JSON.stringify(state));
+    assert.equal(state.hasClassicTopCopy, true, JSON.stringify(state));
+    assert.equal(state.copyBeforeCollapse, true, JSON.stringify(state));
     assert.equal(
       state.templateRows.length,
       state.bottomToolbarRowCount,

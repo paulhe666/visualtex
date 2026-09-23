@@ -1,0 +1,1797 @@
+      body: options.body,
+      displayContainsHighlight: true
+    });
+    this.tooltip = new Atom({
+      type: "root",
+      mode: options.content,
+      body: options.tooltip,
+      style: {}
+    });
+    this.skipBoundary = true;
+    this.captureSelection = false;
+  }
+  static fromJson(json) {
+    return new _TooltipAtom(__spreadProps(__spreadValues({}, json), {
+      tooltip: fromJson(json.tooltip)
+    }));
+  }
+  toJson() {
+    var _a3;
+    const tooltip = (_a3 = this.tooltip.body) == null ? void 0 : _a3.filter((x) => x.type !== "first").map((x) => x.toJson());
+    return __spreadProps(__spreadValues({}, super.toJson()), { tooltip });
+  }
+  render(context) {
+    const body = Atom.createBox(context, this.body);
+    if (!body) return null;
+    const tooltipContext = new Context(
+      { parent: context, mathstyle: "displaystyle" },
+      { fontSize: DEFAULT_FONT_SIZE }
+    );
+    const tooltip = coalesce(
+      applyInterBoxSpacing(
+        new Box(this.tooltip.render(tooltipContext), {
+          classes: "ML__tooltip-content"
+        }),
+        tooltipContext
+      )
+    );
+    const box = new Box([tooltip, body], { classes: "ML__tooltip-container" });
+    if (this.caret) box.caret = this.caret;
+    return this.bind(context, box);
+  }
+};
+
+// src/atoms/operator.ts
+var OperatorAtom = class _OperatorAtom extends Atom {
+  constructor(symbol, options) {
+    super(__spreadProps(__spreadValues({}, options), {
+      type: "operator",
+      isFunction: options == null ? void 0 : options.isFunction
+    }));
+    this.value = symbol;
+    this.variant = options == null ? void 0 : options.variant;
+    this.variantStyle = options == null ? void 0 : options.variantStyle;
+    this.subsupPlacement = options == null ? void 0 : options.limits;
+  }
+  static fromJson(json) {
+    return new _OperatorAtom(json.symbol, json);
+  }
+  toJson() {
+    const result = super.toJson();
+    if (this.variant) result.variant = this.variant;
+    if (this.variantStyle) result.variantStyle = this.variantStyle;
+    if (this.subsupPlacement) result.limits = this.subsupPlacement;
+    if (this.value) result.symbol = this.value;
+    return result;
+  }
+  render(context) {
+    var _a3;
+    const base = new Box(this.value, {
+      type: "op",
+      mode: "math",
+      maxFontSize: context.scalingFactor,
+      style: {
+        variant: this.variant,
+        variantStyle: this.variantStyle
+      },
+      isSelected: this.isSelected,
+      letterShapeStyle: context.letterShapeStyle
+    });
+    let result = base;
+    if (this.superscript || this.subscript) {
+      const limits = (_a3 = this.subsupPlacement) != null ? _a3 : "auto";
+      result = limits === "over-under" || limits === "auto" && context.isDisplayStyle ? this.attachLimits(context, { base }) : this.attachSupsub(context, { base });
+    }
+    return new Box(this.bind(context, result), {
+      type: "op",
+      caret: this.caret,
+      isSelected: this.isSelected,
+      classes: "ML__op-group"
+    }).wrap(context);
+  }
+  _serialize(options) {
+    if (!(options.expandMacro || options.skipStyles || options.skipPlaceholders) && typeof this.verbatimLatex === "string")
+      return this.verbatimLatex;
+    const def = getDefinition(this.command, this.mode);
+    if (def == null ? void 0 : def.serialize) return def.serialize(this, options);
+    const result = [this.command];
+    if (this.explicitSubsupPlacement) {
+      if (this.subsupPlacement === "over-under") result.push("\\limits");
+      if (this.subsupPlacement === "adjacent") result.push("\\nolimits");
+      if (this.subsupPlacement === "auto") result.push("\\displaylimits");
+    }
+    result.push(this.supsubToLatex(options));
+    return joinLatex(result);
+  }
+};
+
+// src/core/atom.ts
+function fromJson(json) {
+  if (isArray(json)) return json.map((x) => fromJson(x));
+  if (typeof json === "string") return Atom.fromJson(json);
+  json = __spreadValues({}, json);
+  for (const branch of NAMED_BRANCHES)
+    if (json[branch]) json[branch] = fromJson(json[branch]);
+  if (json.args) json.args = argumentsFromJson(json.args);
+  if (json.array) json.array = fromJson(json.array);
+  const type = json.type;
+  let result = void 0;
+  if (type === "accent") result = AccentAtom.fromJson(json);
+  if (type === "array") result = ArrayAtom.fromJson(json);
+  if (type === "box") result = BoxAtom.fromJson(json);
+  if (type === "chem") result = ChemAtom.fromJson(json);
+  if (type === "composition") result = CompositionAtom.fromJson(json);
+  if (type === "delim") result = MiddleDelimAtom.fromJson(json);
+  if (type === "enclose") result = EncloseAtom.fromJson(json);
+  if (type === "error") result = ErrorAtom.fromJson(json);
+  if (type === "extensible-symbol")
+    result = ExtensibleSymbolAtom.fromJson(json);
+  if (type === "genfrac") result = GenfracAtom.fromJson(json);
+  if (type === "group") result = GroupAtom.fromJson(json);
+  if (type === "latex") result = LatexAtom.fromJson(json);
+  if (type === "latexgroup") result = LatexGroupAtom.fromJson(json);
+  if (type === "leftright") result = LeftRightAtom.fromJson(json);
+  if (type === "macro") result = MacroAtom.fromJson(json);
+  if (type === "macro-argument") result = MacroArgumentAtom.fromJson(json);
+  if (type === "operator") result = OperatorAtom.fromJson(json);
+  if (type === "overlap") result = OverlapAtom.fromJson(json);
+  if (type === "overunder") result = OverunderAtom.fromJson(json);
+  if (type === "placeholder") result = PlaceholderAtom.fromJson(json);
+  if (type === "prompt") result = PromptAtom.fromJson(json);
+  if (type === "phantom") result = PhantomAtom.fromJson(json);
+  if (type === "sizeddelim") result = SizedDelimAtom.fromJson(json);
+  if (type === "spacing") result = SpacingAtom.fromJson(json);
+  if (type === "subsup") result = SubsupAtom.fromJson(json);
+  if (type === "surd") result = SurdAtom.fromJson(json);
+  if (type === "text") result = TextAtom.fromJson(json);
+  if (type === "tooltip") result = TooltipAtom.fromJson(json);
+  if (!result) {
+    console.assert(
+      !type || [
+        "first",
+        "mbin",
+        "mrel",
+        "mclose",
+        "minner",
+        "mop",
+        "mopen",
+        "mord",
+        "mpunct",
+        "root",
+        "space"
+      ].includes(type),
+      `MathLive 0.109.2: an unexpected atom type "${type}" was encountered. Add new atom constructors to \`fromJson()\` in "atom.ts"`
+    );
+    result = Atom.fromJson(json);
+  }
+  for (const branch of NAMED_BRANCHES)
+    if (json[branch]) result.setChildren(json[branch], branch);
+  if (json.verbatimLatex !== void 0)
+    result.verbatimLatex = json.verbatimLatex;
+  if (json.subsupPlacement) result.subsupPlacement = json.subsupPlacement;
+  if (json.explicitSubsupPlacement) result.explicitSubsupPlacement = true;
+  if (json.isFunction) result.isFunction = true;
+  if (json.skipBoundary) result.skipBoundary = true;
+  if (json.captureSelection) result.captureSelection = true;
+  return result;
+}
+function argumentsFromJson(json) {
+  if (!json) return void 0;
+  if (typeof json === "string") return json;
+  if (!Array.isArray(json)) return void 0;
+  return json.map((arg) => {
+    if (arg === "<null>") return null;
+    if (typeof arg === "object" && "group" in arg)
+      return { group: arg.group.map((x) => fromJson(x)) };
+    if (typeof arg === "object" && "atoms" in arg)
+      return arg.atoms.map((x) => fromJson(x));
+    return arg;
+  });
+}
+
+// src/editor-model/styling.ts
+function applyStyleToUnstyledAtoms(atom, style) {
+  if (!atom || !style) return;
+  if (isArray(atom)) {
+    atom.forEach((x) => applyStyleToUnstyledAtoms(x, style));
+  } else if (typeof atom === "object")
+    atom.applyStyle(style, { unstyledOnly: true });
+}
+function applyStyle(model, range2, style, options) {
+  function everyStyle(property, value) {
+    for (const atom of atoms) if (atom.style[property] !== value) return false;
+    return true;
+  }
+  range2 = model.normalizeRange(range2);
+  if (range2[0] === range2[1]) return false;
+  const atoms = model.getAtoms(range2, { includeChildren: true });
+  if (options.operation === "toggle") {
+    if (style.color && everyStyle("color", style.color)) {
+      style.color = "none";
+      delete style.verbatimColor;
+    }
+    if (style.backgroundColor && everyStyle("backgroundColor", style.backgroundColor)) {
+      style.backgroundColor = "none";
+      delete style.verbatimBackgroundColor;
+    }
+    if (style.fontFamily && everyStyle("fontFamily", style.fontFamily)) {
+      style.fontFamily = "none";
+    }
+    if (style.fontSeries && everyStyle("fontSeries", style.fontSeries)) {
+      style.fontSeries = "auto";
+    }
+    if (style.fontShape && everyStyle("fontShape", style.fontShape)) {
+      style.fontShape = "auto";
+    }
+    if (style.fontSize && everyStyle("fontSize", style.fontSize)) {
+      style.fontSize = DEFAULT_FONT_SIZE;
+    }
+    if (style.variant && everyStyle("variant", style.variant)) {
+      style.variant = "normal";
+    }
+    if (style.variantStyle && everyStyle("variantStyle", style.variantStyle)) {
+      style.variantStyle = "";
+    }
+  }
+  for (const atom of atoms) atom.applyStyle(style);
+  return true;
+}
+function addItalic(v) {
+  return {
+    "up": "italic",
+    "bold": "bolditalic",
+    "italic": "italic",
+    "bolditalic": "bolditalic",
+    "": "italic"
+  }[v != null ? v : ""];
+}
+function removeItalic(v) {
+  return {
+    "up": "up",
+    "bold": "bold",
+    "italic": void 0,
+    "bolditalic": "bold",
+    "": void 0
+  }[v != null ? v : ""];
+}
+
+// VisualTeX kernel: retain live macro-argument boundaries inside the parsed
+// atom tree. This command is internal and serializes transparently.
+defineFunction("visualtexmacroarg", "{index:string}{body:auto}", {
+  createAtom: (options) =>
+    new MacroArgumentAtom(
+      options.args[0] ?? 0,
+      argAtoms(options.args[1]),
+      options
+    )
+});
+
+// src/latex-commands/accents.ts
+var ACCENTS = {
+  acute: 714,
+  grave: 715,
+  dot: 729,
+  ddot: 168,
+  dddot: 8411,
+  ddddot: 8412,
+  mathring: 730,
+  tilde: 126,
+  bar: 713,
+  breve: 728,
+  check: 711,
+  hat: 94,
+  vec: 8407
+};
+defineFunction(Object.keys(ACCENTS), "{body:auto}", {
+  createAtom: (options) => new AccentAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    accentChar: ACCENTS[options.command.slice(1)]
+  }))
+});
+defineFunction(["widehat", "widecheck", "widetilde"], "{body:auto}", {
+  createAtom: (options) => {
+    const baseString = parseArgAsString(argAtoms(options.args[0]));
+    return new AccentAtom(__spreadProps(__spreadValues({}, options), {
+      body: argAtoms(options.args[0]),
+      svgAccent: options.command.slice(1) + (baseString.length > 5 ? "4" : ["1", "1", "2", "2", "3", "3"][baseString.length])
+    }));
+  }
+});
+defineFunction(["overarc", "overparen", "wideparen"], "{body:auto}", {
+  createAtom: (options) => {
+    return new AccentAtom(__spreadProps(__spreadValues({}, options), {
+      body: argAtoms(options.args[0]),
+      svgAccent: "overarc"
+    }));
+  }
+});
+defineFunction(["underarc", "underparen"], "{body:auto}", {
+  createAtom: (options) => {
+    return new OverunderAtom(__spreadProps(__spreadValues({}, options), {
+      body: argAtoms(options.args[0]),
+      svgBelow: "underarc"
+    }));
+  }
+});
+defineFunction("utilde", "{body:auto}", {
+  createAtom: (options) => {
+    const body = argAtoms(options.args[0]);
+    const baseString = parseArgAsString(body);
+    const accent = "widetilde" + (baseString.length > 5 ? "4" : ["1", "1", "2", "2", "3", "3"][baseString.length]);
+    return new OverunderAtom(__spreadProps(__spreadValues({}, options), {
+      body,
+      svgBelow: accent,
+      boxType: atomsBoxType(body)
+    }));
+  }
+});
+defineFunction("^", "{:string}", {
+  createAtom: (options) => {
+    var _a3;
+    return new Atom(__spreadProps(__spreadValues({}, options), {
+      type: "mord",
+      isFunction: false,
+      limits: "adjacent",
+      value: options.args[0] ? (_a3 = {
+        a: "\xE2",
+        e: "\xEA",
+        i: "\xEE",
+        o: "\xF4",
+        u: "\xFB",
+        A: "\xC2",
+        E: "\xCA",
+        I: "\xCE",
+        O: "\xD4",
+        U: "\xDB"
+      }[options.args[0]]) != null ? _a3 : "^" : "^"
+    }));
+  }
+});
+defineFunction("`", "{:string}", {
+  createAtom: (options) => {
+    var _a3;
+    return new Atom(__spreadProps(__spreadValues({}, options), {
+      type: "mord",
+      isFunction: false,
+      limits: "adjacent",
+      value: options.args[0] ? (_a3 = {
+        a: "\xE0",
+        e: "\xE8",
+        i: "\xEC",
+        o: "\xF2",
+        u: "\xF9",
+        A: "\xC0",
+        E: "\xC8",
+        I: "\xCC",
+        O: "\xD2",
+        U: "\xD9"
+      }[options.args[0]]) != null ? _a3 : "`" : "`"
+    }));
+  }
+});
+defineFunction("'", "{:string}", {
+  createAtom: (options) => {
+    var _a3;
+    return new Atom(__spreadProps(__spreadValues({}, options), {
+      type: "mord",
+      isFunction: false,
+      limits: "adjacent",
+      value: options.args[0] ? (_a3 = {
+        a: "\xE1",
+        e: "\xE9",
+        i: "\xED",
+        o: "\xF3",
+        u: "\xFA",
+        A: "\xC1",
+        E: "\xC9",
+        I: "\xCD",
+        O: "\xD3",
+        U: "\xDA"
+      }[options.args[0]]) != null ? _a3 : "'" : "'"
+    }));
+  }
+});
+defineFunction('"', "{:string}", {
+  createAtom: (options) => {
+    var _a3, _b3;
+    return new Atom(__spreadProps(__spreadValues({}, options), {
+      type: "mord",
+      isFunction: false,
+      limits: "adjacent",
+      value: ((_a3 = options.args) == null ? void 0 : _a3[0]) ? (_b3 = {
+        a: "\xE4",
+        e: "\xEB",
+        i: "\xEF",
+        o: "\xF6",
+        u: "\xFC",
+        A: "\xC4",
+        E: "\xCB",
+        I: "\xCB",
+        O: "\xD6",
+        U: "\xDC"
+      }[options.args[0]]) != null ? _b3 : '"' + options.args[0] : '"'
+    }));
+  }
+});
+defineFunction(".", "{:string}", {
+  createAtom: (options) => {
+    var _a3, _b3;
+    return new Atom(__spreadProps(__spreadValues({}, options), {
+      type: "mord",
+      isFunction: false,
+      limits: "adjacent",
+      value: ((_a3 = options.args) == null ? void 0 : _a3[0]) ? (_b3 = {
+        // a with single dot above
+        a: "\u0227",
+        e: "\u0117",
+        // i with single dot above (combining character)
+        i: "\u0307i",
+        o: "\u022F",
+        // U with single dot above (combining character)
+        u: "\u0307u",
+        A: "\u0226",
+        E: "\u0116",
+        I: "\u0130",
+        O: "\u022E",
+        // U with single dot above (combining character)
+        U: "\u0307U"
+      }[options.args[0]]) != null ? _b3 : "." + options.args[0] : "."
+    }));
+  }
+});
+defineFunction("=", "{:string}", {
+  createAtom: (options) => {
+    var _a3, _b3;
+    return new Atom(__spreadProps(__spreadValues({}, options), {
+      type: "mord",
+      isFunction: false,
+      limits: "adjacent",
+      value: ((_a3 = options.args) == null ? void 0 : _a3[0]) ? (_b3 = {
+        // a with macron
+        a: "\u0101",
+        e: "\u0113",
+        i: "\u012B",
+        o: "\u014D",
+        u: "\u016B",
+        A: "\u0100",
+        E: "\u0112",
+        I: "\u012A",
+        O: "\u014C",
+        U: "\u016A"
+      }[options.args[0]]) != null ? _b3 : "=" + options.args[0] : "="
+      // fallback
+    }));
+  }
+});
+defineFunction("~", "{:string}", {
+  createAtom: (options) => {
+    var _a3;
+    return new Atom(__spreadProps(__spreadValues({
+      type: "mord"
+    }, options), {
+      isFunction: false,
+      limits: "adjacent",
+      value: options.args[0] ? (_a3 = { n: "\xF1", N: "\xD1", a: "\xE3", o: "\xF5", A: "\xC3", O: "\xD5" }[options.args[0]]) != null ? _a3 : "\xB4" : "\xB4"
+    }));
+  }
+});
+defineFunction("c", "{:string}", {
+  createAtom: (options) => {
+    var _a3;
+    return new Atom(__spreadProps(__spreadValues({}, options), {
+      type: "mord",
+      isFunction: false,
+      limits: "adjacent",
+      value: options.args[0] ? (_a3 = { c: "\xE7", C: "\xC7" }[options.args[0]]) != null ? _a3 : "" : ""
+    }));
+  }
+});
+
+// src/latex-commands/enclose.ts
+defineFunction("enclose", "{notation:string}[style:string]{body:auto}", {
+  createAtom: (atomOptions) => {
+    var _a3, _b3;
+    const args = atomOptions.args;
+    const options = {
+      strokeColor: "currentColor",
+      strokeWidth: "",
+      strokeStyle: "solid",
+      backgroundcolor: "transparent",
+      padding: "auto",
+      shadow: "none",
+      svgStrokeStyle: void 0,
+      borderStyle: void 0,
+      style: (_a3 = atomOptions.style) != null ? _a3 : {}
+    };
+    if (args[1]) {
+      const styles = args[1].split(/,(?![^(]*\)(?:(?:[^(]*\)){2})*[^"]*$)/);
+      for (const s of styles) {
+        const shorthand = s.match(/\s*(\S+)\s+(\S+)\s+(.*)/);
+        if (shorthand) {
+          options.strokeWidth = shorthand[1];
+          options.strokeStyle = shorthand[2];
+          options.strokeColor = shorthand[3];
+        } else {
+          const attribute = s.match(/\s*([a-z]*)\s*=\s*"(.*)"/);
+          if (attribute) {
+            if (attribute[1] === "mathbackground")
+              options.backgroundcolor = attribute[2];
+            else if (attribute[1] === "mathcolor")
+              options.strokeColor = attribute[2];
+            else if (attribute[1] === "padding") options.padding = attribute[2];
+            else if (attribute[1] === "shadow") options.shadow = attribute[2];
+          }
+        }
+      }
+      if (options.strokeStyle === "dashed") options.svgStrokeStyle = "5,5";
+      else if (options.strokeStyle === "dotted") options.svgStrokeStyle = "1,5";
+    }
+    options.borderStyle = `${options.strokeWidth} ${options.strokeStyle} ${options.strokeColor}`;
+    const notation = {};
+    ((_b3 = args[0]) != null ? _b3 : "").split(/[, ]/).filter((v) => v.length > 0).forEach((x) => {
+      notation[x.toLowerCase()] = true;
+    });
+    return new EncloseAtom(
+      atomOptions.command,
+      argAtoms(args[2]),
+      notation,
+      options
+    );
+  }
+});
+defineFunction("cancel", "{body:auto}", {
+  createAtom: (options) => {
+    var _a3;
+    return new EncloseAtom(
+      options.command,
+      argAtoms(options.args[0]),
+      { updiagonalstrike: true },
+      {
+        strokeColor: "currentColor",
+        strokeWidth: "",
+        strokeStyle: "solid",
+        borderStyle: "1px solid currentColor",
+        backgroundcolor: "transparent",
+        padding: "auto",
+        shadow: "none",
+        style: (_a3 = options.style) != null ? _a3 : {}
+      }
+    );
+  }
+});
+defineFunction("bcancel", "{body:auto}", {
+  createAtom: (options) => {
+    var _a3;
+    return new EncloseAtom(
+      options.command,
+      argAtoms(options.args[0]),
+      { downdiagonalstrike: true },
+      {
+        strokeColor: "currentColor",
+        strokeWidth: "",
+        strokeStyle: "solid",
+        borderStyle: "1px solid currentColor",
+        backgroundcolor: "transparent",
+        padding: "auto",
+        shadow: "none",
+        style: (_a3 = options.style) != null ? _a3 : {}
+      }
+    );
+  }
+});
+defineFunction("xcancel", "{body:auto}", {
+  createAtom: (options) => {
+    var _a3;
+    return new EncloseAtom(
+      options.command,
+      argAtoms(options.args[0]),
+      { updiagonalstrike: true, downdiagonalstrike: true },
+      {
+        strokeColor: "currentColor",
+        strokeWidth: "",
+        strokeStyle: "solid",
+        borderStyle: "1px solid currentColor",
+        backgroundcolor: "transparent",
+        padding: "auto",
+        shadow: "none",
+        style: (_a3 = options.style) != null ? _a3 : {}
+      }
+    );
+  }
+});
+
+// src/latex-commands/environments.ts
+defineRootEnvironment(["math", "displaymath"], makeEnvironment);
+defineRootEnvironment("center", makeEnvironment);
+defineTabularEnvironment(["multline", "multline*"], "", makeEnvironment);
+defineFunction("displaylines", "", {
+  parse: (parser) => {
+    parser.skipWhitespace();
+    if (!parser.match("<{>")) return [];
+    const lines = [];
+    let line = [];
+    if (parser.mathlist.length > 0) lines.push([parser.mathlist]);
+    parser.beginContext({ tabular: true, root: true });
+    do {
+      if (parser.end() || parser.match("<}>")) break;
+      if (parser.matchColumnSeparator() || parser.matchRowSeparator()) {
+        lines.push([line]);
+        line = [];
+      } else {
+        line.push(
+          ...parser.scan(
+            (token) => ["<}>", "&", "\\cr", "\\\\", "\\tabularnewline"].includes(token)
+          )
+        );
+      }
+    } while (true);
+    parser.endContext();
+    lines.push([line]);
+    const rhs = parser.scan();
+    if (rhs.length > 0) lines.push([rhs]);
+    return lines;
+  },
+  createAtom: (options) => new ArrayAtom("lines", options.args, [], {
+    // arraystretch: 1.2,
+    leftDelim: ".",
+    rightDelim: ".",
+    columns: [{ align: "l" }],
+    classes: ["ML__multiline_environment"],
+    isRoot: true,
+    minColumns: 1,
+    maxColumns: 1,
+    minRows: 1
+  })
+});
+defineTabularEnvironment("split", "", makeEnvironment);
+defineTabularEnvironment(
+  ["gather", "gather*", "gathered"],
+  "",
+  makeEnvironment
+);
+defineTabularEnvironment(
+  ["equation", "equation*", "subequations"],
+  "",
+  makeEnvironment
+);
+defineRootEnvironment(["align", "align*", "eqnarray"], makeEnvironment, {
+  tabular: true
+});
+defineTabularEnvironment(["aligned"], "", makeEnvironment);
+defineTabularEnvironment(
+  "array",
+  "{columns:colspec}",
+  (name, array, rowGaps, args) => {
+    return new ArrayAtom(name, array, rowGaps, {
+      columns: args[0],
+      mathstyleName: "textstyle"
+    });
+  }
+);
+defineTabularEnvironment(
+  [
+    "matrix",
+    "pmatrix",
+    "bmatrix",
+    "Bmatrix",
+    "vmatrix",
+    "Vmatrix",
+    "matrix*",
+    "pmatrix*",
+    "bmatrix*",
+    "Bmatrix*",
+    "vmatrix*",
+    "Vmatrix*"
+  ],
+  "[columns:colspec]",
+  makeEnvironment
+);
+defineTabularEnvironment(
+  ["smallmatrix", "smallmatrix*"],
+  "[columns:colspec]",
+  makeEnvironment
+);
+// physics.sty matrix shorthands need a real tabular parse. A regular MathLive
+// macro expands too late: its argument ampersands become literal \& atoms and
+// source serialization loses the matrix column separators.
+var VISUALTEX_PHYSICS_MATRIX_WRAPPERS = {
+  pmqty: ["\\begin{pmatrix}", "\\end{pmatrix}"],
+  Pmqty: ["\\left\\lgroup\\begin{matrix}", "\\end{matrix}\\right\\rgroup"],
+  bmqty: ["\\begin{bmatrix}", "\\end{bmatrix}"],
+  vmqty: ["\\begin{vmatrix}", "\\end{vmatrix}"],
+  matrixquantity: ["\\begin{matrix}", "\\end{matrix}"],
+  mqty: ["\\begin{matrix}", "\\end{matrix}"],
+  matrixdeterminant: ["\\begin{vmatrix}", "\\end{vmatrix}"],
+  mdet: ["\\begin{vmatrix}", "\\end{vmatrix}"],
+  spmqty: ["\\left(\\begin{smallmatrix}", "\\end{smallmatrix}\\right)"],
+  sPmqty: ["\\left\\lgroup\\begin{smallmatrix}", "\\end{smallmatrix}\\right\\rgroup"],
+  sbmqty: ["\\left[\\begin{smallmatrix}", "\\end{smallmatrix}\\right]"],
+  svmqty: ["\\left\\lvert\\begin{smallmatrix}", "\\end{smallmatrix}\\right\\rvert"],
+  smallmatrixquantity: ["\\begin{smallmatrix}", "\\end{smallmatrix}"],
+  smqty: ["\\begin{smallmatrix}", "\\end{smallmatrix}"],
+  smallmatrixdeterminant: ["\\left\\lvert\\begin{smallmatrix}", "\\end{smallmatrix}\\right\\rvert"],
+  smdet: ["\\left\\lvert\\begin{smallmatrix}", "\\end{smallmatrix}\\right\\rvert"]
+};
+defineFunction(Object.keys(VISUALTEX_PHYSICS_MATRIX_WRAPPERS), "", {
+  ifMode: "math",
+  parse: (parser) => {
+    parser.skipWhitespace();
+    if (parser.peek() !== "<{>") {
+      parser.onError({ code: "missing-argument" });
+      return [""];
+    }
+    return [parser.scanLiteralGroup()];
+  },
+  createAtom: (options) => {
+    const [open, close] = VISUALTEX_PHYSICS_MATRIX_WRAPPERS[options.command.slice(1)];
+    const argument = options.args[0] ?? "";
+    const atom = new MacroAtom(options.command, {
+      args: `{${argument}}`,
+      body: parseLatex(open + argument + close),
+      style: options.style,
+      expand: false,
+      captureSelection: false
+    });
+    atom._serialize = (serializeOptions) => {
+      const expanded = atom.bodyToLatex(serializeOptions);
+      if (!expanded.startsWith(open) || !expanded.endsWith(close)) return expanded;
+      return options.command + "{" + expanded.slice(open.length, -close.length) + "}";
+    };
+    return atom;
+  }
+});
+// A tracked source argument must contain the real array, not a flat A\\B
+// string, so vertical navigation can traverse \\substack rows.
+defineFunction("substack", "", {
+  ifMode: "math",
+  parse: (parser) => {
+    parser.skipWhitespace();
+    if (parser.peek() !== "<{>") {
+      parser.onError({ code: "missing-argument" });
+      return [""];
+    }
+    return [parser.scanLiteralGroup()];
+  },
+  createAtom: (options) => {
+    const argument = options.args[0] ?? "";
+    const open = "\\begin{array}{c}";
+    const close = "\\end{array}";
+    const tracked = new MacroArgumentAtom(
+      1,
+      parseLatex(open + argument + close),
+      { style: options.style }
+    );
+    const atom = new MacroAtom(options.command, {
+      args: `{${argument}}`,
+      argumentCount: 1,
+      body: [tracked],
+      style: options.style,
+      expand: false,
+      captureSelection: false
+    });
+    atom._serialize = (serializeOptions) => {
+      const expanded = tracked.bodyToLatex(serializeOptions);
+      if (!expanded.startsWith(open) || !expanded.endsWith(close)) return expanded;
+      return options.command + "{" + expanded.slice(open.length, -close.length) + "}";
+    };
+    return atom;
+  }
+});
+// \qq and \qqtext have text arguments. A generic macro reparses their text
+// wrapper into the editable argument and rewrites \qq{if} as \qq{\text{if}}.
+defineFunction(["qq", "qqtext"], "", {
+  ifMode: "math",
+  parse: (parser) => {
+    parser.skipWhitespace();
+    if (parser.peek() !== "<{>") {
+      parser.onError({ code: "missing-argument" });
+      return [""];
+    }
+    return [parser.scanLiteralGroup()];
+  },
+  createAtom: (options) => {
+    const argument = options.args[0] ?? "";
+    const open = "\\quad\\text{";
+    const close = "}\\quad";
+    const atom = new MacroAtom(options.command, {
+      args: `{${argument}}`,
+      body: parseLatex(open + argument + close),
+      style: options.style,
+      expand: false,
+      captureSelection: false
+    });
+    atom._serialize = (serializeOptions) => {
+      const expanded = atom.bodyToLatex(serializeOptions);
+      if (!expanded.startsWith(open) || !expanded.endsWith(close)) return expanded;
+      return options.command + "{" + expanded.slice(open.length, -close.length) + "}";
+    };
+    return atom;
+  }
+});
+defineTabularEnvironment(["cases", "dcases", "rcases"], "", makeEnvironment);
+function makeEnvironment(name, content = [[[]]], rowGaps = [], args = [], maxMatrixCols) {
+  switch (name) {
+    case "math":
+      return new ArrayAtom(name, content, rowGaps, {
+        mathstyleName: "textstyle",
+        isRoot: true,
+        minColumns: 1,
+        maxColumns: 1,
+        minRows: 1,
+        maxRows: 1
+      });
+    case "displaymath":
+      return new ArrayAtom(name, content, rowGaps, {
+        mathstyleName: "textstyle",
+        isRoot: true,
+        minColumns: 1,
+        maxColumns: 1,
+        minRows: 1,
+        maxRows: 1
+      });
+    case "center":
+      return new ArrayAtom(name, content, rowGaps, {
+        columns: [{ align: "c" }],
+        classes: ["ML__center_environment"],
+        isRoot: true,
+        minColumns: 1,
+        maxColumns: 1,
+        minRows: 1,
+        maxRows: 1
+      });
+    case "multline":
+    case "multline*":
+      return new ArrayAtom(name, content, rowGaps, {
+        columns: [{ align: "m" }],
+        leftDelim: ".",
+        rightDelim: ".",
+        isRoot: true,
+        minColumns: 1,
+        maxColumns: 1,
+        minRows: 1
+      });
+    case "split":
+      return new ArrayAtom(name, content, rowGaps, {
+        columns: [{ align: "r" }, { align: "l" }],
+        minColumns: 2,
+        minRows: 1,
+        isRoot: false
+      });
+    case "gather":
+    case "gather*":
+      return new ArrayAtom(name, content, rowGaps, {
+        columns: [{ gap: 0.25 }, { align: "c" }, { gap: 0 }],
+        // colSeparationType: 'gather',
+        minColumns: 1,
+        maxColumns: 1,
+        minRows: 1,
+        isRoot: true,
+        classes: ["ML__gather_environment"]
+      });
+    case "gathered":
+      return new ArrayAtom(name, content, rowGaps, {
+        columns: [{ gap: 0.25 }, { align: "c" }, { gap: 0 }],
+        // colSeparationType: 'gather',
+        minColumns: 1,
+        maxColumns: 1,
+        minRows: 1
+      });
+    case "equation":
+    case "equation*":
+    case "subequations":
+      return new ArrayAtom(name, content, rowGaps, {
+        columns: [{ align: "c" }],
+        isRoot: true,
+        minColumns: 1,
+        maxColumns: 1,
+        minRows: 1
+      });
+    case "aligned": {
+      let colCount = 0;
+      for (const row of content) colCount = Math.max(colCount, row.length);
+      const columns = [
+        { gap: 0 },
+        { align: "r" },
+        { gap: 0.25 },
+        { align: "l" }
+      ];
+      let i = 2;
+      while (i < colCount) {
+        columns.push({ gap: 1 }, { align: "r" }, { gap: 0.25 }, { align: "l" });
+        i += 2;
+      }
+      columns.push({ gap: 0 });
+      return new ArrayAtom(name, content, rowGaps, {
+        arraycolsep: 0,
+        columns,
+        // colSeparationType: 'align',
+        minColumns: 2,
+        minRows: 1,
+        isRoot: name !== "aligned"
+      });
+    }
+    case "eqnarray":
+      return new ArrayAtom(name, content, rowGaps, {
+        arraycolsep: 0,
+        columns: [{ gap: 0 }, { align: "r" }, { align: "c" }, { align: "l" }],
+        minColumns: 3,
+        maxColumns: 3,
+        minRows: 1,
+        isRoot: true,
+        classes: ["ML__eqnarray_environment"]
+      });
+    case "align":
+    case "align*":
+      return new ArrayAtom(name, content, rowGaps, {
+        arraycolsep: 0,
+        columns: [{ gap: 0 }, { align: "r" }, { gap: 0.25 }, { align: "l" }],
+        minColumns: 2,
+        maxColumns: 2,
+        minRows: 1,
+        isRoot: true,
+        classes: ["ML__align_environment"]
+      });
+    case "pmatrix":
+    case "pmatrix*":
+      return new ArrayAtom(name, content, rowGaps, {
+        mathstyleName: "textstyle",
+        leftDelim: "(",
+        rightDelim: ")",
+        columns: defaultColumns(args[0], maxMatrixCols)
+      });
+    case "bmatrix":
+    case "bmatrix*":
+      return new ArrayAtom(name, content, rowGaps, {
+        mathstyleName: "textstyle",
+        leftDelim: "[",
+        rightDelim: "]",
+        columns: defaultColumns(args[0], maxMatrixCols)
+      });
+    case "Bmatrix":
+    case "Bmatrix*":
+      return new ArrayAtom(name, content, rowGaps, {
+        mathstyleName: "textstyle",
+        leftDelim: "\\lbrace",
+        rightDelim: "\\rbrace",
+        columns: defaultColumns(args[0], maxMatrixCols)
+      });
+    case "vmatrix":
+    case "vmatrix*":
+      return new ArrayAtom(name, content, rowGaps, {
+        mathstyleName: "textstyle",
+        leftDelim: "\\vert",
+        rightDelim: "\\vert",
+        columns: defaultColumns(args[0], maxMatrixCols)
+      });
+    case "Vmatrix":
+    case "Vmatrix*":
+      return new ArrayAtom(name, content, rowGaps, {
+        mathstyleName: "textstyle",
+        leftDelim: "\\Vert",
+        rightDelim: "\\Vert",
+        columns: defaultColumns(args[0], maxMatrixCols)
+      });
+    case "matrix":
+    case "matrix*":
+      return new ArrayAtom(name, content, rowGaps, {
+        mathstyleName: "textstyle",
+        leftDelim: ".",
+        rightDelim: ".",
+        columns: defaultColumns(args == null ? void 0 : args[0], maxMatrixCols)
+      });
+    case "smallmatrix":
+    case "smallmatrix*":
+      return new ArrayAtom(name, content, rowGaps, {
+        mathstyleName: "scriptstyle",
+        columns: defaultColumns(args == null ? void 0 : args[0], maxMatrixCols),
+        colSeparationType: "small",
+        arraystretch: 0.5
+      });
+    case "cases":
+    case "dcases":
+      return new ArrayAtom(name, content, rowGaps, {
+        mathstyleName: name === "dcases" ? "displaystyle" : "textstyle",
+        arraystretch: 1.2,
+        leftDelim: "\\lbrace",
+        rightDelim: ".",
+        columns: casesColumns()
+      });
+    case "rcases":
+      return new ArrayAtom(name, content, rowGaps, {
+        arraystretch: 1.2,
+        leftDelim: ".",
+        rightDelim: "\\rbrace",
+        columns: casesColumns()
+      });
+    case "lines":
+      return new ArrayAtom(name, content, rowGaps, {
+        // arraystretch: 1.2,
+        leftDelim: ".",
+        rightDelim: ".",
+        columns: [{ align: "l" }],
+        isRoot: true,
+        minColumns: 1,
+        maxColumns: 1,
+        minRows: 1
+      });
+  }
+  return new ArrayAtom(name, content, rowGaps, {
+    mathstyleName: "textstyle"
+  });
+}
+function defaultColumns(args, maxMatrixCols = 10) {
+  return args != null ? args : Array(maxMatrixCols).fill({ align: "c" });
+}
+function casesColumns(maxCasesColumns = 10) {
+  const columns = [];
+  for (let i = 0; i < maxCasesColumns; i++) {
+    if (i > 0) columns.push({ gap: 1 });
+    columns.push({ align: "l" });
+  }
+  return columns;
+}
+
+// src/latex-commands/extensible-symbols.ts
+defineFunction(
+  [
+    "overrightarrow",
+    "overleftarrow",
+    "Overrightarrow",
+    "overleftharpoon",
+    "overrightharpoon",
+    "overleftrightarrow",
+    "overlinesegment",
+    "overgroup"
+  ],
+  "{:auto}",
+  {
+    createAtom: (options) => {
+      var _a3;
+      return new OverunderAtom(__spreadProps(__spreadValues({}, options), {
+        body: argAtoms((_a3 = options.args) == null ? void 0 : _a3[0]),
+        skipBoundary: false,
+        supsubPlacement: "over-under",
+        paddedBody: true,
+        boxType: "rel",
+        // Set the "svgAbove" to the name of a SVG object (which is the same
+        // as the command name)
+        svgAbove: options.command.slice(1)
+      }));
+    }
+  }
+);
+defineFunction("overbrace", "{:auto}", {
+  createAtom: (options) => new OverunderAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    skipBoundary: false,
+    supsubPlacement: "over-under",
+    paddedBody: true,
+    boxType: "ord",
+    svgAbove: options.command.slice(1)
+  }))
+});
+defineFunction(
+  [
+    "underrightarrow",
+    "underleftarrow",
+    "underleftrightarrow",
+    "underlinesegment",
+    "undergroup"
+  ],
+  "{:auto}",
+  {
+    createAtom: (options) => new OverunderAtom(__spreadProps(__spreadValues({}, options), {
+      body: argAtoms(options.args[0]),
+      skipBoundary: false,
+      supsubPlacement: "over-under",
+      paddedBody: true,
+      boxType: "rel",
+      // Set the "svgBelow" to the name of a SVG object (which is the same
+      // as the command name)
+      svgBelow: options.command.slice(1)
+    }))
+  }
+);
+defineFunction(["underbrace"], "{:auto}", {
+  createAtom: (options) => new OverunderAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    skipBoundary: false,
+    supsubPlacement: "over-under",
+    paddedBody: true,
+    boxType: "ord",
+    svgBelow: options.command.slice(1)
+  }))
+});
+defineFunction(
+  [
+    "xrightarrow",
+    "longrightarrow",
+    // From mhchem.sty package
+    "xleftarrow",
+    "longleftarrow",
+    // From mhchem.sty package
+    "xRightarrow",
+    "xLeftarrow",
+    "xleftharpoonup",
+    "xleftharpoondown",
+    "xrightharpoonup",
+    "xrightharpoondown",
+    "xlongequal",
+    "xtwoheadleftarrow",
+    "xtwoheadrightarrow",
+    "xleftrightarrow",
+    "longleftrightarrow",
+    // From mhchem.sty package
+    "xLeftrightarrow",
+    "xrightleftharpoons",
+    // From mhchem.sty package
+    "longrightleftharpoons",
+    "xleftrightharpoons",
+    "xhookleftarrow",
+    "xhookrightarrow",
+    "xmapsto",
+    "xtofrom",
+    "xleftrightarrows",
+    // From mhchem.sty package
+    "longleftrightarrows",
+    // From mhchem.sty package
+    "xRightleftharpoons",
+    // From mhchem.sty package
+    "longRightleftharpoons",
+    // From mhchem.sty package
+    "xLeftrightharpoons",
+    // From mhchem.sty package
+    "longLeftrightharpoons"
+    // From mhchem.sty package
+  ],
+  "[:auto]{:auto}",
+  {
+    createAtom: (options) => {
+      var _a3, _b3, _c2, _d2, _e;
+      return new OverunderAtom(__spreadProps(__spreadValues({}, options), {
+        // Set the "svgBody" to the name of a SVG object (which is the same
+        // as the command name)
+        svgBody: options.command.slice(1),
+        // The overscript is optional, i.e. `\xtofrom` is valid
+        above: ((_b3 = argAtoms((_a3 = options.args) == null ? void 0 : _a3[1])) == null ? void 0 : _b3.length) === 0 ? void 0 : argAtoms((_c2 = options.args) == null ? void 0 : _c2[1]),
+        below: (_e = argAtoms((_d2 = options.args) == null ? void 0 : _d2[0])) != null ? _e : null,
+        skipBoundary: false,
+        supsubPlacement: "over-under",
+        paddedBody: true,
+        paddedLabels: true,
+        boxType: "rel"
+      }));
+    },
+    serialize: (atom, options) => atom.command + (!atom.hasEmptyBranch("below") ? `[${atom.belowToLatex(options)}]` : "") + `{${atom.aboveToLatex(options)}}${atom.supsubToLatex(options)}`
+  }
+);
+
+// src/latex-commands/functions.ts
+defineFunction(
+  [
+    "arccos",
+    "arcsin",
+    "arctan",
+    "arctg",
+    // Not LaTeX standard. Used in France
+    "arcctg",
+    // Not LaTeX standard. Used in France
+    "arg",
+    "ch",
+    // Not LaTeX standard. \cosh
+    "cos",
+    "cosh",
+    "cot",
+    "cotg",
+    // Not LaTeX standard. Used in France
+    "coth",
+    "ctg",
+    // Not LaTeX standard. Used in France
+    "cth",
+    "csc",
+    // Not LaTeX standard. \cth
+    "cosec",
+    // Not LaTeX standard.
+    "deg",
+    "dim",
+    "exp",
+    "gcd",
+    "hom",
+    "inf",
+    "ker",
+    "lb",
+    // Not LaTeX standard. US Dept of Commerce recommendation for log2
+    "lg",
+    // Not LaTeX standard. In German and Russian literature,  log10.
+    // Sometimes used as the log2
+    "ln",
+    "log",
+    "Pr",
+    "sec",
+    "sh",
+    // Not LaTeX standard. \sinh
+    "sin",
+    "sinh",
+    "sup",
+    "tan",
+    "tanh",
+    "tg",
+    // Not LaTeX standard. Used in France
+    "th",
+    // Not LaTeX standard. \tanh
+    "arcsec",
+    // Not LaTeX standard.
+    "arccsc",
+    // Not LaTeX standard.
+    "arsinh",
+    "arcosh",
+    "artanh",
+    "arcsech",
+    // Not LaTeX standard.
+    "arccsch"
+  ],
+  "",
+  {
+    isFunction: true,
+    ifMode: "math",
+    createAtom: (options) => new OperatorAtom(options.command.slice(1), __spreadProps(__spreadValues({}, options), {
+      limits: "adjacent",
+      isFunction: true,
+      variant: "main",
+      variantStyle: "up"
+    }))
+  }
+);
+defineFunction(["liminf", "limsup"], "", {
+  ifMode: "math",
+  createAtom: (options) => new OperatorAtom(
+    { "\\liminf": "lim inf", "\\limsup": "lim sup" }[options.command],
+    __spreadProps(__spreadValues({}, options), { limits: "over-under", variant: "main" })
+  )
+});
+defineFunction(["lim", "mod"], "", {
+  ifMode: "math",
+  createAtom: (options) => new OperatorAtom(options.command.slice(1), __spreadProps(__spreadValues({}, options), {
+    limits: "over-under",
+    variant: "main"
+  }))
+});
+defineFunction(["det", "max", "min"], "", {
+  ifMode: "math",
+  isFunction: true,
+  createAtom: (options) => new OperatorAtom(options.command.slice(1), __spreadProps(__spreadValues({}, options), {
+    limits: "over-under",
+    isFunction: true,
+    variant: "main"
+  }))
+});
+defineFunction("ang", "{:math}", {
+  ifMode: "math",
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { body: argAtoms(options.args[0]) })),
+  serialize: (atom, options) => `\\ang{${atom.bodyToLatex(options)}}`,
+  render: (atom, context) => {
+    const box = atom.createBox(context);
+    const caret = box.caret;
+    box.caret = void 0;
+    const deg = new Box("\xB0", {
+      style: __spreadProps(__spreadValues({}, atom.style), { variant: "normal", variantStyle: "up" })
+    });
+    return new Box([box, deg], {
+      type: "inner",
+      isSelected: atom.isSelected,
+      caret
+    });
+  }
+});
+defineFunction("sqrt", "[index:auto]{radicand:expression}", {
+  ifMode: "math",
+  createAtom: (options) => new SurdAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[1]),
+    index: options.args[0] ? argAtoms(options.args[0]) : void 0
+  }))
+});
+defineFunction(
+  ["frac", "dfrac", "tfrac", "binom", "dbinom", "tbinom"],
+  "{:expression}{:expression}",
+  {
+    ifMode: "math",
+    createAtom: (options) => {
+      const genfracOptions = __spreadValues({}, options);
+      const command = options.command;
+      const args = options.args;
+      switch (command) {
+        case "\\dfrac":
+        case "\\frac":
+        case "\\tfrac":
+          genfracOptions.hasBarLine = true;
+          break;
+        case "\\atopfrac":
+          genfracOptions.hasBarLine = false;
+          break;
+        case "\\dbinom":
+        case "\\binom":
+        case "\\tbinom":
+          genfracOptions.hasBarLine = false;
+          genfracOptions.leftDelim = "(";
+          genfracOptions.rightDelim = ")";
+          break;
+        case "\\cfrac":
+          genfracOptions.hasBarLine = true;
+          genfracOptions.continuousFraction = true;
+          break;
+        default:
+      }
+      switch (command) {
+        case "\\dfrac":
+        case "\\dbinom":
+          genfracOptions.mathstyleName = "displaystyle";
+          break;
+        case "\\tfrac":
+        case "\\tbinom":
+          genfracOptions.mathstyleName = "textstyle";
+          break;
+        default:
+      }
+      return new GenfracAtom(
+        !args[0] ? [new PlaceholderAtom()] : argAtoms(args[0]),
+        !args[1] ? [new PlaceholderAtom()] : argAtoms(args[1]),
+        genfracOptions
+      );
+    },
+    serialize: (atom, options) => {
+      const numer = atom.aboveToLatex(options);
+      const denom = atom.belowToLatex(options);
+      if (/^[0-9]$/.test(numer) && /^[0-9]$/.test(denom))
+        return `${atom.command}${numer}${denom}`;
+      return latexCommand(atom.command, numer, denom);
+    }
+  }
+);
+defineFunction(["cfrac"], "[:string]{:expression}{:expression}", {
+  ifMode: "math",
+  createAtom: (options) => {
+    const genfracOptions = __spreadValues({}, options);
+    const args = options.args;
+    genfracOptions.hasBarLine = true;
+    genfracOptions.continuousFraction = true;
+    if (args[0] === "r") genfracOptions.align = "right";
+    if (args[0] === "l") genfracOptions.align = "left";
+    return new GenfracAtom(
+      !args[1] ? [new PlaceholderAtom()] : argAtoms(args[1]),
+      !args[2] ? [new PlaceholderAtom()] : argAtoms(args[2]),
+      genfracOptions
+    );
+  },
+  serialize: (atom, options) => {
+    const numer = atom.aboveToLatex(options);
+    const denom = atom.belowToLatex(options);
+    return latexCommand(atom.command, numer, denom);
+  }
+});
+defineFunction(["brace", "brack"], "", {
+  infix: true,
+  createAtom: (options) => new GenfracAtom(argAtoms(options.args[0]), argAtoms(options.args[1]), __spreadProps(__spreadValues({}, options), {
+    hasBarLine: false,
+    leftDelim: options.command === "\\brace" ? "\\lbrace" : "\\lbrack",
+    rightDelim: options.command === "\\brace" ? "\\rbrace" : "\\rbrack"
+  })),
+  serialize: (atom, options) => joinLatex([
+    atom.aboveToLatex(options),
+    atom.command,
+    atom.belowToLatex(options)
+  ])
+});
+defineFunction(["over", "atop", "choose"], "", {
+  infix: true,
+  createAtom: (options) => {
+    let leftDelim = void 0;
+    let rightDelim = void 0;
+    const args = options.args;
+    if (options.command === "\\choose") {
+      leftDelim = "(";
+      rightDelim = ")";
+    }
+    return new GenfracAtom(argAtoms(args[0]), argAtoms(args[1]), __spreadProps(__spreadValues({}, options), {
+      hasBarLine: options.command === "\\over",
+      leftDelim,
+      rightDelim
+    }));
+  },
+  serialize: (atom, options) => joinLatex([
+    atom.aboveToLatex(options),
+    atom.command,
+    atom.belowToLatex(options)
+  ])
+});
+defineFunction(
+  ["overwithdelims", "atopwithdelims"],
+  "{numer:auto}{denom:auto}{left-delim:delim}{right-delim:delim}",
+  {
+    infix: true,
+    createAtom: (options) => {
+      var _a3, _b3;
+      const args = options.args;
+      return new GenfracAtom(argAtoms(args[0]), argAtoms(args[1]), __spreadProps(__spreadValues({}, options), {
+        leftDelim: (_a3 = args[2]) != null ? _a3 : ".",
+        rightDelim: (_b3 = args[3]) != null ? _b3 : ".",
+        hasBarLine: false
+      }));
+    },
+    serialize: (atom, options) => `${atom.aboveToLatex(options)} ${atom.command}${atom.leftDelim}${atom.rightDelim}${atom.belowToLatex(options)}`
+  }
+);
+defineFunction("pdiff", "{numerator}{denominator}", {
+  ifMode: "math",
+  createAtom: (options) => new GenfracAtom(argAtoms(options.args[0]), argAtoms(options.args[1]), __spreadProps(__spreadValues({}, options), {
+    hasBarLine: true,
+    numerPrefix: "\u2202",
+    denomPrefix: "\u2202"
+  })),
+  serialize: (atom, options) => joinLatex([
+    atom.aboveToLatex(options),
+    atom.command,
+    atom.belowToLatex(options)
+  ])
+});
+defineFunction(
+  [
+    "sum",
+    "prod",
+    "bigcup",
+    "bigcap",
+    "coprod",
+    "bigvee",
+    "bigwedge",
+    "biguplus",
+    "bigotimes",
+    "bigoplus",
+    "bigodot",
+    "bigsqcup",
+    "intop"
+  ],
+  "",
+  {
+    ifMode: "math",
+    createAtom: (options) => new ExtensibleSymbolAtom(
+      {
+        coprod: "\u2210",
+        bigvee: "\u22C1",
+        bigwedge: "\u22C0",
+        biguplus: "\u2A04",
+        bigcap: "\u22C2",
+        bigcup: "\u22C3",
+        intop: "\u222B",
+        prod: "\u220F",
+        sum: "\u2211",
+        bigotimes: "\u2A02",
+        bigoplus: "\u2A01",
+        bigodot: "\u2A00",
+        bigsqcup: "\u2A06",
+        smallint: "\u222B"
+      }[options.command.slice(1)],
+      __spreadProps(__spreadValues({}, options), {
+        limits: "auto",
+        variant: "main"
+      })
+    )
+  }
+);
+defineFunction("smallint", "", {
+  ifMode: "math",
+  createAtom: (options) => new OperatorAtom("\u222B", __spreadProps(__spreadValues({}, options), {
+    limits: "adjacent",
+    variant: "main"
+  }))
+});
+var EXTENSIBLE_SYMBOLS = {
+  int: "\u222B",
+  iint: "\u222C",
+  iiint: "\u222D",
+  oint: "\u222E",
+  oiint: "\u222F",
+  oiiint: "\u2230",
+  intclockwise: "\u2231",
+  varointclockwise: "\u2232",
+  ointctrclockwise: "\u2233",
+  intctrclockwise: "\u2A11",
+  sqcup: "\u2294",
+  sqcap: "\u2293",
+  uplus: "\u228E",
+  wr: "\u2240",
+  amalg: "\u2A3F",
+  Cap: "\u22D2",
+  Cup: "\u22D3",
+  doublecap: "\u22D2",
+  doublecup: "\u22D3"
+};
+defineFunction(Object.keys(EXTENSIBLE_SYMBOLS), "", {
+  ifMode: "math",
+  createAtom: (options) => {
+    const command = options.command;
+    const symbol = EXTENSIBLE_SYMBOLS[command.slice(1)];
+    return new ExtensibleSymbolAtom(symbol, __spreadProps(__spreadValues({}, options), {
+      limits: "adjacent",
+      variant: { "\u22D2": "ams", "\u22D3": "ams" }[symbol]
+    }));
+  }
+});
+defineFunction(["Re", "Im"], "", {
+  ifMode: "math",
+  createAtom: (options) => new OperatorAtom(
+    { "\\Re": "\u211C", "\\Im": "\u2111" }[options.command],
+    __spreadProps(__spreadValues({}, options), {
+      limits: "adjacent",
+      isFunction: true,
+      variant: "fraktur"
+    })
+  )
+});
+defineFunction("middle", "{:delim}", {
+  ifMode: "math",
+  createAtom: (options) => {
+    var _a3;
+    return new MiddleDelimAtom(__spreadProps(__spreadValues({}, options), {
+      delim: (_a3 = options.args[0]) != null ? _a3 : "|",
+      size: 1
+    }));
+  }
+});
+defineFunction("the", "{:value}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), {
+    captureSelection: true,
+    verbatimLatex: null
+    // disable verbatim LaTeX
+  })),
+  render: (atom, parent) => {
+    var _a3;
+    const ctx = new Context({ parent }, atom.style);
+    let classes = "";
+    if (atom.isSelected) classes += " ML__selected";
+    const arg = ctx.evaluate(atom.args[0]);
+    return new Box(
+      ((_a3 = serializeLatexValue(arg)) != null ? _a3 : "").split("").map(
+        (x) => new Box(x, {
+          type: "ord",
+          classes,
+          mode: atom.mode,
+          isSelected: atom.isSelected,
+          style: __spreadValues({ variant: "main" }, atom.style)
+        })
+      ),
+      {
+        type: "lift",
+        style: atom.style,
+        caret: atom.caret,
+        isSelected: atom.isSelected,
+        classes
+      }
+    ).wrap(ctx);
+  },
+  serialize: (atom) => {
+    var _a3;
+    return `\\the${(_a3 = serializeLatexValue(atom.args[0])) != null ? _a3 : "\\relax"}`;
+  }
+});
+
+// src/latex-commands/styling.ts
+defineFunction("mathtip", "{:auto}{:math}", {
+  createAtom: (options) => new TooltipAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    tooltip: argAtoms(options.args[1]),
+    content: "math"
+  })),
+  serialize: (atom, options) => options.skipStyles ? atom.bodyToLatex(options) : `\\mathtip{${atom.bodyToLatex(options)}}{${Atom.serialize(
+    [atom.tooltip],
+    __spreadProps(__spreadValues({}, options), {
+      defaultMode: "math"
+    })
+  )}}`
+});
+defineFunction("texttip", "{:auto}{:text}", {
+  createAtom: (options) => new TooltipAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    tooltip: argAtoms(options.args[1]),
+    content: "text"
+  })),
+  serialize: (atom, options) => options.skipStyles ? atom.bodyToLatex(options) : `\\texttip{${atom.bodyToLatex(options)}}{${Atom.serialize(
+    [atom.tooltip],
+    __spreadProps(__spreadValues({}, options), {
+      defaultMode: "text"
+    })
+  )}}`
+});
+defineFunction("error", "{:math}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { body: argAtoms(options.args[0]) })),
+  serialize: (atom, options) => `\\error{${atom.bodyToLatex(options)}}`,
+  render: (atom, context) => atom.createBox(context, { classes: "ML__error" })
+});
+defineFunction("ensuremath", "{:math}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { body: argAtoms(options.args[0]) })),
+  serialize: (atom, options) => `${atom.command}{${atom.bodyToLatex(__spreadProps(__spreadValues({}, options), { defaultMode: "math" }))}}`
+});
+defineFunction("color", "{:value}", {
+  applyStyle: (style, _name, args, context) => {
+    var _a3, _b3;
+    return __spreadProps(__spreadValues({}, style), {
+      verbatimColor: (_a3 = serializeLatexValue(args[0])) != null ? _a3 : void 0,
+      color: context.toColor((_b3 = args[0]) != null ? _b3 : { string: "red" })
+    });
+  }
+});
+defineFunction("textcolor", "{:value}{content:auto*}", {
+  applyStyle: (style, _name, args, context) => {
+    var _a3, _b3;
+    return __spreadProps(__spreadValues({}, style), {
+      verbatimColor: (_a3 = serializeLatexValue(args[0])) != null ? _a3 : void 0,
+      color: context.toColor((_b3 = args[0]) != null ? _b3 : { string: "red" })
+    });
+  }
+});
+defineFunction("boxed", "{content:math}", {
+  createAtom: (options) => new BoxAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    framecolor: { string: "black" }
+  }))
+});
+defineFunction("colorbox", "{:value}{:text*}", {
+  applyStyle: (style, _name, args, context) => {
+    var _a3, _b3;
+    return __spreadProps(__spreadValues({}, style), {
+      verbatimBackgroundColor: (_a3 = serializeLatexValue(args[0])) != null ? _a3 : void 0,
+      backgroundColor: context.toBackgroundColor(
+        (_b3 = args[0]) != null ? _b3 : { string: "yellow" }
+      )
+    });
+  }
+});
+defineFunction(
+  "fcolorbox",
+  "{frame-color:value}{background-color:value}{content:text}",
+  {
+    applyMode: "text",
+    createAtom: (options) => {
+      var _a3, _b3;
+      return new BoxAtom(__spreadProps(__spreadValues({}, options), {
+        body: argAtoms(options.args[2]),
+        framecolor: (_a3 = options.args[0]) != null ? _a3 : { string: "blue" },
+        backgroundcolor: (_b3 = options.args[1]) != null ? _b3 : { string: "yellow" }
+      }));
+    },
+    serialize: (atom, options) => {
+      var _a3, _b3;
+      return options.skipStyles ? atom.bodyToLatex(__spreadProps(__spreadValues({}, options), { defaultMode: "text" })) : latexCommand(
+        atom.command,
+        (_a3 = serializeLatexValue(atom.framecolor)) != null ? _a3 : "",
+        (_b3 = serializeLatexValue(atom.backgroundcolor)) != null ? _b3 : "",
+        atom.bodyToLatex(__spreadProps(__spreadValues({}, options), { defaultMode: "text" }))
+      );
+    }
+  }
+);
+defineFunction("bbox", "[:bbox]{body:auto}", {
+  createAtom: (options) => {
+    var _a3;
+    const arg = options.args[0];
+    const body = argAtoms(options.args[1]);
+    if (!arg) return new BoxAtom(__spreadProps(__spreadValues({}, options), { body }));
+    return new BoxAtom(__spreadProps(__spreadValues({}, options), {
+      body,
+      padding: arg.padding,
+      border: arg.border,
+      backgroundcolor: (_a3 = arg.backgroundcolor) != null ? _a3 : void 0
+    }));
+  },
+  serialize: (atom, options) => {
+    var _a3, _b3;
+    if (options.skipStyles) return atom.bodyToLatex(options);
+    let result = atom.command;
+    if (Number.isFinite(atom.padding) || atom.border !== void 0 || atom.backgroundcolor !== void 0) {
+      const bboxParameters = [];
+      if (atom.padding)
+        bboxParameters.push((_a3 = serializeLatexValue(atom.padding)) != null ? _a3 : "");
+      if (atom.border) bboxParameters.push(`border: ${atom.border}`);
+      if (atom.backgroundcolor)
+        bboxParameters.push((_b3 = serializeLatexValue(atom.backgroundcolor)) != null ? _b3 : "");
+      result += `[${bboxParameters.join(",")}]`;
+    }
+    return latexCommand(result, atom.bodyToLatex(options));
+  }
+});
+defineFunction(
+  ["displaystyle", "textstyle", "scriptstyle", "scriptscriptstyle"],
+  "{:rest}",
+  {
+    createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { body: argAtoms(options.args[0]) })),
+    render: (atom, context) => {
+      const ctx = new Context(
+        { parent: context, mathstyle: atom.command.slice(1) },
+        atom.style
+      );
+      const box = Atom.createBox(ctx, atom.body, { type: "lift" });
+      if (atom.caret) box.caret = atom.caret;
+      return atom.bind(context, box);
+    },
+    serialize: (atom, options) => options.skipStyles ? atom.bodyToLatex(options) : `{${joinLatex([atom.command, atom.bodyToLatex(options)])}}`
+  }
+);
+defineFunction(
+  [
+    "tiny",
+    "scriptsize",
+    "footnotesize",
+    "small",
+    "normalsize",
+    "large",
+    "Large",
+    "LARGE",
+    "huge",
+    "Huge"
+  ],
+  "",
+  {
+    // TeX behaves very inconsistently when sizing commands are applied
+    // to math mode. We allow sizing commands to be applied in both math and
+    // text mode
+    applyStyle: (style, name) => {
+      return __spreadProps(__spreadValues({}, style), {
+        fontSize: {
+          "\\tiny": 1,
+          "\\scriptsize": 2,
+          // Not to be confused with \scriptstyle
+          "\\footnotesize": 3,
+          "\\small": 4,
+          "\\normalsize": 5,
+          "\\large": 6,
+          "\\Large": 7,
+          "\\LARGE": 8,
+          "\\huge": 9,
+          "\\Huge": 10
+        }[name]
+      });
+    }
+  }
+);
+defineFunction("fontseries", "{:string}", {
+  ifMode: "text",
+  applyStyle: (style, _name, args) => {
+    var _a3;
+    return __spreadProps(__spreadValues({}, style), { fontSeries: (_a3 = args[0]) != null ? _a3 : "auto" });
+  }
+});
+defineFunction("fontshape", "{:string}", {
+  ifMode: "text",
+  applyStyle: (style, _name, args) => {
+    var _a3;
+    return __spreadProps(__spreadValues({}, style), { fontShape: (_a3 = args[0]) != null ? _a3 : "auto" });
+  }
+});
+defineFunction("fontfamily", "{:string}", {
+  ifMode: "text",
+  applyStyle: (style, _name, args) => {
+    var _a3;
+    return __spreadProps(__spreadValues({}, style), { fontFamily: (_a3 = args[0]) != null ? _a3 : "roman" });
+  }
+});
+defineFunction("selectfont", "", {
+  ifMode: "text",
+  applyStyle: (style) => style
+});
+defineFunction("bf", "{:rest*}", {
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    fontSeries: "b",
+    fontShape: "n",
+    fontFamily: "roman"
+  })
+});
+defineFunction(["boldsymbol", "bm", "bold"], "{:math*}", {
+  applyMode: "math",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { variantStyle: "bold" })
+});
+defineFunction("bfseries", "{:rest*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontSeries: "b" })
+});
+defineFunction("mdseries", "{:rest*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontSeries: "m" })
+});

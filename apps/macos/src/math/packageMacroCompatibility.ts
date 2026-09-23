@@ -1,3 +1,6 @@
+import { VISUALTEX_CORE_MATHLIVE_MACROS } from "./coreLatexAliases";
+import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "./physicsKernelMacros";
+
 export interface VisualTexMathLiveMacroDefinition {
   def: string;
   args: number;
@@ -19,6 +22,20 @@ const macro = (
   expand: false,
   captureSelection: false,
 });
+
+/**
+ * Non-Vite/static MathLive consumers cannot see the VisualTeX-patched private
+ * DEFAULT_MACROS dictionary. Derive the fallback dictionary from the exact same
+ * core registry instead of maintaining a second list.
+ */
+export const VISUALTEX_CORE_MATHLIVE_COMPATIBILITY_MACROS = Object.freeze(
+  Object.fromEntries(
+    [...VISUALTEX_CORE_MATHLIVE_MACROS, ...VISUALTEX_PHYSICS_KERNEL_MACROS].map((definition) => [
+      definition.name,
+      macro(definition.def, definition.args),
+    ]),
+  ) as Record<string, VisualTexMathLiveMacroDefinition>,
+);
 
 /**
  * Curated package macros whose common braced forms can be represented exactly
@@ -53,7 +70,7 @@ export const VISUALTEX_MATHLIVE_PACKAGE_MACROS = Object.freeze({
     3,
   ),
   ketbra: macro(
-    "\\left\\lvert #1\\middle\\rangle\\!\\middle\\langle #2\\right\\rvert",
+    "\\left\\lvert #1\\right\\rangle\\!\\left\\langle #2\\right\\rvert",
     2,
   ),
   vb: macro("\\mathbf{#1}", 1),
@@ -62,12 +79,19 @@ export const VISUALTEX_MATHLIVE_PACKAGE_MACROS = Object.freeze({
 } satisfies Record<string, VisualTexMathLiveMacroDefinition>);
 
 export const VISUALTEX_MATHJAX_PACKAGE_MACROS = Object.freeze(
-  Object.fromEntries(
-    Object.entries(VISUALTEX_MATHLIVE_PACKAGE_MACROS).map(
+  Object.fromEntries([
+    ...[...VISUALTEX_CORE_MATHLIVE_MACROS, ...VISUALTEX_PHYSICS_KERNEL_MACROS].map(
+      (definition) =>
+        [
+          definition.name,
+          [definition.def, definition.args] as const,
+        ] as const,
+    ),
+    ...Object.entries(VISUALTEX_MATHLIVE_PACKAGE_MACROS).map(
       ([name, definition]) =>
         [name, [definition.def, definition.args] as const] as const,
     ),
-  ) as Record<string, VisualTexPackageMathJaxMacro>,
+  ]) as Record<string, VisualTexPackageMathJaxMacro>,
 );
 
 export const VISUALTEX_PACKAGE_MACRO_NAMES = Object.freeze(

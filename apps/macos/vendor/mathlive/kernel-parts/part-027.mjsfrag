@@ -1,0 +1,1649 @@
+        this.connectToVirtualKeyboard();
+        setTimeout(() => {
+          this.programmaticFocusInProgress = false;
+        }, 0);
+      }
+    }, 60);
+  }
+  onBlur(options) {
+    var _a3, _b3, _c2, _d2;
+    if (this.focusBlurInProgress || this.blurred) return;
+    this.focusBlurInProgress = true;
+    this.stopCoalescingUndo();
+    this.blurred = true;
+    if (__Mathfield._globallyFocusedMathfield === this)
+      __Mathfield._globallyFocusedMathfield = void 0;
+    if (this.ariaLiveText) this.ariaLiveText.textContent = "";
+    hideSuggestionPopover(this);
+    if (this.model.getValue() !== this.valueOnFocus) {
+      (_a3 = this.host) == null ? void 0 : _a3.dispatchEvent(
+        new Event("change", { bubbles: true, composed: true })
+      );
+    }
+    this.disconnectFromVirtualKeyboard();
+    const dispatchEvents = (_b3 = options == null ? void 0 : options.dispatchEvents) != null ? _b3 : true;
+    if (dispatchEvents) {
+      (_c2 = this.host) == null ? void 0 : _c2.dispatchEvent(
+        new Event("blur", {
+          bubbles: false,
+          // DOM 'focus' and 'blur' don't bubble
+          composed: true
+        })
+      );
+      (_d2 = this.host) == null ? void 0 : _d2.dispatchEvent(
+        new UIEvent("focusout", {
+          bubbles: true,
+          // unlike 'blur', focusout does bubble
+          composed: true
+        })
+      );
+    }
+    requestUpdate(this);
+    this.focusBlurInProgress = false;
+    hideEnvironmentPopover();
+    if (mathfield_element_default.restoreFocusWhenDocumentFocused) {
+      const controller = new AbortController();
+      const signal = controller.signal;
+      window.addEventListener(
+        "blur",
+        () => {
+          window.addEventListener(
+            "focus",
+            () => {
+              if (isValidMathfield(this)) this.focus({ preventScroll: true });
+            },
+            { once: true, signal }
+          );
+        },
+        { once: true, signal }
+      );
+      document.addEventListener("focusin", () => controller.abort(), {
+        once: true
+      });
+      document.addEventListener("click", () => controller.abort(), {
+        once: true
+      });
+    }
+  }
+  onInput(text) {
+    onInput(this, text);
+  }
+  onKeystroke(evt) {
+    return onKeystroke(this, evt);
+  }
+  onCompositionStart(_composition) {
+    if (!this.isSelectionEditable) return;
+    // A caret at the visual boundary of \text{} is a math caret in VisualTeX.
+    // Normalize before the composition atom is created so IME cannot inherit
+    // "text" merely because the atom to the left is a TextAtom.
+    visualTexNormalizeTextBoundaryMode(this);
+    this.visualTexCompositionStartedInsideText =
+      this.model.mode === "text" && visualTexCaretIsInsideTextRun(this.model);
+    this.visualTexCompositionState = this.model.getState();
+    const visualTexCompositionPlaceholder = this.model.selectionIsPlaceholder
+      ? this.model.at(Math.max(this.model.position, this.model.anchor))
+      : null;
+    this.visualTexCompositionStructuralSlot =
+      visualTexCompositionPlaceholder?.type === "placeholder"
+        ? visualTexFreshStructuralSlot(visualTexCompositionPlaceholder)
+        : (() => {
+            const current = this.model.at(this.model.position);
+            if (!current?.parent || current.parentBranch == null) return null;
+            return {
+              parent: current.parent,
+              branch: current.parentBranch,
+              after: current.leftSibling
+            };
+          })();
+    this.stopCoalescingUndo();
+    // Composition replaces the selection without invoking structural
+    // Backspace promotion rules.
+    if (!this.model.selectionIsCollapsed)
+      this.model.deleteAtoms(range(this.model.selection));
+  }
+  onCompositionUpdate(composition) {
+    updateComposition(this.model, composition);
+    requestUpdate(this);
+  }
+  onCompositionEnd(composition) {
+    removeComposition(this.model);
+    if (!composition && this.visualTexCompositionState) {
+      this.model.setState(this.visualTexCompositionState);
+      visualTexNormalizeTextBoundaryMode(this);
+      requestUpdate(this);
+    } else {
+      this.visualTexCompositionCommit = true;
+      try {
+        const visualTexChineseComposition =
+          /^[\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’\s]+$/.test(composition);
+        const visualTexCommittedComposition =
+          visualTexChineseComposition && /[^\s]/.test(composition)
+            ? composition.replace(/\s+$/u, "")
+            : composition;
+        if (visualTexChineseComposition) {
+          if (this.visualTexCompositionStructuralSlot)
+            this.visualTexPendingStructuralCommandSlot =
+              this.visualTexCompositionStructuralSlot;
+          if (this.visualTexCompositionStartedInsideText) {
+            ModeEditor.insert(this.model, visualTexCommittedComposition, {
+              mode: "text",
+              insertionMode: "replaceSelection",
+              selectionMode: "after",
+              style: computeInsertStyle(this)
+            });
+            this.model.mode = "text";
+          } else {
+            ModeEditor.insert(this.model, "\\text{" + visualTexCommittedComposition + "}", {
+              mode: "math",
+              format: "latex",
+              insertionMode: "replaceSelection",
+              selectionMode: "after",
+              style: computeInsertStyle(this)
+            });
+            if (!this.model.selectionIsCollapsed)
+              this.model.collapseSelection("forward");
+            this.model.mode = "math";
+          }
+          this.snapshot("insert-composition");
+          requestUpdate(this);
+        } else {
+          onInput(this, composition, { simulateKeystroke: true });
+          if (!this.visualTexCompositionStartedInsideText)
+            visualTexNormalizeTextBoundaryMode(this, true);
+        }
+      } finally {
+        this.visualTexCompositionCommit = false;
+      }
+      const visualTexCompositionAtom = this.model.at(this.model.position);
+      if (!visualTexAutoExitAccentAfterDirectInput(
+            this,
+            visualTexCompositionAtom
+          ) &&
+          !visualTexAutoExitScriptAfterDirectInput(
+            this,
+            visualTexCompositionAtom
+          ))
+        visualTexAutoExitAfterComposition(
+          this,
+          this.visualTexCompositionStructuralSlot
+        );
+    }
+    this.visualTexCompositionState = null;
+    this.visualTexCompositionStructuralSlot = null;
+    this.visualTexCompositionStartedInsideText = false;
+  }
+  onCut(ev) {
+    if (!this.isSelectionEditable) {
+      this.model.announce("plonk");
+      return;
+    }
+    if (this.model.contentWillChange({ inputType: "deleteByCut" })) {
+      this.stopCoalescingUndo();
+      if (ev.clipboardData) ModeEditor.onCopy(this, ev);
+      else ModeEditor.copyToClipboard(this, "latex");
+      deleteRange(this.model, range(this.model.selection), "deleteByCut");
+      this.snapshot("cut");
+      requestUpdate(this);
+    }
+  }
+  onCopy(ev) {
+    if (ev.clipboardData) ModeEditor.onCopy(this, ev);
+    else ModeEditor.copyToClipboard(this, "latex");
+  }
+  onPaste(ev) {
+    let result = this.isSelectionEditable;
+    if (result) {
+      result = ModeEditor.onPaste(
+        this.model.at(this.model.position).mode,
+        this,
+        ev.clipboardData
+      );
+    }
+    if (!result) this.model.announce("plonk");
+    ev.preventDefault();
+    ev.stopPropagation();
+    return result;
+  }
+  onGeometryChange() {
+    var _a3;
+    (_a3 = this._menu) == null ? void 0 : _a3.hide();
+    updateSuggestionPopoverPosition(this);
+    updateEnvironmentPopover(this);
+  }
+  onWheel(ev) {
+    const wheelDelta = 5 * ev.deltaX;
+    if (!Number.isFinite(wheelDelta) || wheelDelta === 0) return;
+    const field = this.field;
+    if (wheelDelta < 0 && field.scrollLeft === 0) return;
+    if (wheelDelta > 0 && field.offsetWidth + field.scrollLeft >= field.scrollWidth)
+      return;
+    field.scrollBy({ top: 0, left: wheelDelta });
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+  getHTMLElement(atom) {
+    let target = atom;
+    while (!target.id && target.hasChildren) target = atom.children[0];
+    return this.field.querySelector(
+      `[data-atom-id="${target.id}"]`
+    );
+  }
+  get context() {
+    var _a3, _b3;
+    return {
+      registers: (_a3 = this.options.registers) != null ? _a3 : {},
+      smartFence: this.smartFence,
+      letterShapeStyle: this.letterShapeStyle,
+      minFontScale: this.minFontScale,
+      maxMatrixCols: this.maxMatrixCols,
+      placeholderSymbol: (_b3 = this.options.placeholderSymbol) != null ? _b3 : "\u25A2",
+      colorMap: (name) => this.colorMap(name),
+      backgroundColorMap: (name) => this.backgroundColorMap(name),
+      getMacro: (token) => getMacroDefinition(
+        token,
+        this.options.macros
+      ),
+      atomIdsSettings: { seed: "random", groupNumbers: false }
+    };
+  }
+};
+
+// src/editor/speech.ts
+register2(
+  {
+    speak: (mathfield, scope, options) => {
+      return speak(mathfield, scope, options);
+    }
+  },
+  { target: "mathfield" }
+);
+function speak(mathfield, scope, speakOptions) {
+  var _a3;
+  speakOptions = speakOptions != null ? speakOptions : { withHighlighting: false };
+  const { model } = mathfield;
+  function getAtoms(scope2) {
+    let result = null;
+    switch (scope2) {
+      case "all":
+        result = model.root;
+        break;
+      case "selection":
+        result = model.getAtoms(model.selection);
+        break;
+      case "left": {
+        result = model.getAtoms(
+          model.offsetOf(model.at(model.position).leftSibling),
+          model.position
+        );
+        break;
+      }
+      case "right": {
+        result = model.getAtoms(
+          model.position,
+          model.offsetOf(model.at(model.position).rightSibling)
+        );
+        break;
+      }
+      case "group":
+        result = model.getAtoms(model.getSiblingsRange(model.position));
+        break;
+      case "parent": {
+        const { parent } = model.at(model.position);
+        if (parent == null ? void 0 : parent.parent) result = parent;
+        else result = model.root;
+        break;
+      }
+      default:
+        result = model.root;
+    }
+    return result;
+  }
+  function getFailedSpeech(scope2) {
+    let result = "";
+    switch (scope2) {
+      case "all":
+        console.error("Internal failure: speak all failed");
+        break;
+      case "selection":
+        result = "no selection";
+        break;
+      case "left":
+        result = "at start";
+        break;
+      case "right":
+        result = "at end";
+        break;
+      case "group":
+        console.error("Internal failure: speak group failed");
+        break;
+      case "parent":
+        result = "no parent";
+        break;
+      default:
+        console.error('unknown speak_ param value: "' + scope2 + '"');
+        break;
+    }
+    return result;
+  }
+  const mfe = globalThis.MathfieldElement;
+  const atoms = getAtoms(scope);
+  if (atoms === null) {
+    (_a3 = mfe.speakHook) == null ? void 0 : _a3.call(mfe, getFailedSpeech(scope));
+    return false;
+  }
+  if (speakOptions.withHighlighting || mfe.speechEngine === "amazon") {
+    mfe.textToSpeechMarkup = globalThis.sre && mfe.textToSpeechRules === "sre" ? "ssml_step" : "ssml";
+  }
+  const text = atomToSpeakableText(atoms);
+  if (isBrowser() && speakOptions.withHighlighting) {
+    globalMathLive().readAloudMathfield = mathfield;
+    render(mathfield, { forHighlighting: true });
+    if (mfe.readAloudHook) mfe.readAloudHook(mathfield.field, text);
+  } else if (mfe.speakHook) mfe.speakHook(text);
+  return false;
+}
+function defaultSpeakHook(text) {
+  var _a3, _b3;
+  if (!isBrowser()) {
+    console.log("Speak:", text);
+    return;
+  }
+  const mfe = globalThis.MathfieldElement;
+  if (!mfe.speechEngine || mfe.speechEngine === "local") {
+    const utterance = new SpeechSynthesisUtterance(text);
+    globalThis.speechSynthesis.speak(utterance);
+  } else if (mfe.speechEngine === "amazon") {
+    if (!("AWS" in window)) {
+      console.error(
+        `MathLive 0.109.2: AWS SDK not loaded. See https://www.npmjs.com/package/aws-sdk`
+      );
+    } else {
+      const polly = new globalThis.AWS.Polly({ apiVersion: "2016-06-10" });
+      const parameters = {
+        OutputFormat: "mp3",
+        VoiceId: (_a3 = mfe.speechEngineVoice) != null ? _a3 : "Joanna",
+        Engine: [
+          "Amy",
+          "Emma",
+          "Brian",
+          "Ivy",
+          "Joanna",
+          "Kendra",
+          "Kimberly",
+          "Salli",
+          "Joey",
+          "Justin",
+          "Matthew"
+        ].includes((_b3 = mfe.speechEngineVoice) != null ? _b3 : "Joanna") ? "neural" : "standard",
+        // SampleRate: '24000',
+        Text: text,
+        TextType: "ssml"
+        // SpeechMarkTypes: ['ssml]'
+      };
+      polly.synthesizeSpeech(parameters, (err, data) => {
+        if (err) {
+          console.trace(
+            `MathLive 0.109.2: \`polly.synthesizeSpeech()\` error: ${err}`
+          );
+        } else if (data == null ? void 0 : data.AudioStream) {
+          const uInt8Array = new Uint8Array(data.AudioStream);
+          const blob = new Blob([uInt8Array.buffer], { type: "audio/mpeg" });
+          const url = URL.createObjectURL(blob);
+          const audioElement = new Audio(url);
+          audioElement.play().catch((error) => console.error(error));
+        } else console.log("polly.synthesizeSpeech():", data);
+      });
+    }
+  } else if (mfe.speechEngine === "google") {
+    console.error(
+      `MathLive 0.109.2: The Google speech engine is not supported yet. Please come again.`
+    );
+  }
+}
+
+// src/editor/speech-read-aloud.ts
+function removeHighlight(element) {
+  if (!element) return;
+  element.classList.remove("ML__highlight");
+  if (element.children)
+    for (const child of element.children) removeHighlight(child);
+}
+function highlightAtomID(element, atomID) {
+  var _a3;
+  if (!element) return;
+  if (!atomID || ((_a3 = element.dataset) == null ? void 0 : _a3.atomId) === atomID) {
+    element.classList.add("ML__highlight");
+    if (element.children && element.children.length > 0) {
+      [...element.children].forEach((x) => {
+        if (x instanceof HTMLElement) highlightAtomID(x);
+      });
+    }
+  } else {
+    element.classList.remove("ML__highlight");
+    if (element.children && element.children.length > 0) {
+      [...element.children].forEach((x) => {
+        if (x instanceof HTMLElement) highlightAtomID(x, atomID);
+      });
+    }
+  }
+}
+function defaultReadAloudHook(element, text) {
+  var _a3;
+  if (!isBrowser()) return;
+  if (globalThis.MathfieldElement.speechEngine !== "amazon") {
+    console.error(
+      `MathLive 0.109.2: Use Amazon TTS Engine for synchronized highlighting`
+    );
+    if (typeof globalThis.MathfieldElement.speakHook === "function")
+      globalThis.MathfieldElement.speakHook(text);
+    return;
+  }
+  if (!globalThis.AWS) {
+    console.error(
+      `MathLive 0.109.2: AWS SDK not loaded. See https://www.npmjs.com/package/aws-sdk`
+    );
+    return;
+  }
+  const polly = new globalThis.AWS.Polly({ apiVersion: "2016-06-10" });
+  const parameters = {
+    OutputFormat: "json",
+    VoiceId: (_a3 = globalThis.MathfieldElement.speechEngineVoice) != null ? _a3 : "Joanna",
+    Engine: "standard",
+    // The neural engine does not appear to support ssml marks
+    Text: text,
+    TextType: "ssml",
+    SpeechMarkTypes: ["ssml"]
+  };
+  globalMathLive().readAloudElement = element;
+  polly.synthesizeSpeech(parameters, (err, data) => {
+    if (err) {
+      console.trace(
+        `MathLive 0.109.2: \`polly.synthesizeSpeech()\` error: ${err}`
+      );
+      return;
+    }
+    if (!(data == null ? void 0 : data.AudioStream)) {
+      console.log("polly.synthesizeSpeech():", data);
+      return;
+    }
+    const response = new TextDecoder("utf-8").decode(
+      new Uint8Array(data.AudioStream)
+    );
+    globalMathLive().readAloudMarks = response.split("\n").map((x) => x ? JSON.parse(x) : {});
+    globalMathLive().readAloudTokens = [];
+    for (const mark of globalMathLive().readAloudMarks)
+      if (mark.value) globalMathLive().readAloudTokens.push(mark.value);
+    globalMathLive().readAloudCurrentMark = "";
+    parameters.OutputFormat = "mp3";
+    parameters.SpeechMarkTypes = [];
+    polly.synthesizeSpeech(parameters, (err2, data2) => {
+      if (err2) {
+        console.trace(
+          `MathLive 0.109.2: \`polly.synthesizeSpeech("${text}") error:${err2}`
+        );
+        return;
+      }
+      if (!(data2 == null ? void 0 : data2.AudioStream)) return;
+      const uInt8Array = new Uint8Array(data2.AudioStream);
+      const blob = new Blob([uInt8Array.buffer], {
+        type: "audio/mpeg"
+      });
+      const url = URL.createObjectURL(blob);
+      const global = globalMathLive();
+      if (!global.readAloudAudio) {
+        global.readAloudAudio = new Audio();
+        global.readAloudAudio.addEventListener("ended", () => {
+          const mathfield = global.readAloudMathfield;
+          global.readAloudStatus = "ended";
+          document.body.dispatchEvent(
+            new Event("read-aloud-status-change", {
+              bubbles: true,
+              composed: true
+            })
+          );
+          if (mathfield) {
+            render(mathfield);
+            global.readAloudElement = null;
+            global.readAloudMathfield = null;
+            global.readAloudTokens = [];
+            global.readAloudMarks = [];
+            global.readAloudCurrentMark = "";
+          } else removeHighlight(global.readAloudElement);
+        });
+        global.readAloudAudio.addEventListener("timeupdate", () => {
+          let value = "";
+          const target = global.readAloudAudio.currentTime * 1e3 + 100;
+          for (const mark of global.readAloudMarks)
+            if (mark.time < target) value = mark.value;
+          if (global.readAloudCurrentMark !== value) {
+            global.readAloudCurrentToken = value;
+            if (value && value === global.readAloudFinalToken)
+              global.readAloudAudio.pause();
+            else {
+              global.readAloudCurrentMark = value;
+              highlightAtomID(
+                global.readAloudElement,
+                global.readAloudCurrentMark
+              );
+            }
+          }
+        });
+      } else global.readAloudAudio.pause();
+      global.readAloudAudio.src = url;
+      global.readAloudStatus = "playing";
+      document.body.dispatchEvent(
+        new Event("read-aloud-status-change", {
+          bubbles: true,
+          composed: true
+        })
+      );
+      global.readAloudAudio.play();
+    });
+  });
+}
+
+// src/public/mathfield-element.ts
+if (!isBrowser()) {
+  console.error(
+    `MathLive 0.109.2: this version of the MathLive library is for use in the browser. A subset of the API is available on the server side in the "mathlive-ssr" library. If using server side rendering (with React for example) you may want to do a dynamic import of the MathLive library inside a \`useEffect()\` call.`
+  );
+}
+var gDeferredState = /* @__PURE__ */ new WeakMap();
+var AUDIO_FEEDBACK_VOLUME = 0.5;
+var DEPRECATED_OPTIONS = {
+  letterShapeStyle: "mf.letterShapeStyle = ...",
+  horizontalSpacingScale: 'Removed. Use `"thinmuskip"`, `"medmuskip"`, and `"thickmuskip"` registers ',
+  macros: "mf.macros = ...",
+  registers: "mf.registers = ...",
+  backgroundColorMap: "mf.backgroundColorMap = ...",
+  colorMap: "mf.colorMap = ...",
+  enablePopover: "mf.popoverPolicy = ...",
+  mathModeSpace: "mf.mathModeSpace = ...",
+  placeholderSymbol: "mf.placeholderSymbol = ...",
+  readOnly: "mf.readOnly = ...",
+  removeExtraneousParentheses: "mf.removeExtraneousParentheses = ...",
+  scriptDepth: "mf.scriptDepth = ...",
+  smartFence: "mf.smartFence = ...",
+  smartMode: "mf.smartMode = ...",
+  smartSuperscript: "mf.smartSuperscript = ...",
+  inlineShortcutTimeout: "mf.inlineShortcutTimeout = ...",
+  inlineShortcuts: "mf.inlineShortcuts = ...",
+  keybindings: "mf.keybindings = ...",
+  virtualKeyboardMode: "mf.mathVirtualKeyboardPolicy = ...",
+  customVirtualKeyboardLayers: "mathVirtualKeyboard.layers = ...",
+  customVirtualKeyboards: "mathVirtualKeyboard.layouts = ...",
+  keypressSound: "mathVirtualKeyboard.keypressSound = ...",
+  keypressVibration: "mathVirtualKeyboard.keypressVibration = ...",
+  plonkSound: "mathVirtualKeyboard.plonkSound = ...",
+  virtualKeyboardContainer: "mathVirtualKeyboard.container = ...",
+  virtualKeyboardLayout: "mathVirtualKeyboard.alphabeticLayout = ...",
+  virtualKeyboardTheme: "No longer supported",
+  virtualKeyboardToggleGlyph: "No longer supported",
+  virtualKeyboardToolbar: "mathVirtualKeyboard.editToolbar = ...",
+  virtualKeyboards: "Use `mathVirtualKeyboard.layouts`",
+  speechEngine: "`MathfieldElement.speechEngine`",
+  speechEngineRate: "`MathfieldElement.speechEngineRate`",
+  speechEngineVoice: "`MathfieldElement.speechEngineVoice`",
+  textToSpeechMarkup: "`MathfieldElement.textToSpeechMarkup`",
+  textToSpeechRules: "`MathfieldElement.textToSpeechRules`",
+  textToSpeechRulesOptions: "`MathfieldElement.textToSpeechRulesOptions`",
+  readAloudHook: "`MathfieldElement.readAloudHook`",
+  speakHook: "`MathfieldElement.speakHook`",
+  computeEngine: "`MathfieldElement.computeEngine`",
+  fontsDirectory: "`MathfieldElement.fontsDirectory`",
+  soundsDirectory: "`MathfieldElement.soundsDirectory`",
+  createHTML: "`MathfieldElement.createHTML`",
+  onExport: "`mf.onExport`",
+  onInlineShortcut: "`mf.onInlineShortcut`",
+  onScrollIntoView: "`mf.onScrollIntoView`",
+  locale: "MathfieldElement.locale = ...",
+  strings: "MathfieldElement.strings = ...",
+  decimalSeparator: "MathfieldElement.decimalSeparator = ...",
+  fractionNavigationOrder: "MathfieldElement.fractionNavigationOrder = ..."
+};
+var _MathfieldElement = class _MathfieldElement extends HTMLElement {
+  /**
+       * To create programmatically a new mathfield use:
+       *
+       ```javascript
+      let mfe = new MathfieldElement();
+  
+      // Set initial value and options
+      mfe.value = "\\frac{\\sin(x)}{\\cos(x)}";
+  
+      // Options can be set either as an attribute (for simple options)...
+      mfe.setAttribute("letter-shape-style", "french");
+  
+      // ... or using properties
+      mfe.letterShapeStyle = "french";
+  
+      // Attach the element to the DOM
+      document.body.appendChild(mfe);
+      ```
+      */
+  constructor(options) {
+    super();
+    /** @internal */
+    this._observer = null;
+    if (options) {
+      const warnings = [];
+      for (const key of Object.keys(options)) {
+        if (DEPRECATED_OPTIONS[key]) {
+          if (DEPRECATED_OPTIONS[key].startsWith("mf.")) {
+            if (!DEPRECATED_OPTIONS[key].startsWith(`mf.${key}`)) {
+              const newName = DEPRECATED_OPTIONS[key].match(/([a-zA-Z]+) =/);
+              warnings.push(
+                `Option \`${key}\` has been renamed \`${newName[1]}\``
+              );
+            } else {
+              warnings.push(
+                `Option \`${key}\` cannot be used as a constructor option. Use ${DEPRECATED_OPTIONS[key]}`
+              );
+            }
+          } else {
+            warnings.push(
+              `Option \`${key}\` cannot be used as a constructor option. Use ${DEPRECATED_OPTIONS[key]}`
+            );
+          }
+        }
+      }
+      if (warnings.length > 0) {
+        console.group(
+          `%cMathLive 0.109.2: %cInvalid Options`,
+          "color:#12b; font-size: 1.1rem",
+          "color:#db1111; font-size: 1.1rem"
+        );
+        console.warn(
+          `Some of the options passed to \`new MathfieldElement(...)\` are invalid. 
+          See mathfield/changelog/ for details.`
+        );
+        for (const warning of warnings) console.warn(warning);
+        console.groupEnd();
+      }
+    }
+    if (isElementInternalsSupported()) {
+      this._internals = this.attachInternals();
+      this._internals["role"] = "math";
+      this._internals.ariaLabel = "math input field";
+      this._internals.ariaMultiLine = "false";
+    }
+    this.attachShadow({ mode: "open", delegatesFocus: true });
+    if (this.shadowRoot && "adoptedStyleSheets" in this.shadowRoot) {
+      this.shadowRoot.adoptedStyleSheets = [
+        getStylesheet("core"),
+        getStylesheet("mathfield"),
+        getStylesheet("mathfield-element"),
+        getStylesheet("ui"),
+        getStylesheet("menu")
+      ];
+      this.shadowRoot.appendChild(document.createElement("span"));
+      const slot = document.createElement("slot");
+      slot.style.display = "none";
+      this.shadowRoot.appendChild(slot);
+    } else {
+      this.shadowRoot.innerHTML = "<style>" + getStylesheetContent("core") + getStylesheetContent("mathfield") + getStylesheetContent("mathfield-element") + getStylesheetContent("ui") + getStylesheetContent("menu") + '</style><span></span><slot style="display:none"></slot>';
+    }
+    if (options) this._setOptions(options);
+  }
+  /** @internal */
+  static get formAssociated() {
+    return isElementInternalsSupported();
+  }
+  /**
+   * Private lifecycle hooks.
+   * If adding a 'boolean' attribute, add its default value to getOptionsFromAttributes
+   * @internal
+   */
+  static get optionsAttributes() {
+    return {
+      "default-mode": "string",
+      "letter-shape-style": "string",
+      "min-font-scale": "number",
+      "max-matrix-cols": "number",
+      "popover-policy": "string",
+      "math-mode-space": "string",
+      "read-only": "boolean",
+      "remove-extraneous-parentheses": "on/off",
+      "smart-fence": "on/off",
+      "smart-mode": "on/off",
+      "smart-superscript": "on/off",
+      "inline-shortcut-timeout": "string",
+      "script-depth": "string",
+      "placeholder": "string",
+      "virtual-keyboard-target-origin": "string",
+      "math-virtual-keyboard-policy": "string"
+    };
+  }
+  /**
+   * Custom elements lifecycle hooks
+   * @internal
+   */
+  static get observedAttributes() {
+    return [
+      ...Object.keys(this.optionsAttributes),
+      "contenteditable",
+      // Global attribute
+      "disabled",
+      // Global attribute
+      "readonly",
+      // A semi-global attribute (not all standard elements support it, but some do)
+      "read-only"
+      // Alternate spelling for `readonly`
+    ];
+  }
+  /**
+   * A URL fragment pointing to the directory containing the fonts
+   * necessary to render a formula.
+   *
+   * These fonts are available in the `/fonts` directory of the npm package.
+   *
+   * Customize this value to reflect where you have copied these fonts,
+   * or to use the CDN version.
+   *
+   * The default value is `"./fonts"`. Use `null` to prevent
+   * any fonts from being loaded.
+   *
+   * Changing this setting after the mathfield has been created will have
+   * no effect.
+   *
+   * ```javascript
+   * {
+   *      // Use the CDN version
+   *      fontsDirectory: ''
+   * }
+   * ```
+   *
+   * ```javascript
+   * {
+   *      // Use a directory called "fonts", located next to the
+   *      // `mathlive.js` (or `mathlive.mjs`) file.
+   *      fontsDirectory: './fonts'
+   * }
+   * ```
+   *
+   * ```javascript
+   * {
+   *      // Use a directory located at the root of your website
+   *      fontsDirectory: 'https://example.com/fonts'
+   * }
+   * ```
+   *
+   */
+  static get fontsDirectory() {
+    return this._fontsDirectory;
+  }
+  static set fontsDirectory(value) {
+    if (value !== this._fontsDirectory) {
+      this._fontsDirectory = value;
+      reloadFonts();
+    }
+  }
+  /** @internal */
+  get fontsDirectory() {
+    throw new Error("Use MathfieldElement.fontsDirectory instead");
+  }
+  /** @internal */
+  set fontsDirectory(_value) {
+    throw new Error("Use MathfieldElement.fontsDirectory instead");
+  }
+  /**
+   * A URL fragment pointing to the directory containing the optional
+   * sounds used to provide feedback while typing.
+   *
+   * Some default sounds are available in the `/dist/sounds` directory of the SDK.
+   *
+   * Use `null` to prevent any sound from being loaded.
+   * @category Virtual Keyboard
+   */
+  static get soundsDirectory() {
+    return this._soundsDirectory;
+  }
+  static set soundsDirectory(value) {
+    this._soundsDirectory = value;
+    this.audioBuffers = {};
+  }
+  /** @internal */
+  get soundsDirectory() {
+    throw new Error("Use MathfieldElement.soundsDirectory instead");
+  }
+  /** @internal */
+  set soundsDirectory(_value) {
+    throw new Error("Use MathfieldElement.soundsDirectory instead");
+  }
+  /**
+   * When a key on the virtual keyboard is pressed, produce a short audio
+   * feedback.
+   *
+   * If the property is set to a `string`, the same sound is played in all
+   * cases. Otherwise, a distinct sound is played:
+   *
+   * -   `delete` a sound played when the delete key is pressed
+   * -   `return` ... when the return/tab key is pressed
+   * -   `spacebar` ... when the spacebar is pressed
+   * -   `default` ... when any other key is pressed. This property is required,
+   *     the others are optional. If they are missing, this sound is played as
+   *     well.
+   *
+   * The value of the properties should be either a string, the name of an
+   * audio file in the `soundsDirectory` directory or `null` to suppress
+   * the sound.
+   *
+   * If the `soundsDirectory` is `null`, no sound will be played.
+   *
+   * @category Virtual Keyboard
+   */
+  static get keypressSound() {
+    return this._keypressSound;
+  }
+  static set keypressSound(value) {
+    var _a3, _b3, _c2;
+    this.audioBuffers = {};
+    if (value === null) {
+      this._keypressSound = {
+        spacebar: null,
+        return: null,
+        delete: null,
+        default: null
+      };
+    } else if (typeof value === "string") {
+      this._keypressSound = {
+        spacebar: value,
+        return: value,
+        delete: value,
+        default: value
+      };
+    } else if (typeof value === "object" && "default" in value) {
+      this._keypressSound = {
+        spacebar: (_a3 = value.spacebar) != null ? _a3 : value.default,
+        return: (_b3 = value.return) != null ? _b3 : value.default,
+        delete: (_c2 = value.delete) != null ? _c2 : value.default,
+        default: value.default
+      };
+    }
+  }
+  /**
+   * Sound played to provide feedback when a command has no effect, for example
+   * when pressing the spacebar at the root level.
+   *
+   * The property is either:
+   * - a string, the name of an audio file in the `soundsDirectory` directory
+   * - `null` to turn off the sound
+   *
+   * If the `soundsDirectory` is `null`, no sound will be played.
+   *
+   */
+  static get plonkSound() {
+    return this._plonkSound;
+  }
+  static set plonkSound(value) {
+    this.audioBuffers = {};
+    this._plonkSound = value;
+  }
+  /** @internal */
+  static get audioContext() {
+    if (!this._audioContext) this._audioContext = new AudioContext();
+    return this._audioContext;
+  }
+  // @todo https://github.com/microsoft/TypeScript/issues/30024
+  /**
+   * Indicates which speech engine to use for speech output.
+   *
+   * Use `local` to use the OS-specific TTS engine.
+   *
+   * Use `amazon` for Amazon Text-to-Speech cloud API. You must include the
+   * AWS API library and configure it with your API key before use.
+   *
+   * **See**
+   * {@link mathfield/guides/speech/ | Guide: Speech}
+   * @category Speech
+   */
+  static get speechEngine() {
+    return this._speechEngine;
+  }
+  static set speechEngine(value) {
+    this._speechEngine = value;
+  }
+  /**
+   * Sets the speed of the selected voice.
+   *
+   * One of `x-slow`, `slow`, `medium`, `fast`, `x-fast` or a value as a
+   * percentage.
+   *
+   * Range is `20%` to `200%` For example `200%` to indicate a speaking rate
+   * twice the default rate.
+   * @category Speech
+   */
+  static get speechEngineRate() {
+    return this._speechEngineRate;
+  }
+  static set speechEngineRate(value) {
+    this._speechEngineRate = value;
+  }
+  /**
+   * Indicates the voice to use with the speech engine.
+   *
+   * This is dependent on the speech engine. For Amazon Polly, see here:
+   * https://docs.aws.amazon.com/polly/latest/dg/voicelist.html
+   *
+   * @category Speech
+   */
+  static get speechEngineVoice() {
+    return this._speechEngineVoice;
+  }
+  static set speechEngineVoice(value) {
+    this._speechEngineVoice = value;
+  }
+  /**
+   * The markup syntax to use for the output of conversion to spoken text.
+   *
+   * Possible values are `ssml` for the SSML markup or `mac` for the macOS
+   * markup, i.e. `&#91;&#91;ltr&#93;&#93;`.
+   * @category Speech
+   *
+   */
+  static get textToSpeechMarkup() {
+    return this._textToSpeechMarkup;
+  }
+  static set textToSpeechMarkup(value) {
+    this._textToSpeechMarkup = value;
+  }
+  /**
+   * Specify which set of text to speech rules to use.
+   *
+   * A value of `mathlive` indicates that the simple rules built into MathLive
+   * should be used.
+   *
+   * A value of `sre` indicates that the Speech Rule Engine from Volker Sorge
+   * should be used.
+   *
+   * **(Caution)** SRE is not included or loaded by MathLive. For this option to
+   * work SRE should be loaded separately.
+   *
+   * **See**
+   * {@link mathfield/guides/speech/ | Guide: Speech}
+   * @category Speech
+   */
+  static get textToSpeechRules() {
+    return this._textToSpeechRules;
+  }
+  static set textToSpeechRules(value) {
+    this._textToSpeechRules = value;
+  }
+  /**
+   * A set of key/value pairs that can be used to configure the speech rule
+   * engine.
+   *
+   * Which options are available depends on the speech rule engine in use.
+   * There are no options available with MathLive's built-in engine. The
+   * options for the SRE engine are documented
+   * {@link https://github.com/zorkow/speech-rule-engine | here}
+   * @category Speech
+   */
+  static get textToSpeechRulesOptions() {
+    return this._textToSpeechRulesOptions;
+  }
+  static set textToSpeechRulesOptions(value) {
+    this._textToSpeechRulesOptions = value;
+  }
+  /**
+   * The locale (language + region) to use for string localization.
+   *
+   * If none is provided, the locale of the browser is used.
+   * @category Localization
+   *
+   */
+  static get locale() {
+    return l10n.locale;
+  }
+  static set locale(value) {
+    if (value === "auto") value = navigator.language.slice(0, 5);
+    l10n.locale = value;
+  }
+  /** @internal */
+  get locale() {
+    throw new Error("Use MathfieldElement.locale instead");
+  }
+  /** @internal */
+  set locale(_value) {
+    throw new Error("Use MathfieldElement.locale instead");
+  }
+  /**
+  * An object whose keys are a locale string, and whose values are an object of
+  * string identifier to localized string.
+  *
+  * **Example**
+  *
+  ```js example
+  mf.strings = {
+    "fr-CA": {
+        "tooltip.undo": "Annuler",
+        "tooltip.redo": "Refaire",
+    }
+  }
+  ```
+  *
+  * If the locale is already supported, this will override the existing
+  * strings. If the locale is not supported, it will be added.
+  *
+  * @category Localization
+  */
+  static get strings() {
+    return l10n.strings;
+  }
+  static set strings(value) {
+    l10n.merge(value);
+  }
+  /** @internal */
+  get strings() {
+    throw new Error("Use MathfieldElement.strings instead");
+  }
+  /** @internal */
+  set strings(_val) {
+    throw new Error("Use MathfieldElement.strings instead");
+  }
+  /**
+   * The symbol used to separate the integer part from the fractional part of a
+   * number.
+   *
+   * When `","` is used, the corresponding LaTeX string is `{,}`, in order
+   * to ensure proper spacing (otherwise an extra gap is displayed after the
+   * comma).
+   *
+   * This affects:
+   * - what happens when the `,` key is pressed (if `decimalSeparator` is
+   * `","`, the `{,}` LaTeX string is inserted when following some digits)
+   * - the label and behavior of the "." key in the default virtual keyboard
+   *
+   * **Default**: `"."`
+   * @category Localization
+   */
+  static get decimalSeparator() {
+    return this._decimalSeparator;
+  }
+  static set decimalSeparator(value) {
+    this._decimalSeparator = value;
+    if (this._computeEngine) {
+      console.warn(
+        `MathLive 0.109.2: setting MathfieldElement.decimalSeparator after the Compute Engine has been created has no effect on the engine. Reassign MathfieldElement.computeEngine with a freshly configured instance to apply the new separator.`
+      );
+    }
+  }
+  /** @internal */
+  get decimalSeparator() {
+    throw new Error("Use MathfieldElement.decimalSeparator instead");
+  }
+  /** @internal */
+  set decimalSeparator(_val) {
+    throw new Error("Use MathfieldElement.decimalSeparator instead");
+  }
+  /** The template used to format numbers in scientific notation.
+   * The template should include the placeholders `#1` and `#2`, which will
+   * be replaced by the significand and exponent, respectively.
+   *
+   * The template is used when typing a number in scientific notation, e.g.
+   * `1.23e4`, which will be rendered as `1.23×10^4`.
+   *
+   * **Default**: `'#1\\times10^{#2}'`
+   *
+   * Other common formats include:
+   * - `'#1\\,\\mathrm{E}\\mathop{#2}'` (e.g. `1.23\,\mathrm{E}\mathop{-4}`)
+   *
+   * @category Localization
+   */
+  static set scientificNotationTemplate(value) {
+    this._scientificNotationTemplate = value;
+  }
+  static get scientificNotationTemplate() {
+    return this._scientificNotationTemplate;
+  }
+  /**
+   * When using the keyboard to navigate a fraction, the order in which the
+   * numerator and navigator are traversed:
+   * - `"numerator-denominator"`: first the elements in the numerator, then
+   *   the elements in the denominator.
+   * - `"denominator-numerator"`: first the elements in the denominator, then
+   *   the elements in the numerator. In some East-Asian cultures, fractions
+   *   are read and written denominator first ("fēnzhī"). With this option
+   *   the keyboard navigation follows this convention.
+   *
+   * **Default**: `"numerator-denominator"`
+   * @category Localization
+   */
+  static get fractionNavigationOrder() {
+    return _MathEnvironment.fractionNavigationOrder;
+  }
+  static set fractionNavigationOrder(s) {
+    if (s !== "numerator-denominator" && s !== "denominator-numerator")
+      throw new Error("Invalid value");
+    if (_MathEnvironment.fractionNavigationOrder === s) return;
+    _MathEnvironment.fractionNavigationOrder = s;
+    reparseAllMathfields();
+  }
+  /**
+   * A custom compute engine instance. If none is provided, a default one is
+   * used. If `null` is specified, no compute engine is used.
+   */
+  static get computeEngine() {
+    var _a3, _b3, _c2;
+    if (this._computeEngine === void 0) {
+      const ComputeEngineCtor = (_a3 = window[Symbol.for("io.cortexjs.compute-engine")]) == null ? void 0 : _a3.ComputeEngine;
+      if (!ComputeEngineCtor) return null;
+      this._computeEngine = new ComputeEngineCtor();
+      if (this._computeEngine && this.decimalSeparator === ",") {
+        const opts = (_b3 = this._computeEngine.latexSyntax) == null ? void 0 : _b3._options;
+        if (opts) opts.decimalSeparator = "{,}";
+      }
+    }
+    return (_c2 = this._computeEngine) != null ? _c2 : null;
+  }
+  static set computeEngine(value) {
+    this._computeEngine = value;
+  }
+  /** @internal */
+  get computeEngine() {
+    throw new Error("Use MathfieldElement.computeEngine instead");
+  }
+  /** @internal */
+  set computeEngine(_val) {
+    throw new Error("Use MathfieldElement.computeEngine instead");
+  }
+  static get isFunction() {
+    if (typeof this._isFunction !== "function") return () => false;
+    return this._isFunction;
+  }
+  static set isFunction(value) {
+    this._isFunction = value;
+    reparseAllMathfields();
+  }
+  static async loadSound(sound) {
+    delete this.audioBuffers[sound];
+    let soundFile = "";
+    switch (sound) {
+      case "keypress":
+        soundFile = this._keypressSound.default;
+        break;
+      case "return":
+        soundFile = this._keypressSound.return;
+        break;
+      case "spacebar":
+        soundFile = this._keypressSound.spacebar;
+        break;
+      case "delete":
+        soundFile = this._keypressSound.delete;
+        break;
+      case "plonk":
+        soundFile = this.plonkSound;
+        break;
+    }
+    if (typeof soundFile !== "string") return;
+    soundFile = soundFile.trim();
+    const soundsDirectory = this.soundsDirectory;
+    if (soundsDirectory === void 0 || soundsDirectory === null || soundsDirectory === "null" || soundFile === "none" || soundFile === "null")
+      return;
+    try {
+      const response = await fetch(
+        await resolveUrl(`${soundsDirectory}/${soundFile}`)
+      );
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+      this.audioBuffers[sound] = audioBuffer;
+    } catch (e) {
+    }
+  }
+  static async playSound(name) {
+    if (this.audioContext.state === "suspended" || this.audioContext.state === "interrupted")
+      await this.audioContext.resume();
+    if (!this.audioBuffers[name]) await this.loadSound(name);
+    if (!this.audioBuffers[name]) return;
+    const soundSource = this.audioContext.createBufferSource();
+    soundSource.buffer = this.audioBuffers[name];
+    const gainNode = this.audioContext.createGain();
+    gainNode.gain.value = AUDIO_FEEDBACK_VOLUME;
+    soundSource.connect(gainNode).connect(this.audioContext.destination);
+    soundSource.start();
+  }
+  /** @category Menu */
+  showMenu(_) {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.showMenu(_)) != null ? _b3 : false;
+  }
+  /** @internal */
+  get mathVirtualKeyboard() {
+    throw new Error(
+      "The `mathVirtualKeyboard` property is not available on the MathfieldElement. Use `window.mathVirtualKeyboard` instead."
+    );
+  }
+  /** @internal */
+  onPointerDown() {
+    window.addEventListener(
+      "pointerup",
+      (evt) => {
+        const mf = this._mathfield;
+        if (!mf) return;
+        if (evt.target === this && !mf.disabled) {
+          this.dispatchEvent(
+            new MouseEvent("click", {
+              altKey: evt.altKey,
+              button: evt.button,
+              buttons: evt.buttons,
+              clientX: evt.clientX,
+              clientY: evt.clientY,
+              ctrlKey: evt.ctrlKey,
+              metaKey: evt.metaKey,
+              movementX: evt.movementX,
+              movementY: evt.movementY,
+              relatedTarget: evt.relatedTarget,
+              screenX: evt.screenX,
+              screenY: evt.screenY,
+              shiftKey: evt.shiftKey
+            })
+          );
+          const offset = this.getOffsetFromPoint(evt.clientX, evt.clientY);
+          if (offset >= 0) _MathfieldElement.openUrl(getHref(mf, offset));
+          if (evt.pointerType === "touch" && this.selectionIsCollapsed)
+            this.position = offset;
+        }
+      },
+      { once: true }
+    );
+  }
+  /**
+   * Return the content of the `\placeholder{}` command with the `placeholderId`
+   * @category Prompts
+   */
+  getPromptValue(placeholderId, format) {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.getPromptValue(placeholderId, format)) != null ? _b3 : "";
+  }
+  /** @category Prompts */
+  setPromptValue(id, content, insertOptions) {
+    var _a3;
+    (_a3 = this._mathfield) == null ? void 0 : _a3.setPromptValue(id, content, insertOptions);
+  }
+  /**
+   * Return the selection range for the specified prompt.
+   *
+   * This can be used for example to select the content of the prompt.
+   *
+   * ```js
+   * mf.selection = mf.getPromptRange('my-prompt-id');
+   * ```
+   *
+   * @category Prompts
+   *
+   */
+  getPromptRange(id) {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.getPromptRange(id)) != null ? _b3 : null;
+  }
+  /** Return the id of the prompts matching the filter.
+   * @category Prompts
+   */
+  getPrompts(filter) {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.getPrompts(filter)) != null ? _b3 : [];
+  }
+  /** True if the mathfield has editable content, such as unlocked prompts */
+  get hasEditableContent() {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.hasEditableContent) != null ? _b3 : false;
+  }
+  /** @internal */
+  get form() {
+    var _a3;
+    return (_a3 = this._internals) == null ? void 0 : _a3["form"];
+  }
+  /** @internal */
+  get name() {
+    var _a3;
+    return (_a3 = this.getAttribute("name")) != null ? _a3 : "";
+  }
+  /** @internal */
+  get type() {
+    return this.localName;
+  }
+  get mode() {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.model.mode) != null ? _b3 : this.defaultMode === "text" ? "text" : "math";
+  }
+  set mode(value) {
+    var _a3;
+    (_a3 = this._mathfield) == null ? void 0 : _a3.switchMode(value);
+  }
+  /**
+     * If the Compute Engine library is available, return a boxed MathJSON expression representing the value of the mathfield.
+     *
+     * To load the Compute Engine library, use:
+     * ```js
+  import 'https://esm.run/@cortex-js/compute-engine';
+  ```
+     *
+     * @category Accessing and changing the content
+     */
+  get expression() {
+    if (!this._mathfield) return void 0;
+    if (!window[Symbol.for("io.cortexjs.compute-engine")]) {
+      console.error(
+        `MathLive 0.109.2: The CortexJS Compute Engine library is not available.
+        
+        Load the library, for example with:
+        
+        import "https://esm.run/@cortex-js/compute-engine"`
+      );
+      return null;
+    }
+    return this._mathfield.expression;
+  }
+  set expression(mathJson) {
+    var _a3, _b3;
+    if (!this._mathfield) return;
+    const latex = (_b3 = (_a3 = _MathfieldElement.computeEngine) == null ? void 0 : _a3.box(mathJson).latex) != null ? _b3 : null;
+    if (latex !== null) this._mathfield.setValue(latex);
+    if (!window[Symbol.for("io.cortexjs.compute-engine")]) {
+      console.error(
+        `MathLive 0.109.2: The Compute Engine library is not available.
+        
+        Load the library, for example with:
+        
+        import "https://esm.run/@cortex-js/compute-engine"`
+      );
+    }
+  }
+  /**
+   * Return an array of LaTeX syntax errors, if any.
+   * @category Accessing and changing the content
+   */
+  get errors() {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.errors) != null ? _b3 : [];
+  }
+  _getOptions(keys) {
+    if (this._mathfield) return get(this._mathfield.options, keys);
+    if (!gDeferredState.has(this)) return null;
+    return __spreadValues({}, get(
+      __spreadValues(__spreadValues({}, getDefault()), update(gDeferredState.get(this).options)),
+      keys
+    ));
+  }
+  getOptions(keys) {
+    console.warn(
+      `%cMathLive 0.109.2: %cDeprecated Usage%c
+      \`mf.getOptions()\` is deprecated. Read the property directly on the mathfield instead.
+      See mathfield/changelog/ for details.`,
+      "color:#12b; font-size: 1.1rem",
+      "color:#db1111; font-size: 1.1rem",
+      "color: inherit, font-size: 1rem"
+    );
+    if (this._mathfield) return get(this._mathfield.options, keys);
+    if (!gDeferredState.has(this)) return null;
+    return get(
+      __spreadValues(__spreadValues({}, getDefault()), update(gDeferredState.get(this).options)),
+      keys
+    );
+  }
+  /** @internal */
+  reflectAttributes() {
+    const defaultOptions = getDefault();
+    const options = this._getOptions();
+    Object.keys(_MathfieldElement.optionsAttributes).forEach((x) => {
+      const prop = x === "placeholder" ? "contentPlaceholder" : toCamelCase(x);
+      if (_MathfieldElement.optionsAttributes[x] === "on/off") {
+        if (defaultOptions[prop] !== options[prop])
+          this.setAttribute(x, options[prop] ? "on" : "off");
+        else this.removeAttribute(x);
+      } else if (defaultOptions[prop] !== options[prop]) {
+        if (_MathfieldElement.optionsAttributes[x] === "boolean") {
+          if (options[prop]) {
+            this.setAttribute(x, "");
+          } else {
+            this.removeAttribute(x);
+          }
+        } else {
+          if (typeof options[prop] === "string" || typeof options[prop] === "number")
+            this.setAttribute(x, options[prop].toString());
+        }
+      }
+    });
+  }
+  /**
+   *  @category Options
+   * @deprecated
+   */
+  getOption(key) {
+    console.warn(
+      `%cMathLive 0.109.2: %cDeprecated Usage%c
+      \`mf.getOption()\` is deprecated. Read the property directly on the mathfield instead.
+      See mathfield/changelog/ for details.`,
+      "color:#12b; font-size: 1.1rem",
+      "color:#db1111; font-size: 1.1rem",
+      "color: inherit, font-size: 1rem"
+    );
+    return this._getOptions([key])[key];
+  }
+  /** @internal */
+  _getOption(key) {
+    return this._getOptions([key])[key];
+  }
+  /** @internal */
+  _setOptions(options) {
+    if (this._mathfield) this._mathfield.setOptions(options);
+    else if (gDeferredState.has(this)) {
+      const mergedOptions = __spreadValues(__spreadValues({}, gDeferredState.get(this).options), options);
+      gDeferredState.set(this, __spreadProps(__spreadValues({}, gDeferredState.get(this)), {
+        selection: { ranges: mergedOptions.readOnly ? [[0, 0]] : [[0, -1]] },
+        options: mergedOptions
+      }));
+    } else {
+      gDeferredState.set(this, {
+        value: void 0,
+        selection: { ranges: [[0, 0]] },
+        options,
+        menuItems: void 0
+      });
+    }
+    this.reflectAttributes();
+  }
+  /**
+   *  @category Options
+   * @deprecated
+   */
+  setOptions(options) {
+    console.group(
+      `%cMathLive 0.109.2: %cDeprecated Usage`,
+      "color:#12b; font-size: 1.1rem",
+      "color:#db1111; font-size: 1.1rem"
+    );
+    console.warn(
+      ` \`mf.setOptions()\` is deprecated. Set the property directly on the mathfield instead.
+      See mathfield/changelog/ for details.`
+    );
+    for (const key of Object.keys(options)) {
+      if (DEPRECATED_OPTIONS[key]) {
+        console.warn(
+          `\`mf.setOptions({${key}:...})\` -> ${DEPRECATED_OPTIONS[key]}`
+        );
+      }
+    }
+    console.groupEnd();
+    this._setOptions(options);
+  }
+  executeCommand(...args) {
+    var _a3, _b3;
+    let selector;
+    if (args.length === 1)
+      selector = args[0];
+    else selector = [args[0], ...args.slice(1)];
+    if (selector) return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.executeCommand(selector)) != null ? _b3 : false;
+    throw new Error("Invalid selector");
+  }
+  getValue(arg1, arg2, arg3) {
+    var _a3, _b3;
+    if (this._mathfield)
+      return this._mathfield.model.getValue(arg1, arg2, arg3);
+    if (gDeferredState.has(this)) {
+      let start;
+      let end;
+      let format = void 0;
+      if (isSelection(arg1)) {
+        [start, end] = arg1.ranges[0];
+        format = arg2;
+      } else if (isRange(arg1)) {
+        [start, end] = arg1;
+        format = arg2;
+      } else if (isOffset(arg1) && isOffset(arg2)) {
+        start = arg1;
+        end = arg2;
+        format = arg3;
+      } else {
+        start = 0;
+        end = -1;
+        format = arg1;
+      }
+      if ((format === void 0 || format === "latex") && start === 0 && end === -1)
+        return (_b3 = (_a3 = gDeferredState.get(this).value) != null ? _a3 : this.textContent) != null ? _b3 : "";
+    }
+    return "";
+  }
+  /**
+   * Set the content of the mathfield to the text interpreted as a
+   * LaTeX expression.
+   *
+   * @category Accessing and changing the content
+   */
+  setValue(value, options) {
+    if (this._mathfield && value !== void 0) {
+      const currentValue = this._mathfield.model.getValue();
+      // VisualTeX: an explicit mode is part of the requested editor state,
+      // not merely a parsing hint. A field can have identical LaTeX while its
+      // live model is still stuck in text mode from a previous caret/IME
+      // context. Do not let the same-value fast path preserve that stale mode.
+      if (currentValue === value) {
+        const requestedMode = options == null ? void 0 : options.mode;
+        if (
+          requestedMode &&
+          requestedMode !== "auto" &&
+          this._mathfield.model.mode !== requestedMode
+        ) {
+          this._mathfield.model.mode = requestedMode;
+          requestUpdate(this._mathfield);
+        }
+        return;
+      }
+      options != null ? options : options = { silenceNotifications: true, mode: "math" };
+      this._mathfield.setValue(value, options);
+      return;
+    }
+    if (gDeferredState.has(this)) {
+      const options2 = gDeferredState.get(this).options;
+      gDeferredState.set(this, {
+        value,
+        selection: { ranges: [[-1, -1]], direction: "forward" },
+        options: options2,
+        menuItems: void 0
+      });
+      return;
+    }
+    const attrOptions = getOptionsFromAttributes(this);
+    gDeferredState.set(this, {
+      value,
+      selection: { ranges: [[-1, -1]], direction: "forward" },
+      options: attrOptions,
+      menuItems: void 0
+    });
+  }
+  /**
+   * Return true if the mathfield is currently focused (responds to keyboard
+   * input).
+   *
+   * @category Focus
+   *
+   */
+  hasFocus() {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.hasFocus()) != null ? _b3 : false;
+  }
+  /**
+   * Sets the focus to the mathfield (will respond to keyboard input).
+   *
+   * @category Focus
+   *
+   */
+  focus() {
+    var _a3;
+    if (this.disabled) return;
+    (_a3 = this._mathfield) == null ? void 0 : _a3.focus();
+  }
+  /**
+   * Remove the focus from the mathfield (will no longer respond to keyboard
+   * input).
+   *
+   * @category Focus
+   *
+   */
+  blur() {
+    var _a3;
+    (_a3 = this._mathfield) == null ? void 0 : _a3.blur();
+  }
+  /**
+   * Select the content of the mathfield.
+   * @category Selection
+   */
+  select() {
+    var _a3;
+    (_a3 = this._mathfield) == null ? void 0 : _a3.select();
+  }
+  /**
+     * Insert a block of text at the current insertion point.
+     *
+     * This method can be called explicitly or invoked as a selector with
+     * `executeCommand("insert")`.
+     *
+     * After the insertion, the selection will be set according to the
+     * `options.selectionMode`.
+  
+     *  @category Accessing and changing the content
+     */
+  insert(s, options) {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.insert(s, options)) != null ? _b3 : false;
+  }
+  /**
+   * Update the style (color, bold, italic, etc...) of the selection or sets
+   * the style to be applied to future input.
+   *
+   * If there is no selection and no range is specified, the style will
+   * apply to the next character typed.
+   *
+   * If a range is specified, the style is applied to the range, otherwise,
+   * if there is a selection, the style is applied to the selection.
+   *
+   * If the operation is `"toggle"` and the range already has this style,
+   * remove it. If the range
+   * has the style partially applied (i.e. only some sections), remove it from
+   * those sections, and apply it to the entire range.
+   *
+   * If the operation is `"set"`, the style is applied to the range,
+   * whether it already has the style or not.
+   *
+   * The default operation is `"set"`.
+   *
+   *
+   *
+   * @category Styles
+   */
+  applyStyle(style, options) {
+    var _a3;
+    return (_a3 = this._mathfield) == null ? void 0 : _a3.applyStyle(style, options);
+  }
+  /**
+   * If there is a selection, return if all the atoms in the selection,
+   * some of them or none of them match the `style` argument.
+   *
+   * If there is no selection, return 'all' if the current implicit style
+   * (determined by a combination of the style of the previous atom and
+   * the current style) matches the `style` argument, 'none' if it does not.
+   *
+   * @category Styles
+   */
+  queryStyle(style) {
+    var _a3, _b3;

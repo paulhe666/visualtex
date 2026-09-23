@@ -1,0 +1,196 @@
+/* macOS-only presentation overrides loaded after the pinned Windows shared CSS.
+   Keep platform session architecture and extreme-narrow resident-window behavior
+   separate from the shared editor rules. */
+
+/* The resident macOS Office editor keeps Apply/Cancel and session controls in
+   the fixed editor header. Do not inherit a Windows-only hidden classic header. */
+.office-dialog-shell
+  .workspace.is-office-workspace.is-classic-layout
+  > .formula-workspace.editor-pane
+  > .editor-pane-header.is-office-editor-header {
+  display: flex;
+}
+
+/* The desktop classic header is portaled into the macOS top toolbar and hidden
+   inside the workspace. Anchor the collapsed tile-rail affordance to the
+   formula canvas itself instead of reserving the old in-workspace header row. */
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .classic-tile-expand-button {
+  top: 8px;
+}
+
+/* Keypad mode removes the macOS top toolbar, so the editor header becomes the
+   only home for its format selector and exit control. The shared classic
+   layout normally hides this header because those controls are portalled into
+   the desktop toolbar; restore a compact header while the native keypad
+   window is active. */
+.workspace.is-classic-layout.is-keypad-mode:not(.is-office-workspace) {
+  grid-template-rows: var(--panel-header-height) minmax(0, 1fr);
+}
+
+.workspace.is-classic-layout.is-keypad-mode:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .editor-pane-header {
+  display: flex;
+  grid-column: 1;
+  grid-row: 1;
+  padding-inline: 9px;
+  background: var(--surface);
+  pointer-events: auto;
+}
+
+.workspace.is-classic-layout.is-keypad-mode:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .keypad-editor-pane-body {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.workspace.is-keypad-mode:not(.is-office-workspace)
+  .editor-pane-header-trailing {
+  min-width: 0;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.workspace.is-keypad-mode:not(.is-office-workspace)
+  .editor-pane-header
+  .canvas-tool-group {
+  flex: 0 0 auto;
+}
+
+/* At very narrow resident-editor widths the tile rail can leave roughly 100px
+   for the first classic-bottom grid cell. Keep all formatting actions
+   accessible by horizontal scrolling instead of letting their intrinsic width
+   overlap the centred panel tabs and right-side actions. */
+@media (max-width: 560px) {
+  .office-dialog-shell .classic-bottom-formatting-slot {
+    width: 100%;
+    max-width: 100%;
+    justify-self: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .office-dialog-shell .classic-bottom-formatting-slot::-webkit-scrollbar {
+    display: none;
+  }
+
+  .office-dialog-shell
+    .classic-bottom-formatting-slot
+    .formula-alignment-controls {
+    width: max-content;
+    min-width: max-content;
+  }
+
+  /* An absolute color picker would be clipped by the scrolling first cell.
+     In the extreme-narrow layout it becomes a viewport floating layer. */
+  .office-dialog-shell
+    .classic-bottom-formatting-slot
+    .formula-color-popover {
+    position: fixed;
+    top: auto;
+    right: auto;
+    bottom: calc(var(--classic-dock-height, 240px) + 21px);
+    left: 8px;
+    max-width: min(196px, calc(100vw - 16px));
+    z-index: var(--z-popover, 190);
+  }
+}
+
+/* Keep the Office dock on one compact line. The formatting strip owns only the
+   flexible first column; at narrow widths it scrolls internally instead of
+   pushing the tools/source tabs or the collapse action onto another row. */
+.office-dialog-shell .classic-bottom-dock:not(.is-collapsed) {
+  grid-template-rows: 30px minmax(0, 1fr);
+}
+
+.office-dialog-shell .classic-bottom-tabs {
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  grid-template-rows: 30px;
+  gap: 2px;
+  padding-inline: 4px;
+  overflow: visible;
+}
+
+.office-dialog-shell .classic-bottom-formatting-slot {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  max-width: 100%;
+  min-height: 30px;
+  padding-left: 0;
+  justify-self: stretch;
+  overflow: visible;
+}
+
+.office-dialog-shell .classic-bottom-formatting-slot::-webkit-scrollbar {
+  display: none;
+}
+
+.office-dialog-shell
+  .classic-bottom-formatting-slot
+  .formula-alignment-controls,
+.office-dialog-shell
+  .classic-bottom-formatting-slot
+  .formula-formatting-controls {
+  width: max-content;
+  min-width: max-content;
+  flex-wrap: nowrap;
+}
+
+.office-dialog-shell .classic-bottom-tab-group {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: max-content;
+}
+
+.office-dialog-shell .classic-bottom-actions {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: max-content;
+  overflow: visible;
+}
+
+@container (max-width: 560px) {
+  .office-dialog-shell .classic-bottom-tabs {
+    overflow: hidden;
+  }
+
+  .office-dialog-shell .classic-bottom-formatting-slot {
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .office-dialog-shell .classic-bottom-tab-group {
+    gap: 0;
+  }
+
+  .office-dialog-shell .classic-bottom-tab-group button {
+    min-width: 32px;
+    padding-inline: 6px;
+    gap: 0;
+  }
+
+  .office-dialog-shell .classic-bottom-tab-label {
+    display: none;
+  }
+
+  .office-dialog-shell
+    .classic-bottom-formatting-slot
+    .formula-color-popover {
+    position: fixed;
+    top: auto;
+    right: auto;
+    bottom: calc(var(--classic-dock-height, 240px) + 21px);
+    left: 8px;
+    max-width: min(196px, calc(100vw - 16px));
+    z-index: var(--z-popover, 190);
+  }
+}

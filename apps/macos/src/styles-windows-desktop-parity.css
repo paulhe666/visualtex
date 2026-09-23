@@ -1,0 +1,416 @@
+/* Desktop header and classic-panel layout migrated from Windows 7e9c8050,
+   styles-windows-shared-latest.css. Native Office headers keep their separate
+   macOS presentation and Apply/Cancel controls. */
+
+/* Desktop single-row toolbar. All top-level desktop actions live in the
+   real app header; the classic editor header is only a portal source and does
+   not consume layout space. This removes the previous two-layer seam and
+   prevents independently-positioned headers from overlapping at narrow widths. */
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) {
+  --desktop-toolbar-control-size: 32px;
+  grid-template-rows: var(--panel-header-height, 52px) minmax(0, 1fr) 24px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header {
+  position: relative;
+  inset: auto;
+  z-index: var(--z-app-header, 120);
+  width: 100%;
+  min-width: 0;
+  height: var(--panel-header-height, 52px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  overflow: visible;
+  background: color-mix(in srgb, var(--surface) 97%, var(--bg));
+  border-bottom: 1px solid var(--border);
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-area {
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: 5px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-copy {
+  white-space: nowrap;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .document-title-area {
+  flex: 0 1 230px;
+  min-width: 104px;
+  max-width: 260px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .header-actions {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .header-actions .icon-button,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .menu-button,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .keypad-mode-toggle,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .workspace-export-trigger,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .canvas-input-behavior-trigger,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .quick-ocr-button,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .silent-ocr-toggle,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .canvas-ocr-model {
+  box-sizing: border-box;
+  width: var(--desktop-toolbar-control-size);
+  min-width: var(--desktop-toolbar-control-size);
+  height: var(--desktop-toolbar-control-size);
+  min-height: var(--desktop-toolbar-control-size);
+  padding: 0;
+  border-radius: 7px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-control {
+  flex: 0 0 var(--desktop-toolbar-control-size);
+  width: var(--desktop-toolbar-control-size);
+  min-width: var(--desktop-toolbar-control-size);
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary:hover,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary[aria-expanded="true"] {
+  border-color: var(--border);
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+.desktop-top-tools-mount {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.desktop-top-tools-mount .editor-pane-header-trailing {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.desktop-top-tools-mount .desktop-editor-header-controls,
+.desktop-top-tools-mount .canvas-tool-group,
+.desktop-top-tools-mount .quick-ocr-controls,
+.desktop-top-tools-mount .quick-ocr-split,
+.desktop-top-tools-mount .canvas-controls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.desktop-top-tools-mount .workspace-export-trigger > span,
+.desktop-top-tools-mount .canvas-input-behavior-trigger > span,
+.desktop-top-tools-mount .canvas-input-behavior-trigger > svg:last-child,
+.desktop-top-tools-mount .keypad-mode-toggle > span,
+.desktop-top-tools-mount .canvas-controls > span {
+  display: none !important;
+}
+
+.desktop-top-tools-mount .desktop-editor-header-controls {
+  margin-left: 0;
+}
+
+.desktop-top-tools-mount .quick-ocr-mode-trigger {
+  display: none !important;
+}
+
+.desktop-top-tools-mount .quick-ocr-primary {
+  border-radius: 7px !important;
+}
+
+.desktop-top-tools-mount .silent-ocr-toggle {
+  justify-content: center;
+  gap: 0;
+}
+
+.desktop-top-tools-mount .silent-ocr-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.desktop-top-tools-mount .canvas-ocr-model {
+  position: relative;
+  overflow: visible;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.desktop-top-tools-mount .canvas-ocr-model > svg {
+  display: block !important;
+  margin: 0;
+  pointer-events: none;
+}
+
+.desktop-top-tools-mount .canvas-ocr-model select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.desktop-top-tools-mount .canvas-controls {
+  height: var(--desktop-toolbar-control-size);
+}
+
+.desktop-top-tools-mount .canvas-controls .icon-button {
+  width: var(--desktop-toolbar-control-size);
+  min-width: var(--desktop-toolbar-control-size);
+  height: var(--desktop-toolbar-control-size);
+  min-height: var(--desktop-toolbar-control-size);
+}
+
+.editor-pane-header-controls {
+  display: contents;
+}
+
+.classic-bottom-workspace-controls {
+  position: relative;
+  z-index: var(--z-workspace-floating, 60);
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  align-self: stretch;
+  overflow: visible;
+}
+
+.classic-bottom-workspace-controls .pane-title-group {
+  width: max-content;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  overflow: visible;
+}
+
+.classic-bottom-workspace-controls .formula-alignment-controls {
+  margin: 0;
+  padding: 0;
+  gap: 1px;
+}
+
+.classic-bottom-workspace-controls .formula-alignment-button,
+.classic-bottom-workspace-controls .formula-formatting-button,
+.classic-bottom-workspace-controls .icon-button.compact {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.classic-bottom-workspace-controls .formula-color-popover {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 7px);
+  left: 0;
+  z-index: var(--z-popover, 190);
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .editor-pane-header {
+  z-index: calc(var(--z-app-header, 120) + 1);
+  padding-left: calc(100% - var(--desktop-top-tools-width));
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .editor-pane-header
+  > .editor-pane-header-controls {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 0 8px;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .editor-pane-header
+  .desktop-editor-header-controls {
+  flex: 0 0 auto;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .editor-pane-header
+  .canvas-tool-group {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  overflow: visible;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tabs {
+  grid-template-columns: minmax(0, 1fr) auto minmax(30px, max-content);
+  gap: 4px;
+  padding-inline: 6px;
+  overflow: visible;
+}
+
+.workspace.is-classic-layout.has-sidebar {
+  grid-template-columns:
+    minmax(0, 1fr)
+    7px
+    minmax(220px, var(--classic-tile-width, 300px));
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace) {
+  grid-template-rows: var(--panel-header-height) minmax(0, 1fr);
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .formula-workspace.editor-pane {
+  display: contents;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .editor-pane-header {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .classic-editor-pane-body {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .classic-tile-resizer {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .classic-tile-toolbar {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.workspace.is-classic-layout .formula-workspace.editor-pane {
+  border-right: 0;
+}
+
+@media (max-width: 980px) {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .document-title-area {
+    display: none;
+  }
+
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .header-actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .file-actions,
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .edit-actions,
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell)
+    > .app-header
+    .header-actions
+    > .workspace-action,
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell)
+    > .app-header
+    .header-actions
+    > .settings-toggle {
+    display: none !important;
+  }
+
+  .desktop-top-tools-mount .canvas-controls > span {
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-copy {
+    display: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-tab-label {
+    display: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-tab-group button {
+    min-width: 38px;
+    width: 38px;
+    padding-inline: 0;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls {
+    max-width: calc(50% - 48px);
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls .formula-alignment-button,
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls .formula-formatting-button {
+    width: 24px;
+    min-width: 24px;
+    height: 26px;
+    min-height: 26px;
+  }
+}
+
+@media (max-width: 540px) {
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls {
+    transform: scale(0.74);
+    transform-origin: left center;
+  }
+}
+
+@media (max-width: 460px) {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) {
+    --desktop-toolbar-control-size: 28px;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls {
+    transform: scale(0.64);
+  }
+}

@@ -51,6 +51,22 @@
   --toolbar-category-set: #c8e4d9;
   --control-height: 30px;
   --panel-header-height: 52px;
+  /* Global stacking order. Workspace chrome and menus stay below blocking
+     surfaces; nested dialogs and toasts remain visible above their owner. */
+  --z-workspace-footer: 50;
+  --z-workspace-floating: 60;
+  --z-workspace-resizer: 70;
+  --z-workspace-header: 80;
+  --z-menu-dismiss: 110;
+  --z-app-header: 120;
+  --z-app-menu: 120;
+  --z-popover: 190;
+  --z-context-menu: 2050;
+  --z-modal: 2200;
+  --z-panel-backdrop: 2200;
+  --z-panel: 2210;
+  --z-modal-nested: 2300;
+  --z-toast: 2400;
   background: var(--bg);
   color: var(--text);
   font-synthesis: none;
@@ -1765,42 +1781,6 @@ kbd {
   justify-content: center;
 }
 
-.mathfield-host.has-pending-wrapper-placeholder::after {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  top: var(--pending-wrapper-top, 50%);
-  left: var(--pending-wrapper-left, 50%);
-  width: var(--pending-wrapper-width, 18px);
-  height: var(--pending-wrapper-height, 29px);
-  transform: translate(-50%, -50%);
-  border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--border-strong));
-  border-radius: 5px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent-soft) 58%, transparent),
-    color-mix(in srgb, var(--surface) 74%, transparent)
-  );
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--surface) 72%, transparent),
-    0 2px 8px color-mix(in srgb, var(--accent) 12%, transparent);
-  pointer-events: none;
-  transition:
-    width 90ms ease,
-    left 90ms ease;
-}
-
-.pending-wrapper-measure {
-  position: absolute;
-  left: -10000px;
-  top: -10000px;
-  display: inline-block;
-  width: max-content;
-  white-space: nowrap;
-  visibility: hidden;
-  pointer-events: none;
-}
-
 .visual-mathfield {
   position: relative;
   z-index: 1;
@@ -2099,10 +2079,17 @@ kbd {
 .panel-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 110;
   background: var(--bg-scrim);
   backdrop-filter: blur(3px);
   animation: fade-in 140ms ease;
+}
+
+.modal-backdrop {
+  z-index: var(--z-modal);
+}
+
+.panel-backdrop {
+  z-index: var(--z-panel-backdrop);
 }
 
 .settings-dialog {
@@ -2123,7 +2110,7 @@ kbd {
 }
 
 .help-manual-backdrop {
-  z-index: 145;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 18px;
@@ -2486,7 +2473,7 @@ kbd {
 .settings-subdialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 130;
+  z-index: var(--z-modal-nested);
   display: grid;
   place-items: center;
   padding: 16px;
@@ -3012,7 +2999,7 @@ kbd {
 
 .history-panel {
   position: fixed;
-  z-index: 130;
+  z-index: var(--z-panel);
   top: 0;
   right: 0;
   bottom: 0;
@@ -3031,7 +3018,7 @@ kbd {
 }
 
 .panel-backdrop {
-  z-index: 120;
+  z-index: var(--z-panel-backdrop);
 }
 
 .history-list {
@@ -3137,7 +3124,7 @@ kbd {
 
 .toast {
   position: fixed;
-  z-index: 200;
+  z-index: var(--z-toast);
   left: 50%;
   bottom: 42px;
   display: flex;
@@ -3191,53 +3178,68 @@ kbd {
   grid-template-columns: 50px minmax(0, 1fr);
 }
 
+.multi-line-editor.has-mixed-line-modes .formula-line {
+  grid-template-columns: 24px minmax(0, 1fr) 24px;
+}
+
+.multi-line-editor.has-mixed-line-modes.has-line-numbers .formula-line {
+  grid-template-columns: 50px 24px minmax(0, 1fr) 24px;
+}
+
 .formula-line-mode-toggle {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  z-index: 5;
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
-  box-shadow: 0 3px 12px color-mix(in srgb, var(--text) 10%, transparent);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-50%);
-  transition: opacity 120ms ease;
-  user-select: none;
-}
-
-.formula-line.is-active .formula-line-mode-toggle,
-.formula-line:hover .formula-line-mode-toggle,
-.formula-line-mode-toggle:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.formula-line-mode-toggle button {
-  min-width: 35px;
-  height: 22px;
-  padding: 0 5px;
+  position: static;
+  align-self: center;
+  justify-self: center;
+  z-index: 2;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-faint);
+  font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 9px;
   font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  opacity: 0.34;
   cursor: pointer;
+  user-select: none;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    background-color 120ms ease;
 }
 
-.formula-line-mode-toggle button:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--bg) 70%, transparent);
+.formula-line.is-active .formula-line-mode-toggle {
+  opacity: 0.68;
 }
 
-.formula-line-mode-toggle button.is-active {
+.formula-line:hover .formula-line-mode-toggle,
+.formula-line-mode-toggle:hover,
+.formula-line-mode-toggle:focus-visible {
   color: var(--accent);
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent-soft) 64%, transparent);
+  opacity: 1;
+  outline: none;
+}
+
+.formula-line-mode-toggle:disabled {
+  color: var(--text-faint);
+  background: transparent;
+  opacity: 0.26;
+  cursor: default;
+}
+
+.multi-line-editor.is-source-preview-only .formula-line-mode-toggle:disabled {
+  opacity: 0.34;
+}
+
+.multi-line-editor.is-source-preview-only
+  .formula-line.is-active
+  .formula-line-mode-toggle:disabled {
+  opacity: 0.68;
 }
 
 .workspace.has-active-line-highlight .formula-line:hover {
@@ -4947,6 +4949,10 @@ button:disabled {
   gap: 8px;
 }
 
+.editor-pane-header-controls {
+  display: contents;
+}
+
 .desktop-editor-header-controls {
   min-width: 0;
   display: flex;
@@ -5597,7 +5603,7 @@ button:disabled {
 .office-first-run-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 230;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -6103,7 +6109,7 @@ button:disabled {
 .onboarding-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 220;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -7254,16 +7260,6 @@ textarea:disabled {
   outline: 0 !important;
 }
 
-.workspace.is-source-editor-focused .editor-surface:focus-within {
-  border-color: var(--border);
-  box-shadow: none;
-}
-
-.workspace.is-source-editor-focused
-  .mathfield-host.has-pending-wrapper-placeholder::after {
-  display: none !important;
-}
-
 .multi-line-editor.is-source-preview-only {
   cursor: default;
 }
@@ -7686,7 +7682,7 @@ textarea:disabled {
 
 /* Application update dialog: restrained macOS utility styling. */
 .update-backdrop {
-  z-index: 230;
+  z-index: var(--z-modal);
 }
 
 .update-dialog {
@@ -8135,7 +8131,10 @@ html body #mathlive-suggestion-popover.bottom-tip::after {
 }
 
 html body #mathlive-suggestion-popover ul {
-  max-height: 320px;
+  max-height: min(
+    320px,
+    var(--visualtex-suggestion-max-height, 320px)
+  );
   padding: 6px !important;
   background: var(--surface);
   overscroll-behavior: contain;
@@ -8178,7 +8177,8 @@ html body #mathlive-suggestion-popover li.has-visualtex-command-preview .ML__pop
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
+  padding-block: 3px;
   font-size: 1.1rem !important;
 }
 
@@ -8194,7 +8194,7 @@ html body #visualtex-native-input-suggestion-popover .visualtex-native-preview-p
   display: inline-block;
   overflow: hidden;
   border-radius: 0.08em;
-  background: var(--formula-placeholder);
+  background: #d9edf9;
   color: transparent;
   line-height: 0;
   vertical-align: -0.08em;
@@ -8222,15 +8222,7 @@ html body #mathlive-suggestion-popover .ML__popover__latex {
 }
 
 html body #mathlive-suggestion-popover .ML__popover__keybinding {
-  min-width: 46px;
-  flex: 0 0 46px;
-  align-self: center;
-  margin-left: auto;
   color: var(--text-faint);
-  font-size: 10px;
-  line-height: 1.35;
-  text-align: right;
-  white-space: nowrap;
   opacity: 1 !important;
 }
 
@@ -8248,157 +8240,6 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 :root[data-theme="light"] body #mathlive-suggestion-popover li.ML__popover__current {
   border-color: #9fc8e5 !important;
   background: #ffffff !important;
-  box-shadow: inset 0 0 0 1px rgba(31, 99, 142, 0.10);
-}
-
-/* MathLive removes and recreates its native input-selection popover whenever
-   the query or highlighted row changes. Keep the source measurable but hidden,
-   and project it into one persistent VisualTeX node so the frame never flashes. */
-html body #mathlive-suggestion-popover {
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-html body #visualtex-native-input-suggestion-popover {
-  min-width: 250px;
-  max-width: min(380px, calc(100vw - 24px));
-  position: fixed;
-  z-index: var(--suggestion-zindex, 100);
-  display: none;
-  flex-direction: column;
-  justify-content: center;
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow-md);
-  isolation: isolate;
-  pointer-events: auto;
-}
-
-html body #visualtex-native-input-suggestion-popover.is-visible {
-  display: flex;
-}
-
-html body #visualtex-native-input-suggestion-popover.top-tip::after {
-  content: "";
-  position: absolute;
-  top: -15px;
-  left: calc(50% - 15px);
-  width: 0;
-  height: 0;
-  border-right: 15px solid transparent;
-  border-bottom: 15px solid var(--surface);
-  border-left: 15px solid transparent;
-}
-
-html body #visualtex-native-input-suggestion-popover.bottom-tip::after {
-  content: "";
-  position: absolute;
-  bottom: -15px;
-  left: calc(50% - 15px);
-  width: 0;
-  height: 0;
-  border-top: 15px solid var(--surface);
-  border-right: 15px solid transparent;
-  border-left: 15px solid transparent;
-}
-
-html body #visualtex-native-input-suggestion-popover ul {
-  max-height: 320px;
-  display: flex;
-  flex-flow: column;
-  align-items: flex-start;
-  margin: 0;
-  padding: 6px;
-  overflow-y: auto;
-  background: var(--surface);
-  list-style: none;
-  overscroll-behavior: contain;
-}
-
-html body #visualtex-native-input-suggestion-popover li {
-  width: 100%;
-  min-height: 48px;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0;
-  padding: 7px 9px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  color: var(--text);
-  cursor: pointer;
-}
-
-html body #visualtex-native-input-suggestion-popover li + li {
-  margin-top: 3px;
-}
-
-html body #visualtex-native-input-suggestion-popover li:hover,
-html body #visualtex-native-input-suggestion-popover li.is-active,
-html body #visualtex-native-input-suggestion-popover li.is-pressed {
-  border-color: var(--accent-border);
-  background: var(--accent-soft);
-}
-
-html body #visualtex-native-input-suggestion-popover li.ML__popover__current {
-  border-color: var(--accent-border);
-  background: transparent;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
-}
-
-html body #visualtex-native-input-suggestion-popover .ML__popover__latex {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-html body #visualtex-native-input-suggestion-popover .ML__popover__command {
-  min-width: 72px;
-  color: var(--text);
-  font-size: 1.3rem;
-}
-
-html body #visualtex-native-input-suggestion-popover li.has-visualtex-command-preview .ML__popover__command {
-  min-width: 126px;
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  font-size: 1.1rem;
-}
-
-html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
-  min-width: 46px;
-  flex: 0 0 46px;
-  align-self: center;
-  margin-left: auto;
-  color: var(--text-faint);
-  font-size: 10px;
-  line-height: 1.35;
-  text-align: right;
-  white-space: nowrap;
-  opacity: 1;
-}
-
-:root[data-theme="light"] body #visualtex-native-input-suggestion-popover,
-:root[data-theme="light"] body #visualtex-native-input-suggestion-popover ul {
-  background: #ffffff;
-}
-
-:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li:hover,
-:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li.is-active,
-:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li.is-pressed {
-  background: #f4f9ff;
-}
-
-:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li.ML__popover__current {
-  border-color: #9fc8e5;
-  background: #ffffff;
   box-shadow: inset 0 0 0 1px rgba(31, 99, 142, 0.10);
 }
 
@@ -9272,6 +9113,87 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   color: var(--accent);
 }
 
+.latex-profile-menu {
+  width: min(392px, calc(100vw - 24px));
+  max-height: none;
+  overflow: visible;
+}
+
+.latex-profile-options {
+  display: grid;
+  gap: 7px;
+}
+
+.latex-profile-row {
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.latex-profile-row > span {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.latex-profile-segments {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.code-format-menu.latex-profile-menu .latex-profile-segments > button,
+.code-format-menu.latex-profile-menu .latex-profile-toggle {
+  min-height: 27px;
+  width: auto;
+  display: inline-flex;
+  grid-template-columns: none;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 0;
+  padding: 4px 8px !important;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.code-format-menu.latex-profile-menu .latex-profile-segments > button.is-selected,
+.code-format-menu.latex-profile-menu .latex-profile-toggle.is-selected {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: none;
+}
+
+.latex-profile-toggle {
+  justify-self: start;
+}
+
+.latex-profile-toggle > span {
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.latex-profile-summary {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
 @media (max-width: 900px) {
   .code-format-primary {
     min-width: 0;
@@ -9539,11 +9461,14 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
 .office-dialog-shell
   .workspace.is-office-workspace
   > .formula-workspace.editor-pane
-  > .editor-pane-header {
+  > .editor-pane-header.is-office-editor-header {
   position: fixed;
+  z-index: var(--z-workspace-header, 80);
   inset: 0 0 auto;
   width: auto;
   height: var(--panel-header-height);
+  display: flex;
+  overflow: visible;
 }
 
 .office-dialog-shell
@@ -9593,6 +9518,7 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
 .editor-pane-header.is-office-editor-header .pane-title-group {
   flex: 0 1 auto;
   gap: 6px;
+  overflow: visible;
 }
 
 .office-inline-options,
@@ -9601,6 +9527,7 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   display: flex;
   align-items: center;
   gap: 6px;
+  overflow: visible;
 }
 
 .office-inline-options {
@@ -9612,15 +9539,35 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   margin-left: auto;
 }
 
+.editor-pane-header.is-office-editor-header .office-formatting-mount {
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  overflow: visible;
+}
+
 .editor-pane-header.is-office-editor-header .formula-alignment-controls {
   margin-left: 0;
   padding-left: 7px;
 }
 
+.editor-pane-header.is-office-editor-header .editor-pane-header-trailing {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  overflow: visible;
+}
+
 .editor-pane-header.is-office-editor-header .canvas-tool-group {
+  min-width: 0;
   flex: 1 1 auto;
   justify-content: flex-end;
   gap: 5px;
+  overflow: visible;
 }
 
 .editor-pane-header.is-office-editor-header .office-display-mode-setting {
@@ -10378,7 +10325,7 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
 
 .formula-editor-context-menu {
   position: fixed;
-  z-index: 2050;
+  z-index: var(--z-context-menu);
   min-width: 176px;
   padding: 4px;
   border: 1px solid var(--border-strong);
@@ -10423,7 +10370,7 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
 
 .formula-tile-context-menu {
   position: fixed;
-  z-index: 1800;
+  z-index: var(--z-context-menu);
   min-width: 144px;
   padding: 4px;
   border: 1px solid var(--border-strong);
@@ -10505,7 +10452,7 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
 }
 
 .formula-hotkey-modal-backdrop {
-  z-index: 2100;
+  z-index: var(--z-modal-nested);
 }
 
 .formula-hotkey-recorder-dialog,
@@ -13854,7 +13801,7 @@ body[data-workspace-resize="dock"] * {
 }
 
 .custom-symbol-designer-backdrop {
-  z-index: 145;
+  z-index: var(--z-modal);
   display: grid;
   place-items: center;
   padding: 16px;
@@ -16019,5 +15966,202 @@ body[data-workspace-resize="dock"] * {
 
   .custom-symbol-system-glyph-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.visualtex-native-placeholder-preview,
+html body #visualtex-native-input-suggestion-popover .visualtex-native-placeholder-preview {
+  background: var(--formula-placeholder);
+}
+
+/* MathLive owns candidate data and command acceptance. Keep its source panel
+   measurable but invisible after the stable VisualTeX projection is active. */
+html body #mathlive-suggestion-popover[data-visualtex-input-popover-source="true"] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+html body #visualtex-native-input-suggestion-popover {
+  min-width: 250px;
+  max-width: min(380px, calc(100vw - 24px));
+  position: fixed;
+  z-index: var(--suggestion-zindex, 190);
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  isolation: isolate;
+  pointer-events: auto;
+}
+
+html body #visualtex-native-input-suggestion-popover.is-visible {
+  display: flex;
+}
+
+html body #visualtex-native-input-suggestion-popover.top-tip::after {
+  content: "";
+  position: absolute;
+  top: -15px;
+  left: calc(50% - 15px);
+  width: 0;
+  height: 0;
+  border-right: 15px solid transparent;
+  border-bottom: 15px solid var(--surface);
+  border-left: 15px solid transparent;
+}
+
+html body #visualtex-native-input-suggestion-popover.bottom-tip::after {
+  content: "";
+  position: absolute;
+  bottom: -15px;
+  left: calc(50% - 15px);
+  width: 0;
+  height: 0;
+  border-top: 15px solid var(--surface);
+  border-right: 15px solid transparent;
+  border-left: 15px solid transparent;
+}
+
+html body #visualtex-native-input-suggestion-popover ul {
+  max-height: min(
+    320px,
+    var(--visualtex-suggestion-max-height, 320px)
+  );
+  display: flex;
+  flex-flow: column;
+  align-items: flex-start;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  background: var(--surface);
+  list-style: none;
+  overscroll-behavior: contain;
+}
+
+html body #visualtex-native-input-suggestion-popover li {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+html body #visualtex-native-input-suggestion-popover li + li {
+  margin-top: 3px;
+}
+
+html body #visualtex-native-input-suggestion-popover li:hover,
+html body #visualtex-native-input-suggestion-popover li.is-active,
+html body #visualtex-native-input-suggestion-popover li.is-pressed {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+html body #visualtex-native-input-suggestion-popover li.ML__popover__current {
+  border-color: var(--accent-border);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__latex {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__command {
+  min-width: 72px;
+  color: var(--text);
+  font-size: 1.3rem;
+}
+
+html body #visualtex-native-input-suggestion-popover li.has-visualtex-command-preview .ML__popover__command {
+  min-width: 126px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  padding-block: 3px;
+  font-size: 1.1rem;
+}
+
+html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
+  min-width: 46px;
+  flex: 0 0 46px;
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  white-space: nowrap;
+  opacity: 1;
+}
+
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover,
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover ul {
+  background: #ffffff;
+}
+
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li:hover,
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li.is-active,
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li.is-pressed {
+  background: #f4f9ff;
+}
+
+:root[data-theme="light"] body #visualtex-native-input-suggestion-popover li.ML__popover__current {
+  border-color: #9fc8e5;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(31, 99, 142, 0.10);
+}
+
+/* Shared Office header rules from the pinned Windows editor stylesheet.
+   macOS keeps native session controls in this header in both layouts; Windows
+   moves them elsewhere. Hiding it would remove Apply / Cancel on macOS.
+   The Windows-only MathType/object-kind selector is not mounted on macOS. */
+.workspace.is-classic-layout.is-office-workspace > .formula-workspace.editor-pane > .editor-pane-header.is-office-editor-header {
+  display: flex;
+}
+
+.classic-bottom-formatting .formula-alignment-controls,
+.editor-pane-header.is-office-editor-header .formula-alignment-controls {
+  margin-left: 0;
+  padding-left: 0;
+  gap: 1px;
+}
+
+.classic-bottom-formatting .formula-alignment-button,
+.classic-bottom-formatting .formula-formatting-button,
+.editor-pane-header.is-office-editor-header .formula-alignment-button,
+.editor-pane-header.is-office-editor-header .formula-formatting-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+}
+
+@media (max-width: 760px) {
+  .editor-pane-header.is-office-editor-header .canvas-input-behavior-trigger {
+    width: 30px;
+    min-width: 30px;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .editor-pane-header.is-office-editor-header .canvas-input-behavior-trigger > span,
+  .editor-pane-header.is-office-editor-header .canvas-input-behavior-trigger > svg:last-child {
+    display: none;
   }
 }
