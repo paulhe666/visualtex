@@ -71,12 +71,24 @@ internal static class WordOmmlHostWriter
             throw new InvalidOperationException(
                 "Preserving a Word-native number host requires display OMML -> display OMML.");
         }
-        if (!HasFieldFreeWordNativeNumberHost(
+        var sourceNumbering =
+            WordFormulaNumberingResolver.ResolveLocal(
                 document,
-                source))
+                source);
+        var preservingManagedNumber =
+            request.Numbered
+            && sourceNumbering.ContainerKind ==
+                WordFormulaNumberingContainerKind.CanonicalNativeOmml;
+        var preservingFieldFreeWordNumber =
+            !request.Numbered
+            && HasFieldFreeWordNativeNumberHost(
+                document,
+                source);
+        if (!preservingManagedNumber
+            && !preservingFieldFreeWordNumber)
         {
             throw new InvalidOperationException(
-                "The source is not a field-free Word-native numbered OMML host.");
+                "The source is not a preservable Word-native numbered OMML host.");
         }
         if (string.IsNullOrWhiteSpace(request.MathMl)
             || !request.MathMl!.TrimStart().StartsWith(
@@ -103,9 +115,6 @@ internal static class WordOmmlHostWriter
 
             var semanticOmml =
                 WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
-            WordOmmlConverter.ValidateOmmlResult(
-                semanticOmml,
-                request.MathMl!);
             semanticOmml =
                 ApplySemanticOmmlTypography(
                     semanticOmml,
@@ -129,21 +138,28 @@ internal static class WordOmmlHostWriter
 
             // Typography was applied to the replacement mathematical body
             // before it was merged with the source host. Do not set Range.Font
-            // on the completed OMath: that would also rewrite the field-free
-            // native number payload, which VisualTeX deliberately does not own.
+            // on the completed OMath: that would also rewrite the preserved
+            // Word-native number payload/fields/bookmarks.
             WordFormulaHostLayout.ConfigureDisplayParagraph(
                 replacement);
 
             var described = DescribeInsertedOmml(
                 replacement,
-                requestedNumbered: false,
-                semanticOmml,
-                request.AdditionalValidOmmlContentSignatures);
+                requestedNumbered: request.Numbered);
+            if (request.Numbered)
+            {
+                described.Numbering =
+                    WordFormulaNumberingResolver.ResolveLocal(
+                        document,
+                        described);
+                if (described.Numbering.ContainerKind !=
+                    WordFormulaNumberingContainerKind.CanonicalNativeOmml)
+                    throw new InvalidDataException(
+                        "Editing a referenced numbered OMML formula lost its native numbering host.");
+            }
             return new WordFormulaHostWriteResult
             {
-                Host = described.Host,
-                SemanticPostconditionValidated =
-                    described.SemanticValidated,
+                Host = described,
             };
         }
         finally
@@ -270,11 +286,6 @@ internal static class WordOmmlHostWriter
         {
             var preparedOmml =
                 WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
-            WordOmmlConverter.ValidateOmmlResult(
-                preparedOmml,
-                request.MathMl!);
-            var expectedSemanticOmml =
-                preparedOmml;
 
             // Numbered OMML is one native Word host, not an unnumbered OMath
             // followed by a second rebuild. Materialize the final #(SEQ) form
@@ -294,12 +305,9 @@ internal static class WordOmmlHostWriter
                     PrepareAdjacentInlineNativeMerge(
                         document,
                         insertion,
-                        preparedOmml,
-                        request);
+                        preparedOmml);
                 preparedOmml =
                     preparedInline.Omml;
-                expectedSemanticOmml =
-                    preparedOmml;
                 target =
                     preparedInline.Target;
             }
@@ -318,27 +326,25 @@ internal static class WordOmmlHostWriter
                 preparedOmml,
                 display,
                 mathFontName:
-                    document.OMathFontName);
+                    document.OMathFontName,
+                allowWordNativeInlinePromotion:
+                    !display);
 
             WordFormulaHostLayout.ApplyOmmlLocalTypography(
                 inserted,
                 request.FontSizePoints);
-            if (display)
-                WordFormulaHostLayout.ConfigureDisplayParagraph(
-                    inserted);
             // OMML has no VisualTeX-owned durable identity. FormulaId is
             // operation/session state only and is never serialized into Word.
 
             var described = DescribeInsertedOmml(
                 inserted,
-                request.Numbered,
-                expectedSemanticOmml,
-                request.AdditionalValidOmmlContentSignatures);
+                request.Numbered);
+            if (described.Display)
+                WordFormulaHostLayout.ConfigureDisplayParagraph(
+                    inserted);
             return new WordFormulaHostWriteResult
             {
-                Host = described.Host,
-                SemanticPostconditionValidated =
-                    described.SemanticValidated,
+                Host = described,
             };
         }
         catch
@@ -360,8 +366,7 @@ internal static class WordOmmlHostWriter
         PrepareAdjacentInlineNativeMerge(
             Document document,
             Range insertion,
-            string preparedOmml,
-            WordFormulaHostWriteRequest request)
+            string preparedOmml)
     {
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
@@ -464,17 +469,6 @@ internal static class WordOmmlHostWriter
                     sourceStart;
                 targetEnd =
                     rightRange.End;
-            }
-
-            var combinedSignature =
-                WordOmmlConverter.ComputeImportedOmmlContentSignature(
-                    combinedOmml);
-            if (!request.AdditionalValidOmmlContentSignatures.Contains(
-                    combinedSignature,
-                    StringComparer.Ordinal))
-            {
-                request.AdditionalValidOmmlContentSignatures.Add(
-                    combinedSignature);
             }
 
             return (
@@ -933,14 +927,9 @@ internal static class WordOmmlHostWriter
         }
     }
 
-    private static (
-        WordFormulaHostDescriptor Host,
-        bool SemanticValidated)
-        DescribeInsertedOmml(
-            Range inserted,
-            bool requestedNumbered,
-            string expectedSemanticOmml,
-            IReadOnlyCollection<string> additionalValidSignatures)
+    private static WordFormulaHostDescriptor DescribeInsertedOmml(
+        Range inserted,
+        bool requestedNumbered)
     {
         OMaths? maths = null;
         OMath? math = null;
@@ -953,37 +942,12 @@ internal static class WordOmmlHostWriter
                     "Word did not materialize exactly one OMML host.");
             math = maths[1];
             exact = math.Range.Duplicate;
-            if (exact.Start != inserted.Start
+            if (exact.End <= exact.Start
+                || exact.Start != inserted.Start
                 || exact.End != inserted.End
                 || exact.StoryType != inserted.StoryType)
                 throw new InvalidDataException(
-                    "Word returned an ambiguous OMML insertion range.");
-
-            var actualSemanticXml =
-                exact.WordOpenXML
-                ?? string.Empty;
-
-            var display =
-                math.Type ==
-                WdOMathType.wdOMathDisplay;
-            var comparison =
-                WordNativeOmmlSemanticComparer.CompareOmml(
-                    expectedSemanticOmml,
-                    actualSemanticXml,
-                    display,
-                    additionalValidSignatures);
-            if (!comparison.Equivalent)
-            {
-                throw new InvalidDataException(
-                    "Word materialized an OMML equation whose canonical mathematical semantics differ from the requested content. "
-                    + $"display={(display ? "block" : "inline")}; "
-                    + $"expectedOmmlSignature=[{comparison.ExpectedOmmlSignature}]; "
-                    + $"actualOmmlSignature=[{comparison.ActualOmmlSignature}]; "
-                    + $"expectedMathMlSignature=[{comparison.ExpectedMathMlSignature}]; "
-                    + $"actualMathMlSignature=[{comparison.ActualMathMlSignature}]; "
-                    + $"semanticExtractionError=[{comparison.SemanticExtractionError ?? string.Empty}].");
-            }
-            var semanticValidated = true;
+                    "Word returned an invalid or ambiguous OMML insertion range.");
 
             var address =
                 new WordFormulaRangeAddress
@@ -992,35 +956,31 @@ internal static class WordOmmlHostWriter
                     Start = exact.Start,
                     End = exact.End,
                 };
-            var descriptor =
-                new WordFormulaHostDescriptor
+            return new WordFormulaHostDescriptor
+            {
+                Kind = WordFormulaHostKind.Omml,
+                Range = address,
+                DisplayMode =
+                    math.Type == WdOMathType.wdOMathDisplay
+                        ? "block"
+                        : "inline",
+                FormulaId = null,
+                Metadata = null,
+                MetadataAuthoritative = false,
+                Numbering = new WordFormulaNumberingDescriptor
                 {
-                    Kind = WordFormulaHostKind.Omml,
-                    Range = address,
-                    DisplayMode =
-                        math.Type == WdOMathType.wdOMathDisplay
-                            ? "block"
-                            : "inline",
+                    Numbered = requestedNumbered,
                     FormulaId = null,
-                    Metadata = null,
-                    MetadataAuthoritative = false,
-                    Numbering = new WordFormulaNumberingDescriptor
-                    {
-                        Numbered = requestedNumbered,
-                        FormulaId = null,
-                        ContainerKind = requestedNumbered
-                            ? WordFormulaNumberingContainerKind
-                                .CanonicalNativeOmml
-                            : WordFormulaNumberingContainerKind.None,
-                        ContainerRange = requestedNumbered
-                            ? address
-                            : null,
-                    },
-                    WithinTable = IsWithinTable(exact),
-                };
-            return (
-                descriptor,
-                semanticValidated);
+                    ContainerKind = requestedNumbered
+                        ? WordFormulaNumberingContainerKind
+                            .CanonicalNativeOmml
+                        : WordFormulaNumberingContainerKind.None,
+                    ContainerRange = requestedNumbered
+                        ? address
+                        : null,
+                },
+                WithinTable = IsWithinTable(exact),
+            };
         }
         finally
         {

@@ -222,14 +222,49 @@ internal sealed partial class WordFormulaService
                         ?? throw new InvalidDataException(
                             "The selected native Word equation moved before reference insertion.");
 
-                    WordEquationReferenceFields
-                        .InsertNativeWordEquationReference(
-                            document,
-                            selection,
-                            current.NativeReferenceItem,
-                            prefix,
-                            suffix,
-                            color);
+                    Range? currentRange = null;
+                    try
+                    {
+                        currentRange = document.Range(
+                            current.Position,
+                            current.EndPosition);
+                        var currentHost =
+                            WordFormulaHostResolver.ResolveLocal(
+                                document,
+                                currentRange,
+                                WordFormulaHostKind.Omml)
+                            ?? throw new InvalidDataException(
+                                "The selected native Word equation no longer exists at its captured range.");
+                        if (currentHost.Range.Start != current.Position
+                            || currentHost.Range.End != current.EndPosition)
+                            throw new InvalidDataException(
+                                "The selected native Word equation changed range before reference insertion.");
+
+                        // Word's InsertCrossReference can bind an OMML Equation
+                        // item to the complete OMath host, causing the REF result
+                        // to reproduce the formula body. Pure OMML already has a
+                        // canonical native number range, so reference that exact
+                        // range through Word's ordinary hidden _Ref bookmark.
+                        // This adds no VisualTeX identity/numbering metadata and
+                        // keeps the displayed REF strictly number-only.
+                        var nativeBookmark =
+                            WordEquationReferenceFields
+                                .CreateNativeOmmlNumberReferenceBookmark(
+                                    document,
+                                    currentHost);
+                        WordEquationReferenceFields
+                            .InsertDirectReference(
+                                document,
+                                selection,
+                                nativeBookmark,
+                                prefix,
+                                suffix,
+                                color);
+                    }
+                    finally
+                    {
+                        Release(currentRange);
+                    }
                     return true;
                 });
             return;

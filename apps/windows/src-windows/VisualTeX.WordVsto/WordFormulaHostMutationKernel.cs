@@ -121,13 +121,10 @@ internal static class WordFormulaHostMutationKernel
             insertion,
             target);
         var validated =
-            target.Kind == WordFormulaHostKind.Omml
-            && write.SemanticPostconditionValidated
-                ? write.Host
-                : WordFormulaMutationValidator.ValidateInsertedHost(
-                    document,
-                    target,
-                    write.Host);
+            WordFormulaMutationValidator.ValidateInsertedHost(
+                document,
+                target,
+                write.Host);
 
         if (target.Kind == WordFormulaHostKind.Omml)
         {
@@ -141,9 +138,9 @@ internal static class WordFormulaHostMutationKernel
                     validated);
             }
 
-            // The OMML writer owns the complete unnumbered host and has already
-            // validated the exact materialized WordOpenXML above. There is no
-            // separate numbering container to rediscover for a fresh insertion.
+            // The OMML writer owns the complete unnumbered physical host.
+            // Runtime correctness is structural only: Word's materialized
+            // mathematics is not compared against the requested source.
             return validated;
         }
 
@@ -434,11 +431,21 @@ internal static class WordFormulaHostMutationKernel
             freshSource,
             target);
 
-        // A field-free Word-native '#(...)' number is not part of VisualTeX's
-        // numbering subsystem. During an ordinary OMML edit the editor sees
-        // Numbered=false, but the existing Word-owned suffix must remain
-        // untouched. Preserve that suffix and replace only the mathematical
-        // body; do not detach, renumber, refresh, or adopt it.
+        // Word-native numbered OMML owns its number suffix inside the same
+        // OMath host. Preserve that host when editing OMML -> OMML so existing
+        // Word _Ref bookmarks continue to target the exact number range. The
+        // same body-only replacement also remains mandatory for third-party
+        // field-free '#(2)' hosts, whose numbering is entirely Word/user-owned
+        // and deliberately exposed to the editor as Numbered=false.
+        var preserveFieldFreeWordNumber =
+            !target.Numbered
+            && WordOmmlHostWriter.HasFieldFreeWordNativeNumberHost(
+                document,
+                freshSource);
+        var preserveManagedWordNumber =
+            target.Numbered
+            && sourceNumbering.ContainerKind ==
+                WordFormulaNumberingContainerKind.CanonicalNativeOmml;
         if (freshSource.Kind == WordFormulaHostKind.Omml
             && freshSource.Display
             && target.Kind == WordFormulaHostKind.Omml
@@ -446,10 +453,8 @@ internal static class WordFormulaHostMutationKernel
                 target.DisplayMode,
                 "block",
                 StringComparison.OrdinalIgnoreCase)
-            && !target.Numbered
-            && WordOmmlHostWriter.HasFieldFreeWordNativeNumberHost(
-                document,
-                freshSource))
+            && (preserveFieldFreeWordNumber
+                || preserveManagedWordNumber))
         {
             var preserved =
                 WordOmmlHostWriter.ReplacePreservingWordNativeNumberHost(
@@ -545,13 +550,10 @@ internal static class WordFormulaHostMutationKernel
                 insertion,
                 target);
             var validated =
-                target.Kind == WordFormulaHostKind.Omml
-                && written.SemanticPostconditionValidated
-                    ? written.Host
-                    : WordFormulaMutationValidator.ValidateInsertedHost(
-                        document,
-                        target,
-                        written.Host);
+                WordFormulaMutationValidator.ValidateInsertedHost(
+                    document,
+                    target,
+                    written.Host);
 
             if (freshSource.Kind == WordFormulaHostKind.Omml
                 && target.Kind != WordFormulaHostKind.Omml)
@@ -576,9 +578,8 @@ internal static class WordFormulaHostMutationKernel
                         validated);
                 }
 
-                // The OMML writer has already validated the exact materialized
-                // WordOpenXML. An unnumbered pure OMath has no external
-                // container to rediscover.
+                // The OMML writer has already established one physical OMath.
+                // No semantic/fingerprint comparison participates in this path.
                 return validated;
             }
 

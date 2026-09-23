@@ -747,7 +747,10 @@ internal static partial class MathTypeMtefCodec
                 return "text(" + value + ")";
             }
             case "mfrac":
-                return CanonicalBinary("frac", children, variant);
+            {
+                var fractionKind = CanonicalFractionKind(element);
+                return CanonicalBinary(fractionKind, children, variant);
+            }
             case "msqrt":
                 return "sqrt(" + Children() + ")";
             case "mroot":
@@ -803,12 +806,18 @@ internal static partial class MathTypeMtefCodec
                 var over = NormalizeAccentMark(children[1].Value.Trim());
                 if (IsHorizontalBraceMarker(over, top: true))
                     return "hbrace-top(" + CanonicalizeMathMl(children[0], variant) + ")";
-                if (over == "¯")
+                var moverAccent = IsTrueMathMlBoolean((string?)element.Attribute("accent"));
+                var markAccent = IsTrueMathMlBoolean((string?)children[1].Attribute("accent"));
+                var explicitlyAccent = moverAccent || markAccent;
+                var explicitlyNonAccent =
+                    IsFalseMathMlBoolean((string?)element.Attribute("accent"))
+                    || IsFalseMathMlBoolean((string?)children[1].Attribute("accent"));
+                if (over == "¯" && (explicitlyAccent || explicitlyNonAccent))
                     return "accent(overbar," + CanonicalizeMathMl(children[0], variant) + ")";
-                var accent = over is "→" or "←" or "↔"
+                var accentGlyph = over is "→" or "←" or "↔"
                     or "^" or "~" or "." or "˙" or "¨"
                     or "⌢" or "⏜" or "ˇ" or "˘" or "´" or "`" or "˚";
-                return accent
+                return explicitlyAccent && accentGlyph
                     ? "accent(" + over + "," + CanonicalizeMathMl(children[0], variant) + ")"
                     : CanonicalBinary("sup", children, variant);
             }
@@ -820,7 +829,7 @@ internal static partial class MathTypeMtefCodec
                     return binomial;
                 var open = NormalizeFence((string?)element.Attribute("open") ?? "(");
                 var close = NormalizeFence((string?)element.Attribute("close") ?? ")");
-                var fencedChildren = Children();
+                var fencedChildren = CanonicalizeMfencedChildren(element, children, variant);
                 // Word OMML materializes a one-sided system/cases delimiter as
                 // a real delimiter object (m:d / MathML mfenced with an empty
                 // opposite fence), while MathJax can represent the same visible
@@ -843,18 +852,55 @@ internal static partial class MathTypeMtefCodec
                 return "cell(" + Children() + ")";
             case "menclose":
             {
-                var notation = ((string?)element.Attribute("notation") ?? string.Empty)
-                    .Trim()
-                    .ToLowerInvariant();
-                if (notation.Contains("radical")) return "sqrt(" + Children() + ")";
-                if (notation.Contains("box")) return "box(" + Children() + ")";
+                var notation = new HashSet<string>(
+                    ((string?)element.Attribute("notation") ?? string.Empty)
+                        .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(value => value.Trim().ToLowerInvariant()),
+                    StringComparer.Ordinal);
+                if (notation.Contains("radical") && notation.Count == 1)
+                    return "sqrt(" + Children() + ")";
+
+                var borders = new List<string>();
+                if (notation.Contains("box"))
+                {
+                    borders.AddRange(new[] { "top", "bottom", "left", "right" });
+                }
+                else
+                {
+                    if (notation.Contains("top")) borders.Add("top");
+                    if (notation.Contains("bottom")) borders.Add("bottom");
+                    if (notation.Contains("left")) borders.Add("left");
+                    if (notation.Contains("right")) borders.Add("right");
+                }
+
                 var strikeParts = new List<string>();
                 if (notation.Contains("horizontalstrike")) strikeParts.Add("h");
+                if (notation.Contains("verticalstrike")) strikeParts.Add("v");
                 if (notation.Contains("updiagonalstrike")) strikeParts.Add("up");
                 if (notation.Contains("downdiagonalstrike")) strikeParts.Add("down");
-                if (strikeParts.Count > 0)
-                    return "strike[" + string.Join("+", strikeParts) + "](" + Children() + ")";
-                return Children();
+
+                var otherVisibleNotations = notation
+                    .Where(value => value is not (
+                        "box" or "top" or "bottom" or "left" or "right"
+                        or "horizontalstrike" or "verticalstrike"
+                        or "updiagonalstrike" or "downdiagonalstrike"))
+                    .OrderBy(value => value, StringComparer.Ordinal)
+                    .ToArray();
+                var content = Children();
+                if (borders.Count == 4 && strikeParts.Count == 0
+                    && otherVisibleNotations.Length == 0)
+                    return "box(" + content + ")";
+                if (borders.Count == 0 && strikeParts.Count > 0
+                    && otherVisibleNotations.Length == 0)
+                    return "strike[" + string.Join("+", strikeParts) + "](" + content + ")";
+                if (borders.Count > 0 || strikeParts.Count > 0 || otherVisibleNotations.Length > 0)
+                {
+                    return "enclose[borders=" + string.Join("+", borders)
+                        + ";strikes=" + string.Join("+", strikeParts)
+                        + ";other=" + string.Join("+", otherVisibleNotations)
+                        + "](" + content + ")";
+                }
+                return content;
             }
             case "mphantom":
                 return "phantom(" + Children() + ")";
@@ -943,6 +989,93 @@ internal static partial class MathTypeMtefCodec
             + CanonicalizeMathMl(inner[0], variant) + ")";
         return true;
     }
+
+    private static bool IsTrueMathMlBoolean(string? value) =>
+        string.Equals(value?.Trim(), "true", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(value?.Trim(), "1", StringComparison.Ordinal);
+
+    private static bool IsFalseMathMlBoolean(string? value) =>
+        string.Equals(value?.Trim(), "false", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(value?.Trim(), "0", StringComparison.Ordinal);
+
+    private static string CanonicalFractionKind(XElement fraction)
+    {
+        var lineThickness = ((string?)fraction.Attribute("linethickness") ?? string.Empty).Trim();
+        if (IsZeroMathMlLength(lineThickness))
+            return "nobarfrac";
+
+        var bevelled = ((string?)fraction.Attribute("bevelled") ?? string.Empty).Trim();
+        if (string.Equals(bevelled, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(bevelled, "1", StringComparison.Ordinal))
+            return "bevelledfrac";
+
+        return "frac";
+    }
+
+    private static bool IsZeroMathMlLength(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var trimmed = value.Trim();
+        var index = 0;
+        if (trimmed[index] is '+' or '-') index++;
+        var sawDigit = false;
+        while (index < trimmed.Length
+               && (char.IsDigit(trimmed[index]) || trimmed[index] == '.'))
+        {
+            sawDigit |= char.IsDigit(trimmed[index]);
+            index++;
+        }
+        if (!sawDigit) return false;
+        if (!double.TryParse(
+                trimmed.Substring(0, index),
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var numeric))
+            return false;
+        return numeric == 0d;
+    }
+
+    private static string CanonicalizeMfencedChildren(
+        XElement fenced,
+        XElement[] children,
+        string? variant)
+    {
+        if (children.Length == 0) return string.Empty;
+        if (children.Length == 1)
+            return CanonicalizeMathMl(children[0], variant);
+
+        var rawSeparators = fenced.Attribute("separators") is null
+            ? ","
+            : ((string?)fenced.Attribute("separators") ?? string.Empty);
+        var separators = rawSeparators
+            .Where(character => !char.IsWhiteSpace(character))
+            .Select(character => NormalizeMfencedSeparator(character.ToString()))
+            .Where(separator => separator.Length > 0)
+            .ToArray();
+
+        var signature = new StringBuilder();
+        for (var index = 0; index < children.Length; index++)
+        {
+            if (index > 0 && separators.Length > 0)
+            {
+                var separator = separators[Math.Min(index - 1, separators.Length - 1)];
+                signature.Append("o(");
+                signature.Append(separator);
+                signature.Append(')');
+            }
+            signature.Append(CanonicalizeMathMl(children[index], variant));
+        }
+        return signature.ToString();
+    }
+
+    private static string NormalizeMfencedSeparator(string value) => value switch
+    {
+        // Word canonicalizes the ordinary set-builder vertical separator into
+        // U+2223 DIVIDES when it materializes m:d/m:sepChr. Inside mfenced this
+        // is the same visible separator as MathJax's ASCII vertical line.
+        "∣" => "|",
+        _ => NormalizeOperatorToken(value),
+    };
 
     private static string CanonicalBinary(
         string name,
@@ -4412,6 +4545,13 @@ internal static partial class MathTypeMtefCodec
         // They are semantically identical in an <mo> token and must compare equal
         // across VisualTeX/OMML/MathType round trips.
         "−" => "-",
+        // MathType 7 may expose TeX \\mid as U+2223 DIVIDES in either <mi>
+        // or <mo>, while Word commonly materializes the same relation as the
+        // ASCII vertical line. At the semantic-token layer these are the same
+        // vertical relation. Absolute-value/norm bars remain structurally
+        // distinct because fence recognition canonicalizes them as fence(...)
+        // before ordinary operator-token comparison.
+        "∣" => "|",
         // MathType 7 stores TeX \\sim as ASCII '~' in its Function typeface,
         // while MathJax represents the same operator as U+223C. This is an
         // operator-token equivalence only; accent \\tilde is represented by

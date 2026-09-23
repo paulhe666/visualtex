@@ -6,160 +6,14 @@ using Range = Microsoft.Office.Interop.Word.Range;
 namespace VisualTeX.WordVsto;
 
 /// <summary>
-/// Creates a real Word equation reference: an outer GOTOBUTTON field containing
-/// one nested REF field. The nested REF keeps the displayed number live, while
-/// the outer field makes double-click navigation work consistently for VisualTeX,
-/// OMML and MathType numbering bookmarks.
+/// Creates and maintains Word REF-based equation references. VisualTeX targets
+/// use VTEqNum bookmarks; pure OMML targets use ordinary Word _Ref bookmarks
+/// bound only to the native number range; legacy navigable references may still
+/// use a GOTOBUTTON wrapper around a nested REF.
 /// </summary>
 internal static class WordEquationReferenceFields
 {
     private const string MathTypeSectionStyleName = "MTEquationSection";
-
-    internal static void InsertNativeWordEquationReference(
-        Document document,
-        Selection selection,
-        int nativeReferenceItem,
-        string prefix,
-        string suffix,
-        WdColor? preferredInsertionColor = null)
-    {
-        if (document is null) throw new ArgumentNullException(nameof(document));
-        if (selection is null) throw new ArgumentNullException(nameof(selection));
-        if (nativeReferenceItem <= 0)
-            throw new ArgumentOutOfRangeException(
-                nameof(nativeReferenceItem));
-        if (document.ReadOnly)
-            throw new UnauthorizedAccessException(
-                "当前 Word 文档为只读状态。");
-
-        Range? sourceFormattingRange = null;
-        Range? insertion = null;
-        Range? probe = null;
-        Fields? fields = null;
-        Field? field = null;
-        Range? code = null;
-        Range? result = null;
-        Range? selectedResult = null;
-        Range? selectionRange = null;
-        try
-        {
-            sourceFormattingRange =
-                selection.Range.Duplicate;
-            sourceFormattingRange.Collapse(
-                WdCollapseDirection.wdCollapseStart);
-            var formatting =
-                WordCharacterFormatting.Capture(
-                    sourceFormattingRange);
-            if (preferredInsertionColor.HasValue)
-            {
-                var requested =
-                    preferredInsertionColor.Value;
-                formatting.Color =
-                    requested == WdColor.wdColorAutomatic
-                    || (int)requested >= 0
-                        ? requested
-                        : WdColor.wdColorAutomatic;
-            }
-
-            if (!string.IsNullOrEmpty(prefix))
-                selection.TypeText(prefix);
-
-            var referenceStart =
-                selection.Start;
-            insertion =
-                selection.Range.Duplicate;
-            insertion.Collapse(
-                WdCollapseDirection.wdCollapseStart);
-            insertion.InsertCrossReference(
-                ReferenceType:
-                    WdCaptionLabelID.wdCaptionEquation,
-                ReferenceKind:
-                    WdReferenceKind.wdOnlyLabelAndNumber,
-                ReferenceItem:
-                    nativeReferenceItem,
-                InsertAsHyperlink: true,
-                IncludePosition: false);
-
-            var probeEnd =
-                Math.Min(
-                    document.Content.End,
-                    referenceStart + 256);
-            probe =
-                document.Range(
-                    referenceStart,
-                    probeEnd);
-            fields = probe.Fields;
-            for (var index = 1;
-                 index <= fields.Count;
-                 index++)
-            {
-                Release(result);
-                result = null;
-                Release(code);
-                code = null;
-                Release(field);
-                field = fields[index];
-                if (field.Type !=
-                    WdFieldType.wdFieldRef)
-                    continue;
-                code =
-                    field.Code.Duplicate;
-                result =
-                    field.Result.Duplicate;
-                if (result.End < referenceStart)
-                    continue;
-                if (selectedResult is not null
-                    && selectedResult.Start <=
-                        result.Start)
-                    continue;
-                Release(selectedResult);
-                selectedResult =
-                    result.Duplicate;
-            }
-
-            if (selectedResult is null)
-                throw new InvalidDataException(
-                    "Word did not materialize a native REF field for the selected Equation item.");
-
-            // Keep Word's native equation-reference result exactly as Word
-            // materialized it. A native REF result can itself be OMath, and
-            // forcing ordinary text properties such as Subscript/Superscript
-            // onto that mathematical range is invalid in desktop Word.
-
-            var after =
-                Math.Max(
-                    document.Content.Start,
-                    Math.Min(
-                        selectedResult.End + 1,
-                        Math.Max(
-                            document.Content.Start,
-                            document.Content.End - 1)));
-            selection.SetRange(
-                after,
-                after);
-            if (!string.IsNullOrEmpty(suffix))
-                selection.TypeText(suffix);
-
-            selectionRange =
-                selection.Range;
-            NormalizeInternalStyle(
-                selectionRange);
-            formatting.Apply(
-                selectionRange);
-        }
-        finally
-        {
-            Release(selectionRange);
-            Release(selectedResult);
-            Release(result);
-            Release(code);
-            Release(field);
-            Release(fields);
-            Release(probe);
-            Release(insertion);
-            Release(sourceFormattingRange);
-        }
-    }
 
     internal static void InsertDirectReference(
         Document document,
@@ -235,7 +89,7 @@ internal static class WordEquationReferenceFields
 
             refCode = refField.Code;
             if (refField.Type != WdFieldType.wdFieldRef
-                || !TryReadVisualTeXNumberBookmark(
+                || !TryReadReferenceBookmark(
                     refCode.Text,
                     out var insertedBookmark)
                 || !string.Equals(

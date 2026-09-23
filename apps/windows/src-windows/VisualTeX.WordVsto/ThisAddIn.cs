@@ -224,7 +224,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
               <toggleButton id="VisualTeX.WordVsto.NumberFormatHeading2Dot" label="按节编号（1.1.1）" tag="heading2-dot" getPressed="GetEquationNumberFormatPressed" onAction="OnEquationNumberFormatChanged" />
               <toggleButton id="VisualTeX.WordVsto.NumberFormatHeading2Dash" label="按节编号（1.1-1）" tag="heading2-dash" getPressed="GetEquationNumberFormatPressed" onAction="OnEquationNumberFormatChanged" />
             </menu>
-            <button id="VisualTeX.WordVsto.InsertReference" label="插入公式引用" screentip="引用带编号公式" supertip="从当前文档的 VisualTeX 或 MathType 带编号公式中选择目标；VisualTeX 使用 Word REF，MathType 保留原生 ZEqnNum/GOTOBUTTON/REF 引用结构。" imageMso="HyperlinkInsert" onAction="OnInsertEquationReference" />
+            <button id="VisualTeX.WordVsto.InsertReference" label="插入公式引用" screentip="引用带编号公式" supertip="分别从当前文档的 VisualTeX、Word OMML 或 MathType 带编号公式中选择目标；各格式沿用各自的原生编号与引用结构。" imageMso="HyperlinkInsert" onAction="OnInsertEquationReference" />
           </box>
           <button id="VisualTeX.WordVsto.BulkImport" label="批量导入" size="large" screentip="批量导入 LaTeX / Markdown" supertip="将 Markdown 或 LaTeX 文档解析为 Word 原生文字，以及可单独编辑和调整字号的行内/行间公式。" tag="batchImport" getImage="GetRibbonImage" onAction="OnBulkImport" />
         </group>
@@ -2959,16 +2959,20 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
+            var failureMessage = OfficePluginLanguage.FormatOperationError(
+                error,
+                "VisualTeX Word 写入失败",
+                "VisualTeX Word formula write failed");
             if (sessionId is not null && _sessionClient is not null)
             {
                 try
                 {
-                    await _sessionClient.FailAsync(sessionId, error.Message, CancellationToken.None)
+                    await _sessionClient.FailAsync(sessionId, failureMessage, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
                 catch { }
             }
-            SetStatus($"VisualTeX Word 写入失败：{error.Message}");
+            SetStatus(failureMessage);
         }
         finally
         {
@@ -4586,14 +4590,22 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     var referenceInsertionStart = selection.Start;
                     var referenceInsertionEnd = selection.End;
                     var referenceInsertionColor = selection.Font.Color;
-                    var visualTexTargets = service.GetCanonicalEquationReferenceTargets(document);
+                    var canonicalTargets = service.GetCanonicalEquationReferenceTargets(document);
+                    var visualTexTargets = canonicalTargets
+                        .Where(target => target.Source == EquationReferenceSource.VisualTeX)
+                        .ToArray();
+                    var wordOmmlTargets = canonicalTargets
+                        .Where(target => target.Source == EquationReferenceSource.WordOmml)
+                        .ToArray();
                     var mathTypeTargets = MathTypeEquationReferences.GetTargets(document);
-                    if (visualTexTargets.Count == 0 && mathTypeTargets.Count == 0)
+                    if (visualTexTargets.Length == 0
+                        && wordOmmlTargets.Length == 0
+                        && mathTypeTargets.Count == 0)
                     {
                         System.Windows.Forms.MessageBox.Show(
                             T(
-                                "当前文档没有可引用的带编号公式。请先插入带编号的 VisualTeX 或 MathType 行间公式。",
-                                "The current document has no numbered equations to reference. Insert a numbered VisualTeX or MathType display equation first."),
+                                "当前文档没有可引用的带编号公式。请先插入带编号的 VisualTeX、Word OMML 或 MathType 行间公式。",
+                                "The current document has no numbered equations to reference. Insert a numbered VisualTeX, Word OMML, or MathType display equation first."),
                             "VisualTeX",
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Information);
@@ -4618,14 +4630,31 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     {
                         var requestedSource = Environment.GetEnvironmentVariable(
                             "VISUALTEX_VSTO_REFERENCE_SOURCE");
-                        var targets = string.Equals(
+                        IReadOnlyList<EquationReferenceTarget> targets =
+                            string.Equals(
                                 requestedSource,
                                 "mathtype",
                                 StringComparison.OrdinalIgnoreCase)
-                            ? mathTypeTargets
-                            : visualTexTargets.Count > 0
-                                ? visualTexTargets
-                                : mathTypeTargets;
+                                ? mathTypeTargets
+                                : string.Equals(
+                                      requestedSource,
+                                      "omml",
+                                      StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(
+                                      requestedSource,
+                                      "wordomml",
+                                      StringComparison.OrdinalIgnoreCase)
+                                    ? wordOmmlTargets
+                                    : string.Equals(
+                                          requestedSource,
+                                          "visualtex",
+                                          StringComparison.OrdinalIgnoreCase)
+                                        ? visualTexTargets
+                                        : visualTexTargets.Length > 0
+                                            ? visualTexTargets
+                                            : wordOmmlTargets.Length > 0
+                                                ? wordOmmlTargets
+                                                : mathTypeTargets;
                         if (targets.Count == 0)
                             throw new InvalidOperationException(
                                 $"Acceptance requested equation-reference source '{requestedSource}' but that source has no targets.");
@@ -4658,6 +4687,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
                     using var dialog = new EquationReferenceDialog(
                         visualTexTargets,
+                        wordOmmlTargets,
                         mathTypeTargets);
                     System.Windows.Forms.DialogResult result;
                     try

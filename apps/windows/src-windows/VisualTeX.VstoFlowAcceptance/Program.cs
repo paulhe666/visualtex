@@ -458,6 +458,30 @@ internal static partial class Program
 
         if (string.Equals(
                 mode,
+                "word-active-omml-roundtrip-audit",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var activeRoundTripMessageFilter =
+                    OfficeComMessageFilter.Register();
+                RunActiveOmmlRoundTripAuditAcceptance();
+                Console.WriteLine("VisualTeX active OMML round-trip audit passed.");
+                Console.WriteLine($"Artifacts: {artifactRoot}");
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(
+                    $"{error.GetType().FullName} (0x{error.HResult:X8}): "
+                    + error.Message);
+                Console.Error.WriteLine($"Acceptance artifacts retained: {artifactRoot}");
+                return 1;
+            }
+        }
+
+        if (string.Equals(
+                mode,
                 "word-active-omml-semantic-audit",
                 StringComparison.OrdinalIgnoreCase))
         {
@@ -734,7 +758,19 @@ internal static partial class Program
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
                 mode,
+                "word-host-core-reference-regression",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
                 "word-host-core-omml-conversion-matrix",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-omml-set-builder-semantic-regression",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-omml-semantic-corpus",
                 StringComparison.OrdinalIgnoreCase))
         {
             try
@@ -746,9 +782,26 @@ internal static partial class Program
                     RunWordHostCoreMinimalAcceptance(artifactRoot);
                 else if (string.Equals(
                              mode,
+                             "word-host-core-reference-regression",
+                             StringComparison.OrdinalIgnoreCase))
+                    RunWordHostCorePureOmmlAcceptance(
+                        artifactRoot,
+                        stopAfterReferenceAndPromotion: true);
+                else if (string.Equals(
+                             mode,
                              "word-host-core-omml-conversion-matrix",
                              StringComparison.OrdinalIgnoreCase))
                     RunPureOmmlMixedConversionMatrixAcceptance(artifactRoot);
+                else if (string.Equals(
+                             mode,
+                             "word-omml-set-builder-semantic-regression",
+                             StringComparison.OrdinalIgnoreCase))
+                    RunReportedOmmlSetBuilderSeparatorAcceptance();
+                else if (string.Equals(
+                             mode,
+                             "word-omml-semantic-corpus",
+                             StringComparison.OrdinalIgnoreCase))
+                    RunWordNativeSemanticCorpusAcceptance();
                 else if (string.Equals(
                              mode,
                              "word-deep-format-rollback",
@@ -948,6 +1001,14 @@ internal static partial class Program
             else if (string.Equals(mode, "word-exact-mathtype-omml-core-clone", StringComparison.OrdinalIgnoreCase))
             {
                 RunExactMathTypeOmmlCoreCloneAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-exact-mathtype-omml-runtime", StringComparison.OrdinalIgnoreCase))
+            {
+                RunExactMathTypeOmmlRuntimeAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-exact-mathtype-omml-semantic-validation", StringComparison.OrdinalIgnoreCase))
+            {
+                RunExactMathTypeOmmlSemanticValidationAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-active-mathtype-source-double-click", StringComparison.OrdinalIgnoreCase))
             {

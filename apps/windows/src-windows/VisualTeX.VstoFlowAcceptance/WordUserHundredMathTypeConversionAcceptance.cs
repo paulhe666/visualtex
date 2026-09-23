@@ -853,7 +853,7 @@ internal static partial class Program
                     {
                         ommlRoundTripMismatches++;
                         Console.WriteLine(
-                            $"OMML-ROUNDTRIP-MISMATCH|{pair.Index}|latex={latex}|expected={expectedSignature}|actual={actualSignature}|mathml={roundTripMathMl}");
+                            $"OMML-ROUNDTRIP-MISMATCH|{pair.Index}|latex={latex}|expected={expectedSignature}|actual={actualSignature}|sourceMathMl={sourceMathMl}|roundTripMathMl={roundTripMathMl}");
                     }
                 }
                 catch (Exception error)
@@ -1491,6 +1491,317 @@ internal static partial class Program
             Environment.SetEnvironmentVariable(
                 "VISUALTEX_VSTO_ACCEPTANCE",
                 previousAcceptance);
+        }
+    }
+
+    private static void RunExactMathTypeOmmlRuntimeAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var sourcePath = Environment.GetEnvironmentVariable(
+            "VISUALTEX_EXACT_MT_OMML_SOURCE");
+        if (string.IsNullOrWhiteSpace(sourcePath))
+            throw new InvalidOperationException(
+                "VISUALTEX_EXACT_MT_OMML_SOURCE must point to the MathType source document.");
+        sourcePath = Path.GetFullPath(sourcePath);
+        if (!File.Exists(sourcePath))
+            throw new FileNotFoundException(
+                "The MathType source document is missing.",
+                sourcePath);
+
+        var inputPath = Path.Combine(
+            artifactRoot,
+            "Exact-MathType-To-OMML-Runtime-Input.docx");
+        File.Copy(sourcePath, inputPath, overwrite: true);
+
+        Word.Application? application = null;
+        Word.Document? document = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Open(
+                inputPath,
+                ReadOnly: false,
+                AddToRecentFiles: false,
+                Visible: false);
+            document.Activate();
+
+            var service = new WordFormulaService(application);
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.MathTypeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            var prepared = PrepareOmmlMathTypeTargets(
+                plan,
+                string.Empty);
+            var beforeMathType = CountMathTypeOleShapes(document);
+            var beforeOmml = document.OMaths.Count;
+
+            Console.WriteLine(
+                $"[EXACT MT→OMML RUNTIME BEFORE] source={sourcePath}; "
+                + $"targets={plan.Targets.Count}; mathType={beforeMathType}; "
+                + $"omml={beforeOmml}");
+
+            var result = service.ApplyFormulaFormatConversionPlan(
+                plan,
+                prepared);
+
+            if (result.FailedFormulaCount != 0)
+                throw new InvalidDataException(
+                    "Runtime MathType→OMML conversion reported failures: "
+                    + string.Join(" || ", result.Failures));
+
+            AssertEqual(
+                plan.Targets.Count,
+                result.FormulaCount,
+                "Runtime MathType→OMML did not complete every captured target.");
+            AssertEqual(
+                0,
+                CountMathTypeOleShapes(document),
+                "Runtime MathType→OMML left MathType OLE sources behind.");
+            AssertTrue(
+                document.OMaths.Count >= result.FormulaCount,
+                "Runtime MathType→OMML did not leave enough physical Word OMath objects.");
+            AssertPureOmmlHasNoVisualTeXResidue(
+                document,
+                "runtime MathType→OMML result");
+
+            Console.WriteLine(
+                $"[EXACT MT→OMML RUNTIME PASS] converted={result.FormulaCount}; "
+                + $"failed={result.FailedFormulaCount}; "
+                + $"finalMathType={CountMathTypeOleShapes(document)}; "
+                + $"finalOmml={document.OMaths.Count}; "
+                + "semanticValidation=disabled");
+        }
+        finally
+        {
+            try
+            {
+                document?.Close(
+                    Word.WdSaveOptions.wdDoNotSaveChanges);
+            }
+            catch { }
+            try
+            {
+                QuitWordApplicationIfOwned(application);
+            }
+            catch { }
+            Release(document);
+            Release(application);
+            ForceComCleanup();
+        }
+    }
+
+    private static void RunExactMathTypeOmmlSemanticValidationAcceptance(string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var sourcePath = Environment.GetEnvironmentVariable(
+            "VISUALTEX_EXACT_MT_OMML_SOURCE");
+        if (string.IsNullOrWhiteSpace(sourcePath))
+            throw new InvalidOperationException(
+                "VISUALTEX_EXACT_MT_OMML_SOURCE must point to the captured MathType source document.");
+        sourcePath = Path.GetFullPath(sourcePath);
+        if (!File.Exists(sourcePath))
+            throw new FileNotFoundException(
+                "The MathType source document is missing.",
+                sourcePath);
+
+        var inputPath = Path.Combine(
+            artifactRoot,
+            "Exact-MathType-To-OMML-Semantic-Input.docx");
+        File.Copy(sourcePath, inputPath, overwrite: true);
+
+        Word.Application? application = null;
+        Word.Document? document = null;
+        try
+        {
+            application = CreateWordApplication(visible: false);
+            document = application.Documents.Open(
+                inputPath,
+                ReadOnly: false,
+                AddToRecentFiles: false,
+                Visible: false);
+            document.Activate();
+
+            var service = new WordFormulaService(application);
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: true,
+                FormulaOleContract.MathTypeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            var prepared = PrepareOmmlMathTypeTargets(plan, string.Empty);
+            var expectedSequence = new List<(string Kind, int Start, string Signature, string Label)>();
+            for (var index = 1; index <= document.OMaths.Count; index++)
+            {
+                Word.OMath? math = null;
+                Word.Range? range = null;
+                try
+                {
+                    math = document.OMaths[index];
+                    range = math.Range.Duplicate;
+                    var mathMl = WordOmmlConverter.TransformOmmlToMathMl(
+                        range.WordOpenXML,
+                        display: math.Type == Word.WdOMathType.wdOMathDisplay);
+                    expectedSequence.Add((
+                        "PreexistingOmml",
+                        range.Start,
+                        MathTypeMtefCodec.SemanticSignature(mathMl),
+                        $"preexisting OMML #{index}"));
+                }
+                finally
+                {
+                    Release(range);
+                    Release(math);
+                }
+            }
+            foreach (var target in plan.Targets)
+            {
+                var sourceMathMl = target.SourceMathMl
+                    ?? throw new InvalidDataException(
+                        $"MathType source {target.SourceFormulaId} has no source MathML.");
+                expectedSequence.Add((
+                    "MathType",
+                    target.SourceStart,
+                    MathTypeMtefCodec.SemanticSignature(sourceMathMl),
+                    $"MathType start={target.SourceStart} latex={target.Latex}"));
+            }
+            expectedSequence = expectedSequence
+                .OrderBy(item => item.Start)
+                .ThenBy(item => item.Kind, StringComparer.Ordinal)
+                .ToList();
+
+            Console.WriteLine(
+                $"[EXACT MT→OMML SEMANTIC BEFORE] source={sourcePath}; targets={plan.Targets.Count}; "
+                + $"mathType={CountMathTypeOleShapes(document)}; omml={document.OMaths.Count}");
+
+            var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+            if (result.FailedFormulaCount != 0)
+                throw new InvalidDataException(
+                    "Exact MathType→OMML semantic validation reported conversion failures: "
+                    + string.Join(" || ", result.Failures));
+            AssertEqual(plan.Targets.Count, result.FormulaCount,
+                "Exact MathType→OMML semantic validation did not convert every captured target.");
+            AssertEqual(0, CountMathTypeOleShapes(document),
+                "Exact MathType→OMML semantic validation left MathType sources behind.");
+
+            var actualSequence = new List<(int Start, string Signature)>();
+            for (var index = 1; index <= document.OMaths.Count; index++)
+            {
+                Word.OMath? math = null;
+                Word.Range? range = null;
+                try
+                {
+                    math = document.OMaths[index];
+                    range = math.Range.Duplicate;
+                    var mathMl = WordOmmlConverter.TransformOmmlToMathMl(
+                        range.WordOpenXML,
+                        display: math.Type == Word.WdOMathType.wdOMathDisplay);
+                    actualSequence.Add((
+                        range.Start,
+                        MathTypeMtefCodec.SemanticSignature(mathMl)));
+                }
+                finally
+                {
+                    Release(range);
+                    Release(math);
+                }
+            }
+            actualSequence = actualSequence
+                .OrderBy(item => item.Start)
+                .ToList();
+
+            var expectedCount = expectedSequence.Count;
+            var actualCount = actualSequence.Count;
+            var lcs = new int[expectedCount + 1, actualCount + 1];
+            for (var expectedIndex = expectedCount - 1; expectedIndex >= 0; expectedIndex--)
+            {
+                for (var actualIndex = actualCount - 1; actualIndex >= 0; actualIndex--)
+                {
+                    lcs[expectedIndex, actualIndex] = string.Equals(
+                            expectedSequence[expectedIndex].Signature,
+                            actualSequence[actualIndex].Signature,
+                            StringComparison.Ordinal)
+                        ? 1 + lcs[expectedIndex + 1, actualIndex + 1]
+                        : Math.Max(
+                            lcs[expectedIndex + 1, actualIndex],
+                            lcs[expectedIndex, actualIndex + 1]);
+                }
+            }
+
+            var matchedExpected = new bool[expectedCount];
+            var matchedActual = new bool[actualCount];
+            var ei = 0;
+            var ai = 0;
+            while (ei < expectedCount && ai < actualCount)
+            {
+                if (string.Equals(
+                        expectedSequence[ei].Signature,
+                        actualSequence[ai].Signature,
+                        StringComparison.Ordinal)
+                    && lcs[ei, ai] == 1 + lcs[ei + 1, ai + 1])
+                {
+                    matchedExpected[ei] = true;
+                    matchedActual[ai] = true;
+                    ei++;
+                    ai++;
+                    continue;
+                }
+                if (lcs[ei + 1, ai] >= lcs[ei, ai + 1])
+                    ei++;
+                else
+                    ai++;
+            }
+
+            var missingMathType = Enumerable.Range(0, expectedCount)
+                .Where(index => expectedSequence[index].Kind == "MathType" && !matchedExpected[index])
+                .Select(index => expectedSequence[index])
+                .ToArray();
+            var missingPreexisting = Enumerable.Range(0, expectedCount)
+                .Where(index => expectedSequence[index].Kind == "PreexistingOmml" && !matchedExpected[index])
+                .Select(index => expectedSequence[index])
+                .ToArray();
+            var unexpectedActual = Enumerable.Range(0, actualCount)
+                .Where(index => !matchedActual[index])
+                .Select(index => actualSequence[index])
+                .ToArray();
+
+            if (missingMathType.Length != 0)
+            {
+                throw new InvalidDataException(
+                    "Exact MathType→OMML semantic validation lost or changed converted mathematics: "
+                    + string.Join(
+                        " || ",
+                        missingMathType.Select(item =>
+                            $"{item.Label}; signature=[{item.Signature}]")));
+            }
+
+            Console.WriteLine(
+                $"[EXACT MT→OMML SEQUENCE] expected={expectedCount}; actual={actualCount}; "
+                + $"lcs={lcs[0, 0]}; missingMathType={missingMathType.Length}; "
+                + $"missingPreexisting={missingPreexisting.Length}; unexpectedActual={unexpectedActual.Length}");
+            foreach (var item in missingPreexisting)
+                Console.WriteLine(
+                    $"  PREEXISTING-OMML-NOT-RETAINED|start={item.Start}|signature={item.Signature}");
+            foreach (var item in unexpectedActual)
+                Console.WriteLine(
+                    $"  UNMATCHED-ACTUAL-OMML|start={item.Start}|signature={item.Signature}");
+
+            var matchedMathTypeCount = Enumerable.Range(0, expectedCount)
+                .Count(index =>
+                    expectedSequence[index].Kind == "MathType"
+                    && matchedExpected[index]);
+            AssertEqual(plan.Targets.Count,
+                matchedMathTypeCount,
+                "Exact MathType→OMML semantic validation did not match every converted MathType formula.");
+            Console.WriteLine(
+                $"[EXACT MT→OMML SEMANTIC PASS] converted={result.FormulaCount}; verifiedMathType={plan.Targets.Count}; "
+                + $"finalOmml={document.OMaths.Count}; missingPreexistingOmml={missingPreexisting.Length}");
+        }
+        finally
+        {
+            try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(document);
+            Release(application);
+            ForceComCleanup();
         }
     }
 

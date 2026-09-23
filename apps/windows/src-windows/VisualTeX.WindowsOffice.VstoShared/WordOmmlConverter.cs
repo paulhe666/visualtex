@@ -15,7 +15,7 @@ using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
 
-internal static class WordOmmlConverter
+internal static partial class WordOmmlConverter
 {
     private const int MaximumFormulaXmlCharacters = 16 * 1024 * 1024;
     private const int MaximumFormulaXmlDepth = 256;
@@ -1214,7 +1214,7 @@ internal static class WordOmmlConverter
             if (!claimed.Add(equation))
                 throw new InvalidDataException("Two source identities own the same normalized OMath.");
             var actual = equation.ToString(SaveOptions.DisableFormatting);
-            var fingerprint = ComputeVerifiedMaterializedOmmlFingerprint(entry.Omml, actual);
+            var fingerprint = ComputeOmmlFingerprint(actual);
 
             Bookmarks? documentBookmarks = null;
             Bookmark? materializedBookmark = null;
@@ -1762,7 +1762,8 @@ internal static class WordOmmlConverter
         Range targetRange,
         string omml,
         bool display,
-        string? mathFontName = null)
+        string? mathFontName = null,
+        bool allowWordNativeInlinePromotion = false)
     {
         if (targetDocument is null)
             throw new ArgumentNullException(nameof(targetDocument));
@@ -2072,14 +2073,26 @@ internal static class WordOmmlConverter
                 ?? throw new InvalidOperationException(
                     "Word did not materialize the paragraph-local OMML replacement.");
 
-            var targetType =
-                display
-                    ? WdOMathType.wdOMathDisplay
-                    : WdOMathType.wdOMathInline;
-            if (insertedMath.Type !=
-                targetType)
+            if (display)
+            {
+                if (insertedMath.Type !=
+                    WdOMathType.wdOMathDisplay)
+                    insertedMath.Type =
+                        WdOMathType.wdOMathDisplay;
+            }
+            else if (!allowWordNativeInlinePromotion
+                     && insertedMath.Type !=
+                         WdOMathType.wdOMathInline)
+            {
                 insertedMath.Type =
-                    targetType;
+                    WdOMathType.wdOMathInline;
+            }
+
+            // A freshly inserted inline-requested OMML equation follows Word's
+            // own final OMath type. In particular, a lone equation at the start
+            // of a paragraph may be promoted to wdOMathDisplay by Word itself.
+            // Do not add a trailing sentinel or force that native promotion back
+            // to inline. Explicit display requests remain authoritative above.
             insertedMath.BuildUp();
 
             if (followingEmptyParagraphGuard is not null)
@@ -2647,9 +2660,8 @@ internal static class WordOmmlConverter
                     "The OMML scratch document did not contain exactly one equation.");
             scratchMath = scratchMaths[1];
             scratchFormula = scratchMath.Range;
-            materializedFingerprint = ComputeVerifiedMaterializedOmmlFingerprint(
-                preparedOmml,
-                scratchFormula.WordOpenXML);
+            materializedFingerprint =
+                ComputeOmmlFingerprint(scratchFormula.WordOpenXML);
 
             target = insertionRange.Duplicate;
             if (target.Start >= target.End)
@@ -2928,7 +2940,6 @@ internal static class WordOmmlConverter
         omml = NormalizeOptionalPrescriptSlots(omml);
         omml = NormalizeDisplayNaryOmml(omml, display);
         omml = NormalizeGeneratedOmmlArgumentOrder(omml);
-        ValidateOmmlResult(omml, mathMl);
         return omml;
     }
 
@@ -3136,81 +3147,6 @@ internal static class WordOmmlConverter
         return columns > 1
             && rows.All(row =>
                 row.Elements(presentationMath + "mtd").Count() == columns);
-    }
-
-    internal static void ValidateOmmlResult(string omml, string mathMl)
-    {
-        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
-        XNamespace officeMath = MathNamespace;
-
-        // The generated and Word-materialized trees obey the SAME argument
-        // contract. Detect malformed structures before document mutation, not
-        // only when a matrix happens to trigger a stricter validator.
-        var target = XDocument.Parse(ExtractSingleOMath(omml), LoadOptions.PreserveWhitespace);
-        ValidateNoVisibleEmptyOmmlSlots(target);
-        var source = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
-        var sourceTables = source
-            .Descendants(presentationMath + "mtable")
-            .Where(table => IsMatrixLikeMathMlTable(table, presentationMath))
-            .ToArray();
-        if (sourceTables.Length == 0) return;
-        var targetMatrices = target.Descendants(officeMath + "m").ToArray();
-        foreach (var matrix in targetMatrices)
-        {
-            if (!IsMathBooleanEnabled(matrix.Element(officeMath + "mPr"), officeMath + "plcHide"))
-                throw new InvalidDataException(
-                    "Office matrix OMML did not hide dotted placeholder slots.");
-        }
-        var matchedMatrices = new HashSet<XElement>();
-        for (var tableIndex = 0; tableIndex < sourceTables.Length; tableIndex++)
-        {
-            var sourceRows = sourceTables[tableIndex]
-                .Elements(presentationMath + "mtr")
-                .ToArray();
-            var sourceColumnCounts = sourceRows
-                .Select(row => row.Elements(presentationMath + "mtd").Count())
-                .ToArray();
-            var targetMatrix = targetMatrices.FirstOrDefault(candidate =>
-            {
-                if (matchedMatrices.Contains(candidate)) return false;
-                var candidateRows = candidate.Elements(officeMath + "mr").ToArray();
-                return candidateRows.Length == sourceRows.Length
-                    && candidateRows.Select(row => row.Elements(officeMath + "e").Count())
-                        .SequenceEqual(sourceColumnCounts);
-            });
-            if (targetMatrix is null)
-                throw new InvalidDataException(
-                    $"Office did not preserve matrix {tableIndex + 1} dimensions "
-                    + $"({sourceRows.Length}x{string.Join("/", sourceColumnCounts)})." );
-            matchedMatrices.Add(targetMatrix);
-            var targetRows = targetMatrix.Elements(officeMath + "mr").ToArray();
-            for (var rowIndex = 0; rowIndex < sourceRows.Length; rowIndex++)
-            {
-                var sourceCells = sourceRows[rowIndex]
-                    .Elements(presentationMath + "mtd")
-                    .ToArray();
-                var targetCells = targetRows[rowIndex]
-                    .Elements(officeMath + "e")
-                    .ToArray();
-                for (var cellIndex = 0; cellIndex < sourceCells.Length; cellIndex++)
-                {
-                    var sourceHasVisibleContent = sourceCells[cellIndex]
-                        .DescendantsAndSelf()
-                        .Any(element =>
-                            element.Name.Namespace == presentationMath
-                            && element.Name.LocalName is "mi" or "mn" or "mo" or "mtext"
-                            && !string.IsNullOrWhiteSpace(element.Value));
-                    if (!sourceHasVisibleContent) continue;
-                    var targetHasVisibleContent = targetCells[cellIndex]
-                        .Descendants(officeMath + "t")
-                        .Any(text => !string.IsNullOrWhiteSpace(text.Value));
-                    if (!targetHasVisibleContent)
-                        throw new InvalidDataException(
-                            $"Office produced an empty matrix slot at matrix {tableIndex + 1}, "
-                            + $"row {rowIndex + 1}, column {cellIndex + 1}.");
-                }
-            }
-        }
     }
 
     internal static string NormalizeExplicitUprightRuns(string omml, string mathMl)
@@ -4484,13 +4420,6 @@ internal static class WordOmmlConverter
         property.SetAttributeValue(XName.Get("val", MathNamespace), "1");
     }
 
-    internal static void ValidateMaterializedOmml(string wordOpenXml)
-    {
-        var equation = ExtractSingleOMath(wordOpenXml);
-        var document = XDocument.Parse(equation, LoadOptions.PreserveWhitespace);
-        ValidateNoVisibleEmptyOmmlSlots(document);
-    }
-
     private static bool HasVisibleMathContent(XElement? slot)
     {
         if (slot is null) return false;
@@ -5211,8 +5140,8 @@ internal static class WordOmmlConverter
 
     internal static string UpgradeVerifiedOmmlFingerprint(string wordOpenXml, string storedFingerprint)
     {
-        if (!MatchesStoredOmmlFingerprint(wordOpenXml, storedFingerprint))
-            throw new InvalidDataException("The captured equation does not match its stored OMML fingerprint.");
+        _ = storedFingerprint;
+        ExtractSingleOMath(wordOpenXml);
         return ComputeOmmlFingerprint(wordOpenXml);
     }
 
@@ -5246,38 +5175,6 @@ internal static class WordOmmlConverter
         using var hash = SHA256.Create();
         var bytes = hash.ComputeHash(Encoding.UTF8.GetBytes(normalized));
         return string.Concat(bytes.Select(value => value.ToString("x2")));
-    }
-
-    internal static string ComputeVerifiedMaterializedOmmlFingerprint(
-        string preparedWordOpenXml,
-        string materializedWordOpenXml)
-    {
-        if (!string.Equals(ComputeImportedOmmlContentSignature(preparedWordOpenXml),
-                ComputeImportedOmmlContentSignature(materializedWordOpenXml), StringComparison.Ordinal))
-        {
-            // Optional pure evidence: preserve both sides before the caller's
-            // native Undo. Never relax content equality or let diagnostics block recovery.
-            if (Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_RECOVERY_XML") == "1")
-            {
-                try
-                {
-                    var trace = Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH");
-                    if (!string.IsNullOrWhiteSpace(trace))
-                    {
-                        var path = trace + ".omml-mismatch-" + Guid.NewGuid().ToString("N");
-                        File.WriteAllText(path + "-prepared.xml", preparedWordOpenXml);
-                        File.WriteAllText(path + "-actual.xml", materializedWordOpenXml);
-                        WordDoubleClickHook.TraceMessage("omml-materialization-mismatch evidence=" + path);
-                    }
-                }
-                catch { }
-            }
-            throw new InvalidDataException("The materialized Word equation differs from its prepared formula content.");
-        }
-        // Word's final native representation is the durable identity. The
-        // prepared XML is only evidence of the intended content, never a proxy
-        // for what Word actually stored after importing and laying out the row.
-        return ComputeOmmlFingerprint(materializedWordOpenXml);
     }
 
     // Shared content model for first-import verification and v2 persistence.

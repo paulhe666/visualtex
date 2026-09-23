@@ -89,22 +89,11 @@ internal sealed class WordFormulaHostWriteRequest
     internal float? ExportedBaselinePixels { get; set; }
     internal double FontSizePoints { get; set; } = FormulaFontSize.DefaultPt;
 
-    // Word may normalize a collapsed inline insertion directly beside an
-    // existing inline OMath into one physical OMath. These are exact semantic
-    // signatures of the Word-native merged outcomes that are valid for this
-    // insertion; they are operation-only and are never serialized.
-    internal List<string> AdditionalValidOmmlContentSignatures { get; } = new();
-
 }
 
 internal sealed class WordFormulaHostWriteResult
 {
     internal WordFormulaHostDescriptor Host { get; set; } = new();
-
-    // True only when the low-level writer compared the actual Word host it just
-    // materialized with the requested semantic content. This is operation-local
-    // state; it is never serialized into the document.
-    internal bool SemanticPostconditionValidated { get; set; }
 }
 
 internal sealed class WordFormulaDocumentIndex

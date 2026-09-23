@@ -8,7 +8,8 @@ namespace VisualTeX.VstoFlowAcceptance;
 internal static partial class Program
 {
     private static void RunWordHostCorePureOmmlAcceptance(
-        string artifactRoot)
+        string artifactRoot,
+        bool stopAfterReferenceAndPromotion = false)
     {
         AssertEqual(
             "(ax-1)(x+1)>(2a+1)x-a",
@@ -349,12 +350,96 @@ internal static partial class Program
                 Word.WdUnits.wdStory);
             application.Selection.TypeParagraph();
             application.Selection.TypeText("ref ");
+            var referenceStart =
+                application.Selection.Start;
             service.InsertEquationReference(
                 document,
                 application.Selection,
                 serviceTargets[0],
                 EquationReferenceStyle.Parenthesized,
                 Word.WdColor.wdColorAutomatic);
+            var referenceEnd =
+                application.Selection.Start;
+            Word.Range? insertedReference = null;
+            Word.OMaths? insertedReferenceMaths = null;
+            try
+            {
+                insertedReference = document.Range(
+                    referenceStart,
+                    referenceEnd);
+                AssertEqual(
+                    "(" + serviceTargets[0].NumberText + ")",
+                    insertedReference.Text ?? string.Empty,
+                    "Word OMML reference inserted formula content instead of the number-only label.");
+                insertedReferenceMaths =
+                    insertedReference.OMaths;
+                AssertEqual(
+                    0,
+                    insertedReferenceMaths.Count,
+                    "Word OMML number-only REF unexpectedly materialized an OMath result.");
+            }
+            finally
+            {
+                Release(insertedReferenceMaths);
+                Release(insertedReference);
+            }
+
+            // Editing the referenced numbered OMML must replace only the
+            // mathematical body. Rebuilding the whole #(SEQ) host would delete
+            // the native _Ref bookmark that the number-only REF now targets.
+            const string referencedEditedMathMl =
+                "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><mrow><mi>z</mi><mo>+</mo><mn>3</mn></mrow></math>";
+            var referenceSourceIndex =
+                WordFormulaHostResolver.CaptureDocumentIndex(
+                    document);
+            var referenceSource =
+                referenceSourceIndex.Omml.Single(item =>
+                {
+                    item.Numbering =
+                        WordFormulaNumberingResolver.ResolveLocal(
+                            document,
+                            item);
+                    return item.Numbering.ContainerKind ==
+                        WordFormulaNumberingContainerKind.CanonicalNativeOmml;
+                });
+            Word.Range? referenceSourceRange = null;
+            try
+            {
+                referenceSourceRange =
+                    WordFormulaHostSemanticReader.CreateRange(
+                        document,
+                        referenceSource.Range);
+                referenceSourceRange.Select();
+                var selectedReferenceSource =
+                    service.ReadSelection();
+                AssertTrue(
+                    selectedReferenceSource.Metadata is not null
+                    && selectedReferenceSource.Metadata.Numbered,
+                    "Referenced native OMML was not exposed as a managed numbered equation before edit.");
+
+                var referenceEditSession =
+                    CreateOmmlMathTypeAcceptanceSession(
+                        referencedEditedMathMl,
+                        "block",
+                        numbered: true,
+                        FormulaOleContract.WordOmmlMode);
+                referenceEditSession.Mode = "edit";
+                referenceEditSession.FormulaId =
+                    selectedReferenceSource.FormulaId!;
+                referenceEditSession.SourceDocumentId =
+                    selectedReferenceSource.DocumentId;
+                referenceEditSession.SourceObjectId =
+                    selectedReferenceSource.ObjectId;
+                referenceEditSession.OriginalMetadata =
+                    selectedReferenceSource.Metadata;
+                _ = service.ReplaceOmml(
+                    referenceEditSession,
+                    referencedEditedMathMl);
+            }
+            finally
+            {
+                Release(referenceSourceRange);
+            }
 
             var foundNativeRef = false;
             var fields = document.Fields;
@@ -382,6 +467,32 @@ internal static partial class Program
                                 "VTEqNum_",
                                 StringComparison.OrdinalIgnoreCase) < 0,
                             "Word native cross-reference unexpectedly targets a VisualTeX bookmark.");
+                        AssertTrue(
+                            code.IndexOf(
+                                "_Ref",
+                                StringComparison.OrdinalIgnoreCase) >= 0,
+                            "Word native cross-reference no longer targets its number-only _Ref bookmark after source edit.");
+                        field.Update();
+                        Word.Range? updatedResult = null;
+                        Word.OMaths? updatedResultMaths = null;
+                        try
+                        {
+                            updatedResult = field.Result.Duplicate;
+                            AssertEqual(
+                                serviceTargets[0].NumberText,
+                                updatedResult.Text ?? string.Empty,
+                                "Editing referenced OMML changed the REF from number-only output.");
+                            updatedResultMaths = updatedResult.OMaths;
+                            AssertEqual(
+                                0,
+                                updatedResultMaths.Count,
+                                "Editing referenced OMML turned its number-only REF back into formula content.");
+                        }
+                        finally
+                        {
+                            Release(updatedResultMaths);
+                            Release(updatedResult);
+                        }
                     }
                 }
             }
@@ -514,11 +625,15 @@ internal static partial class Program
                 "[host-core pure OMML] save/reopen kept the native OMath + _Ref/REF structure live without VisualTeX metadata.");
         }
 
+        RunPureOmmlParagraphLeadingNativePromotionAcceptance();
+        if (stopAfterReferenceAndPromotion)
+            return;
         RunPureOmmlHeadingNumberingAcceptance();
         RunPureOmmlMissingHeadingFallbackAcceptance();
         RunPureOmmlAdjacentInlineAcceptance();
         RunReportedOmmlParenthesisNormalizationAcceptance();
         RunReportedOmmlOneSidedMatrixAcceptance();
+        RunReportedOmmlSetBuilderSeparatorAcceptance();
         RunWordNativeSemanticCorpusAcceptance();
         RunPureOmmlVisualTeXComplexAdjacentInlineConversionAcceptance(
             artifactRoot);
@@ -531,6 +646,90 @@ internal static partial class Program
         RunPureOmmlCopyPasteAcceptance();
         RunPureOmmlDeleteReferenceAcceptance();
         RunPureOmmlNumberToggleAcceptance();
+    }
+
+    private static void RunPureOmmlParagraphLeadingNativePromotionAcceptance()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow></math>";
+
+        using var host =
+            new WordPerformanceHost(
+                documentPath: null);
+        var application = host.Application;
+        var document = host.Document;
+        var service = new WordFormulaService(application);
+        var selection = application.Selection;
+        selection.SetRange(0, 0);
+
+        var session =
+            CreateOmmlMathTypeAcceptanceSession(
+                mathMl,
+                "inline",
+                numbered: false,
+                FormulaOleContract.WordOmmlMode);
+        _ = service.InsertOmml(
+            session,
+            mathMl);
+
+        Word.OMaths? maths = null;
+        Word.OMath? math = null;
+        Word.Range? exact = null;
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? paragraphRange = null;
+        Word.Range? trailing = null;
+        try
+        {
+            maths = document.OMaths;
+            AssertEqual(
+                1,
+                maths.Count,
+                "Paragraph-leading OMML insertion did not create exactly one Word OMath.");
+            math = maths[1];
+            AssertEqual(
+                Word.WdOMathType.wdOMathDisplay,
+                math.Type,
+                "VisualTeX forced a paragraph-leading OMML equation to stay inline instead of accepting Word's native display promotion.");
+            exact = math.Range.Duplicate;
+            paragraphs = exact.Paragraphs;
+            AssertEqual(
+                1,
+                paragraphs.Count,
+                "Paragraph-leading promoted OMML no longer belongs to one Word paragraph.");
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range.Duplicate;
+            var bodyEnd = Math.Max(
+                paragraphRange.Start,
+                paragraphRange.End - 1);
+            trailing = document.Range(
+                exact.End,
+                bodyEnd);
+            AssertTrue(
+                string.IsNullOrEmpty(trailing.Text),
+                "Paragraph-leading OMML promotion left a trailing placeholder/text guard in the paragraph.");
+            AssertEqual(
+                "block",
+                session.DisplayMode,
+                "The OMML session did not report Word's final promoted display mode.");
+            AssertNoHostCoreSentinelArtifacts(
+                document,
+                "after paragraph-leading Word-native OMML promotion");
+        }
+        finally
+        {
+            Release(trailing);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(exact);
+            Release(math);
+            Release(maths);
+            Release(selection);
+        }
+
+        Console.WriteLine(
+            "[host-core pure OMML] paragraph-leading inline request followed Word-native display promotion without a trailing guard.");
     }
 
     private static void RunPureOmmlHeadingNumberingAcceptance()
@@ -1213,6 +1412,108 @@ internal static partial class Program
                 "Reported one-sided matrix OMML regression lost matrix/max content.");
             Console.WriteLine(
                 "[host-core pure OMML] reported one-sided brace + matrix + max Word BuildUp passed semantic postcondition validation.");
+        }
+        finally
+        {
+            Release(range);
+            Release(math);
+            Release(insertion);
+        }
+    }
+
+    private static void RunReportedOmmlSetBuilderSeparatorAcceptance()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mrow>"
+            + "<mi>M</mi><mo>=</mo>"
+            + "<mfenced open=\"{\" close=\"}\"><mrow>"
+            + "<mi>x</mi><mo>∣</mo><mi>a</mi><mo>−</mo><mn>4</mn>"
+            + "<mo>≤</mo><mi>x</mi><mo>≤</mo><mi>a</mi><mo>+</mo><mn>4</mn>"
+            + "</mrow></mfenced></mrow></math>";
+
+        using var host =
+            new WordPerformanceHost(
+                documentPath: null);
+        var application = host.Application;
+        var document = host.Document;
+        var service = new WordFormulaService(application);
+        Word.Range? insertion = null;
+        Word.OMath? math = null;
+        Word.Range? range = null;
+        try
+        {
+            insertion = document.Range(0, 0);
+            insertion.Select();
+            _ = service.InsertOmml(
+                CreateOmmlMathTypeAcceptanceSession(
+                    mathMl,
+                    "inline",
+                    numbered: false,
+                    FormulaOleContract.WordOmmlMode),
+                mathMl);
+
+            AssertEqual(
+                1,
+                document.OMaths.Count,
+                "Reported set-builder OMML regression did not create one native Word equation.");
+            AssertPureOmmlHasNoVisualTeXResidue(
+                document,
+                "direct InsertOmml result");
+            math = document.OMaths[1];
+            range = math.Range.Duplicate;
+            var xml = range.WordOpenXML ?? string.Empty;
+            var usedNativeSeparator =
+                xml.IndexOf("sepChr", StringComparison.Ordinal) >= 0;
+
+            var resolved =
+                WordFormulaHostResolver.ResolveLocal(
+                    document,
+                    range,
+                    WordFormulaHostKind.Omml)
+                ?? throw new InvalidDataException(
+                    "Reported set-builder OMML regression could not resolve the inserted equation.");
+            var payload = WordFormulaHostSemanticReader.Read(document, resolved);
+            var semantic =
+                WordNativeOmmlSemanticComparer.CompareMathMlToWordOpenXml(
+                    mathMl,
+                    payload.WordOpenXml ?? xml,
+                    display: false);
+            AssertTrue(
+                semantic.Equivalent,
+                "Word's native m:d/m:sepChr set-builder materialization failed semantic validation: "
+                + $"expected=[{semantic.ExpectedMathMlSignature}] actual=[{semantic.ActualMathMlSignature}].");
+            var sourceSignature =
+                WordNativeOmmlSemanticComparer.ComputeMathMlSemanticSignature(mathMl);
+            var transformedOmml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+            var transformedRoundTripMathMl =
+                WordOmmlConverter.TransformOmmlToMathMl(transformedOmml, display: false);
+            var transformedSignature =
+                WordNativeOmmlSemanticComparer.ComputeMathMlSemanticSignature(
+                    transformedRoundTripMathMl);
+            var actualMathMl =
+                WordOmmlConverter.TransformOmmlToMathMl(
+                    payload.WordOpenXml ?? xml,
+                    display: false);
+            var actualSignature =
+                WordNativeOmmlSemanticComparer.ComputeMathMlSemanticSignature(
+                    actualMathMl);
+            Console.WriteLine(
+                "[set-builder diagnostic] "
+                + $"sourceSignature=[{sourceSignature}]; "
+                + $"preparedRoundTripSignature=[{transformedSignature}]; "
+                + $"actualSignature=[{actualSignature}]; "
+                + $"exactOmml={semantic.ExactOmmlMatch}; "
+                + $"wordNativeSeparator={usedNativeSeparator}; "
+                + $"localOmml=[{WordOmmlConverter.ExtractSingleOMath(xml)}]");
+            AssertTrue(
+                actualSignature.IndexOf("o(|)", StringComparison.Ordinal) >= 0,
+                "The materialized set-builder semantic signature lost its vertical separator. "
+                + $"source=[{sourceSignature}] prepared=[{transformedSignature}] "
+                + $"actual=[{actualSignature}].");
+
+            Console.WriteLine(
+                "[host-core pure OMML] reported M={x|a-4≤x≤a+4} direct InsertOmml produced pure Word OMML; "
+                + $"testOnlySemanticDiagnostic=PASS; wordNativeSeparator={usedNativeSeparator}.");
         }
         finally
         {

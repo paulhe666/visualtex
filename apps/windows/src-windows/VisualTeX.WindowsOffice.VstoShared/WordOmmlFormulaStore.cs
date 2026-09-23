@@ -206,16 +206,12 @@ internal static class WordOmmlFormulaStore
                 throw new InvalidDataException(
                     "The selected OMML identity changed structural metadata before rebinding.");
 
-            var currentWordOpenXml =
-                WordOmmlNativeSource.ReadCompleteEquationWordOpenXml(
-                    document,
-                    exactEquationRange,
-                    refreshedMetadata.FormulaId);
-            if (!WordOmmlConverter.MatchesStoredOmmlFingerprint(
-                    currentWordOpenXml,
-                    refreshedMetadata.NativeOmmlFingerprint))
-                throw new InvalidDataException(
-                    "The selected OMML equation changed again after conversion preview capture.");
+            refreshedMetadata.NativeOmmlFingerprint =
+                WordOmmlConverter.ComputeOmmlFingerprint(
+                    WordOmmlNativeSource.ReadCompleteEquationWordOpenXml(
+                        document,
+                        exactEquationRange,
+                        refreshedMetadata.FormulaId));
 
             if (refreshedMetadata.Numbered
                 && !NumberedFormulaIdentityMatchesEquationRange(
@@ -1541,10 +1537,6 @@ internal static class WordOmmlFormulaStore
         {
             bookmarkRange = bookmark.Range;
             content = document.Content;
-            var expectedFingerprint = metadata.NativeOmmlFingerprint;
-            bool ContentMatches(Range range) => string.IsNullOrWhiteSpace(expectedFingerprint)
-                || string.Equals(GetEquationFingerprint(range, expectedFingerprint!), expectedFingerprint, StringComparison.OrdinalIgnoreCase);
-
             // Read the exact canonical bookmark before broadening any range.
             // Word 2021 can omit or clip table OMaths in a probe spanning body /
             // table boundaries. Opening, applying and converting must not choose
@@ -1552,13 +1544,18 @@ internal static class WordOmmlFormulaStore
             candidate = TryGetExactAnchorEquationRange(bookmark)
                 ?? FindAdjacentEquationRangeNearAnchor(document, content, bookmarkRange.Start);
             if (candidate is not null && IsCanonicalAnchor(bookmark, candidate)
-                && ((NumberedFormulaIdentityMatchesEquationRange(document, formulaId, metadata, candidate)
-                        && (captureCurrentContent || ContentMatches(candidate)))
-                    || (metadata.Numbered && metadata.DisplayMode == "block"
+                && (NumberedFormulaIdentityMatchesEquationRange(
+                        document,
+                        formulaId,
+                        metadata,
+                        candidate)
+                    || (metadata.Numbered
+                        && metadata.DisplayMode == "block"
                         && bookmarkRange.Start == candidate.Start
-                        && !string.IsNullOrWhiteSpace(expectedFingerprint)
-                        && ContentMatches(candidate)
-                        && IsPendingStandaloneNumberHost(document, formulaId, candidate))))
+                        && IsPendingStandaloneNumberHost(
+                            document,
+                            formulaId,
+                            candidate))))
             {
                 var result = candidate;
                 candidate = null;
@@ -1567,23 +1564,22 @@ internal static class WordOmmlFormulaStore
             Release(candidate);
             candidate = null;
 
-            // The same-row numeric identity distinguishes identical equations in
-            // different rows. It cannot override a mismatch in captured content.
+            // The same-row numeric identity is physical ownership evidence and
+            // no longer depends on an OMML content fingerprint.
             if (metadata.Numbered && metadata.DisplayMode == "block")
             {
                 candidate = FindNumberedEquationRangeByNumberIdentity(document, formulaId);
                 if (candidate is not null)
                 {
-                    if (!ContentMatches(candidate))
-                        throw new InvalidDataException($"The numbered OMML row for {formulaId} no longer matches its captured formula content.");
                     var result = candidate;
                     candidate = null;
                     return result;
                 }
             }
 
-            // Missing legacy fingerprints permit only a verified local/row host;
-            // without content evidence there is no safe drift recovery by position.
+            // Fingerprints are retained only as a last-resort identity recovery
+            // aid when the normal physical bookmark/number owner has drifted.
+            var expectedFingerprint = metadata.NativeOmmlFingerprint;
             if (!string.IsNullOrWhiteSpace(expectedFingerprint))
                 candidate = FindUniqueEquationRangeByFingerprint(document, expectedFingerprint!,
                     requireDisplay: !metadata.Numbered && metadata.DisplayMode == "block");

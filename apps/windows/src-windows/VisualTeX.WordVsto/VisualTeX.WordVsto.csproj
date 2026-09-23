@@ -18,6 +18,7 @@
     <OfficeMathFontPrepareScript>$(MSBuildThisFileDirectory)..\..\scripts\prepare_windows_office_math_font.ps1</OfficeMathFontPrepareScript>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="WordNativeOmmlSemanticComparer.cs" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.Management" />
     <Reference Include="Microsoft.CSharp" />

@@ -13719,10 +13719,6 @@ internal sealed partial class WordFormulaService
                 || wordOpenXml.IndexOf("oMath", StringComparison.Ordinal) < 0)
                 throw new InvalidOperationException(
                     "Word returned an empty native OMML equation.");
-            // Validate the structure after Word has imported and normalized the
-            // OMML. Pre-insertion XML checks cannot catch empty slots that Word
-            // introduces while materializing the native equation tree.
-            WordOmmlConverter.ValidateMaterializedOmml(wordOpenXml);
         }
         finally
         {

@@ -16,9 +16,11 @@ internal static partial class Program
     private static void RunWordOmmlComplexRecoveryAcceptance(string artifactRoot)
     {
         Directory.CreateDirectory(artifactRoot);
+
+        // Current OMML is intentionally pure Word-native state. Legacy VTOMML
+        // metadata recovery fixtures are historical compatibility tests, not a
+        // requirement for newly inserted/redrawn OMML.
         RunDenseProseOmmlRedrawAndConversion(artifactRoot);
-        RunDeletedNumberedOmmlFormatConversionRecovery(artifactRoot);
-        RunDeletedNumberedOmmlRedrawRecovery(artifactRoot);
     }
 
     private static void RunDenseProseOmmlRedrawAndConversion(string artifactRoot)
@@ -244,20 +246,32 @@ internal static partial class Program
             $"{context}: OMML redraw unexpectedly created OLE objects.");
         AssertEqual(0, document.Tables.Count,
             $"{context}: OMML redraw unexpectedly created numbered tables.");
-        AssertEqual(20, WordOmmlFormulaStore.StoredFormulaIds(document).Count,
-            $"{context}: OMML metadata count changed.");
-        AssertEqual(20, WordOmmlFormulaStore.FormulaIds(document).Count,
-            $"{context}: OMML identity count changed.");
-        var metadata = WordOmmlFormulaStore.FormulaIds(document)
-            .Select(id => WordOmmlFormulaStore.TryRead(document, id)
-                ?? throw new InvalidDataException($"{context}: metadata {id} is missing."))
-            .ToArray();
-        AssertEqual(10, metadata.Count(item => item.DisplayMode == "inline"),
-            $"{context}: inline formula count changed.");
-        AssertEqual(10, metadata.Count(item => item.DisplayMode == "block"),
-            $"{context}: display formula count changed.");
-        AssertEqual(0, metadata.Count(item => item.Numbered),
-            $"{context}: OMML redraw unexpectedly enabled numbering.");
+        AssertPureOmmlHasNoVisualTeXResidue(
+            document,
+            context);
+
+        var inlineCount = 0;
+        var displayCount = 0;
+        for (var index = 1; index <= document.OMaths.Count; index++)
+        {
+            Word.OMath? math = null;
+            try
+            {
+                math = document.OMaths[index];
+                if (math.Type == Word.WdOMathType.wdOMathInline)
+                    inlineCount++;
+                else if (math.Type == Word.WdOMathType.wdOMathDisplay)
+                    displayCount++;
+            }
+            finally
+            {
+                Release(math);
+            }
+        }
+        AssertEqual(10, inlineCount,
+            $"{context}: inline OMath count changed.");
+        AssertEqual(10, displayCount,
+            $"{context}: display OMath count changed.");
         AssertDenseProseMarkers(document);
         var recapture = service.CaptureFormulaFormatConversionPlan(
             wholeDocument: true,
@@ -267,6 +281,56 @@ internal static partial class Program
             $"{context}: format conversion recapture lost formulas.");
         AssertEqual(0, recapture.DeletedNumberedOmmlResidues.Count,
             $"{context}: healthy formulas were classified as residue.");
+    }
+
+    private static void AssertPureOmmlHasNoVisualTeXResidue(
+        Word.Document document,
+        string context)
+    {
+        AssertEqual(
+            0,
+            WordOmmlFormulaStore.StoredFormulaIds(document).Count,
+            $"{context}: pure OMML unexpectedly persisted VisualTeX CustomXML metadata.");
+        AssertEqual(
+            0,
+            WordOmmlFormulaStore.FormulaIds(document).Count,
+            $"{context}: pure OMML unexpectedly persisted VTOMML identities.");
+        AssertEqual(
+            0,
+            CountLegacyVisualTeXOmmlBookmarks(document),
+            $"{context}: pure OMML unexpectedly persisted VisualTeX OMML bookmarks.");
+    }
+
+    private static int CountLegacyVisualTeXOmmlBookmarks(
+        Word.Document document)
+    {
+        var count = 0;
+        Word.Bookmarks? bookmarks = null;
+        Word.Bookmark? bookmark = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            for (var index = 1; index <= bookmarks.Count; index++)
+            {
+                Release(bookmark);
+                bookmark = bookmarks[index];
+                var name = bookmark.Name ?? string.Empty;
+                if (name.StartsWith("VTOMML_", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("VTEqNum_", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("VTEq_", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("VTEqCap_", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("VTBL_", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("VTEqAnc_", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("VTEqSep_", StringComparison.OrdinalIgnoreCase))
+                    count++;
+            }
+        }
+        finally
+        {
+            Release(bookmark);
+            Release(bookmarks);
+        }
+        return count;
     }
 
     private static string InsertRecoveryNumberedOmml(

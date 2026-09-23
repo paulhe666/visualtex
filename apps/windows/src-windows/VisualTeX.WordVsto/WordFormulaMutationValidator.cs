@@ -29,6 +29,16 @@ internal static class WordFormulaMutationValidator
                 throw new InvalidDataException(
                     "The newly inserted formula host moved before validation.");
 
+            if (request.Kind == WordFormulaHostKind.Omml)
+            {
+                // Pure OMML trusts Word's final native shape. Do not compare
+                // inline/display mode, semantics, fingerprints or numbering
+                // containers against the request. The only postcondition is that
+                // one non-empty physical OMath still owns this exact range.
+                ValidateOmml(localRange);
+                return resolved;
+            }
+
             if (!string.Equals(
                     resolved.DisplayMode,
                     request.DisplayMode,
@@ -43,9 +53,6 @@ internal static class WordFormulaMutationValidator
             {
                 case WordFormulaHostKind.VisualTeX:
                     ValidateVisualTeX(request, resolved, payload);
-                    break;
-                case WordFormulaHostKind.Omml:
-                    ValidateOmml(request, payload);
                     break;
                 default:
                     throw new NotSupportedException(
@@ -103,73 +110,34 @@ internal static class WordFormulaMutationValidator
     }
 
     private static void ValidateOmml(
-        WordFormulaHostWriteRequest request,
-        WordFormulaSemanticPayload payload)
+        Microsoft.Office.Interop.Word.Range hostRange)
     {
-        if (string.IsNullOrWhiteSpace(request.MathMl))
-            throw new InvalidDataException(
-                "OMML validation requires the requested MathML.");
-        if (string.IsNullOrWhiteSpace(payload.WordOpenXml))
-            throw new InvalidDataException(
-                "The inserted OMML host returned no local WordOpenXML.");
-
-        var display =
-            string.Equals(
-                request.DisplayMode,
-                "block",
-                StringComparison.OrdinalIgnoreCase);
-        var comparison =
-            WordNativeOmmlSemanticComparer.CompareMathMlToWordOpenXml(
-                request.MathMl!,
-                payload.WordOpenXml!,
-                display,
-                request.AdditionalValidOmmlContentSignatures);
-        if (comparison.Equivalent)
-            return;
-
-        var expectedRawLatex =
-            MathMlToLatexConverter.Convert(
-                request.MathMl!);
-        var actualRawLatex =
-            payload.Latex;
-        var expectedLatex =
-            NormalizeLatexFragment(
-                expectedRawLatex);
-        var actualLatexForDiagnostic =
-            NormalizeLatexFragment(
-                actualRawLatex);
-        var expectedWordNativeLatex =
-            NormalizeWordNativeLatexSemantics(
-                expectedRawLatex);
-        var actualWordNativeLatex =
-            NormalizeWordNativeLatexSemantics(
-                actualRawLatex);
-
-        throw new InvalidDataException(
-            "The inserted Word equation differs from the requested mathematical content after Word-native semantic canonicalization. "
-            + $"display={request.DisplayMode}; expectedLatex=[{expectedLatex}]; "
-            + $"actualLatex=[{actualLatexForDiagnostic}]; "
-            + $"expectedWordNativeLatex=[{expectedWordNativeLatex}]; "
-            + $"actualWordNativeLatex=[{actualWordNativeLatex}]; "
-            + $"expectedOmmlSignature=[{comparison.ExpectedOmmlSignature}]; "
-            + $"actualOmmlSignature=[{comparison.ActualOmmlSignature}]; "
-            + $"expectedMathMlSignature=[{comparison.ExpectedMathMlSignature}]; "
-            + $"actualMathMlSignature=[{comparison.ActualMathMlSignature}]; "
-            + $"semanticExtractionError=[{comparison.SemanticExtractionError ?? string.Empty}].");
+        Microsoft.Office.Interop.Word.OMaths? maths = null;
+        Microsoft.Office.Interop.Word.OMath? math = null;
+        Microsoft.Office.Interop.Word.Range? exact = null;
+        try
+        {
+            maths = hostRange.OMaths;
+            if (maths.Count != 1)
+                throw new InvalidDataException(
+                    "Word did not retain exactly one native OMath.");
+            math = maths[1];
+            exact = math.Range.Duplicate;
+            if (exact.End <= exact.Start
+                || exact.StoryType != hostRange.StoryType
+                || exact.Start != hostRange.Start
+                || exact.End != hostRange.End)
+                throw new InvalidDataException(
+                    "Word returned an invalid native OMath range.");
+        }
+        finally
+        {
+            Release(exact);
+            Release(math);
+            Release(maths);
+        }
     }
 
-    private static string NormalizeLatexFragment(
-        string? latex)
-    {
-        if (string.IsNullOrWhiteSpace(
-                latex))
-            return string.Empty;
-
-        return string.Concat(
-            latex!.Where(character =>
-                !char.IsWhiteSpace(
-                    character)));
-    }
 
     internal static string NormalizeWordNativeLatexSemantics(
         string? latex)

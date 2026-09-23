@@ -10,6 +10,7 @@ internal sealed class EquationReferenceDialog : Form
         OfficePluginLanguage.Text(chinese, english);
 
     private readonly IReadOnlyList<EquationReferenceTarget> _visualTexTargets;
+    private readonly IReadOnlyList<EquationReferenceTarget> _wordOmmlTargets;
     private readonly IReadOnlyList<EquationReferenceTarget> _mathTypeTargets;
     private readonly ComboBox _sourceBox = new();
     private readonly TextBox _searchBox = new();
@@ -53,9 +54,11 @@ internal sealed class EquationReferenceDialog : Form
 
     public EquationReferenceDialog(
         IReadOnlyList<EquationReferenceTarget> visualTexTargets,
+        IReadOnlyList<EquationReferenceTarget> wordOmmlTargets,
         IReadOnlyList<EquationReferenceTarget> mathTypeTargets)
     {
         _visualTexTargets = visualTexTargets ?? Array.Empty<EquationReferenceTarget>();
+        _wordOmmlTargets = wordOmmlTargets ?? Array.Empty<EquationReferenceTarget>();
         _mathTypeTargets = mathTypeTargets ?? Array.Empty<EquationReferenceTarget>();
 
         Text = T("插入公式引用", "Insert Equation Reference");
@@ -78,8 +81,13 @@ internal sealed class EquationReferenceDialog : Form
         if (_visualTexTargets.Count > 0)
             _sourceBox.Items.Add(new SourceOption(
                 EquationReferenceSource.VisualTeX,
-                T("Word / VisualTeX 编号公式", "Numbered Word / VisualTeX equations"),
+                T("VisualTeX 编号公式", "Numbered VisualTeX equations"),
                 _visualTexTargets.Count));
+        if (_wordOmmlTargets.Count > 0)
+            _sourceBox.Items.Add(new SourceOption(
+                EquationReferenceSource.WordOmml,
+                T("Word OMML 编号公式", "Numbered Word OMML equations"),
+                _wordOmmlTargets.Count));
         if (_mathTypeTargets.Count > 0)
             _sourceBox.Items.Add(new SourceOption(
                 EquationReferenceSource.MathType,
@@ -157,9 +165,12 @@ internal sealed class EquationReferenceDialog : Form
     }
 
     private IReadOnlyList<EquationReferenceTarget> CurrentTargets =>
-        CurrentSource == EquationReferenceSource.MathType
-            ? _mathTypeTargets
-            : _visualTexTargets;
+        CurrentSource switch
+        {
+            EquationReferenceSource.WordOmml => _wordOmmlTargets,
+            EquationReferenceSource.MathType => _mathTypeTargets,
+            _ => _visualTexTargets,
+        };
 
     private void ConfigureStyleForSource()
     {

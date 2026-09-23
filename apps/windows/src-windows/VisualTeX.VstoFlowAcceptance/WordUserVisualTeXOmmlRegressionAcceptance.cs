@@ -156,6 +156,9 @@ internal static partial class Program
                 "r66 VisualTeX→OMML left VisualTeX OLE sources behind.");
             AssertEqual(ommlBefore + visualTeXBefore, document.OMaths.Count,
                 "r66 VisualTeX→OMML did not create one OMML equation per VisualTeX source.");
+            AssertPureOmmlHasNoVisualTeXResidue(
+                document,
+                "VisualTeX→OMML live result");
 
             document.Save();
             document.Close(Word.WdSaveOptions.wdSaveChanges);
@@ -174,6 +177,9 @@ internal static partial class Program
                 "Saved/reopened r66 conversion restored or retained VisualTeX OLE sources.");
             AssertEqual(ommlBefore + visualTeXBefore, reopened.OMaths.Count,
                 "Saved/reopened r66 conversion changed the OMML equation count.");
+            AssertPureOmmlHasNoVisualTeXResidue(
+                reopened,
+                "VisualTeX→OMML saved/reopened result");
             Console.WriteLine(
                 $"[USER VT→OMML PASS] converted={visualTeXBefore}; "
                 + $"omml={reopened.OMaths.Count}; output={outputPath}");

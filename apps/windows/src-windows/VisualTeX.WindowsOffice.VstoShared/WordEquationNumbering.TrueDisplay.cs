@@ -1222,9 +1222,7 @@ internal static partial class WordEquationNumbering
                 var isCanonicalAdjacent = anchor == candidateRange.Start
                     || anchor == candidateRange.Start - 1
                     || bookmarkOverlaps;
-                if (isCanonicalAdjacent
-                    && (string.IsNullOrWhiteSpace(expectedFingerprint)
-                        || fingerprintMatches))
+                if (isCanonicalAdjacent)
                 {
                     if (adjacentMatch is not null)
                         return null;

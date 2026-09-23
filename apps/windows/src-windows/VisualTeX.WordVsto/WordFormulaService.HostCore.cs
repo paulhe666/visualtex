@@ -400,6 +400,13 @@ internal sealed partial class WordFormulaService
 
             if (!string.IsNullOrWhiteSpace(resultHost.FormulaId))
                 session.FormulaId = resultHost.FormulaId!;
+            if (resultHost.Kind == WordFormulaHostKind.Omml)
+            {
+                // Pure OMML follows Word's actual native OMath type. A requested
+                // inline insertion can legitimately become display when Word
+                // promotes a paragraph-leading equation during BuildUp.
+                session.DisplayMode = resultHost.DisplayMode;
+            }
 
             finalRange =
                 WordFormulaHostSemanticReader.CreateRange(
