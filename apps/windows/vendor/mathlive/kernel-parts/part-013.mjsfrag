@@ -1,0 +1,1527 @@
+          if (b5.o.match(/^[+\-]/)) {
+            b5.o = "{" + b5.o + "}";
+          }
+          res += b5.o;
+        }
+        if (buf.dType === "kv") {
+          if (b5.d || b5.q) {
+            res += "{\\vphantom{X}}";
+          }
+          if (b5.d) {
+            res += "^{" + b5.d + "}";
+          }
+          if (b5.q) {
+            res += "_{\\smash[t]{" + b5.q + "}}";
+          }
+        } else if (buf.dType === "oxidation") {
+          if (b5.d) {
+            res += "{\\vphantom{X}}";
+            res += "^{" + b5.d + "}";
+          }
+          if (b5.q) {
+            res += "{\\vphantom{X}}";
+            res += "_{\\smash[t]{" + b5.q + "}}";
+          }
+        } else {
+          if (b5.q) {
+            res += "{\\vphantom{X}}";
+            res += "_{\\smash[t]{" + b5.q + "}}";
+          }
+          if (b5.d) {
+            res += "{\\vphantom{X}}";
+            res += "^{" + b5.d + "}";
+          }
+        }
+        break;
+      case "rm":
+        res = "\\mathrm{" + buf.p1 + "}";
+        break;
+      case "text":
+        if (buf.p1.match(/[\^_]/)) {
+          buf.p1 = buf.p1.replace(" ", "~").replace("-", "\\text{-}");
+          res = "\\mathrm{" + buf.p1 + "}";
+        } else {
+          res = "\\text{" + buf.p1 + "}";
+        }
+        break;
+      case "roman numeral":
+        res = "\\mathrm{" + buf.p1 + "}";
+        break;
+      case "state of aggregation":
+        res = "\\mskip2mu " + texify._goInner(buf.p1);
+        break;
+      case "state of aggregation subscript":
+        res = "\\mskip1mu " + texify._goInner(buf.p1);
+        break;
+      case "bond":
+        res = texify._getBond(buf.kind_);
+        if (!res) {
+          throw [
+            "MhchemErrorBond",
+            "mhchem Error. Unknown bond type (" + buf.kind_ + ")"
+          ];
+        }
+        break;
+      case "frac":
+        var c = "\\frac{" + buf.p1 + "}{" + buf.p2 + "}";
+        res = "\\mathchoice{\\textstyle" + c + "}{" + c + "}{" + c + "}{" + c + "}";
+        break;
+      case "pu-frac":
+        var d = "\\frac{" + texify._goInner(buf.p1) + "}{" + texify._goInner(buf.p2) + "}";
+        res = "\\mathchoice{\\textstyle" + d + "}{" + d + "}{" + d + "}{" + d + "}";
+        break;
+      case "tex-math":
+        res = buf.p1 + " ";
+        break;
+      case "frac-ce":
+        res = "\\frac{" + texify._goInner(buf.p1) + "}{" + texify._goInner(buf.p2) + "}";
+        break;
+      case "overset":
+        res = "\\overset{" + texify._goInner(buf.p1) + "}{" + texify._goInner(buf.p2) + "}";
+        break;
+      case "underset":
+        res = "\\underset{" + texify._goInner(buf.p1) + "}{" + texify._goInner(buf.p2) + "}";
+        break;
+      case "underbrace":
+        res = "\\underbrace{" + texify._goInner(buf.p1) + "}_{" + texify._goInner(buf.p2) + "}";
+        break;
+      case "color":
+        res = "{\\color{" + buf.color1 + "}{" + texify._goInner(buf.color2) + "}}";
+        break;
+      case "color0":
+        res = "\\color{" + buf.color + "}";
+        break;
+      case "arrow":
+        var b6 = {
+          rd: texify._goInner(buf.rd),
+          rq: texify._goInner(buf.rq)
+        };
+        var arrow = texify._getArrow(buf.r);
+        if (b6.rd || b6.rq) {
+          if (buf.r === "<=>" || buf.r === "<=>>" || buf.r === "<<=>" || buf.r === "<-->") {
+            arrow = "\\long" + arrow;
+            if (b6.rd) {
+              arrow = "\\overset{" + b6.rd + "}{" + arrow + "}";
+            }
+            if (b6.rq) {
+              if (buf.r === "<-->") {
+                arrow = "\\underset{\\lower2mu{" + b6.rq + "}}{" + arrow + "}";
+              } else {
+                arrow = "\\underset{\\lower6mu{" + b6.rq + "}}{" + arrow + "}";
+              }
+            }
+            arrow = " {}\\mathrel{" + arrow + "}{} ";
+          } else {
+            if (b6.rq) {
+              arrow += "[{" + b6.rq + "}]";
+            }
+            arrow += "{" + b6.rd + "}";
+            arrow = " {}\\mathrel{\\x" + arrow + "}{} ";
+          }
+        } else {
+          arrow = " {}\\mathrel{\\long" + arrow + "}{} ";
+        }
+        res = arrow;
+        break;
+      case "operator":
+        res = texify._getOperator(buf.kind_);
+        break;
+      case "1st-level escape":
+        res = buf.p1 + " ";
+        break;
+      case "space":
+        res = " ";
+        break;
+      case "entitySkip":
+        res = "~";
+        break;
+      case "pu-space-1":
+        res = "~";
+        break;
+      case "pu-space-2":
+        res = "\\mkern3mu ";
+        break;
+      case "1000 separator":
+        res = "\\mkern2mu ";
+        break;
+      case "commaDecimal":
+        res = "{,}";
+        break;
+      case "comma enumeration L":
+        res = "{" + buf.p1 + "}\\mkern6mu ";
+        break;
+      case "comma enumeration M":
+        res = "{" + buf.p1 + "}\\mkern3mu ";
+        break;
+      case "comma enumeration S":
+        res = "{" + buf.p1 + "}\\mkern1mu ";
+        break;
+      case "hyphen":
+        res = "\\text{-}";
+        break;
+      case "addition compound":
+        res = "\\,{\\cdot}\\,";
+        break;
+      case "electron dot":
+        res = "\\mkern1mu \\bullet\\mkern1mu ";
+        break;
+      case "KV x":
+        res = "{\\times}";
+        break;
+      case "prime":
+        res = "\\prime ";
+        break;
+      case "cdot":
+        res = "\\cdot ";
+        break;
+      case "tight cdot":
+        res = "\\mkern1mu{\\cdot}\\mkern1mu ";
+        break;
+      case "times":
+        res = "\\times ";
+        break;
+      case "circa":
+        res = "{\\sim}";
+        break;
+      case "^":
+        res = "uparrow";
+        break;
+      case "v":
+        res = "downarrow";
+        break;
+      case "ellipsis":
+        res = "\\ldots ";
+        break;
+      case "/":
+        res = "/";
+        break;
+      case " / ":
+        res = "\\,/\\,";
+        break;
+      default:
+        assertNever(buf);
+        throw ["MhchemBugT", "mhchem bug T. Please report."];
+    }
+    assertString(res);
+    return res;
+  },
+  _getArrow: function(a) {
+    switch (a) {
+      case "->":
+        return "rightarrow";
+      case "\u2192":
+        return "rightarrow";
+      case "\u27F6":
+        return "rightarrow";
+      case "<-":
+        return "leftarrow";
+      case "<->":
+        return "leftrightarrow";
+      case "<-->":
+        return "leftrightarrows";
+      case "<=>":
+        return "rightleftharpoons";
+      case "\u21CC":
+        return "rightleftharpoons";
+      case "<=>>":
+        return "Rightleftharpoons";
+      case "<<=>":
+        return "Leftrightharpoons";
+      default:
+        assertNever(a);
+        throw ["MhchemBugT", "mhchem bug T. Please report."];
+    }
+  },
+  _getBond: function(a) {
+    switch (a) {
+      case "-":
+        return "{-}";
+      case "1":
+        return "{-}";
+      case "=":
+        return "{=}";
+      case "2":
+        return "{=}";
+      case "#":
+        return "{\\equiv}";
+      case "3":
+        return "{\\equiv}";
+      case "~":
+        return "{\\tripledash}";
+      case "~-":
+        return "{\\rlap{\\lower.1em{-}}\\raise.1em{\\tripledash}}";
+      case "~=":
+        return "{\\rlap{\\lower.2em{-}}\\rlap{\\raise.2em{\\tripledash}}-}";
+      case "~--":
+        return "{\\rlap{\\lower.2em{-}}\\rlap{\\raise.2em{\\tripledash}}-}";
+      case "-~-":
+        return "{\\rlap{\\lower.2em{-}}\\rlap{\\raise.2em{-}}\\tripledash}";
+      case "...":
+        return "{{\\cdot}{\\cdot}{\\cdot}}";
+      case "....":
+        return "{{\\cdot}{\\cdot}{\\cdot}{\\cdot}}";
+      case "->":
+        return "{\\rightarrow}";
+      case "<-":
+        return "{\\leftarrow}";
+      case "<":
+        return "{<}";
+      case ">":
+        return "{>}";
+      default:
+        assertNever(a);
+        throw ["MhchemBugT", "mhchem bug T. Please report."];
+    }
+  },
+  _getOperator: function(a) {
+    switch (a) {
+      case "+":
+        return " {}+{} ";
+      case "-":
+        return " {}-{} ";
+      case "=":
+        return " {}={} ";
+      case "<":
+        return " {}<{} ";
+      case ">":
+        return " {}>{} ";
+      case "<<":
+        return " {}\\ll{} ";
+      case ">>":
+        return " {}\\gg{} ";
+      case "\\pm":
+        return " {}\\pm{} ";
+      case "\\approx":
+        return " {}\\approx{} ";
+      case "$\\approx$":
+        return " {}\\approx{} ";
+      case "v":
+        return " \\downarrow{} ";
+      case "(v)":
+        return " \\downarrow{} ";
+      case "^":
+        return " \\uparrow{} ";
+      case "(^)":
+        return " \\uparrow{} ";
+      default:
+        assertNever(a);
+        throw ["MhchemBugT", "mhchem bug T. Please report."];
+    }
+  }
+};
+function assertNever(a) {
+}
+function assertString(a) {
+}
+
+// src/atoms/delim.ts
+var MiddleDelimAtom = class _MiddleDelimAtom extends Atom {
+  constructor(options) {
+    super(__spreadProps(__spreadValues({}, options), { type: "delim" }));
+    this.value = options.delim;
+    this.size = options.size;
+  }
+  static fromJson(json) {
+    return new _MiddleDelimAtom(json);
+  }
+  toJson() {
+    return __spreadProps(__spreadValues({}, super.toJson()), { delim: this.value, size: this.size });
+  }
+  render(_context) {
+    return new Box(this.value, { type: "middle" });
+  }
+  _serialize(options) {
+    if (!(options.expandMacro || options.skipStyles || options.skipPlaceholders) && typeof this.verbatimLatex === "string")
+      return this.verbatimLatex;
+    const def = getDefinition(this.command, this.mode);
+    if (def == null ? void 0 : def.serialize) return def.serialize(this, options);
+    return latexCommand(this.command, this.value);
+  }
+};
+var SizedDelimAtom = class _SizedDelimAtom extends Atom {
+  constructor(options) {
+    super(__spreadProps(__spreadValues({}, options), { type: "sizeddelim", value: options.delim }));
+    this.delimType = options.delimType;
+    this.size = options.size;
+  }
+  static fromJson(json) {
+    return new _SizedDelimAtom(json);
+  }
+  toJson() {
+    return __spreadProps(__spreadValues({}, super.toJson()), {
+      delim: this.value,
+      size: this.size,
+      delimType: this.delimType
+    });
+  }
+  render(context) {
+    let result = makeSizedDelim(this.value, this.size, context, {
+      classes: { open: "ML__open", close: "ML__close" }[this.delimType],
+      type: this.delimType,
+      isSelected: this.isSelected
+    });
+    if (!result) return null;
+    result = this.bind(context, result);
+    if (this.caret) result.caret = this.caret;
+    return result;
+  }
+  _serialize(options) {
+    if (!(options.expandMacro || options.skipStyles || options.skipPlaceholders) && typeof this.verbatimLatex === "string")
+      return this.verbatimLatex;
+    const def = getDefinition(this.command, this.mode);
+    if (def == null ? void 0 : def.serialize) return def.serialize(this, options);
+    return latexCommand(this.command, this.value);
+  }
+};
+
+// src/atoms/enclose.ts
+function escapeSvgAttr(s) {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+var EncloseAtom = class _EncloseAtom extends Atom {
+  constructor(command, body, notation, options) {
+    var _a3, _b3;
+    super({ type: "enclose", command, style: options.style });
+    this.body = body;
+    this.backgroundcolor = options.backgroundcolor;
+    if (notation.updiagonalarrow) notation.updiagonalstrike = false;
+    if (notation.box) {
+      notation.left = false;
+      notation.right = false;
+      notation.bottom = false;
+      notation.top = false;
+    }
+    this.notation = notation;
+    this.shadow = (_a3 = options.shadow) != null ? _a3 : "none";
+    this.strokeWidth = (_b3 = options.strokeWidth) != null ? _b3 : "0.06em";
+    if (!this.strokeWidth) this.strokeWidth = "0.06em";
+    this.strokeStyle = options.strokeStyle;
+    this.svgStrokeStyle = options.svgStrokeStyle;
+    this.strokeColor = options.strokeColor;
+    this.borderStyle = options.borderStyle;
+    this.padding = options.padding;
+    this.captureSelection = false;
+  }
+  static fromJson(json) {
+    return new _EncloseAtom(
+      json.command,
+      json.body,
+      json.notation,
+      json
+    );
+  }
+  toJson() {
+    return __spreadProps(__spreadValues({}, super.toJson()), {
+      notation: this.notation,
+      shadow: this.shadow,
+      strokeWidth: this.strokeWidth,
+      strokeStyle: this.strokeStyle,
+      svgStrokeStyle: this.svgStrokeStyle,
+      strokeColor: this.strokeColor,
+      borderStyle: this.borderStyle,
+      padding: this.padding
+    });
+  }
+  _serialize(options) {
+    var _a3;
+    if (!(options.expandMacro || options.skipStyles || options.skipPlaceholders) && typeof this.verbatimLatex === "string")
+      return this.verbatimLatex;
+    const def = getDefinition(this.command, this.mode);
+    if (def == null ? void 0 : def.serialize) return def.serialize(this, options);
+    let command = (_a3 = this.command) != null ? _a3 : "";
+    if (this.command === "\\enclose") {
+      command += "{" + Object.keys(this.notation).join(" ") + "}";
+      let style = "";
+      let sep = "";
+      if (this.backgroundcolor && this.backgroundcolor !== "transparent") {
+        style += sep + 'mathbackground="' + this.backgroundcolor + '"';
+        sep = ",";
+      }
+      if (this.shadow && this.shadow !== "auto") {
+        style += sep + 'shadow="' + this.shadow + '"';
+        sep = ",";
+      }
+      if (this.strokeWidth || this.strokeStyle !== "solid") {
+        style += sep + this.borderStyle;
+        sep = ",";
+      } else if (this.strokeColor && this.strokeColor !== "currentColor") {
+        style += sep + 'mathcolor="' + this.strokeColor + '"';
+        sep = ",";
+      }
+      if (style) command += `[${style}]`;
+    }
+    return latexCommand(command, this.bodyToLatex(options));
+  }
+  render(parentContext) {
+    var _a3, _b3, _c2, _d2, _e;
+    const context = new Context({ parent: parentContext }, this.style);
+    const base = Atom.createBox(context, this.body);
+    if (!base) return null;
+    const borderWidth = borderDim(this.borderStyle);
+    const padding2 = context.toEm(
+      !this.padding || this.padding === "auto" ? { register: "fboxsep" } : { string: this.padding }
+    );
+    base.setStyle("position", "relative");
+    base.setStyle("display", "inline-block");
+    base.setStyle("height", base.height + base.depth, "em");
+    base.setStyle("width", base.width, "em");
+    const notation = new Box(null, { classes: "ML__notation" });
+    let h = base.height + base.depth + 2 * padding2;
+    const w = base.width + 2 * padding2;
+    let svg = "";
+    const margin = Math.min(padding2 * 0.2, 0.05);
+    if (this.notation.horizontalstrike) {
+      const y = 2 * padding2 + base.height - X_HEIGHT / 2;
+      svg += this.line(
+        (padding2 + margin).toString(),
+        y.toString(),
+        (padding2 + base.width - margin).toString(),
+        y.toString()
+      );
+    }
+    if (this.notation.verticalstrike) {
+      const x = padding2 + base.width / 2;
+      svg += this.line(
+        x.toString(),
+        (padding2 + margin).toString(),
+        x.toString(),
+        (h - padding2 - margin).toString()
+      );
+    }
+    if (this.notation.updiagonalstrike) {
+      svg += this.line(
+        (padding2 + margin).toString(),
+        (h - padding2 - margin).toString(),
+        // bottom
+        (padding2 + base.width - margin).toString(),
+        (padding2 + margin).toString()
+        // top
+      );
+    }
+    if (this.notation.downdiagonalstrike) {
+      svg += this.line(
+        (padding2 + margin).toString(),
+        (padding2 + margin).toString(),
+        // top
+        (padding2 + base.width - margin).toString(),
+        (h - padding2 - margin).toString()
+        // bottom
+      );
+    }
+    if (this.notation.updiagonalarrow) {
+      svg += this.line(
+        padding2.toString(),
+        (2 * padding2 + base.depth + base.height).toString(),
+        (padding2 + base.width).toString(),
+        padding2.toString()
+      );
+      const t = 1;
+      const length = Math.sqrt(w * w + h * h);
+      const f = 0.03 * length * t;
+      const wf = base.width * f;
+      const hf = (base.depth + base.height) * f;
+      const x = padding2 + base.width;
+      let y = padding2;
+      if (y + hf - 0.4 * wf < 0) y = 0.4 * wf - hf;
+      svg += '<polygon points="';
+      svg += `${x},${y} ${x - wf - 0.4 * hf},${y + hf - 0.4 * wf} `;
+      svg += `${x - 0.7 * wf},${y + 0.7 * hf} ${x - wf + 0.4 * hf},${y + hf + 0.4 * wf} `;
+      svg += `${x},${y}`;
+      svg += `" stroke='none' fill="${escapeSvgAttr((_a3 = this.strokeColor) != null ? _a3 : "")}"`;
+      svg += "/>";
+    }
+    let wDelta = 0;
+    if (this.notation.phasorangle) {
+      const clearance = getClearance(context);
+      const bot = (base.height + base.depth + 2 * clearance + 2 * padding2).toString();
+      const angleWidth = (base.height + base.depth) / 2;
+      svg += this.line(
+        padding2.toString(),
+        bot,
+        (padding2 + angleWidth + base.width).toString(),
+        bot
+      );
+      svg += this.line(
+        padding2.toString(),
+        bot,
+        (padding2 + angleWidth).toString(),
+        (padding2 - clearance).toString()
+      );
+      h += clearance;
+      wDelta = angleWidth;
+      base.left += h / 2 - padding2;
+    }
+    if (this.notation.longdiv) {
+      const clearance = getClearance(context);
+      h += clearance;
+      svg += this.line(
+        padding2.toString(),
+        padding2.toString(),
+        (padding2 + base.width).toString(),
+        padding2.toString()
+      );
+      const surdWidth = 0.3;
+      wDelta = surdWidth + clearance;
+      base.left += surdWidth + clearance;
+      base.setTop(padding2 + clearance);
+      svg += '<path d="';
+      svg += `M ${padding2} ${padding2}  a${surdWidth} ${(base.depth + base.height + 2 * clearance) / 2}, 0, 1, 1, 0 ${base.depth + base.height + 2 * clearance} "`;
+      svg += ` stroke-width="${getRuleThickness(context)}" stroke="${escapeSvgAttr(
+        (_b3 = this.strokeColor) != null ? _b3 : ""
+      )}" fill="none"`;
+      svg += "/>";
+    }
+    notation.width = base.width + 2 * padding2 + wDelta;
+    notation.height = base.height + 2 * padding2;
+    notation.depth = base.depth;
+    notation.setStyle("box-sizing", "border-box");
+    notation.setStyle("left", `calc(-1 * ${borderWidth} - ${padding2}em)`);
+    notation.setStyle(
+      "height",
+      `calc( ${base.height + base.depth + 2 * padding2}em + ${borderWidth})`
+    );
+    notation.setStyle("top", `0em`);
+    notation.setStyle(
+      "width",
+      `calc(${base.width + 2 * padding2}em + ${borderWidth})`
+    );
+    if (this.backgroundcolor)
+      notation.setStyle("background-color", this.backgroundcolor);
+    if (this.notation.box) notation.setStyle("border", "1px solid red");
+    if (this.notation.actuarial) {
+      notation.setStyle("border-top", this.borderStyle);
+      notation.setStyle("border-right", this.borderStyle);
+    }
+    if (this.notation.madruwb) {
+      notation.setStyle("border-bottom", this.borderStyle);
+      notation.setStyle("border-right", this.borderStyle);
+    }
+    if (this.notation.roundedbox) {
+      notation.setStyle("border-radius", "8px");
+      notation.setStyle("border", this.borderStyle);
+    }
+    if (this.notation.circle) {
+      notation.setStyle("border-radius", "50%");
+      notation.setStyle("border", this.borderStyle);
+    }
+    if (this.notation.top) notation.setStyle("border-top", this.borderStyle);
+    if (this.notation.left) notation.setStyle("border-left", this.borderStyle);
+    if (this.notation.right)
+      notation.setStyle("border-right", this.borderStyle);
+    if (this.notation.bottom)
+      notation.setStyle("border-bottom", this.borderStyle);
+    if (svg) {
+      let svgStyle = "";
+      if (this.shadow === "auto") {
+        svgStyle += "filter: drop-shadow(0 0 .5px rgba(255, 255, 255, .7)) drop-shadow(1px 1px 2px #333)";
+      }
+      if (this.shadow !== "none")
+        svgStyle += `filter: drop-shadow(${escapeSvgAttr((_c2 = this.shadow) != null ? _c2 : "")})`;
+      svgStyle += ` stroke-width="${escapeSvgAttr((_d2 = this.strokeWidth) != null ? _d2 : "")}" stroke="${escapeSvgAttr((_e = this.strokeColor) != null ? _e : "")}"`;
+      svgStyle += ' stroke-linecap="round"';
+      if (this.svgStrokeStyle)
+        svgStyle += ` stroke-dasharray="${escapeSvgAttr(this.svgStrokeStyle)}"`;
+      notation.svgStyle = svgStyle;
+      notation.svgOverlay = svg;
+    }
+    const result = new Box([notation, base]);
+    result.setStyle("position", "relative");
+    result.setStyle(
+      "height",
+      `${Math.floor(100 * (notation.depth + notation.height)) / 100}em`
+    );
+    result.setStyle("display", "inline-block");
+    result.height = notation.height;
+    result.depth = notation.depth;
+    result.width = notation.width - 2 * padding2;
+    result.left = padding2;
+    result.right = padding2;
+    if (this.caret) result.caret = this.caret;
+    return result.wrap(context);
+  }
+  line(x1, y1, x2, y2) {
+    return `<line x1="${coord(x1)}"  y1="${coord(y1)}" x2="${coord(
+      x2
+    )}" y2="${coord(y2)}" vector-effect="non-scaling-stroke"></line>`;
+  }
+};
+function coord(c) {
+  if (typeof c === "number") return `${Math.floor(100 * c) / 100}%`;
+  return c;
+}
+function borderDim(s) {
+  if (!s) return "1px";
+  const m = s.match(/([0-9][a-zA-Z\%]+)/);
+  if (m === null) return "1px";
+  return m[1];
+}
+function getRuleThickness(ctx) {
+  return (Math.floor(100 * ctx.metrics.sqrtRuleThickness / ctx.scalingFactor) / 100 / 10).toString() + "em";
+}
+function getClearance(ctx) {
+  const phi = ctx.isDisplayStyle ? X_HEIGHT : ctx.metrics.defaultRuleThickness;
+  return ctx.metrics.defaultRuleThickness + ctx.scalingFactor * phi / 4;
+}
+
+// src/core/math-environment.ts
+var _MathEnvironment = {
+  fractionNavigationOrder: "numerator-denominator"
+};
+
+// src/atoms/genfrac.ts
+var GenfracAtom = class _GenfracAtom extends Atom {
+  constructor(above, below, options) {
+    var _a3, _b3, _c2;
+    super(__spreadProps(__spreadValues({}, options), {
+      type: "genfrac",
+      displayContainsHighlight: true
+    }));
+    this.above = above;
+    this.below = below;
+    this.hasBarLine = (_a3 = options == null ? void 0 : options.hasBarLine) != null ? _a3 : true;
+    this.continuousFraction = (_b3 = options == null ? void 0 : options.continuousFraction) != null ? _b3 : false;
+    this.align = (_c2 = options == null ? void 0 : options.align) != null ? _c2 : "center";
+    this.numerPrefix = options == null ? void 0 : options.numerPrefix;
+    this.denomPrefix = options == null ? void 0 : options.denomPrefix;
+    this.mathstyleName = options == null ? void 0 : options.mathstyleName;
+    this.leftDelim = options == null ? void 0 : options.leftDelim;
+    this.rightDelim = options == null ? void 0 : options.rightDelim;
+  }
+  static fromJson(json) {
+    return new _GenfracAtom(
+      json.above,
+      json.below,
+      json
+    );
+  }
+  toJson() {
+    const options = {};
+    if (this.continuousFraction) options.continuousFraction = true;
+    if (this.align !== "center") options.align = this.align;
+    if (this.numerPrefix) options.numerPrefix = this.numerPrefix;
+    if (this.denomPrefix) options.denomPrefix = this.denomPrefix;
+    if (this.leftDelim) options.leftDelim = this.leftDelim;
+    if (this.rightDelim) options.rightDelim = this.rightDelim;
+    if (!this.hasBarLine) options.hasBarLine = false;
+    if (this.mathstyleName) options.mathstyleName = this.mathstyleName;
+    return __spreadValues(__spreadValues({}, super.toJson()), options);
+  }
+  // The order of the children, which is used for keyboard navigation order,
+  // may be customized for fractions...
+  get children() {
+    if (this._children) return this._children;
+    const result = [];
+    if (_MathEnvironment.fractionNavigationOrder === "denominator-numerator") {
+      for (const x of this.below) {
+        result.push(...x.children);
+        result.push(x);
+      }
+      for (const x of this.above) {
+        result.push(...x.children);
+        result.push(x);
+      }
+    } else {
+      for (const x of this.above) {
+        result.push(...x.children);
+        result.push(x);
+      }
+      for (const x of this.below) {
+        result.push(...x.children);
+        result.push(x);
+      }
+    }
+    this._children = result;
+    return result;
+  }
+  render(context) {
+    var _a3, _b3;
+    const fracContext = new Context(
+      { parent: context, mathstyle: this.mathstyleName },
+      this.style
+    );
+    const metrics = fracContext.metrics;
+    const numContext = new Context(
+      {
+        parent: fracContext,
+        mathstyle: this.continuousFraction ? "" : "numerator"
+      },
+      this.style
+    );
+    const numerBox = this.numerPrefix ? new Box(
+      [new Box(this.numerPrefix), Atom.createBox(numContext, this.above)],
+      { isTight: numContext.isTight, type: "ignore" }
+    ) : (_a3 = Atom.createBox(numContext, this.above, { type: "ignore" })) != null ? _a3 : new Box(null, { type: "ignore" });
+    const denomContext = new Context(
+      {
+        parent: fracContext,
+        mathstyle: this.continuousFraction ? "" : "denominator"
+      },
+      this.style
+    );
+    const denomBox = this.denomPrefix ? new Box([
+      new Box(this.denomPrefix),
+      Atom.createBox(denomContext, this.below, { type: "ignore" })
+    ]) : (_b3 = Atom.createBox(denomContext, this.below, { type: "ignore" })) != null ? _b3 : new Box(null, { type: "ignore" });
+    const ruleThickness = this.hasBarLine ? metrics.defaultRuleThickness : 0;
+    let numerShift;
+    let clearance = 0;
+    let denomShift;
+    if (fracContext.isDisplayStyle) {
+      numerShift = numContext.metrics.num1;
+      clearance = ruleThickness > 0 ? 3 * ruleThickness : 7 * ruleThickness;
+      denomShift = denomContext.metrics.denom1;
+    } else {
+      if (ruleThickness > 0) {
+        numerShift = numContext.metrics.num2;
+        clearance = ruleThickness;
+      } else {
+        numerShift = numContext.metrics.num3;
+        clearance = 3 * metrics.defaultRuleThickness;
+      }
+      denomShift = denomContext.metrics.denom2;
+    }
+    const classes = [];
+    if (this.isSelected) classes.push("ML__selected");
+    const numerDepth = numerBox.depth;
+    const denomHeight = denomBox.height;
+    let frac;
+    if (ruleThickness <= 0) {
+      const candidateClearance = numerShift - numerDepth - (denomHeight - denomShift);
+      if (candidateClearance < clearance) {
+        numerShift += (clearance - candidateClearance) / 2;
+        denomShift += (clearance - candidateClearance) / 2;
+      }
+      frac = new VBox({
+        individualShift: [
+          {
+            box: numerBox,
+            shift: -numerShift,
+            classes: [...classes, align2(this.align)]
+          },
+          {
+            box: denomBox,
+            shift: denomShift,
+            classes: [...classes, align2(this.align)]
+          }
+        ]
+      }).wrap(fracContext);
+    } else {
+      const fracLine = new Box(null, {
+        classes: "ML__frac-line",
+        mode: this.mode,
+        style: this.style
+      });
+      fracLine.softWidth = Math.max(numerBox.width, denomBox.width);
+      fracLine.height = ruleThickness / 2;
+      fracLine.depth = ruleThickness / 2;
+      const numerLine = AXIS_HEIGHT + ruleThickness / 2;
+      if (numerShift < clearance + numerDepth + numerLine)
+        numerShift = clearance + numerDepth + numerLine;
+      const denomLine = AXIS_HEIGHT - ruleThickness / 2;
+      if (denomShift < clearance + denomHeight - denomLine)
+        denomShift = clearance + denomHeight - denomLine;
+      frac = new VBox({
+        individualShift: [
+          {
+            box: denomBox,
+            shift: denomShift,
+            classes: [...classes, align2(this.align)]
+          },
+          { box: fracLine, shift: -denomLine, classes },
+          {
+            box: numerBox,
+            shift: -numerShift,
+            classes: [...classes, align2(this.align)]
+          }
+        ]
+      }).wrap(fracContext);
+    }
+    const delimSize = fracContext.isDisplayStyle ? metrics.delim1 : metrics.delim2;
+    const leftDelim = this.leftDelim ? this.bind(
+      context,
+      makeCustomSizedDelim(
+        "open",
+        this.leftDelim,
+        delimSize,
+        true,
+        context,
+        { style: this.style, mode: this.mode, isSelected: this.isSelected }
+      )
+    ) : makeNullDelimiter(fracContext, "ML__open");
+    let rightDelim = null;
+    if (this.continuousFraction) {
+      rightDelim = new Box(null, { type: "close" });
+    } else if (!this.rightDelim)
+      rightDelim = makeNullDelimiter(fracContext, "ML__close");
+    else {
+      rightDelim = this.bind(
+        context,
+        makeCustomSizedDelim(
+          "close",
+          this.rightDelim,
+          delimSize,
+          true,
+          context,
+          { style: this.style, mode: this.mode, isSelected: this.isSelected }
+        )
+      );
+    }
+    const mfrac = new Box([leftDelim, frac, rightDelim], {
+      isTight: fracContext.isTight,
+      type: "inner",
+      classes: "ML__mfrac"
+    });
+    const result = this.bind(context, mfrac);
+    if (this.caret) result.caret = this.caret;
+    return this.attachSupsub(context, { base: result });
+  }
+};
+function align2(v) {
+  var _a3;
+  return (_a3 = {
+    left: "ML__left",
+    right: "ML__right",
+    center: "ML__center"
+  }[v]) != null ? _a3 : "ML__center";
+}
+
+// src/atoms/latex.ts
+var LatexAtom = class _LatexAtom extends Atom {
+  // Display errors with wavy red line
+  constructor(value, options) {
+    var _a3;
+    super({ type: "latex", value, mode: "latex" });
+    this.isSuggestion = (_a3 = options == null ? void 0 : options.isSuggestion) != null ? _a3 : false;
+    this.isError = false;
+  }
+  static fromJson(json) {
+    const result = new _LatexAtom(json.value);
+    if (json.isSuggestion) result.isSuggestion = true;
+    if (json.isError) result.isError = true;
+    return result;
+  }
+  toJson() {
+    const options = {};
+    if (this.isSuggestion) options.isSuggestion = true;
+    if (this.isError) options.isError = true;
+    return __spreadValues({ type: "latex", value: this.value }, options);
+  }
+  render(context) {
+    const result = new Box(this.value, {
+      classes: this.isSuggestion ? "ML__suggestion" : this.isError ? "ML__error" : "",
+      type: "latex",
+      maxFontSize: 1
+    });
+    if (!result) return null;
+    if (this.caret) result.caret = this.caret;
+    return this.bind(context, result);
+  }
+};
+var LatexGroupAtom = class _LatexGroupAtom extends Atom {
+  constructor(latex = "") {
+    super({ type: "latexgroup", mode: "latex" });
+    this.body = [...latex].map((c) => new LatexAtom(c));
+    this.skipBoundary = true;
+  }
+  static fromJson(_json) {
+    return new _LatexGroupAtom();
+  }
+  toJson() {
+    return super.toJson();
+  }
+  render(context) {
+    const box = Atom.createBox(context, this.body);
+    if (!box) return null;
+    if (this.caret) box.caret = this.caret;
+    return this.bind(context, box);
+  }
+  _serialize(_options) {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this.body) == null ? void 0 : _a3.map((x) => x.value).join("")) != null ? _b3 : "";
+  }
+};
+
+// src/atoms/extensible-symbol.ts
+var ExtensibleSymbolAtom = class _ExtensibleSymbolAtom extends Atom {
+  constructor(symbol, options) {
+    super(__spreadProps(__spreadValues({}, options), {
+      type: "extensible-symbol",
+      isFunction: options == null ? void 0 : options.isFunction
+    }));
+    this.value = symbol;
+    this.variant = options == null ? void 0 : options.variant;
+    this.subsupPlacement = options == null ? void 0 : options.limits;
+  }
+  static fromJson(json) {
+    return new _ExtensibleSymbolAtom(json.symbol, json);
+  }
+  toJson() {
+    const result = super.toJson();
+    if (this.variant) result.variant = this.variant;
+    if (this.subsupPlacement) result.limits = this.subsupPlacement;
+    if (this.value) result.symbol = this.value;
+    return result;
+  }
+  render(context) {
+    var _a3;
+    const large = context.isDisplayStyle && this.value !== "\\smallint";
+    const base = new Box(this.value, {
+      fontFamily: large ? "Size2-Regular" : "Size1-Regular",
+      classes: "ML__op-symbol " + (large ? "ML__large-op" : "ML__small-op"),
+      type: "op",
+      maxFontSize: context.scalingFactor,
+      isSelected: this.isSelected
+    });
+    if (!base) return null;
+    base.right = base.italic;
+    const baseShift = (base.height - base.depth) / 2 - AXIS_HEIGHT * context.scalingFactor;
+    const slant = base.italic;
+    base.setTop(baseShift);
+    let result = base;
+    if (this.superscript || this.subscript) {
+      let limits = (_a3 = this.subsupPlacement) != null ? _a3 : "auto";
+      if (limits === "auto" && context.isDisplayStyle) limits = "over-under";
+      result = limits === "over-under" ? this.attachLimits(context, { base, baseShift, slant }) : this.attachSupsub(context, { base });
+    }
+    return new Box(this.bind(context, result), {
+      type: "op",
+      caret: this.caret,
+      isSelected: this.isSelected,
+      classes: "ML__op-group"
+    }).wrap(context);
+  }
+  _serialize(options) {
+    if (!(options.expandMacro || options.skipStyles || options.skipPlaceholders) && typeof this.verbatimLatex === "string")
+      return this.verbatimLatex;
+    const def = getDefinition(this.command, this.mode);
+    if (def == null ? void 0 : def.serialize) return def.serialize(this, options);
+    const result = [];
+    result.push(this.command);
+    if (this.explicitSubsupPlacement) {
+      if (this.subsupPlacement === "over-under") result.push("\\limits");
+      if (this.subsupPlacement === "adjacent") result.push("\\nolimits");
+      if (this.subsupPlacement === "auto") result.push("\\displaylimits");
+    }
+    result.push(this.supsubToLatex(options));
+    return joinLatex(result);
+  }
+};
+
+// src/atoms/overlap.ts
+var OverlapAtom = class _OverlapAtom extends Atom {
+  constructor(options) {
+    const body = options.body;
+    super(__spreadProps(__spreadValues({}, options), {
+      type: "overlap",
+      body: typeof body === "string" ? [new Atom({ value: body })] : body,
+      style: options == null ? void 0 : options.style
+    }));
+    this.skipBoundary = true;
+    this.align = options == null ? void 0 : options.align;
+    this.boxType = options == null ? void 0 : options.boxType;
+  }
+  static fromJson(json) {
+    return new _OverlapAtom(json);
+  }
+  toJson() {
+    const options = {};
+    if (this.align) options.align = this.align;
+    if (this.boxType) options.boxType = this.boxType;
+    return __spreadValues(__spreadValues({}, super.toJson()), options);
+  }
+  render(context) {
+    const inner = Atom.createBox(context, this.body, { classes: "ML__inner" });
+    if (!inner) return null;
+    if (this.caret) inner.caret = this.caret;
+    return this.bind(
+      context,
+      new Box([inner, new Box(null, { classes: "ML__fix" })], {
+        classes: this.align === "right" ? "ML__rlap" : "ML__llap",
+        type: this.boxType
+      })
+    );
+  }
+};
+
+// src/atoms/overunder.ts
+var OverunderAtom = class _OverunderAtom extends Atom {
+  constructor(options) {
+    var _a3, _b3, _c2, _d2;
+    super({
+      type: "overunder",
+      command: options.command,
+      style: options.style,
+      mode: options.mode,
+      body: options.body,
+      skipBoundary: (_a3 = options.skipBoundary) != null ? _a3 : true
+    });
+    this.subsupPlacement = options.supsubPlacement;
+    this.svgAbove = options.svgAbove;
+    this.svgBelow = options.svgBelow;
+    this.svgBody = options.svgBody;
+    this.above = options.above;
+    this.below = options.below;
+    this.boxType = (_b3 = options.boxType) != null ? _b3 : "ord";
+    this.paddedBody = (_c2 = options.paddedBody) != null ? _c2 : false;
+    this.paddedLabels = (_d2 = options.paddedLabels) != null ? _d2 : false;
+  }
+  static fromJson(json) {
+    return new _OverunderAtom(json);
+  }
+  toJson() {
+    const json = super.toJson();
+    if (!this.skipBoundary) json.skipBoundary = false;
+    if (this.subsupPlacement) json.subsupPlacement = this.subsupPlacement;
+    if (this.svgAbove) json.svgAbove = this.svgAbove;
+    if (this.svgBelow) json.svgBelow = this.svgBelow;
+    if (this.svgBody) json.svgBody = this.svgBody;
+    if (this.boxType !== "ord") json.boxType = this.boxType;
+    if (this.paddedBody) json.paddedBody = true;
+    if (this.paddedLabels) json.paddedLabels = true;
+    return json;
+  }
+  /**
+   * Combine a base with an atom above and an atom below.
+   *
+   * See http://tug.ctan.org/macros/latex/required/amsmath/amsmath.dtx
+   *
+   * > \newcommand{\overset}[2]{\binrel@{#2}%
+   * > \binrel@@{\mathop{\kern\z@#2}\limits^{#1}}}
+   *
+   */
+  render(parentContext) {
+    let body = this.svgBody ? makeSVGBox(this.svgBody) : Atom.createBox(parentContext, this.body, { type: "ignore" });
+    const annotationContext = new Context(
+      { parent: parentContext, mathstyle: "scriptstyle" },
+      this.style
+    );
+    let above = null;
+    if (this.svgAbove) above = makeSVGBox(this.svgAbove);
+    else if (this.above)
+      above = Atom.createBox(annotationContext, this.above, { type: "ignore" });
+    let below = null;
+    if (this.svgBelow) below = makeSVGBox(this.svgBelow);
+    else if (this.below)
+      below = Atom.createBox(annotationContext, this.below, { type: "ignore" });
+    if (this.paddedBody) {
+      body = new Box(
+        [
+          makeNullDelimiter(parentContext, "ML__open"),
+          body,
+          makeNullDelimiter(parentContext, "ML__close")
+        ],
+        { type: "ignore" }
+      );
+    }
+    let base = makeOverunderStack(parentContext, {
+      base: body,
+      above,
+      below,
+      type: this.boxType === "bin" || this.boxType === "rel" ? this.boxType : "ord",
+      paddedAboveBelow: this.paddedLabels
+    });
+    if (!base) return null;
+    if (this.subsupPlacement === "over-under")
+      base = this.attachLimits(parentContext, { base, type: base.type });
+    else base = this.attachSupsub(parentContext, { base });
+    if (this.caret) base.caret = this.caret;
+    return this.bind(parentContext, base);
+  }
+};
+function makeOverunderStack(context, options) {
+  if (!options.base) return null;
+  if (!options.above && !options.below) {
+    const box = new Box(options.base, { type: options.type });
+    box.setStyle("position", "relative");
+    return box;
+  }
+  let aboveShift = 0;
+  if (options.above) aboveShift = context.metrics.bigOpSpacing5;
+  let result = null;
+  const base = options.base;
+  const baseShift = 0;
+  const classes = ["ML__center"];
+  if (options.paddedAboveBelow) classes.push("ML__label_padding");
+  if (options.below && options.above) {
+    const bottom = context.metrics.bigOpSpacing5 + options.below.height + options.below.depth + base.depth + baseShift;
+    result = new VBox({
+      bottom,
+      children: [
+        context.metrics.bigOpSpacing5,
+        { box: options.below, classes },
+        { box: base, classes: ["ML__center"] },
+        aboveShift,
+        { box: options.above, classes },
+        context.metrics.bigOpSpacing5
+      ]
+    });
+  } else if (options.below) {
+    result = new VBox({
+      top: base.height - baseShift,
+      children: [
+        context.metrics.bigOpSpacing5,
+        { box: options.below, classes },
+        { box: base, classes: ["ML__center"] }
+      ]
+    });
+  } else if (options.above) {
+    result = new VBox({
+      bottom: base.depth + baseShift,
+      children: [
+        // base.depth,
+        { box: base, classes: ["ML__center"] },
+        aboveShift,
+        { box: options.above, classes },
+        context.metrics.bigOpSpacing5
+      ]
+    });
+  }
+  return new Box(result, { type: options.type });
+}
+
+// src/atoms/phantom.ts
+var PhantomAtom = class _PhantomAtom extends Atom {
+  constructor(options) {
+    var _a3, _b3, _c2, _d2;
+    super(__spreadProps(__spreadValues({}, options), { type: "phantom" }));
+    this.captureSelection = true;
+    this.isInvisible = (_a3 = options.isInvisible) != null ? _a3 : false;
+    this.smashDepth = (_b3 = options.smashDepth) != null ? _b3 : false;
+    this.smashHeight = (_c2 = options.smashHeight) != null ? _c2 : false;
+    this.smashWidth = (_d2 = options.smashWidth) != null ? _d2 : false;
+  }
+  static fromJson(json) {
+    return new _PhantomAtom(json);
+  }
+  toJson() {
+    const options = {};
+    if (this.isInvisible) options.isInvisible = true;
+    if (this.smashDepth) options.smashDepth = true;
+    if (this.smashHeight) options.smashHeight = true;
+    if (this.smashWidth) options.smashWidth = true;
+    return __spreadValues(__spreadValues({}, super.toJson()), options);
+  }
+  render(context) {
+    const phantom = new Context({ parent: context, isPhantom: true });
+    if (!this.smashDepth && !this.smashHeight && !this.smashWidth) {
+      console.assert(this.isInvisible);
+      return Atom.createBox(phantom, this.body, { classes: "ML__inner" });
+    }
+    const content = Atom.createBox(
+      this.isInvisible ? phantom : context,
+      this.body
+    );
+    if (!content) return null;
+    if (this.smashWidth) {
+      const fix = new Box(null, { classes: "ML__fix" });
+      return new Box([content, fix], { classes: "ML__rlap" }).wrap(context);
+    }
+    if (!this.smashHeight && !this.smashDepth) return content;
+    if (this.smashHeight) content.height = 0;
+    if (this.smashDepth) content.depth = 0;
+    if (content.children) {
+      for (const box of content.children) {
+        if (this.smashHeight) box.height = 0;
+        if (this.smashDepth) box.depth = 0;
+      }
+    }
+    return new VBox(
+      { firstBaseline: [{ box: content }] },
+      { type: content.type }
+    ).wrap(context);
+  }
+};
+
+// src/atoms/spacing.ts
+var SpacingAtom = class _SpacingAtom extends Atom {
+  constructor(options) {
+    var _a3;
+    super(__spreadValues({ type: "spacing" }, options));
+    this.width = options == null ? void 0 : options.width;
+    this._braced = (_a3 = options == null ? void 0 : options.braced) != null ? _a3 : false;
+  }
+  static fromJson(json) {
+    return new _SpacingAtom(json);
+  }
+  toJson() {
+    const json = super.toJson();
+    if (this.width !== void 0) json.width = this.width;
+    if (this._braced) json.braced = true;
+    return json;
+  }
+  render(context) {
+    var _a3;
+    if (this.command === "space")
+      return new Box(this.mode === "math" ? null : " ");
+    let result;
+    if (this.width !== void 0) {
+      result = new Box(null, { classes: "ML__mspace" });
+      result.left = context.toEm(this.width);
+    } else {
+      const spacingCls = (_a3 = {
+        "\\qquad": "ML__qquad",
+        "\\quad": "ML__quad",
+        "\\enspace": "ML__enspace",
+        "\\;": "ML__thickspace",
+        "\\:": "ML__mediumspace",
+        "\\>": "ML__mediumspace",
+        "\\,": "ML__thinspace",
+        "\\!": "ML__negativethinspace"
+      }[this.command]) != null ? _a3 : "ML__mediumspace";
+      result = new Box(null, { classes: spacingCls });
+    }
+    result = this.bind(context, result);
+    if (this.caret) result.caret = this.caret;
+    return result;
+  }
+  _serialize(options) {
+    var _a3;
+    if (!options.expandMacro && typeof this.verbatimLatex === "string")
+      return this.verbatimLatex;
+    const def = getDefinition(this.command, this.mode);
+    if (def == null ? void 0 : def.serialize) return def.serialize(this, options);
+    const command = (_a3 = this.command) != null ? _a3 : "";
+    if (this.width === void 0) return command;
+    if (this._braced && !("register" in this.width))
+      return `${command}{${serializeLatexValue(this.width)}}`;
+    return `${command}${serializeLatexValue(this.width)}`;
+  }
+};
+
+// src/atoms/surd.ts
+var SurdAtom = class _SurdAtom extends Atom {
+  constructor(options) {
+    var _a3;
+    super(__spreadProps(__spreadValues({}, options), {
+      type: "surd",
+      mode: (_a3 = options.mode) != null ? _a3 : "math",
+      style: options.style,
+      displayContainsHighlight: true,
+      body: options.body
+    }));
+    this.above = options.index;
+  }
+  static fromJson(json) {
+    return new _SurdAtom(__spreadProps(__spreadValues({}, json), {
+      index: json.above
+    }));
+  }
+  _serialize(options) {
+    if (!(options.expandMacro || options.skipStyles || options.skipPlaceholders) && typeof this.verbatimLatex === "string")
+      return this.verbatimLatex;
+    const def = getDefinition(this.command, this.mode);
+    if (def == null ? void 0 : def.serialize) return def.serialize(this, options);
+    const command = this.command;
+    const body = this.bodyToLatex(options);
+    if (this.above && !this.hasEmptyBranch("above"))
+      return latexCommand(`${command}[${this.aboveToLatex(options)}]`, body);
+    if (/^[0-9]$/.test(body)) return `${command}${body}`;
+    return latexCommand(command, body);
+  }
+  // Custom implementation so that the navigation of the index feels natural
+  get children() {
+    if (this._children) return this._children;
+    const result = [];
+    if (this.above) {
+      for (const x of this.above) {
+        result.push(...x.children);
+        result.push(x);
+      }
+    }
+    if (this.body) {
+      for (const x of this.body) {
+        result.push(...x.children);
+        result.push(x);
+      }
+    }
+    this._children = result;
+    return result;
+  }
+  render(context) {
+    var _a3;
+    const innerContext = new Context(
+      { parent: context, mathstyle: "cramp" },
+      this.style
+    );
+    const innerBox = (_a3 = Atom.createBox(innerContext, this.body, { type: "inner" })) != null ? _a3 : new Box(null);
+    const factor = innerContext.scalingFactor;
+    const ruleWidth = innerContext.metrics.defaultRuleThickness / factor;
+    const phi = context.isDisplayStyle ? X_HEIGHT : ruleWidth;
+    const line = new Box(null, { classes: "ML__sqrt-line", style: this.style });
+    line.height = ruleWidth;
+    line.softWidth = innerBox.width;
+    let lineClearance = factor * (ruleWidth + phi / 4);
+    const innerTotalHeight = Math.max(
+      factor * 2 * phi,
+      innerBox.height + innerBox.depth
+    );
+    const minDelimiterHeight = innerTotalHeight + lineClearance + ruleWidth;
+    const delimContext = new Context({ parent: context }, this.style);
+    const delimBox = this.bind(
+      delimContext,
+      new Box(
+        makeCustomSizedDelim(
+          "inner",
+          // @todo not sure if that's the right type
+          "\\surd",
+          minDelimiterHeight,
+          false,
+          delimContext,
+          { isSelected: this.isSelected }
+        ),
+        {
+          isSelected: this.isSelected,
+          classes: "ML__sqrt-sign",
+          style: this.style
+        }
+      )
+    );
+    if (!delimBox) return null;
+    const delimDepth = delimBox.height + delimBox.depth - ruleWidth;
+    if (delimDepth > innerBox.height + innerBox.depth + lineClearance) {
+      lineClearance = (lineClearance + delimDepth - (innerBox.height + innerBox.depth)) / 2;
+    }
+    delimBox.setTop(delimBox.height - innerBox.height - lineClearance);
+    const bodyBox = this.bind(
+      context,
+      new VBox({
+        firstBaseline: [
+          { box: new Box(innerBox) },
+          // Need to wrap the inner for proper selection bound calculation
+          lineClearance - 2 * ruleWidth,
+          { box: line },
+          ruleWidth
+        ]
+      })
+    );
+    const indexBox = Atom.createBox(
+      new Context({ parent: context, mathstyle: "scriptscriptstyle" }),
+      this.above,
+      { type: "ignore" }
+    );
+    if (!indexBox) {
+      const result2 = new Box([delimBox, bodyBox], {
+        classes: this.containsCaret ? "ML__contains-caret" : "",
+        type: "inner"
+      });
+      result2.setStyle("display", "inline-block");
+      result2.setStyle("height", result2.height + result2.depth, "em");
+      if (this.caret) result2.caret = this.caret;
+      return this.bind(context, result2);
+    }
+    const indexStack = new VBox({
+      shift: -0.6 * (Math.max(delimBox.height, bodyBox.height) - Math.max(delimBox.depth, bodyBox.depth)),
+      children: [{ box: indexBox }]
+    });
+    const result = new Box(
+      [
+        new Box(indexStack, { classes: "ML__sqrt-index", type: "ignore" }),
+        delimBox,
+        bodyBox
+      ],
+      {
+        type: "inner",
+        classes: this.containsCaret ? "ML__contains-caret" : ""
+      }
+    );
+    result.height = delimBox.height;
+    result.depth = delimBox.depth;
+    if (this.caret) result.caret = this.caret;
+    return this.bind(context, result);
+  }
+};
+
+// src/core/skip-box.ts
+var SkipBox = class extends Box {
+  constructor(width) {
+    super(null, { type: "skip" });
+    this._width = width;
+  }
+  toMarkup() {
+    return `<span style="display:inline-block;width:${Math.ceil(this.width * 100) / 100}em"></span>`;
+  }
+};
+function addSkipBefore(box, width) {
+  if (!box.parent) return;
+  const siblings = box.parent.children;
+  const i = siblings.indexOf(box);
+  let j = i - 1;
+  while (j >= 0) {
+    if (siblings[j].type === "ignore") j -= 1;
+    else break;
+  }
+  if (j < 0 && box.parent.parent && box.parent.type === "lift") {
+    addSkipBefore(box.parent, width);
+    return;
+  }
+  if (i > 0 && siblings[i - 1].type === "skip") siblings[i - 1].width += width;
+  else siblings.splice(i, 0, new SkipBox(width));
+}
+
+// src/core/inter-box-spacing.ts
+var INTER_BOX_SPACING = {
+  ord: { op: 3, bin: 4, rel: 5, inner: 3 },
+  op: { ord: 3, op: 3, rel: 5, inner: 3 },
+  bin: { ord: 4, op: 4, open: 4, inner: 4 },
+  rel: { ord: 5, op: 5, open: 5, inner: 5 },
+  close: { op: 3, bin: 4, rel: 5, inner: 3 },
+  punct: { ord: 3, op: 3, rel: 3, open: 3, punct: 3, inner: 3 },
+  inner: { ord: 3, op: 3, bin: 4, rel: 5, open: 3, punct: 3, inner: 3 }
+};
+var INTER_BOX_TIGHT_SPACING = {
+  ord: { op: 3 },
+  op: { ord: 3, op: 3 },
+  close: { op: 3 },
+  inner: { op: 3 }
+};
+function adjustType(boxes) {
+  traverseBoxes(boxes, (prev, cur) => {
+    if (cur.type === "bin" && (!prev || /^(middle|bin|op|rel|open|punct)$/.test(prev.type)))
+      cur.type = "ord";
+    if ((prev == null ? void 0 : prev.type) === "bin" && /^(rel|close|punct)$/.test(cur.type))
+      prev.type = "ord";
+    if (cur.type !== "ignore") prev = cur;
+  });
+}
+function applyInterBoxSpacing(root, context) {
+  if (!root.children) return root;
+  const boxes = root.children;
+  adjustType(boxes);
+  const thin = context.getRegisterAsEm("thinmuskip");
+  const med = context.getRegisterAsEm("medmuskip");
+  const thick = context.getRegisterAsEm("thickmuskip");
+  traverseBoxes(boxes, (prev, cur) => {
+    var _a3, _b3, _c2;
+    if (!prev) return;
+    const prevType = prev.type;
+    const table = cur.isTight ? (_a3 = INTER_BOX_TIGHT_SPACING[prevType]) != null ? _a3 : null : (_b3 = INTER_BOX_SPACING[prevType]) != null ? _b3 : null;
+    const hskip = (_c2 = table == null ? void 0 : table[cur.type]) != null ? _c2 : null;
+    if (hskip === 3) addSkipBefore(cur, thin);
+    if (hskip === 4) addSkipBefore(cur, med);
+    if (hskip === 5) addSkipBefore(cur, thick);
+  });
+  return root;
+}
+function traverseBoxes(boxes, f, prev = void 0) {
+  if (!boxes) return prev;
+  boxes = [...boxes];
+  for (const cur of boxes) {
+    if (cur.type === "lift") prev = traverseBoxes(cur.children, f, prev);
+    else if (cur.type === "ignore") traverseBoxes(cur.children, f);
+    else {
+      f(prev, cur);
+      traverseBoxes(cur.children, f);
+      prev = cur;
+    }
+  }
+  return prev;
+}
+
+// src/atoms/tooltip.ts
+var TooltipAtom = class _TooltipAtom extends Atom {
+  constructor(options) {
+    super({
+      type: "tooltip",
+      command: options.command,
+      mode: options.mode,
+      style: options.style,

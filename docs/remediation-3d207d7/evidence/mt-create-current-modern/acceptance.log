@@ -1,0 +1,25 @@
+Acceptance mode: word-mathtype-ole-create
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[MathType create preview] Standalone MathType inline create: 23,14-329,119; ink=1332
+[MathType create preview] Standalone MathType inline create: native diff=0.0271, size=26.1x33.1pt, native=26.0x33.0pt
+[MathType create inline probe] paragraphs=1, shape=5-31
+  P1=0-37 cp=U+004C,U+0045,U+0046,U+0054,U+0020,U+0001,U+0052,U+0049,U+0047,U+0048,U+0054,U+000D
+[MathType create preview] Reopened standalone MathType inline create: 23,14-329,119; ink=1332
+[MathType create preview] Reopened standalone MathType inline create: native diff=0.0271, size=26.1x33.1pt, native=26.0x33.0pt
+[MathType create] Inline Equation.DSMT4 insert + save/reopen passed.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[MathType create preview] Right-then-left first MathType row: 26,24-295,98; ink=2941
+[MathType create preview] Right-then-left first MathType row: native diff=0.0358, size=27.0x13.9pt, native=27.0x14.0pt
+System.IO.InvalidDataException (0x80131501): Right-then-left first MathType row is visible but does not visually match MathType's native renderer.
+   在 VisualTeX.VstoFlowAcceptance.Program.AssertWordMathTypePreviewVisible(InlineShape shape, String context, String mathMl, Boolean inline, String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordMathTypeOleCreateAcceptance.cs:行号 1610
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWordMathTypeRightThenLeftCreateAcceptance(String artifactRoot, String emfPath) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordMathTypeOleCreateAcceptance.cs:行号 861
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWordMathTypeOleCreateAcceptance(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordMathTypeOleCreateAcceptance.cs:行号 42
+   在 VisualTeX.VstoFlowAcceptance.Program.Main(String[] args) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 1123
+Acceptance artifacts retained: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\mt-create-current-modern

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -118,8 +119,13 @@ internal static class WordFormulaNumberingKernel
 
     internal static int RefreshCanonicalNumbers(
         Document document,
-        string? requestedFormatId = null)
+        string? requestedFormatId = null,
+        WordFormulaHostKind? kindFilter = null,
+        int minimumExpectedNumbered = 0)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.RefreshCanonicalNumbers");
         if (document is null)
             throw new ArgumentNullException(nameof(document));
 
@@ -130,26 +136,76 @@ internal static class WordFormulaNumberingKernel
             ?? WordEquationNumbering.GetEquationNumberFormatId(document)).Id;
         var format = EquationNumberFormat.Resolve(formatId);
 
-        // If the document contains no Equation/VisualTeX SEQ field at all,
-        // there cannot be any canonical numbered OMML/VisualTeX host to refresh.
-        // Avoid building a full host index and re-proving 1000 unnumbered
-        // formulas one-by-one.
-        if (!HasAnyCanonicalEquationSequenceField(
-                document))
+        if (kindFilter ==
+                WordFormulaHostKind.VisualTeX
+            && !changeNumberFormat)
         {
-            WordEquationNumbering.RestoreEquationNumberFormatForConversion(
-                document,
-                formatId);
-            return 0;
+            // Batch format conversion does not change the numbering format; it
+            // only inserts/replaces hosts in reverse source order. The current
+            // VisualTeX numbering model is a self-contained field tree, so one
+            // ordered field-stream pass is sufficient to finalize all numbers.
+            // Avoid rebuilding a document-wide VisualTeX host index and
+            // re-opening every OLE paragraph several times.
+            WordEquationNumbering
+                .RestoreEquationNumberFormatForConversion(
+                    document,
+                    formatId);
+            return WordVisualTeXParagraphNumbering
+                .RefreshBatchFields(
+                    document,
+                    minimumExpectedNumbered);
         }
 
-        var index =
-            WordFormulaHostResolver.CaptureDocumentIndex(
-                document);
-        var hosts = index.Omml
-            .Concat(index.VisualTeX)
-            .OrderBy(host => host.Range.Start)
-            .ToArray();
+        WordFormulaHostDescriptor[] hosts;
+        if (kindFilter is
+            WordFormulaHostKind.Omml
+            or WordFormulaHostKind.VisualTeX)
+        {
+            // Format conversion already knows which target family was mutated.
+            // OMML and VisualTeX use independent sequence systems, so refreshing
+            // the other family is unrelated work. Build one target-only index
+            // instead of scanning OMaths + InlineShapes + identity bookmarks for
+            // both families.
+            Range? content = null;
+            try
+            {
+                content = document.Content;
+                hosts =
+                    WordFormulaHostResolver
+                        .CaptureScopeKindIndex(
+                            document,
+                            content,
+                            kindFilter.Value)
+                        .OrderBy(host =>
+                            host.Range.Start)
+                        .ToArray();
+            }
+            finally
+            {
+                Release(content);
+            }
+        }
+        else
+        {
+            // The explicit user command has no target-family hint. Retain the
+            // cheap field precheck and refresh both canonical numbering systems.
+            if (!HasAnyCanonicalEquationSequenceField(
+                    document))
+            {
+                WordEquationNumbering.RestoreEquationNumberFormatForConversion(
+                    document,
+                    formatId);
+                return 0;
+            }
+
+            var index =
+                WordFormulaHostResolver.CaptureDocumentIndex(
+                    document);
+            hosts = index.Omml
+                .Concat(index.VisualTeX)
+                .OrderBy(host => host.Range.Start)
+                .ToArray();
+        }
 
         var numbered = new List<(
             WordFormulaHostDescriptor Host,
@@ -693,19 +749,49 @@ internal static class WordFormulaNumberingKernel
 
     internal static WordFormulaHostDescriptor AttachCanonical(
         Document document,
-        WordFormulaHostDescriptor host)
+        WordFormulaHostDescriptor host,
+        bool deferFinalization = false)
     {
         if (!host.Display)
             throw new InvalidOperationException(
                 "Only display equations can receive an equation number.");
         if (host.Kind == WordFormulaHostKind.Omml)
+        {
+            // A fresh OMML writer already materializes the complete native
+            // #(SEQ) structure. During a reverse-order batch, evaluating that
+            // field per item is redundant because the final document-order pass
+            // must evaluate it again after all earlier targets exist.
+            if (deferFinalization
+                && host.Numbering.Numbered
+                && host.Numbering.ContainerKind ==
+                    WordFormulaNumberingContainerKind.CanonicalNativeOmml)
+                return host;
+
             return WordNativeOmmlNumbering.Attach(
                 document,
                 host);
+        }
 
         if (!Guid.TryParse(host.FormulaId, out _))
             throw new InvalidDataException(
                 "A numbered VisualTeX OLE requires one stable FormulaId.");
+
+        // A batch conversion has just inserted and locally validated this OLE in
+        // the same transaction. When it is a body display host with no numbering
+        // container yet, re-running the general numbering resolver before attach
+        // only re-reads the same paragraph/tables/bookmarks. Attach the known-new
+        // scaffold directly; the final target-family refresh validates and
+        // evaluates every field tree in document order.
+        if (deferFinalization
+            && !host.WithinTable
+            && host.Numbering.ContainerKind ==
+                WordFormulaNumberingContainerKind.None)
+        {
+            return WordVisualTeXParagraphNumbering.Attach(
+                document,
+                host,
+                deferFinalization: true);
+        }
 
         var current = WordFormulaNumberingResolver.ResolveLocal(document, host);
         if (current.ContainerKind ==
@@ -726,14 +812,29 @@ internal static class WordFormulaNumberingKernel
             ? AttachInsideUserTableCell(document, host)
             : WordVisualTeXParagraphNumbering.Attach(
                 document,
-                host);
+                host,
+                deferFinalization);
     }
 
     internal static WordFormulaHostDescriptor DetachCanonical(
         Document document,
-        WordFormulaHostDescriptor host)
+        WordFormulaHostDescriptor host,
+        WordFormulaNumberingDescriptor? alreadyResolvedNumbering = null,
+        bool sourceWillBeRemovedImmediately = false)
     {
-        var numbering = WordFormulaNumberingResolver.ResolveLocal(document, host);
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.DetachCanonical."
+                + host.Kind);
+        // Batch conversion resolves the exact source immediately before calling
+        // here. Reusing that local descriptor is safe because no Word mutation
+        // occurs between the resolve and detach, and avoids re-reading the same
+        // OMath/paragraph field tree once per formula.
+        var numbering =
+            alreadyResolvedNumbering
+            ?? WordFormulaNumberingResolver.ResolveLocal(
+                document,
+                host);
         return numbering.ContainerKind switch
         {
             WordFormulaNumberingContainerKind.None => WithNumbering(
@@ -744,12 +845,14 @@ internal static class WordFormulaNumberingKernel
                     document,
                     host),
             WordFormulaNumberingContainerKind.CanonicalBodyTabParagraph =>
-                WordVisualTeXParagraphNumbering.IsSelfContainedHost(
+                numbering.SelfContainedVisualTeXParagraph
+                || WordVisualTeXParagraphNumbering.IsSelfContainedHost(
                     document,
                     host)
                     ? WordVisualTeXParagraphNumbering.Detach(
                         document,
-                        host)
+                        host,
+                        sourceWillBeRemovedImmediately)
                     : DetachBodyTabParagraph(
                         document,
                         host),

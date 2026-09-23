@@ -1,0 +1,29 @@
+Acceptance mode: word-redraw-immediate-numbering
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[REDRAW IMMEDIATE NUMBERING] omml=1,2,3
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[REDRAW IMMEDIATE NUMBERING] mathtype=1,2,3
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+System.Runtime.InteropServices.COMException (0x80070005): Unable to initialize the VisualTeX native OLE object. 拒绝访问。 (异常来自 HRESULT:0x80070005 (E_ACCESSDENIED))
+   在 VisualTeX.WindowsOffice.Contracts.FormulaOleInterop.ThrowIfFailed(Int32 hresult, String message) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\FormulaOleInterop.cs:行号 82
+   在 VisualTeX.WindowsOffice.Contracts.FormulaOleInterop.Initialize(IVisualTeXFormulaObject formula, FormulaMetadata metadata, String emfPath, String pngPath) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\FormulaOleInterop.cs:行号 24
+   在 VisualTeX.WordVsto.WordVisualTeXHostWriter.InitializeOle(InlineShape shape, FormulaMetadata metadata, String emfPath, String pngPath) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordVisualTeXHostWriter.cs:行号 627
+   在 VisualTeX.WordVsto.WordVisualTeXHostWriter.Insert(Document document, Range insertion, WordFormulaHostWriteRequest request) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordVisualTeXHostWriter.cs:行号 115
+   在 VisualTeX.WordVsto.WordFormulaHostMutationKernel.InsertHost(Application application, Document document, Range insertion, WordFormulaHostWriteRequest target) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaHostMutationKernel.cs:行号 811
+   在 VisualTeX.WordVsto.WordFormulaHostMutationKernel.InsertInsideTransaction(Application application, Document document, Range insertion, WordFormulaHostWriteRequest target) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaHostMutationKernel.cs:行号 117
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyLatexRedrawInsideTransaction(Document document, WordLatexRedrawPlan plan, IReadOnlyDictionary`2 prepared) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaService.LatexRedrawCore.cs:行号 334
+   在 VisualTeX.WordVsto.WordFormulaMutationTransaction.Execute[T](Application application, Document document, String name, Func`1 mutationAndValidation) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaMutationTransaction.cs:行号 82
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyLatexRedrawPlanCore(WordLatexRedrawPlan plan, IReadOnlyDictionary`2 prepared) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaService.LatexRedrawCore.cs:行号 231
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWordLatexRedrawImmediateNumberingAcceptance(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordMathTypeCompatibility14NumberedCreateAcceptance.cs:行号 171
+   在 VisualTeX.VstoFlowAcceptance.Program.Main(String[] args) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 1135
+Acceptance artifacts retained: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\redraw-numbering-after-final-refresh-v3

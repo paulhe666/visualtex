@@ -1,4 +1,7 @@
-import type { MacroDictionary, MathfieldElement } from "mathlive";
+import type {
+  LegacyMacroDictionary,
+  LegacyMathfieldLike,
+} from "../editor/legacyMathfieldTypes";
 import { commandRegistry } from "../autocomplete/commandRegistry";
 import { safeStorage } from "../runtime/safeStorage";
 import type {
@@ -147,7 +150,7 @@ const listeners = new Set<() => void>();
 let broadcastChannel: BroadcastChannel | null = null;
 let browserEventsInstalled = false;
 let runtimeCommandAvailabilityValidator: ((command: string) => boolean) | null = null;
-const appliedMathfieldCommands = new WeakMap<MathfieldElement, Set<string>>();
+const appliedMathfieldCommands = new WeakMap<LegacyMathfieldLike, Set<string>>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -1143,17 +1146,17 @@ export function addCustomSymbolMacros<T extends Record<string, unknown>>(macros:
 }
 
 export function getAppliedCustomSymbolCommandsForMathfield(
-  field: MathfieldElement,
+  field: LegacyMathfieldLike,
 ) {
   return new Set(appliedMathfieldCommands.get(field) ?? []);
 }
 
 export function composeCustomSymbolMacrosForMathfield(
-  field: MathfieldElement,
-  baseMacros: MacroDictionary,
-  additionalMacros: MacroDictionary = {},
+  field: LegacyMathfieldLike,
+  baseMacros: LegacyMacroDictionary,
+  additionalMacros: LegacyMacroDictionary = {},
 ) {
-  const macros: MacroDictionary = { ...baseMacros };
+  const macros: LegacyMacroDictionary = { ...baseMacros };
   const previous = appliedMathfieldCommands.get(field);
   previous?.forEach((command) => delete macros[command]);
   Object.assign(macros, additionalMacros);
@@ -1163,7 +1166,7 @@ export function composeCustomSymbolMacrosForMathfield(
   return macros;
 }
 
-export function applyCustomSymbolMacrosToMathfield(field: MathfieldElement) {
+export function applyCustomSymbolMacrosToMathfield(field: LegacyMathfieldLike) {
   field.macros = composeCustomSymbolMacrosForMathfield(field, field.macros);
 }
 

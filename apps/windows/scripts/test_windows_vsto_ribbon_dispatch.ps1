@@ -137,14 +137,18 @@ function Test-RibbonComDispatch(
                 "VisualTeX.WordVsto.WordFormulaService",
                 $true)
             $pairValidator = $formulaServiceType.GetMethod(
-                "ValidateSimpleFormatConversionPair",
+                "ValidateCoreConversionPair",
                 [Reflection.BindingFlags]::Static -bor [Reflection.BindingFlags]::NonPublic)
             if ($null -eq $pairValidator) {
-                throw "$ClassName is missing the format conversion pair validator."
+                throw "$ClassName is missing the Host Core format conversion pair validator."
             }
             foreach ($pair in @(
+                @("nativeOle", "mathTypeOle"),
+                @("mathTypeOle", "nativeOle"),
                 @("nativeOle", "wordOmml"),
-                @("wordOmml", "nativeOle")
+                @("wordOmml", "nativeOle"),
+                @("wordOmml", "mathTypeOle"),
+                @("mathTypeOle", "wordOmml")
             )) {
                 try {
                     [void]$pairValidator.Invoke($null, @($pair[0], $pair[1]))

@@ -130,27 +130,25 @@ async function main() {
 
   const wrapperStateExpression = `(() => {
     const field = document.querySelector("math-field");
-    const host = field?.closest(".mathfield-host");
-    const pseudo = host ? getComputedStyle(host, "::after") : null;
-    const caret = field?.shadowRoot?.querySelector(".ML__caret");
-    const placeholders = [...(field?.shadowRoot?.querySelectorAll(".ML__placeholder") ?? [])]
-      .map((node) => ({ text: node.textContent ?? "", className: node.className }));
+    const root = field?.shadowRoot;
     return {
-      ready: Boolean(field && host),
+      ready: Boolean(field),
       value: field?.value ?? "",
+      mode: field?.mode ?? "",
       position: field?.position ?? -1,
       lastOffset: field?.lastOffset ?? -1,
       selection: field?.selection ?? null,
-      pending: field?.dataset.pendingWrapperCommand ?? "",
-      hostPending: host?.dataset.pendingWrapperCommand ?? "",
-      hasBox: host?.classList.contains("has-pending-wrapper-placeholder") ?? false,
-      boxWidth: Number.parseFloat(pseudo?.width ?? "NaN"),
-      boxHeight: Number.parseFloat(pseudo?.height ?? "NaN"),
-      boxBorder: pseudo?.borderTopWidth ?? "",
-      boxContent: pseudo?.content ?? "",
-      caretClass: caret?.className ?? "",
-      placeholders,
-      shadowText: field?.shadowRoot?.textContent ?? "",
+      sourceCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+      sourceKind: field?.dataset.visualtexSourceWrapperKind ?? "",
+      sourceContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+      raw: [...(root?.querySelectorAll(".ML__raw-latex") ?? [])]
+        .filter((node) => !node.classList.contains("ML__suggestion"))
+        .map((node) => node.textContent ?? "")
+        .join(""),
+      latexCaret: Boolean(root?.querySelector(".ML__latex-caret")),
+      placeholderCount:
+        root?.querySelectorAll(".visualtex-structural-placeholder, .ML__placeholder").length ?? 0,
+      shadowText: root?.textContent ?? "",
     };
   })()`;
 
@@ -428,33 +426,40 @@ async function main() {
 
   console.log(JSON.stringify(report, null, 2));
 
-  assert.ok(report.autoExit.empty.hasBox, "auto-exit toolbar insertion has no visible wrapper input box");
-  assert.equal(report.autoExit.empty.pending, "\\mathbb");
+  assert.equal(report.autoExit.empty.value, "\\mathbb{}");
+  assert.equal(report.autoExit.empty.mode, "latex");
+  assert.equal(report.autoExit.empty.sourceCommand, "\\mathbb");
+  assert.equal(report.autoExit.empty.sourceKind, "variant");
+  assert.equal(report.autoExit.empty.sourceContent, "");
+  assert.equal(report.autoExit.empty.placeholderCount, 0);
+  assert.equal(report.autoExit.empty.latexCaret, true);
   assert.equal(report.autoExit.afterA.value, "\\mathbb{A}");
-  assert.ok(!report.autoExit.afterA.hasBox, "auto-exit wrapper box did not close after one character");
+  assert.equal(report.autoExit.afterA.sourceCommand, "");
   assert.equal(report.autoExit.afterB.value, "\\mathbb{A}B");
 
-  assert.ok(report.continuous.empty.hasBox, "continuous toolbar insertion has no visible wrapper input box");
+  assert.equal(report.continuous.empty.value, "\\mathbb{}");
+  assert.equal(report.continuous.empty.sourceCommand, "\\mathbb");
   assert.equal(report.continuous.after3.value, "\\mathbb{ABC}");
-  assert.ok(report.continuous.after3.hasBox, "continuous wrapper input closed before Enter");
-  assert.ok(
-    report.continuous.after3.boxWidth > report.continuous.after1.boxWidth,
-    `continuous wrapper box did not grow: ${report.continuous.after1.boxWidth} -> ${report.continuous.after3.boxWidth}`,
-  );
-  assert.ok(!report.continuous.afterEnter.hasBox, "Enter did not close continuous wrapper input");
+  assert.equal(report.continuous.after3.mode, "latex");
+  assert.equal(report.continuous.after3.sourceCommand, "\\mathbb");
+  assert.equal(report.continuous.after3.sourceContent, "ABC");
+  assert.equal(report.continuous.after3.raw, "\\mathbb{ABC}");
+  assert.equal(report.continuous.afterEnter.sourceCommand, "");
+  assert.equal(report.continuous.afterEnter.mode, "math");
   assert.equal(report.continuous.afterD.value, "\\mathbb{ABC}D");
   assert.equal(report.continuous.uiSetting.checked, false);
 
-  assert.ok(report.middle.empty.hasBox, "middle insertion did not open a wrapper input box");
+  assert.equal(report.middle.empty.sourceCommand, "\\mathbb");
   assert.equal(report.middle.afterAB.value, "x\\mathbb{AB}+y");
-  assert.ok(report.middle.afterAB.hasBox, "middle wrapper closed before Enter");
-  assert.ok(!report.middle.afterEnter.hasBox, "middle wrapper did not close on Enter");
+  assert.equal(report.middle.afterAB.sourceCommand, "\\mathbb");
+  assert.equal(report.middle.afterEnter.sourceCommand, "");
   assert.equal(report.middle.afterC.value, "x\\mathbb{AB}C+y");
 
-  assert.ok(report.rawCommand.empty.hasBox, "typed raw wrapper command did not open a box");
-  assert.equal(report.rawCommand.empty.pending, "\\mathbb");
+  assert.equal(report.rawCommand.empty.value, "\\mathbb{}");
+  assert.equal(report.rawCommand.empty.sourceCommand, "\\mathbb");
+  assert.equal(report.rawCommand.empty.raw, "\\mathbb{}");
   assert.equal(report.rawCommand.afterA.value, "\\mathbb{A}");
-  assert.ok(!report.rawCommand.afterA.hasBox, "typed raw command did not auto-exit after one character");
+  assert.equal(report.rawCommand.afterA.sourceCommand, "");
   assert.equal(report.rawCommand.afterB.value, "\\mathbb{A}B");
 
   assert.equal(

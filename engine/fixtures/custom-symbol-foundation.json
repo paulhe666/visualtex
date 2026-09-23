@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "symbols": [
+    {
+      "id": "review-glyph-v1",
+      "command": "userglyph",
+      "name": "Compound vector test symbol",
+      "role": "ordinary",
+      "limitsBehavior": "auto",
+      "metrics": { "widthEm": 1.0, "ascentEm": 0.85, "descentEm": 0.15 },
+      "artwork": { "shapes": [
+        { "kind": "path", "d": "M100 650Q250 150 400 650T700 650L700 700H100Z", "fill": true },
+        { "kind": "circle", "cx": 750, "cy": 250, "r": 130, "fill": false, "strokeWidth": 35 },
+        { "kind": "line", "x1": 120, "y1": 800, "x2": 840, "y2": 800, "strokeWidth": 45, "lineCap": "round" }
+      ] },
+      "ommlFallback": "\\operatorname{custom}",
+      "designerSource": { "version": 1, "assets": [], "layers": [] },
+      "createdAt": 0,
+      "updatedAt": 1
+    },
+    {
+      "id": "review-operator-v1",
+      "command": "userop",
+      "name": "Custom limit-bearing operator",
+      "role": "operator",
+      "limitsBehavior": "auto",
+      "metrics": { "widthEm": 0.9, "ascentEm": 0.8, "descentEm": 0.2 },
+      "artwork": { "shapes": [
+        { "kind": "polygon", "points": [[100,150],[760,150],[540,400],[760,800],[100,800],[300,400]], "fill": true },
+        { "kind": "rect", "x": 10, "y": 30, "width": 850, "height": 840, "fill": false, "strokeWidth": 20 }
+      ] },
+      "ommlFallback": "\\sum",
+      "createdAt": 0,
+      "updatedAt": 1
+    },
+    {
+      "id": "review-relation-v1",
+      "command": "userrel",
+      "name": "Transformed relation artwork",
+      "role": "relation",
+      "limitsBehavior": "nolimits",
+      "metrics": { "widthEm": 0.9, "ascentEm": 0.7, "descentEm": 0.15 },
+      "artwork": { "shapes": [
+        { "kind": "ellipse", "cx": 450, "cy": 400, "rx": 300, "ry": 110, "fill": true,
+          "transform": { "rotateDeg": 12, "originX": 450, "originY": 400 } },
+        { "kind": "line", "x1": 100, "y1": 600, "x2": 780, "y2": 600, "strokeWidth": 30, "lineCap": "square" }
+      ] },
+      "ommlFallback": "=",
+      "createdAt": 0,
+      "updatedAt": 1
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
@@ -29,8 +30,12 @@ internal static class WordVisualTeXParagraphNumbering
 
     internal static WordFormulaHostDescriptor Attach(
         Document document,
-        WordFormulaHostDescriptor host)
+        WordFormulaHostDescriptor host,
+        bool deferFinalization = false)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.VisualTeXNumbering.Attach");
         if (document is null)
             throw new ArgumentNullException(nameof(document));
         if (host is null
@@ -113,15 +118,41 @@ internal static class WordVisualTeXParagraphNumbering
                     document,
                     hostRange.End + 1,
                     numberPlan);
-            UpdateHeadingStateFields(
-                document,
-                hostRange);
-            UpdatePlaceRefFields(placeRef);
+            if (!deferFinalization)
+            {
+                UpdateHeadingStateFields(
+                    document,
+                    hostRange);
+                UpdatePlaceRefFields(placeRef);
 
-            return ResolveRequired(
-                document,
-                hostRange,
-                host.FormulaId!);
+                return ResolveRequired(
+                    document,
+                    hostRange,
+                    host.FormulaId!);
+            }
+
+            // Whole-document format conversion runs from the end of the story
+            // toward the beginning. Any SEQ result calculated here is therefore
+            // provisional and will be invalidated as earlier equations are
+            // inserted. Keep the fully materialized field topology, but defer
+            // field evaluation and the expensive resolver round-trip until the
+            // single batch finalization pass. If any scaffold is malformed, that
+            // final pass throws inside the same mutation transaction and Word
+            // rolls the complete batch back.
+            host.Numbering =
+                new WordFormulaNumberingDescriptor
+                {
+                    Numbered = true,
+                    FormulaId = host.FormulaId,
+                    Position = "right",
+                    ContainerKind =
+                        WordFormulaNumberingContainerKind
+                            .CanonicalBodyTabParagraph,
+                    SelfContainedVisualTeXParagraph = true,
+                    ContainerRange =
+                        Address(paragraphRange),
+                };
+            return host;
         }
         finally
         {
@@ -137,8 +168,12 @@ internal static class WordVisualTeXParagraphNumbering
 
     internal static WordFormulaHostDescriptor Detach(
         Document document,
-        WordFormulaHostDescriptor host)
+        WordFormulaHostDescriptor host,
+        bool sourceWillBeRemovedImmediately = false)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.VisualTeXNumbering.Detach");
         if (document is null)
             throw new ArgumentNullException(nameof(document));
         if (host is null
@@ -214,6 +249,30 @@ internal static class WordVisualTeXParagraphNumbering
             // Any lazily-created VTEqNum_* bookmark lived wholly inside the deleted
             // visible number. Word removes it naturally; existing body REF fields
             // then enter Word's ordinary missing-source state.
+            //
+            // A batch cross-format replacement deletes this exact OLE immediately
+            // after detach. Reopening the same embedded OLE and re-running the full
+            // numbering resolver just to prove an intermediate unnumbered state is
+            // duplicate work; the detach operations above are exact and any COM
+            // failure aborts the surrounding transaction. Preserve the updated
+            // Word range and mark the transient descriptor unnumbered so the caller
+            // can delete the host directly. Interactive detach keeps the independent
+            // post-detach resolver/validation below.
+            if (sourceWillBeRemovedImmediately)
+            {
+                host.Range = Address(hostRange);
+                host.Numbering =
+                    new WordFormulaNumberingDescriptor
+                    {
+                        Numbered = false,
+                        FormulaId = host.FormulaId,
+                        Position = "right",
+                        ContainerKind =
+                            WordFormulaNumberingContainerKind.None,
+                    };
+                return host;
+            }
+
             return ResolveUnnumbered(
                 document,
                 hostRange,
@@ -325,6 +384,7 @@ internal static class WordVisualTeXParagraphNumbering
                     ContainerKind =
                         WordFormulaNumberingContainerKind
                             .CanonicalBodyTabParagraph,
+                    SelfContainedVisualTeXParagraph = true,
                     ContainerRange =
                         Address(paragraphRange),
                     NumberRange =
@@ -356,6 +416,9 @@ internal static class WordVisualTeXParagraphNumbering
         WordFormulaHostDescriptor host,
         bool rebuildForCurrentFormat)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.VisualTeXNumbering.Refresh");
         if (document is null)
             throw new ArgumentNullException(nameof(document));
         if (host is null
@@ -1167,6 +1230,121 @@ internal static class WordVisualTeXParagraphNumbering
 
         // The final ')' is materialized before these reverse-inserted segments.
         return result;
+    }
+
+    internal static int RefreshBatchFields(
+        Document document,
+        int minimumExpectedNumbered = 0)
+    {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.VisualTeXNumbering.RefreshBatchFields");
+        if (document is null)
+            throw new ArgumentNullException(nameof(document));
+
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        var placeRefCount = 0;
+        var hasUserReferenceFields = false;
+        try
+        {
+            // Word enumerates top-level fields in story order. Update the private
+            // chapter/section restart state and each VisualTeXPlaceRef exactly in
+            // that order so the nested VisualTeXEquation SEQ stream advances once
+            // through the final document topology. This replaces the old
+            // host-index -> numbering-resolver -> IsSelfContainedHost -> Refresh
+            // chain, which repeatedly reopened the same OLE paragraph.
+            fields = document.Fields;
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+
+                if (field.Type is
+                    WdFieldType.wdFieldRef
+                    or WdFieldType.wdFieldGoToButton)
+                    hasUserReferenceFields = true;
+
+                code = field.Code.Duplicate;
+                var instruction =
+                    code.Text
+                    ?? string.Empty;
+
+                if (IsHeadingStateRestartCode(
+                        instruction))
+                {
+                    field.Update();
+                    continue;
+                }
+
+                if (field.Type ==
+                        WdFieldType.wdFieldMacroButton
+                    && IsPlaceRefCode(
+                        instruction))
+                {
+                    UpdatePlaceRefFields(
+                        field);
+                    placeRefCount++;
+                    continue;
+                }
+
+                // Older canonical VisualTeX numbering can own a standalone
+                // top-level sequence field instead of the current self-contained
+                // PlaceRef tree. Keep it numerically coherent if such a host
+                // coexists with newly converted formulas, without rebuilding or
+                // globally rediscovering that legacy-compatible host.
+                if (IsStandaloneEquationSequenceCode(
+                        instruction))
+                    field.Update();
+            }
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+
+        if (placeRefCount <
+            minimumExpectedNumbered)
+            throw new InvalidDataException(
+                $"VisualTeX batch numbering materialized only {placeRefCount} numbered hosts; expected at least {minimumExpectedNumbered}.");
+
+        // Formula references are uncommon. Do not perform another document-wide
+        // field pass when the document contains no REF/GOTOBUTTON at all.
+        if (hasUserReferenceFields)
+            _ =
+                WordEquationReferenceFields
+                    .UpdateReferences(
+                        document);
+
+        return placeRefCount;
+    }
+
+    private static bool IsStandaloneEquationSequenceCode(
+        string? instruction)
+    {
+        if (string.IsNullOrWhiteSpace(
+                instruction))
+            return false;
+        var normalized =
+            instruction!
+                .TrimStart();
+        return normalized.StartsWith(
+                   "SEQ "
+                   + SequenceName
+                   + " ",
+                   StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith(
+                   "SEQ \""
+                   + SequenceName
+                   + "\" ",
+                   StringComparison.OrdinalIgnoreCase);
     }
 
     private static void UpdatePlaceRefFields(

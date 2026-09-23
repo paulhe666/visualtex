@@ -1,0 +1,3 @@
+source,target,count,capture_ms,apply_ms,capture_per_formula_ms,apply_per_formula_ms
+visualtex,mathtype,10,1802.313,8273.889,180.231,827.389
+visualtex,mathtype,20,3476.692,15546.921,173.835,777.346

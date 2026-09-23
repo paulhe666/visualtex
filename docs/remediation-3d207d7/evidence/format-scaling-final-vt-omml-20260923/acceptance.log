@@ -1,0 +1,11 @@
+Acceptance mode: word-format-conversion-scaling
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+[FORMAT SCALING] reusing source fixture C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-vt-omml-20260923\format-scaling-visualtex-10.docx
+[EXPLICIT OWNED WORD] pid=78820; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-vt-omml-20260923\owned-word-convert-visualtex-to-omml-10-7755fa3215e8425c82f2f5af8fcf7aa4\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] visualtex->omml count=10 captureMs=2624.2 applyMs=13644.8 capturePer=262.42 applyPer=1364.48
+[FORMAT SCALING] reusing source fixture C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-vt-omml-20260923\format-scaling-visualtex-20.docx
+[EXPLICIT OWNED WORD] pid=39956; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-vt-omml-20260923\owned-word-convert-visualtex-to-omml-20-d5f3602333f647438dcd550d2aa0f4ac\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] visualtex->omml count=20 captureMs=4253.8 applyMs=26347.5 capturePer=212.69 applyPer=1317.37
+[FORMAT SCALING COMPLETE] samples=2; report=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-vt-omml-20260923\format-conversion-scaling.csv
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-vt-omml-20260923

@@ -524,9 +524,9 @@ internal static class MathMlToLatexConverter
     {
         latex = string.Empty;
         if (open != "(" || close != ")") return false;
-        var child = fenced.Elements().SingleOrDefault();
-        if (child is null) return false;
-        child = UnwrapSingleTransparentMathMlContainer(child);
+        var children = fenced.Elements().Take(2).ToArray();
+        if (children.Length != 1) return false;
+        var child = UnwrapSingleTransparentMathMlContainer(children[0]);
         if (child.Name.LocalName != "mfrac") return false;
         var lineThickness = ((string?)child.Attribute("linethickness") ?? string.Empty).Trim();
         if (!lineThickness.StartsWith("0", StringComparison.Ordinal)) return false;
@@ -545,8 +545,10 @@ internal static class MathMlToLatexConverter
     {
         latex = string.Empty;
         if (open != "(" || close != ")") return false;
-        var table = fenced.Elements().SingleOrDefault();
-        if (table is not null && table.Name.LocalName == "mrow")
+        var fencedChildren = fenced.Elements().Take(2).ToArray();
+        if (fencedChildren.Length != 1) return false;
+        var table = fencedChildren[0];
+        if (table.Name.LocalName == "mrow")
         {
             var nested = table.Elements().ToArray();
             if (nested.Length == 1 && nested[0].Name.LocalName == "mtable")

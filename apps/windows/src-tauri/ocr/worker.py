@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import contextlib
 import gc
+import hashlib
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -51,6 +54,24 @@ _MODEL_DOWNLOAD_MB = {
     "PP-FormulaNet-S": 234.4,
     "PP-FormulaNet-L": 728.8,
 }
+_MODEL_FILE_SHA256 = {
+    "PP-FormulaNet_plus-S": {
+        "inference.json": "01238434e33df83588e2627f350559b576e34551d2b2ffea148345032de56c00",
+        "inference.pdiparams": "e464f94412feaa98f8791eacc84684f887b3569e30e80c52b8112e9cf7d4069b",
+        "inference.yml": "96062655d94c21d39274328dbc82c1a487e66addb8425f5a7fd5b7dfb2421ec3",
+    },
+    "PP-FormulaNet_plus-M": {
+        "inference.json": "8333a7f650766a748e273c550d278601dd19dfeee1c4b01038ff632f134d9884",
+        "inference.pdiparams": "f16ef9b5c8227da70d3ec969a5195f4d62c1154427b883f4d6cff07633654041",
+        "inference.yml": "87b5f3d7f2b2fe553627d77b37f496608ca150ebd0ef62d362591edca47b5538",
+    },
+    "PP-FormulaNet_plus-L": {
+        "inference.json": "ad259c4b896d99aa3479336b9121112fb40ff1ababfbf8765a3428a3b86df582",
+        "inference.pdiparams": "4245c39c181d1d21e472bc85c7434df9b23f177be46552c0542bf153addbc355",
+        "inference.yml": "afc92a2737268da0499c37b0b6741da268c369fd7424667fcfeb8fa6c7b22d30",
+    },
+}
+_MODEL_VALIDATION_CACHE: Dict[str, Tuple[Tuple[str, int, int, int], ...]] = {}
 
 
 def _emit(payload: Dict[str, Any]) -> None:
@@ -143,18 +164,221 @@ def _watch_parent_process() -> None:
             os._exit(0)
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _validate_model_integrity(directory: Path, model_name: str) -> None:
+    expected = _MODEL_FILE_SHA256.get(model_name)
+    if expected is None:
+        raise RuntimeError(
+            f"OCR_MODEL_INTEGRITY_ERROR: VisualTeX has no pinned integrity manifest for {model_name}."
+        )
+    if not directory.is_dir():
+        raise RuntimeError(
+            f"OCR_MODEL_INTEGRITY_ERROR: The model directory does not exist: {directory}"
+        )
+
+    actual_files = {entry.name for entry in directory.iterdir() if entry.is_file()}
+    expected_files = set(expected)
+    if actual_files != expected_files:
+        missing = sorted(expected_files - actual_files)
+        unexpected = sorted(actual_files - expected_files)
+        raise RuntimeError(
+            "OCR_MODEL_INTEGRITY_ERROR: "
+            f"{model_name} has an incomplete or unexpected file set at {directory}; "
+            f"missing={missing}, unexpected={unexpected}. Reinstall or re-import this model."
+        )
+
+    signature: List[Tuple[str, int, int, int]] = []
+    for filename in sorted(expected):
+        path = directory / filename
+        stat = path.stat()
+        if stat.st_size <= 0:
+            raise RuntimeError(
+                "OCR_MODEL_INTEGRITY_ERROR: "
+                f"{model_name}/{filename} is empty at {path}. Reinstall or re-import this model."
+            )
+        signature.append((filename, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns))
+
+    cache_key = str(directory.resolve())
+    signature_tuple = tuple(signature)
+    if _MODEL_VALIDATION_CACHE.get(cache_key) == signature_tuple:
+        return
+
+    json_path = directory / "inference.json"
+    try:
+        with json_path.open("r", encoding="utf-8") as handle:
+            parsed_json = json.load(handle)
+        if not isinstance(parsed_json, (dict, list)):
+            raise ValueError("top-level JSON value is not an object or array")
+    except Exception as exc:
+        raise RuntimeError(
+            "OCR_MODEL_INTEGRITY_ERROR: "
+            f"{model_name}/inference.json is unreadable or invalid at {json_path}: {exc}. "
+            "Reinstall or re-import this model."
+        ) from exc
+
+    for filename, expected_hash in expected.items():
+        path = directory / filename
+        actual_hash = _sha256_file(path)
+        if actual_hash.lower() != expected_hash.lower():
+            raise RuntimeError(
+                "OCR_MODEL_INTEGRITY_ERROR: "
+                f"{model_name}/{filename} failed SHA-256 verification at {path}; "
+                f"expected={expected_hash}, actual={actual_hash}. Reinstall or re-import this model."
+            )
+
+    _MODEL_VALIDATION_CACHE[cache_key] = signature_tuple
+
+
 def _cached_model_dir(model_name: str) -> Optional[Path]:
     cache_home = os.environ.get("PADDLE_PDX_CACHE_HOME", "").strip()
     if not cache_home:
         return None
     directory = Path(cache_home) / "official_models" / model_name
-    if (
-        (directory / "inference.json").is_file()
-        and (directory / "inference.pdiparams").is_file()
-        and (directory / "inference.yml").is_file()
-    ):
+    if not directory.exists():
+        return None
+    _validate_model_integrity(directory, model_name)
+    return directory
+
+
+def _windows_short_path(path: Path) -> Optional[Path]:
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        get_short_path = kernel32.GetShortPathNameW
+        get_short_path.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.LPWSTR,
+            wintypes.DWORD,
+        ]
+        get_short_path.restype = wintypes.DWORD
+        required = get_short_path(str(path), None, 0)
+        if required == 0:
+            return None
+        buffer = ctypes.create_unicode_buffer(required + 1)
+        written = get_short_path(str(path), buffer, len(buffer))
+        if written == 0 or written >= len(buffer):
+            return None
+        short = Path(buffer.value)
+        if not str(short).isascii() or not short.exists():
+            return None
+        return short
+    except Exception:
+        return None
+
+
+def _ascii_bridge_root() -> Path:
+    candidates = [
+        Path(tempfile.gettempdir()) / "VisualTeX-OCR-bridge",
+        Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir()))
+        / "VisualTeX"
+        / "ocr-path-bridge",
+    ]
+    system_root = os.environ.get("SystemRoot", "").strip()
+    if system_root:
+        candidates.append(Path(system_root) / "Temp" / "VisualTeX-OCR-bridge")
+
+    failures: List[str] = []
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            if str(candidate).isascii():
+                return candidate
+            short = _windows_short_path(candidate)
+            if short is not None and str(short).isascii():
+                return short
+            failures.append(f"{candidate}: no ASCII short path")
+        except Exception as exc:
+            failures.append(f"{candidate}: {exc}")
+
+    raise RuntimeError(
+        "OCR_MODEL_PATH_COMPATIBILITY_ERROR: Unable to create an ASCII compatibility root for Paddle Inference. "
+        + " | ".join(failures)
+    )
+
+
+def _junction_model_dir(directory: Path) -> Path:
+    bridge_root = _ascii_bridge_root()
+    identity = hashlib.sha256(str(directory.resolve()).encode("utf-8")).hexdigest()[:20]
+    alias = bridge_root / f"model-{identity}"
+    if not str(alias).isascii():
+        raise RuntimeError(
+            f"OCR_MODEL_PATH_COMPATIBILITY_ERROR: Compatibility alias is not ASCII: {alias}"
+        )
+
+    if alias.exists():
+        try:
+            if os.path.samefile(alias, directory):
+                return alias
+        except OSError:
+            pass
+        raise RuntimeError(
+            f"OCR_MODEL_PATH_COMPATIBILITY_ERROR: Existing compatibility alias points elsewhere: {alias}"
+        )
+
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "& { param([string]$Path, [string]$Target) $ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $Path -Target $Target | Out-Null }",
+        str(alias),
+        str(directory),
+    ]
+    completed = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=0x08000000,
+        check=False,
+    )
+    if completed.returncode != 0 or not alias.is_dir():
+        detail = (completed.stderr or completed.stdout).strip()
+        raise RuntimeError(
+            "OCR_MODEL_PATH_COMPATIBILITY_ERROR: Paddle Inference cannot read the Unicode model path, "
+            f"and VisualTeX could not create an ASCII junction for {directory}. "
+            f"PowerShell exit={completed.returncode}; detail={detail or 'no output'}"
+        )
+    try:
+        if not os.path.samefile(alias, directory):
+            raise RuntimeError(
+                f"OCR_MODEL_PATH_COMPATIBILITY_ERROR: Junction verification failed: {alias} -> {directory}"
+            )
+    except OSError as exc:
+        raise RuntimeError(
+            f"OCR_MODEL_PATH_COMPATIBILITY_ERROR: Junction verification failed for {alias}: {exc}"
+        ) from exc
+    return alias
+
+
+def _paddle_compatible_model_dir(directory: Path) -> Path:
+    if os.name != "nt" or str(directory).isascii():
         return directory
-    return None
+    short = _windows_short_path(directory)
+    if short is not None:
+        _log(f"Using Windows short path for Paddle model_dir: {short}")
+        return short
+    alias = _junction_model_dir(directory)
+    _log(f"Using ASCII junction for Paddle model_dir: {alias} -> {directory}")
+    return alias
 
 
 def _model_is_cached(model_name: str) -> bool:
@@ -348,20 +572,27 @@ def _load_model(model_name: str, device: str) -> Any:
     cached_model_dir = _cached_model_dir(model_name)
     if cached_model_dir is None:
         raise RuntimeError(f"Verified local model_dir is unavailable for {model_name}")
+    paddle_model_dir = _paddle_compatible_model_dir(cached_model_dir)
     _log(
         f"Loading {model_name} directly from local model_dir "
-        f"{cached_model_dir} on {device}"
+        f"{paddle_model_dir} on {device}"
     )
     with contextlib.redirect_stdout(sys.stderr):
         from paddleocr import FormulaRecognition
 
         # Passing model_dir is mandatory. This bypasses PaddleX host checks,
         # registry metadata and every implicit model download path.
-        model = FormulaRecognition(
-            model_name=model_name,
-            model_dir=str(cached_model_dir),
-            device=device,
-        )
+        try:
+            model = FormulaRecognition(
+                model_name=model_name,
+                model_dir=str(paddle_model_dir),
+                device=device,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "OCR_MODEL_LOAD_ERROR: Paddle FormulaRecognition failed while initializing "
+                f"{model_name} from {paddle_model_dir} on {device}: {exc}"
+            ) from exc
 
     _CURRENT_MODEL = model
     _CURRENT_MODEL_NAME = model_name

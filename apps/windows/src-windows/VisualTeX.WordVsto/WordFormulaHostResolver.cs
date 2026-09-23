@@ -59,6 +59,9 @@ internal static class WordFormulaHostResolver
         Document document,
         Range scope)
     {
+        using var operationMetric =
+            VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+                "FormatConversion.CaptureScopeIndex");
         if (document is null) throw new ArgumentNullException(nameof(document));
         if (scope is null) throw new ArgumentNullException(nameof(scope));
 
@@ -76,6 +79,49 @@ internal static class WordFormulaHostResolver
             anchors,
             tableRanges);
         return new WordFormulaDocumentIndex(omml, visualTeX);
+    }
+
+    internal static IReadOnlyList<WordFormulaHostDescriptor>
+        CaptureScopeKindIndex(
+            Document document,
+            Range scope,
+            WordFormulaHostKind kind)
+    {
+        if (document is null)
+            throw new ArgumentNullException(nameof(document));
+        if (scope is null)
+            throw new ArgumentNullException(nameof(scope));
+
+        // Format conversion knows the source host family up front. Do not build
+        // the other family's index merely to discard it immediately. OMML needs
+        // one REF-result snapshot so cached OMaths inside native REF results are
+        // excluded, plus table boundaries for local ownership. VisualTeX needs
+        // only its identity anchors and table boundaries. Both remain one-pass
+        // scope snapshots; no per-formula document scans are introduced.
+        var tableRanges =
+            CaptureTableRanges(scope);
+        if (kind == WordFormulaHostKind.Omml)
+        {
+            var referenceResults =
+                CaptureReferenceResultRanges(scope);
+            return CaptureOmmlIndex(
+                scope,
+                referenceResults,
+                tableRanges);
+        }
+
+        if (kind == WordFormulaHostKind.VisualTeX)
+        {
+            var anchors =
+                CaptureIdentityAnchors(scope);
+            return CaptureVisualTeXIndex(
+                scope,
+                anchors,
+                tableRanges);
+        }
+
+        throw new NotSupportedException(
+            $"Scope kind index is not owned by the OMML/VisualTeX resolver for {kind}.");
     }
 
     private static WordFormulaHostDescriptor? ResolveLocalOmml(
@@ -154,6 +200,40 @@ internal static class WordFormulaHostResolver
             // service after resolving this exact OMath.
             string? formulaId = null;
             var display = type == WdOMathType.wdOMathDisplay;
+            WordFormulaNumberingDescriptor numbering;
+            if (!display)
+            {
+                numbering =
+                    new WordFormulaNumberingDescriptor
+                    {
+                        Numbered = false,
+                        FormulaId = null,
+                        Position = "right",
+                        ContainerKind =
+                            WordFormulaNumberingContainerKind.None,
+                    };
+            }
+            else if (WordNativeOmmlNumbering
+                     .TryResolveUnownedNativeStructure(
+                         document,
+                         candidate,
+                         out var nativeNumbering))
+            {
+                nativeNumbering.FormulaId = null;
+                numbering = nativeNumbering;
+            }
+            else
+            {
+                // TryResolveUnownedNativeStructure already proved that this exact
+                // OMath is not the canonical native #(SEQ) topology. Check only
+                // the retired local fallback here instead of re-running the full
+                // native resolver immediately afterwards.
+                numbering =
+                    WordFormulaNumberingResolver
+                        .ResolveOmmlAfterNativeMiss(
+                            candidate);
+            }
+
             return new WordFormulaHostDescriptor
             {
                 Kind = WordFormulaHostKind.Omml,
@@ -162,11 +242,7 @@ internal static class WordFormulaHostResolver
                 FormulaId = formulaId,
                 Metadata = null,
                 MetadataAuthoritative = false,
-                Numbering = new WordFormulaNumberingDescriptor
-                {
-                    Numbered = display && HasLocalNativeSequenceNumber(candidate),
-                    FormulaId = formulaId,
-                },
+                Numbering = numbering,
                 WithinTable = IsWithinTable(candidate),
             };
         }

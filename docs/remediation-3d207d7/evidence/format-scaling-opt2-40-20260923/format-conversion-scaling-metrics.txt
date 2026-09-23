@@ -1,0 +1,8 @@
+[omml->mathtype count=40]
+capture|FormatConversion.CaptureTarget.OmmlToMathType|calls=40|ms=3653.525
+capture|FormatConversion.NumberingResolver.Omml|calls=40|ms=2113.261
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=40|ms=55.645
+apply|FormatConversion.ReplaceExternalFrom.Omml|calls=40|ms=38656.154
+apply|FormatConversion.ResolveCapturedHost.Omml|calls=40|ms=7439.439
+apply|FormatConversion.RollbackSnapshot.Capture|calls=1|ms=520.969
+apply|WordDocumentXml.Read|calls=1|ms=113.443

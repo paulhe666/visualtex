@@ -1,0 +1,20 @@
+Acceptance mode: word-redraw-immediate-numbering
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+[Word probe] Test OLE server pinned: pid=86404, path=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\artifacts\formula-ole-server\x64\Release\VisualTeX.FormulaOleServer.exe
+[Word 1/12] Starting Word and creating an inline Session...
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+    [perf] OpenSession.health: +153ms (153ms total)
+    [perf] OpenSession.read-selection: +0ms (153ms total)
+    [perf] OpenSession.build-request: +180ms (333ms total)
+    [perf] OpenSession.create-session: +29ms (362ms total)
+    [perf] OpenSession.open-editor-window: +4ms (366ms total)
+[Word 2/12] Committing the initial vector formula...
+[Word 3/12] Checking OLE size, aspect ratio and formula baseline...
+System.InvalidOperationException (0x80131509): Word inline formula baseline is incorrect. Expected -5.000, actual 9999999.000.
+   在 VisualTeX.VstoFlowAcceptance.Program.AssertNear(Single expected, Single actual, Single tolerance, String message) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 6399
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWord(VisualTeXSessionClient client, String artifactRoot, Boolean initialOnly, Boolean stopAfterUnchanged, Boolean stopAfterOlePictureRoundTrip, Boolean skipDoubleClickForOlePictureRoundTrip) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 4379
+   在 VisualTeX.VstoFlowAcceptance.Program.Main(String[] args) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 1717
+Acceptance artifacts retained: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\redraw-numbering-after-final-refresh-v6

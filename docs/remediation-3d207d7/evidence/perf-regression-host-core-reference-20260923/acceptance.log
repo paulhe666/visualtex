@@ -1,0 +1,19 @@
+Acceptance mode: word-host-core-reference-regression
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[host-core pure OMML] native edit + inline/display/numbered mapping + Word cross-reference passed.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[host-core pure OMML] save/reopen kept the native OMath + _Ref/REF structure live without VisualTeX metadata.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[host-core pure OMML] paragraph-leading inline request followed Word-native display promotion without a trailing guard.
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\perf-regression-host-core-reference-20260923

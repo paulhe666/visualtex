@@ -1,0 +1,1404 @@
+      this.container.style.paddingBottom = this.originalContainerBottomPadding ? `calc(${this.originalContainerBottomPadding} + ${keyboardHeight}px)` : `${keyboardHeight}px`;
+    } else this._element.style.setProperty("--_keyboard-height", `${h}px`);
+  }
+  // adjustBoundingRect(): void {
+  //   if (!this._element) return;
+  //   // Adjust the keyboard height
+  //   const h = this.boundingRect.height;
+  //   if (this.container !== document.body) {
+  //     // We don't adjust the padding bottom if the container is not the body
+  //     this._element.style.setProperty('--_keyboard-height', `${h}px`);
+  //     return;
+  //   }
+  //   this._element.style.setProperty(
+  //     '--_keyboard-height',
+  //     `calc(${h}px + var(--_padding-top) + var(--_padding-bottom) + env(safe-area-inset-bottom, 0))`
+  //   );
+  //   const keyboardHeight = `${h - 1}px + var(--_padding-top) + var(--_padding-bottom) + env(safe-area-inset-bottom, 0)`;
+  //   document.body.style.paddingBottom = this.originalContainerBottomPadding
+  //     ? `calc(${this.originalContainerBottomPadding} + ${keyboardHeight})`
+  //     : `calc(${keyboardHeight})`;
+  // }
+  rebuild() {
+    if (this._rebuilding || !this._element) return;
+    this._rebuilding = true;
+    const currentLayerId = this.currentLayer;
+    requestAnimationFrame(() => {
+      this._rebuilding = false;
+      if (this._element) {
+        this._element.remove();
+        this._element = void 0;
+      }
+      if (this.visible) {
+        this.buildAndAttachElement();
+        this.currentLayer = currentLayerId;
+        this.render();
+        this.adjustBoundingRect();
+        this._element.classList.add("is-visible");
+      }
+    });
+  }
+  /** Update the keycaps to account for the current state */
+  render() {
+    var _a3;
+    if (!this._element) return;
+    const layer = this.getLayer(this.currentLayer);
+    this._element.classList.toggle(
+      "backdrop-is-transparent",
+      Boolean(layer && (layer.backdrop || layer.container))
+    );
+    const keycaps = this._element.querySelectorAll(
+      ".MLK__layer.is-visible .MLK__keycap, .MLK__layer.is-visible .action, .fnbutton, .MLK__layer.is-visible .bigfnbutton, .MLK__layer.is-visible .shift"
+    );
+    if (!keycaps) return;
+    const shifted = this.isShifted;
+    for (const keycapElement of keycaps) {
+      const keycap = this.getKeycap(keycapElement.id);
+      if (keycap) {
+        const [markup, cls] = renderKeycap(keycap, { shifted });
+        keycapElement.innerHTML = globalThis.MathfieldElement.createHTML(markup);
+        keycapElement.className = cls;
+        if (shifted && typeof keycap.shift === "object" && ((_a3 = keycap.shift) == null ? void 0 : _a3.tooltip))
+          keycapElement.dataset.tooltip = keycap.shift.tooltip;
+        else if (!shifted && keycap.tooltip)
+          keycapElement.dataset.tooltip = keycap.tooltip;
+      }
+    }
+  }
+  show(options) {
+    var _a3;
+    if (this._visible) return;
+    const container = this.container;
+    if (!container) return;
+    if (!window.mathVirtualKeyboard) return;
+    if (!this.stateWillChange(true)) return;
+    if (!this._element) {
+      this.buildAndAttachElement();
+      this.adjustBoundingRect();
+    }
+    if (!this._visible) {
+      const plate = this._element.getElementsByClassName(
+        "MLK__plate"
+      )[0];
+      if (plate) this.observer.observe(plate);
+      if (container === window.document.body) {
+        const padding2 = container.style.paddingBottom;
+        this.originalContainerBottomPadding = padding2;
+        const keyboardHeight = plate.offsetHeight - 1;
+        container.style.paddingBottom = padding2 ? `calc(${padding2} + ${keyboardHeight}px)` : `${keyboardHeight}px`;
+      }
+      window.addEventListener("mouseup", this);
+      window.addEventListener("blur", this);
+      window.addEventListener("keydown", this, { capture: true });
+      window.addEventListener("keyup", this, { capture: true });
+      (_a3 = this._element) == null ? void 0 : _a3.classList.toggle(
+        "is-caps-lock",
+        this.shiftPressCount === 2
+      );
+      this.currentLayer = this.latentLayer;
+    }
+    this._visible = true;
+    if (options == null ? void 0 : options.animate) {
+      requestAnimationFrame(() => {
+        if (this._element) {
+          this._element.classList.add("animate");
+          this._element.addEventListener(
+            "transitionend",
+            () => {
+              var _a4;
+              return (_a4 = this._element) == null ? void 0 : _a4.classList.remove("animate");
+            },
+            { once: true }
+          );
+          this._element.classList.add("is-visible");
+          this.stateChanged();
+        }
+      });
+    } else {
+      this._element.classList.add("is-visible");
+      this.stateChanged();
+    }
+  }
+  hide(_options) {
+    var _a3;
+    const container = this.container;
+    if (!container) return;
+    if (!this._visible) return;
+    if (!this.stateWillChange(false)) return;
+    this._visible = false;
+    if (this._element) {
+      this.latentLayer = this.currentLayer;
+      const plate = this._element.getElementsByClassName("MLK__plate")[0];
+      if (plate) this.observer.unobserve(plate);
+      window.removeEventListener("mouseup", this);
+      window.removeEventListener("blur", this);
+      window.removeEventListener("keydown", this, { capture: true });
+      window.removeEventListener("keyup", this, { capture: true });
+      window.removeEventListener("contextmenu", this, { capture: true });
+      hideVariantsPanel();
+      releaseStylesheets();
+      (_a3 = this._element) == null ? void 0 : _a3.remove();
+      this._element = void 0;
+      if (this.originalContainerBottomPadding !== null)
+        container.style.paddingBottom = this.originalContainerBottomPadding;
+    }
+    this.stateChanged();
+  }
+  get height() {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this.element) == null ? void 0 : _a3.offsetHeight) != null ? _b3 : 0;
+  }
+  buildAndAttachElement() {
+    var _a3;
+    console.assert(!this.element);
+    this.element = makeKeyboardElement(this);
+    window.addEventListener("contextmenu", this, { capture: true });
+    this.element.addEventListener(
+      "contextmenu",
+      (ev) => {
+        if (!ev.shiftKey) {
+          if (ev.ctrlKey || ev.button === 2)
+            showVariantsPanel(ev.target);
+          ev.preventDefault();
+          ev.stopPropagation();
+        }
+      },
+      { capture: true }
+    );
+    (_a3 = this.container) == null ? void 0 : _a3.appendChild(this.element);
+  }
+  handleEvent(evt) {
+    if (isVirtualKeyboardMessage(evt)) {
+      if (!validateOrigin(evt.origin, this.originValidator)) {
+        throw new DOMException(
+          `Message from unknown origin (${evt.origin}) cannot be handled`,
+          "SecurityError"
+        );
+      }
+      if (evt.data.action === "disconnect") {
+        if (this._visible) return;
+        this.connectedMathfieldWindow = void 0;
+      } else if (evt.data.action !== "update-setting" && evt.data.action !== "proxy-created" && evt.data.action !== "execute-command") {
+        console.assert(evt.source !== void 0);
+        this.connectedMathfieldWindow = evt.source;
+      }
+      this.handleMessage(evt.data, evt.source);
+    }
+    if (!this._element) return;
+    switch (evt.type) {
+      case "mouseup":
+      case "blur":
+        document.body.style.userSelect = "";
+        this.shiftPressCount = 0;
+        break;
+      case "contextmenu":
+        if (evt.button !== 2) evt.preventDefault();
+        break;
+      case "keydown": {
+        if (evt.key === "Shift" && !evt.repeat) this.shiftPressCount = 1;
+        break;
+      }
+      case "keyup": {
+        if (evt.key === "Shift" || !evt.getModifierState("Shift") && this.shiftPressCount !== 2)
+          this.shiftPressCount = 0;
+        break;
+      }
+    }
+  }
+  handleMessage(msg, source) {
+    const { action } = msg;
+    if (action === "execute-command") {
+      const { command } = msg;
+      const commandTarget = getCommandTarget(command);
+      if (window === window.top && source !== window) return;
+      if (source === window && commandTarget !== "virtual-keyboard") return;
+      this.executeCommand(command);
+      return;
+    }
+    if (action === "connect" || action === "show") {
+      this.sendMessage(
+        "synchronize-proxy",
+        {
+          boundingRect: this.boundingRect,
+          alphabeticLayout: this._alphabeticLayout,
+          layouts: this._layouts,
+          editToolbar: this._editToolbar
+        },
+        source
+      );
+    }
+    if (action === "disconnect") return;
+    if (this.isSandbox) return;
+    if (action === "show") {
+      if (typeof msg.animate !== "undefined")
+        this.show({ animate: msg.animate });
+      else this.show();
+      return;
+    }
+    if (action === "hide") {
+      if (typeof msg.animate !== "undefined")
+        this.hide({ animate: msg.animate });
+      else this.hide();
+      return;
+    }
+    if (action === "update-setting") {
+      if (msg.alphabeticLayout) this.alphabeticLayout = msg.alphabeticLayout;
+      if (msg.layouts) this.layouts = msg.layouts;
+      if (msg.editToolbar) this.editToolbar = msg.editToolbar;
+      if (msg.setKeycap) {
+        const { keycap, value } = msg.setKeycap;
+        this.setKeycap(keycap, value);
+        this.render();
+      }
+      return;
+    }
+    if (action === "proxy-created") {
+      this.sendMessage(
+        "synchronize-proxy",
+        {
+          boundingRect: this.boundingRect,
+          alphabeticLayout: this._alphabeticLayout,
+          layouts: this._layouts,
+          editToolbar: this._editToolbar
+        },
+        source
+      );
+      return;
+    }
+  }
+  sendMessage(action, payload, target) {
+    if (payload.command) {
+      this.dispatchEvent(
+        new CustomEvent("math-virtual-keyboard-command", {
+          detail: payload.command
+        })
+      );
+    }
+    if (!target) target = this.connectedMathfieldWindow;
+    if (this.targetOrigin === null || this.targetOrigin === "null" || target === window) {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: window,
+          origin: window.origin,
+          data: __spreadValues({
+            type: VIRTUAL_KEYBOARD_MESSAGE,
+            action
+          }, payload)
+        })
+      );
+      return;
+    }
+    if (target) {
+      target.postMessage(
+        __spreadValues({
+          type: VIRTUAL_KEYBOARD_MESSAGE,
+          action
+        }, payload),
+        { targetOrigin: this.targetOrigin }
+      );
+    } else {
+      if (action === "execute-command" && Array.isArray(payload.command) && payload.command[0] === "insert") {
+        const s = payload.command[1].split("");
+        for (const c of s) {
+          this.dispatchEvent(
+            new KeyboardEvent("keydown", { key: c, bubbles: true })
+          );
+          this.dispatchEvent(
+            new KeyboardEvent("keyup", { key: c, bubbles: true })
+          );
+        }
+      }
+    }
+  }
+  stateWillChange(visible) {
+    const success = this.dispatchEvent(
+      new CustomEvent("before-virtual-keyboard-toggle", {
+        detail: { visible },
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      })
+    );
+    return success;
+  }
+  stateChanged() {
+    this.dispatchEvent(new Event("virtual-keyboard-toggle"));
+    if (!this._visible) {
+      this.dispatchEvent(new Event("geometrychange"));
+      this.sendMessage("geometry-changed", {
+        boundingRect: this.boundingRect
+      });
+    }
+  }
+  /**
+   * @category Focus
+   */
+  focus() {
+    this.sendMessage("focus", {});
+  }
+  /**
+   * @category Focus
+   */
+  blur() {
+    this.sendMessage("blur", {});
+  }
+  updateToolbar(mf) {
+    const el = this._element;
+    if (!el) return;
+    el.classList.toggle("is-math-mode", mf.mode === "math");
+    el.classList.toggle("is-text-mode", mf.mode === "text");
+    el.classList.toggle("can-undo", mf.canUndo);
+    el.classList.toggle("can-redo", mf.canRedo);
+    el.classList.toggle("can-copy", !mf.selectionIsCollapsed);
+    el.classList.toggle("can-cut", !mf.selectionIsCollapsed);
+    el.classList.toggle("can-paste", true);
+    const toolbars = el.querySelectorAll(".ML__edit-toolbar");
+    if (!toolbars) return;
+    for (const toolbar of toolbars)
+      toolbar.innerHTML = makeEditToolbar(this, mf);
+  }
+  update(mf) {
+    this._style = mf.style;
+    this.updateToolbar(mf);
+  }
+  connect() {
+    this.connectedMathfieldWindow = window;
+  }
+  disconnect() {
+    if (this._visible) return;
+    this.connectedMathfieldWindow = void 0;
+  }
+  executeCommand(command) {
+    command = parseCommand(command);
+    if (!command) return false;
+    let selector;
+    let args = [];
+    let target = getCommandTarget(command);
+    if (isArray(command)) {
+      selector = command[0];
+      if (selector === "performWithFeedback") {
+        target = getCommandTarget(
+          command.slice(1)
+        );
+      }
+      args = command.slice(1);
+    } else selector = command;
+    if (target === "virtual-keyboard")
+      return COMMANDS[selector].fn(void 0, ...args);
+    this.sendMessage("execute-command", { command });
+    return false;
+  }
+  dispose() {
+    window.removeEventListener("mouseup", this);
+    window.removeEventListener("blur", this);
+    window.removeEventListener("message", this);
+  }
+};
+function focusedMathfield() {
+  let target = deepActiveElement();
+  let mf = null;
+  while (target) {
+    if ("host" in target && target.host instanceof MathfieldElement) {
+      mf = target.host;
+      break;
+    }
+    target = target.parentNode;
+  }
+  return mf;
+}
+
+// src/virtual-keyboard/global.ts
+if (isBrowser() && !("mathVirtualKeyboard" in window)) {
+  if (window === window["top"]) {
+    mountMathVirtualKeyboard();
+  } else {
+    Object.defineProperty(window, "mathVirtualKeyboard", {
+      get: () => VirtualKeyboardProxy.singleton,
+      configurable: true
+    });
+  }
+}
+function mountMathVirtualKeyboard() {
+  const kbd = VirtualKeyboard.singleton;
+  if (window.mathVirtualKeyboard !== kbd) {
+    Object.defineProperty(window, "mathVirtualKeyboard", {
+      get: () => kbd
+    });
+  }
+  return kbd;
+}
+
+// src/editor-mathfield/options.ts
+function update(updates) {
+  const result = {};
+  for (const key of Object.keys(updates)) {
+    switch (key) {
+      case "scriptDepth":
+        const scriptDepth = updates.scriptDepth;
+        if (isArray(scriptDepth))
+          result.scriptDepth = [scriptDepth[0], scriptDepth[1]];
+        else if (typeof scriptDepth === "number")
+          result.scriptDepth = [scriptDepth, scriptDepth];
+        else if (typeof scriptDepth === "string") {
+          const [from, to] = scriptDepth.split(",").map((x) => parseInt(x.trim()));
+          result.scriptDepth = [from, to];
+        } else throw new TypeError("Unexpected value for scriptDepth");
+        break;
+      case "mathVirtualKeyboardPolicy":
+        let keyboardPolicy = updates.mathVirtualKeyboardPolicy.toLowerCase();
+        if (keyboardPolicy === "sandboxed") {
+          const kbd = mountMathVirtualKeyboard();
+          if (kbd) kbd.isSandbox = true;
+          keyboardPolicy = "manual";
+        }
+        result.mathVirtualKeyboardPolicy = keyboardPolicy;
+        break;
+      case "letterShapeStyle":
+        if (updates.letterShapeStyle === "auto") {
+          if (l10n.locale.startsWith("fr")) result.letterShapeStyle = "french";
+          else result.letterShapeStyle = "tex";
+        } else result.letterShapeStyle = updates.letterShapeStyle;
+        break;
+      case "defaultMode":
+        if (!["text", "math", "inline-math"].includes(
+          updates.defaultMode
+        )) {
+          console.error(
+            `MathLive 0.109.2:  valid values for defaultMode are "text", "math" or "inline-math"`
+          );
+          result.defaultMode = "math";
+        } else result.defaultMode = updates.defaultMode;
+        break;
+      case "macros":
+        result.macros = normalizeMacroDictionary(updates.macros);
+        break;
+      default:
+        if (isArray(updates[key])) result[key] = [...updates[key]];
+        else if (typeof updates[key] === "object" && !(updates[key] instanceof Element) && key !== "computeEngine")
+          result[key] = __spreadValues({}, updates[key]);
+        else result[key] = updates[key];
+    }
+  }
+  return result;
+}
+function get(config, keys) {
+  let resolvedKeys;
+  if (typeof keys === "string") resolvedKeys = [keys];
+  else if (keys === void 0) resolvedKeys = Object.keys(config);
+  else resolvedKeys = keys;
+  const result = {};
+  for (const x of resolvedKeys) {
+    if (config[x] === null) result[x] = null;
+    else if (isArray(config[x])) result[x] = [...config[x]];
+    else if (typeof config[x] === "object" && !(config[x] instanceof Element) && x !== "computeEngine") {
+      result[x] = __spreadValues({}, config[x]);
+    } else result[x] = config[x];
+  }
+  if (typeof keys === "string") return result[keys];
+  return result;
+}
+function getDefault() {
+  return {
+    readOnly: false,
+    defaultMode: "math",
+    macros: {},
+    registers: {},
+    colorMap: defaultColorMap,
+    backgroundColorMap: defaultBackgroundColorMap,
+    letterShapeStyle: l10n.locale.startsWith("fr") ? "french" : "tex",
+    minFontScale: 0,
+    maxMatrixCols: 10,
+    smartMode: false,
+    smartFence: true,
+    smartSuperscript: true,
+    scriptDepth: [Infinity, Infinity],
+    removeExtraneousParentheses: true,
+    isImplicitFunction: (x) => [
+      "\\sin",
+      "\\cos",
+      "\\tan",
+      "\\arcsin",
+      "\\arccos",
+      "\\arctan",
+      "\\arcsec",
+      "\\arccsc",
+      "\\arsinh",
+      "\\arcosh",
+      "\\artanh",
+      "\\arcsech",
+      "\\arccsch",
+      "\\arg",
+      "\\ch",
+      "\\cosec",
+      "\\cosh",
+      "\\cot",
+      "\\cotg",
+      "\\coth",
+      "\\csc",
+      "\\ctg",
+      "\\cth",
+      "\\sec",
+      "\\sinh",
+      "\\sh",
+      "\\tanh",
+      "\\tg",
+      "\\th",
+      "\\lg",
+      "\\lb",
+      "\\log",
+      "\\ln"
+    ].includes(x),
+    mathModeSpace: "",
+    placeholderSymbol: "\u25A2",
+    contentPlaceholder: "",
+    popoverPolicy: "auto",
+    environmentPopoverPolicy: "off",
+    keybindings: DEFAULT_KEYBINDINGS,
+    inlineShortcuts: INLINE_SHORTCUTS,
+    inlineShortcutTimeout: 0,
+    mathVirtualKeyboardPolicy: "auto",
+    originValidator: "none",
+    onInsertStyle: defaultInsertStyleHook,
+    onInlineShortcut: () => "",
+    onScrollIntoView: null,
+    onExport: defaultExportHook,
+    value: ""
+  };
+}
+function effectiveMode(options) {
+  if (options.defaultMode === "inline-math") return "math";
+  return options.defaultMode;
+}
+
+// src/editor-model/composition.ts
+function updateComposition(model, s) {
+  // VisualTeX: IME composition must inherit the editing context, not merely
+  // the mode of the atom immediately to the left of the caret. At the visual
+  // right edge of a \text{} run MathLive's offset still points at the final
+  // TextAtom, which otherwise re-enters text mode and makes all subsequent
+  // input stick to that run.
+  if (model.mathfield) visualTexNormalizeTextBoundaryMode(model.mathfield);
+  const cursor = model.at(model.position);
+  if (cursor.type === "composition") {
+    cursor.value = s;
+  } else {
+    const { caret } = cursor;
+    cursor.caret = void 0;
+    const compositionMode = model.mode === "latex" ? "math" : model.mode;
+    const atom = new CompositionAtom(s, { mode: compositionMode });
+    atom.caret = caret;
+    cursor.parent.addChildAfter(atom, cursor);
+    model.position += 1;
+  }
+}
+function removeComposition(model) {
+  const cursor = model.at(model.position);
+  if (cursor.type === "composition") {
+    cursor.parent.removeChild(cursor);
+    model.position -= 1;
+  }
+}
+
+// src/editor-model/array.ts
+function cellSiblings(model) {
+  let atom = model.at(model.position);
+  while (atom && !isCellBranch(atom.parentBranch)) atom = atom.parent;
+  return [atom.firstSibling, atom.lastSibling];
+}
+function parentArray(model, where) {
+  let atom = model.at(model.position);
+  while (atom && !(atom.parent instanceof ArrayAtom)) atom = atom.parent;
+  if ((atom == null ? void 0 : atom.type) === "array") {
+    const array = atom;
+    if (array.environmentName === "lines") {
+    }
+  }
+  if (!atom || !(atom.parent instanceof ArrayAtom)) {
+    const cursor = model.at(model.position);
+    atom = cursor;
+    if (!atom.parent.parent) {
+      let secondCell = model.extractAtoms([model.position, model.lastOffset]);
+      let firstCell = model.extractAtoms([0, model.position]);
+      let array;
+      if (where.endsWith("column")) {
+        if (firstCell.length === 0) firstCell = placeholderCell();
+        if (secondCell.length === 0) secondCell = placeholderCell();
+        array = makeEnvironment("split", [[firstCell, secondCell]]);
+        model.root = array;
+        if (isPlaceholderCell(array, 0, 0)) selectCell(model, array, 0, 0);
+        else if (isPlaceholderCell(array, 0, 1)) selectCell(model, array, 0, 1);
+        else model.position = model.offsetOf(cursor);
+      } else {
+        array = makeEnvironment("lines", [[firstCell], [secondCell]]);
+        model.root = array;
+        selectCell(model, array, 1, 0);
+      }
+      return [void 0, [0, 0]];
+    }
+    if (atom.parent instanceof LeftRightAtom) {
+      const parent = atom.parent;
+      let secondCell = model.extractAtoms([
+        model.position,
+        model.offsetOf(parent.lastChild)
+      ]);
+      let firstCell = model.extractAtoms([
+        model.offsetOf(parent.firstChild),
+        model.position
+      ]);
+      if (firstCell.length === 0) firstCell = placeholderCell();
+      if (secondCell.length === 0) secondCell = placeholderCell();
+      let envName = "pmatrix";
+      const lDelim = parent.leftDelim;
+      const rDelim = parent.rightDelim;
+      if (lDelim === "(" && (rDelim === ")" || rDelim === "?"))
+        envName = "pmatrix";
+      else if ((lDelim === "[" || lDelim === "\\lbrack") && (rDelim === "]" || rDelim === "\\rbrack" || rDelim === "?"))
+        envName = "bmatrix";
+      else if (lDelim === "\\vert" && rDelim === "\\vert") envName = "vmatrix";
+      else if (lDelim === "\\Vert" && rDelim === "\\Vert") envName = "Vmatrix";
+      else if ((lDelim === "{" || lDelim === "\\lbrace") && (rDelim === "." || rDelim === "?"))
+        envName = "cases";
+      const array = makeEnvironment(
+        envName,
+        where.endsWith("column") ? [[firstCell, secondCell]] : [[firstCell], [secondCell]]
+      );
+      parent.parent.addChildBefore(array, parent);
+      parent.parent.removeChild(parent);
+      if (isPlaceholderCell(array, 0, 0)) selectCell(model, array, 0, 0);
+      else if (where.endsWith("column")) {
+        if (isPlaceholderCell(array, 0, 1)) selectCell(model, array, 0, 1);
+        else model.position = model.offsetOf(atom);
+      } else {
+        if (isPlaceholderCell(array, 1, 0)) selectCell(model, array, 1, 0);
+        else model.position = model.offsetOf(atom);
+      }
+      return [void 0, [0, 0]];
+    }
+  }
+  return atom && atom.parent instanceof ArrayAtom ? [atom.parent, atom.parentBranch] : [void 0, [0, 0]];
+}
+function isPlaceholderCell(array, row, column) {
+  const cell = array.getCell(row, column);
+  if ((cell == null ? void 0 : cell.length) !== 2) return false;
+  return cell[1].type === "placeholder";
+}
+function cellRange(model, array, row, column) {
+  const cell = array.getCell(row, column);
+  if (!cell) return -1;
+  return [model.offsetOf(cell[0]), model.offsetOf(cell[cell.length - 1])];
+}
+function selectCell(model, array, row, column) {
+  const range2 = cellRange(model, array, row, column);
+  if (typeof range2 !== "number") model.setSelection(range2);
+}
+function setPositionInCell(model, array, row, column, pos) {
+  const cell = array.getCell(row, column);
+  if (!cell) return;
+  model.setPositionHandlingPlaceholder(
+    model.offsetOf(cell[pos === "start" ? 0 : cell.length - 1])
+  );
+}
+function addCell(model, where) {
+  const [arrayAtom, [row, column]] = parentArray(model, where);
+  if (!arrayAtom) return;
+  switch (where) {
+    case "after row":
+      arrayAtom.addRowAfter(row);
+      setPositionInCell(model, arrayAtom, row + 1, 0, "end");
+      break;
+    case "after column":
+      if (arrayAtom.maxColumns <= arrayAtom.colCount) {
+        model.announce("plonk");
+        return;
+      }
+      arrayAtom.addColumnAfter(column);
+      setPositionInCell(model, arrayAtom, row, column + 1, "end");
+      break;
+    case "before row":
+      arrayAtom.addRowBefore(row);
+      setPositionInCell(model, arrayAtom, row, 0, "start");
+      break;
+    case "before column":
+      if (arrayAtom.maxColumns <= arrayAtom.colCount) {
+        model.announce("plonk");
+        return;
+      }
+      arrayAtom.addColumnBefore(column);
+      setPositionInCell(model, arrayAtom, row, column, "start");
+      break;
+  }
+}
+function addRowAfter(model) {
+  var _a3;
+  const cursor = model.at(model.position);
+  if (!isCellBranch(cursor.parentBranch) && cursor.parent !== model.root && model.root.type !== "root") {
+    model.announce("plonk");
+    return false;
+  }
+  if (!model.contentWillChange({ inputType: "insertText" })) return false;
+  if ((_a3 = model.parentEnvironment) == null ? void 0 : _a3.isMultiline) {
+    if (!model.selectionIsCollapsed) model.deleteAtoms(range(model.selection));
+    const [first, last] = cellSiblings(model);
+    const after = model.extractAtoms([model.position, model.offsetOf(last)]);
+    const before = model.extractAtoms([model.offsetOf(first), model.position]);
+    const array = first.parent;
+    const [row, col] = first.parentBranch;
+    array.setCell(row, col, before);
+    addCell(model, "after row");
+    array.setCell(row + 1, col, after);
+    model.position = model.offsetOf(array.getCell(row + 1, col)[0]);
+    model.contentDidChange({ inputType: "insertText" });
+    return true;
+  }
+  addCell(model, "after row");
+  model.contentDidChange({ inputType: "insertText" });
+  return true;
+}
+function addRowBefore(model) {
+  if (!model.contentWillChange({ inputType: "insertText" })) return false;
+  addCell(model, "before row");
+  model.contentDidChange({ inputType: "insertText" });
+  return true;
+}
+function addColumnAfter(model) {
+  if (!model.contentWillChange({ inputType: "insertText" })) return false;
+  addCell(model, "after column");
+  model.contentDidChange({ inputType: "insertText" });
+  return true;
+}
+function addColumnBefore(model) {
+  if (!model.contentWillChange({ inputType: "insertText" })) return false;
+  addCell(model, "before column");
+  model.contentDidChange({ inputType: "insertText" });
+  return true;
+}
+function setEnvironment(model, environment) {
+  if (!model.contentWillChange({})) return false;
+  model.mathfield.snapshot();
+  let leftDelim = ".";
+  let rightDelim = ".";
+  switch (environment) {
+    case "pmatrix":
+    case "pmatrix*":
+      leftDelim = "(";
+      rightDelim = ")";
+      break;
+    case "bmatrix":
+    case "bmatrix*":
+      leftDelim = "[";
+      rightDelim = "]";
+      break;
+    case "Bmatrix":
+    case "Bmatrix*":
+      leftDelim = "\\lbrace";
+      rightDelim = "\\rbrace";
+      break;
+    case "vmatrix":
+    case "vmatrix*":
+      leftDelim = "\\vert";
+      rightDelim = "\\vert";
+      break;
+    case "Vmatrix":
+    case "Vmatrix*":
+      leftDelim = "\\Vert";
+      rightDelim = "\\Vert";
+      break;
+    case "matrix":
+    case "matrix*":
+      leftDelim = ".";
+      rightDelim = ".";
+      break;
+    case "cases":
+    case "dcases":
+      leftDelim = "\\lbrace";
+      break;
+    case "rcases":
+      rightDelim = "\\rbrace";
+      break;
+  }
+  const atom = model.at(model.position);
+  const arrayAtom = atom.type === "array" ? atom : model.parentEnvironment;
+  arrayAtom.environmentName = environment;
+  arrayAtom.leftDelim = leftDelim;
+  arrayAtom.rightDelim = rightDelim;
+  model.contentDidChange({});
+  return true;
+}
+function removeCell(model, where) {
+  let atom = model.at(model.position);
+  while (atom && !(Array.isArray(atom.parentBranch) && atom.parent instanceof ArrayAtom))
+    atom = atom.parent;
+  if (Array.isArray(atom == null ? void 0 : atom.parentBranch) && (atom == null ? void 0 : atom.parent) instanceof ArrayAtom) {
+    const arrayAtom = atom.parent;
+    const treeBranch = atom.parentBranch;
+    let pos;
+    switch (where) {
+      case "row":
+        if (arrayAtom.rowCount > 1) {
+          arrayAtom.removeRow(treeBranch[0]);
+          const cell = arrayAtom.getCell(
+            Math.max(0, treeBranch[0] - 1),
+            treeBranch[1]
+          );
+          pos = model.offsetOf(cell[cell.length - 1]);
+        }
+        break;
+      case "column":
+        if (arrayAtom.colCount > arrayAtom.minColumns) {
+          arrayAtom.removeColumn(treeBranch[1]);
+          const cell = arrayAtom.getCell(
+            treeBranch[0],
+            Math.max(0, treeBranch[1] - 1)
+          );
+          pos = model.offsetOf(cell[cell.length - 1]);
+        }
+        break;
+    }
+    if (pos !== void 0) model.setPositionHandlingPlaceholder(pos);
+  }
+}
+function removeRow(model) {
+  if (!model.contentWillChange({ inputType: "deleteContent" })) return false;
+  removeCell(model, "row");
+  model.contentDidChange({ inputType: "deleteContent" });
+  return true;
+}
+function removeColumn(model) {
+  if (!model.contentWillChange({ inputType: "deleteContent" })) return false;
+  removeCell(model, "column");
+  model.contentDidChange({ inputType: "deleteContent" });
+  return true;
+}
+register2(
+  {
+    addRowAfter,
+    addColumnAfter,
+    addRowBefore,
+    addColumnBefore,
+    removeRow,
+    removeColumn,
+    setEnvironment
+  },
+  {
+    target: "model",
+    canUndo: true,
+    changeContent: true,
+    changeSelection: true
+  }
+);
+function placeholderCell() {
+  return [new PlaceholderAtom()];
+}
+
+// src/editor/undo.ts
+var _UndoManager = class _UndoManager {
+  constructor(model) {
+    this.recording = false;
+    this.model = model;
+    this.reset();
+  }
+  reset() {
+    this.stack = [];
+    this.index = -1;
+    this.lastOp = "";
+  }
+  startRecording() {
+    this.recording = true;
+  }
+  stopRecording() {
+    this.recording = false;
+  }
+  canUndo() {
+    return this.index - 1 >= 0;
+  }
+  canRedo() {
+    return this.stack.length - 1 > this.index;
+  }
+  /** Call this to stop coalescing future ops, for example when the selection
+   * changes
+   */
+  stopCoalescing(selection) {
+    if (selection && this.index >= 0)
+      this.stack[this.index].selection = selection;
+    this.lastOp = "";
+  }
+  undo() {
+    if (!this.canUndo()) return false;
+    const state = this.stack[this.index - 1];
+    this.index -= 1;
+    this.lastOp = "";
+    this.model.setState(state, { silenceNotifications: false, type: "undo" });
+    return true;
+  }
+  redo() {
+    if (!this.canRedo()) return false;
+    const state = this.stack[this.index + 1];
+    this.index += 1;
+    this.lastOp = "";
+    this.model.setState(state, { silenceNotifications: false, type: "redo" });
+    return true;
+  }
+  pop() {
+    if (!this.canUndo()) return;
+    this.stack.splice(this.index, this.stack.length - this.index);
+    this.index -= 1;
+  }
+  /**
+   * Push a snapshot of the content and selection of the mathfield onto the
+   * undo stack so that it can potentially be reverted to later.
+   *
+   * **Return** `true` if the undo state changed
+   */
+  snapshot(op) {
+    if (!this.recording) return false;
+    if (op && op === this.lastOp) this.pop();
+    this.stack.splice(this.index + 1, this.stack.length - this.index - 1);
+    this.stack.push(this.model.getState());
+    this.index += 1;
+    if (this.stack.length > _UndoManager.maximumDepth) {
+      this.stack.shift();
+      this.index -= 1;
+    }
+    this.lastOp = op != null ? op : "";
+    return true;
+  }
+};
+// Maximum number of undo/redo states
+_UndoManager.maximumDepth = 1e3;
+var UndoManager = _UndoManager;
+
+// src/editor-model/delete.ts
+function onDelete(model, direction, atom, branch) {
+  var _a3, _b3, _c2, _d2, _e, _f;
+  const parent = atom.parent;
+  if (isCellBranch(branch) && atom instanceof ArrayAtom && atom.isMultiline) {
+    if (deleteRow(model, atom, branch[0], direction)) return true;
+  }
+  if (parent && atom instanceof LeftRightAtom) {
+    const atStart = !branch && direction === "forward" || branch === "body" && direction === "backward";
+    let pos = atStart ? model.offsetOf(atom.firstChild) : model.offsetOf(atom.lastChild);
+    if (atStart) {
+      if (atom.rightDelim !== "?" && atom.rightDelim !== ".") {
+        atom.leftDelim = ".";
+        atom.isDirty = true;
+      } else {
+        parent.addChildrenAfter(atom.removeBranch("body"), atom);
+        parent.removeChild(atom);
+        pos--;
+      }
+    } else {
+      if (atom.leftDelim !== "?" && atom.leftDelim !== ".") {
+        atom.rightDelim = ".";
+        atom.isDirty = true;
+      } else {
+        parent.addChildrenAfter(atom.removeBranch("body"), atom);
+        parent.removeChild(atom);
+        pos--;
+      }
+    }
+    model.position = pos;
+    return true;
+  }
+  if (parent && atom.type === "surd") {
+    if (direction === "forward" && !branch || direction === "backward" && branch === "body") {
+      const pos = atom.leftSibling;
+      if (atom.hasChildren)
+        parent.addChildrenAfter(atom.removeBranch("body"), atom);
+      parent.removeChild(atom);
+      model.position = model.offsetOf(pos);
+    } else if (direction === "forward" && branch === "body") {
+      model.position = model.offsetOf(atom);
+    } else if (!branch && direction === "backward") {
+      if (atom.hasChildren) model.position = model.offsetOf(atom.lastChild);
+      else {
+        model.position = Math.max(0, model.offsetOf(atom) - 1);
+        parent.removeChild(atom);
+      }
+    } else if (branch === "above") {
+      if (atom.hasEmptyBranch("above")) atom.removeBranch("above");
+      if (direction === "backward") {
+        model.position = model.offsetOf(atom.leftSibling);
+      } else {
+        model.position = model.offsetOf(atom.body[0]);
+      }
+    }
+    return true;
+  }
+  if (parent && (atom.type === "box" || atom.type === "enclose")) {
+    const pos = branch && direction === "backward" || !branch && direction === "forward" ? atom.leftSibling : atom.lastChild;
+    parent.addChildrenAfter(atom.removeBranch("body"), atom);
+    parent.removeChild(atom);
+    model.position = model.offsetOf(pos);
+    return true;
+  }
+  if (atom.type === "genfrac" || atom.type === "overunder") {
+    if (!branch) {
+      if (atom.type === "overunder" && atom.hasEmptyBranch("body"))
+        return false;
+      if (atom.type === "genfrac" && atom.hasEmptyBranch("below") && atom.hasEmptyBranch("above"))
+        return false;
+      model.position = model.offsetOf(
+        direction === "forward" ? atom.firstChild : atom.lastChild
+      );
+      return true;
+    }
+    const firstBranch = MathfieldElement.fractionNavigationOrder === "numerator-denominator" ? "above" : "below";
+    const secondBranch = firstBranch === "above" ? "below" : "above";
+    if (parent && (direction === "forward" && branch === firstBranch || direction === "backward" && branch === secondBranch)) {
+      const first = atom.removeBranch(firstBranch);
+      const second = atom.removeBranch(secondBranch);
+      parent.addChildrenAfter([...first, ...second], atom);
+      parent.removeChild(atom);
+      model.position = model.offsetOf(
+        first.length > 0 ? first[first.length - 1] : second[0]
+      );
+      return true;
+    }
+    if (direction === "backward")
+      model.position = model.offsetOf(atom.leftSibling);
+    else model.position = model.offsetOf(atom);
+    return true;
+  }
+  if (atom.type === "extensible-symbol" || atom.type === "subsup" || atom.type === "operator") {
+    if (!branch && direction === "forward") return false;
+    if (!branch) {
+      if (atom.subscript || atom.superscript) {
+        const pos = direction === "forward" ? (_c2 = (_a3 = atom.superscript) == null ? void 0 : _a3[0]) != null ? _c2 : (_b3 = atom.subscript) == null ? void 0 : _b3[0] : (_f = (_d2 = atom.subscript) == null ? void 0 : _d2[0].lastSibling) != null ? _f : (_e = atom.superscript) == null ? void 0 : _e[0].lastSibling;
+        if (pos) model.position = model.offsetOf(pos);
+        return true;
+      }
+      return false;
+    }
+    if (!atom.hasChildren && atom.type === "subsup") {
+      const pos = direction === "forward" ? model.offsetOf(atom) : Math.max(0, model.offsetOf(atom) - 1);
+      atom.parent.removeChild(atom);
+      model.position = pos;
+      return true;
+    }
+    if (branch && atom.hasEmptyBranch(branch)) {
+      atom.removeBranch(branch);
+      if (atom.type === "subsup" && !atom.subscript && !atom.superscript) {
+        const pos = direction === "forward" ? model.offsetOf(atom) : Math.max(0, model.offsetOf(atom) - 1);
+        atom.parent.removeChild(atom);
+        model.position = pos;
+        return true;
+      }
+      if (branch === "superscript" && direction === "backward")
+        model.position = model.offsetOf(atom.firstChild) - 1;
+      else if (branch === "subscript" && direction === "backward") {
+        if (atom.superscript)
+          model.position = model.offsetOf(atom.superscript[0].lastSibling);
+        else model.position = model.offsetOf(atom.firstChild) - 1;
+      } else model.position = model.offsetOf(atom);
+      return true;
+    }
+    if (branch === "superscript") {
+      if (direction === "backward") {
+        const pos = model.offsetOf(atom.firstChild) - 1;
+        console.assert(pos >= 0);
+        model.position = pos;
+      } else if (atom.subscript)
+        model.position = model.offsetOf(atom.subscript[0]);
+      else model.position = model.offsetOf(atom);
+    } else if (branch === "subscript") {
+      if (direction === "backward" && atom.superscript) {
+        model.position = model.offsetOf(atom.superscript[0].lastSibling);
+      } else if (direction === "backward") {
+        model.position = model.offsetOf(atom.firstChild) - 1;
+      } else {
+        model.position = model.offsetOf(atom);
+      }
+    }
+    return true;
+  }
+  if ((parent == null ? void 0 : parent.type) === "genfrac" && !branch && atom.type !== "first" && atom.type !== "placeholder" && atom.type !== "prompt") {
+    const targetBranch = atom.parentBranch;
+    const previous = atom.leftSibling;
+    parent.removeChild(atom);
+    model.position = model.offsetOf(previous);
+    visualTexRestoreStructuralPlaceholder(model, parent, targetBranch);
+    model.announce("delete", void 0, [atom]);
+    return true;
+  }
+  if ((parent == null ? void 0 : parent.type) === "genfrac" && !branch && atom.type !== "first") {
+    let pos = model.offsetOf(atom.leftSibling);
+    parent.removeChild(atom);
+    if (parent.hasEmptyBranch("above") && parent.hasEmptyBranch("below")) {
+      pos = model.offsetOf(parent.leftSibling);
+      parent.parent.removeChild(parent);
+      model.announce("delete", void 0, [parent]);
+      model.position = pos;
+      return true;
+    }
+    model.announce("delete", void 0, [atom]);
+    model.position = pos;
+    return true;
+  }
+  if (direction === "backward" && ((parent == null ? void 0 : parent.command) === "\\ln" || (parent == null ? void 0 : parent.command) === "\\log") && atom.parentBranch !== "body") {
+    const pos = model.offsetOf(parent.leftSibling);
+    parent.parent.removeChild(parent);
+    model.announce("delete", void 0, [parent]);
+    model.position = pos;
+    return true;
+  }
+  return false;
+}
+function visualTexShouldRetainStructuralPlaceholder(parent, branch) {
+  if (!parent || branch == null || parent.type === "root") return false;
+  if (Array.isArray(branch)) return parent.type === "array";
+  if (branch === "superscript" || branch === "subscript") return true;
+  if (branch === "body")
+    return parent.type === "surd" || parent.type === "accent" || parent.type === "box" || parent.type === "enclose" || parent.type === "leftright" || parent.type === "overunder" || parent.type === "macro-argument";
+  if (branch === "above" || branch === "below")
+    return parent.type === "genfrac" || parent.type === "overunder" || parent.type === "surd";
+  return false;
+}
+function visualTexSameStructuralBranch(left, right) {
+  if (Array.isArray(left) || Array.isArray(right))
+    return Array.isArray(left) && Array.isArray(right) && left[0] === right[0] && left[1] === right[1];
+  return left === right;
+}
+function visualTexFreshStructuralSlot(atom) {
+  if (!atom?.parent || atom.parentBranch == null) return null;
+  return { parent: atom.parent, branch: atom.parentBranch, after: atom.leftSibling };
+}
+function visualTexLiveStructuralSlot(atom) {
+  const slot = atom?.visualTexStructuralSlot;
+  if (!slot?.parent || slot.parent !== atom.parent || !visualTexSameStructuralBranch(slot.branch, atom.parentBranch)) return null;
+  return slot;
+}
+function visualTexStructuralSlotForAtoms(atoms) {
+  for (const atom of atoms || []) {
+    const slot = visualTexLiveStructuralSlot(atom);
+    if (slot) return slot;
+  }
+  return null;
+}
+function visualTexStructuralSlotStillOccupied(parent, branch, slot) {
+  const siblings = parent?.branch(branch);
+  return Boolean(siblings?.some((atom) => atom.type !== "first" && visualTexLiveStructuralSlot(atom) === slot));
+}
+function visualTexRestoreStructuralPlaceholder(model, parent, branch, after, force = false, slot = null) {
+  if (!force && !visualTexShouldRetainStructuralPlaceholder(parent, branch)) return false;
+  if (!force && !parent.hasEmptyBranch(branch)) return false;
+  const placeholder = new PlaceholderAtom();
+  if (slot) placeholder.visualTexStructuralSlot = slot;
+  if (after && after.parent === parent) parent.addChildrenAfter([placeholder], after);
+  else parent.addChild(placeholder, branch);
+  const offset = model.offsetOf(placeholder);
+  model.setSelection(Math.max(0, offset - 1), offset);
+  return true;
+}
+function deleteBackward(model) {
+  if (!model.mathfield.isSelectionEditable) return false;
+  if (!model.contentWillChange({ inputType: "deleteContentBackward" }))
+    return false;
+  if (!model.selectionIsCollapsed)
+    return deleteRange(model, range(model.selection), "deleteContentBackward");
+  return model.deferNotifications(
+    { content: true, selection: true, type: "deleteContentBackward" },
+    () => {
+      var _a3;
+      let target = model.at(model.position);
+      if (target && onDelete(model, "backward", target)) return;
+      if (target == null ? void 0 : target.isFirstSibling) {
+        if (onDelete(model, "backward", target.parent, target.parentBranch))
+          return;
+        target = null;
+      }
+      if (!target) {
+        model.announce("plonk");
+        return;
+      }
+      const targetParent = target.parent;
+      const targetBranch = target.parentBranch;
+      const targetLeftSibling = target.leftSibling;
+      const targetSlot = visualTexLiveStructuralSlot(target);
+      model.position = model.offsetOf(targetLeftSibling);
+      targetParent.removeChild(target);
+      model.announce("delete", void 0, [target]);
+      if (targetParent.type === "latexgroup" && targetParent.hasEmptyBranch("body")) {
+        const structuralParent = targetParent.parent;
+        const structuralBranch = targetParent.parentBranch;
+        const pos = model.offsetOf(targetParent.leftSibling);
+        (_a3 = targetParent.parent) == null ? void 0 : _a3.removeChild(targetParent);
+        model.position = Math.max(0, pos);
+        if (target.type !== "placeholder" && target.type !== "prompt")
+          visualTexRestoreStructuralPlaceholder(model, structuralParent, structuralBranch);
+      } else if (target.type !== "placeholder" && target.type !== "prompt" && targetSlot) {
+        if (!visualTexStructuralSlotStillOccupied(targetParent, targetBranch, targetSlot))
+          visualTexRestoreStructuralPlaceholder(model, targetParent, targetBranch, targetLeftSibling, true, targetSlot);
+      } else if (target.type !== "placeholder" && target.type !== "prompt") {
+        visualTexRestoreStructuralPlaceholder(model, targetParent, targetBranch);
+      }
+      if (model.root.hasEmptyBranch("body"))
+        model.mathfield.flushInlineShortcutBuffer();
+    }
+  );
+}
+function deleteForward(model) {
+  if (!model.mathfield.isSelectionEditable) return false;
+  if (!model.contentWillChange({ inputType: "deleteContentForward" }))
+    return false;
+  if (!model.selectionIsCollapsed)
+    return deleteRange(model, range(model.selection), "deleteContentForward");
+  return model.deferNotifications(
+    { content: true, selection: true, type: "deleteContentForward" },
+    () => {
+      var _a3, _b3, _c2;
+      let target = model.at(model.position).rightSibling;
+      if (target && onDelete(model, "forward", target)) return;
+      if (!target) {
+        target = model.at(model.position);
+        if (target.isLastSibling && onDelete(model, "forward", target.parent, target.parentBranch))
+          return;
+        target = void 0;
+      } else if (model.at(model.position).isLastSibling && onDelete(model, "forward", target.parent, target.parentBranch))
+        return;
+      if (model.position === model.lastOffset || !target) {
+        model.announce("plonk");
+        return;
+      }
+      const targetParent = target.parent;
+      const targetBranch = target.parentBranch;
+      const targetLeftSibling = target.leftSibling;
+      const targetSlot = visualTexLiveStructuralSlot(target);
+      targetParent.removeChild(target);
+      let sibling = (_a3 = model.at(model.position)) == null ? void 0 : model.at(model.position).rightSibling;
+      while ((sibling == null ? void 0 : sibling.type) === "subsup") {
+        sibling.parent.removeChild(sibling);
+        sibling = (_b3 = model.at(model.position)) == null ? void 0 : model.at(model.position).rightSibling;
+      }
+      model.announce("delete", void 0, [target]);
+      if (targetParent.type === "latexgroup" && targetParent.hasEmptyBranch("body")) {
+        const structuralParent = targetParent.parent;
+        const structuralBranch = targetParent.parentBranch;
+        const pos = model.offsetOf(targetParent.leftSibling);
+        (_c2 = targetParent.parent) == null ? void 0 : targetParent.parent.removeChild(targetParent);
+        model.position = Math.max(0, pos);
+        if (target.type !== "placeholder" && target.type !== "prompt")
+          visualTexRestoreStructuralPlaceholder(model, structuralParent, structuralBranch);
+      } else if (target.type !== "placeholder" && target.type !== "prompt" && targetSlot) {
+        if (!visualTexStructuralSlotStillOccupied(targetParent, targetBranch, targetSlot))
+          visualTexRestoreStructuralPlaceholder(model, targetParent, targetBranch, targetLeftSibling, true, targetSlot);
+      } else if (target.type !== "placeholder" && target.type !== "prompt") {
+        visualTexRestoreStructuralPlaceholder(model, targetParent, targetBranch);
+      }
+      if (model.root.hasEmptyBranch("body"))
+        model.mathfield.flushInlineShortcutBuffer();
+    }
+  );
+}
+function deleteRange(model, range2, type) {
+  const result = model.getAtoms(range2);
+  const branchParent = result[0]?.parent;
+  const selectedBranch = result[0]?.parentBranch;
+  const visualTexStructuralSlot = visualTexStructuralSlotForAtoms(result);
+  const visualTexDeletesRealContent = result.some(
+    (atom) => atom.type !== "first" && atom.type !== "placeholder" && atom.type !== "prompt"
+  );
+  if (type.startsWith("delete") && visualTexDeletesRealContent && visualTexStructuralSlot?.parent) {
+    return model.deferNotifications({ content: true, selection: true, type }, () => {
+      model.deleteAtoms(range2);
+      if (!visualTexStructuralSlotStillOccupied(
+        visualTexStructuralSlot.parent,
+        visualTexStructuralSlot.branch,
+        visualTexStructuralSlot
+      )) {
+        visualTexRestoreStructuralPlaceholder(
+          model,
+          visualTexStructuralSlot.parent,
+          visualTexStructuralSlot.branch,
+          visualTexStructuralSlot.after,
+          true,
+          visualTexStructuralSlot
+        );
+      }
+    });
+  }
+  if (
+    type.startsWith("delete") &&
+    visualTexDeletesRealContent &&
+    visualTexShouldRetainStructuralPlaceholder(branchParent, selectedBranch) &&
+    result.every((atom) => atom.parent === branchParent && atom.parentBranch === selectedBranch) &&
+    branchParent.branch(selectedBranch).every((atom) => atom.type === "first" || result.includes(atom))
+  ) {
+    return model.deferNotifications({ content: true, selection: true, type }, () => {
+      model.deleteAtoms(range2);
+      visualTexRestoreStructuralPlaceholder(model, branchParent, selectedBranch);
+    });
+  }
+  if (result.length > 0 && result[0].parent) {
+    let parent = result[0];
+    while (parent && !(parent instanceof ArrayAtom)) parent = parent.parent;
+    let endArray = result[result.length - 1];
+    while (endArray && !(endArray instanceof ArrayAtom))
+      endArray = endArray.parent;
+    if (parent && parent instanceof ArrayAtom) {
+      const parentArray2 = parent;
+      if (parentArray2 && endArray === parentArray2 && parentArray2.isMultiline) {
+        const [startOffset, endOffset] = [
+          Math.min(model.position, model.anchor),
+          Math.max(model.position, model.anchor)
+        ];
+        const [startRow, startColumn] = model.at(startOffset).parentBranch;
+        const [endRow, endColumn] = model.at(endOffset).parentBranch;
+        const rowSpan = endRow - startRow + 1;
+        if (rowSpan >= 2) {
+          return model.deferNotifications(
+            { content: true, selection: true, type },
+            () => {
+              var _a3;
+              const startCell = parentArray2.getCell(startRow, startColumn);
+              const endCell = parentArray2.getCell(endRow, endColumn);
+              if (!startCell || !endCell) return;
+              model.extractAtoms([startOffset, endOffset]);
+              const remainingStart = parentArray2.getCell(startRow, startColumn);
+              const remainingEnd = parentArray2.getCell(endRow, endColumn);
+              for (let i = endRow - 1; i > startRow; i--)
+                parentArray2.removeRow(i);
+              if (startRow !== endRow) {
+                const nowRemainingEnd = parentArray2.getCell(
+                  startRow + 1,
+                  startColumn
+                );
+                if (remainingStart && nowRemainingEnd) {
+                  const mergedContent = [
+                    ...remainingStart.filter((x) => x.type !== "first"),
+                    ...nowRemainingEnd.filter((x) => x.type !== "first")
+                  ];
+                  parentArray2.setCell(startRow, startColumn, mergedContent);
+                  parentArray2.removeRow(startRow + 1);
+                }
+              }
+              const mergedCell = parentArray2.getCell(startRow, startColumn);
+              if (mergedCell) {
+                const targetIndex = remainingStart ? remainingStart.filter((x) => x.type !== "first").length : 0;
+                model.position = model.offsetOf(
+                  (_a3 = mergedCell[targetIndex]) != null ? _a3 : mergedCell[0]
+                );
+              } else model.position = startOffset;
+              parentArray2.isDirty = true;
+            }
+          );
+        }
+      }
+    }
+    let firstChild = result[0].parent.firstChild;
+    if (firstChild.type === "first") firstChild = firstChild.rightSibling;
+    const lastChild = result[result.length - 1].parent.lastChild;
+    let firstSelected = result[0];
+    if (firstSelected.type === "first")
+      firstSelected = firstSelected.rightSibling;
+    const lastSelected = result[result.length - 1];
+    if (firstSelected === firstChild && lastSelected === lastChild) {
+      const parent2 = result[0].parent;
+      if (
+        parent2.parent &&
+        parent2.type !== "prompt" &&
+        parent2.type !== "macro-argument"
+      )
+        range2 = [model.offsetOf(parent2.leftSibling), model.offsetOf(parent2)];
+    }
+    if (result.length === 1 && result[0].type === "placeholder" && result[0].parent.type === "genfrac") {
+      const genfrac = result[0].parent;

@@ -16,6 +16,12 @@ const probes = [
   },
 ];
 assert.deepEqual(decodeNativeSystemMathFontProbes(probes), probes);
+assert.deepEqual(
+  decodeNativeSystemMathFontProbes([
+    { requestedFamily: "STIX Two Math", resolvedFamily: "", available: false },
+  ]),
+  [{ requestedFamily: "STIX Two Math", resolvedFamily: "", available: false }],
+);
 assert.throws(
   () => decodeNativeSystemMathFontProbes([{ requestedFamily: null }]),
   /probe\[0\]/,

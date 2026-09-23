@@ -3,6 +3,23 @@ import { additionalCommands } from "./additionalCommands.ts";
 import { compatibilityCommands } from "./compatibilityCommands.ts";
 import { latestSharedCommands } from "./latestSharedCommands.ts";
 
+const accentSemanticCommands: LatexCommand[] = [
+  { id: "acute", command: "\\acute", insertTemplate: "\\acute{\\placeholder{}}", previewLatex: "\\acute{x}", labelZh: "锐音符", labelEn: "Acute accent", aliases: ["acute"], keywords: ["重音", "accent"], category: "structure", defaultPriority: 74, supportedInMathMode: true },
+  { id: "grave", command: "\\grave", insertTemplate: "\\grave{\\placeholder{}}", previewLatex: "\\grave{x}", labelZh: "钝音符", labelEn: "Grave accent", aliases: ["grave"], keywords: ["重音", "accent"], category: "structure", defaultPriority: 73, supportedInMathMode: true },
+  { id: "dot-accent", command: "\\dot", insertTemplate: "\\dot{\\placeholder{}}", previewLatex: "\\dot{x}", labelZh: "单点重音", labelEn: "Dot accent", aliases: ["dot accent"], keywords: ["点", "重音"], category: "structure", defaultPriority: 79, supportedInMathMode: true },
+  { id: "ddot-accent", command: "\\ddot", insertTemplate: "\\ddot{\\placeholder{}}", previewLatex: "\\ddot{x}", labelZh: "双点重音", labelEn: "Double dot accent", aliases: ["double dot"], keywords: ["双点", "重音"], category: "structure", defaultPriority: 78, supportedInMathMode: true },
+  { id: "dddot-accent", command: "\\dddot", insertTemplate: "\\dddot{\\placeholder{}}", previewLatex: "\\dddot{x}", labelZh: "三点重音", labelEn: "Triple dot accent", aliases: ["triple dot"], keywords: ["三点", "重音"], category: "structure", defaultPriority: 77, supportedInMathMode: true },
+  { id: "ddddot-accent", command: "\\ddddot", insertTemplate: "\\ddddot{\\placeholder{}}", previewLatex: "\\ddddot{x}", labelZh: "四点重音", labelEn: "Quadruple dot accent", aliases: ["quadruple dot"], keywords: ["四点", "重音"], category: "structure", defaultPriority: 76, supportedInMathMode: true },
+  { id: "tilde-accent", command: "\\tilde", insertTemplate: "\\tilde{\\placeholder{}}", previewLatex: "\\tilde{x}", labelZh: "波浪重音", labelEn: "Tilde accent", aliases: ["tilde accent"], keywords: ["波浪", "重音"], category: "structure", defaultPriority: 76, supportedInMathMode: true },
+  { id: "bar-accent", command: "\\bar", insertTemplate: "\\bar{\\placeholder{}}", previewLatex: "\\bar{x}", labelZh: "短横重音", labelEn: "Bar accent", aliases: ["bar accent"], keywords: ["横线", "重音"], category: "structure", defaultPriority: 75, supportedInMathMode: true },
+  { id: "breve", command: "\\breve", insertTemplate: "\\breve{\\placeholder{}}", previewLatex: "\\breve{x}", labelZh: "短音符", labelEn: "Breve accent", aliases: ["breve"], keywords: ["重音", "accent"], category: "structure", defaultPriority: 72, supportedInMathMode: true },
+  { id: "check-accent", command: "\\check", insertTemplate: "\\check{\\placeholder{}}", previewLatex: "\\check{x}", labelZh: "倒尖重音", labelEn: "Check accent", aliases: ["check accent"], keywords: ["重音", "accent"], category: "structure", defaultPriority: 72, supportedInMathMode: true },
+  { id: "hat", command: "\\hat", insertTemplate: "\\hat{\\placeholder{}}", previewLatex: "\\hat{x}", labelZh: "帽重音", labelEn: "Hat accent", aliases: ["hat"], keywords: ["帽子", "重音"], category: "structure", defaultPriority: 84, supportedInMathMode: true },
+  { id: "widehat", command: "\\widehat", insertTemplate: "\\widehat{\\placeholder{}}", previewLatex: "\\widehat{AB}", labelZh: "宽帽重音", labelEn: "Wide hat", aliases: ["wide hat"], keywords: ["宽帽", "重音"], category: "structure", defaultPriority: 75, supportedInMathMode: true },
+  { id: "widetilde", command: "\\widetilde", insertTemplate: "\\widetilde{\\placeholder{}}", previewLatex: "\\widetilde{AB}", labelZh: "宽波浪重音", labelEn: "Wide tilde", aliases: ["wide tilde"], keywords: ["宽波浪", "重音"], category: "structure", defaultPriority: 74, supportedInMathMode: true },
+  { id: "mathring", command: "\\mathring", insertTemplate: "\\mathring{\\placeholder{}}", previewLatex: "\\mathring{x}", labelZh: "圆环重音", labelEn: "Ring accent", aliases: ["math ring"], keywords: ["圆环", "重音"], category: "structure", defaultPriority: 71, supportedInMathMode: true },
+];
+
 const baseCommandRegistry: LatexCommand[] = [
   { id: "frac", command: "\\frac", insertTemplate: "\\frac{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\frac{a}{b}", labelZh: "分式", labelEn: "Fraction", aliases: ["divide", "fraction"], keywords: ["分数", "除法"], category: "structure", defaultPriority: 100, supportedInMathMode: true },
   { id: "sqrt", command: "\\sqrt", insertTemplate: "\\sqrt{\\placeholder{}}", previewLatex: "\\sqrt{x}", labelZh: "平方根", labelEn: "Square root", aliases: ["root", "square root"], keywords: ["根号", "开方"], category: "structure", defaultPriority: 98, supportedInMathMode: true },
@@ -14,7 +31,7 @@ const baseCommandRegistry: LatexCommand[] = [
   { id: "binom", command: "\\binom", insertTemplate: "\\binom{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\binom{n}{k}", labelZh: "二项式", labelEn: "Binomial", aliases: ["choose", "binomial"], keywords: ["组合数"], category: "structure", defaultPriority: 72, supportedInMathMode: true },
   { id: "overset", command: "\\overset", insertTemplate: "\\overset{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\overset{a}{b}", labelZh: "上方标注", labelEn: "Overset", aliases: ["over set", "upper annotation"], keywords: ["上方标注", "上置符号"], category: "structure", defaultPriority: 70, supportedInMathMode: true },
   { id: "underset", command: "\\underset", insertTemplate: "\\underset{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\underset{a}{b}", labelZh: "下方标注", labelEn: "Underset", aliases: ["under set", "lower annotation"], keywords: ["下方标注", "下置符号"], category: "structure", defaultPriority: 69, supportedInMathMode: true },
-  { id: "overunderset", command: "\\overunderset", insertTemplate: "\\overset{\\placeholder{}}{\\underset{\\placeholder{}}{\\placeholder{}}}", previewLatex: "\\overunderset{a}{c}{b}", labelZh: "上下标注", labelEn: "Over-underset", aliases: ["over under set", "upper lower annotation"], keywords: ["上下标注", "上下置符号"], category: "structure", defaultPriority: 68, supportedInMathMode: true },
+  { id: "overunderset", command: "\\overunderset", insertTemplate: "\\overset{\\placeholder{}}{\\underset{\\placeholder{}}{\\placeholder{}}}", previewLatex: "\\overset{a}{\\underset{c}{b}}", labelZh: "上下标注", labelEn: "Over-underset", aliases: ["over under set", "upper lower annotation"], keywords: ["上下标注", "上下置符号"], category: "structure", defaultPriority: 68, supportedInMathMode: true },
   { id: "stackrel", command: "\\stackrel", insertTemplate: "\\stackrel{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\stackrel{a}{b}", labelZh: "叠加关系", labelEn: "Stacked relation", aliases: ["stack relation"], keywords: ["叠加关系", "上方关系"], category: "structure", defaultPriority: 67, supportedInMathMode: true },
   { id: "stackbin", command: "\\stackbin", insertTemplate: "\\stackbin{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\stackbin{a}{b}", labelZh: "叠加二元符号", labelEn: "Stacked binary", aliases: ["stack binary"], keywords: ["叠加符号", "二元符号"], category: "structure", defaultPriority: 66, supportedInMathMode: true },
   { id: "overarc", command: "\\overarc", insertTemplate: "\\overarc{\\placeholder{}}", previewLatex: "\\overarc{AB}", labelZh: "上弧线", labelEn: "Over arc", aliases: ["over arc"], keywords: ["上弧线", "圆弧"], category: "structure", defaultPriority: 65, supportedInMathMode: true },
@@ -44,7 +61,7 @@ const baseCommandRegistry: LatexCommand[] = [
   { id: "sum", command: "\\sum", insertTemplate: "\\sum_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", previewLatex: "\\sum_{i=1}^{n} a_i", labelZh: "求和", labelEn: "Summation", aliases: ["summation"], keywords: ["求和", "西格玛"], category: "calculus", defaultPriority: 96, supportedInMathMode: true },
   { id: "prod", command: "\\prod", insertTemplate: "\\prod_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", previewLatex: "\\prod_{i=1}^{n} a_i", labelZh: "连乘", labelEn: "Product", aliases: ["product"], keywords: ["乘积", "连乘"], category: "calculus", defaultPriority: 79, supportedInMathMode: true },
   { id: "lim", command: "\\lim", insertTemplate: "\\lim_{\\placeholder{}\\to\\placeholder{}} \\placeholder{}", previewLatex: "\\lim_{x\\to 0} f(x)", labelZh: "极限", labelEn: "Limit", aliases: ["limit"], keywords: ["极限"], category: "calculus", defaultPriority: 92, supportedInMathMode: true },
-  { id: "partial", command: "\\partial", insertTemplate: "\\frac{\\partial \\placeholder{}}{\\partial \\placeholder{}}", previewLatex: "\\frac{\\partial f}{\\partial x}", labelZh: "偏导数", labelEn: "Partial derivative", aliases: ["partial", "derivative"], keywords: ["偏导", "偏微分"], category: "calculus", defaultPriority: 86, supportedInMathMode: true },
+  { id: "partial", command: "\\partial", insertTemplate: "\\partial", previewLatex: "\\partial", labelZh: "偏导符号", labelEn: "Partial derivative symbol", aliases: ["partial"], keywords: ["偏导", "偏微分", "偏导符号"], category: "calculus", defaultPriority: 86, supportedInMathMode: true },
   { id: "nabla", command: "\\nabla", insertTemplate: "\\nabla", previewLatex: "\\nabla f", labelZh: "Nabla 算子", labelEn: "Nabla", aliases: ["gradient", "del"], keywords: ["梯度", "哈密顿算子"], category: "calculus", defaultPriority: 74, supportedInMathMode: true },
   { id: "infty", command: "\\infty", insertTemplate: "\\infty", previewLatex: "\\infty", labelZh: "无穷", labelEn: "Infinity", aliases: ["infinity"], keywords: ["无穷大"], category: "calculus", defaultPriority: 88, supportedInMathMode: true },
 
@@ -104,12 +121,11 @@ const baseCommandRegistry: LatexCommand[] = [
 
   { id: "hbar", command: "\\hbar", insertTemplate: "\\hbar", previewLatex: "\\hbar", labelZh: "约化普朗克常数", labelEn: "Reduced Planck constant", aliases: ["hbar", "planck"], keywords: ["普朗克常数", "量子"], category: "physics", defaultPriority: 100, supportedInMathMode: true },
   { id: "dd", command: "\\mathrm{d}", insertTemplate: "\\mathrm{d}\\placeholder{}", previewLatex: "\\mathrm{d}x", labelZh: "微分元", labelEn: "Differential", aliases: ["differential"], keywords: ["微分", "微分元"], category: "physics", defaultPriority: 96, supportedInMathMode: true },
-  { id: "bra", command: "\\langle", insertTemplate: "\\langle\\placeholder{}|", previewLatex: "\\langle\\psi|", labelZh: "左矢", labelEn: "Bra", aliases: ["bra"], keywords: ["狄拉克", "量子态"], category: "physics", defaultPriority: 92, supportedInMathMode: true },
-  { id: "ket", command: "\\rangle", insertTemplate: "|\\placeholder{}\\rangle", previewLatex: "|\\psi\\rangle", labelZh: "右矢", labelEn: "Ket", aliases: ["ket"], keywords: ["狄拉克", "量子态"], category: "physics", defaultPriority: 92, supportedInMathMode: true },
   { id: "degree", command: "^\\circ", insertTemplate: "^{\\circ}", previewLatex: "30^{\\circ}", labelZh: "角度", labelEn: "Degree", aliases: ["degree"], keywords: ["度", "角度"], category: "physics", defaultPriority: 86, supportedInMathMode: true },
 ];
 
 export const commandRegistry: LatexCommand[] = [
+  ...accentSemanticCommands,
   ...baseCommandRegistry,
   ...compatibilityCommands,
   ...additionalCommands,

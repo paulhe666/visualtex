@@ -1,0 +1,22 @@
+{
+  "checkpoint": "CP03-review-2",
+  "localHead": "00b48e17b736c7e57a0a72e19e271df82906f89d",
+  "gitCommitPerformed": false,
+  "gitPushPerformed": false,
+  "archive": "visualtex-engine-workspace-0.1.0.tgz",
+  "archiveSha256": "7667e67d6908bbdd37340aaefe03d603e043b5ad8f3e66e381ff6b3d76989c90",
+  "archiveFiles": 33,
+  "sourceStabilityDuringArchive": "PASS",
+  "beforeAndAfterSourceDigest": "8cc47f37c1534b07932fbc7b4deea350a308d91358343cdedc2469267b1a7271",
+  "rustTests": 61,
+  "hostUnitTests": 21,
+  "nativeWasmProtocolCases": 2151,
+  "nativeWasmStatefulSourceCases": 222,
+  "nativeWasmIndependentSyntaxCases": 305,
+  "nativeSha256": "b9e8eaaf70929eb7af35beb71d8d40f215d40c2455890399f9097e6098ae274e",
+  "wasmSha256": "ace83bf16a4be3d86e787e7086e11c21320311f590d42488024876d59a64c10c",
+  "protection": {"status": "PASS", "checkedAt": "2026-09-13T04:29:26.758Z", "groups": 12, "artifacts": 12, "originalDirtyFiles": 65},
+  "warnings": ["unused parse_braced_fragment helper is preparatory, not integrated local editing"],
+  "notAccepted": ["local edit identity/history", "math font/layout", "real browser edit view", "system IME", "Office UI", "final installer"],
+  "defaultEngineSwitched": false
+}

@@ -1,0 +1,68 @@
+{
+  "schema":"visualtex-office-contract-snapshot-v1",
+  "sourceHashes":{
+    "src/office/shared/sessionClient.ts":"aca814750d174dade5dc25c33b570a4fbabd69b608d0a02b24dd3e7518f751e4",
+    "src/office/shared/sessionPayloadValidation.ts":"dfb41d2a0916dcb870c3945323ba57e1a1c234513cee5cde2f987b31f0e214bd",
+    "src/office/shared/formulaMetadata.ts":"7025efdb7c4a58d4a134a7f331adca33ddcea700f1ec4f2bc51540c774f65b44",
+    "src/office/shared/mathTypeAlignmentGeometry.ts":"66e94d3bb414c5c60a98f97894ad9da77a8870bfe24dd90619608c2ec5fe0e9f",
+    "src/office/dialog/useOfficeSession.ts":"cbfffda99d332c866c87d28c929004d7030878d01102f86b45f0f446e365bdc2",
+    "src/export/exportTypes.ts":"8d72102645fc4f1913c31a211d6b4e1c5078667abbb399b4c6eeb0ad000d72e4",
+    "src-tauri/src/office/sessions.rs":"ec5324d16be56a7ee4947bedc2dd73aea555f6bf7b303e58b06d2f152546def1",
+    "src-tauri/src/office/server.rs":"7ba9bbba31486b8d33d1d9577976144a4d411867638b198ea911de1ede3c6dd4",
+    "src-windows/VisualTeX.WindowsOffice.Contracts/FormulaOleContract.cs":"6ee8c90e501a265f8cfd2621ef09184ba436f52d26e511ab767e0887740e806a",
+    "src-windows/VisualTeX.WindowsOffice.Contracts/OfficeFormulaSizing.cs":"86dc497413037e2318662f11d0afcdbba6faf677dc8b2cbce6320bc45831073a",
+    "src-windows/VisualTeX.WindowsOffice.Contracts/FormulaFontSize.cs":"02f5b91a7ca63975845221907b31cfb6c220eae194d547abf0ad50d823b057d0"
+  },
+  "interfaces":{
+    "OfficeExportResult":[
+      {"name":"svg","optional":false,"type":"string"},{"name":"svgBase64","optional":false,"type":"string"},
+      {"name":"mathMl","optional":true,"type":"string"},{"name":"pngBase64","optional":true,"type":"string"},
+      {"name":"width","optional":false,"type":"number"},{"name":"height","optional":false,"type":"number"},
+      {"name":"baseline","optional":true,"type":"number"},{"name":"formulaLetterFont","optional":true,"type":"FormulaLetterFont"},
+      {"name":"formulaChineseFont","optional":true,"type":"FormulaChineseFont"}
+    ],
+    "OfficeFormulaSession":[
+      {"name":"id","optional":false,"type":"string"},{"name":"mode","optional":false,"type":"OfficeSessionMode"},
+      {"name":"host","optional":false,"type":"OfficeHost"},{"name":"formulaId","optional":false,"type":"string"},
+      {"name":"sourceDocumentId","optional":false,"type":"string | null"},{"name":"sourceObjectId","optional":false,"type":"string | null"},
+      {"name":"title","optional":false,"type":"string"},{"name":"lines","optional":false,"type":"Array<{ id: string; latex: string }>"},
+      {"name":"activeLineId","optional":false,"type":"string | null"},{"name":"codeFormat","optional":false,"type":"string"},
+      {"name":"displayMode","optional":false,"type":"\"inline\" | \"block\""},{"name":"objectMode","optional":false,"type":"OfficeObjectMode"},
+      {"name":"numbered","optional":false,"type":"boolean"},{"name":"mathTypeNumberPosition","optional":false,"type":"MathTypeNumberPosition"},
+      {"name":"fontSizePt","optional":false,"type":"number"},{"name":"exportWidth","optional":false,"type":"number"},
+      {"name":"exportHeight","optional":false,"type":"number"},{"name":"exportResult","optional":false,"type":"OfficeExportResult | null"},
+      {"name":"originalMetadata","optional":false,"type":"VisualTeXFormulaMetadata | null"},{"name":"dirty","optional":false,"type":"boolean"},
+      {"name":"status","optional":false,"type":"OfficeSessionStatus"},{"name":"autoCommitOnClose","optional":false,"type":"boolean"},
+      {"name":"explicitCancel","optional":false,"type":"boolean"},{"name":"error","optional":false,"type":"string | null"},
+      {"name":"createdAt","optional":false,"type":"number"},{"name":"updatedAt","optional":false,"type":"number"},{"name":"expiresAt","optional":false,"type":"number"}
+    ],
+    "VisualTeXFormulaMetadata":[
+      {"name":"schema","optional":false,"type":"\"visualtex-formula\""},{"name":"schemaVersion","optional":false,"type":"1"},
+      {"name":"formulaId","optional":false,"type":"string"},{"name":"title","optional":false,"type":"string"},
+      {"name":"latex","optional":false,"type":"string"},{"name":"lines","optional":false,"type":"Array<{ id: string; latex: string }>"},
+      {"name":"codeFormat","optional":false,"type":"string"},{"name":"displayMode","optional":false,"type":"\"inline\" | \"block\""},
+      {"name":"numbered","optional":true,"type":"boolean"},{"name":"equationTag","optional":true,"type":"string"},
+      {"name":"renderWidthPx","optional":true,"type":"number"},{"name":"renderHeightPx","optional":true,"type":"number"},
+      {"name":"baseline","optional":true,"type":"number"},{"name":"fontSizePt","optional":true,"type":"number"},
+      {"name":"renderFontSizePt","optional":true,"type":"number"},{"name":"formulaLetterFont","optional":true,"type":"FormulaLetterFont"},
+      {"name":"formulaChineseFont","optional":true,"type":"FormulaChineseFont"},{"name":"wordInlineOleWidthPt","optional":true,"type":"number"},
+      {"name":"wordInlineOleHeightPt","optional":true,"type":"number"},{"name":"nativeOmmlFingerprint","optional":true,"type":"string"},
+      {"name":"createdWithVersion","optional":false,"type":"string"},{"name":"updatedWithVersion","optional":false,"type":"string"},
+      {"name":"createdAt","optional":false,"type":"string"},{"name":"updatedAt","optional":false,"type":"string"}
+    ]
+  },
+  "clientRoutes":[
+    "\"/api/v1/app/converter/next-batch\"","\"/api/v1/preferences\"","\"/api/v1/sessions\"","\"/api/v1/theme\"",
+    "`/api/v1/app/sessions/${encodeURIComponent(sessionId)}/close`","`/api/v1/powerpoint/sessions/${encodeURIComponent(sessionId)}/commit`",
+    "`/api/v1/powerpoint/sessions/${encodeURIComponent(sessionId)}/confirm`","`/api/v1/sessions/${encodeURIComponent(sessionId)}`",
+    "`/api/v1/windows/sessions/${encodeURIComponent(sessionId)}/commit`","return fetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, {"
+  ],
+  "ole":{
+    "ProtocolVersion":2,"StorageSchemaVersion":1,"ProgId":"VisualTeX.Formula.1","VersionIndependentProgId":"VisualTeX.Formula",
+    "ClassId":"8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B","InterfaceId":"6C672AF0-7321-4D21-B325-868CB34592C2",
+    "AppId":"3C72FF7F-B04A-4FD0-AA7D-61D110D8B3C1","TypeLibraryId":"DF66EC66-3B3A-4675-A7BE-30456A04EB96",
+    "MetadataStream":"VisualTeX.Formula.json","EmfPreviewStream":"VisualTeX.Preview.emf","PngPreviewStream":"VisualTeX.Preview.png",
+    "NativeOleMode":"nativeOle","MathTypeOleMode":"mathTypeOle","WordOmmlMode":"wordOmml","CrossPlatformPictureMode":"crossPlatformPicture"
+  },
+  "dimensions":{"naturalUnit":"css-px-96dpi","officeUnit":"pt-72dpi","pointsPerPixel":0.75,"baselineOrigin":"svg-top","mtefUnitsPerPixel":24}
+}

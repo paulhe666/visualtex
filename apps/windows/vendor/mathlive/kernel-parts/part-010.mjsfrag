@@ -1,0 +1,1608 @@
+  if (center) result.setTop((1 - context.scalingFactor) * AXIS_HEIGHT);
+  return result;
+}
+function makeStackedDelim(delim, heightTotal, center, context, options) {
+  var _a3;
+  let top;
+  let middle;
+  let repeat;
+  let bottom;
+  top = repeat = bottom = getSymbolValue(delim);
+  middle = null;
+  let fontFamily = "Size1-Regular";
+  if (delim === "\\vert" || delim === "\\lvert" || delim === "\\rvert" || delim === "\\mvert" || delim === "\\mid")
+    repeat = top = bottom = 8739;
+  else if (delim === "\\Vert" || delim === "\\lVert" || delim === "\\rVert" || delim === "\\mVert" || delim === "\\|")
+    repeat = top = bottom = 8741;
+  else if (delim === "\\uparrow") repeat = bottom = 9168;
+  else if (delim === "\\Uparrow") repeat = bottom = 8214;
+  else if (delim === "\\downarrow") top = repeat = 9168;
+  else if (delim === "\\Downarrow") top = repeat = 8214;
+  else if (delim === "\\updownarrow") {
+    top = 8593;
+    repeat = 9168;
+    bottom = 8595;
+  } else if (delim === "\\Updownarrow") {
+    top = 8657;
+    repeat = 8214;
+    bottom = 8659;
+  } else if (delim === "[" || delim === "\\lbrack") {
+    top = 9121;
+    repeat = 9122;
+    bottom = 9123;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "]" || delim === "\\rbrack") {
+    top = 9124;
+    repeat = 9125;
+    bottom = 9126;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\lfloor" || delim === "\u230A") {
+    repeat = top = 9122;
+    bottom = 9123;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\lceil" || delim === "\u2308") {
+    top = 9121;
+    repeat = bottom = 9122;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\rfloor" || delim === "\u230B") {
+    repeat = top = 9125;
+    bottom = 9126;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\rceil" || delim === "\u2309") {
+    top = 9124;
+    repeat = bottom = 9125;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "(" || delim === "\\lparen") {
+    top = 9115;
+    repeat = 9116;
+    bottom = 9117;
+    fontFamily = "Size4-Regular";
+  } else if (delim === ")" || delim === "\\rparen") {
+    top = 9118;
+    repeat = 9119;
+    bottom = 9120;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\{" || delim === "\\lbrace") {
+    top = 9127;
+    middle = 9128;
+    bottom = 9129;
+    repeat = 9130;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\}" || delim === "\\rbrace") {
+    top = 9131;
+    middle = 9132;
+    bottom = 9133;
+    repeat = 9130;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\lgroup" || delim === "\u27EE") {
+    top = 9127;
+    bottom = 9129;
+    repeat = 9130;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\rgroup" || delim === "\u27EF") {
+    top = 9131;
+    bottom = 9133;
+    repeat = 9130;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\lmoustache" || delim === "\u23B0") {
+    top = 9127;
+    bottom = 9133;
+    repeat = 9130;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\rmoustache" || delim === "\u23B1") {
+    top = 9131;
+    bottom = 9129;
+    repeat = 9130;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\surd") {
+    top = 57345;
+    bottom = 9143;
+    repeat = 57344;
+    fontFamily = "Size4-Regular";
+  } else if (delim === "\\ulcorner") {
+    top = 9484;
+    repeat = bottom = 32;
+  } else if (delim === "\\urcorner") {
+    top = 9488;
+    repeat = bottom = 32;
+  } else if (delim === "\\llcorner") {
+    bottom = 9492;
+    repeat = top = 32;
+  } else if (delim === "\\lrcorner") {
+    top = 9496;
+    repeat = top = 32;
+  }
+  const topMetrics = getCharacterMetrics(top, fontFamily);
+  const topHeightTotal = topMetrics.height + topMetrics.depth;
+  const repeatMetrics = getCharacterMetrics(repeat, fontFamily);
+  const repeatHeightTotal = repeatMetrics.height + repeatMetrics.depth;
+  const bottomMetrics = getCharacterMetrics(bottom, fontFamily);
+  const bottomHeightTotal = bottomMetrics.height + bottomMetrics.depth;
+  let middleHeightTotal = 0;
+  let middleFactor = 1;
+  if (middle !== null) {
+    const middleMetrics = getCharacterMetrics(middle, fontFamily);
+    middleHeightTotal = middleMetrics.height + middleMetrics.depth;
+    middleFactor = 2;
+  }
+  const minHeight = topHeightTotal + bottomHeightTotal + middleHeightTotal;
+  const repeatCount = Math.max(
+    0,
+    Math.ceil((heightTotal - minHeight) / (middleFactor * repeatHeightTotal))
+  );
+  const realHeightTotal = minHeight + repeatCount * middleFactor * repeatHeightTotal;
+  let axisHeight = AXIS_HEIGHT;
+  if (center) axisHeight = axisHeight * context.scalingFactor;
+  const depth = realHeightTotal / 2 - axisHeight;
+  const OVERLAP = 8e-3;
+  const stack = [];
+  stack.push({ box: new Box(bottom, { fontFamily }) });
+  stack.push(-OVERLAP);
+  const repeatBox = new Box(repeat, { fontFamily });
+  if (middle === null) {
+    for (let i = 0; i < repeatCount; i++) stack.push({ box: repeatBox });
+  } else {
+    for (let i = 0; i < repeatCount; i++) stack.push({ box: repeatBox });
+    stack.push(-OVERLAP);
+    stack.push({ box: new Box(middle, { fontFamily }) });
+    stack.push(-OVERLAP);
+    for (let i = 0; i < repeatCount; i++) stack.push({ box: repeatBox });
+  }
+  stack.push(-OVERLAP);
+  stack.push({ box: new Box(top, { fontFamily }) });
+  let sizeClass = "";
+  if (fontFamily === "Size1-Regular") sizeClass = " delim-size1";
+  else if (fontFamily === "Size4-Regular") sizeClass = " delim-size4";
+  const inner = new VBox(
+    {
+      bottom: depth,
+      children: stack
+    },
+    { classes: sizeClass }
+  );
+  const result = new Box(inner, __spreadProps(__spreadValues({}, options != null ? options : {}), {
+    classes: ((_a3 = options == null ? void 0 : options.classes) != null ? _a3 : "") + " ML__delim-mult"
+  }));
+  return result;
+}
+var stackLargeDelimiters = /* @__PURE__ */ new Set([
+  "(",
+  ")",
+  "\\lparen",
+  "\\rparen",
+  "[",
+  "]",
+  "\\lbrack",
+  "\\rbrack",
+  "\\{",
+  "\\}",
+  "\\lbrace",
+  "\\rbrace",
+  "\\lfloor",
+  "\\rfloor",
+  "\\lceil",
+  "\\rceil",
+  "\\surd",
+  "\u230A",
+  "\u230B",
+  "\u2308",
+  "\u2309"
+]);
+var stackAlwaysDelimiters = /* @__PURE__ */ new Set([
+  "\\uparrow",
+  "\\downarrow",
+  "\\updownarrow",
+  "\\Uparrow",
+  "\\Downarrow",
+  "\\Updownarrow",
+  "|",
+  "\\|",
+  "\\vert",
+  "\\Vert",
+  "\\lvert",
+  "\\rvert",
+  "\\lVert",
+  "\\rVert",
+  "\\mvert",
+  "\\mid",
+  "\\lgroup",
+  "\\rgroup",
+  "\\lmoustache",
+  "\\rmoustache",
+  "\u27EE",
+  "\u27EF",
+  "\u23B0",
+  "\u23B1"
+]);
+var stackNeverDelimiters = /* @__PURE__ */ new Set([
+  "<",
+  ">",
+  "\\langle",
+  "\\rangle",
+  "/",
+  "\\backslash",
+  "\\lt",
+  "\\gt"
+]);
+var sizeToMaxHeight = [0, 1.2, 1.8, 2.4, 3];
+function makeSizedDelim(delim, size, context, options) {
+  if (delim === void 0 || delim === ".")
+    return makeNullDelimiter(context, options.classes);
+  if (delim === "<" || delim === "\\lt" || delim === "\u27E8")
+    delim = "\\langle";
+  else if (delim === ">" || delim === "\\gt" || delim === "\u27E9")
+    delim = "\\rangle";
+  if (stackLargeDelimiters.has(delim) || stackNeverDelimiters.has(delim))
+    return makeLargeDelim(delim, size, false, context, options);
+  if (stackAlwaysDelimiters.has(delim)) {
+    return makeStackedDelim(
+      delim,
+      sizeToMaxHeight[size],
+      false,
+      context,
+      options
+    );
+  }
+  console.assert(false, "Unknown delimiter '" + delim + "'");
+  return null;
+}
+var stackNeverDelimiterSequence = [
+  { type: "small", mathstyle: "scriptscriptstyle" },
+  { type: "small", mathstyle: "scriptstyle" },
+  { type: "small", mathstyle: "textstyle" },
+  { type: "large", size: 1 },
+  { type: "large", size: 2 },
+  { type: "large", size: 3 },
+  { type: "large", size: 4 }
+];
+var stackAlwaysDelimiterSequence = [
+  { type: "small", mathstyle: "scriptscriptstyle" },
+  { type: "small", mathstyle: "scriptscriptstyle" },
+  { type: "small", mathstyle: "textstyle" },
+  { type: "stack" }
+];
+var stackLargeDelimiterSequence = [
+  { type: "small", mathstyle: "scriptscriptstyle" },
+  { type: "small", mathstyle: "scriptstyle" },
+  { type: "small", mathstyle: "textstyle" },
+  { type: "large", size: 1 },
+  { type: "large", size: 2 },
+  { type: "large", size: 3 },
+  { type: "large", size: 4 },
+  { type: "stack" }
+];
+function delimTypeToFont(info) {
+  if (info.type === "small") return "Main-Regular";
+  if (info.type === "large")
+    return "Size" + info.size + "-Regular";
+  console.assert(info.type === "stack");
+  return "Size4-Regular";
+}
+function traverseSequence(delim, height, sequence, context) {
+  const start = { "-4": 0, "-3": 1, "0": 2 }[context.mathstyle.sizeDelta];
+  for (let i = start; i < sequence.length; i++) {
+    if (sequence[i].type === "stack") {
+      break;
+    }
+    const metrics = getCharacterMetrics(delim, delimTypeToFont(sequence[i]));
+    if (metrics.defaultMetrics) {
+      return { type: "small", mathstyle: "scriptstyle" };
+    }
+    let heightDepth = metrics.height + metrics.depth;
+    if (sequence[i].type === "small") {
+      if (sequence[i].mathstyle === "scriptscriptstyle") {
+        heightDepth *= Math.max(
+          FONT_SCALE[Math.max(1, context.size - 2)],
+          context.minFontScale
+        );
+      } else if (sequence[i].mathstyle === "scriptstyle") {
+        heightDepth *= Math.max(
+          FONT_SCALE[Math.max(1, context.size - 1)],
+          context.minFontScale
+        );
+      }
+    }
+    if (heightDepth > height) return sequence[i];
+  }
+  return sequence[sequence.length - 1];
+}
+function makeCustomSizedDelim(type, delim, height, center, context, options) {
+  if (!delim || delim.length === 0 || delim === ".")
+    return makeNullDelimiter(context);
+  if (delim === "<" || delim === "\\lt") delim = "\\langle";
+  else if (delim === ">" || delim === "\\gt") delim = "\\rangle";
+  let sequence;
+  if (stackNeverDelimiters.has(delim)) sequence = stackNeverDelimiterSequence;
+  else if (stackLargeDelimiters.has(delim))
+    sequence = stackLargeDelimiterSequence;
+  else sequence = stackAlwaysDelimiterSequence;
+  const delimType = traverseSequence(
+    getSymbolValue(delim),
+    height,
+    sequence,
+    context
+  );
+  const ctx = new Context(
+    { parent: context, mathstyle: delimType.mathstyle },
+    options == null ? void 0 : options.style
+  );
+  if (delimType.type === "small")
+    return makeSmallDelim(delim, ctx, center, __spreadProps(__spreadValues({}, options), { type }));
+  if (delimType.type === "large") {
+    return makeLargeDelim(delim, delimType.size, center, ctx, __spreadProps(__spreadValues({}, options), {
+      type
+    }));
+  }
+  console.assert(delimType.type === "stack");
+  return makeStackedDelim(delim, height, center, ctx, __spreadProps(__spreadValues({}, options), { type }));
+}
+function makeLeftRightDelim(type, delim, height, depth, context, options) {
+  if (delim === ".") return makeNullDelimiter(context, options == null ? void 0 : options.classes);
+  const axisHeight = AXIS_HEIGHT * context.scalingFactor;
+  const delimiterFactor = 901;
+  const delimiterExtend = 5 / PT_PER_EM;
+  const maxDistFromAxis = Math.max(height - axisHeight, depth + axisHeight);
+  const totalHeight = Math.max(
+    maxDistFromAxis / 500 * delimiterFactor,
+    2 * maxDistFromAxis - delimiterExtend
+  );
+  return makeCustomSizedDelim(type, delim, totalHeight, true, context, options);
+}
+function makeNullDelimiter(parent, classes) {
+  const box = new Box(null, {
+    classes: " ML__nulldelimiter " + (classes != null ? classes : ""),
+    type: "ignore"
+  });
+  box.width = parent.getRegisterAsEm("nulldelimiterspace");
+  return box.wrap(new Context({ parent, mathstyle: "textstyle" }));
+}
+
+// src/atoms/placeholder.ts
+var PlaceholderAtom = class _PlaceholderAtom extends Atom {
+  constructor(options) {
+    var _a3;
+    super({
+      type: "placeholder",
+      command: "\\placeholder",
+      mode: (_a3 = options == null ? void 0 : options.mode) != null ? _a3 : "math",
+      style: options == null ? void 0 : options.style
+    });
+    this.captureSelection = true;
+  }
+  static fromJson(json) {
+    return new _PlaceholderAtom(json);
+  }
+  toJson() {
+    return super.toJson();
+  }
+  render(context) {
+    let result;
+    // VisualTeX kernel: structural placeholders use native TeX x metrics.
+    this.value = "x";
+    if (typeof context.renderPlaceholder === "function")
+      result = context.renderPlaceholder(context);
+    else result = this.createBox(context);
+    if (
+      this.parent?.type === "accent" &&
+      this.parentBranch === "body" &&
+      this.parent.body.length === 2
+    )
+      result.classes += " visualtex-accent-structural-placeholder";
+    result.classes += " visualtex-structural-placeholder";
+    if (this.isSelected) result.classes += " ML__placeholder-selected";
+    if (this.visualTexPlaceholderCaret) result.caret = "math";
+    return result;
+  }
+  _serialize(options) {
+    if (options.skipPlaceholders) return "";
+    return "\\placeholder{}";
+  }
+};
+
+// src/latex-commands/environment-types.ts
+var matrices = [
+  "matrix",
+  "matrix*",
+  "pmatrix",
+  "pmatrix*",
+  "bmatrix",
+  "bmatrix*",
+  "Bmatrix",
+  "Bmatrix*",
+  "vmatrix",
+  "vmatrix*",
+  "Vmatrix",
+  "Vmatrix*"
+];
+var cases = ["cases", "dcases", "rcases"];
+var align = [
+  "align",
+  "align*",
+  "aligned",
+  "gather",
+  "gather*",
+  "gathered",
+  "split"
+];
+var otherTabular = ["array", "subequations", "eqnarray"];
+function isTabularEnvironment(environment) {
+  return align.includes(environment) || cases.includes(environment) || cases.includes(environment) || matrices.includes(environment) || otherTabular.includes(environment);
+}
+function isMatrixEnvironment(environment) {
+  return matrices.includes(environment);
+}
+function isCasesEnvironment(environment) {
+  return cases.includes(environment);
+}
+function isAlignEnvironment(environment) {
+  return align.includes(environment);
+}
+
+// src/atoms/array.ts
+function normalizeCells(atom, cells, options) {
+  let maxColCount = 0;
+  for (const colSpec of options.columns)
+    if ("align" in colSpec) maxColCount += 1;
+  maxColCount = Math.max(maxColCount, options.minColumns);
+  let colCount = 0;
+  const rows = [];
+  for (const row of cells) {
+    colCount = Math.max(colCount, Math.min(row.length, maxColCount));
+    let colIndex2 = 0;
+    while (colIndex2 < row.length) {
+      const newRow = [];
+      const lastCol = Math.min(row.length, colIndex2 + maxColCount);
+      while (colIndex2 < lastCol) {
+        newRow.push(normalizeCell(row[colIndex2], atom.mode));
+        colIndex2 += 1;
+      }
+      if (newRow.length < options.minColumns) {
+        while (newRow.length < options.minColumns)
+          newRow.push([new Atom({ type: "first", mode: atom.mode })]);
+      }
+      rows.push(newRow);
+    }
+  }
+  if (!atom.isMultiline && rows.length > 0 && rows[rows.length - 1].length === 1 && isEmptyCell(rows[rows.length - 1][0]))
+    rows.pop();
+  const result = [];
+  for (const row of rows) {
+    if (row.length !== colCount) {
+      for (let i = row.length; i < colCount; i++) {
+        if (atom.isMultiline)
+          row.push([new Atom({ type: "first", mode: atom.mode })]);
+        else {
+          row.push([
+            new Atom({ type: "first", mode: atom.mode }),
+            new PlaceholderAtom()
+          ]);
+        }
+      }
+    }
+    result.push(row);
+  }
+  let rowIndex = 0;
+  let colIndex = 0;
+  for (const row of result) {
+    colIndex = 0;
+    for (const cell of row) {
+      for (const element of cell) {
+        element.parent = atom;
+        element.parentBranch = [rowIndex, colIndex];
+      }
+      colIndex += 1;
+    }
+    rowIndex += 1;
+  }
+  atom.isDirty = true;
+  return result;
+}
+function isEmptyMultilineCell(cell) {
+  return cell.length > 0 && cell.every((atom) => atom.type === "first");
+}
+function makeEmptyLineAnchor(cell, context, metrics) {
+  const marker = new Box(null, { classes: "ML__empty-line-anchor" });
+  const idSource = cell[0];
+  if (idSource) {
+    if (!idSource.id) idSource.id = context.makeID();
+    marker.atomID = idSource.id;
+  }
+  marker.setStyle("display", "inline-block");
+  marker.setStyle("width", 0);
+  marker.setStyle("position", "relative");
+  marker.setStyle("height", Math.max(0, metrics.height + metrics.depth), "em");
+  marker.setStyle("vertical-align", -metrics.depth, "em");
+  marker.height = metrics.height;
+  marker.depth = metrics.depth;
+  const caretAtom = cell.find((atom) => atom.caret);
+  if (caretAtom == null ? void 0 : caretAtom.caret) marker.caret = caretAtom.caret;
+  if (cell.some((atom) => atom.isSelected)) marker.selected(true);
+  return marker;
+}
+function normalizeCell(cell, mode) {
+  if (cell.length === 0) return [new Atom({ type: "first", mode })];
+  if (cell[0].type !== "first")
+    return [new Atom({ type: "first", mode }), ...cell];
+  console.assert(!cell.slice(1).some((x) => x.type === "first"));
+  return cell;
+}
+function isEmptyCell(cell) {
+  return cell.length === 1 && cell[0].type === "first";
+}
+var ArrayAtom = class _ArrayAtom extends Atom {
+  /** True if the environment is multiline. In a multiline environment,
+   * pressing return automatically creates a new row. In non-multiline
+   * environments, pressing alt+return creates a new row.
+   */
+  get isMultiline() {
+    const env = this.environmentName;
+    return [
+      "lines",
+      "multline",
+      "multline*",
+      "align",
+      "split",
+      "gather",
+      "gathered"
+    ].includes(env);
+  }
+  constructor(envName, array, rowGaps, options = {}) {
+    var _a3, _b3, _c2, _d2;
+    super({ type: "array", isRoot: options.isRoot });
+    this.environmentName = envName;
+    if (options.columns) {
+      if (options.columns.length === 0) this.colFormat = [{ align: "l" }];
+      else this.colFormat = [...options.columns];
+    } else {
+      if (options.minColumns) {
+        const columns = [];
+        for (let i = 0; i < options.minColumns; i++)
+          columns.push({ align: "l" });
+        this.colFormat = columns;
+      } else {
+        this.colFormat = [
+          { align: "l" },
+          { align: "l" },
+          { align: "l" },
+          { align: "l" },
+          { align: "l" },
+          { align: "l" },
+          { align: "l" },
+          { align: "l" },
+          { align: "l" },
+          { align: "l" }
+        ];
+      }
+    }
+    this.minColumns = (_a3 = options.minColumns) != null ? _a3 : 1;
+    this.minRows = (_b3 = options.minRows) != null ? _b3 : 1;
+    this.maxRows = (_c2 = options.maxRows) != null ? _c2 : Infinity;
+    this._rows = normalizeCells(this, array, {
+      columns: this.colFormat,
+      minColumns: this.minColumns,
+      minRows: this.minRows,
+      maxRows: this.maxRows
+    });
+    this.rowGaps = rowGaps;
+    if (options.arraycolsep !== void 0)
+      this.arraycolsep = options.arraycolsep;
+    this.colSeparationType = options.colSeparationType;
+    if (options.arraystretch !== void 0)
+      this.arraystretch = options.arraystretch;
+    if (options.mathstyleName) this.mathstyleName = options.mathstyleName;
+    if (options.leftDelim) this.leftDelim = options.leftDelim;
+    if (options.rightDelim) this.rightDelim = options.rightDelim;
+    this.classes = (_d2 = options.classes) != null ? _d2 : [];
+  }
+  static fromJson(json) {
+    return new _ArrayAtom(
+      json.environmentName,
+      json.array,
+      json.rowGaps,
+      json
+    );
+  }
+  toJson() {
+    const result = __spreadProps(__spreadValues({}, super.toJson()), {
+      environmentName: this.environmentName,
+      array: this._rows.map(
+        (row) => row.map((col) => col.map((x) => x.toJson()))
+      ),
+      rowGaps: this.rowGaps,
+      columns: this.colFormat,
+      colSeparationType: this.colSeparationType,
+      minColumns: this.minColumns,
+      minRows: this.minRows,
+      maxRows: this.maxRows
+    });
+    if (this.arraystretch !== void 0)
+      result.arraystretch = this.arraystretch;
+    if (this.arraycolsep !== void 0) result.arraycolsep = this.arraycolsep;
+    if (this.leftDelim) result.leftDelim = this.leftDelim;
+    if (this.rightDelim) result.rightDelim = this.rightDelim;
+    if (this.isRoot) result.isRoot = true;
+    result.minColumns = this.minColumns;
+    result.minRows = this.minRows;
+    result.maxRows = this.maxRows;
+    if (this.mathstyleName) result.mathstyleName = this.mathstyleName;
+    if (this.classes.length > 0) result.classes = this.classes;
+    return result;
+  }
+  branch(cell) {
+    var _a3;
+    if (!isCellBranch(cell)) return void 0;
+    return (_a3 = this._rows[cell[0]][cell[1]]) != null ? _a3 : void 0;
+  }
+  createBranch(cell) {
+    var _a3;
+    if (!isCellBranch(cell)) return [];
+    this.isDirty = true;
+    return (_a3 = this.branch(cell)) != null ? _a3 : [];
+  }
+  get rowCount() {
+    return this._rows.length;
+  }
+  get colCount() {
+    return this._rows[0].length;
+  }
+  get maxColumns() {
+    return this.colFormat.filter((col) => Boolean(col["align"])).length;
+  }
+  removeBranch(name) {
+    if (isNamedBranch(name)) return super.removeBranch(name);
+    const [_first, ...children] = this.branch(name);
+    console.assert(_first.type === "first");
+    this._rows[name[0]][name[1]] = void 0;
+    children.forEach((x) => {
+      x.parent = void 0;
+      x.parentBranch = void 0;
+    });
+    this.isDirty = true;
+    return children;
+  }
+  get hasChildren() {
+    return this.children.length > 0;
+  }
+  get children() {
+    const result = [];
+    for (const row of this._rows) {
+      for (const cell of row) {
+        if (cell) {
+          for (const atom of cell) {
+            result.push(...atom.children);
+            result.push(atom);
+          }
+        }
+      }
+    }
+    return [...result, ...super.children];
+  }
+  render(context) {
+    var _a3, _b3, _c2, _d2, _e, _f;
+    const innerContext = new Context(
+      { parent: context, mathstyle: this.mathstyleName },
+      this.style
+    );
+    const arrayRuleWidth = innerContext.getRegisterAsEm("arrayrulewidth");
+    const arrayColSep = innerContext.getRegisterAsEm("arraycolsep");
+    const doubleRuleSep = innerContext.getRegisterAsEm("doublerulesep");
+    const arraystretch = (_b3 = (_a3 = this.arraystretch) != null ? _a3 : innerContext.getRegisterAsNumber("arraystretch")) != null ? _b3 : 1;
+    let arraycolsep = typeof this.arraycolsep === "number" ? this.arraycolsep : arrayColSep;
+    if (this.colSeparationType === "small") {
+      const localMultiplier = new Context({
+        parent: context,
+        mathstyle: "scriptstyle"
+      }).scalingFactor;
+      arraycolsep = 0.2778 * (localMultiplier / context.scalingFactor);
+    }
+    const arrayskip = arraystretch * BASELINE_SKIP;
+    const arstrutHeight = 0.7 * arrayskip;
+    const arstrutDepth = 0.3 * arrayskip;
+    let totalHeight = 0;
+    const body = [];
+    let nc = 0;
+    const nr = this._rows.length;
+    for (let r = 0; r < nr; ++r) {
+      const inrow = this._rows[r];
+      nc = Math.max(nc, inrow.length);
+      const cellContext = new Context(
+        { parent: innerContext, mathstyle: this.mathstyleName },
+        this.style
+      );
+      let height = arstrutHeight / cellContext.scalingFactor;
+      let depth = arstrutDepth / cellContext.scalingFactor;
+      const outrow = { cells: [], height: 0, depth: 0, pos: 0 };
+      for (const element of inrow) {
+        const elt = this.isMultiline && element && isEmptyMultilineCell(element) ? makeEmptyLineAnchor(element, cellContext, {
+          height: arstrutHeight / cellContext.scalingFactor,
+          depth: arstrutDepth / cellContext.scalingFactor
+        }) : (_c2 = Atom.createBox(cellContext, element, { type: "ignore" })) != null ? _c2 : new Box(null, { type: "ignore" });
+        depth = Math.max(depth, elt.depth);
+        height = Math.max(height, elt.height);
+        outrow.cells.push(elt);
+      }
+      let gap = (_d2 = convertDimensionToEm(this.rowGaps[r])) != null ? _d2 : 0;
+      if (gap > 0) {
+        gap += arstrutDepth;
+        depth = Math.max(depth, gap);
+        gap = 0;
+      }
+      if (r < nr - 1 && !isMatrixEnvironment(this.environmentName) && this.environmentName !== "cases" && this.environmentName !== "array")
+        depth += innerContext.getRegisterAsEm("jot");
+      outrow.height = height;
+      outrow.depth = depth;
+      totalHeight += height;
+      outrow.pos = totalHeight;
+      totalHeight += depth + gap;
+      body.push(outrow);
+    }
+    const offset = this.environmentName === "array" && !this.isMultiline ? body[0].height : totalHeight / 2 + AXIS_HEIGHT;
+    const contentCols = [];
+    for (let colIndex = 0; colIndex < nc; colIndex++) {
+      const stack = [];
+      for (const row of body) {
+        const element = row.cells[colIndex];
+        if (element) {
+          element.depth = row.depth;
+          element.height = row.height;
+          stack.push({ box: element, shift: row.pos - offset });
+        }
+      }
+      if (stack.length > 0)
+        contentCols.push(new VBox({ individualShift: stack }));
+    }
+    const cols = [];
+    let previousColContent = false;
+    let previousColRule = false;
+    let currentContentCol = 0;
+    let firstColumn = !this.leftDelim;
+    const { colFormat } = this;
+    for (const colDesc of colFormat) {
+      if ("align" in colDesc && currentContentCol >= contentCols.length) {
+        break;
+      }
+      if ("align" in colDesc) {
+        if (previousColContent) {
+          cols.push(makeColGap(2 * arraycolsep));
+        } else if (previousColRule || firstColumn) {
+          cols.push(makeColGap(arraycolsep));
+        }
+        cols.push(
+          new Box(contentCols[currentContentCol], {
+            classes: "col-align-" + colDesc.align
+          })
+        );
+        currentContentCol++;
+        previousColContent = true;
+        previousColRule = false;
+        firstColumn = false;
+      } else if ("gap" in colDesc) {
+        if (typeof colDesc.gap === "number") {
+          cols.push(makeColGap(colDesc.gap));
+        } else {
+          const col = makeColOfRepeatingElements(
+            context,
+            body,
+            offset,
+            colDesc.gap
+          );
+          if (col) cols.push(col);
+        }
+        previousColContent = false;
+        previousColRule = false;
+        firstColumn = false;
+      } else if ("separator" in colDesc) {
+        const separator = new Box(null, { classes: "ML__vertical-separator" });
+        separator.height = totalHeight;
+        separator.setStyle("height", totalHeight, "em");
+        separator.setStyle(
+          "border-right",
+          `${arrayRuleWidth}em ${colDesc.separator} currentColor`
+        );
+        separator.setStyle("vertical-align", -(totalHeight - offset), "em");
+        let gap = 0;
+        if (previousColRule) gap = doubleRuleSep - arrayRuleWidth;
+        else if (previousColContent) gap = arraycolsep - arrayRuleWidth;
+        separator.left = gap;
+        cols.push(separator);
+        previousColContent = false;
+        previousColRule = true;
+        firstColumn = false;
+      }
+    }
+    if (previousColContent && !this.rightDelim) {
+      cols.push(makeColGap(arraycolsep));
+    }
+    const inner = new Box(cols, {
+      classes: ["ML__mtable", ...this.classes].join(" ")
+    });
+    if (this.environmentName === "array" && !this.isMultiline) {
+      inner.height = body[0].height;
+      inner.depth = totalHeight - body[0].height;
+    }
+    if ((!this.leftDelim || this.leftDelim === ".") && (!this.rightDelim || this.rightDelim === ".")) {
+      if (this.caret) inner.caret = this.caret;
+      return this.bind(context, inner);
+    }
+    const innerHeight = inner.height;
+    const innerDepth = inner.depth;
+    const base = this.bind(
+      context,
+      new Box(
+        [
+          this.bind(
+            context,
+            makeLeftRightDelim(
+              "open",
+              (_e = this.leftDelim) != null ? _e : ".",
+              innerHeight,
+              innerDepth,
+              innerContext,
+              { isSelected: this.isSelected }
+            )
+          ),
+          inner,
+          this.bind(
+            context,
+            makeLeftRightDelim(
+              "close",
+              (_f = this.rightDelim) != null ? _f : ".",
+              innerHeight,
+              innerDepth,
+              innerContext,
+              { isSelected: this.isSelected }
+            )
+          )
+        ],
+        { type: "ord" }
+      )
+    );
+    if (!base) return null;
+    base.setStyle("display", "inline-block");
+    if (this.caret) base.caret = this.caret;
+    return this.bind(context, this.attachSupsub(context, { base }));
+  }
+  _serialize(options) {
+    var _a3;
+    const result = [];
+    if (this.environmentName === "lines" && this._rows.length > 1)
+      result.push(`\\displaylines{`);
+    else if (this.environmentName !== "lines")
+      result.push(`\\begin{${this.environmentName}}`);
+    if (this.environmentName === "array") {
+      result.push("{");
+      if (this.colFormat !== void 0) {
+        for (const format of this.colFormat) {
+          if ("align" in format && typeof format.align === "string")
+            result.push(format.align);
+          else if ("separator" in format && format.separator === "solid")
+            result.push("|");
+          else if ("separator" in format && format.separator === "dashed")
+            result.push(":");
+        }
+      }
+      result.push("}");
+    }
+    for (let row = 0; row < this._rows.length; row++) {
+      for (let col = 0; col < this._rows[row].length; col++) {
+        if (col > 0) result.push(" & ");
+        result.push(Atom.serialize(this._rows[row][col], options));
+      }
+      if (row < this._rows.length - 1) {
+        const gap = this.rowGaps[row];
+        if (gap == null ? void 0 : gap.dimension)
+          result.push(`\\\\[${gap.dimension} ${(_a3 = gap.unit) != null ? _a3 : "pt"}] `);
+        else result.push("\\\\ ");
+      }
+    }
+    if (this.environmentName === "lines" && this._rows.length > 1)
+      result.push(`}`);
+    else if (this.environmentName !== "lines")
+      result.push(`\\end{${this.environmentName}}`);
+    return joinLatex(result);
+  }
+  forEachCell(callback) {
+    for (let i = 0; i < this.rowCount; i++)
+      for (let j = 0; j < this.colCount; j++) callback(this._rows[i][j], i, j);
+  }
+  getCell(row, col) {
+    var _a3;
+    return (_a3 = this._rows[row]) == null ? void 0 : _a3[col];
+  }
+  setCell(row, column, value) {
+    console.assert(
+      this.type === "array" && Array.isArray(this._rows) && this._rows[row][column] !== void 0
+    );
+    for (const atom of this._rows[row][column]) {
+      atom.parent = void 0;
+      atom.parentBranch = void 0;
+    }
+    const atoms = [
+      new Atom({ type: "first", mode: this.mode }),
+      ...value.filter((x) => x.type !== "first")
+    ];
+    this._rows[row][column] = atoms;
+    adjustBranches(this);
+    this.isDirty = true;
+  }
+  addRowBefore(row) {
+    console.assert(this.type === "array" && Array.isArray(this._rows));
+    this._rows.splice(
+      row,
+      0,
+      Array.from(
+        { length: this.colCount },
+        () => makeEmptyCell(this, !this.isMultiline)
+      )
+    );
+    adjustBranches(this);
+    this.isDirty = true;
+  }
+  addRowAfter(row) {
+    console.assert(this.type === "array" && Array.isArray(this._rows));
+    this._rows.splice(
+      row + 1,
+      0,
+      Array.from(
+        { length: this.colCount },
+        () => makeEmptyCell(this, !this.isMultiline)
+      )
+    );
+    adjustBranches(this);
+    this.isDirty = true;
+  }
+  removeRow(row) {
+    console.assert(
+      this.type === "array" && Array.isArray(this._rows) && this.rowCount > row
+    );
+    const deleted = this._rows.splice(row, 1);
+    for (const column of deleted) {
+      for (const cell of column) {
+        if (cell) {
+          for (const child of cell) {
+            child.parent = void 0;
+            child.parentBranch = void 0;
+          }
+        }
+      }
+    }
+    adjustBranches(this);
+    this.isDirty = true;
+  }
+  addColumnBefore(col) {
+    console.assert(this.type === "array" && Array.isArray(this._rows));
+    for (const row of this._rows) row.splice(col, 0, makeEmptyCell(this));
+    adjustBranches(this);
+    this.isDirty = true;
+  }
+  addColumnAfter(col) {
+    console.assert(this.type === "array" && Array.isArray(this._rows));
+    for (const row of this._rows) row.splice(col + 1, 0, makeEmptyCell(this));
+    adjustBranches(this);
+    this.isDirty = true;
+  }
+  addColumn() {
+    this.addColumnAfter(this.colCount - 1);
+  }
+  removeColumn(col) {
+    console.assert(
+      this.type === "array" && Array.isArray(this._rows) && this.colCount > col
+    );
+    for (const row of this._rows) {
+      const deleted = row.splice(col, 1);
+      for (const cell of deleted) {
+        if (cell) {
+          for (const child of cell) {
+            child.parent = void 0;
+            child.parentBranch = void 0;
+          }
+        }
+      }
+    }
+    adjustBranches(this);
+    this.isDirty = true;
+  }
+  get cells() {
+    const result = [];
+    for (const row of this._rows) {
+      for (const cell of row)
+        if (cell) result.push(cell.filter((x) => x.type !== "first"));
+    }
+    return result;
+  }
+  get rows() {
+    return this._rows;
+  }
+};
+function makeEmptyCell(parent, withPlaceholder = false) {
+  const first = new Atom({ type: "first", mode: parent.mode });
+  first.parent = parent;
+  const result = [first];
+  if (withPlaceholder) {
+    const placeholder = new PlaceholderAtom();
+    placeholder.parent = parent;
+    result.push(placeholder);
+  }
+  return result;
+}
+function adjustBranches(array) {
+  for (let i = 0; i < array.rowCount; i++) {
+    for (let j = 0; j < array.colCount; j++) {
+      const atoms = array.getCell(i, j);
+      if (atoms) {
+        for (const atom of atoms) {
+          if (atom) {
+            atom.parent = array;
+            atom.parentBranch = [i, j];
+          }
+        }
+      }
+    }
+  }
+}
+function makeColGap(width) {
+  const result = new Box(null, { classes: "ML__arraycolsep" });
+  result.width = width;
+  return result;
+}
+function makeColOfRepeatingElements(context, rows, offset, element) {
+  if (!element) return null;
+  const col = [];
+  for (const row of rows) {
+    const cell = Atom.createBox(context, element, { type: "ignore" });
+    if (cell) {
+      cell.depth = row.depth;
+      cell.height = row.height;
+      col.push({ box: cell, shift: row.pos - offset });
+    }
+  }
+  return new VBox({ individualShift: col }).wrap(context);
+}
+
+// src/atoms/box.ts
+var BoxAtom = class _BoxAtom extends Atom {
+  constructor(options) {
+    super({
+      mode: options.mode,
+      command: options.command,
+      style: options.style,
+      body: options.body,
+      type: "box"
+    });
+    this.framecolor = options.framecolor;
+    this.backgroundcolor = options.backgroundcolor;
+    this.padding = options.padding;
+    this.offset = options.offset;
+    this.border = options.border;
+  }
+  static fromJson(json) {
+    return new _BoxAtom(json);
+  }
+  toJson() {
+    return __spreadProps(__spreadValues({}, super.toJson()), {
+      framecolor: this.framecolor,
+      backgroundcolor: this.backgroundcolor,
+      padding: this.padding,
+      offset: this.offset,
+      border: this.border
+    });
+  }
+  render(parentContext) {
+    var _a3, _b3, _c2, _d2;
+    const base = Atom.createBox(parentContext, this.body, { type: "lift" });
+    if (!base) return null;
+    const offset = parentContext.toEm((_a3 = this.offset) != null ? _a3 : { dimension: 0 });
+    base.depth += offset;
+    base.setStyle("display", "inline-block");
+    base.setStyle("position", "relative");
+    base.setStyle(
+      "height",
+      Math.floor(100 * base.height + base.depth) / 100,
+      "em"
+    );
+    base.setStyle("vertical-align", -Math.floor(100 * base.height) / 100, "em");
+    const context = new Context({ parent: parentContext }, this.style);
+    const padding2 = context.toEm((_b3 = this.padding) != null ? _b3 : { register: "fboxsep" });
+    const box = new Box(null, { classes: "ML__box" });
+    box.height = base.height + padding2;
+    box.depth = base.depth + padding2;
+    box.setStyle("box-sizing", "border-box");
+    box.setStyle("position", "absolute");
+    box.setStyle("top", -padding2 + 0.3, "em");
+    box.setStyle("left", 0);
+    box.setStyle("height", box.height + box.depth, "em");
+    box.setStyle("width", "100%");
+    if (this.backgroundcolor) {
+      box.setStyle(
+        "background-color",
+        (_c2 = context.toBackgroundColor(this.backgroundcolor)) != null ? _c2 : "transparent"
+      );
+    }
+    if (this.framecolor) {
+      box.setStyle(
+        "border",
+        `${context.getRegisterAsEm("fboxrule", 2)}em solid ${(_d2 = context.toColor(this.framecolor)) != null ? _d2 : "black"}`
+      );
+    }
+    if (this.border) box.setStyle("border", this.border);
+    const result = new Box([box, base], { type: "lift" });
+    result.setStyle("display", "inline-block");
+    result.setStyle("position", "relative");
+    result.setStyle("line-height", 0);
+    result.height = base.height + padding2 + (offset > 0 ? offset : 0);
+    result.depth = base.depth + padding2 + (offset < 0 ? -offset : 0);
+    result.setStyle("padding-left", padding2, "em");
+    result.setStyle("padding-right", padding2, "em");
+    result.setStyle(
+      "height",
+      Math.floor(
+        100 * (base.height + base.depth + 2 * padding2 + Math.abs(offset))
+      ) / 100,
+      "em"
+    );
+    result.setStyle("margin-top", -padding2, "em");
+    result.setStyle(
+      "top",
+      Math.floor(100 * (base.depth - base.height + 2 * padding2 - offset)) / 100,
+      "em"
+    );
+    result.setStyle(
+      "vertical-align",
+      Math.floor(100 * (base.depth + 2 * padding2)) / 100,
+      "em"
+    );
+    if (this.caret) result.caret = this.caret;
+    return this.attachSupsub(parentContext, { base: result });
+  }
+  _serialize(options) {
+    if (!options.skipStyles) return super._serialize(options);
+    return joinLatex([this.bodyToLatex(options), this.supsubToLatex(options)]);
+  }
+};
+
+// src/atoms/composition.ts
+var CompositionAtom = class _CompositionAtom extends Atom {
+  constructor(value, options) {
+    var _a3;
+    super({ type: "composition", mode: (_a3 = options == null ? void 0 : options.mode) != null ? _a3 : "math", value });
+  }
+  static fromJson(json) {
+    return new _CompositionAtom(json.value, json);
+  }
+  toJson() {
+    return super.toJson();
+  }
+  render(context) {
+    const result = new Box(this.value, {
+      classes: "ML__composition",
+      type: "composition"
+    });
+    this.bind(context, result);
+    if (this.caret) result.caret = this.caret;
+    return result;
+  }
+  _serialize(_options) {
+    return "";
+  }
+};
+
+// src/atoms/error.ts
+var ErrorAtom = class _ErrorAtom extends Atom {
+  constructor(value) {
+    super({ type: "error", value, command: value, mode: "math" });
+    this.verbatimLatex = value;
+  }
+  static fromJson(json) {
+    return new _ErrorAtom(json.command);
+  }
+  toJson() {
+    return super.toJson();
+  }
+  render(context) {
+    const result = this.createBox(context, { classes: "ML__error" });
+    if (this.caret) result.caret = this.caret;
+    return result;
+  }
+};
+
+// src/atoms/group.ts
+var GroupAtom = class _GroupAtom extends Atom {
+  constructor(arg, mode) {
+    super({ type: "group", mode });
+    this.body = arg;
+    this.boxType = arg.length > 1 ? "ord" : "ignore";
+    this.skipBoundary = true;
+    this.displayContainsHighlight = false;
+    if ((arg == null ? void 0 : arg.length) === 1 && arg[0].command === ",")
+      this.captureSelection = true;
+  }
+  static fromJson(json) {
+    return new _GroupAtom(json.body, json.mode);
+  }
+  render(context) {
+    const box = Atom.createBox(context, this.body, { type: this.boxType });
+    if (!box) return null;
+    if (this.caret) box.caret = this.caret;
+    return this.bind(context, box);
+  }
+  _serialize(options) {
+    if (!(options.expandMacro || options.skipStyles || options.skipPlaceholders) && typeof this.verbatimLatex === "string")
+      return this.verbatimLatex;
+    const def = getDefinition(this.command, this.mode);
+    if (def == null ? void 0 : def.serialize) return def.serialize(this, options);
+    return `{${this.bodyToLatex(options)}}`;
+  }
+};
+
+// src/atoms/leftright.ts
+var LeftRightAtom = class _LeftRightAtom extends Atom {
+  constructor(variant, body, options) {
+    super({
+      type: "leftright",
+      style: options.style,
+      displayContainsHighlight: true
+    });
+    this.variant = variant;
+    this.body = body;
+    this.leftDelim = options.leftDelim;
+    this.rightDelim = options.rightDelim;
+  }
+  static fromJson(json) {
+    var _a3;
+    return new _LeftRightAtom((_a3 = json.variant) != null ? _a3 : "", json.body, json);
+  }
+  toJson() {
+    const result = super.toJson();
+    if (this.variant) result.variant = this.variant;
+    if (this.leftDelim) result.leftDelim = this.leftDelim;
+    if (this.rightDelim) result.rightDelim = this.rightDelim;
+    return result;
+  }
+  _serialize(options) {
+    var _a3, _b3;
+    const rightDelim = this.matchingRightDelim();
+    if (this.variant === "left...right") {
+      return joinLatex([
+        "\\left",
+        (_a3 = this.leftDelim) != null ? _a3 : ".",
+        this.bodyToLatex(options),
+        "\\right",
+        rightDelim
+      ]);
+    }
+    if (this.variant === "mleft...mright") {
+      return joinLatex([
+        "\\mleft",
+        (_b3 = this.leftDelim) != null ? _b3 : ".",
+        this.bodyToLatex(options),
+        "\\mright",
+        rightDelim
+      ]);
+    }
+    return joinLatex([
+      !this.leftDelim || this.leftDelim === "." ? "" : this.leftDelim,
+      this.bodyToLatex(options),
+      rightDelim
+    ]);
+  }
+  matchingRightDelim() {
+    var _a3, _b3;
+    if (this.rightDelim && this.rightDelim !== "?") return this.rightDelim;
+    const leftDelim = (_a3 = this.leftDelim) != null ? _a3 : ".";
+    return (_b3 = RIGHT_DELIM[leftDelim]) != null ? _b3 : leftDelim;
+  }
+  render(parentContext) {
+    var _a3, _b3;
+    const context = new Context({ parent: parentContext }, this.style);
+    console.assert(this.body !== void 0);
+    const delimContext = new Context(
+      { parent: parentContext, mathstyle: "textstyle" },
+      this.style
+    );
+    const inner = (_a3 = Atom.createBox(context, this.body, { type: "inner" })) != null ? _a3 : new Box(null, { type: "inner" });
+    const innerHeight = inner.height / delimContext.scalingFactor;
+    const innerDepth = inner.depth / delimContext.scalingFactor;
+    const boxes = [];
+    if (this.leftDelim) {
+      boxes.push(
+        this.bind(
+          delimContext,
+          makeLeftRightDelim(
+            "open",
+            this.leftDelim,
+            innerHeight,
+            innerDepth,
+            delimContext,
+            {
+              isSelected: this.isSelected,
+              classes: "ML__open" + (this.containsCaret ? " ML__contains-caret" : ""),
+              mode: this.mode,
+              style: this.style
+            }
+          )
+        )
+      );
+    }
+    if (inner) {
+      upgradeMiddle(inner.children, this, context, innerHeight, innerDepth);
+      boxes.push(inner);
+    }
+    if (this.rightDelim) {
+      let classes = this.containsCaret ? " ML__contains-caret" : "";
+      let delim = this.rightDelim;
+      if (delim === "?") {
+        if (context.smartFence) {
+          delim = this.matchingRightDelim();
+          classes += " ML__smart-fence__close";
+        } else delim = ".";
+      }
+      boxes.push(
+        this.bind(
+          delimContext,
+          makeLeftRightDelim(
+            "close",
+            delim,
+            innerHeight,
+            innerDepth,
+            delimContext,
+            {
+              isSelected: this.isSelected,
+              classes: classes + " ML__close",
+              mode: this.mode,
+              style: this.style
+            }
+          )
+        )
+      );
+    }
+    let tightSpacing = this.variant === "mleft...mright";
+    const sibling = this.leftSibling;
+    if (sibling) {
+      if (!tightSpacing && sibling.isFunction) tightSpacing = true;
+      if (!tightSpacing && sibling.type === "subsup" && ((_b3 = sibling.leftSibling) == null ? void 0 : _b3.isFunction))
+        tightSpacing = true;
+    }
+    const result = new Box(boxes, {
+      type: tightSpacing ? "close" : "inner",
+      classes: "ML__left-right"
+    });
+    result.setStyle("margin-top", `${-inner.depth}em`);
+    result.setStyle("height", `${inner.height + inner.depth}em`);
+    if (this.caret) result.caret = this.caret;
+    return this.bind(context, result.wrap(context));
+  }
+};
+function upgradeMiddle(boxes, atom, context, height, depth) {
+  if (!boxes) return;
+  for (let i = 0; i < boxes.length; i++) {
+    const child = boxes[i];
+    if (child.type === "middle") {
+      boxes[i] = atom.bind(
+        context,
+        makeLeftRightDelim("inner", child.value, height, depth, context, {
+          isSelected: atom.isSelected
+        })
+      );
+      boxes[i].caret = child.caret;
+      boxes[i].isSelected = child.isSelected;
+      boxes[i].cssId = child.cssId;
+      boxes[i].htmlData = child.htmlData;
+      boxes[i].htmlStyle = child.htmlStyle;
+      boxes[i].attributes = child.attributes;
+      boxes[i].cssProperties = child.cssProperties;
+    } else if (child.children)
+      upgradeMiddle(child.children, atom, context, height, depth);
+  }
+}
+
+// src/atoms/macro.ts
+var MacroAtom = class _MacroAtom extends Atom {
+  constructor(macro, options) {
+    var _a3;
+    super({ type: "macro", command: macro, style: options.style });
+    this.body = options.body;
+    if (options.captureSelection === void 0) {
+      if (options.args) this.captureSelection = false;
+      else this.captureSelection = true;
+    } else this.captureSelection = options.captureSelection;
+    this.macroArgs = options.args;
+    this.argumentCount = options.argumentCount ?? 0;
+    this.expand = (_a3 = options.expand) != null ? _a3 : false;
+  }
+  static fromJson(json) {
+    return new _MacroAtom(json.command, json);
+  }
+  toJson() {
+    const options = super.toJson();
+    if (this.expand) options.expand = true;
+    if (this.captureSelection !== void 0)
+      options.captureSelection = this.captureSelection;
+    if (this.macroArgs) options.args = this.macroArgs;
+    if (this.argumentCount) options.argumentCount = this.argumentCount;
+    return options;
+  }
+  _serialize(options) {
+    var _a3;
+    if (options.expandMacro && this.expand) return this.bodyToLatex(options);
+    if (this.argumentCount > 0) {
+      const argumentsByIndex = /* @__PURE__ */ new Map();
+      for (const child of this.children) {
+        if (
+          child.type === "macro-argument" &&
+          Number.isInteger(child.argumentIndex) &&
+          !argumentsByIndex.has(child.argumentIndex)
+        ) {
+          argumentsByIndex.set(child.argumentIndex, child);
+        }
+      }
+      if (
+        Array.from({ length: this.argumentCount }, (_, index) => index + 1)
+          .every((index) => argumentsByIndex.has(index))
+      ) {
+        return this.command + Array.from(
+          { length: this.argumentCount },
+          (_, index) => {
+            const argument = argumentsByIndex.get(index + 1);
+            return "{" + argument.bodyToLatex(options) + "}";
+          }
+        ).join("");
+      }
+    }
+    return this.command + ((_a3 = this.macroArgs) != null ? _a3 : "");
+  }
+  applyStyle(style, options) {
+    const allowedStyle = {};
+    if (style.color) allowedStyle.color = style.color;
+    if (style.backgroundColor)
+      allowedStyle.backgroundColor = style.backgroundColor;
+    super.applyStyle(allowedStyle, options);
+  }
+  render(context) {
+    const result = Atom.createBox(context, this.body, { type: "lift" });
+    if (!result) return null;
+    if (this.caret) result.caret = this.caret;
+    return this.bind(context, result);
+  }
+};
+var MacroArgumentAtom = class _MacroArgumentAtom extends Atom {
+  constructor(argumentIndex = 0, body = [], options = {}) {
+    super({
+      type: "macro-argument",
+      mode: options.mode ?? "math",
+      style: options.style,
+      body
+    });
+    this.argumentIndex = Number(argumentIndex) || 0;
+  }
+  static fromJson(json) {
+    return new _MacroArgumentAtom(
+      json.argumentIndex ?? 0,
+      json.body ?? [],
+      json
+    );
+  }
+  toJson() {
+    const options = super.toJson();
+    if (this.argumentIndex) options.argumentIndex = this.argumentIndex;
+    return options;
+  }
+  _serialize(options) {
+    return this.bodyToLatex(options);
+  }
+  render(context) {
+    return Atom.createBox(context, this.body, { type: "ignore" });
+  }
+};
+
+// src/atoms/prompt.ts
+var PromptAtom = class _PromptAtom extends Atom {
+  constructor(placeholderId, correctness, locked = false, body, options) {
+    var _a3;
+    super({
+      type: "prompt",
+      mode: (_a3 = options == null ? void 0 : options.mode) != null ? _a3 : "math",
+      style: options == null ? void 0 : options.style,
+      command: "\\placeholder"
+    });
+    this.body = body;
+    this.correctness = correctness;
+    this.placeholderId = placeholderId;
+    this.locked = locked;
+    this.captureSelection = this.locked;
+  }
+  static fromJson(json) {
+    return new _PromptAtom(
+      json.placeholderId,
+      json.correctness,
+      json.locked,
+      json.body,
+      json
+    );
+  }
+  toJson() {
+    const result = super.toJson();
+    if (this.placeholderId) result.placeholderId = this.placeholderId;
+    if (!this.body) delete result.body;
+    if (this.body) {
+      result.body = this.body.filter((x) => x.type !== "first").map((x) => x.toJson());
+    }
+    if (this.correctness) result.correctness = this.correctness;
+    result.locked = this.locked;
+    return result;
+  }
+  render(parentContext) {
+    var _a3, _b3;
+    const context = new Context({ parent: parentContext });
+    const fboxsep = context.getRegisterAsEm("fboxsep");
+    const hPadding = fboxsep;
+    const vPadding = fboxsep;
+    const content = Atom.createBox(parentContext, this.body);
+    if (!content) return null;
+    const isEffectivelyEmpty = !this.body || this.body.length === 0 || this.body.every((atom) => atom.type === "first");
+    const placeholderMetrics = isEffectivelyEmpty ? new PlaceholderAtom({
+      mode: this.mode,
+      style: this.style
+    }).render(new Context({ parent: parentContext, isPhantom: true })) : null;
+    const emptyHeight = (_a3 = placeholderMetrics == null ? void 0 : placeholderMetrics.height) != null ? _a3 : context.metrics.xHeight;
+    const emptyDepth = (_b3 = placeholderMetrics == null ? void 0 : placeholderMetrics.depth) != null ? _b3 : emptyHeight / 2;
+    if (!content.height) {
+      content.height = isEffectivelyEmpty ? emptyHeight : context.metrics.xHeight;
+    }
+    if (!content.depth) {
+      content.depth = isEffectivelyEmpty ? emptyDepth : context.metrics.defaultRuleThickness;
+    }
+    const verticalShift = isEffectivelyEmpty ? emptyDepth - emptyHeight : content.depth - content.height;
+    content.setStyle("vertical-align", verticalShift, "em");
+    if (this.correctness === "correct") {
+      content.setStyle(
+        "color",
+        "var(--correct-color, var(--ML__correct-color))"
+      );
+    } else if (this.correctness === "incorrect") {
+      content.setStyle(
+        "color",
+        "var(--incorrect-color, var(--ML__incorrect-color))"
+      );
+    }
+    const base = new Box(content, { type: "ord" });
+    base.height = content.height;
+    base.depth = content.depth;
+    base.setStyle("display", "inline-block");
+    base.setStyle("height", content.height + content.depth, "em");
+    base.setStyle("vertical-align", -vPadding, "em");
+    base.setStyle("position", "relative");
+    base.setStyle("z-index", 1);
+    let boxClasses = "ML__prompt ";
+    if (this.locked) {
+      boxClasses += " ML__lockedPromptBox ";
+    } else boxClasses += " ML__editablePromptBox ";
+    if (this.correctness === "correct") boxClasses += " ML__correctPromptBox ";
+    else if (this.correctness === "incorrect")
+      boxClasses += " ML__incorrectPromptBox ";
+    if (this.containsCaret) boxClasses += " ML__focusedPromptBox ";
+    const box = new Box(null, {
+      classes: boxClasses,
+      attributes: { part: "prompt" }
+    });
+    box.height = base.height + vPadding;
+    box.depth = base.depth + vPadding;
+    box.width = base.width + 2 * hPadding;
+    box.setStyle("position", "absolute");
+    box.setStyle("z-index", 0);
+    box.setStyle("display", "block");
+    box.setStyle("pointer-events", "auto");
+    const overlayHeight = base.height + base.depth + 2 * vPadding;
+    box.setStyle("height", Math.max(overlayHeight, 0.6), "em");
+    let overlayWidth = base.width + 2 * hPadding;
+    if (isEffectivelyEmpty)
+      overlayWidth = Math.max(overlayWidth, 3 * hPadding || 0.8);
+    box.setStyle("width", Math.max(overlayWidth, 0.6), "em");
+    box.setStyle("top", fboxsep + vPadding, "em");
+    if (isEffectivelyEmpty) box.setStyle("left", -1.5 * hPadding, "em");
+    else if (hPadding !== 0) box.setStyle("left", -hPadding, "em");
+    let svg = "";
+    if (this.correctness === "incorrect") {
+      svg += '<line x1="3%"  y1="97%" x2="97%" y2="3%" stroke-width="0.5" stroke="var(--incorrect-color, var(--ML__incorrect-color))" stroke-linecap="round" />';
+    }
+    if (svg) box.svgOverlay = svg;
+    const result = new Box([box, base], { classes: "ML__prompt-atom" });

@@ -205,7 +205,7 @@ try {
             "/x", $productCode,
             "/qn",
             "/norestart",
-            "/L*v", $msiLog
+            "/L*v", (Quote-ProcessArgument $msiLog)
         )
         Write-UninstallLog "MSI uninstall exit code for ${productCode}: $exitCode"
         if ($exitCode -notin @(0, 1605, 3010)) {

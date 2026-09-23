@@ -1,0 +1,9 @@
+Acceptance mode: word-mixed-visualtex-sequence
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+Mixed VisualTeX sequence acceptance passed: OMML keeps its native Word Equation stream (1/2) while VisualTeXPlaceRef keeps an independent VisualTeXEquation stream (1), before and after save/reopen.
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\visualtex-mixed-sequence-afterfix

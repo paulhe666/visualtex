@@ -1,0 +1,16 @@
+[omml->mathtype count=10]
+capture|FormatConversion.CaptureTarget.OmmlToMathType|calls=10|ms=1132.57
+capture|FormatConversion.NumberingResolver.Omml|calls=10|ms=622.088
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=10|ms=66.988
+apply|FormatConversion.ReplaceExternalFrom.Omml|calls=10|ms=6437.029
+apply|FormatConversion.ResolveCapturedHost.Omml|calls=10|ms=1059.863
+apply|FormatConversion.RollbackSnapshot.Capture|calls=1|ms=223.952
+apply|WordDocumentXml.Read|calls=1|ms=41.467
+[omml->mathtype count=20]
+capture|FormatConversion.CaptureTarget.OmmlToMathType|calls=20|ms=1589.721
+capture|FormatConversion.NumberingResolver.Omml|calls=20|ms=910.363
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=20|ms=6.365
+apply|FormatConversion.ReplaceExternalFrom.Omml|calls=20|ms=14775.202
+apply|FormatConversion.ResolveCapturedHost.Omml|calls=20|ms=2623.605
+apply|FormatConversion.RollbackSnapshot.Capture|calls=1|ms=129.266
+apply|WordDocumentXml.Read|calls=1|ms=77.236

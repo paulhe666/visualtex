@@ -1,4 +1,4 @@
-param([string]$Label='stage01',[int]$RestartEmptyProcessId=0,[switch]$TraceRecoveryXml,[string]$InstalledStage='')
+param([string]$Label='stage01',[int]$RestartEmptyProcessId=0,[switch]$TraceRecoveryXml,[string]$InstalledStage='',[string]$InitialDocument='',[switch]$HoldOpen)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'word-connection.ps1')
 if($RestartEmptyProcessId){
@@ -17,7 +17,8 @@ $env:VISUALTEX_NUMBERED_PERF_TRACE='1'
 $env:VISUALTEX_NUMBERED_PERF_TRACE_PATH=Join-Path $PSScriptRoot "evidence\$Label-numbering-perf.log"
 $env:VISUALTEX_VSTO_TRACE_FORMAT_PERF='1'
 if($TraceRecoveryXml){$env:VISUALTEX_VSTO_TRACE_RECOVERY_XML='1'}else{$env:VISUALTEX_VSTO_TRACE_RECOVERY_XML=$null}
-$stageWord=Start-Process -FilePath 'C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE' -ArgumentList '/x' -PassThru
+$wordArguments=if($InitialDocument){@('/w',('"'+[IO.Path]::GetFullPath($InitialDocument)+'"'))}else{@('/x')}
+$stageWord=Start-Process -FilePath 'C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE' -ArgumentList $wordArguments -PassThru
 if(!$InstalledStage){$InstalledStage=$Label}
 $record=@{pid=$stageWord.Id;stage=$Label;started=[DateTime]::UtcNow.ToString('o');source="$InstalledStage-installed.json";protectedWordPid=27664}
 $record|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $PSScriptRoot "evidence\$Label-word-process.json") -Encoding UTF8
@@ -38,4 +39,24 @@ do {
  Start-Sleep -Milliseconds 400
 } while([DateTime]::UtcNow -lt $deadline)
 if(!$ready){throw 'The recorded Word process has not exposed its native document; inspect without starting another.'}
+if($InitialDocument){
+ $openedWord=$null;$openedDocument=$null
+ try{
+  $openedWord=Connect-RunningWord $stageWord.Id
+  $openedDocument=$openedWord.ActiveDocument
+  $expectedPath=[IO.Path]::GetFullPath($InitialDocument)
+  if(![string]::Equals([string]$openedDocument.FullName,$expectedPath,[StringComparison]::OrdinalIgnoreCase)){throw 'Word did not open the requested initial evidence document.'}
+  $record|Add-Member document $openedDocument.Name -Force
+  $record|Add-Member hwnd $openedDocument.ActiveWindow.Hwnd -Force
+  $record|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $PSScriptRoot "evidence\$Label-word-process.json") -Encoding UTF8
+  $record|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $PSScriptRoot 'evidence\target-word.json') -Encoding UTF8
+  if($HoldOpen){
+   Write-Output ('HOLDING_STAGE_WORD|'+$stageWord.Id)
+   [void][Console]::ReadLine()
+  }
+ }finally{
+  if($openedDocument){[void][Runtime.InteropServices.Marshal]::ReleaseComObject($openedDocument)}
+  if($openedWord){[void][Runtime.InteropServices.Marshal]::ReleaseComObject($openedWord)}
+ }
+}
 $stageWord.Id

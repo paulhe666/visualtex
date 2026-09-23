@@ -1,0 +1,33 @@
+[omml->visualtex count=10]
+capture|FormatConversion.CaptureTarget.OmmlToVisualTeX|calls=10|ms=1201.057
+capture|FormatConversion.NumberingResolver.Omml|calls=10|ms=666.081
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=10|ms=42.505
+apply|FormatConversion.Replace.OmmlToVisualTeX|calls=10|ms=9959.034
+apply|FormatConversion.ReplaceInsideTransaction.Omml->VisualTeX|calls=10|ms=9957.566
+apply|FormatConversion.VisualTeXHostWriter.Insert|calls=10|ms=6193.849
+apply|FormatConversion.VisualTeXNumbering.Attach|calls=10|ms=2481.308
+apply|FormatConversion.RefreshCanonicalNumbers|calls=1|ms=1766.322
+apply|FormatConversion.VisualTeXNumbering.RefreshBatchFields|calls=1|ms=1750.368
+apply|FormatConversion.ResolveCapturedHost.Omml|calls=10|ms=1644.022
+[omml->visualtex count=20]
+capture|FormatConversion.CaptureTarget.OmmlToVisualTeX|calls=20|ms=1489.639
+capture|FormatConversion.NumberingResolver.Omml|calls=20|ms=846.587
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=20|ms=6.06
+apply|FormatConversion.Replace.OmmlToVisualTeX|calls=20|ms=12604.654
+apply|FormatConversion.ReplaceInsideTransaction.Omml->VisualTeX|calls=20|ms=12604.619
+apply|FormatConversion.VisualTeXHostWriter.Insert|calls=20|ms=7511.703
+apply|FormatConversion.VisualTeXNumbering.Attach|calls=20|ms=3677.354
+apply|FormatConversion.ResolveCapturedHost.Omml|calls=20|ms=2476.552
+apply|FormatConversion.RefreshCanonicalNumbers|calls=1|ms=2466.978
+apply|FormatConversion.VisualTeXNumbering.RefreshBatchFields|calls=1|ms=2460.025
+[omml->visualtex count=40]
+capture|FormatConversion.CaptureTarget.OmmlToVisualTeX|calls=40|ms=2814.703
+capture|FormatConversion.NumberingResolver.Omml|calls=40|ms=1606.077
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=40|ms=12.599
+apply|FormatConversion.Replace.OmmlToVisualTeX|calls=40|ms=30046.251
+apply|FormatConversion.ReplaceInsideTransaction.Omml->VisualTeX|calls=40|ms=30046.179
+apply|FormatConversion.VisualTeXHostWriter.Insert|calls=40|ms=18042.284
+apply|FormatConversion.VisualTeXNumbering.Attach|calls=40|ms=9140.779
+apply|FormatConversion.ResolveCapturedHost.Omml|calls=40|ms=6185.221
+apply|FormatConversion.RefreshCanonicalNumbers|calls=1|ms=3285.439
+apply|FormatConversion.VisualTeXNumbering.RefreshBatchFields|calls=1|ms=3277.399

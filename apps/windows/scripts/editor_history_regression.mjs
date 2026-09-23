@@ -215,6 +215,10 @@ async function main() {
         };
         delete persisted.state.latex;
         localStorage.setItem("visualtex-editor", JSON.stringify(persisted));
+        localStorage.setItem(
+          "visualtex-desktop-editor-source-open",
+          String(${JSON.stringify(sourceOpen)}),
+        );
       })()`);
       await client.send("Page.reload", { ignoreCache: true });
       await sleep(850);
@@ -225,6 +229,7 @@ async function main() {
       await evaluate(`(() => {
         let callbackId = 1;
         const callbacks = new Map();
+        globalThis.isTauri = true;
         window.__TAURI_INTERNALS__ = {
           transformCallback(callback, once = false) {
             const id = callbackId++;
@@ -235,20 +240,40 @@ async function main() {
             callbacks.delete(id);
           },
           async invoke(command) {
-            if (command === "get_ocr_runtime_status") {
+            if (command === "get_ocr_provider_configuration") {
               return {
-                installed: true,
-                pythonPath: "/fake/python",
-                pythonVersion: "3.13.0",
-                paddleVersion: "3.3.1",
-                paddleocrVersion: "3.7.0",
-                runtimePath: "/fake/runtime",
-                message: "Fake OCR runtime ready",
+                activeProvider: "openai-compatible",
+                openAiCompatible: {
+                  protocol: "responses",
+                  baseUrl: "https://api.openai.com/v1",
+                  model: "fake-vision-model",
+                  prompt: "Return formula LaTeX.",
+                  hasApiKey: true,
+                },
+                ollama: {
+                  baseUrl: "http://127.0.0.1:11434",
+                  model: "fake-ollama-model",
+                  prompt: "Return formula LaTeX.",
+                },
+                mathpix: {
+                  baseUrl: "https://api.mathpix.com",
+                  appId: "fake-app-id",
+                  hasAppKey: true,
+                },
+                paddleOcr: {
+                  model: "PaddleOCR-VL-1.6",
+                  hasAccessToken: true,
+                },
+                simpleTex: {
+                  model: "standard",
+                  hasAccessToken: true,
+                },
               };
             }
             if (command === "recognize_formula_image") {
               return {
-                model: "PP-FormulaNet_plus-S",
+                provider: "openai-compatible",
+                model: "fake-vision-model",
                 elapsedMs: 5,
                 processedWidth: 64,
                 processedHeight: 32,
@@ -593,32 +618,16 @@ async function main() {
     assertDeepEqual(await values(), ["x"], "wrapped selection should undo in one step");
 
     await resetDocument({ lines: [{ id: "candidate-line", latex: "" }] });
-    await evaluate(`(() => {
-      const field = document.querySelector("math-field");
-      field.focus();
-      field.shadowRoot
-        ?.querySelector('[part="keyboard-sink"]')
-        ?.focus({ preventScroll: true });
-      field.setValue("\\\\su", {
-        mode: "math",
-        format: "latex",
-        insertionMode: "replaceAll",
-        selectionMode: "after",
-        silenceNotifications: true,
-      });
-      field.position = field.lastOffset;
-      field.dispatchEvent(new InputEvent("input", {
-        bubbles: true,
-        composed: true,
-        inputType: "insertText",
-      }));
-    })()`);
+    await focusField(0);
+    await key("\\", "Backslash", 220);
+    await key("s", "KeyS", 83);
+    await key("u", "KeyU", 85);
     await sleep(220);
     const candidateBefore = (await values())[0];
     assertEqual(
-      await evaluate(`Boolean(document.querySelector(".suggestion-popup"))`),
+      await evaluate(`Boolean(document.querySelector('#mathlive-suggestion-popover[aria-hidden="false"] li[data-command]'))`),
       true,
-      "structured candidate popup should open",
+      "MathLive native candidate popup should open",
     );
     await key("Enter", "Enter", 13);
     await sleep(220);

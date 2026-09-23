@@ -33,15 +33,26 @@ internal static class WordFormulaHostMutationKernel
                 document,
                 source,
                 target,
-                sourceAlreadyResolved: true));
+                sourceAlreadyResolved: true,
+                allowDirectCanonicalOmmlRemoval: false,
+                deferTargetNumberFinalization: false));
     }
 
     internal static WordFormulaHostDescriptor ReplaceInActiveTransaction(
         WordApplication application,
         Document document,
         WordFormulaHostDescriptor source,
-        WordFormulaHostWriteRequest target)
+        WordFormulaHostWriteRequest target,
+        bool sourceAlreadyResolved = false,
+        bool allowDirectCanonicalOmmlRemoval = false,
+        bool deferTargetNumberFinalization = false)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.Replace."
+                + source.Kind
+                + "To"
+                + target.Kind);
         ValidateTargetRequest(target);
         RequireActiveTransaction(application);
         return ReplaceInsideTransaction(
@@ -49,7 +60,9 @@ internal static class WordFormulaHostMutationKernel
             document,
             source,
             target,
-            sourceAlreadyResolved: false);
+            sourceAlreadyResolved,
+            allowDirectCanonicalOmmlRemoval,
+            deferTargetNumberFinalization);
     }
 
     internal static WordFormulaHostDescriptor AdoptUnownedOmmlForMutation(
@@ -167,8 +180,14 @@ internal static class WordFormulaHostMutationKernel
         WordApplication application,
         Document document,
         WordFormulaHostDescriptor source,
-        Func<Range, T> externalWriter)
+        Func<Range, T> externalWriter,
+        bool sourceAlreadyResolved = false,
+        bool allowDirectCanonicalOmmlRemoval = false)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.ReplaceExternalFrom."
+                + source.Kind);
         if (externalWriter is null)
             throw new ArgumentNullException(nameof(externalWriter));
         if (source.Kind == WordFormulaHostKind.MathType)
@@ -176,29 +195,42 @@ internal static class WordFormulaHostMutationKernel
                 "MathType-to-MathType replacement is not owned by the OMML/VisualTeX core.");
 
         RequireActiveTransaction(application);
-        var fresh = ReResolveExactSource(
-            application,
-            document,
-            source);
+        var fresh =
+            sourceAlreadyResolved
+                ? source
+                : ReResolveExactSource(
+                    application,
+                    document,
+                    source);
         var numbering =
-            WordFormulaNumberingResolver.ResolveLocal(
-                document,
-                fresh);
+            sourceAlreadyResolved
+                ? fresh.Numbering
+                : WordFormulaNumberingResolver.ResolveLocal(
+                    document,
+                    fresh);
         if (numbering.ContainerKind ==
             WordFormulaNumberingContainerKind.Legacy)
             throw new InvalidDataException(
                 "The source formula uses a retired numbering topology and must be canonicalized before cross-format replacement.");
 
-        if (numbering.Numbered)
+        var directCanonicalOmmlRemoval =
+            allowDirectCanonicalOmmlRemoval
+            && fresh.Kind == WordFormulaHostKind.Omml
+            && fresh.Display
+            && numbering.ContainerKind ==
+                WordFormulaNumberingContainerKind.CanonicalNativeOmml;
+
+        if (numbering.Numbered
+            && !directCanonicalOmmlRemoval)
         {
             fresh =
                 WordFormulaNumberingKernel.DetachCanonical(
                     document,
-                    fresh);
+                    fresh,
+                    numbering,
+                    sourceWillBeRemovedImmediately: true);
             numbering =
-                WordFormulaNumberingResolver.ResolveLocal(
-                    document,
-                    fresh);
+                fresh.Numbering;
             if (numbering.Numbered)
                 throw new InvalidDataException(
                     "The source numbering container survived canonical detach.");
@@ -387,8 +419,16 @@ internal static class WordFormulaHostMutationKernel
         Document document,
         WordFormulaHostDescriptor source,
         WordFormulaHostWriteRequest target,
-        bool sourceAlreadyResolved)
+        bool sourceAlreadyResolved,
+        bool allowDirectCanonicalOmmlRemoval = false,
+        bool deferTargetNumberFinalization = false)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.ReplaceInsideTransaction."
+                + source.Kind
+                + "->"
+                + target.Kind);
         var freshSource =
             sourceAlreadyResolved
                 ? source
@@ -465,12 +505,21 @@ internal static class WordFormulaHostMutationKernel
         }
 
         var sourceUsesSelfContainedVisualTeXNumbering =
-            freshSource.Kind == WordFormulaHostKind.VisualTeX
+            target.Kind == WordFormulaHostKind.VisualTeX
+            && freshSource.Kind == WordFormulaHostKind.VisualTeX
             && sourceNumbering.ContainerKind ==
                 WordFormulaNumberingContainerKind.CanonicalBodyTabParagraph
             && WordVisualTeXParagraphNumbering.IsSelfContainedHost(
                 document,
                 freshSource);
+
+        var directCanonicalOmmlRemoval =
+            allowDirectCanonicalOmmlRemoval
+            && freshSource.Kind == WordFormulaHostKind.Omml
+            && target.Kind != WordFormulaHostKind.Omml
+            && freshSource.Display
+            && sourceNumbering.ContainerKind ==
+                WordFormulaNumberingContainerKind.CanonicalNativeOmml;
 
         var preserveCanonicalContainer =
             target.Numbered
@@ -494,16 +543,18 @@ internal static class WordFormulaHostMutationKernel
         // every other formula.
         if (freshSource.Kind != WordFormulaHostKind.MathType
             && sourceNumbering.Numbered
-            && !preserveCanonicalContainer)
+            && !preserveCanonicalContainer
+            && !directCanonicalOmmlRemoval)
         {
             freshSource =
                 WordFormulaNumberingKernel.DetachCanonical(
                     document,
-                    freshSource);
+                    freshSource,
+                    sourceNumbering,
+                    sourceWillBeRemovedImmediately:
+                        target.Kind != freshSource.Kind);
             sourceNumbering =
-                WordFormulaNumberingResolver.ResolveLocal(
-                    document,
-                    freshSource);
+                freshSource.Numbering;
             if (sourceNumbering.Numbered)
                 throw new InvalidDataException(
                     "The source numbering container survived canonical detach.");
@@ -528,11 +579,15 @@ internal static class WordFormulaHostMutationKernel
             else
             {
                 insertion =
-                    freshSource.Kind == WordFormulaHostKind.Omml
-                    && target.Kind != WordFormulaHostKind.Omml
+                    directCanonicalOmmlRemoval
                         ? WordOmmlHostWriter.DeleteExactToPlainTextBoundary(
                             document,
                             freshSource)
+                        : freshSource.Kind == WordFormulaHostKind.Omml
+                          && target.Kind != WordFormulaHostKind.Omml
+                            ? WordOmmlHostWriter.DeleteExactToPlainTextBoundary(
+                                document,
+                                freshSource)
                         : freshSource.Kind == WordFormulaHostKind.VisualTeX
                           && freshSource.Display
                           && target.Kind == WordFormulaHostKind.Omml
@@ -549,11 +604,19 @@ internal static class WordFormulaHostMutationKernel
                 document,
                 insertion,
                 target);
+            // The low-level writers already prove the exact physical host they
+            // just materialized. VisualTeX additionally reads its embedded OLE
+            // payload back and validates FormulaId/LaTeX/display mode. During a
+            // format-conversion batch, immediately resolving the same host again
+            // through WordFormulaMutationValidator is duplicate COM/OLE work.
+            // Interactive create/edit keeps the independent validator.
             var validated =
-                WordFormulaMutationValidator.ValidateInsertedHost(
-                    document,
-                    target,
-                    written.Host);
+                target.BatchFormatConversion
+                    ? written.Host
+                    : WordFormulaMutationValidator.ValidateInsertedHost(
+                        document,
+                        target,
+                        written.Host);
 
             if (freshSource.Kind == WordFormulaHostKind.Omml
                 && target.Kind != WordFormulaHostKind.Omml)
@@ -562,11 +625,18 @@ internal static class WordFormulaHostMutationKernel
                     WordOmmlHostWriter.RemovePlainTextBoundaryGuard(
                         document,
                         validated);
-                validated =
-                    WordFormulaMutationValidator.ValidateInsertedHost(
-                        document,
-                        target,
-                        validated);
+                // Batch conversion already trusts the low-level writer's local
+                // physical/payload verification. Removing the temporary plain-text
+                // boundary guard only adjusts the surrounding Word range; do not
+                // reopen and semantically revalidate the same OLE a second time.
+                if (!target.BatchFormatConversion)
+                {
+                    validated =
+                        WordFormulaMutationValidator.ValidateInsertedHost(
+                            document,
+                            target,
+                            validated);
+                }
             }
 
             if (target.Kind == WordFormulaHostKind.Omml)
@@ -575,11 +645,21 @@ internal static class WordFormulaHostMutationKernel
                 {
                     return WordFormulaNumberingKernel.AttachCanonical(
                         document,
-                        validated);
+                        validated,
+                        deferTargetNumberFinalization);
                 }
 
                 // The OMML writer has already established one physical OMath.
                 // No semantic/fingerprint comparison participates in this path.
+                return validated;
+            }
+
+            if (target.BatchFormatConversion
+                && !target.Numbered
+                && target.Kind == WordFormulaHostKind.VisualTeX)
+            {
+                // The VisualTeX writer has already read the embedded OLE payload
+                // back and the target has no numbering container to finalize.
                 return validated;
             }
 
@@ -624,7 +704,19 @@ internal static class WordFormulaHostMutationKernel
                 validated =
                     WordFormulaNumberingKernel.AttachCanonical(
                         document,
-                        validated);
+                        validated,
+                        deferTargetNumberFinalization);
+            }
+
+            if (deferTargetNumberFinalization
+                && target.Numbered
+                && !preserveCanonicalContainer)
+            {
+                // Batch conversion validates every numbering container in one
+                // final document-order refresh. The formula host itself has
+                // already passed the local semantic validation above, so a
+                // second identical host read here only duplicates COM/OLE work.
+                return validated;
             }
 
             WordFormulaNumberingKernel.ValidatePreservedContainer(

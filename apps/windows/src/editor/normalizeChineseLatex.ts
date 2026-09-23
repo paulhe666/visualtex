@@ -63,7 +63,7 @@ const uprightOperatorPattern = new RegExp(
   "g",
 );
 
-const MATHLIVE_CANONICAL_UPRIGHT_COMMANDS: ReadonlyArray<
+const CANONICAL_UPRIGHT_COMMANDS: ReadonlyArray<
   readonly [command: string, standardLatex: string]
 > = [
   ["capitalDifferentialD", "\\mathrm{D}"],
@@ -563,11 +563,11 @@ export function normalizeContextualUprightSymbols(source: string): string {
   return transformOutsideProtectedCommands(source, normalizeTypographyChunk);
 }
 
-export function normalizeMathLiveCanonicalUprightCommands(
+export function normalizeCanonicalUprightCommands(
   source: string,
 ): string {
   let normalized = source;
-  for (const [command, standardLatex] of MATHLIVE_CANONICAL_UPRIGHT_COMMANDS) {
+  for (const [command, standardLatex] of CANONICAL_UPRIGHT_COMMANDS) {
     normalized = normalized.replace(
       new RegExp(`\\\\${command}(?![A-Za-z])[ \\t]*`, "g"),
       standardLatex,
@@ -578,6 +578,12 @@ export function normalizeMathLiveCanonicalUprightCommands(
     "\\mathrm{d}$1",
   );
 }
+
+// Compatibility name retained for the restored MathLive/MathJax product path.
+// The implementation is renderer-independent; this alias does not reintroduce
+// any MathLive runtime behavior into normalization itself.
+export const normalizeMathLiveCanonicalUprightCommands =
+  normalizeCanonicalUprightCommands;
 
 const differentialFractionCommands = ["\\dfrac", "\\tfrac", "\\frac"];
 const integralCommandPattern = new RegExp(
@@ -1135,7 +1141,7 @@ function readBracedCommand(source: string, start: number): number {
 
 export function normalizeChineseLatex(source: string): string {
   const normalizedTextCommands = normalizeContextualUprightSymbols(
-    normalizeMathLiveCanonicalUprightCommands(
+    normalizeCanonicalUprightCommands(
       normalizeExtendedIntegralLatexCommands(source),
     ),
   ).replace(

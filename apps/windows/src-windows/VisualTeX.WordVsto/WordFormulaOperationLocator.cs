@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
 using WordApplication = Microsoft.Office.Interop.Word.Application;
 
@@ -46,6 +47,10 @@ internal static class WordFormulaOperationLocator
         WordFormulaHostKind kind,
         string? expectedFormulaId)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.ResolveCapturedHost."
+                + kind);
         Range? captured = null;
         try
         {
@@ -84,9 +89,12 @@ internal static class WordFormulaOperationLocator
                 && Guid.TryParse(expectedFormulaId, out var parsed))
                 host.FormulaId = parsed.ToString("D");
 
-            if (kind == WordFormulaHostKind.VisualTeX
-                || (kind == WordFormulaHostKind.Omml
-                    && host.Display))
+            // ResolveLocalOmml now returns one fully-proved local
+            // numbering descriptor (native, legacy, or unnumbered) from the same
+            // exact OMath inspection. Do not immediately inspect that OMML a
+            // second time. VisualTeX still needs its external paragraph/table
+            // numbering container resolved after the OLE host itself is located.
+            if (kind == WordFormulaHostKind.VisualTeX)
             {
                 host.Numbering =
                     WordFormulaNumberingResolver.ResolveLocal(

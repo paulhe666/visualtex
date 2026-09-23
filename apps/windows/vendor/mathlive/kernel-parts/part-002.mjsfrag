@@ -1,0 +1,1613 @@
+    l10n._subscribers.push(callback);
+    return l10n._subscribers.length - 1;
+  },
+  unsubscribe(id) {
+    if (id < 0 || id >= l10n._subscribers.length) return;
+    l10n._subscribers[id] = void 0;
+  },
+  /**
+   * Update the l10n strings in the DOM
+   */
+  update(root) {
+    let elements = root.querySelectorAll("[data-l10n-tooltip]");
+    for (const element of elements) {
+      const key = element.getAttribute("data-l10n-tooltip");
+      if (key) {
+        const localized = localize(key);
+        if (localized) element.setAttribute("data-tooltip", localized);
+      }
+    }
+    elements = root.querySelectorAll("[data-l10n-arial-label]");
+    for (const element of elements) {
+      const key = element.getAttribute("data-l10n-arial-label");
+      if (key) {
+        const localized = localize(key);
+        if (localized) element.setAttribute("aria-label", localized);
+      }
+    }
+  }
+};
+function localize(key, ...params) {
+  if (key === void 0) return void 0;
+  let result = "";
+  const locale = l10n.locale;
+  if (l10n.strings[locale]) result = l10n.strings[locale][key];
+  const language = locale.slice(0, 2);
+  if (!result && l10n.strings[language]) result = l10n.strings[language][key];
+  if (!result) result = l10n.strings.en[key];
+  if (!result) return void 0;
+  const regex = /(%@|%([0-9]+)\$@)/g;
+  let match = regex.exec(result);
+  let index = 0;
+  while (match) {
+    const parameter = params[index++];
+    if (parameter) {
+      const parameterIndex = match[2] ? parseInt(match[2], 10) - 1 : index - 1;
+      let repl = params[parameterIndex];
+      if (typeof repl === "number") repl = l10n.numberFormatter.format(repl);
+      result = result.replace(match[1], repl);
+    }
+    match = regex.exec(result);
+  }
+  result = result.replace(/%%/g, "%");
+  return result;
+}
+
+// src/core/color.ts
+var MATHEMATICA_COLORS = {
+  m0: "#3F3D99",
+  // Strong blue
+  m1: "#993D71",
+  // Strong cerise
+  m2: "#998B3D",
+  // Strong gold
+  m3: "#3D9956",
+  // Malachite green
+  m4: "#3D5A99",
+  // Strong cobalt blue
+  m5: "#993D90",
+  // Strong orchid
+  m6: "#996D3D",
+  // Strong orange
+  m7: "#43993D",
+  // Strong sap green
+  m8: "#3D7999",
+  // Cornflower blue
+  m9: "#843D99"
+  // Mulberry
+};
+var MATLAB_COLORS = {
+  blue: "#0072BD",
+  // [0, 0.4470, 0.7410]             blue
+  orange: "#D95319",
+  // [0.8500, 0.3250, 0.0980]        orange
+  yellow: "#EDB120",
+  // [0.9290, 0.6940, 0.1250]       yellow
+  purple: "#7E2F8E",
+  // [0.4940, 0.1840, 0.5560]       purple
+  green: "#77AC30",
+  // [0.4660, 0.6740, 0.1880]       green
+  cyan: "#4DBEEE",
+  // [0.3010, 0.7450, 0.9330]       cyan
+  red: "#A2142F"
+  // [0.6350, 0.0780, 0.1840]	    dark red
+};
+var BACKGROUND_COLORS = {
+  "red": "#fbbbb6",
+  "orange": "#ffe0c2",
+  "yellow": "#fff1c2",
+  "lime": "#d0e8b9",
+  "green": "#bceac4",
+  "teal": "#b9f1f1",
+  "cyan": "#b8e5c9",
+  "blue": "#b6d9fb",
+  "indigo": "#d1c2f0",
+  "purple": "#e3baf8",
+  "magenta": "#f9c8e0",
+  "black": "#353535",
+  "dark-grey": "#8C8C8C",
+  "grey": "#D0D0D0",
+  "light-grey": "#F0F0F0",
+  "white": "#ffffff"
+};
+var FOREGROUND_COLORS = {
+  "red": "#d7170b",
+  //<- 700, 500 ->'#f21c0d'
+  "orange": "#fe8a2b",
+  "yellow": "#ffc02b",
+  // <- 600, 500 -> '#ffcf33',
+  "lime": "#63b215",
+  "green": "#21ba3a",
+  "teal": "#17cfcf",
+  "cyan": "#13a7ec",
+  "blue": "#0d80f2",
+  "indigo": "#63c",
+  "purple": "#a219e6",
+  "magenta": "#eb4799",
+  "black": "#000",
+  "dark-grey": "#666",
+  "grey": "#A6A6A6",
+  "light-grey": "#d4d5d2",
+  "white": "#ffffff"
+};
+var DVIPS_TO_CHROMATIC = {
+  Red: "red",
+  Orange: "orange",
+  Yellow: "yellow",
+  LimeGreen: "lime",
+  Green: "green",
+  TealBlue: "teal",
+  Blue: "blue",
+  Violet: "indigo",
+  Purple: "purple",
+  Magenta: "magenta",
+  Black: "black",
+  Gray: "grey",
+  White: "white"
+};
+var DVIPS_COLORS = {
+  Apricot: "#FBB982",
+  Aquamarine: "#00B5BE",
+  Bittersweet: "#C04F17",
+  Black: "#221E1F",
+  // Indeed.
+  Blue: "#2D2F92",
+  BlueGreen: "#00B3B8",
+  BlueViolet: "#473992",
+  BrickRed: "#B6321C",
+  Brown: "#792500",
+  BurntOrange: "#F7921D",
+  CadetBlue: "#74729A",
+  CarnationPink: "#F282B4",
+  Cerulean: "#00A2E3",
+  CornflowerBlue: "#41B0E4",
+  Cyan: "#00AEEF",
+  Dandelion: "#FDBC42",
+  DarkOrchid: "#A4538A",
+  Emerald: "#00A99D",
+  ForestGreen: "#009B55",
+  Fuchsia: "#8C368C",
+  Goldenrod: "#FFDF42",
+  Gray: "#949698",
+  Green: "#00A64F",
+  GreenYellow: "#DFE674",
+  JungleGreen: "#00A99A",
+  Lavender: "#F49EC4",
+  Limegreen: "#8DC73E",
+  Magenta: "#EC008C",
+  Mahogany: "#A9341F",
+  Maroon: "#AF3235",
+  Melon: "#F89E7B",
+  MidnightBlue: "#006795",
+  Mulberry: "#A93C93",
+  NavyBlue: "#006EB8",
+  OliveGreen: "#3C8031",
+  Orange: "#F58137",
+  OrangeRed: "#ED135A",
+  Orchid: "#AF72B0",
+  Peach: "#F7965A",
+  Periwinkle: "#7977B8",
+  PineGreen: "#008B72",
+  Plum: "#92268F",
+  ProcessBlue: "#00B0F0",
+  Purple: "#99479B",
+  RawSienna: "#974006",
+  Red: "#ED1B23",
+  RedOrange: "#F26035",
+  RedViolet: "#A1246B",
+  Rhodamine: "#EF559F",
+  RoyalBlue: "#0071BC",
+  RoyalPurple: "#613F99",
+  RubineRed: "#ED017D",
+  Salmon: "#F69289",
+  SeaGreen: "#3FBC9D",
+  Sepia: "#671800",
+  SkyBlue: "#46C5DD",
+  SpringGreen: "#C6DC67",
+  Tan: "#DA9D76",
+  TealBlue: "#00AEB3",
+  Thistle: "#D883B7",
+  Turquoise: "#00B4CE",
+  Violet: "#58429B",
+  VioletRed: "#EF58A0",
+  White: "#FFFFFF",
+  WildStrawberry: "#EE2967",
+  Yellow: "#FFF200",
+  YellowGreen: "#98CC70",
+  YellowOrange: "#FAA21A"
+};
+function defaultColorMap(s) {
+  var _a3, _b3, _c2, _d2, _e, _f;
+  const colorSpec = s.split("!");
+  let baseRed;
+  let baseGreen;
+  let baseBlue;
+  let red = 255;
+  let green = 255;
+  let blue = 255;
+  let mix = -1;
+  const complementary = colorSpec.length > 0 && colorSpec[0].startsWith("-");
+  if (complementary) colorSpec[0] = colorSpec[0].slice(1);
+  for (let i = 0; i < colorSpec.length; i++) {
+    baseRed = red;
+    baseGreen = green;
+    baseBlue = blue;
+    const colorName = (_a3 = colorSpec[i].trim().match(/^([A-Za-z\d-]+)/)) == null ? void 0 : _a3[1];
+    const lcColorName = colorName == null ? void 0 : colorName.toLowerCase();
+    const color = !colorName ? colorSpec[i].trim() : (_f = (_e = (_d2 = (_c2 = (_b3 = FOREGROUND_COLORS[lcColorName]) != null ? _b3 : FOREGROUND_COLORS[DVIPS_TO_CHROMATIC[colorName]]) != null ? _c2 : MATLAB_COLORS[colorName]) != null ? _d2 : DVIPS_COLORS[colorName]) != null ? _e : MATHEMATICA_COLORS[colorName]) != null ? _f : colorSpec[i].trim();
+    let m = color.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
+    if ((m == null ? void 0 : m[1]) && m[2] && m[3]) {
+      red = Math.max(0, Math.min(255, Number.parseInt(m[1], 16)));
+      green = Math.max(0, Math.min(255, Number.parseInt(m[2], 16)));
+      blue = Math.max(0, Math.min(255, Number.parseInt(m[3], 16)));
+    } else {
+      m = color.match(/^#([\da-f]{3})$/i);
+      if (m == null ? void 0 : m[1]) {
+        const r1 = Number.parseInt(m[1][0], 16);
+        const g1 = Number.parseInt(m[1][1], 16);
+        const b1 = Number.parseInt(m[1][2], 16);
+        red = Math.max(0, Math.min(255, r1 * 16 + r1));
+        green = Math.max(0, Math.min(255, g1 * 16 + g1));
+        blue = Math.max(0, Math.min(255, b1 * 16 + b1));
+      } else {
+        m = color.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+        if ((m == null ? void 0 : m[1]) && m[2] && m[3]) {
+          red = Math.max(0, Math.min(255, Number.parseInt(m[1])));
+          green = Math.max(0, Math.min(255, Number.parseInt(m[2])));
+          blue = Math.max(0, Math.min(255, Number.parseInt(m[3])));
+        } else return void 0;
+      }
+    }
+    if (mix >= 0) {
+      red = (1 - mix) * red + mix * baseRed;
+      green = (1 - mix) * green + mix * baseGreen;
+      blue = (1 - mix) * blue + mix * baseBlue;
+      mix = -1;
+    }
+    if (i + 1 < colorSpec.length)
+      mix = Math.max(0, Math.min(100, Number.parseInt(colorSpec[++i]))) / 100;
+  }
+  if (mix >= 0) {
+    red = mix * red + (1 - mix) * baseRed;
+    green = mix * green + (1 - mix) * baseGreen;
+    blue = mix * blue + (1 - mix) * baseBlue;
+  }
+  if (complementary) {
+    red = 255 - red;
+    green = 255 - green;
+    blue = 255 - blue;
+  }
+  return "#" + ("00" + Math.round(red).toString(16)).slice(-2) + ("00" + Math.round(green).toString(16)).slice(-2) + ("00" + Math.round(blue).toString(16)).slice(-2);
+}
+function defaultBackgroundColorMap(s) {
+  var _a3, _b3;
+  s = s.trim();
+  return (_b3 = (_a3 = BACKGROUND_COLORS[s.toLowerCase()]) != null ? _a3 : BACKGROUND_COLORS[DVIPS_TO_CHROMATIC[s]]) != null ? _b3 : defaultColorMap(s);
+}
+function parseHex(hex) {
+  if (!hex) return void 0;
+  if (hex[0] !== "#") return void 0;
+  hex = hex.slice(1);
+  let result;
+  if (hex.length <= 4) {
+    result = {
+      r: parseInt(hex[0] + hex[0], 16),
+      g: parseInt(hex[1] + hex[1], 16),
+      b: parseInt(hex[2] + hex[2], 16)
+    };
+    if (hex.length === 4) result.a = parseInt(hex[3] + hex[3], 16) / 255;
+  } else {
+    result = {
+      r: parseInt(hex[0] + hex[1], 16),
+      g: parseInt(hex[2] + hex[3], 16),
+      b: parseInt(hex[4] + hex[5], 16)
+    };
+    if (hex.length === 8) result.a = parseInt(hex[6] + hex[7], 16) / 255;
+  }
+  if (result && result.a === void 0) result.a = 1;
+  return result;
+}
+function hueToRgbChannel(t1, t2, hue) {
+  if (hue < 0) hue += 6;
+  if (hue >= 6) hue -= 6;
+  if (hue < 1) return (t2 - t1) * hue + t1;
+  else if (hue < 3) return t2;
+  else if (hue < 4) return (t2 - t1) * (4 - hue) + t1;
+  return t1;
+}
+function hslToRgb(hsl) {
+  let [hue, sat, light] = [hsl.h, hsl.s, hsl.l];
+  hue = (hue + 360) % 360 / 60;
+  light = Math.max(0, Math.min(light, 1));
+  sat = Math.max(0, Math.min(sat, 1));
+  const t2 = light <= 0.5 ? light * (sat + 1) : light + sat - light * sat;
+  const t1 = light * 2 - t2;
+  return {
+    r: Math.round(255 * hueToRgbChannel(t1, t2, hue + 2)),
+    g: Math.round(255 * hueToRgbChannel(t1, t2, hue)),
+    b: Math.round(255 * hueToRgbChannel(t1, t2, hue - 2))
+  };
+}
+function clampByte(v) {
+  if (v < 0) return 0;
+  if (v > 255) return 255;
+  return Math.round(v);
+}
+function rgbToHexstring(rgb) {
+  const { r, g, b } = rgb;
+  let hexString = ((1 << 24) + (clampByte(r) << 16) + (clampByte(g) << 8) + clampByte(b)).toString(16).slice(1);
+  if (hexString[0] === hexString[1] && hexString[2] === hexString[3] && hexString[4] === hexString[5] && hexString[6] === hexString[7])
+    hexString = hexString[0] + hexString[2] + hexString[4];
+  return "#" + hexString;
+}
+function rgbToHsl(rgb) {
+  let { r, g, b } = rgb;
+  r = r / 255;
+  g = g / 255;
+  b = b / 255;
+  const min = Math.min(r, g, b);
+  const max = Math.max(r, g, b);
+  const delta = max - min;
+  let h;
+  let s;
+  if (max === min) h = 0;
+  else if (r === max) h = (g - b) / delta;
+  else if (g === max) h = 2 + (b - r) / delta;
+  else if (b === max) h = 4 + (r - g) / delta;
+  h = Math.min(h * 60, 360);
+  if (h < 0) h += 360;
+  const l = (min + max) / 2;
+  if (max === min) s = 0;
+  else if (l <= 0.5) s = delta / (max + min);
+  else s = delta / (2 - max - min);
+  return { h, s, l };
+}
+function highlight(color) {
+  let rgb = parseHex(color);
+  if (!rgb) return color;
+  let { h, s, l } = rgbToHsl(rgb);
+  s += 0.1;
+  l -= 0.1;
+  return rgbToHexstring(hslToRgb({ h, s, l }));
+}
+
+// src/core/unicode.ts
+var UNICODE_TO_LATEX = {
+  60: "\\lt",
+  62: "\\gt",
+  111: "o",
+  // Also \omicron
+  38: "\\&",
+  // Also \And
+  123: "\\lbrace",
+  125: "\\rbrace",
+  91: "\\lbrack",
+  93: "\\rbrack",
+  58: "\\colon",
+  // Also :
+  160: "~",
+  // Also \space
+  172: "\\neg",
+  // Also \lnot
+  183: "\\cdot",
+  188: "\\frac{1}{4}",
+  189: "\\frac{1}{2}",
+  190: "\\frac{3}{4}",
+  8304: "^{0}",
+  8305: "^{i}",
+  185: "^{1}",
+  178: "^{2}",
+  // ²
+  179: "^{3}",
+  8224: "\\dagger",
+  // Also \dag
+  8225: "\\ddagger",
+  // Also \ddag
+  8230: "\\ldots",
+  // Also \mathellipsis
+  8308: "^{4}",
+  8309: "^{5}",
+  8310: "^{6}",
+  8311: "^{7}",
+  8312: "^{8}",
+  8313: "^{9}",
+  8314: "^{+}",
+  8315: "^{-}",
+  8316: "^{=}",
+  8319: "^{n}",
+  8320: "_{0}",
+  8321: "_{1}",
+  8322: "_{2}",
+  8323: "_{3}",
+  8324: "_{4}",
+  8325: "_{5}",
+  8326: "_{6}",
+  8327: "_{7}",
+  8328: "_{8}",
+  8329: "_{9}",
+  8330: "_{+}",
+  8331: "_{-}",
+  8332: "_{=}",
+  8336: "_{a}",
+  8337: "_{e}",
+  8338: "_{o}",
+  8339: "_{x}",
+  8242: "\\prime",
+  39: "\\prime",
+  8592: "\\gets",
+  // Also \leftarrow
+  8594: "\\to",
+  // Also \rightarrow
+  9651: "\\triangle",
+  // Also \bigtriangleup, \vartriangle
+  9661: "\\triangledown",
+  8715: "\\owns",
+  // Also \ni
+  8727: "\\ast",
+  // Also *
+  8739: "\\vert",
+  // Also |, \mvert, \lvert, \rvert
+  8741: "\\Vert",
+  // Also \parallel \shortparallel
+  8743: "\\land",
+  // Also \wedge
+  8744: "\\lor",
+  // Also \vee
+  8901: "\\cdot",
+  // Also \centerdot, \cdotp
+  8904: "\\bowtie",
+  // Also \Joint
+  8800: "\\ne",
+  // Also \neq
+  8804: "\\le",
+  // Also \leq
+  8805: "\\ge",
+  // Also \geq
+  8869: "\\bot",
+  10178: "\\perp",
+  10231: "\\biconditional",
+  // Also \longleftrightarrow
+  10232: "\\impliedby",
+  // Also \Longleftarrow
+  10233: "\\implies",
+  // Also \Longrightarrow
+  10234: "\\iff",
+  8450: "\\mathbb{C}",
+  8469: "\\mathbb{N}",
+  8473: "\\mathbb{P}",
+  8474: "\\mathbb{Q}",
+  8477: "\\mathbb{R}",
+  8484: "\\mathbb{Z}",
+  8461: "\\mathbb{H}",
+  8476: "\\Re",
+  8465: "\\Im",
+  42: "\\ast",
+  11036: "\\square",
+  9633: "\\square",
+  8720: "\\coprod",
+  8716: "\\not\\ni",
+  9671: "\\diamond",
+  8846: "\\uplus",
+  8851: "\\sqcap",
+  8852: "\\sqcup",
+  8768: "\\wr",
+  8750: "\\oint",
+  8226: "\\textbullet",
+  8722: "-",
+  978: "\\Upsilon"
+};
+var MATH_LETTER_EXCEPTIONS = {
+  119893: 8462,
+  119965: 8492,
+  119968: 8496,
+  119969: 8497,
+  119971: 8459,
+  119972: 8464,
+  119975: 8466,
+  119976: 8499,
+  119981: 8475,
+  119994: 8495,
+  119996: 8458,
+  120004: 8500,
+  120070: 8493,
+  120075: 8460,
+  120076: 8465,
+  120085: 8476,
+  120093: 8488,
+  120122: 8450,
+  120127: 8461,
+  120133: 8469,
+  120135: 8473,
+  120136: 8474,
+  120137: 8477,
+  120145: 8484
+};
+var MATH_UNICODE_BLOCKS = [
+  { start: 119808, len: 26, offset: 65, style: "bold" },
+  { start: 119834, len: 26, offset: 97, style: "bold" },
+  { start: 120488, len: 25, offset: 913, style: "bold" },
+  { start: 120514, len: 25, offset: 945, style: "bold" },
+  { start: 119860, len: 26, offset: 65, style: "italic" },
+  { start: 119886, len: 26, offset: 97, style: "italic" },
+  { start: 120546, len: 25, offset: 913, style: "italic" },
+  { start: 120572, len: 25, offset: 945, style: "italic" },
+  { start: 119912, len: 26, offset: 65, style: "bolditalic" },
+  { start: 119938, len: 26, offset: 97, style: "bolditalic" },
+  { start: 120604, len: 25, offset: 913, style: "bolditalic" },
+  { start: 120630, len: 25, offset: 945, style: "bolditalic" },
+  { start: 120782, len: 10, offset: 48, variant: "main", style: "bold" },
+  { start: 119964, len: 26, offset: 65, variant: "script" },
+  { start: 119990, len: 26, offset: 97, variant: "script" },
+  { start: 120016, len: 26, offset: 65, variant: "script", style: "bold" },
+  { start: 120042, len: 26, offset: 97, variant: "script", style: "bold" },
+  { start: 120068, len: 26, offset: 65, variant: "fraktur" },
+  { start: 120094, len: 26, offset: 97, variant: "fraktur" },
+  { start: 120172, len: 26, offset: 65, variant: "fraktur", style: "bold" },
+  { start: 120198, len: 26, offset: 97, variant: "fraktur", style: "bold" },
+  { start: 120120, len: 26, offset: 65, variant: "double-struck" },
+  { start: 120146, len: 26, offset: 97, variant: "double-struck" },
+  { start: 120792, len: 10, offset: 48, variant: "double-struck" },
+  { start: 120432, len: 26, offset: 65, variant: "monospace" },
+  { start: 120458, len: 26, offset: 97, variant: "monospace" },
+  { start: 120822, len: 10, offset: 48, variant: "monospace" },
+  { start: 120224, len: 26, offset: 65, variant: "sans-serif" },
+  { start: 120250, len: 26, offset: 97, variant: "sans-serif" },
+  {
+    start: 120276,
+    len: 26,
+    offset: 65,
+    variant: "sans-serif",
+    style: "bold"
+  },
+  {
+    start: 120302,
+    len: 26,
+    offset: 97,
+    variant: "sans-serif",
+    style: "bold"
+  },
+  {
+    start: 120328,
+    len: 26,
+    offset: 65,
+    variant: "sans-serif",
+    style: "italic"
+  },
+  {
+    start: 120354,
+    len: 26,
+    offset: 97,
+    variant: "sans-serif",
+    style: "italic"
+  },
+  {
+    start: 120380,
+    len: 26,
+    offset: 65,
+    variant: "sans-serif",
+    style: "bolditalic"
+  },
+  {
+    start: 120406,
+    len: 26,
+    offset: 97,
+    variant: "sans-serif",
+    style: "bolditalic"
+  },
+  {
+    start: 120662,
+    len: 25,
+    offset: 913,
+    variant: "sans-serif",
+    style: "bold"
+  },
+  {
+    start: 120688,
+    len: 25,
+    offset: 945,
+    variant: "sans-serif",
+    style: "bold"
+  },
+  {
+    start: 120720,
+    len: 25,
+    offset: 913,
+    variant: "sans-serif",
+    style: "bolditalic"
+  },
+  {
+    start: 120746,
+    len: 25,
+    offset: 945,
+    variant: "sans-serif",
+    style: "bolditalic"
+  },
+  { start: 120803, len: 10, offset: 48, variant: "sans-serif" },
+  {
+    start: 120812,
+    len: 10,
+    offset: 48,
+    variant: "sans-serif",
+    style: "bold"
+  }
+];
+function mathVariantToUnicode(char, variant, style) {
+  if (!/[A-Za-z\d]/.test(char)) return void 0;
+  if (style === "up") style = void 0;
+  if (!variant && !style) return void 0;
+  const codepoint = char.codePointAt(0);
+  if (codepoint === void 0) return char;
+  for (const block of MATH_UNICODE_BLOCKS) {
+    if (!variant || block.variant === variant) {
+      if (!style || block.style === style) {
+        if (codepoint >= block.offset && codepoint < block.offset + block.len) {
+          const result = block.start + codepoint - block.offset;
+          return String.fromCodePoint(MATH_LETTER_EXCEPTIONS[result] || result);
+        }
+      }
+    }
+  }
+  return void 0;
+}
+function unicodeToMathVariant(codepoint) {
+  var _a3;
+  if ((codepoint < 119808 || codepoint > 120831) && (codepoint < 8448 || codepoint > 8527))
+    return { char: String.fromCodePoint(codepoint) };
+  for (const c in MATH_LETTER_EXCEPTIONS) {
+    if (MATH_LETTER_EXCEPTIONS[c] === codepoint) {
+      codepoint = (_a3 = c.codePointAt(0)) != null ? _a3 : 0;
+      break;
+    }
+  }
+  for (const block of MATH_UNICODE_BLOCKS) {
+    if (codepoint >= block.start && codepoint < block.start + block.len) {
+      return {
+        char: String.fromCodePoint(codepoint - block.start + block.offset),
+        variant: block.variant,
+        style: block.style
+      };
+    }
+  }
+  return { char: String.fromCodePoint(codepoint) };
+}
+function codePointToLatex(c) {
+  var _a3;
+  if ("{}<>[]$&*#^_%:'\u02DC".includes(c)) return void 0;
+  if (c.length > 1) return void 0;
+  const codepoint = (_a3 = c.codePointAt(0)) != null ? _a3 : 0;
+  let latex = UNICODE_TO_LATEX[codepoint];
+  if (latex) return latex;
+  const { char, variant, style } = unicodeToMathVariant(codepoint);
+  if (!variant && !style) return void 0;
+  latex = char;
+  switch (variant) {
+    case "double-struck":
+      latex = `\\mathbb{${latex}}`;
+      break;
+    case "fraktur":
+      latex = `\\mathfrak{${latex}}`;
+      break;
+    case "script":
+      latex = `\\mathscr{${latex}}`;
+      break;
+    case "sans-serif":
+      latex = `\\mathsf{${latex}}`;
+      break;
+    case "monospace":
+      latex = `\\mathtt{${latex}}`;
+      break;
+    case "calligraphic":
+      latex = `\\mathcal{${latex}}`;
+      break;
+  }
+  switch (style) {
+    case "bold":
+      latex = `\\mathbf{${latex}}`;
+      break;
+    case "italic":
+      latex = `\\mathit{${latex}}`;
+      break;
+    case "bolditalic":
+      latex = `\\mathbfit{${latex}}`;
+      break;
+  }
+  return latex;
+}
+
+// src/latex-commands/definitions-utils.ts
+function argAtoms(arg) {
+  if (!arg) return [];
+  if (Array.isArray(arg)) return arg;
+  if (typeof arg === "object" && "group" in arg) return arg.group;
+  return [];
+}
+var MATH_SYMBOLS = {};
+var REVERSE_MATH_SYMBOLS = __spreadValues({}, UNICODE_TO_LATEX);
+var LATEX_COMMANDS = {};
+var ENVIRONMENTS = {};
+var TEXVC_MACROS = {
+  //////////////////////////////////////////////////////////////////////
+  // texvc.sty
+  // The texvc package
+  // (https://ctan.math.illinois.edu/macros/latex/contrib/texvc/texvc.pdf)
+  // contains macros available in mediawiki pages.
+  // We omit the functions deprecated at
+  // https://en.wikipedia.org/wiki/Help:Displaying_a_formula#Deprecated_syntax
+  // We also omit texvc's \O, which conflicts with \text{\O}
+  darr: "\\downarrow",
+  dArr: "\\Downarrow",
+  Darr: "\\Downarrow",
+  lang: "\\langle",
+  rang: "\\rangle",
+  uarr: "\\uparrow",
+  uArr: "\\Uparrow",
+  Uarr: "\\Uparrow",
+  C: "\\mathbb{C}",
+  H: "\\mathbb{H}",
+  N: "\\mathbb{N}",
+  Q: "\\mathbb{Q}",
+  R: "\\mathbb{R}",
+  Z: "\\mathbb{Z}",
+  alef: "\\aleph",
+  alefsym: "\\aleph",
+  Alpha: "\\mathrm{A}",
+  // and: '\\land',
+  //  ang: '\\angle',   // We use the def from the siunitx package
+  Beta: "\\mathrm{B}",
+  bull: "\\bullet",
+  Chi: "\\mathrm{X}",
+  clubs: "\\clubsuit",
+  cnums: "\\mathbb{C}",
+  Complex: "\\mathbb{C}",
+  Dagger: "\\ddagger",
+  diamonds: "\\diamondsuit",
+  //  Doteq: '\\doteq',   // We map it to U+2251, while \doteq is U+2250
+  doublecap: "\\Cap",
+  doublecup: "\\Cup",
+  empty: "\\emptyset",
+  Epsilon: "\\mathrm{E}",
+  Eta: "\\mathrm{H}",
+  exist: "\\exists",
+  //  ge: '\\geq', // We have it as a builtin
+  //  gggtr: '\\ggg', // We have it as a builtin
+  hArr: "\\Leftrightarrow",
+  harr: "\\leftrightarrow",
+  Harr: "\\Leftrightarrow",
+  hearts: "\\heartsuit",
+  image: "\\Im",
+  infin: "\\infty",
+  Iota: "\\mathrm{I}",
+  isin: "\\in",
+  Kappa: "\\mathrm{K}",
+  larr: "\\leftarrow",
+  Larr: "\\Leftarrow",
+  lArr: "\\Leftarrow",
+  //  le: '\\leq', // We have it as a builtin
+  lrarr: "\\leftrightarrow",
+  Lrarr: "\\Leftrightarrow",
+  lrArr: "\\Leftrightarrow",
+  Mu: "\\mathrm{M}",
+  natnums: "\\mathbb{N}",
+  // ne: '\\neq',   // We have it as a builtin
+  Nu: "\\mathrm{N}",
+  //  O: '\\emptyset', // Conflicts with \O text command
+  //  omicron: '\\mathrm{o}', // We have it as a builtin
+  Omicron: "\\mathrm{O}",
+  // or: '\\lor',
+  part: "\\partial",
+  plusmn: "\\pm",
+  rarr: "\\rightarrow",
+  Rarr: "\\Rightarrow",
+  rArr: "\\Rightarrow",
+  real: "\\Re",
+  reals: "\\mathbb{R}",
+  Reals: "\\mathbb{R}",
+  restriction: "\\upharpoonright",
+  Rho: "\\mathrm{P}",
+  sdot: "\\cdot",
+  sect: "\\S",
+  spades: "\\spadesuit",
+  sub: "\\subset",
+  sube: "\\subseteq",
+  supe: "\\supseteq",
+  Tau: "\\mathrm{T}",
+  thetasym: "\\vartheta",
+  varcoppa: "\\coppa",
+  weierp: "\\wp",
+  Zeta: "\\mathrm{Z}"
+};
+var AMSMATH_MACROS = {
+  // amsmath.sty
+  // http://mirrors.concertpass.com/tex-archive/macros/latex/required/amsmath/amsmath.pdf
+  // Italic Greek capital letters.  AMS defines these with \DeclareMathSymbol,
+  // but they are equivalent to \mathit{\Letter}.
+  varGamma: "\\mathit{\\Gamma}",
+  varDelta: "\\mathit{\\Delta}",
+  varTheta: "\\mathit{\\Theta}",
+  varLambda: "\\mathit{\\Lambda}",
+  varXi: "\\mathit{\\Xi}",
+  varPi: "\\mathit{\\Pi}",
+  varSigma: "\\mathit{\\Sigma}",
+  varUpsilon: "\\mathit{\\Upsilon}",
+  varPhi: "\\mathit{\\Phi}",
+  varPsi: "\\mathit{\\Psi}",
+  varOmega: "\\mathit{\\Omega}",
+  // From http://tug.ctan.org/macros/latex/required/amsmath/amsmath.dtx
+  // > \newcommand{\pod}[1]{
+  // >    \allowbreak
+  // >    \if@display
+  // >      \mkern18mu
+  // >    \else
+  // >      \mkern8mu
+  // >    \fi
+  // >    (#1)
+  // > }
+  // 18mu = \quad
+  // > \renewcommand{\pmod}[1]{
+  // >  \pod{{\operator@font mod}\mkern6mu#1}
+  // > }
+  pmod: {
+    def: "\\quad(\\operatorname{mod}\\ #1)",
+    args: 1,
+    expand: false,
+    captureSelection: false
+  },
+  // > \newcommand{\mod}[1]{
+  // >    \allowbreak
+  // >    \if@display
+  // >      \mkern18mu
+  // >    \else
+  // >      \mkern12mu
+  // >    \fi
+  //>     {\operator@font mod}\,\,#1}
+  mod: {
+    def: "\\quad\\operatorname{mod}\\,\\,#1",
+    args: 1,
+    expand: false
+  },
+  // > \renewcommand{\bmod}{
+  // >  \nonscript\mskip-\medmuskip\mkern5mu
+  // >  \mathbin{\operator@font mod}
+  // >  \penalty900 \mkern5mu
+  // >  \nonscript\mskip-\medmuskip
+  // > }
+  // 5mu = \;
+  bmod: {
+    def: "\\;\\mathbin{\\operatorname{mod }}",
+    expand: false
+  }
+};
+var BRAKET_MACROS = {
+  bra: { def: "\\mathinner{\\langle{#1}|}", args: 1, captureSelection: false },
+  ket: { def: "\\mathinner{|{#1}\\rangle}", args: 1, captureSelection: false },
+  braket: {
+    def: "\\mathinner{\\langle{#1}\\rangle}",
+    args: 1,
+    captureSelection: false
+  },
+  set: {
+    def: "\\mathinner{\\lbrace #1 \\rbrace}",
+    args: 1,
+    captureSelection: false
+  },
+  Bra: { def: "\\left\\langle #1\\right|", args: 1, captureSelection: false },
+  Ket: { def: "\\left|#1\\right\\rangle", args: 1, captureSelection: false },
+  Braket: {
+    def: "\\left\\langle{#1}\\right\\rangle",
+    args: 1,
+    captureSelection: false
+  },
+  Set: {
+    def: "\\left\\lbrace #1 \\right\\rbrace",
+    args: 1,
+    captureSelection: false
+  }
+};
+var DEFAULT_MACROS = {
+  "strut": {
+    primitive: true,
+    def: "\\phantom{\\rule[0.3\\baselineskip]{0}{0.7\\baselineskip}}",
+    args: 0,
+    captureSelection: true
+  },
+  "iff": {
+    primitive: true,
+    captureSelection: true,
+    def: "\\;\\Longleftrightarrow\\;"
+    // >2,000 Note: additional spaces around the arrows, as per AMSMATH package definition
+  },
+  "nicefrac": "^{#1}\\!\\!/\\!_{#2}",
+  "phase": {
+    def: "\\enclose{phasorangle}{#1}",
+    args: 1,
+    captureSelection: false
+  },
+  // Proof Wiki
+  "rd": "\\mathrm{d}",
+  "rD": "\\mathrm{D}",
+  // Derivative package
+  "odif": "\\mathrm{d}",
+  // From Wolfram Alpha
+  "doubleStruckCapitalN": "\\mathbb{N}",
+  "doubleStruckCapitalR": "\\mathbb{R}",
+  "doubleStruckCapitalQ": "\\mathbb{Q}",
+  "doubleStruckCapitalZ": "\\mathbb{Z}",
+  "doubleStruckCapitalP": "\\mathbb{P}",
+  "scriptCapitalE": "\\mathscr{E}",
+  "scriptCapitalH": "\\mathscr{H}",
+  "scriptCapitalL": "\\mathscr{L}",
+  "gothicCapitalC": "\\mathfrak{C}",
+  "gothicCapitalH": "\\mathfrak{H}",
+  "gothicCapitalI": "\\mathfrak{I}",
+  "gothicCapitalR": "\\mathfrak{R}",
+  "imaginaryI": "\\mathrm{i}",
+  // NOTE: set in main (upright) as per ISO 80000-2:2009.
+  "imaginaryJ": "\\mathrm{j}",
+  // NOTE: set in main (upright) as per ISO 80000-2:2009.
+  "exponentialE": "\\mathrm{e}",
+  // NOTE: set in main (upright) as per ISO 80000-2:2009.
+  "differentialD": "\\mathrm{d}",
+  // NOTE: set in main (upright) as per ISO 80000-2:2009.
+  "capitalDifferentialD": "\\mathrm{D}",
+  // NOTE: set in main (upright) as per ISO 80000-2:2009.
+  "mathstrut": { def: "\\vphantom{(}", primitive: true },
+  // https://ctan.math.washington.edu/tex-archive/macros/latex/contrib/actuarialangle/actuarialangle.pdf
+  "angl": "\\enclose{actuarial}{#1}",
+  "angln": "\\enclose{actuarial}{n}",
+  "anglr": "\\enclose{actuarial}{r}",
+  "anglk": "\\enclose{actuarial}{k}",
+  //////////////////////////////////////////////////////////////////////
+  // mathtools.sty
+  // In the summer of 2022, mathtools did some renaming of macros.
+  // This is the latest version, with some legacy commands.
+  // See https://mirrors.ircam.fr/pub/CTAN/macros/latex/contrib/mathtools/mathtools.pdf
+  "mathtools": {
+    primitive: true,
+    package: {
+      //\providecommand\ordinarycolon{:}
+      ordinarycolon: ":",
+      //\def\vcentcolon{\mathrel{\mathop\ordinarycolon}}
+      //TODO(edemaine): Not yet centered. Fix via \raisebox or #726
+      vcentcolon: "\\mathrel{\\mathop\\ordinarycolon}",
+      // \providecommand*\dblcolon{\vcentcolon\mathrel{\mkern-.9mu}\vcentcolon}
+      dblcolon: '{\\mathop{\\char"2237}}',
+      // ∷
+      // \providecommand*\coloneqq{\vcentcolon\mathrel{\mkern-1.2mu}=}
+      coloneqq: '{\\mathop{\\char"2254}}',
+      // ≔
+      // \providecommand*\Coloneqq{\dblcolon\mathrel{\mkern-1.2mu}=}
+      Coloneqq: '{\\mathop{\\char"2A74}}',
+      // ⩴
+      // \providecommand*\coloneq{\vcentcolon\mathrel{\mkern-1.2mu}\mathrel{-}}
+      coloneq: '{\\mathop{\\char"2254}}',
+      // ≔
+      // \providecommand*\Coloneq{\dblcolon\mathrel{\mkern-1.2mu}\mathrel{=}}
+      Coloneq: '{\\mathop{\\char"2A74}}',
+      // ⩴
+      // \providecommand*\eqqcolon{=\mathrel{\mkern-1.2mu}\vcentcolon}
+      eqqcolon: '{\\mathop{\\char"2255}}',
+      // ≕
+      // \providecommand*\Eqqcolon{=\mathrel{\mkern-1.2mu}\dblcolon}
+      Eqqcolon: '{\\mathop{\\char"3D\\char"2237}}',
+      // =∷
+      // \providecommand*\eqcolon{\mathrel{-}\mathrel{\mkern-1.2mu}\vcentcolon}
+      eqcolon: '{\\mathop{\\char"2255}}',
+      // ≕
+      // \providecommand*\Eqcolon{\mathrel{-}\mathrel{\mkern-1.2mu}\dblcolon}
+      Eqcolon: '{\\mathop{\\char"3D\\char"2237}}',
+      // =∷
+      // \providecommand*\colonapprox{\vcentcolon\mathrel{\mkern-1.2mu}\approx}
+      colonapprox: '{\\mathop{\\char"003A\\char"2248}}',
+      // :≈
+      // \providecommand*\Colonapprox{\dblcolon\mathrel{\mkern-1.2mu}\approx}
+      Colonapprox: '{\\mathop{\\char"2237\\char"2248}}',
+      // ∷≈
+      // \providecommand*\colonsim{\vcentcolon\mathrel{\mkern-1.2mu}\sim}
+      colonsim: '{\\mathop{\\char"3A\\char"223C}}',
+      // :∼
+      // \providecommand*\Colonsim{\dblcolon\mathrel{\mkern-1.2mu}\sim}
+      Colonsim: '{\\mathop{\\char"2237\\char"223C}}',
+      // ∷∼
+      colondash: "\\mathrel{\\vcentcolon\\mathrel{\\mkern-1.2mu}\\mathrel{-}}",
+      // :-
+      Colondash: "\\mathrel{\\dblcolon\\mathrel{\\mkern-1.2mu}\\mathrel{-}}",
+      dashcolon: "\\mathrel{\\mathrel{-}\\mathrel{\\mkern-1.2mu}\\vcentcolon}",
+      Dashcolon: "\\mathrel{\\mathrel{-}\\mathrel{\\mkern-1.2mu}\\dblcolon}"
+    }
+  },
+  //////////////////////////////////////////////////////////////////////
+  // colonequals.sty
+  // Alternate names for mathtools's macros:
+  "ratio": "\\vcentcolon",
+  "coloncolon": "\\dblcolon",
+  "colonequals": "\\coloneq",
+  "coloncolonequals": "\\Coloneq",
+  "equalscolon": "\\eqcolon",
+  "equalscoloncolon": "\\Eqcolon",
+  "colonminus": "\\colondash",
+  "coloncolonminus": "\\Colondash",
+  "minuscolon": "\\dashcolon",
+  "minuscoloncolon": "\\Dashcolon",
+  // \colonapprox name is same in mathtools and colonequals.
+  "coloncolonapprox": "\\Colonapprox",
+  // \colonsim name is same in mathtools and colonequals.
+  "coloncolonsim": "\\Colonsim",
+  // Additional macros, implemented by analogy with mathtools definitions:
+  "simcolon": "\\mathrel{\\sim\\mathrel{\\mkern-1.2mu}\\vcentcolon}",
+  "Simcolon": "\\mathrel{\\sim\\mathrel{\\mkern-1.2mu}\\dblcolon}",
+  "simcoloncolon": "\\mathrel{\\sim\\mathrel{\\mkern-1.2mu}\\dblcolon}",
+  "approxcolon": "\\mathrel{\\approx\\mathrel{\\mkern-1.2mu}\\vcentcolon}",
+  "Approxcolon": "\\mathrel{\\approx\\mathrel{\\mkern-1.2mu}\\dblcolon}",
+  "approxcoloncolon": "\\mathrel{\\approx\\mathrel{\\mkern-1.2mu}\\dblcolon}",
+  // Present in newtxmath, pxfonts and txfonts
+  "notni": "\\mathrel{\\char`\u220C}",
+  "limsup": "\\operatorname*{lim\\,sup}",
+  "liminf": "\\operatorname*{lim\\,inf}",
+  //////////////////////////////////////////////////////////////////////
+  // From amsopn.sty
+  "injlim": "\\operatorname*{inj\\,lim}",
+  "projlim": "\\operatorname*{proj\\,lim}",
+  "varlimsup": "\\operatorname*{\\overline{lim}}",
+  "varliminf": "\\operatorname*{\\underline{lim}}",
+  "varinjlim": "\\operatorname*{\\underrightarrow{lim}}",
+  "varprojlim": "\\operatorname*{\\underleftarrow{lim}}",
+  //////////////////////////////////////////////////////////////////////
+  // statmath.sty
+  // https://ctan.math.illinois.edu/macros/latex/contrib/statmath/statmath.pdf
+  "argmin": "\\operatorname*{arg\\,min}",
+  "argmax": "\\operatorname*{arg\\,max}",
+  "plim": "\\mathop{\\operatorname{plim}}\\limits",
+  // mhchem
+  "tripledash": {
+    def: "\\vphantom{-}\\raise{4mu}{\\mkern1.5mu\\rule{2mu}{1.5mu}\\mkern{2.25mu}\\rule{2mu}{1.5mu}\\mkern{2.25mu}\\rule{2mu}{1.5mu}\\mkern{2mu}}",
+    expand: true
+  },
+  "braket.sty": { package: BRAKET_MACROS },
+  "amsmath.sty": {
+    package: AMSMATH_MACROS,
+    primitive: true
+  },
+  "texvc.sty": {
+    package: TEXVC_MACROS,
+    primitive: false
+  }
+};
+var TEXT_SYMBOLS = {
+  " ": 32,
+  // want that in Text mode.
+  "\\!": 33,
+  "\\#": 35,
+  "\\$": 36,
+  "\\%": 37,
+  "\\&": 38,
+  "\\_": 95,
+  "-": 45,
+  // In Math mode, '-' is substituted to U+2212, but we don't
+  "\\textunderscore": 95,
+  // '_'
+  "\\euro": 8364,
+  "\\maltese": 10016,
+  "\\{": 123,
+  "\\}": 125,
+  "\\textbraceleft": 123,
+  "\\textbraceright": 125,
+  "\\lbrace": 123,
+  "\\rbrace": 125,
+  "\\lbrack": 91,
+  "\\rbrack": 93,
+  "\\nobreakspace": 160,
+  "\\ldots": 8230,
+  "\\textellipsis": 8230,
+  "\\backslash": 92,
+  "`": 8216,
+  "'": 8217,
+  "``": 8220,
+  "''": 8221,
+  "\\degree": 176,
+  "\\textasciicircum": 94,
+  "\\textasciitilde": 126,
+  "\\textasteriskcentered": 42,
+  "\\textbackslash": 92,
+  // '\'
+  "\\textbullet": 8226,
+  "\\textdollar": 36,
+  "\\textsterling": 163,
+  "\\textdagger": 8224,
+  "\\textdaggerdbl": 8225,
+  "\u2013": 8211,
+  // EN DASH
+  "\u2014": 8212,
+  // EM DASH
+  "\u2018": 8216,
+  // LEFT SINGLE QUOTATION MARK
+  "\u2019": 8217,
+  // RIGHT SINGLE QUOTATION MARK
+  "\u201C": 8220,
+  // LEFT DOUBLE QUOTATION MARK
+  "\u201D": 8221,
+  // RIGHT DOUBLE QUOTATION MARK
+  '"': 8221,
+  // DOUBLE PRIME
+  "\\ss": 223,
+  // LATIN SMALL LETTER SHARP S
+  "\\ae": 230,
+  // LATIN SMALL LETTER AE
+  "\\oe": 339,
+  // LATIN SMALL LIGATURE OE
+  "\\AE": 198,
+  // LATIN CAPITAL LETTER AE
+  "\\OE": 338,
+  // LATIN CAPITAL LIGATURE OE
+  "\\O": 216,
+  // LATIN CAPITAL LETTER O WITH STROKE
+  "\\i": 305,
+  // LATIN SMALL LETTER DOTLESS I
+  "\\j": 567,
+  // LATIN SMALL LETTER DOTLESS J
+  "\\aa": 229,
+  // LATIN SMALL LETTER A WITH RING ABOVE
+  "\\AA": 197
+  // LATIN CAPITAL LETTER A WITH RING ABOVE
+};
+var COMMAND_MODE_CHARACTERS = /[\w!@*()-=+{}\[\]\\';:?/.,~<>`|$%#&^" ]/;
+var LETTER;
+var LETTER_AND_DIGITS;
+if (supportRegexPropertyEscape()) {
+  LETTER = new RegExp("\\p{Letter}", "u");
+  LETTER_AND_DIGITS = new RegExp("[0-9\\p{Letter}]", "u");
+} else {
+  LETTER = /[a-zA-ZаАбБвВгГдДеЕёЁжЖзЗиИйЙкКлЛмМнНоОпПрРсСтТуУфФхХцЦчЧшШщЩъЪыЫьЬэЭюЮяĄąĆćĘęŁłŃńÓóŚśŹźŻżàâäôéèëêïîçùûüÿæœÀÂÄÔÉÈËÊÏÎŸÇÙÛÜÆŒößÖẞìíòúÌÍÒÚáñÁÑ]/;
+  LETTER_AND_DIGITS = /[\da-zA-ZаАбБвВгГдДеЕёЁжЖзЗиИйЙкКлЛмМнНоОпПрРсСтТуУфФхХцЦчЧшШщЩъЪыЫьЬэЭюЮяĄąĆćĘęŁłŃńÓóŚśŹźŻżàâäôéèëêïîçùûüÿæœÀÂÄÔÉÈËÊÏÎŸÇÙÛÜÆŒößÖẞìíòúÌÍÒÚáñÁÑ]/;
+}
+function defineSymbol(symbol, codepoint, type = "mord", variant) {
+  if (codepoint === void 0) return;
+  MATH_SYMBOLS[symbol] = {
+    definitionType: "symbol",
+    type,
+    variant,
+    codepoint
+  };
+  if (!REVERSE_MATH_SYMBOLS[codepoint])
+    REVERSE_MATH_SYMBOLS[codepoint] = symbol;
+}
+function defineSymbols(value, inType, inVariant) {
+  if (typeof value === "string") {
+    for (let i = 0; i < value.length; i++) {
+      const ch = value.charAt(i);
+      defineSymbol(ch, ch.codePointAt(0));
+    }
+    return;
+  }
+  for (const [symbol, val, type, variant] of value)
+    defineSymbol(symbol, val, type != null ? type : inType, variant != null ? variant : inVariant);
+}
+function defineSymbolRange(from, to) {
+  for (let i = from; i <= to; i++) defineSymbol(String.fromCodePoint(i), i);
+}
+function getEnvironmentDefinition(name) {
+  var _a3;
+  return (_a3 = ENVIRONMENTS[name]) != null ? _a3 : null;
+}
+function suggest(mf, s) {
+  var _a3, _b3;
+  if (s.length === 0 || s === "\\" || !s.startsWith("\\")) return [];
+  const result = [];
+  for (const p in LATEX_COMMANDS) {
+    if (p.startsWith(s) && !LATEX_COMMANDS[p].infix)
+      result.push({ match: p, frequency: (_a3 = LATEX_COMMANDS[p].frequency) != null ? _a3 : 0 });
+  }
+  for (const p in MATH_SYMBOLS) {
+    if (p.startsWith(s))
+      result.push({ match: p, frequency: (_b3 = MATH_SYMBOLS[p].frequency) != null ? _b3 : 0 });
+  }
+  const command = s.substring(1);
+  for (const p of Object.keys(mf.options.macros))
+    if (p.startsWith(command)) result.push({ match: "\\" + p, frequency: 0 });
+  result.sort((a, b) => {
+    var _a4, _b4;
+    if (a.frequency === b.frequency) {
+      if (a.match.length === b.match.length) return a.match < b.match ? -1 : 1;
+      return a.match.length - b.match.length;
+    }
+    return ((_a4 = b.frequency) != null ? _a4 : 0) - ((_b4 = a.frequency) != null ? _b4 : 0);
+  });
+  return result.map((x) => x.match);
+}
+function parseParameterTemplateArgument(argTemplate) {
+  let type = "auto";
+  const r = argTemplate.match(/:([^=]+)/);
+  if (r) type = r[1].trim();
+  return type;
+}
+function parseParameterTemplate(parameterTemplate) {
+  if (!parameterTemplate) return [];
+  const result = [];
+  let parameters = parameterTemplate.split("]");
+  if (parameters[0].startsWith("[")) {
+    result.push({
+      isOptional: true,
+      type: parseParameterTemplateArgument(parameters[0].slice(1))
+    });
+    for (let i = 1; i <= parameters.length; i++)
+      result.push(...parseParameterTemplate(parameters[i]));
+  } else {
+    parameters = parameterTemplate.split("}");
+    if (parameters[0].startsWith("{")) {
+      result.push({
+        isOptional: false,
+        type: parseParameterTemplateArgument(parameters[0].slice(1))
+      });
+      for (let i = 1; i <= parameters.length; i++)
+        result.push(...parseParameterTemplate(parameters[i]));
+    }
+  }
+  return result;
+}
+function parseArgAsString(atoms) {
+  if (!atoms) return "";
+  let result = "";
+  let success = true;
+  for (const atom of atoms) {
+    if (typeof atom.value === "string") result += atom.value;
+    else success = false;
+  }
+  return success ? result : "";
+}
+function defineTabularEnvironment(names, parameters, createAtom) {
+  if (typeof names === "string") names = [names];
+  const parsedParameters = parseParameterTemplate(parameters);
+  const data = {
+    tabular: true,
+    rootOnly: false,
+    params: parsedParameters,
+    createAtom
+  };
+  for (const name of names) ENVIRONMENTS[name] = data;
+}
+function defineRootEnvironment(names, createAtom, options) {
+  var _a3;
+  if (typeof names === "string") names = [names];
+  const def = {
+    tabular: (_a3 = options == null ? void 0 : options.tabular) != null ? _a3 : false,
+    rootOnly: true,
+    params: [],
+    createAtom
+  };
+  for (const name of names) ENVIRONMENTS[name] = def;
+}
+function defineFunction(names, parameters, options) {
+  var _a3, _b3;
+  if (!options) options = {};
+  const data = {
+    definitionType: "function",
+    // The parameters for this function, an array of
+    // {optional, type}
+    params: parseParameterTemplate(parameters),
+    ifMode: options.ifMode,
+    isFunction: (_a3 = options.isFunction) != null ? _a3 : false,
+    applyMode: options.applyMode,
+    infix: (_b3 = options.infix) != null ? _b3 : false,
+    parse: options.parse,
+    createAtom: options.createAtom,
+    applyStyle: options.applyStyle,
+    serialize: options.serialize,
+    render: options.render
+  };
+  if (typeof names === "string") LATEX_COMMANDS["\\" + names] = data;
+  else for (const name of names) LATEX_COMMANDS["\\" + name] = data;
+}
+var _DEFAULT_MACROS;
+function getMacros(otherMacros) {
+  if (!_DEFAULT_MACROS)
+    _DEFAULT_MACROS = normalizeMacroDictionary(DEFAULT_MACROS);
+  if (!otherMacros) return _DEFAULT_MACROS;
+  return normalizeMacroDictionary(__spreadValues(__spreadValues({}, _DEFAULT_MACROS), otherMacros));
+}
+function normalizeMacroDefinition(def, options) {
+  var _a3, _b3, _c2, _d2;
+  if (typeof def === "string") {
+    let argCount = 0;
+    const defString = def;
+    if (/(^|[^\\])#1/.test(defString)) argCount = 1;
+    if (/(^|[^\\])#2/.test(defString)) argCount = 2;
+    if (/(^|[^\\])#3/.test(defString)) argCount = 3;
+    if (/(^|[^\\])#4/.test(defString)) argCount = 4;
+    if (/(^|[^\\])#5/.test(defString)) argCount = 5;
+    if (/(^|[^\\])#6/.test(defString)) argCount = 6;
+    if (/(^|[^\\])#7/.test(defString)) argCount = 7;
+    if (/(^|[^\\])#8/.test(defString)) argCount = 8;
+    if (/(^|[^\\])#9/.test(defString)) argCount = 9;
+    return {
+      expand: (_a3 = options == null ? void 0 : options.expand) != null ? _a3 : true,
+      captureSelection: (_b3 = options == null ? void 0 : options.captureSelection) != null ? _b3 : true,
+      args: argCount,
+      def: defString
+    };
+  }
+  return __spreadValues({
+    expand: (_c2 = options == null ? void 0 : options.expand) != null ? _c2 : true,
+    captureSelection: (_d2 = options == null ? void 0 : options.captureSelection) != null ? _d2 : true,
+    args: 0
+  }, def);
+}
+function normalizeMacroDictionary(macros) {
+  if (!macros) return {};
+  const result = {};
+  for (const macro of Object.keys(macros)) {
+    const macroDef = macros[macro];
+    if (macroDef === void 0 || macroDef === null) delete result[macro];
+    else if (typeof macroDef === "object" && "package" in macroDef) {
+      for (const packageMacro of Object.keys(macroDef.package)) {
+        result[packageMacro] = normalizeMacroDefinition(
+          macroDef.package[packageMacro],
+          {
+            expand: !macroDef.primitive,
+            captureSelection: macroDef.captureSelection
+          }
+        );
+      }
+    } else result[macro] = normalizeMacroDefinition(macroDef);
+  }
+  return result;
+}
+function getDefinition(token, parseMode = "math") {
+  if (!token || token.length === 0) return null;
+  let info = null;
+  if (token.startsWith("\\")) {
+    info = LATEX_COMMANDS[token];
+    if (info) {
+      if (!info.ifMode || info.ifMode === parseMode) return info;
+      return null;
+    }
+    if (parseMode === "math") info = MATH_SYMBOLS[token];
+    else if (TEXT_SYMBOLS[token]) {
+      info = {
+        definitionType: "symbol",
+        type: "mord",
+        codepoint: TEXT_SYMBOLS[token]
+      };
+    }
+  } else if (parseMode === "math") {
+    info = MATH_SYMBOLS[token];
+    if (!info && token.length === 1) {
+      const command = charToLatex("math", token.codePointAt(0));
+      if (command.startsWith("\\"))
+        return __spreadProps(__spreadValues({}, getDefinition(command, "math")), { command });
+      return null;
+    }
+  } else if (TEXT_SYMBOLS[token]) {
+    info = {
+      definitionType: "symbol",
+      type: "mord",
+      codepoint: TEXT_SYMBOLS[token]
+    };
+  } else if (parseMode === "text") {
+    info = {
+      definitionType: "symbol",
+      type: "mord",
+      codepoint: token.codePointAt(0)
+    };
+  }
+  return info != null ? info : null;
+}
+function getMacroDefinition(token, macros) {
+  if (!token.startsWith("\\")) return null;
+  const command = token.slice(1);
+  return macros[command];
+}
+function charToLatex(parseMode, codepoint) {
+  if (codepoint === void 0) return "";
+  if (parseMode === "math" && REVERSE_MATH_SYMBOLS[codepoint])
+    return REVERSE_MATH_SYMBOLS[codepoint];
+  if (parseMode === "text") {
+    const textSymbol = Object.keys(TEXT_SYMBOLS).find(
+      (x) => TEXT_SYMBOLS[x] === codepoint
+    );
+    if (textSymbol) return textSymbol;
+    return String.fromCodePoint(codepoint);
+  }
+  return String.fromCodePoint(codepoint);
+}
+
+// src/core/font-metrics-data.ts
+var M1 = [0, 0.68889, 0, 0, 0.72222];
+var M2 = [0, 0.68889, 0, 0, 0.66667];
+var M3 = [0, 0.68889, 0, 0, 0.77778];
+var M4 = [0, 0.68889, 0, 0, 0.61111];
+var M5 = [0.16667, 0.68889, 0, 0, 0.77778];
+var M6 = [0, 0.68889, 0, 0, 0.55556];
+var M7 = [0, 0, 0, 0, 0.25];
+var M8 = [0, 0.825, 0, 0, 2.33334];
+var M9 = [0, 0.9, 0, 0, 2.33334];
+var M10 = [0, 0.68889, 0, 0, 0.54028];
+var M11 = [-0.03598, 0.46402, 0, 0, 0.5];
+var M12 = [-0.13313, 0.36687, 0, 0, 1];
+var M13 = [0.01354, 0.52239, 0, 0, 1];
+var M14 = [0.01354, 0.52239, 0, 0, 1.11111];
+var M15 = [0, 0.54986, 0, 0, 1];
+var M16 = [0, 0.69224, 0, 0, 0.5];
+var M17 = [0, 0.43056, 0, 0, 1];
+var M18 = [0.08198, 0.58198, 0, 0, 0.77778];
+var M19 = [0.19444, 0.69224, 0, 0, 0.41667];
+var M20 = [0.1808, 0.675, 0, 0, 1];
+var M21 = [0.19444, 0.69224, 0, 0, 0.83334];
+var M22 = [0.13667, 0.63667, 0, 0, 1];
+var M23 = [-0.064, 0.437, 0, 0, 1.334];
+var M24 = [0.08167, 0.58167, 0, 0, 0.77778];
+var M25 = [0, 0.69224, 0, 0, 0.72222];
+var M26 = [0, 0.69224, 0, 0, 0.66667];
+var M27 = [-0.13313, 0.36687, 0, 0, 0.77778];
+var M28 = [0.06062, 0.54986, 0, 0, 0.77778];
+var M29 = [0, 0.69224, 0, 0, 0.77778];
+var M30 = [0.25583, 0.75583, 0, 0, 0.77778];
+var M31 = [0.25142, 0.75726, 0, 0, 0.77778];
+var M32 = [0.20576, 0.70576, 0, 0, 0.77778];
+var M33 = [0.30274, 0.79383, 0, 0, 0.77778];
+var M34 = [0.22958, 0.72958, 0, 0, 0.77778];
+var M35 = [0.1808, 0.675, 0, 0, 0.77778];
+var M36 = [0.13667, 0.63667, 0, 0, 0.77778];
+var M37 = [0.13597, 0.63597, 0, 0, 0.77778];
+var M38 = [0.03517, 0.54986, 0, 0, 0.77778];
+var M39 = [0, 0.675, 0, 0, 0.77778];
+var M40 = [0.19444, 0.69224, 0, 0, 0.61111];
+var M41 = [0, 0.54986, 0, 0, 0.76042];
+var M42 = [0, 0.54986, 0, 0, 0.66667];
+var M43 = [0.0391, 0.5391, 0, 0, 0.77778];
+var M44 = [0.03517, 0.54986, 0, 0, 1.33334];
+var M45 = [0.38569, 0.88569, 0, 0, 0.77778];
+var M46 = [0.23222, 0.74111, 0, 0, 0.77778];
+var M47 = [0.19444, 0.69224, 0, 0, 0.77778];
+var M48 = [0, 0.37788, 0, 0, 0.5];
+var M49 = [0, 0.54986, 0, 0, 0.72222];
+var M50 = [0, 0.69224, 0, 0, 0.83334];
+var M51 = [0.11111, 0.69224, 0, 0, 0.66667];
+var M52 = [0.26167, 0.75726, 0, 0, 0.77778];
+var M53 = [0.48256, 0.98256, 0, 0, 0.77778];
+var M54 = [0.28481, 0.79383, 0, 0, 0.77778];
+var M55 = [0.08167, 0.58167, 0, 0, 0.22222];
+var M56 = [0.08167, 0.58167, 0, 0, 0.38889];
+var M57 = [0, 0.43056, 0.04028, 0, 0.66667];
+var M58 = [0.41951, 0.91951, 0, 0, 0.77778];
+var M59 = [0.24982, 0.74947, 0, 0, 0.38865];
+var M60 = [0.08319, 0.58283, 0, 0, 0.75623];
+var M61 = [0, 0.10803, 0, 0, 0.27764];
+var M62 = [0, 0.47534, 0, 0, 0.50181];
+var M63 = [0.18906, 0.47534, 0, 0, 0.50181];
+var M64 = [0, 0.69141, 0, 0, 0.50181];
+var M65 = [0.24982, 0.74947, 0, 0, 0.27764];
+var M66 = [0, 0.69141, 0, 0, 0.21471];
+var M67 = [0.25, 0.75, 0, 0, 0.44722];
+var M68 = [0, 0.64444, 0, 0, 0.575];
+var M69 = [0.08556, 0.58556, 0, 0, 0.89444];
+var M70 = [0, 0.69444, 0, 0, 0.89444];
+var M71 = [0, 0.68611, 0, 0, 0.9];
+var M72 = [0, 0.68611, 0, 0, 0.86944];
+var M73 = [0.25, 0.75, 0, 0, 0.575];
+var M74 = [0.25, 0.75, 0, 0, 0.31944];
+var M75 = [0, 0.69444, 0, 0, 0.63889];
+var M76 = [0, 0.69444, 0, 0, 0.31944];
+var M77 = [0, 0.44444, 0, 0, 0.63889];
+var M78 = [0, 0.44444, 0, 0, 0.51111];
+var M79 = [0, 0.69444, 0, 0, 0.575];
+var M80 = [0.13333, 0.63333, 0, 0, 0.89444];
+var M81 = [0, 0.44444, 0, 0, 0.31944];
+var M82 = [0, 0.69444, 0, 0, 0.86944];
+var M83 = [0, 0.68611, 0, 0, 0.69166];
+var M84 = [0, 0.68611, 0, 0, 0.83055];
+var M85 = [0, 0.68611, 0, 0, 0.89444];
+var M86 = [0, 0.69444, 0, 0, 0.60278];
+var M87 = [0.19444, 0.69444, 0, 0, 0.51111];
+var M88 = [0, 0.69444, 0, 0, 0.83055];
+var M89 = [-0.10889, 0.39111, 0, 0, 1.14999];
+var M90 = [0.19444, 0.69444, 0, 0, 0.575];
+var M91 = [0.19444, 0.69444, 0, 0, 1.14999];
+var M92 = [0.19444, 0.69444, 0, 0, 0.70277];
+var M93 = [0.05556, 0.75, 0, 0, 0.575];
+var M94 = [0, 0.68611, 0, 0, 0.95833];
+var M95 = [0.08556, 0.58556, 0, 0, 0.76666];
+var M96 = [-0.02639, 0.47361, 0, 0, 0.575];
+var M97 = [0, 0.44444, 0, 0, 0.89444];
+var M98 = [0, 0.55556, 0, 0, 0.76666];
+var M99 = [-0.10889, 0.39111, 0, 0, 0.89444];
+var M100 = [222e-5, 0.50222, 0, 0, 0.89444];
+var M101 = [0.19667, 0.69667, 0, 0, 0.89444];
+var M102 = [0.08556, 0.58556, 0, 0, 1.14999];
+var M103 = [0, 0.69444, 0, 0, 0.70277];
+var M104 = [-0.02778, 0.47222, 0, 0, 0.575];
+var M105 = [0.25, 0.75, 0, 0, 0.51111];
+var M106 = [-0.13889, 0.36111, 0, 0, 1.14999];
+var M107 = [0.19444, 0.69444, 0, 0, 1.02222];
+var M108 = [0.12963, 0.69444, 0, 0, 0.89444];
+var M109 = [0.19444, 0.69444, 0, 0, 0.44722];
+var M110 = [0, 0.64444, 0.13167, 0, 0.59111];
+var M111 = [0.19444, 0.64444, 0.13167, 0, 0.59111];
+var M112 = [0, 0.68611, 0.17208, 0, 0.8961];
+var M113 = [0.19444, 0.44444, 0.105, 0, 0.53222];
+var M114 = [0, 0.44444, 0.085, 0, 0.82666];
+var M115 = [0, 0.69444, 0.06709, 0, 0.59111];
+var M116 = [0, 0.69444, 0.12945, 0, 0.35555];
+var M117 = [0, 0.69444, 0, 0, 0.94888];
+var M118 = [0, 0.69444, 0.11472, 0, 0.59111];
+var M119 = [0, 0.68611, 0.10778, 0, 0.88555];
+var M120 = [0, 0.69444, 0.07939, 0, 0.62055];
+var M121 = [0, 0.69444, 0.12417, 0, 0.30667];
+var M122 = [0, 0.64444, 0.13556, 0, 0.51111];
+var M123 = [0.19444, 0.64444, 0.13556, 0, 0.51111];
+var M124 = [0, 0.68333, 0.16389, 0, 0.74333];
+var M125 = [0.19444, 0.43056, 0.08847, 0, 0.46];
+var M126 = [0, 0.43056, 0.07514, 0, 0.71555];
+var M127 = [0, 0.69444, 0.06646, 0, 0.51111];
+var M128 = [0, 0.69444, 0, 0, 0.83129];
+var M129 = [0, 0.69444, 0.1225, 0, 0.51111];
+var M130 = [0, 0.68333, 0.09403, 0, 0.76666];
+var M131 = [0, 0.68333, 0.11111, 0, 0.76666];
+var M132 = [0, 0.69444, 0.06961, 0, 0.51444];
+var M133 = [0, 0.69444, 0, 0, 0.27778];
+var M134 = [0.25, 0.75, 0, 0, 0.38889];
+var M135 = [0, 0.64444, 0, 0, 0.5];
+var M136 = [0, 0.69444, 0, 0, 0.77778];
+var M137 = [0, 0.68333, 0, 0, 0.75];
+var M138 = [0, 0.68333, 0, 0, 0.77778];
+var M139 = [0, 0.68333, 0, 0, 0.68056];
+var M140 = [0, 0.68333, 0, 0, 0.72222];
+var M141 = [0.25, 0.75, 0, 0, 0.5];
+var M142 = [0.25, 0.75, 0, 0, 0.27778];
+var M143 = [0, 0.69444, 0, 0, 0.5];
+var M144 = [0, 0.69444, 0, 0, 0.55556];
+var M145 = [0, 0.43056, 0, 0, 0.44445];
+var M146 = [0, 0.43056, 0, 0, 0.5];
+var M147 = [0.19444, 0.43056, 0, 0, 0.55556];
+var M148 = [0, 0.43056, 0, 0, 0.55556];
+var M149 = [0.08333, 0.58333, 0, 0, 0.77778];
+var M150 = [0, 0.43056, 0, 0, 0.27778];
+var M151 = [0, 0.66786, 0, 0, 0.27778];
+var M152 = [0, 0.69444, 0, 0, 0.75];
+var M153 = [0, 0.66786, 0, 0, 0.5];
+var M154 = [0, 0.68333, 0, 0, 0.625];
+var M155 = [0.19444, 0.69444, 0, 0, 0.44445];
+var M156 = [0, 0.69444, 0, 0, 0.72222];
+var M157 = [0.19444, 0.69444, 0, 0, 0.5];
+var M158 = [0.19444, 0.69444, 0, 0, 1];
+var M159 = [0.011, 0.511, 0, 0, 1.126];
+var M160 = [0.19444, 0.69444, 0, 0, 0.61111];
+var M161 = [0.05556, 0.75, 0, 0, 0.5];
+var M162 = [0, 0.68333, 0, 0, 0.83334];
+var M163 = [0.0391, 0.5391, 0, 0, 0.66667];
+var M164 = [-0.05555, 0.44445, 0, 0, 0.5];
+var M165 = [0, 0.43056, 0, 0, 0.77778];
+var M166 = [0, 0.55556, 0, 0, 0.66667];
+var M167 = [-0.03625, 0.46375, 0, 0, 0.77778];
+var M168 = [-0.01688, 0.48312, 0, 0, 0.77778];
+var M169 = [0.0391, 0.5391, 0, 0, 1];
+var M170 = [0, 0.69444, 0, 0, 0.61111];
+var M171 = [-0.03472, 0.46528, 0, 0, 0.5];
+var M172 = [0.25, 0.75, 0, 0, 0.44445];
+var M173 = [-0.14236, 0.35764, 0, 0, 1];
+var M174 = [0.244, 0.744, 0, 0, 0.412];
+var M175 = [0.19444, 0.69444, 0, 0, 0.88889];
+var M176 = [0.12963, 0.69444, 0, 0, 0.77778];
+var M177 = [0.19444, 0.69444, 0, 0, 0.38889];
+var M178 = [0.011, 0.511, 0, 0, 1.638];
+var M179 = [0.19444, 0.69444, 0, 0, 0];
+var M180 = [0, 0.44444, 0, 0, 0.575];
+var M181 = [0.19444, 0.44444, 0, 0, 0.575];
+var M182 = [0, 0.68611, 0, 0, 0.75555];
+var M183 = [0, 0.69444, 0, 0, 0.66759];
+var M184 = [0, 0.68611, 0, 0, 0.80555];
+var M185 = [0, 0.68611, 0.08229, 0, 0.98229];
+var M186 = [0, 0.68611, 0, 0, 0.76666];
+var M187 = [0, 0.44444, 0, 0, 0.58472];
+var M188 = [0.19444, 0.44444, 0, 0, 0.6118];
+var M189 = [0.19444, 0.43056, 0, 0, 0.5];
+var M190 = [0, 0.68333, 0.02778, 0.08334, 0.76278];
+var M191 = [0, 0.68333, 0.08125, 0.05556, 0.83125];
+var M192 = [0, 0.43056, 0, 0.05556, 0.48472];
+var M193 = [0.19444, 0.43056, 0, 0.08334, 0.51702];
+var M194 = [0.25, 0.75, 0, 0, 0.42778];
+var M195 = [0, 0.69444, 0, 0, 0.55];
+var M196 = [0, 0.69444, 0, 0, 0.73334];
+var M197 = [0, 0.69444, 0, 0, 0.79445];
+var M198 = [0, 0.69444, 0, 0, 0.51945];
+var M199 = [0, 0.69444, 0, 0, 0.70278];
+var M200 = [0, 0.69444, 0, 0, 0.76389];
+var M201 = [0.25, 0.75, 0, 0, 0.34306];

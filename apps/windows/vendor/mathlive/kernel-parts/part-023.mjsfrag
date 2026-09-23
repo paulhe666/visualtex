@@ -1,0 +1,1448 @@
+   * Call `item.submenu.openSubmenu()` to open the submenu.
+   */
+  set activeMenuItem(value) {
+    var _a3, _b3, _c2, _d2;
+    this.rootMenu.cancelDelayedOperation();
+    if (value !== this._activeMenuItem) {
+      if (this.activeMenuItem) {
+        const item = this.activeMenuItem;
+        item.active = false;
+        (_a3 = item.submenu) == null ? void 0 : _a3.hide();
+      }
+      if (!((_b3 = value == null ? void 0 : value.visible) != null ? _b3 : true)) {
+        this._activeMenuItem = null;
+        return;
+      }
+      this._activeMenuItem = value;
+      if (value) value.active = true;
+    }
+    if (value) (_c2 = value.element) == null ? void 0 : _c2.focus({ preventScroll: true });
+    else (_d2 = this._element) == null ? void 0 : _d2.focus({ preventScroll: true });
+  }
+  /** First activable menu item */
+  get firstMenuItem() {
+    this.updateIfDirty();
+    let result = 0;
+    let found = false;
+    const menuItems = this._menuItems;
+    while (!found && result <= menuItems.length - 1) {
+      const item = menuItems[result];
+      found = item.type !== "divider" && item.visible && item.enabled;
+      result += 1;
+    }
+    return found ? menuItems[result - 1] : null;
+  }
+  /** Last activable menu item */
+  get lastMenuItem() {
+    this.updateIfDirty();
+    const menuItems = this._menuItems;
+    let result = menuItems.length - 1;
+    let found = false;
+    while (!found && result >= 0) {
+      const item = menuItems[result];
+      found = item.type !== "divider" && item.visible && item.enabled;
+      result -= 1;
+    }
+    return found ? menuItems[result + 1] : null;
+  }
+  nextMenuItem(stride) {
+    if (stride === 0) return this._activeMenuItem;
+    if (!this._activeMenuItem)
+      return stride > 0 ? this.firstMenuItem : this.lastMenuItem;
+    if (!this.firstMenuItem || !this.lastMenuItem || !this._activeMenuItem)
+      return null;
+    this.updateIfDirty();
+    const first = this._menuItems.indexOf(this.firstMenuItem);
+    const last = this._menuItems.indexOf(this.lastMenuItem);
+    let index = this._menuItems.indexOf(this._activeMenuItem);
+    let count = 1;
+    while (index >= first && index <= last) {
+      index += stride > 0 ? 1 : -1;
+      const item = this._menuItems[index];
+      if (!item) break;
+      if (item.visible && item.enabled) {
+        if (count === Math.abs(stride)) return this._menuItems[index];
+        count += 1;
+      }
+    }
+    return stride > 0 ? this.lastMenuItem : this.firstMenuItem;
+  }
+  getMenuItemColumn(menu) {
+    this.updateIfDirty();
+    const visibleItems = this._menuItems.filter((x) => x.visible && x.enabled);
+    const index = visibleItems.indexOf(menu);
+    if (index < 0) return -1;
+    return index % this.columnCount;
+  }
+  static get collator() {
+    if (__MenuListState._collator) return __MenuListState._collator;
+    __MenuListState._collator = new Intl.Collator(void 0, {
+      usage: "search",
+      sensitivity: "base"
+    });
+    return __MenuListState._collator;
+  }
+  findMenuItem(text) {
+    var _a3;
+    this.updateIfDirty();
+    const candidates = this._menuItems.filter(
+      (x) => x.type !== "divider" && x.visible && x.enabled
+    );
+    if (candidates.length === 0) return null;
+    const last = Math.max(...candidates.map((x) => x.label.length)) - text.length;
+    if (last < 0) return null;
+    let result = null;
+    let i = 0;
+    while (i < last && !result) {
+      result = (_a3 = candidates.find(
+        (x) => __MenuListState.collator.compare(
+          text,
+          x.label.substring(i, text.length)
+        ) === 0
+      )) != null ? _a3 : null;
+      i++;
+    }
+    return result;
+  }
+  /**
+   * @param location: in viewport coordinates
+   * @param alternateLocation: in viewport coordinates
+   * @param container: where the menu should be attached
+   * @return false if no menu to show
+   */
+  show(options) {
+    if (!this.visible || !options.container) return false;
+    this.updateElement();
+    options.container.appendChild(this.element);
+    if (supportPopover()) {
+      this.element.popover = "manual";
+      this.element.showPopover();
+    }
+    if (options.location) {
+      fitInViewport(this.element, {
+        location: options.location,
+        alternateLocation: options.alternateLocation,
+        verticalPos: "bottom",
+        horizontalPos: "start"
+      });
+    }
+    suppressFocusEvents();
+    this.element.focus({ preventScroll: true });
+    enableFocusEvents();
+    if (this.parentMenu) this.parentMenu.openSubmenu = this;
+    return true;
+  }
+  hide() {
+    var _a3, _b3, _c2, _d2, _e, _f;
+    this.openSubmenu = null;
+    this.activeMenuItem = null;
+    if (this.parentMenu) this.parentMenu.openSubmenu = null;
+    if (!((_a3 = this._element) == null ? void 0 : _a3.isConnected) || !this._element.parentElement) return;
+    if (supportPopover() && ((_b3 = this._element) == null ? void 0 : _b3.popover)) this._element.hidePopover();
+    suppressFocusEvents();
+    (_d2 = (_c2 = this.parentMenu) == null ? void 0 : _c2.element) == null ? void 0 : _d2.focus();
+    (_f = (_e = this._element) == null ? void 0 : _e.parentNode) == null ? void 0 : _f.removeChild(this._element);
+    enableFocusEvents();
+  }
+  /**
+   * This method is called to record that one of our submenus has opened.
+   * To open a submenu call openSubmenu() on the item with the submenu
+   * or show() on the submenu.
+   */
+  set openSubmenu(submenu) {
+    var _a3, _b3, _c2, _d2;
+    const expanded = submenu !== null;
+    if (((_a3 = this.activeMenuItem) == null ? void 0 : _a3.type) === "submenu") {
+      (_b3 = this.activeMenuItem.element) == null ? void 0 : _b3.setAttribute(
+        "aria-expanded",
+        expanded.toString()
+      );
+    }
+    (_d2 = (_c2 = this.activeMenuItem) == null ? void 0 : _c2.element) == null ? void 0 : _d2.classList.toggle("is-submenu-open", expanded);
+    this.isSubmenuOpen = expanded;
+  }
+};
+function suppressFocusEvents() {
+  document.addEventListener("focusin", handleFocusEvent, true);
+  document.addEventListener("focusout", handleFocusEvent, true);
+  document.addEventListener("focus", handleFocusEvent, true);
+  document.addEventListener("blur", handleFocusEvent, true);
+}
+function handleFocusEvent(event) {
+  event.stopImmediatePropagation();
+  event.preventDefault();
+}
+function enableFocusEvents() {
+  document.removeEventListener("focusin", handleFocusEvent, true);
+  document.removeEventListener("focusout", handleFocusEvent, true);
+  document.removeEventListener("focus", handleFocusEvent, true);
+  document.removeEventListener("blur", handleFocusEvent, true);
+}
+
+// src/ui/menu/menu.ts
+var _Menu = class _Menu extends _MenuListState {
+  /**
+   * The host is the element that the events will be dispatched from
+   *
+   */
+  constructor(menuItems, options) {
+    var _a3;
+    super(menuItems);
+    /**
+     * - 'closed': the menu is not visible
+     * - 'open': the menu is visible as long as the mouse button is pressed
+     * - 'modal': the menu is visible until dismissed, even with
+     *   the mouse button released
+     */
+    this.state = "closed";
+    this.typingBufferResetTimer = 0;
+    this.hysteresisTimer = 0;
+    /** @private */
+    this._updating = false;
+    this._host = (_a3 = options == null ? void 0 : options.host) != null ? _a3 : null;
+    this.isDynamic = menuItems.some(isDynamic);
+    this._modifiers = {
+      shift: false,
+      control: false,
+      alt: false,
+      meta: false
+    };
+    this.typingBuffer = "";
+    this.state = "closed";
+  }
+  get modifiers() {
+    return this._modifiers;
+  }
+  set modifiers(value) {
+    if (equalKeyboardModifiers(this._modifiers, value)) return;
+    this._modifiers = value;
+    this.dirty = true;
+  }
+  /**
+   * The currently active menu: could be the root menu or a submenu
+   */
+  get activeSubmenu() {
+    let result = this;
+    while (result.isSubmenuOpen) result = result.activeMenuItem.submenu;
+    return result;
+  }
+  set dirty(value) {
+    if (this._updating) return;
+    console.assert(value === true);
+    if (this._dirty === value) return;
+    this._dirty = true;
+    if (value) {
+      setTimeout(() => {
+        this.updateState(this.modifiers);
+        this.updateElement();
+      });
+    }
+  }
+  updateState(modifiers) {
+    this._updating = true;
+    this.modifiers = modifiers != null ? modifiers : this.modifiers;
+    super.updateState(this.modifiers);
+    this._updating = false;
+  }
+  handleKeyupEvent(ev) {
+    if (this.isDynamic) this.modifiers = keyboardModifiersFromEvent(ev);
+    ev.stopImmediatePropagation();
+  }
+  handleKeydownEvent(ev) {
+    var _a3, _b3, _c2;
+    if (ev.key === "Tab" || ev.key === "Escape") {
+      this.hide();
+      return;
+    }
+    if (this.isDynamic) this.modifiers = keyboardModifiersFromEvent(ev);
+    let handled = true;
+    const menu = this.activeSubmenu;
+    const menuItem = menu.activeMenuItem;
+    switch (ev.key) {
+      case " ":
+      case "Space":
+      case "Return":
+      case "Enter":
+        menuItem == null ? void 0 : menuItem.select(keyboardModifiersFromEvent(ev));
+        break;
+      case "ArrowRight":
+        if ((menuItem == null ? void 0 : menuItem.type) === "submenu") {
+          menuItem.select(keyboardModifiersFromEvent(ev));
+          this.activeSubmenu.activeMenuItem = this.activeSubmenu.firstMenuItem;
+        } else if (!menuItem) menu.activeMenuItem = menu.firstMenuItem;
+        else {
+          const col = (_a3 = menu.getMenuItemColumn(menuItem)) != null ? _a3 : -1;
+          if (col >= 0 && col < ((_b3 = menu.columnCount) != null ? _b3 : 1) - 1) {
+            const next = menu.nextMenuItem(1);
+            if (next) menu.activeMenuItem = next;
+          }
+        }
+        break;
+      case "ArrowLeft":
+        if (menu === this.rootMenu) {
+          if (!menuItem) menu.activeMenuItem = menu.firstMenuItem;
+        } else {
+          const col = menuItem ? (_c2 = menu.getMenuItemColumn(menuItem)) != null ? _c2 : -1 : -1;
+          if (col <= 0 || !menuItem) {
+            menu.hide();
+            const activeMenu = menu.parentMenu.activeMenuItem;
+            if (activeMenu) {
+              const { element } = activeMenu;
+              element == null ? void 0 : element.focus();
+              element == null ? void 0 : element.classList.remove("is-submenu-open");
+            }
+          } else {
+            const next = menu.nextMenuItem(-1);
+            if (next) menu.activeMenuItem = next;
+          }
+        }
+        break;
+      case "ArrowDown":
+        menu.activeMenuItem = menu.nextMenuItem(menu.columnCount);
+        break;
+      case "ArrowUp":
+        menu.activeMenuItem = menu.nextMenuItem(-menu.columnCount);
+        break;
+      case "Home":
+      case "PageUp":
+        menu.activeMenuItem = menu.firstMenuItem;
+        break;
+      case "End":
+      case "PageDown":
+        menu.activeMenuItem = menu.lastMenuItem;
+        break;
+      case "Backspace":
+        if (this.typingBuffer) {
+          this.typingBuffer = this.typingBuffer.slice(0, -1);
+          if (this.typingBuffer) {
+            clearTimeout(this.typingBufferResetTimer);
+            const newItem = menu.findMenuItem(this.typingBuffer);
+            if (newItem) menu.activeMenuItem = newItem;
+            this.typingBufferResetTimer = setTimeout(() => {
+              this.typingBuffer = "";
+            }, 500);
+          }
+        }
+        break;
+      default:
+        if (mightProducePrintableCharacter(ev)) {
+          if (isFinite(this.typingBufferResetTimer))
+            clearTimeout(this.typingBufferResetTimer);
+          this.typingBuffer += ev.key;
+          const newItem = menu.findMenuItem(this.typingBuffer);
+          if (newItem) menu.activeMenuItem = newItem;
+          this.typingBufferResetTimer = setTimeout(() => {
+            this.typingBuffer = "";
+          }, 500);
+        } else handled = false;
+    }
+    if (handled) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+  }
+  handleEvent(event) {
+    if (event.type === "keydown")
+      this.handleKeydownEvent(event);
+    else if (event.type === "keyup")
+      this.handleKeyupEvent(event);
+    else if (event.type === "pointermove")
+      this.lastMoveEvent = event;
+    else if (event.type === "pointerup") {
+      if (Number.isFinite(this.rootMenu._openTimestamp) && Date.now() - this.rootMenu._openTimestamp < 120) {
+        this.state = "modal";
+      } else if (this.state === "modal" && event.target === this.scrim) {
+        this.hide();
+      }
+    } else if (event.type === "contextmenu") {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    super.handleEvent(event);
+  }
+  /** Return true if the event is **not** canceled */
+  dispatchEvent(ev) {
+    if (!this._host) return true;
+    return this._host.dispatchEvent(ev);
+  }
+  get host() {
+    return this._host;
+  }
+  get scrim() {
+    return Scrim.element;
+  }
+  connectScrim(target) {
+    const scrim = this.scrim;
+    scrim.addEventListener("pointerup", this, true);
+    scrim.addEventListener("contextmenu", this);
+    scrim.addEventListener("keydown", this);
+    scrim.addEventListener("keyup", this);
+    scrim.addEventListener("pointermove", this);
+    Scrim.open({ root: target, onDismiss: () => this.hide() });
+  }
+  disconnectScrim() {
+    const scrim = this.scrim;
+    scrim.removeEventListener("pointerup", this, true);
+    scrim.removeEventListener("contextmenu", this);
+    scrim.removeEventListener("keydown", this);
+    scrim.removeEventListener("keyup", this);
+    scrim.removeEventListener("pointermove", this);
+    if (Scrim.state === "open") Scrim.scrim.close();
+  }
+  get rootMenu() {
+    return this;
+  }
+  /** Locations are in viewport coordinate. */
+  show(options) {
+    this._onDismiss = options == null ? void 0 : options.onDismiss;
+    if (options == null ? void 0 : options.modifiers) this.modifiers = options.modifiers;
+    this.updateState();
+    this.connectScrim(options == null ? void 0 : options.target);
+    if (!super.show(__spreadProps(__spreadValues({}, options), { container: this.scrim }))) {
+      this.disconnectScrim();
+      return false;
+    }
+    this._openTimestamp = Date.now();
+    this.state = "open";
+    return true;
+  }
+  hide() {
+    this.cancelDelayedOperation();
+    if (this.state !== void 0) {
+      if (this.state !== "closed") {
+        this.activeMenuItem = null;
+        Scrim.element.parentElement.focus();
+        super.hide();
+        this.state = "closed";
+        this.disconnectScrim();
+      }
+      if (this._onDismiss) {
+        this._onDismiss();
+        this._onDismiss = void 0;
+      }
+    }
+  }
+  scheduleOperation(fn) {
+    this.cancelDelayedOperation();
+    const delay = _Menu.SUBMENU_DELAY;
+    if (delay <= 0) {
+      fn();
+      return;
+    }
+    this.hysteresisTimer = setTimeout(() => {
+      this.hysteresisTimer = 0;
+      fn();
+    }, delay);
+  }
+  cancelDelayedOperation() {
+    if (this.hysteresisTimer) {
+      clearTimeout(this.hysteresisTimer);
+      this.hysteresisTimer = 0;
+    }
+  }
+};
+/**
+ * Delay (in milliseconds) before displaying a submenu.
+ *
+ * Prevents distracting flashing of submenus when moving quickly
+ * through the options in a menu.
+ */
+_Menu.SUBMENU_DELAY = 120;
+var Menu = _Menu;
+function isDynamic(item) {
+  if (isDivider(item)) return false;
+  if (typeof item.label === "function" || typeof item.ariaLabel === "function" || typeof item.tooltip === "function")
+    return true;
+  if ((isCommand(item) || isSubmenu(item)) && (typeof item.enabled === "function" || typeof item.visible === "function"))
+    return true;
+  if (isCommand(item) && typeof item.checked === "function") return true;
+  if (isSubmenu(item)) return item.submenu.some(isDynamic);
+  return false;
+}
+
+// src/ui/events/longpress.ts
+var LongPress = class {
+  // Maximum distance between the start and end of the gesture, in pixels
+};
+LongPress.DELAY = 300;
+// Amount of time before showing the context menu, in ms
+LongPress.MAX_DISTANCE = 10;
+function onLongPress(triggerEvent) {
+  return new Promise((resolve, _reject) => {
+    const startPoint = eventLocation(triggerEvent);
+    if (!startPoint) resolve(false);
+    let lastPoint = startPoint;
+    const timer = setTimeout(() => {
+      controller.abort();
+      resolve(distance2(lastPoint, startPoint) < LongPress.MAX_DISTANCE);
+    }, LongPress.DELAY);
+    const controller = new AbortController();
+    const signal = controller.signal;
+    for (const eventType of ["pointermove", "pointerup", "pointercancel"]) {
+      window.addEventListener(
+        eventType,
+        (evt) => {
+          if (evt.type === "pointerup" || evt.type === "pointercancel") {
+            clearTimeout(timer);
+            controller.abort();
+            resolve(false);
+          } else if (evt.type === "pointermove") {
+            const location = eventLocation(evt);
+            if (location) lastPoint = location;
+          }
+        },
+        { passive: true, signal }
+      );
+    }
+  });
+}
+
+// src/ui/menu/context-menu.ts
+async function onContextMenu(event, target, menu) {
+  if (event.defaultPrevented) return false;
+  if (event.type === "contextmenu") {
+    const evt = event;
+    event.preventDefault();
+    event.stopPropagation();
+    if (menu.show({
+      target,
+      location: eventLocation(evt),
+      modifiers: keyboardModifiersFromEvent(evt)
+    }))
+      return true;
+  }
+  if (event.type === "keydown") {
+    const evt = event;
+    if (evt.code === "ContextMenu" || evt.code === "F10" && evt.shiftKey) {
+      const bounds = target == null ? void 0 : target.getBoundingClientRect();
+      if (acceptContextMenu(target) && bounds && menu.show({
+        target,
+        location: {
+          x: Math.ceil(bounds.left + bounds.width / 2),
+          y: Math.ceil(bounds.top + bounds.height / 2)
+        },
+        modifiers: keyboardModifiersFromEvent(evt)
+      })) {
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+      }
+    }
+  }
+  if (event.type === "pointerdown" && event.pointerType !== "mouse" && event.button === 0) {
+    let eventTarget = event.target;
+    while (eventTarget && target !== eventTarget)
+      eventTarget = eventTarget.parentNode;
+    if (!eventTarget) return false;
+    if (!menu.visible) return false;
+    const location = eventLocation(event);
+    if (await onLongPress(event)) {
+      if (menu.state !== "closed") return false;
+      if (!acceptContextMenu(target)) return false;
+      menu.show({ target, location });
+      return true;
+    }
+  }
+  return false;
+}
+function acceptContextMenu(host) {
+  return host.dispatchEvent(new Event("contextmenu", { cancelable: true }));
+}
+
+// src/formats/atom-to-math-ml.ts
+var APPLY_FUNCTION = "<mo>&#x2061;</mo>";
+var INVISIBLE_TIMES = "<mo>&#8290;</mo>";
+function xmlEscape(string) {
+  return string.replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function makeID(id, options) {
+  if (!id || !options.generateID) return "";
+  return ` extid="${id}"`;
+}
+function scanIdentifier(stream, final, options) {
+  var _a3, _b3, _c2, _d2, _e, _f, _g, _h;
+  let result = false;
+  final = final != null ? final : stream.atoms.length;
+  let mathML = "";
+  let body = "";
+  let atom = stream.atoms[stream.index];
+  const variant = (_a3 = atom.style) == null ? void 0 : _a3.variant;
+  const variantStyle = (_b3 = atom.style) == null ? void 0 : _b3.variantStyle;
+  let variantProp = "";
+  if (atom.value && (variant || variantStyle)) {
+    const unicodeVariant = (_c2 = mathVariantToUnicode(atom.value, variant, variantStyle)) != null ? _c2 : atom.value;
+    if (unicodeVariant !== atom.value) {
+      stream.index += 1;
+      mathML = `<mi${makeID(atom.id, options)}>${unicodeVariant}</mi>`;
+      if (!parseSubsup(mathML, stream, options)) {
+        stream.mathML += mathML;
+        stream.lastType = "mi";
+      }
+      return true;
+    }
+    variantProp = (_d2 = {
+      "upnormal": "normal",
+      "boldnormal": "bold",
+      "italicmain": "italic",
+      "bolditalicmain": "bold-italic",
+      "updouble-struck": "double-struck",
+      "double-struck": "double-struck",
+      "boldfraktur": "bold-fraktur",
+      "calligraphic": "script",
+      "upcalligraphic": "script",
+      "script": "script",
+      "boldscript": "bold-script",
+      "boldcalligraphic": "bold-script",
+      "fraktur": "fraktur",
+      "upsans-serif": "sans-serif",
+      "boldsans-serif": "bold-sans-serif",
+      "italicsans-serif": "sans-serif-italic",
+      "bolditalicsans-serif": "sans-serif-bold-italic",
+      "monospace": "monospace"
+    }[(variantStyle != null ? variantStyle : "") + (variant != null ? variant : "")]) != null ? _d2 : "";
+    if (variantProp) variantProp = ` mathvariant="${variantProp}"`;
+  }
+  const SPECIAL_IDENTIFIERS = {
+    "\\exponentialE": "&#x02147;",
+    "\\imaginaryI": "&#x2148;",
+    "\\differentialD": "&#x2146;",
+    "\\capitalDifferentialD": "&#x2145;",
+    "\\alpha": "&#x03b1;",
+    "\\pi": "&#x03c0;",
+    "\\infty": "&#x221e;",
+    "\\forall": "&#x2200;",
+    "\\nexists": "&#x2204;",
+    "\\exists": "&#x2203;",
+    "\\hbar": "\u210F",
+    "\\cdotp": "\u22C5",
+    "\\ldots": "\u2026",
+    "\\cdots": "\u22EF",
+    "\\ddots": "\u22F1",
+    "\\vdots": "\u22EE",
+    "\\ldotp": "."
+  };
+  if (atom.command === "!") {
+    stream.index += 1;
+    mathML = "<mo>!</mo>";
+    if (!parseSubsup(mathML, stream, options)) {
+      stream.mathML += mathML;
+      stream.lastType = "mo";
+    }
+    return true;
+  }
+  if (SPECIAL_IDENTIFIERS[atom.command]) {
+    stream.index += 1;
+    let mathML2 = `<mi${makeID(atom.id, options)}${variantProp}>${SPECIAL_IDENTIFIERS[atom.command]}</mi>`;
+    if (stream.lastType === "mi" || stream.lastType === "mn" || stream.lastType === "mtext" || stream.lastType === "fence")
+      mathML2 = INVISIBLE_TIMES + mathML2;
+    if (!parseSubsup(mathML2, stream, options)) {
+      stream.mathML += mathML2;
+      stream.lastType = "mi";
+    }
+    return true;
+  }
+  if (atom.command === "\\operatorname") {
+    body = toString2(atom.body);
+    stream.index += 1;
+  } else {
+    if (variant || variantStyle) {
+      while (stream.index < final && (atom.type === "mord" || atom.type === "macro") && !atom.isDigit() && variant === ((_f = (_e = atom.style) == null ? void 0 : _e.variant) != null ? _f : "") && variantStyle === ((_h = (_g = atom.style) == null ? void 0 : _g.variantStyle) != null ? _h : "")) {
+        body += toString2([atom]);
+        stream.index += 1;
+        atom = stream.atoms[stream.index];
+      }
+    } else if ((atom.type === "mord" || atom.type === "macro") && !atom.isDigit()) {
+      body += toString2([atom]);
+      stream.index += 1;
+    }
+  }
+  if (body.length > 0) {
+    result = true;
+    mathML = `<mi${variantProp}>${body}</mi>`;
+    const lastType = stream.lastType;
+    if (mathML.endsWith(">f</mi>") || mathML.endsWith(">g</mi>")) {
+      mathML += APPLY_FUNCTION;
+      stream.lastType = "applyfunction";
+    } else stream.lastType = /^<mo>(.*)<\/mo>$/.test(mathML) ? "mo" : "mi";
+    if (!parseSubsup(mathML, stream, options)) {
+      if (lastType === "mi" || lastType === "mn" || lastType === "mtext" || lastType === "fence")
+        mathML = INVISIBLE_TIMES + mathML;
+      stream.mathML += mathML;
+    }
+  }
+  return result;
+}
+function isSuperscriptAtom(stream) {
+  return stream.index < stream.atoms.length && stream.atoms[stream.index].superscript && stream.atoms[stream.index].type === "subsup";
+}
+function indexOfSuperscriptInNumber(stream) {
+  let result = -1;
+  let i = stream.index;
+  let done = false;
+  let found = false;
+  while (i < stream.atoms.length && !done && !found) {
+    const atom = stream.atoms[i];
+    done = !atom.isDigit();
+    found = !done && atom.superscript !== void 0;
+    i++;
+  }
+  if (found) result = i - 1;
+  return result;
+}
+function parseSubsup(base, stream, options) {
+  var _a3;
+  let atom = stream.atoms[stream.index - 1];
+  if (!atom) return false;
+  if (!atom.superscript && !atom.subscript) {
+    if (((_a3 = stream.atoms[stream.index]) == null ? void 0 : _a3.type) === "subsup") {
+      atom = stream.atoms[stream.index];
+      stream.index += 1;
+    } else return false;
+  }
+  const lastType = stream.lastType;
+  stream.lastType = "";
+  const superscript = toMathML(atom.superscript, options);
+  stream.lastType = "";
+  const subscript = toMathML(atom.subscript, options);
+  stream.lastType = lastType;
+  if (!superscript && !subscript) return false;
+  let mathML = "";
+  if (superscript && subscript)
+    mathML = `<msubsup>${base}${subscript}${superscript}</msubsup>`;
+  else if (superscript) mathML = `<msup>${base}${superscript}</msup>`;
+  else if (subscript) mathML = `<msub>${base}${subscript}</msub>`;
+  stream.mathML += mathML;
+  stream.lastType = "";
+  return true;
+}
+function scanText(stream, final, options) {
+  final = final != null ? final : stream.atoms.length;
+  const initial = stream.index;
+  let mathML = "";
+  let superscript = indexOfSuperscriptInNumber(stream);
+  if (superscript >= 0 && superscript < final) final = superscript;
+  while (stream.index < final && stream.atoms[stream.index].mode === "text") {
+    mathML += stream.atoms[stream.index].value ? stream.atoms[stream.index].value : " ";
+    stream.index += 1;
+  }
+  if (mathML.length > 0) {
+    mathML = `<mtext ${makeID(
+      stream.atoms[initial].id,
+      options
+    )}>${mathML}</mtext>`;
+    if (superscript < 0 && isSuperscriptAtom(stream)) {
+      superscript = stream.index;
+      stream.index += 1;
+    }
+    if (!parseSubsup(mathML, stream, options)) {
+      stream.mathML += mathML;
+      stream.lastType = "mtext";
+    }
+    return true;
+  }
+  return false;
+}
+function scanNumber(stream, final, options) {
+  final = final != null ? final : stream.atoms.length;
+  const initial = stream.index;
+  let mathML = "";
+  let superscript = indexOfSuperscriptInNumber(stream);
+  if (superscript >= 0 && superscript < final) final = superscript;
+  while (stream.index < final && stream.atoms[stream.index].isDigit()) {
+    mathML += stream.atoms[stream.index].asDigit();
+    stream.index += 1;
+  }
+  if (mathML.length <= 0) return false;
+  mathML = "<mn" + makeID(stream.atoms[initial].id, options) + ">" + mathML + "</mn>";
+  if (superscript < 0 && isSuperscriptAtom(stream)) {
+    superscript = stream.index;
+    stream.index += 1;
+  }
+  if (!parseSubsup(mathML, stream, options)) {
+    stream.mathML += mathML;
+    stream.lastType = "mn";
+  }
+  return true;
+}
+function scanFence(stream, final, options) {
+  let result = false;
+  final = final != null ? final : stream.atoms.length;
+  let mathML = "";
+  let lastType = "";
+  if (stream.index < final && stream.atoms[stream.index].type === "mopen") {
+    let found = false;
+    let depth = 0;
+    const openIndex = stream.index;
+    let closeIndex = -1;
+    let index = openIndex + 1;
+    while (index < final && !found) {
+      if (stream.atoms[index].type === "mopen") depth += 1;
+      else if (stream.atoms[index].type === "mclose") depth -= 1;
+      if (depth === -1) {
+        found = true;
+        closeIndex = index;
+      }
+      index += 1;
+    }
+    if (found) {
+      mathML = "<mrow>";
+      mathML += toMo(stream.atoms[openIndex], options);
+      mathML += toMathML(stream.atoms, options, openIndex + 1, closeIndex);
+      mathML += toMo(stream.atoms[closeIndex], options);
+      mathML += "</mrow>";
+      stream.index = closeIndex + 1;
+      if (stream.lastType === "mi" || stream.lastType === "mn" || stream.lastType === "mfrac" || stream.lastType === "fence")
+        stream.mathML += INVISIBLE_TIMES;
+      if (parseSubsup(mathML, stream, options)) {
+        result = true;
+        stream.lastType = "";
+        mathML = "";
+      }
+      lastType = "fence";
+    }
+  }
+  if (mathML.length > 0) {
+    result = true;
+    stream.mathML += mathML;
+    stream.lastType = lastType;
+  }
+  return result;
+}
+function scanOperator(stream, final, options) {
+  let result = false;
+  final = final != null ? final : stream.atoms.length;
+  let mathML = "";
+  let lastType = "";
+  const atom = stream.atoms[stream.index];
+  if (!atom) return false;
+  const SPECIAL_OPERATORS = {
+    "\\ne": "&ne;",
+    "\\neq": "&ne;",
+    "\\pm": "&#177;",
+    "\\times": "&#215;",
+    "\\colon": ":",
+    "\\vert": "|",
+    "\\Vert": "\u2225",
+    "\\mid": "\u2223",
+    "\\{": "{",
+    "\\}": "}",
+    "\\lbrace": "{",
+    "\\rbrace": "}",
+    "\\lbrack": "[",
+    "\\rbrack": "]",
+    "\\lparen": "(",
+    "\\rparen": ")",
+    "\\langle": "\u27E8",
+    "\\rangle": "\u27E9",
+    "\\lfloor": "\u230A",
+    "\\rfloor": "\u230B",
+    "\\lceil": "\u2308",
+    "\\rceil": "\u2309"
+  };
+  if (SPECIAL_OPERATORS[atom.command]) {
+    stream.index += 1;
+    const mathML2 = `<mo${makeID(atom.id, options)}>${SPECIAL_OPERATORS[atom.command]}</mo>`;
+    if (!parseSubsup(mathML2, stream, options)) {
+      stream.mathML += mathML2;
+      stream.lastType = "mo";
+    }
+    return true;
+  }
+  if (stream.index < final && (atom.type === "mbin" || atom.type === "mrel")) {
+    mathML += atomToMathML(stream.atoms[stream.index], options);
+    stream.index += 1;
+    lastType = "mo";
+  } else if (stream.index < final && (atom.type === "mop" || atom.type === "operator" || atom.type === "extensible-symbol")) {
+    if (atom.subsupPlacement === "over-under" && (atom.superscript || atom.subscript)) {
+      const op = toMo(atom, options);
+      if (atom.superscript && atom.subscript) {
+        mathML += "<munderover>" + op;
+        mathML += toMathML(atom.subscript, options);
+        mathML += toMathML(atom.superscript, options);
+        mathML += "</munderover>";
+      } else if (atom.superscript) {
+        mathML += "<mover>" + op;
+        mathML += toMathML(atom.superscript, options);
+        mathML += "</mover>";
+      } else if (atom.subscript) {
+        mathML += "<munder>" + op;
+        mathML += toMathML(atom.subscript, options);
+        mathML += "</munder>";
+      }
+      stream.mathML += mathML;
+      stream.lastType = "mo";
+      stream.index += 1;
+      return true;
+    }
+    {
+      const atom2 = stream.atoms[stream.index];
+      const isUnit = atom2.value === "\\operatorname";
+      const op = isUnit ? '<mi class="MathML-Unit"' + makeID(atom2.id, options) + ">" + toString2(atom2.value) + "</mi>" : toMo(atom2, options);
+      mathML += op;
+      if (!isUnit && !/^<mo>(.*)<\/mo>$/.test(op)) {
+        mathML += APPLY_FUNCTION;
+        lastType = "applyfunction";
+      } else lastType = isUnit ? "mi" : "mo";
+    }
+    if ((stream.lastType === "mi" || stream.lastType === "mn") && !/^<mo>(.*)<\/mo>$/.test(mathML))
+      mathML = INVISIBLE_TIMES + mathML;
+    stream.index += 1;
+  }
+  if (mathML.length > 0) {
+    result = true;
+    if (!parseSubsup(mathML, stream, options)) {
+      stream.mathML += mathML;
+      stream.lastType = lastType;
+    }
+  }
+  return result;
+}
+function toMathML(input, options, initial, final) {
+  options != null ? options : options = {};
+  const result = {
+    atoms: [],
+    index: initial != null ? initial : 0,
+    mathML: "",
+    lastType: ""
+  };
+  if (typeof input === "number" || typeof input === "boolean")
+    result.mathML = input.toString();
+  else if (typeof input === "string") result.mathML = input;
+  else if (input instanceof Atom) result.mathML = atomToMathML(input, options);
+  else if (Array.isArray(input)) {
+    result.atoms = input;
+    let count = 0;
+    final = final ? final : input ? input.length : 0;
+    while (result.index < final) {
+      if (scanText(result, final, options) || scanNumber(result, final, options) || scanIdentifier(result, final, options) || scanOperator(result, final, options) || scanFence(result, final, options))
+        count += 1;
+      else if (result.index < final) {
+        let mathML = atomToMathML(result.atoms[result.index], options);
+        if (result.lastType === "mn" && mathML.length > 0 && result.atoms[result.index].type === "genfrac") {
+          mathML = "<mo>&#x2064;</mo>" + mathML;
+        }
+        if (result.atoms[result.index].type === "genfrac")
+          result.lastType = "mfrac";
+        else result.lastType = "";
+        result.index += 1;
+        if (parseSubsup(mathML, result, options)) count += 1;
+        else {
+          if (mathML.length > 0) {
+            result.mathML += mathML;
+            count += 1;
+          }
+        }
+      }
+    }
+    if (count > 1) result.mathML = "<mrow>" + result.mathML + "</mrow>";
+  }
+  return result.mathML;
+}
+function toMo(atom, options) {
+  let result = "";
+  const body = toString2(atom.value);
+  if (body) result = "<mo" + makeID(atom.id, options) + ">" + body + "</mo>";
+  return result;
+}
+function toString2(atoms) {
+  if (!atoms) return "";
+  if (typeof atoms === "string") return xmlEscape(atoms);
+  if (!Array.isArray(atoms) && typeof atoms.body === "string")
+    return xmlEscape(atoms.body);
+  let result = "";
+  for (const atom of atoms)
+    if (typeof atom.value === "string") result += atom.value;
+  return xmlEscape(result);
+}
+function atomToMathML(atom, options) {
+  var _a3, _b3, _c2, _d2, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
+  if (atom.mode === "text")
+    return `<mi${makeID(atom.id, options)}>${atom.value}</mi>`;
+  const SVG_CODE_POINTS = {
+    widehat: "^",
+    widecheck: "\u02C7",
+    widetilde: "~",
+    utilde: "~",
+    overleftarrow: "\u2190",
+    underleftarrow: "\u2190",
+    xleftarrow: "\u2190",
+    longleftarrow: "\u2190",
+    overrightarrow: "\u2192",
+    underrightarrow: "\u2192",
+    xrightarrow: "\u2192",
+    longrightarrow: "\u2192",
+    underbrace: "\u23DF",
+    overbrace: "\u23DE",
+    overgroup: "\u23E0",
+    undergroup: "\u23E1",
+    overleftrightarrow: "\u2194",
+    underleftrightarrow: "\u2194",
+    xleftrightarrow: "\u2194",
+    Overrightarrow: "\u21D2",
+    xRightarrow: "\u21D2",
+    overleftharpoon: "\u21BC",
+    xleftharpoonup: "\u21BC",
+    overrightharpoon: "\u21C0",
+    xrightharpoonup: "\u21C0",
+    xLeftarrow: "\u21D0",
+    xLeftrightarrow: "\u21D4",
+    xhookleftarrow: "\u21A9",
+    xhookrightarrow: "\u21AA",
+    xmapsto: "\u21A6",
+    xrightharpoondown: "\u21C1",
+    xleftharpoondown: "\u21BD",
+    xrightleftharpoons: "\u21CC",
+    longrightleftharpoons: "\u21CC",
+    xleftrightharpoons: "\u21CB",
+    xtwoheadleftarrow: "\u219E",
+    xtwoheadrightarrow: "\u21A0",
+    xlongequal: "=",
+    xtofrom: "\u21C4",
+    xleftrightarrows: "\u21C4",
+    xRightleftharpoons: "\u21CC",
+    // Not a perfect match.
+    longRightleftharpoons: "\u21CC",
+    // Not a perfect match.
+    xLeftrightharpoons: "\u21CB",
+    // None better available.
+    longLeftrightharpoons: "\u21CB"
+    // None better available.
+  };
+  const SPACING = {
+    "\\!": -3 / 18,
+    "\\ ": 6 / 18,
+    "\\,": 3 / 18,
+    "\\:": 4 / 18,
+    "\\>": 4 / 18,
+    "\\;": 5 / 18,
+    "\\enspace": 0.5,
+    "\\quad": 1,
+    "\\qquad": 2,
+    "\\enskip": 0.5
+  };
+  let result = "";
+  let sep = "";
+  let col;
+  let row;
+  let i;
+  let underscript;
+  let overscript;
+  let body;
+  const { command } = atom;
+  if (atom.command === "\\error") {
+    return `<merror${makeID(atom.id, options)}>${toMathML(
+      atom.body,
+      options
+    )}</merror>`;
+  }
+  const SPECIAL_DELIMS = {
+    "\\vert": "|",
+    "\\Vert": "\u2225",
+    "\\mid": "\u2223",
+    "\\lbrack": "[",
+    "\\rbrack": "]",
+    "\\{": "{",
+    "\\}": "}",
+    "\\lbrace": "{",
+    "\\rbrace": "}",
+    "\\lparen": "(",
+    "\\rparen": ")",
+    "\\langle": "\u27E8",
+    "\\rangle": "\u27E9",
+    "\\lfloor": "\u230A",
+    "\\rfloor": "\u230B",
+    "\\lceil": "\u2308",
+    "\\rceil": "\u2309"
+  };
+  const SPECIAL_ACCENTS = {
+    "\\vec": "&#x20d7;",
+    "\\acute": "&#x00b4;",
+    "\\grave": "&#x0060;",
+    "\\dot": "&#x02d9;",
+    "\\ddot": "&#x00a8;",
+    "\\tilde": "&#x007e;",
+    "\\bar": "&#x00af;",
+    "\\breve": "&#x02d8;",
+    "\\check": "&#x02c7;",
+    "\\hat": "&#x005e;"
+  };
+  switch (atom.type) {
+    case "first":
+      break;
+    // Nothing to do
+    case "error":
+      if (atom.command === "\\\\") break;
+      result = `<merror${makeID(atom.id, options)}>${toMathML(
+        atom.body,
+        options
+      )}</merror>`;
+      break;
+    case "group":
+    case "root":
+      result = toMathML(atom.body, options);
+      break;
+    case "array":
+      const arrayAtom = atom;
+      if (arrayAtom.leftDelim && arrayAtom.leftDelim !== "." || arrayAtom.rightDelim && arrayAtom.rightDelim !== ".") {
+        result += "<mrow>";
+        if (arrayAtom.leftDelim && arrayAtom.leftDelim !== ".")
+          result += `<mo>${SPECIAL_DELIMS[arrayAtom.leftDelim] || arrayAtom.leftDelim}</mo>`;
+      }
+      result += "<mtable";
+      if (arrayAtom.colFormat) {
+        result += ' columnalign="';
+        for (i = 0; i < arrayAtom.colFormat.length; i++) {
+          const format = arrayAtom.colFormat[i];
+          if ("align" in format) {
+            result += { l: "left", c: "center", r: "right" }[format.align] + " ";
+          }
+        }
+        result += '"';
+      }
+      result += ">";
+      for (row = 0; row < arrayAtom.rows.length; row++) {
+        result += "<mtr>";
+        for (col = 0; col < arrayAtom.rows[row].length; col++) {
+          result += "<mtd>" + toMathML(arrayAtom.rows[row][col], options) + "</mtd>";
+        }
+        result += "</mtr>";
+      }
+      result += "</mtable>";
+      if (arrayAtom.leftDelim && arrayAtom.leftDelim !== "." || arrayAtom.rightDelim && arrayAtom.rightDelim !== ".") {
+        if (arrayAtom.rightDelim && arrayAtom.rightDelim !== ".")
+          result += `<mo>${SPECIAL_DELIMS[arrayAtom.rightDelim] || arrayAtom.rightDelim}</mo>`;
+        result += "</mrow>";
+      }
+      break;
+    case "genfrac":
+      const genfracAtom = atom;
+      if (genfracAtom.leftDelim || genfracAtom.rightDelim) result += "<mrow>";
+      if (genfracAtom.leftDelim && genfracAtom.leftDelim !== ".") {
+        result += "<mo" + makeID(atom.id, options) + ">" + (SPECIAL_DELIMS[genfracAtom.leftDelim] || genfracAtom.leftDelim) + "</mo>";
+      }
+      if (genfracAtom.hasBarLine) {
+        result += "<mfrac>";
+        result += toMathML(atom.above, options) || "<mi>&nbsp;</mi>";
+        result += toMathML(atom.below, options) || "<mi>&nbsp;</mi>";
+        result += "</mfrac>";
+      } else {
+        result += "<mtable" + makeID(atom.id, options) + ">";
+        result += "<mtr>" + toMathML(atom.above, options) + "</mtr>";
+        result += "<mtr>" + toMathML(atom.below, options) + "</mtr>";
+        result += "</mtable>";
+      }
+      if (genfracAtom.rightDelim && genfracAtom.rightDelim !== ".") {
+        result += "<mo" + makeID(atom.id, options) + ">" + (SPECIAL_DELIMS[genfracAtom.rightDelim] || genfracAtom.rightDelim) + "</mo>";
+      }
+      if (genfracAtom.leftDelim || genfracAtom.rightDelim) result += "</mrow>";
+      break;
+    case "surd":
+      if (!atom.hasEmptyBranch("above")) {
+        result += "<mroot" + makeID(atom.id, options) + ">";
+        result += toMathML(atom.body, options);
+        result += toMathML(atom.above, options);
+        result += "</mroot>";
+      } else {
+        result += "<msqrt" + makeID(atom.id, options) + ">";
+        result += toMathML(atom.body, options);
+        result += "</msqrt>";
+      }
+      break;
+    case "leftright":
+      const leftrightAtom = atom;
+      const lDelim = leftrightAtom.leftDelim;
+      result = "<mrow>";
+      if (lDelim && lDelim !== ".") {
+        result += `<mo${makeID(atom.id, options)}>${(_a3 = SPECIAL_DELIMS[lDelim]) != null ? _a3 : lDelim}</mo>`;
+      }
+      if (atom.body) result += toMathML(atom.body, options);
+      const rDelim = leftrightAtom.matchingRightDelim();
+      if (rDelim && rDelim !== ".") {
+        result += `<mo${makeID(atom.id, options)}>${(_b3 = SPECIAL_DELIMS[rDelim]) != null ? _b3 : rDelim}</mo>`;
+      }
+      result += "</mrow>";
+      break;
+    case "sizeddelim":
+    case "delim":
+      result += `<mo${makeID(atom.id, options)}>${SPECIAL_DELIMS[atom.value] || atom.value}</mo>`;
+      break;
+    case "accent":
+      const accentAtom = atom;
+      result += '<mover accent="true"' + makeID(atom.id, options) + ">";
+      result += toMathML(atom.body, options);
+      result += "<mo>" + (SPECIAL_ACCENTS[command] || accentAtom.accent) + "</mo>";
+      result += "</mover>";
+      break;
+    case "line":
+    case "overlap":
+      break;
+    case "overunder":
+      const overunderAtom = atom;
+      overscript = atom.above;
+      underscript = atom.below;
+      if ((overunderAtom.svgAbove || overscript) && (overunderAtom.svgBelow || underscript))
+        body = atom.body;
+      else if (overscript && overscript.length > 0) {
+        body = atom.body;
+        if ((_d2 = (_c2 = atom.body) == null ? void 0 : _c2[0]) == null ? void 0 : _d2.below) {
+          underscript = atom.body[0].below;
+          body = atom.body[0].body;
+        } else if (((_f = (_e = atom.body) == null ? void 0 : _e[0]) == null ? void 0 : _f.type) === "first" && ((_h = (_g = atom.body) == null ? void 0 : _g[1]) == null ? void 0 : _h.below)) {
+          underscript = atom.body[1].below;
+          body = atom.body[1].body;
+        }
+      } else if (underscript && underscript.length > 0) {
+        body = atom.body;
+        if ((_j = (_i = atom.body) == null ? void 0 : _i[0]) == null ? void 0 : _j.above) {
+          overscript = atom.body[0].above;
+          body = atom.body[0].body;
+        } else if (((_l = (_k = atom.body) == null ? void 0 : _k[0]) == null ? void 0 : _l.type) === "first" && ((_n = (_m = atom.body) == null ? void 0 : _m[1]) == null ? void 0 : _n.above)) {
+          overscript = atom.body[1].above;
+          body = atom.body[1].body;
+        }
+      }
+      if ((overunderAtom.svgAbove || overscript) && (overunderAtom.svgBelow || underscript)) {
+        result += `<munderover ${makeID(atom.id, options)}>`;
+        result += (_o = SVG_CODE_POINTS[overunderAtom.svgBody]) != null ? _o : toMathML(body, options);
+        result += (_p = SVG_CODE_POINTS[overunderAtom.svgBelow]) != null ? _p : toMathML(underscript, options);
+        result += (_q = SVG_CODE_POINTS[overunderAtom.svgAbove]) != null ? _q : toMathML(overscript, options);
+        result += "</munderover>";
+      } else if (overunderAtom.svgAbove || overscript) {
+        result += `<mover ${makeID(atom.id, options)}>` + ((_r = SVG_CODE_POINTS[overunderAtom.svgBody]) != null ? _r : toMathML(body, options));
+        result += (_s = SVG_CODE_POINTS[overunderAtom.svgAbove]) != null ? _s : toMathML(overscript, options);
+        result += "</mover>";
+      } else if (overunderAtom.svgBelow || underscript) {
+        result += `<munder ${makeID(atom.id, options)}>` + ((_t = SVG_CODE_POINTS[overunderAtom.svgBody]) != null ? _t : toMathML(body, options));
+        result += (_u = SVG_CODE_POINTS[overunderAtom.svgBelow]) != null ? _u : toMathML(underscript, options);
+        result += "</munder>";
+      }
+      break;
+    case "placeholder":
+      result += "?";
+      break;
+    case "mord": {
+      result = typeof atom.value === "string" ? atom.value : command;
+      if (result.length > 0 && result.startsWith("\\")) {
+        if (typeof atom.value === "string" && atom.value.charCodeAt(0) > 255) {
+          result = "&#x" + ("000000" + atom.value.charCodeAt(0).toString(16)).slice(-4) + ";";
+        } else if (typeof atom.value === "string")
+          result = atom.value.charAt(0);
+      } else if (atom.command === "\\char") {
+        const val = (_v = atom.args) == null ? void 0 : _v[0];
+        if (val !== void 0 && "number" in val) {
+          const codepoint = val.number;
+          if (typeof codepoint === "number") {
+            result = "&#x" + ("000000" + codepoint.toString(16)).slice(-4) + ";";
+          }
+        }
+      } else if (typeof atom.value === "string") result = atom.value;
+      else {
+        console.error("Did not expect this");
+        result = "";
+      }
+      const tag = /\d/.test(result) ? "mn" : "mi";
+      result = `<${tag}${makeID(atom.id, options)}>${xmlEscape(
+        result
+      )}</${tag}>`;
+      break;
+    }
+    case "mbin":
+    case "mrel":
+    case "minner":
+      result = toMo(atom, options);
+      break;
+    case "mpunct":
+      result = '<mo separator="true"' + makeID(atom.id, options) + ">" + command + "</mo>";
+      break;
+    case "mop":
+    case "operator":
+    case "extensible-symbol":
+      if (atom.value !== "\u200B") {
+        result = "<mo" + makeID(atom.id, options) + ">";
+        result += command === "\\operatorname" ? atom.body : command || atom.body;
+        result += "</mo>";
+      }
+      break;
+    // Case 'mathstyle':
+    // TODO: mathstyle is a switch. Need to figure out its scope to properly wrap it around a <mstyle> tag
+    // if (atom.mathstyle === 'displaystyle') {
+    //     result += '<mstyle displaystyle="true">';
+    //     result += '</mstyle>';
+    // } else {
+    //     result += '<mstyle displaystyle="false">';
+    //     result += '</mstyle>';
+    // };
+    // break;
+    case "box":
+      const boxAtom = atom;
+      result = '<menclose notation="box"';
+      if (boxAtom.backgroundcolor)
+        result += ' mathbackground="' + boxAtom.backgroundcolor + '"';
+      result += makeID(atom.id, options) + ">" + toMathML(atom.body, options) + "</menclose>";
+      break;
+    case "spacing":
+      result += '<mspace width="' + ((_w = SPACING[command]) != null ? _w : 0) + 'em"/>';
+      break;
+    case "enclose":
+      const encloseAtom = atom;
+      result = '<menclose notation="';
+      for (const notation in encloseAtom.notation) {
+        if (Object.prototype.hasOwnProperty.call(
+          encloseAtom.notation,
+          notation
+        ) && encloseAtom.notation[notation]) {
+          result += sep + notation;
+          sep = " ";
+        }
+      }
+      result += makeID(atom.id, options) + '">' + toMathML(atom.body, options) + "</menclose>";
+      break;
+    case "prompt":
+      result = '<menclose notation="roundexbox""">' + toMathML(atom.body, options) + "</menclose>";
+      break;
+    case "space":
+      result += "&nbsp;";
+      break;
+    case "subsup":
+      break;
+    case "phantom":
+      break;
+    case "composition":
+      break;
+    case "rule":
+      break;
+    case "chem":
+      break;
+    case "mopen":
+      result += toMo(atom, options);
+      break;
+    case "mclose":
+      result += toMo(atom, options);
+      break;
+    case "macro":
+      {
+        const body2 = atom.command + toString2(atom.macroArgs);
+        if (body2) result += `<mo ${makeID(atom.id, options)}>${body2}</mo>`;
+      }
+      break;
+    case "latexgroup":
+      result += toMathML(atom.body, options);
+      break;
+    case "latex":
+      result += "<mtext" + makeID(atom.id, options) + ">" + atom.value + "</mtext>";
+      break;
+    case "tooltip":
+      result += toMathML(atom.body, options);
+      break;
+    case "text":
+      result += `<mtext ${makeID(atom.id, options)}x>${atom.value}</mtext>`;
+      break;
+    default:
+      if (atom.command === "\\displaystyle") {
+        return `<mrow ${makeID(
+          atom.id,
+          options
+        )} displaystyle="true">${toMathML(atom.body, options)}</mrow>`;
+      }
+      if (atom.command === "\\textstyle") {
+        return `<mrow ${makeID(
+          atom.id,
+          options
+        )} displaystyle="false">${toMathML(atom.body, options)}</mrow>`;
+      }
+      console.info("Unexpected element in conversion to MathML:", atom);
+  }
+  return result;
+}
+
+// src/formats/atom-to-speakable-text.ts
+var PRONUNCIATION = {
+  "\\alpha": "alpha ",
+  "\\mu": "mew ",
+  "\\sigma": "sigma ",
+  "\\pi": "pie ",
+  "\\imaginaryI": "imaginary eye ",
+  "\\imaginaryJ": "imaginary jay ",
+  "\\sum": "Summation ",
+  "\\prod": "Product ",
+  "+": "plus ",
+  "-": "minus ",
+  ";": '<break time="150ms"/> semi-colon <break time="150ms"/>',
+  ",": '<break time="150ms"/> comma  <break time="150ms"/>',
+  "|": '<break time="150ms"/>Vertical bar<break time="150ms"/>',
+  "(": '<break time="150ms"/>Open paren. <break time="150ms"/>',
+  ")": '<break time="150ms"/> Close paren. <break time="150ms"/>',
+  "=": "equals ",
+  "<": "is less than ",
+  "\\lt": "is less than ",
+  "<=": "is less than or equal to ",
+  "\\le": "is less than or equal to ",
+  "\\gt": "is greater than ",
+  ">": "is greater than ",
+  "\\pm": "plus or minus",
+  "\\mp": "minus or plus",
+  "\\ge": "is greater than or equal to ",
+  "\\geq": "is greater than or equal to ",
+  "\\leq": "is less than or equal to ",
+  "\\ne": "is not equal to ",
+  "\\neq": "is not equal to ",
+  "!": "factorial ",
+  "\\sin": "sine ",
+  "\\cos": "cosine ",
+  "\u200B": "",
+  "\u2212": "minus ",
+  ":": '<break time="150ms"/> such that <break time="200ms"/> ',
+  "\\colon": '<break time="150ms"/> such that <break time="200ms"/> ',
+  "\\hbar": "etch bar ",
+  "\\iff": '<break time="200ms"/>if, and only if, <break time="200ms"/>',
+  "\\Longleftrightarrow": '<break time="200ms"/>if, and only if, <break time="200ms"/>',
+  "\\land": "and ",
+  "\\lor": "or ",
+  "\\neg": "not ",
+  "\\div": "divided by ",
+  "\\forall": "for all ",
+  "\\exists": "there exists ",
+  "\\nexists": "there does not exists ",
+  "\\in": "element of ",
+  "\\N": 'the set <break time="150ms"/><say-as interpret-as="character">n</say-as>',
+  "\\C": 'the set <break time="150ms"/><say-as interpret-as="character">c</say-as>',
+  "\\Z": 'the set <break time="150ms"/><say-as interpret-as="character">z</say-as>',
+  "\\Q": 'the set <break time="150ms"/><say-as interpret-as="character">q</say-as>',
+  "\\infty": "infinity ",
+  "\\nabla": "nabla ",
+  "\\partial": "partial derivative of ",
+  "\\cdot": "times ",
+  "\\cdots": "dot dot dot ",
+  "\\Rightarrow": "implies ",
+  "\\lparen": '<break time="150ms"/>open paren<break time="150ms"/>',
+  "\\rparen": '<break time="150ms"/>close paren<break time="150ms"/>',
+  "\\lbrace": '<break time="150ms"/>open brace<break time="150ms"/>',
+  "\\{": '<break time="150ms"/>open brace<break time="150ms"/>',
+  "\\rbrace": '<break time="150ms"/>close brace<break time="150ms"/>',
+  "\\}": '<break time="150ms"/>close brace<break time="150ms"/>',
+  "\\langle": '<break time="150ms"/>left angle bracket<break time="150ms"/>',
+  "\\rangle": '<break time="150ms"/>right angle bracket<break time="150ms"/>',
+  "\\lfloor": '<break time="150ms"/>open floor<break time="150ms"/>',
+  "\\rfloor": '<break time="150ms"/>close floor<break time="150ms"/>',
+  "\\lceil": '<break time="150ms"/>open ceiling<break time="150ms"/>',
+  "\\rceil": '<break time="150ms"/>close ceiling<break time="150ms"/>',
+  "\\vert": '<break time="150ms"/>vertical bar<break time="150ms"/>',
+  "\\mvert": '<break time="150ms"/>divides<break time="150ms"/>',
+  "\\lvert": '<break time="150ms"/>left vertical bar<break time="150ms"/>',
+  "\\rvert": '<break time="150ms"/>right vertical bar<break time="150ms"/>',
+  // '\\lbrack':		'left bracket',
+  // '\\rbrack':		'right bracket',
+  "\\lbrack": '<break time="150ms"/> open square bracket <break time="150ms"/>',
+  "\\rbrack": '<break time="150ms"/> close square bracket <break time="150ms"/>',
+  // Need to add code to detect singluar/plural. Until then spoken as plural since that is vastly more common
+  // note: need to worry about intervening &InvisibleTimes;.
+  // note: need to also do this when in numerator of fraction and number preceeds fraction
+  // note: need to do this for <msup>
+  "mm": "millimeters",
+  "cm": "centimeters",
+  "km": "kilometers",
+  "kg": "kilograms"
+};
+var ENVIRONMENTS_NAMES = {
+  "array": "array",

@@ -7671,11 +7671,6 @@ internal static partial class WordEquationNumbering
         InlineShapes? shapes = null;
         InlineShape? shape = null;
         Range? shapeRange = null;
-        Paragraphs? paragraphs = null;
-        Paragraph? paragraph = null;
-        Range? paragraphRange = null;
-        Range? paragraphMark = null;
-        Microsoft.Office.Interop.Word.Font? paragraphMarkFont = null;
         try
         {
             // VisualTeX OLE and MathType are different objects, but Word lays both
@@ -7694,103 +7689,47 @@ internal static partial class WordEquationNumbering
             float? exportedBaseline = metadata.Baseline.HasValue
                 ? (float)metadata.Baseline.Value
                 : null;
-            var position = 0;
-            var usedDisplayInkCenter = false;
-            if (!metadata.Numbered)
+            if (!metadata.Numbered
+                && (!metadata.WordDisplayPreviewInkHeightRatio.HasValue
+                    || !metadata.WordDisplayPreviewBottomWhitespaceRatio.HasValue))
             {
-                float? inkHeightRatio = metadata.WordDisplayPreviewInkHeightRatio.HasValue
-                    ? (float?)metadata.WordDisplayPreviewInkHeightRatio.Value
-                    : null;
-                float? bottomWhitespaceRatio =
-                    metadata.WordDisplayPreviewBottomWhitespaceRatio.HasValue
-                        ? (float?)metadata.WordDisplayPreviewBottomWhitespaceRatio.Value
-                        : null;
-
-                if (!inkHeightRatio.HasValue || !bottomWhitespaceRatio.HasValue)
+                // Keep the preview metrics in metadata for diagnostics/backward
+                // compatibility, but never use them to move only unnumbered OLEs.
+                // Numbering must not change the physical formula baseline.
+                try
                 {
-                    try
+                    shapes = formulaRange.InlineShapes;
+                    if (shapes.Count == 1)
                     {
-                        shapes = formulaRange.InlineShapes;
-                        if (shapes.Count == 1)
+                        shape = shapes[1];
+                        shapeRange = shape.Range;
+                        var emfBytes = shapeRange.EnhMetaFileBits as byte[];
+                        var metrics = emfBytes is null
+                            ? null
+                            : OfficeOlePreview.TryMeasureVerticalInkMetrics(emfBytes);
+                        if (metrics.HasValue)
                         {
-                            shape = shapes[1];
-                            shapeRange = shape.Range;
-                            var emfBytes = shapeRange.EnhMetaFileBits as byte[];
-                            var metrics = emfBytes is null
-                                ? null
-                                : OfficeOlePreview.TryMeasureVerticalInkMetrics(emfBytes);
-                            if (metrics.HasValue)
-                            {
-                                inkHeightRatio = metrics.Value.InkHeightRatio;
-                                bottomWhitespaceRatio =
-                                    metrics.Value.BottomWhitespaceRatio;
-                                metadata.WordDisplayPreviewInkHeightRatio =
-                                    inkHeightRatio.Value;
-                                metadata.WordDisplayPreviewBottomWhitespaceRatio =
-                                    bottomWhitespaceRatio.Value;
-                            }
+                            metadata.WordDisplayPreviewInkHeightRatio =
+                                metrics.Value.InkHeightRatio;
+                            metadata.WordDisplayPreviewBottomWhitespaceRatio =
+                                metrics.Value.BottomWhitespaceRatio;
                         }
                     }
-                    catch
-                    {
-                        inkHeightRatio = null;
-                        bottomWhitespaceRatio = null;
-                    }
                 }
-
-                var paragraphMarkFontSize = 0f;
-                if (inkHeightRatio.HasValue && bottomWhitespaceRatio.HasValue)
+                catch
                 {
-                    try
-                    {
-                        paragraphs = formulaRange.Paragraphs;
-                        if (paragraphs.Count == 1)
-                        {
-                            paragraph = paragraphs[1];
-                            paragraphRange = paragraph.Range;
-                            if (paragraphRange.End > paragraphRange.Start)
-                            {
-                                paragraphMark = document.Range(
-                                    paragraphRange.End - 1,
-                                    paragraphRange.End);
-                                if (string.Equals(
-                                        paragraphMark.Text,
-                                        "\r",
-                                        StringComparison.Ordinal))
-                                {
-                                    paragraphMarkFont = paragraphMark.Font;
-                                    paragraphMarkFontSize = paragraphMarkFont.Size;
-                                }
-                            }
-                        }
-                    }
-                    catch { paragraphMarkFontSize = 0f; }
-                }
-
-                if (paragraphMarkFontSize > 0
-                    && paragraphMarkFontSize < 256
-                    && inkHeightRatio.HasValue
-                    && bottomWhitespaceRatio.HasValue)
-                {
-                    position = WordInlineAlignment.CalculateDisplayInkCenterPosition(
-                        actualHeightPoints,
-                        inkHeightRatio.Value,
-                        bottomWhitespaceRatio.Value,
-                        paragraphMarkFontSize);
-                    usedDisplayInkCenter = true;
+                    // The display baseline itself is derived from exported
+                    // geometry below, so preview-metric readback is optional.
                 }
             }
 
-            if (!usedDisplayInkCenter)
-            {
-                position = WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
-                    actualHeightPoints,
-                    exportedHeight,
-                    exportedBaseline,
-                    existingFontPosition: null,
-                    sourceSemanticFontSizePoints: semanticFontSize,
-                    targetSemanticFontSizePoints: semanticFontSize);
-            }
+            var position = WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
+                actualHeightPoints,
+                exportedHeight,
+                exportedBaseline,
+                existingFontPosition: null,
+                sourceSemanticFontSizePoints: semanticFontSize,
+                targetSemanticFontSizePoints: semanticFontSize);
             var clamped = Math.Max(-256, Math.Min(256, position));
 
             // A Word inline OLE is a wdFieldEmbed whose Result owns the painted
@@ -7816,11 +7755,6 @@ internal static partial class WordEquationNumbering
         }
         finally
         {
-            Release(paragraphMarkFont);
-            Release(paragraphMark);
-            Release(paragraphRange);
-            Release(paragraph);
-            Release(paragraphs);
             Release(shapeRange);
             Release(shape);
             Release(shapes);

@@ -18,6 +18,9 @@ public struct Point { public int X,Y; }
 [DllImport("user32.dll",EntryPoint="SendMessageW")] public static extern IntPtr ListItemRect(IntPtr h,uint m,IntPtr index,ref Rect r);
 public delegate bool EnumProc(IntPtr h,IntPtr l);
 [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb,IntPtr l);
+[DllImport("user32.dll")] public static extern bool EnumDesktopWindows(IntPtr desktop,EnumProc cb,IntPtr l);
+[DllImport("user32.dll",SetLastError=true)] public static extern IntPtr OpenInputDesktop(uint flags,bool inherit,uint access);
+[DllImport("user32.dll")] public static extern bool CloseDesktop(IntPtr desktop);
 [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr parent,EnumProc cb,IntPtr l);
 [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h,StringBuilder s,int n);
 [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
@@ -26,6 +29,8 @@ public delegate bool EnumProc(IntPtr h,IntPtr l);
 [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h,StringBuilder s,int n);
 [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int command);
+[DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int cx,int cy,uint flags);
 [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
 [DllImport("user32.dll")] public static extern void mouse_event(uint f,uint x,uint y,uint d,UIntPtr e);
@@ -39,9 +44,14 @@ $out=Join-Path $PSScriptRoot 'evidence';[void][IO.Directory]::CreateDirectory($o
 $script:windows=@()
 $script:officeProcessNames=@{}
 foreach($process in (Get-Process WINWORD,visualtex -ErrorAction SilentlyContinue)){$script:officeProcessNames[[uint32]$process.Id]=$process.ProcessName}
-[void][AuditUi]::EnumWindows({param($h,$l)
-if([AuditUi]::IsWindowVisible($h)) { [uint32]$pidValue=0;[void][AuditUi]::GetWindowThreadProcessId($h,[ref]$pidValue);if($script:officeProcessNames.ContainsKey($pidValue)){$s=[Text.StringBuilder]::new(1024);[void][AuditUi]::GetWindowText($h,$s,1024);$script:windows+=@{handle=$h.ToInt64();title=$s.ToString();pid=$pidValue;process=$script:officeProcessNames[$pidValue]}} };return $true
-},[IntPtr]::Zero)
+$enumerateWindows={param($h,$l)
+[uint32]$pidValue=0;[void][AuditUi]::GetWindowThreadProcessId($h,[ref]$pidValue);if($script:officeProcessNames.ContainsKey($pidValue)){$s=[Text.StringBuilder]::new(1024);[void][AuditUi]::GetWindowText($h,$s,1024);$script:windows+=@{handle=$h.ToInt64();title=$s.ToString();visible=[AuditUi]::IsWindowVisible($h);pid=$pidValue;process=$script:officeProcessNames[$pidValue]}};return $true
+}
+$inputDesktop=[AuditUi]::OpenInputDesktop(0,$false,0x01C1)
+try {
+ if($inputDesktop -ne [IntPtr]::Zero){[void][AuditUi]::EnumDesktopWindows($inputDesktop,$enumerateWindows,[IntPtr]::Zero)}
+ else{[void][AuditUi]::EnumWindows($enumerateWindows,[IntPtr]::Zero)}
+} finally {if($inputDesktop -ne [IntPtr]::Zero){[void][AuditUi]::CloseDesktop($inputDesktop)}}
 function FindEl($root,[string]$n) { return $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty,$n)) }
 function ClickEl($el) {
 if($null -eq $el){throw "UI element not found: $Name"}
@@ -65,7 +75,7 @@ foreach($e in $els){$c=$e.Current;$v='';$pat=$null;try {if($e.TryGetCurrentPatte
 $result+=@{type=$c.ControlType.ProgrammaticName;name=$c.Name;id=$c.AutomationId;enabled=$c.IsEnabled;offscreen=$c.IsOffscreen;value=$v;rect=$c.BoundingRectangle.ToString()}}
 return $result
 }
-if($Action -eq 'windows') { @($script:windows|Where-Object {$_.title})|ConvertTo-Json -Depth 4;exit }
+if($Action -eq 'windows') { @($script:windows|Where-Object {$_.title -and ($WordProcessId -eq 0 -or $_.pid -eq $WordProcessId)})|ConvertTo-Json -Depth 4;exit }
 $stageTargetPath=Join-Path $out 'target-word.json'
 $stageTarget=if(Test-Path -LiteralPath $stageTargetPath){Get-Content -LiteralPath $stageTargetPath -Raw | ConvertFrom-Json}else{$null}
 $expectedStageDocument=if($ExpectedDocument){$ExpectedDocument}elseif($stageTarget -and $stageTarget.pid -eq $WordProcessId){$stageTarget.document}else{''}
@@ -84,8 +94,16 @@ if($Action -eq 'new') {
  Write-Output ('NEW_DOCUMENT|'+$d.Name+'|'+$Label);exit
 }
 if($Action -notin @('windows','probe','native','screenshot')) {
-    $guardWord = if($null -ne $word){$word}else{(Connect-RunningWord $WordProcessId)}
-    $guardName = $guardWord.ActiveDocument.Name
+    $guardWord = $word
+    if($null -eq $guardWord){try{$guardWord=Connect-RunningWord $WordProcessId}catch{$guardWord=$null}}
+    $guardName = if($null-ne$guardWord){$guardWord.ActiveDocument.Name}else{''}
+    if($null-eq$guardWord){
+        $guardWindow=$script:windows|Where-Object {$_.handle-eq$WindowHandle -and $_.pid-eq$WordProcessId}|Select-Object -First 1
+        if(!$guardWindow -or !$expectedStageDocument -or $guardWindow.title -notlike ($expectedStageDocument+'* - Word')){
+            throw "Cannot verify the requested Word window for action $Action; no input was sent."
+        }
+        $guardName=$expectedStageDocument
+    }
     if($expectedStageDocument -and $guardName -ne $expectedStageDocument){
         $ownedModal=$false
         if(!$guardName -and $Target -eq 'dialog' -and $WordProcessId -ne 27664){
@@ -116,7 +134,7 @@ if($Action -eq 'enter') {$word.Selection.TypeParagraph();Write-Output 'TYPE_PARA
 $hwnd=[IntPtr]$WindowHandle
 if($WindowHandle -eq 0) {$hwnd=[IntPtr]$word.ActiveWindow.Hwnd}
 if($Target -eq 'editor') {$win=$script:windows|Where-Object {$_.process -eq 'visualtex' -and $_.title -like 'Office*'}|Select-Object -First 1;if(!$win){throw 'No Office editor window'};$hwnd=[IntPtr]$win.handle}
-elseif($Target -eq 'dialog') {$win=$script:windows|Where-Object {$_.title -and $_.title -notlike '* - Word' -and $_.process -eq 'WINWORD' -and ($WordProcessId -eq 0 -or $_.pid -eq $WordProcessId)}|Select-Object -First 1;if(!$win){throw 'No VisualTeX Word dialog'};$hwnd=[IntPtr]$win.handle}
+elseif($Target -eq 'dialog') {$dialogs=@($script:windows|Where-Object {$_.visible -and $_.title -and $_.title -notlike '* - Word' -and $_.process -eq 'WINWORD' -and ($WordProcessId -eq 0 -or $_.pid -eq $WordProcessId)});$modalDialogs=@($dialogs|Where-Object {$className=[Text.StringBuilder]::new(256);[void][AuditUi]::GetClassName([IntPtr]$_.handle,$className,256);$className.ToString() -eq '#32770'});if($modalDialogs.Count -eq 1){$dialogs=$modalDialogs};if($dialogs.Count -ne 1){throw 'Expected exactly one visible dialog in the owned Word process'};$win=$dialogs[0];$hwnd=[IntPtr]$win.handle}
 elseif($Target -eq 'desktop') {$win=$script:windows|Where-Object {$_.process -eq 'visualtex' -and $_.title -notlike 'Office*'}|Select-Object -First 1;if(!$win){throw 'No VisualTeX desktop window'};$hwnd=[IntPtr]$win.handle}
 if($Action -in @('native','dlgclick','dlgcheck','dlglist')) { [void][AuditUi]::SetForegroundWindow($hwnd);Start-Sleep -Milliseconds 200; $script:children=@();[void][AuditUi]::EnumChildWindows($hwnd,{param($h,$l) $s=[Text.StringBuilder]::new(8192);$c=[Text.StringBuilder]::new(256);[void][AuditUi]::GetWindowText($h,$s,8192);[void][AuditUi]::GetClassName($h,$c,256);$script:children+=@{handle=$h.ToInt64();name=$s.ToString();class=$c.ToString();id=[AuditUi]::GetDlgCtrlID($h)};return $true},[IntPtr]::Zero);if($Action -eq 'dlglist'){
 $list=$script:children|Where-Object {$_.class -like '*LISTBOX*'}|Select-Object -First 1
@@ -136,6 +154,7 @@ Write-Output ('NATIVE_LIST_SELECTED|'+$Index+'|count='+$count);exit
 };if($Action -eq 'native'){[IO.File]::WriteAllText((Join-Path $out ($Label+'-native.json')),($script:children|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false));$script:children|ConvertTo-Json -Depth 4;exit};$b=$script:children|Where-Object {$_.class -like '*BUTTON*' -and $_.name -like ('*'+$Name+'*')}|Select-Object -First 1;if(!$b){throw "Native button missing: $Name"};if($Action -eq 'dlgcheck') {$state=[AuditUi]::SendMessage([IntPtr]$b.handle,0x00F0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32();if(($state -eq 1) -eq [bool]$Checked){Write-Output ('NATIVE_CHECK_ALREADY|'+$b.name+'|'+$state);exit}};Write-Output ('UI_NATIVE_BEGIN|'+[DateTimeOffset]::UtcNow.ToString('o')+'|'+$Target+'|'+$b.name);[void][AuditUi]::PostMessage([IntPtr]$b.handle,0x00F5,[UIntPtr]::Zero,[IntPtr]::Zero);Write-Output ('UI_NATIVE_POSTED|'+[DateTimeOffset]::UtcNow.ToString('o')+'|'+$Target+'|'+$b.name);Start-Sleep -Milliseconds 600;Write-Output ('NATIVE_CLICK|'+$b.name);exit }
 [void][AuditUi]::SetForegroundWindow($hwnd);Start-Sleep -Milliseconds 250
 $r=[System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+if($Action -eq 'show') {[void][AuditUi]::ShowWindow($hwnd,9);[void][AuditUi]::SetForegroundWindow($hwnd);Start-Sleep -Milliseconds 500;Write-Output ('SHOWN|'+$Target+'|'+$hwnd.ToInt64());exit}
 if($Action -eq 'menu') {
  if(!$Name -or !$Choice){throw 'Menu action requires exact parent and child labels.'}
  $deadline=[DateTime]::UtcNow.AddSeconds(4)
@@ -161,10 +180,13 @@ if($Action -eq 'menu') {
  throw 'The requested native menu child did not become uniquely visible; no product action was invoked.'
 }
 if($Action -eq 'activate') {
- $titleCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::TitleBar)
- $titleBar=$r.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$titleCondition)
- if($null -ne $titleBar){ClickEl $titleBar;Start-Sleep -Milliseconds 300}
- if([AuditUi]::GetForegroundWindow() -ne $hwnd){throw 'Requested Word window did not obtain foreground; Selection was not changed.'}
+ [void][AuditUi]::SetWindowPos($hwnd,[IntPtr](-1),0,0,0,0,3)
+ try {
+  $titleCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::TitleBar)
+  $titleBar=$r.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$titleCondition)
+  if($null -ne $titleBar){ClickEl $titleBar;Start-Sleep -Milliseconds 300}
+  if([AuditUi]::GetForegroundWindow() -ne $hwnd){throw 'Requested Word window did not obtain foreground; Selection was not changed.'}
+ } finally {[void][AuditUi]::SetWindowPos($hwnd,[IntPtr](-2),0,0,0,0,3)}
  Write-Output ('ACTIVATED|'+$WordProcessId+'|'+$hwnd.ToInt64());exit
 }
 if($Action -eq 'ribbon') {

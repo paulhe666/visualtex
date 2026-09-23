@@ -190,6 +190,25 @@ fn main() -> Result<(), String> {
         "Explicit OCR root did not receive a managed marker",
     )?;
 
+    let unicode_parent = root.path.join("unicode-storage/OCR储存");
+    fs::create_dir_all(&unicode_parent)
+        .map_err(|error| format!("Unable to create Unicode OCR storage parent: {error}"))?;
+    let unicode_change = ocr_storage::configure(
+        &config,
+        &root.path.join("empty-unicode-current"),
+        &unicode_parent,
+        std::slice::from_ref(&second_program),
+    )?;
+    let unicode_target = unicode_parent.join(ocr_storage::STORAGE_DIRECTORY_NAME);
+    require(
+        unicode_change.target_root == unicode_target,
+        "Unicode OCR storage path was not preserved exactly",
+    )?;
+    require(
+        ocr_storage::marker_is_valid(&unicode_target),
+        "Unicode OCR storage root did not receive a managed marker",
+    )?;
+
     let protected_error = ocr_storage::configure(
         &config,
         &external,

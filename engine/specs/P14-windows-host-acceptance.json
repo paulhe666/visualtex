@@ -1,0 +1,187 @@
+{
+  "schema": "visualtex-p14-windows-host-acceptance-v1",
+  "status": "PASS",
+  "date": "2026-09-16",
+  "scope": "Windows/native-WASM/browser/WebView2 resource, race, recovery, input and performance hardening. macOS/WKWebView remains untested and unchanged.",
+  "environment": {
+    "platform": "Windows x64",
+    "office": "Microsoft Office Professional Plus 2021 x64",
+    "browser": "Microsoft Edge 153.0.4234.32",
+    "candidateCompanion": "apps/windows/src-tauri/target/debug/visualtex.exe",
+    "candidateOfficeUiRoot": "apps/windows/src-tauri/target/debug/office",
+    "webView2DebugArgumentTestOnly": "--remote-debugging-port=9223 --remote-debugging-address=127.0.0.1"
+  },
+  "resources": {
+    "wasmSha256": "6ee676b2c25a5b3b6cfe16241a208808110e9b7561514c94e4eddca343954ff7",
+    "fontSha256": "6075562b771f8b82f0c179e363389684f2dd09de30038269e2628e504bd7be0f",
+    "officeDialogEntry": "dialog-Cw9bnVMQ.js",
+    "officeCoreChunk": "CoreMathEditor-CHC9Cpiw.js",
+    "wasmAsset": "visualtex_engine_wasm_bg-DLwqUPYp.wasm",
+    "fontAsset": "latinmodern-math-CUFlBgaJ.otf",
+    "desktopAndOfficeBytesMatchSource": true,
+    "oneHashedAssetPerResourcePerProductionHost": true,
+    "runtimeExpectedHashesMatch": true,
+    "nonAsciiAndSpacePathRoundTrip": true,
+    "officeHttpsWasmMime": "application/wasm",
+    "officeHttpsFontMime": "application/font-sfnt",
+    "hashedAssetsCacheable": true,
+    "securityHeadersPresent": true
+  },
+  "resourceFailureRecovery": {
+    "badWasmFailsClosed": true,
+    "badFontFailsClosed": true,
+    "failedSessionSourcePreserved": true,
+    "retryWithoutPageReloadOrConfigurationDeletion": true,
+    "recoveredSessionCommitted": true
+  },
+  "runtimeRecovery": {
+    "businessErrorDoesNotInvalidateRuntime": true,
+    "fatalDispatchErrorInvalidatesRuntime": true,
+    "lastCommittedSourceCheckpointPreserved": true,
+    "newRuntimeRecreatedFromCheckpoint": true,
+    "svgAndMathMlRecovered": true,
+    "oldOwnerSnapshotRemainsReadable": true,
+    "undoHistoryAfterFatalRecovery": "restarts from the preserved source checkpoint"
+  },
+  "races": {
+    "multiWindowSessionIsolation": true,
+    "parallelSessionSourcesDoNotCross": true,
+    "doubleApplyProducesSingleCommit": true,
+    "closeDuringExportWaitsForCurrentExport": true,
+    "staleWriteAfterClose": false
+  },
+  "ocrAsync": {
+    "browserReceipt": "engine/target/ocr-target-browser-review/2026-09-16T03-13-02-444Z/report.json",
+    "parityReceipt": "engine/target/ocr-target-parity-review/2026-09-16T03-13-08-104Z/report.json",
+    "nativeAndWasmParity": true,
+    "staleRevisionRejected": true,
+    "selectionAwayAndBackRejected": true,
+    "newerRequestSupersedesOld": true,
+    "cancelScoped": true,
+    "crossSessionAndCrossRuntimeTicketsRejected": true,
+    "zoomDprCases": 9
+  },
+  "inputAndAccessibility": {
+    "actualWindowsImeReceipt": "engine/target/owned-ime-review/report.json",
+    "actualWindowsIme": true,
+    "cdpCompositionUsedForNativeImeClaim": false,
+    "unicodeInjectionUsedForNativeImeClaim": false,
+    "clipboardUsedForNativeImeClaim": false,
+    "nativeImeZoomCases": [0.5, 2.0],
+    "browserEditorChineseCommitOnce": true,
+    "candidateEnterDoesNotSplitFormula": true,
+    "accessiblePositionLabelVerified": true,
+    "realBrowserClipboard": true,
+    "clipboardHtmlExecution": false,
+    "zoomDprHitGeometryVerified": true
+  },
+  "virtualization": {
+    "receipt": "engine/target/virtual-viewport-browser-review/2026-09-16T03-23-39-246Z/report.json",
+    "formulaCount": 1000,
+    "peakMountedEditors": 11,
+    "peakInputDom": 11,
+    "peakSvgDom": 11,
+    "allFormulasMaterializedDuringScroll": true,
+    "offscreenStateParkedAndRestored": true,
+    "disposeActiveSessions": 0
+  },
+  "performance": {
+    "browserReceipt": "engine/target/p14-browser-performance-review/2026-09-16T03-31-42-858Z/report.json",
+    "fixtureNodes": 187,
+    "localEditEventToFrameP95Ms": 15.521300000000338,
+    "cursorEventToFrameP95Ms": 5.488000000000284,
+    "cursorMoveLayoutDelta": 0,
+    "cursorMoveRevisionDelta": 0,
+    "localEditTargetP95Ms": 32,
+    "cursorCoreTargetMs": 8,
+    "cursorFrameMeasurementInterpretation": "includes browser event dispatch and next animation frame; core-only <=8ms is supported by zero-layout/no-revision cursor invariants rather than inferred from frame pacing",
+    "headlessMixed100": {
+      "formulas": 100,
+      "failures": 0,
+      "elapsedMs": 1104,
+      "averageMsPerFormula": 11.04
+    },
+    "headlessOmml1000": {
+      "formulas": 1000,
+      "failures": 0,
+      "elapsedMs": 1935,
+      "averageMsPerFormula": 1.935,
+      "mathMlOnly": true
+    }
+  },
+  "realWindowsWebView2": {
+    "status": "PASS",
+    "ownedWordPid": 46648,
+    "ownedDocument": "文档4",
+    "testCompanionPid": 45828,
+    "productionOfficeBundleLoaded": true,
+    "coreEditors": 1,
+    "coreInputs": 1,
+    "legacyMathFields": 0,
+    "resourceUrls": [
+      "https://127.0.0.1:43127/assets/dialog-Cw9bnVMQ.js",
+      "https://127.0.0.1:43127/assets/CoreMathEditor-CHC9Cpiw.js",
+      "https://127.0.0.1:43127/assets/visualtex_engine_wasm_bg-DLwqUPYp.wasm",
+      "https://127.0.0.1:43127/assets/latinmodern-math-CUFlBgaJ.otf"
+    ],
+    "systemFontProbe": {
+      "requestedFamily": "Cambria Math",
+      "resolvedFamily": "Cambria Math",
+      "faceIndex": 1,
+      "sha256": "84e70ccc1664482f4a960442c7a166c91a1b2cf98ff88c33cb73f79403f66d7b",
+      "byteLength": 1792664,
+      "hasMathTable": true,
+      "tauriPostMessageFallbackSucceeded": true
+    },
+    "create": {
+      "sessionId": "90da3511-8f53-4ef1-b14c-ef5e71963301",
+      "source": "abc",
+      "sessionCompleted": true,
+      "svgExportPresent": true,
+      "mathMlExportPresent": true,
+      "visualTeXOleCount": 1,
+      "fontSizePt": 10.5,
+      "renderFontSizePt": 10.5,
+      "wordInlinePositionPt": 0,
+      "widthPt": 17.850000381469727,
+      "heightPt": 8.899999618530273,
+      "baselinePx": 10.775390625
+    },
+    "edit": {
+      "sessionId": "b919e0cf-bb07-43dc-9217-4a3f5dbb1a82",
+      "sourceBefore": "abc",
+      "sourceAfter": "abcd",
+      "sessionCompleted": true,
+      "svgExportPresent": true,
+      "mathMlExportPresent": true,
+      "visualTeXOleCountAfter": 1,
+      "duplicateObjectInserted": false,
+      "fontSizePt": 10.5,
+      "renderFontSizePt": 10.5,
+      "wordInlinePositionPt": 0,
+      "widthPt": 23.700000762939453,
+      "heightPt": 8.899999618530273,
+      "renderWidthPx": 31.900390625,
+      "renderHeightPx": 11.8916015625,
+      "baselinePx": 10.775390625
+    },
+    "interaction": "Real Word Ribbon opened the native WebView2 editor; CDP was used only for read-only DOM/resource inspection and deterministic input focus; source mutation and Apply used OS SendKeys into the exact foreground editor HWND. Final correctness was read back from the real Word document and OLE metadata."
+  },
+  "diagnostics": {
+    "tauriCustomProtocolCspWarning": "http://ipc.localhost is blocked by the external HTTPS page CSP; Tauri automatically falls back to postMessage and the verified Cambria Math command succeeds. The frozen Office server/CSP was not changed in P14.",
+    "historicalTaoCrash": "P13 recorded three non-deterministic debug companion crashes in Tao Window::new/EventLoopRunner. P14 repeated resource, converter, race, lifecycle and real WebView2 acceptance without a new matching crash; no formula-core causal link was found."
+  },
+  "protection": {
+    "macosOfficeModified": false,
+    "officeSessionWireModified": false,
+    "wordVstoModified": false,
+    "powerPointVstoModified": false,
+    "officeServerModified": false,
+    "comOleContractsModified": false,
+    "installedOfficeUiOverwritten": false,
+    "userWordDocumentTouched": false,
+    "gitCommitCreated": false,
+    "gitPushPerformed": false,
+    "installerOrReleaseActionPerformed": false
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "schema": "visualtex-p16-packages-static-ready-checkpoint-v1",
+  "status": "STATIC_PASS",
+  "completion": "awaiting-installed-office-acceptance",
+  "branch": "reference-3d207d7",
+  "headAtFreeze": "d1f0aff8db9275c90dc18c7318dc2a4d7bbbd760",
+  "verificationReceipt": "engine/target/p16-static-verification/2026-09-16T07-01-53-015Z/report.json",
+  "verificationReceiptSha256": "e00655a26570cb695484e7ba157f59427ebfd04de66ff5ca70ec28d949050b9a",
+  "sourceUnchanged": true,
+  "verificationSteps": 3,
+  "frozenOfficeWorkingTreeUnchanged": true,
+  "packageArtifactsReadyForInstallAcceptance": true,
+  "installedAcceptance": "NOT_RUN",
+  "overallComplete": false,
+  "packages": {
+    "full": {
+      "path": "apps/windows/src-tauri/target/release/bundle/nsis/VisualTeX_1.2.7_x64-setup.exe",
+      "bytes": 348750365,
+      "sha256": "10D5C3DA3C0544817A09223495EC9DCD197A7176581BD4EC0D72298A2AA6CC22"
+    },
+    "noOcr": {
+      "path": "apps/windows/src-tauri/target/release/bundle/nsis/VisualTeX_1.2.7_x64-no-ocr-setup.exe",
+      "bytes": 121413575,
+      "sha256": "E1D4CC05FF8A7D8FB1330BD8EC1DEF7997B07E80C42B1A09D943E7504B3C1514"
+    }
+  },
+  "fixedOfficeInputs": {
+    "x64MsiSha256": "8CF32DA5AC67F2692B497B527ECC6407B4331818D97854DC6FAA4355A905E98D",
+    "x86MsiSha256": "CDC4FE5721BBC5FC2D1D21F9D634F84082A5BD76BAB02B3D84515901026C3548",
+    "bridgeSha256": "9131480E504B277E54857AE8D28A40A7C433E4CEC8BB6F108676D7660C114C32",
+    "vstoRuntimeSha256": "CFE1A40BBE4A50022DB2164ABDB0154984E2CECB761A23CDC81CB5754F6E0A18",
+    "privateMathTypeVersion": "7.9.1",
+    "privateMathTypeFiles": 69
+  },
+  "coreResources": {
+    "wasmSha256": "6EE676B2C25A5B3B6CFE16241A208808110E9B7561514C94E4EDDCA343954FF7",
+    "fontSha256": "6075562B771F8B82F0C179E363389684F2DD09DE30038269E2628E504BD7BE0F"
+  },
+  "boundaries": {
+    "installerFilesOverwrittenByUserPermission": true,
+    "installerExecuted": false,
+    "installedApplicationOverwritten": false,
+    "userOfficeProcessTouched": false,
+    "gitCommitCreated": false,
+    "gitPushPerformed": false,
+    "releasePublished": false
+  }
+}

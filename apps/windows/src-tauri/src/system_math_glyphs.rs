@@ -1,4 +1,6 @@
+use base64::Engine as _;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +28,20 @@ pub(crate) struct SystemMathGlyphOutline {
     glyph_id: u16,
     path: String,
     metrics: SystemMathGlyphMetrics,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SystemFontAsset {
+    requested_family: String,
+    resolved_family: String,
+    face_index: u32,
+    sha256: String,
+    byte_length: usize,
+    bytes_base64: String,
+    has_math_table: bool,
+    italic: bool,
+    weight: u16,
 }
 
 const DEFAULT_MATH_FONT_FALLBACKS: &[&str] = &[
@@ -88,6 +104,8 @@ mod windows {
         face_index: u32,
         families: Vec<String>,
         display_family: String,
+        italic: bool,
+        weight: u16,
     }
 
     static FONT_CATALOG: OnceLock<Vec<FontFaceEntry>> = OnceLock::new();
@@ -166,6 +184,8 @@ mod windows {
                 face_index,
                 families,
                 display_family,
+                italic: face.is_italic(),
+                weight: face.weight().to_number(),
             });
         }
     }
@@ -197,16 +217,28 @@ mod windows {
         FONT_CATALOG.get_or_init(build_font_catalog).as_slice()
     }
 
-    fn resolve_font(requested: &str) -> Option<FontFaceEntry> {
+    fn family_matches(entry: &FontFaceEntry, requested: &str) -> bool {
         let normalized = normalize_font_family(requested);
+        entry
+            .families
+            .iter()
+            .any(|family| normalize_font_family(family) == normalized)
+    }
+
+    fn resolve_font(requested: &str) -> Option<FontFaceEntry> {
+        catalog().iter().find(|entry| family_matches(entry, requested)).cloned()
+    }
+
+    fn resolve_font_variant(requested: &str, italic: bool, weight: u16) -> Option<FontFaceEntry> {
+        let wants_bold = weight >= 600;
         catalog()
             .iter()
-            .find(|entry| {
-                entry
-                    .families
-                    .iter()
-                    .any(|family| normalize_font_family(family) == normalized)
+            .filter(|entry| {
+                family_matches(entry, requested)
+                    && entry.italic == italic
+                    && ((entry.weight >= 600) == wants_bold)
             })
+            .min_by_key(|entry| entry.weight.abs_diff(weight))
             .cloned()
     }
 
@@ -390,6 +422,83 @@ mod windows {
         })
     }
 
+    fn font_asset_from_entry(
+        requested_family: String,
+        entry: FontFaceEntry,
+    ) -> Result<SystemFontAsset, String> {
+        let metadata = fs::metadata(&entry.path).map_err(|error| {
+            format!("VisualTeX could not inspect the resolved font: {error}")
+        })?;
+        if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_FONT_FILE_BYTES {
+            return Err("The resolved system font exceeds the bounded asset size.".to_string());
+        }
+        let bytes = fs::read(&entry.path).map_err(|error| {
+            format!("VisualTeX could not read the resolved font: {error}")
+        })?;
+        // Re-parse the exact returned face before exposing bytes to the webview.
+        let face = Face::parse(&bytes, entry.face_index).map_err(|error| {
+            format!("VisualTeX could not parse the resolved system font face: {error:?}")
+        })?;
+        let has_math_table = face.tables().math.is_some();
+        let sha256 = format!("{:x}", Sha256::digest(&bytes));
+        Ok(SystemFontAsset {
+            requested_family,
+            resolved_family: entry.display_family,
+            face_index: entry.face_index,
+            sha256,
+            byte_length: bytes.len(),
+            bytes_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+            has_math_table,
+            italic: face.is_italic(),
+            weight: face.weight().to_number(),
+        })
+    }
+
+    pub(super) fn read_font_asset(font_families: &[String]) -> Result<SystemFontAsset, String> {
+        if font_families.is_empty() {
+            return Err("At least one system font family is required.".to_string());
+        }
+        let mut errors = Vec::new();
+        for requested in font_families {
+            let requested_family = validate_font_family(requested)?;
+            let Some(entry) = resolve_font(&requested_family) else {
+                errors.push(format!("Windows could not find the requested family {requested_family}."));
+                continue;
+            };
+            return font_asset_from_entry(requested_family, entry);
+        }
+        Err(format!(
+            "VisualTeX could not resolve any requested system font. {}",
+            errors.join(" ")
+        ))
+    }
+
+    pub(super) fn read_font_variant_asset(
+        font_families: &[String],
+        italic: bool,
+        weight: u16,
+    ) -> Result<SystemFontAsset, String> {
+        if font_families.is_empty() {
+            return Err("At least one system font family is required.".to_string());
+        }
+        if !(100..=900).contains(&weight) {
+            return Err("The requested system font weight is invalid.".to_string());
+        }
+        let mut errors = Vec::new();
+        for requested in font_families {
+            let requested_family = validate_font_family(requested)?;
+            let Some(entry) = resolve_font_variant(&requested_family, italic, weight) else {
+                errors.push(format!("Windows could not find the requested family {requested_family}."));
+                continue;
+            };
+            return font_asset_from_entry(requested_family, entry);
+        }
+        Err(format!(
+            "VisualTeX could not resolve any requested system font variant. {}",
+            errors.join(" ")
+        ))
+    }
+
     pub(super) fn probe_fonts(font_families: &[String]) -> Vec<SystemMathFontProbe> {
         font_families
             .iter()
@@ -474,6 +583,44 @@ pub(crate) fn probe_system_math_fonts(
 }
 
 #[tauri::command]
+pub(crate) fn read_system_font_asset(
+    font_families: Vec<String>,
+) -> Result<SystemFontAsset, String> {
+    if font_families.is_empty() || font_families.len() > 16 {
+        return Err("A bounded system font fallback list is required.".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::read_font_asset(&font_families);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = font_families;
+        Err("System font asset extraction is unavailable on this platform.".to_string())
+    }
+}
+
+#[tauri::command]
+pub(crate) fn read_system_font_variant_asset(
+    font_families: Vec<String>,
+    italic: bool,
+    weight: u16,
+) -> Result<SystemFontAsset, String> {
+    if font_families.is_empty() || font_families.len() > 16 {
+        return Err("A bounded system font fallback list is required.".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows::read_font_variant_asset(&font_families, italic, weight);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (font_families, italic, weight);
+        Err("System font variant extraction is unavailable on this platform.".to_string())
+    }
+}
+
+#[tauri::command]
 pub(crate) fn extract_system_math_glyph(
     font_families: Vec<String>,
     character: String,
@@ -501,6 +648,58 @@ mod tests {
         assert!(validate_character("AB").is_err());
         assert!(validate_character("αβ").is_err());
         assert_eq!(validate_character("𝛼").as_deref(), Ok("𝛼"));
+    }
+
+    #[test]
+    fn reads_only_a_resolved_system_font_asset_with_matching_hash() {
+        let probes = windows::probe_fonts(&["Cambria Math".to_string()]);
+        if !probes.first().is_some_and(|probe| probe.available) {
+            return;
+        }
+        let asset = windows::read_font_asset(&["Cambria Math".to_string()])
+            .expect("Cambria Math should be readable as a verified asset");
+        assert_eq!(normalize_font_family(&asset.resolved_family), "cambriamath");
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&asset.bytes_base64)
+            .expect("asset base64 should decode");
+        assert_eq!(decoded.len(), asset.byte_length);
+        assert_eq!(format!("{:x}", Sha256::digest(&decoded)), asset.sha256);
+        assert!(ttf_parser::Face::parse(&decoded, asset.face_index).is_ok());
+    }
+
+    #[test]
+    fn resolves_real_regular_italic_bold_and_bold_italic_system_font_faces() {
+        let families = ["Times New Roman".to_string()];
+        let regular = windows::read_font_variant_asset(&families, false, 400)
+            .expect("Times New Roman regular should resolve");
+        let italic = windows::read_font_variant_asset(&families, true, 400)
+            .expect("Times New Roman italic should resolve");
+        let bold = windows::read_font_variant_asset(&families, false, 700)
+            .expect("Times New Roman bold should resolve");
+        let bold_italic = windows::read_font_variant_asset(&families, true, 700)
+            .expect("Times New Roman bold italic should resolve");
+        for asset in [&regular, &italic, &bold, &bold_italic] {
+            assert_eq!(normalize_font_family(&asset.resolved_family), "timesnewroman");
+            assert!(!asset.has_math_table);
+        }
+        assert!(!regular.italic);
+        assert!(italic.italic);
+        assert!(!bold.italic);
+        assert!(bold_italic.italic);
+        assert!(regular.weight < 700);
+        assert!(italic.weight < 700);
+        assert!(bold.weight >= 700);
+        assert!(bold_italic.weight >= 700);
+        let hashes = [&regular.sha256, &italic.sha256, &bold.sha256, &bold_italic.sha256]
+            .into_iter().collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(hashes.len(), 4, "the four Times faces must be distinct font files");
+        for asset in [&regular, &italic, &bold, &bold_italic] {
+            let decoded = base64::engine::general_purpose::STANDARD.decode(&asset.bytes_base64).unwrap();
+            let face = ttf_parser::Face::parse(&decoded, asset.face_index).unwrap();
+            for ch in ['A', 'x', '1', '+', '=', '±', 'α', '∂'] {
+                assert!(face.glyph_index(ch).is_some(), "Times face {:?}/{:?} lacks {ch}", asset.italic, asset.weight);
+            }
+        }
     }
 
     #[test]

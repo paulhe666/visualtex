@@ -1,0 +1,11 @@
+{
+  "name": "visualtex-engine-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "files": ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "crates/", "tools/", "specs/", "fixtures/", "web/host/", "web/sandbox/", "README.md"],
+  "scripts": {
+    "test:protocol": "node tools/protocol-parity.mjs",
+    "check:protection": "node ../docs/engine-rebuild/tools/inspect-baseline.mjs --check docs/engine-rebuild/checkpoints/20260913-P00-provenance.json --git-transition docs/engine-rebuild/checkpoints/20260913-P00-git-transition.json"
+  }
+}

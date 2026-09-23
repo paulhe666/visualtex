@@ -1,0 +1,9 @@
+[omml->visualtex count=10]
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=10|ms=32.321
+apply|FormatConversion.ReplaceInsideTransaction.Omml->VisualTeX|calls=10|ms=17409.87
+apply|FormatConversion.VisualTeXNumbering.Attach|calls=10|ms=4023.274
+apply|FormatConversion.VisualTeXHostWriter.Insert|calls=10|ms=3542.327
+apply|FormatConversion.DetachCanonical.Omml|calls=10|ms=2524.12
+apply|FormatConversion.NativeOmmlRebuild.unnumbered|calls=10|ms=2049.248
+apply|FormatConversion.ValidateInsertedHost.VisualTeX|calls=30|ms=2044.041
+apply|FormatConversion.ResolveCapturedHost.Omml|calls=10|ms=1320.576

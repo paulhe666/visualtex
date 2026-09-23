@@ -119,6 +119,10 @@ assert(postUninstallHookSource.includes("Remove-Item -LiteralPath '$INSTDIR'"));
 assert(!postUninstallHookSource.includes('RMDir /r "$APPDATA\\VisualTeX"'));
 assert(uninstallVstoSource.includes("ArchitectureRelaunched"));
 assert(uninstallVstoSource.includes("$process.WaitForExit()"));
+assert(
+  uninstallVstoSource.includes('"/L*v", (Quote-ProcessArgument $msiLog)'),
+  "Office MSI uninstall log path must remain quoted for user profiles containing spaces",
+);
 assert(uninstallVstoSource.includes("vsto-uninstall-bootstrap-$stamp.log"));
 assert(uninstallVstoSource.includes("remove_windows_office_certificate.ps1"));
 assert(uninstallVstoSource.includes("Get-Process visualtex"));

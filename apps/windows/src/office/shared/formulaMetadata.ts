@@ -41,7 +41,7 @@ export interface VisualTeXFormulaMetadata {
   wordInlineSourceBottomWhitespacePt?: number;
   /** In-frame vertical preview compensation already applied, in render pixels. */
   wordInlinePreviewShiftPx?: number;
-  /** Fingerprint of the exact Word-native OMML source. */
+  /** Legacy 64-hex XML digest, or omml2:<64-hex> canonical-content digest. */
   nativeOmmlFingerprint?: string;
   createdWithVersion: string;
   updatedWithVersion: string;
@@ -77,7 +77,7 @@ export const VISUALTEX_FORMULA_SCHEMA = "visualtex-formula" as const;
 export const VISUALTEX_FORMULA_SCHEMA_VERSION = 1 as const;
 export const VISUALTEX_FORMULA_XML_NAMESPACE = "urn:visualtex:formula:1";
 export const VISUALTEX_METADATA_PREFIX = "visualtex:v1:deflate:";
-export const CURRENT_VISUALTEX_VERSION = "1.2.7";
+export const CURRENT_VISUALTEX_VERSION = "1.2.8";
 
 function bytesToBase64Url(bytes: Uint8Array) {
   let binary = "";
@@ -208,7 +208,7 @@ export function isVisualTeXFormulaMetadata(
         candidate.wordInlinePreviewShiftPx <= 2)) &&
     (candidate.nativeOmmlFingerprint === undefined ||
       (typeof candidate.nativeOmmlFingerprint === "string" &&
-        /^[0-9a-f]{64}$/i.test(candidate.nativeOmmlFingerprint))) &&
+        /^(?:omml2:)?[0-9a-f]{64}$/i.test(candidate.nativeOmmlFingerprint))) &&
     typeof candidate.createdWithVersion === "string" &&
     typeof candidate.updatedWithVersion === "string" &&
     typeof candidate.createdAt === "string" &&

@@ -1,0 +1,1369 @@
+      model.collapseSelection("forward");
+    const currentAtom = model.at(model.position);
+    if (currentAtom && !currentAtom.isLastSibling && ((_c2 = model.at(model.position + 1)) == null ? void 0 : _c2.type) === "placeholder") {
+      model.deleteAtoms([model.position, model.position + 1]);
+    } else if ((currentAtom == null ? void 0 : currentAtom.type) === "placeholder") {
+      model.deleteAtoms([model.position - 1, model.position]);
+    }
+    let implicitArgumentOffset = -1;
+    if (args[0]) {
+      args["@"] = args[0];
+    } else if (typeof input === "string" && /(^|[^\\])#@/.test(input)) {
+      implicitArgumentOffset = getImplicitArgOffset(model);
+      if (implicitArgumentOffset >= 0) {
+        args["@"] = model.getValue(
+          implicitArgumentOffset,
+          model.position,
+          "latex"
+        );
+      }
+    }
+    if (!args[0]) args[0] = args["?"];
+    let usedArg = false;
+    const argFunction = (arg) => {
+      usedArg = true;
+      return args[arg];
+    };
+    let [format, newAtoms] = convertStringToAtoms(
+      model,
+      input,
+      argFunction,
+      options
+    );
+    if (!newAtoms) return false;
+    const insertingFraction = newAtoms.length === 1 && newAtoms[0].type === "genfrac";
+    const atomAtPos = model.at(model.position);
+    if (insertingFraction && implicitArgumentOffset >= 0 && typeof model.mathfield.options.isImplicitFunction === "function" && atomAtPos && model.mathfield.options.isImplicitFunction(atomAtPos.command)) {
+      args["@"] = args["?"];
+      usedArg = false;
+      [format, newAtoms] = convertStringToAtoms(
+        model,
+        input,
+        argFunction,
+        options
+      );
+    }
+    const implicitArgEndOffset = model.position;
+    if (newAtoms.length === 1 && newAtoms[0].isRoot) model.root = newAtoms[0];
+    else {
+      const atom = model.at(model.position);
+      const parent = (_d2 = atom == null ? void 0 : atom.parent) != null ? _d2 : model.root;
+      const hadEmptyBody = parent.hasEmptyBranch("body");
+      if (insertingFraction && format !== "latex" && model.mathfield.options.removeExtraneousParentheses && parent instanceof LeftRightAtom && parent.leftDelim === "(" && hadEmptyBody) {
+        const newParent = parent.parent;
+        const branch = parent.parentBranch;
+        newParent.removeChild(parent);
+        newParent.setChildren(newAtoms, branch);
+      }
+      const cursor = model.at(model.position);
+      if (cursor) {
+        cursor.parent.addChildrenAfter(newAtoms, cursor);
+      } else {
+        const body = parent.branch("body");
+        const firstAtom = body == null ? void 0 : body[0];
+        if (firstAtom) {
+          parent.addChildrenAfter(newAtoms, firstAtom);
+        } else {
+          parent.setChildren(newAtoms, "body");
+        }
+      }
+      if (implicitArgumentOffset >= 0) {
+        model.deleteAtoms([implicitArgumentOffset, implicitArgEndOffset]);
+        const rootBody = model.root.branch("body");
+        if (rootBody) {
+          for (const child of rootBody) {
+            if (child.parent !== model.root) {
+              child.parent = model.root;
+              child.parentBranch = "body";
+            }
+          }
+        }
+      }
+      if (format === "latex" && typeof input === "string") {
+        if ((parent == null ? void 0 : parent.type) === "root" && hadEmptyBody && !usedArg)
+          parent.verbatimLatex = input;
+      }
+    }
+    model.silenceNotifications = contentWasChanging;
+    const lastNewAtom = newAtoms[newAtoms.length - 1];
+    if (options.selectionMode === "placeholder") {
+      let placeholder;
+      if (newAtoms.length === 1 && newAtoms[0].type === "genfrac") {
+        const numerator = newAtoms[0].branch("above");
+        placeholder = numerator == null ? void 0 : numerator.find((x) => x.type === "placeholder");
+        if (!placeholder) {
+          const denominator = newAtoms[0].branch("below");
+          placeholder = denominator == null ? void 0 : denominator.find((x) => x.type === "placeholder");
+        }
+      }
+      if (!placeholder) {
+        placeholder = newAtoms.flatMap((x) => [x, ...x.children]).find((x) => x.type === "placeholder");
+      }
+      if (placeholder) {
+        const placeholderOffset = model.offsetOf(placeholder);
+        model.setSelection(placeholderOffset - 1, placeholderOffset);
+        model.announce("move");
+      } else if (lastNewAtom) {
+        const body = lastNewAtom.body;
+        const hadEmptyBody = lastNewAtom.hasEmptyBranch("body");
+        if (body && hadEmptyBody) {
+          model.setSelection(
+            model.offsetOf(body[0]),
+            model.offsetOf(body[body.length - 1]) + 1
+          );
+        } else {
+          model.position = model.offsetOf(lastNewAtom);
+        }
+      }
+    } else if (options.selectionMode === "before") {
+    } else if (options.selectionMode === "after") {
+      if (lastNewAtom) model.position = model.offsetOf(lastNewAtom);
+    } else if (options.selectionMode === "item")
+      model.setSelection(model.anchor, model.offsetOf(lastNewAtom));
+    model.contentDidChange({ data, inputType: "insertText" });
+    model.silenceNotifications = silenceNotifications;
+    return true;
+  }
+};
+function convertStringToAtoms(model, s, args, options) {
+  var _a3;
+  let format = void 0;
+  let result = [];
+  if (typeof s !== "string" || options.format === "math-json") {
+    const ce = globalThis.MathfieldElement.computeEngine;
+    if (!ce) return ["math-json", []];
+    [format, s] = ["latex", ce.box(s).latex];
+    result = parseLatex(s, { context: model.mathfield.context });
+  } else if (typeof s === "string" && options.format === "ascii-math") {
+    [format, s] = parseMathString(s, {
+      format: "ascii-math",
+      inlineShortcuts: model.mathfield.options.inlineShortcuts
+    });
+    result = parseLatex(s, { context: model.mathfield.context });
+    if (format !== "latex" && model.mathfield.options.removeExtraneousParentheses)
+      result = result.map((x) => removeExtraneousParenthesis(x));
+  } else if (options.format === "auto" || ((_a3 = options.format) == null ? void 0 : _a3.startsWith("latex"))) {
+    if (options.format === "auto") {
+      [format, s] = parseMathString(s, {
+        format: "auto",
+        inlineShortcuts: model.mathfield.options.inlineShortcuts
+      });
+    }
+    if (options.format === "latex") [, s] = trimModeShiftCommand(s);
+    result = parseLatex(s, {
+      context: model.mathfield.context,
+      args
+    });
+    if (options.format !== "latex" && model.mathfield.options.removeExtraneousParentheses)
+      result = result.map((x) => removeExtraneousParenthesis(x));
+  }
+  applyStyleToUnstyledAtoms(result, options.style);
+  return [format != null ? format : "latex", result];
+}
+function removeExtraneousParenthesis(atom) {
+  var _a3;
+  if (atom instanceof LeftRightAtom && atom.leftDelim !== "(" && atom.rightDelim === ")") {
+    const children = (_a3 = atom.body) == null ? void 0 : _a3.filter((x) => x.type !== "first");
+    if ((children == null ? void 0 : children.length) === 1 && children[0].type === "genfrac")
+      return children[0];
+  }
+  for (const branch of atom.branches) {
+    if (!atom.hasEmptyBranch(branch)) {
+      atom.setChildren(
+        atom.branch(branch).map((x) => removeExtraneousParenthesis(x)),
+        branch
+      );
+    }
+  }
+  if (atom instanceof ArrayAtom) {
+    atom.forEachCell((cell, row, column) => {
+      atom.setCell(
+        row,
+        column,
+        cell.map((x) => removeExtraneousParenthesis(x))
+      );
+    });
+  }
+  return atom;
+}
+function getImplicitArgOffset(model) {
+  let atom = model.at(model.position);
+  if (!atom) return -1;
+  if (atom.mode === "text") {
+    while (!atom.isFirstSibling && atom.mode === "text")
+      atom = atom.leftSibling;
+    return model.offsetOf(atom);
+  }
+  const atomAtCursor = atom;
+  let afterDelim = false;
+  if (atom.type === "mclose") {
+    const delim = LEFT_DELIM[atom.value];
+    while (!atom.isFirstSibling && !(atom.type === "mopen" && atom.value === delim)) {
+      const left = atom.leftSibling;
+      if (!left) break;
+      atom = left;
+    }
+    if (!atom.isFirstSibling) {
+      const left = atom.leftSibling;
+      if (left) atom = left;
+    }
+    afterDelim = true;
+  } else if (atom.type === "leftright") {
+    const left = atom.leftSibling;
+    if (left) atom = left;
+    afterDelim = true;
+  }
+  if (afterDelim) {
+    while (!atom.isFirstSibling && (atom.isFunction || isImplicitArg(atom))) {
+      const left = atom.leftSibling;
+      if (!left) break;
+      atom = left;
+    }
+  } else {
+    const delimiterStack = [];
+    while (!atom.isFirstSibling && (isImplicitArg(atom) || delimiterStack.length > 0)) {
+      if (atom.type === "mclose") delimiterStack.unshift(atom.value);
+      if (atom.type === "mopen" && delimiterStack.length > 0 && atom.value === LEFT_DELIM[delimiterStack[0]])
+        delimiterStack.shift();
+      const left = atom.leftSibling;
+      if (!left) break;
+      atom = left;
+    }
+  }
+  if (atomAtCursor === atom) return -1;
+  return model.offsetOf(atom);
+}
+function isPartOfScientificNotation(atom) {
+  if (atom.type === "mord" && atom.value === "e") {
+    const left = atom.leftSibling;
+    if (left && left.isDigit()) return true;
+  }
+  if (atom.type === "mbin" && (atom.value === "+" || atom.value === "-" || atom.value === "\u2212")) {
+    const left = atom.leftSibling;
+    const right = atom.rightSibling;
+    if ((left == null ? void 0 : left.type) === "mord" && left.value === "e" && right && right.isDigit()) {
+      const leftLeft = left.leftSibling;
+      if (leftLeft && leftLeft.isDigit()) return true;
+    }
+  }
+  if (atom.type === "subsup") {
+    const left1 = atom.leftSibling;
+    if (left1 && left1.isDigit() && left1.value === "0") {
+      const left2 = left1.leftSibling;
+      if (left2 && left2.isDigit() && left2.value === "1") {
+        const left3 = left2.leftSibling;
+        if ((left3 == null ? void 0 : left3.type) === "mbin" && (left3.value === "\xD7" || left3.value === "\\times")) {
+          const left4 = left3.leftSibling;
+          if (left4 && left4.isDigit()) return true;
+        }
+      }
+    }
+  }
+  if (atom.isDigit() && atom.value === "0") {
+    const left = atom.leftSibling;
+    const right = atom.rightSibling;
+    if (left && left.isDigit() && left.value === "1" && (right == null ? void 0 : right.type) === "subsup") {
+      const left2 = left.leftSibling;
+      if ((left2 == null ? void 0 : left2.type) === "mbin" && (left2.value === "\xD7" || left2.value === "\\times")) {
+        const left3 = left2.leftSibling;
+        if (left3 && left3.isDigit()) return true;
+      }
+    }
+  }
+  if (atom.isDigit() && atom.value === "1") {
+    const right1 = atom.rightSibling;
+    if (right1 && right1.isDigit() && right1.value === "0") {
+      const right2 = right1.rightSibling;
+      if ((right2 == null ? void 0 : right2.type) === "subsup") {
+        const left = atom.leftSibling;
+        if ((left == null ? void 0 : left.type) === "mbin" && (left.value === "\xD7" || left.value === "\\times")) {
+          const left2 = left.leftSibling;
+          if (left2 && left2.isDigit()) return true;
+        }
+      }
+    }
+  }
+  if (atom.type === "mbin" && (atom.value === "\xD7" || atom.value === "\\times")) {
+    const left = atom.leftSibling;
+    const right1 = atom.rightSibling;
+    if (left && left.isDigit() && right1 && right1.isDigit() && right1.value === "1") {
+      const right2 = right1.rightSibling;
+      if (right2 && right2.isDigit() && right2.value === "0") {
+        const right3 = right2.rightSibling;
+        if ((right3 == null ? void 0 : right3.type) === "subsup") return true;
+      }
+    }
+  }
+  return false;
+}
+function isImplicitArg(atom) {
+  if (atom.isDigit()) return true;
+  if (isPartOfScientificNotation(atom)) return true;
+  if (atom.type && /^(mord|surd|subsup|leftright|mop|mclose)$/.test(atom.type)) {
+    if (atom.type === "extensible-symbol") return false;
+    return true;
+  }
+  return false;
+}
+new MathModeEditor();
+
+// src/editor-mathfield/mode-editor-text.ts
+var TextModeEditor = class extends ModeEditor {
+  constructor() {
+    super("text");
+  }
+  onPaste(mathfield, data) {
+    if (!data) return false;
+    const text = typeof data === "string" ? data : data.getData("text/plain");
+    if (text && mathfield.model.contentWillChange({
+      inputType: "insertFromPaste",
+      data: text
+    })) {
+      mathfield.stopCoalescingUndo();
+      mathfield.stopRecording();
+      if (this.insert(mathfield.model, text)) {
+        mathfield.model.contentDidChange({ inputType: "insertFromPaste" });
+        mathfield.startRecording();
+        mathfield.snapshot("paste");
+        requestUpdate(mathfield);
+      }
+      mathfield.startRecording();
+      return true;
+    }
+    return false;
+  }
+  insert(model, text, options = {}) {
+    if (!model.contentWillChange({ data: text, inputType: "insertText" }))
+      return false;
+    if (!options.insertionMode) options.insertionMode = "replaceSelection";
+    if (!options.selectionMode) options.selectionMode = "placeholder";
+    if (!options.format) options.format = "auto";
+    const { silenceNotifications } = model;
+    if (options.silenceNotifications) model.silenceNotifications = true;
+    const contentWasChanging = model.silenceNotifications;
+    model.silenceNotifications = true;
+    if (options.insertionMode === "replaceSelection" && !model.selectionIsCollapsed)
+      model.deleteAtoms(range(model.selection));
+    else if (options.insertionMode === "replaceAll") {
+      model.root.setChildren([], "body");
+      model.position = 0;
+    } else if (options.insertionMode === "insertBefore")
+      model.collapseSelection("backward");
+    else if (options.insertionMode === "insertAfter")
+      model.collapseSelection("forward");
+    const newAtoms = convertStringToAtoms2(text, model.mathfield.context);
+    applyStyleToUnstyledAtoms(newAtoms, options.style);
+    if (!newAtoms) return false;
+    const cursor = model.at(model.position);
+    const lastNewAtom = cursor.parent.addChildrenAfter(newAtoms, cursor);
+    model.silenceNotifications = contentWasChanging;
+    if (options.selectionMode === "before") {
+    } else if (options.selectionMode === "item")
+      model.setSelection(model.anchor, model.offsetOf(lastNewAtom));
+    else if (lastNewAtom) model.position = model.offsetOf(lastNewAtom);
+    model.contentDidChange({ data: text, inputType: "insertText" });
+    model.silenceNotifications = silenceNotifications;
+    return true;
+  }
+};
+function convertStringToAtoms2(s, context) {
+  if (s.includes("$")) {
+    const segments = [];
+    let i = 0;
+    let inMath = false;
+    let currentSegment = "";
+    while (i < s.length) {
+      if (s[i] === "$") {
+        if (i + 1 < s.length && s[i + 1] === "$") {
+          if (!inMath && currentSegment) {
+            segments.push(escapeTextModeCharacters(currentSegment));
+            currentSegment = "";
+          } else if (inMath && currentSegment) {
+            segments.push(currentSegment);
+            currentSegment = "";
+          }
+          segments.push("$$");
+          inMath = !inMath;
+          i += 2;
+        } else {
+          if (!inMath && currentSegment) {
+            segments.push(escapeTextModeCharacters(currentSegment));
+            currentSegment = "";
+          } else if (inMath && currentSegment) {
+            segments.push(currentSegment);
+            currentSegment = "";
+          }
+          segments.push("$");
+          inMath = !inMath;
+          i += 1;
+        }
+      } else {
+        currentSegment += s[i];
+        i += 1;
+      }
+    }
+    if (currentSegment) {
+      if (inMath) segments.push(currentSegment);
+      else segments.push(escapeTextModeCharacters(currentSegment));
+    }
+    return parseLatex(segments.join(""), { context, parseMode: "text" });
+  }
+  return parseLatex(escapeTextModeCharacters(s), {
+    context,
+    parseMode: "text"
+  });
+}
+function escapeTextModeCharacters(s) {
+  s = s.replace(/\\/g, "\\textbackslash ");
+  s = s.replace(/#/g, "\\#");
+  s = s.replace(/%/g, "\\%");
+  s = s.replace(/&/g, "\\&");
+  s = s.replace(/_/g, "\\_");
+  s = s.replace(/{/g, "\\textbraceleft ");
+  s = s.replace(/}/g, "\\textbraceright ");
+  s = s.replace(/lbrace/g, "\\textbraceleft ");
+  s = s.replace(/rbrace/g, "\\textbraceright ");
+  s = s.replace(/\^/g, "\\textasciicircum ");
+  s = s.replace(/~/g, "\\textasciitilde ");
+  s = s.replace(/£/g, "\\textsterling ");
+  return s;
+}
+new TextModeEditor();
+
+// src/virtual-keyboard/mathfield-proxy.ts
+function makeProxy(mf) {
+  return {
+    value: mf.model.getValue(),
+    selectionIsCollapsed: mf.model.selectionIsCollapsed,
+    canUndo: mf.canUndo(),
+    canRedo: mf.canRedo(),
+    style: commonStyle(mf.model),
+    mode: mf.model.mode
+  };
+}
+function commonStyle(model) {
+  var _a3;
+  if (model.selectionIsCollapsed) return (_a3 = model.at(model.position)) == null ? void 0 : _a3.style;
+  const selectedAtoms = model.getAtoms(model.selection);
+  if (selectedAtoms.length === 0) return {};
+  const style = __spreadValues({}, selectedAtoms[0].style);
+  for (const atom of selectedAtoms) {
+    for (const [key, value] of Object.entries(atom.style))
+      if (style[key] !== value) delete style[key];
+  }
+  return style;
+}
+
+// src/editor/environment-popover.ts
+var padding = 4;
+var radius = 20;
+var paddedWidth = 2 * (radius + padding);
+var newPlus = (x, y) => `
+  <line x1="${x + radius}" y1="${y + radius}" 
+    x2="${x > y ? x + radius : 7 * radius + 10 * padding}" 
+    y2="${x < y ? y + radius : 7 * radius + 10 * padding}"/>
+  <svg id="plus" viewBox="0 0 40 40" x="${x}" y="${y}" width="40" height="40">
+    <circle class="cls-2" cx="20" cy="20" r="20"/>
+    <path class="font" d="m33.33,20c0,1.84-1.49,3.34-3.33,3.34h-6.67v6.66c0,1.84-1.49,3.34-3.33,3.34s-3.34-1.5-3.34-3.34v-6.66h-6.66c-1.84,0-3.34-1.5-3.34-3.34s1.5-3.33,3.34-3.33h6.66v-6.67c0-1.84,1.5-3.33,3.34-3.33s3.33,1.49,3.33,3.33v6.67h6.67c1.84,0,3.33,1.49,3.33,3.33Z"/>
+  </svg>`;
+var newMinus = (x, y) => `
+  <line x1="${x + radius}" y1="${y + radius}" 
+    x2="${x > y ? x + radius : 7 * radius + 10 * padding}" 
+    y2="${x < y ? y + radius : 7 * radius + 10 * padding}"/>
+  <svg id="minus" viewBox="0 0 40 40" x="${x}" y="${y}" width="40" height="40">
+    <circle class="cls-2" cx="20" cy="20" r="20"/>
+    <path class="font" d="m33.33,20c0,1.84-1.49,3.33-3.33,3.33H10c-1.84,0-3.34-1.49-3.34-3.33s1.5-3.34,3.34-3.34h20c1.84,0,3.33,1.5,3.33,3.34Z"/>
+  </svg>`;
+var newArrow = (x, y, theta) => `
+  <svg id="arrow" viewBox="0 0 40 40" x="${x}" y="${y}" width="40" height="40">
+    <circle class="cls-2" cx="20" cy="20" r="20"/>
+    <g transform="rotate(${theta})" transform-origin="20 20">
+      <path class="font" d="m17.7,7.23h4.6c.52,0,.94.42.94.94v13.82c0,.52.42.94.94.94h3.39c.83,0,1.25,1.01.66,1.6l-7.56,7.56c-.37.37-.96.37-1.32,0l-7.56-7.56c-.59-.59-.17-1.6.66-1.6h3.39c.52,0,.94-.42.94-.94v-13.82c0-.52.42-.94.94-.94Z"/>
+    </g>  
+  </svg>`;
+var controllerSvg = `
+<svg class="MLEP__array-buttons" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+viewBox=
+"-2 -2 ${8 * radius + 10 * padding + 5} ${8 * radius + 10 * padding + 5}">
+  <rect 
+      class="MLEP__array-insert-background rows"
+      x="0" 
+      y="${paddedWidth + padding}" 
+      height="${3 * paddedWidth}" 
+      width="${paddedWidth}" 
+      rx="${paddedWidth / 2}"/>
+      <rect 
+      class="MLEP__array-insert-background columns"
+      x="${paddedWidth + padding}" 
+      y="0" 
+      height="${paddedWidth}" 
+      width="${3 * paddedWidth}" 
+      rx="${paddedWidth / 2}"/>
+  <g data-command='"moveDown"'>
+  ${newArrow(2 * (padding + paddedWidth), 2 * padding + 3 * paddedWidth, 0)}
+  </g>
+  <g data-command='"moveUp"'>
+  ${newArrow(2 * (padding + paddedWidth), 2 * padding + paddedWidth, 180)}
+  </g>
+  <g data-command='"moveToNextWord"'>
+  ${newArrow(2 * padding + 3 * paddedWidth, 2 * (padding + paddedWidth), -90)}
+  </g>
+  <g data-command='"moveToPreviousWord"'>
+  ${newArrow(2 * padding + paddedWidth, 2 * (padding + paddedWidth), 90)}
+  </g>
+  <g>
+
+  <g data-command='"addColumnBefore"'>
+  ${newPlus(2 * padding + paddedWidth, padding)}
+  </g>
+  <g data-command='"removeColumn"'>
+  ${newMinus(2 * padding + 2 * paddedWidth, padding)}
+  </g>
+  <g data-command='"addColumnAfter"'>
+  ${newPlus(2 * padding + 3 * paddedWidth, padding)}
+  </g>
+  <g data-command='"addRowBefore"'>
+  ${newPlus(padding, 2 * padding + paddedWidth)}
+  </g>
+  <g data-command='"removeRow"'>
+  ${newMinus(padding, 2 * padding + 2 * paddedWidth)}
+  </g>
+  <g data-command='"addRowAfter"'>
+    ${newPlus(padding, 2 * padding + 3 * paddedWidth)}
+  </g>
+</svg>`;
+var matrix = (className) => `
+<svg id="matrix" class="${className}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 24" 
+  data-command='["setEnvironment","matrix"]'>
+  <rect class="cls-1" width="28" height="24"/>
+  <circle cx="10" cy="8" r="1"/>
+  <circle cx="14" cy="12" r="1"/>
+  <circle cx="18" cy="16" r="1"/></svg>`;
+var pmatrix = (className) => `
+<svg id="pmatrix" class="${className}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 24" 
+data-command='["setEnvironment","pmatrix"]'>
+  <rect class="cls-1" width="28" height="24"/>
+  <path class="cls-2" d="m6,4c-3.96,4.6-3.96,11.4,0,16"/>
+  <path class="cls-2" d="m22,4c3.96,4.6,3.96,11.4,0,16"/>
+  <circle cx="10" cy="8" r="1"/>
+  <circle cx="14" cy="12" r="1"/>
+  <circle cx="18" cy="16" r="1"/></svg>`;
+var Bmatrix = (className) => `
+<svg id="Bmatrix" class="${className}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 24" 
+  data-command='["setEnvironment","Bmatrix"]'>
+  <rect class="cls-1" width="28" height="24"/>
+  <path class="cls-2" d="m6,4c-1.1,0-2,.9-2,2v3c0,1.66-.9,3-2,3,1.1,0,2,1.34,2,3v3c0,1.1.9,2,2,2"/>
+  <path class="cls-2" d="m22,4c1.1,0,2,.9,2,2v3c0,1.66.9,3,2,3-1.1,0-2,1.34-2,3v3c0,1.1-.9,2-2,2"/>
+  <circle cx="10" cy="8" r="1"/>
+  <circle cx="14" cy="12" r="1"/>
+  <circle cx="18" cy="16" r="1"/>
+</svg>`;
+var bmatrix = (className) => `
+<svg id="bmatrix" class="${className}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 24" 
+  data-command='["setEnvironment","bmatrix"]'>
+  <rect class="cls-1" width="28" height="24"/>
+  <path class="cls-2" d="m6,4h-3v16h3"/>
+  <path class="cls-2" d="m22,4h3v16h-3"/>
+  <circle cx="10" cy="8" r="1"/>
+  <circle cx="14" cy="12" r="1"/>
+  <circle cx="18" cy="16" r="1"/>
+</svg>`;
+var vmatrix = (className) => `
+<svg id="vmatrix" class="${className}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 24" 
+  data-command='["setEnvironment","vmatrix"]'>
+  <rect class="cls-1" width="28" height="24"/>
+  <circle cx="10" cy="8" r="1"/>
+  <circle cx="14" cy="12" r="1"/>
+  <circle cx="18" cy="16" r="1"/>
+  <line class="cls-2" x1="4" y1="4" x2="4" y2="20"/>
+  <line class="cls-2" x1="24" y1="4" x2="24" y2="20"/>
+</svg>`;
+var Vmatrix = (className) => `
+<svg id="Vmatrix" class="${className}" xmlns="http://www.w3.org/2000/svg" viewBox="-3.5 -3 35 30" 
+  data-command='["setEnvironment","Vmatrix"]'>
+  <rect class="cls-1" width="28" height="24"/>
+  <circle cx="10" cy="8" r="1"/>
+  <circle cx="14" cy="12" r="1"/>
+  <circle cx="18" cy="16" r="1"/>
+  <line class="cls-2" x1="6" y1="4" x2="6" y2="20"/>
+  <line class="cls-2" x1="22" y1="4" x2="22" y2="20"/>
+  <line class="cls-2" x1="2" y1="4" x2="2" y2="20"/>
+  <line class="cls-2" x1="26" y1="4" x2="26" y2="20"/>
+</svg>`;
+var cases2 = (className) => `
+<svg id="cases" class="${className}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 24" 
+  data-command='["setEnvironment","cases"]'>
+  <rect class="cls-1" width="28" height="24"/>
+  <path class="cls-2" d="m10,4c-1.1,0-2,.9-2,2v3c0,1.66-.9,3-2,3,1.1,0,2,1.34,2,3v3c0,1.1.9,2,2,2"/>
+  <circle cx="13" cy="8" r="1"/>
+  <circle cx="13" cy="16" r="1"/>
+  <circle cx="21" cy="8" r="1"/>
+  <circle cx="21" cy="16" r="1"/>
+</svg>`;
+var rcases = (className) => `
+<svg id="rcases" class="${className}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 24" 
+  data-command='["setEnvironment","rcases"]'>
+  <rect class="cls-1" width="28" height="24"/>
+  <path class="cls-2" d="m18,20c1.1,0,2-.9,2-2v-3c0-1.66.9-3,2-3-1.1,0-2-1.34-2-3v-3c0-1.1-.9-2-2-2"/>
+  <circle cx="15" cy="8" r="1"/>
+  <circle cx="15" cy="16" r="1"/>
+  <circle cx="7" cy="8" r="1"/>
+  <circle cx="7" cy="16" r="1"/>
+</svg>`;
+var matrixButtons = { matrix, pmatrix, bmatrix, Bmatrix, vmatrix, Vmatrix };
+var casesButtons = { cases: cases2, rcases, Bmatrix };
+function showEnvironmentPopover(mf) {
+  var _a3, _d2;
+  const rows = (_a3 = mf.model.parentEnvironment) == null ? void 0 : _a3.rows;
+  if (!rows) return;
+  let columnCount = 0;
+  rows.forEach((column) => {
+    if (!columnCount || column.length > columnCount)
+      columnCount = column.length;
+  });
+  let panel = document.getElementById("mathlive-environment-popover");
+  if (!panel) {
+    panel = getSharedElement("mathlive-environment-popover");
+    injectStylesheet("environment-popover");
+    injectStylesheet("core");
+    panel.setAttribute("aria-hidden", "true");
+  }
+  let flexbox;
+  const possiblyExistentFlexbox = panel.querySelector(
+    ".MLEP__environment-controls"
+  );
+  if (possiblyExistentFlexbox) flexbox = possiblyExistentFlexbox;
+  else {
+    flexbox = document.createElement("div");
+    panel.innerHTML = "";
+    panel.appendChild(flexbox);
+  }
+  flexbox.className = "MLEP__environment-controls";
+  flexbox.style.display = "flex";
+  flexbox.style.width = "100%";
+  flexbox.style.height = "100%";
+  flexbox.style.boxSizing = "border-box";
+  flexbox.innerHTML = controllerSvg;
+  let delimiterOptions = [];
+  let activeDelimeter = "";
+  const environment = mf.model.parentEnvironment.environmentName;
+  if (isMatrixEnvironment(environment)) {
+    const normalizedEnvironment = normalizeMatrixName(environment);
+    activeDelimeter = matrixButtons[normalizedEnvironment]("active");
+    const _b3 = matrixButtons, { [normalizedEnvironment]: _ } = _b3, filteredDelimeters = __objRest(_b3, [__restKey(normalizedEnvironment)]);
+    delimiterOptions = Object.values(filteredDelimeters).map(
+      (f) => f("inactive")
+    );
+  } else if (isCasesEnvironment(environment)) {
+    const normalizedEnvironment = normalizeCasesName(environment);
+    activeDelimeter = casesButtons[normalizedEnvironment]("active");
+    const _c2 = casesButtons, { [normalizedEnvironment]: _ } = _c2, filteredDelimeters = __objRest(_c2, [__restKey(normalizedEnvironment)]);
+    delimiterOptions = Object.values(filteredDelimeters).map(
+      (f) => f("inactive")
+    );
+  } else if (isAlignEnvironment(environment)) {
+    activeDelimeter = matrixButtons["matrix"]("active");
+    delimiterOptions = Object.values(casesButtons).map(
+      (f) => f("inactive")
+    );
+  }
+  const delimiterControls = document.createElement("div");
+  delimiterControls.className = "MLEP__environment-delimiter-controls";
+  delimiterControls.style.display = "flex";
+  delimiterControls.style.flexDirection = "column";
+  delimiterControls.innerHTML = `
+  <div class='MLEP__array-delimiter-options'>
+  ${activeDelimeter}
+  ${delimiterOptions.join("")}
+  </div>`;
+  if (activeDelimeter) flexbox.appendChild(delimiterControls);
+  const arrayControls = flexbox.querySelectorAll(
+    "[data-command]"
+  );
+  arrayControls.forEach((control) => {
+    const commandString = control.dataset.command;
+    let command = commandString;
+    try {
+      command = JSON.parse(commandString);
+    } catch (e) {
+    }
+    control.addEventListener("mousedown", (ev) => ev.preventDefault());
+    if (command)
+      control.addEventListener("click", () => mf.executeCommand(command));
+  });
+  const position = (_d2 = mf.field) == null ? void 0 : _d2.getBoundingClientRect();
+  if (position) {
+    panel.style.top = `${window.scrollY + (position.top - panel.clientHeight - 15)}px`;
+    panel.style.left = `${position.left + 20}px`;
+    panel.classList.add("is-visible");
+  }
+}
+function hideEnvironmentPopover() {
+  const panel = document.getElementById("mathlive-environment-popover");
+  panel == null ? void 0 : panel.classList.remove("is-visible");
+}
+function disposeEnvironmentPopover() {
+  if (!document.getElementById("mathlive-environment-popover")) return;
+  releaseSharedElement("mathlive-environment-popover");
+  releaseStylesheet("environment-popover");
+  releaseStylesheet("core");
+}
+function updateEnvironmentPopover(mf) {
+  if (!mf.hasFocus()) return;
+  let visible = false;
+  if (mf.model.mode === "math") {
+    const env = mf.model.parentEnvironment;
+    if (!!(env == null ? void 0 : env.rows) && isTabularEnvironment(env.environmentName)) {
+      const policy = mf.options.environmentPopoverPolicy;
+      visible = policy === "auto" || policy === "on";
+    }
+  }
+  if (visible) showEnvironmentPopover(mf);
+  else hideEnvironmentPopover();
+}
+function normalizeMatrixName(environment) {
+  return environment.replace("*", "");
+}
+function normalizeCasesName(environment) {
+  if (environment === "dcases")
+    return "cases";
+  return environment;
+}
+
+// src/ui/i18n/utils.ts
+function getComputedDir(element) {
+  const dir = getComputedStyle(element).direction;
+  return dir === "ltr" || dir === "rtl" ? dir : "ltr";
+}
+
+// src/ui/geometry/utils.ts
+function getEdge(bounds, position, direction) {
+  if (position === "left" || position === "leading" && direction === "ltr" || position === "trailing" && direction === "rtl")
+    return bounds.left;
+  return bounds.right;
+}
+function getEffectivePos(pos, length, placement, dir) {
+  if (placement === "middle") return pos - length / 2;
+  if (placement === "start" && dir === "rtl" || placement === "end" && dir === "ltr" || placement === "top" || placement === "right")
+    return Math.max(0, pos - length);
+  return pos;
+}
+function getOppositeEffectivePos(pos, length, placement, dir) {
+  if (placement === "middle") return pos - length / 2;
+  if (placement === "start" && dir === "ltr" || placement === "end" && dir === "rtl" || placement === "top" || placement === "right")
+    return pos;
+  return pos - length;
+}
+function fitInViewport(element, options) {
+  var _a3, _b3, _c2;
+  const dir = (_a3 = getComputedDir(element)) != null ? _a3 : "ltr";
+  element.style.position = "fixed";
+  element.style.left = "";
+  element.style.top = "";
+  element.style.right = "";
+  element.style.bottom = "";
+  element.style.height = "";
+  element.style.width = "";
+  const elementBounds = element.getBoundingClientRect();
+  const maxHeight = Number.isFinite(options.maxHeight) ? Math.min(options.maxHeight, window.innerHeight) : window.innerHeight;
+  let height = Math.min(maxHeight, (_b3 = options.height) != null ? _b3 : elementBounds.height);
+  let top = getEffectivePos(
+    options.location.y,
+    height,
+    options.verticalPos,
+    dir
+  );
+  if (top + height > window.innerHeight - 8) {
+    if (options.alternateLocation) {
+      top = getEffectivePos(
+        options.alternateLocation.y,
+        height,
+        options.verticalPos,
+        dir
+      );
+      if (top + height > window.innerHeight - 8) top = void 0;
+    } else top = void 0;
+  }
+  if (!Number.isFinite(top)) {
+    top = Math.max(8, window.innerHeight - 8 - height);
+    if (8 + height > window.innerHeight - 8) {
+      element.style.bottom = "8px";
+    }
+  }
+  height = Math.min(top + height, window.innerHeight - 8) - top;
+  const maxWidth = Number.isFinite(options.maxWidth) ? Math.min(options.maxWidth, window.innerWidth) : window.innerWidth;
+  let width = Math.min(maxWidth, (_c2 = options.width) != null ? _c2 : elementBounds.width);
+  let left = getEffectivePos(
+    options.location.x,
+    width,
+    options.horizontalPos,
+    dir
+  );
+  if (left + width > window.innerWidth - 8) {
+    if (options.alternateLocation) {
+      left = getOppositeEffectivePos(
+        options.alternateLocation.x,
+        width,
+        options.verticalPos,
+        dir
+      );
+      if (left + width > window.innerWidth - 8) left = void 0;
+    } else left = void 0;
+  }
+  if (!Number.isFinite(left)) {
+    left = Math.max(8, window.innerWidth - 8 - width);
+    if (8 + width > window.innerWidth - 8) {
+      element.style.right = "8px";
+    }
+  }
+  width = Math.min(left + width, window.innerWidth - 8) - left;
+  if (dir === "rtl") {
+    element.style.right = `${Math.ceil(
+      window.innerWidth - left - width
+    ).toString()}px`;
+  } else element.style.left = `${Math.ceil(left).toString()}px`;
+  element.style.top = `${Math.ceil(top).toString()}px`;
+  if (height !== elementBounds.height)
+    element.style.height = `${Math.ceil(height).toString()}px`;
+  if (width !== elementBounds.width)
+    element.style.width = `${Math.ceil(width).toString()}px`;
+}
+function distance2(p1, p2) {
+  return Math.hypot(p2.x - p1.x, p2.y - p1.y);
+}
+
+// src/public/ui-menu-types.ts
+function isSubmenu(item) {
+  return "submenu" in item;
+}
+function isCommand(item) {
+  return "type" in item && item.type === "command" || "onMenuSelect" in item || "id" in item;
+}
+function isDivider(item) {
+  return "type" in item && item.type === "divider";
+}
+function isHeading(item) {
+  return "type" in item && item.type === "heading";
+}
+
+// src/ui/icons/icons.ts
+var ICON_CATALOG = {};
+function icon(name) {
+  let icon2 = ICON_CATALOG[name];
+  if (!icon2) {
+    let markup;
+    switch (name) {
+      case "checkmark":
+        markup = `<span aria-hidden="true" class="ui-checkmark"><svg  xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="currentColor" d="M435.848 83.466L172.804 346.51l-96.652-96.652c-4.686-4.686-12.284-4.686-16.971 0l-28.284 28.284c-4.686 4.686-4.686 12.284 0 16.971l133.421 133.421c4.686 4.686 12.284 4.686 16.971 0l299.813-299.813c4.686-4.686 4.686-12.284 0-16.971l-28.284-28.284c-4.686-4.686-12.284-4.686-16.97 0z"></path></svg>
+      </span>`;
+        break;
+      case "trailing-chevron":
+        markup = `<span aria-hidden="true" class="ui-trailing-chevron"><svg focusable="false" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><path fill="currentColor" d="M285.476 272.971L91.132 467.314c-9.373 9.373-24.569 9.373-33.941 0l-22.667-22.667c-9.357-9.357-9.375-24.522-.04-33.901L188.505 256 34.484 101.255c-9.335-9.379-9.317-24.544.04-33.901l22.667-22.667c9.373-9.373 24.569-9.373 33.941 0L285.475 239.03c9.373 9.372 9.373 24.568.001 33.941z"></path></svg></span>`;
+        break;
+      case "mixedmark":
+        markup = '<span aria-hidden="true" class="ui-mixedmark"><svg xmlns="http://www.w3.org/2000/svg" width="16" viewBox="0 0 512 512"><path fill="currentColor" d="M0 256c0-13.3 10.7-24 24-24H488c13.3 0 24 10.7 24 24s-10.7 24-24 24H24c-13.3 0-24-10.7-24-24z"/></svg></span>';
+    }
+    if (markup) {
+      const template = document.createElement("template");
+      template.innerHTML = markup;
+      ICON_CATALOG[name] = template;
+      icon2 = template;
+    }
+  }
+  if (icon2) {
+    if ("content" in icon2)
+      return icon2.content.cloneNode(true);
+    const element = document.createElement("svg");
+    element.innerHTML = icon2.innerHTML;
+    return element;
+  }
+  return void 0;
+}
+
+// src/ui/menu/menu-item.ts
+var BLINK_SPEED = 80;
+var _MenuItemState = class {
+  constructor(declaration, parentMenu) {
+    this._className = "";
+    /** The DOM element the menu item is rendered as */
+    this._element = null;
+    var _a3;
+    this.parentMenu = parentMenu;
+    this._declaration = declaration;
+    Object.freeze(this._declaration);
+    if (isSubmenu(declaration)) {
+      this.type = "submenu";
+      this.submenu = new _MenuListState(declaration.submenu, {
+        parentMenu,
+        submenuClass: declaration.submenuClass,
+        columnCount: declaration.columnCount
+      });
+    } else this.type = (_a3 = declaration.type) != null ? _a3 : "command";
+    this.hasCheck = isCommand(declaration) && declaration.checked !== void 0;
+  }
+  get rootMenu() {
+    return this.parentMenu.rootMenu;
+  }
+  get abortController() {
+    if (!this._abortController) this._abortController = new AbortController();
+    return this._abortController;
+  }
+  dispose() {
+    var _a3, _b3;
+    (_a3 = this._abortController) == null ? void 0 : _a3.abort();
+    this._abortController = void 0;
+    (_b3 = this._element) == null ? void 0 : _b3.remove();
+    this._element = null;
+    if (this.submenu) this.submenu.dispose();
+    this.submenu = void 0;
+  }
+  get menuItem() {
+    return this._declaration;
+  }
+  get label() {
+    var _a3;
+    return (_a3 = this._label) != null ? _a3 : "";
+  }
+  set label(value) {
+    if (value === void 0) value = "";
+    if (value === this._label) return;
+    this._label = value;
+    this.dirty = true;
+  }
+  get visible() {
+    return this._visible;
+  }
+  set visible(value) {
+    if (value === this._visible) return;
+    this._visible = value;
+    this.dirty = true;
+  }
+  get enabled() {
+    return this._enabled;
+  }
+  set enabled(value) {
+    this._enabled = value;
+    if (this.element) {
+      if (value) this.element.removeAttribute("aria-disabled");
+      else this.element.setAttribute("aria-disabled", "true");
+    }
+    this.dirty = true;
+  }
+  get checked() {
+    return this._checked;
+  }
+  set checked(value) {
+    this._checked = value;
+    this.dirty = true;
+  }
+  get tooltip() {
+    return this._tooltip;
+  }
+  set tooltip(value) {
+    if (value === this._tooltip) return;
+    this._tooltip = value;
+    this.dirty = true;
+  }
+  get ariaLabel() {
+    return this._ariaLabel;
+  }
+  set ariaLabel(value) {
+    if (value === this._ariaLabel) return;
+    this._ariaLabel = value;
+    this.dirty = true;
+  }
+  get active() {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this.element) == null ? void 0 : _a3.classList.contains("active")) != null ? _b3 : false;
+  }
+  set active(value) {
+    if (!this.element) return;
+    this.element.classList.toggle("active", value);
+  }
+  updateState(modifiers) {
+    var _a3, _b3, _c2;
+    const declaration = this._declaration;
+    if (isDivider(declaration)) {
+      this.enabled = false;
+      this.checked = false;
+      return;
+    }
+    if (isHeading(declaration)) {
+      this.enabled = false;
+      this.checked = false;
+      this.visible = true;
+    }
+    if (isCommand(declaration)) {
+      this.checked = (_a3 = dynamicValue(declaration.checked, modifiers)) != null ? _a3 : false;
+    }
+    if (isCommand(declaration) || isSubmenu(declaration)) {
+      this.enabled = (_b3 = dynamicValue(declaration.enabled, modifiers)) != null ? _b3 : true;
+      this.visible = (_c2 = dynamicValue(declaration.visible, modifiers)) != null ? _c2 : true;
+      if (this.visible && this.enabled && this.submenu) {
+        this.submenu.updateState(modifiers);
+        if (!this.submenu.visible) this.visible = false;
+      }
+    }
+    if (isCommand(declaration) || isHeading(declaration) || isSubmenu(declaration)) {
+      this.label = dynamicValue(declaration.label, modifiers);
+      this._className = dynamicValue(declaration.class, modifiers);
+      this.tooltip = dynamicValue(declaration.tooltip, modifiers);
+      this.ariaLabel = dynamicValue(declaration.ariaLabel, modifiers);
+    }
+    if (this._element) this.updateElement();
+  }
+  set dirty(value) {
+    console.assert(value === true);
+    if (value && this.parentMenu) this.parentMenu.dirty = true;
+  }
+  updateElement() {
+    var _a3;
+    if (!this.visible || !this.element) return;
+    const li = this.element;
+    li.textContent = "";
+    li.className = "";
+    li.className = (_a3 = this._className) != null ? _a3 : "";
+    if (!this.enabled) li.setAttribute("aria-disabled", "true");
+    else li.removeAttribute("aria-disabled");
+    if (this.checked === true) {
+      li.setAttribute("aria-checked", "true");
+      li.append(icon("checkmark"));
+    } else if (this.checked === "mixed") {
+      li.setAttribute("aria-checked", "mixed");
+      li.append(icon("mixedmark"));
+    } else li.removeAttribute("aria-checked");
+    if (this.ariaLabel) li.setAttribute("aria-label", this.ariaLabel);
+    const span = document.createElement("span");
+    span.className = this.parentMenu.hasCheck ? "label indent" : "label";
+    if (this.type === "heading") span.classList.add("heading");
+    span.innerHTML = this.label;
+    li.append(span);
+    if (this._tooltip) {
+      li.setAttribute("data-tooltip", this._tooltip);
+    }
+    if (isCommand(this._declaration) && this._declaration.keyboardShortcut) {
+      const kbd = document.createElement("kbd");
+      kbd.innerHTML = getKeybindingMarkup(this._declaration.keyboardShortcut);
+      li.append(kbd);
+    }
+    if (this.type === "submenu") li.append(icon("trailing-chevron"));
+  }
+  get element() {
+    if (this._element) return this._element;
+    if (isDivider(this._declaration)) {
+      const li2 = document.createElement("li");
+      li2.setAttribute("part", "menu-divider");
+      li2.setAttribute("role", "divider");
+      this._element = li2;
+      return li2;
+    }
+    const li = document.createElement("li");
+    this._element = li;
+    if (isCommand(this._declaration) || isHeading(this._declaration) || isSubmenu(this._declaration))
+      li.setAttribute("part", "menu-item");
+    li.setAttribute("tabindex", "-1");
+    if (this.hasCheck) li.setAttribute("role", "menuitemcheckbox");
+    else li.setAttribute("role", "menuitem");
+    if (this.type === "submenu") {
+      li.setAttribute("aria-haspopup", "true");
+      li.setAttribute("aria-expanded", "false");
+    }
+    const signal = this.abortController.signal;
+    li.addEventListener("pointerenter", this, { signal });
+    li.addEventListener("pointerleave", this, { signal });
+    li.addEventListener("pointerup", this, { signal });
+    li.addEventListener("click", this, { signal });
+    return this._element;
+  }
+  /** Dispatch a `menu-select` event, and call the
+   * `onMenuSelect()` hook if defined.
+   */
+  dispatchSelect() {
+    var _a3;
+    if (!isCommand(this._declaration)) return;
+    const ev = new CustomEvent("menu-select", {
+      cancelable: true,
+      bubbles: true,
+      detail: {
+        modifiers: this.rootMenu.modifiers,
+        id: this._declaration.id,
+        data: this._declaration.data
+      }
+    });
+    const success = this.parentMenu.dispatchEvent(ev);
+    if (success && typeof this._declaration.onMenuSelect === "function") {
+      this._declaration.onMenuSelect({
+        target: (_a3 = this.parentMenu.host) != null ? _a3 : void 0,
+        modifiers: this.rootMenu.modifiers,
+        id: this._declaration.id,
+        data: this._declaration.data
+      });
+    }
+  }
+  handleEvent(event) {
+    var _a3;
+    if (!this.visible || !this.enabled) return;
+    if (event.type === "click") {
+      if (this.rootMenu.state === "modal") this.select();
+      event.stopPropagation();
+      event.preventDefault();
+      return;
+    }
+    if (event.type === "pointerenter") {
+      const ev = event;
+      this.rootMenu.cancelDelayedOperation();
+      if (this.parentMenu.isSubmenuOpen && ((_a3 = this.parentMenu.activeMenuItem) == null ? void 0 : _a3.movingTowardSubmenu(ev))) {
+        this.rootMenu.scheduleOperation(() => {
+          this.parentMenu.activeMenuItem = this;
+          this.openSubmenu();
+        });
+      } else {
+        this.parentMenu.activeMenuItem = this;
+        this.openSubmenu({ withDelay: true });
+      }
+      return;
+    }
+    if (event.type === "pointerleave") {
+      if (this.rootMenu.activeSubmenu === this.parentMenu)
+        this.parentMenu.activeMenuItem = null;
+      return;
+    }
+    if (event.type === "pointerup") {
+      if (this.rootMenu.state !== "modal") this.select();
+      event.stopPropagation();
+      event.preventDefault();
+      return;
+    }
+  }
+  /**
+   * Called when a menu item is selected:
+   * - either dismiss the menu and execute the command
+   * - or display the submenu
+   */
+  select() {
+    this.rootMenu.cancelDelayedOperation();
+    if (this.type === "submenu") {
+      this.openSubmenu();
+      return;
+    }
+    this.active = false;
+    setTimeout(() => {
+      this.active = true;
+      setTimeout(() => {
+        this.active = false;
+        this.rootMenu.hide();
+        this.dispatchSelect();
+      }, BLINK_SPEED);
+    }, BLINK_SPEED);
+  }
+  /**
+   * Open the submenu of this menu item, with a delay if options.delay
+   * This delay improves targeting of submenus with the mouse.
+   */
+  openSubmenu(options) {
+    var _a3;
+    if (this.type !== "submenu" || !this.element) return;
+    if ((_a3 = options == null ? void 0 : options.withDelay) != null ? _a3 : false) {
+      this.rootMenu.scheduleOperation(() => this.openSubmenu());
+      return;
+    }
+    const bounds = this.element.getBoundingClientRect();
+    const dir = getComputedDir(this.element);
+    this.submenu.show({
+      container: this.rootMenu.element.parentNode,
+      location: { x: getEdge(bounds, "trailing", dir), y: bounds.top - 4 },
+      alternateLocation: {
+        x: getEdge(bounds, "leading", dir),
+        y: bounds.top - 4
+      }
+    });
+  }
+  movingTowardSubmenu(ev) {
+    if (!this.element) return false;
+    if (this.type !== "submenu") return false;
+    const lastEv = this.rootMenu.lastMoveEvent;
+    if (!lastEv) return false;
+    const deltaT = ev.timeStamp - lastEv.timeStamp;
+    if (deltaT > 500) return false;
+    const deltaX = ev.clientX - lastEv.clientX;
+    const s = speed(deltaX, lastEv.clientY - ev.clientY, deltaT);
+    if (s <= 0.2) return false;
+    let position = "right";
+    if (this.submenu.element) {
+      const submenuBounds = this.submenu.element.getBoundingClientRect();
+      const bounds = this.element.getBoundingClientRect();
+      if (submenuBounds.left < bounds.left + bounds.width / 2)
+        position = "left";
+    }
+    return position === "right" ? deltaX > 0 : deltaX < 0;
+  }
+};
+function speed(dx, dy, dt) {
+  return Math.hypot(dx, dy) / dt;
+}
+function dynamicValue(value, modifiers) {
+  if (value === void 0 || typeof value !== "function")
+    return value;
+  modifiers != null ? modifiers : modifiers = { alt: false, control: false, shift: false, meta: false };
+  return value(modifiers);
+}
+
+// src/ui/menu/menu-list.ts
+var _MenuListState = class __MenuListState {
+  constructor(items, options) {
+    /** @private */
+    this._element = null;
+    /** @private */
+    this._activeMenuItem = null;
+    /** @private */
+    this._dirty = true;
+    var _a3, _b3;
+    this.parentMenu = (_a3 = options == null ? void 0 : options.parentMenu) != null ? _a3 : null;
+    this._submenuClass = options == null ? void 0 : options.submenuClass;
+    this.columnCount = (_b3 = options == null ? void 0 : options.columnCount) != null ? _b3 : 1;
+    this.isSubmenuOpen = false;
+    this.menuItems = items;
+  }
+  get children() {
+    return Object.freeze([...this._menuItems]);
+  }
+  /** Setting the menu items will reset this item and
+   * redefine a set of _MenuItem objects
+   */
+  set menuItems(items) {
+    const parent = this.parentMenu;
+    this.dispose();
+    this.parentMenu = parent;
+    items = [...items];
+    this._menuItems = items.map(
+      (x) => x["onCreate"] ? x["onCreate"](x, this) : new _MenuItemState(x, this)
+    );
+    this.hasCheck = void 0;
+    this.dirty = true;
+  }
+  dispose() {
+    var _a3;
+    this.hide();
+    if (this._element) this._element.remove();
+    if (this._abortController) this._abortController.abort();
+    (_a3 = this._menuItems) == null ? void 0 : _a3.forEach((x) => x.dispose());
+    this._menuItems = [];
+    this._activeMenuItem = null;
+    this.parentMenu = null;
+  }
+  handleEvent(event) {
+    if (event.type === "wheel" && this._element) {
+      const ev = event;
+      this._element.scrollBy(0, ev.deltaY);
+      event.stopPropagation();
+    }
+  }
+  dispatchEvent(ev) {
+    return this.rootMenu.dispatchEvent(ev);
+  }
+  get host() {
+    return this.rootMenu.host;
+  }
+  get rootMenu() {
+    return this.parentMenu.rootMenu;
+  }
+  /**
+   * Update the 'model' of this menu (i.e. list of menu items)
+   */
+  updateState(modifiers) {
+    var _a3, _b3, _c2;
+    this._menuItems.forEach((x) => x.updateState(modifiers));
+    const previousHasCheck = this.hasCheck;
+    this.hasCheck = this._menuItems.some((x) => x.visible && x.hasCheck);
+    if (this.hasCheck !== previousHasCheck) {
+      this._menuItems.forEach((x) => x.updateState(modifiers));
+    }
+    let heading = void 0;
+    let itemInHeadingCount = 0;
+    for (const item of this._menuItems) {
+      if (item.type === "heading") {
+        if (heading && itemInHeadingCount === 0) heading.visible = false;
+        heading = item;
+        itemInHeadingCount = 0;
+      } else if (item.type === "divider" && heading) {
+        heading.visible = itemInHeadingCount > 0;
+        heading = void 0;
+        itemInHeadingCount = 0;
+      } else if (heading && item.visible) itemInHeadingCount += 1;
+    }
+    if (heading) heading.visible = itemInHeadingCount > 0;
+    let wasDivider = true;
+    for (const item of this._menuItems) {
+      if (item.type === "divider") {
+        item.visible = !wasDivider;
+        wasDivider = true;
+      } else if (item.visible) wasDivider = false;
+    }
+    if (!((_a3 = this.activeMenuItem) == null ? void 0 : _a3.visible)) this.activeMenuItem = null;
+    if (!((_b3 = this.activeMenuItem) == null ? void 0 : _b3.enabled) && ((_c2 = this.activeMenuItem) == null ? void 0 : _c2.type) === "submenu")
+      this._activeMenuItem.submenu.hide();
+    this._dirty = false;
+  }
+  get enabled() {
+    this.updateIfDirty();
+    return this._menuItems.some(
+      (x) => x.type !== "divider" && x.visible && x.enabled
+    );
+  }
+  get visible() {
+    this.updateIfDirty();
+    return this._menuItems.some((x) => x.type !== "divider" && x.visible);
+  }
+  set dirty(value) {
+    console.assert(value === true);
+    if (this._dirty === value) return;
+    if (value && this.parentMenu) {
+      this._dirty = true;
+      this.parentMenu.dirty = true;
+    }
+  }
+  updateIfDirty() {
+    if (this._dirty) this.updateState(this.rootMenu.modifiers);
+  }
+  /** If the element has been created, update its content to reflect
+   * the current state of the menu items
+   */
+  updateElement() {
+    var _a3;
+    if (!this._element) return;
+    this._element.textContent = "";
+    for (const { element, visible } of this._menuItems)
+      if (element && visible) this._element.append(element);
+    (_a3 = this._element.querySelector("li:first-of-type")) == null ? void 0 : _a3.setAttribute("tabindex", "0");
+  }
+  /**
+   * Construct (or return a cached version) of an element representing
+   * the items in this menu (model -> view)
+   */
+  get element() {
+    if (this._element) return this._element;
+    const menu = document.createElement("menu");
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("tabindex", "-1");
+    menu.setAttribute("aria-orientation", "vertical");
+    menu.setAttribute("part", "ui-menu-container");
+    if (this._submenuClass) menu.classList.add(this._submenuClass);
+    menu.classList.add("ui-menu-container");
+    if (!this._abortController) this._abortController = new AbortController();
+    const signal = this._abortController.signal;
+    menu.addEventListener("focus", this, { signal });
+    menu.addEventListener("wheel", this, { passive: true, signal });
+    this._element = menu;
+    this.updateElement();
+    return menu;
+  }
+  /**
+   * The active menu is displayed on a colored background.
+   */
+  get activeMenuItem() {
+    return this._activeMenuItem;
+  }
+  /**
+   * Set to null to have no active item.
+   * Note that setting the active menu item doesn't automatically
+   * open the submenu (e.g. when keyboard navigating).

@@ -1079,6 +1079,9 @@ internal static class WordEquationReferenceFields
 
     internal static IReadOnlyDictionary<string, int> CaptureReferenceCounts(Document document)
     {
+        using var operationMetric =
+            VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+                "FormatConversion.CaptureReferenceCounts");
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         Fields? fields = null;
         Bookmarks? bookmarks = null;

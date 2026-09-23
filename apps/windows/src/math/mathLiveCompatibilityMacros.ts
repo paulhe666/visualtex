@@ -1,5 +1,5 @@
 import type { MacroDictionary } from "mathlive";
-import { VISUALTEX_MATHLIVE_PACKAGE_MACROS } from "./packageMacroCompatibility";
+import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "./packageMacroCompatibility";
 
 const macro = (def: string): MacroDictionary[string] => ({
   def,
@@ -15,13 +15,22 @@ const inputAliasMacro = (def: string): MacroDictionary[string] => ({
   captureSelection: false,
 });
 
+const legacyPackageMacros = Object.fromEntries(
+  Object.entries(VISUALTEX_PACKAGE_COMPATIBILITY_MACROS).map(
+    ([name, [def, args]]) => [
+      name,
+      { def, args, expand: false, captureSelection: false },
+    ],
+  ),
+) as MacroDictionary;
+
 /**
  * MathLive rendering/editing compatibility shared by formula fields and static
  * previews. These are rendering aliases only: `expand: false` keeps supported
  * source spellings such as `\\bm{...}` and `\\symbfit{...}` intact.
  */
 export const VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS: MacroDictionary = {
-  ...VISUALTEX_MATHLIVE_PACKAGE_MACROS,
+  ...legacyPackageMacros,
 
   // MathLive accepts \nicefrac as source but does not expose its two
   // arguments as stable editable atoms in every Windows runtime. Define the

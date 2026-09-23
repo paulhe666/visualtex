@@ -12,13 +12,13 @@ if (!outputArgument) {
 }
 
 const latex = String.raw`\oiint_{\Sigma}F\,\mathrm{d}S11`;
-const exportResult = latexToSvg(latex, {
+const exportResult = await latexToSvg(latex, {
   displayMode: true,
   fontSizePt: 14,
   paddingPx: 0,
   background: "transparent",
 });
-const mathMl = latexToMathMl(latex, true);
+const mathMl = await latexToMathMl(latex, true);
 
 assert.match(
   exportResult.svg,

@@ -1,0 +1,20 @@
+[mathtype->omml count=10]
+capture|FormatConversion.CaptureTarget.MathTypeToOmml|calls=10|ms=1683.872
+apply|FormatConversion.Replace.MathTypeToOmml|calls=10|ms=5059.199
+apply|FormatConversion.ReplaceInsideTransaction.MathType->Omml|calls=10|ms=5057.413
+apply|FormatConversion.OmmlHostWriter.Insert|calls=10|ms=3973.084
+apply|FormatConversion.ResolveCapturedHost.MathType|calls=10|ms=2251.308
+apply|FormatConversion.RefreshCanonicalNumbers|calls=1|ms=1077.977
+apply|FormatConversion.NumberingResolver.Omml|calls=10|ms=520.782
+apply|FormatConversion.RollbackSnapshot.Capture|calls=1|ms=508.14
+apply|WordDocumentXml.Read|calls=1|ms=94.591
+[mathtype->omml count=20]
+capture|FormatConversion.CaptureTarget.MathTypeToOmml|calls=20|ms=3694.747
+apply|FormatConversion.Replace.MathTypeToOmml|calls=20|ms=10087.808
+apply|FormatConversion.ReplaceInsideTransaction.MathType->Omml|calls=20|ms=10087.763
+apply|FormatConversion.OmmlHostWriter.Insert|calls=20|ms=8066.755
+apply|FormatConversion.ResolveCapturedHost.MathType|calls=20|ms=3283.058
+apply|FormatConversion.RefreshCanonicalNumbers|calls=1|ms=2633.702
+apply|FormatConversion.NumberingResolver.Omml|calls=20|ms=1329.835
+apply|FormatConversion.RollbackSnapshot.Capture|calls=1|ms=561.957
+apply|WordDocumentXml.Read|calls=1|ms=116.609

@@ -69,6 +69,7 @@ import {
   type OcrRecognitionResult,
   type OcrRuntimeStatus,
   fileToOcrRequest,
+  formatOcrError,
   getOcrRuntimeStatus,
   installOcrRuntime,
   installOptionalOcrModel,
@@ -117,13 +118,7 @@ function readableEta(seconds: number | null) {
 }
 
 function readError(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return "Unknown OCR error";
-  }
+  return formatOcrError(error);
 }
 
 const OCR_MODEL_PACKAGE_EXTENSION = ".vtxocrmodel";

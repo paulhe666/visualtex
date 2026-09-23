@@ -39,7 +39,8 @@ internal static partial class Program
         Word.Range? shapeRange = null;
         try
         {
-            application = CreateWordApplication(visible: false);
+            application = CreateFreshAcceptanceAutomationWord(artifactRoot);
+            application.Visible = false;
             document = application.Documents.Add(Visible: false);
             document.SaveAs2(documentPath, Word.WdSaveFormat.wdFormatXMLDocument);
             document.Activate();
@@ -708,12 +709,16 @@ internal static partial class Program
             tabStops = paragraphFormat.TabStops;
             var hasCenterTab = false;
             var hasRightTab = false;
+            var centerTabPosition = 0f;
             for (var index = 1; index <= tabStops.Count; index++)
             {
                 Release(tabStop); tabStop = null;
                 tabStop = tabStops[index];
-                hasCenterTab |=
-                    tabStop.Alignment == Word.WdTabAlignment.wdAlignTabCenter;
+                if (tabStop.Alignment == Word.WdTabAlignment.wdAlignTabCenter)
+                {
+                    hasCenterTab = true;
+                    centerTabPosition = tabStop.Position;
+                }
                 hasRightTab |=
                     tabStop.Alignment == Word.WdTabAlignment.wdAlignTabRight;
             }
@@ -736,8 +741,25 @@ internal static partial class Program
                 objectResultFont = objectResultRange.Font;
                 break;
             }
-            if (objectResultFont is null)
+            if (objectResultFont is null || objectResultRange is null)
                 throw new InvalidDataException(context + ": VisualTeX OLE has no U+0001 object-result character.");
+
+            Word.Range? visibleObjectStart = null;
+            try
+            {
+                visibleObjectStart = objectResultRange.Duplicate;
+                visibleObjectStart.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                var shapeStartX = Convert.ToSingle(
+                    visibleObjectStart.Information[
+                        Word.WdInformation.wdHorizontalPositionRelativeToTextBoundary]);
+                var shapeCenterX = shapeStartX + shape.Width / 2f;
+                AssertNear(
+                    centerTabPosition,
+                    shapeCenterX,
+                    0.75f,
+                    context + ": unnumbered VisualTeX OLE is not physically centered on the same center tab used by numbered formulas.");
+            }
+            finally { Release(visibleObjectStart); }
 
             AssertTrue(
                 metadata.WordDisplayPreviewInkHeightRatio.HasValue
@@ -746,24 +768,30 @@ internal static partial class Program
             paragraphMark = document.Range(ownerRange.End - 1, ownerRange.End);
             AssertEqual("\r", paragraphMark.Text, context + ": formula is not followed by one ordinary paragraph mark.");
             paragraphMarkFont = paragraphMark.Font;
-            var expectedPosition = WordInlineAlignment.CalculateDisplayInkCenterPosition(
-                shape.Height,
-                (float)metadata.WordDisplayPreviewInkHeightRatio!.Value,
-                (float)metadata.WordDisplayPreviewBottomWhitespaceRatio!.Value,
-                paragraphMarkFont.Size);
+            var semanticFontSize =
+                FormulaFontSize.ResolveSemanticFontSize(metadata);
+            var expectedPosition =
+                WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
+                    shape.Height,
+                    (float)(metadata.RenderHeightPx ?? 0d),
+                    metadata.Baseline.HasValue
+                        ? (float?)metadata.Baseline.Value
+                        : null,
+                    existingFontPosition: null,
+                    sourceSemanticFontSizePoints: semanticFontSize,
+                    targetSemanticFontSizePoints: semanticFontSize);
             AssertNear(
                 expectedPosition,
                 objectResultFont.Position,
                 0.1f,
-                context + ": OLE bottom remained on the paragraph baseline, leaving the paragraph mark at the lower-right corner.");
-            AssertTrue(
-                expectedPosition < 0,
-                context + ": fixture did not exercise a visible display-baseline displacement.");
+                context + ": unnumbered display OLE does not use the same exported-baseline contract as numbered VisualTeX.");
             AssertNear(
                 0f,
                 paragraphMarkFont.Position,
                 0.1f,
                 context + ": paragraph mark itself has a manual vertical offset.");
+            Console.WriteLine(
+                $"  {context}: centerTab={centerTabPosition:0.##}, olePosition={objectResultFont.Position:0.##}, paragraphMarkPosition={paragraphMarkFont.Position:0.##}, shapeWidth={shape.Width:0.##}.");
         }
         finally
         {

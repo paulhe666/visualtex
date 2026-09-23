@@ -1,0 +1,51 @@
+﻿{
+    "Items":  [
+                  {
+                      "MtefPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-1.mtef",
+                      "Id":  "1",
+                      "WmfPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-1.wmf"
+                  },
+                  {
+                      "MtefPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-15.mtef",
+                      "Id":  "15",
+                      "WmfPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-15.wmf"
+                  },
+                  {
+                      "MtefPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-27.mtef",
+                      "Id":  "27",
+                      "WmfPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-27.wmf"
+                  },
+                  {
+                      "MtefPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-36.mtef",
+                      "Id":  "36",
+                      "WmfPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-36.wmf"
+                  },
+                  {
+                      "MtefPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-42.mtef",
+                      "Id":  "42",
+                      "WmfPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-42.wmf"
+                  },
+                  {
+                      "MtefPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-45.mtef",
+                      "Id":  "45",
+                      "WmfPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-45.wmf"
+                  },
+                  {
+                      "MtefPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-207.mtef",
+                      "Id":  "207",
+                      "WmfPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-207.wmf"
+                  },
+                  {
+                      "MtefPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-219.mtef",
+                      "Id":  "219",
+                      "WmfPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-219.wmf"
+                  },
+                  {
+                      "MtefPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-227.mtef",
+                      "Id":  "227",
+                      "WmfPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\formula-227.wmf"
+                  }
+              ],
+    "ResultPath":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\mtef-redraw-20260923\\native-core\\response.json",
+    "MathTypeServerPath":  "C:\\Program Files (x86)\\MathType\\MathType.exe"
+}

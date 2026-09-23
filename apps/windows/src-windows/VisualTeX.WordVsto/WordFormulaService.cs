@@ -1771,7 +1771,8 @@ internal sealed partial class WordFormulaService
         MathTypeDisplayParagraphLayout? preservedDisplayParagraphLayout = null,
         float? knownDisplayColumnWidth = null,
         Action<Range, string>? retainMathTypeForCompletedValidation = null,
-        bool preserveCapturedInsertion = false)
+        bool preserveCapturedInsertion = false,
+        bool boundedFormatConversionBatch = false)
     {
         if (string.IsNullOrWhiteSpace(mathMl)
             || !mathMl.TrimStart().StartsWith("<math", StringComparison.Ordinal))
@@ -1880,7 +1881,8 @@ internal sealed partial class WordFormulaService
         // Its caller performs one document-wide numbering reconciliation after all
         // replacements, so the per-item path can avoid repeated global scans.
         var useLocalConversionLookup =
-            !string.IsNullOrWhiteSpace(createdObjectBookmarkName);
+            boundedFormatConversionBatch
+            || !string.IsNullOrWhiteSpace(createdObjectBookmarkName);
         var traceInsertPerformance = string.Equals(
             Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF"),
             "1",
@@ -2149,18 +2151,19 @@ internal sealed partial class WordFormulaService
                         "Word materialized a different MathType equation than VisualTeX generated.");
             }
 
-            // The Flat OPC already contains both VisualTeX's standalone MathType
-            // CFB and its WMF/EMF presentation cache.  Do not round-trip the object
-            // through Word PasteSpecial here: wdPasteOLEObject asks Windows to
-            // instantiate the Equation.DSMT4 CLSID and therefore launches an
-            // installed MathType OLE server.  Keeping this original InlineShape is
-            // both sufficient for Word display and makes conversion fully offline.
+            // CreateWithPlaceableWmf already writes the final VML width/height
+            // and w:dxaOrig/w:dyaOrig into the same Flat OPC transaction as the
+            // Equation.DSMT4 storage and preview.  Do not immediately rewrite
+            // InlineShape geometry through COM after InsertXML.  In Word
+            // compatibility mode 14, a numbered Flat OPC paragraph that also
+            // materializes nested MTPlaceRef/SEQ fields can keep the just-inserted
+            // OLE result range temporarily non-editable until the field transaction
+            // settles; assigning LockAspectRatio/Width/Height in that window raises
+            // 0x800A1710 ("Range cannot be edited").  The geometry write was also
+            // redundant because it repeated the dimensions already committed by
+            // Flat OPC.  Keep Word's materialized presentation unchanged.
             stage = "use-flat-opc-presentation";
-            shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoFalse;
-            shape.Width = widthPt;
-            shape.Height = heightPt;
-            shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue;
-            TraceInsertPerf("set-shape-geometry");
+            TraceInsertPerf("use-flat-opc-geometry");
 
             if (sourceParagraphCount >= 0)
             {

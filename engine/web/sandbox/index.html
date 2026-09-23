@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="engine-build-id" content="__ENGINE_BUILD_ID__">
+  <title>VisualTeX 独立引擎验证</title>
+  <link rel="stylesheet" href="/sandbox/style.css">
+  <script type="module" src="/sandbox/main.js"></script>
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">VISUALTEX / ENGINE LAB</span><h1>独立数学编辑引擎</h1></div>
+    <span id="phase">K0 · 加载中</span>
+  </header>
+  <p class="scope">这是独立验证入口，不会修改正式 VisualTeX 或 Office 文档。当前支持分式、上下标、平方根、带指标根式、定界符、重音、上下标注、大运算符、基本符号和文本；未支持的 LaTeX 会保留源码并明确提示。</p>
+  <div id="error" role="alert" hidden></div>
+  <main>
+    <section aria-labelledby="visual-title">
+      <div class="section-heading"><h2 id="visual-title">可视编辑</h2><span id="document-status">等待引擎</span></div>
+      <div class="toolbar" role="toolbar" aria-label="公式结构">
+        <button type="button" data-structure="fraction" disabled>分式</button>
+        <button type="button" data-structure="binomial" disabled>组合数</button>
+        <button type="button" data-structure="skewedFraction" disabled>斜分式</button>
+        <button type="button" data-structure="squareRoot" disabled>平方根</button>
+        <button type="button" data-structure="indexedRoot" disabled>带指标根式</button>
+        <button type="button" data-structure="superscript" disabled>上标</button>
+        <button type="button" data-structure="subscript" disabled>下标</button>
+        <button type="button" data-structure="text" disabled>文本</button>
+        <button type="button" data-fence="parentheses" disabled>圆括号</button>
+        <button type="button" data-fence="brackets" disabled>方括号</button>
+        <button type="button" data-fence="absolute" disabled>绝对值</button>
+        <button type="button" data-fence="leftOnly" disabled>单侧花括号</button>
+        <button type="button" data-accent="hat" disabled>帽重音</button>
+        <button type="button" data-accent="vec" disabled>向量重音</button>
+        <button type="button" data-accent="widehat" disabled>宽帽重音</button>
+        <button type="button" data-accent="overline" disabled>上划线</button>
+        <button type="button" data-accent="overbrace" disabled>上花括号</button>
+        <button type="button" data-accent="underbrace" disabled>下花括号</button>
+        <button type="button" data-accent="overgroup" disabled>上分组线</button>
+        <button type="button" data-accent="undergroup" disabled>下分组线</button>
+        <button type="button" data-accent="overleftharpoon" disabled>左鱼叉重音</button>
+        <button type="button" data-accent="overrightharpoon" disabled>右鱼叉重音</button>
+        <button type="button" data-accent="overlinesegment" disabled>上线段</button>
+        <button type="button" data-accent="underlinesegment" disabled>下线段</button>
+        <button type="button" data-annotation="overset" disabled>上方标注</button>
+        <button type="button" data-annotation="underset" disabled>下方标注</button>
+        <button type="button" data-style="mathbf" disabled>粗体</button>
+        <button type="button" data-style="mathrm" disabled>正体</button>
+        <button type="button" data-style="mathbb" disabled>黑板体</button>
+        <button type="button" data-style="symbfsfit" disabled>无衬线粗斜体</button>
+        <button type="button" data-style="symbfcal" disabled>粗花体</button>
+        <button type="button" data-style="mathcal" disabled>花体</button>
+        <button type="button" data-style="mathfrak" disabled>哥特体</button>
+        <button type="button" data-symbol="partial" disabled>偏导符号</button>
+        <button type="button" data-symbol="subseteq" disabled>子集关系</button>
+        <button type="button" data-symbol="Rightarrow" disabled>推出箭头</button>
+        <button type="button" data-symbol="otimes" disabled>张量积</button>
+        <button type="button" data-symbol="digamma" disabled>双伽马</button>
+        <button type="button" data-operator="intbar" disabled>带横线积分</button>
+        <button type="button" data-general-operator="body" disabled>自定义算子</button>
+        <button type="button" data-general-operator="bounds" disabled>算子与上下限</button>
+        <button type="button" data-operator="sum" disabled>求和</button>
+        <button type="button" data-operator="prod" disabled>连乘</button>
+        <button type="button" data-operator="int" disabled>积分</button>
+        <button type="button" data-operator="lim" data-upper="false" disabled>极限</button>
+        <button type="button" data-limits="limits" disabled>上下限</button>
+        <button type="button" data-limits="noLimits" disabled>侧边上下标</button>
+        <button type="button" data-limits="auto" disabled>默认位置</button>
+        <label>数学样式 <select id="math-style" disabled><option value="display">行间</option><option value="text">行内</option></select></label>
+        <button type="button" data-space="," disabled>薄空白</button>
+        <button type="button" data-space="!" disabled>负空白</button>
+        <button type="button" data-space="quad" disabled>字宽空白</button>
+        <button type="button" data-phantom="phantom" disabled>完整占位</button>
+        <button type="button" data-phantom="hphantom" disabled>宽度占位</button>
+        <button type="button" data-phantom="vphantom" disabled>高度占位</button>
+        <button type="button" id="insert-boxed" disabled>公式边框</button>
+        <button type="button" data-color="red" disabled>红色</button>
+        <button type="button" data-color="blue" disabled>蓝色</button>
+        <button type="button" data-color="black" disabled>黑色</button>
+        <button type="button" id="exit-structure" disabled>跳出结构</button>
+        <button type="button" id="focus-editor" disabled>继续输入</button>
+        <label class="zoom-label">显示缩放
+          <select id="zoom" disabled>
+            <option value="0.5">50%</option><option value="1" selected>100%</option>
+            <option value="1.5">150%</option><option value="2">200%</option>
+          </select>
+        </label>
+      </div>
+      <div id="editor-scroll"><div id="editor"></div></div>
+      <p class="hint">先点「分式」再输入。用方向键进入或离开结构，Shift + 方向键扩展选区；Ctrl + Z / Y 撤销和重做。数学区输入左括号自动配对，匹配的右括号跳出；在结构末端可点「跳出结构」。文本槽支持中文输入法。</p>
+    </section>
+    <section aria-labelledby="source-title">
+      <div class="section-heading"><h2 id="source-title">LaTeX 源码</h2><span id="revision">revision 0</span></div>
+      <textarea id="source" aria-label="LaTeX 源码" spellcheck="false" autocapitalize="off" autocomplete="off" disabled></textarea>
+      <p class="hint">源码和可视操作写入同一个内核会话。未完成的源码草稿不会被静默修补或替换。</p>
+    </section>
+    <section class="export-section" aria-labelledby="export-title">
+      <div class="section-heading"><h2 id="export-title">同一排版快照的 SVG 输出</h2><button type="button" id="export-svg" disabled>检查 SVG</button></div>
+      <pre id="export-result" aria-label="SVG 输出结果">公式填写完整后可导出。</pre>
+    </section>
+  </main>
+  <footer><span id="resource-status">字体和 WASM 将按哈希验证</span><span>没有 MathLive / MathJax 回退</span></footer>
+</body>
+</html>

@@ -1,0 +1,79 @@
+{
+  "schema": "visualtex-p14-cross-host-hardening-complete-checkpoint-v1",
+  "status": "PASS",
+  "completion": "complete",
+  "p15Permitted": true,
+  "branch": "reference-3d207d7",
+  "headAtFreeze": "d1f0aff8db9275c90dc18c7318dc2a4d7bbbd760",
+  "verificationReceipt": "engine/target/p14-verification/2026-09-16T04-03-39-149Z/report.json",
+  "verificationReceiptSha256": "822fb4fcdb4e6188594a3c6efd97bec9de7d9baa3662da532602073da61798ae",
+  "sourceSha256": "4c11167999ec089ea4279ed8215179a598b4dab51ee569a11812c257c050790e",
+  "sourceUnchanged": true,
+  "verificationSteps": 24,
+  "windowsHostAcceptance": {
+    "status": "PASS",
+    "record": "engine/specs/P14-windows-host-acceptance.json",
+    "sha256": "85a26917c95e8c0f516c7556dee5f99a1be85874ee067405e5ce1b5cbc1776df",
+    "finalOfficeScript": "dialog-Cw9bnVMQ.js",
+    "finalCoreChunk": "CoreMathEditor-CHC9Cpiw.js",
+    "wasmSha256": "6ee676b2c25a5b3b6cfe16241a208808110e9b7561514c94e4eddca343954ff7",
+    "fontSha256": "6075562b771f8b82f0c179e363389684f2dd09de30038269e2628e504bd7be0f",
+    "realWebView2CoreEditors": 1,
+    "realWebView2CoreInputs": 1,
+    "realWebView2MathFields": 0,
+    "createSource": "abc",
+    "editSource": "abcd",
+    "finalVisualTeXOleCount": 1,
+    "inlinePositionPt": 0,
+    "fontSizePt": 10.5
+  },
+  "resourceHardening": {
+    "desktopOfficeBytesIdentical": true,
+    "wasmHashBoundBeforeInit": true,
+    "fontHashBoundBeforeRegistration": true,
+    "corruptWasmFailsClosed": true,
+    "corruptFontFailsClosed": true,
+    "sameHostRecoveryAfterResourceRepair": true,
+    "fatalRuntimeRebuildFromCheckpoint": true,
+    "normalStructuredErrorsDoNotInvalidateRuntime": true
+  },
+  "hostRegression": {
+    "nativeWindowsIme": "PASS",
+    "ocrTargetIsolation": "PASS",
+    "structuredClipboard": "PASS",
+    "accessibility": "PASS",
+    "zoomDpr": "PASS",
+    "virtualViewport1000": "PASS",
+    "officeRaces": "PASS",
+    "p13HeadlessPerformance": "PASS"
+  },
+  "headlessCompatibility": {
+    "interactiveBrowserFontContractRemainsStrict": true,
+    "browserOnlyHeadlessGeometryMayUseVerifiedBundledMathFont": true,
+    "mathTypeOutputMetadataRemainsTimes": true,
+    "p13HeadlessConverterAfterFix": "PASS",
+    "p10DesktopSmokeAfterFix": "PASS"
+  },
+  "frozenOfficeAudit": {
+    "trackedAndUntrackedBoundaryClean": true,
+    "workingTreeUnchangedDuringVerification": true,
+    "p13Checkpoint": "docs/engine-rebuild/checkpoints/CP13-office-batch-complete-1/",
+    "officeServerModifiedByP14": false,
+    "wordVstoModifiedByP14": false,
+    "powerPointVstoModifiedByP14": false,
+    "contractsModifiedByP14": false,
+    "officeSessionWireOrStateModifiedByP14": false,
+    "numberingOrReferenceAlgorithmsModifiedByP14": false
+  },
+  "sourceFreeze": {
+    "kind": "hash-manifest",
+    "archiveCreated": false,
+    "allVerifiedInputHashesRecordedInReceipt": true
+  },
+  "boundaries": {
+    "gitCommitCreated": false,
+    "gitPushPerformed": false,
+    "installerOrReleaseActionPerformed": false,
+    "userWordProcessActionPerformed": false
+  }
+}

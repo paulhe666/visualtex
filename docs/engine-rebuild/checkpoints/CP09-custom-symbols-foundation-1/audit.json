@@ -1,0 +1,16 @@
+{
+  "schema": "visualtex-engine-archive-audit-v1",
+  "status": "PASS",
+  "archive": "docs/engine-rebuild/checkpoints/CP09-custom-symbols-foundation-1/visualtex-engine-workspace-0.1.0.tgz",
+  "archiveSha256": "ff0d79245319dce9512bfcf74db152ae1ee4f04bd05e8d582fd86a1b9dd08bd2",
+  "archiveBytes": 484340,
+  "archiveFiles": 216,
+  "verifiedSourceFiles": 215,
+  "sourceSha256": "ad92fd7e191482b4a4f9c9e1e21e1905a0e82763f77248023f2eace3b0dbc168",
+  "archiveMatchedEveryVerifiedInput": true,
+  "currentSourceStillMatches": true,
+  "forbiddenArchiveFiles": [],
+  "verificationReceipt": "engine/target/p09-verification/2026-09-14T06-07-44-117Z/report.json",
+  "strictVerificationStatus": "PASS",
+  "writes": 0
+}

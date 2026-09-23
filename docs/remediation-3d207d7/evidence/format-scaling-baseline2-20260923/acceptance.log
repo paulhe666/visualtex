@@ -1,0 +1,59 @@
+Acceptance mode: word-format-conversion-scaling
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[EXPLICIT OWNED WORD] pid=32452; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923\owned-word-convert-omml-to-visualtex-10-c4676b2a2f4242d3a83356926e9530c3\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->visualtex count=10 captureMs=1452.8 applyMs=23597.0 capturePer=145.28 applyPer=2359.70
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[FORMAT SCALING] omml->mathtype count=10 captureMs=1197.0 applyMs=14202.1 capturePer=119.70 applyPer=1420.21
+[EXPLICIT OWNED WORD] pid=44700; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923\owned-word-source-visualtex-10-2904a45cc7f245eeb076a5a202b1ee3e\owned-empty-startup.docx; coCreateInstance=False
+[EXPLICIT OWNED WORD] pid=64344; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923\owned-word-convert-visualtex-to-omml-10-2f459b84e0ac421ea6c360e63d85d6eb\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] visualtex->omml count=10 captureMs=2071.8 applyMs=18283.0 capturePer=207.18 applyPer=1828.30
+[EXPLICIT OWNED WORD] pid=42880; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923\owned-word-convert-visualtex-to-mathtype-10-5f466ac61f1945a2aaad1c813f58e87f\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] visualtex->mathtype count=10 captureMs=2433.4 applyMs=19610.8 capturePer=243.34 applyPer=1961.08
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[FORMAT SCALING] mathtype->omml count=10 captureMs=3080.2 applyMs=10248.5 capturePer=308.02 applyPer=1024.85
+[EXPLICIT OWNED WORD] pid=58260; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923\owned-word-convert-mathtype-to-visualtex-10-d13ca85b832b454ba898041eb320a4df\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] mathtype->visualtex count=10 captureMs=3318.7 applyMs=17510.5 capturePer=331.87 applyPer=1751.05
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[EXPLICIT OWNED WORD] pid=86800; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923\owned-word-convert-omml-to-visualtex-20-1baba19237234785a897b41c6747595a\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->visualtex count=20 captureMs=2491.7 applyMs=57447.1 capturePer=124.59 applyPer=2872.36
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[FORMAT SCALING] omml->mathtype count=20 captureMs=2002.3 applyMs=29858.7 capturePer=100.11 applyPer=1492.94
+[EXPLICIT OWNED WORD] pid=45660; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923\owned-word-source-visualtex-20-1aed6f8c653f4c408b61d37c7b3fa5b7\owned-empty-startup.docx; coCreateInstance=False
+[EXPLICIT OWNED WORD] pid=37412; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923\owned-word-convert-visualtex-to-omml-20-1bb13a2e0b484820ae6342d615cf1332\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] visualtex->omml count=20 captureMs=3845.2 applyMs=35179.0 capturePer=192.26 applyPer=1758.95
+[EXPLICIT OWNED WORD] pid=64460; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923\owned-word-convert-visualtex-to-mathtype-20-590ea4a806dd4040aa3546375beef8fa\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] visualtex->mathtype count=20 captureMs=3807.2 applyMs=32980.2 capturePer=190.36 applyPer=1649.01
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[FORMAT SCALING] mathtype->omml count=20 captureMs=5313.3 applyMs=18965.8 capturePer=265.67 applyPer=948.29
+[EXPLICIT OWNED WORD] pid=6892; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923\owned-word-convert-mathtype-to-visualtex-20-4e691acb32634b429cc974e23974592b\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] mathtype->visualtex count=20 captureMs=5605.7 applyMs=31600.4 capturePer=280.29 applyPer=1580.02
+[FORMAT SCALING COMPLETE] samples=12; report=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923\format-conversion-scaling.csv
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline2-20260923

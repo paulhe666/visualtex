@@ -50,6 +50,7 @@ import {
   createEmptyCustomSymbolDesignerDocument,
   type CustomSymbolDesignerDocument,
   type CustomSymbolDesignerLayer,
+  type CustomSymbolGlyphAsset,
 } from "../math/customSymbolDesignerTypes";
 import { createUuid } from "../runtime/browserCompatibility";
 import {
@@ -344,12 +345,20 @@ export function CustomSymbolDesignerDialog({ open, language, onClose }: Props) {
   const referencePreset =
     referencePresets.find((preset) => preset.latex === referenceLatex) ??
     referencePresets[0];
-  const referenceAsset = useMemo(() => {
-    try {
-      return compileLatexGlyphAsset(referenceLatex);
-    } catch {
-      return null;
-    }
+  const [referenceAsset, setReferenceAsset] = useState<CustomSymbolGlyphAsset | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setReferenceAsset(null);
+    void compileLatexGlyphAsset(referenceLatex)
+      .then((asset) => {
+        if (!cancelled) setReferenceAsset(asset);
+      })
+      .catch(() => {
+        if (!cancelled) setReferenceAsset(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [referenceLatex]);
   const [registrationState, setRegistrationState] = useState<{
     kind: "idle" | "success" | "error";
@@ -485,7 +494,7 @@ export function CustomSymbolDesignerDialog({ open, language, onClose }: Props) {
     }));
   };
 
-  const addMaterial = (source = materialLatex) => {
+  const addMaterial = async (source = materialLatex) => {
     try {
       const requestedSource = source.trim();
       const normalizedSource = normalizeDesignerMaterialLatex(requestedSource);
@@ -499,7 +508,7 @@ export function CustomSymbolDesignerDialog({ open, language, onClose }: Props) {
             : "这里只能加入单个裸字符或符号命令。",
         );
       }
-      const asset = compileLatexGlyphAsset(normalizedSource);
+      const asset = await compileLatexGlyphAsset(normalizedSource);
       const layer = glyphLayerFromAsset(asset, { id: createUuid(), name: source.trim() });
       setDocumentState((current) => ({
         ...current,
@@ -731,7 +740,7 @@ export function CustomSymbolDesignerDialog({ open, language, onClose }: Props) {
         : "侧边放置上下限";
   };
 
-  const saveRegisteredSymbol = () => {
+  const saveRegisteredSymbol = async () => {
     try {
       const name = documentState.name.trim();
       const command = documentState.command.trim().replace(/^\\/, "");
@@ -757,7 +766,7 @@ export function CustomSymbolDesignerDialog({ open, language, onClose }: Props) {
               : "Word fallback 不能依赖其他 VisualTeX 自定义字符。",
           );
         }
-        latexToMathMl(fallback, false);
+        await latexToMathMl(fallback, false);
       }
 
       const existing = documentState.symbolId

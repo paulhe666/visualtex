@@ -1,0 +1,22 @@
+Acceptance mode: word-latex-redraw-mathtype
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+[Word LaTeX redraw MathType] Prewarming reusable hidden converter...
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+System.IO.InvalidDataException (0x80131501): Word LaTeX redraw failed.
+2026-09-23T18:12:35.7603071+08:00 redraw-failed System.IO.InvalidDataException: Word text coordinates differ from the captured LaTeX span; redraw stopped before mutation.
+   在 VisualTeX.WordVsto.WordFormulaService.CaptureLatexRedrawPlanCore(Boolean wholeDocument) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaService.LatexRedrawCore.cs:行号 106
+   在 VisualTeX.WordVsto.ThisAddIn.<>c__DisplayClass160_0.<RedrawLatexAsync>b__3() 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\ThisAddIn.cs:行号 3086
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0() 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\OfficeUiDispatcher.cs:行号 43
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 VisualTeX.WordVsto.ThisAddIn.<RedrawLatexAsync>d__160.MoveNext() 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\ThisAddIn.cs:行号 3085
+
+   在 VisualTeX.VstoFlowAcceptance.Program.WaitForLatexRedraw(String logPath, TimeSpan timeout) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordLatexRedrawAcceptance.cs:行号 2161
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWordLatexRedrawScenario(String artifactRoot, String objectMode, Boolean wholeDocument, String expectedFileName, Boolean verifyResizeBaseline) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordLatexRedrawAcceptance.cs:行号 2031
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWordLatexRedrawMathTypeOnly(VisualTeXSessionClient client, String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordLatexRedrawAcceptance.cs:行号 430
+   在 VisualTeX.VstoFlowAcceptance.Program.Main(String[] args) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 1347
+Acceptance artifacts retained: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\mt-redraw-numbered-beforefix

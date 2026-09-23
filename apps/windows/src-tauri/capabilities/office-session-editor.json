@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "office-session-editor",
+  "description": "Allow only the trusted local Office formula editor WebView to call the bounded verified system-font command required by the self-owned math engine.",
+  "local": false,
+  "remote": {
+    "urls": ["https://127.0.0.1:43127/*"]
+  },
+  "windows": ["office-session-editor", "office-session-converter"],
+  "permissions": [
+    "core:default",
+    "allow-read-system-font-asset"
+  ]
+}

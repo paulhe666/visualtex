@@ -17,6 +17,9 @@ internal static class WordVisualTeXHostWriter
         Range insertion,
         WordFormulaHostWriteRequest request)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.VisualTeXHostWriter.Insert");
         if (request.Kind != WordFormulaHostKind.VisualTeX)
             throw new ArgumentException("VisualTeX writer received a non-VisualTeX request.");
         if (request.Metadata is null)
@@ -80,7 +83,7 @@ internal static class WordVisualTeXHostWriter
             }
 
             WordFormulaIdentityStore.BindVisualTeX(shape, metadata.FormulaId);
-            ValidateInsertedHost(shape, metadata.FormulaId);
+            ValidateInsertedHost(shape, metadata);
 
             shapeRange = shape.Range.Duplicate;
             return new WordFormulaHostWriteResult
@@ -641,17 +644,29 @@ internal static class WordVisualTeXHostWriter
 
     private static void ValidateInsertedHost(
         InlineShape shape,
-        string formulaId)
+        FormulaMetadata expected)
     {
         var metadata = WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape)
             ?? throw new InvalidDataException(
                 "The inserted VisualTeX OLE cannot be read back.");
         if (!string.Equals(
                 metadata.FormulaId,
-                formulaId,
+                expected.FormulaId,
                 StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException(
                 "The inserted VisualTeX OLE returned a different FormulaId.");
+        if (!string.Equals(
+                metadata.Latex,
+                expected.Latex,
+                StringComparison.Ordinal))
+            throw new InvalidDataException(
+                "The inserted VisualTeX OLE returned different LaTeX source.");
+        if (!string.Equals(
+                metadata.DisplayMode,
+                expected.DisplayMode,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException(
+                "The inserted VisualTeX OLE returned a different display mode.");
     }
 
     private static bool IsWithinTable(Range range)

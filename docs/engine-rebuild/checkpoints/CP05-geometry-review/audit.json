@@ -1,0 +1,23 @@
+{
+  "checkpoint": "CP05-geometry-review",
+  "localHead": "00b48e17b736c7e57a0a72e19e271df82906f89d",
+  "archive": "visualtex-engine-workspace-0.1.0.tgz",
+  "archiveSha256": "0e9cb232fd8ee66468de1826bf22294c4bb428ec6a9c6e86519caade12a99d11",
+  "nativeSha256": "4965e99a6a247800605b0c63b189b3d07b3add544f5d8688cddb3fa075b2197d",
+  "wasmSha256": "31ff40846ea961a412046b892da85a407e274b91c715a3052f5bc43df0b106d4",
+  "tests": {
+    "rustCore": {"passed": 187, "failed": 0},
+    "rustCli": {"passed": 2, "failed": 0},
+    "protocolParityRequests": 2151,
+    "sourceSessionParityRequests": 222,
+    "sourceEditParityRequests": 440,
+    "editorParityRequests": 473,
+    "layoutReview": {"requests": 519, "validScenes": 360, "status": "PASS"},
+    "layoutChinese": {"requests": 183, "validScenes": 106, "maximumNumericDifference": 0, "exactSvgParity": true, "status": "PASS"}
+  },
+  "actualWasmExecution": true,
+  "actualOsIme": "NOT_RUN",
+  "actualOfficeUi": "NOT_RUN",
+  "productionEditorSwitch": "NOT_RUN",
+  "archiveContainsFontBinaries": false
+}

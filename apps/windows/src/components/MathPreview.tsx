@@ -160,12 +160,13 @@ function MathPreviewComponent({
             Math.max(1, host.clientWidth * fitInsetRatio) / naturalWidth,
             Math.max(1, host.clientHeight * fitInsetRatio) / naturalHeight,
           );
-          // Horizontal toolbar static previews historically render at 0.92x.
-          // Keep that visual ceiling, but allow narrower Windows/WebView2
-          // glyph boxes to shrink further when containment requires it.
+          // Static toolbar previews must obey the same visual sizing contract as
+          // measured previews. Static mode exists only to avoid continuous
+          // ResizeObserver work while scrolling; it must not make whole
+          // categories (arrows/physics/set) permanently smaller than their tiles.
           scale = Math.max(
             Number.EPSILON,
-            Math.min(0.92, maximumFitScale, containedScale),
+            Math.min(maximumFitScale, containedScale),
           );
         }
         content.style.setProperty(

@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  18954404,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  7747180,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  2557580,
+        "name":  "Word materialized an OMML equation whose canonical mathematical semantics differ from the requested content. display=inline; expectedOmmlSignature=[792777d9f33e9f3f0b4aa8fce1d5683f2386514c7861def32e8f240880e6d885]; actualOmmlSignature=[9146dcca1b2af6dca3fe3c68f365109b511c971c40d958c7677cbb5f24a98fd1]; expectedMathMlSignature=[mi[](M)o(=)fence({,},mi[](x)o(∣)mi[](a)o(-)n(4)o(≤)mi[](x)o(≤)mi[](a)o(+)n(4))]; actualMathMlSignature=[mi[](M)o(=)fence({,},mi[](x)o(|)mi[](a)o(-)n(4)o(≤)mi[](x)o(≤)mi[](a)o(+)n(4))]; semanticExtractionError=[].",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

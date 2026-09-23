@@ -74,10 +74,12 @@ internal sealed partial class WordFormulaService
             }
             else
             {
-                var index = WordFormulaHostResolver.CaptureScopeIndex(
-                    document,
-                    scope);
-                hosts = index.ForKind(sourceKind);
+                hosts =
+                    WordFormulaHostResolver
+                        .CaptureScopeKindIndex(
+                            document,
+                            scope,
+                            sourceKind);
             }
 
             var targetMathTypeNumberPosition =
@@ -177,6 +179,38 @@ internal sealed partial class WordFormulaService
                     : new Dictionary<string, int>(
                         StringComparer.OrdinalIgnoreCase);
 
+            // Normal format conversion deliberately uses Word's own Custom
+            // UndoRecord as the rollback boundary. The older full-document
+            // recovery snapshot parses and canonicalizes the complete Flat OPC
+            // package before any mutation; that made unrelated legal package
+            // parts part of the success path and could reject an otherwise valid
+            // conversion. Keep the strict snapshot only as an opt-in diagnostic
+            // mode for rollback investigations, never as a production prerequisite.
+            WordDocumentEditSnapshot? rollbackSnapshot = null;
+            if (plan.Targets.Count > 1
+                && string.Equals(
+                    Environment.GetEnvironmentVariable(
+                        "VISUALTEX_STRICT_FORMAT_ROLLBACK_SNAPSHOT"),
+                    "1",
+                    StringComparison.Ordinal))
+            {
+                using var snapshotMetric =
+                    WordOperationMetrics.Measure(
+                        "FormatConversion.RollbackSnapshot.Capture");
+                var ownedBookmarkNames =
+                    plan.Targets
+                        .Select(target => target.SourceFormulaId)
+                        .Where(value => Guid.TryParse(value, out _))
+                        .SelectMany(value =>
+                            WordBookmarkRecoverySnapshot.NamesForFormula(value))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+                rollbackSnapshot =
+                    new WordDocumentEditSnapshot(
+                        document,
+                        ownedBookmarkNames);
+            }
+
             return WordFormulaMutationTransaction.Execute(
                 _application,
                 document,
@@ -218,13 +252,20 @@ internal sealed partial class WordFormulaService
                                 preparedFormula.MathMl,
                                 preparedFormula.PngPath,
                                 preparedFormula.EmfPath);
+                            request.BatchFormatConversion = true;
                             replacedHost =
                                 WordFormulaHostMutationKernel
                                     .ReplaceInActiveTransaction(
                                         _application,
                                         document,
                                         source,
-                                        request);
+                                        request,
+                                        sourceAlreadyResolved: true,
+                                        allowDirectCanonicalOmmlRemoval:
+                                            sourceKind ==
+                                            WordFormulaHostKind.Omml,
+                                        deferTargetNumberFinalization:
+                                            true);
 
                             if (sourceKind ==
                                     WordFormulaHostKind.VisualTeX
@@ -314,6 +355,8 @@ internal sealed partial class WordFormulaService
                                                             "block",
                                                             StringComparison.OrdinalIgnoreCase),
                                                     preserveCapturedInsertion:
+                                                        true,
+                                                    boundedFormatConversionBatch:
                                                         true);
                                             }
                                             finally
@@ -321,7 +364,11 @@ internal sealed partial class WordFormulaService
                                                 session.SourceObjectId =
                                                     oldSourceObjectId;
                                             }
-                                        });
+                                        },
+                                        sourceAlreadyResolved: true,
+                                        allowDirectCanonicalOmmlRemoval:
+                                            sourceKind ==
+                                            WordFormulaHostKind.Omml);
                         }
                         else
                         {
@@ -341,16 +388,40 @@ internal sealed partial class WordFormulaService
                     // after the complete batch has materialized. This is the same
                     // numbering kernel used by the explicit refresh command; no
                     // conversion-specific numbering structure is introduced.
-                    if (targetKind is
-                            WordFormulaHostKind.Omml
-                            or WordFormulaHostKind.VisualTeX
-                        && plan.Targets.Any(target =>
+                    if (plan.Targets.Any(target =>
                             target.Numbered))
                     {
-                        _ =
-                            WordFormulaNumberingKernel
-                                .RefreshCanonicalNumbers(
-                                    document);
+                        if (targetKind is
+                            WordFormulaHostKind.Omml
+                            or WordFormulaHostKind.VisualTeX)
+                        {
+                            _ =
+                                WordFormulaNumberingKernel
+                                    .RefreshCanonicalNumbers(
+                                        document,
+                                        kindFilter:
+                                            targetKind,
+                                        minimumExpectedNumbered:
+                                            targetKind == WordFormulaHostKind.VisualTeX
+                                                ? plan.Targets.Count(target =>
+                                                    target.Numbered
+                                                    && !target.SourceWithinTable)
+                                                : plan.Targets.Count(target =>
+                                                    target.Numbered));
+                        }
+                        else if (targetKind ==
+                                 WordFormulaHostKind.MathType)
+                        {
+                            // Batch MathType insertion deliberately skips
+                            // per-item nested field updates and document-wide
+                            // nearest-template scans. Re-evaluate the native
+                            // MTPlaceRef/MTEqn stream once, in final document
+                            // order, after every target has materialized.
+                            _ =
+                                MathTypeEquationNumbering
+                                    .UpdateEquationNumbers(
+                                        document);
+                        }
                     }
 
                     if (referenceTargetReplacements.Count > 0)
@@ -364,7 +435,8 @@ internal sealed partial class WordFormulaService
                     }
 
                     return result;
-                });
+                },
+                rollbackSnapshot);
         }
         finally
         {
@@ -379,6 +451,12 @@ internal sealed partial class WordFormulaService
         WordFormulaHostKind targetKind,
         string targetMathTypeNumberPosition)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.CaptureTarget."
+                + sourceKind
+                + "To"
+                + targetKind);
         FormulaMetadata metadata;
         string latex;
         string? mathMl = null;

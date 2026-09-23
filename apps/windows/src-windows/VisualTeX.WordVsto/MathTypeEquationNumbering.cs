@@ -49,49 +49,114 @@ internal static class MathTypeEquationNumbering
 
     internal static int UpdateEquationNumbers(Document document)
     {
-        var count = UpdateNumberFields(document);
-        if (count > 0) WordEquationReferenceFields.UpdateReferences(document);
+        var count =
+            UpdateNumberFields(
+                document,
+                out var hasPotentialEquationReferences);
+        if (count > 0
+            && hasPotentialEquationReferences)
+            WordEquationReferenceFields.UpdateReferences(
+                document);
         return count;
     }
 
     // Conversion restores compatibility aliases after all target hosts exist.
     // Number fields must be ready first; the caller then refreshes and validates
     // references after rebinding, through the same common reference mechanism.
-    internal static int UpdateNumberFields(Document document)
+    internal static int UpdateNumberFields(
+        Document document) =>
+        UpdateNumberFields(
+            document,
+            out _);
+
+    private static int UpdateNumberFields(
+        Document document,
+        out bool hasPotentialEquationReferences)
     {
-        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (document is null)
+            throw new ArgumentNullException(
+                nameof(document));
 
-        var numberedEquationCount = CountPlaceRefFields(document);
-        if (numberedEquationCount == 0) return 0;
-
-        // Update only MathType-owned sequence fields. A document-wide
-        // Fields.Update() would also refresh TOCs, citations and unrelated fields.
+        // The old implementation scanned document.Fields once to count
+        // MTPlaceRef and a second time to update MTEqn/MTChap/MTSec, then always
+        // launched another reference scan. In large conversions that made the
+        // finalization cost grow with the whole document several times.
+        //
+        // Snapshot the exact MathType sequence Field objects during one field
+        // enumeration. Only update them after we have proved that at least one
+        // MTPlaceRef exists. This preserves the old malformed-document behavior
+        // (orphan sequence fields are not touched) while removing the duplicate
+        // global scan. Also skip reference refresh entirely when the document has
+        // no REF/GOTOBUTTON field at all.
         Fields? fields = null;
         Field? field = null;
         Range? code = null;
+        var sequenceFields =
+            new List<Field>();
+        var numberedEquationCount = 0;
+        hasPotentialEquationReferences = false;
         try
         {
             fields = document.Fields;
-            for (var index = 1; index <= fields.Count; index++)
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
             {
                 Release(code);
                 code = null;
                 Release(field);
                 field = fields[index];
+
+                var type = field.Type;
+                if (type is
+                    WdFieldType.wdFieldRef
+                    or WdFieldType.wdFieldGoToButton)
+                {
+                    hasPotentialEquationReferences = true;
+                }
+
+                if (type != WdFieldType.wdFieldMacroButton
+                    && type != WdFieldType.wdFieldSequence)
+                    continue;
+
                 code = field.Code;
-                if (!IsMathTypeSequenceFieldCode(code.Text)) continue;
-                field.Update();
+                if (type ==
+                    WdFieldType.wdFieldMacroButton)
+                {
+                    if (MathTypeEquationReferences
+                        .IsMathTypePlaceRefCode(
+                            code.Text))
+                        numberedEquationCount++;
+                    continue;
+                }
+
+                if (!IsMathTypeSequenceFieldCode(
+                        code.Text))
+                    continue;
+
+                sequenceFields.Add(
+                    field);
+                field = null;
             }
 
+            if (numberedEquationCount == 0)
+                return 0;
+
+            foreach (var sequenceField in
+                     sequenceFields)
+                sequenceField.Update();
+
+            return numberedEquationCount;
         }
         finally
         {
+            foreach (var sequenceField in
+                     sequenceFields)
+                Release(sequenceField);
             Release(code);
             Release(field);
             Release(fields);
         }
-
-        return numberedEquationCount;
     }
 
     internal static PreparedNumberFormatRewrite PrepareEquationNumberFormat(

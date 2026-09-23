@@ -499,40 +499,30 @@ async function main() {
     await key(" ", "Space", 32, false);
     const wrapperPlaceholder = await waitForEvaluation(`(() => {
       const field = document.querySelector("math-field");
-      const host = field?.closest(".mathfield-host");
-      const caret = field?.shadowRoot?.querySelector(".ML__caret");
-      const caretBounds = caret?.getBoundingClientRect();
-      const hostBounds = host?.getBoundingClientRect();
-      const left = Number.parseFloat(host?.style.getPropertyValue("--pending-wrapper-left") ?? "NaN");
-      const top = Number.parseFloat(host?.style.getPropertyValue("--pending-wrapper-top") ?? "NaN");
-      const expectedCaretLeft = caretBounds && hostBounds ? caretBounds.left - hostBounds.left : Number.NaN;
-      const expectedTop = caretBounds && hostBounds
-        ? caretBounds.top - hostBounds.top + caretBounds.height / 2
-        : Number.NaN;
-      const pseudo = host ? getComputedStyle(host, "::after") : null;
-      const width = Number.parseFloat(pseudo?.width ?? "NaN");
-      const expectedCenter = expectedCaretLeft + width / 2;
-      const borderWidth = Number.parseFloat(pseudo?.borderTopWidth ?? "NaN");
+      const root = field?.shadowRoot;
+      const raw = [...(root?.querySelectorAll(".ML__raw-latex") ?? [])]
+        .filter((node) => !node.classList.contains("ML__suggestion"))
+        .map((node) => node.textContent ?? "")
+        .join("");
       return {
         ready:
-          !field?.value.includes("\\\\left") &&
-          field?.dataset.pendingWrapperCommand === "\\\\mathbb" &&
-          host?.classList.contains("has-pending-wrapper-placeholder") &&
-          width >= 18 &&
-          borderWidth > 0 &&
-          Math.abs(left - expectedCenter) <= 1.5 &&
-          Math.abs(top - expectedTop) <= 1.5,
+          field?.value === "\\\\mathbb{}" &&
+          field?.mode === "latex" &&
+          field?.dataset.visualtexSourceWrapperCommand === "\\\\mathbb" &&
+          field?.dataset.visualtexSourceWrapperKind === "variant" &&
+          (field?.dataset.visualtexSourceWrapperContent ?? "") === "" &&
+          raw === "\\\\mathbb{}" &&
+          Boolean(root?.querySelector(".ML__latex-caret")) &&
+          (root?.querySelectorAll(".visualtex-structural-placeholder, .ML__placeholder").length ?? 0) === 0,
         value: field?.value ?? "",
-        pending: field?.dataset.pendingWrapperCommand ?? "",
-        left,
-        top,
-        width,
-        borderWidth,
-        expectedCaretLeft,
-        expectedCenter,
-        expectedTop,
+        mode: field?.mode ?? "",
+        sourceCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+        sourceKind: field?.dataset.visualtexSourceWrapperKind ?? "",
+        sourceContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+        raw,
+        latexCaret: Boolean(root?.querySelector(".ML__latex-caret")),
       };
-    })()`, "mathbb placeholder anchored to native caret");
+    })()`, "mathbb raw source shell");
     await screenshot("02-mathbb-placeholder.png");
     console.log("STAGE mathbb-placeholder PASS");
     await key("A", "KeyA", 65);
@@ -540,8 +530,9 @@ async function main() {
     const wrapperAutoExit = await waitForEvaluation(`(() => ({
       ready:
         document.querySelector("math-field")?.value === "\\\\mathbb{A}" &&
-        !document.querySelector("math-field")?.dataset.pendingWrapperCommand,
+        !(document.querySelector("math-field")?.dataset.visualtexSourceWrapperCommand ?? ""),
       value: document.querySelector("math-field")?.value ?? "",
+      sourceCommand: document.querySelector("math-field")?.dataset.visualtexSourceWrapperCommand ?? "",
     }))()`, "mathbb default one-character auto exit");
     await key("B", "KeyB", 66);
     const wrapperNormalFont = await waitForEvaluation(`(() => ({
@@ -577,27 +568,34 @@ async function main() {
     await key("B", "KeyB", 66);
     const wrapperContinuous = await waitForEvaluation(`(() => {
       const field = document.querySelector("math-field");
-      const host = field?.closest(".mathfield-host");
-      const width = Number.parseFloat(host?.style.getPropertyValue("--pending-wrapper-width") ?? "NaN");
+      const raw = [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+        .filter((node) => !node.classList.contains("ML__suggestion"))
+        .map((node) => node.textContent ?? "")
+        .join("");
       return {
         ready:
           field?.value === "\\\\mathbb{AB}" &&
-          field.dataset.pendingWrapperCommand === "\\\\mathbb" &&
-          width > 18,
+          field?.mode === "latex" &&
+          field?.dataset.visualtexSourceWrapperCommand === "\\\\mathbb" &&
+          field?.dataset.visualtexSourceWrapperContent === "AB" &&
+          raw === "\\\\mathbb{AB}",
         value: field?.value ?? "",
-        pending: field?.dataset.pendingWrapperCommand ?? "",
-        width,
+        mode: field?.mode ?? "",
+        sourceCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+        sourceContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+        raw,
       };
-    })()`, "continuous wrapper input with content-sized frame when auto-exit is disabled");
+    })()`, "continuous source-wrapper input when auto-exit is disabled");
     await key("Enter", "Enter", 13);
     const wrapperEnterExit = await waitForEvaluation(`(() => ({
       ready:
         document.querySelector("math-field")?.value === "\\\\mathbb{AB}" &&
-        !document.querySelector("math-field")?.dataset.pendingWrapperCommand &&
-        !document.querySelector(".mathfield-host")?.classList.contains("has-pending-wrapper-placeholder"),
+        document.querySelector("math-field")?.mode === "math" &&
+        !(document.querySelector("math-field")?.dataset.visualtexSourceWrapperCommand ?? ""),
       value: document.querySelector("math-field")?.value ?? "",
-      pending: document.querySelector("math-field")?.dataset.pendingWrapperCommand ?? "",
-    }))()`, "Enter exits continuous wrapper input");
+      mode: document.querySelector("math-field")?.mode ?? "",
+      sourceCommand: document.querySelector("math-field")?.dataset.visualtexSourceWrapperCommand ?? "",
+    }))()`, "Enter exits continuous source-wrapper input");
     await key("C", "KeyC", 67);
     const wrapperNormalAfterEnter = await waitForEvaluation(`(() => ({
       ready: document.querySelector("math-field")?.value === "\\\\mathbb{AB}C",

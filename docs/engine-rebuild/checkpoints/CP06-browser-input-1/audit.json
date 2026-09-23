@@ -1,0 +1,15 @@
+{
+  "archiveSha256": "def29c8e0b5f78d572a684f33d510011c3e93e066299b4e1afc3bb8bf389624c",
+  "reportSha256": "4d8c5108cd4db98806f8297593fb66da1e37189efa160d000f290c3ce5db9f03",
+  "screenshotSha256": "f4678d4f994137a0be48d6f2f7f7c55f8faaf9ce4f4c6bfe29523b0a9fe4a2a1",
+  "browser": "Edg/152.0.4191.62",
+  "startedEmpty": true,
+  "result": "PASS",
+  "browserEvents": 44,
+  "trustedEvents": 41,
+  "untrustedCompositionEndEvents": 3,
+  "physicalWindowsIme": "NOT_RUN",
+  "officeUi": "NOT_RUN",
+  "productionSwitch": "NOT_RUN",
+  "gitCommitOfEngine": false
+}

@@ -41,6 +41,10 @@ internal sealed class WordFormulaNumberingDescriptor
     internal string Position { get; set; } = "right";
     internal string? FormulaId { get; set; }
     internal WordFormulaNumberingContainerKind ContainerKind { get; set; }
+    // True only when the canonical body-tab paragraph was proved by the current
+    // self-contained VisualTeXPlaceRef resolver. Older compatible body-tab hosts
+    // intentionally leave this false so migration/detach keeps its legacy checks.
+    internal bool SelfContainedVisualTeXParagraph { get; set; }
     internal WordFormulaRangeAddress? ContainerRange { get; set; }
     internal WordFormulaRangeAddress? NumberRange { get; set; }
 }
@@ -89,6 +93,11 @@ internal sealed class WordFormulaHostWriteRequest
     internal float? ExportedBaselinePixels { get; set; }
     internal double FontSizePoints { get; set; } = FormulaFontSize.DefaultPt;
 
+    // Set only by the whole-document/selection format-conversion batch. The
+    // batch owns one outer transaction plus one final numbering pass, so writers
+    // and the mutation kernel may avoid post-write checks that would immediately
+    // be repeated by that same batch. Interactive create/edit leaves this false.
+    internal bool BatchFormatConversion { get; set; }
 }
 
 internal sealed class WordFormulaHostWriteResult

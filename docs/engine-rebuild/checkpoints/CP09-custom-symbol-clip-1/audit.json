@@ -1,0 +1,16 @@
+{
+  "schema": "visualtex-engine-archive-audit-v1",
+  "status": "PASS",
+  "archive": "docs/engine-rebuild/checkpoints/CP09-custom-symbol-clip-1/visualtex-engine-workspace-0.1.0.tgz",
+  "archiveSha256": "9f2f917cfae37668263878c7b23665c3680f13647c39dc1bb170368c9984abff",
+  "archiveBytes": 490297,
+  "archiveFiles": 216,
+  "verifiedSourceFiles": 215,
+  "sourceSha256": "5c3d93e13e2ec79728bef40d89a6a7032564d0ec5dce55cf0d3daeee958b8614",
+  "archiveMatchedEveryVerifiedInput": true,
+  "currentSourceStillMatches": true,
+  "forbiddenArchiveFiles": [],
+  "verificationReceipt": "engine/target/p09-verification/2026-09-14T07-21-56-250Z/report.json",
+  "strictVerificationStatus": "PASS",
+  "writes": 0
+}

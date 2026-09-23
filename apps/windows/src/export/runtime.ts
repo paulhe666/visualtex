@@ -52,7 +52,10 @@ RegisterHTMLHandler(adaptor);
 
 function createTexInput(macros: Record<string, VisualTexMathJaxMacro>) {
   return new TeX({
-    packages: AllPackages,
+    // Export must fail at the parser boundary, never turn an unknown command
+    // or syntax error into a successful colored/text rendering. This also lets
+    // literal mtext/verb content pass without guessing from its characters.
+    packages: AllPackages.filter((name) => name !== "noundefined" && name !== "noerrors"),
     macros,
     formatError: (_jax: unknown, error: unknown) => {
       const message = readErrorMessage(error, "MathJax 无法解析当前 LaTeX 公式。");
@@ -403,7 +406,7 @@ export function svgToBase64(svg: string) {
   return encodeUtf8Base64(svg);
 }
 
-export function latexToMathMl(latex: string, displayMode = true) {
+export async function latexToMathMl(latex: string, displayMode = true) {
   const source = expandCustomSymbolsForMathMl(prepareLatex(latex));
   const root = mathMlDocument.convert(source, {
     display: displayMode,
@@ -417,10 +420,10 @@ export function latexToMathMl(latex: string, displayMode = true) {
   return mathMl;
 }
 
-export function latexToSvg(
+export async function latexToSvg(
   latex: string,
   options: SvgExportOptions = DEFAULT_OPTIONS,
-): SvgExportResult {
+): Promise<SvgExportResult> {
   const source = expandCustomSymbolsForSvg(prepareLatex(latex));
   const fontSizePt = positiveFinite(options.fontSizePt, DEFAULT_OPTIONS.fontSizePt);
   const paddingPx = nonNegativeFinite(options.paddingPx, DEFAULT_OPTIONS.paddingPx);

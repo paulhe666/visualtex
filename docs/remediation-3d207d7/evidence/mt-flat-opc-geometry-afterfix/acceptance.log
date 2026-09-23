@@ -1,0 +1,34 @@
+Acceptance mode: word-mathtype-insert-scaling
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+[MATHTYPE INSERT SCALING] Preserving 1 pre-existing MathType process(es); the acceptance requires that insertion create no additional process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[MATHTYPE INSERT INLINE] 10/60 elapsed=344ms
+[MATHTYPE INSERT INLINE] 20/60 elapsed=323ms
+[MATHTYPE INSERT INLINE] 30/60 elapsed=341ms
+[MATHTYPE INSERT INLINE] 40/60 elapsed=325ms
+[MATHTYPE INSERT INLINE] 50/60 elapsed=322ms
+[MATHTYPE INSERT INLINE] 60/60 elapsed=350ms
+[MATHTYPE INSERT SCALING INLINE] count=60 earlyMedian=356.6ms lateMedian=339.5ms ratio=0.952 slope=-0.243ms/formula total=20411.5ms
+[perf] update-numbers.health-fail reason=no-parseable-field-codes
+      [perf] number-format.caption-inventory: +45ms (45ms)
+      [perf] number-format.field-batch: +4ms (49ms)
+    [perf] SetEquationNumberFormat.fast: 0 formulas in 62ms
+[MATHTYPE INSERT BLOCK] 10/40 elapsed=481ms
+[MATHTYPE INSERT BLOCK] 20/40 elapsed=490ms
+[MATHTYPE INSERT BLOCK] 30/40 elapsed=485ms
+[MATHTYPE INSERT BLOCK] 40/40 elapsed=491ms
+[MATHTYPE INSERT SCALING NUMBERED] count=40 earlyMedian=473.7ms lateMedian=480.1ms ratio=1.014 slope=0.273ms/formula total=19214.8ms
+[perf] update-numbers.health-fail reason=no-parseable-field-codes
+      [perf] number-format.caption-inventory: +27ms (27ms)
+      [perf] number-format.field-batch: +0ms (27ms)
+    [perf] SetEquationNumberFormat.fast: 0 formulas in 33ms
+[MATHTYPE INSERT BLOCK] 10/24 elapsed=493ms
+[MATHTYPE INSERT BLOCK] 20/24 elapsed=538ms
+[MATHTYPE INSERT BLOCK] 24/24 elapsed=530ms
+[MATHTYPE INSERT SCALING DISTANT-NUMBERED] count=24 earlyMedian=493.0ms lateMedian=537.4ms ratio=1.090 slope=3.500ms/formula total=12247.4ms
+[MATHTYPE INSERT SCALING PASS] Interactive insertion remained effectively flat through 60 inline, 40 adjacent-numbered and 24 prose-separated numbered Equation.DSMT4 formulas; all objects and number fields survived save/reopen and MathTypeProcessCount=0.
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\mt-flat-opc-geometry-afterfix

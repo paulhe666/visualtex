@@ -111,7 +111,8 @@ internal static partial class Program
         System.Drawing.Bitmap? screenshot = null;
         try
         {
-            application = CreateWordApplication(visible: true);
+            application = CreateFreshAcceptanceAutomationWord(artifactRoot);
+            application.Visible = true;
             document = application.Documents.Add(Visible: true);
             var documentPath = Path.Combine(
                 artifactRoot,
@@ -399,11 +400,15 @@ internal static partial class Program
                 && metadata.WordDisplayPreviewBottomWhitespaceRatio.HasValue,
                 "Paragraph-mark alignment fixture lost its display preview ink metrics.");
             var expectedObjectPosition =
-                WordInlineAlignment.CalculateDisplayInkCenterPosition(
+                WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
                     shape.Height,
-                    (float)metadata.WordDisplayPreviewInkHeightRatio!.Value,
-                    (float)metadata.WordDisplayPreviewBottomWhitespaceRatio!.Value,
-                    paragraphMarkFont.Size);
+                    (float)(metadata.RenderHeightPx ?? 0d),
+                    metadata.Baseline.HasValue
+                        ? (float?)metadata.Baseline.Value
+                        : null,
+                    existingFontPosition: null,
+                    sourceSemanticFontSizePoints: semanticFontSize,
+                    targetSemanticFontSizePoints: semanticFontSize);
             var measurement = new
             {
                 formulaId,
@@ -470,7 +475,7 @@ internal static partial class Program
                 expectedObjectPosition,
                 objectResultFont.Position,
                 0.1f,
-                "The unnumbered VisualTeX display OLE did not retain the preview-ink-center position.");
+                "The unnumbered VisualTeX display OLE did not retain the shared numbered/unnumbered exported-baseline position.");
             AssertNear(
                 0f,
                 paragraphMarkFont.Position,

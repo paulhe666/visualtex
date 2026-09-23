@@ -1,0 +1,64 @@
+{
+  "schema": "visualtex-p12-real-office-acceptance-v1",
+  "status": "PASS",
+  "date": "2026-09-15",
+  "environment": {
+    "platform": "Windows",
+    "office": "Office 2021 x64 / Microsoft 365 desktop runtime already installed on test machine",
+    "companion": "apps/windows/src-tauri/target/debug/visualtex.exe",
+    "officeUi": "apps/windows/dist-office-windows-native",
+    "userWordProcessProtected": 63776
+  },
+  "word": {
+    "dedicatedDocument": "engine/target/p12-real-office/P12-Office-Core.docx",
+    "inlineVisualTeXOleCreate": true,
+    "inlineVisualTeXOleEditInPlace": true,
+    "displayVisualTeXOleNumbered": true,
+    "displayVisualTeXOleUnnumbered": true,
+    "inlineWordOmml": true,
+    "displayMathTypeOleNumbered": true,
+    "mathTypeProgIdVerified": "Equation.DSMT4",
+    "cancelLeavesDocumentUnchanged": true,
+    "closeXAutoCommit": true,
+    "editorWindowReused": true,
+    "saveReopenStructureStable": true,
+    "reopenedSourceVerified": "x^{2}+1+z+q",
+    "postReopen": {
+      "inlineShapes": 4,
+      "oMaths": 1,
+      "fields": 11,
+      "bookmarks": 7,
+      "visualTeXSeqFields": 1,
+      "mathTypeNumberFields": 5
+    }
+  },
+  "powerPoint": {
+    "currentSupportedCreateMode": "crossPlatformPicture",
+    "realRibbonCreate": true,
+    "coreExportVerified": true,
+    "mathJaxInExport": false,
+    "shapeCreated": true,
+    "shapeNamePrefix": "VisualTeX_",
+    "metadataPersistedInAlternativeText": true,
+    "editSessionRestoredSource": "e^{i\\pi}+1=0",
+    "editUpdatesExistingShapeWithoutDuplicate": true,
+    "userConfirmedInsertWorks": true
+  },
+  "runtime": {
+    "interactiveEditorUsesCore": true,
+    "legacyMathFieldAbsentWhenCoreOwned": true,
+    "vstoConvertRemainsLegacy": true,
+    "remoteOfficeFontAccessUsesMinimalTauriPermission": true,
+    "officeServerRoutesModified": false,
+    "systemMathFontRequiresOpenTypeMathTable": true,
+    "fallbackMathFont": "Latin Modern Math"
+  },
+  "protection": {
+    "userWordProcessUntouched": true,
+    "wordVstoAlgorithmsModified": false,
+    "powerPointVstoAlgorithmsModified": false,
+    "officeSessionWireModified": false,
+    "numberingAlgorithmsModified": false,
+    "comOleContractsModified": false
+  }
+}

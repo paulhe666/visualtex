@@ -1,0 +1,217 @@
+{
+  "schema": "visualtex-p13-real-office-acceptance-v1",
+  "status": "PASS",
+  "date": "2026-09-16",
+  "environment": {
+    "platform": "Windows",
+    "office": "Office 2021 x64 desktop Word acceptance",
+    "companion": "apps/windows/src-tauri/target/debug/visualtex.exe --office-background",
+    "officeUi": "apps/windows/dist-office-windows-native",
+    "realRibbonUiRequired": true,
+    "userWordProcessUntouched": true
+  },
+  "runtime": {
+    "interactiveEditorStillUsesCore": true,
+    "hiddenConverterUsesHeadlessCore": true,
+    "hiddenConverterMountsInteractiveEditor": false,
+    "hiddenConverterMountsMathLive": false,
+    "officeServerRoutesModifiedByP13": false,
+    "officeSessionWireModifiedByP13": false,
+    "wordVstoAlgorithmsModifiedByP13": false,
+    "powerPointVstoAlgorithmsModifiedByP13": false,
+    "numberingOrReferenceAlgorithmsModifiedByP13": false,
+    "comOleContractsModifiedByP13": false
+  },
+  "fullDocument100": {
+    "sourceFormulas": 100,
+    "paragraphs": 101,
+    "redrawVisualTeX": {
+      "result": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-redraw-native-result.json",
+      "audit": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-redraw-audit.json",
+      "count": 100,
+      "productMs": 6330
+    },
+    "directions": [
+      {
+        "source": "VisualTeX",
+        "target": "OMML",
+        "result": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-vt-omml-result.json",
+        "audit": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-vt-omml-audit.json",
+        "count": 100,
+        "productMs": 12257
+      },
+      {
+        "source": "OMML",
+        "target": "MathType",
+        "result": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-omml-mt-result.json",
+        "audit": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-omml-mt-audit.json",
+        "count": 100,
+        "productMs": 32531
+      },
+      {
+        "source": "MathType",
+        "target": "OMML",
+        "result": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-mt-omml-result.json",
+        "audit": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-mt-omml-audit.json",
+        "count": 100,
+        "productMs": 13164
+      },
+      {
+        "source": "OMML",
+        "target": "VisualTeX",
+        "result": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-omml-vt-result.json",
+        "audit": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-omml-vt-audit.json",
+        "count": 100,
+        "productMs": 27268
+      },
+      {
+        "source": "VisualTeX",
+        "target": "MathType",
+        "result": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-vt-mt-result.json",
+        "audit": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-vt-mt-audit.json",
+        "count": 100,
+        "productMs": 12140
+      },
+      {
+        "source": "MathType",
+        "target": "VisualTeX",
+        "result": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-mt-vt-retry2-result.json",
+        "audit": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-final-audit.json",
+        "count": 100,
+        "productMs": 43240
+      }
+    ],
+    "allDirectionsFailedZero": true,
+    "identityAndOrderPreserved": true,
+    "paragraphCountStable": true
+  },
+  "selectedConversion": {
+    "visualTeXToOmml": {
+      "log": "docs/remediation-3d207d7/evidence/p13-core-office-real-1-word-hook.log",
+      "count": 1,
+      "failed": 0
+    },
+    "ommlToMathType": {
+      "result": "docs/remediation-3d207d7/evidence/p13-selected-omml-mt-result.json",
+      "count": 1,
+      "productMs": 479
+    },
+    "mathTypeToVisualTeX": {
+      "result": "docs/remediation-3d207d7/evidence/p13-selected-mt-vt-result.json",
+      "count": 1,
+      "productMs": 615
+    }
+  },
+  "mixedMathType146": {
+    "beforeAudit": "docs/remediation-3d207d7/evidence/p13-core-mt146-vt-final-before-audit.json",
+    "conversionResult": "docs/remediation-3d207d7/evidence/p13-core-mt146-vt-final-convert-result.json",
+    "afterAudit": "docs/remediation-3d207d7/evidence/p13-core-mt146-vt-final-after-audit.json",
+    "sourceMathTypeObjects": 146,
+    "unrelatedInlineShapes": 2,
+    "unrelatedOmml": 1,
+    "convertedVisualTeXObjects": 146,
+    "failed": 0,
+    "productMs": 67962,
+    "unrelatedContentPreserved": true
+  },
+  "sourceRestore": {
+    "log": "docs/remediation-3d207d7/evidence/p13-core-mt146-vt-final-word-redraw.log",
+    "afterAudit": "docs/remediation-3d207d7/evidence/p13-core-mt146-vt-final-restored-audit.json",
+    "mode": "nativeOle",
+    "formulas": 146,
+    "visualTeXObjectsAfterRestore": 0,
+    "unrelatedInlineShapesAfterRestore": 2,
+    "unrelatedOmmlAfterRestore": 1,
+    "paragraphsAfterRestore": 97
+  },
+  "redraw1000": {
+    "sourceDocument": "docs/remediation-3d207d7/evidence/p13-core-office-1000-source.docx",
+    "uiResult": "docs/remediation-3d207d7/evidence/p13-core-office-1000-ui-result.json",
+    "redrawLog": "docs/remediation-3d207d7/evidence/p13-core-office-1000-word-redraw.log",
+    "hookLog": "docs/remediation-3d207d7/evidence/p13-core-office-1000-word-hook.log",
+    "formulas": 1000,
+    "unique": 1000,
+    "skipped": 0,
+    "renderAverageMs": 8,
+    "renderMaxMs": 49,
+    "insertTotalMs": 7233,
+    "insertMaxMs": 127,
+    "materializedVerified": true,
+    "materializedVerificationMs": 17759,
+    "inlineFormulas": 500,
+    "displayFormulas": 500,
+    "paragraphs": 1002,
+    "intentionalUndo": {
+      "inspect": "docs/remediation-3d207d7/evidence/p13-core-office-1000-undo-inspect.json",
+      "verification": "docs/remediation-3d207d7/evidence/p13-core-office-1000-undo-verified.json",
+      "sourceTextRestored": true,
+      "isNotAProductRollback": true,
+      "fullFormattingMatch": false
+    }
+  },
+  "bulkImport": {
+    "fixture": "engine/fixtures/p13-office-bulk-import.md",
+    "log": "docs/remediation-3d207d7/evidence/p13-core-bulk-import-final-word-bulk.log",
+    "audit": "docs/remediation-3d207d7/evidence/p13-core-bulk-import-final-after-audit.json",
+    "auditXml": "docs/remediation-3d207d7/evidence/p13-core-bulk-import-final-after-audit.xml",
+    "blocks": 7,
+    "formulas": 3,
+    "inlineFormulas": 1,
+    "displayFormulas": 2,
+    "targetMode": "wordOmml",
+    "wordOmmlCount": 3,
+    "oleCount": 0,
+    "paragraphs": 8,
+    "bookmarks": 3,
+    "proseOrderVerified": true,
+    "complexMatrixIncluded": true,
+    "longFormulaIncluded": true
+  },
+  "browserAndPerformance": {
+    "converterSmoke": "apps/windows/scripts/p13_office_core_converter_browser_smoke.mjs",
+    "interactiveGuard": "apps/windows/scripts/p13_office_interactive_core_guard.mjs",
+    "performance": "apps/windows/scripts/p13_office_core_converter_performance.mjs",
+    "malformedSessionFailsWithoutPartialExport": true,
+    "batchContinuesAfterMalformedSession": true,
+    "batchOrderAndIdentityPreserved": true,
+    "mathMlOnlySkipsGraphicalPipeline": true,
+    "equationTagCompatibilityUsesCore": true,
+    "mixed100": {
+      "count": 100,
+      "failures": 0,
+      "elapsedMs": 1062,
+      "averageMsPerFormula": 10.62
+    },
+    "omml1000": {
+      "count": 1000,
+      "failures": 0,
+      "elapsedMs": 1924,
+      "averageMsPerFormula": 1.924
+    }
+  },
+  "runtimeObservation": {
+    "historicalNonDeterministicCompanionCrashObservedDuringExploration": true,
+    "historicalExceptionCode": "0xc000001d",
+    "historicalFaultOffset": "0x114eace",
+    "mappedTo": "tao EventLoopRunner Rc clone during Window::new",
+    "attributedToP13CoreConversion": false,
+    "deterministicallyReproduced": false,
+    "finalRealWordMathTypeToVisualTeX146Passed": true,
+    "finalSelectedMathTypeToVisualTeXPassed": true,
+    "finalConverterWindowLifecycleStressRounds": 20,
+    "newCrashDuringFinalValidation": false,
+    "carryForward": "P14 runtime/fault hardening observation; no evidence of a formula-core semantic or identity failure."
+  },
+  "protection": {
+    "userWordDocumentsSavedOrClosed": false,
+    "officeServerModifiedByP13": false,
+    "contractsModifiedByP13": false,
+    "vstoSharedModifiedByP13": false,
+    "windowsOleBridgeModifiedByP13": false,
+    "wordVstoModifiedByP13": false,
+    "powerPointVstoModifiedByP13": false,
+    "gitCommitCreated": false,
+    "gitPushPerformed": false,
+    "installerOrReleaseActionPerformed": false
+  }
+}

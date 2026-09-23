@@ -1,0 +1,26 @@
+[visualtex->omml count=10]
+capture|FormatConversion.CaptureTarget.VisualTeXToOmml|calls=10|ms=1776.623
+capture|FormatConversion.NumberingResolver.VisualTeX|calls=10|ms=1235.116
+apply|FormatConversion.Replace.VisualTeXToOmml|calls=10|ms=8946.467
+apply|FormatConversion.ReplaceInsideTransaction.VisualTeX->Omml|calls=10|ms=8944.939
+apply|FormatConversion.OmmlHostWriter.Insert|calls=10|ms=4591.685
+apply|FormatConversion.DetachCanonical.VisualTeX|calls=10|ms=3506.043
+apply|FormatConversion.ResolveCapturedHost.VisualTeX|calls=10|ms=3195.028
+apply|FormatConversion.NumberingResolver.VisualTeX|calls=10|ms=2317.751
+apply|FormatConversion.VisualTeXNumbering.Detach|calls=10|ms=1558.349
+apply|FormatConversion.RefreshCanonicalNumbers|calls=1|ms=1354.698
+apply|FormatConversion.NumberingResolver.Omml|calls=10|ms=709.44
+apply|FormatConversion.CaptureReferenceCounts|calls=1|ms=127.617
+[visualtex->omml count=20]
+capture|FormatConversion.CaptureTarget.VisualTeXToOmml|calls=20|ms=3355.269
+capture|FormatConversion.NumberingResolver.VisualTeX|calls=20|ms=2372.57
+apply|FormatConversion.Replace.VisualTeXToOmml|calls=20|ms=18193.769
+apply|FormatConversion.ReplaceInsideTransaction.VisualTeX->Omml|calls=20|ms=18193.72
+apply|FormatConversion.OmmlHostWriter.Insert|calls=20|ms=9557.392
+apply|FormatConversion.DetachCanonical.VisualTeX|calls=20|ms=6662.137
+apply|FormatConversion.ResolveCapturedHost.VisualTeX|calls=20|ms=4716.947
+apply|FormatConversion.NumberingResolver.VisualTeX|calls=20|ms=3316.692
+apply|FormatConversion.RefreshCanonicalNumbers|calls=1|ms=3113.195
+apply|FormatConversion.VisualTeXNumbering.Detach|calls=20|ms=2654.905
+apply|FormatConversion.NumberingResolver.Omml|calls=20|ms=2007.694
+apply|FormatConversion.CaptureReferenceCounts|calls=1|ms=315.371

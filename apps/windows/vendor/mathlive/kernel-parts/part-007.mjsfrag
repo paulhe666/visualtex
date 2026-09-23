@@ -1,0 +1,1655 @@
+    for (const child of children) {
+      child.parent = this;
+      child.parentBranch = branchName;
+      branch.push(child);
+    }
+    this.isDirty = true;
+  }
+  /**
+   * Return the last atom that was added
+   */
+  addChildrenAfter(children, after) {
+    console.assert(children.length === 0 || children[0].type !== "first");
+    console.assert(after.parentBranch !== void 0);
+    const branch = this.createBranch(after.parentBranch);
+    branch.splice(branch.indexOf(after) + 1, 0, ...children);
+    this.isDirty = true;
+    for (const child of children) {
+      child.parent = this;
+      child.parentBranch = after.parentBranch;
+    }
+    return children[children.length - 1];
+  }
+  removeBranch(name) {
+    const children = this.branch(name);
+    if (isNamedBranch(name)) this._branches[name] = void 0;
+    if (!children) return [];
+    for (const child of children) {
+      child.parent = void 0;
+      child.parentBranch = void 0;
+    }
+    console.assert(children[0].type === "first");
+    const [_first, ...rest] = children;
+    this.isDirty = true;
+    return rest;
+  }
+  removeChild(child) {
+    console.assert(child.parent === this);
+    if (child.type === "first") return;
+    const branch = this.branch(child.parentBranch);
+    const index = branch.indexOf(child);
+    console.assert(index >= 0);
+    branch.splice(index, 1);
+    this.isDirty = true;
+    child.parent = void 0;
+    child.parentBranch = void 0;
+  }
+  get siblings() {
+    if (!this.parent) return [];
+    return this.parent.branch(this.parentBranch);
+  }
+  get firstSibling() {
+    return this.siblings[0];
+  }
+  get lastSibling() {
+    const { siblings } = this;
+    return siblings[siblings.length - 1];
+  }
+  get isFirstSibling() {
+    return this === this.firstSibling;
+  }
+  get isLastSibling() {
+    return this === this.lastSibling;
+  }
+  get hasNoSiblings() {
+    return this.siblings.length === 1;
+  }
+  get leftSibling() {
+    console.assert(this.parent !== void 0);
+    const siblings = this.parent.branch(this.parentBranch);
+    return siblings[siblings.indexOf(this) - 1];
+  }
+  get rightSibling() {
+    console.assert(this.parent !== void 0);
+    const siblings = this.parent.branch(this.parentBranch);
+    return siblings[siblings.indexOf(this) + 1];
+  }
+  get hasChildren() {
+    return Boolean(this._branches && this.children.length > 0);
+  }
+  get firstChild() {
+    console.assert(this.hasChildren);
+    return this.children[0];
+  }
+  get lastChild() {
+    console.assert(this.hasChildren);
+    const { children } = this;
+    return children[children.length - 1];
+  }
+  /**
+   * All the children of this atom.
+   *
+   * The order of the atoms is the order in which they
+   * are navigated using the keyboard.
+   */
+  get children() {
+    if (this._children) return this._children;
+    if (!this._branches) return [];
+    const result = [];
+    for (const branchName of NAMED_BRANCHES) {
+      if (this._branches[branchName]) {
+        for (const x of this._branches[branchName]) {
+          result.push(...x.children);
+          result.push(x);
+        }
+      }
+    }
+    this._children = result;
+    return result;
+  }
+  /**
+   * Render this atom as a box.
+   *
+   * The parent context (color, size...) will be applied
+   * to the result.
+   *
+   */
+  render(parentContext) {
+    if (this.type === "first" && !parentContext.atomIdsSettings) return null;
+    const def = getDefinition(this.command, this.mode);
+    if (def == null ? void 0 : def.render) return def.render(this, parentContext);
+    const context = new Context({ parent: parentContext }, this.style);
+    let result = this.createBox(context, {
+      classes: !this.parent ? "ML__base" : ""
+    });
+    if (!result) return null;
+    if (!this.subsupPlacement && (this.superscript || this.subscript)) {
+      result = this.attachSupsub(context, { base: result });
+    }
+    return result.wrap(context);
+  }
+  attachSupsub(parentContext, options) {
+    var _a3;
+    const base = options.base;
+    const superscript = this.superscript;
+    const subscript = this.subscript;
+    if (!superscript && !subscript) return base;
+    let supBox = null;
+    let subBox = null;
+    const isCharacterBox = (_a3 = options.isCharacterBox) != null ? _a3 : this.isCharacterBox();
+    let supShift = 0;
+    if (superscript) {
+      const context = new Context({
+        parent: parentContext,
+        mathstyle: "superscript"
+      });
+      supBox = _Atom.createBox(context, superscript);
+      if (!isCharacterBox) {
+        supShift = base.height - parentContext.metrics.supDrop * context.scalingFactor;
+      }
+    }
+    let subShift = 0;
+    if (subscript) {
+      const context = new Context({
+        parent: parentContext,
+        mathstyle: "subscript"
+      });
+      subBox = _Atom.createBox(context, subscript);
+      if (!isCharacterBox) {
+        subShift = base.depth + parentContext.metrics.subDrop * context.scalingFactor;
+      }
+    }
+    let minSupShift;
+    if (parentContext.isDisplayStyle)
+      minSupShift = parentContext.metrics.sup1;
+    else if (parentContext.isCramped)
+      minSupShift = parentContext.metrics.sup3;
+    else minSupShift = parentContext.metrics.sup2;
+    const scriptspace = 0.5 / PT_PER_EM / parentContext.scalingFactor;
+    let supsub = null;
+    if (subBox && supBox) {
+      supShift = Math.max(
+        supShift,
+        minSupShift,
+        supBox.depth + 0.25 * parentContext.metrics.xHeight
+      );
+      subShift = Math.max(subShift, parentContext.metrics.sub2);
+      const ruleWidth = parentContext.metrics.defaultRuleThickness;
+      if (supShift - supBox.depth - (subBox.height - subShift) < 4 * ruleWidth) {
+        subShift = 4 * ruleWidth - (supShift - supBox.depth) + subBox.height;
+        const psi = 0.8 * parentContext.metrics.xHeight - (supShift - supBox.depth);
+        if (psi > 0) {
+          supShift += psi;
+          subShift -= psi;
+        }
+      }
+      const slant = this.type === "extensible-symbol" && base.italic ? -base.italic : 0;
+      supsub = new VBox({
+        individualShift: [
+          { box: subBox, shift: subShift, marginLeft: slant },
+          { box: supBox, shift: -supShift }
+        ]
+      });
+    } else if (subBox && !supBox) {
+      subShift = Math.max(
+        subShift,
+        parentContext.metrics.sub1,
+        subBox.height - 0.8 * X_HEIGHT
+      );
+      supsub = new VBox({
+        shift: subShift,
+        children: [
+          {
+            box: subBox,
+            marginRight: scriptspace,
+            marginLeft: this.isCharacterBox() ? -base.italic : 0
+          }
+        ]
+      });
+    } else if (!subBox && supBox) {
+      supShift = Math.max(
+        supShift,
+        minSupShift,
+        supBox.depth + 0.25 * X_HEIGHT
+      );
+      supsub = new VBox({
+        shift: -supShift,
+        children: [{ box: supBox, marginRight: scriptspace }]
+      });
+    }
+    return new Box(
+      [
+        base,
+        new Box(supsub, {
+          caret: this.caret,
+          isSelected: this.isSelected,
+          classes: "ML__msubsup"
+        })
+      ],
+      { type: options.type }
+    );
+  }
+  attachLimits(ctx, options) {
+    const above = this.superscript ? _Atom.createBox(
+      new Context({ parent: ctx, mathstyle: "superscript" }, this.style),
+      this.superscript
+    ) : null;
+    const below = this.subscript ? _Atom.createBox(
+      new Context({ parent: ctx, mathstyle: "subscript" }, this.style),
+      this.subscript
+    ) : null;
+    if (!above && !below) return options.base.wrap(ctx);
+    return makeLimitsStack(ctx, __spreadProps(__spreadValues({}, options), { above, below }));
+  }
+  bind(context, box) {
+    if (!box || context.isPhantom || this.value === "\u200B") return box;
+    let parent = this.parent;
+    while (parent && !parent.captureSelection) parent = parent.parent;
+    const visualTexEditableCapturedPlaceholder =
+      (this.type === "placeholder" || this.type === "prompt") &&
+      parent?.type === "accent";
+    if ((parent == null ? void 0 : parent.captureSelection) && !visualTexEditableCapturedPlaceholder)
+      return box;
+    if (!this.id) this.id = context.makeID();
+    box.atomID = this.id;
+    return box;
+  }
+  /**
+   * Create a box with the specified body.
+   */
+  createBox(context, options) {
+    var _a3, _b3, _c2, _d2;
+    const value = (_a3 = this.value) != null ? _a3 : this.body;
+    const type = (_b3 = options == null ? void 0 : options.boxType) != null ? _b3 : boxType(this.type);
+    let classes = (_c2 = options == null ? void 0 : options.classes) != null ? _c2 : "";
+    if (this.mode === "text") classes += " ML__text";
+    const result = typeof value === "string" || value === void 0 ? new Box(value != null ? value : null, {
+      type,
+      isSelected: this.isSelected,
+      mode: this.mode,
+      maxFontSize: context.scalingFactor,
+      style: __spreadProps(__spreadValues({
+        variant: "normal"
+      }, this.style), {
+        fontSize: Math.max(
+          1,
+          context.size + context.mathstyle.sizeDelta
+        )
+      }),
+      letterShapeStyle: context.letterShapeStyle,
+      classes
+    }) : (_d2 = _Atom.createBox(context, value, { type, classes })) != null ? _d2 : new Box(null);
+    if (context.isTight) result.isTight = true;
+    if (this.mode !== "math" || this.style.variant === "main")
+      result.italic = 0;
+    result.right = result.italic;
+    this.bind(context, result);
+    if (this.caret) {
+      if (!this.superscript && !this.subscript) result.caret = this.caret;
+    }
+    return result;
+  }
+  /** Return true if a digit, or a decimal point, or a french decimal `{,}` */
+  isDigit() {
+    var _a3;
+    if (this.type === "mord" && this.value) return /^[\d,\.]$/.test(this.value);
+    if (this.type === "group" && ((_a3 = this.body) == null ? void 0 : _a3.length) === 2)
+      return this.body[0].type === "first" && this.body[1].value === ",";
+    return false;
+  }
+  asDigit() {
+    var _a3;
+    if (this.type === "mord" && this.value && /^[\d,\.]$/.test(this.value))
+      return this.value;
+    if (this.type === "group" && ((_a3 = this.body) == null ? void 0 : _a3.length) === 2) {
+      if (this.body[0].type === "first" && this.body[1].value === ",")
+        return ".";
+    }
+    return "";
+  }
+};
+function getStyleRuns(atoms) {
+  let style = void 0;
+  const runs = [];
+  let run = [];
+  for (const atom of atoms) {
+    if (atom.type === "first") {
+      run.push(atom);
+      continue;
+    }
+    if (!style && !atom.style) run.push(atom);
+    else {
+      const atomStyle = atom.style;
+      if (style && atomStyle.color === style.color && atomStyle.backgroundColor === style.backgroundColor && atomStyle.fontSize === style.fontSize) {
+        run.push(atom);
+      } else {
+        if (run.length > 0) runs.push(run);
+        run = [atom];
+        style = atomStyle;
+      }
+    }
+  }
+  if (run.length > 0) runs.push(run);
+  return runs;
+}
+function renderStyleRun(parentContext, atoms, options) {
+  var _a3, _b3, _c2, _d2, _e;
+  if (!atoms || atoms.length === 0) return null;
+  const context = new Context({ parent: parentContext }, options.style);
+  const displaySelection = !((_a3 = context.atomIdsSettings) == null ? void 0 : _a3.groupNumbers);
+  let boxes = [];
+  if (atoms.length === 1) {
+    const atom = atoms[0];
+    const box = atom.render(context);
+    if (box) {
+      if (displaySelection && atom.isSelected) box.selected(true);
+      boxes = [box];
+    }
+  } else {
+    let digitOrTextStringID = "";
+    let lastWasDigit = true;
+    for (const atom of atoms) {
+      if (((_b3 = context.atomIdsSettings) == null ? void 0 : _b3.groupNumbers) && digitOrTextStringID && (lastWasDigit && atom.isDigit() || !lastWasDigit && isText(atom)))
+        context.atomIdsSettings.overrideID = digitOrTextStringID;
+      const box = atom.render(context);
+      if (context.atomIdsSettings)
+        context.atomIdsSettings.overrideID = void 0;
+      if (box) {
+        if ((_c2 = context.atomIdsSettings) == null ? void 0 : _c2.groupNumbers) {
+          if (atom.isDigit() || isText(atom)) {
+            if (!digitOrTextStringID || lastWasDigit !== atom.isDigit()) {
+              lastWasDigit = atom.isDigit();
+              digitOrTextStringID = (_d2 = atom.id) != null ? _d2 : "";
+            }
+          }
+          if (digitOrTextStringID && (!(atom.isDigit() || isText(atom)) || !atom.hasEmptyBranch("superscript") || !atom.hasEmptyBranch("subscript"))) {
+            digitOrTextStringID = "";
+          }
+        }
+        if (displaySelection && atom.isSelected) box.selected(true);
+        boxes.push(box);
+      }
+    }
+  }
+  if (boxes.length === 0) return null;
+  const result = new Box(boxes, __spreadProps(__spreadValues({
+    isTight: context.isTight
+  }, options), {
+    type: (_e = options.type) != null ? _e : "lift"
+  }));
+  result.isSelected = boxes.every((x) => x.isSelected);
+  return result.wrap(context);
+}
+function isText(atom) {
+  return atom.mode === "text";
+}
+function argumentsToJson(args) {
+  return args.map((arg) => {
+    if (arg === null) return "<null>";
+    if (Array.isArray(arg) && arg[0] instanceof Atom)
+      return { atoms: arg.map((x) => x.toJson()) };
+    if (typeof arg === "object" && "group" in arg)
+      return { group: arg.group.map((x) => x.toJson()) };
+    return arg;
+  });
+}
+
+// src/atoms/text.ts
+var TextAtom = class _TextAtom extends Atom {
+  constructor(command, value, style) {
+    super({
+      type: "text",
+      command,
+      mode: "text",
+      displayContainsHighlight: true
+    });
+    this.value = value;
+    this.verbatimLatex = value;
+    this.applyStyle(style);
+  }
+  static fromJson(json) {
+    return new _TextAtom(json.command, json.value, json.style);
+  }
+  render(context) {
+    const result = this.createBox(context);
+    if (this.caret) result.caret = this.caret;
+    return result;
+  }
+  _serialize(_options) {
+    var _a3;
+    return (_a3 = this.verbatimLatex) != null ? _a3 : charToLatex("text", this.value.codePointAt(0));
+  }
+};
+
+// src/editor-model/selection-utils.ts
+function compareSelection(a, b) {
+  if (a.direction === b.direction) {
+    const l = a.ranges.length;
+    if (b.ranges.length === l) {
+      let i = 0;
+      while (i < l && compareRange(a.ranges[i], b.ranges[i]) === "equal") i++;
+      return i === l ? "equal" : "different";
+    }
+  }
+  return "different";
+}
+function compareRange(a, b) {
+  if (a[0] === b[0] && a[1] === b[1]) return "equal";
+  return "different";
+}
+function range(selection) {
+  let first = Infinity;
+  let last = -Infinity;
+  for (const range2 of selection.ranges) {
+    first = Math.min(first, range2[0], range2[1]);
+    last = Math.max(last, range2[0], range2[1]);
+  }
+  return [first, last];
+}
+function isOffset(value) {
+  return typeof value === "number" && !Number.isNaN(value);
+}
+function isRange(value) {
+  return Array.isArray(value) && value.length === 2;
+}
+function isSelection(value) {
+  return value !== void 0 && value !== null && typeof value === "object" && "ranges" in value && Array.isArray(value.ranges);
+}
+function getMode(model, offset) {
+  const atom = model.at(offset);
+  let result;
+  if (atom) {
+    result = atom.mode;
+    let ancestor = atom.parent;
+    while (!result && ancestor) {
+      if (ancestor) result = ancestor.mode;
+      ancestor = ancestor.parent;
+    }
+  }
+  // VisualTeX: a caret position is represented by the atom immediately to
+  // its left. At the right edge of a consecutive text run this used to make
+  // the visually-outside caret inherit "text" forever, so every subsequent
+  // keystroke was absorbed into \text{...}. Keep text mode only while the
+  // caret is actually inside a text run. Its right boundary belongs to math.
+  if (result === "text" && atom?.mode === "text") {
+    const right = atom.rightSibling;
+    if (!right || right.mode !== "text") return "math";
+  }
+  return result;
+}
+
+// src/editor/shortcuts.ts
+function validateShortcut(siblings, shortcut) {
+  if (!shortcut) return "";
+  if (typeof shortcut === "string") return shortcut;
+  if (!siblings || shortcut.after === void 0) return shortcut.value;
+  let nothing = false;
+  let letter = false;
+  let digit = false;
+  let isFunction = false;
+  let frac = false;
+  let surd = false;
+  let binop = false;
+  let relop = false;
+  let operator = false;
+  let punct = false;
+  let array = false;
+  let openfence = false;
+  let closefence = false;
+  let text = false;
+  let space = false;
+  let sibling = siblings[0];
+  let index = 0;
+  while ((sibling == null ? void 0 : sibling.type) && /^(subsup|placeholder)$/.test(sibling.type)) {
+    index += 1;
+    sibling = siblings[index];
+  }
+  nothing = !sibling || sibling.type === "first";
+  if (sibling) {
+    text = sibling.mode === "text";
+    letter = !text && sibling.type === "mord" && LETTER.test(sibling.value);
+    digit = !text && sibling.type === "mord" && /\d+$/.test(sibling.value);
+    isFunction = !text && sibling.isFunction;
+    frac = sibling.type === "genfrac";
+    surd = sibling.type === "surd";
+    binop = sibling.type === "mbin";
+    relop = sibling.type === "mrel";
+    operator = sibling.type === "mop" || sibling.type === "operator" || sibling.type === "extensible-symbol";
+    punct = sibling.type === "mpunct" || sibling.type === "minner";
+    array = sibling.type === "array";
+    openfence = sibling.type === "mopen";
+    closefence = sibling.type === "mclose" || sibling.type === "leftright";
+    space = sibling.type === "space";
+  }
+  if (shortcut.after.includes("nothing") && nothing || shortcut.after.includes("letter") && letter || shortcut.after.includes("digit") && digit || shortcut.after.includes("function") && isFunction || shortcut.after.includes("frac") && frac || shortcut.after.includes("surd") && surd || shortcut.after.includes("binop") && binop || shortcut.after.includes("relop") && relop || shortcut.after.includes("operator") && operator || shortcut.after.includes("punct") && punct || shortcut.after.includes("array") && array || shortcut.after.includes("openfence") && openfence || shortcut.after.includes("closefence") && closefence || shortcut.after.includes("text") && text || shortcut.after.includes("space") && space)
+    return shortcut.value;
+  return "";
+}
+function getInlineShortcut(context, s, shortcuts) {
+  if (!shortcuts) return "";
+  return validateShortcut(context, shortcuts[s]);
+}
+
+// src/editor/shortcuts-definitions.ts
+var INLINE_SHORTCUTS = {
+  "&": "\\&",
+  "%": "\\%",
+  "$": "\\$",
+  // Primes
+  // "'": '^{\\prime}', // Conflicts with text zone shortcut
+  "''": "^{\\doubleprime}",
+  "'''": "^{\\prime\\prime\\prime}",
+  "''''": "^{\\prime\\prime\\prime\\prime}",
+  // Greek letters
+  "alpha": "\\alpha",
+  "delta": "\\delta",
+  "Delta": "\\Delta",
+  "pi": "\\pi",
+  "Pi": "\\Pi",
+  "theta": "\\theta",
+  "Theta": "\\Theta",
+  // Letter-like
+  "ii": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\imaginaryI"
+  },
+  "jj": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\imaginaryJ"
+  },
+  "ee": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\exponentialE"
+  },
+  "nabla": "\\nabla",
+  "grad": "\\nabla",
+  "del": "\\partial",
+  "deg": { after: "digit+space", value: "\\degree" },
+  "infty": "\\infty",
+  "\u221E": "\\infty",
+  // @TODO: doesn't work
+  // '&infin;': '\\infty',
+  // '&#8734;': '\\infty',
+  "oo": {
+    after: "nothing+digit+frac+surd+binop+relop+punct+array+openfence+closefence+space",
+    value: "\\infty"
+  },
+  // Big operators
+  "\u2211": "\\sum",
+  "sum": "\\sum_{#?}^{#?}",
+  "int": "\\int_{#?}^{#?}",
+  "prod": "\\prod_{#?}^{#?}",
+  "sqrt": "\\sqrt{#?}",
+  // '∫':                    '\\int',             // There's a alt-B command for this
+  "\u2206": "\\differentialD",
+  // @TODO: is \\diffD most common?
+  "\u2202": "\\differentialD",
+  //
+  // Functions
+  //
+  // The standard LaTeX commands (i.e. in the amsmath package) are:
+  // https://mirror.math.princeton.edu/pub/CTAN/macros/latex/required/amsmath/amsldoc.pdf
+  // \arccos, \arcsin, \arctan, \arg, \cos, \cosh, \cot, \coth, \csc, \deg, \det, \dim, \exp, \gcd, \hom, \inf, \injlim, \ker, \lg, \lim, \liminf, \limsup, \ln, \log, \max, \min, \Pr, \projlim, \sec, \sin, \sinh, \sup, \tan, \tanh
+  // \varinjlim, \varprojlim, \varlimsup, \varliminf
+  // Although we support rendering of non-standard commands (i.e. \arsinh)
+  // we avoid generating them when using the shortcuts.
+  "sin": "\\sin",
+  "cos": "\\cos",
+  "tan": "\\tan",
+  "arccos": "\\arccos",
+  "arcsin": "\\arcsin",
+  "arctan": "\\arctan",
+  "arctg": "\\operatorname{arctg}",
+  "arcsec": "\\operatorname{arcsec}",
+  "arccsc": "\\operatorname{arccsc}",
+  "arsinh": "\\operatorname{arsinh}",
+  "arccosh": "\\operatorname{arccosh}",
+  "arcosh": "\\operatorname{arcosh}",
+  "artanh": "\\operatorname{artanh}",
+  "arctanh": "\\operatorname{arctanh}",
+  "arcsech": "\\operatorname{arcsech}",
+  "arccsch": "\\operatorname{arccsch}",
+  "ch": "\\operatorname{ch}",
+  "cosec": "\\operatorname{cosec}",
+  "cosh": "\\cosh",
+  "cot": "\\cot",
+  "cotg": "\\operatorname{cotg}",
+  "coth": "\\coth",
+  "csc": "\\csc",
+  "ctg": "\\operatorname{ctg}",
+  "cth": "\\operatorname{cth}",
+  "sec": "\\sec",
+  "sech": "\\operatorname{sech}",
+  "sinh": "\\sinh",
+  "sh": "\\operatorname{sh}",
+  "tanh": "\\tanh",
+  "tg": "\\operatorname{tg}",
+  "th": "\\operatorname{th}",
+  "arg": "\\arg",
+  "lg": "\\lg",
+  "lb": "\\operatorname{lb}",
+  // not in amsmath
+  "log": "\\log_{#?}",
+  "ln": "\\ln",
+  "exp": "\\exp",
+  "lim": "\\lim_{#?\\to#?}",
+  // Differentials
+  // According to ISO31/XI (ISO 80000-2), differentials should be upright
+  // (note this is not universal: https://tex.stackexchange.com/questions/14821/whats-the-proper-way-to-typeset-a-differential-operator/637613#637613)
+  "dx": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\differentialD x"
+  },
+  "dy": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\differentialD y"
+  },
+  "dt": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\differentialD t"
+  },
+  // Logic
+  "AA": "\\forall",
+  "EE": "\\exists",
+  "!EE": "\\nexists",
+  "&&": "\\land",
+  // The shortcut for the greek letter "xi" is interfering with "x in"
+  "xin": {
+    after: "nothing+text+relop+punct+openfence+space",
+    value: "x \\in"
+  },
+  // The shortcut for `\int` is interfering with `\sin x`
+  "sint": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\sin t"
+  },
+  "in": {
+    after: "nothing+letter+closefence",
+    value: "\\in"
+  },
+  "!in": "\\notin",
+  // Sets
+  "NN": "\\mathbb{N}",
+  // Natural numbers
+  "ZZ": "\\mathbb{Z}",
+  // Integers
+  "QQ": "\\mathbb{Q}",
+  // Rational numbers
+  "RR": "\\mathbb{R}",
+  // Real numbers
+  "CC": "\\mathbb{C}",
+  // Complex numbers
+  // Operators
+  "xx": "\\times",
+  "+-": "\\pm",
+  // Relational operators
+  "\u2260": "\\ne",
+  "!=": "\\ne",
+  "\u2265": "\\ge",
+  ">=": "\\ge",
+  "\u2264": "\\le",
+  "<=": "\\le",
+  "<<": "\\ll",
+  ">>": "\\gg",
+  "~~": "\\approx",
+  // More operators
+  "\u2248": "\\approx",
+  "?=": "\\questeq",
+  "\xF7": "\\div",
+  "\xAC": "\\neg",
+  ":=": "\\coloneq",
+  "::": "\\Colon",
+  // Fences
+  "(:": "\\langle",
+  ":)": "\\rangle",
+  // More Greek letters
+  "beta": "\\beta",
+  "chi": "\\chi",
+  "epsilon": "\\epsilon",
+  "varepsilon": "\\varepsilon",
+  "eta": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\eta"
+  },
+  "gamma": "\\gamma",
+  "Gamma": "\\Gamma",
+  "iota": "\\iota",
+  "kappa": "\\kappa",
+  "lambda": "\\lambda",
+  "Lambda": "\\Lambda",
+  "mu": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\mu"
+  },
+  "nu": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\nu"
+  },
+  "\xB5": "\\mu",
+  // @TODO: or micro?
+  "phi": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\phi"
+  },
+  "Phi": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\Phi"
+  },
+  "varphi": "\\varphi",
+  "psi": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\psi"
+  },
+  "Psi": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\Psi"
+  },
+  "rho": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\rho"
+  },
+  "sigma": "\\sigma",
+  "Sigma": "\\Sigma",
+  "tau": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\tau"
+  },
+  "vartheta": "\\vartheta",
+  "upsilon": "\\upsilon",
+  "xi": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space",
+    value: "\\xi"
+  },
+  "Xi": {
+    after: "nothing+digit+function+frac+surd+binop+relop+punct+array+openfence+closefence+space+text",
+    value: "\\Xi"
+  },
+  "zeta": "\\zeta",
+  "omega": "\\omega",
+  "Omega": "\\Omega",
+  "\u03A9": "\\omega",
+  // @TODO: or ohm?
+  // More Logic
+  "forall": "\\forall",
+  "exists": "\\exists",
+  "!exists": "\\nexists",
+  ":.": "\\therefore",
+  // MORE FUNCTIONS
+  // 'arg': '\\arg',
+  "liminf": "\\liminf_{#?}",
+  "limsup": "\\limsup_{#?}",
+  "argmin": "\\operatorname*{arg~min}_{#?}",
+  "argmax": "\\operatorname*{arg~max}_{#?}",
+  "det": "\\det",
+  "mod": "\\bmod{#?}",
+  "(mod": "\\pmod{#?}",
+  "max": "\\max",
+  "min": "\\min",
+  "erf": "\\operatorname{erf}",
+  "erfc": "\\operatorname{erfc}",
+  "bessel": "\\operatorname{bessel}",
+  "mean": "\\operatorname{mean}",
+  "median": "\\operatorname{median}",
+  "fft": "\\operatorname{fft}",
+  "lcm": "\\operatorname{lcm}",
+  "gcd": "\\gcd",
+  "randomReal": "\\operatorname{randomReal}",
+  "randomInteger": "\\operatorname{randomInteger}",
+  "Re": "\\operatorname{Re}",
+  "Im": "\\operatorname{Im}",
+  // UNITS
+  "mm": {
+    after: "nothing+digit+operator",
+    value: "\\operatorname{mm}"
+    // Millimeter
+  },
+  "cm": {
+    after: "nothing+digit+operator",
+    value: "\\operatorname{cm}"
+    // Centimeter
+  },
+  "km": {
+    after: "nothing+digit+operator",
+    value: "\\operatorname{km}"
+    // Kilometer
+  },
+  "kg": {
+    after: "nothing+digit+operator",
+    value: "\\operatorname{kg}"
+    // Kilogram
+  },
+  "ft": {
+    after: "nothing+digit+operator",
+    value: "\\operatorname{ft}"
+    // feet
+  },
+  "inch": {
+    after: "nothing+digit+operator",
+    value: "\\operatorname{inch}"
+    // inch
+  },
+  "mi": {
+    after: "nothing+digit+operator",
+    value: "\\operatorname{mi}"
+    // mile
+  },
+  // '||':                   '\\lor',
+  "...": "\\ldots",
+  // In general, use \ldots
+  "+...": "+\\cdots",
+  // ... but use \cdots after + ...
+  "-...": "-\\cdots",
+  // ... - and ...
+  "->...": "\\to\\cdots",
+  // ->
+  "-->...": "\\longrightarrow\\cdots",
+  "->": "\\to",
+  "|->": "\\mapsto",
+  "-->": "\\longrightarrow",
+  //    '<-':                   '\\leftarrow',
+  "<--": "\\longleftarrow",
+  "=>": "\\Rightarrow",
+  "==>": "\\Longrightarrow",
+  // '<=': '\\Leftarrow',     // CONFLICTS WITH LESS THAN OR EQUAL
+  "<=>": "\\iff",
+  "<->": "\\leftrightarrow",
+  "(.)": "\\odot",
+  "(+)": "\\oplus",
+  "(/)": "\\oslash",
+  "(*)": "\\otimes",
+  "(-)": "\\ominus",
+  // '(-)':                  '\\circleddash',
+  "||": "\\Vert",
+  "*": "\\cdot",
+  //
+  // ASCIIIMath
+  //
+  // Binary operation symbols
+  //
+  "**": "\\star",
+  "***": "\\ast",
+  "//": "\\slash",
+  "\\\\": "\\backslash",
+  "setminus": "\\backslash",
+  "|><": "\\ltimes",
+  "><|": "\\rtimes",
+  "|><|": "\\bowtie",
+  "-:": "\\div",
+  "divide": "\\div",
+  "@": "\\circ",
+  // 'o+': '\\oplus',
+  // 'ox': '\\otimes',
+  // 'o.': '\\odot',
+  "^^": "\\wedge",
+  "^^^": "\\bigwedge",
+  "vv": "\\vee",
+  "vvv": "\\bigvee",
+  "nn": "\\cap",
+  "nnn": "\\bigcap",
+  "uu": "\\cup",
+  "uuu": "\\bigcup",
+  // Binary relation symbols
+  "-=": "\\equiv",
+  "~=": "\\cong",
+  "lt": "<",
+  "lt=": "\\leq",
+  "gt": ">",
+  "gt=": "\\geq",
+  "-<": "\\prec",
+  "-lt": "\\prec",
+  "-<=": "\\preceq",
+  // '>-':                   '\\succ',
+  ">-=": "\\succeq",
+  "prop": "\\propto",
+  "diamond": "\\diamond",
+  "square": "\\square",
+  "iff": "\\iff",
+  "sub": "\\subset",
+  "sup": "\\supset",
+  "sube": "\\subseteq",
+  "supe": "\\supseteq",
+  "uarr": "\\uparrow",
+  "darr": "\\downarrow",
+  "rarr": "\\rightarrow",
+  "rArr": "\\Rightarrow",
+  "larr": "\\leftarrow",
+  "lArr": "\\Leftarrow",
+  "harr": "\\leftrightarrow",
+  "hArr": "\\Leftrightarrow",
+  "aleph": "\\aleph",
+  // Logic
+  "and": "\\land",
+  "or": "\\lor",
+  "not": "\\neg",
+  "_|_": "\\bot",
+  "TT": "\\top",
+  "|--": "\\vdash",
+  "|==": "\\models",
+  // Other functions
+  "|__": "\\lfloor",
+  "__|": "\\rfloor",
+  "|~": "\\lceil",
+  "~|": "\\rceil",
+  // Arrows
+  ">->": "\\rightarrowtail",
+  "->>": "\\twoheadrightarrow",
+  // \char"21A0
+  ">->>": "\\twoheadrightarrowtail",
+  // \char"2916
+  "times": "\\times",
+  // "?=":"\\questeq"
+  "of": "\\circ",
+  "infinity": "\\infty",
+  "defint": "\\int_{#?}^{#?}",
+  "approaches": "\\to",
+  "ceil": "\\left\\lceil#?\\right\\rceil",
+  "floor": "\\left\\lfloor#?\\right\\rfloor",
+  "union": "\\cup",
+  "asterisk": "\\ast",
+  //
+  // Desmos Graphing Calculator
+  //
+  "frac": "\\frac{#?}{#?}",
+  "cbrt": "\\sqrt[3]{#?}",
+  "nthroot": "\\sqrt[#?]{#?}"
+};
+
+// src/formats/parse-math-string.ts
+function parseMathString(s, options) {
+  var _a3;
+  let format = (_a3 = options == null ? void 0 : options.format) != null ? _a3 : "auto";
+  if (format === "auto") [format, s] = inferFormat(s);
+  if (format === "ascii-math") {
+    s = s.replace(/\u2061/gu, "");
+    s = s.replace(/\u3016/gu, "{");
+    s = s.replace(/\u3017/gu, "}");
+    s = s.replace(/([^\\])sinx/g, "$1\\sin x");
+    s = s.replace(/([^\\])cosx/g, "$1\\cos x ");
+    s = s.replace(/\u2013/g, "-");
+    return [
+      "ascii-math",
+      parseMathExpression(s, { inlineShortcuts: options == null ? void 0 : options.inlineShortcuts })
+    ];
+  }
+  return ["latex", s];
+}
+function parseMathExpression(s, options) {
+  var _a3;
+  s = s.trim();
+  if (!s) return "";
+  const inlineShortcuts = (_a3 = options.inlineShortcuts) != null ? _a3 : INLINE_SHORTCUTS;
+  if (s.startsWith("^") || s.startsWith("_")) {
+    const { match: match2, rest: rest2 } = parseMathArgument(s.slice(1), {
+      inlineShortcuts,
+      noWrap: true
+    });
+    return `${s[0]}{${match2}}${parseMathExpression(rest2, options)}`;
+  }
+  let m = s.match(/^(sqrt|\u221A)(.*)/);
+  if (m) {
+    const { match: match2, rest: rest2 } = parseMathArgument(m[2], {
+      inlineShortcuts,
+      noWrap: true
+    });
+    return `\\sqrt{${match2 != null ? match2 : "\\placeholder{}"}}${parseMathExpression(
+      rest2,
+      options
+    )}`;
+  }
+  m = s.match(/^(\\cbrt|\u221B)(.*)/);
+  if (m) {
+    const { match: match2, rest: rest2 } = parseMathArgument(m[2], {
+      inlineShortcuts,
+      noWrap: true
+    });
+    return `\\sqrt[3]{${match2 != null ? match2 : "\\placeholder{}"}}${parseMathExpression(
+      rest2,
+      options
+    )}`;
+  }
+  m = s.match(/^abs(.*)/);
+  if (m) {
+    const { match: match2, rest: rest2 } = parseMathArgument(m[1], {
+      inlineShortcuts,
+      noWrap: true
+    });
+    return `\\left|${match2 != null ? match2 : "\\placeholder{}"}\\right|${parseMathExpression(
+      rest2,
+      options
+    )}`;
+  }
+  m = s.match(/^["”“](.*?)["”“](.*)/);
+  if (m) {
+    return `\\text{${m[1]}}${parseMathExpression(m[2], options)}`;
+  }
+  m = s.match(/^([^a-zA-Z0-9\(\{\[\_\^\\\s"]+)(.*)/);
+  if (m) {
+    return `${paddedShortcut(m[1], inlineShortcuts)}${parseMathExpression(
+      m[2],
+      options
+    )}`;
+  }
+  if (/^([fgh])[^a-zA-Z]/.test(s)) {
+    const { rest: rest2, match: match2 } = parseMathArgument(s.slice(1), {
+      inlineShortcuts,
+      noWrap: true
+    });
+    let result = "";
+    if (s[1] === "(") result = `${s[0]}\\left(${match2}\\right)`;
+    else result = s[0] + match2;
+    return result + parseMathExpression(rest2, options);
+  }
+  m = s.match(/^([a-zA-Z]+)(.*)/);
+  if (m) {
+    return paddedShortcut(m[1], inlineShortcuts) + parseMathExpression(m[2], options);
+  }
+  const { match, rest } = parseMathArgument(s, {
+    inlineShortcuts,
+    noWrap: true
+  });
+  if (match && rest[0] === "/") {
+    const m2 = parseMathArgument(rest.slice(1), {
+      inlineShortcuts,
+      noWrap: true
+    });
+    if (m2.match) {
+      return `\\frac{${match}}{${m2.match}}${parseMathExpression(
+        m2.rest,
+        options
+      )}`;
+    }
+  } else {
+    return s.startsWith("(") ? "\\left(" + match + "\\right)" + parseMathExpression(rest, options) : match + parseMathExpression(rest, options);
+  }
+  m = s.match(/^(\s+)(.*)$/);
+  if (m) return " " + parseMathExpression(m[2], options);
+  return s;
+}
+var FENCES = {
+  "[": "\\lbrack",
+  "]": "\\rbrack",
+  "{": "\\lbrace",
+  "}": "\\rbrace"
+};
+function parseMathArgument(s, options) {
+  var _a3, _b3;
+  let match = "";
+  s = s.trim();
+  let rest = s;
+  const lFence = s.charAt(0);
+  const rFence = { "(": ")", "{": "}", "[": "]" }[lFence];
+  if (rFence) {
+    let level = 1;
+    let i = 1;
+    while (i < s.length && level > 0) {
+      if (s[i] === lFence) level++;
+      if (s[i] === rFence) level--;
+      i++;
+    }
+    if (level === 0) {
+      const body = parseMathExpression(s.substring(1, i - 1), options);
+      if (options.noWrap && lFence === "(") match = body;
+      else
+        match = `\\left${(_a3 = FENCES[lFence]) != null ? _a3 : lFence}${body}\\right${(_b3 = FENCES[rFence]) != null ? _b3 : rFence}`;
+      rest = s.slice(Math.max(0, i));
+    } else {
+      match = s.substring(1, i);
+      rest = "";
+    }
+  } else {
+    let m = s.match(/^([a-zA-Z]+)/);
+    if (m) {
+      let shortcut = getInlineShortcut(null, s, options.inlineShortcuts);
+      if (shortcut) {
+        shortcut = shortcut.replace("_{#?}", "");
+        shortcut = shortcut.replace("^{#?}", "");
+        return { match: shortcut, rest: s.slice(shortcut.length) };
+      }
+    }
+    m = s.match(/^([a-zA-Z])/);
+    if (m) {
+      return { match: m[1], rest: s.slice(1) };
+    }
+    m = s.match(/^(-)?\d+(\.\d*)?/);
+    if (m) {
+      return { match: m[0], rest: s.slice(m[0].length) };
+    }
+    if (!/^\\(left|right)/.test(s)) {
+      m = s.match(/^(\\[a-zA-Z]+)/);
+      if (m) {
+        rest = s.slice(m[1].length);
+        match = m[1];
+      }
+    }
+  }
+  return { match, rest };
+}
+function paddedShortcut(s, shortcuts) {
+  let result = getInlineShortcut(null, s, shortcuts);
+  if (result) {
+    result = result.replace("_{#?}", "");
+    result = result.replace("^{#?}", "");
+    result += " ";
+  } else result = s;
+  return result;
+}
+var MODE_SHIFT_COMMANDS = [
+  ["\\[", "\\]"],
+  ["\\(", "\\)"],
+  ["$$", "$$"],
+  ["$", "$"],
+  // Must be *after* $$..$$
+  ["\\begin{math}", "\\end{math}"],
+  ["\\begin{displaymath}", "\\end{displaymath}"],
+  ["\\begin{equation}", "\\end{equation}"],
+  ["\\begin{equation*}", "\\end{equation*}"]
+];
+function trimModeShiftCommand(s) {
+  const trimmedString = s.trim();
+  for (const mode of MODE_SHIFT_COMMANDS) {
+    if (trimmedString.startsWith(mode[0]) && trimmedString.endsWith(mode[1])) {
+      return [
+        true,
+        trimmedString.substring(
+          mode[0].length,
+          trimmedString.length - mode[1].length
+        )
+      ];
+    }
+  }
+  return [false, s];
+}
+function inferFormat(s) {
+  s = s.trim();
+  if (s.length <= 1) return ["latex", s];
+  let hasLatexModeShiftCommand;
+  [hasLatexModeShiftCommand, s] = trimModeShiftCommand(s);
+  if (hasLatexModeShiftCommand) return ["latex", s];
+  if (s.startsWith("`") && s.endsWith("`")) {
+    s = s.substring(1, s.length - 1);
+    return ["ascii-math", s];
+  }
+  if (s.includes("\\")) {
+    return ["latex", s];
+  }
+  if (/\$.+\$/.test(s)) {
+    return ["latex", `\\text{${s}}`];
+  }
+  return [void 0, s];
+}
+
+// src/editor-mathfield/mode-editor.ts
+var CLIPBOARD_LATEX_BEGIN = "$$";
+var CLIPBOARD_LATEX_END = "$$";
+var defaultExportHook = (_from, latex, _range) => {
+  if (!MODE_SHIFT_COMMANDS.some(
+    (x) => latex.startsWith(x[0]) && latex.endsWith(x[1])
+  ))
+    latex = `${CLIPBOARD_LATEX_BEGIN} ${latex} ${CLIPBOARD_LATEX_END}`;
+  return latex;
+};
+var _ModeEditor = class _ModeEditor {
+  constructor(name) {
+    _ModeEditor._modes[name] = this;
+  }
+  static onPaste(mode, mathfield, data) {
+    var _a3;
+    if (!mathfield.contentEditable && mathfield.userSelect === "none") {
+      mathfield.model.announce("plonk");
+      return false;
+    }
+    if (typeof data === "string") {
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData("text/plain", data);
+      data = dataTransfer;
+    }
+    const redispatchedEvent = new ClipboardEvent("paste", {
+      clipboardData: data,
+      cancelable: true
+    });
+    if (!((_a3 = mathfield.host) == null ? void 0 : _a3.dispatchEvent(redispatchedEvent))) return false;
+    return _ModeEditor._modes[mode].onPaste(mathfield, data);
+  }
+  /** Call this method from a menu */
+  static copyToClipboard(mathfield, format) {
+    if (!mathfield.contentEditable && mathfield.userSelect === "none") {
+      mathfield.model.announce("plonk");
+      return;
+    }
+    const model = mathfield.model;
+    const exportRange = model.selectionIsCollapsed ? [0, model.lastOffset] : range(model.selection);
+    const latex = model.getValue(exportRange, format);
+    navigator.clipboard.writeText(latex).then(
+      () => {
+      },
+      () => mathfield.model.announce("plonk")
+    );
+  }
+  /** Call this method in response to a clipboard event */
+  static onCopy(mathfield, ev) {
+    var _a3;
+    if (!ev.clipboardData) return;
+    if (!mathfield.contentEditable && mathfield.userSelect === "none") {
+      mathfield.model.announce("plonk");
+      return;
+    }
+    const model = mathfield.model;
+    const exportRange = model.selectionIsCollapsed ? [0, model.lastOffset] : range(model.selection);
+    let atoms = model.getAtoms(exportRange);
+    if (atoms.every((x) => x.mode === "text" || !x.mode)) {
+      ev.clipboardData.setData(
+        "text/plain",
+        atoms.filter((x) => x instanceof TextAtom).map((x) => x.value).join("")
+      );
+    } else if (atoms.every((x) => x.mode === "latex")) {
+      ev.clipboardData.setData(
+        "text/plain",
+        model.getAtoms(exportRange, { includeChildren: true }).map((x) => {
+          var _a4;
+          return (_a4 = x.value) != null ? _a4 : "";
+        }).join("")
+      );
+    } else {
+      let latex;
+      if (atoms.length === 1 && atoms[0].verbatimLatex !== void 0)
+        latex = atoms[0].verbatimLatex;
+      else latex = model.getValue(exportRange, "latex-expanded");
+      ev.clipboardData.setData("application/x-latex", latex);
+      try {
+        ev.clipboardData.setData(
+          "text/plain",
+          mathfield.options.onExport(mathfield, latex, exportRange)
+        );
+      } catch (e) {
+      }
+      if (atoms.length === 1) {
+        const atom = atoms[0];
+        if (atom.type === "root" || atom.type === "group")
+          atoms = atom.body.filter((x) => x.type !== "first");
+      }
+      try {
+        ev.clipboardData.setData(
+          "application/json+mathlive",
+          JSON.stringify(atoms.map((x) => x.toJson()))
+        );
+      } catch (e) {
+      }
+      if ((_a3 = window[Symbol.for("io.cortexjs.compute-engine")]) == null ? void 0 : _a3.ComputeEngine) {
+        const ce = globalThis.MathfieldElement.computeEngine;
+        if (ce) {
+          try {
+            const options = ce.jsonSerializationOptions;
+            ce.jsonSerializationOptions = { metadata: ["latex"] };
+            const expr = ce.parse(
+              model.getValue(exportRange, "latex-unstyled")
+            );
+            ce.jsonSerializationOptions = options;
+            const mathJson = JSON.stringify(expr.json);
+            if (mathJson)
+              ev.clipboardData.setData("application/json", mathJson);
+          } catch (e) {
+          }
+        }
+      }
+    }
+    ev.preventDefault();
+  }
+  static insert(model, text, options = {}) {
+    var _a3;
+    const mode = options.mode === "auto" ? model.mode : (_a3 = options.mode) != null ? _a3 : model.mode;
+    return _ModeEditor._modes[mode].insert(model, text, options);
+  }
+  onPaste(_mathfield, _data) {
+    return false;
+  }
+  insert(_model, _text, _options) {
+    return false;
+  }
+};
+_ModeEditor._modes = {};
+var ModeEditor = _ModeEditor;
+
+// src/editor/keybindings-definitions.ts
+var DEFAULT_KEYBINDINGS = [
+  { key: "left", command: "moveToPreviousChar" },
+  { key: "right", command: "moveToNextChar" },
+  { key: "up", command: "moveUp" },
+  { key: "down", command: "moveDown" },
+  { key: "shift+[ArrowLeft]", command: "extendSelectionBackward" },
+  { key: "shift+[ArrowRight]", command: "extendSelectionForward" },
+  { key: "shift+[ArrowUp]", command: "extendSelectionUpward" },
+  { key: "shift+[ArrowDown]", command: "extendSelectionDownward" },
+  { key: "[Backspace]", command: "deleteBackward" },
+  { key: "[Delete]", command: "deleteForward" },
+  { key: "shift+[Backspace]", command: "deleteForward" },
+  { key: "alt+[Backspace]", command: "deletePreviousWord" },
+  { key: "alt+[Delete]", command: "deleteNextWord" },
+  { key: "ctrl+[Backspace]", command: "deleteToGroupStart" },
+  { key: "ctrl+[Delete]", command: "deleteToGroupEnd" },
+  { key: "ctrl+shift+[Backspace]", command: "deleteToGroupEnd" },
+  { key: "alt+[ArrowLeft]", command: "moveToPreviousWord" },
+  { key: "alt+[ArrowRight]", command: "moveToNextWord" },
+  { key: "shift+alt+[ArrowLeft]", command: "extendToPreviousWord" },
+  { key: "shift+alt+[ArrowRight]", command: "extendToNextWord" },
+  { key: "ctrl+[ArrowLeft]", command: "moveToGroupStart" },
+  { key: "ctrl+[ArrowRight]", command: "moveToGroupEnd" },
+  { key: "shift+ctrl+[ArrowLeft]", command: "extendToGroupStart" },
+  { key: "shift+ctrl+[ArrowRight]", command: "extendToGroupEnd" },
+  { key: "[Home]", command: "moveToMathfieldStart" },
+  { key: "cmd+[ArrowLeft]", command: "moveToMathfieldStart" },
+  { key: "shift+[Home]", command: "extendToMathFieldStart" },
+  { key: "shift+cmd+[ArrowLeft]", command: "extendToMathFieldStart" },
+  { key: "[End]", command: "moveToMathfieldEnd" },
+  { key: "cmd+[ArrowRight]", command: "moveToMathfieldEnd" },
+  { key: "shift+[End]", command: "extendToMathFieldEnd" },
+  { key: "shift+cmd+[ArrowRight]", command: "extendToMathFieldEnd" },
+  { key: "[Pageup]", command: "moveToGroupStart" },
+  { key: "[Pagedown]", command: "moveToGroupEnd" },
+  { key: "[Tab]", command: "moveToNextGroup" },
+  {
+    key: "shift+[Tab]",
+    command: "moveToPreviousGroup"
+  },
+  { key: "[Escape]", ifMode: "math", command: ["switchMode", "latex"] },
+  { key: "[Escape]", ifMode: "text", command: ["switchMode", "latex"] },
+  {
+    key: "[Escape]",
+    ifMode: "latex",
+    command: ["complete", "complete", { selectItem: "true" }]
+  },
+  // Accept the entry (without the suggestion) and select
+  {
+    key: "\\",
+    ifMode: "math",
+    command: ["switchMode", "latex", "", "\\"]
+  },
+  {
+    key: "\\",
+    ifMode: "text",
+    command: ["switchMode", "latex", "", "\\"]
+  },
+  // VisualTeX: the physical Backslash key is a command prefix regardless of
+  // the active Windows IME's reported event.key value.
+  {
+    key: "[Backslash]",
+    ifMode: "math",
+    command: ["switchMode", "latex", "", "\\"]
+  },
+  {
+    key: "[Backslash]",
+    ifMode: "text",
+    command: ["switchMode", "latex", "", "\\"]
+  },
+  {
+    key: "[IntlBackslash]",
+    ifMode: "math",
+    command: ["switchMode", "latex", "", "\\"]
+  },
+  {
+    key: "[IntlBackslash]",
+    ifMode: "text",
+    command: ["switchMode", "latex", "", "\\"]
+  },
+  // On UK QWERTY keyboards
+  {
+    key: "[Tab]",
+    ifMode: "latex",
+    command: ["complete", "accept-suggestion"]
+  },
+  // Complete the suggestion
+  { key: "[Return]", ifMode: "latex", command: ["complete", "accept-all"] },
+  { key: "[Enter]", ifMode: "latex", command: ["complete", "accept-all"] },
+  {
+    key: "shift+[Escape]",
+    ifMode: "latex",
+    command: ["complete", "reject"]
+  },
+  // Some keyboards can't generate
+  // this combination, for example in 60% keyboards it is mapped to ~
+  { key: "[ArrowDown]", ifMode: "latex", command: "nextSuggestion" },
+  // { key: 'ios:command:[Tab]', ifMode: 'latex',command: 'nextSuggestion' },
+  { key: "[ArrowUp]", ifMode: "latex", command: "previousSuggestion" },
+  { key: "ctrl+a", ifPlatform: "!macos", command: "selectAll" },
+  { key: "cmd+a", command: "selectAll" },
+  // Rare keys on some extended keyboards
+  { key: "[Cut]", command: "cutToClipboard" },
+  { key: "[Copy]", command: "copyToClipboard" },
+  { key: "[Paste]", command: "pasteFromClipboard" },
+  { key: "[Clear]", command: "deleteBackward" },
+  { key: "[Undo]", command: "undo" },
+  { key: "[Redo]", command: "redo" },
+  { key: "[EraseEof]", command: "deleteToGroupEnd" },
+  // Safari on iOS does not send cut/copy/paste commands when the mathfield
+  // is focused, so intercept the keyboard shortcuts.
+  // This is less desirable because the full clipboard API is not accessible
+  // by this path, and user authorization is required.
+  { key: "ctrl+x", ifPlatform: "ios", command: "cutToClipboard" },
+  { key: "cmd+x", ifPlatform: "ios", command: "cutToClipboard" },
+  { key: "ctrl+c", ifPlatform: "ios", command: "copyToClipboard" },
+  { key: "cmd+c", ifPlatform: "ios", command: "copyToClipboard" },
+  { key: "ctrl+v", ifPlatform: "ios", command: "pasteFromClipboard" },
+  { key: "cmd+v", ifPlatform: "ios", command: "pasteFromClipboard" },
+  { key: "ctrl+z", ifPlatform: "!macos", command: "undo" },
+  { key: "cmd+z", command: "undo" },
+  { key: "ctrl+y", ifPlatform: "!macos", command: "redo" },
+  // ARIA recommendation
+  { key: "shift+cmd+y", command: "redo" },
+  { key: "shift+ctrl+z", ifPlatform: "!macos", command: "redo" },
+  { key: "shift+cmd+z", command: "redo" },
+  // EMACS/MACOS BINDINGS
+  { key: "ctrl+b", ifPlatform: "macos", command: "moveToPreviousChar" },
+  { key: "ctrl+f", ifPlatform: "macos", command: "moveToNextChar" },
+  { key: "ctrl+p", ifPlatform: "macos", command: "moveUp" },
+  { key: "ctrl+n", ifPlatform: "macos", command: "moveDown" },
+  { key: "ctrl+a", ifPlatform: "macos", command: "moveToMathfieldStart" },
+  { key: "ctrl+e", ifPlatform: "macos", command: "moveToMathfieldEnd" },
+  {
+    key: "shift+ctrl+b",
+    ifPlatform: "macos",
+    command: "extendSelectionBackward"
+  },
+  {
+    key: "shift+ctrl+f",
+    ifPlatform: "macos",
+    command: "extendSelectionForward"
+  },
+  {
+    key: "shift+ctrl+p",
+    ifPlatform: "macos",
+    command: "extendSelectionUpward"
+  },
+  {
+    key: "shift+ctrl+n",
+    ifPlatform: "macos",
+    command: "extendSelectionDownward"
+  },
+  {
+    key: "shift+ctrl+a",
+    ifPlatform: "macos",
+    command: "extendToMathFieldStart"
+  },
+  {
+    key: "shift+ctrl+e",
+    ifPlatform: "macos",
+    command: "extendToMathFieldEnd"
+  },
+  { key: "alt+ctrl+b", ifPlatform: "macos", command: "moveToPreviousWord" },
+  { key: "alt+ctrl+f", ifPlatform: "macos", command: "moveToNextWord" },
+  {
+    key: "shift+alt+ctrl+b",
+    ifPlatform: "macos",
+    command: "extendToPreviousWord"
+  },
+  {
+    key: "shift+alt+ctrl+f",
+    ifPlatform: "macos",
+    command: "extendToNextWord"
+  },
+  { key: "ctrl+h", ifPlatform: "macos", command: "deleteBackward" },
+  { key: "ctrl+d", ifPlatform: "macos", command: "deleteForward" },
+  { key: "ctrl+l", ifPlatform: "macos", command: "scrollIntoView" },
+  // { key: 'ctrl+t', ifPlatform: 'macos', command: 'transpose' },
+  // WOLFRAM MATHEMATICA BINDINGS
+  {
+    key: "ctrl+[Digit2]",
+    ifMode: "math",
+    command: ["insert", "\\sqrt{#0}"]
+  },
+  { key: "ctrl+[Digit5]", ifMode: "math", command: "moveToOpposite" },
+  { key: "ctrl+[Digit6]", ifMode: "math", command: "moveToSuperscript" },
+  { key: "ctrl+[Return]", ifMode: "math", command: "addRowAfter" },
+  { key: "ctrl+[Enter]", ifMode: "math", command: "addRowAfter" },
+  { key: "cmd+[Return]", ifMode: "math", command: "addRowAfter" },
+  { key: "cmd+[Enter]", ifMode: "math", command: "addRowAfter" },
+  // Excel keybindings:
+  // shift+space: select entire row, ctrl+space: select an entire column
+  // shift+ctrl++ or ctrl+numpad+
+  // ctrl+- to delete a row or columns
+  // MATHLIVE BINDINGS
+  { key: "alt+p", ifMode: "math", command: ["insert", "\\pi"] },
+  { key: "alt+v", ifMode: "math", command: ["insert", "\\sqrt{#0}"] },
+  { key: "alt+shift+v", ifMode: "math", command: ["insert", "\\sqrt[#0]{#1}"] },
+  { key: "alt+o", ifMode: "math", command: ["insert", "\\emptyset"] },
+  {
+    key: "alt+d",
+    ifMode: "math",
+    command: ["insert", "\\differentialD"]
+  },
+  {
+    key: "shift+alt+o",
+    ifMode: "math",
+    command: ["insert", "\\varnothing"]
+  },
+  {
+    key: "shift+alt+d",
+    ifMode: "math",
+    command: ["insert", "\\partial"]
+  },
+  {
+    key: "alt+[Backslash]",
+    ifMode: "math",
+    command: ["insert", "\\backslash"]
+  },
+  // "|" key} override command mode
+  {
+    key: "[NumpadDivide]",
+    ifMode: "math",
+    command: ["insert", "\\frac{#@}{#?}"]
+  },
+  // ??
+  {
+    key: "alt+[NumpadDivide]",
+    ifMode: "math",
+    command: ["insert", "\\frac{#?}{#@}"]
+  },
+  // ??
+  // Accessibility
+  { key: "shift+alt+k", command: "toggleKeystrokeCaption" },
+  { key: "alt+[Space]", command: "toggleContextMenu" },
+  { key: "alt+shift+[Space]", command: "toggleVirtualKeyboard" },
+  // Note: On Mac OS (as of 10.12), there is a bug/behavior that causes
+  // a beep to be generated with certain command+control key combinations.
+  // The workaround is to create a default binding file to silence them.
+  // In ~/Library/KeyBindings/DefaultKeyBinding.dict add these entries:
+  //
+  //   {
+  //      "^@\UF701" = "noop:";
+  //    "^@\UF702" = "noop:";
+  //      "^@\UF703" = "noop:";
+  //  }
+  {
+    key: "alt+ctrl+[ArrowUp]",
+    command: ["speak", "all", { withHighlighting: false }]
+  },
+  {
+    key: "alt+ctrl+[ArrowDown]",
+    command: ["speak", "selection", { withHighlighting: false }]
+  },
+  //
+  // Punctuations and some non-alpha key combinations
+  // only work with specific keyboard layouts
+  //
+  {
+    key: "shift+[Quote]",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: ["switchMode", "text", "", ""]
+    // command: ['switchMode', 'text', '', '«'],
+  },
+  {
+    key: "shift+[Quote]",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "text",
+    command: ["switchMode", "math", "", ""]
+    // command: ['switchMode', 'math', '»', ''],
+  },
+  {
+    key: "shift+alt+[KeyT]",
+    ifMode: "math",
+    command: ["switchMode", "text"]
+  },
+  {
+    key: "shift+alt+[KeyT]",
+    ifMode: "text",
+    command: ["switchMode", "math"]
+  },
+  {
+    key: "/",
+    ifMode: "math",
+    command: ["insert", "\\frac{#@}{#?}"]
+  },
+  {
+    key: "alt+/",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: ["insert", "/"]
+  },
+  {
+    key: "alt+shift+/",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: ["insert", "/"]
+  },
+  {
+    key: "alt+[BracketLeft]",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: ["insert", "\\left\\lbrack #0 \\right\\rbrack"]
+  },
+  // ??
+  {
+    key: "ctrl+[Minus]",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: "moveToSubscript"
+  },
+  // ??
+  {
+    key: "shift+alt+[BracketLeft]",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: ["insert", "\\left\\lbrace #0 \\right\\rbrace"]
+  },
+  // ??
+  {
+    key: "ctrl+;",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: "addRowAfter"
+  },
+  {
+    key: "cmd+;",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: "addRowAfter"
+  },
+  {
+    key: "shift+ctrl+;",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: "addRowBefore"
+  },
+  {
+    key: "shift+cmd+;",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",

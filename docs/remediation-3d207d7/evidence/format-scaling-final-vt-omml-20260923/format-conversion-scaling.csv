@@ -1,0 +1,3 @@
+source,target,count,capture_ms,apply_ms,capture_per_formula_ms,apply_per_formula_ms
+visualtex,omml,10,2624.187,13644.783,262.419,1364.478
+visualtex,omml,20,4253.772,26347.487,212.689,1317.374

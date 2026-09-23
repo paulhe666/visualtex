@@ -1,0 +1,160 @@
+/* Keep the product's editor-surface/mathfield-stack/formula-line shell.
+   Only the contents of each former MathLive host are replaced by the core view. */
+.core-math-editor {
+  position: relative;
+}
+
+.core-math-editor .core-formula-cell {
+  min-width: 0;
+}
+
+.core-math-editor .core-math-editor-notice {
+  position: relative;
+  z-index: 3;
+  padding: 6px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.core-math-editor .core-math-editor-notice button {
+  margin-left: 8px;
+}
+
+.core-row-source-preserved {
+  margin: 0;
+  padding: 4px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font: 12px/1.5 Consolas, monospace;
+}
+
+.core-math-editor.is-probing {
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.formula-line .mathfield-host.core-formula-line {
+  position: relative;
+  min-height: var(--core-row-min-height, 69px);
+  display: flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding-block: var(--formula-row-vertical-inset, 5px);
+  color: var(--text);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.core-math-editor[data-formula-alignment="center"] .core-formula-line {
+  justify-content: center;
+}
+
+.core-math-editor[data-formula-alignment="right"] .core-formula-line {
+  justify-content: flex-end;
+}
+
+.core-formula-line > .vt-core-view {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.core-formula-line .vt-core-input {
+  position: fixed;
+  width: 1px;
+  min-width: 1px;
+  height: 1px;
+  min-height: 1px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
+  overflow: hidden;
+  z-index: -1;
+}
+
+.core-formula-line .vt-core-selection {
+  pointer-events: none;
+}
+
+.core-formula-line .vt-core-empty-slot {
+  fill: color-mix(in srgb, var(--accent-soft) 52%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 62%, var(--text-faint));
+  stroke-width: 0.045;
+  stroke-dasharray: 0.105 0.075;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.82;
+}
+
+.core-formula-line:focus-within .vt-core-empty-slot {
+  fill: color-mix(in srgb, var(--accent-soft) 76%, transparent);
+  stroke: var(--accent);
+  opacity: 0.96;
+}
+
+.core-formula-line .vt-core-caret {
+  pointer-events: none;
+}
+
+.core-formula-line .vt-core-position {
+  position: absolute;
+  left: 0;
+  bottom: -16px;
+  max-width: min(760px, 90vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 10px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Structural position descriptions remain accessible, not visible debug UI. */
+.core-formula-line .vt-core-position {
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  overflow: hidden;
+}
+
+.core-formula-line .vt-core-command-popup {
+  min-width: 180px;
+  max-width: 320px;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.core-formula-line .vt-core-command-query {
+  padding: 4px 6px;
+  color: var(--text-muted);
+  font: 12px/1.4 Consolas, "Cascadia Mono", monospace;
+}
+
+.core-formula-line .vt-core-command-candidate,
+.core-formula-line .vt-core-command-empty {
+  padding: 5px 7px;
+  font-size: 12px;
+}
+
+.core-formula-line .vt-core-command-candidate[aria-selected="true"] {
+  background: var(--accent-soft);
+}
+
+.core-math-editor-preview-shield {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: text;
+  z-index: 2;
+}

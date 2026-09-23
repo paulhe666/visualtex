@@ -1,0 +1,23 @@
+{
+  "schema": "visualtex-p10-tauri-checkpoint-audit-v1",
+  "status": "PASS",
+  "completion": "tauriStable-notP10Complete",
+  "runtimeReceipt": "engine/target/p10-tauri-relaunch/2026-09-15T20-00-46+08-00/report.json",
+  "sourceReceipt": "engine/target/p10-verification/2026-09-14T14-24-07-439Z/report.json",
+  "sourceArchive": "docs/engine-rebuild/checkpoints/CP10-main-app-browser-stable-1/visualtex-p10-main-app-browser-stable-1.tgz",
+  "sourceArchiveSha256": "b057aeb5097885211411117d5ff7c08288f42272e8ead53f615469928d30a21a",
+  "sourceSha256": "f39d8f3dbb59e39042a91f8d2aed5db30619d86fe47187d4012cd1f5effa5825",
+  "verifiedSourceFiles": 267,
+  "currentSourceStillMatches": true,
+  "realTauriCloseRelaunch": "PASS",
+  "realTauriEditSave": "PASS",
+  "realTauriCoreReselection": "PASS",
+  "realTauriPersistedDocumentRestore": "PASS",
+  "realTauriWindowSizeRestore": "PASS",
+  "installerNoOcrSizeInstall": "NOT_RUN",
+  "wordActions": 0,
+  "officeActions": 0,
+  "gitMutations": 0,
+  "nsisBuilds": 0,
+  "p11Started": false
+}

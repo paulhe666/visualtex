@@ -403,7 +403,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
-            ReportError($"VisualTeX PowerPoint 写入失败：{error.Message}");
+            ReportError(OfficePluginLanguage.FormatOperationError(
+                error,
+                "VisualTeX PowerPoint 写入失败",
+                "VisualTeX PowerPoint formula write failed"));
         }
     }
 
@@ -627,16 +630,20 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
+            var failureMessage = OfficePluginLanguage.FormatOperationError(
+                error,
+                "VisualTeX PowerPoint 写入失败",
+                "VisualTeX PowerPoint formula write failed");
             if (sessionId is not null && _sessionClient is not null)
             {
                 try
                 {
-                    await _sessionClient.FailAsync(sessionId, error.Message, CancellationToken.None)
+                    await _sessionClient.FailAsync(sessionId, failureMessage, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
                 catch { }
             }
-            ReportError($"VisualTeX PowerPoint 写入失败：{error.Message}");
+            ReportError(failureMessage);
         }
         finally
         {

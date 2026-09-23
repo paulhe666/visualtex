@@ -434,6 +434,13 @@ const settingsDialog = await source("src/components/SettingsDialog.tsx");
 const editorStore = await source("src/stores/editorStore.ts");
 const mathEditor = await source("src/editor/MathEditor.tsx");
 const formulaToolbar = await source("src/toolbar/FormulaToolbar.tsx");
+const defaultCapability = await source("src-tauri/capabilities/default.json");
+const officeSessionCapability = await source(
+  "src-tauri/capabilities/office-session-editor.json",
+);
+const officeDesktopPermission = await source(
+  "src-tauri/permissions/office-desktop-integration.toml",
+);
 assert.ok(officeDialogApp.includes("closeOfficeSessionWindow"));
 assert.ok(officeDialogApp.includes("IS_VSTO_DESKTOP_RUNTIME"));
 assert.ok(officeDialogApp.includes("if (!delivered) window.close()"));
@@ -489,8 +496,31 @@ assert.ok(officeState.includes("normalize_app_editor_layout"));
 assert.ok(settingsDialog.includes("data-powerpoint-default-font-size"));
 assert.ok(editorStore.includes("powerPointDefaultFontSizePt: 20"));
 assert.ok(editorStore.includes("contextCounts"));
-assert.ok(mathEditor.includes("rankNativeSuggestionItems"));
-assert.ok(mathEditor.includes("recordNativeSuggestionUsage"));
+assert.ok(mathEditor.includes("pendingNativeSuggestion"));
+assert.ok(mathEditor.includes("dismissNativeSuggestionPopover"));
+assert.ok(defaultCapability.includes('"allow-office-desktop-integration"'));
+assert.ok(officeDesktopPermission.includes('identifier = "allow-office-desktop-integration"'));
+for (const command of [
+  "get_app_window_configuration",
+  "apply_app_window_configuration",
+  "set_main_window_keypad_mode",
+  "get_office_platform_status",
+  "get_office_companion_status",
+  "get_mathtype_double_click_edit_enabled",
+  "open_word",
+  "open_powerpoint",
+  "install_windows_ole_integration",
+  "repair_windows_office_integration",
+  "test_windows_office_runtime",
+]) {
+  assert.ok(
+    officeDesktopPermission.includes(`"${command}"`),
+    `Desktop Office permission is missing ${command}`,
+  );
+}
+assert.ok(!officeSessionCapability.includes("allow-office-desktop-integration"));
+assert.ok(!officeSessionCapability.includes("open_word"));
+assert.ok(!officeSessionCapability.includes("get_office_platform_status"));
 assert.ok(formulaToolbar.includes("commonToolbarCommandLimit = 45"));
 assert.ok(formulaToolbar.includes("visualtex-common-toolbar-command-ids-v2"));
 assert.ok(formulaToolbar.includes("visualtex-common-toolbar-command-ids-v1"));
@@ -575,7 +605,7 @@ assert.ok(wordVstoService.includes("NativeOmmlScreenUpdatingScope.Suspend(_appli
 assert.ok(wordEquationNumberingPerformance.includes("ScreenUpdatingScope.Suspend(document)"));
 assert.ok(
   wordEquationNumbering.includes(
-    "TryRefreshHealthyEquationNumbersInPlace(document, out var updated)",
+    "TryRefreshHealthyEquationNumbersInPlace(document, out var updated, requiredIds)",
   ),
 );
 for (const productionNumberingSource of [
@@ -599,7 +629,9 @@ assert.ok(wordVstoService.includes("LegacyInlineBaselineSentinel"));
 assert.ok(wordVstoService.includes("font.Hidden = -1"));
 assert.ok(wordVstoService.includes("RestoreOmmlReplacementRollback"));
 assert.ok(wordVstoFormatConversion.includes("(targetIsMathType || targetIsVisualTeX)"));
-assert.ok(wordVstoFormatConversion.includes("targetIsVisualTeX && plan.Targets.Count > 1"));
+assert.ok(wordVstoFormatConversion.includes("var needsAtomicMathTypeVisualTeXParagraphReplacement ="));
+assert.ok(wordVstoFormatConversion.includes("targetIsVisualTeX"));
+assert.ok(wordVstoFormatConversion.includes("plan.Targets.Count > 1"));
 assert.ok(wordVstoFormatConversion.includes("EnsureConvertedVisualTeXNumberingHostHealthy"));
 assert.ok(wordVstoFormatConversion.includes("format-conversion-numbering-visualtex-single-reused"));
 assert.ok(!wordVstoFormatConversion.includes("deferNumberingLayout: targetIsVisualTeX"));
@@ -628,7 +660,7 @@ assert.ok(wordVstoService.includes("shape.LockAspectRatio = Microsoft.Office.Cor
 assert.ok(wordVstoService.includes("shape.Height = height"));
 assert.ok(wordVstoService.includes("ApplyInlineBaseline("));
 assert.ok(wordVstoService.includes("ReadDefinedShapeFontPosition"));
-assert.ok(wordVstoService.includes("CalculateFontPositionWithLegacyFallback"));
+assert.ok(wordEquationNumbering.includes("CalculateFontPositionWithLegacyFallback"));
 assert.ok(wordInlineAlignment.includes("HasValidExportedBaseline"));
 assert.ok(wordInlineAlignment.includes("dequantizedMagnitude"));
 assert.ok(wordInlineAlignment.includes("LegacyDescentRatio"));
@@ -737,7 +769,7 @@ assert.ok(
 assert.ok(wordVsto.includes("DocumentBeforeSave -= OnDocumentBeforeSave"));
 assert.ok(wordDoubleClickHook.includes("WhMouseLl = 14"));
 assert.ok(wordDoubleClickHook.includes("return new IntPtr(1)"));
-assert.ok(wordDoubleClickHook.includes('"WINWORD"'));
+assert.ok(wordDoubleClickHook.includes("ForegroundProcessBelongsToOwner"));
 assert.ok(wordDoubleClickHook.includes("OpenNativeOle"));
 assert.ok(wordDoubleClickHook.includes("DispatchCallback"));
 assert.ok(wordVsto.includes("NativeOleDecision.OpenNativeOle"));
@@ -889,11 +921,13 @@ assert.ok(powerpointVsto.includes("ResolveFormulaSelection"));
 assert.ok(powerpointVsto.includes("targetObjectMode"));
 assert.ok(powerpointVsto.includes("requiresObjectModeChange"));
 assert.ok(powerpointVsto.includes("new PowerPointDoubleClickHook"));
-for (const vstoEntry of [wordVsto, powerpointVsto]) {
-  assert.ok(vstoEntry.includes("MaterializeSvg"));
-  assert.ok(vstoEntry.includes("OfficeOlePreview.CreateVectorEmfFromSvg"));
+assert.ok(wordVsto.includes("MaterializeSvg"));
+assert.ok(wordVsto.includes("OfficeOlePreview.CreateInkSafeVectorPreviewFromSvg"));
+assert.ok(wordVsto.includes("OfficeOlePreview.CreateInkSafePreviewFromSvg"));
+assert.ok(powerpointVsto.includes("MaterializeSvg"));
+assert.ok(powerpointVsto.includes("OfficeOlePreview.CreateVectorEmfFromSvg"));
+for (const vstoEntry of [wordVsto, powerpointVsto])
   assert.ok(vstoEntry.includes("File.Delete(emfPath)"));
-}
 assert.ok(wordVsto.includes("FormulaOleContract.NativeOleMode"));
 assert.ok(powerpointVsto.includes('session.ObjectMode == "nativeOle"'));
 for (const nativeService of [wordVstoService, powerpointVstoService]) {
@@ -949,8 +983,6 @@ assert.ok(wordEquationNumbering.includes("WordOmmlFormulaStore.FindByFormulaId")
 assert.ok(wordEquationNumbering.includes("WordOmmlFormulaStore.GetEquationRange"));
 assert.ok(wordEquationNumbering.includes("FormulaFontSize.ResolveSemanticFontSize"));
 assert.ok(wordEquationNumbering.includes("ResolveEquationNumberLabelRange"));
-assert.ok(wordEquationNumbering.includes('EquationNumberFontName = "Cambria Math"'));
-assert.ok(wordEquationNumbering.includes("ApplyEquationNumberFont"));
 assert.ok(wordVstoService.includes("paragraphFormat.DisableLineHeightGrid = -1"));
 assert.ok(wordEquationNumberingTrueDisplay.includes("StyleNativeDisplayAnchorParagraph"));
 assert.ok(wordEquationNumberingTrueDisplay.includes("WdWrapType.wdWrapNone"));
@@ -1098,6 +1130,10 @@ assert.ok(uninstallVsto.includes("remove_windows_office_certificate.ps1"));
 assert.ok(uninstallVsto.includes("Get-Process visualtex"));
 assert.ok(uninstallVsto.includes("Stopping VisualTeX process"));
 assert.ok(uninstallVsto.includes("$process.WaitForExit()"));
+assert.ok(
+  uninstallVsto.includes('"/L*v", (Quote-ProcessArgument $msiLog)'),
+  "Office MSI uninstall log path must stay quoted for Windows user profiles containing spaces",
+);
 assert.ok(certificateUninstaller.includes("reg.exe"));
 assert.ok(certificateUninstaller.includes("SystemCertificates\\Root\\Certificates"));
 assert.ok(certificateUninstaller.includes("WaitForExit"));
@@ -1311,7 +1347,7 @@ assert.ok(
 );
 assert.ok(officeProcessGuard.includes("Get-Process -Name $officeNames"));
 assert.ok(officeProcessGuard.includes("Stop-Process -Id $item.ProcessId -Force"));
-assert.ok(officeProcessGuard.includes("background COM/OLE (-Embedding"));
+assert.ok(officeProcessGuard.includes("background Office process (no visible main window; may be COM/OLE)"));
 assert.ok(officeProcessGuard.includes("exit 10"));
 assert.ok(officeProcessGuard.includes("exit 11"));
 assert.ok(!installerHooks.includes("VisualTeXOfficeOleRadio"));

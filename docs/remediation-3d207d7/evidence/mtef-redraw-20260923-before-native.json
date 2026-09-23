@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  28907252,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  6823486,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  11614074,
+        "name":  "VisualTeX generated invalid standalone MathType MTEF for \u0027\\lvert x_{8}-\\mu\\rvert\u003c\\varepsilon\u0027. index=0; expectedLen=50; actualLen=47; expectedChar=U+0066(\u0027f\u0027); actualChar=U+006F(\u0027o\u0027); expectedContext=\u0027fence(|\u0027; actualContext=\u0027o(|)sub\u0027",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

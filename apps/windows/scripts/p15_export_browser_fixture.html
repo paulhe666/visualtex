@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8"><title>P15 core export fixture</title></head>
+  <body>
+    <div id="ready">loading</div>
+    <script type="module">
+      const ready = document.getElementById("ready");
+      try {
+        const { latexToMathMl, latexToSvg, svgToBase64 } = await import("/src/export/runtime.ts");
+        window.p15ExportRuntime = { latexToMathMl, latexToSvg, svgToBase64 };
+        ready.textContent = "ready";
+      } catch (error) {
+        ready.textContent = `error:${error instanceof Error ? error.stack || error.message : String(error)}`;
+      }
+    </script>
+  </body>
+</html>

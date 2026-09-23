@@ -1,0 +1,20 @@
+{
+  "schema": "visualtex-engine-archive-audit-v1",
+  "status": "PASS",
+  "archive": "docs/engine-rebuild/checkpoints/CP09-builtin-macros-1/visualtex-engine-workspace-0.1.0.tgz",
+  "archiveSha256": "c4ea9e356221dda4f9f571ae1a5c12b0a9a0b4727b11c0f64d8ce7a847d28397",
+  "archiveBytes": 435245,
+  "archiveFiles": 195,
+  "verifiedSourceFiles": 194,
+  "sourceSha256": "4d25a397ac10eda35e8f66c900fe6abfbabcfd4a763ae8c92aa1435dc097e890",
+  "archiveMatchedEveryVerifiedInput": true,
+  "currentSourceStillMatches": true,
+  "forbiddenArchiveFiles": [],
+  "verificationReceipt": "engine/target/p09-verification/2026-09-14T01-08-09-777Z/report.json",
+  "strictVerificationStatus": "PASS",
+  "writes": 0,
+  "engineGitCommits": 0,
+  "engineGitPushes": 0,
+  "officeActions": 0,
+  "productionEngineSwitched": false
+}

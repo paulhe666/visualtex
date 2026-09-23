@@ -1196,7 +1196,7 @@ internal static partial class WordOmmlConverter
         var package = XDocument.Parse(WordDocumentXml.Read(document));
         XNamespace w = WordNamespace;
         XNamespace m = MathNamespace;
-        var body = package.Descendants(w + "body").Single();
+        var body = WordDocumentXml.GetRequiredMainDocumentBody(package);
         if (body.Descendants(m + "oMath").Count() != prepared.Count)
             throw new InvalidDataException("The normalized OMML source inventory is incomplete.");
         var anchors = body.Descendants(w + "bookmarkStart")

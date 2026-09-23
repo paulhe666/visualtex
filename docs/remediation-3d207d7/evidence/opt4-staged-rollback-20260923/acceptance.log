@@ -1,0 +1,10 @@
+Acceptance mode: word-staged-omml-rollback
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+System.IO.DirectoryNotFoundException (0x80070003): 未能找到路径“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\docs\remediation-3d207d7\evidence\perf100-fix9b-omml-vt-source-copy.docx”的一部分。
+   在 System.IO.__Error.WinIOError(Int32 errorCode, String maybeFullPath)
+   在 System.IO.FileStream.Init(String path, FileMode mode, FileAccess access, Int32 rights, Boolean useRights, FileShare share, Int32 bufferSize, FileOptions options, SECURITY_ATTRIBUTES secAttrs, String msgPath, Boolean bFromProxy, Boolean useLongPath, Boolean checkHost)
+   在 System.IO.FileStream..ctor(String path, FileMode mode, FileAccess access, FileShare share)
+   在 VisualTeX.VstoFlowAcceptance.Program.<RunWordStagedOmmlRollbackAcceptance>g__HashFile|1125_0(String path, <>c__DisplayClass1125_0& ) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordStagedOmmlRollbackAcceptance.cs:行号 18
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWordStagedOmmlRollbackAcceptance(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordStagedOmmlRollbackAcceptance.cs:行号 21
+   在 VisualTeX.VstoFlowAcceptance.Program.Main(String[] args) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 1179
+Acceptance artifacts retained: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\opt4-staged-rollback-20260923

@@ -1,0 +1,4 @@
+Devspace capability probe requested by user.
+probe_id=20260923-7ba309f5
+write=verified
+edit=verified

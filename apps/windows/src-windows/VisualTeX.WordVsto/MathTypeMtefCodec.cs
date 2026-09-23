@@ -651,7 +651,7 @@ internal static partial class MathTypeMtefCodec
                     var normalizedOpen = NormalizeFence(open);
                     var normalizedClose = NormalizeFence(close);
                     var fencedChildrenSignature =
-                        string.Concat(fenceChildren.Select(child => CanonicalizeMathMl(child, variant)));
+                        CanonicalizeElementSequence(fenceChildren, variant);
                     return CanonicalFenceSignature(
                         normalizedOpen,
                         normalizedClose,
@@ -806,18 +806,15 @@ internal static partial class MathTypeMtefCodec
                 var over = NormalizeAccentMark(children[1].Value.Trim());
                 if (IsHorizontalBraceMarker(over, top: true))
                     return "hbrace-top(" + CanonicalizeMathMl(children[0], variant) + ")";
-                var moverAccent = IsTrueMathMlBoolean((string?)element.Attribute("accent"));
-                var markAccent = IsTrueMathMlBoolean((string?)children[1].Attribute("accent"));
-                var explicitlyAccent = moverAccent || markAccent;
-                var explicitlyNonAccent =
-                    IsFalseMathMlBoolean((string?)element.Attribute("accent"))
-                    || IsFalseMathMlBoolean((string?)children[1].Attribute("accent"));
-                if (over == "¯" && (explicitlyAccent || explicitlyNonAccent))
+                var isAccent = ResolveOverAccent(element, children[1]);
+                // MathType's overbar template is also the representation used
+                // for TeX overline (whose MathML may explicitly set accent=false).
+                if (over == "¯")
                     return "accent(overbar," + CanonicalizeMathMl(children[0], variant) + ")";
                 var accentGlyph = over is "→" or "←" or "↔"
                     or "^" or "~" or "." or "˙" or "¨"
                     or "⌢" or "⏜" or "ˇ" or "˘" or "´" or "`" or "˚";
-                return explicitlyAccent && accentGlyph
+                return isAccent && accentGlyph
                     ? "accent(" + over + "," + CanonicalizeMathMl(children[0], variant) + ")"
                     : CanonicalBinary("sup", children, variant);
             }
@@ -2375,6 +2372,40 @@ internal static partial class MathTypeMtefCodec
         return false;
     }
 
+    // Presentation MathML gives explicit fixed-glyph attributes precedence over
+    // TeX spacing classes. OPEN/CLOSE on \\lvert, \\rvert and \\langle describe
+    // spacing, not an expandable fence template. MTEF CHAR does not retain those
+    // MathJax annotations, so canonicalization and emission must agree here.
+    private static bool IsExplicitlyFixedFence(XElement token) =>
+        IsFalseMathMlBoolean((string?)token.Attribute("fence"))
+        || IsFalseMathMlBoolean((string?)token.Attribute("stretchy"));
+
+    private static bool ResolveOverAccent(XElement mover, XElement overscript)
+    {
+        var own = (string?)mover.Attribute("accent");
+        if (IsTrueMathMlBoolean(own)) return true;
+        if (IsFalseMathMlBoolean(own)) return false;
+
+        // MathML 3, 3.4.5: an omitted accent inherits the core mo's accent,
+        // including its operator-dictionary default. Absence is not false.
+        var core = overscript;
+        while (core.Name.LocalName is "mrow" or "mstyle" or "mpadded" or "semantics")
+        {
+            var contents = core.Elements()
+                .Where(child => child.Name.LocalName is not ("annotation" or "annotation-xml"))
+                .ToArray();
+            if (contents.Length != 1) return false;
+            core = contents[0];
+        }
+        if (core.Name.LocalName != "mo") return false;
+        var mark = (string?)core.Attribute("accent");
+        if (IsTrueMathMlBoolean(mark)) return true;
+        if (IsFalseMathMlBoolean(mark)) return false;
+        return NormalizeAccentMark(core.Value.Trim()) is "→" or "←" or "↔"
+            or "^" or "~" or "˙" or "¨" or "¯"
+            or "⌢" or "⏜" or "ˇ" or "˘" or "´" or "`" or "˚";
+    }
+
     private static bool TryGetLooseFenceToken(XElement candidate, out string fence)
     {
         fence = string.Empty;
@@ -2385,7 +2416,7 @@ internal static partial class MathTypeMtefCodec
             if (nested.Length == 1 && nested[0].Name.LocalName == "mo")
                 token = nested[0];
         }
-        if (token is null) return false;
+        if (token is null || IsExplicitlyFixedFence(token)) return false;
         fence = NormalizeFence(token.Value.Trim());
         return fence is "(" or ")" or "[" or "]" or "{" or "}"
             or "⟨" or "⟩" or "⌈" or "⌉" or "⌊" or "⌋" or "|" or "‖";
@@ -2484,12 +2515,10 @@ internal static partial class MathTypeMtefCodec
         var markerMatches = string.Equals(candidateClass, expectedClass, StringComparison.OrdinalIgnoreCase)
             || string.Equals(tokenClass, expectedClass, StringComparison.OrdinalIgnoreCase);
         fence = NormalizeFence(token.Value.Trim());
+        // This rule must run before OPEN/CLOSE spacing-class recognition and
+        // must be identical to the loose-sequence canonicalizer's rule.
+        if (IsExplicitlyFixedFence(token)) return false;
         if (markerMatches) return true;
-        // Explicitly fixed CHAR delimiters must not become stretchable TMPL
-        // fences merely because a read-back mrow groups their siblings.
-        if (string.Equals((string?)token.Attribute("fence"), "false", StringComparison.OrdinalIgnoreCase)
-            || string.Equals((string?)token.Attribute("stretchy"), "false", StringComparison.OrdinalIgnoreCase))
-            return false;
         if (fence.Length == 0
             && string.Equals((string?)token.Attribute("fence"), "true", StringComparison.OrdinalIgnoreCase))
             return true;
@@ -4602,10 +4631,12 @@ internal static partial class MathTypeMtefCodec
             encoded8 = 0x61;
             return true;
         }
-        if (mtCode == 0x2225)
+        if (mtCode is 0x2016 or 0x2225)
         {
             // Genuine MathType 7 persists \parallel in MT Extra:
             // fnMTEXTRA + MTCode U+2225 + encoded8 0x50.
+            // Fixed norm bars use the same double-line glyph, retaining U+2016
+            // as their MTCode. Unicode Text fallback renders them as boxes.
             typeface = TypefaceMtExtra;
             encoded8 = 0x50;
             return true;
@@ -5517,6 +5548,8 @@ internal static partial class MathTypeMtefCodec
                 // longer recoverable, so preserve the actual stored glyph.
                 token = new XElement("mo", "♢");
             }
+            else if (typeface == TypefaceMtExtra && scalar == 0x2016)
+                token = new XElement("mo", text);
             else if (typeface == TypefaceMtExtra && scalar == 0x2210 && encoded == 0x43)
             {
                 // MathType reuses U+2210 internally for ordinary TeX \\amalg.

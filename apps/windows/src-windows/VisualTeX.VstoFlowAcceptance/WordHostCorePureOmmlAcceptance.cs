@@ -2327,6 +2327,8 @@ internal static partial class Program
         var previousNativePreview =
             Environment.GetEnvironmentVariable(
                 "VISUALTEX_DISABLE_MATHTYPE_NATIVE_PREVIEW");
+        Word.Application? application = null;
+        Word.Document? document = null;
 
         try
         {
@@ -2334,11 +2336,18 @@ internal static partial class Program
                 "VISUALTEX_DISABLE_MATHTYPE_NATIVE_PREVIEW",
                 "1");
 
-            using var host =
-                new WordPerformanceHost(
-                    documentPath: null);
-            var application = host.Application;
-            var document = host.Document;
+            var ownedWordRoot =
+                Path.Combine(
+                    artifactRoot,
+                    "mixed-conversion-owned-word");
+            Directory.CreateDirectory(
+                ownedWordRoot);
+            application =
+                CreateFreshAcceptanceAutomationWord(
+                    ownedWordRoot);
+            document =
+                application.Documents.Add();
+            document.Activate();
             var service =
                 new WordFormulaService(
                     application);
@@ -2928,6 +2937,22 @@ internal static partial class Program
         }
         finally
         {
+            try
+            {
+                document?.Close(
+                    Word.WdSaveOptions.wdDoNotSaveChanges);
+            }
+            catch { }
+            try
+            {
+                QuitWordApplicationIfOwned(
+                    application);
+            }
+            catch { }
+            Release(document);
+            Release(application);
+            ForceComCleanup();
+
             Environment.SetEnvironmentVariable(
                 "VISUALTEX_DISABLE_MATHTYPE_NATIVE_PREVIEW",
                 previousNativePreview);

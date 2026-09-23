@@ -1,0 +1,99 @@
+{
+  "schema": "visualtex-p15-retired-runtime-complete-checkpoint-v1",
+  "status": "PASS",
+  "completion": "complete",
+  "p16Permitted": true,
+  "p16InstallerMutationPermittedWithoutNewUserApproval": false,
+  "branch": "reference-3d207d7",
+  "headAtFreeze": "d1f0aff8db9275c90dc18c7318dc2a4d7bbbd760",
+  "verificationReceipt": "engine/target/p15-verification/2026-09-16T06-09-08-451Z/report.json",
+  "verificationReceiptSha256": "e80bba65d1670bb70811bbc77e1cf49da820f5f3ce9ffb5a23583d18ba3228fb",
+  "sourceSha256": "ec8a234d64884fc4b14d2451a744c13e995d39bac5b828aa73eafd73aa215c76",
+  "sourceUnchanged": true,
+  "verificationSteps": 30,
+  "windowsAcceptance": {
+    "status": "PASS",
+    "record": "engine/specs/P15-windows-acceptance.json",
+    "sha256": "544d67df45ba0407dd74e14b0057bf567df262b7d248480c4b9b9ec85b66b9d8",
+    "finalDesktopScript": "main-I4TNfDC1.js",
+    "finalOfficeScript": "dialog-yV0v4sBO.js",
+    "wasmSha256": "6ee676b2c25a5b3b6cfe16241a208808110e9b7561514c94e4eddca343954ff7",
+    "fontSha256": "6075562b771f8b82f0c179e363389684f2dd09de30038269e2628e504bd7be0f",
+    "productionReachableFiles": 139,
+    "productionMathliveImports": 0,
+    "productionMathjaxImports": 0,
+    "legacyProductionReachableFiles": 0,
+    "retiredCssSelectors": 0,
+    "realWebView2CoreEditors": 1,
+    "realWebView2CoreInputs": 1,
+    "realWebView2MathFields": 0,
+    "createSource": "abc",
+    "editSource": "abcd",
+    "finalVisualTeXOleCount": 1,
+    "inlinePositionPt": 0,
+    "fontSizePt": 10.5
+  },
+  "runtimeRemoval": {
+    "mathliveProductionDependency": false,
+    "mathjaxProductionDependency": false,
+    "mathliveDevOracleOnly": true,
+    "mathjaxDevOracleOnly": true,
+    "katexOrMathliveFontAssetsInFinalBundles": 0,
+    "mathjaxRuntimeAssetsInFinalBundles": 0,
+    "latexCopyServiceUsesOwnDraftValidation": true,
+    "mathPreviewUsesCore": true,
+    "svgMathMlExportUsesCore": true,
+    "defaultDesktopUsesCore": true,
+    "outerMultiFormulaUsesCore": true
+  },
+  "hostRegression": {
+    "nativeWindowsIme": "PASS",
+    "ocrTargetIsolation": "PASS",
+    "structuredClipboard": "PASS",
+    "virtualViewport1000": "PASS",
+    "resourceRecovery": "PASS",
+    "fatalRuntimeRecovery": "PASS",
+    "officeRaces": "PASS",
+    "p13HeadlessPerformance": "PASS",
+    "coreBrowserExport": "PASS"
+  },
+  "performance": {
+    "localEditEventToFrameP95Ms": 13.9818,
+    "cursorEventToFrameP95Ms": 4.1166,
+    "cursorMoveLayoutDelta": 0,
+    "cursorMoveRevisionDelta": 0,
+    "headlessOmml1000AverageMs": 1.859
+  },
+  "licenseAndData": {
+    "latinModernMathLicense": "GUST Font License",
+    "latinModernLicensePresent": true,
+    "stixTwoMathOflPresent": true,
+    "integralDistributionRegression": "PASS"
+  },
+  "frozenOfficeAudit": {
+    "trackedBoundaryClean": true,
+    "workingTreeUnchangedDuringVerification": true,
+    "p14Checkpoint": "docs/engine-rebuild/checkpoints/CP14-cross-host-hardening-complete-1/",
+    "officeServerModifiedByP15": false,
+    "wordVstoModifiedByP15": false,
+    "powerPointVstoModifiedByP15": false,
+    "contractsModifiedByP15": false,
+    "numberingOrReferenceAlgorithmsModifiedByP15": false
+  },
+  "sourceFreeze": {
+    "kind": "hash-manifest",
+    "archiveCreated": false,
+    "allVerifiedInputHashesRecordedInReceipt": true
+  },
+  "boundaries": {
+    "gitCommitCreated": false,
+    "gitPushPerformed": false,
+    "installerBuilt": false,
+    "installerInstalled": false,
+    "releasePublished": false,
+    "installedOfficeUiOverwritten": false,
+    "userWordProcessActionPerformed": false,
+    "ownedAcceptanceWordClosedWithoutSave": true,
+    "ownedAcceptanceCompanionStopped": true
+  }
+}

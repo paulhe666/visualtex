@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import os
 import sys
@@ -34,8 +35,18 @@ def main() -> None:
             model_name = "PP-FormulaNet_plus-M"
             model_dir = cache_root / "official_models" / model_name
             model_dir.mkdir(parents=True)
-            for filename in ("inference.json", "inference.pdiparams", "inference.yml"):
-                (model_dir / filename).write_bytes(b"test")
+            test_files = {
+                "inference.json": b"{}",
+                "inference.pdiparams": b"test-params",
+                "inference.yml": b"model: test\n",
+            }
+            for filename, payload in test_files.items():
+                (model_dir / filename).write_bytes(payload)
+            worker._MODEL_FILE_SHA256[model_name] = {
+                filename: hashlib.sha256(payload).hexdigest()
+                for filename, payload in test_files.items()
+            }
+            worker._MODEL_VALIDATION_CACHE.clear()
 
             isolated_home = cache_root / "isolated-home"
             isolated_home.mkdir()
@@ -73,10 +84,12 @@ def main() -> None:
             worker._CURRENT_DEVICE = None
             calls.clear()
             (model_dir / "inference.yml").unlink()
+            worker._MODEL_VALIDATION_CACHE.clear()
             try:
                 worker._load_model(model_name, "cpu")
             except RuntimeError as error:
-                assert "verified local model" in str(error).lower()
+                assert "OCR_MODEL_INTEGRITY_ERROR" in str(error)
+                assert "inference.yml" in str(error)
             else:
                 raise AssertionError(
                     "An incomplete model directory must be rejected instead of allowing PaddleX to download implicitly"
@@ -84,6 +97,56 @@ def main() -> None:
             assert calls == [], (
                 "An incomplete model directory must fail before PaddleOCR is constructed"
             )
+
+            (model_dir / "inference.yml").write_bytes(test_files["inference.yml"])
+            (model_dir / "inference.json").write_bytes(b"")
+            worker._MODEL_VALIDATION_CACHE.clear()
+            try:
+                worker._load_model(model_name, "cpu")
+            except RuntimeError as error:
+                assert "OCR_MODEL_INTEGRITY_ERROR" in str(error)
+                assert "inference.json" in str(error)
+                assert "empty" in str(error).lower()
+            else:
+                raise AssertionError(
+                    "An empty inference.json must be rejected before PaddleOCR is constructed"
+                )
+            assert calls == []
+
+            (model_dir / "inference.json").write_bytes(test_files["inference.json"])
+            (model_dir / "inference.pdiparams").write_bytes(b"broken-data")
+            worker._MODEL_VALIDATION_CACHE.clear()
+            try:
+                worker._load_model(model_name, "cpu")
+            except RuntimeError as error:
+                assert "OCR_MODEL_INTEGRITY_ERROR" in str(error)
+                assert "SHA-256" in str(error)
+            else:
+                raise AssertionError(
+                    "A corrupted model file must be rejected before PaddleOCR is constructed"
+                )
+            assert calls == []
+
+            if os.name == "nt":
+                unicode_cache = cache_root / "中文缓存"
+                unicode_model_dir = unicode_cache / "official_models" / model_name
+                unicode_model_dir.mkdir(parents=True)
+                for filename, payload in test_files.items():
+                    (unicode_model_dir / filename).write_bytes(payload)
+                os.environ["PADDLE_PDX_CACHE_HOME"] = str(unicode_cache)
+                worker._MODEL_VALIDATION_CACHE.clear()
+                worker._CURRENT_MODEL = None
+                worker._CURRENT_MODEL_NAME = None
+                worker._CURRENT_DEVICE = None
+                calls.clear()
+                worker._load_model(model_name, "cpu")
+                assert len(calls) == 1
+                paddle_model_dir = str(calls[0].get("model_dir"))
+                assert paddle_model_dir.isascii(), (
+                    "Paddle Inference must never receive a non-ASCII model_dir on Windows: "
+                    + paddle_model_dir
+                )
+                assert Path(paddle_model_dir).is_dir()
     finally:
         if original_cache is None:
             os.environ.pop("PADDLE_PDX_CACHE_HOME", None)

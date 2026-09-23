@@ -1,3 +1,4 @@
+import { isTauri } from "@tauri-apps/api/core";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../editor/alignmentMarkers.ts";
 import {
   decodeBooleanOcrResult,
@@ -51,6 +52,56 @@ function listen<T>(
   handler: (event: OcrTransportEvent<T>) => void,
 ) {
   return activeTransport().listen(eventName, handler);
+}
+
+export function formatOcrError(
+  error: unknown,
+  fallback = "Unknown OCR error",
+): string {
+  const seen = new Set<object>();
+  const fragments: string[] = [];
+
+  const append = (value: unknown, depth = 0) => {
+    if (depth > 4 || value === null || value === undefined) return;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed && !fragments.includes(trimmed)) fragments.push(trimmed);
+      return;
+    }
+    if (value instanceof Error) {
+      append(value.message, depth + 1);
+      append(value.cause, depth + 1);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) append(item, depth + 1);
+      return;
+    }
+    if (typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    const record = value as Record<string, unknown>;
+    for (const key of [
+      "message",
+      "error",
+      "detail",
+      "details",
+      "reason",
+      "cause",
+    ]) {
+      append(record[key], depth + 1);
+    }
+    if (fragments.length === 0) {
+      try {
+        const serialized = JSON.stringify(value);
+        if (serialized && serialized !== "{}") append(serialized, depth + 1);
+      } catch {
+        // Fall through to the caller-provided fallback.
+      }
+    }
+  };
+
+  append(error);
+  return fragments.join("\n").trim() || fallback;
 }
 
 export const OCR_MODELS = [
@@ -637,7 +688,7 @@ const SUPPORTED_EXTENSIONS = new Set([
 ]);
 
 export const isTauriEnvironment = () =>
-  configuredTransport?.environment === "desktop";
+  configuredTransport?.environment === "desktop" && isTauri();
 
 export const isOfficeCompanionEnvironment = () => {
   if (typeof window === "undefined" || typeof document === "undefined") {

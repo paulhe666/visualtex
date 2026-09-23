@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-read-system-font-asset"
+description = "Allow the trusted local Office formula editor to read a bounded verified system font asset for the self-owned math engine."
+commands.allow = ["read_system_font_asset", "read_system_font_variant_asset", "probe_system_math_fonts"]

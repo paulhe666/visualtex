@@ -1,0 +1,20 @@
+{
+  "schema":"visualtex-engine-checkpoint-v1",
+  "checkpoint":"CP07.2-delimiters",
+  "baseHead":"00b48e17b736c7e57a0a72e19e271df82906f89d",
+  "archive":"visualtex-engine-workspace-0.1.0.tgz",
+  "archiveSha256":"aec5998e81dc317d5d898e5c1ed327b2c01d643abf92efbef7ac98ed76582118",
+  "archiveFiles":103,
+  "verificationReceipt":"engine/target/verification/2026-09-13T07-03-43-563Z/report.json",
+  "verifiedInputSha256":"2c4996e261d11a70099669e7c9a699b4fe6cb0a3f4a5c088166fe1fecaa394d5",
+  "status":"PASS",
+  "verificationSteps":7,
+  "rustPassed":223,
+  "fenceNativeTests":10,
+  "layoutParity":{"requests":354,"scenes":209,"maxNumericDifference":0},
+  "fenceBrowser":"PASS",
+  "sourceChangedDuringVerification":false,
+  "productionSwitched":false,
+  "gitCommitCreated":false,
+  "gitPushPerformed":false
+}

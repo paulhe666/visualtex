@@ -59,8 +59,8 @@ const complexCommands: LatexCommand[] = [
   makeCommand("overrightarrow", "\\overrightarrow", "\\overrightarrow{\\placeholder{}}", "\\overrightarrow{AB}", "上方右箭头", "Over-arrow right", "structure", 77, ["over arrow"], ["向量箭头"]),
   makeCommand("overleftarrow", "\\overleftarrow", "\\overleftarrow{\\placeholder{}}", "\\overleftarrow{AB}", "上方左箭头", "Over-arrow left", "structure", 74, ["over left arrow"], ["向量箭头"]),
   makeCommand("underline", "\\underline", "\\underline{\\placeholder{}}", "\\underline{x}", "下划线", "Underline", "structure", 73, ["underline"], ["下划线"]),
-  makeCommand("overbrace", "\\overbrace", "\\overbrace{\\placeholder{}}^{\\placeholder{}}", "\\overbrace{a+\\cdots+a}^{n}", "上花括号", "Overbrace", "structure", 72, ["overbrace"], ["上括注"]),
-  makeCommand("underbrace", "\\underbrace", "\\underbrace{\\placeholder{}}_{\\placeholder{}}", "\\underbrace{a+\\cdots+a}_{n}", "下花括号", "Underbrace", "structure", 72, ["underbrace"], ["下括注"]),
+  makeCommand("overbrace", "\\overbrace", "\\overbrace{\\placeholder{}}", "\\overbrace{a+\\cdots+a}^{n}", "上花括号", "Overbrace", "structure", 72, ["overbrace"], ["上括注"]),
+  makeCommand("underbrace", "\\underbrace", "\\underbrace{\\placeholder{}}", "\\underbrace{a+\\cdots+a}_{n}", "下花括号", "Underbrace", "structure", 72, ["underbrace"], ["下括注"]),
   makeCommand("cases", "\\begin{cases}", "\\begin{cases}\\placeholder{} & \\placeholder{} \\\\ \\placeholder{} & \\placeholder{}\\end{cases}", "f(x)=\\begin{cases}x&x>0\\\\0&x\\leq0\\end{cases}", "分段函数", "Cases", "structure", 85, ["cases", "piecewise"], ["分段函数"]),
   makeCommand("boxed", "\\boxed", "\\boxed{\\placeholder{}}", "\\boxed{x}", "方框公式", "Boxed", "structure", 70, ["boxed", "box"], ["方框"]),
 
@@ -130,14 +130,14 @@ const complexCommands: LatexCommand[] = [
 
   // 物理常用结构
   makeCommand("expectation", "\\langle", "\\left\\langle\\placeholder{}\\right\\rangle", "\\langle A\\rangle", "期望值", "Expectation value", "physics", 90, ["expectation"], ["期望值"]),
-  makeCommand("braket", "\\langle", "\\left\\langle\\placeholder{}\\middle|\\placeholder{}\\right\\rangle", "\\langle\\phi|\\psi\\rangle", "内积", "Bra-ket", "physics", 92, ["braket", "inner product"], ["内积", "狄拉克"]),
+  makeCommand("braket", "\\langle", "\\braket{\\placeholder{}}{\\placeholder{}}", "\\braket{\\phi}{\\psi}", "内积", "Bra-ket", "physics", 92, ["braket", "inner product"], ["内积", "狄拉克"]),
   makeCommand("commutator", "[", "\\left[\\placeholder{},\\placeholder{}\\right]", "[A,B]", "对易子", "Commutator", "physics", 88, ["commutator"], ["对易子"]),
   makeCommand("anticommutator", "\\{", "\\left\\{\\placeholder{},\\placeholder{}\\right\\}", "\\{A,B\\}", "反对易子", "Anticommutator", "physics", 82, ["anticommutator"], ["反对易子"]),
   makeCommand("timederivative", "\\dot", "\\dot{\\placeholder{}}", "\\dot{x}", "时间一阶导", "Time derivative", "physics", 86, ["dot derivative"], ["时间导数"]),
   makeCommand("timesecond", "\\ddot", "\\ddot{\\placeholder{}}", "\\ddot{x}", "时间二阶导", "Second time derivative", "physics", 84, ["double dot"], ["二阶时间导数"]),
-  makeCommand("outerproduct", "|\\psi\\rangle\\langle\\phi|", "|\\placeholder{}\\rangle\\langle\\placeholder{}|", "|\\psi\\rangle\\langle\\phi|", "外积", "Outer product", "physics", 91, ["outer product", "ket bra"], ["外积", "狄拉克"]),
-  makeCommand("matrixelement", "\\langle\\phi|\\hat A|\\psi\\rangle", "\\left\\langle\\placeholder{}\\middle|\\placeholder{}\\middle|\\placeholder{}\\right\\rangle", "\\langle\\phi|\\hat A|\\psi\\rangle", "矩阵元", "Matrix element", "physics", 90, ["matrix element"], ["矩阵元", "量子力学"]),
-  makeCommand("expectation-operator", "\\langle\\psi|\\hat A|\\psi\\rangle", "\\left\\langle\\placeholder{}\\middle|\\placeholder{}\\middle|\\placeholder{}\\right\\rangle", "\\langle\\psi|\\hat A|\\psi\\rangle", "算符期望值", "Operator expectation", "physics", 89, ["operator expectation"], ["期望值", "算符"]),
+  makeCommand("outerproduct", "|\\psi\\rangle\\langle\\phi|", "\\ketbra{\\placeholder{}}{\\placeholder{}}", "\\ketbra{\\psi}{\\phi}", "外积", "Outer product", "physics", 91, ["outer product", "ket bra"], ["外积", "狄拉克"]),
+  makeCommand("matrixelement", "\\langle\\phi|\\hat A|\\psi\\rangle", "\\mel{\\placeholder{}}{\\placeholder{}}{\\placeholder{}}", "\\mel{\\phi}{\\hat A}{\\psi}", "矩阵元", "Matrix element", "physics", 90, ["matrix element"], ["矩阵元", "量子力学"]),
+  makeCommand("expectation-operator", "\\langle\\psi|\\hat A|\\psi\\rangle", "\\mel{\\placeholder{}}{\\placeholder{}}{\\placeholder{}}", "\\mel{\\psi}{\\hat A}{\\psi}", "算符期望值", "Operator expectation", "physics", 89, ["operator expectation"], ["期望值", "算符"]),
   makeCommand("time-ordering", "\\mathcal{T}", "\\mathcal{T}\\left\\{\\placeholder{}\\right\\}", "\\mathcal{T}\\{A(t)B(t')\\}", "时间序算符", "Time ordering", "physics", 75, ["time ordering"], ["时间序", "量子场论"]),
 ];
 

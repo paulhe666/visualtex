@@ -24,7 +24,7 @@ function run(command, args, env = process.env) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-function preparePatchedNsisTemplate({ noOcrBundle = false } = {}) {
+function preparePatchedNsisTemplate({ noOcrBundle = false, targetRoot = null } = {}) {
   const nativePackage =
     process.arch === "arm64"
       ? "@tauri-apps/cli-win32-arm64-msvc"
@@ -232,8 +232,7 @@ function preparePatchedNsisTemplate({ noOcrBundle = false } = {}) {
   template = template.replace(oldResourceCopy, newResourceCopy);
 
   const output = resolve(
-    "src-tauri",
-    noOcrBundle ? "target-no-ocr" : "target",
+    targetRoot ?? resolve("src-tauri", noOcrBundle ? "target-no-ocr" : "target"),
     "nsis-template",
     "visualtex-installer.nsi",
   );

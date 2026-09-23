@@ -1,0 +1,20 @@
+[visualtex->mathtype count=10]
+capture|FormatConversion.CaptureTarget.VisualTeXToMathType|calls=10|ms=1271.964
+capture|FormatConversion.NumberingResolver.VisualTeX|calls=10|ms=843.871
+apply|FormatConversion.ReplaceExternalFrom.VisualTeX|calls=10|ms=6494.632
+apply|FormatConversion.ResolveCapturedHost.VisualTeX|calls=10|ms=1144.942
+apply|FormatConversion.DetachCanonical.VisualTeX|calls=10|ms=902.237
+apply|FormatConversion.VisualTeXNumbering.Detach|calls=10|ms=901.472
+apply|FormatConversion.NumberingResolver.VisualTeX|calls=10|ms=848.205
+apply|FormatConversion.RollbackSnapshot.Capture|calls=1|ms=392.02
+apply|WordDocumentXml.Read|calls=1|ms=61.418
+[visualtex->mathtype count=20]
+capture|FormatConversion.CaptureTarget.VisualTeXToMathType|calls=20|ms=2889.44
+capture|FormatConversion.NumberingResolver.VisualTeX|calls=20|ms=2001.573
+apply|FormatConversion.ReplaceExternalFrom.VisualTeX|calls=20|ms=12341.246
+apply|FormatConversion.ResolveCapturedHost.VisualTeX|calls=20|ms=2221.796
+apply|FormatConversion.DetachCanonical.VisualTeX|calls=20|ms=1741.349
+apply|FormatConversion.VisualTeXNumbering.Detach|calls=20|ms=1741.33
+apply|FormatConversion.NumberingResolver.VisualTeX|calls=20|ms=1649.972
+apply|FormatConversion.RollbackSnapshot.Capture|calls=1|ms=473.773
+apply|WordDocumentXml.Read|calls=1|ms=105.809

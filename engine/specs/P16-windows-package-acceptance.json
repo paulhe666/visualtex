@@ -1,0 +1,205 @@
+{
+  "schema": "visualtex-p16-windows-package-static-acceptance-v1",
+  "status": "STATIC_PASS",
+  "completion": "awaiting-installed-office-acceptance",
+  "date": "2026-09-16",
+  "branch": "reference-3d207d7",
+  "head": "d1f0aff8db9275c90dc18c7318dc2a4d7bbbd760",
+  "p15Receipt": {
+    "path": "engine/target/p15-verification/2026-09-16T06-09-08-451Z/report.json",
+    "sha256": "e80bba65d1670bb70811bbc77e1cf49da820f5f3ce9ffb5a23583d18ba3228fb",
+    "status": "PASS",
+    "role": "pre-installed-regression baseline; the current P16 candidate includes explicitly verified post-P15 fixes"
+  },
+  "postP15RegressionFixes": {
+    "sourceChangedAfterP15": true,
+    "reason": "Installed P16 candidate exposed product-visible regressions in formula rendering, command candidate previews, editable empty structures and formula-font identity.",
+    "visualRegression": {
+      "path": "engine/target/p16-core-visual-regression-browser/2026-09-16T11-07-04-051Z/report.json",
+      "sha256": "15E9C25A187BC5EB489EFCB1F7C74501BCFA502860944CCA523A4BB1EDFB682C",
+      "status": "PASS"
+    },
+    "formulaFontTruth": {
+      "path": "engine/target/p16-formula-font-truth-review/2026-09-16T10-40-17-230Z/report.json",
+      "sha256": "D543A893668E83BD035855B15AE90F659C2E7B92EB66EE00DF9B8AC1FABB71B7",
+      "status": "PASS"
+    },
+    "privateFontProductUi": {
+      "path": "engine/target/p16-private-font-product/2026-09-16T10-36-40-458Z/report.json",
+      "sha256": "EEDD2746C275C80460F77DC327197CE93DDD3AFF348BAB91CB1EDE8B72108DBB",
+      "status": "PASS",
+      "matrixCases": 30,
+      "previewsPerCase": 440
+    },
+    "mathLiveRuntimeReintroduced": false,
+    "installedAcceptanceStillRequired": true
+  },
+  "packages": {
+    "full": {
+      "path": "apps/windows/src-tauri/target/release/bundle/nsis/VisualTeX_1.2.7_x64-setup.exe",
+      "bytes": 429373597,
+      "sha256": "217E46CB233263BBAD4449CAD48F60ECB9BDE45F6AFF97422273E250FA46AF80",
+      "installerNsi": "apps/windows/src-tauri/target/release/nsis/x64/installer.nsi",
+      "installerNsiSha256": "44836004DAFCB08EE9BC95F8923A9F52C8376DC3DF8E93516C9A028DD2AED487",
+      "staticVerification": "PASS",
+      "containsOfflineOcr": true
+    },
+    "noOcr": {
+      "path": "apps/windows/src-tauri/target/release/bundle/nsis/VisualTeX_1.2.7_x64-no-ocr-setup.exe",
+      "bytes": 202042166,
+      "sha256": "AE10F3E5D9BCE3A4D74F79EAC1C75880E4F03DC2BD3AAFE616A634A30C5F5D27",
+      "isolatedBuiltPath": "apps/windows/src-tauri/target-no-ocr/release/bundle/nsis/VisualTeX_1.2.7_x64-setup.exe",
+      "installerNsi": "apps/windows/src-tauri/target-no-ocr/release/nsis/x64/installer.nsi",
+      "installerNsiSha256": "70A14D4B501B61C458ACAE5F2193B79A0219C37FA901532D6A587E569D190AA9",
+      "staticVerification": "PASS",
+      "containsOfflineOcr": false,
+      "bytesSavedVsFull": 227331431
+    }
+  },
+  "coreResources": {
+    "wasm": {
+      "asset": "visualtex_engine_wasm_bg-B3lZvpAa.wasm",
+      "bytes": 7357915,
+      "sha256": "0497FB94613855117479D92761A6692771FF017906EBDE61C06CBDD99EC72865",
+      "presentInFullNsiInput": true,
+      "presentInNoOcrNsiInput": true
+    },
+    "mathFont": {
+      "asset": "latinmodern-math-CUFlBgaJ.otf",
+      "bytes": 733736,
+      "sha256": "6075562B771F8B82F0C179E363389684F2DD09DE30038269E2628E504BD7BE0F",
+      "license": "GUST Font License",
+      "presentInFullNsiInput": true,
+      "presentInNoOcrNsiInput": true
+    },
+    "desktopMain": {
+      "asset": "main-CD1tnNSW.js",
+      "bytes": 1334425,
+      "sha256": "95F46E7FD8A419DFCE87567E834CF65E3E71F577C9A70031C62B2207FCE55C96"
+    },
+    "officeDialog": {
+      "asset": "dialog-Cov-hBVi.js",
+      "bytes": 1264084,
+      "sha256": "8ED427CF164B1A9CDA987E21E21CD5A174BA5853E2D59BECF87F433DD273E00F"
+    }
+  },
+  "bundledFormulaFonts": {
+    "manifest": {
+      "path": "apps/windows/src-tauri/resources/formula-fonts/manifest.json",
+      "sha256": "6DB0311011BC079B32156ECE0A28B3DBCC727956B6BE64C432D79A59EDB8576E",
+      "fontCount": 37
+    },
+    "desktopEmbeddedFontCount": 37,
+    "officeCompanionFontCount": 37,
+    "noOcrEmbeddedFontCount": 37,
+    "licenses": [
+      {
+        "path": "apps/windows/src-tauri/resources/formula-fonts/KaTeX-LICENSE.txt",
+        "installedPath": "licenses/formula-fonts/KaTeX-LICENSE.txt",
+        "sha256": "A7BD44ABD8419BF78185BE51F34216356AF1ADB0806CE39D6A9CA0940BD49B70"
+      },
+      {
+        "path": "apps/windows/src-tauri/resources/formula-fonts/MathLive-font-distribution-LICENSE.txt",
+        "installedPath": "licenses/formula-fonts/MathLive-font-distribution-LICENSE.txt",
+        "sha256": "3CAEBD18611959CA725AB976A004D408017EB1D7093D6C9B9B09C5A4790EAFF8"
+      },
+      {
+        "path": "apps/windows/src-tauri/resources/formula-fonts/STIXTwoMath-OFL.txt",
+        "installedPath": "licenses/formula-fonts/STIXTwoMath-OFL.txt",
+        "sha256": "BEC17CEE6412788DB45FD2644B301AFBC99CC5D372DDD3345DC4A7BFDEFB9F04"
+      },
+      {
+        "path": "apps/windows/src-tauri/resources/formula-fonts/GUST-FONT-LICENSE.txt",
+        "installedPath": "licenses/formula-fonts/GUST-FONT-LICENSE.txt",
+        "sha256": "2BD69AFFC3DA00715116F713F57EAB9707E96DAF3562AD0215987B15B9C16F73"
+      },
+      {
+        "path": "apps/windows/src-tauri/resources/formula-fonts/NotoSansCJK-OFL.txt",
+        "installedPath": "licenses/formula-fonts/NotoSansCJK-OFL.txt",
+        "sha256": "6A73F9541C2DE74158C0E7CF6B0A58EF774F5A780BF191F2D7EC9CC53EFE2BF2"
+      },
+      {
+        "path": "apps/windows/src-tauri/resources/formula-fonts/NotoSerifCJK-OFL.txt",
+        "installedPath": "licenses/formula-fonts/NotoSerifCJK-OFL.txt",
+        "sha256": "6A73F9541C2DE74158C0E7CF6B0A58EF774F5A780BF191F2D7EC9CC53EFE2BF2"
+      },
+      {
+        "path": "apps/windows/src-tauri/resources/formula-fonts/LXGWWenKai-OFL.txt",
+        "installedPath": "licenses/formula-fonts/LXGWWenKai-OFL.txt",
+        "sha256": "5C0F0D98A8B71A401063C9A9E814E608FEF6824FEFAB0C2AB73FE0955A5551B1"
+      }
+    ],
+    "productionMathLiveRuntime": false,
+    "defaultFont": "KaTeX"
+  },
+  "fixedOfficeInputs": {
+    "officeMsiVersion": "1.0.43.0",
+    "x64Msi": {
+      "sha256": "756C1AA9622234ED91BC789157ADBE97605D646DAD9173600A0A91C0732EF625",
+      "wordDllSha256": "35EDB78232272963D22FDFAFD4BF21A63DDF749F6216A0CC527CE91D446083F8",
+      "powerPointDllSha256": "3294285A46239A26C24E3D6587FED919BD9978FD6243BE45659768E3B4E0B249",
+      "formulaOleServerSha256": "3527651149BDAF72A68BAF663012C480A4CCEE0600AC05804BED66C0A3805900",
+      "contractsDllSha256": "C8FE901EFC50EC2A0CAAC1630D6056A39CBE9B4EEBA255ACB1CACDDAB72C0A48"
+    },
+    "x86Msi": {
+      "sha256": "C49F6C092A8E6E1D14C8BF0FB9A72A7B8DBC3B73B79600AC16A2F7DB9234910F",
+      "wordDllSha256": "3851787A9E153285C538A7C06D28958B2D3ADDA26A493761006946F5B9B490B5",
+      "powerPointDllSha256": "959D5F128DFFC996322C6CC4F88BC5BFE9C1668BA9CAB803164D9831D681D94B",
+      "formulaOleServerSha256": "D8A60F2B792379695200E8A656C75583B160197D4983ACF10BB81D18FE1765B7",
+      "contractsDllSha256": "56442F932CEC9D682D440451393538BF7878F37EE2E4EFD7145C7532DF434F45"
+    },
+    "bridgeSha256": "9131480E504B277E54857AE8D28A40A7C433E4CEC8BB6F108676D7660C114C32",
+    "vstoRuntimeSha256": "CFE1A40BBE4A50022DB2164ABDB0154984E2CECB761A23CDC81CB5754F6E0A18",
+    "privateMathType": {
+      "version": "7.9.1",
+      "fileCount": 69,
+      "manifestSha256": "F634A36CF0EA361D9A13156DB8409551E50CC7AF9CD60EC9E6977E57B34766DF"
+    }
+  },
+  "fullOcrInputs": {
+    "manifestSha256": "C3522372AC19404CFB2E20386F4BDDB2BB5BF9C1A062CF8E26B21C1F08C5DB33",
+    "pythonArchiveSha256": "611CEBA0EBBA2B3E05CA689A53B2C95CE01E9E01B50F34AE7C2DEAC6C5BFA874",
+    "requirementsLockSha256": "8A3FE6FD9D37804787BA2A2693199174DDEAAC699FAFE0360CFC44E162A31805",
+    "modelCatalogSha256": "B4B6AC149BA7FFA17B9FD070BFD79AE7240A38E91F507603D10D367CE33F1003",
+    "wheelCount": 71,
+    "modelPackagesEmbedded": false
+  },
+  "generatedNsiEvidence": {
+    "full": {
+      "coreWasm": true,
+      "coreMathFont": true,
+      "windowsOfficeMsiX64X86": true,
+      "officeBridge": true,
+      "privateMathTypeRuntime": true,
+      "ocrWorker": true,
+      "ocrPython": true,
+      "ocrWheelhouse": true,
+      "ocrModelCatalog": true
+    },
+    "noOcr": {
+      "coreWasm": true,
+      "coreMathFont": true,
+      "windowsOfficeMsiX64X86": true,
+      "officeBridge": true,
+      "privateMathTypeRuntime": true,
+      "ocrWorker": false,
+      "ocrPython": false,
+      "ocrWheelhouse": false,
+      "ocrModelCatalog": false
+    }
+  },
+  "installedAcceptance": {
+    "status": "NOT_RUN",
+    "installerInstalled": false,
+    "installedWordRibbonTested": false,
+    "installedPowerPointTested": false,
+    "reason": "User authorized overwriting the installer package files, but did not authorize installing or replacing the installed VisualTeX/Office integration."
+  },
+  "releaseActions": {
+    "uploaded": false,
+    "releasePublished": false,
+    "gitCommitCreated": false,
+    "gitPushPerformed": false
+  },
+  "overallComplete": false
+}

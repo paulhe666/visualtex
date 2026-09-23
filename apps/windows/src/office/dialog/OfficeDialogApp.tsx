@@ -92,6 +92,7 @@ import {
   OCR_RECOGNIZER_OPTIONS,
   cancelOcrRecognition,
   fileToOcrRequest,
+  formatOcrError,
   getOcrProviderConfiguration,
   listenOcrRecognitionProgress,
   normalizeOcrFormulaLines,
@@ -163,6 +164,7 @@ function officeExportCanCommit(
 async function waitForOfficeCommitResult(
   sessionId: string,
   host: OfficeHost,
+  isEn: boolean,
 ) {
   const hostLabel = host === "word" ? "Word" : "PowerPoint";
   const deadline = Date.now() + OFFICE_COMMIT_RESULT_TIMEOUT_MS;
@@ -170,14 +172,27 @@ async function waitForOfficeCommitResult(
     const current = await getOfficeSession(sessionId);
     if (current.status === "completed") return;
     if (current.status === "failed") {
-      throw new Error(current.error || `${hostLabel} 公式写入失败。`);
+      throw new Error(
+        current.error ||
+          (isEn
+            ? `${hostLabel} formula write failed.`
+            : `${hostLabel} 公式写入失败。`),
+      );
     }
     if (current.status === "cancelled" || current.explicitCancel) {
-      throw new Error(`${hostLabel} 公式写入已取消。`);
+      throw new Error(
+        isEn
+          ? `${hostLabel} formula write was cancelled.`
+          : `${hostLabel} 公式写入已取消。`,
+      );
     }
     await delay(100);
   }
-  throw new Error(`等待 ${hostLabel} 确认写入超时，请重试。`);
+  throw new Error(
+    isEn
+      ? `Timed out waiting for ${hostLabel} to confirm the formula write. Try again.`
+      : `等待 ${hostLabel} 确认写入超时，请重试。`,
+  );
 }
 
 function normalizeOfficeCodeFormat(codeFormat: string): LatexCodeFormat {
@@ -1864,12 +1879,10 @@ export function OfficeDialogApp() {
       );
       scheduleInlineOcrClear(1800);
     } catch (reason) {
-      const message =
-        reason instanceof Error
-          ? reason.message
-          : typeof reason === "string"
-            ? reason
-            : "";
+      const message = formatOcrError(
+        reason,
+        isEn ? "Image OCR failed" : "图片 OCR 失败",
+      );
       const cancelled =
         inlineOcrCancelRequestedRef.current || message.includes("OCR_CANCELLED");
       if (cancelled) {
@@ -2005,7 +2018,7 @@ export function OfficeDialogApp() {
       // action busy until the host confirms the durable final state; a failed
       // PowerPoint decoration therefore leaves this editor open with a useful
       // error instead of closing after creating an anonymous Graphic shape.
-      await waitForOfficeCommitResult(next.id, next.host);
+      await waitForOfficeCommitResult(next.id, next.host, isEn);
       if (IS_VSTO_DESKTOP_RUNTIME) {
         await closeOfficeSessionWindow(next.id);
         return;

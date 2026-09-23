@@ -1,0 +1,22 @@
+{
+  "schema": "visualtex-engine-checkpoint-v1",
+  "checkpoint": "CP06-native-ime-verified",
+  "baseHead": "00b48e17b736c7e57a0a72e19e271df82906f89d",
+  "branch": "reference-3d207d7",
+  "archive": "visualtex-engine-workspace-0.1.0.tgz",
+  "sha256": "9f39ca3f268a1fcba86ddb793c9f7d849a4a2d8765217adbf117b80a075e5166",
+  "archiveBytes": 178397,
+  "archiveFiles": 92,
+  "rustTests": {"passed": 200, "failed": 0},
+  "nativeWasmCases": {"protocol":2151,"sourceSession":222,"sourceEdit":440,"editingHistory":473},
+  "sandbox": "PASS",
+  "browserInput": {"status":"PASS","events":44,"trusted":41,"untrustedCompositionEnd":3},
+  "inputFaultInjection": {"passed":15,"failed":0},
+  "actualWindowsIme": {"status":"PASS","nativeSteps":32,"unicodeInjection":false,"cdpComposition":false,"clipboard":false},
+  "viewGeometry": {"status":"PASS","mappingCases":18,"fixturePixelDifference":0},
+  "protection": {"status":"PASS","groups":12,"artifacts":12,"originalDirtyFiles":65},
+  "productionSwitched":false,
+  "officeUiAccepted":false,
+  "gitCommitCreated":false,
+  "gitPushPerformed":false
+}

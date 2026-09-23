@@ -1,0 +1,5 @@
+[omml->mathtype count=10]
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=10|ms=31.446
+apply|FormatConversion.DetachCanonical.Omml|calls=10|ms=2382.514
+apply|FormatConversion.NativeOmmlRebuild.unnumbered|calls=10|ms=1887.961
+apply|FormatConversion.ResolveCapturedHost.Omml|calls=10|ms=1347.88

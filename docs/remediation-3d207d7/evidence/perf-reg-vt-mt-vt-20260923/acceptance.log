@@ -1,0 +1,8 @@
+Acceptance mode: word-visualtex-mathtype-batch-roundtrip
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+[EXPLICIT OWNED WORD] pid=23716; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\perf-reg-vt-mt-vt-20260923\owned-empty-startup.docx; coCreateInstance=False
+[VT→MT→VT LEG1] converted=3 failed=0 failures=
+[VT→MT→VT LEG2] converted=3 failed=0 failures=
+[VT→MT→VT] Three numbered VisualTeX formulas survived a whole-document VisualTeX→MathType→VisualTeX roundtrip under heading1-dash numbering.
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\perf-reg-vt-mt-vt-20260923

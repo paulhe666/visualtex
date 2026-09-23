@@ -1,0 +1,35 @@
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import assert from "node:assert/strict";
+import process from "node:process";
+
+const offset=process.pid%1000,previewPort=7600+offset,debugPort=13600+offset;
+const baseUrl=`http://127.0.0.1:${previewPort}`,profile=join(tmpdir(),`visualtex-p15-multiline-${process.pid}`);
+const candidates=[process.env.VISUALTEX_CHROME_PATH,process.env.PROGRAMFILES&&join(process.env.PROGRAMFILES,"Microsoft","Edge","Application","msedge.exe"),process.env["PROGRAMFILES(X86)"]&&join(process.env["PROGRAMFILES(X86)"],"Microsoft","Edge","Application","msedge.exe")].filter(Boolean);
+const browserPath=candidates.find(existsSync);if(!browserPath)throw new Error("No Edge/Chrome executable found.");
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function waitFor(url,timeout=15000){const s=Date.now();while(Date.now()-s<timeout){try{const r=await fetch(url);if(r.ok)return r}catch{}await sleep(80)}throw Error(`Timed out waiting for ${url}`)}
+class Cdp{constructor(url){this.url=url;this.id=1;this.pending=new Map()}async connect(){this.socket=new WebSocket(this.url);await new Promise((r,j)=>{this.socket.addEventListener("open",r,{once:true});this.socket.addEventListener("error",j,{once:true})});this.socket.addEventListener("message",e=>{const m=JSON.parse(e.data),p=this.pending.get(m.id);if(!p)return;this.pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result)})}send(method,params={}){const id=this.id++;return new Promise((resolve,reject)=>{this.pending.set(id,{resolve,reject});this.socket.send(JSON.stringify({id,method,params}))})}close(){this.socket?.close()}}
+async function main(){const preview=spawn(process.execPath,["node_modules/vite/bin/vite.js","preview","--host","127.0.0.1","--port",String(previewPort),"--strictPort"],{cwd:process.cwd(),stdio:"ignore"});let browser,client;try{
+ await waitFor(baseUrl);browser=spawn(browserPath,["--headless=new","--disable-gpu","--no-first-run","--no-default-browser-check",`--remote-debugging-port=${debugPort}`,`--user-data-dir=${profile}`,"--window-size=1400,1000",baseUrl],{stdio:"ignore"});await waitFor(`http://127.0.0.1:${debugPort}/json/list`);let page;for(let i=0;i<100&&!page;i++){const a=await(await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();page=a.find(x=>x.type==="page"&&x.url.startsWith(baseUrl));if(!page)await sleep(80)}if(!page)throw Error("Product page missing");client=new Cdp(page.webSocketDebuggerUrl);await client.connect();await client.send("Runtime.enable");
+ const ev=async e=>{const r=await client.send("Runtime.evaluate",{expression:e,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result.value};
+ const wait=async(e,label,t=12000)=>{const s=Date.now();while(Date.now()-s<t){if(await ev(e))return;await sleep(70)}throw Error(`Timed out: ${label}`)};
+ const key=async(key,code,vk,mod=0,text)=>{for(const type of["keyDown","keyUp"])await client.send("Input.dispatchKeyEvent",{type,key,code,windowsVirtualKeyCode:vk,nativeVirtualKeyCode:vk,modifiers:mod,...(type==="keyDown"&&text!==undefined?{text,unmodifiedText:text}:{})});await sleep(70)};
+ const click=async sel=>{const p=await ev(`(()=>{const e=document.querySelector(${JSON.stringify(sel)});if(!e)return null;e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2}})()`);if(!p)throw Error(`Missing ${sel}`);for(const type of["mousePressed","mouseReleased"])await client.send("Input.dispatchMouseEvent",{type,...p,button:"left",clickCount:1});await sleep(100)};
+ const state=()=>ev(`(()=>{let p=null;try{p=JSON.parse(localStorage.getItem('visualtex-editor')??'null')?.state??null}catch{}return{lines:p?.lines?.map(x=>({id:x.id,latex:x.latex,mode:x.mode}))??[],active:p?.activeLineId??null,inputs:document.querySelectorAll('.vt-core-input').length,core:document.querySelectorAll('[data-engine="visualtex-core"]').length,legacy:document.querySelectorAll('math-field').length}})()`);
+ await wait(`Boolean(document.querySelector('[data-engine="visualtex-core"] .vt-core-input'))`,`core mount`);
+ let s=await state();assert.equal(s.core,1);assert.equal(s.legacy,0);assert.equal(s.inputs,1);const firstSource=s.lines[0].latex;
+ await ev(`document.querySelector('.vt-core-input').focus();true`);
+ await key('Enter','Enter',13);await wait(`document.querySelectorAll('.vt-core-input').length===2&&JSON.parse(localStorage.getItem('visualtex-editor')).state.lines.length===2`,`Enter creates second core owner`);s=await state();assert.equal(s.legacy,0);assert.equal(s.lines[0].latex,firstSource);assert.equal(s.lines[1].latex,'');
+ await ev(`[...document.querySelectorAll('.vt-core-input')].at(-1).focus();true`);await key('y','KeyY',89,0,'y');await wait(`JSON.parse(localStorage.getItem('visualtex-editor')).state.lines[1].latex==='y'`,`second line edit`);s=await state();assert.deepEqual(s.lines.map(x=>x.latex),[firstSource,'y']);
+ await click('.edit-actions button:nth-child(1)');await wait(`JSON.parse(localStorage.getItem('visualtex-editor')).state.lines[1].latex===''`,`core undo second line`);
+ await click('.edit-actions button:nth-child(1)');await wait(`JSON.parse(localStorage.getItem('visualtex-editor')).state.lines.length===1`,`document undo line add`);s=await state();assert.deepEqual(s.lines.map(x=>x.latex),[firstSource]);assert.equal(s.inputs,1);
+ await click('.edit-actions button:nth-child(2)');await wait(`JSON.parse(localStorage.getItem('visualtex-editor')).state.lines.length===2&&document.querySelectorAll('.vt-core-input').length===2`,`document redo line add`);s=await state();assert.deepEqual(s.lines.map(x=>x.latex),[firstSource,'']);
+ await ev(`[...document.querySelectorAll('.vt-core-input')].at(-1).focus();true`);await key('Backspace','Backspace',8);await wait(`JSON.parse(localStorage.getItem('visualtex-editor')).state.lines.length===1`,`empty Backspace removes outer line`);s=await state();assert.deepEqual(s.lines.map(x=>x.latex),[firstSource]);assert.equal(s.inputs,1);assert.equal(s.legacy,0);
+ await click('.edit-actions button:nth-child(1)');await wait(`JSON.parse(localStorage.getItem('visualtex-editor')).state.lines.length===2`,`undo outer line removal`);s=await state();assert.deepEqual(s.lines.map(x=>x.latex),[firstSource,'']);assert.equal(s.inputs,2);assert.equal(s.legacy,0);
+ console.log(JSON.stringify({status:'PASS',actualProductPage:true,outerFormulaOwners:s.lines.length,coreInputs:s.inputs,legacyMathFields:s.legacy,enterCreatesOuterLine:true,coreUndoThenDocumentUndo:true,documentRedo:true,emptyBackspaceRemovesOuterLine:true,removeUndoRestoresOuterLine:true,finalSources:s.lines.map(x=>x.latex)},null,2));
+ }finally{client?.close();browser?.kill();preview.kill();await rm(profile,{recursive:true,force:true,maxRetries:3,retryDelay:100}).catch(()=>{})}}
+main().catch(e=>{console.error(e);process.exitCode=1});

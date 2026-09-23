@@ -1,0 +1,23 @@
+Acceptance mode: word-format-conversion-scaling
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[EXPLICIT OWNED WORD] pid=65016; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt3-omml-vt-20260923\owned-word-convert-omml-to-visualtex-10-384ebb93cfba4d1884c36123f02f3d06\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->visualtex count=10 captureMs=1640.9 applyMs=10383.9 capturePer=164.09 applyPer=1038.39
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[EXPLICIT OWNED WORD] pid=94104; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt3-omml-vt-20260923\owned-word-convert-omml-to-visualtex-20-3230a91c52ae4fa18d46c72921b545db\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->visualtex count=20 captureMs=2757.4 applyMs=23761.1 capturePer=137.87 applyPer=1188.06
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[EXPLICIT OWNED WORD] pid=46976; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt3-omml-vt-20260923\owned-word-convert-omml-to-visualtex-40-1ce5e131ecd74ce994577af654edb1e0\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->visualtex count=40 captureMs=5934.8 applyMs=63129.0 capturePer=148.37 applyPer=1578.23
+[FORMAT SCALING COMPLETE] samples=3; report=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt3-omml-vt-20260923\format-conversion-scaling.csv
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt3-omml-vt-20260923

@@ -1781,8 +1781,8 @@
   font-size: 27px;
 }
 
-.custom-symbol-material-library .math-preview .ML__latex,
-.custom-symbol-material-library .math-preview .ML__latex * {
+.custom-symbol-material-library .math-preview svg,
+.custom-symbol-material-library .math-preview svg * {
   color: var(--csd-ink) !important;
   opacity: 1 !important;
   visibility: visible !important;

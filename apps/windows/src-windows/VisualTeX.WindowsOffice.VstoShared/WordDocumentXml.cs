@@ -8,6 +8,57 @@ namespace VisualTeX.WordVsto;
 
 internal static class WordDocumentXml
 {
+    internal static bool TryGetMainDocumentBody(XDocument package, out XElement body)
+    {
+        if (package is null) throw new ArgumentNullException(nameof(package));
+        XNamespace pkg = "http://schemas.microsoft.com/office/2006/xmlPackage";
+        XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        body = null!;
+
+        // Range.WordOpenXML is normally Flat OPC. Resolve the main story from the
+        // package part identity instead of searching every WordprocessingML part:
+        // auxiliary/custom parts can legally contain another w:document/w:body.
+        if (package.Root?.Name == pkg + "package")
+        {
+            var mainParts = package.Root.Elements(pkg + "part")
+                .Where(part => string.Equals(
+                    (string?)part.Attribute(pkg + "name"),
+                    "/word/document.xml",
+                    StringComparison.Ordinal))
+                .Take(2)
+                .ToArray();
+            if (mainParts.Length != 1) return false;
+
+            var xmlData = mainParts[0].Element(pkg + "xmlData");
+            if (xmlData is null) return false;
+            var mainDocuments = xmlData.Elements(w + "document").Take(2).ToArray();
+            if (mainDocuments.Length != 1) return false;
+            var bodies = mainDocuments[0].Elements(w + "body").Take(2).ToArray();
+            if (bodies.Length != 1) return false;
+            body = bodies[0];
+            return true;
+        }
+
+        // Direct WordprocessingML payloads are still useful for diagnostics, but
+        // never fall back to a global Descendants(w:body) selection.
+        if (package.Root?.Name == w + "document")
+        {
+            var bodies = package.Root.Elements(w + "body").Take(2).ToArray();
+            if (bodies.Length != 1) return false;
+            body = bodies[0];
+            return true;
+        }
+
+        return false;
+    }
+
+    internal static XElement GetRequiredMainDocumentBody(XDocument package)
+    {
+        if (TryGetMainDocumentBody(package, out var body)) return body;
+        throw new InvalidDataException(
+            "Word XML does not contain exactly one main /word/document.xml w:document/w:body.");
+    }
+
     internal static bool CanProveNoMathTypePlaceRefFields(string wordOpenXml)
     {
         if (string.IsNullOrWhiteSpace(wordOpenXml)) return false;
@@ -15,8 +66,7 @@ internal static class WordDocumentXml
         {
             var package = XDocument.Parse(wordOpenXml);
             XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-            var body = package.Descendants(word + "body").SingleOrDefault();
-            if (body is null) return false;
+            if (!TryGetMainDocumentBody(package, out var body)) return false;
             // Word may split one field instruction across several instrText runs.
             // Concatenate without separators so MTPlace|Ref remains detectable.
             // A false positive merely triggers the exact COM fallback; only full
@@ -37,8 +87,7 @@ internal static class WordDocumentXml
         {
             var package = XDocument.Parse(wordOpenXml);
             XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-            var body = package.Descendants(word + "body").SingleOrDefault();
-            if (body is null) return false;
+            if (!TryGetMainDocumentBody(package, out var body)) return false;
             // VisualTeX-owned OMML/OLE numbering always carries the fixed,
             // locale-neutral SEQ VisualTeXEquation field. MathType's native
             // MTPlaceRef/MTEqn/MTChap/MTSec fields are deliberately excluded.
@@ -124,7 +173,7 @@ internal static class WordDocumentXml
                 XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
                 XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
                 XNamespace o = "urn:schemas-microsoft-com:office:office";
-                var body = package.Descendants(w + "body").Single();
+                var body = GetRequiredMainDocumentBody(package);
                 var exportedMaths = body.Descendants(m + "oMath").Count();
                 var exportedOles = body.Descendants(o + "OLEObject").Count();
                 // Before redraw, an all-LaTeX document contains zero OMath/OLE

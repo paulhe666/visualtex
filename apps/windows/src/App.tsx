@@ -83,6 +83,7 @@ import {
   OCR_RECOGNIZER_OPTIONS,
   cancelOcrRecognition,
   fileToOcrRequest,
+  formatOcrError,
   getOcrProviderConfiguration,
   isTauriEnvironment,
   listenOcrRecognitionProgress,
@@ -750,8 +751,10 @@ function App() {
       );
       scheduleInlineOcrClear(1800);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : typeof error === "string" ? error : "";
+      const errorMessage = formatOcrError(
+        error,
+        isEn ? "Image OCR failed" : "图片 OCR 失败",
+      );
       const cancelled =
         inlineOcrCancelRequestedRef.current || errorMessage.includes("OCR_CANCELLED");
       if (cancelled) {
@@ -853,11 +856,10 @@ function App() {
       );
     } catch (error) {
       setToast(
-        error instanceof Error
-          ? error.message
-          : isEn
-            ? "Quick OCR failed"
-            : "快捷 OCR 失败",
+        formatOcrError(
+          error,
+          isEn ? "Quick OCR failed" : "快捷 OCR 失败",
+        ),
       );
     } finally {
       setQuickOcrCaptureBusy(false);

@@ -25,6 +25,9 @@ internal static class WordFormulaNumberingResolver
         Document document,
         WordFormulaHostDescriptor host)
     {
+        using var operationMetric =
+            VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
+                "FormatConversion.NumberingResolver." + host?.Kind);
         if (document is null) throw new ArgumentNullException(nameof(document));
         if (host is null) throw new ArgumentNullException(nameof(host));
 
@@ -109,6 +112,33 @@ internal static class WordFormulaNumberingResolver
             Release(tables);
             Release(hostRange);
         }
+    }
+
+    internal static WordFormulaNumberingDescriptor ResolveOmmlAfterNativeMiss(
+        Range hostRange)
+    {
+        if (hostRange is null)
+            throw new ArgumentNullException(nameof(hostRange));
+
+        return HasLocalLegacyNumberingEvidence(
+                hostRange,
+                formulaId: null)
+            ? new WordFormulaNumberingDescriptor
+            {
+                Numbered = true,
+                FormulaId = null,
+                Position = "right",
+                ContainerKind =
+                    WordFormulaNumberingContainerKind.Legacy,
+            }
+            : new WordFormulaNumberingDescriptor
+            {
+                Numbered = false,
+                FormulaId = null,
+                Position = "right",
+                ContainerKind =
+                    WordFormulaNumberingContainerKind.None,
+            };
     }
 
     private static bool TryResolveCanonicalBodyTable(

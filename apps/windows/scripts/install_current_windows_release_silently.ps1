@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$Version = "1.2.7")
+param([string]$Version = "1.2.8")
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot

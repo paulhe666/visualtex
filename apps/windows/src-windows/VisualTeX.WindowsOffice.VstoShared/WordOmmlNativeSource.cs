@@ -1169,7 +1169,7 @@ internal static class WordOmmlNativeSource
                 "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
             XNamespace m =
                 "http://schemas.openxmlformats.org/officeDocument/2006/math";
-            var body = package.Descendants(w + "body").Single();
+            var body = WordDocumentXml.GetRequiredMainDocumentBody(package);
             var xmlEquations = body.Descendants(m + "oMath").ToArray();
             maths = document.OMaths;
             if (maths.Count != xmlEquations.Length)
@@ -1341,7 +1341,7 @@ internal static class WordOmmlNativeSource
             var package = XDocument.Parse(WordDocumentXml.Read(document));
             XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
             XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
-            var body = package.Descendants(w + "body").Single();
+            var body = WordDocumentXml.GetRequiredMainDocumentBody(package);
             maths = document.OMaths;
             var xmlEquations = body.Descendants(m + "oMath").ToArray();
             if (maths.Count != xmlEquations.Length)
@@ -1557,7 +1557,7 @@ internal static class WordOmmlNativeSource
             var package = XDocument.Parse(WordDocumentXml.Read(document));
             XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
             XNamespace m = "http://schemas.openxmlformats.org/officeDocument/2006/math";
-            var body = package.Descendants(w + "body").Single();
+            var body = WordDocumentXml.GetRequiredMainDocumentBody(package);
             maths = document.OMaths;
             var xmlEquations = body.Descendants(m + "oMath").ToArray();
             if (maths.Count != xmlEquations.Length)

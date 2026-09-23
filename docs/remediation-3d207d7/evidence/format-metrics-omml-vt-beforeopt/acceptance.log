@@ -1,0 +1,11 @@
+Acceptance mode: word-format-conversion-scaling
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[EXPLICIT OWNED WORD] pid=89644; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-metrics-omml-vt-beforeopt\owned-word-convert-omml-to-visualtex-10-3719ba9ce82542f9848a81bd62994342\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->visualtex count=10 captureMs=1463.4 applyMs=22368.0 capturePer=146.34 applyPer=2236.80
+[FORMAT SCALING COMPLETE] samples=1; report=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-metrics-omml-vt-beforeopt\format-conversion-scaling.csv
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-metrics-omml-vt-beforeopt

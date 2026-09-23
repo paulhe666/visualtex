@@ -1,0 +1,143 @@
+{
+    "name":  "文档1",
+    "fullName":  "文档1",
+    "saved":  false,
+    "end":  309,
+    "paragraphs":  2,
+    "tables":  [
+
+               ],
+    "maths":  [
+                  {
+                      "controlTags":  [
+
+                                      ],
+                      "type":  1,
+                      "size":  10.5,
+                      "start":  178,
+                      "text":  "\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0(𝑎+𝑏\u003cCR\u003e)\u003cCR\u003e𝑛\u003cCR\u003e=\u003cCR\u003e𝑘=0\u003cCR\u003e𝑛\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e𝑛\u003cCR\u003e𝑘\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e𝑎\u003cCR\u003e𝑛−𝑘\u003cCR\u003e\u003cCR\u003e𝑏\u003cCR\u003e𝑘\u003cCR\u003e",
+                      "index":  1,
+                      "tables":  0,
+                      "font":  "Cambria Math",
+                      "end":  238
+                  }
+              ],
+    "shapes":  [
+                   {
+                       "start":  1,
+                       "alternative":  "visualtex:v1:deflate:lZNdb9MwFIb_CvJ1HPkraRyJCwaqqARaxSZ6QUBynNPGaj46x-kGVf_7bJp1GhSkXdbPe855z3vSAxp0Da1COdqbYVSNgwe87m07NgpFE_wKdjB9h3IaoYktKl-RQVkqIGtcpoJgkZQcq3SWYk6lLgUhkAD1TZxxDXj5qrfVm_m5d6P8LP_88LYo1lbpAy6LYtcWxXBn3aH8wbBQ-ng8MHUMatPBgPJvB2TC6LLUnFR8hrNUl1hIrrEEusZJpbmmXCuuqlfOOH6PkO4rCA6V80Wn4ghVZtg16udnz8Lkptdb_9qNbQkWvBlnR4gQ3I3K-ZRu1Qbl3dg0EbLQVWBXpnL10rugIouFZIQILkXCKUueJB_BbGoXNAmLZzyTMhOUkyyRPItQqQYI66Ocs1hK4ankNMvELE3DQTp3Y37B0lumJD73nP_1Pp3uEzh3wn4bZ1of65m9r0PMMMGtMs54eO8Pt-iChesGTuu4px1fsGmPy3DZDyYEdAnf9KPVcNU717er2jgYdkrDJeXSwt7A_U1t1r8De-YfTmeaBItue3LzJVzl37o_Z76Qd_7HHq7btpmbbgN2Z0139qQt-A-kWhlXn_8giMYkppnPbNxV_6FT7buQMiMsxURixm5JkhOaExZTyQljSTESwq4IyQl5bvmaouMj",
+                       "width":  111.35,
+                       "index":  1,
+                       "type":  1,
+                       "height":  39.6,
+                       "prog":  "VisualTeX.Formula.1",
+                       "end":  35
+                   }
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  167,
+                          "name":  "VTEqNum_8ebbae0fb64045b3a676319cb400e5e1",
+                          "text":  "1",
+                          "start":  112
+                      },
+                      {
+                          "end":  35,
+                          "name":  "VTO_8ebbae0fb64045b3a676319cb400e5e1",
+                          "text":  "\u0001",
+                          "start":  1
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  2,
+                       "end":  34,
+                       "index":  1
+                   },
+                   {
+                       "nested":  2,
+                       "code":  " MACROBUTTON VisualTeXPlaceRef \u0013 SEQ VisualTeXEquation \\h \\* MERGEFORMAT \u0015(\u0013 SEQ VisualTeXEquation \\c \\* ARABIC \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  37,
+                       "end":  169,
+                       "index":  2
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  69,
+                       "end":  111,
+                       "index":  3
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\c \\* ARABIC \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  113,
+                       "end":  166,
+                       "index":  4
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_8ebbae0fb64045b3a676319cb400e5e1 \\h \\* CHARFORMAT ",
+                       "result":  "1",
+                       "type":  3,
+                       "start":  240,
+                       "end":  306,
+                       "index":  5
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  170,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  170,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "",
+                      "inTable":  false,
+                      "end":  309,
+                      "lineRule":  0,
+                      "text":  "风格豆腐干豆腐干\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0(𝑎+𝑏\u003cCR\u003e)\u003cCR\u003e𝑛\u003cCR\u003e=\u003cCR\u003e𝑘=0\u003cCR\u003e𝑛\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e𝑛\u003cCR\u003e𝑘\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e𝑎\u003cCR\u003e𝑛−𝑘\u003cCR\u003e\u003cCR\u003e𝑏\u003cCR\u003e𝑘\u003cCR\u003e(1)\u003cCR\u003e",
+                      "size":  10.5
+                  }
+              ],
+    "variables":  [
+
+                  ],
+    "xmlFonts":  [
+                     "\u003cw:rFonts w:ascii=\"Cambria Math\" w:hAnsi=\"Cambria Math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" /\u003e"
+                 ],
+    "xmlMathCount":  1,
+    "customXml":  [
+
+                  ]
+}

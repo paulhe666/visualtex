@@ -18,7 +18,7 @@ internal static class WordLocalEditSnapshot
     {
         XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
         var document = XDocument.Parse(xml);
-        var body = document.Descendants(w + "body").Single();
+        var body = WordDocumentXml.GetRequiredMainDocumentBody(document);
         if (geometry is not null) WordInlineObjectGeometry.BindToEvidence(body, geometry);
         XNamespace pkg = "http://schemas.microsoft.com/office/2006/xmlPackage";
         XNamespace rel = "http://schemas.openxmlformats.org/package/2006/relationships";

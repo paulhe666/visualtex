@@ -1,0 +1,22 @@
+Acceptance mode: word-format-conversion-scaling
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[EXPLICIT OWNED WORD] pid=28184; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-optimized1-20260923\owned-word-convert-omml-to-visualtex-10-a5bdbddaad2845e18a495c4044caa8b3\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->visualtex count=10 captureMs=1652.6 applyMs=19685.7 capturePer=165.26 applyPer=1968.57
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+System.Runtime.InteropServices.COMException (0x800A16C1): 对象已被删除。
+   在 Microsoft.Office.Interop.Word.Range.get_Duplicate()
+   在 VisualTeX.WordVsto.WordFormulaHostSemanticReader.ReadOmml(Document document, WordFormulaHostDescriptor host) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaHostSemanticReader.cs:行号 52
+   在 VisualTeX.WordVsto.WordFormulaHostSemanticReader.Read(Document document, WordFormulaHostDescriptor host) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaHostSemanticReader.cs:行号 28
+   在 VisualTeX.WordVsto.WordFormulaService.CaptureCoreConversionTarget(Document document, WordFormulaHostDescriptor host, WordFormulaHostKind sourceKind, WordFormulaHostKind targetKind, String targetMathTypeNumberPosition) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaService.FormatConversionCore.cs:行号 430
+   在 VisualTeX.WordVsto.WordFormulaService.CaptureFormulaFormatConversionPlanCore(Boolean wholeDocument, String sourceMode, String targetMode) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaService.FormatConversionCore.cs:行号 108
+   在 VisualTeX.VstoFlowAcceptance.Program.MeasureFormatScalingConversion(String artifactRoot, String conversionPath, String sourceMode, String targetMode, Int32 count, String pngPath, String emfPath) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordFormatConversionScalingAcceptance.cs:行号 420
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWordFormatConversionScalingAcceptance(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordFormatConversionScalingAcceptance.cs:行号 147
+   在 VisualTeX.VstoFlowAcceptance.Program.Main(String[] args) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 1215
+Acceptance artifacts retained: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-optimized1-20260923

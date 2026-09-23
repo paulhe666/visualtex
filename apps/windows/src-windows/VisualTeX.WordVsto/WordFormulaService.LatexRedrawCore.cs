@@ -405,6 +405,59 @@ internal sealed partial class WordFormulaService
             }
         }
 
+        // Redraw replaces source ranges from the end of the document
+        // toward the beginning so earlier source addresses stay stable.  A local
+        // field update performed while each numbered target is inserted therefore
+        // cannot establish the final document-order sequence: the first target
+        // processed is physically the last equation, so every newly-created SEQ
+        // stream can temporarily evaluate to 1.  The old path returned immediately
+        // after the reverse-order inserts and left those provisional field results
+        // visible until the user manually clicked "Update Equation Numbers".
+        //
+        // Finalize numbering once, after every target is in its final position.
+        // Keep MathType on its native MTPlaceRef/MTEqn subsystem; OMML and
+        // VisualTeX use the canonical Word numbering kernel.  One post-batch pass
+        // is both correct in document order and avoids an O(N^2) refresh per item.
+        if (plan.NumberDisplayFormulas
+            && result.FormulaCount > 0)
+        {
+            var targetKinds =
+                plan.Targets
+                    .Where(target =>
+                        string.Equals(
+                            target.DisplayMode,
+                            "block",
+                            StringComparison.OrdinalIgnoreCase))
+                    .Select(target =>
+                        ObjectModeToHostKind(
+                            prepared[target.Id]
+                                .Session
+                                .ObjectMode))
+                    .Distinct()
+                    .ToArray();
+
+            if (targetKinds.Any(kind =>
+                    kind ==
+                    WordFormulaHostKind.MathType))
+            {
+                _ =
+                    MathTypeEquationNumbering
+                        .UpdateEquationNumbers(
+                            document);
+            }
+
+            if (targetKinds.Any(kind =>
+                    kind is
+                        WordFormulaHostKind.Omml
+                        or WordFormulaHostKind.VisualTeX))
+            {
+                _ =
+                    WordFormulaNumberingKernel
+                        .RefreshCanonicalNumbers(
+                            document);
+            }
+        }
+
         result.TotalInsertMilliseconds = total;
         result.MaxInsertMilliseconds = maximum;
         return result;

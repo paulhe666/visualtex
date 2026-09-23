@@ -1,0 +1,8 @@
+﻿2026-09-23T18:12:35.7603071+08:00 redraw-failed System.IO.InvalidDataException: Word text coordinates differ from the captured LaTeX span; redraw stopped before mutation.
+   在 VisualTeX.WordVsto.WordFormulaService.CaptureLatexRedrawPlanCore(Boolean wholeDocument) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaService.LatexRedrawCore.cs:行号 106
+   在 VisualTeX.WordVsto.ThisAddIn.<>c__DisplayClass160_0.<RedrawLatexAsync>b__3() 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\ThisAddIn.cs:行号 3086
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0() 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\OfficeUiDispatcher.cs:行号 43
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 VisualTeX.WordVsto.ThisAddIn.<RedrawLatexAsync>d__160.MoveNext() 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\ThisAddIn.cs:行号 3085

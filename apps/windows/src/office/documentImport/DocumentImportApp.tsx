@@ -57,23 +57,28 @@ function formatFromSession(session: OfficeFormulaSession): DocumentSourceFormat 
 }
 
 function FormulaPreview({ latex, display, isEn }: { latex: string; display: boolean; isEn: boolean }) {
-  const rendered = useMemo(() => {
-    try {
-      return {
-        svg: latexToSvg(latex, {
-          displayMode: display,
-          fontSizePt: 13,
-          paddingPx: display ? 4 : 1,
-          background: "transparent",
-        }).svg,
-        error: "",
-      };
-    } catch (error) {
-      return {
-        svg: "",
-        error: readErrorMessage(error, isEn ? "Formula preview failed." : "公式预览失败。"),
-      };
-    }
+  const [rendered, setRendered] = useState({ svg: "", error: "" });
+  useEffect(() => {
+    let cancelled = false;
+    setRendered({ svg: "", error: "" });
+    void latexToSvg(latex, {
+      displayMode: display,
+      fontSizePt: 13,
+      paddingPx: display ? 4 : 1,
+      background: "transparent",
+    }).then((result) => {
+      if (!cancelled) setRendered({ svg: result.svg, error: "" });
+    }).catch((error) => {
+      if (!cancelled) {
+        setRendered({
+          svg: "",
+          error: readErrorMessage(error, isEn ? "Formula preview failed." : "公式预览失败。"),
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [display, isEn, latex]);
 
   if (rendered.error) {

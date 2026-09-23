@@ -1,4 +1,4 @@
-import type { OcrTransport } from "../../ocr/ocrService";
+import { formatOcrError, type OcrTransport } from "../../ocr/ocrService";
 
 export interface TransportEvent<T> {
   event: string;
@@ -42,9 +42,20 @@ function authenticatedHeaders(extra: HeadersInit = {}) {
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new Error(
-      `VisualTeX OCR API failed (${response.status})${detail ? `: ${detail}` : ""}`,
-    );
+    if (detail.trim()) {
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(detail) as unknown;
+      } catch {
+        // Plain-text backend errors are already useful and should be preserved.
+      }
+      if (parsed !== null) {
+        const message = formatOcrError(parsed, "");
+        if (message) throw new Error(message);
+      }
+      throw new Error(detail.trim());
+    }
+    throw new Error(`VisualTeX OCR API failed (${response.status})`);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;

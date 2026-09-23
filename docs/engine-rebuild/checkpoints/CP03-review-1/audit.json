@@ -1,0 +1,19 @@
+{
+  "checkpoint": "CP03-review-1",
+  "checkedAt": "2026-09-13T04:18:18.153Z",
+  "localHead": "00b48e17b736c7e57a0a72e19e271df82906f89d",
+  "gitCommitPerformed": false,
+  "gitPushPerformed": false,
+  "sourceArchive": "visualtex-engine-workspace-0.1.0.tgz",
+  "archiveSha256": "0d33cdfdd429b3ad86e496707ae3fb8c71dacb884edd3be23bcff4c013e6e0e2",
+  "sourceStability": "PASS",
+  "beforeAndAfterSourceDigest": "38be36949b60877d7184bc3786c55d721950011d5cbe30e325ab11e1a7a01e28",
+  "independentRustTests": {"source": 9, "model": 8, "parser": 6, "failed": 0},
+  "corpus": {"cases": 41, "supported": 25, "incomplete": 6, "invalid": 3, "unsupported": 7},
+  "generatedLexerCases": 256,
+  "generatedRecursiveParserCases": 512,
+  "fixedRegressions": ["lossless control-word/inserted-letter boundary", "scripted-base control-word boundary", "EmptySlot label preserved by canonical serialization"],
+  "protection": {"status": "PASS", "groups": 12, "artifacts": 12, "originalDirtyFiles": 65},
+  "notRun": ["P03 Native/WASM parse equivalence", "P04 structural transaction acceptance", "P05 font/layout", "P06 real system IME", "Office UI", "final installer"],
+  "productionEngineSwitched": false
+}

@@ -1,0 +1,5 @@
+/target/
+/.tools/
+/web/pkg/
+/web/pkg-node/
+/test-results/

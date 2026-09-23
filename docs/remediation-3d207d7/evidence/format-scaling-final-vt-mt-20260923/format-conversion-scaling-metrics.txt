@@ -1,0 +1,16 @@
+[visualtex->mathtype count=10]
+capture|FormatConversion.CaptureTarget.VisualTeXToMathType|calls=10|ms=1611.464
+capture|FormatConversion.NumberingResolver.VisualTeX|calls=10|ms=1155.611
+apply|FormatConversion.ReplaceExternalFrom.VisualTeX|calls=10|ms=9576.333
+apply|FormatConversion.DetachCanonical.VisualTeX|calls=10|ms=2558.706
+apply|FormatConversion.ResolveCapturedHost.VisualTeX|calls=10|ms=1566.756
+apply|FormatConversion.VisualTeXNumbering.Detach|calls=10|ms=1246.348
+apply|FormatConversion.NumberingResolver.VisualTeX|calls=10|ms=1158.547
+[visualtex->mathtype count=20]
+capture|FormatConversion.CaptureTarget.VisualTeXToMathType|calls=20|ms=3647.865
+capture|FormatConversion.NumberingResolver.VisualTeX|calls=20|ms=2671.798
+apply|FormatConversion.ReplaceExternalFrom.VisualTeX|calls=20|ms=22105.05
+apply|FormatConversion.DetachCanonical.VisualTeX|calls=20|ms=4892.245
+apply|FormatConversion.ResolveCapturedHost.VisualTeX|calls=20|ms=3568.154
+apply|FormatConversion.NumberingResolver.VisualTeX|calls=20|ms=2645.572
+apply|FormatConversion.VisualTeXNumbering.Detach|calls=20|ms=2443.201

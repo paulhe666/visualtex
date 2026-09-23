@@ -1,0 +1,13 @@
+[visualtex->omml count=20]
+capture|FormatConversion.CaptureTarget.VisualTeXToOmml|calls=20|ms=4334.25
+capture|FormatConversion.NumberingResolver.VisualTeX|calls=20|ms=3142.935
+apply|FormatConversion.Replace.VisualTeXToOmml|calls=20|ms=14177.308
+apply|FormatConversion.ReplaceInsideTransaction.VisualTeX->Omml|calls=20|ms=14174.893
+apply|FormatConversion.OmmlHostWriter.Insert|calls=20|ms=8156.981
+apply|FormatConversion.DetachCanonical.VisualTeX|calls=20|ms=4664.739
+apply|FormatConversion.ResolveCapturedHost.VisualTeX|calls=20|ms=4081.189
+apply|FormatConversion.NumberingResolver.VisualTeX|calls=20|ms=2729.099
+apply|FormatConversion.RefreshCanonicalNumbers|calls=1|ms=2109.77
+apply|FormatConversion.VisualTeXNumbering.Detach|calls=20|ms=2106.874
+apply|FormatConversion.NumberingResolver.Omml|calls=20|ms=1115.47
+apply|FormatConversion.CaptureReferenceCounts|calls=1|ms=579.816

@@ -2,9 +2,10 @@ import {
   EXTENDED_INTEGRAL_MATHML_MACROS,
   EXTENDED_INTEGRAL_SVG_MACROS,
 } from "./extendedIntegralCompatibility.ts";
-import { VISUALTEX_MATHJAX_PACKAGE_MACROS } from "./packageMacroCompatibility.ts";
+import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "./packageMacroCompatibility.ts";
 
-export type VisualTexMathJaxMacro = string | readonly [replacement: string, argumentCount: number];
+export type VisualTexCompatibilityMacro = string | readonly [replacement: string, argumentCount: number];
+export type VisualTexMathJaxMacro = VisualTexCompatibilityMacro;
 
 /**
  * Rendering-only compatibility aliases shared by every VisualTeX export path.
@@ -15,7 +16,7 @@ export type VisualTexMathJaxMacro = string | readonly [replacement: string, argu
 const STANDARD_COMPATIBILITY_MACROS = {
   // Import the shared package-compatibility layer first, then let Windows'
   // broader physics/siunitx aliases below override any overlapping names.
-  ...VISUALTEX_MATHJAX_PACKAGE_MACROS,
+  ...VISUALTEX_PACKAGE_COMPATIBILITY_MACROS,
   bm: ["\\boldsymbol{#1}", 1] as const,
   mathbbm: ["\\mathbb{#1}", 1] as const,
   symup: ["\\mathrm{#1}", 1] as const,
@@ -144,17 +145,17 @@ const STANDARD_COMPATIBILITY_MACROS = {
   pico: "\\mathrm{p}",
   femto: "\\mathrm{f}",
   atto: "\\mathrm{a}",
-} satisfies Record<string, VisualTexMathJaxMacro>;
+} satisfies Record<string, VisualTexCompatibilityMacro>;
 
 export const VISUALTEX_MATHML_MACROS = {
   ...EXTENDED_INTEGRAL_MATHML_MACROS,
   ...STANDARD_COMPATIBILITY_MACROS,
-} satisfies Record<string, VisualTexMathJaxMacro>;
+} satisfies Record<string, VisualTexCompatibilityMacro>;
 
 export const VISUALTEX_SVG_MACROS = {
   ...EXTENDED_INTEGRAL_SVG_MACROS,
   ...STANDARD_COMPATIBILITY_MACROS,
-} satisfies Record<string, VisualTexMathJaxMacro>;
+} satisfies Record<string, VisualTexCompatibilityMacro>;
 
 type BalancedArgument = {
   content: string;
@@ -165,7 +166,6 @@ function skipLatexWhitespace(source: string, index: number) {
   while (index < source.length && /\s/.test(source[index])) index += 1;
   return index;
 }
-
 function readBalancedArgument(
   source: string,
   start: number,
@@ -217,6 +217,70 @@ function readPackageMacroArgument(source: string, start: number) {
   return position < source.length
     ? { content: source[position], end: position + 1 }
     : null;
+}
+
+function expandFixedCompatibilityMacros(source: string) {
+  let current = source;
+  for (let pass = 0; pass < 12; pass += 1) {
+    let output = "";
+    let cursor = 0;
+    let changed = false;
+    while (cursor < current.length) {
+      const slash = current.indexOf("\\", cursor);
+      if (slash < 0) {
+        output += current.slice(cursor);
+        break;
+      }
+      output += current.slice(cursor, slash);
+      const match = current.slice(slash).match(/^\\([A-Za-z@]+)/);
+      if (!match) {
+        output += current[slash];
+        cursor = slash + 1;
+        continue;
+      }
+      const command = match[1];
+      const definition = STANDARD_COMPATIBILITY_MACROS[command as keyof typeof STANDARD_COMPATIBILITY_MACROS];
+      const commandEnd = slash + match[0].length;
+      if (definition === undefined) {
+        output += match[0];
+        cursor = commandEnd;
+        continue;
+      }
+      if (typeof definition === "string") {
+        output += definition;
+        cursor = commandEnd;
+        changed = true;
+        continue;
+      }
+      const [replacement, argumentCount] = definition;
+      const argumentsFound: string[] = [];
+      let position = commandEnd;
+      let complete = true;
+      for (let argument = 0; argument < argumentCount; argument += 1) {
+        const value = readPackageMacroArgument(current, position);
+        if (!value) {
+          complete = false;
+          break;
+        }
+        argumentsFound.push(value.content);
+        position = value.end;
+      }
+      if (!complete) {
+        output += match[0];
+        cursor = commandEnd;
+        continue;
+      }
+      output += replacement.replace(/#([1-9])/g, (_token, rawIndex: string) => {
+        const index = Number(rawIndex) - 1;
+        return argumentsFound[index] ?? "";
+      });
+      cursor = position;
+      changed = true;
+    }
+    if (!changed || output === current) return output;
+    current = output;
+  }
+  return current;
 }
 
 function normalizeMatrixQuantityCommands(source: string) {
@@ -450,12 +514,14 @@ function normalizeSiunitxConflictingUnitCommands(source: string) {
   return output;
 }
 
-/** Normalize package syntax that cannot be represented by fixed MathJax macros. */
+/** Normalize supported package syntax into standard LaTeX primitives. */
 export function normalizePackageLatexCommands(source: string) {
-  return normalizeDerivativeCommands(
-    normalizeMatrixQuantityCommands(
-      normalizeSiunitxConflictingUnitCommands(
-        normalizeQtyCommands(stripSiunitxOptions(source)),
+  return expandFixedCompatibilityMacros(
+    normalizeDerivativeCommands(
+      normalizeMatrixQuantityCommands(
+        normalizeSiunitxConflictingUnitCommands(
+          normalizeQtyCommands(stripSiunitxOptions(source)),
+        ),
       ),
     ),
   );
@@ -465,7 +531,6 @@ const unresolvedCommand = /\\[A-Za-z@]+/;
 const structuralPlaceholder = /\\placeholder\s*\{\s*\}/;
 const trailingCommand = /\\[A-Za-z@]+$/;
 const environmentToken = /\\(begin|end)\s*\{([^{}]+)\}/g;
-const mathText = /<mtext\b([^>]*)>([\s\S]*?)<\/mtext>/gi;
 
 function stripXmlMarkup(value: string) {
   return value.replace(/<[^>]*>/g, "").replace(/&#x5c;|&#92;|&bsol;/gi, "\\");
@@ -505,7 +570,7 @@ function hasUnclosedLatexEnvironment(source: string) {
 /**
  * Office drafts are saved on every keystroke. Structural placeholders and the
  * tail of a command/environment are valid editing states, not user-facing
- * export failures. Explicit Insert/Update still uses strict MathJax validation.
+ * export failures. Explicit Insert/Update still uses strict VisualTeX core validation.
  */
 export function isIncompleteLatexDraft(source: string, error?: unknown) {
   const normalized = source.replace(/\r\n?/g, "\n").trim();
@@ -542,30 +607,18 @@ export function assertNoUnfilledStructuralPlaceholders(source: string) {
   }
 }
 
-/** Reject MathJax's permissive unknown-command fallback before it reaches Word. */
+/** Parser errors are structural; literal text and color are not error signals. */
 export function assertResolvedPresentationMathMl(mathMl: string) {
-  mathText.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = mathText.exec(mathMl))) {
-    const attributes = match[1] ?? "";
-    const text = stripXmlMarkup(match[2] ?? "");
-    if (unresolvedCommand.test(text) || /mathcolor=["']?red/i.test(attributes)) {
-      const command = text.match(unresolvedCommand)?.[0] ?? (text.trim() || "unknown command");
-      throw new Error(`MathJax did not resolve LaTeX command ${command}.`);
-    }
-  }
-  if (/<merror\b/i.test(mathMl)) {
+  // runtime.ts disables noerrors/noundefined for both export producers. This
+  // guard covers serialized error nodes without reinterpreting mtext as TeX.
+  if (/<(?:[A-Za-z_][\w.-]*:)?merror(?=[\s/>])/i.test(mathMl)) {
     throw new Error("MathJax produced an error node instead of semantic MathML.");
   }
 }
 
 /** The document-import preview uses SVG directly, so guard that branch too. */
 export function assertResolvedMathJaxSvg(svg: string) {
-  if (
-    /<g\b[^>]*data-mml-node=["']mtext["'][^>]*(?:fill|stroke)=["']red["']/i.test(svg)
-    || /<g\b[^>]*(?:fill|stroke)=["']red["'][^>]*data-mml-node=["']mtext["']/i.test(svg)
-    || /data-mml-node=["']merror["']/i.test(svg)
-  ) {
+  if (/data-mml-node=["']merror["']/i.test(svg)) {
     const text = stripXmlMarkup(svg)
       .replace(/&lt;/gi, "<")
       .replace(/&gt;/gi, ">")

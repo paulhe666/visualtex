@@ -1,0 +1,189 @@
+{
+  "schema": "visualtex-p15-retired-runtime-acceptance-v1",
+  "status": "PASS",
+  "date": "2026-09-16",
+  "scope": "Windows production runtime and owned real Word/WebView2 acceptance",
+  "branch": "reference-3d207d7",
+  "head": "d1f0aff8db9275c90dc18c7318dc2a4d7bbbd760",
+  "productionDependencyAudit": {
+    "reachableProductionFiles": 139,
+    "mathlivePackageImports": 0,
+    "mathjaxPackageImports": 0,
+    "legacyEditorOrRuntimeReachableFiles": 0,
+    "retiredCssSelectors": 0,
+    "mathliveProductionDependency": false,
+    "mathjaxProductionDependency": false,
+    "mathliveDevOracleDependency": true,
+    "mathjaxDevOracleDependency": true
+  },
+  "resources": {
+    "desktopJs": "main-I4TNfDC1.js",
+    "desktopJsSha256": "5a72556a09ee2cce1093ed88055f9107b01fae790d3ad5b2c334fdb7c4e10914",
+    "officeJs": "dialog-yV0v4sBO.js",
+    "officeJsSha256": "50aa671ed660b891eda140f6938f6174dadc7ab73d16e344b48c4d503929f634",
+    "wasmAsset": "visualtex_engine_wasm_bg-DLwqUPYp.wasm",
+    "wasmSha256": "6ee676b2c25a5b3b6cfe16241a208808110e9b7561514c94e4eddca343954ff7",
+    "fontAsset": "latinmodern-math-CUFlBgaJ.otf",
+    "fontSha256": "6075562b771f8b82f0c179e363389684f2dd09de30038269e2628e504bd7be0f",
+    "desktopAndOfficeWasmIdentical": true,
+    "desktopAndOfficeFontIdentical": true,
+    "retiredRuntimeAssetsInDesktop": 0,
+    "retiredRuntimeAssetsInOffice": 0,
+    "katexFontAssetsInDesktop": 0,
+    "katexFontAssetsInOffice": 0
+  },
+  "coreOnlyProduct": {
+    "defaultDesktopBuildUsesCore": true,
+    "legacyMathFieldsInProductSmoke": 0,
+    "unsupportedSourceRemainsCoreAcrossReload": true,
+    "sourceRepairRestoresCoreScene": true,
+    "outerMultiFormulaSmoke": "PASS",
+    "outerFormulaOwners": 2,
+    "coreInputs": 2,
+    "enterCreatesOuterLine": true,
+    "coreUndoThenDocumentUndo": true,
+    "documentRedo": true,
+    "emptyBackspaceRemovesOuterLine": true,
+    "removeUndoRestoresOuterLine": true
+  },
+  "exportRuntime": {
+    "status": "PASS",
+    "actualBrowser": true,
+    "formulaClasses": [
+      "fraction",
+      "root",
+      "matrix",
+      "multiline",
+      "equation-aligned",
+      "upright-constants",
+      "accent",
+      "physics",
+      "physics-orders",
+      "physics-vectors",
+      "physics-matrix-quantity",
+      "siunitx",
+      "siunitx-options",
+      "siunitx-range"
+    ],
+    "chineseMathMl": true,
+    "placeholderFailsClosed": true,
+    "unknownCommandFailsClosed": true,
+    "emptyFailsClosed": true,
+    "wasmBodyFetches": 1,
+    "mathFontBodyFetches": 1,
+    "retiredRuntimeResourceRequests": 0
+  },
+  "officeHeadless": {
+    "status": "PASS",
+    "nativeOle": "core-svg-mathml-png",
+    "wordOmml": "core-mathml-only",
+    "mathTypeOle": "core-svg-mathml-no-png",
+    "crossPlatformPicture": "core-svg-mathml-png",
+    "equationTagCoreCompatibility": true,
+    "batchOrderPreserved": true,
+    "failureContinues": true,
+    "mathFields": 0,
+    "coreEditors": 0,
+    "coreInputs": 0
+  },
+  "performance": {
+    "browserFixtureNodes": 187,
+    "localEditEventToFrameP95Ms": 13.9818,
+    "cursorEventToFrameP95Ms": 4.1166,
+    "cursorMoveLayoutDelta": 0,
+    "cursorMoveRevisionDelta": 0,
+    "headlessMixed100": {
+      "formulas": 100,
+      "failures": 0,
+      "elapsedMs": 1053,
+      "averageMsPerFormula": 10.53
+    },
+    "headlessOmml1000": {
+      "formulas": 1000,
+      "failures": 0,
+      "elapsedMs": 1859,
+      "averageMsPerFormula": 1.859,
+      "mathMlOnly": true
+    }
+  },
+  "hardeningRevalidation": {
+    "resourceHashFailureRecovery": "PASS",
+    "fatalRuntimeRecovery": "PASS",
+    "officeRaceIsolation": "PASS",
+    "ocrBrowserStaleTarget": "PASS",
+    "ocrNativeWasmParity": "PASS",
+    "browserInputAccessibility": "PASS",
+    "structuredClipboardZoom": "PASS",
+    "virtualViewport1000": "PASS",
+    "physicalWindowsIme": "PASS"
+  },
+  "noOcr": {
+    "frontendContract": "PASS",
+    "sameCoreResources": true,
+    "installerBuiltOrInstalled": false
+  },
+  "licenseAndData": {
+    "latinModernMathVersion": "1.959",
+    "latinModernMathLicense": "GUST Font License",
+    "latinModernLicenseFile": "apps/windows/src-windows/artifacts/office-fonts/GUST-FONT-LICENSE.txt",
+    "latinModernReadme": "apps/windows/src-windows/artifacts/office-fonts/README-Latin-Modern-Math.txt",
+    "rareIntegralDistributionRegression": "PASS",
+    "stixTwoMathLicense": "SIL Open Font License 1.1",
+    "stixLicenseFile": "apps/windows/src/math/STIXTwoMath-OFL-1.1.txt",
+    "mathliveAndMathjaxAreDevOnly": true
+  },
+  "realWindowsWebView2": {
+    "status": "PASS",
+    "ownedWordPid": 44812,
+    "ownedCompanionPid": 39660,
+    "officeScript": "dialog-yV0v4sBO.js",
+    "coreEditors": 1,
+    "coreInputs": 1,
+    "legacyMathFields": 0,
+    "wasmAsset": "visualtex_engine_wasm_bg-DLwqUPYp.wasm",
+    "fontAsset": "latinmodern-math-CUFlBgaJ.otf",
+    "systemFontProbe": {
+      "requestedFamily": "Cambria Math",
+      "resolvedFamily": "Cambria Math",
+      "hasMathTable": true,
+      "sha256": "84e70ccc1664482f4a960442c7a166c91a1b2cf98ff88c33cb73f79403f66d7b"
+    },
+    "create": {
+      "source": "abc",
+      "visualTeXOleCount": 1,
+      "fontSizePt": 10.5,
+      "renderFontSizePt": 10.5,
+      "positionPt": 0,
+      "renderWidthPx": 23.7861328125,
+      "renderHeightPx": 11.8916015625,
+      "baselinePx": 10.775390625
+    },
+    "edit": {
+      "sourceBefore": "abc",
+      "sourceAfter": "abcd",
+      "visualTeXOleCountAfter": 1,
+      "duplicateObjectInserted": false,
+      "fontSizePt": 10.5,
+      "renderFontSizePt": 10.5,
+      "positionPt": 0,
+      "renderWidthPx": 31.900390625,
+      "renderHeightPx": 11.8916015625,
+      "baselinePx": 10.775390625
+    },
+    "ownedWordClosedWithoutSave": true,
+    "ownedCompanionStopped": true
+  },
+  "protection": {
+    "frozenOfficeTrackedDiff": [],
+    "installedOfficeUiOverwritten": false,
+    "userWordDocumentTouched": false,
+    "macosOfficeModified": false,
+    "commitCreated": false,
+    "pushPerformed": false,
+    "installerBuilt": false,
+    "installerInstalled": false,
+    "releasePublished": false
+  },
+  "p16Permitted": true,
+  "p16InstallerMutationPermittedWithoutNewUserApproval": false
+}

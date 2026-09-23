@@ -1,0 +1,11 @@
+Acceptance mode: word-format-conversion-scaling
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+[FORMAT SCALING] reusing source fixture C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-mt-vt-20260923\format-scaling-mathtype-10.docx
+[EXPLICIT OWNED WORD] pid=69860; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-mt-vt-20260923\owned-word-convert-mathtype-to-visualtex-10-31067097c63f4cc4a03df1cb5065a98c\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] mathtype->visualtex count=10 captureMs=3746.3 applyMs=9569.0 capturePer=374.63 applyPer=956.90
+[FORMAT SCALING] reusing source fixture C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-mt-vt-20260923\format-scaling-mathtype-20.docx
+[EXPLICIT OWNED WORD] pid=82796; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-mt-vt-20260923\owned-word-convert-mathtype-to-visualtex-20-65e09686c1744d20964f1c22ba65703c\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] mathtype->visualtex count=20 captureMs=8722.7 applyMs=19119.6 capturePer=436.13 applyPer=955.98
+[FORMAT SCALING COMPLETE] samples=2; report=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-mt-vt-20260923\format-conversion-scaling.csv
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-final-mt-vt-20260923

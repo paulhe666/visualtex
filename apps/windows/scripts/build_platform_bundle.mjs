@@ -25,6 +25,8 @@ const powershell = process.platform === "win32" ? windowsPowerShellPath() : "pow
 // frontend is built exactly once by tauri_build.mjs before Tauri codegen.
 if (process.platform === "win32") {
   const noOcrBundle = process.env.VISUALTEX_NO_OCR_BUNDLE === "1";
+  const useFixedOfficeBundle =
+    process.env.VISUALTEX_USE_FIXED_OFFICE_BUNDLE === "1";
   if (noOcrBundle) {
     console.log("Skipping bundled OCR Python preparation for the no-OCR installer flavor.");
   } else {
@@ -36,33 +38,47 @@ if (process.platform === "win32") {
       "scripts/prepare_windows_ocr_python.ps1",
     ]);
   }
-  run(powershell, [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    "scripts/prepare_windows_vsto_runtime.ps1",
-  ]);
-  // MathType native preview is a required Windows bundle resource. Reuse a
-  // previously staged, validated 7.9.1 runtime or rebuild it only when the
-  // caller explicitly supplies VISUALTEX_MATHTYPE_INSTALLER. Never silently
-  // ship a package that falls back to the non-native preview path.
-  run(powershell, [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    "scripts/prepare_private_mathtype_runtime.ps1",
-  ]);
-  run(npm, ["run", "build:office:windows-native"]);
-  run(powershell, [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    "scripts/build_windows_office.ps1",
-    "-Configuration",
-    "Release",
-    "-SkipTests",
-  ]);
+  if (useFixedOfficeBundle) {
+    // P16 final-candidate mode: Office/VSTO/native-preview binaries are frozen
+    // inputs. Verify exact accepted identities and never rebuild or restage
+    // them. The Office WebView UI is still rebuilt from the current core source.
+    run(powershell, [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "scripts/verify_fixed_windows_office_inputs.ps1",
+    ]);
+    run(npm, ["run", "build:office:windows-native"]);
+  } else {
+    run(powershell, [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "scripts/prepare_windows_vsto_runtime.ps1",
+    ]);
+    // MathType native preview is a required Windows bundle resource. Reuse a
+    // previously staged, validated 7.9.1 runtime or rebuild it only when the
+    // caller explicitly supplies VISUALTEX_MATHTYPE_INSTALLER. Never silently
+    // ship a package that falls back to the non-native preview path.
+    run(powershell, [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "scripts/prepare_private_mathtype_runtime.ps1",
+    ]);
+    run(npm, ["run", "build:office:windows-native"]);
+    run(powershell, [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "scripts/build_windows_office.ps1",
+      "-Configuration",
+      "Release",
+      "-SkipTests",
+    ]);
+  }
 }

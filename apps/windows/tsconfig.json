@@ -22,7 +22,12 @@
     "src/office/adapters/**",
     "src/office/bridge/**",
     "src/office/metadata/wordMetadata.ts",
-    "src/office/windows-ole/**"
+    "src/office/windows-ole/**",
+    "src/editor/CoreMathEditor*.tsx",
+    "src/editor/coreMathEditor.css",
+    "src/editor/mathEditorTypes.ts",
+    "src/engine/**",
+    "src/office/compat/**"
   ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

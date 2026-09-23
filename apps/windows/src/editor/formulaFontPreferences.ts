@@ -83,7 +83,7 @@ const LETTER_FONT_FAMILIES: Record<
 };
 
 const LETTER_PRIMARY_FONT_NAMES: Record<FormulaLetterFont, string> = {
-  katex: "KaTeX_Math",
+  katex: "KaTeX_Main",
   times: "Times New Roman",
   cambria: "Cambria Math",
   stix: "STIX Two Math",

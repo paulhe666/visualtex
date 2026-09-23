@@ -1,0 +1,13 @@
+Acceptance mode: word-host-core-omml-conversion-matrix
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+System.IO.DirectoryNotFoundException: 未能找到路径“C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\opt4-matrix-isolated-20260923\mixed-conversion-owned-word\owned-empty-startup.docx”的一部分。
+   在 System.IO.__Error.WinIOError(Int32 errorCode, String maybeFullPath)
+   在 System.IO.FileStream.Init(String path, FileMode mode, FileAccess access, Int32 rights, Boolean useRights, FileShare share, Int32 bufferSize, FileOptions options, SECURITY_ATTRIBUTES secAttrs, String msgPath, Boolean bFromProxy, Boolean useLongPath, Boolean checkHost)
+   在 System.IO.FileStream..ctor(String path, FileMode mode, FileAccess access, FileShare share)
+   在 System.IO.Compression.ZipFile.Open(String archiveFileName, ZipArchiveMode mode, Encoding entryNameEncoding)
+   在 VisualTeX.VstoFlowAcceptance.Program.CreateEmptyWordPerformanceSeed(String output) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordOmmlPerformanceFixture.cs:行号 16
+   在 VisualTeX.VstoFlowAcceptance.Program.CreateFreshRollbackAutomationWord(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\OwnedAutomationWordAcceptance.cs:行号 19
+   在 VisualTeX.VstoFlowAcceptance.Program.CreateFreshAcceptanceAutomationWord(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\OwnedAutomationWordAcceptance.cs:行号 99
+   在 VisualTeX.VstoFlowAcceptance.Program.RunPureOmmlMixedConversionMatrixAcceptance(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordHostCorePureOmmlAcceptance.cs:行号 2335
+   在 VisualTeX.VstoFlowAcceptance.Program.Main(String[] args) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 794
+Acceptance artifacts retained: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\opt4-matrix-isolated-20260923

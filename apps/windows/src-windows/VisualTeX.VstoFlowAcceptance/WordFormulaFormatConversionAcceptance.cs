@@ -453,8 +453,10 @@ internal static partial class Program
                     emfPath);
             }
 
-            AssertEqual(formulas.Count, CountVisualTeXNumberingBookmarkTriples(document),
+            AssertEqual(formulas.Count, CountInstalledVisualTeXNumberedFormulaHosts(document),
                 "OMML→VisualTeX roundtrip setup did not create one numbered VisualTeX host per formula.");
+            AssertEqual(formulas.Count, CountVisualTeXPlaceRefFields(document),
+                "OMML→VisualTeX roundtrip setup did not create one self-contained VisualTeXPlaceRef per numbered formula.");
 
             var toOmmlPlan = service.CaptureFormulaFormatConversionPlan(
                 wholeDocument: true,
@@ -494,10 +496,18 @@ internal static partial class Program
                 "VisualTeX→OMML roundtrip leg did not leave one OMath per formula.");
             AssertEqual(0, CountVisualTeXNativeOleShapes(document),
                 "VisualTeX→OMML roundtrip leg left VisualTeX OLE sources behind.");
-            AssertEqual(formulas.Count, CountVisualTeXNumberingBookmarkTriples(document),
-                "VisualTeX→OMML roundtrip leg did not preserve every numbered host.");
+            AssertEqual(0, CountVisualTeXNumberingBookmarks(document),
+                "VisualTeX→OMML roundtrip leg left VisualTeX numbering bookmarks in native OMML.");
+            AssertEqual(0, CountVisualTeXPlaceRefFields(document),
+                "VisualTeX→OMML roundtrip leg left VisualTeXPlaceRef fields in native OMML.");
             var baselineOmmlBlankParagraphs =
                 CountPureBlankParagraphsImmediatelyBeforeTables(document);
+            document.SaveAs2(
+                Path.Combine(
+                    artifactRoot,
+                    "roundtrip-after-visualtex-to-omml.docx"),
+                Word.WdSaveFormat.wdFormatXMLDocument,
+                AddToRecentFiles: false);
 
             var toVisualTeXPlan = service.CaptureFormulaFormatConversionPlan(
                 wholeDocument: true,
@@ -536,7 +546,7 @@ internal static partial class Program
                 toVisualTeXPlan,
                 toVisualTeXPrepared);
             Console.WriteLine(
-                $"[OMML→VISUALTEX NUMBERED RESULT] converted={toVisualTeXResult.FormulaCount} failed={toVisualTeXResult.FailedFormulaCount} triples={CountVisualTeXNumberingBookmarkTriples(document)}");
+                $"[OMML→VISUALTEX NUMBERED RESULT] converted={toVisualTeXResult.FormulaCount} failed={toVisualTeXResult.FailedFormulaCount} placeRefs={CountVisualTeXPlaceRefFields(document)}");
             AssertEqual(formulas.Count, toVisualTeXResult.FormulaCount,
                 "OMML→VisualTeX roundtrip leg did not convert every numbered formula.");
             AssertEqual(0, toVisualTeXResult.FailedFormulaCount,
@@ -547,8 +557,8 @@ internal static partial class Program
                 "OMML→VisualTeX roundtrip leg did not create one VisualTeX OLE per source formula.");
             AssertEqual(formulas.Count, CountInstalledVisualTeXNumberedFormulaHosts(document),
                 "OMML→VisualTeX roundtrip leg lost Numbered metadata on a converted formula.");
-            AssertEqual(formulas.Count, CountVisualTeXNumberingBookmarkTriples(document),
-                "OMML→VisualTeX roundtrip leg lost a VTEq/VTEqCap/VTEqNum numbering host.");
+            AssertEqual(formulas.Count, CountVisualTeXPlaceRefFields(document),
+                "OMML→VisualTeX roundtrip leg lost a self-contained VisualTeXPlaceRef numbering host.");
 
             var backToOmmlPlan = service.CaptureFormulaFormatConversionPlan(
                 wholeDocument: true,
@@ -586,8 +596,10 @@ internal static partial class Program
                 $"OMML→VisualTeX→OMML roundtrip failed: {string.Join(" | ", backToOmmlResult.Failures)}");
             AssertEqual(formulas.Count, document.OMaths.Count,
                 "OMML→VisualTeX→OMML roundtrip did not leave one OMath per formula.");
-            AssertEqual(formulas.Count, CountVisualTeXNumberingBookmarkTriples(document),
-                "OMML→VisualTeX→OMML roundtrip lost a numbering host.");
+            AssertEqual(0, CountVisualTeXNumberingBookmarks(document),
+                "OMML→VisualTeX→OMML roundtrip left VisualTeX numbering bookmarks in native OMML.");
+            AssertEqual(0, CountVisualTeXPlaceRefFields(document),
+                "OMML→VisualTeX→OMML roundtrip left VisualTeXPlaceRef fields in native OMML.");
             AssertEqual(
                 baselineOmmlBlankParagraphs,
                 CountPureBlankParagraphsImmediatelyBeforeTables(document),
@@ -1368,6 +1380,37 @@ internal static partial class Program
             }
         }
         return count;
+    }
+
+    private static int CountVisualTeXPlaceRefFields(Word.Document document)
+    {
+        var count = 0;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                if (field.Type != Word.WdFieldType.wdFieldMacroButton)
+                    continue;
+                code = field.Code.Duplicate;
+                if (WordVisualTeXParagraphNumbering.IsPlaceRefCode(code.Text))
+                    count++;
+            }
+            return count;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
     }
 
     private static int CountVisualTeXNumberingBookmarkTriples(Word.Document document) =>

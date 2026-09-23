@@ -1,0 +1,39 @@
+Acceptance mode: word-omml-mathtype-format-conversion
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+[OMML↔MATHTYPE CORE] Preserving 1 pre-existing MathType process(es); every stage still verifies that conversion starts no additional process.
+[EXPLICIT OWNED WORD] pid=79048; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\perf-correctness-omml-mt6-20260923\owned-empty-startup.docx; coCreateInstance=False
+[NO UNKNOWN GLYPHS] Every MathType Equation Native payload is clean after OMML→MathType core conversion.
+[VISIBLE MATHTYPE PREVIEW] #1 after OMML→MathType core conversion: 48.95x16.1 pt; wmfBytes=852; records=28; drawing=3
+[VISIBLE MATHTYPE PREVIEW] #2 after OMML→MathType core conversion: 87x33.05 pt; wmfBytes=1858; records=76; drawing=12
+[VISIBLE MATHTYPE PREVIEW] #3 after OMML→MathType core conversion: 62x36.1 pt; wmfBytes=1094; records=41; drawing=8
+[VISIBLE MATHTYPE PREVIEW] #4 after OMML→MathType core conversion: 45.05x16.1 pt; wmfBytes=1034; records=39; drawing=4
+[VISIBLE MATHTYPE PREVIEW] #5 after OMML→MathType core conversion: 28.05x16.1 pt; wmfBytes=834; records=28; drawing=3
+[VISIBLE MATHTYPE PREVIEW] Every MathType OLE used a non-empty Word metafile presentation with no internal OlePres stream after OMML→MathType core conversion; count=5.
+[NO UNKNOWN GLYPHS] Every MathType Equation Native payload is clean after OMML→MathType save/reopen.
+[VISIBLE MATHTYPE PREVIEW] #1 after OMML→MathType save/reopen: 48.95x16.1 pt; wmfBytes=852; records=28; drawing=3
+[VISIBLE MATHTYPE PREVIEW] #2 after OMML→MathType save/reopen: 87x33.05 pt; wmfBytes=1858; records=76; drawing=12
+[VISIBLE MATHTYPE PREVIEW] #3 after OMML→MathType save/reopen: 62x36.1 pt; wmfBytes=1094; records=41; drawing=8
+[VISIBLE MATHTYPE PREVIEW] #4 after OMML→MathType save/reopen: 45.05x16.1 pt; wmfBytes=1034; records=39; drawing=4
+[VISIBLE MATHTYPE PREVIEW] #5 after OMML→MathType save/reopen: 28.05x16.1 pt; wmfBytes=834; records=28; drawing=3
+[VISIBLE MATHTYPE PREVIEW] Every MathType OLE used a non-empty Word metafile presentation with no internal OlePres stream after OMML→MathType save/reopen; count=5.
+[NO UNKNOWN GLYPHS] Every MathType Equation Native payload is clean after pure native OMML→MathType.
+[VISIBLE MATHTYPE PREVIEW] #1 after pure native OMML→MathType: 23.05x13.05 pt; wmfBytes=836; records=28; drawing=3
+[VISIBLE MATHTYPE PREVIEW] Every MathType OLE used a non-empty Word metafile presentation with no internal OlePres stream after pure native OMML→MathType; count=1.
+[NO UNKNOWN GLYPHS] Every MathType Equation Native payload is clean exact user limit OMML→MathType.
+[VISIBLE MATHTYPE PREVIEW] #1 exact user limit OMML→MathType: 95.05x37 pt; wmfBytes=1518; records=60; drawing=10
+[VISIBLE MATHTYPE PREVIEW] Every MathType OLE used a non-empty Word metafile presentation with no internal OlePres stream exact user limit OMML→MathType; count=1.
+[EXACT USER LIMIT OMML→MATHTYPE] \lim_{n→∞}((1+1/n)^n)=e converted transactionally with no rollback.
+[UNNUMBERED MATHTYPE DISPLAY→OMML PARAGRAPH] paragraphs=5->5; preceding='VT-DISPLAY-BEFORE'.
+[NUMBERED MATHTYPE DISPLAY→OMML NATIVE] paragraphs=5->5; formula=18:80; preceding='VT-DISPLAY-BEFORE'; tables=0; frames=0; shapes=0.
+[ATOMIC MT→OMML ROLLBACK] Malformed middle-target failure restored all three MathType sources, document text, styles, fields, bookmarks and OMML metadata inventory exactly.
+System.IO.InvalidDataException (0x80131501): The source formula uses a retired numbering topology. Canonicalize it before host replacement.
+   在 VisualTeX.WordVsto.WordFormulaHostMutationKernel.ReplaceInsideTransaction(Application application, Document document, WordFormulaHostDescriptor source, WordFormulaHostWriteRequest target, Boolean sourceAlreadyResolved, Boolean allowDirectCanonicalOmmlRemoval, Boolean deferTargetNumberFinalization) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaHostMutationKernel.cs:行号 467
+   在 VisualTeX.WordVsto.WordFormulaHostMutationKernel.<>c__DisplayClass0_0.<Replace>b__0() 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaHostMutationKernel.cs:行号 31
+   在 VisualTeX.WordVsto.WordFormulaMutationTransaction.Execute[T](Application application, Document document, String name, Func`1 mutationAndValidation, WordDocumentEditSnapshot rollbackSnapshot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaMutationTransaction.cs:行号 97
+   在 VisualTeX.WordVsto.WordFormulaHostMutationKernel.Replace(Application application, Document document, WordFormulaHostDescriptor source, WordFormulaHostWriteRequest target) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaHostMutationKernel.cs:行号 27
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyOmmlVisualTeXHostSession(OfficeSessionDocument session, String sourceObjectMode, String mathMl, String pngPath, String emfPath) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaService.HostCore.cs:行号 384
+   在 VisualTeX.WordVsto.WordFormulaService.ReplaceOmml(OfficeSessionDocument session, String mathMl) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaService.cs:行号 7592
+   在 VisualTeX.VstoFlowAcceptance.Program.AssertVisualTeXOleToOmmlPreservesNumberFormat(Application application, Document returnDocument, String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordOmmlMathTypeFormatConversionAcceptance.cs:行号 3222
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWordOmmlMathTypeFormatConversionAcceptance(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordOmmlMathTypeFormatConversionAcceptance.cs:行号 2561
+   在 VisualTeX.VstoFlowAcceptance.Program.Main(String[] args) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 1199
+Acceptance artifacts retained: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\perf-correctness-omml-mt6-20260923

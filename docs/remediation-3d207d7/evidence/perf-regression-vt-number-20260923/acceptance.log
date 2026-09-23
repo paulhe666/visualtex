@@ -1,0 +1,15 @@
+Acceptance mode: word-visualtex-number-parenthesis
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+  fresh numbered VisualTeX insertion: raw owner codes=U+0009,U+0001,U+0009,U+0015,U+000D, owner=0-277, shape=48-82, visible=163-275 codes=U+0028,U+0030,U+002E,U+0031,U+0029, between=82-163 codes=U+0009.
+  fresh numbered VisualTeX insertion: self-contained VisualTeXPlaceRef owner=0-277, formula=48-82, visible='(0.1)', tabs=207.65/415.3, olePosition=-13, numberPosition=0, numberFont='+西文正文', numberY=77, markY=77.
+  numbered VisualTeX edit/reconcile: raw owner codes=U+0009,U+0001,U+0009,U+0015,U+000D, owner=0-277, shape=48-82, visible=163-275 codes=U+0028,U+0030,U+002E,U+0031,U+0029, between=82-163 codes=U+0009.
+  numbered VisualTeX edit/reconcile: self-contained VisualTeXPlaceRef owner=0-277, formula=48-82, visible='(0.1)', tabs=207.65/415.3, olePosition=-13, numberPosition=0, numberFont='+西文正文', numberY=77, markY=77.
+  numbered VisualTeX save/reopen: raw owner codes=U+0009,U+0001,U+0009,U+0015,U+000D, owner=0-277, shape=48-82, visible=163-275 codes=U+0028,U+0030,U+002E,U+0031,U+0029, between=82-163 codes=U+0009.
+  numbered VisualTeX save/reopen: self-contained VisualTeXPlaceRef owner=0-277, formula=48-82, visible='(0.1)', tabs=207.65/415.3, olePosition=-13, numberPosition=0, numberFont='+西文正文', numberY=72, markY=72.
+VisualTeX self-contained numbering acceptance passed: fresh insert, safe post-formula typing, edit/reconcile, lazy reference creation and save/reopen kept one MathType-style TAB + OLE + TAB + VisualTeXPlaceRef paragraph with no VTEqCap.
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\perf-regression-vt-number-20260923

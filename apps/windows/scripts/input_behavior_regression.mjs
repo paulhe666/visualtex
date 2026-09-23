@@ -8,6 +8,7 @@ import {
 } from "./browser_test_runtime.mjs";
 
 const scenario = process.argv[2] ?? "all";
+const caseFilter = process.argv[3]?.trim() ?? "";
 const supportedScenarios = new Set([
   "all",
   "navigation",
@@ -322,15 +323,27 @@ async function main() {
         const script = marker?.closest(".ML__msubsup, .ML__op-group");
         const markerBox = (marker?.parentElement || marker)?.getBoundingClientRect();
         const scriptBox = script?.getBoundingClientRect();
+        const model = field?._mathfield?.model;
+        const selectedAtom = model?.at(Math.max(model.position, model.anchor));
         return {
           value: field.value,
+          mode: field.mode,
+          sourceWrapperCommand: field.dataset.visualtexSourceWrapperCommand || "",
+          sourceWrapperKind: field.dataset.visualtexSourceWrapperKind || "",
+          sourceWrapperContent: field.dataset.visualtexSourceWrapperContent || "",
+          raw: Array.from(field.shadowRoot?.querySelectorAll(".ML__raw-latex") || [])
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent || "")
+            .join(""),
+          latexCaret: Boolean(field.shadowRoot?.querySelector(".ML__latex-caret")),
+          selectedLatex: field.selectionIsCollapsed
+            ? ""
+            : field.getValue(field.selection, "latex"),
+          selectedAtomType: selectedAtom?.type ?? null,
+          selectedBranch: selectedAtom?.parentBranch ?? null,
+          selectedParentType: selectedAtom?.parent?.type ?? null,
           position: field.position,
           lastOffset: field.lastOffset,
-          pendingWrapperCommand: field.dataset.pendingWrapperCommand || "",
-          pendingWrapperLength: field.closest(".mathfield-host")?.dataset.pendingWrapperLength || "",
-          hasPendingWrapperFrame: field.closest(".mathfield-host")?.classList.contains(
-            "has-pending-wrapper-placeholder",
-          ) || false,
           structuralPlaceholderCount: field.shadowRoot?.querySelectorAll(
             ".visualtex-structural-placeholder-caret, .ML__placeholder-selected",
           ).length || 0,
@@ -514,6 +527,7 @@ async function main() {
     if (scenario === "all" || scenario === "structures") {
       await configure();
       for (const [command, expectedValue] of rawStructuralCommandCases) {
+        if (caseFilter && !command.includes(caseFilter)) continue;
         await prepareEmptyField();
       await typeRawCommand(command);
       const pendingStructure = await readState();
@@ -596,30 +610,27 @@ async function main() {
     assert.equal(accent.value, "\\hat{c}d+z");
 
     await preparePlaceholder("\\vec{\\placeholder{}}+z");
-    await evaluate(`(() => {
-      const field = document.querySelector("math-field");
-      field.dispatchEvent(new CompositionEvent("compositionstart", {
-        bubbles: true,
-        composed: true,
-      }));
-      field.insert("m", {
-        mode: "math",
-        format: "latex",
-        insertionMode: "replaceSelection",
-        selectionMode: "after",
-        focus: true,
-        scrollIntoView: false,
-      });
-      field.dispatchEvent(new CompositionEvent("compositionend", {
-        data: "m",
-        bubbles: true,
-        composed: true,
-      }));
-    })()`);
-    await sleep(120);
+    await client.send("Input.imeSetComposition", {
+      text: "m",
+      selectionStart: 1,
+      selectionEnd: 1,
+    });
+    await sleep(80);
+    await client.send("Input.insertText", { text: "m" });
+    await client.send("Input.imeSetComposition", {
+      text: "",
+      selectionStart: 0,
+      selectionEnd: 0,
+    });
+    await sleep(180);
+    const composedAccentBeforeNext = await readState();
     await typeCharacter("n", "KeyN", 78);
     const composedAccent = await readState();
-    assert.equal(composedAccent.value, "\\vec{m}n+z");
+    assert.equal(
+      composedAccent.value,
+      "\\vec{m}n+z",
+      JSON.stringify({ composedAccentBeforeNext, composedAccent }),
+    );
 
     await configure({ autoExitAccent: false });
     await preparePlaceholder("\\dot{\\placeholder{}}+z");
@@ -640,19 +651,15 @@ async function main() {
     await prepareEmptyField();
     await typeRawCommand("dot");
     const pendingDot = await readState();
-    const dotPlaceholder = pendingDot.placeholderNodes.find((node) =>
-      node.className.includes("visualtex-structural-placeholder"),
-    );
-    assert.ok(dotPlaceholder, JSON.stringify(pendingDot));
-    assert.equal(dotPlaceholder.visualBackground, "rgb(207, 232, 247)");
-    assert.equal(dotPlaceholder.color, "rgba(0, 0, 0, 0)");
-    assert.ok(
-      Number.parseFloat(dotPlaceholder.visualWidth) <= 24,
-      JSON.stringify(dotPlaceholder),
-    );
-    assert.match(pendingDot.value, /^\\dot\{(?:\\placeholder\{\})?\}$/);
-    assert.equal(pendingDot.pendingWrapperCommand, "");
-    assert.equal(pendingDot.hasPendingWrapperFrame, false);
+    assert.equal(pendingDot.value, "\\dot{}");
+    assert.equal(pendingDot.raw, "\\dot{}");
+    assert.equal(pendingDot.mode, "latex");
+    assert.equal(pendingDot.sourceWrapperCommand, "\\dot");
+    assert.equal(pendingDot.sourceWrapperKind, "accent");
+    assert.equal(pendingDot.sourceWrapperContent, "");
+    assert.equal(pendingDot.structuralPlaceholderCount, 0);
+    assert.equal(pendingDot.placeholderNodes.length, 0);
+    assert.equal(pendingDot.latexCaret, true);
     assert.notEqual(
       pendingDot.position,
       pendingDot.lastOffset,
@@ -662,8 +669,6 @@ async function main() {
     await typeCharacter("b", "KeyB", 66);
     const enabledRawAccent = await readState();
     assert.equal(enabledRawAccent.value, "\\dot{a}b");
-    assert.equal(enabledRawAccent.pendingWrapperCommand, "");
-    assert.equal(enabledRawAccent.hasPendingWrapperFrame, false);
 
     await configure({
       autoExitAccent: false,
@@ -673,19 +678,15 @@ async function main() {
     await typeCharacter("t", "KeyT", 84);
     await typeRawCommand("ddot");
     const pendingDdot = await readState();
-    const ddotPlaceholder = pendingDdot.placeholderNodes.find((node) =>
-      node.className.includes("visualtex-structural-placeholder"),
-    );
-    assert.ok(ddotPlaceholder, JSON.stringify(pendingDdot));
-    assert.equal(ddotPlaceholder.visualBackground, "rgb(207, 232, 247)");
-    assert.equal(ddotPlaceholder.color, "rgba(0, 0, 0, 0)");
-    assert.ok(
-      Number.parseFloat(ddotPlaceholder.visualWidth) <= 24,
-      JSON.stringify(ddotPlaceholder),
-    );
-    assert.match(pendingDdot.value, /^t\\ddot\{(?:\\placeholder\{\})?\}$/);
-    assert.equal(pendingDdot.pendingWrapperCommand, "");
-    assert.equal(pendingDdot.hasPendingWrapperFrame, false);
+    assert.equal(pendingDdot.value, "t\\ddot{}");
+    assert.equal(pendingDdot.raw, "\\ddot{}");
+    assert.equal(pendingDdot.mode, "latex");
+    assert.equal(pendingDdot.sourceWrapperCommand, "\\ddot");
+    assert.equal(pendingDdot.sourceWrapperKind, "accent");
+    assert.equal(pendingDdot.sourceWrapperContent, "");
+    assert.equal(pendingDdot.structuralPlaceholderCount, 0);
+    assert.equal(pendingDdot.placeholderNodes.length, 0);
+    assert.equal(pendingDdot.latexCaret, true);
     assert.notEqual(
       pendingDdot.position,
       pendingDdot.lastOffset,
@@ -695,8 +696,6 @@ async function main() {
     await typeCharacter("b", "KeyB", 66);
     const disabledRawAccent = await readState();
     assert.equal(disabledRawAccent.value, "t\\ddot{ab}");
-    assert.equal(disabledRawAccent.pendingWrapperCommand, "");
-    assert.equal(disabledRawAccent.hasPendingWrapperFrame, false);
       assert.notEqual(
         disabledRawAccent.position,
         disabledRawAccent.lastOffset,

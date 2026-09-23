@@ -1,0 +1,39 @@
+// Native/WASM execute the same deferred-OCR protocol. No recognizer/network/Office.
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {createRequire} from 'node:module';
+import {createInterface} from 'node:readline';
+import {once} from 'node:events';
+import {createHash} from 'node:crypto';
+import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
+import {dirname,resolve,relative} from 'node:path';
+import {fileURLToPath} from 'node:url';
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),stamp=new Date().toISOString().replaceAll(':','-').replaceAll('.','-'),out=resolve(root,'target/ocr-target-parity-review',stamp);mkdirSync(out,{recursive:true});
+const sha=b=>createHash('sha256').update(b).digest('hex');
+const nativePath=resolve(root,`target/debug/visualtex-engine-test-cli${process.platform==='win32'?'.exe':''}`),wasmPath=resolve(root,'web/pkg-node/visualtex_engine_wasm_bg.wasm');
+const {EngineRuntime}=createRequire(import.meta.url)(resolve(root,'web/pkg-node/visualtex_engine_wasm.js')),wasm=new EngineRuntime();
+const native=spawn(nativePath,[],{stdio:['pipe','pipe','pipe']}),lines=createInterface({input:native.stdout,crlfDelay:Infinity})[Symbol.asyncIterator]();let stderr='';native.stderr.on('data',d=>stderr=(stderr+String(d)).slice(-12000));const timer=setTimeout(()=>native.kill(),120000);
+let requests=0,rejections=0;const transcript=createHash('sha256'),checks=[];let report;
+async function send(command,error=null){const input=JSON.stringify({protocol:1,command}),a=JSON.parse(wasm.dispatch(input));if(!native.stdin.write(input+'\n'))await once(native.stdin,'drain');const line=await lines.next();assert.equal(line.done,false,stderr);const b=JSON.parse(line.value);assert.deepEqual(a,b,`request ${requests}: ${command.op}`);requests++;transcript.update(input+'\n'+line.value+'\n');if(error){rejections++;assert.equal(a.status,'error',JSON.stringify(a));assert.equal(a.error.code,error);return a;}assert.equal(a.status,'ok',JSON.stringify(a));return a.result;}
+const inspect=async h=>(await send({op:'inspectEditor',handle:h})).snapshot;
+const capture=async h=>(await send({op:'captureOcrTarget',handle:h,expectedRevision:(await inspect(h)).document.revision})).target;
+const sequences=new Map();const seq=h=>{const n=(sequences.get(h)??0)+1;sequences.set(h,n);return n;};
+const action=async(h,a)=>(await send({op:'editorAction',handle:h,expectedRevision:(await inspect(h)).document.revision,eventSequence:seq(h),action:a})).result;
+const request=(h,t,latex,eventSequence=seq(h))=>({op:'editorAction',handle:h,expectedRevision:t.revision,eventSequence,action:{kind:'applyOcrLatex',target:t,latex}});
+async function reject(h,c,error){const before=await inspect(h);await send(c,error);assert.deepEqual(await inspect(h),before);}
+async function create(name,source='x'){return (await send({op:'create',documentId:name,source})).handle;}
+try{
+ const a=await create('ocr-a'),b=await create('ocr-b');const before=await inspect(a),t=await capture(a);assert.deepEqual(await inspect(a),before);
+ await reject(b,request(b,t,'b'),'conflict');const c=request(a,t,String.raw`\frac{a}{b}`);await send(c);const done=await inspect(a);assert.equal(done.document.source,String.raw`x\frac{a}{b}`);assert.equal(done.undoDepth,1);assert.equal((await send(c)).result.replayed,true);assert.deepEqual(await inspect(a),done);await action(a,{kind:'undo'});assert.equal((await inspect(a)).document.source,'x');await action(a,{kind:'redo'});assert.equal((await inspect(a)).document.source,done.document.source);checks.push('capture leaves editor unchanged; original owner accepts one structural transaction; replay and undo/redo are exact');
+ let s=await create('ocr-selection','xy'),target=await capture(s);await action(s,{kind:'moveHorizontal',direction:'left',extend:false});await action(s,{kind:'setSelection',selection:target.selection});assert.equal((await inspect(s)).document.revision,target.revision);await reject(s,request(s,target,'z'),'conflict');checks.push('selection away-and-back is stale even at the same revision and same final position');
+ const revisionTarget=await capture(s);await action(s,{kind:'edit',command:{kind:'insertText',text:'q',mode:'math'},groupId:null});await action(s,{kind:'undo'});await reject(s,request(s,revisionTarget,'z'),'staleRevision');const bypass=request(s,revisionTarget,'z');bypass.expectedRevision=(await inspect(s)).document.revision;await reject(s,bypass,'staleRevision');checks.push('undo cannot revive a captured revision; changing only the outer expectedRevision cannot bypass the target check');
+ const old=await capture(b),latest=await capture(b);await reject(b,request(b,old,'q'),'conflict');assert.equal((await send({op:'cancelOcrTarget',handle:b,requestId:old.requestId})).cancelled,false);assert.equal((await send({op:'cancelOcrTarget',handle:b,requestId:latest.requestId})).cancelled,true);await reject(b,request(b,latest,'q'),'conflict');checks.push('latest request wins; cancellation does not cancel another request');
+ target=await capture(b);const ime=(await action(b,{kind:'beginComposition',mode:'math'})).editor.composition.id;await reject(b,request(b,target,'q'),'conflict');await action(b,{kind:'cancelComposition',id:ime});await reject(b,request(b,target,'q'),'conflict');checks.push('IME begin/cancel permanently invalidates the earlier request');
+ target=await capture(b);for(const [key,value]of [['documentId','wrong'],['sourceId',99999],['selectionEpoch',99999],['requestId',99999]]){const forged={...target,[key]:value};await reject(b,request(b,forged,'q'),'conflict');}
+ await reject(b,request(b,target,''),'invalidInput');await reject(b,request(b,target,String.raw`\unknownocr{x}`),'unsupportedSyntax');await reject(b,request(b,target,'x'.repeat(1048577)),'resourceLimit');await send(request(b,target,'q'));checks.push('tampered target, unknown source, empty and excessive payloads fail without content/selection/history changes');
+ const parkedTarget=await capture(b),rev=(await inspect(b)).document.revision;await send({op:'parkSession',handle:b,expectedRevision:rev});await send({op:'resumeSession',handle:b,expectedRevision:rev});await reject(b,request(b,parkedTarget,'q'),'conflict');await send({op:'destroy',handle:b,expectedRevision:rev});await send(request(b,parkedTarget,'q'),'invalidHandle');const reopened=await create('ocr-b','xq');await reject(reopened,request(reopened,parkedTarget,'q'),'conflict');checks.push('parking/destroy/reopening cannot transfer or revive stale OCR targets');
+ const draft=await create('ocr-draft',String.raw`\frac{`);await reject(draft,{op:'captureOcrTarget',handle:draft,expectedRevision:0},'incompleteSource');const unknown=await create('ocr-unknown',String.raw`\unknownocr{x}`);await reject(unknown,{op:'captureOcrTarget',handle:unknown,expectedRevision:0},'unsupportedSyntax');
+ for(const h of[a,s,reopened,draft,unknown])await send({op:'destroy',handle:h,expectedRevision:(await inspect(h)).document.revision});assert.equal((await send({op:'stats'})).activeSessions,0);
+ report={status:'PASS',actualNativeExecution:true,actualWasmExecution:true,requests,rejections,exactResponseParity:true,checks,nativeSha256:sha(readFileSync(nativePath)),wasmSha256:sha(readFileSync(wasmPath)),transcriptSha256:transcript.digest('hex'),notCovered:['Actual OCR recognition services/models','Browser input in this runner','Office']};
+}catch(error){report={status:'FAILED',requests,rejections,error:String(error),checks};throw error;}
+finally{clearTimeout(timer);wasm.free();native.stdin.end();lines.return?.();if(native.exitCode===null)native.kill();if(report){writeFileSync(resolve(out,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify({receipt:relative(root,resolve(out,'report.json')).replaceAll('\\','/'),...report},null,2));}}

@@ -1,4 +1,4 @@
-import type { MathfieldElement } from "mathlive";
+import type { LegacyMathfieldLike } from "../editor/legacyMathfieldTypes";
 import type {
   CustomSymbolDefinition,
   CustomSymbolVectorShape,
@@ -17,7 +17,7 @@ import {
 
 const globalStyleId = "visualtex-custom-symbol-runtime-style";
 const shadowStyleId = "visualtex-custom-symbol-runtime-shadow-style";
-const shadowStyleSignatures = new WeakMap<MathfieldElement, string>();
+const shadowStyleSignatures = new WeakMap<LegacyMathfieldLike, string>();
 let cachedGlobalStyleRevision = -1;
 let cachedGlobalStyleCss = "";
 
@@ -293,7 +293,7 @@ export function installCustomSymbolGlobalStyle() {
   installStyle(document, globalStyleId, cachedGlobalStyleCss);
 }
 
-export function installCustomSymbolShadowStyle(field: MathfieldElement) {
+export function installCustomSymbolShadowStyle(field: LegacyMathfieldLike) {
   const root = field.shadowRoot;
   if (!root) return;
   const revision = getCustomSymbolRevision();
@@ -324,7 +324,7 @@ function sourceContainsControlWord(source: string, commands: ReadonlySet<string>
   return false;
 }
 
-function selectionSourceAnchor(field: MathfieldElement, offset: number) {
+function selectionSourceAnchor(field: LegacyMathfieldLike, offset: number) {
   const safeOffset = Math.max(0, Math.min(field.lastOffset, offset));
   if (safeOffset === 0) return "";
   if (safeOffset === field.lastOffset) return field.value;
@@ -332,7 +332,7 @@ function selectionSourceAnchor(field: MathfieldElement, offset: number) {
 }
 
 function modelOffsetForSourceAnchor(
-  field: MathfieldElement,
+  field: LegacyMathfieldLike,
   source: string,
   anchor: string,
 ) {
@@ -344,7 +344,7 @@ function modelOffsetForSourceAnchor(
   return anchor.length <= source.length / 2 ? 0 : field.lastOffset;
 }
 
-export function refreshCustomSymbolMathfield(field: MathfieldElement) {
+export function refreshCustomSymbolMathfield(field: LegacyMathfieldLike) {
   const latex = field.value;
   const previousCommands = getAppliedCustomSymbolCommandsForMathfield(field);
   const currentCommands = new Set(

@@ -26,7 +26,7 @@ export async function renderFormulaDocumentPng(
     throw new Error("There is no formula to export.");
   }
 
-  const svg = latexToSvg(nonEmptyFormulas.join("\n"), {
+  const svg = await latexToSvg(nonEmptyFormulas.join("\n"), {
     displayMode: true,
     fontSizePt: 18,
     paddingPx: 18,

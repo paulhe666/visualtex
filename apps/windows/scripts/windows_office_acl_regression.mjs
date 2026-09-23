@@ -24,6 +24,9 @@ assert.ok(
 );
 
 const requiredCommands = [
+  "get_app_window_configuration",
+  "apply_app_window_configuration",
+  "set_main_window_keypad_mode",
   "get_office_platform_status",
   "get_office_companion_status",
   "get_mathtype_double_click_edit_enabled",

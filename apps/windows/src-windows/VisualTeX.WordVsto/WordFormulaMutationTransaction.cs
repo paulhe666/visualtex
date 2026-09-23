@@ -23,7 +23,8 @@ internal static class WordFormulaMutationTransaction
         WordApplication application,
         Document document,
         string name,
-        Func<T> mutationAndValidation)
+        Func<T> mutationAndValidation,
+        WordDocumentEditSnapshot? rollbackSnapshot = null)
     {
         if (application is null) throw new ArgumentNullException(nameof(application));
         if (document is null) throw new ArgumentNullException(nameof(document));
@@ -69,7 +70,21 @@ internal static class WordFormulaMutationTransaction
                     }
                 }
 
-                if (!TryUndoExactlyOne(document, out var undoError))
+                if (rollbackSnapshot is not null)
+                {
+                    try
+                    {
+                        rollbackSnapshot.Restore(document);
+                    }
+                    catch (Exception recoveryError)
+                    {
+                        throw new AggregateException(
+                            "The formula mutation failed and the verified Word rollback snapshot could not restore the complete batch.",
+                            primary,
+                            recoveryError);
+                    }
+                }
+                else if (!TryUndoExactlyOne(document, out var undoError))
                 {
                     throw new AggregateException(
                         "The formula mutation failed and its exact Word undo record could not be rolled back.",

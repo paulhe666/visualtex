@@ -1,0 +1,16 @@
+[omml->visualtex count=10]
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=10|ms=31.343
+[omml->mathtype count=10]
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=10|ms=2.745
+[visualtex->omml count=10]
+[visualtex->mathtype count=10]
+[mathtype->omml count=10]
+[mathtype->visualtex count=10]
+[omml->visualtex count=20]
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=20|ms=7.058
+[omml->mathtype count=20]
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=20|ms=5.147
+[visualtex->omml count=20]
+[visualtex->mathtype count=20]
+[mathtype->omml count=20]
+[mathtype->visualtex count=20]

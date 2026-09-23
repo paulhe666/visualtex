@@ -1,3 +1,5 @@
+using VisualTeX.WindowsOffice.Contracts;
+
 namespace VisualTeX.WordVsto;
 
 /// <summary>
@@ -11,6 +13,10 @@ internal static class WordFormulaMutationValidator
         WordFormulaHostWriteRequest request,
         WordFormulaHostDescriptor inserted)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.ValidateInsertedHost."
+                + request.Kind);
         var localRange = WordFormulaHostSemanticReader.CreateRange(
             document,
             inserted.Range);

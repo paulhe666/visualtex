@@ -1,0 +1,8 @@
+Acceptance mode: word-format-conversion-scaling
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+[FORMAT SCALING] reusing source fixture C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt2-40-20260923\format-scaling-omml-40.docx
+[EXPLICIT OWNED WORD] pid=63388; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt2-40-20260923\owned-word-convert-omml-to-mathtype-40-ba57828f423c4e9e8cc713c6b3fcd919\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->mathtype count=40 captureMs=4321.8 applyMs=47859.9 capturePer=108.05 applyPer=1196.50
+[FORMAT SCALING COMPLETE] samples=1; report=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt2-40-20260923\format-conversion-scaling.csv
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt2-40-20260923

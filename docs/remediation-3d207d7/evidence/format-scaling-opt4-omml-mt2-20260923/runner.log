@@ -1,0 +1,14 @@
+Acceptance mode: word-format-conversion-scaling
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+[EXPLICIT OWNED WORD] pid=57012; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt4-omml-mt2-20260923\owned-word-source-omml-10-5354a875bcab450ab3a0b537264bab32\owned-empty-startup.docx; coCreateInstance=False
+[EXPLICIT OWNED WORD] pid=51896; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt4-omml-mt2-20260923\owned-word-convert-omml-to-mathtype-10-87e2547c071d4c12bb4714c0bd467261\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->mathtype count=10 captureMs=1316.8 applyMs=6712.1 capturePer=131.68 applyPer=671.21
+[EXPLICIT OWNED WORD] pid=94648; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt4-omml-mt2-20260923\owned-word-source-omml-20-4260a544b72143e6a3bfe6d4b4996c33\owned-empty-startup.docx; coCreateInstance=False
+[EXPLICIT OWNED WORD] pid=94640; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt4-omml-mt2-20260923\owned-word-convert-omml-to-mathtype-20-700541e4ff72491590c3eafadc2816db\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->mathtype count=20 captureMs=2026.9 applyMs=15480.9 capturePer=101.34 applyPer=774.05
+[EXPLICIT OWNED WORD] pid=63388; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt4-omml-mt2-20260923\owned-word-source-omml-40-1ae95c823d35469ea863c42712899e7a\owned-empty-startup.docx; coCreateInstance=False
+[EXPLICIT OWNED WORD] pid=94788; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt4-omml-mt2-20260923\owned-word-convert-omml-to-mathtype-40-1060aea47b7f42308ecf5ec6c113403f\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->mathtype count=40 captureMs=3565.9 applyMs=33650.8 capturePer=89.15 applyPer=841.27
+[FORMAT SCALING COMPLETE] samples=3; report=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt4-omml-mt2-20260923\format-conversion-scaling.csv
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt4-omml-mt2-20260923

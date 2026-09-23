@@ -1,0 +1,21 @@
+Acceptance mode: word-format-conversion-scaling
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[EXPLICIT OWNED WORD] pid=82244; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline-20260923\owned-empty-startup.docx; coCreateInstance=False
+[FORMAT SCALING] omml->visualtex count=10 captureMs=1338.7 applyMs=22242.1 capturePer=133.87 applyPer=2224.21
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[FORMAT SCALING] omml->mathtype count=10 captureMs=1181.3 applyMs=13703.5 capturePer=118.13 applyPer=1370.35
+System.IO.InvalidDataException (0x80131501): Do not overwrite a Word startup seed.
+   在 VisualTeX.VstoFlowAcceptance.Program.CreateEmptyWordPerformanceSeed(String output) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordOmmlPerformanceFixture.cs:行号 16
+   在 VisualTeX.VstoFlowAcceptance.Program.CreateFreshRollbackAutomationWord(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\OwnedAutomationWordAcceptance.cs:行号 19
+   在 VisualTeX.VstoFlowAcceptance.Program.CreateFreshAcceptanceAutomationWord(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\OwnedAutomationWordAcceptance.cs:行号 99
+   在 VisualTeX.VstoFlowAcceptance.Program.CreateFormatScalingSourceFixture(String artifactRoot, String fixturePath, String sourceMode, Int32 count, String pngPath, String emfPath) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordFormatConversionScalingAcceptance.cs:行号 233
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWordFormatConversionScalingAcceptance(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordFormatConversionScalingAcceptance.cs:行号 113
+   在 VisualTeX.VstoFlowAcceptance.Program.Main(String[] args) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 1215
+Acceptance artifacts retained: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-baseline-20260923

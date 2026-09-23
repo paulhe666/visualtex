@@ -1,6 +1,6 @@
 [package]
 name = "visualtex"
-version = "1.2.7"
+version = "1.2.8"
 description = "A visual LaTeX formula editor"
 authors = ["paulhe666"]
 license = "MIT"
@@ -13,6 +13,7 @@ ocr-python-bundle-acceptance = []
 ocr-model-acceptance = []
 ocr-storage-acceptance = []
 ocr-provider-connectivity-acceptance = []
+system-font-asset-acceptance = []
 
 [[bin]]
 name = "ocr_install_acceptance"
@@ -38,6 +39,11 @@ required-features = ["ocr-storage-acceptance"]
 name = "ocr_provider_connectivity_acceptance"
 path = "src/bin/ocr_provider_connectivity_acceptance.rs"
 required-features = ["ocr-provider-connectivity-acceptance"]
+
+[[bin]]
+name = "system_font_asset_acceptance"
+path = "src/bin/system_font_asset_acceptance.rs"
+required-features = ["system-font-asset-acceptance"]
 
 [lib]
 name = "visualtex_lib"

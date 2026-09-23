@@ -1,0 +1,9 @@
+Acceptance mode: word-omml-visualtex-numbered-roundtrip
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+[EXPLICIT OWNED WORD] pid=76392; seed=C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\perf-regression-omml-vt-20260923\owned-empty-startup.docx; coCreateInstance=False
+System.InvalidOperationException (0x80131509): OMML→VisualTeX roundtrip setup did not create one numbered VisualTeX host per formula. Expected 3, actual 0.
+   在 VisualTeX.VstoFlowAcceptance.Program.AssertEqual[T](T expected, T actual, String message) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 6410
+   在 VisualTeX.VstoFlowAcceptance.Program.RunOmmlVisualTeXNumberedRoundTripAcceptance(Application application, String pngPath, String emfPath, IReadOnlyList`1 formulas, String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordFormulaFormatConversionAcceptance.cs:行号 456
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWordOmmlVisualTeXNumberedRoundTripAcceptance(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordFormulaFormatConversionAcceptance.cs:行号 410
+   在 VisualTeX.VstoFlowAcceptance.Program.Main(String[] args) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 1195
+Acceptance artifacts retained: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\perf-regression-omml-vt-20260923

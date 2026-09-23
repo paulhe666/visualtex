@@ -1,0 +1,19 @@
+{
+  "document": {
+    "version": 3,
+    "title": "旧文档兼容回归",
+    "formulas": [
+      {"id":"original-A","latex":"% 保留原换行\r\n\\frac{a}{b} ","displayMode":"inline","alignment":"left","fontSize":23,"createdAt":100,"updatedAt":200,"futureBlock":{"keep":true}},
+      {"id":"original-B","latex":"\\unknownlegacy{x}","displayMode":"block","alignment":"center","fontSize":36,"createdAt":101,"updatedAt":201},
+      {"id":"original-C","latex":"\\frac{","displayMode":"block","alignment":"right","fontSize":28,"createdAt":102,"updatedAt":202}
+    ],
+    "macros":{"userdef":"\\frac{#1}{#2}"},
+    "settings":{"theme":"dark","zoom":0.45,"formulaLetterFont":"times","formulaChineseFont":"songti","inputBehavior":{"autoEscapeShortcuts":false,"autoExitSuperscript":false,"autoExitSubscript":true,"autoExitAccent":false,"autoExitWrapperCommand":true,"showStructuredCommandSuggestions":true,"showOtherCommandSuggestions":false},"futureSetting":{"unchanged":true}},
+    "futureEnvelope":{"keep":[1,2,3]}
+  },
+  "editorState":{"version":0,"state":{"title":"旧工作区","lines":[{"id":"line-a","latex":"a+b","mode":"inline"},{"id":"line-b","latex":"\\sqrt{x}","mode":"display"}],"activeLineId":"line-b","formulaLetterFont":"cambria","formulaChineseFont":"kaiti","zoom":0.75,"history":[{"id":"snippet-1","latex":"\\frac{a}{b}","createdAt":123,"lines":[{"id":"snippet-row","latex":"\\frac{a}{b}","mode":"display"}],"extra":"keep"}],"usage":{"fraction":{"count":8}},"unknownSetting":true}},
+  "singleEditorState":{"version":0,"state":{"latex":"x + y\r\n","title":"旧单公式","future":42}},
+  "configuration":{"schema":"visualtex-user-configuration","version":1,"exportedAt":"2026-09-14T00:00:00Z","editorSettings":{"formulaLetterFont":"cambria","formulaChineseFont":"heiti","inputBehavior":{"autoExitSuperscript":false},"zoom":0.5},"storage":{"visualtex.formula-letter-font":"times","visualtex.formula-chinese-font":"songti","unknown-storage-key":"retained-only"},"personalization":{"history":[{"id":"saved-1","latex":"\\alpha+\\beta","createdAt":10}],"usage":{"alpha":{"count":4}}},"word":{"defaultEquationNumberFormat":"heading1-dot"},"windows":{"main":{"width":1200,"height":800}},"futureConfiguration":{"keep":true}},
+  "hotkeys":{"version":2,"state":{"bindings":[{"id":"binding-1","target":{"id":"command:frac","kind":"command","command":{"id":"frac","command":"\\frac","insertTemplate":"\\frac{#?}{#?}","previewLatex":"\\frac{a}{b}","labelZh":"分式","labelEn":"Fraction","aliases":[],"keywords":[],"category":"common","defaultPriority":0,"supportedInMathMode":true}},"chord":{"code":"KeyF","key":"f","ctrlKey":true,"altKey":true,"shiftKey":false,"metaKey":false},"updatedAt":99,"futureBinding":true}]}},
+  "checkpoint":{"id":"checkpoint-1","createdAt":1000,"operationIndex":42,"reason":"save-document","document":{"title":"历史检查点","lines":[{"id":"old-line","latex":"\\frac{x}{y}","mode":"display"}],"activeLineId":"old-line","formulaAlignment":"center","selectionByLineId":{"old-line":{"ranges":[[2,7]],"direction":"forward"}}},"extraCheckpoint":"retain"}
+}

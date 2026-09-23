@@ -1,0 +1,26 @@
+{
+  "schema": "visualtex-p10-source-archive-audit-v1",
+  "status": "PASS",
+  "completion": "browserStable-notP10Complete",
+  "archive": "docs/engine-rebuild/checkpoints/CP10-main-app-browser-stable-1/visualtex-p10-main-app-browser-stable-1.tgz",
+  "archiveSha256": "b057aeb5097885211411117d5ff7c08288f42272e8ead53f615469928d30a21a",
+  "archiveBytes": 733852,
+  "archiveFiles": 267,
+  "verifiedSourceFiles": 267,
+  "sourceSha256": "f39d8f3dbb59e39042a91f8d2aed5db30619d86fe47187d4012cd1f5effa5825",
+  "archiveMatchedEveryVerifiedInput": true,
+  "currentSourceStillMatches": true,
+  "forbiddenArchiveFiles": [],
+  "verificationReceipt": "engine/target/p10-verification/2026-09-14T14-24-07-439Z/report.json",
+  "p09VerificationReceipt": "engine/target/p09-verification/2026-09-14T14-20-44-010Z/report.json",
+  "p09Steps": 20,
+  "p10Steps": 15,
+  "notCovered": [
+    "Real Tauri process close and second launch: not run because an installed user VisualTeX process was already active and must not be closed or stolen by single-instance dev acceptance.",
+    "Installer-level no-OCR size/install verification: no no-OCR installer was produced by this checkpoint.",
+    "Office interaction and Office document algorithms: intentionally outside P10."
+  ],
+  "officeActions": 0,
+  "wordActions": 0,
+  "gitMutations": 0
+}

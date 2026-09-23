@@ -1122,6 +1122,14 @@ internal static partial class Program
             {
                 RunWordMathTypeOleCreateAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-compat14", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeCompatibility14Acceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-latex-redraw-number-order", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordLatexRedrawNumberingOrderAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-mathtype-aligned-create", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeAlignedCreateAcceptance(artifactRoot);
@@ -1201,6 +1209,26 @@ internal static partial class Program
             else if (string.Equals(mode, "word-mathtype-omml-selection-view", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeOmmlSelectionViewAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-format-conversion-scaling", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordFormatConversionScalingAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-format-conversion-multibody-flatopc", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordFormatConversionMultiBodyFlatOpcAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-format-conversion-table-mixed", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordFormatConversionTableMixedAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-existing-omml-vt-capture", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordExistingOmmlToVisualTeXCaptureAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-existing-omml-vt-apply", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordExistingOmmlToVisualTeXApplyAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-installed-omml-mathtype-format-conversion", StringComparison.OrdinalIgnoreCase))
             {

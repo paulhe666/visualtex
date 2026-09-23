@@ -9,6 +9,9 @@ using System.Runtime.InteropServices;
 public static class WordNativeConnection {
  public delegate bool EnumProc(IntPtr window, IntPtr data);
  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc proc, IntPtr data);
+ [DllImport("user32.dll")] public static extern bool EnumDesktopWindows(IntPtr desktop, EnumProc proc, IntPtr data);
+ [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
+ [DllImport("user32.dll")] public static extern bool CloseDesktop(IntPtr desktop);
  [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr parent, EnumProc proc, IntPtr data);
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr window, StringBuilder text, int count);
@@ -21,10 +24,18 @@ public static class WordNativeConnection {
  $connectionDeadline=[DateTime]::UtcNow.AddSeconds(5)
  do {
  $script:nativeWordWindows=@()
- [void][WordNativeConnection]::EnumWindows({param($window,$data)
+ $inputDesktop=[WordNativeConnection]::OpenInputDesktop(0,$false,0x01C1)
+ $enumerate={param($window,$data)
    [uint32]$ownerProcess=0;[void][WordNativeConnection]::GetWindowThreadProcessId($window,[ref]$ownerProcess)
    if($ownerProcess -eq $WordProcessId){$script:nativeWordWindows+=$window};return $true
- },[IntPtr]::Zero)
+ }
+ try {
+  if($inputDesktop -ne [IntPtr]::Zero){
+   [void][WordNativeConnection]::EnumDesktopWindows($inputDesktop,$enumerate,[IntPtr]::Zero)
+  } else {
+   [void][WordNativeConnection]::EnumWindows($enumerate,[IntPtr]::Zero)
+  }
+ } finally {if($inputDesktop -ne [IntPtr]::Zero){[void][WordNativeConnection]::CloseDesktop($inputDesktop)}}
  $script:connectedWord=$null
  foreach($parent in $script:nativeWordWindows){
   [void][WordNativeConnection]::EnumChildWindows($parent,{param($window,$data)

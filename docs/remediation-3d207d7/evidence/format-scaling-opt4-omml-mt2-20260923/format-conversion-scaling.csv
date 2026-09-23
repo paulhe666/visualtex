@@ -1,0 +1,4 @@
+source,target,count,capture_ms,apply_ms,capture_per_formula_ms,apply_per_formula_ms
+omml,mathtype,10,1316.792,6712.132,131.679,671.213
+omml,mathtype,20,2026.875,15480.924,101.344,774.046
+omml,mathtype,40,3565.95,33650.82,89.149,841.27

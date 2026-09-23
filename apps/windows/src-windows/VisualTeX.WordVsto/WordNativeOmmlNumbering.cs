@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -238,6 +239,9 @@ internal static class WordNativeOmmlNumbering
         Document document,
         WordFormulaHostDescriptor host)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.NativeOmmlNumbering.Detach");
         if (host.Kind != WordFormulaHostKind.Omml)
             throw new ArgumentException(
                 "Word-native # numbering detach received a non-OMML host.");
@@ -583,6 +587,10 @@ internal static class WordNativeOmmlNumbering
         WordFormulaHostDescriptor host,
         bool numbered)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.NativeOmmlRebuild."
+                + (numbered ? "numbered" : "unnumbered"));
         Range? range = null;
         OMaths? maths = null;
         OMath? math = null;

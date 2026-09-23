@@ -1,0 +1,10 @@
+Acceptance mode: word-mathtype-compat14
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+[MATHTYPE COMPAT14 PASS] Unnumbered then numbered Equation.DSMT4 insertion completed in Word compatibility mode 14.
+[MATHTYPE COMPAT14 REDRAW PASS] Dedicated display source delete + exact-position numbered MathType insertion completed.
+VisualTeX real VSTO formula flow acceptance passed.
+Artifacts: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\mt-compat14-redraw-beforefix

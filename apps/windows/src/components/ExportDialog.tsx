@@ -186,7 +186,7 @@ export function ExportDialog({
         text = buildMarkdownDocument(title, nonEmptyFormulas);
         browserPayload = text;
       } else if (format === "svg") {
-        const svg = latexToSvg(nonEmptyFormulas.join("\n"), {
+        const svg = await latexToSvg(nonEmptyFormulas.join("\n"), {
           displayMode: true,
           fontSizePt: 18,
           paddingPx: 18,

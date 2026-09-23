@@ -1,0 +1,86 @@
+{
+  "schema": "visualtex-engine-checkpoint-v1",
+  "checkpoint": "CP16-post-regression-static-ready-2",
+  "stage": "P16",
+  "status": "STATIC_PASS",
+  "completion": "awaiting-installed-office-acceptance",
+  "date": "2026-09-16",
+  "branch": "reference-3d207d7",
+  "head": "d1f0aff8db9275c90dc18c7318dc2a4d7bbbd760",
+  "context": {
+    "previousP15Receipt": "engine/target/p15-verification/2026-09-16T06-09-08-451Z/report.json",
+    "previousP15ReceiptSha256": "E80BBA65D1670BB70811BBC77E1CF49DA820F5F3CE9FFB5A23583D18BA3228FB",
+    "sourceChangedAfterP15": true,
+    "reason": "The first installed P16 candidate exposed product-visible regressions in the autonomous editor: simplified visual rendering, text-only command candidates, invisible empty structural arguments, and formula-font preferences whose visible glyph family did not match the selected product font."
+  },
+  "postP15RegressionEvidence": {
+    "formulaFontTruth": {
+      "status": "PASS",
+      "receipt": "engine/target/p16-formula-font-truth-review/2026-09-16T08-41-30-424Z/report.json",
+      "receiptSha256": "39FFA9169F092C0E7C61DD0F0C33BFC96CADC1B7D6D6E5E10A046A49F4234614",
+      "families": ["Times New Roman", "Palatino Linotype", "Arial"],
+      "semantics": "Real Regular/Italic/Bold/BoldItalic faces own common visible glyphs; selected-family fixed-size glyphs are preferred; OpenType MATH fallback is reserved for structures requiring MATH metrics/variants/assemblies; semantic special alphabets remain dedicated mathematical alphabets."
+    },
+    "coreVisualRegression": {
+      "status": "PASS",
+      "receipt": "engine/target/p16-core-visual-regression-browser/2026-09-16T08-30-19-600Z/report.json",
+      "receiptSha256": "98437678A23F57CC6518175AED30F081C5FD4C4F026FDE90388939FDCC78E8D3",
+      "commandCandidateMathPreview": true,
+      "interactiveEmptyFractionSlots": 2,
+      "mathLiveFields": 0
+    },
+    "mathLiveProductionRuntimeReintroduced": false
+  },
+  "coreResources": {
+    "wasmAsset": "visualtex_engine_wasm_bg-BtL3PE-e.wasm",
+    "wasmBytes": 7242419,
+    "wasmSha256": "1D106B40B8696AF80F47C128C2D3811496D4ECCDE9D364C139F0FED2397743EA",
+    "mathFontAsset": "latinmodern-math-CUFlBgaJ.otf",
+    "mathFontSha256": "6075562B771F8B82F0C179E363389684F2DD09DE30038269E2628E504BD7BE0F"
+  },
+  "packages": {
+    "full": {
+      "path": "apps/windows/src-tauri/target/release/bundle/nsis/VisualTeX_1.2.7_x64-setup.exe",
+      "bytes": 348762103,
+      "sha256": "A014BF2BC4FF37726E69920E17F84F920DE83F7F72769977B34AD91E069C2F49",
+      "staticVerification": "PASS"
+    },
+    "noOcr": {
+      "path": "apps/windows/src-tauri/target/release/bundle/nsis/VisualTeX_1.2.7_x64-no-ocr-setup.exe",
+      "isolatedPath": "apps/windows/src-tauri/target-no-ocr/release/bundle/nsis/VisualTeX_1.2.7_x64-setup.exe",
+      "bytes": 121454489,
+      "sha256": "5026CF3917F0BFB8EA36334A1823C8D56E20CD64DBCCAC6E214A2FF5675F12BC",
+      "bytesSavedVsFull": 227307614,
+      "staticVerification": "PASS",
+      "offlineOcrPayloadPresent": false
+    }
+  },
+  "staticVerification": {
+    "status": "STATIC_PASS",
+    "receipt": "engine/target/p16-static-verification/2026-09-16T08-42-50-578Z/report.json",
+    "receiptSha256": "35ED664C35257BEE7333095CF8AB1E60E3F1F4CDDDBB8EE95CBB0C65DE06998D",
+    "verificationSteps": 5,
+    "sourceUnchangedDuringVerification": true,
+    "frozenOfficeWorkingTreeUnchanged": true,
+    "packageArtifactsReadyForInstallAcceptance": true
+  },
+  "installedAcceptance": {
+    "status": "NOT_RUN",
+    "currentRebuiltInstallerInstalled": false,
+    "realInstalledWordRibbonTested": false,
+    "realInstalledPowerPointTested": false,
+    "overallComplete": false,
+    "reason": "The user has not authorized this rebuilt post-regression installer to be executed. The previously installed candidate is not evidence for these new package bytes."
+  },
+  "auditBoundaries": {
+    "installerFilesOverwrittenByUserPermission": true,
+    "installerExecuted": false,
+    "installedApplicationOverwritten": false,
+    "userOfficeProcessTouched": false,
+    "protectedOfficeSourceModified": false,
+    "gitCommitCreated": false,
+    "gitPushPerformed": false,
+    "releasePublished": false
+  },
+  "overallComplete": false
+}

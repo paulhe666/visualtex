@@ -27,6 +27,14 @@ mod ocr_offline;
 mod ocr_python_bundle;
 #[cfg(windows)]
 mod system_math_glyphs;
+
+#[cfg(all(windows, feature = "system-font-asset-acceptance"))]
+pub fn system_font_asset_acceptance_json(
+    font_families: Vec<String>,
+) -> Result<String, String> {
+    serde_json::to_string(&system_math_glyphs::read_system_font_asset(font_families)?)
+        .map_err(|error| format!("VisualTeX could not serialize the system font asset: {error}"))
+}
 mod office;
 #[cfg(windows)]
 mod windows_quick_ocr;
@@ -4085,6 +4093,8 @@ pub fn run() {
             get_word_numbering_user_configuration,
             apply_word_numbering_user_configuration,
             system_math_glyphs::probe_system_math_fonts,
+            system_math_glyphs::read_system_font_asset,
+            system_math_glyphs::read_system_font_variant_asset,
             system_math_glyphs::extract_system_math_glyph,
             office::lifecycle::set_app_theme,
             office::lifecycle::set_app_editor_layout,

@@ -1,0 +1,9 @@
+# P04 implementation lane
+
+CP03 archived and guarded. Implementation now owns positions.rs, position_map.rs, projection.rs, transactions.rs (being added), editing.rs/history.rs/composition.rs (to follow), and associated session/protocol integration. Please add review tests under separately named review files rather than racing these modules.
+
+Scripts.base is now always an editable Row when produced by the parser (bare for one unbraced base, braced for a source group). This is an intentional P04 model refinement, not a source spelling change. Model's shared serializer now optionally records node output ranges; projection.rs reindexes every node against a new source buffer after structural edits without invoking the parser. A changed multi-atom script base is grouped and that grouping is reflected back into the tree.
+
+The public positions module is exported. The implementation lane fixed positions_contract_review.rs only to use the public module and correct the existing two-argument Node::empty_row API (already returns Arc); none of its behavioral assertions were weakened. Its 11 cases and the implementation's 8 position/projection cases all passed with parser/source-edit regression. Text/row edge equivalence, partial shift-selection, node-promotion reporting, offset overflow and depth budget fixes are in positions.rs.
+
+Next API: transactions::EditCommand for InsertText(mode math/text), InsertStructure(fraction/superscript/subscript/text), DeleteBackward/Forward, PasteLatex, DuplicateSelection, SplitText, MergeText(direction). A prepare-style executor edits Arc<Node> structurally and projects source, returns a PositionMap and selection; EngineSession's editing owner then adds bounded undo/redo and composition. Source replace/patch will use the same owner/history. No real keyboard/IME or Office acceptance is claimed by pure tests.

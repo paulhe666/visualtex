@@ -209,6 +209,20 @@ public sealed class MathMlToLatexConverterTests
             MathMlToLatexConverter.Convert(mathMl));
     }
 
+    [Fact]
+    public void ConvertsOrdinaryMultiElementFencedExpressionWithoutBinomialProbeFailure()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mfenced open=\"(\" close=\")\" separators=\",\">"
+            + "<msub><mi>A</mi><mn>9</mn></msub><mi>B</mi>"
+            + "</mfenced></math>";
+
+        Assert.Equal(
+            @"\left( A_{9},B\right)",
+            MathMlToLatexConverter.Convert(mathMl));
+    }
+
     [Theory]
     [InlineData("'", @"f^{\prime}")]
     [InlineData("′", @"f^{\prime}")]

@@ -1,0 +1,17 @@
+Acceptance mode: word-format-conversion-scaling
+Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+Acceptance Word startup: verifying Latin Modern Math.
+Acceptance Word startup: font ready path='C:\Windows\Fonts\latinmodern-math.otf', sessionRegistration=False.
+Acceptance Word startup: creating WINWORD COM application.
+Acceptance Word startup: WINWORD COM application created.
+System.InvalidOperationException (0x80131509): The active Word document changed while the VisualTeX editor was open.
+   在 VisualTeX.WordVsto.WordFormulaService.EnsureSourceDocument(Document document, String expectedIdentity) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaService.cs:行号 13450
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlanCore(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WordVsto\WordFormulaService.FormatConversionCore.cs:行号 151
+   在 VisualTeX.VstoFlowAcceptance.Program.MeasureFormatScalingConversion(String artifactRoot, String conversionPath, String sourceMode, String targetMode, Int32 count, String pngPath, String emfPath) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordFormatConversionScalingAcceptance.cs:行号 494
+   在 VisualTeX.VstoFlowAcceptance.Program.RunWordFormatConversionScalingAcceptance(String artifactRoot) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\WordFormatConversionScalingAcceptance.cs:行号 147
+   在 VisualTeX.VstoFlowAcceptance.Program.Main(String[] args) 位置 C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.VstoFlowAcceptance\Program.cs:行号 1215
+Acceptance artifacts retained: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\format-scaling-opt4-omml-mt-20260923

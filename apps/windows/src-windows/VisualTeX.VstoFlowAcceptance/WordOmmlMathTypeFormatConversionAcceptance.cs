@@ -2553,7 +2553,7 @@ internal static partial class Program
                 document,
                 emfPath,
                 artifactRoot);
-            AssertVisualTeXOleToOmmlPreservesNumberFormat(
+            AssertCurrentVisualTeXToOmmlPreservesNumberFormat(
                 application,
                 document,
                 artifactRoot);
@@ -2735,49 +2735,50 @@ internal static partial class Program
 
             if (numbered)
             {
-                AssertEqual(1, probe.Tables.Count,
-                    "Numbered MathType→OMML conversion did not create exactly one managed 1x3 numbering table.");
+                AssertEqual(0, probe.Tables.Count,
+                    "Numbered MathType→OMML unexpectedly created a VisualTeX-managed numbering table.");
                 AssertEqual(0, probe.Shapes.Count,
                     "Numbered MathType→OMML conversion created a floating number Shape.");
                 AssertEqual(0, probe.Frames.Count,
-                    "Numbered MathType→OMML conversion left a hidden caption Frame outside the 1x3 host.");
-                var convertedFormulaId = preparedTargets[plan.Targets[0].Id]
-                    .Session.FormulaId;
-                AssertOmmlTableNumberLifecyclePhase(
-                    application,
-                    probe,
-                    convertedFormulaId,
-                    "numbered MathType→OMML direct-SEQ 1x3 host");
+                    "Numbered MathType→OMML conversion left a hidden caption Frame.");
+                AssertEqual(1, CountManagedNumberedOmml(probe),
+                    "Numbered MathType→OMML did not converge to one canonical native #(SEQ) OMath host.");
+                AssertEqual(paragraphCountBefore, probe.Paragraphs.Count,
+                    "Numbered MathType→OMML display conversion changed the body paragraph count.");
 
-                numberedTable = probe.Tables[1];
-                numberedTableRange = numberedTable.Range.Duplicate;
-                Word.Range? precedingProbe = null;
-                Word.Paragraphs? precedingParagraphs = null;
+                var formulaParagraphIndex = -1;
+                for (var index = 1; index <= paragraphs.Count; index++)
+                {
+                    Release(formulaParagraph);
+                    formulaParagraph = paragraphs[index];
+                    Word.Range? range = null;
+                    try
+                    {
+                        range = formulaParagraph.Range;
+                        if (convertedRange.Start >= range.Start
+                            && convertedRange.End <= range.End)
+                        {
+                            formulaParagraphIndex = index;
+                            break;
+                        }
+                    }
+                    finally { Release(range); }
+                }
+                AssertTrue(formulaParagraphIndex > 1,
+                    "Converted numbered display OMML has no preceding body paragraph to validate.");
+                precedingParagraph = paragraphs[formulaParagraphIndex - 1];
                 Word.Range? precedingRange = null;
                 try
                 {
-                    var precedingStart = Math.Max(
-                        probe.Content.Start,
-                        numberedTableRange.Start - 1);
-                    precedingProbe = probe.Range(precedingStart, numberedTableRange.Start);
-                    precedingParagraphs = precedingProbe.Paragraphs;
-                    AssertTrue(precedingParagraphs.Count > 0,
-                        "Converted numbered display OMML has no preceding body paragraph to validate.");
-                    precedingParagraph = precedingParagraphs[1];
                     precedingRange = precedingParagraph.Range;
                     var precedingText = (precedingRange.Text ?? string.Empty)
                         .Trim('\r', '\a', '\v', '\f', '\t', ' ');
                     AssertEqual("VT-DISPLAY-BEFORE", precedingText,
-                        "Numbered MathType→OMML inserted a visible blank paragraph above the managed 1x3 formula.");
+                        "Numbered MathType→OMML inserted a blank paragraph above the native numbered OMath.");
                     Console.WriteLine(
-                        $"[NUMBERED MATHTYPE DISPLAY→OMML 1X3] paragraphs={paragraphCountBefore}->{probe.Paragraphs.Count}; formula={convertedRange.Start}:{convertedRange.End}; preceding='{precedingText}'; tables={probe.Tables.Count}; frames={probe.Frames.Count}; shapes={probe.Shapes.Count}.");
+                        $"[NUMBERED MATHTYPE DISPLAY→OMML NATIVE] paragraphs={paragraphCountBefore}->{probe.Paragraphs.Count}; formula={convertedRange.Start}:{convertedRange.End}; preceding='{precedingText}'; tables={probe.Tables.Count}; frames={probe.Frames.Count}; shapes={probe.Shapes.Count}.");
                 }
-                finally
-                {
-                    Release(precedingRange);
-                    Release(precedingParagraphs);
-                    Release(precedingProbe);
-                }
+                finally { Release(precedingRange); }
             }
             else
             {
@@ -2856,10 +2857,6 @@ internal static partial class Program
         const string thirdMathMl =
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></math>";
 
-        var previousAcceptance = Environment.GetEnvironmentVariable(
-            "VISUALTEX_VSTO_ACCEPTANCE");
-        var previousFailure = Environment.GetEnvironmentVariable(
-            "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE");
         Word.Document? probe = null;
         try
         {
@@ -2991,10 +2988,13 @@ internal static partial class Program
             var storedOmmlIdsBefore =
                 WordOmmlFormulaStore.StoredFormulaIds(probe).ToArray();
 
-            Environment.SetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE", "1");
-            Environment.SetEnvironmentVariable(
-                "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
-                ordered[1].SourceFormulaId);
+            // Force a real mid-batch writer failure instead of relying on the
+            // retired VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE test
+            // hook. Conversion runs from the document end toward the start, so
+            // the third formula is already replaced before the malformed middle
+            // target deletes its source and WordOmmlHostWriter rejects the target.
+            prepared[ordered[1].Id].MathMl =
+                "<invalid-omml-rollback-target/>";
             Exception? expectedFailure = null;
             try
             {
@@ -3006,7 +3006,7 @@ internal static partial class Program
             }
             if (expectedFailure is null)
                 throw new InvalidDataException(
-                    "Atomic MathType→OMML rollback fault injection did not fail the conversion.");
+                    "Atomic MathType→OMML rollback malformed middle target did not fail the conversion.");
 
             AssertEqual(3, CountMathTypeOleShapes(probe),
                 "Atomic MathType→OMML rollback did not restore all three MathType sources.");
@@ -3015,9 +3015,9 @@ internal static partial class Program
             var failureText = expectedFailure.ToString();
             AssertTrue(
                 failureText.IndexOf(
-                    "Injected format-conversion failure after deleting the source host.",
+                    "OMML insertion requires valid MathML.",
                     StringComparison.OrdinalIgnoreCase) >= 0,
-                "Atomic MathType→OMML rollback lost the primary injected failure: " + failureText);
+                "Atomic MathType→OMML rollback lost the primary malformed-target failure: " + failureText);
             AssertTrue(
                 failureText.IndexOf("bookmark drifted", StringComparison.OrdinalIgnoreCase) < 0
                 && failureText.IndexOf("could not be recovered uniquely", StringComparison.OrdinalIgnoreCase) < 0,
@@ -3097,22 +3097,240 @@ internal static partial class Program
                 "MathType-To-OMML-Atomic-Batch-Rollback.docx");
             probe.SaveAs2(outputPath, Word.WdSaveFormat.wdFormatXMLDocument);
             Console.WriteLine(
-                "[ATOMIC MT→OMML ROLLBACK] Injected second-target failure restored all three MathType sources, "
+                "[ATOMIC MT→OMML ROLLBACK] Malformed middle-target failure restored all three MathType sources, "
                 + "document text, styles, fields, bookmarks and OMML metadata inventory exactly.");
         }
         finally
         {
-            Environment.SetEnvironmentVariable(
-                "VISUALTEX_VSTO_ACCEPTANCE",
-                previousAcceptance);
-            Environment.SetEnvironmentVariable(
-                "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
-                previousFailure);
             if (probe is not null)
             {
                 try { probe.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
             }
             Release(probe);
+            try { returnDocument.Activate(); } catch { }
+        }
+    }
+
+    private static void AssertCurrentVisualTeXToOmmlPreservesNumberFormat(
+        Word.Application application,
+        Word.Document returnDocument,
+        string artifactRoot)
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mi>y</mi><mn>2</mn></msup><mo>=</mo><msup><mi>z</mi><mn>2</mn></msup></math>";
+        var previousDefaultFormat =
+            WordEquationNumbering.GetDefaultEquationNumberFormatId();
+        var previewRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VisualTeX",
+            "office",
+            "temp",
+            "current-vt-omml-number-format-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(previewRoot);
+        var pngPath = Path.Combine(previewRoot, "preview.png");
+        var svgPath = Path.Combine(previewRoot, "preview.svg");
+        WriteAcceptancePng(pngPath, "x^2+y^2=z^2", 300, 96);
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"300\" height=\"96\" viewBox=\"0 0 300 96\"><text x=\"6\" y=\"66\" font-family=\"Cambria Math\" font-size=\"44\">x²+y²=z²</text></svg>");
+        var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(svgPath, 300, 96);
+        var outputPath = Path.Combine(
+            artifactRoot,
+            "Current-VisualTeX-To-OMML-Heading2-Number-Format.docx");
+
+        Word.Document? probe = null;
+        Word.Document? reopened = null;
+        Word.ListTemplate? headingTemplate = null;
+        Word.Range? content = null;
+        Word.Range? hostRange = null;
+        try
+        {
+            probe = application.Documents.Add();
+            probe.Activate();
+            headingTemplate =
+                CreateEquationNumberFormatHeadingTemplate(probe);
+            InsertNumberedFormatHeading(
+                application,
+                probe,
+                headingTemplate,
+                level: 1,
+                "Chapter A",
+                continuePreviousList: false);
+            InsertNumberedFormatHeading(
+                application,
+                probe,
+                headingTemplate,
+                level: 2,
+                "Section A.1",
+                continuePreviousList: true);
+
+            var service = new WordFormulaService(application);
+            service.SetEquationNumberFormat(
+                EquationNumberFormat.Heading2DotId);
+            AssertEqual(
+                EquationNumberFormat.Heading2DotId,
+                service.GetEquationNumberFormatId(),
+                "Current number-format regression did not enter heading2-dot mode.");
+
+            SelectDocumentEnd(probe);
+            var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
+            service.InsertOle(
+                CreateSimpleVisualTeXSourceSession(
+                    latex,
+                    numbered: true),
+                pngPath,
+                emfPath);
+            AssertEqual(1, CountVisualTeXNativeOleShapes(probe),
+                "Current number-format regression did not create one VisualTeX OLE.");
+            AssertEqual(1, CountInstalledVisualTeXNumberedFormulaHosts(probe),
+                "Current number-format regression lost VisualTeX numbered metadata.");
+            AssertEqual(1, CountVisualTeXPlaceRefFields(probe),
+                "Current number-format regression did not create one VisualTeXPlaceRef.");
+
+            Word.InlineShape? sourceShape = null;
+            try
+            {
+                sourceShape = probe.InlineShapes[1];
+                hostRange = sourceShape.Range.Duplicate;
+                hostRange.Select();
+            }
+            finally { Release(sourceShape); }
+
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: false,
+                FormulaOleContract.NativeOleMode,
+                FormulaOleContract.WordOmmlMode);
+            AssertEqual(1, plan.Targets.Count,
+                "Current VisualTeX→OMML number-format regression did not capture one source.");
+            AssertTrue(plan.Targets[0].Numbered,
+                "Current VisualTeX→OMML number-format regression lost numbered state at capture.");
+            var target = plan.Targets[0];
+            var prepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal)
+            {
+                [target.Id] = new PreparedWordBulkFormula
+                {
+                    Run = new WordBulkRun
+                    {
+                        Id = target.Id,
+                        IsFormula = true,
+                        Latex = target.Latex,
+                        DisplayMode = target.DisplayMode,
+                    },
+                    Session = CreateSimpleFormatTargetSession(
+                        target,
+                        FormulaOleContract.WordOmmlMode,
+                        mathMl),
+                    MathMl = mathMl,
+                },
+            };
+            var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+            AssertEqual(1, result.FormulaCount,
+                "Current VisualTeX→OMML number-format conversion did not convert one formula.");
+            AssertEqual(0, result.FailedFormulaCount,
+                "Current VisualTeX→OMML number-format conversion reported a failure.");
+            AssertEqual(0, CountVisualTeXNativeOleShapes(probe),
+                "Current VisualTeX→OMML number-format conversion left a VisualTeX OLE.");
+            AssertEqual(1, probe.OMaths.Count,
+                "Current VisualTeX→OMML number-format conversion did not leave one OMath.");
+            AssertEqual(1, CountManagedNumberedOmml(probe),
+                "Current VisualTeX→OMML number-format conversion did not create canonical native numbering.");
+            AssertEqual(0, CountVisualTeXNumberingBookmarks(probe),
+                "Current VisualTeX→OMML number-format conversion left VisualTeX numbering bookmarks.");
+            AssertEqual(0, CountVisualTeXPlaceRefFields(probe),
+                "Current VisualTeX→OMML number-format conversion left VisualTeXPlaceRef fields.");
+
+            content = probe.Content;
+            var scheduled = WordFormulaHostResolver.CaptureScopeKindIndex(
+                probe,
+                content,
+                WordFormulaHostKind.Omml);
+            AssertEqual(1, scheduled.Count,
+                "Current number-format regression did not resolve one OMML host.");
+            Release(hostRange);
+            hostRange = WordFormulaHostSemanticReader.CreateRange(
+                probe,
+                scheduled[0].Range);
+            var resolved = WordFormulaHostResolver.ResolveLocal(
+                probe,
+                hostRange,
+                WordFormulaHostKind.Omml)
+                ?? throw new InvalidDataException(
+                    "Current number-format regression could not re-resolve native OMML.");
+            var numberBeforeReopen =
+                WordNativeOmmlNumbering.ReadVisibleNumber(
+                    probe,
+                    resolved.Numbering);
+            AssertTrue(
+                numberBeforeReopen.Count(character => character == '.') == 2,
+                "Current VisualTeX→OMML visible number no longer has heading2-dot shape a.b.c: "
+                + numberBeforeReopen);
+
+            probe.SaveAs2(
+                outputPath,
+                Word.WdSaveFormat.wdFormatXMLDocument,
+                AddToRecentFiles: false);
+            probe.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(probe);
+            probe = null;
+            reopened = application.Documents.Open(
+                outputPath,
+                ReadOnly: false,
+                AddToRecentFiles: false);
+            var reopenedService = new WordFormulaService(application);
+            AssertEqual(
+                EquationNumberFormat.Heading2DotId,
+                reopenedService.GetEquationNumberFormatId(),
+                "Saved/reopened native OMML lost heading2-dot preference.");
+            AssertEqual(1, CountManagedNumberedOmml(reopened),
+                "Saved/reopened native OMML lost canonical numbering.");
+            AssertEqual(0, CountVisualTeXNumberingBookmarks(reopened),
+                "Saved/reopened native OMML regained VisualTeX numbering bookmarks.");
+            AssertEqual(0, CountVisualTeXPlaceRefFields(reopened),
+                "Saved/reopened native OMML regained VisualTeXPlaceRef fields.");
+
+            Release(content);
+            content = reopened.Content;
+            scheduled = WordFormulaHostResolver.CaptureScopeKindIndex(
+                reopened,
+                content,
+                WordFormulaHostKind.Omml);
+            AssertEqual(1, scheduled.Count,
+                "Saved/reopened current number-format regression did not resolve one OMML host.");
+            Release(hostRange);
+            hostRange = WordFormulaHostSemanticReader.CreateRange(
+                reopened,
+                scheduled[0].Range);
+            resolved = WordFormulaHostResolver.ResolveLocal(
+                reopened,
+                hostRange,
+                WordFormulaHostKind.Omml)
+                ?? throw new InvalidDataException(
+                    "Saved/reopened current number-format regression could not resolve native OMML.");
+            var numberAfterReopen = WordNativeOmmlNumbering.ReadVisibleNumber(
+                reopened,
+                resolved.Numbering);
+            AssertEqual(numberBeforeReopen, numberAfterReopen,
+                "Saved/reopened native OMML changed its heading2-dot equation number.");
+            Console.WriteLine(
+                $"[CURRENT VISUALTEX→OMML NUMBER FORMAT] format={EquationNumberFormat.Heading2DotId}; number={numberAfterReopen}; no VT residue; save/reopen preserved.");
+        }
+        finally
+        {
+            Release(hostRange);
+            Release(content);
+            Release(headingTemplate);
+            if (reopened is not null)
+            {
+                try { reopened.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(reopened);
+            if (probe is not null)
+            {
+                try { probe.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            }
+            Release(probe);
+            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(previousDefaultFormat);
+            try { Directory.Delete(previewRoot, recursive: true); } catch { }
             try { returnDocument.Activate(); } catch { }
         }
     }
@@ -3493,20 +3711,39 @@ internal static partial class Program
 
     private static int CountManagedNumberedOmml(Word.Document document)
     {
-        var count = 0;
-        foreach (var formulaId in WordOmmlFormulaStore.FormulaIds(document))
+        Word.Range? content = null;
+        Word.Range? probe = null;
+        try
         {
-            Word.Bookmark? bookmark = null;
-            try
+            content = document.Content;
+            var scheduled = WordFormulaHostResolver
+                .CaptureScopeKindIndex(
+                    document,
+                    content,
+                    WordFormulaHostKind.Omml);
+            var count = 0;
+            foreach (var host in scheduled)
             {
-                bookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId);
-                if (bookmark is null) continue;
-                var metadata = WordOmmlFormulaStore.TryRead(document, bookmark);
-                if (metadata?.Numbered == true) count++;
+                Release(probe);
+                probe = WordFormulaHostSemanticReader.CreateRange(
+                    document,
+                    host.Range);
+                var resolved = WordFormulaHostResolver.ResolveLocal(
+                    document,
+                    probe,
+                    WordFormulaHostKind.Omml);
+                if (resolved?.Numbering.Numbered == true
+                    && resolved.Numbering.ContainerKind ==
+                        WordFormulaNumberingContainerKind.CanonicalNativeOmml)
+                    count++;
             }
-            finally { Release(bookmark); }
+            return count;
         }
-        return count;
+        finally
+        {
+            Release(probe);
+            Release(content);
+        }
     }
 
     private static void AssertEveryMathTypeProgId(Word.Document document)

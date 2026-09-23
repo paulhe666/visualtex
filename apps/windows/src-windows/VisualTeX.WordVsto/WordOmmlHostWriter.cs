@@ -263,6 +263,9 @@ internal static class WordOmmlHostWriter
         Range insertion,
         WordFormulaHostWriteRequest request)
     {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.OmmlHostWriter.Insert");
         if (request.Kind != WordFormulaHostKind.Omml)
             throw new ArgumentException("OMML writer received a non-OMML request.");
         if (string.IsNullOrWhiteSpace(request.MathMl)
@@ -660,9 +663,25 @@ internal static class WordOmmlHostWriter
                 witnessText = followingWitness.Text ?? string.Empty;
             }
 
-            anchor = exact.Duplicate;
-            anchor.Collapse(WdCollapseDirection.wdCollapseStart);
-            exact.Text = string.Empty;
+            // Use the one canonical OMML deletion primitive. DeleteExact()
+            // clears the exact OMath and then proves from a freshly acquired
+            // document range that no mathematical host/affinity survived. The
+            // older display-boundary path duplicated only the text-clearing half
+            // of that logic, which could leave a numbered native OMath produced
+            // by a previous cross-format conversion mathematically active around
+            // the insertion boundary.
+            anchor = DeleteExact(
+                document,
+                host);
+
+            Release(exact);
+            exact = null;
+            Release(math);
+            math = null;
+            Release(maths);
+            maths = null;
+            Release(range);
+            range = null;
 
             Release(paragraphRange);
             paragraphRange = null;

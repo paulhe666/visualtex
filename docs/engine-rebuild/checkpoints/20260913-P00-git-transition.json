@@ -1,0 +1,17 @@
+{
+  "schema": "visualtex-engine-observed-git-transition-v1",
+  "observedAt": "2026-09-13T04:06:30.141Z",
+  "reason": "External checkpoint commit recorded existing working-copy bytes; this run did not execute git commit.",
+  "fromHead": "c4690c2e69e266e6273eb0eaf5803ce74a054d1f",
+  "fromIndexSha256": "464dca5b26391323cc2ec408d4a1dcc6af36b2b49f7f5f16324ade83743529d3",
+  "head": "00b48e17b736c7e57a0a72e19e271df82906f89d",
+  "indexSha256": "79668f8f71d7dd85914ba75cc82bbea9f12dcb2382740fc772ab22d164d9ce68",
+  "commitMessage": "chore(windows): checkpoint pre-engine-rebuild state",
+  "promotedUntrackedCount": 21,
+  "historicalUntracked": {
+    "count": 11629,
+    "pathsSha256": "38044b8f9b9d54ab14e4f1b7bf83f55c6ff6a2ac30493b1bdb63f56e2e718d0e"
+  },
+  "sourceAndArtifactPolicy": "All original CP00 group, artifact and dirty-file byte hashes must still match. No source or binary difference is exempted.",
+  "engineFilesIncludedInCommit": false
+}

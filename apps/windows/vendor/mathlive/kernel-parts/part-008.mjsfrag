@@ -1,0 +1,1018 @@
+    command: "addRowBefore"
+  },
+  // {
+  //   key: 'ctrl+[Comma]',
+  //   ifLayout: ['apple.en-intl', 'windows.en-intl', 'linux.en'],
+  //   ifMode: 'math',
+  //   command: 'addColumnAfter',
+  // },
+  // {
+  //   key: 'cmd+[Comma]',
+  //   ifLayout: ['apple.en-intl', 'windows.en-intl', 'linux.en'],
+  //   ifMode: 'math',
+  //   command: 'addColumnAfter',
+  // },
+  // {
+  //   key: 'shift+ctrl+[Comma]',
+  //   ifLayout: ['apple.en-intl', 'windows.en-intl', 'linux.en'],
+  //   ifMode: 'math',
+  //   command: 'addColumnBefore',
+  // },
+  // {
+  //   key: 'shift+cmd+[Comma]',
+  //   ifLayout: ['apple.en-intl', 'windows.en-intl', 'linux.en'],
+  //   ifMode: 'math',
+  //   command: 'addColumnBefore',
+  // },
+  { key: "alt+[Tab]", ifMode: "math", command: "addColumnAfter" },
+  { key: "shift+alt+[Tab]", ifMode: "math", command: "addColumnBefore" },
+  { key: "alt+[Enter]", ifMode: "math", command: "addRowAfter" },
+  { key: "shift+alt+[Enter]", ifMode: "math", command: "addRowBefore" },
+  { key: "alt+[Return]", ifMode: "math", command: "addRowAfter" },
+  { key: "shift+alt+[Return]", ifMode: "math", command: "addRowBefore" },
+  {
+    key: "shift+[Backspace]",
+    ifMode: "math",
+    command: "removeColumn"
+  },
+  {
+    key: "shift+[Delete]",
+    ifMode: "math",
+    command: "removeRow"
+  },
+  {
+    key: "shift+alt+[Backspace]",
+    ifMode: "math",
+    command: "removeRow"
+  },
+  {
+    key: "alt+[Digit5]",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: ["insert", "$\\infty"]
+  },
+  // "%" key
+  {
+    key: "alt+[Digit9]",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: ["insert", "("]
+  },
+  // "(" key} override smartFence
+  {
+    key: "alt+[Digit0]",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: ["insert", ")"]
+  },
+  // ")" key} override smartFence
+  {
+    key: "alt+|",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: ["insert", "|"]
+  },
+  // "|" key} override smartFence
+  {
+    key: "shift+[Backquote]",
+    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
+    ifMode: "math",
+    command: ["insert", "\\~"]
+  },
+  // ??
+  {
+    key: "[Backquote]",
+    ifLayout: ["windows.french", "linux.french"],
+    ifMode: "math",
+    command: ["insert", "^2"]
+  },
+  {
+    key: "[Backquote]",
+    ifLayout: ["windows.german", "linux.german"],
+    ifMode: "math",
+    command: ["insert", "^"]
+  },
+  {
+    key: "[IntlBackslash]",
+    ifLayout: ["apple.german"],
+    ifMode: "math",
+    command: ["insert", "^"]
+  }
+];
+var REVERSE_KEYBINDINGS = {
+  "\\sqrt": ["alt+v", "ctrl+[Digit2]"],
+  "\\pi": "alt+p",
+  "\\infty": "alt+[Digit5]",
+  "\\differentialD": "alt+d",
+  "\\partial": "shift+alt+d",
+  "\\frac": "Slash",
+  "\\emptyset": "alt+o",
+  "\\varnothing": "shift+alt+o",
+  "\\~": "~"
+};
+
+// src/editor-mathfield/utils.ts
+function isValidMathfield(mf) {
+  var _a3;
+  return ((_a3 = mf.element) == null ? void 0 : _a3.mathfield) === mf;
+}
+function findElementWithCaret(element) {
+  var _a3, _b3;
+  return (_b3 = (_a3 = element.querySelector(".ML__caret")) != null ? _a3 : element.querySelector(".ML__text-caret")) != null ? _b3 : element.querySelector(".ML__latex-caret");
+}
+function getCaretPoint(element) {
+  const caret = findElementWithCaret(element);
+  if (!caret) return null;
+  const bounds = caret.getBoundingClientRect();
+  return {
+    x: bounds.right,
+    y: bounds.bottom,
+    height: bounds.height
+  };
+}
+function branchId(atom) {
+  var _a3;
+  if (!atom.parent) return "root";
+  let result = (_a3 = atom.parent.id) != null ? _a3 : "";
+  result += typeof atom.parentBranch === "string" ? "-" + atom.parentBranch : `-${atom.parentBranch[0]}/${atom.parentBranch[0]}`;
+  return result;
+}
+function adjustForScrolling(mathfield, rect, scaleFactor) {
+  if (!rect) return null;
+  const fieldRect = mathfield.field.getBoundingClientRect();
+  const w = rect.right - rect.left;
+  const h = rect.bottom - rect.top;
+  const left = Math.ceil(
+    rect.left - fieldRect.left + mathfield.field.scrollLeft * scaleFactor
+  );
+  const top = Math.ceil(rect.top - fieldRect.top);
+  return { left, right: left + w, top, bottom: top + h };
+}
+function getNodeBounds(node) {
+  let target = node;
+  let bounds = target.getBoundingClientRect();
+  while (bounds.bottom === bounds.top && target.parentElement instanceof Element) {
+    target = target.parentElement;
+    bounds = target.getBoundingClientRect();
+    if (bounds.bottom !== bounds.top) break;
+  }
+  const styles = getComputedStyle(target);
+  const marginRight = parseInt(styles.marginRight);
+  let width = bounds.right - bounds.left;
+  let height = bounds.bottom - bounds.top;
+  if (width === 0 || !Number.isFinite(width)) {
+    const computedWidth = parseFloat(styles.width);
+    if (Number.isFinite(computedWidth) && computedWidth > 0)
+      width = computedWidth;
+    else if (target instanceof HTMLElement && target.offsetWidth > 0)
+      width = target.offsetWidth;
+  }
+  if (height === 0 || !Number.isFinite(height)) {
+    const computedHeight = parseFloat(styles.height);
+    if (Number.isFinite(computedHeight) && computedHeight > 0)
+      height = computedHeight;
+    else if (target instanceof HTMLElement && target.offsetHeight > 0)
+      height = target.offsetHeight;
+  }
+  const result = {
+    top: bounds.top - 1,
+    bottom: bounds.top - 1 + height,
+    left: bounds.left,
+    right: bounds.left + width - 1 + marginRight
+  };
+  if (node.children.length === 0 || node.tagName.toUpperCase() === "SVG")
+    return result;
+  for (const child of node.children) {
+    if (child.nodeType === 1 && "atomId" in child.dataset && !child.classList.contains("ML__pstrut")) {
+      const r = getNodeBounds(child);
+      result.left = Math.min(result.left, r.left);
+      result.right = Math.max(result.right, r.right);
+      result.top = Math.min(result.top, r.top);
+      result.bottom = Math.max(result.bottom, r.bottom);
+    }
+  }
+  return result;
+}
+function getAtomBounds(mathfield, atom) {
+  var _a3, _b3;
+  if (!atom.id) return null;
+  let result = (_b3 = (_a3 = mathfield.atomBoundsCache) == null ? void 0 : _a3.get(atom.id)) != null ? _b3 : null;
+  if (result !== null) return result;
+  const nodes = mathfield.field.querySelectorAll(`[data-atom-id="${atom.id}"]`);
+  const nodeList = Array.from(nodes);
+  if (atom.type === "prompt") {
+    for (const node of nodeList) {
+      if (node.classList.contains("ML__prompt-atom")) {
+        const overlay = node.querySelector(".ML__prompt");
+        if (overlay) {
+          const overlayBounds = getNodeBounds(overlay);
+          if (!result) result = overlayBounds;
+          else {
+            result.left = Math.min(result.left, overlayBounds.left);
+            result.right = Math.max(result.right, overlayBounds.right);
+            result.top = Math.min(result.top, overlayBounds.top);
+            result.bottom = Math.max(result.bottom, overlayBounds.bottom);
+          }
+        }
+      }
+    }
+  }
+  for (const node of nodeList) {
+    const bounds = getNodeBounds(node);
+    if (!result) result = bounds;
+    else {
+      result.left = Math.min(result.left, bounds.left);
+      result.right = Math.max(result.right, bounds.right);
+      result.top = Math.min(result.top, bounds.top);
+      result.bottom = Math.max(result.bottom, bounds.bottom);
+    }
+  }
+  if (mathfield.atomBoundsCache) {
+    if (result) mathfield.atomBoundsCache.set(atom.id, result);
+    else mathfield.atomBoundsCache.delete(atom.id);
+  }
+  return result != null ? result : null;
+}
+function getRangeBoundingRect(mf, range2) {
+  const [start, end] = range2;
+  let result = null;
+  for (let i = start; i <= end; i++) {
+    const bounds = getAtomBounds(mf, mf.model.at(i));
+    if (bounds) {
+      if (!result) result = bounds;
+      else {
+        result.top = Math.min(result.top, bounds.top);
+        result.bottom = Math.max(result.bottom, bounds.bottom);
+        result.left = Math.min(result.left, bounds.left);
+        result.right = Math.max(result.right, bounds.right);
+      }
+    }
+  }
+  return result != null ? result : { top: 0, bottom: 0, left: 0, right: 0 };
+}
+function getRangeBounds(mathfield, range2, options) {
+  const rects = /* @__PURE__ */ new Map();
+  const field = mathfield.field;
+  const offsetWidth = field.offsetWidth;
+  const actualWidth = Math.floor(field.getBoundingClientRect().width);
+  let scaleFactor = actualWidth / offsetWidth;
+  scaleFactor = isNaN(scaleFactor) ? 1 : scaleFactor;
+  for (const atom of mathfield.model.getAtoms(range2, {
+    includeChildren: true
+  })) {
+    if ((options == null ? void 0 : options.excludeAtomsWithBackground) && atom.style.backgroundColor)
+      continue;
+    const bounds = adjustForScrolling(
+      mathfield,
+      getAtomBounds(mathfield, atom),
+      scaleFactor
+    );
+    if (bounds) {
+      const id = branchId(atom);
+      if (rects.has(id)) {
+        const r = rects.get(id);
+        rects.set(id, {
+          left: Math.min(r.left, bounds.left),
+          right: Math.max(r.right, bounds.right),
+          top: Math.min(r.top, bounds.top),
+          bottom: Math.max(r.bottom, bounds.bottom)
+        });
+      } else rects.set(id, bounds);
+    }
+  }
+  return [...rects.values()];
+}
+function getSelectionBounds(mathfield, options) {
+  return mathfield.model.selection.ranges.reduce(
+    (acc, x) => acc.concat(...getRangeBounds(mathfield, x, options)),
+    []
+  );
+}
+function validateOrigin(origin, originValidator) {
+  if (origin === "*" || originValidator === "none") return true;
+  if (originValidator === "same-origin")
+    return !window.origin || origin === window.origin;
+  if (typeof originValidator === "function") return originValidator(origin);
+  return false;
+}
+function getLocalDOMRect(el) {
+  let offsetTop = 0;
+  let offsetLeft = 0;
+  const width = el.offsetWidth;
+  const height = el.offsetHeight;
+  while (el instanceof HTMLElement) {
+    offsetTop += el.offsetTop;
+    offsetLeft += el.offsetLeft;
+    el = el.offsetParent;
+  }
+  return new DOMRect(offsetLeft, offsetTop, width, height);
+}
+function getElementInfo(mf, offset) {
+  if (!mf) return void 0;
+  const atom = mf.model.at(offset);
+  if (!atom) return void 0;
+  const result = {};
+  const bounds = getAtomBounds(mf, atom);
+  if (bounds) {
+    result.bounds = new DOMRect(
+      bounds.left,
+      bounds.top,
+      bounds.right - bounds.left,
+      bounds.bottom - bounds.top
+    );
+  }
+  result.depth = atom.treeDepth - 2;
+  result.style = atom.style;
+  let a = atom;
+  while (a) {
+    if (a.command === "\\htmlData" && a.args && typeof a.args[0] === "string") {
+      const entries = a.args[0].split(",");
+      for (const entry of entries) {
+        const matched = entry.match(/([^=]+)=(.+$)/);
+        if (matched) {
+          const key = matched[1].trim().replace(/ /g, "-");
+          if (key) {
+            if (!result.data) result.data = {};
+            result.data[key] = matched[2];
+          }
+        } else {
+          const key = entry.trim().replace(/ /g, "-");
+          if (key) {
+            if (!result.data) result.data = {};
+            result.data[key] = void 0;
+          }
+        }
+      }
+    }
+    if (a.command === "\\htmlId" || a.command === "\\cssId") {
+      if (!result.id && a.args && typeof a.args[0] === "string")
+        result.id = a.args[0];
+    }
+    a = a.parent;
+  }
+  if (atom.mode === "math" || atom.mode === "text")
+    result.latex = Atom.serialize([atom], { defaultMode: "math" });
+  return result;
+}
+function getHref(mf, offset) {
+  let a = mf.model.at(offset);
+  while (a) {
+    if (a.command === "\\href") {
+      const url = a.args[0];
+      if (typeof url === "string") return url;
+    }
+    a = a.parent;
+  }
+  return "";
+}
+
+// css/mathfield.less
+var mathfield_default = `@keyframes ML__caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+:host {
+  display: block;
+}
+.ML__container {
+  display: inline-flex;
+  flex-flow: row;
+  justify-content: space-between;
+  align-items: flex-end;
+  min-height: 39px;
+  /* Need some room for the virtual keyboard toggle */
+  width: 100%;
+  padding: 4px;
+  box-sizing: border-box;
+  /* This attribute is necessary to work around a Firefox issue where
+  where clicking multiple times on the border leads to a focused mathfield that cannot be edited until focus is lost and regained (also fixes the multiple cursor issue on firefox that can occur with the same sequence of events).
+  */
+  pointer-events: auto;
+  /* Prevent the browser from trying to interpret touch gestures in the field */
+  /* "Disabling double-tap to zoom removes the need for browsers to
+        delay the generation of click events when the user taps the screen." */
+  touch-action: none;
+  --_caret-color: var(--caret-color, hsl(var(--_hue), 40%, 49%));
+  --_selection-color: var(--selection-color, #000);
+  --_selection-background-color: var(--selection-background-color, hsl(var(--_hue), 70%, 85%));
+  --_text-highlight-background-color: var(--highlight-text, hsla(var(--_hue), 40%, 50%, 0.1));
+  --_contains-highlight-background-color: var(--contains-highlight-background-color, hsl(var(--_hue), 40%, 95%));
+  --_smart-fence-color: var(--smart-fence-color, currentColor);
+  --_smart-fence-opacity: var(--smart-fence-opacity, 0.5);
+  --_contains-highlight-color: var(--contains-highlight-color, var(--_caret-color));
+  --_latex-color: var(--latex-color, hsl(var(--_hue), 80%, 40%));
+  --_correct-color: var(--correct-color, #10a000);
+  --_incorrect-color: var(--incorrect-color, #a01b00);
+  --_composition-background-color: var(--composition-background-color, #fff1c2);
+  --_composition-text-color: var(--composition-text-color, black);
+  --_composition-underline-color: var(--composition-underline-color, transparent);
+  --_tooltip-border: var(--tooltip-border, 1px solid transparent);
+  --_tooltip-border-radius: var(--tooltip-border-radius, 8px);
+  --_tooltip-background-color: var(--tooltip-background-color, #616161);
+  --_tooltip-color: var(--tooltip-color, #fff);
+  --_tooltip-box-shadow: var(--tooltip-box-shadow, 0 2px 2px 0 rgba(0, 0, 0, 0.14), 0 1px 5px 0 rgba(0, 0, 0, 0.12), 0 3px 1px -2px rgba(0, 0, 0, 0.2));
+}
+@media (prefers-color-scheme: dark) {
+  .ML__container {
+    --_contains-highlight-color: var(--contains-highlight-color, hsl(var(--_hue), 85%, 75%));
+    --_caret-color: var(--caret-color, hsl(var(--_hue), 65%, 55%));
+    --_selection-color: var(--selection-color, #fff);
+    --_selection-background-color: var(--selection-background-color, hsl(var(--_hue), 65%, 55%));
+    --_text-highlight-background-color: var(--text-highlight-background-color, hsla(var(--_hue), 40%, 50%, 0.6));
+    --_contains-highlight-background-color: var(--contains-highlight-background-color, hsl(var(--_hue), 5%, 34%));
+    --_latex-color: var(--primary, hsl(var(--_hue), 40%, 50%));
+    --_composition-background-color: #69571c;
+    --_composition-text-color: white;
+    --_placeholder-color: hsl(var(--_hue), 60%, 69%);
+    --_smart-fence-color: var(--smart-fence-color, #fff);
+    --_smart-fence-opacity: var(--smart-fence-opacity, 0.7);
+  }
+}
+@media (forced-colors: active) {
+  .ML__container {
+    --_caret-color: white;
+    --_selection-color: white;
+    --_smart-fence-color: white;
+    --_latex-color: white;
+    --_correct-color: white;
+    --_incorrect-color: white;
+    --_composition-text-color: white;
+  }
+}
+@media (hover: none) and (pointer: coarse) {
+  :host(:not(:focus)) .ML__container {
+    pointer-events: none;
+  }
+}
+/* This is the actual field content (formula) */
+.ML__content {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  position: relative;
+  overflow: hidden;
+  padding: 2px 3px 2px 1px;
+  width: 100%;
+  /* Encourage the browser to use the GPU to render the field.
+     Weirdly, this is required for prompts to be rendered correctly. 
+   */
+  isolation: isolate;
+  text-shadow: var(--text-shadow);
+}
+.ML__content .ML__latex {
+  text-shadow: var(--text-shadow);
+}
+.ML__content .ML__sqrt-line {
+  box-shadow: var(--text-shadow);
+}
+.ML__content .ML__frac-line {
+  box-shadow: var(--text-shadow);
+}
+/* Container for the virtual keyboard toggle and menu toggle buttons */
+.ML__toggles {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0;
+  align-self: flex-start;
+}
+/* Vertical layout modifier */
+.ML__toggles--vertical {
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ML__toggles--vertical .ML__virtual-keyboard-toggle,
+.ML__toggles--vertical .ML__menu-toggle {
+  margin-right: 0;
+}
+.ML__virtual-keyboard-toggle,
+.ML__menu-toggle {
+  box-sizing: border-box;
+  display: flex;
+  align-self: center;
+  align-items: center;
+  flex-shrink: 0;
+  flex-direction: column;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  margin-right: 4px;
+  cursor: pointer;
+  /* Avoid some weird blinking with :hover */
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: background 0.2s cubic-bezier(0.64, 0.09, 0.08, 1);
+  color: hsl(var(--_hue), 40%, 50%);
+  fill: currentColor;
+  background: transparent;
+}
+.ML__virtual-keyboard-toggle:hover,
+.ML__menu-toggle:hover {
+  background: hsla(0, 0%, 70%, 0.3);
+  color: #333;
+  fill: currentColor;
+}
+.ML__virtual-keyboard-toggle > span,
+.ML__menu-toggle > span {
+  display: flex;
+  align-self: center;
+  align-items: center;
+}
+@media (pointer: coarse) {
+  .ML__virtual-keyboard-toggle,
+  .ML__menu-toggle {
+    min-width: 60px;
+    min-height: 60px;
+  }
+}
+/* The invisible element used to capture keyboard events. We're just trying
+ really hard to make sure it doesn't show. */
+.ML__keyboard-sink {
+  display: inline-block;
+  resize: none;
+  outline: none;
+  border: none;
+  pointer-events: none;
+  /* Need these for Microsoft Edge */
+  position: fixed;
+  clip: rect(0 0 0 0);
+  /* Need this to prevent iOS Safari from auto-zooming */
+  font-size: 1em;
+  font-family: KaTeX_Main;
+  line-height: 0.5;
+  /* On Chromium, if this is 0, no keyboard events are received */
+  /* Preferred over clip */
+  clip-path: inset(50%);
+}
+[part='placeholder'] {
+  color: var(--neutral-400);
+}
+.ML__composition {
+  background: var(--_composition-background-color);
+  color: var(--_composition-text-color);
+  text-decoration: underline var(--_composition-underline-color);
+}
+.ML__caret {
+  display: inline-block;
+}
+.ML__caret::after {
+  content: '';
+  visibility: hidden;
+  width: 0;
+  display: inline-block;
+  height: 0.76em;
+  --_caret-width: clamp(2px, 0.08em, 10px);
+  border: none;
+  border-radius: calc(var(--_caret-width) / 2);
+  border-right: var(--_caret-width) solid var(--_caret-color);
+  margin-right: calc(-1 * var(--_caret-width));
+  position: relative;
+  left: -0.045em;
+  bottom: -0.05em;
+  animation: ML__caret-blink 1.05s step-end forwards infinite;
+}
+.ML__text-caret::after {
+  content: '';
+  visibility: hidden;
+  width: 0;
+  display: inline-block;
+  height: 0.76em;
+  --_caret-width: clamp(2px, 0.08em, 10px);
+  border: none;
+  border-radius: calc(var(--_caret-width) / 2);
+  border-right: var(--_caret-width) solid var(--_caret-color);
+  margin-right: calc(-1 * var(--_caret-width));
+  position: relative;
+  left: -0.045em;
+  bottom: -0.05em;
+  animation: ML__caret-blink 1.05s step-end forwards infinite;
+}
+.ML__latex-caret::after {
+  content: '';
+  visibility: hidden;
+  --_caret-width: clamp(2px, 0.08em, 10px);
+  border: none;
+  border-radius: calc(var(--_caret-width) / 2);
+  border-right: var(--_caret-width) solid var(--_latex-color);
+  margin-right: calc(-1 * var(--_caret-width));
+  position: relative;
+  left: -0.019em;
+  animation: ML__caret-blink 1.05s step-end forwards infinite;
+}
+.ML__focused .ML__latex-caret::after,
+.ML__focused .ML__text-caret::after,
+.ML__focused .ML__caret::after {
+  visibility: visible;
+}
+.ML__focused .ML__text {
+  background: transparent;
+}
+/* When using smartFence, the anticipated closing fence is displayed
+with this style */
+.ML__smart-fence__close {
+  opacity: var(--_smart-fence-opacity);
+  color: var(--_smart-fence-color);
+}
+.ML__focused .ML__selected,
+.ML__focused .ML__selected .ML__contains-caret,
+.ML__focused .ML__selected .ML__smart-fence__close,
+.ML__focused .ML__selected .ML__placeholder {
+  color: var(--_selection-color);
+  opacity: 1;
+}
+.ML__empty-line-anchor::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 20px;
+  border-radius: 2px;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+.ML__focused .ML__empty-line-anchor.ML__selected::after {
+  background: var(--_selection-background-color);
+  opacity: 1;
+}
+.ML__selection {
+  box-sizing: border-box;
+  background: transparent;
+}
+:host(:focus) .ML__selection {
+  background: var(--_selection-background-color) !important;
+}
+.ML__contains-caret.ML__close,
+.ML__contains-caret.ML__open,
+.ML__contains-caret > .ML__close,
+.ML__contains-caret > .ML__open,
+.ML__contains-caret .ML__sqrt-sign,
+.ML__contains-caret .ML__sqrt-line {
+  color: var(--_contains-highlight-color);
+}
+.ML__contains-highlight {
+  box-sizing: border-box;
+  background: transparent;
+}
+.ML__focused .ML__contains-highlight {
+  background: var(--_contains-highlight-background-color);
+}
+.ML__raw-latex {
+  font-family: 'Berkeley Mono', 'IBM Plex Mono', 'Source Code Pro', Consolas, 'Roboto Mono', Menlo, 'Bitstream Vera Sans Mono', 'DejaVu Sans Mono', Monaco, Courier, monospace;
+  font-weight: 400;
+  font-size: 0.8em;
+  letter-spacing: -0.05em;
+  color: var(--_latex-color);
+}
+.ML__suggestion {
+  color: var(--neutral-500);
+}
+.ML__virtual-keyboard-toggle.is-visible.is-pressed:hover {
+  background: hsl(var(--_hue), 25%, 35%);
+  color: #fafafa;
+  fill: currentColor;
+}
+.ML__virtual-keyboard-toggle.is-pressed,
+.ML__virtual-keyboard-toggle.is-active:hover,
+.ML__virtual-keyboard-toggle.is-active {
+  background: hsl(var(--_hue), 25%, 35%);
+  color: #fafafa;
+  fill: currentColor;
+}
+/* Add an attribute 'data-tooltip' to automatically show a
+   tooltip over a element on hover.
+*/
+[data-tooltip] {
+  position: relative;
+}
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  display: block;
+  z-index: 2;
+  pointer-events: none;
+  right: auto;
+  top: calc(-100% - 4px);
+  width: max-content;
+  max-width: 200px;
+  padding: 8px 8px;
+  border-radius: 4px;
+  background: #616161;
+  color: #fff;
+  box-shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.14), 0 1px 5px 0 rgba(0, 0, 0, 0.12), 0 3px 1px -2px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 13px;
+  /* Phone */
+  opacity: 0;
+  transform: scale(0.5);
+}
+@media only screen and (max-width: 767px) {
+  [data-tooltip]::after {
+    padding: 8px 16px;
+    font-size: 16px;
+  }
+}
+menu [data-tooltip]::after {
+  left: 100%;
+  top: 0%;
+}
+menu .ML__base {
+  cursor: default;
+}
+/** Don't display if we're tracking, i.e. have the pointer down */
+.tracking [data-tooltip]:hover::after {
+  /* Use visibility, not display. Display will remove the after from the DOM, and the override below will not work */
+  visibility: hidden;
+}
+/** But do display if tracking and inside a menu */
+.tracking menu li[data-tooltip]:hover::after,
+[data-tooltip]:hover::after {
+  visibility: visible;
+  opacity: 1;
+  transform: scale(1);
+  transition-property: opacity, scale;
+  transition-duration: 0.15s;
+  transition-delay: 1s;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+}
+.ML__prompt {
+  border-radius: 2px;
+}
+.ML__editablePromptBox {
+  outline: 1px solid #acacac;
+  border-radius: 2px;
+  z-index: -1;
+}
+.ML__focused .ML__focusedPromptBox {
+  outline: highlight auto 1px;
+}
+.ML__lockedPromptBox {
+  background-color: rgba(142, 142, 141, 0.4);
+  z-index: -1;
+}
+.ML__correctPromptBox {
+  outline: 1px solid var(--_correct-color);
+  box-shadow: 0 0 5px var(--_correct-color);
+}
+.ML__incorrectPromptBox {
+  outline: 1px solid var(--_incorrect-color);
+  box-shadow: 0 0 5px var(--_incorrect-color);
+}
+.variant-submenu {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+}
+.variant-submenu [part='menu-item'].ML__xl {
+  font-size: 2rem;
+  text-align: center;
+  margin: 0;
+}
+.ML__center-menu .label {
+  text-align: center;
+}
+.insert-matrix-submenu {
+  /* Grid doesn't work on Safari */
+  --_menu-item-size: 25px;
+  width: calc(5 * var(--_menu-item-size));
+  display: flex;
+  flex-wrap: wrap;
+  padding: 8px;
+  align-content: center;
+  justify-content: center;
+}
+.insert-matrix-submenu [part='menu-item'] {
+  width: var(--_menu-item-size);
+  height: var(--_menu-item-size);
+  font-size: 21px;
+  border: none;
+  border-radius: 0;
+  line-height: 21px;
+  text-align: center;
+  padding: 0;
+  margin: 0;
+}
+.border-submenu [part='menu-item'] {
+  font-size: 2rem;
+  line-height: 1.2;
+  text-align: center;
+}
+.swatches-submenu {
+  --_swatch-size: 2rem;
+  --_columns: 4;
+  display: flex;
+  flex-flow: wrap;
+  padding: 8px;
+  max-width: calc(var(--_columns) * (var(--_swatch-size) + 18px) + 16px);
+  box-sizing: border-box;
+}
+.menu-swatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: fit-content;
+  height: fit-content;
+  margin: 2px;
+  padding: 0;
+  background: var(--neutral-200);
+}
+.menu-swatch > .label {
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+}
+.menu-swatch > .label > span {
+  display: inline-block;
+  margin: 6px;
+  min-width: var(--_swatch-size);
+  min-height: var(--_swatch-size);
+  border-radius: 50%;
+}
+.menu-swatch.active {
+  background: var(--neutral-100);
+  z-index: 1;
+  scale: 1.4;
+}
+.menu-swatch.active > .label > span {
+  border-radius: 2px;
+}
+.menu-swatch .ui-checkmark,
+.menu-swatch .ui-mixedmark {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  color: white;
+}
+.menu-swatch.dark-contrast .ui-checkmark,
+.menu-swatch.dark-contrast .ui-mixedmark {
+  color: #000;
+}
+.ML__insert-template {
+  font-size: 1em;
+}
+.ML__insert-label {
+  opacity: 0.5;
+  margin-left: 2ex;
+}
+`;
+
+// css/core.less
+var core_default = ".ML__container {\n  min-height: auto !important;\n  --_hue: var(--hue, 212);\n  --_placeholder-color: var(--placeholder-color, hsl(var(--_hue), 40%, 49%));\n  --_placeholder-opacity: var(--placeholder-opacity, 0.4);\n  --_text-font-family: var(--text-font-family, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif);\n}\n.ML__sr-only {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  margin: -1px;\n  padding: 0;\n  overflow: hidden;\n  clip: rect(0, 0, 0, 0);\n  clip-path: inset(50%);\n  white-space: nowrap;\n  border: 0;\n}\n.ML__is-inline {\n  display: inline-block;\n}\n.ML__base {\n  visibility: inherit;\n  display: inline-block;\n  position: relative;\n  cursor: text;\n  padding: 0;\n  margin: 0;\n  box-sizing: content-box;\n  border: 0;\n  outline: 0;\n  vertical-align: baseline;\n  font-weight: inherit;\n  font-family: inherit;\n  font-style: inherit;\n  text-decoration: none;\n  width: min-content;\n}\n.ML__strut,\n.ML__strut--bottom {\n  display: inline-block;\n  min-height: 0.5em;\n}\n.ML__small-delim {\n  font-family: KaTeX_Main;\n}\n/* Text mode */\n.ML__text {\n  font-family: var(--_text-font-family);\n  white-space: pre;\n}\n/* Use cmr for 'math upright' */\n.ML__cmr {\n  font-family: KaTeX_Main;\n  font-style: normal;\n}\n.ML__mathit {\n  font-family: KaTeX_Math;\n  /* The KaTeX_Math font is italic by default, so the font-style below is only \n     useful when a fallback font is used\n  */\n  font-style: italic;\n}\n.ML__mathbf {\n  font-family: KaTeX_Main;\n  font-weight: bold;\n}\n/* Lowercase greek symbols should stick to math font when \\mathbf is applied \n   to match TeX idiosyncratic behavior */\n.lcGreek.ML__mathbf {\n  font-family: KaTeX_Math;\n}\n.ML__mathbfit {\n  font-family: KaTeX_Math;\n  font-weight: bold;\n  font-style: italic;\n}\n.ML__ams {\n  font-family: KaTeX_AMS;\n}\n/* Blackboard */\n.ML__bb {\n  font-family: KaTeX_AMS;\n}\n.ML__cal {\n  font-family: KaTeX_Caligraphic;\n}\n.ML__frak {\n  font-family: KaTeX_Fraktur;\n}\n.ML__tt {\n  font-family: KaTeX_Typewriter;\n}\n.ML__script {\n  font-family: KaTeX_Script;\n}\n.ML__sans {\n  font-family: KaTeX_SansSerif;\n}\n.ML__series_ul {\n  font-weight: 100;\n}\n.ML__series_el {\n  font-weight: 100;\n}\n.ML__series_l {\n  font-weight: 200;\n}\n.ML__series_sl {\n  font-weight: 300;\n}\n.ML__series_sb {\n  font-weight: 500;\n}\n.ML__bold {\n  font-weight: 700;\n}\n.ML__series_eb {\n  font-weight: 800;\n}\n.ML__series_ub {\n  font-weight: 900;\n}\n.ML__series_uc {\n  font-stretch: ultra-condensed;\n}\n.ML__series_ec {\n  font-stretch: extra-condensed;\n}\n.ML__series_c {\n  font-stretch: condensed;\n}\n.ML__series_sc {\n  font-stretch: semi-condensed;\n}\n.ML__series_sx {\n  font-stretch: semi-expanded;\n}\n.ML__series_x {\n  font-stretch: expanded;\n}\n.ML__series_ex {\n  font-stretch: extra-expanded;\n}\n.ML__series_ux {\n  font-stretch: ultra-expanded;\n}\n.ML__it {\n  font-style: italic;\n}\n.ML__shape_ol {\n  -webkit-text-stroke: 1px black;\n  text-stroke: 1px black;\n  color: transparent;\n}\n.ML__shape_sc {\n  font-variant: small-caps;\n}\n.ML__shape_sl {\n  font-style: oblique;\n}\n/* First level emphasis */\n.ML__emph {\n  color: #bc2612;\n}\n/* Second level emphasis */\n.ML__emph .ML__emph {\n  color: #0c7f99;\n}\n.ML__highlight {\n  color: #007cb2;\n  background: #edd1b0;\n}\n.ML__center {\n  text-align: center;\n}\n.ML__left {\n  text-align: left;\n}\n.ML__right {\n  text-align: right;\n}\n.ML__label_padding {\n  padding: 0 0.5em;\n}\n.ML__frac-line {\n  width: 100%;\n  min-height: 1px;\n}\n.ML__frac-line:after {\n  content: '';\n  display: block;\n  margin-top: max(-1px, -0.04em);\n  min-height: max(1px, 0.04em);\n  /* Ensure the line is visible when printing even if \"turn off background images\" is on*/\n  -webkit-print-color-adjust: exact;\n  print-color-adjust: exact;\n  /* There's a bug since Chrome 62 where \n      sub-pixel border lines don't draw at some zoom \n      levels (110%, 90%). \n      Setting the min-height used to work around it, but that workaround\n      broke in Chrome 84 or so.\n      Setting the background (and the min-height) seems to work for now.\n      */\n  background: currentColor;\n  box-sizing: content-box;\n  /* Vuetify sets the box-sizing to inherit \n            causes the fraction line to not draw at all sizes (see #26) */\n  /* On some versions of Firefox on Windows, the line fails to \n            draw at some zoom levels, but setting the transform triggers\n            the hardware accelerated path, which works */\n  transform: translate(0, 0);\n  forced-color-adjust: preserve-parent-color;\n}\n@media (forced-colors: active) {\n  .ML__frac-line {\n    min-height: 0px;\n  }\n}\n.ML__sqrt {\n  display: inline-block;\n}\n.ML__sqrt-sign {\n  display: inline-block;\n  position: relative;\n}\n.ML__sqrt-line {\n  display: inline-block;\n  height: max(1px, 0.04em);\n  width: 100%;\n}\n.ML__sqrt-line:before {\n  content: '';\n  display: block;\n  margin-top: min(-1px, -0.04em);\n  min-height: max(1px, 0.04em);\n  /* Ensure the line is visible when printing even if \"turn off background images\" is on*/\n  -webkit-print-color-adjust: exact;\n  print-color-adjust: exact;\n  background: currentColor;\n  /* On some versions of Firefox on Windows, the line fails to \n            draw at some zoom levels, but setting the transform triggers\n            the hardware accelerated path, which works */\n  transform: translate(0, 0);\n  forced-color-adjust: preserve-parent-color;\n}\n@media (forced-colors: active) {\n  .ML__sqrt-line:after {\n    background: white !important;\n  }\n}\n.ML__sqrt-line:after {\n  border-bottom-width: 1px;\n  content: ' ';\n  display: block;\n  margin-top: -0.1em;\n}\n.ML__sqrt-index {\n  margin-left: 0.27777778em;\n  margin-right: -0.55555556em;\n}\n.ML__delim-size1 {\n  font-family: KaTeX_Size1;\n}\n.ML__delim-size2 {\n  font-family: KaTeX_Size2;\n}\n.ML__delim-size3 {\n  font-family: KaTeX_Size3;\n}\n.ML__delim-size4 {\n  font-family: KaTeX_Size4;\n}\n.ML__delim-mult .delim-size1 > span {\n  font-family: KaTeX_Size1;\n}\n.ML__delim-mult .delim-size4 > span {\n  font-family: KaTeX_Size4;\n}\n.ML__accent-body {\n  font-family: KaTeX_Main;\n}\n.ML__accent-combining-char {\n  position: relative;\n  left: 0.24em;\n}\n/** The markup for a LaTeX formula, either in an editable mathfield or \n    in a static display.\n*/\n.ML__latex {\n  display: inline-block;\n  direction: ltr;\n  text-align: left;\n  text-indent: 0;\n  text-rendering: auto;\n  font-family: inherit;\n  font-style: normal;\n  font-size-adjust: none;\n  font-stretch: normal;\n  font-variant-caps: normal;\n  letter-spacing: normal;\n  line-height: 1.2;\n  word-wrap: normal;\n  word-spacing: normal;\n  white-space: nowrap;\n  text-shadow: none;\n  -webkit-user-select: none;\n  user-select: none;\n  width: min-content;\n  forced-color-adjust: preserve-parent-color;\n}\n.ML__latex .style-wrap {\n  position: relative;\n}\n.ML__latex .ML__mfrac {\n  display: inline-block;\n}\n.ML__latex .ML__left-right {\n  display: inline-block;\n}\n.ML__latex .ML__vlist-t {\n  display: inline-table;\n  table-layout: fixed;\n  border-collapse: collapse;\n}\n.ML__latex .ML__vlist-r {\n  display: table-row;\n}\n.ML__latex .ML__vlist {\n  display: table-cell;\n  vertical-align: bottom;\n  position: relative;\n}\n.ML__latex .ML__vlist > span {\n  display: block;\n  height: 0;\n  position: relative;\n}\n.ML__latex .ML__vlist > span > span {\n  display: inline-block;\n}\n.ML__latex .ML__vlist > span > .ML__pstrut {\n  overflow: hidden;\n  width: 0;\n}\n.ML__latex .ML__vlist-t2 {\n  margin-right: -2px;\n}\n.ML__latex .ML__vlist-s {\n  display: table-cell;\n  vertical-align: bottom;\n  font-size: 1px;\n  width: 2px;\n  min-width: 2px;\n}\n.ML__latex .ML__msubsup {\n  text-align: left;\n}\n.ML__latex .ML__negativethinspace {\n  display: inline-block;\n  margin-left: -0.16667em;\n  height: 0.71em;\n}\n.ML__latex .ML__thinspace {\n  display: inline-block;\n  width: 0.16667em;\n  height: 0.71em;\n}\n.ML__latex .ML__mediumspace {\n  display: inline-block;\n  width: 0.22222em;\n  height: 0.71em;\n}\n.ML__latex .ML__thickspace {\n  display: inline-block;\n  width: 0.27778em;\n  height: 0.71em;\n}\n.ML__latex .ML__enspace {\n  display: inline-block;\n  width: 0.5em;\n  height: 0.71em;\n}\n.ML__latex .ML__quad {\n  display: inline-block;\n  width: 1em;\n  height: 0.71em;\n}\n.ML__latex .ML__qquad {\n  display: inline-block;\n  width: 2em;\n  height: 0.71em;\n}\n.ML__latex .ML__llap,\n.ML__latex .ML__rlap {\n  width: 0;\n  position: relative;\n  display: inline-block;\n}\n.ML__latex .ML__llap > .ML__inner,\n.ML__latex .ML__rlap > .ML__inner {\n  position: absolute;\n}\n.ML__latex .ML__llap > .ML__fix,\n.ML__latex .ML__rlap > .ML__fix {\n  display: inline-block;\n}\n.ML__latex .ML__llap > .ML__inner {\n  right: 0;\n}\n.ML__latex .ML__rlap > .ML__inner {\n  left: 0;\n}\n.ML__latex .ML__rule {\n  display: inline-block;\n  border: solid 0;\n  position: relative;\n  box-sizing: border-box;\n}\n.ML__latex .overline .overline-line,\n.ML__latex .underline .underline-line {\n  width: 100%;\n}\n.ML__latex .overline .overline-line:before,\n.ML__latex .underline .underline-line:before {\n  content: '';\n  border-bottom-style: solid;\n  border-bottom-width: max(1px, 0.04em);\n  -webkit-print-color-adjust: exact;\n  print-color-adjust: exact;\n  display: block;\n}\n.ML__latex .overline .overline-line:after,\n.ML__latex .underline .underline-line:after {\n  border-bottom-style: solid;\n  border-bottom-width: max(1px, 0.04em);\n  -webkit-print-color-adjust: exact;\n  print-color-adjust: exact;\n  content: '';\n  display: block;\n  margin-top: -1px;\n}\n.ML__latex .ML__stretchy {\n  display: block;\n  position: absolute;\n  width: 100%;\n  left: 0;\n  overflow: hidden;\n}\n.ML__latex .ML__stretchy:before,\n.ML__latex .ML__stretchy:after {\n  content: '';\n}\n.ML__latex .ML__stretchy svg {\n  display: block;\n  position: absolute;\n  width: 100%;\n  height: inherit;\n  fill: currentColor;\n  stroke: currentColor;\n  fill-rule: nonzero;\n  fill-opacity: 1;\n  stroke-width: 1;\n  stroke-linecap: butt;\n  stroke-linejoin: miter;\n  stroke-miterlimit: 4;\n  stroke-dasharray: none;\n  stroke-dashoffset: 0;\n  stroke-opacity: 1;\n}\n.ML__latex .slice-1-of-2 {\n  display: inline-flex;\n  position: absolute;\n  left: 0;\n  width: 50.2%;\n  overflow: hidden;\n}\n.ML__latex .slice-2-of-2 {\n  display: inline-flex;\n  position: absolute;\n  right: 0;\n  width: 50.2%;\n  overflow: hidden;\n}\n.ML__latex .slice-1-of-3 {\n  display: inline-flex;\n  position: absolute;\n  left: 0;\n  width: 25.1%;\n  overflow: hidden;\n}\n.ML__latex .slice-2-of-3 {\n  display: inline-flex;\n  position: absolute;\n  left: 25%;\n  width: 50%;\n  overflow: hidden;\n}\n.ML__latex .slice-3-of-3 {\n  display: inline-flex;\n  position: absolute;\n  right: 0;\n  width: 25.1%;\n  overflow: hidden;\n}\n.ML__latex .slice-1-of-1 {\n  display: inline-flex;\n  position: absolute;\n  width: 100%;\n  left: 0;\n  overflow: hidden;\n}\n.ML__latex .ML__nulldelimiter {\n  display: inline-block;\n}\n.ML__latex .ML__op-group {\n  display: inline-block;\n}\n.ML__latex .ML__op-symbol {\n  position: relative;\n}\n.ML__latex .ML__op-symbol.ML__small-op {\n  font-family: KaTeX_Size1;\n}\n.ML__latex .ML__op-symbol.ML__large-op {\n  font-family: KaTeX_Size2;\n}\n.ML__latex:has(.ML__center_environment),\n.ML__latex:has(.ML__multiline_environment),\n.ML__latex:has(.ML__align_environment),\n.ML__latex:has(.ML__eqnarray_environment),\n.ML__latex:has(.ML__gather_environment) {\n  width: 100%;\n}\n.ML__latex .ML__multiline_environment {\n  display: inline-flex;\n  width: 100%;\n}\n.ML__latex .ML__center_environment {\n  display: inline-flex;\n  width: 100%;\n  justify-content: center;\n}\n.ML__latex .ML__align_environment,\n.ML__latex .ML__eqnarray_environment,\n.ML__latex .ML__gather_environment {\n  display: inline-block;\n}\n.ML__latex .ML__mtable .ML__vertical-separator {\n  display: inline-block;\n  min-width: 1px;\n  box-sizing: border-box;\n}\n.ML__latex .ML__mtable .ML__arraycolsep {\n  display: inline-block;\n}\n.ML__latex .ML__mtable .col-align-m > .ML__vlist-t {\n  text-align: center;\n}\n.ML__latex .ML__mtable .col-align-c > .ML__vlist-t {\n  text-align: center;\n}\n.ML__latex .ML__mtable .col-align-l > .ML__vlist-t {\n  text-align: left;\n}\n.ML__latex .ML__mtable .col-align-r > .ML__vlist-t {\n  text-align: right;\n}\n[data-href] {\n  cursor: pointer;\n}\n.ML__error {\n  display: inline-block;\n  background-image: radial-gradient(ellipse at center, hsl(341, 100%, 40%), rgba(0, 0, 0, 0) 70%);\n  background-color: hsla(341, 100%, 40%, 0.1);\n  background-repeat: repeat-x;\n  background-size: 3px 3px;\n  padding-bottom: 3px;\n  background-position: 0 100%;\n}\n.ML__error > .ML__error {\n  background: transparent;\n  padding: 0;\n}\n.ML__placeholder {\n  color: var(--_placeholder-color);\n  opacity: var(--_placeholder-opacity);\n  padding-left: 0.4ex;\n  padding-right: 0.4ex;\n  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;\n}\n.ML__notation {\n  position: absolute;\n  box-sizing: border-box;\n  line-height: 0;\n}\n/* This class is used to implement the `\\mathtip` and `\\texttip` commands\n   For UI elements, see `[data-ML__tooltip]`\n*/\n.ML__tooltip-container {\n  position: relative;\n  transform: scale(0);\n}\n.ML__tooltip-container .ML__tooltip-content {\n  position: fixed;\n  display: inline-table;\n  visibility: hidden;\n  z-index: 2;\n  width: max-content;\n  max-width: 400px;\n  padding: 12px 12px;\n  border: var(--_tooltip-border);\n  border-radius: var(--_tooltip-border-radius);\n  background: var(--_tooltip-background-color);\n  --_selection-color: var(--_tooltip-color);\n  color: var(--_tooltip-color);\n  box-shadow: var(--_tooltip-box-shadow);\n  opacity: 0;\n  transition: opacity 0.15s cubic-bezier(0.4, 0, 1, 1);\n}\n.ML__tooltip-container .ML__tooltip-content .ML__text {\n  white-space: normal;\n}\n.ML__tooltip-container .ML__tooltip-content .ML__base {\n  display: contents;\n}\n.ML__tooltip-container:hover .ML__tooltip-content {\n  visibility: visible;\n  opacity: 1;\n  font-size: 0.75em;\n  transform: scale(1) translate(0, 3em);\n}\n.ML__bg {\n  background-color: transparent !important;\n}\n.ML__bg::before {\n  content: '';\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  background-color: var(--bg-color);\n  z-index: -1;\n  box-sizing: border-box;\n}\n";
+
+// css/environment-popover.less
+var environment_popover_default = "#mathlive-environment-popover.is-visible {\n  visibility: visible;\n}\n#mathlive-environment-popover {\n  --_environment-panel-height: var(--environment-panel-height, 70px);\n  --_accent-color: var(--accent-color, #aaa);\n  --_background: var(--environment-panel-background, #fff);\n  --_button-background: var(--environment-panel-button-background, white);\n  --_button-background-hover: var(--environment-panel-button-background-hover, #f5f5f7);\n  --_button-background-active: var(--environment-panel-button-background-active, #f5f5f7);\n  --_button-text: var(--environment-panel-button-text, #e3e4e8);\n  position: absolute;\n  width: calc(var(--_environment-panel-height) * 2);\n  height: var(--_environment-panel-height);\n  border-radius: 4px;\n  border: 1.5px solid var(--_accent-color);\n  background-color: var(--_background);\n  box-shadow: 0 0 30px 0 var(--environment-shadow, rgba(0, 0, 0, 0.4));\n  pointer-events: all;\n  visibility: hidden;\n}\n#mathlive-environment-popover .MLEP__array-buttons {\n  height: calc(var(--_environment-panel-height) * 5/4);\n  width: calc(var(--_environment-panel-height) * 5/4);\n  margin-left: calc(0px - var(--_environment-panel-height) * 0.16);\n  margin-top: calc(0px - var(--_environment-panel-height) * 0.19);\n}\n#mathlive-environment-popover .MLEP__array-buttons .font {\n  fill: white;\n}\n#mathlive-environment-popover .MLEP__array-buttons circle {\n  fill: #7f7f7f;\n  transition: fill 300ms;\n}\n#mathlive-environment-popover .MLEP__array-buttons .MLEP__array-insert-background {\n  fill-opacity: 1;\n  fill: var(--_background);\n  stroke: var(--_accent-color);\n  stroke-width: 3px;\n}\n#mathlive-environment-popover .MLEP__array-buttons line {\n  stroke: var(--_accent-color);\n  stroke-opacity: 0;\n  stroke-width: 40;\n  pointer-events: none;\n  transition: stroke-opacity 300ms;\n  stroke-linecap: round;\n}\n#mathlive-environment-popover .MLEP__array-buttons g[data-command]:hover circle {\n  fill: var(--_accent-color);\n}\n#mathlive-environment-popover .MLEP__array-buttons g[data-command]:hover line {\n  stroke-opacity: 1;\n}\n#mathlive-environment-popover .MLEP__environment-delimiter-controls {\n  height: 100%;\n  width: 50%;\n}\n#mathlive-environment-popover .MLEP__environment-delimiter-controls .MLEP__array-delimiter-options {\n  width: var(--_environment-panel-height);\n  height: var(--_environment-panel-height);\n  display: flex;\n  flex-wrap: wrap;\n  flex-direction: row;\n  justify-content: space-around;\n}\n#mathlive-environment-popover .MLEP__environment-delimiter-controls .MLEP__array-delimiter-options svg {\n  pointer-events: all;\n  margin-top: 2px;\n  width: calc(var(--_environment-panel-height) / 3 * 28 / 24);\n  height: calc(var(--_environment-panel-height) / 3 - 2px);\n  border-radius: calc(var(--_environment-panel-height) / 25);\n  background-color: var(--_button-background);\n}\n#mathlive-environment-popover .MLEP__environment-delimiter-controls .MLEP__array-delimiter-options svg:hover {\n  background-color: var(--_button-background-hover);\n}\n#mathlive-environment-popover .MLEP__environment-delimiter-controls .MLEP__array-delimiter-options svg path,\n#mathlive-environment-popover .MLEP__environment-delimiter-controls .MLEP__array-delimiter-options svg line {\n  stroke: var(--_button-text);\n  stroke-width: 2;\n  stroke-linecap: round;\n}\n#mathlive-environment-popover .MLEP__environment-delimiter-controls .MLEP__array-delimiter-options svg rect,\n#mathlive-environment-popover .MLEP__environment-delimiter-controls .MLEP__array-delimiter-options svg path {\n  fill-opacity: 0;\n}\n#mathlive-environment-popover .MLEP__environment-delimiter-controls .MLEP__array-delimiter-options svg.active {\n  pointer-events: none;\n  background-color: var(--_button-background-active);\n}\n#mathlive-environment-popover .MLEP__environment-delimiter-controls .MLEP__array-delimiter-options svg.active path,\n#mathlive-environment-popover .MLEP__environment-delimiter-controls .MLEP__array-delimiter-options svg.active line {\n  stroke: var(--_accent-color);\n}\n#mathlive-environment-popover .MLEP__environment-delimiter-controls .MLEP__array-delimiter-options svg.active circle {\n  fill: var(--_accent-color);\n}\n";
+
+// css/suggestion-popover.less
+var suggestion_popover_default = `/* The element that display info while in latex mode */
+#mathlive-suggestion-popover {
+  --_suggestion-zindex: var(--suggestion-zindex, 100);
+  background-color: rgba(97, 97, 97);
+  color: #fff;
+  text-align: center;
+  border-radius: 8px;
+  position: fixed;
+  z-index: var(--_suggestion-zindex);
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.25), 0 10px 10px rgba(0, 0, 0, 0.22);
+}
+#mathlive-suggestion-popover.top-tip::after {
+  content: '';
+  position: absolute;
+  top: -15px;
+  left: calc(50% - 15px);
+  width: 0;
+  height: 0;
+  border-left: 15px solid transparent;
+  border-right: 15px solid transparent;
+  border-bottom: 15px solid rgba(97, 97, 97);
+  font-size: 1rem;
+}
+#mathlive-suggestion-popover.bottom-tip::after {
+  content: '';
+  position: absolute;
+  bottom: -15px;
+  left: calc(50% - 15px);
+  width: 0;
+  height: 0;
+  border-left: 15px solid transparent;
+  border-right: 15px solid transparent;
+  border-top: 15px solid rgba(97, 97, 97);
+  font-size: 1rem;
+}
+#mathlive-suggestion-popover.is-animated {
+  transition: all 0.2s cubic-bezier(0.64, 0.09, 0.08, 1);
+  animation: ML__fade-in cubic-bezier(0, 0, 0.2, 1) 0.15s;
+}
+#mathlive-suggestion-popover.is-visible {
+  display: flex;
+}
+@keyframes ML__fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* The wrapper class for the entire content of the popover panel */
+#mathlive-suggestion-popover ul {
+  display: flex;
+  flex-flow: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  align-items: flex-start;
+  max-height: 400px;
+  overflow-y: auto;
+}
+#mathlive-suggestion-popover li {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  margin: 8px;
+  padding: 8px;
+  width: calc(100% - 16px - 16px);
+  column-gap: 1em;
+  border-radius: 8px;
+  cursor: pointer;
+  /* Since the content can be clicked on, provide feedback on hover */
+}
+#mathlive-suggestion-popover li a {
+  color: #5ea6fd;
+  padding-top: 0.3em;
+  margin-top: 0.4em;
+  display: block;
+}
+#mathlive-suggestion-popover li a:hover {
+  color: #5ea6fd;
+  text-decoration: underline;
+}
+#mathlive-suggestion-popover li:hover,
+#mathlive-suggestion-popover li.is-pressed,
+#mathlive-suggestion-popover li.is-active {
+  background: rgba(255, 255, 255, 0.1);
+}
+/* The command inside a popover (inside a #mathlive-suggestion-popover) */
+.ML__popover__command {
+  font-size: 1.6rem;
+  font-family: KaTeX_Main;
+}
+.ML__popover__current {
+  background: #5ea6fd;
+  color: #fff;
+}
+.ML__popover__latex {
+  font-family: 'IBM Plex Mono', 'Source Code Pro', Consolas, 'Roboto Mono', Menlo, 'Bitstream Vera Sans Mono', 'DejaVu Sans Mono', Monaco, Courier, monospace;
+  align-self: center;
+}
+/* The keyboard shortcuts for a symbol as displayed in the popover */
+.ML__popover__keybinding {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+/* Style for the character that joins the modifiers of a keyboard shortcut 
+(usually a "+" sign)*/
+.ML__shortcut-join {
+  opacity: 0.5;
+}
+`;
+
+// css/keystroke-caption.less
+var keystroke_caption_default = "/* The element that displays the keys as the user type them */\n#mathlive-keystroke-caption-panel {\n  visibility: hidden;\n  /*min-width: 160px;*/\n  /*background-color: rgba(97, 97, 200, .95);*/\n  background: var(--secondary, hsl(var(--_hue), 19%, 26%));\n  border-color: var(--secondary-border, hsl(0, 0%, 91%));\n  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);\n  text-align: center;\n  border-radius: 6px;\n  padding: 16px;\n  position: absolute;\n  z-index: 1;\n  display: flex;\n  flex-direction: row-reverse;\n  justify-content: center;\n  --keystroke: white;\n  --on-keystroke: #555;\n  --keystroke-border: #f7f7f7;\n}\n@media (prefers-color-scheme: dark) {\n  body:not([theme='light']) #mathlive-keystroke-caption-panel {\n    --keystroke: hsl(var(--_hue), 50%, 30%);\n    --on-keystroke: hsl(0, 0%, 98%);\n    --keystroke-border: hsl(var(--_hue), 50%, 25%);\n  }\n}\nbody[theme='dark'] #mathlive-keystroke-caption-panel {\n  --keystroke: hsl(var(--_hue), 50%, 30%);\n  --on-keystroke: hsl(0, 0%, 98%);\n  --keystroke-border: hsl(var(--_hue), 50%, 25%);\n}\n#mathlive-keystroke-caption-panel > span {\n  min-width: 14px;\n  /*height: 8px;*/\n  margin: 0 8px 0 0;\n  padding: 4px;\n  background-color: var(--keystroke);\n  color: var(--on-keystroke);\n  fill: currentColor;\n  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;\n  font-size: 1em;\n  border-radius: 6px;\n  border: 2px solid var(--keystroke-border);\n  /*box-shadow: 0 7px 14px rgba(0,0,0,0.25), 0 5px 5px rgba(0,0,0,0.22);*/\n}\n";
+
+// css/virtual-keyboard.less
+var virtual_keyboard_default = `.ML__keyboard {
+  --_keyboard-height: 0;
+  --_keyboard-zindex: var(--keyboard-zindex, 105);
+  --_accent-color: var(--keyboard-accent-color, #0c75d8);
+  --_background: var(--keyboard-background, #cacfd7);
+  --_border: var(--keyboard-border, #ddd);
+  --_padding-horizontal: var(--keyboard-padding-horizontal, 0px);
+  --_padding-top: var(--keyboard-padding-top, 5px);
+  --_padding-bottom: var(--keyboard-padding-bottom, 0px);
+  --_row-padding-left: var(--keyboard-row-padding-left, 0px);
+  --_row-padding-right: var(--keyboard-row-padding-right, 0px);
+  --_toolbar-text: var(--keyboard-toolbar-text, #2c2e2f);
+  --_toolbar-text-active: var(--keyboard-toolbar-text-active, var(--_accent-color));
+  --_toolbar-background: var(--keyboard-toolbar-background, transparent);
+  --_toolbar-background-hover: var(--keyboard-toolbar-background-hover, #eee);
+  --_toolbar-background-selected: var(--keyboard-toolbar-background-selected, transparent);
+  --_toolbar-font-size: var(--keyboard-toolbar-font-size, '135%');
+  --_horizontal-rule: var(--keyboard-horizontal-rule, 1px solid #fff);
+  --_keycap-background: var(--keycap-background, #f0f0f0);

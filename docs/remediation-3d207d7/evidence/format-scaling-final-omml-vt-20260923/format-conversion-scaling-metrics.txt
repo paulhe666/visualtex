@@ -1,0 +1,22 @@
+[omml->visualtex count=10]
+capture|FormatConversion.CaptureTarget.OmmlToVisualTeX|calls=10|ms=1250.625
+capture|FormatConversion.NumberingResolver.Omml|calls=10|ms=766.352
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=10|ms=54.207
+apply|FormatConversion.Replace.OmmlToVisualTeX|calls=10|ms=7458.704
+apply|FormatConversion.ReplaceInsideTransaction.Omml->VisualTeX|calls=10|ms=7457.107
+apply|FormatConversion.VisualTeXHostWriter.Insert|calls=10|ms=4521.825
+apply|FormatConversion.VisualTeXNumbering.Attach|calls=10|ms=1944.03
+apply|FormatConversion.ResolveCapturedHost.Omml|calls=10|ms=1615.156
+apply|FormatConversion.RefreshCanonicalNumbers|calls=1|ms=1191.711
+apply|FormatConversion.VisualTeXNumbering.RefreshBatchFields|calls=1|ms=1178.14
+[omml->visualtex count=20]
+capture|FormatConversion.CaptureTarget.OmmlToVisualTeX|calls=20|ms=2400.076
+capture|FormatConversion.NumberingResolver.Omml|calls=20|ms=1450.294
+capture|WordOmmlConverter.TransformOmmlToMathMl|calls=20|ms=6.506
+apply|FormatConversion.Replace.OmmlToVisualTeX|calls=20|ms=16587.771
+apply|FormatConversion.ReplaceInsideTransaction.Omml->VisualTeX|calls=20|ms=16587.733
+apply|FormatConversion.VisualTeXHostWriter.Insert|calls=20|ms=9746.873
+apply|FormatConversion.VisualTeXNumbering.Attach|calls=20|ms=4977.746
+apply|FormatConversion.ResolveCapturedHost.Omml|calls=20|ms=3308.547
+apply|FormatConversion.RefreshCanonicalNumbers|calls=1|ms=2750.961
+apply|FormatConversion.VisualTeXNumbering.RefreshBatchFields|calls=1|ms=2699.15

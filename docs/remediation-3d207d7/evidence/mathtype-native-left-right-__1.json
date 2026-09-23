@@ -1,0 +1,256 @@
+{
+    "name":  "文档1",
+    "fullName":  "文档1",
+    "saved":  false,
+    "end":  569,
+    "paragraphs":  5,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+                   {
+                       "start":  174,
+                       "alternative":  null,
+                       "width":  50.05,
+                       "index":  1,
+                       "type":  1,
+                       "height":  35,
+                       "prog":  "Equation.DSMT4",
+                       "end":  201
+                   },
+                   {
+                       "start":  540,
+                       "alternative":  null,
+                       "width":  93.95,
+                       "index":  2,
+                       "type":  1,
+                       "height":  20,
+                       "prog":  "Equation.DSMT4",
+                       "end":  567
+                   }
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+
+                  ],
+    "fields":  [
+                   {
+                       "nested":  3,
+                       "code":  " MACROBUTTON MTEditEquationSection2 Equation Chapter 1 Section 1\u0013 SEQ MTEqn \\r \\h \\* MERGEFORMAT \u0015\u0013 SEQ MTSec \\r 1 \\h \\* MERGEFORMAT \u0015\u0013 SEQ MTChap \\r 1 \\h \\* MERGEFORMAT \u0015",
+                       "result":  "",
+                       "type":  51,
+                       "start":  1,
+                       "end":  173,
+                       "index":  1
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\r \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  66,
+                       "end":  99,
+                       "index":  2
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTSec \\r 1 \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  100,
+                       "end":  135,
+                       "index":  3
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTChap \\r 1 \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  136,
+                       "end":  172,
+                       "index":  4
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED Equation.DSMT4  ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  175,
+                       "end":  200,
+                       "index":  5
+                   },
+                   {
+                       "nested":  3,
+                       "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  203,
+                       "end":  363,
+                       "index":  6
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  243,
+                       "end":  273,
+                       "index":  7
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  275,
+                       "end":  316,
+                       "index":  8
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  319,
+                       "end":  360,
+                       "index":  9
+                   },
+                   {
+                       "nested":  3,
+                       "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  379,
+                       "end":  539,
+                       "index":  10
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  419,
+                       "end":  449,
+                       "index":  11
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  451,
+                       "end":  492,
+                       "index":  12
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "2",
+                       "type":  12,
+                       "start":  495,
+                       "end":  536,
+                       "index":  13
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED Equation.DSMT4  ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  541,
+                       "end":  566,
+                       "index":  14
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  9999999,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  364,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  364,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  372,
+                      "lineRule":  0,
+                      "text":  "对方对方的方法\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  372,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  378,
+                      "lineRule":  0,
+                      "text":  "反对法地方\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  378,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  568,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cTAB\u003e\u0001\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  568,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  569,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  }
+              ],
+    "variables":  [
+
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}
