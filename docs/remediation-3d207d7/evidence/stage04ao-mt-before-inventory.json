@@ -1,0 +1,232 @@
+{
+    "build":  "16.0.14334",
+    "version":  "16.0",
+    "statusBar":  "",
+    "active":  "文档15",
+    "documents":  [
+                      {
+                          "name":  "文档15",
+                          "key":  "stage04ao-mt-before-__15",
+                          "saved":  false,
+                          "end":  217,
+                          "paragraphs":  3,
+                          "tables":  [
+
+                                     ],
+                          "maths":  [
+
+                                    ],
+                          "shapes":  [
+                                         {
+                                             "start":  118,
+                                             "alternative":  null,
+                                             "width":  52.05,
+                                             "index":  1,
+                                             "type":  1,
+                                             "height":  15,
+                                             "prog":  "Equation.DSMT4",
+                                             "end":  144
+                                         }
+                                     ],
+                          "controls":  [
+
+                                       ],
+                          "fields":  [
+                                         {
+                                             "nested":  2,
+                                             "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                                             "result":  "",
+                                             "type":  51,
+                                             "start":  1,
+                                             "end":  117,
+                                             "index":  1
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                                             "result":  "",
+                                             "type":  12,
+                                             "start":  41,
+                                             "end":  71,
+                                             "index":  2
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "1",
+                                             "type":  12,
+                                             "start":  73,
+                                             "end":  114,
+                                             "index":  3
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED Equation.DSMT4 ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  119,
+                                             "end":  143,
+                                             "index":  4
+                                         },
+                                         {
+                                             "nested":  1,
+                                             "code":  " GOTOBUTTON ZEqnNum100071 \u0013 REF ZEqnNum100071 \\* CHARFORMAT \\! \u0015",
+                                             "result":  "",
+                                             "type":  50,
+                                             "start":  147,
+                                             "end":  216,
+                                             "index":  5
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " REF ZEqnNum100071 \\* CHARFORMAT \\! ",
+                                             "result":  "(1)",
+                                             "type":  3,
+                                             "start":  174,
+                                             "end":  214,
+                                             "index":  6
+                                         }
+                                     ],
+                          "bookmarks":  [
+                                            {
+                                                "end":  116,
+                                                "name":  "ZEqnNum100071",
+                                                "text":  "(1)",
+                                                "start":  71
+                                            }
+                                        ],
+                          "paras":  [
+                                        {
+                                            "start":  0,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  1,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  145,
+                                            "lineRule":  0,
+                                            "text":  "\u0015\u003cTAB\u003e\u0001\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  145,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  2,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  146,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  146,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  3,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  217,
+                                            "lineRule":  0,
+                                            "text":  "\u0015\u003cCR\u003e",
+                                            "size":  10.5
+                                        }
+                                    ],
+                          "xmlFonts":  [
+
+                                       ],
+                          "xmlMathCount":  0
+                      }
+                  ],
+    "processes":  [
+                      {
+                          "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+                          "name":  "visualtex",
+                          "id":  108292,
+                          "start":  "2026-09-06T19:39:43.5667446+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  27664,
+                          "start":  "2026-09-05T23:07:41.2634623+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  55728,
+                          "start":  "2026-09-06T09:34:20.5498056+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  60152,
+                          "start":  "2026-09-06T09:19:28.3881752+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  67232,
+                          "start":  "2026-09-06T21:07:02.7486584+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  71532,
+                          "start":  "2026-09-06T19:04:25.7118063+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  81452,
+                          "start":  "2026-09-06T18:17:42.9788964+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  82668,
+                          "start":  "2026-09-06T14:45:09.4153585+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  94656,
+                          "start":  "2026-09-06T20:18:23.0414098+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  100440,
+                          "start":  "2026-09-06T16:25:56.9336162+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  101980,
+                          "start":  "2026-09-06T16:40:17.8412004+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  111272,
+                          "start":  "2026-09-06T18:29:30.4706807+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  112840,
+                          "start":  "2026-09-06T20:41:54.1660726+08:00"
+                      }
+                  ],
+    "time":  "2026-09-06T21:08:06.7717427+08:00"
+}

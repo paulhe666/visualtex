@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using VisualTeX.WindowsOffice.VstoShared;
 
 namespace VisualTeX.WordVsto;
 
@@ -50,6 +51,7 @@ internal sealed class WordDoubleClickHook : IDisposable
     private HookProc? _hookCallback;
     private IntPtr _hook;
     private uint _threadId;
+    private int _ownerProcessId = Process.GetCurrentProcess().Id;
     private long _lastClickTimestamp;
     private int _lastClickX = int.MinValue;
     private int _lastClickY = int.MinValue;
@@ -65,6 +67,16 @@ internal sealed class WordDoubleClickHook : IDisposable
             IsBackground = true,
             Name = "VisualTeX Word Double Click",
         };
+    }
+
+    internal void BindOwnerWindow(int windowHandle)
+    {
+        if (windowHandle == 0) return;
+        GetWindowThreadProcessId(new IntPtr(windowHandle), out var processId);
+        if (processId == 0) return;
+        var previous = Interlocked.Exchange(ref _ownerProcessId, unchecked((int)processId));
+        if (previous != unchecked((int)processId))
+            Interlocked.Exchange(ref _lastClickTimestamp, 0);
     }
 
     public void Start()
@@ -120,7 +132,12 @@ internal sealed class WordDoubleClickHook : IDisposable
         var wordForeground = IsWordForeground();
         TraceMessage($"left-down x={input.Pt.X} y={input.Pt.Y} wordForeground={wordForeground}");
         if (!wordForeground)
+        {
+            // Never pair clicks separated by a switch to another application or
+            // another Word process, even when both windows are named WINWORD.
+            Interlocked.Exchange(ref _lastClickTimestamp, 0);
             return CallNextHookEx(_hook, code, wParam, lParam);
+        }
         var now = Stopwatch.GetTimestamp();
         var previous = Interlocked.Read(ref _lastClickTimestamp);
         var hasPreviousClick = previous != 0;
@@ -173,6 +190,7 @@ internal sealed class WordDoubleClickHook : IDisposable
                 // callback only schedules a later Office UI turn; it never executes
                 // DoVerb while this hook callback is still unwinding.
                 Thread.Sleep(decision.NativeOleTarget ? 40 : 90);
+                if (!IsWordForeground()) return;
                 try
                 {
                     TraceMessage(
@@ -195,20 +213,18 @@ internal sealed class WordDoubleClickHook : IDisposable
         return new IntPtr(1);
     }
 
-    private static bool IsWordForeground()
+    private bool IsWordForeground()
     {
         var window = GetForegroundWindow();
         if (window == IntPtr.Zero) return false;
         GetWindowThreadProcessId(window, out var processId);
-        if (processId == 0) return false;
-        try
-        {
-            return string.Equals(
-                Process.GetProcessById((int)processId).ProcessName,
-                "WINWORD",
-                StringComparison.OrdinalIgnoreCase);
-        }
-        catch { return false; }
+        // The low-level hook is desktop-wide; it must dispatch only to the Word
+        // instance that owns this add-in. Comparing just the executable name
+        // makes every open /x instance process the same gesture and can switch
+        // editors/documents repeatedly. No process enumeration or COM on clicks.
+        return WordDoubleClickRouting.ForegroundProcessBelongsToOwner(
+            processId,
+            Volatile.Read(ref _ownerProcessId));
     }
 
     public void Dispose()

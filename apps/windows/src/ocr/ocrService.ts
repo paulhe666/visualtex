@@ -211,6 +211,98 @@ export type OcrProviderId =
   | "paddleocr"
   | "simpletex";
 
+export type RemoteOcrProviderId = Exclude<OcrProviderId, "local">;
+
+export type OcrRecognizerSelection =
+  | `local:${OcrModelName}`
+  | `provider:${RemoteOcrProviderId}`;
+
+export interface OcrRecognizerOption {
+  id: OcrRecognizerSelection;
+  group: "local" | "api";
+  labelZh: string;
+  labelEn: string;
+}
+
+export const OCR_RECOGNIZER_OPTIONS: readonly OcrRecognizerOption[] = [
+  ...OCR_MODELS.map((item) => ({
+    id: `local:${item.id}` as OcrRecognizerSelection,
+    group: "local" as const,
+    labelZh: item.labelZh,
+    labelEn: item.labelEn,
+  })),
+  {
+    id: "provider:openai-compatible",
+    group: "api",
+    labelZh: "OpenAI 兼容 API",
+    labelEn: "OpenAI-compatible API",
+  },
+  {
+    id: "provider:ollama",
+    group: "api",
+    labelZh: "Ollama",
+    labelEn: "Ollama",
+  },
+  {
+    id: "provider:mathpix",
+    group: "api",
+    labelZh: "Mathpix",
+    labelEn: "Mathpix",
+  },
+  {
+    id: "provider:paddleocr",
+    group: "api",
+    labelZh: "PaddleOCR 星河 API",
+    labelEn: "PaddleOCR AI Studio",
+  },
+  {
+    id: "provider:simpletex",
+    group: "api",
+    labelZh: "SimpleTex",
+    labelEn: "SimpleTex",
+  },
+];
+
+export function ocrProviderDisplayLabel(provider: OcrProviderId, isEn: boolean) {
+  const option = OCR_RECOGNIZER_OPTIONS.find(
+    (item) => item.id === `provider:${provider}`,
+  );
+  if (option) return isEn ? option.labelEn : option.labelZh;
+  return isEn ? "Local PP-FormulaNet" : "本地 PP-FormulaNet";
+}
+
+export function ocrRecognizerSelection(
+  provider: OcrProviderId,
+  model: OcrModelName,
+): OcrRecognizerSelection {
+  return provider === "local"
+    ? (`local:${model}` as OcrRecognizerSelection)
+    : (`provider:${provider}` as OcrRecognizerSelection);
+}
+
+export function parseOcrRecognizerSelection(value: string): {
+  provider: OcrProviderId;
+  model?: OcrModelName;
+} | null {
+  if (value.startsWith("local:")) {
+    const model = value.slice("local:".length);
+    if (OCR_MODELS.some((item) => item.id === model)) {
+      return { provider: "local", model: model as OcrModelName };
+    }
+    return null;
+  }
+  if (value.startsWith("provider:")) {
+    const provider = value.slice("provider:".length) as OcrProviderId;
+    if (
+      provider !== "local" &&
+      OCR_RECOGNIZER_OPTIONS.some((item) => item.id === `provider:${provider}`)
+    ) {
+      return { provider };
+    }
+  }
+  return null;
+}
+
 export type OpenAiCompatibleProtocol = "responses" | "chat-completions";
 export type PaddleOcrApiModel =
   | "PaddleOCR-VL-1.6";
@@ -631,6 +723,37 @@ export async function saveOcrProviderConfiguration(
   return decodeOcrProviderConfiguration(
     await invoke<unknown>("save_ocr_provider_configuration", { configuration }),
   );
+}
+
+export async function setActiveOcrProvider(
+  provider: OcrProviderId,
+): Promise<OcrProviderConfiguration> {
+  const current = await getOcrProviderConfiguration();
+  if (current.activeProvider === provider) return current;
+  return saveOcrProviderConfiguration({
+    activeProvider: provider,
+    openAiCompatible: {
+      protocol: current.openAiCompatible.protocol,
+      baseUrl: current.openAiCompatible.baseUrl,
+      model: current.openAiCompatible.model,
+      prompt: current.openAiCompatible.prompt,
+    },
+    ollama: {
+      baseUrl: current.ollama.baseUrl,
+      model: current.ollama.model,
+      prompt: current.ollama.prompt,
+    },
+    mathpix: {
+      baseUrl: current.mathpix.baseUrl,
+      appId: current.mathpix.appId,
+    },
+    paddleOcr: {
+      model: current.paddleOcr.model,
+    },
+    simpleTex: {
+      model: current.simpleTex.model,
+    },
+  });
 }
 
 export async function getOcrRuntimeStatus(

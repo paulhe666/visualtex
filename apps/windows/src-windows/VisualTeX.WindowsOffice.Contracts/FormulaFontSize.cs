@@ -76,11 +76,15 @@ public static class FormulaFontSize
         return Normalize(current - StepPt);
     }
 
-    public static float Parse(string? value)
+    public static float Parse(string? value) => Parse(value, english: false);
+
+    public static float Parse(string? value, bool english)
     {
         if (TryParse(value, out var result)) return result;
         throw new InvalidOperationException(
-            "请输入 5–200 之间的公式字号，或输入初号、小初、一号、小一等中文字号。");
+            english
+                ? "Enter a formula font size between 5 and 200 pt."
+                : "请输入 5–200 之间的公式字号，或输入初号、小初、一号、小一等中文字号。");
     }
 
     public static bool TryParse(string? value, out float fontSizePt)
@@ -122,9 +126,13 @@ public static class FormulaFontSize
         return true;
     }
 
-    public static string FormatDisplay(double? value)
+    public static string FormatDisplay(double? value) => FormatDisplay(value, english: false);
+
+    public static string FormatDisplay(double? value, bool english)
     {
         var normalized = Normalize(value);
+        if (english)
+            return normalized.ToString("0.##", CultureInfo.InvariantCulture);
         foreach (var size in ChineseSizes)
         {
             if (Math.Abs(size.Points - normalized) < 0.001f) return size.Name;
@@ -132,9 +140,13 @@ public static class FormulaFontSize
         return normalized.ToString("0.##", CultureInfo.InvariantCulture);
     }
 
-    public static string Describe(double? value)
+    public static string Describe(double? value) => Describe(value, english: false);
+
+    public static string Describe(double? value, bool english)
     {
         var normalized = Normalize(value);
+        if (english)
+            return $"{normalized.ToString("0.##", CultureInfo.InvariantCulture)} pt";
         var display = FormatDisplay(normalized);
         return display.EndsWith("号", StringComparison.Ordinal)
             || display.StartsWith("小", StringComparison.Ordinal)

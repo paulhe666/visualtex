@@ -1,0 +1,1526 @@
+          id: "environment-no-border",
+          onMenuSelect: () => performSetEnvironment(mf, "matrix")
+        },
+        {
+          label: "(\u22F1)",
+          id: "environment-parentheses",
+          onMenuSelect: () => performSetEnvironment(mf, "pmatrix")
+        },
+        {
+          label: "[\u22F1]",
+          id: "environment-brackets",
+          onMenuSelect: () => performSetEnvironment(mf, "bmatrix")
+        },
+        {
+          label: "|\u22F1|",
+          id: "environment-bar",
+          onMenuSelect: () => performSetEnvironment(mf, "vmatrix")
+        },
+        {
+          label: "{\u22F1}",
+          id: "environment-braces",
+          onMenuSelect: () => performSetEnvironment(mf, "Bmatrix")
+        }
+      ],
+      submenuClass: "border-submenu"
+    },
+    {
+      type: "divider"
+    },
+    {
+      label: () => localize("menu.insert matrix"),
+      id: "insert-matrix",
+      visible: () => mf.isSelectionEditable,
+      submenu: getInsertMatrixSubmenu(mf),
+      submenuClass: "insert-matrix-submenu",
+      columnCount: 5
+    },
+    {
+      type: "divider"
+    },
+    {
+      label: () => localize("menu.insert"),
+      id: "insert",
+      submenu: insertMenu(mf)
+    },
+    {
+      type: "divider"
+    },
+    {
+      label: () => localize("menu.mode"),
+      id: "mode",
+      visible: () => mf.isSelectionEditable && mf.model.selectionIsCollapsed,
+      submenu: [
+        {
+          label: () => localize("menu.mode-math"),
+          id: "mode-math",
+          onMenuSelect: () => {
+            complete(mf, "accept-all");
+            mf.executeCommand(["switchMode", "math"]);
+          },
+          checked: () => mf.model.mode === "math"
+        },
+        {
+          label: () => localize("menu.mode-text"),
+          id: "mode-text",
+          onMenuSelect: () => {
+            complete(mf, "accept-all");
+            mf.executeCommand(["switchMode", "text"]);
+          },
+          checked: () => mf.model.mode === "text"
+        },
+        {
+          label: () => localize("menu.mode-latex"),
+          id: "mode-latex",
+          onMenuSelect: () => mf.executeCommand(["switchMode", "latex"]),
+          checked: () => mf.model.mode === "latex"
+        }
+      ]
+    },
+    {
+      type: "divider"
+    },
+    {
+      label: () => localize("menu.font-style"),
+      id: "variant",
+      visible: () => mf.isSelectionEditable,
+      submenu: getVariantSubmenu(mf),
+      submenuClass: "variant-submenu"
+    },
+    {
+      label: () => localize("menu.color"),
+      id: "color",
+      visible: () => mf.isSelectionEditable,
+      submenu: getColorSubmenu(mf),
+      columnCount: 4,
+      submenuClass: "swatches-submenu"
+    },
+    {
+      label: () => localize("menu.background-color"),
+      id: "background-color",
+      visible: () => mf.isSelectionEditable,
+      submenu: getBackgroundColorSubmenu(mf),
+      columnCount: 4,
+      submenuClass: "swatches-submenu"
+    },
+    {
+      label: () => localize("menu.accent"),
+      id: "accent",
+      visible: () => mf.isSelectionEditable,
+      submenu: getAccentSubmenu(mf),
+      submenuClass: "variant-submenu"
+    },
+    {
+      label: () => localize("menu.decoration"),
+      id: "decoration",
+      visible: () => mf.isSelectionEditable && getSelectionPlainString(mf).length > 0,
+      submenu: getDecorationSubmenu(mf),
+      submenuClass: "variant-submenu"
+    },
+    {
+      type: "divider"
+    },
+    {
+      label: () => localize("menu.evaluate"),
+      id: "ce-evaluate",
+      visible: () => mf.isSelectionEditable && globalThis.MathfieldElement.computeEngine !== null,
+      onMenuSelect: () => {
+        const latex = evaluate(mf);
+        if (!latex) {
+          mf.model.announce("plonk");
+          return;
+        }
+        if (mf.model.selectionIsCollapsed) {
+          mf.model.position = mf.model.lastOffset;
+          mf.insert(`=${latex}`, {
+            insertionMode: "insertAfter",
+            selectionMode: "item"
+          });
+        } else {
+          mf.insert(latex, {
+            insertionMode: "replaceSelection",
+            selectionMode: "item"
+          });
+        }
+      }
+    },
+    {
+      label: () => localize("menu.simplify"),
+      id: "ce-simplify",
+      visible: () => mf.isSelectionEditable && globalThis.MathfieldElement.computeEngine !== null,
+      onMenuSelect: () => {
+        var _a3, _b3;
+        if (mf.model.selectionIsCollapsed) {
+          const result = (_a3 = mf.expression) == null ? void 0 : _a3.simplify();
+          mf.model.position = mf.model.lastOffset;
+          if (!result) {
+            mf.model.announce("plonk");
+            return;
+          }
+          mf.insert(`=${result.latex}`, {
+            insertionMode: "insertAfter",
+            selectionMode: "item"
+          });
+        } else {
+          const result = (_b3 = globalThis.MathfieldElement.computeEngine) == null ? void 0 : _b3.parse(mf.getValue(mf.model.selection)).simplify();
+          if (!result) {
+            mf.model.announce("plonk");
+            return;
+          }
+          mf.insert(result.latex, {
+            insertionMode: "replaceSelection",
+            selectionMode: "item"
+          });
+        }
+      }
+    },
+    {
+      label: () => {
+        var _a3;
+        const ce = globalThis.MathfieldElement.computeEngine;
+        if (ce === null) return "";
+        const unknown = (_a3 = mf.expression) == null ? void 0 : _a3.unknowns[0];
+        if (unknown) {
+          const latex = ce.box(unknown).latex;
+          return localize("menu.solve-for", convertLatexToMarkup(latex));
+        }
+        return localize("menu.solve");
+      },
+      id: "ce-solve",
+      visible: () => {
+        var _a3;
+        return mf.isSelectionEditable && globalThis.MathfieldElement.computeEngine !== null && ((_a3 = mf.expression) == null ? void 0 : _a3.unknowns.length) === 1 && mf.expression.unknowns[0] !== "Nothing";
+      },
+      onMenuSelect: () => {
+        const expr = mf.expression;
+        const unknown = expr == null ? void 0 : expr.unknowns[0];
+        const solutions = expr.solve(unknown);
+        const results = Array.isArray(solutions) ? solutions.map(
+          (x) => {
+            var _a3;
+            return (_a3 = x.simplify().latex) != null ? _a3 : "";
+          }
+        ) : null;
+        if (!results) {
+          mf.model.announce("plonk");
+          return;
+        }
+        mf.insert(
+          `${unknown}=${results.length === 1 ? results[0] : "\\left\\lbrace" + (results == null ? void 0 : results.join(", ")) + "\\right\\rbrace"}`,
+          {
+            insertionMode: "replaceAll",
+            selectionMode: "item"
+          }
+        );
+      }
+    },
+    {
+      type: "divider"
+    },
+    {
+      label: () => localize("menu.cut"),
+      id: "cut",
+      onMenuSelect: () => mf.executeCommand("cutToClipboard"),
+      visible: () => !mf.options.readOnly && mf.isSelectionEditable,
+      keyboardShortcut: "meta+X"
+    },
+    // {
+    //   label: 'Copy',
+    //   onMenuSelect: () => mf.executeCommand('copyToClipboard'),
+    // },
+    {
+      label: () => localize("menu.copy"),
+      id: "copy",
+      submenu: [
+        {
+          label: () => localize("menu.copy-as-latex"),
+          id: "copy-latex",
+          onMenuSelect: () => ModeEditor.copyToClipboard(mf, "latex"),
+          keyboardShortcut: "meta+C"
+        },
+        {
+          label: () => localize("menu.copy-as-typst"),
+          id: "copy-latex",
+          onMenuSelect: () => ModeEditor.copyToClipboard(mf, "typst")
+        },
+        {
+          label: () => localize("menu.copy-as-ascii-math"),
+          id: "copy-ascii-math",
+          onMenuSelect: () => ModeEditor.copyToClipboard(mf, "ascii-math")
+        },
+        {
+          label: () => localize("menu.copy-as-mathml"),
+          id: "copy-math-ml",
+          onMenuSelect: () => ModeEditor.copyToClipboard(mf, "math-ml")
+        }
+      ]
+    },
+    {
+      label: () => localize("menu.paste"),
+      id: "paste",
+      onMenuSelect: () => mf.executeCommand("pasteFromClipboard"),
+      visible: () => mf.hasEditableContent,
+      keyboardShortcut: "meta+V"
+    },
+    {
+      label: () => localize("menu.select-all"),
+      id: "select-all",
+      keyboardShortcut: "meta+A",
+      onMenuSelect: () => mf.executeCommand("selectAll")
+    }
+  ];
+}
+function inMatrix(mf) {
+  var _a3, _b3;
+  const env = (_b3 = (_a3 = mf.model.parentEnvironment) == null ? void 0 : _a3.environmentName) != null ? _b3 : "";
+  return [
+    "array",
+    "matrix",
+    "pmatrix",
+    "bmatrix",
+    "vmatrix",
+    "Bmatrix",
+    "cases",
+    "dcases",
+    "rcases"
+  ].includes(env);
+}
+function isMatrixSelected(mf) {
+  const cursor = mf.model.at(mf.model.position);
+  if (cursor.type !== "array") return false;
+  const env = cursor.environmentName;
+  return ["matrix", "pmatrix", "bmatrix", "vmatrix", "Bmatrix"].includes(env);
+}
+function shape(mf) {
+  var _a3;
+  const rows = (_a3 = mf.model.parentEnvironment) == null ? void 0 : _a3.rows;
+  if (!rows) return [0, 0];
+  return [rows.length, rows.reduce((acc, col) => Math.max(acc, col.length), 0)];
+}
+function minShape(mf) {
+  const array = mf.model.parentEnvironment;
+  if (!array) return [0, 0];
+  return [array.minRows, array.minColumns];
+}
+function maxShape(mf) {
+  const array = mf.model.parentEnvironment;
+  if (!array) return [0, 0];
+  return [array.maxRows, array.maxColumns];
+}
+function performSetEnvironment(mf, env) {
+  removeSuggestion(mf);
+  mf.flushInlineShortcutBuffer();
+  setEnvironment(mf.model, env);
+  requestUpdate(mf);
+}
+function evaluate(mf) {
+  var _a3, _b3;
+  let expr;
+  if (mf.model.selectionIsCollapsed) {
+    expr = (_a3 = globalThis.MathfieldElement.computeEngine) == null ? void 0 : _a3.parse(mf.getValue(), {
+      canonical: false
+    });
+  } else {
+    expr = (_b3 = globalThis.MathfieldElement.computeEngine) == null ? void 0 : _b3.parse(
+      mf.getValue(mf.model.selection),
+      { canonical: false }
+    );
+  }
+  if (!expr) return "";
+  let result = expr.evaluate();
+  if (result.isSame(expr)) result = expr.N();
+  return result.latex;
+}
+function variantMenuItem(mf, variant, command, tooltip) {
+  return {
+    id: `variant-${variant}`,
+    label: () => {
+      var _a3;
+      const textSelection = getSelectionPlainString(mf);
+      if (textSelection.length < 12) {
+        return convertLatexToMarkup(
+          `\\${command}{${getSelectionPlainString(mf)}}`
+        );
+      }
+      return (_a3 = localize(tooltip)) != null ? _a3 : tooltip;
+    },
+    class: "ML__xl",
+    tooltip: () => {
+      var _a3;
+      return (_a3 = localize(tooltip)) != null ? _a3 : tooltip;
+    },
+    visible: () => validVariantAtom(mf, variant),
+    checked: () => {
+      var _a3;
+      return (_a3 = { some: "mixed", all: true }[mf.queryStyle({ variant })]) != null ? _a3 : false;
+    },
+    onMenuSelect: () => mf.applyStyle({ variant }, { operation: "toggle" })
+  };
+}
+function variantStyleMenuItem(mf, variantStyle, command, tooltip) {
+  return {
+    id: `variant-style-${variantStyle}`,
+    label: () => {
+      var _a3;
+      const textSelection = getSelectionPlainString(mf);
+      if (textSelection.length > 0 && textSelection.length < 12) {
+        return convertLatexToMarkup(
+          `\\${command}{${getSelectionPlainString(mf)}}`
+        );
+      }
+      return (_a3 = localize(tooltip)) != null ? _a3 : tooltip;
+    },
+    class: () => {
+      const textSelection = getSelectionPlainString(mf);
+      if (textSelection.length > 0 && textSelection.length < 12)
+        return "ML__xl";
+      return "";
+    },
+    tooltip: () => {
+      var _a3;
+      return (_a3 = localize(tooltip)) != null ? _a3 : tooltip;
+    },
+    visible: true,
+    checked: () => {
+      var _a3;
+      return (_a3 = { some: "mixed", all: true }[mf.queryStyle({ variantStyle })]) != null ? _a3 : false;
+    },
+    onMenuSelect: () => mf.applyStyle({ variantStyle }, { operation: "toggle" })
+  };
+}
+function insertMenu(mf) {
+  return [
+    {
+      label: () => insertLabel("abs"),
+      id: "insert-abs",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("|#?|")
+    },
+    {
+      label: () => insertLabel("nth-root"),
+      id: "insert-nth-root",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\sqrt[#?]{#?}")
+    },
+    {
+      label: () => insertLabel("log-base"),
+      id: "insert-log-base",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\log_{#?}{#?}")
+    },
+    {
+      type: "heading",
+      label: () => localize("menu.insert.heading-calculus")
+    },
+    {
+      label: () => insertLabel("derivative"),
+      id: "insert-derivative",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\dfrac{\\mathrm{d}}{\\mathrm{d}x}#?\\bigm|_{x=#?}")
+    },
+    {
+      label: () => insertLabel("nth-derivative"),
+      id: "insert-nth-derivative",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\dfrac{\\mathrm{d}^#?}{\\mathrm{d}x^#?}#?\\bigm|_{x=#?}")
+    },
+    {
+      label: () => insertLabel("integral"),
+      id: "insert-integral",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\int_#?^#?#?\\,\\mathrm{d}#?")
+    },
+    {
+      label: () => insertLabel("sum"),
+      id: "insert-sum",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\sum_#?^#?#?")
+    },
+    {
+      label: () => insertLabel("product"),
+      id: "insert-product",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\prod_#?^#?#?")
+    },
+    {
+      type: "heading",
+      label: () => localize("menu.insert.heading-complex-numbers")
+    },
+    {
+      label: () => insertLabel("modulus"),
+      id: "insert-modulus",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\lvert#?\\rvert")
+    },
+    {
+      label: () => insertLabel("argument"),
+      id: "insert-argument",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\arg(#?)")
+    },
+    {
+      label: () => insertLabel("real-part"),
+      id: "insert-real-part",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\Re(#?)")
+    },
+    {
+      label: () => insertLabel("imaginary-part"),
+      id: "insert-imaginary-part",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\Im(#?)")
+    },
+    {
+      label: () => insertLabel("conjugate"),
+      id: "insert-conjugate",
+      visible: () => mf.isSelectionEditable,
+      onMenuSelect: () => mf.insert("\\overline{#?}")
+    }
+  ];
+}
+function insertLabel(id) {
+  return `<span class='ML__insert-template'> ${convertLatexToMarkup(localize(`menu.insert.${id}-template`))}</span><span class="ML__insert-label">${localize(`menu.insert.${id}`)}</span>`;
+}
+
+// src/formats/atom-to-typst.ts
+var IDENTIFIERS2 = {
+  "\\ne": "!=",
+  "\\neq": "!=",
+  "\u2212": "-",
+  // MINUS SIGN
+  "-": "-",
+  "\\alpha": "alpha",
+  "\\beta": "beta",
+  "\\gamma": "gamma",
+  "\\delta": "delta",
+  "\\epsilon": "epsilon.alt",
+  "\\varepsilon": "epsilon",
+  "\\zeta": "zeta",
+  "\\eta": "eta",
+  "\\theta": "theta.alt",
+  "\\vartheta": "theta",
+  "\\iota": "iota",
+  "\\kappa": "kappa",
+  "\\lambda": "lambda",
+  "\\mu": "mu",
+  "\\nu": "nu",
+  "\\xi": "xi",
+  "\\pi": "pi",
+  "\\rho": "rho",
+  "\\sigma": "sigma",
+  "\\tau": "tau",
+  "\\upsilon": "upsilon",
+  "\\phi": "phi.alt",
+  "\\varphi": "phi",
+  "\\chi": "chi",
+  "\\psi": "psi",
+  "\\omega": "omega",
+  "\\Gamma": "Gamma",
+  "\\Delta": "Delta",
+  "\\Theta": "Theta",
+  "\\Lambda": "Lambda",
+  "\\Xi": "Xi",
+  "\\Pi": "Pi",
+  "\\Sigma": "Sigma",
+  "\\Phi": "Phi",
+  "\\Psi": "Psi",
+  "\\Omega": "Omega",
+  "\\exponentialE": "e",
+  "\\imaginaryI": "i",
+  "\\imaginaryJ": "j",
+  "\\!": " #h(-1em/6) ",
+  "\\,": " thin ",
+  "\\:": " med ",
+  "\\>": " med ",
+  "\\;": " thick ",
+  "\\enskip": "space.en",
+  "\\enspace": "space.en",
+  "\\qquad": "space.quad space.quad",
+  "\\quad": "space.quad",
+  "\\infty": "infinity",
+  "\\R": "RR",
+  "\\mathbb{R}": "RR",
+  "\\N": "NN",
+  "\\mathbb{N}": "NN",
+  "\\Z": "ZZ",
+  "\\mathbb{Z}": "ZZ",
+  "\\Q": "QQ",
+  "\\mathbb{Q}": "QQ",
+  "\\C": "CC",
+  "\\mathbb{C}": "CC",
+  "\\emptyset": "emptyset",
+  "\\varnothing": "nothing",
+  "\\varDelta": "Delta",
+  "\\varTheta": "Theta",
+  "\\varLambda": "Lambda",
+  "\\varXi": "Xi",
+  "\\varPi": "Pi",
+  "\\varSigma": "Sigma",
+  "\\varUpsilon": "Upsilon",
+  "\\varPhi": "Phi",
+  "\\varPsi": "Psi",
+  "\\varOmega": "Omega",
+  "\\vert": " | ",
+  "\\Vert": " || ",
+  "\\mid": " divides ",
+  "\\lbrack": " bracket.l ",
+  "\\rbrack": " bracket.r ",
+  "\\lbrace": " brace.l ",
+  "\\rbrace": " brace.r ",
+  "\\lparen": " paren.l ",
+  "\\rparen": " paren.r ",
+  "\\langle": " angle.l ",
+  "\\rangle": " angle.r ",
+  "\\differentialD": " dif ",
+  "\\diamond": " diamond.stroked.small ",
+  "\\square": " square.stroked.small ",
+  "\\lceil": " ceil.l ",
+  "\\rceil": " ceil.r ",
+  "\\lfloor": " floor.l ",
+  "\\rfloor": " floor.r ",
+  "\\aleph": " aleph ",
+  "\\bet": " bet ",
+  "\\gimel": " gimel ",
+  "\\dalet": " dalet ",
+  "\\mod": " mod ",
+  "\\equiv": " equiv ",
+  "\\subset": " subset ",
+  "\\supset": " supset ",
+  "\\subseteq": " subset.eq ",
+  "\\supseteq": " supset.eq ",
+  "\\subsetneq": " subset.neq ",
+  "\\supsetneq": " supset.neq ",
+  "\\supsetneqq": " supset.neq ",
+  "\\nsubset": " subset.not ",
+  "\\nsupset": " supset.not ",
+  "\\nsubseteq": " subset.eq.not ",
+  "\\nsupseteq": " supset.eq.not ",
+  "\\approx": " approx ",
+  "\\uparrow": " arrow.t ",
+  "\\downarrow": " arrow.b ",
+  "\\rightarrow": " arrow.r ",
+  "\\leftarrow": " arrow.l ",
+  "\\longmapsto": " mapsto.long ",
+  "\\longmapsfrom": " arrow.l.bar.long ",
+  "/": "\\/",
+  "&": "&"
+};
+var FENCES3 = {
+  "[": " bracket.l ",
+  "]": " bracket.r ",
+  "{": " brace.l ",
+  "}": " brace.r ",
+  "(": " paren.l ",
+  ")": " paren.r ",
+  "<": " angle.l ",
+  ">": " angle.r ",
+  ".": ""
+};
+var REVERSE_FENCES = {
+  " bracket.l ": "[",
+  " bracket.r ": "]",
+  " brace.l ": "{",
+  " brace.r ": "}",
+  " paren.l ": "(",
+  " paren.r ": ")",
+  " angle.l ": " angle.l ",
+  " angle.r ": " angle.r "
+};
+var OPERATORS2 = {
+  "\\pm": "plus.minus",
+  "\\colon": " : ",
+  "\\sum": " sum ",
+  "\\prod": " product ",
+  "\\bigcap": " inter.big ",
+  "\\bigcup": " union.big ",
+  "\\int": " integral ",
+  "\\iint": " integral.double ",
+  "\\iiint": " integral.triple ",
+  "\\intop": " integral ",
+  "\\oint": " integral.cont ",
+  "\\oiint": " integral.surf ",
+  "\\oiiint": " integral.vol ",
+  "\\setminus": " without ",
+  "\\vdots": " without ",
+  "\\ddots": " dots.down ",
+  "\\ge": ">=",
+  "\\le": "<=",
+  "\\ne": "!=",
+  "\\neq": "!=",
+  "\\lt": "<",
+  "\\gt": ">",
+  "\\gets": "<-",
+  "\\to": "->",
+  "\\land": " and ",
+  "\\lor": " or ",
+  "\\lnot": " not ",
+  "\\forall": " forall ",
+  "\\exists": " exists ",
+  "\\in": " in ",
+  "\\notin": " in.not ",
+  "\\mapsto": "|->",
+  "\\implies": "==>",
+  "\\iff": "<==>",
+  "\\cdot": " dot.op ",
+  "\\ast": " * ",
+  "\\star": " star.op ",
+  "\\times": " times ",
+  "\\div": " div ",
+  "\\ltimes": " times.l ",
+  "\\rtimes": " times.r ",
+  "\\bowtie": " \u22C8 ",
+  "\\circ": " circle.stroked.small "
+};
+var CUSTOM_FUNCTIONS = {
+  underarc: "underparen",
+  underparen: "underparen",
+  underbrace: "underbrace",
+  underline: "underline",
+  overarc: "overparen",
+  overparen: "overparen",
+  overbrace: "overbrace",
+  overline: "overline",
+  cancel: "cancel",
+  displaystyle: "display",
+  textstyle: "inline"
+};
+var CUSTOM_CONVERTERS = {
+  longrightarrow: (atom) => `arrow.r.long^(${atomToTypst(atom.above)})`,
+  longleftarrow: (atom) => `arrow.l.long^(${atomToTypst(atom.above)})`
+};
+function joinAsciiMath2(xs) {
+  let result = "";
+  for (const x of xs) {
+    const last = result[result.length - 1];
+    if (last !== void 0 && (/\d$/.test(last) && /^\d/.test(x) || /[a-zA-Z]$/.test(last) && /^[a-zA-Z]/.test(x)))
+      result += " ";
+    result += x;
+  }
+  return result;
+}
+function atomToTypst(atom) {
+  var _a3, _b3, _c2, _d2, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
+  if (!atom) return "";
+  if (isArray(atom)) {
+    if (atom.length === 0) return "";
+    if (atom[0].mode === "latex")
+      return atom.map((x) => atomToTypst(x)).join("");
+    if (atom[0].mode === "text") {
+      let i2 = 0;
+      let text = "";
+      while (((_a3 = atom[i2]) == null ? void 0 : _a3.mode) === "text") {
+        text += atom[i2].body ? atomToTypst(atom[i2].body) : atom[i2].value;
+        i2++;
+      }
+      return ` "${text}" ${atomToTypst(atom.slice(i2))}`;
+    }
+    let i = 0;
+    const result2 = [];
+    while (((_b3 = atom[i]) == null ? void 0 : _b3.mode) === "math") {
+      let digits = "";
+      while (((_c2 = atom[i]) == null ? void 0 : _c2.type) === "mord" && /\d/.test(atom[i].value))
+        digits += atom[i++].value;
+      if (digits) result2.push(digits);
+      else result2.push(atomToTypst(atom[i++]));
+    }
+    result2.push(atomToTypst(atom.slice(i)));
+    return joinAsciiMath2(result2);
+  }
+  if (atom.mode === "text") return `"${atom.value}"`;
+  let result = "";
+  const { command } = atom;
+  let m;
+  if (command === "\\placeholder") return `"${atomToTypst(atom.body)}"`;
+  const latex = Atom.serialize([atom], {
+    expandMacro: true,
+    defaultMode: "math"
+  });
+  switch (atom.type) {
+    case "accent":
+      const accent = {
+        "\\vec": "arrow",
+        "\\dot": "dot",
+        "\\ddot": "dot.double",
+        "\\bar": "overline",
+        "\\hat": "hat",
+        "\\acute": "acute",
+        "\\grave": "grave",
+        "\\tilde": "tilde",
+        "\\breve": "breve",
+        "\\check": "caron"
+      }[command];
+      result = `${accent != null ? accent : ""}(${atomToTypst(atom.body)}) `;
+      break;
+    case "first":
+      return "";
+    case "latexgroup":
+      return atom.body.map((x) => x.value).join("");
+    case "group":
+    case "root":
+      result = (_d2 = IDENTIFIERS2[command]) != null ? _d2 : atomToTypst(atom.body);
+      break;
+    case "genfrac":
+      {
+        const genfracAtom = atom;
+        if (genfracAtom.hasBarLine) {
+          result += "(";
+          result += atomToTypst(genfracAtom.above);
+          result += ")/(";
+          result += atomToTypst(genfracAtom.below);
+          result += ")";
+        } else {
+          result += `binom(${atomToTypst(genfracAtom.above)}, ${atomToTypst(genfracAtom.below)})`;
+        }
+      }
+      break;
+    case "surd":
+      if (atom.hasEmptyBranch("above"))
+        result += `sqrt(${atomToTypst(atom.body)})`;
+      else
+        result += `root(${atomToTypst(atom.above)}, ${atomToTypst(atom.body)})`;
+      break;
+    case "latex":
+      result = atom.value;
+      break;
+    case "leftright":
+      {
+        const leftrightAtom = atom;
+        let lDelim = leftrightAtom.leftDelim;
+        if (lDelim && IDENTIFIERS2[lDelim]) lDelim = IDENTIFIERS2[lDelim];
+        let rDelim = leftrightAtom.matchingRightDelim();
+        if (rDelim && IDENTIFIERS2[rDelim]) rDelim = IDENTIFIERS2[rDelim];
+        if (lDelim) lDelim = (_e = FENCES3[lDelim]) != null ? _e : lDelim;
+        if (rDelim) rDelim = (_f = FENCES3[rDelim]) != null ? _f : rDelim;
+        if (lDelim && rDelim) {
+          result = `lr(${(_g = REVERSE_FENCES[lDelim]) != null ? _g : lDelim}${atomToTypst(leftrightAtom.body)}${(_h = REVERSE_FENCES[rDelim]) != null ? _h : rDelim})`;
+        } else
+          result = `lr(${lDelim}${atomToTypst(leftrightAtom.body)}${rDelim})`;
+      }
+      break;
+    case "sizeddelim":
+    case "delim":
+      result = atom.value;
+      break;
+    case "overlap":
+      break;
+    case "mord":
+      if (IDENTIFIERS2[latex]) return IDENTIFIERS2[latex];
+      result = (_k = (_j = (_i = IDENTIFIERS2[command]) != null ? _i : command) != null ? _j : command) != null ? _k : typeof atom.value === "string" ? atom.value : "";
+      if (result.startsWith("\\")) result += " ";
+      m = command ? command.match(/{?\\char"([\dabcdefABCDEF]+)}?/) : null;
+      if (m) {
+        result = String.fromCodePoint(Number.parseInt("0x" + m[1]));
+      } else if (result.length > 0 && result.startsWith("\\")) {
+        result = typeof atom.value === "string" ? atom.value.charAt(0) : atom.command;
+      }
+      result = typstStyle(result, atom.style);
+      result = ` ${result} `;
+      break;
+    case "mbin":
+    case "mrel":
+    case "minner":
+      result = (_n = (_m = (_l = IDENTIFIERS2[latex]) != null ? _l : IDENTIFIERS2[command]) != null ? _m : OPERATORS2[command]) != null ? _n : atom.value;
+      break;
+    case "mopen":
+    case "mclose":
+      result = (_o = IDENTIFIERS2[latex]) != null ? _o : atom.value;
+      break;
+    case "mpunct":
+      result = (_p = OPERATORS2[command]) != null ? _p : command;
+      break;
+    case "mop":
+    case "operator":
+    case "extensible-symbol":
+      if (atom.value !== "\u200B") {
+        if (OPERATORS2[command]) result = OPERATORS2[command];
+        else {
+          result = command === "\\operatorname" ? atomToTypst(atom.body) : (_q = atom.value) != null ? _q : command;
+        }
+        result += " ";
+      }
+      break;
+    case "array":
+      const environment = atom.environmentName;
+      if (atom.isMultiline) {
+        const lines = atom.rows;
+        result = lines.map((line) => line.map((cell) => atomToTypst(cell)).join("")).join("\n");
+      } else {
+        const array = atom.rows;
+        const rows = array.map((row) => row.map(atomToTypst).join(", "));
+        const delim = {
+          "pmatrix": '"("',
+          "bmatrix": '"["',
+          "bmatrix*": '"["',
+          "Bmatrix": '"{"',
+          "vmatrix": '"|"',
+          "matrix": "#none"
+        }[environment];
+        if (delim) result = `mat(delim: ${delim}, ${rows.join(" ; ")})`;
+        else if (environment === "cases" || environment === "rcases")
+          result = `cases(reverse: #${environment === "rcases"}, ${rows.join(", ")})`;
+        else if (environment === "aligned") {
+          result = array.map((row) => row.map(atomToTypst).join(" & ")).join(" \\ ");
+        } else
+          result = array.map((row) => row.map(atomToTypst).join("")).join("");
+      }
+      break;
+    case "box":
+      break;
+    case "spacing":
+      result = (_s = (_r = IDENTIFIERS2[latex]) != null ? _r : IDENTIFIERS2[command]) != null ? _s : " ";
+      break;
+    case "space":
+      result = " ";
+      break;
+    case "subsup":
+      result = ((_t = atom.leftSibling) == null ? void 0 : _t.value) ? "" : '""';
+      break;
+    case "macro":
+      result = (_w = (_v = (_u = IDENTIFIERS2[latex]) != null ? _u : IDENTIFIERS2[command]) != null ? _v : OPERATORS2[command]) != null ? _w : atomToTypst(atom.body);
+      break;
+    case "overunder":
+      break;
+  }
+  if (!result) {
+    const customFunction = CUSTOM_FUNCTIONS[atom.command.slice(1)];
+    if (customFunction) result = `${customFunction}(${atomToTypst(atom.body)})`;
+  }
+  if (!result) {
+    const customConverter = CUSTOM_CONVERTERS[atom.command.slice(1)];
+    if (customConverter) result = customConverter(atom);
+  }
+  if (!atom.hasEmptyBranch("subscript")) {
+    result += "_";
+    const arg = atomToTypst(atom.subscript);
+    result += arg.length !== 1 ? `(${arg})` : arg;
+  }
+  if (!atom.hasEmptyBranch("superscript")) {
+    result += "^";
+    const arg = atomToTypst(atom.superscript);
+    result += arg.length !== 1 ? `(${arg})` : arg;
+  }
+  return result;
+}
+function typstStyle(body, style) {
+  if (!style) return body;
+  let result = body;
+  if (style.variant === "double-struck") result = `bb(${result})`;
+  if (style.variant === "script") result = `cal(${result})`;
+  if (style.variant === "fraktur") result = `frak(${result})`;
+  if (style.variant === "sans-serif") result = `sans(${result})`;
+  if (style.variant === "monospace") result = `mono(${result})`;
+  if (style.variantStyle === "bold") result = `bold(${result})`;
+  return result;
+}
+
+// src/editor/a11y.ts
+function speakableText(arg1, arg2) {
+  if (typeof arg1 === "string") return arg1 + atomToSpeakableText(arg2);
+  return atomToSpeakableText(arg1);
+}
+function relationName(atom) {
+  var _a3;
+  let result = void 0;
+  if (atom.parent.type === "prompt") {
+    if (atom.parentBranch === "body") result = "prompt";
+  } else if (atom.parentBranch === "body") {
+    if (atom.type === "first") {
+      if (atom.parent.type === "root") result = "mathfield";
+      else if (atom.parent.type === "surd") result = "radicand";
+      else if (atom.parent.type === "genfrac") result = "fraction";
+      else if (atom.parent.type === "sizeddelim") result = "delimiter";
+      if (result) return result;
+    }
+    if (atom.type === "subsup") {
+      if (atom.superscript && atom.subscript)
+        result = "superscript and subscript";
+      else if (atom.superscript) result = "superscript";
+      else if (atom.subscript) result = "subscript";
+    } else if (atom.type) {
+      result = (_a3 = {
+        "accent": "accented",
+        "array": "array",
+        "box": "box",
+        "chem": "chemical formula",
+        "delim": "delimiter",
+        "enclose": "cross out",
+        "extensible-symbol": "extensible symbol",
+        "error": "error",
+        "first": "first",
+        "genfrac": "fraction",
+        "group": "group",
+        "latex": "LaTeX",
+        "leftright": "delimiter",
+        "line": "line",
+        "subsup": "subscript-superscript",
+        "operator": "operator",
+        "overunder": "over-under",
+        "placeholder": "placeholder",
+        "rule": "rule",
+        "sizeddelim": "delimiter",
+        "space": "space",
+        "spacing": "spacing",
+        "surd": "square root",
+        "text": "text",
+        "prompt": "prompt",
+        "root": "math field",
+        "mop": "operator"
+        // E.g. `\operatorname`, a `mop` with a body
+      }[atom.type]) != null ? _a3 : "parent";
+    }
+  } else if (atom.parent.type === "genfrac") {
+    if (atom.parentBranch === "above") return "numerator";
+    if (atom.parentBranch === "below") return "denominator";
+  } else if (atom.parent.type === "surd") {
+    if (atom.parentBranch === "above") result = "index";
+  } else if (atom.parentBranch === "superscript") result = "superscript";
+  else if (atom.parentBranch === "subscript") result = "subscript";
+  return result != null ? result : "parent";
+}
+function defaultAnnounceHook(mathfield, action, previousPosition, atoms) {
+  let liveText = "";
+  if (action === "plonk") {
+    globalThis.MathfieldElement.playSound("plonk");
+    mathfield.flushInlineShortcutBuffer();
+    return;
+  }
+  if (action === "delete") liveText = speakableText("deleted: ", atoms);
+  else if (action === "focus" || action.includes("move")) {
+    liveText = getRelationshipAsSpokenText(mathfield.model, previousPosition);
+    liveText += getNextAtomAsSpokenText(mathfield.model);
+  } else if (action === "replacement") {
+    liveText = speakableText(mathfield.model.at(mathfield.model.position));
+  } else if (action === "line") {
+    const label = speakableText(mathfield.model.root);
+    mathfield.keyboardDelegate.setAriaLabel(label);
+  } else liveText = atoms ? speakableText(action + " ", atoms) : action;
+  if (liveText && mathfield.ariaLiveText) {
+    const ariaLiveChangeHack = mathfield.ariaLiveText.textContent.includes(
+      "\xA0"
+    ) ? " \u202F " : " \xA0 ";
+    mathfield.ariaLiveText.textContent = liveText + ariaLiveChangeHack;
+  }
+}
+function getRelationshipAsSpokenText(model, previousOffset) {
+  if (Number.isNaN(previousOffset)) return "";
+  const previous = model.at(previousOffset);
+  if (!previous) return "";
+  if (previous.treeDepth <= model.at(model.position).treeDepth) return "";
+  let result = "";
+  let ancestor = previous.parent;
+  const newParent = model.at(model.position).parent;
+  while (ancestor !== model.root && ancestor !== newParent) {
+    result += `out of ${relationName(ancestor)};`;
+    ancestor = ancestor.parent;
+  }
+  return result;
+}
+function getNextAtomAsSpokenText(model) {
+  if (!model.selectionIsCollapsed)
+    return `selected: ${speakableText(model.getAtoms(model.selection))}`;
+  let result = "";
+  const cursor = model.at(model.position);
+  if (cursor.isFirstSibling) result = `start of ${relationName(cursor)}: `;
+  if (cursor.isLastSibling) {
+    if (!cursor.isFirstSibling) {
+      if (!cursor.parent.parent)
+        return `${speakableText(cursor)}; end of mathfield`;
+      result = `${speakableText(cursor)}; end of ${relationName(cursor)}`;
+    }
+  } else result += speakableText(cursor);
+  return result;
+}
+
+// src/editor-model/model-private.ts
+var _Model = class {
+  constructor(target, mode, root) {
+    this.mathfield = target;
+    this.mode = mode;
+    this.silenceNotifications = false;
+    this._selection = { ranges: [[0, 0]], direction: "none" };
+    this._anchor = 0;
+    this._position = 0;
+    this.root = root;
+  }
+  dispose() {
+    this.mathfield = void 0;
+  }
+  getState() {
+    const selection = { ranges: [...this._selection.ranges] };
+    if (this.selection.direction && this.selection.direction !== "none")
+      selection.direction = this.selection.direction;
+    return {
+      content: this.root.toJson(),
+      selection,
+      mode: this.mode
+    };
+  }
+  setState(state, options) {
+    var _a3;
+    const wasSuppressing = this.silenceNotifications;
+    this.silenceNotifications = (_a3 = options == null ? void 0 : options.silenceNotifications) != null ? _a3 : true;
+    let changeOption = {};
+    if ((options == null ? void 0 : options.type) === "undo") changeOption = { inputType: "historyUndo" };
+    if ((options == null ? void 0 : options.type) === "redo") changeOption = { inputType: "historyRedo" };
+    if (this.contentWillChange(changeOption)) {
+      const didSuppress = this.silenceNotifications;
+      this.silenceNotifications = true;
+      this.mode = state.mode;
+      this.root = fromJson(state.content);
+      this.selection = state.selection;
+      this.silenceNotifications = didSuppress;
+      this.contentDidChange(changeOption);
+      this.selectionDidChange();
+    }
+    this.silenceNotifications = wasSuppressing;
+  }
+  get atoms() {
+    return this.root.children;
+  }
+  get selection() {
+    return this._selection;
+  }
+  set selection(value) {
+    this.setSelection(value);
+  }
+  setSelection(arg1, arg2) {
+    if (!this.mathfield.contentEditable && this.mathfield.userSelect === "none")
+      return false;
+    return this.deferNotifications({ selection: true, content: true }, () => {
+      var _a3, _b3, _c2, _d2;
+      const value = this.normalizeSelection(arg1, arg2);
+      if (value === void 0) throw new TypeError("Invalid selection");
+      if (value.ranges.length === 1 && value.ranges[0][0] === value.ranges[0][1]) {
+        const pos = value.ranges[0][0];
+        if (!this.mathfield.dirty && !((_a3 = this.at(pos)) == null ? void 0 : _a3.parentPrompt) && this.mathfield.hasEditablePrompts) {
+          if ((_b3 = this.at(pos - 1)) == null ? void 0 : _b3.parentPrompt) {
+            this._anchor = this.normalizeOffset(pos - 1);
+            this._position = this._anchor;
+            this._selection = this.normalizeSelection(this._anchor);
+            return;
+          }
+          if ((_c2 = this.at(pos + 1)) == null ? void 0 : _c2.parentPrompt) {
+            this._anchor = this.normalizeOffset(pos + 1);
+            this._position = this._anchor;
+            this._selection = this.normalizeSelection(this._anchor);
+            return;
+          }
+          this._anchor = 0;
+          this._position = 0;
+          this._selection = { ranges: [[0, 0]] };
+          return;
+        }
+        this._anchor = pos;
+        this._position = pos;
+        this._selection = value;
+        return;
+      }
+      let selRange = range(value);
+      selRange = includeAttachedSubsup(this, selRange);
+      if (value.direction === "backward")
+        [this._position, this._anchor] = selRange;
+      else [this._anchor, this._position] = selRange;
+      let firstIndex = selRange[0] + 1;
+      while (firstIndex <= this.lastOffset && ((_d2 = this.at(firstIndex)) == null ? void 0 : _d2.type) === "first" && firstIndex < selRange[1])
+        firstIndex += 1;
+      const first = firstIndex <= this.lastOffset ? this.at(firstIndex) : this.at(selRange[1]);
+      const last = this.at(selRange[1]);
+      const commonAncestor = Atom.commonAncestor(first, last);
+      if ((commonAncestor == null ? void 0 : commonAncestor.type) === "array" && first.parent === commonAncestor && last.parent === commonAncestor) {
+        this._selection = { ranges: [selRange], direction: value.direction };
+      } else
+        this._selection = { ranges: [selRange], direction: value.direction };
+      console.assert(this._position >= 0 && this._position <= this.lastOffset);
+      return;
+    });
+  }
+  setPositionHandlingPlaceholder(pos) {
+    var _a3;
+    const atom = this.at(pos);
+    if ((atom == null ? void 0 : atom.type) === "placeholder") {
+      this.setSelection(pos - 1, pos);
+    } else if (((_a3 = atom == null ? void 0 : atom.rightSibling) == null ? void 0 : _a3.type) === "placeholder") {
+      this.setSelection(pos, pos + 1);
+    } else this.position = pos;
+    if (atom instanceof LatexAtom && atom.isSuggestion)
+      atom.isSuggestion = false;
+    this.mathfield.stopCoalescingUndo();
+  }
+  /**
+   * The "focus" or "cursor" (i.e. not the anchor) a.k.a the insertion point
+   * or caret: where things are going to be inserted next.
+   *
+   */
+  get position() {
+    return this._position;
+  }
+  set position(value) {
+    this.setSelection(value, value);
+  }
+  /**
+   * The offset from which the selection is extended
+   */
+  get anchor() {
+    return this._anchor;
+  }
+  get selectionIsCollapsed() {
+    return this._anchor === this._position;
+  }
+  get selectionIsPlaceholder() {
+    if (Math.abs(this._anchor - this._position) === 1) {
+      return this.at(Math.max(this._anchor, this._position)).type === "placeholder";
+    }
+    return false;
+  }
+  collapseSelection(direction = "forward") {
+    if (this._anchor === this._position) return false;
+    if (direction === "backward")
+      this.position = Math.min(this._anchor, this._position);
+    else this.position = Math.max(this._anchor, this._position);
+    return true;
+  }
+  get lastOffset() {
+    return this.atoms.length - 1;
+  }
+  at(index) {
+    return this.atoms[index];
+  }
+  offsetOf(atom) {
+    return this.atoms.indexOf(atom);
+  }
+  getSiblingsRange(offset) {
+    const atom = this.at(offset);
+    const { parent } = atom;
+    if (!parent) return [0, this.lastOffset];
+    const branch = atom.parent.branch(atom.parentBranch);
+    return [this.offsetOf(branch[0]), this.offsetOf(branch[branch.length - 1])];
+  }
+  getBranchRange(offset, branchName) {
+    const branch = this.at(offset).branch(branchName);
+    return [this.offsetOf(branch[0]), this.offsetOf(branch[branch.length - 1])];
+  }
+  /** If offset is inside a cell, return the range (first and last offset) of the cell */
+  getCellRange(offset) {
+    var _a3, _b3;
+    const cellIndex = this.getParentCell(offset);
+    let atom = this.at(offset);
+    if (!atom) return void 0;
+    while (atom && ((_a3 = atom.parent) == null ? void 0 : _a3.type) !== "array") atom = atom.parent;
+    if (((_b3 = atom == null ? void 0 : atom.parent) == null ? void 0 : _b3.type) !== "array") return void 0;
+    return [this.offsetOf(atom.firstSibling), this.offsetOf(atom.lastSibling)];
+  }
+  getAtoms(arg1, arg2, arg3) {
+    let options = arg3 != null ? arg3 : {};
+    if (isSelection(arg1)) {
+      options = arg2 != null ? arg2 : {};
+      if (arg1.ranges.length > 1) {
+        return arg1.ranges.reduce(
+          (acc, range2) => [...acc, ...this.getAtoms(range2, options)],
+          []
+        );
+      }
+      arg1 = arg1.ranges[0];
+    }
+    let start;
+    let end;
+    if (isOffset(arg1)) {
+      start = arg1;
+      if (!isOffset(arg2)) return [];
+      end = arg2;
+    } else {
+      [start, end] = arg1;
+      if (Object.keys(options).length === 0)
+        options = arg2 != null ? arg2 : {};
+    }
+    if (!Number.isFinite(start)) return [];
+    if (options.includeChildren === void 0) options.includeChildren = false;
+    if (start < 0) start = this.lastOffset - start + 1;
+    if (end < 0) end = this.lastOffset + end + 1;
+    const minPos = Math.min(start, end);
+    const maxPos = Math.max(start, end);
+    const first = minPos === 0 ? 0 : minPos + 1;
+    const last = maxPos;
+    if (!options.includeChildren && first === 1 && last === this.lastOffset)
+      return [this.root];
+    let result = [];
+    for (let i = first; i <= last; i++) {
+      const atom = this.atoms[i];
+      if (atomIsInRange(this, atom, first, last, options.includeFirstAtoms))
+        result.push(atom);
+    }
+    if (!options.includeChildren) {
+      result = result.filter((atom) => {
+        let ancestorIncluded = false;
+        let { parent } = atom;
+        while (parent && !ancestorIncluded) {
+          ancestorIncluded = atomIsInRange(
+            this,
+            parent,
+            first,
+            last,
+            options.includeFirstAtoms
+          );
+          parent = parent.parent;
+        }
+        return !ancestorIncluded;
+      });
+    }
+    return result;
+  }
+  findAtom(filter, startingIndex = 0, direction = "forward") {
+    let atom = void 0;
+    const last = this.lastOffset;
+    if (direction === "forward") {
+      for (let i = startingIndex; i <= last; i++) {
+        atom = this.atoms[i];
+        if (filter(atom)) return atom;
+      }
+      for (let i = 0; i < startingIndex; i++) {
+        atom = this.atoms[i];
+        if (filter(atom)) return atom;
+      }
+      return void 0;
+    }
+    for (let i = startingIndex; i >= 0; i--) {
+      atom = this.atoms[i];
+      if (filter(atom)) return atom;
+    }
+    for (let i = last; i > startingIndex; i--) {
+      atom = this.atoms[i];
+      if (filter(atom)) return atom;
+    }
+    return void 0;
+  }
+  /** Remove the specified atoms from the tree.
+   * **WARNING** upon return the selection may now be invalid
+   */
+  extractAtoms(range2) {
+    var _a3;
+    let result = this.getAtoms(range2);
+    if (result.length === 1 && !result[0].parent) {
+      if (result[0].isRoot) {
+        if (result[0] instanceof ArrayAtom)
+          result = result[0].rows.flatMap((x) => x.flatMap((y) => y));
+        else result = [...(_a3 = result[0].body) != null ? _a3 : result[0].children];
+        result = result.filter((x) => x.type !== "first");
+      }
+    }
+    for (const child of result) child.parent.removeChild(child);
+    return result;
+  }
+  deleteAtoms(range2) {
+    range2 != null ? range2 : range2 = [0, -1];
+    this.extractAtoms(range2);
+    if (range2[0] === 0 && range2[1] === -1 && this.root instanceof ArrayAtom) {
+      while (this.root.rowCount > 1) this.root.removeRow(1);
+    }
+    this.position = range2[0];
+  }
+  atomToString(atom, inFormat) {
+    const format = inFormat != null ? inFormat : "latex";
+    if (format.startsWith("latex")) {
+      return Atom.serialize([atom], {
+        expandMacro: format === "latex-expanded",
+        skipStyles: format === "latex-unstyled",
+        skipPlaceholders: format === "latex-without-placeholders",
+        defaultMode: this.mathfield.options.defaultMode
+      });
+    }
+    if (format === "math-ml") return toMathML(atom);
+    if (format === "spoken") return atomToSpeakableText(atom);
+    if (format === "spoken-text") {
+      const saveTextToSpeechMarkup = globalThis.MathfieldElement.textToSpeechMarkup;
+      globalThis.MathfieldElement.textToSpeechMarkup = "";
+      const result = atomToSpeakableText(atom);
+      globalThis.MathfieldElement.textToSpeechMarkup = saveTextToSpeechMarkup;
+      return result;
+    }
+    if (format === "spoken-ssml" || format === "spoken-ssml-with-highlighting") {
+      const saveTextToSpeechMarkup = globalThis.MathfieldElement.textToSpeechMarkup;
+      globalThis.MathfieldElement.textToSpeechMarkup = "ssml";
+      const result = atomToSpeakableText(atom);
+      globalThis.MathfieldElement.textToSpeechMarkup = saveTextToSpeechMarkup;
+      return result;
+    }
+    if (format === "typst") return atomToTypst(atom);
+    if (format === "plain-text") return atomToAsciiMath(atom, { plain: true });
+    if (format === "ascii-math") return atomToAsciiMath(atom);
+    console.error(`MathLive 0.109.2: Unexpected format "${format}`);
+    return "";
+  }
+  getValue(arg1, arg2, arg3) {
+    if (arg1 === void 0) return this.atomToString(this.root, "latex");
+    if (typeof arg1 === "string" && arg1 !== "math-json")
+      return this.atomToString(this.root, arg1);
+    let ranges;
+    let format;
+    if (isOffset(arg1) && isOffset(arg2)) {
+      ranges = [this.normalizeRange([arg1, arg2])];
+      format = arg3;
+    } else if (isRange(arg1)) {
+      ranges = [this.normalizeRange(arg1)];
+      format = arg2;
+    } else if (isSelection(arg1)) {
+      ranges = arg1.ranges;
+      format = arg2;
+    } else {
+      ranges = [this.normalizeRange([0, -1])];
+      format = arg1;
+    }
+    format != null ? format : format = "latex";
+    if (format === "math-json") {
+      if (!globalThis.MathfieldElement.computeEngine) {
+        if (!window[Symbol.for("io.cortexjs.compute-engine")]) {
+          console.error(
+            'The CortexJS Compute Engine library is not available.\nLoad the library, for example with:\nimport "https://esm.run/@cortex-js/compute-engine"'
+          );
+        }
+        return '["Error", "compute-engine-not-available"]';
+      }
+      const latex = this.getValue({ ranges }, "latex-unstyled");
+      try {
+        const expr = globalThis.MathfieldElement.computeEngine.parse(latex);
+        return JSON.stringify(expr.json);
+      } catch (e) {
+        return JSON.stringify(["Error", `'${e.toString()}'`]);
+      }
+    }
+    if (format.startsWith("latex")) {
+      const options = {
+        expandMacro: format === "latex-expanded",
+        skipStyles: format === "latex-unstyled",
+        skipPlaceholders: format === "latex-without-placeholders",
+        defaultMode: this.mathfield.options.defaultMode
+      };
+      return joinLatex(
+        ranges.map((range2) => Atom.serialize(this.getAtoms(range2), options))
+      );
+    }
+    return ranges.map(
+      (range2) => this.getAtoms(range2).map((atom) => this.atomToString(atom, format)).join("")
+    ).join("");
+  }
+  /**
+   * Unlike `setSelection`, this method is intended to be used in response
+   * to a user action, and it performs various adjustments to result in a more
+   * intuitive selection.
+   *
+   * For example:
+   * - when all the children of an atom are selected, the atom become selected.
+   * - this method will *not* change the anchor, but may result in a selection
+   *   whose boundary is outside the anchor
+   */
+  extendSelectionTo(anchor, position) {
+    if (!this.mathfield.contentEditable && this.mathfield.userSelect === "none")
+      return false;
+    return this.deferNotifications({ selection: true }, () => {
+      const range2 = this.normalizeRange([anchor, position]);
+      let [start, end] = range2;
+      const expandableTypes = /* @__PURE__ */ new Set([
+        "genfrac",
+        "subsup",
+        "accent",
+        "box",
+        "overlap",
+        "overunder"
+      ]);
+      let { parent } = this.at(end);
+      if ((parent == null ? void 0 : parent.type) && expandableTypes.has(parent.type)) {
+        while ((parent == null ? void 0 : parent.type) && expandableTypes.has(parent.type) && childrenInRange(this, parent, [start, end])) {
+          end = this.offsetOf(parent);
+          parent = parent.parent;
+        }
+      }
+      parent = this.at(start).parent;
+      while ((parent == null ? void 0 : parent.type) && expandableTypes.has(parent.type) && childrenInRange(this, parent, [start, end])) {
+        start = this.offsetOf(parent.leftSibling);
+        parent = parent.parent;
+      }
+      parent = this.at(end).parent;
+      if ((parent == null ? void 0 : parent.type) && expandableTypes.has(parent.type)) {
+        while ((parent == null ? void 0 : parent.type) && expandableTypes.has(parent.type) && childrenInRange(this, parent, [start, end])) {
+          end = this.offsetOf(parent);
+          console.assert(end >= 0);
+          parent = parent.parent;
+        }
+      }
+      this._position = this.normalizeOffset(position);
+      this._selection = {
+        ranges: [[start, end]],
+        direction: "none"
+      };
+    });
+  }
+  /**
+   * This method is called to provide feedback when using a screen reader
+   * or other assistive device, for example when changing the selection or
+   * moving the insertion point.
+   *
+   * It can also be used with the 'plonk' command to provide an audible
+   * feedback when a command is not possible.
+   *
+   * This method should not be called from other methods of the model
+   * (such as `setSelection`) as these methods can also be called
+   * programmatically and a feedback in these case would be inappropriate,
+   * however they should be called from functions called as a result of a user
+   * action, such as the functions in `commands.ts`
+   */
+  announce(command, previousPosition, atoms = []) {
+    var _a3, _b3;
+    const success = (_b3 = (_a3 = this.mathfield.host) == null ? void 0 : _a3.dispatchEvent(
+      new CustomEvent("announce", {
+        detail: { command, previousPosition, atoms },
+        cancelable: true,
+        bubbles: true,
+        composed: true
+      })
+    )) != null ? _b3 : true;
+    if (success)
+      defaultAnnounceHook(this.mathfield, command, previousPosition, atoms);
+  }
+  // Suppress notification while scope is executed, then notify of content
+  // change, and selection change (if actual change)
+  deferNotifications(options, f) {
+    const oldSelection = this._selection;
+    const oldAnchor = this._anchor;
+    const oldPosition = this._position;
+    const saved = this.silenceNotifications;
+    this.silenceNotifications = true;
+    const previousCounter = this.root.changeCounter;
+    f();
+    this.silenceNotifications = saved;
+    const selectionChanged = oldAnchor !== this._anchor || oldPosition !== this._position || compareSelection(this._selection, oldSelection) === "different";
+    if (options.selection && selectionChanged) this.selectionDidChange();
+    const contentChanged = this.root.changeCounter !== previousCounter;
+    if (options.content && contentChanged)
+      this.contentDidChange({ inputType: options.type });
+    return contentChanged || selectionChanged;
+  }
+  normalizeOffset(value) {
+    if (value > 0) value = Math.min(value, this.lastOffset);
+    else if (value < 0) value = this.lastOffset + value + 1;
+    return value;
+  }
+  /**
+   * Ensure that the range is valid and canonical, i.e.
+   * - start <= end
+   * - collapsed = start === end
+   * - start >= 0, end >=0
+   */
+  normalizeRange(range2) {
+    let [start, end] = range2;
+    start = this.normalizeOffset(start);
+    end = this.normalizeOffset(end);
+    return start < end ? [start, end] : [end, start];
+  }
+  normalizeSelection(value, value2) {
+    var _a3;
+    let result = void 0;
+    if (isOffset(value)) {
+      const offset = this.normalizeOffset(value);
+      if (isOffset(value2)) {
+        const offset2 = this.normalizeOffset(value2);
+        result = offset <= offset2 ? { ranges: [[offset, offset2]], direction: "none" } : {
+          ranges: [[offset2, offset]],
+          direction: "backward"
+        };

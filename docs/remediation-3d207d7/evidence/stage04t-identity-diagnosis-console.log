@@ -1,0 +1,44 @@
+[
+    {
+        "signature":  "0cb8eaf615ee0a210b74dc739c700dd58ae357f8afa7861bbb0b44fe25da1a5b",
+        "matchingEquationIndices":  [
+                                        3
+                                    ],
+        "source":  "stage04t-word-hook.log.identity-5ef24927-2637-453f-84cd-10eca241d11c.xml"
+    },
+    {
+        "signature":  "a888a9c4d9b41ca2ac843e11aeb1818532c775627499900f362ea41bc86215d1",
+        "matchingEquationIndices":  [
+                                        4
+                                    ],
+        "source":  "stage04t-word-hook.log.identity-8c26e203-71a1-41ec-91ab-c9ca1d241772.xml"
+    },
+    {
+        "signature":  "520ea253f5f82ae0bf5d972b40e95f70413a474e9bb82e07dc38f5d079d10514",
+        "matchingEquationIndices":  [
+                                        2
+                                    ],
+        "source":  "stage04t-word-hook.log.identity-8f5bfb92-edc8-429b-8836-a87648e74624.xml"
+    },
+    {
+        "signature":  "228a909d63f9f9ca757a580c4fc8e18a660fcc1b708ac48d791790e3da7d4904",
+        "matchingEquationIndices":  [
+                                        1
+                                    ],
+        "source":  "stage04t-word-hook.log.identity-9a835759-c2c5-4d9c-b7fa-4a9c925d4526.xml"
+    },
+    {
+        "signature":  "0ccba0c51503c2954bbabbbe5b7ffe6f0814922a72c12c098b372c3fdd98c848",
+        "matchingEquationIndices":  [
+                                        6
+                                    ],
+        "source":  "stage04t-word-hook.log.identity-c687d787-95de-4104-bebb-818311b5012f.xml"
+    },
+    {
+        "signature":  "a2e90635de49e8c347977f048b77a64e71cb08b5be30b8c655663ad4a67b3d0f",
+        "matchingEquationIndices":  [
+                                        5
+                                    ],
+        "source":  "stage04t-word-hook.log.identity-f4d24d94-5767-4841-9565-829c149702ed.xml"
+    }
+]

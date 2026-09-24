@@ -1,0 +1,15 @@
+[
+  ["new", "stage04ao-blank-boundary"],
+  ["number-format", "continuous", "stage04ao-continuous"],
+  ["insert", "mathType", "block", "left", "勾股定理"],
+  ["reference", "1", "stage04ao-reference"],
+  ["snapshot", "stage04ao-mt-before"],
+  ["convert", "mt-omml", "full", "stage04ao-first-to-omml"],
+  ["snapshot", "stage04ao-omml-first"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04ao-omml-first-visible\"}"],
+  ["convert", "omml-mt", "full", "stage04ao-first-to-mt"],
+  ["snapshot", "stage04ao-mt-returned"],
+  ["convert", "mt-omml", "full", "stage04ao-second-to-omml"],
+  ["snapshot", "stage04ao-omml-second"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04ao-omml-second-visible\"}"]
+]

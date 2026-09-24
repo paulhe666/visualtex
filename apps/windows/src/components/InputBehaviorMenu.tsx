@@ -7,7 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
-import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
+import { MathPreview } from "./MathPreview";
 import {
   ArrowLeft,
   ArrowRight,
@@ -78,8 +78,8 @@ const COMMAND_SUGGESTION_OPTIONS: InputBehaviorOption[] = [
     key: "showStructuredCommandSuggestions",
     titleZh: "求和、积分等结构候选框",
     titleEn: "Structured command suggestions",
-    descriptionZh: "控制 VisualTeX 的大型候选框，默认开启；不影响 MathLive 原生命令提示框",
-    descriptionEn: "Controls the large VisualTeX panel for sums, integrals and similar structures; does not affect MathLive's native command panel",
+    descriptionZh: "控制 VisualTeX 的大型候选框，默认开启",
+    descriptionEn: "Controls the large VisualTeX panel for sums, integrals and similar structures",
   },
   {
     key: "showOtherCommandSuggestions",
@@ -103,17 +103,6 @@ function previewLatex(definition: VisualTexInlineShortcutDefinition) {
 }
 
 function readActiveInlineShortcuts(): VisualTexInlineShortcutDefinitions {
-  try {
-    const field = document.querySelector("math-field") as
-      | (HTMLElement & {
-          inlineShortcuts?: Readonly<VisualTexInlineShortcutDefinitions>;
-        })
-      | null;
-    const active = field?.inlineShortcuts;
-    if (active && Object.keys(active).length > 0) return { ...active };
-  } catch {
-    // Fall back to the explicit VisualTeX table while the mathfield mounts.
-  }
   return { ...visualTexAutoEscapeInlineShortcuts };
 }
 
@@ -127,20 +116,10 @@ interface InputBehaviorPopoverLayout {
 
 function ShortcutOutput({ definition }: { definition: VisualTexInlineShortcutDefinition }) {
   const latex = previewLatex(definition);
-  const markup = useMemo(() => {
-    try {
-      return convertVisualTexLatexToMarkup(latex, { defaultMode: "math" });
-    } catch {
-      return "";
-    }
-  }, [latex]);
-
-  if (!markup) return <code>{shortcutLatex(definition)}</code>;
   return (
-    <span
-      className="auto-escape-map-output-formula"
-      dangerouslySetInnerHTML={{ __html: markup }}
-    />
+    <span className="auto-escape-map-output-formula">
+      <MathPreview latex={latex} staticLayout />
+    </span>
   );
 }
 
@@ -175,16 +154,16 @@ export function InputBehaviorMenu() {
       entries.forEach(([shortcut]) => seen.add(shortcut));
       return { ...group, entries };
     });
-    const mathLiveEntries = Object.entries(activeShortcutDefinitions).filter(
+    const otherEntries = Object.entries(activeShortcutDefinitions).filter(
       ([shortcut]) => !seen.has(shortcut),
     );
-    if (mathLiveEntries.length > 0) {
+    if (otherEntries.length > 0) {
       groups.push({
-        id: "mathlive",
-        titleZh: "MathLive 内置",
-        titleEn: "MathLive built-ins",
+        id: "other",
+        titleZh: "其他内置映射",
+        titleEn: "Other built-in mappings",
         shortcuts: {},
-        entries: mathLiveEntries,
+        entries: otherEntries,
       });
     }
     return groups
@@ -358,7 +337,7 @@ export function InputBehaviorMenu() {
         onClick={() => setOpen((value) => !value)}
         title={isEn ? "Input behavior" : "操作逻辑"}
       >
-        <MousePointerClick size={14} />
+        <MousePointerClick size={16} />
         <span>{isEn ? "Input behavior" : "操作逻辑"}</span>
         <ChevronDown size={13} aria-hidden="true" />
       </button>

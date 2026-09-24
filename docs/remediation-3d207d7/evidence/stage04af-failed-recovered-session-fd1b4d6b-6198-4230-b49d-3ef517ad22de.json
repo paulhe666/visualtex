@@ -1,0 +1,65 @@
+{
+    "id":  "fd1b4d6b-6198-4230-b49d-3ef517ad22de",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "ee1ca0f9-70da-4b77-865a-303ad1c35887",
+    "sourceDocumentId":  "文档157",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "b2d7a05b-b7fc-41de-bd53-bd43c928b33f",
+                      "latex":  "\\sqrt{E-u\\left(x\\right)}=\\frac{1}{f\\left(\\omega\\right)v_{ph}\\left(\\omega,x\\right)}"
+                  }
+              ],
+    "activeLineId":  "b2d7a05b-b7fc-41de-bd53-bd43c928b33f",
+    "codeFormat":  "latex",
+    "displayMode":  "inline",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\"\u003e\n  \u003cmsqrt\u003e\n    \u003cmi\u003eE\u003c/mi\u003e\n    \u003cmo\u003e\u0026#x2212;\u003c/mo\u003e\n    \u003cmi\u003eu\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmi\u003ex\u003c/mi\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n  \u003c/msqrt\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmfrac\u003e\n    \u003cmn\u003e1\u003c/mn\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003ef\u003c/mi\u003e\n      \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n        \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n        \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n        \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n      \u003c/mrow\u003e\n      \u003cmsub\u003e\n        \u003cmi\u003ev\u003c/mi\u003e\n        \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n          \u003cmi\u003ep\u003c/mi\u003e\n          \u003cmi\u003eh\u003c/mi\u003e\n        \u003c/mrow\u003e\n      \u003c/msub\u003e\n      \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n        \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n        \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n        \u003cmo\u003e,\u003c/mo\u003e\n        \u003cmi\u003ex\u003c/mi\u003e\n        \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n      \u003c/mrow\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "ee1ca0f9-70da-4b77-865a-303ad1c35887",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "\\sqrt{E-u\\left(x\\right)}=\\frac{1}{f\\left(\\omega\\right)v_{ph}\\left(\\omega,x\\right)}",
+                             "lines":  [
+                                           {
+                                               "id":  "b2d7a05b-b7fc-41de-bd53-bd43c928b33f",
+                                               "latex":  "\\sqrt{E-u\\left(x\\right)}=\\frac{1}{f\\left(\\omega\\right)v_{ph}\\left(\\omega,x\\right)}"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "inline",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T10:20:12.8253842+00:00",
+                             "updatedAt":  "2026-09-06T10:20:12.8253842+00:00"
+                         },
+    "dirty":  false,
+    "status":  "failed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  "System.IO.InvalidDataException: The converted OMML row identities or number fields are incomplete.\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\r\n   在 VisualTeX.WordVsto.OfficeUiDispatcher.\u003c\u003ec__DisplayClass4_0`1.\u003cInvokeAsync\u003eg__Execute|0()\r\n--- 引发异常的上一位置中堆栈跟踪的末尾 ---\r\n   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()\r\n   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)\r\n   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()\r\n   在 VisualTeX.WordVsto.ThisAddIn.\u003cConvertFormulaFormatAsync\u003ed__165.MoveNext()",
+    "createdAt":  1788690012827,
+    "updatedAt":  1788690135674,
+    "expiresAt":  1788776535674
+}

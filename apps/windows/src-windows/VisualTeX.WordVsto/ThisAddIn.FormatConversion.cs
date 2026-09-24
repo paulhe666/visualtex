@@ -154,9 +154,10 @@ public sealed partial class ThisAddIn
             {
                 var confirmed = await dispatcher.InvokeAsync(() =>
                     System.Windows.Forms.MessageBox.Show(
-                        $"将把全文 {plan.Targets.Count} 个 {sourceName} 公式重新绘制为 {targetName}。\r\n\r\n"
-                        + "旧公式宿主和旧编号会直接删除，目标编号将按当前 Word 编号设置重新创建。是否继续？",
-                        "VisualTeX 公式格式转换",
+                        T(
+                            $"将把全文 {plan.Targets.Count} 个 {sourceName} 公式重新绘制为 {targetName}。\r\n\r\n旧公式宿主和旧编号会直接删除，目标编号将按当前 Word 编号设置重新创建。是否继续？",
+                            $"Redraw all {plan.Targets.Count} {sourceName} equations in the document as {targetName}?\r\n\r\nThe old equation hosts and numbering will be removed, and target numbering will be recreated using the current Word numbering settings."),
+                        T("VisualTeX 公式格式转换", "VisualTeX Equation Format Conversion"),
                         System.Windows.Forms.MessageBoxButtons.YesNo,
                         System.Windows.Forms.MessageBoxIcon.Question,
                         System.Windows.Forms.MessageBoxDefaultButton.Button2)
@@ -316,60 +317,75 @@ public sealed partial class ThisAddIn
                     FormulaOleContract.MathTypeOleMode,
                     StringComparison.Ordinal))
             {
-                SetStatus($"正在批量生成 {plan.Targets.Count} 个 MathType 原生预览…");
-                var nativePreviewInputs =
-                    new Dictionary<string, byte[]>(StringComparer.Ordinal);
                 foreach (var target in plan.Targets)
-                {
-                    var formula = prepared[target.Id];
-                    var mathMl = formula.MathMl
-                        ?? throw new InvalidDataException(
-                            $"缺少公式“{target.Latex}”的 MathType MathML。");
-                    var inline = string.Equals(
-                        target.DisplayMode,
-                        "inline",
-                        StringComparison.OrdinalIgnoreCase);
-                    var generated = MathTypeMtefCodec.CreateEquationNative(
-                        mathMl,
-                        inline);
-                    nativePreviewInputs[target.Id] = generated.Mtef;
-                    // Once the batch is attempted, InsertMathTypeOle must never
-                    // start one MathPage sidecar per formula or silently switch
-                    // the visible result back to frontend/MathJax geometry.
-                    formula.MathTypeNativePreviewAttempted = true;
-                }
+                    prepared[target.Id].MathTypeNativePreviewAttempted = true;
 
-                var nativePreviewRoot = prepared.Values
-                    .Select(formula => string.IsNullOrWhiteSpace(formula.EmfPath)
-                        ? null
-                        : Path.GetDirectoryName(formula.EmfPath))
-                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
-                    ?? Path.GetTempPath();
-                var nativePreviewWatch = System.Diagnostics.Stopwatch.StartNew();
-                var renderedAllNativePreviews =
-                    MathTypeNativePreviewRenderer.TryRenderBatch(
-                        nativePreviewInputs,
-                        nativePreviewRoot,
-                        out var nativePreviews);
-                var missingNativePreviewIds = plan.Targets
-                    .Where(target => !nativePreviews.ContainsKey(target.Id))
-                    .Select(target => target.Id)
-                    .ToArray();
-                if (!renderedAllNativePreviews
-                    || missingNativePreviewIds.Length > 0)
+                var nativePreviewAvailable = MathTypeNativePreviewRenderer.IsAvailable;
+                if (!nativePreviewAvailable)
                 {
-                    foreach (var preview in nativePreviews.Values)
-                        preview.Dispose();
-                    throw new InvalidOperationException(
-                        $"MathType 原生预览批量渲染失败（成功 {nativePreviews.Count}/{plan.Targets.Count}）。"
-                        + "为避免回退到 VisualTeX 前端几何，Word 文档尚未开始转换。");
+                    SetStatus("未检测到 MathType 原生预览器，正在使用 VisualTeX 矢量预览完成 MathType 转换…");
+                    WordDoubleClickHook.TraceMessage(
+                        $"format-conversion-preview-fallback reason=native-unavailable formulas={plan.Targets.Count}");
                 }
+                else
+                {
+                    SetStatus($"正在批量生成 {plan.Targets.Count} 个 MathType 原生预览…");
+                    var nativePreviewInputs =
+                        new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                    foreach (var target in plan.Targets)
+                    {
+                        var formula = prepared[target.Id];
+                        var mathMl = formula.MathMl
+                            ?? throw new InvalidDataException(
+                                $"缺少公式“{target.Latex}”的 MathType MathML。");
+                        var inline = string.Equals(
+                            target.DisplayMode,
+                            "inline",
+                            StringComparison.OrdinalIgnoreCase);
+                        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+                            mathMl,
+                            inline,
+                            formula.Session.FontSizePt);
+                        nativePreviewInputs[target.Id] = generated.Mtef;
+                    }
 
-                foreach (var target in plan.Targets)
-                    prepared[target.Id].MathTypeNativePreview =
-                        nativePreviews[target.Id];
-                WordDoubleClickHook.TraceMessage(
-                    $"format-conversion-native-preview-batch-complete formulas={nativePreviews.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                    var nativePreviewRoot = prepared.Values
+                        .Select(formula => string.IsNullOrWhiteSpace(formula.EmfPath)
+                            ? null
+                            : Path.GetDirectoryName(formula.EmfPath))
+                        .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
+                        ?? Path.GetTempPath();
+                    var nativePreviewWatch = System.Diagnostics.Stopwatch.StartNew();
+                    var renderedAllNativePreviews =
+                        MathTypeNativePreviewRenderer.TryRenderBatch(
+                            nativePreviewInputs,
+                            nativePreviewRoot,
+                            out var nativePreviews);
+                    var missingNativePreviewIds = plan.Targets
+                        .Where(target => !nativePreviews.ContainsKey(target.Id))
+                        .Select(target => target.Id)
+                        .ToArray();
+                    if (!renderedAllNativePreviews
+                        || missingNativePreviewIds.Length > 0)
+                    {
+                        foreach (var preview in nativePreviews.Values)
+                            preview.Dispose();
+                        nativePreviewWatch.Stop();
+                        SetStatus("MathType 原生预览未完整生成，正在整批使用 VisualTeX 矢量预览…");
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-preview-fallback reason=native-batch-incomplete "
+                            + $"native={nativePreviews.Count}/{plan.Targets.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                    }
+                    else
+                    {
+                        foreach (var target in plan.Targets)
+                            prepared[target.Id].MathTypeNativePreview =
+                                nativePreviews[target.Id];
+                        nativePreviewWatch.Stop();
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-native-preview-batch-complete formulas={nativePreviews.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                    }
+                }
             }
 
             SetStatus("公式已全部渲染，正在用正常新建公式路径原位重绘…");
@@ -420,8 +436,10 @@ public sealed partial class ThisAddIn
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            $"已成功转换 {result.FormulaCount} 个公式，随后停止。\r\n\r\n{detail}",
-                            "VisualTeX 公式格式转换",
+                            T(
+                                $"已成功转换 {result.FormulaCount} 个公式，随后停止。\r\n\r\n{detail}",
+                                $"Successfully converted {result.FormulaCount} equations, then stopped.\r\n\r\n{OfficePluginLanguage.SafeErrorMessage(detail)}"),
+                            T("VisualTeX 公式格式转换", "VisualTeX Equation Format Conversion"),
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Warning);
                         return true;
@@ -429,15 +447,18 @@ public sealed partial class ThisAddIn
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException error)
         {
-            SetStatus("公式格式转换已取消。");
+            var reported = await RecordSessionFailureAsync(client, converterSessionIds, error).ConfigureAwait(false);
+            WordDoubleClickHook.TraceMessage($"format-conversion-cancelled error={reported}");
+            SetStatus(ReferenceEquals(reported, error) ? "公式格式转换已取消。" : reported.Message);
         }
         catch (Exception error)
         {
+            var reported = await RecordSessionFailureAsync(client, converterSessionIds, error).ConfigureAwait(false);
             WordDoubleClickHook.TraceMessage(
-                $"format-conversion-failed sourceMode={sourceMode} targetMode={targetMode} error={error}");
-            SetStatus($"公式格式转换失败：{error.Message}");
+                $"format-conversion-failed sourceMode={sourceMode} targetMode={targetMode} error={reported}");
+            SetStatus($"公式格式转换失败：{reported.Message}");
             if (!string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                     "1",
@@ -449,14 +470,17 @@ public sealed partial class ThisAddIn
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            error.Message,
-                            "VisualTeX 公式格式转换",
+                            OfficePluginLanguage.SafeErrorMessage(reported.Message),
+                            T("VisualTeX 公式格式转换", "VisualTeX Equation Format Conversion"),
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);
                         return true;
                     }).ConfigureAwait(false);
                 }
-                catch { }
+                catch (Exception displayError)
+                {
+                    WordDoubleClickHook.TraceMessage($"format-conversion-error-display-failed error={displayError}");
+                }
             }
         }
         finally
@@ -489,6 +513,23 @@ public sealed partial class ThisAddIn
                          .Distinct())
                 preview!.Dispose();
             _operationGate.Release();
+        }
+    }
+
+    private static async Task<Exception> RecordSessionFailureAsync(
+        VisualTeXSessionClient client,
+        IReadOnlyCollection<string> sessionIds,
+        Exception error)
+    {
+        if (sessionIds.Count == 0) return error;
+        try
+        {
+            await FinalizeOfficeSessionsAsync(client, sessionIds, completed: false, error.ToString()).ConfigureAwait(false);
+            return error;
+        }
+        catch (Exception recordingError)
+        {
+            return new AggregateException("Word 操作失败，且未能记录运行时失败状态。", error, recordingError);
         }
     }
 

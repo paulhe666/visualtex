@@ -1,0 +1,83 @@
+[
+    {
+        "id":  "1185662",
+        "name":  "引用来源：",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1723,1074,99,29",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "464758",
+        "name":  "VisualTeX 编号公式（3）",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1797,1070,300,32",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "137110",
+        "name":  "搜索公式：",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1723,1114,99,29",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "137112",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1797,1110,528,30",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "137114",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1723,1149,602,270",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "137122",
+        "name":  "引用格式：",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1723,1440,99,29",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "137116",
+        "name":  "(1)",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1797,1435,260,32",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "137120",
+        "name":  "插入引用",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "2139,1479,90,32",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "923484",
+        "name":  "取消",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "2235,1479,90,32",
+        "value":  "",
+        "enabled":  true
+    }
+]

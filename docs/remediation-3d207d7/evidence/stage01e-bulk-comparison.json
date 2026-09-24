@@ -1,0 +1,57 @@
+{
+  "source": "actual installed Ribbon, COM and WordOpenXML",
+  "a": {
+    "maths": 6,
+    "numbers": [
+      "<TAB>(0.0.1)<CR><CELL>",
+      "<TAB>(0.0.2)<CR><CELL>",
+      "<TAB>(2.0.1)<CR><CELL>",
+      "<TAB>(2.0.2)<CR><CELL>",
+      "<TAB>(2.0.3)<CR><CELL>"
+    ]
+  },
+  "b": {
+    "maths": 7,
+    "numbers": [
+      "<TAB>(0.0.1)<CR><CELL>",
+      "<TAB>(0.0.2)<CR><CELL>",
+      "<TAB>(0.0.3)<CR><CELL>",
+      "<TAB>(2.0.1)<CR><CELL>",
+      "<TAB>(2.0.2)<CR><CELL>",
+      "<TAB>(2.0.3)<CR><CELL>"
+    ]
+  },
+  "newMathContentEqual": true,
+  "originalMathContentEqual": true,
+  "originalFieldsEqual": true,
+  "newFonts": [
+    [
+      "Latin Modern Math",
+      10.5
+    ],
+    [
+      "Latin Modern Math",
+      10.5
+    ],
+    [
+      "Latin Modern Math",
+      10.5
+    ],
+    [
+      "Latin Modern Math",
+      10.5
+    ],
+    [
+      "Latin Modern Math",
+      10.5
+    ],
+    [
+      "Latin Modern Math",
+      10.5
+    ],
+    [
+      "Latin Modern Math",
+      10.5
+    ]
+  ]
+}

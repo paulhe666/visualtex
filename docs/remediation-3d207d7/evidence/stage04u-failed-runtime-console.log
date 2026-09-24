@@ -1,0 +1,133 @@
+SESSION|a5fe9fa3-a9a2-45f3-b9f6-abb178e81178|doc=文档138|mode=create|object=wordOmml|display=block|numbered=False|status=failed|error=System.AggregateException: Conversion failed and Word undo recovery could not be verified. ---> System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+---> (内部异常 #0) System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+---> (内部异常 #1) System.IO.InvalidDataException: Word undo did not restore the original content, numbering, bookmarks, formatting and metadata.
+   在 VisualTeX.WordVsto.WordDocumentEditSnapshot.Restore(Document document)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+SESSION|f8064456-fae1-4493-b19d-885b537ac92f|doc=文档138|mode=create|object=wordOmml|display=block|numbered=False|status=failed|error=System.AggregateException: Conversion failed and Word undo recovery could not be verified. ---> System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+---> (内部异常 #0) System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+---> (内部异常 #1) System.IO.InvalidDataException: Word undo did not restore the original content, numbering, bookmarks, formatting and metadata.
+   在 VisualTeX.WordVsto.WordDocumentEditSnapshot.Restore(Document document)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+SESSION|0164e88d-eaa4-4e88-86ad-e59675c0c5be|doc=文档138|mode=create|object=wordOmml|display=block|numbered=False|status=failed|error=System.AggregateException: Conversion failed and Word undo recovery could not be verified. ---> System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+---> (内部异常 #0) System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+---> (内部异常 #1) System.IO.InvalidDataException: Word undo did not restore the original content, numbering, bookmarks, formatting and metadata.
+   在 VisualTeX.WordVsto.WordDocumentEditSnapshot.Restore(Document document)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+SESSION|b070aa4b-0b1b-4ca9-900e-779fae44307d|doc=文档138|mode=create|object=wordOmml|display=block|numbered=False|status=failed|error=System.AggregateException: Conversion failed and Word undo recovery could not be verified. ---> System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+---> (内部异常 #0) System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+---> (内部异常 #1) System.IO.InvalidDataException: Word undo did not restore the original content, numbering, bookmarks, formatting and metadata.
+   在 VisualTeX.WordVsto.WordDocumentEditSnapshot.Restore(Document document)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+SESSION|8a48a5d6-5456-4a3a-8c19-fe4cd2500040|doc=文档138|mode=create|object=wordOmml|display=block|numbered=False|status=failed|error=System.AggregateException: Conversion failed and Word undo recovery could not be verified. ---> System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+---> (内部异常 #0) System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+---> (内部异常 #1) System.IO.InvalidDataException: Word undo did not restore the original content, numbering, bookmarks, formatting and metadata.
+   在 VisualTeX.WordVsto.WordDocumentEditSnapshot.Restore(Document document)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+SESSION|5027b264-cc20-48ef-abb0-faffff28293c|doc=文档138|mode=create|object=wordOmml|display=inline|numbered=False|status=failed|error=System.AggregateException: Conversion failed and Word undo recovery could not be verified. ---> System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)
+   在 VisualTeX.WordVsto.OfficeUiDispatcher.<>c__DisplayClass4_0`1.<InvokeAsync>g__Execute|0()
+--- 引发异常的上一位置中堆栈跟踪的末尾 ---
+   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()
+   在 VisualTeX.WordVsto.ThisAddIn.<ConvertFormulaFormatAsync>d__165.MoveNext()
+---> (内部异常 #0) System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)
+   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+---> (内部异常 #1) System.IO.InvalidDataException: Word undo did not restore the original content, numbering, bookmarks, formatting and metadata.
+   在 VisualTeX.WordVsto.WordDocumentEditSnapshot.Restore(Document document)
+   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)<---
+
+SESSION|3d678db6-e972-480e-9339-9e7090972a04|doc=文档138|mode=edit|object=nativeOle|display=block|numbered=True|status=completed|error=
+SESSION|83ba9fe5-c897-430f-a8ca-c2d895f73df2|doc=文档138|mode=create|object=nativeOle|display=block|numbered=False|status=completed|error=
+{
+    "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+    "sha256":  "3029A2FC92F646FABEAE17B4B7A2CF8820DA63DE926089F294A1086AD167F729",
+    "process":  "visualtex"
+}

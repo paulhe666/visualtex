@@ -1,0 +1,14 @@
+{
+  "seedFormulaUnchanged": true,
+  "seedFieldsUnchanged": true,
+  "seedParagraphsUnchanged": true,
+  "numbers": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6"
+  ],
+  "note": "Read-only comparison of actual Word evidence; UI and XML review remains required."
+}

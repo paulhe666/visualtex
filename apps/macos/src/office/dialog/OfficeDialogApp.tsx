@@ -892,9 +892,8 @@ export function OfficeDialogApp() {
       editorRef.current?.refreshLayout();
 
       // refreshLayout() remounts resident MathLive fields synchronously. Give
-      // the custom elements one normal task turn to reconnect, then ask AppKit
-      // to present the dedicated editor. Once the app is foreground, its normal
-      // animation-frame paint/focus path is no longer subject to occlusion.
+      // the custom elements one normal task turn to reconnect before the
+      // resident Office window is ordered in front.
       document.body.style.opacity = "1";
       readinessTimer = window.setTimeout(() => {
         if (disposed || activeSessionKeyRef.current !== sessionKey) return;
@@ -978,7 +977,8 @@ export function OfficeDialogApp() {
     let repairInterval = 0;
     const focusFirstLine = () => {
       if (disposed || activeSessionKeyRef.current !== sessionKey) return;
-      window.focus();
+      // AppKit handles window focus. Limit this repair to MathLive's element;
+      // window.focus() would activate the whole VisualTeX application.
       editorRef.current?.focus({ target: "first", moveToEnd: true });
       // Match the Windows editor activation path when the MathLive shadow
       // input finishes mounting one frame after the imperative editor handle.

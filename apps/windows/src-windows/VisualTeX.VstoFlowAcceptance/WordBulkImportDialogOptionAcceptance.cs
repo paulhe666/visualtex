@@ -57,7 +57,8 @@ internal static partial class Program
             formulaCount: 3,
             displayFormulaCount: 2,
             objectModeLabel: "MathType",
-            equationNumberFormatDisplayName: "按章编号（1.1）");
+            equationNumberFormatDisplayName: "按章编号（1.1）",
+            allowNumbering: true);
         var redrawNumberingOption = DescendantControls(redrawDialog)
             .OfType<CheckBox>()
             .Single();

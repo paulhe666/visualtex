@@ -1,0 +1,46 @@
+﻿{
+    "bookmark":  "ZEqnNum100071",
+    "wordMacroButtonTarget":  null,
+    "actualReferenceRectangle":  {
+                                     "left":  1152,
+                                     "width":  0,
+                                     "top":  1092,
+                                     "height":  59
+                                 },
+    "passed":  true,
+    "target":  {
+                   "end":  86,
+                   "frames":  0,
+                   "text":  "(0.0-1)",
+                   "start":  23
+               },
+    "before":  {
+                   "start":  295,
+                   "end":  295
+               },
+    "pid":  112840,
+    "completeReferenceRectangle":  {
+                                       "left":  1152,
+                                       "width":  149,
+                                       "top":  1092,
+                                       "height":  59
+                                   },
+    "rectangle":  {
+                      "left":  1152,
+                      "width":  149,
+                      "top":  1092,
+                      "height":  59
+                  },
+    "wordExpandedTargetField":  null,
+    "time":  "2026-09-06T13:04:37.9840448Z",
+    "navigationBookmark":  "ZEqnNum100071",
+    "visualReviewRequired":  true,
+    "selectionMatched":  true,
+    "after":  {
+                  "end":  86,
+                  "text":  "(0.0-1)",
+                  "start":  23
+              },
+    "document":  "文档12",
+    "action":  "real mouse double-click"
+}

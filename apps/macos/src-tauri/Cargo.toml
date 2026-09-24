@@ -1,6 +1,6 @@
 [package]
 name = "visualtex"
-version = "1.2.7"
+version = "1.2.8"
 description = "A visual LaTeX formula editor"
 authors = ["VisualTeX"]
 license = "MIT"
@@ -46,7 +46,7 @@ rcgen = "0.14.8"
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSEvent", "NSImage", "NSPasteboard", "NSRunningApplication", "NSWorkspace", "block2"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSEvent", "NSGraphics", "NSImage", "NSPanel", "NSPasteboard", "NSResponder", "NSRunningApplication", "NSScreen", "NSView", "NSWindow", "NSWorkspace", "block2"] }
 objc2-core-services = "0.3.2"
 objc2-foundation = { version = "0.3.2", features = ["NSData", "NSDate", "NSDictionary", "NSError", "NSAppleEventDescriptor", "NSAppleScript", "NSString", "objc2-core-services"] }
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
@@ -56,3 +56,6 @@ tempfile = "3"
 x509-parser = "0.18.1"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+
+[patch.crates-io]
+tao = { path = "vendor/tao-office-panel" }

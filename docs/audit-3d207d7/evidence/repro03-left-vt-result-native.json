@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  135064,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  135058,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  135060,
+        "name":  "已成功转换 0 个公式，随后停止。\r\n\r\nConverted target finalization failed: VisualTeX refused to remove a non-empty boundary between numbered OMML tables.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

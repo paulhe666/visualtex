@@ -1,0 +1,48 @@
+﻿{
+    "scope":  "read-only data diagnosis, not Word acceptance",
+    "rows":  [
+                 {
+                     "signature":  "0cb8eaf615ee0a210b74dc739c700dd58ae357f8afa7861bbb0b44fe25da1a5b",
+                     "matchingEquationIndices":  [
+                                                     3
+                                                 ],
+                     "source":  "stage04o-word-hook.log.identity-2cd402a2-5a1b-47a9-9aeb-06f6e272be0e.xml"
+                 },
+                 {
+                     "signature":  "4817c620f5376c914ac2515e6154b89792a87d6d2b82d07bea960a508464db52",
+                     "matchingEquationIndices":  [
+
+                                                 ],
+                     "source":  "stage04o-word-hook.log.identity-427012ad-cd28-4ee4-801b-e1fba34d2f50.xml"
+                 },
+                 {
+                     "signature":  "3425791bd950048718e1749d5af7c923fcc9a79ec8f949dc2d097e680a50f956",
+                     "matchingEquationIndices":  [
+                                                     4
+                                                 ],
+                     "source":  "stage04o-word-hook.log.identity-4dfc9459-b144-4b0b-8b43-a28f95e5c2c7.xml"
+                 },
+                 {
+                     "signature":  "228a909d63f9f9ca757a580c4fc8e18a660fcc1b708ac48d791790e3da7d4904",
+                     "matchingEquationIndices":  [
+                                                     1
+                                                 ],
+                     "source":  "stage04o-word-hook.log.identity-8901cf2e-def7-4df3-9f9c-1792498049f3.xml"
+                 },
+                 {
+                     "signature":  "973de891a5b14ac35e18391e8667cb39558d713c578b8472ac9a22eb7453fa2d",
+                     "matchingEquationIndices":  [
+
+                                                 ],
+                     "source":  "stage04o-word-hook.log.identity-a3f76714-f51a-4edf-b1ae-13e58cab10b9.xml"
+                 },
+                 {
+                     "signature":  "b60cad3c8220cd25a662bf6a8d2c5feeaf547f8c9e34aa0fe150f0e8b51fc766",
+                     "matchingEquationIndices":  [
+                                                     6
+                                                 ],
+                     "source":  "stage04o-word-hook.log.identity-db2e3f45-0eea-4b24-bb2c-5e83c638a502.xml"
+                 }
+             ],
+    "dllSha256":  "EA326DB89BD8666901B5A1C8459D94B570984496A6B20D22C030E97683FF06E5"
+}

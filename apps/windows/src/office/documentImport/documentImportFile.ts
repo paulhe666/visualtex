@@ -1,4 +1,8 @@
-import type { DocumentSourceFormat } from "./documentImportParser";
+import type { DocumentImportLanguage, DocumentSourceFormat } from "./documentImportParser";
+
+function L(language: DocumentImportLanguage, chinese: string, english: string) {
+  return language === "en" ? english : chinese;
+}
 
 export const DOCUMENT_IMPORT_MAX_FILE_BYTES = 5_000_000;
 
@@ -24,11 +28,12 @@ function extensionOf(name: string) {
 
 export function documentFormatFromFileName(
   name: string,
+  language: DocumentImportLanguage = "cn",
 ): Exclude<DocumentSourceFormat, "auto"> {
   const extension = extensionOf(name);
   if (extension === ".tex") return "latex";
   if (extension === ".md" || extension === ".markdown") return "markdown";
-  throw new Error("只支持导入 .tex、.md 或 .markdown 文件。");
+  throw new Error(L(language, "只支持导入 .tex、.md 或 .markdown 文件。", "Only .tex, .md and .markdown files are supported."));
 }
 
 function stripLeadingBom(value: string) {
@@ -39,9 +44,9 @@ function normalizeSource(value: string) {
   return stripLeadingBom(value).replace(/\r\n?/g, "\n");
 }
 
-function decodeUtf16Be(bytes: Uint8Array) {
+function decodeUtf16Be(bytes: Uint8Array, language: DocumentImportLanguage) {
   if (bytes.byteLength % 2 !== 0) {
-    throw new Error("UTF-16 BE 文件包含不完整的字符数据。");
+    throw new Error(L(language, "UTF-16 BE 文件包含不完整的字符数据。", "The UTF-16 BE file contains incomplete character data."));
   }
   const swapped = new Uint8Array(bytes.byteLength);
   for (let index = 0; index < bytes.byteLength; index += 2) {
@@ -68,12 +73,12 @@ function looksLikeUtf16WithoutBom(bytes: Uint8Array) {
   return null;
 }
 
-function assertLooksLikeText(value: string) {
-  if (!value.trim()) throw new Error("所选文件为空，无法导入。");
+function assertLooksLikeText(value: string, language: DocumentImportLanguage) {
+  if (!value.trim()) throw new Error(L(language, "所选文件为空，无法导入。", "The selected file is empty and cannot be imported."));
   let suspicious = 0;
   for (const character of value.slice(0, 8192)) {
     const code = character.charCodeAt(0);
-    if (code === 0) throw new Error("所选文件包含二进制内容，无法作为文档源码导入。");
+    if (code === 0) throw new Error(L(language, "所选文件包含二进制内容，无法作为文档源码导入。", "The selected file contains binary data and cannot be imported as document source."));
     if (
       code < 32 &&
       character !== "\n" &&
@@ -85,15 +90,15 @@ function assertLooksLikeText(value: string) {
     }
   }
   if (suspicious > 0) {
-    throw new Error("所选文件不像有效的文本源码，无法导入。");
+    throw new Error(L(language, "所选文件不像有效的文本源码，无法导入。", "The selected file does not appear to be valid text source and cannot be imported."));
   }
 }
 
-export function decodeDocumentImportBytes(bytes: Uint8Array): {
+export function decodeDocumentImportBytes(bytes: Uint8Array, language: DocumentImportLanguage = "cn"): {
   source: string;
   encoding: DocumentImportFileEncoding;
 } {
-  if (bytes.byteLength === 0) throw new Error("所选文件为空，无法导入。");
+  if (bytes.byteLength === 0) throw new Error(L(language, "所选文件为空，无法导入。", "The selected file is empty and cannot be imported."));
 
   let source: string;
   let encoding: DocumentImportFileEncoding;
@@ -110,7 +115,7 @@ export function decodeDocumentImportBytes(bytes: Uint8Array): {
     source = new TextDecoder("utf-16le", { fatal: true }).decode(bytes.subarray(2));
     encoding = "UTF-16 LE";
   } else if (bytes.byteLength >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
-    source = decodeUtf16Be(bytes.subarray(2));
+    source = decodeUtf16Be(bytes.subarray(2), language);
     encoding = "UTF-16 BE";
   } else {
     const utf16 = looksLikeUtf16WithoutBom(bytes);
@@ -118,7 +123,7 @@ export function decodeDocumentImportBytes(bytes: Uint8Array): {
       source = new TextDecoder("utf-16le", { fatal: true }).decode(bytes);
       encoding = "UTF-16 LE";
     } else if (utf16 === "be") {
-      source = decodeUtf16Be(bytes);
+      source = decodeUtf16Be(bytes, language);
       encoding = "UTF-16 BE";
     } else {
       try {
@@ -129,24 +134,27 @@ export function decodeDocumentImportBytes(bytes: Uint8Array): {
           source = new TextDecoder("gb18030", { fatal: true }).decode(bytes);
           encoding = "GB18030";
         } catch {
-          throw new Error("无法识别文件编码。请将文件保存为 UTF-8、UTF-16 或 GB18030 后重试。");
+          throw new Error(L(language, "无法识别文件编码。请将文件保存为 UTF-8、UTF-16 或 GB18030 后重试。", "Unable to detect the file encoding. Save the file as UTF-8, UTF-16 or GB18030 and try again."));
         }
       }
     }
   }
 
   source = normalizeSource(source);
-  assertLooksLikeText(source);
+  assertLooksLikeText(source, language);
   return { source, encoding };
 }
 
-export async function readDocumentImportFile(file: File): Promise<ImportedDocumentFile> {
-  const format = documentFormatFromFileName(file.name);
+export async function readDocumentImportFile(
+  file: File,
+  language: DocumentImportLanguage = "cn",
+): Promise<ImportedDocumentFile> {
+  const format = documentFormatFromFileName(file.name, language);
   if (file.size > DOCUMENT_IMPORT_MAX_FILE_BYTES) {
-    throw new Error("文件超过 5 MB，无法批量导入。");
+    throw new Error(L(language, "文件超过 5 MB，无法批量导入。", "The file is larger than 5 MB and cannot be imported."));
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const decoded = decodeDocumentImportBytes(bytes);
+  const decoded = decodeDocumentImportBytes(bytes, language);
   return {
     name: file.name,
     source: decoded.source,

@@ -1,0 +1,190 @@
+{
+    "name":  "文档65",
+    "fullName":  "文档65",
+    "saved":  false,
+    "end":  406,
+    "paragraphs":  3,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+                   {
+                       "start":  189,
+                       "alternative":  null,
+                       "width":  274.05,
+                       "index":  1,
+                       "type":  1,
+                       "height":  31,
+                       "prog":  "Equation.DSMT4",
+                       "end":  215
+                   },
+                   {
+                       "start":  379,
+                       "alternative":  null,
+                       "width":  99.05,
+                       "index":  2,
+                       "type":  1,
+                       "height":  31,
+                       "prog":  "Equation.DSMT4",
+                       "end":  405
+                   }
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+
+                  ],
+    "fields":  [
+                   {
+                       "nested":  3,
+                       "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  27,
+                       "end":  188,
+                       "index":  1
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  67,
+                       "end":  97,
+                       "index":  2
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "0",
+                       "type":  12,
+                       "start":  99,
+                       "end":  141,
+                       "index":  3
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  144,
+                       "end":  185,
+                       "index":  4
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED Equation.DSMT4 ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  190,
+                       "end":  214,
+                       "index":  5
+                   },
+                   {
+                       "nested":  3,
+                       "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  217,
+                       "end":  378,
+                       "index":  6
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  257,
+                       "end":  287,
+                       "index":  7
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "0",
+                       "type":  12,
+                       "start":  289,
+                       "end":  331,
+                       "index":  8
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "2",
+                       "type":  12,
+                       "start":  334,
+                       "end":  375,
+                       "index":  9
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED Equation.DSMT4 ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  380,
+                       "end":  404,
+                       "index":  10
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  26,
+                      "lineRule":  0,
+                      "text":  "自己推导一下：\u003cBR\u003e有这个可以得到类似的密度守恒方程：\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  26,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  216,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cTAB\u003e\u0001\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  216,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  406,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cTAB\u003e\u0001\u003cCR\u003e",
+                      "size":  12
+                  }
+              ],
+    "variables":  [
+
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}

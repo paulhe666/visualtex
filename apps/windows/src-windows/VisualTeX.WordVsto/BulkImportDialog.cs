@@ -7,6 +7,9 @@ namespace VisualTeX.WordVsto;
 
 internal sealed class BulkImportDialog : Form
 {
+    private static string T(string chinese, string english) =>
+        OfficePluginLanguage.Text(chinese, english);
+
     private readonly ComboBox _sourceFormat = new();
     private readonly ComboBox _objectMode = new();
     private readonly CheckBox _numberDisplayFormulas = new();
@@ -18,11 +21,11 @@ internal sealed class BulkImportDialog : Form
 
     internal BulkImportDialog()
     {
-        Text = "VisualTeX 批量导入 LaTeX / Markdown";
+        Text = T("VisualTeX 批量导入 LaTeX / Markdown", "VisualTeX Bulk Import — LaTeX / Markdown");
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(820, 600);
         Size = new Size(980, 720);
-        Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
+        Font = new Font(OfficePluginLanguage.UiFontFamily, 9f, FontStyle.Regular, GraphicsUnit.Point);
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = true;
         MinimizeBox = false;
@@ -45,7 +48,7 @@ internal sealed class BulkImportDialog : Form
         var title = new Label
         {
             AutoSize = true,
-            Text = "批量导入为 Word 原生文字和独立公式",
+            Text = T("批量导入为 Word 原生文字和独立公式", "Import native Word text and independent equations"),
             Font = new Font(Font, FontStyle.Bold),
             Margin = new Padding(0, 0, 0, 5),
         };
@@ -53,7 +56,7 @@ internal sealed class BulkImportDialog : Form
         {
             AutoSize = true,
             MaximumSize = new Size(900, 0),
-            Text = "普通文字会成为 Word 原生段落；每个行内公式和行间公式都会成为独立的 VisualTeX 公式，可分别编辑和调整字号。",
+            Text = T("普通文字会成为 Word 原生段落；每个行内公式和行间公式都会成为独立的 VisualTeX 公式，可分别编辑和调整字号。", "Plain text becomes native Word paragraphs. Each inline or display equation is imported as an independent formula that can be edited and resized separately."),
             ForeColor = Color.FromArgb(80, 80, 80),
             Margin = new Padding(0, 0, 0, 10),
         };
@@ -79,32 +82,32 @@ internal sealed class BulkImportDialog : Form
         options.Controls.Add(new Label
         {
             AutoSize = true,
-            Text = "源格式：",
+            Text = T("源格式：", "Source format:"),
             Padding = new Padding(0, 7, 0, 0),
         });
         _sourceFormat.DropDownStyle = ComboBoxStyle.DropDownList;
         _sourceFormat.Width = 145;
-        _sourceFormat.Items.AddRange(new object[] { "自动识别", "Markdown", "LaTeX" });
+        _sourceFormat.Items.AddRange(new object[] { T("自动识别", "Auto detect"), "Markdown", "LaTeX" });
         _sourceFormat.SelectedIndex = 0;
         options.Controls.Add(_sourceFormat);
         options.Controls.Add(new Label
         {
             AutoSize = true,
-            Text = "公式格式：",
+            Text = T("公式格式：", "Equation format:"),
             Padding = new Padding(18, 7, 0, 0),
         });
         _objectMode.DropDownStyle = ComboBoxStyle.DropDownList;
         _objectMode.Width = 210;
         _objectMode.Items.AddRange(new object[]
         {
-            "Word 原生 OMML（推荐）",
+            T("Word 原生 OMML（推荐）", "Native Word OMML (recommended)"),
             "VisualTeX OLE",
             "MathType OLE",
         });
         _objectMode.SelectedIndex = 0;
         options.Controls.Add(_objectMode);
         _numberDisplayFormulas.AutoSize = true;
-        _numberDisplayFormulas.Text = "所有行间公式添加编号";
+        _numberDisplayFormulas.Text = T("所有行间公式添加编号", "Number all display equations");
         _numberDisplayFormulas.Margin = new Padding(18, 5, 0, 0);
         _numberDisplayFormulas.CheckedChanged += (_, _) =>
         {
@@ -115,7 +118,7 @@ internal sealed class BulkImportDialog : Form
         var open = new Button
         {
             AutoSize = true,
-            Text = "打开文件…",
+            Text = T("打开文件…", "Open file…"),
             Margin = new Padding(18, 0, 0, 0),
         };
         open.Click += (_, _) => OpenFile();
@@ -123,7 +126,7 @@ internal sealed class BulkImportDialog : Form
         var preview = new Button
         {
             AutoSize = true,
-            Text = "解析预览",
+            Text = T("解析预览", "Parse preview"),
             Margin = new Padding(8, 0, 0, 0),
         };
         preview.Click += (_, _) => ParseAndPreview(showError: true);
@@ -137,11 +140,13 @@ internal sealed class BulkImportDialog : Form
         _source.ScrollBars = ScrollBars.Both;
         _source.WordWrap = false;
         _source.Font = new Font("Consolas", 10.5f, FontStyle.Regular, GraphicsUnit.Point);
-        _source.Text = "# 示例\r\n\r\n这是正文和行内公式 $E=mc^2$。\r\n\r\n$$\r\n\\int_0^1 x^2\\,\\mathrm{d}x=\\frac13\r\n$$";
+        _source.Text = OfficePluginLanguage.IsEnglish
+            ? "# Example\r\n\r\nThis is body text with an inline equation $E=mc^2$.\r\n\r\n$$\r\n\\int_0^1 x^2\\,\\mathrm{d}x=\\frac13\r\n$$"
+            : "# 示例\r\n\r\n这是正文和行内公式 $E=mc^2$。\r\n\r\n$$\r\n\\int_0^1 x^2\\,\\mathrm{d}x=\\frac13\r\n$$";
         _source.TextChanged += (_, _) =>
         {
             _parsed = null;
-            _summary.Text = "内容已更改，请解析预览。";
+            _summary.Text = T("内容已更改，请解析预览。", "Content changed. Parse the preview again.");
             _warnings.Clear();
         };
         root.Controls.Add(_source, 0, 2);
@@ -157,7 +162,7 @@ internal sealed class BulkImportDialog : Form
         status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
         _summary.Dock = DockStyle.Fill;
         _summary.Padding = new Padding(8);
-        _summary.Text = "点击“解析预览”查看导入结构。";
+        _summary.Text = T("点击“解析预览”查看导入结构。", "Click “Parse preview” to inspect the import structure.");
         _summary.BorderStyle = BorderStyle.FixedSingle;
         status.Controls.Add(_summary, 0, 0);
         _warnings.Dock = DockStyle.Fill;
@@ -177,12 +182,12 @@ internal sealed class BulkImportDialog : Form
         };
         var cancel = new Button
         {
-            Text = "取消",
+            Text = T("取消", "Cancel"),
             DialogResult = DialogResult.Cancel,
             AutoSize = true,
             Padding = new Padding(10, 3, 10, 3),
         };
-        _insert.Text = "插入到 Word";
+        _insert.Text = T("插入到 Word", "Insert into Word");
         _insert.AutoSize = true;
         _insert.Padding = new Padding(10, 3, 10, 3);
         _insert.Click += (_, _) =>
@@ -199,7 +204,7 @@ internal sealed class BulkImportDialog : Form
     }
 
     internal WordBulkImportDocument ParsedDocument =>
-        _parsed ?? throw new InvalidOperationException("批量导入内容尚未解析。");
+        _parsed ?? throw new InvalidOperationException(T("批量导入内容尚未解析。", "The bulk-import content has not been parsed yet."));
 
     internal string SourceText
     {
@@ -254,27 +259,25 @@ internal sealed class BulkImportDialog : Form
                 SelectedSourceFormat,
                 SelectedObjectMode);
             _parsed.NumberDisplayFormulas = NumberDisplayFormulas;
-            _summary.Text =
-                $"识别为 {_parsed.SourceFormat}；共 {_parsed.Blocks.Count} 个块，" +
-                $"{_parsed.TextCharacterCount} 个文字字符，" +
-                $"{_parsed.InlineFormulaCount} 个行内公式，" +
-                $"{_parsed.DisplayFormulaCount} 个行间公式。";
+            _summary.Text = OfficePluginLanguage.IsEnglish
+                ? $"Detected {_parsed.SourceFormat}; {_parsed.Blocks.Count} blocks, {_parsed.TextCharacterCount} text characters, {_parsed.InlineFormulaCount} inline equations, {_parsed.DisplayFormulaCount} display equations."
+                : $"识别为 {_parsed.SourceFormat}；共 {_parsed.Blocks.Count} 个块，{_parsed.TextCharacterCount} 个文字字符，{_parsed.InlineFormulaCount} 个行内公式，{_parsed.DisplayFormulaCount} 个行间公式。";
             _warnings.Text = _parsed.Warnings.Count == 0
-                ? "没有解析警告。"
+                ? T("没有解析警告。", "No parse warnings.")
                 : string.Join(Environment.NewLine, _parsed.Warnings.Select((warning, index) => $"{index + 1}. {warning}"));
             return true;
         }
         catch (Exception error)
         {
             _parsed = null;
-            _summary.Text = "无法解析当前内容。";
+            _summary.Text = T("无法解析当前内容。", "Unable to parse the current content.");
             _warnings.Text = error.Message;
             if (showError)
             {
                 MessageBox.Show(
                     this,
                     error.Message,
-                    "VisualTeX 批量导入",
+                    T("VisualTeX 批量导入", "VisualTeX Bulk Import"),
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             }
@@ -286,8 +289,8 @@ internal sealed class BulkImportDialog : Form
     {
         using var dialog = new OpenFileDialog
         {
-            Title = "打开 Markdown 或 LaTeX 文件",
-            Filter = "Markdown / LaTeX (*.md;*.markdown;*.tex;*.txt)|*.md;*.markdown;*.tex;*.txt|所有文件 (*.*)|*.*",
+            Title = T("打开 Markdown 或 LaTeX 文件", "Open a Markdown or LaTeX file"),
+            Filter = T("Markdown / LaTeX (*.md;*.markdown;*.tex;*.txt)|*.md;*.markdown;*.tex;*.txt|所有文件 (*.*)|*.*", "Markdown / LaTeX (*.md;*.markdown;*.tex;*.txt)|*.md;*.markdown;*.tex;*.txt|All files (*.*)|*.*"),
             CheckFileExists = true,
             Multiselect = false,
         };
@@ -297,7 +300,7 @@ internal sealed class BulkImportDialog : Form
         {
             MessageBox.Show(
                 this,
-                "文件超过 5 MB，无法批量导入。",
+                T("文件超过 5 MB，无法批量导入。", "The file is larger than 5 MB and cannot be imported."),
                 "VisualTeX 批量导入",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);

@@ -1,0 +1,58 @@
+ControlType.Document|VisualTeX Native Office Formula Editor|https://127.0.0.1:43127/dialog?runtime=vsto-desktop&sessionId=ab144dde-8945-4197-80c1-3d7cb72b0800|enabled=True|offscreen=False
+ControlType.Button|行内||enabled=True|offscreen=False
+ControlType.Button|行间||enabled=True|offscreen=False
+ControlType.Text|保存为||enabled=True|offscreen=False
+ControlType.ComboBox|公式对象格式|VisualTeX OLE|enabled=True|offscreen=False
+ControlType.Text|字号||enabled=True|offscreen=False
+ControlType.ComboBox|公式字号|五号（10.5 磅）|enabled=True|offscreen=False
+ControlType.CheckBox|编号|On|enabled=True|offscreen=False
+ControlType.Text|编号||enabled=True|offscreen=False
+ControlType.Button|操作逻辑||enabled=True|offscreen=False
+ControlType.ComboBox|OCR 识别模型|均衡版 M（推荐）|enabled=True|offscreen=False
+ControlType.Button|缩小公式||enabled=True|offscreen=False
+ControlType.Text|60||enabled=True|offscreen=False
+ControlType.Text|%||enabled=True|offscreen=False
+ControlType.Button|放大公式||enabled=True|offscreen=False
+ControlType.Button|OCR||enabled=True|offscreen=False
+ControlType.Button|撤销||enabled=True|offscreen=False
+ControlType.Button|重做||enabled=False|offscreen=False
+ControlType.Button|取消||enabled=True|offscreen=False
+ControlType.Button|完成并插入||enabled=True|offscreen=False
+ControlType.Thumb|调整公式工具与源码区高度|204|enabled=True|offscreen=False
+ControlType.ToolBar|公式对齐方式||enabled=True|offscreen=False
+ControlType.Button|左对齐|On|enabled=True|offscreen=False
+ControlType.Button|居中|Off|enabled=True|offscreen=False
+ControlType.Button|右对齐|Off|enabled=True|offscreen=False
+ControlType.Button|切换选中内容的粗体状态||enabled=True|offscreen=False
+ControlType.Button|切换选中内容的斜体或正体状态||enabled=True|offscreen=False
+ControlType.Button|选中内容字体颜色|Off|enabled=True|offscreen=False
+ControlType.Button|选中内容字体背景颜色|Off|enabled=True|offscreen=False
+ControlType.Tab|底部编辑面板||enabled=True|offscreen=False
+ControlType.TabItem|公式工具||enabled=True|offscreen=False
+ControlType.TabItem|LaTeX 源码||enabled=True|offscreen=False
+ControlType.Button|复制 LaTeX 源码||enabled=True|offscreen=False
+ControlType.Button|收起公式工具与源码||enabled=True|offscreen=False
+ControlType.Text|
+||enabled=True|offscreen=False
+ControlType.Thumb|调整公式磁贴区宽度|220|enabled=True|offscreen=False
+ControlType.Button|自定义|Off|enabled=True|offscreen=False
+ControlType.Button|常用|On|enabled=True|offscreen=False
+ControlType.Button|收起公式磁贴||enabled=True|offscreen=False
+ControlType.Button|一元二次方程求根公式||enabled=True|offscreen=False
+ControlType.Button|欧拉恒等式||enabled=True|offscreen=False
+ControlType.Button|勾股定理||enabled=True|offscreen=False
+ControlType.Button|二项式定理||enabled=True|offscreen=False
+ControlType.Button|高斯积分||enabled=True|offscreen=False
+ControlType.Button|泰勒展开||enabled=True|offscreen=False
+ControlType.Button|质能方程||enabled=True|offscreen=True
+ControlType.Button|含时薛定谔方程||enabled=True|offscreen=True
+ControlType.Button|高斯定律||enabled=True|offscreen=True
+ControlType.Button|矩阵特征方程||enabled=True|offscreen=True
+ControlType.Text|就绪||enabled=True|offscreen=False
+ControlType.Text|1||enabled=True|offscreen=False
+ControlType.Text| ||enabled=True|offscreen=False
+ControlType.Text|行||enabled=True|offscreen=False
+ControlType.Text|· ||enabled=True|offscreen=False
+ControlType.Text|0||enabled=True|offscreen=False
+ControlType.Text| ||enabled=True|offscreen=False
+ControlType.Text|字符||enabled=True|offscreen=False

@@ -1,0 +1,34 @@
+{
+    "id":  "dd0d1a0d-e93f-4ddb-abb5-0d04a20c993c",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "1efbecc4-1a2b-4bf6-bae8-b6e3ee526ba9",
+    "sourceDocumentId":  "文档131",
+    "sourceObjectId":  "visualtex-word-vsto-range:0:0",
+    "title":  "Word 文档批量导入",
+    "lines":  [
+                  {
+                      "id":  "875bc99c-4017-453b-8170-ecb61b99d5f9",
+                      "latex":  "{\"format\":\"latex\",\"blocks\":[{\"id\":\"768393e0-8dd5-48e4-95b5-d00a1cc5b8f9\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"思考分析力学被发明出来的原因\"}]},{\"id\":\"4aaffbec-4659-4e26-8213-1a8772ecd382\",\"kind\":\"bullet\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"系统有很多约束，解决多约束问题\"}]},{\"id\":\"363d1357-630d-4f2d-81f9-1ad3d97b34e9\",\"kind\":\"bullet\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"力学和光学统一起来？\"}]},{\"id\":\"3716df8e-c875-4bd2-aebe-f91bc023feb8\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"这几个公式不知道对不对：\"},{\"kind\":\"formula\",\"latex\":\"\\\\sqrt{E-u\\\\left(x\\\\right)}=\\\\frac{1}{f\\\\left(\\\\omega\\\\right)v_{ph}\\\\left(\\\\omega,x\\\\right)}\",\"display\":false}]},{\"id\":\"bdbfd90c-68e9-4cad-a453-b58d47653940\",\"kind\":\"display\",\"level\":0,\"runs\":[{\"kind\":\"formula\",\"latex\":\"\\\\begin{cases}\\\\frac{\\\\mathrm{d}}{\\\\mathrm{d}\\\\omega}\\\\left(\\\\omega f\\\\left(\\\\omega\\\\right)\\\\right)=0 \\\\\\\\ \\\\frac{\\\\omega f\\\\left(\\\\omega\\\\right)}{2}\\\\frac{\\\\mathrm{d}E\\\\left(\\\\omega\\\\right)}{\\\\mathrm{d}\\\\omega}=\\\\sqrt{\\\\frac{m}{2}} \\\\end{cases}\",\"display\":true}]},{\"id\":\"ffff8f22-9e2e-49ec-a708-0624fa754f81\",\"kind\":\"display\",\"level\":0,\"runs\":[{\"kind\":\"formula\",\"latex\":\"\\\\sqrt{\\\\frac{m}{2\\\\left(E\\\\left(\\\\omega\\\\right)-U\\\\right)}}=\\\\frac{\\\\mathrm{d}}{\\\\mathrm{d}\\\\omega}\\\\left(\\\\omega\\\\cdot f\\\\left(\\\\omega\\\\right)\\\\sqrt{\\\\left(E\\\\left(\\\\omega\\\\right)-U\\\\right)}\\\\right)\",\"display\":true}]},{\"id\":\"a106b1a1-ab0b-43a4-8b20-4015bce52262\",\"kind\":\"heading\",\"level\":1,\"runs\":[{\"kind\":\"text\",\"text\":\"薛定谔方程\"}]},{\"id\":\"02a689e4-ac4d-47f9-88e7-998f4d6adf63\",\"kind\":\"heading\",\"level\":1,\"runs\":[{\"kind\":\"text\",\"text\":\"波函数的统计解释和几率守恒方程\"}]},{\"id\":\"83883b5a-6dad-4434-af0f-19933e3c9be3\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"薛定谔方程：\"}]},{\"id\":\"2f1a78b6-bb18-4e68-a8d1-66a25a5238a0\",\"kind\":\"display\",\"level\":0,\"runs\":[{\"kind\":\"formula\",\"latex\":\"i\\\\hbar \\\\frac{\\\\partial}{\\\\partial t}\\\\psi(\\\\mathbf{r},t) = \\\\left[ -\\\\frac{\\\\hbar^2}{2m}\\\\nabla^2 + V(\\\\mathbf{r},t) \\\\right]\\\\psi(\\\\mathbf{r},t)\",\"display\":true}]},{\"id\":\"1c7373c6-e52c-473f-a19b-897747b1b80f\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"自己推导一下：\"}]},{\"id\":\"59e863a0-479a-41c8-aacf-197c24f9bb37\",\"kind\":\"display\",\"level\":0,\"runs\":[{\"kind\":\"formula\",\"latex\":\"\\\\frac{\\\\partial}{\\\\partial t}\\\\psi ^*\\\\left( \\\\vec{r} \\\\right) \\\\psi \\\\left( \\\\vec{r} \\\\right) =\\\\frac{i\\\\hbar}{2m}\\\\nabla \\\\cdot \\\\left[ \\\\psi ^*\\\\left( \\\\vec{r} \\\\right) \\\\nabla \\\\psi \\\\left( \\\\vec{r} \\\\right) -\\\\psi \\\\left( \\\\vec{r} \\\\right) \\\\nabla \\\\psi ^*\\\\left( r \\\\right) \\\\right]\",\"display\":true}]},{\"id\":\"a2541aed-6691-4244-ae3f-1e8786596dbf\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"有这个可以得到类似的密度守恒方程：\"}]},{\"id\":\"8c669e7f-b561-4650-92db-7d1d17e6be3c\",\"kind\":\"display\",\"level\":0,\"runs\":[{\"kind\":\"formula\",\"latex\":\"\\\\frac{\\\\partial}{\\\\partial t}\\\\rho \\\\left( \\\\vec{r},t \\\\right) +\\\\nabla \\\\cdot \\\\vec{j}=0\",\"display\":true}]},{\"id\":\"ffcd4085-c40f-40ad-8c95-0f95d1366d4d\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"定态的相加不一定为定态。\"}]}],\"warnings\":[],\"formulaCount\":6,\"inlineFormulaCount\":1,\"displayFormulaCount\":5,\"textCharacterCount\":113}"
+                  }
+              ],
+    "activeLineId":  "875bc99c-4017-453b-8170-ecb61b99d5f9",
+    "codeFormat":  "visualtex-document-json",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  true,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  0.0,
+    "exportHeight":  0.0,
+    "exportResult":  null,
+    "originalMetadata":  null,
+    "dirty":  true,
+    "status":  "completed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  null,
+    "createdAt":  1788677605660,
+    "updatedAt":  1788677634982,
+    "expiresAt":  1788764034982
+}

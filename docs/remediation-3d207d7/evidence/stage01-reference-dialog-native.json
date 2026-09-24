@@ -1,0 +1,56 @@
+[
+    {
+        "handle":  529994,
+        "name":  "引用来源：",
+        "id":  529994,
+        "class":  "WindowsForms10.STATIC.app.0.297b065_r138_ad1"
+    },
+    {
+        "handle":  1971556,
+        "name":  "",
+        "id":  1971556,
+        "class":  "WindowsForms10.COMBOBOX.app.0.297b065_r138_ad1"
+    },
+    {
+        "handle":  202336,
+        "name":  "搜索公式：",
+        "id":  202336,
+        "class":  "WindowsForms10.STATIC.app.0.297b065_r138_ad1"
+    },
+    {
+        "handle":  202330,
+        "name":  "",
+        "id":  202330,
+        "class":  "WindowsForms10.EDIT.app.0.297b065_r138_ad1"
+    },
+    {
+        "handle":  202332,
+        "name":  "",
+        "id":  202332,
+        "class":  "WindowsForms10.LISTBOX.app.0.297b065_r138_ad1"
+    },
+    {
+        "handle":  2430536,
+        "name":  "引用格式：",
+        "id":  2430536,
+        "class":  "WindowsForms10.STATIC.app.0.297b065_r138_ad1"
+    },
+    {
+        "handle":  136802,
+        "name":  "",
+        "id":  136802,
+        "class":  "WindowsForms10.COMBOBOX.app.0.297b065_r138_ad1"
+    },
+    {
+        "handle":  136804,
+        "name":  "插入引用",
+        "id":  136804,
+        "class":  "WindowsForms10.BUTTON.app.0.297b065_r138_ad1"
+    },
+    {
+        "handle":  136806,
+        "name":  "取消",
+        "id":  136806,
+        "class":  "WindowsForms10.BUTTON.app.0.297b065_r138_ad1"
+    }
+]

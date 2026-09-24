@@ -1,0 +1,52 @@
+[
+  [
+    "edit-ole",
+    "1",
+    "keep",
+    "keep",
+    "close"
+  ],
+  [
+    "snapshot",
+    "stage04al-cases-closed"
+  ],
+  [
+    "edit-source",
+    "ole",
+    "1",
+    "\\begin{cases}\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega f\\left(\\omega\\right)\\right)=0 \\\\ \\frac{\\omega f\\left(\\omega\\right)}{2}\\frac{\\mathrm{d}E\\left(\\omega\\right)}{\\mathrm{d}\\omega}=\\sqrt{\\frac{n}{2}} \\end{cases}",
+    "stage04al-cases-edit"
+  ],
+  [
+    "snapshot",
+    "stage04al-cases-edited"
+  ],
+  [
+    "reference",
+    "1",
+    "stage04al-cases-ref"
+  ],
+  [
+    "number-format",
+    "heading2-dash",
+    "stage04al-cases-format"
+  ],
+  [
+    "snapshot",
+    "stage04al-cases-mt-ref"
+  ],
+  [
+    "convert",
+    "mt-omml",
+    "full",
+    "stage04al-cases-to-omml"
+  ],
+  [
+    "snapshot",
+    "stage04al-cases-roundtrip-omml"
+  ],
+  [
+    "ui",
+    "{\"Action\": \"screenshot\", \"Label\": \"stage04al-cases-roundtrip-omml-visible\"}"
+  ]
+]

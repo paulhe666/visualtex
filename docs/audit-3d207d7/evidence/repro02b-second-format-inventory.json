@@ -1,0 +1,174 @@
+{
+    "build":  "16.0.14334",
+    "version":  "16.0",
+    "active":  "文档42",
+    "documents":  [
+                      {
+                          "name":  "文档42",
+                          "key":  "repro02b-second-format-__42",
+                          "saved":  false,
+                          "end":  350,
+                          "paragraphs":  3,
+                          "tables":  [
+
+                                     ],
+                          "maths":  [
+
+                                    ],
+                          "shapes":  [
+                                         {
+                                             "start":  1,
+                                             "alternative":  null,
+                                             "width":  58.05,
+                                             "index":  1,
+                                             "type":  1,
+                                             "height":  16.05,
+                                             "prog":  "Equation.DSMT4",
+                                             "end":  27
+                                         }
+                                     ],
+                          "controls":  [
+
+                                       ],
+                          "fields":  [
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED Equation.DSMT4 ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  2,
+                                             "end":  26,
+                                             "index":  1
+                                         },
+                                         {
+                                             "nested":  3,
+                                             "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                                             "result":  "",
+                                             "type":  51,
+                                             "start":  29,
+                                             "end":  190,
+                                             "index":  2
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                                             "result":  "",
+                                             "type":  12,
+                                             "start":  69,
+                                             "end":  99,
+                                             "index":  3
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "0",
+                                             "type":  12,
+                                             "start":  101,
+                                             "end":  143,
+                                             "index":  4
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "1",
+                                             "type":  12,
+                                             "start":  146,
+                                             "end":  187,
+                                             "index":  5
+                                         },
+                                         {
+                                             "nested":  1,
+                                             "code":  " GOTOBUTTON VTEqNum_a9710c1806194ecd84ce537288846e7a  \\* MERGEFORMAT \u0013 REF VTEqNum_a9710c1806194ecd84ce537288846e7a \\* CHARFORMAT \\! \\* MERGEFORMAT \u0015",
+                                             "result":  "",
+                                             "type":  50,
+                                             "start":  193,
+                                             "end":  347,
+                                             "index":  6
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " REF VTEqNum_a9710c1806194ecd84ce537288846e7a \\* CHARFORMAT \\! \\* MERGEFORMAT ",
+                                             "result":  "0.1",
+                                             "type":  3,
+                                             "start":  263,
+                                             "end":  345,
+                                             "index":  7
+                                         }
+                                     ],
+                          "bookmarks":  [
+                                            {
+                                                "end":  188,
+                                                "name":  "VTEqNum_a9710c1806194ecd84ce537288846e7a",
+                                                "text":  "0.1",
+                                                "start":  100
+                                            }
+                                        ],
+                          "paras":  [
+                                        {
+                                            "start":  0,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  1,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  191,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  191,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  2,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  348,
+                                            "lineRule":  0,
+                                            "text":  "(\u0015\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  348,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  3,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  350,
+                                            "lineRule":  0,
+                                            "text":  ")\u003cCR\u003e",
+                                            "size":  10.5
+                                        }
+                                    ],
+                          "xmlFonts":  [
+
+                                       ],
+                          "xmlMathCount":  0
+                      }
+                  ],
+    "processes":  [
+                      {
+                          "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+                          "name":  "visualtex",
+                          "id":  20944,
+                          "start":  "2026-09-05T23:07:20.5116736+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  27664,
+                          "start":  "2026-09-05T23:07:41.2634623+08:00"
+                      }
+                  ],
+    "time":  "2026-09-06T00:33:36.2148220+08:00"
+}

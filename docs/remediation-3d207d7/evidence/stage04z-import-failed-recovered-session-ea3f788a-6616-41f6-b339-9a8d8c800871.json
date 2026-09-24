@@ -1,0 +1,34 @@
+{
+    "id":  "ea3f788a-6616-41f6-b339-9a8d8c800871",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "280f0d03-3cf9-4db1-b8ad-6becef2aeb59",
+    "sourceDocumentId":  "文档147",
+    "sourceObjectId":  "visualtex-word-vsto-range:0:0",
+    "title":  "Word 文档批量导入",
+    "lines":  [
+                  {
+                      "id":  "5a959921-04ed-40d5-8e9c-85e7e4082b38",
+                      "latex":  "{\"format\":\"latex\",\"blocks\":[{\"id\":\"8cf77a66-3098-467c-aec0-8d1b390a6346\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"思考分析力学被发明出来的原因\"}]},{\"id\":\"a1278f28-3301-440f-8244-e427a6c29739\",\"kind\":\"bullet\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"系统有很多约束，解决多约束问题\"}]},{\"id\":\"e0e6f08a-3f72-4d1c-8979-d043e23d5743\",\"kind\":\"bullet\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"力学和光学统一起来？\"}]},{\"id\":\"7ddad71a-a1b1-4ca1-9373-59e19a3d106d\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"这几个公式不知道对不对：\"},{\"kind\":\"formula\",\"latex\":\"\\\\sqrt{E-u\\\\left(x\\\\right)}=\\\\frac{1}{f\\\\left(\\\\omega\\\\right)v_{ph}\\\\left(\\\\omega,x\\\\right)}\",\"display\":false}]},{\"id\":\"8ae45e0c-45d2-49e4-b710-6c4780d54eae\",\"kind\":\"display\",\"level\":0,\"runs\":[{\"kind\":\"formula\",\"latex\":\"\\\\begin{cases}\\\\frac{\\\\mathrm{d}}{\\\\mathrm{d}\\\\omega}\\\\left(\\\\omega f\\\\left(\\\\omega\\\\right)\\\\right)=0 \\\\\\\\ \\\\frac{\\\\omega f\\\\left(\\\\omega\\\\right)}{2}\\\\frac{\\\\mathrm{d}E\\\\left(\\\\omega\\\\right)}{\\\\mathrm{d}\\\\omega}=\\\\sqrt{\\\\frac{m}{2}} \\\\end{cases}\",\"display\":true}]},{\"id\":\"2156a1af-f9cf-4da9-a34a-bba25ee0c45c\",\"kind\":\"display\",\"level\":0,\"runs\":[{\"kind\":\"formula\",\"latex\":\"\\\\sqrt{\\\\frac{m}{2\\\\left(E\\\\left(\\\\omega\\\\right)-U\\\\right)}}=\\\\frac{\\\\mathrm{d}}{\\\\mathrm{d}\\\\omega}\\\\left(\\\\omega\\\\cdot f\\\\left(\\\\omega\\\\right)\\\\sqrt{\\\\left(E\\\\left(\\\\omega\\\\right)-U\\\\right)}\\\\right)\",\"display\":true}]},{\"id\":\"9f07454d-ae0d-424c-a2f9-5aab12f17ef4\",\"kind\":\"heading\",\"level\":1,\"runs\":[{\"kind\":\"text\",\"text\":\"薛定谔方程\"}]},{\"id\":\"8aa11d91-384f-42d0-b6fd-2146ac313b89\",\"kind\":\"heading\",\"level\":1,\"runs\":[{\"kind\":\"text\",\"text\":\"波函数的统计解释和几率守恒方程\"}]},{\"id\":\"f10cc86a-7e09-4f20-9cd6-9d69938e3a15\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"薛定谔方程：\"}]},{\"id\":\"a76d7057-1a5a-43fd-9009-6d11fe64bf33\",\"kind\":\"display\",\"level\":0,\"runs\":[{\"kind\":\"formula\",\"latex\":\"i\\\\hbar \\\\frac{\\\\partial}{\\\\partial t}\\\\psi(\\\\mathbf{r},t) = \\\\left[ -\\\\frac{\\\\hbar^2}{2m}\\\\nabla^2 + V(\\\\mathbf{r},t) \\\\right]\\\\psi(\\\\mathbf{r},t)\",\"display\":true}]},{\"id\":\"d2544ad5-62a0-4f60-b0ce-fb38034eeaeb\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"自己推导一下：\"}]},{\"id\":\"0f29b0c3-4fd0-4faa-8278-c5e77b20b7c1\",\"kind\":\"display\",\"level\":0,\"runs\":[{\"kind\":\"formula\",\"latex\":\"\\\\frac{\\\\partial}{\\\\partial t}\\\\psi ^*\\\\left( \\\\vec{r} \\\\right) \\\\psi \\\\left( \\\\vec{r} \\\\right) =\\\\frac{i\\\\hbar}{2m}\\\\nabla \\\\cdot \\\\left[ \\\\psi ^*\\\\left( \\\\vec{r} \\\\right) \\\\nabla \\\\psi \\\\left( \\\\vec{r} \\\\right) -\\\\psi \\\\left( \\\\vec{r} \\\\right) \\\\nabla \\\\psi ^*\\\\left( r \\\\right) \\\\right]\",\"display\":true}]},{\"id\":\"321f3b6d-fb98-43d3-adb2-611f9180eade\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"有这个可以得到类似的密度守恒方程：\"}]},{\"id\":\"43efd16c-bd44-4a54-8ac9-9c2303af0d2b\",\"kind\":\"display\",\"level\":0,\"runs\":[{\"kind\":\"formula\",\"latex\":\"\\\\frac{\\\\partial}{\\\\partial t}\\\\rho \\\\left( \\\\vec{r},t \\\\right) +\\\\nabla \\\\cdot \\\\vec{j}=0\",\"display\":true}]},{\"id\":\"0e46cc72-5cba-41de-a442-4303aa2e8f88\",\"kind\":\"paragraph\",\"level\":0,\"runs\":[{\"kind\":\"text\",\"text\":\"定态的相加不一定为定态。\"}]}],\"warnings\":[],\"formulaCount\":6,\"inlineFormulaCount\":1,\"displayFormulaCount\":5,\"textCharacterCount\":113}"
+                  }
+              ],
+    "activeLineId":  "5a959921-04ed-40d5-8e9c-85e7e4082b38",
+    "codeFormat":  "visualtex-document-json",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  true,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  0.0,
+    "exportHeight":  0.0,
+    "exportResult":  null,
+    "originalMetadata":  null,
+    "dirty":  true,
+    "status":  "failed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  "System.IO.InvalidDataException: Office MathML conversion did not produce an m:oMath node.\r\n   在 VisualTeX.WordVsto.WordOmmlConverter.ExtractSingleOMath(String omml)\r\n   在 VisualTeX.WordVsto.WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(String wordOpenXml, String formulaId)\r\n   在 VisualTeX.WordVsto.WordOmmlFormulaStore.NumberedFormulaIdentityMatchesEquationRange(Document document, String formulaId, FormulaMetadata metadata, Range equationRange)\r\n   在 VisualTeX.WordVsto.WordOmmlFormulaStore.ResolveEquationIdentity(Document document, Bookmark bookmark, String formulaId, FormulaMetadata metadata, Boolean captureCurrentContent)\r\n   在 VisualTeX.WordVsto.WordOmmlFormulaStore.GetEquationRange(Bookmark bookmark)\r\n   在 VisualTeX.WordVsto.WordOmmlFormulaStore.EstimateHeightPoints(Bookmark bookmark)\r\n   在 VisualTeX.WordVsto.WordEquationNumbering.Reconcile(Document document)\r\n   在 VisualTeX.WordVsto.WordEquationNumbering.UpdateEquationNumbers(Document document, IReadOnlyCollection`1 expectedNumberedFormulaIds)\r\n   在 VisualTeX.WordVsto.WordFormulaService.InsertBulkDocumentCore(WordBulkImportDocument source, IReadOnlyDictionary`2 prepared, String expectedDocumentId, String sourceObjectId)\r\n   在 VisualTeX.WordVsto.WordFormulaService.\u003c\u003ec__DisplayClass104_0.\u003cInsertBulkDocument\u003eb__0()\r\n   在 VisualTeX.WordVsto.WordFormulaService.ExecuteDocumentEdit[T](Document document, String name, Func`1 edit)\r\n   在 VisualTeX.WordVsto.WordFormulaService.InsertBulkDocument(WordBulkImportDocument source, IReadOnlyDictionary`2 prepared, String expectedDocumentId, String sourceObjectId)\r\n   在 VisualTeX.WordVsto.ThisAddIn.\u003c\u003ec__DisplayClass131_2.\u003cBulkImportAsync\u003eb__7()\r\n   在 VisualTeX.WordVsto.OfficeUiDispatcher.\u003c\u003ec__DisplayClass4_0`1.\u003cInvokeAsync\u003eg__Execute|0()\r\n--- 引发异常的上一位置中堆栈跟踪的末尾 ---\r\n   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()\r\n   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)\r\n   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()\r\n   在 VisualTeX.WordVsto.ThisAddIn.\u003cBulkImportAsync\u003ed__131.MoveNext()",
+    "createdAt":  1788687355539,
+    "updatedAt":  1788687479195,
+    "expiresAt":  1788773879195
+}

@@ -4,12 +4,14 @@ import type { CommandSource, CommandUsage } from "../types/command";
 import type {
   FormulaDocument,
   FormulaAlignment,
+  FormulaDisplayStyle,
   FormulaHistoryItem,
   FormulaLine,
   FormulaLineMode,
   InputBehaviorSettingKey,
   InputBehaviorSettings,
   LatexCodeFormat,
+  LatexFormatProfile,
   Theme,
 } from "../types/formula";
 import type { DocumentSnapshot } from "../history/historyTypes";
@@ -17,6 +19,11 @@ import {
   DEFAULT_LATEX_CODE_FORMAT,
   isLatexCodeFormat,
 } from "../clipboard/LatexCopyService";
+import {
+  DEFAULT_LATEX_FORMAT_PROFILE,
+  legacyCodeFormatToProfile,
+  normalizeLatexFormatProfile,
+} from "../clipboard/latexFormatProfile";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
 import { normalizeFormulaLinePhysicalWhitespace } from "../math/formulaLineLatex";
@@ -228,6 +235,15 @@ function normalizeClassicDockHeight(value: unknown) {
   );
 }
 
+function normalizeFormulaDisplayStyle(value: unknown): FormulaDisplayStyle {
+  return value === "double-dollar" ||
+    value === "bracket" ||
+    value === "equation" ||
+    value === "equation-star"
+    ? value
+    : "default";
+}
+
 function normalizeFormulaLineLatex(latex: string) {
   const normalized = latex.replace(/\r\n?/g, "\n");
   const trimmed = normalized.trim();
@@ -242,11 +258,13 @@ export function createFormulaLine(
   latex = "",
   id: string = createUuid(),
   mode: FormulaLineMode = "display",
+  displayStyle: FormulaDisplayStyle = "default",
 ): FormulaLine {
   return {
     id,
     latex: normalizeFormulaLineLatex(latex.replace(/\r\n?/g, "\n")),
     mode: mode === "inline" ? "inline" : "display",
+    displayStyle: normalizeFormulaDisplayStyle(displayStyle),
   };
 }
 
@@ -280,6 +298,7 @@ export function normalizeFormulaLines(
               : "",
           ),
           mode: candidate.mode === "inline" ? "inline" : "display",
+          displayStyle: normalizeFormulaDisplayStyle(candidate.displayStyle),
         } satisfies FormulaLine;
       })
       .filter((line): line is NonNullable<typeof line> => line !== null);
@@ -327,6 +346,7 @@ interface EditorState {
   zoom: number;
   sourceOpen: boolean;
   latexCodeFormat: LatexCodeFormat;
+  latexFormatProfile: LatexFormatProfile;
   autoPairDelimiters: boolean;
   showLineNumbers: boolean;
   highlightActiveLine: boolean;
@@ -351,6 +371,8 @@ interface EditorState {
   setTitle: (title: string) => void;
   setActiveLineId: (lineId: string | null) => void;
   replaceFormulaLine: (lineId: string, latex: string) => void;
+  /** P10 core projection: the core already owns/validates source bytes. */
+  replaceFormulaLineExact: (lineId: string, latex: string) => void;
   setFormulaAlignment: (alignment: FormulaAlignment) => void;
   setEditorLayout: (layout: EditorLayout) => void;
   insertFormulaLine: (line: FormulaLine, index: number) => void;
@@ -361,6 +383,11 @@ interface EditorState {
   setZoom: (zoom: number) => void;
   setSourceOpen: (open: boolean) => void;
   setLatexCodeFormat: (format: LatexCodeFormat) => void;
+  setLatexFormatProfile: (
+    update:
+      | Partial<LatexFormatProfile>
+      | ((current: LatexFormatProfile) => Partial<LatexFormatProfile>),
+  ) => void;
   setAutoPairDelimiters: (enabled: boolean) => void;
   setShowLineNumbers: (enabled: boolean) => void;
   setHighlightActiveLine: (enabled: boolean) => void;
@@ -406,7 +433,8 @@ export const useEditorStore = create<EditorState>()(
       language: "cn",
       zoom: 0.6,
       sourceOpen: false,
-      latexCodeFormat: DEFAULT_LATEX_CODE_FORMAT,
+      latexCodeFormat: "mixed-inline-display",
+      latexFormatProfile: { ...DEFAULT_LATEX_FORMAT_PROFILE },
       autoPairDelimiters: true,
       showLineNumbers: false,
       highlightActiveLine: false,
@@ -451,6 +479,12 @@ export const useEditorStore = create<EditorState>()(
               : line,
           ),
         })),
+      replaceFormulaLineExact: (lineId, latex) =>
+        set((state) => ({
+          lines: state.lines.map((line) =>
+            line.id === lineId ? { ...line, latex } : line,
+          ),
+        })),
       setFormulaAlignment: (formulaAlignment) =>
         set({ formulaAlignment: normalizeFormulaAlignment(formulaAlignment) }),
       setEditorLayout: (editorLayout) =>
@@ -463,6 +497,7 @@ export const useEditorStore = create<EditorState>()(
             id: line.id,
             latex: normalizeFormulaLineLatex(line.latex),
             mode: line.mode === "inline" ? "inline" : "display",
+            displayStyle: normalizeFormulaDisplayStyle(line.displayStyle),
           });
           return {
             lines: nextLines,
@@ -499,6 +534,19 @@ export const useEditorStore = create<EditorState>()(
           latexCodeFormat: isLatexCodeFormat(latexCodeFormat)
             ? latexCodeFormat
             : DEFAULT_LATEX_CODE_FORMAT,
+        }),
+      setLatexFormatProfile: (update) =>
+        set((state) => {
+          const patch =
+            typeof update === "function"
+              ? update(state.latexFormatProfile)
+              : update;
+          return {
+            latexFormatProfile: normalizeLatexFormatProfile({
+              ...state.latexFormatProfile,
+              ...patch,
+            }),
+          };
         }),
       setAutoPairDelimiters: (autoPairDelimiters) =>
         set({ autoPairDelimiters }),
@@ -629,6 +677,7 @@ export const useEditorStore = create<EditorState>()(
               id: formula.id,
               latex: formula.latex,
               mode: formula.displayMode === "inline" ? "inline" : "display",
+              displayStyle: normalizeFormulaDisplayStyle(formula.displayStyle),
             })),
           );
           const settings = document.settings ?? {};
@@ -678,9 +727,11 @@ export const useEditorStore = create<EditorState>()(
             // Keep the user's current workspace choice when opening old files
             // that still carry the legacy settings.sourceOpen field.
             sourceOpen: state.sourceOpen,
-            latexCodeFormat: isLatexCodeFormat(settings.latexCodeFormat)
-              ? settings.latexCodeFormat
-              : state.latexCodeFormat,
+            latexCodeFormat: "mixed-inline-display",
+            latexFormatProfile:
+              settings.latexFormatProfile === undefined
+                ? state.latexFormatProfile
+                : normalizeLatexFormatProfile(settings.latexFormatProfile),
             autoPairDelimiters:
               typeof settings.autoPairDelimiters === "boolean"
                 ? settings.autoPairDelimiters
@@ -774,6 +825,7 @@ export const useEditorStore = create<EditorState>()(
             id: line.id,
             latex: line.latex,
             displayMode: line.mode === "inline" ? "inline" : "block",
+            displayStyle: line.displayStyle,
             alignment: state.formulaAlignment,
             fontSize: Math.round(36 * state.zoom),
             createdAt: now,
@@ -784,7 +836,8 @@ export const useEditorStore = create<EditorState>()(
             theme: state.theme,
             zoom: state.zoom,
             formulaAlignment: state.formulaAlignment,
-            latexCodeFormat: state.latexCodeFormat,
+            latexCodeFormat: "mixed-inline-display",
+            latexFormatProfile: { ...state.latexFormatProfile },
             editorLayout: state.editorLayout,
             language: state.language,
             sourceOpen: state.sourceOpen,
@@ -824,7 +877,8 @@ export const useEditorStore = create<EditorState>()(
         language: state.language,
         zoom: state.zoom,
         sourceOpen: state.sourceOpen,
-        latexCodeFormat: state.latexCodeFormat,
+        latexCodeFormat: "mixed-inline-display",
+        latexFormatProfile: state.latexFormatProfile,
         autoPairDelimiters: state.autoPairDelimiters,
         showLineNumbers: state.showLineNumbers,
         highlightActiveLine: state.highlightActiveLine,
@@ -868,9 +922,15 @@ export const useEditorStore = create<EditorState>()(
           editorLayout: normalizeEditorLayout(persisted.editorLayout),
           theme: normalizeTheme(persisted.theme),
           zoom: normalizeEditorZoom(persisted.zoom),
-          latexCodeFormat: isLatexCodeFormat(persisted.latexCodeFormat)
-            ? persisted.latexCodeFormat
-            : DEFAULT_LATEX_CODE_FORMAT,
+          latexCodeFormat: "mixed-inline-display",
+          latexFormatProfile:
+            persisted.latexFormatProfile === undefined
+              ? legacyCodeFormatToProfile(
+                  isLatexCodeFormat(persisted.latexCodeFormat)
+                    ? persisted.latexCodeFormat
+                    : undefined,
+                )
+              : normalizeLatexFormatProfile(persisted.latexFormatProfile),
           autoPairDelimiters:
             typeof persisted.autoPairDelimiters === "boolean"
               ? persisted.autoPairDelimiters

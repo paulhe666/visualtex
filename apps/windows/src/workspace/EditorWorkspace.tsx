@@ -18,6 +18,7 @@ import {
   ChevronDown,
   Code2,
   Copy,
+  EyeOff,
   FileDown,
   Highlighter,
   Italic,
@@ -52,11 +53,12 @@ import {
   useEditorStore,
 } from "../stores/editorStore";
 import {
-  formatFormulaLines,
-  parseLatexSourceDraft,
+  formatFormulaLinesUniversal,
+  parseUniversalLatexSourceDraft,
 } from "../clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { reconcileFormulaLines } from "../history/documentHistory";
+import { useHistorySnapshot } from "../history/HistoryManager";
 import type { FormulaAlignment, FormulaLine } from "../types/formula";
 import { normalizeCustomFormulaColor } from "./formulaColor";
 import type { EditorWorkspaceProps } from "./workspaceTypes";
@@ -142,10 +144,12 @@ export function EditorWorkspace({
   officeHeaderLeadingControls,
   officeHeaderTrailingActions,
   desktopHeaderControls,
+  desktopTopToolsMount,
   keypadMode = false,
   onOpenExport,
   editorRef,
   editorInstanceKey,
+  sourceDocumentRevision = 0,
   reuseEditorLineSlots = false,
   sidebarOpen,
   onSidebarOpenChange,
@@ -154,10 +158,10 @@ export function EditorWorkspace({
   onCopyPng,
   onCopy,
   onReplaceDocument,
-  ocrModel,
-  ocrModels = [],
+  ocrRecognizer,
+  ocrRecognizers = [],
   ocrBusy = false,
-  onOcrModelChange,
+  onOcrRecognizerChange,
   onQuickOcr,
   quickOcrCaptureMode = "windows",
   onQuickOcrCaptureModeChange,
@@ -181,6 +185,8 @@ export function EditorWorkspace({
     });
   };
   const [officeFormattingMount, setOfficeFormattingMount] =
+    useState<HTMLDivElement | null>(null);
+  const [desktopClassicControlsMount, setDesktopClassicControlsMount] =
     useState<HTMLDivElement | null>(null);
   const [formulaColorMenu, setFormulaColorMenu] =
     useState<FormulaColorMenu | null>(null);
@@ -213,6 +219,16 @@ export function EditorWorkspace({
   );
   const [formulaTextColor, setFormulaTextColor] = useState("#2563eb");
   const [formulaBackgroundColor, setFormulaBackgroundColor] = useState("#fef3c7");
+  const [persistentFormulaBold, setPersistentFormulaBold] = useState(false);
+  const [persistentFormulaItalic, setPersistentFormulaItalic] = useState(false);
+  const [
+    persistentFormulaTextColorEnabled,
+    setPersistentFormulaTextColorEnabled,
+  ] = useState(false);
+  const [
+    persistentFormulaBackgroundColorEnabled,
+    setPersistentFormulaBackgroundColorEnabled,
+  ] = useState(false);
   const [formulaTextColorPickerValue, setFormulaTextColorPickerValue] =
     useState("#2563eb");
   const [formulaBackgroundColorPickerValue, setFormulaBackgroundColorPickerValue] =
@@ -234,6 +250,7 @@ export function EditorWorkspace({
   const title = useEditorStore((state) => state.title);
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
+  const historyReplayActive = useHistorySnapshot().isReplaying;
   const language = useEditorStore((state) => state.language);
   const theme = useEditorStore((state) => state.theme);
   const zoom = useEditorStore((state) => state.zoom);
@@ -253,11 +270,18 @@ export function EditorWorkspace({
     setStoredSourceOpen(open);
   };
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
+  const latexFormatProfile = useEditorStore((state) => state.latexFormatProfile);
   const isEn = language === "en";
+  const localOcrRecognizers = ocrRecognizers.filter(
+    (item) => item.group !== "api",
+  );
+  const apiOcrRecognizers = ocrRecognizers.filter(
+    (item) => item.group === "api",
+  );
   const isOfficeWorkspace = mode !== "desktop";
   const latex = joinFormulaLines(lines);
   const sourceLatex = formatLatexSourceForEditor(
-    formatFormulaLines(lines, latexCodeFormat),
+    formatFormulaLinesUniversal(lines, latexFormatProfile),
   );
 
   const handleSourceFocusChange = (focused: boolean) => {
@@ -268,6 +292,17 @@ export function EditorWorkspace({
     );
     setSourceFocused(focused);
   };
+
+  useLayoutEffect(() => {
+    setSourceDraftFallback(null);
+    handleSourceFocusChange(false);
+  }, [editorInstanceKey, sourceDocumentRevision]);
+
+  useLayoutEffect(() => {
+    if (!historyReplayActive) return;
+    setSourceDraftFallback(null);
+    handleSourceFocusChange(false);
+  }, [historyReplayActive]);
 
   useEffect(() => {
     document.documentElement.classList.toggle(
@@ -592,11 +627,8 @@ export function EditorWorkspace({
       formulaSelectionTargetRef.current ??
       editorRef.current?.captureSelectionTarget() ??
       null;
-    if (!selection) {
-      setFormulaColorMenu(null);
-      formulaSelectionTargetRef.current = null;
-      return;
-    }
+    // The palette is also the color chooser for persistent typing. Opening it
+    // without a selection must not synthesize or move a MathLive selection.
     formulaSelectionTargetRef.current = selection;
     setFormulaColorMenu((current) => {
       if (current === kind) {
@@ -612,8 +644,9 @@ export function EditorWorkspace({
     value: string,
   ) => {
     const target = formulaSelectionTargetRef.current;
-    if (!target) return;
-    editorRef.current?.applySelectionStyle({ kind, value }, target);
+    if (target) {
+      editorRef.current?.applySelectionStyle({ kind, value }, target);
+    }
     if (kind === "color") {
       setFormulaTextColor(value);
       setFormulaTextColorPickerValue(value);
@@ -690,8 +723,11 @@ export function EditorWorkspace({
     editorRef.current?.focus();
   };
 
-  const applySource = (source: string, sourceFormat: typeof latexCodeFormat) => {
-    const parsed = parseLatexSourceDraft(source, sourceFormat);
+  const applySource = (
+    source: string,
+    _sourceFormat: typeof latexCodeFormat,
+  ) => {
+    const parsed = parseUniversalLatexSourceDraft(source, latexFormatProfile);
     if (!parsed.valid) {
       const previewValues = (parsed.previewValues ?? parsed.values).map(
         normalizeChineseLatex,
@@ -700,7 +736,12 @@ export function EditorWorkspace({
         source,
         error: parsed.error ?? "invalid-latex",
         previewLines: previewValues.length
-          ? reconcileFormulaLines(previewValues, lines, parsed.modes)
+          ? reconcileFormulaLines(
+              previewValues,
+              lines,
+              parsed.modes,
+              parsed.displayStyles,
+            )
           : null,
       };
       setSourceDraftFallback(fallback);
@@ -709,7 +750,12 @@ export function EditorWorkspace({
 
     setSourceDraftFallback(null);
     const values = parsed.values.map(normalizeChineseLatex);
-    const nextLines = reconcileFormulaLines(values, lines, parsed.modes);
+    const nextLines = reconcileFormulaLines(
+      values,
+      lines,
+      parsed.modes,
+      parsed.displayStyles,
+    );
     const nextActiveLineId = nextLines.some(
       (line) => line.id === activeLineId,
     )
@@ -740,6 +786,7 @@ export function EditorWorkspace({
     compact?: boolean;
   } = {}) => (
     <LatexSourceEditor
+      key={`${editorInstanceKey ?? ""}:${sourceDocumentRevision}`}
       latex={sourceLatex}
       theme={theme}
       format={latexCodeFormat}
@@ -750,6 +797,7 @@ export function EditorWorkspace({
       onLiveChange={applySource}
       onFocusChange={handleSourceFocusChange}
       onCopy={() => void onCopy()}
+      forceExternalSync={historyReplayActive}
     />
   );
 
@@ -798,7 +846,16 @@ export function EditorWorkspace({
         formulaAlignment={formulaAlignment}
         latexCodeFormat={latexCodeFormat}
         zoom={zoom}
+        persistentTypingStyle={{
+          bold: persistentFormulaBold,
+          italic: persistentFormulaItalic,
+          color: persistentFormulaTextColorEnabled ? formulaTextColor : null,
+          backgroundColor: persistentFormulaBackgroundColorEnabled
+            ? formulaBackgroundColor
+            : null,
+        }}
         readOnly={false}
+        showLineModeControls={!isOfficeWorkspace}
         previewOnly={sourceFocused || Boolean(sourceDraftFallback)}
         onPreviewActivate={
           sourceDraftFallback ? undefined : () => handleSourceFocusChange(false)
@@ -861,7 +918,15 @@ export function EditorWorkspace({
               (isOfficeWorkspace ? " is-office-editor-header" : "")
             }
           >
-            <div className="pane-title-group">
+            <div className="editor-pane-header-controls">
+              <PortalOrInline
+                target={
+                  !isOfficeWorkspace && editorLayout === "classic"
+                    ? desktopClassicControlsMount
+                    : null
+                }
+              >
+                <div className="pane-title-group">
               {isOfficeWorkspace && officeHeaderLeadingControls ? (
                 <div className="office-inline-options">
                   {officeHeaderLeadingControls}
@@ -1016,6 +1081,129 @@ export function EditorWorkspace({
                         onPointerDown={preserveFormulaSelection}
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => toggleFormulaColorMenu("backgroundColor")}
+                      >
+                        <Highlighter size={15} strokeWidth={2} />
+                      </button>
+
+                      <span
+                        className="formula-formatting-subdivider"
+                        aria-hidden="true"
+                      />
+
+                      <button
+                        type="button"
+                        className={
+                          "icon-button compact formula-formatting-button is-persistent-action" +
+                          (persistentFormulaBold ? " is-active" : "")
+                        }
+                        aria-label={
+                          isEn ? "Persistent bold input" : "持久化粗体输入"
+                        }
+                        title={
+                          isEn
+                            ? "Persistent bold · affects newly entered glyphs only"
+                            : "持久化粗体 · 仅作用于之后新输入的字符"
+                        }
+                        aria-pressed={persistentFormulaBold}
+                        data-formula-persistent-bold
+                        onPointerDown={preserveFormulaFocus}
+                        onClick={() =>
+                          setPersistentFormulaBold((enabled) => !enabled)
+                        }
+                      >
+                        <Bold size={15} strokeWidth={2.2} />
+                      </button>
+
+                      <button
+                        type="button"
+                        className={
+                          "icon-button compact formula-formatting-button is-persistent-action" +
+                          (persistentFormulaItalic ? " is-active" : "")
+                        }
+                        aria-label={
+                          isEn ? "Persistent italic input" : "持久化斜体输入"
+                        }
+                        title={
+                          isEn
+                            ? "Persistent italic · affects newly entered glyphs only"
+                            : "持久化斜体 · 仅作用于之后新输入的字符"
+                        }
+                        aria-pressed={persistentFormulaItalic}
+                        data-formula-persistent-italic
+                        onPointerDown={preserveFormulaFocus}
+                        onClick={() =>
+                          setPersistentFormulaItalic((enabled) => !enabled)
+                        }
+                      >
+                        <Italic size={15} strokeWidth={2.2} />
+                      </button>
+
+                      <button
+                        type="button"
+                        className={
+                          "icon-button compact formula-formatting-button is-persistent-action is-color-action" +
+                          (persistentFormulaTextColorEnabled
+                            ? " is-active"
+                            : "")
+                        }
+                        style={
+                          {
+                            "--formula-format-color": formulaTextColor,
+                          } as CSSProperties
+                        }
+                        aria-label={
+                          isEn
+                            ? "Persistent font color input"
+                            : "持久化字体颜色输入"
+                        }
+                        title={
+                          isEn
+                            ? "Persistent font color · uses the current font color and affects new glyphs only"
+                            : "持久化字体颜色 · 使用当前字体颜色，仅作用于之后新输入的字符"
+                        }
+                        aria-pressed={persistentFormulaTextColorEnabled}
+                        data-formula-persistent-color
+                        onPointerDown={preserveFormulaFocus}
+                        onClick={() =>
+                          setPersistentFormulaTextColorEnabled(
+                            (enabled) => !enabled,
+                          )
+                        }
+                      >
+                        <Palette size={15} strokeWidth={2} />
+                      </button>
+
+                      <button
+                        type="button"
+                        className={
+                          "icon-button compact formula-formatting-button is-persistent-action is-color-action" +
+                          (persistentFormulaBackgroundColorEnabled
+                            ? " is-active"
+                            : "")
+                        }
+                        style={
+                          {
+                            "--formula-format-color": formulaBackgroundColor,
+                          } as CSSProperties
+                        }
+                        aria-label={
+                          isEn
+                            ? "Persistent background color input"
+                            : "持久化背景颜色输入"
+                        }
+                        title={
+                          isEn
+                            ? "Persistent background color · uses the current background color and affects new glyphs only"
+                            : "持久化背景颜色 · 使用当前背景颜色，仅作用于之后新输入的字符"
+                        }
+                        aria-pressed={persistentFormulaBackgroundColorEnabled}
+                        data-formula-persistent-background
+                        onPointerDown={preserveFormulaFocus}
+                        onClick={() =>
+                          setPersistentFormulaBackgroundColorEnabled(
+                            (enabled) => !enabled,
+                          )
+                        }
                       >
                         <Highlighter size={15} strokeWidth={2} />
                       </button>
@@ -1181,12 +1369,21 @@ export function EditorWorkspace({
                   </div>
                 </PortalOrInline>
               ) : null}
+                </div>
+              </PortalOrInline>
+              <PortalOrInline
+                target={
+                  !isOfficeWorkspace && editorLayout === "classic"
+                    ? desktopTopToolsMount ?? null
+                    : null
+                }
+              >
+                <div className="editor-pane-header-trailing">
               {!isOfficeWorkspace && desktopHeaderControls ? (
                 <div className="desktop-editor-header-controls">
                   {desktopHeaderControls}
                 </div>
               ) : null}
-            </div>
             <div className="canvas-tool-group">
               {showFileActions && onOpenExport && (
                 <button
@@ -1206,45 +1403,47 @@ export function EditorWorkspace({
                   <div className="quick-ocr-split" ref={quickOcrModeMenuRef}>
                     <button
                       type="button"
-                      className="quick-ocr-button quick-ocr-primary"
+                      className={`quick-ocr-button quick-ocr-primary quick-ocr-icon-trigger${quickOcrModeMenuOpen ? " is-open" : ""}`}
                       onClick={() => {
-                        setQuickOcrModeMenuOpen(false);
-                        onQuickOcr();
+                        if (onQuickOcrCaptureModeChange) {
+                          setQuickOcrModeMenuOpen((open) => !open);
+                        } else {
+                          onQuickOcr();
+                        }
                       }}
                       disabled={ocrBusy}
                       data-quick-ocr-button
-                      title={
-                        quickOcrCaptureMode === "clipboard"
-                          ? isEn
-                            ? "Wait for the next image copied by any screenshot tool"
-                            : "等待任意截图工具写入下一张剪贴板图片"
-                          : quickOcrCaptureMode === "pixpin"
-                            ? isEn
-                              ? "Open PixPin's region capture and read the copied image"
-                              : "打开 PixPin 区域截图并直接读取复制的图片"
-                            : isEn
-                              ? "Open the Windows Snipping Tool region selector"
-                              : "打开 Windows 截图工具的区域选择器"
-                      }
+                      aria-label={isEn ? "Quick OCR" : "快捷 OCR"}
+                      aria-expanded={quickOcrModeMenuOpen}
+                      title={isEn ? "Quick OCR" : "快捷 OCR"}
                     >
-                      <Camera size={15} />
-                      <span>{isEn ? "Quick OCR" : "快捷 OCR"}</span>
+                      <Camera size={16} />
                     </button>
-                    {onQuickOcrCaptureModeChange && (
-                      <button
-                        type="button"
-                        className={`quick-ocr-mode-trigger${quickOcrModeMenuOpen ? " is-open" : ""}${quickOcrCaptureMode !== "windows" ? " is-custom-provider" : ""}`}
-                        onClick={() => setQuickOcrModeMenuOpen((open) => !open)}
-                        disabled={ocrBusy}
-                        aria-label={isEn ? "Choose Quick OCR capture mode" : "选择快捷 OCR 截图模式"}
-                        aria-expanded={quickOcrModeMenuOpen}
-                        data-quick-ocr-mode-trigger
-                      >
-                        <ChevronDown size={12} />
-                      </button>
-                    )}
                     {quickOcrModeMenuOpen && onQuickOcrCaptureModeChange && (
                       <div className="quick-ocr-mode-menu" role="menu" data-quick-ocr-mode-menu>
+                        <button
+                          type="button"
+                          className="quick-ocr-run-current"
+                          onClick={() => {
+                            setQuickOcrModeMenuOpen(false);
+                            onQuickOcr();
+                          }}
+                          role="menuitem"
+                        >
+                          <Camera size={14} />
+                          <strong>{isEn ? "Run Quick OCR" : "开始快捷 OCR"}</strong>
+                          <span>
+                            {quickOcrCaptureMode === "windows"
+                              ? isEn
+                                ? "Windows Snipping Tool"
+                                : "Windows 截图工具"
+                              : quickOcrCaptureMode === "pixpin"
+                                ? "PixPin"
+                                : isEn
+                                  ? "Clipboard"
+                                  : "剪贴板"}
+                          </span>
+                        </button>
                         <button
                           type="button"
                           className={quickOcrCaptureMode === "windows" ? "is-active" : ""}
@@ -1307,36 +1506,50 @@ export function EditorWorkspace({
                         }
                         data-silent-ocr-toggle
                       />
-                      <span className="silent-ocr-indicator" aria-hidden="true" />
-                      <span>{isEn ? "Silent" : "静默"}</span>
-                      <kbd>{silentOcrShortcut}</kbd>
+                      <EyeOff size={16} aria-hidden="true" />
                     </label>
                   )}
                 </div>
               )}
-              {!keypadMode && showOcrActions && ocrModels.length > 0 && ocrModel && (
+              {!keypadMode &&
+                showOcrActions &&
+                ocrRecognizers.length > 0 &&
+                ocrRecognizer && (
                 <label
                   className="canvas-ocr-model"
                   title={
                     isEn
-                      ? "Model used when an image is pasted into a formula field"
-                      : "在公式输入框中粘贴图片时使用的 OCR 模型"
+                      ? "OCR recognizer used for pasted images and quick OCR"
+                      : "选择粘贴图片和快捷 OCR 使用的本地模型或 API"
                   }
                 >
                   <ScanLine size={14} />
                   <select
-                    value={ocrModel}
+                    value={ocrRecognizer}
                     disabled={ocrBusy}
                     onChange={(event) =>
-                      onOcrModelChange?.(event.target.value)
+                      onOcrRecognizerChange?.(event.target.value)
                     }
-                    aria-label={isEn ? "OCR recognition model" : "OCR 识别模型"}
+                    aria-label={isEn ? "OCR recognizer" : "OCR 识别器"}
                   >
-                    {ocrModels.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {isEn ? item.labelEn : item.labelZh}
-                      </option>
-                    ))}
+                    {localOcrRecognizers.length > 0 && (
+                      <optgroup label={isEn ? "Local models" : "本地模型"}>
+                        {localOcrRecognizers.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {isEn ? item.labelEn : item.labelZh}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {apiOcrRecognizers.length > 0 && (
+                      <optgroup label={isEn ? "OCR APIs" : "OCR API"}>
+                        {apiOcrRecognizers.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {isEn ? item.labelEn : item.labelZh}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </label>
               )}
@@ -1383,6 +1596,9 @@ export function EditorWorkspace({
                 {officeHeaderTrailingActions}
               </div>
             ) : null}
+                </div>
+              </PortalOrInline>
+            </div>
           </header>
 
           {keypadMode ? (
@@ -1480,7 +1696,15 @@ export function EditorWorkspace({
                       }
                     />
                   ) : (
-                    <span className="classic-bottom-tab-spacer" aria-hidden="true" />
+                    <div
+                      ref={setDesktopClassicControlsMount}
+                      className="classic-bottom-workspace-controls"
+                      aria-label={
+                        isEn
+                          ? "Formula controls"
+                          : "公式控制"
+                      }
+                    />
                   )}
                   <div
                     className="classic-bottom-tab-group"

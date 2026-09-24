@@ -35,6 +35,30 @@
   opacity: 0.72;
 }
 
+.formula-formatting-subdivider {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: color-mix(in srgb, var(--border) 82%, transparent);
+}
+
+.formula-formatting-button.is-persistent-action::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.38;
+}
+
+.formula-formatting-button.is-persistent-action.is-active::before {
+  opacity: 1;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
 .formula-formatting-button.is-color-action::after {
   content: "";
   position: absolute;
@@ -49,7 +73,7 @@
 
 .formula-color-popover {
   position: absolute;
-  z-index: 2200;
+  z-index: var(--z-popover, 190);
   top: calc(100% + 7px);
   right: 0;
   width: min(360px, calc(100vw - 24px));
@@ -739,7 +763,7 @@
 }
 
 .app-header.has-open-menu {
-  z-index: 520;
+  z-index: var(--z-app-menu, 90);
   overflow: visible;
   isolation: isolate;
 }
@@ -755,7 +779,7 @@
 }
 
 .menu-dismiss-layer {
-  z-index: 510;
+  z-index: var(--z-menu-dismiss, 85);
 }
 
 .code-format-control {
@@ -814,7 +838,7 @@
 }
 
 .export-dialog-backdrop {
-  z-index: 180;
+  z-index: var(--z-modal, 300);
   padding: 24px;
 }
 

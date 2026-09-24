@@ -1,0 +1,6 @@
+        Info Patching C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-tauri\target\release\visualtex.exe with bundle type information: nsis
+        Info Target: x64
+     Running makensis to produce C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-tauri\target\release\bundle\nsis\VisualTeX_1.2.6_x64-setup.exe
+    Finished 1 bundle at:
+        C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-tauri\target\release\bundle\nsis\VisualTeX_1.2.6_x64-setup.exe
+

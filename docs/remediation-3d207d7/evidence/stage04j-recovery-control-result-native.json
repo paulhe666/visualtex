@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  2575790,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  872224,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  1462076,
+        "name":  "OMML identity 2a665581-396a-4a7c-8789-f26657e8776e could not be recovered uniquely (2 matching equations).",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

@@ -1,0 +1,82 @@
+2026-09-06T18:11:46.0466010+08:00 pid=108116 tid=1 word-addin-loaded pid=108116 assembly=C:\Users\pojian_liao\AppData\Local\VisualTeX\office\remediation-builds\457699EFDFA3E7D4794070DE8A19084C99D103416E81C7266D41B79BC3A7D8B3\VisualTeX.WordVsto.dll mvid=89c466ae-a49e-4e4d-b47c-bdcf783c2e2c
+2026-09-06T18:11:46.5549343+08:00 pid=108116 tid=1 hook-started handle=0x371D0
+2026-09-06T18:11:47.5746351+08:00 pid=108116 tid=10 mathtype-native-preview-shared-prewarm-complete
+2026-09-06T18:13:06.8145036+08:00 pid=108116 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T18:13:09.3985673+08:00 pid=108116 tid=12 left-down x=1602 y=747 wordForeground=False
+2026-09-06T18:13:13.5025151+08:00 pid=108116 tid=1 word-undo-begin name=VisualTeX Insert Native OLE Display Formula recording=False level=0
+2026-09-06T18:13:13.5025151+08:00 pid=108116 tid=1 word-undo-started name=VisualTeX Insert Native OLE Display Formula recording=True level=1
+2026-09-06T18:13:13.9087118+08:00 pid=108116 tid=1 word-undo-end recording=True level=1
+2026-09-06T18:13:13.9197116+08:00 pid=108116 tid=16 ribbon-session-operation-released sessionId=adbb650e-3852-4057-82c6-ff5e7497dab0
+2026-09-06T18:13:21.7537107+08:00 pid=108116 tid=1 bulk-import bulk-import-start
+2026-09-06T18:13:21.7825110+08:00 pid=108116 tid=16 bulk-import bulk-import-ui-created sessionId=45456984-f746-4964-83bf-5046528d1294
+2026-09-06T18:13:21.7885094+08:00 pid=108116 tid=16 bulk-import bulk-import-ui-opened sessionId=45456984-f746-4964-83bf-5046528d1294
+2026-09-06T18:13:25.7173659+08:00 pid=108116 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T18:13:29.0355829+08:00 pid=108116 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T18:13:31.4817305+08:00 pid=108116 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T18:13:34.5124354+08:00 pid=108116 tid=18 bulk-import bulk-import-ui-finished sessionId=45456984-f746-4964-83bf-5046528d1294 status=committing error=<null>
+2026-09-06T18:13:34.5194362+08:00 pid=108116 tid=18 bulk-import parsed blocks=15 formulas=6 mode=Ole fontSizePt=10.5
+2026-09-06T18:13:34.5364356+08:00 pid=108116 tid=18 bulk-import render-prepare index=1/6 display=inline latex=\sqrt{E-u\left(x\right)}=\frac{1}{f\left(\omega\right)v_{ph}\left(\omega,x\right)}
+2026-09-06T18:13:34.5384338+08:00 pid=108116 tid=18 bulk-import converter-create display=inline mode=nativeOle latex=\sqrt{E-u\left(x\right)}=\frac{1}{f\left(\omega\right)v_{ph}\left(\omega,x\right)}
+2026-09-06T18:13:34.5434368+08:00 pid=108116 tid=18 bulk-import converter-created sessionId=5db7517d-2ce2-4a44-9ba5-4cebadfc21ec
+2026-09-06T18:13:34.5444366+08:00 pid=108116 tid=18 bulk-import render-prepare index=2/6 display=block latex=\begin{cases}\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega f\left(\omega\right)\right)=0 \\ \frac{\omega f\left(\omega\right)}{2}\frac{\mathrm{d}E\left(\omega\right)}{\mathrm{d}\omega}=\sqrt{\frac{m}{2}} \end{cases}
+2026-09-06T18:13:34.5454363+08:00 pid=108116 tid=18 bulk-import converter-create display=block mode=nativeOle latex=\begin{cases}\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega f\left(\omega\right)\right)=0 \\ \frac{\omega f\left(\omega\right)}{2}\frac{\mathrm{d}E\left(\omega\right)}{\mathrm{d}\omega}=\sqrt{\frac{m}{2}} \end{cases}
+2026-09-06T18:13:34.5494353+08:00 pid=108116 tid=19 bulk-import converter-created sessionId=c4337df5-11bc-4041-b4c0-9eb59b5d8bcf
+2026-09-06T18:13:34.5504363+08:00 pid=108116 tid=19 bulk-import render-prepare index=3/6 display=block latex=\sqrt{\frac{m}{2\left(E\left(\omega\right)-U\right)}}=\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega\cdot f\left(\omega\right)\sqrt{\left(E\left(\omega\right)-U\right)}\right)
+2026-09-06T18:13:34.5504363+08:00 pid=108116 tid=19 bulk-import converter-create display=block mode=nativeOle latex=\sqrt{\frac{m}{2\left(E\left(\omega\right)-U\right)}}=\frac{\mathrm{d}}{\mathrm{d}\omega}\left(\omega\cdot f\left(\omega\right)\sqrt{\left(E\left(\omega\right)-U\right)}\right)
+2026-09-06T18:13:34.5534341+08:00 pid=108116 tid=18 bulk-import converter-created sessionId=8da754fa-d69e-404c-a31c-5d949ccf9ab3
+2026-09-06T18:13:34.5544393+08:00 pid=108116 tid=18 bulk-import render-prepare index=4/6 display=block latex=i\hbar \frac{\partial}{\partial t}\psi(\mathbf{r},t) = \left[ -\frac{\hbar^2}{2m}\nabla^2 + V(\mathbf{r},t) \right]\psi(\mathbf{r},t)
+2026-09-06T18:13:34.5544393+08:00 pid=108116 tid=18 bulk-import converter-create display=block mode=nativeOle latex=i\hbar \frac{\partial}{\partial t}\psi(\mathbf{r},t) = \left[ -\frac{\hbar^2}{2m}\nabla^2 + V(\mathbf{r},t) \right]\psi(\mathbf{r},t)
+2026-09-06T18:13:34.5574363+08:00 pid=108116 tid=19 bulk-import converter-created sessionId=e8b92f1d-bd93-40e5-8a91-3a3428991bad
+2026-09-06T18:13:34.5584350+08:00 pid=108116 tid=19 bulk-import render-prepare index=5/6 display=block latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T18:13:34.5584350+08:00 pid=108116 tid=19 bulk-import converter-create display=block mode=nativeOle latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T18:13:34.5624356+08:00 pid=108116 tid=18 bulk-import converter-created sessionId=67ce9919-7055-47a9-a84d-8f1d6bd9db4e
+2026-09-06T18:13:34.5624356+08:00 pid=108116 tid=18 bulk-import render-prepare index=6/6 display=block latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T18:13:34.5624356+08:00 pid=108116 tid=18 bulk-import converter-create display=block mode=nativeOle latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T18:13:34.5664346+08:00 pid=108116 tid=19 bulk-import converter-created sessionId=a82311f5-99e6-460f-8735-636aa972fc45
+2026-09-06T18:13:34.5674339+08:00 pid=108116 tid=19 bulk-import render-batch-start unique=6 total=6
+2026-09-06T18:13:34.7265333+08:00 pid=108116 tid=18 bulk-import render-batch-item sessionId=5db7517d-2ce2-4a44-9ba5-4cebadfc21ec status=committing display=inline
+2026-09-06T18:13:34.8391461+08:00 pid=108116 tid=19 bulk-import render-batch-item sessionId=c4337df5-11bc-4041-b4c0-9eb59b5d8bcf status=committing display=block
+2026-09-06T18:13:34.9474371+08:00 pid=108116 tid=18 bulk-import render-batch-item sessionId=8da754fa-d69e-404c-a31c-5d949ccf9ab3 status=committing display=block
+2026-09-06T18:13:35.0523478+08:00 pid=108116 tid=19 bulk-import render-batch-item sessionId=e8b92f1d-bd93-40e5-8a91-3a3428991bad status=committing display=block
+2026-09-06T18:13:35.1617212+08:00 pid=108116 tid=18 bulk-import render-batch-item sessionId=67ce9919-7055-47a9-a84d-8f1d6bd9db4e status=committing display=block
+2026-09-06T18:13:35.2624481+08:00 pid=108116 tid=19 bulk-import render-batch-item sessionId=a82311f5-99e6-460f-8735-636aa972fc45 status=committing display=block
+2026-09-06T18:13:35.2624481+08:00 pid=108116 tid=19 bulk-import render-batch-complete unique=6 elapsedMs=695
+2026-09-06T18:13:35.3444746+08:00 pid=108116 tid=1 word-xml-incomplete-export document=文档155 attempt=1 maths=0/0 oles=0/1
+2026-09-06T18:13:35.4138260+08:00 pid=108116 tid=1 word-undo-begin name=VisualTeX 批量导入 recording=False level=0
+2026-09-06T18:13:35.4138260+08:00 pid=108116 tid=1 word-undo-started name=VisualTeX 批量导入 recording=True level=1
+2026-09-06T18:13:36.0257075+08:00 pid=108116 tid=1 bulk-import-ole-identities-finalized repaired=0
+2026-09-06T18:13:36.0267075+08:00 pid=108116 tid=1 word-undo-end recording=False level=0
+2026-09-06T18:13:36.0267075+08:00 pid=108116 tid=14 bulk-import bulk-insert-complete blocks=15 formulas=6 elapsedMs=761
+2026-09-06T18:13:36.0277084+08:00 pid=108116 tid=14 bulk-import bulk-import-complete blocks=15 formulas=6 elapsedMs=14272
+2026-09-06T18:13:36.0277084+08:00 pid=108116 tid=14 bulk-import bulk-operation-gate-released
+2026-09-06T18:13:36.0690873+08:00 pid=108116 tid=20 office-session-finalization-complete sessions=7 completed=True
+2026-09-06T18:14:32.8204918+08:00 pid=108116 tid=12 left-down x=806 y=1212 wordForeground=True
+2026-09-06T18:14:49.7786397+08:00 pid=108116 tid=12 left-down x=815 y=1228 wordForeground=True
+2026-09-06T18:14:57.0425687+08:00 pid=108116 tid=12 left-down x=2177 y=1494 wordForeground=False
+2026-09-06T18:15:00.5177357+08:00 pid=108116 tid=12 left-down x=2100 y=1471 wordForeground=True
+2026-09-06T18:15:02.3781833+08:00 pid=108116 tid=12 left-down x=2019 y=1474 wordForeground=True
+2026-09-06T18:15:03.0036451+08:00 pid=108116 tid=12 left-down x=2019 y=1475 wordForeground=True
+2026-09-06T18:15:03.5779587+08:00 pid=108116 tid=1 window-before-double-click formulaId=e1aeee92-9575-4ab8-ae56-0cc983586187 objectMode=nativeOle shouldOpenVisualTeX=True hasMousePoint=False pointHitsFormula=False
+2026-09-06T18:15:11.2059785+08:00 pid=108116 tid=12 left-down x=2639 y=748 wordForeground=False
+2026-09-06T18:15:15.8316833+08:00 pid=108116 tid=12 left-down x=835 y=1292 wordForeground=True
+2026-09-06T18:15:18.4613728+08:00 pid=108116 tid=12 left-down x=848 y=1359 wordForeground=False
+2026-09-06T18:15:20.3598982+08:00 pid=108116 tid=12 left-down x=863 y=1433 wordForeground=False
+2026-09-06T18:15:55.6778931+08:00 pid=108116 tid=12 left-down x=218 y=1472 wordForeground=False
+2026-09-06T18:16:21.8060940+08:00 pid=108116 tid=12 left-down x=742 y=1246 wordForeground=False
+2026-09-06T18:17:59.3149417+08:00 pid=108116 tid=12 left-down x=1317 y=747 wordForeground=False
+2026-09-06T18:18:17.3351243+08:00 pid=108116 tid=12 left-down x=1382 y=1120 wordForeground=False
+2026-09-06T18:18:20.7105510+08:00 pid=108116 tid=12 left-down x=2332 y=460 wordForeground=False
+2026-09-06T18:18:23.3027759+08:00 pid=108116 tid=12 left-down x=2492 y=460 wordForeground=False
+2026-09-06T18:19:40.1888986+08:00 pid=108116 tid=12 left-down x=1776 y=1270 wordForeground=False
+2026-09-06T18:19:54.0927265+08:00 pid=108116 tid=12 left-down x=2024 y=1211 wordForeground=True
+2026-09-06T18:22:17.6833815+08:00 pid=108116 tid=12 left-down x=2067 y=1076 wordForeground=True
+2026-09-06T18:22:23.8493268+08:00 pid=108116 tid=12 left-down x=1136 y=1362 wordForeground=True
+2026-09-06T18:22:55.8266370+08:00 pid=108116 tid=12 left-down x=2228 y=1331 wordForeground=False
+2026-09-06T18:23:01.6970430+08:00 pid=108116 tid=12 left-down x=684 y=811 wordForeground=False
+2026-09-06T18:23:02.4643942+08:00 pid=108116 tid=12 left-down x=677 y=753 wordForeground=False
+2026-09-06T18:23:08.4096051+08:00 pid=108116 tid=12 left-down x=1890 y=411 wordForeground=False
+2026-09-06T18:23:15.9289546+08:00 pid=108116 tid=12 left-down x=1381 y=2159 wordForeground=False
+2026-09-06T18:23:23.3814882+08:00 pid=108116 tid=12 left-down x=803 y=1363 wordForeground=False
+2026-09-06T18:25:26.0517303+08:00 pid=108116 tid=12 left-down x=1245 y=1142 wordForeground=False
+2026-09-06T18:25:31.5131243+08:00 pid=108116 tid=12 left-down x=227 y=1461 wordForeground=False
+2026-09-06T18:25:36.8368431+08:00 pid=108116 tid=12 left-down x=830 y=1233 wordForeground=False

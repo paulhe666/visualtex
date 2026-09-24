@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  2716824,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  3567878,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  486562,
+        "name":  "The converted OMML row identities or number fields are incomplete.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

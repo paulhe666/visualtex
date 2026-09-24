@@ -1,0 +1,141 @@
+{
+    "name":  "文档81",
+    "fullName":  "文档81",
+    "saved":  false,
+    "end":  271,
+    "paragraphs":  2,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+                   {
+                       "start":  1,
+                       "alternative":  null,
+                       "width":  58.05,
+                       "index":  1,
+                       "type":  1,
+                       "height":  16.05,
+                       "prog":  "Equation.DSMT4",
+                       "end":  27
+                   }
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  143,
+                          "name":  "VTEqNum_6fa7d1fbac004cb0b3a4508c2ba1c51e",
+                          "text":  "1",
+                          "start":  100
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " EMBED Equation.DSMT4 ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  2,
+                       "end":  26,
+                       "index":  1
+                   },
+                   {
+                       "nested":  2,
+                       "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  29,
+                       "end":  145,
+                       "index":  2
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  69,
+                       "end":  99,
+                       "index":  3
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  101,
+                       "end":  142,
+                       "index":  4
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON VTEqNum_6fa7d1fbac004cb0b3a4508c2ba1c51e \u0013 REF VTEqNum_6fa7d1fbac004cb0b3a4508c2ba1c51e \\* CHARFORMAT \\! \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  148,
+                       "end":  269,
+                       "index":  5
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_6fa7d1fbac004cb0b3a4508c2ba1c51e \\* CHARFORMAT \\! ",
+                       "result":  "1",
+                       "type":  3,
+                       "start":  202,
+                       "end":  267,
+                       "index":  6
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  146,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  146,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  271,
+                      "lineRule":  0,
+                      "text":  "(\u0015)\u003cCR\u003e",
+                      "size":  10.5
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "continuous",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      },
+                      {
+                          "value":  "6fa7d1fb-ac00-4cb0-b3a4-508c2ba1c51e",
+                          "name":  "VisualTeXEquationNumberTailFormulaId"
+                      }
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}

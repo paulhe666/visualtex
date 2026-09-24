@@ -545,11 +545,21 @@ internal static partial class Program
         if (string.Equals(
                 mode,
                 "word-sparse-numbered-omml-performance",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-deep-format-rollback",
                 StringComparison.OrdinalIgnoreCase))
         {
             try
             {
-                RunWordSparseNumberedOmmlPerformanceAcceptance(artifactRoot);
+                if (string.Equals(
+                        mode,
+                        "word-deep-format-rollback",
+                        StringComparison.OrdinalIgnoreCase))
+                    RunWordDeepFormatRollbackAcceptance(artifactRoot);
+                else
+                    RunWordSparseNumberedOmmlPerformanceAcceptance(artifactRoot);
                 Console.WriteLine("VisualTeX real VSTO formula flow acceptance passed.");
                 Console.WriteLine($"Artifacts: {artifactRoot}");
                 return 0;
@@ -709,6 +719,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-active-mathtype-omml-copy-diagnostic", StringComparison.OrdinalIgnoreCase))
             {
                 RunActiveMathTypeOmmlCopyDiagnostic(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-active-mathtype-omml-live-diagnostic", StringComparison.OrdinalIgnoreCase))
+            {
+                RunActiveMathTypeOmmlLiveDiagnostic(artifactRoot);
             }
             else if (string.Equals(mode, "word-active-mathtype-source-double-click", StringComparison.OrdinalIgnoreCase))
             {
@@ -889,6 +903,14 @@ internal static partial class Program
             else if (string.Equals(mode, "word-installed-inline-ole-ribbon-reedit", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordInstalledInlineOleRibbonReeditAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-installed-visualtex-numbered-sequence-ui", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordInstalledVisualTeXNumberedSequenceUiAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-active-visualtex-to-mathtype-fixture", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordActiveVisualTeXToMathTypeFixtureAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-installed-mathtype-reedit-regression", StringComparison.OrdinalIgnoreCase))
             {
@@ -1106,6 +1128,14 @@ internal static partial class Program
             {
                 RunWordMathTypeToVisualTeXNumberedCoreAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-visualtex-mathtype-batch-roundtrip", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordVisualTeXMathTypeBatchRoundTripAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-active-mathtype-visualtex-roundtrip-clone", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordActiveMathTypeVisualTeXRoundTripCloneAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-omml-1x3-native-edit", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordOmmlTableNativeEditAcceptance(artifactRoot);
@@ -1149,6 +1179,22 @@ internal static partial class Program
             else if (string.Equals(mode, "word-bulk-import-mathtype", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordBulkImportMathTypeAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-active-doc17-numbered-mathtype-bulk", StringComparison.OrdinalIgnoreCase))
+            {
+                RunActiveDoc17NumberedMathTypeBulkAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-bulk-import-numbered-mathtype-stress", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordBulkImportNumberedMathTypeStressAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-bulk-import-omml-stress", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordBulkImportOmmlStressAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-stress-compare-probes", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlStressProbeComparison(artifactRoot);
             }
             else if (string.Equals(mode, "word-bulk-import-latex-spacing", StringComparison.OrdinalIgnoreCase))
             {

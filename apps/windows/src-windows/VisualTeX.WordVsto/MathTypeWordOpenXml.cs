@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Xml.Linq;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -184,19 +184,13 @@ internal static class MathTypeWordOpenXml
         var bookmarkStarts = directChildren
             .Where(node => node.Name == WordNamespace + "bookmarkStart")
             .ToList();
-        var nonMathTypeBookmarks = bookmarkStarts
-            .Where(node => !(node.Attribute(WordNamespace + "name")?.Value
-                    .StartsWith(
-                        EquationBookmarkPrefix,
-                        StringComparison.OrdinalIgnoreCase)
-                ?? false))
-            .Select(node => node.Attribute(WordNamespace + "name")?.Value
-                ?? "<unnamed>")
-            .ToList();
-        if (nonMathTypeBookmarks.Count > 0)
-            throw new InvalidDataException(
-                "MathType MTPlaceRef field package contains non-MathType bookmarks: "
-                + string.Join(", ", nonMathTypeBookmarks));
+        var unsupportedBookmarks = bookmarkStarts
+            .Select(node => (string?)node.Attribute(WordNamespace + "name") ?? "")
+            .Where(name => !name.StartsWith(EquationBookmarkPrefix, StringComparison.OrdinalIgnoreCase)
+                && !IsVisualTeXNumberAlias(name)).ToArray();
+        if (unsupportedBookmarks.Length > 0)
+            throw new InvalidDataException("MathType MTPlaceRef contains unsupported bookmark owners: "
+                + string.Join(", ", unsupportedBookmarks));
 
         var bookmarkIds = bookmarkStarts
             .Select(node => node.Attribute(WordNamespace + "id")?.Value
@@ -232,6 +226,8 @@ internal static class MathTypeWordOpenXml
                 "MathType MTPlaceRef field contains unmatched bookmark ends: "
                 + string.Join(", ", unmatchedBookmarkEnds));
 
+        ValidateNumberOnlyAliasSpans(directChildren, bookmarkStarts);
+
         var paragraphProperties = directChildren
             .Where(node => node.Name == WordNamespace + "pPr")
             .Select(node => new XElement(node))
@@ -254,6 +250,59 @@ internal static class MathTypeWordOpenXml
         owner.Add(paragraphProperties);
         owner.Add(rebuiltField);
         return package.ToString(SaveOptions.DisableFormatting);
+    }
+
+    internal static bool IsVisualTeXNumberAlias(string name) =>
+        name.StartsWith("VTEqNum_", StringComparison.OrdinalIgnoreCase)
+        && Guid.TryParseExact(name.Substring("VTEqNum_".Length), "N", out _);
+
+    private static void ValidateNumberOnlyAliasSpans(
+        IReadOnlyList<XElement> nodes, IReadOnlyList<XElement> starts)
+    {
+        var aliases = starts.Where(node => IsVisualTeXNumberAlias(
+                (string?)node.Attribute(WordNamespace + "name") ?? ""))
+            .ToDictionary(node => (string)node.Attribute(WordNamespace + "id")!, node => node);
+        if (aliases.Count == 0) return;
+        var positions = new Dictionary<string, (int Start, int End)>();
+        var text = new System.Text.StringBuilder();
+        var fieldResults = new Stack<bool>();
+        foreach (var node in nodes)
+        {
+            var id = (string?)node.Attribute(WordNamespace + "id") ?? "";
+            if (aliases.ContainsKey(id)
+                && (node.Name == WordNamespace + "bookmarkStart" || node.Name == WordNamespace + "bookmarkEnd"))
+            {
+                if (fieldResults.Count != 1)
+                    throw new InvalidDataException("A compatibility number alias crosses a nested field boundary.");
+                if (node.Name.LocalName == "bookmarkStart") positions.Add(id, (text.Length, -1));
+                else if (positions.TryGetValue(id, out var span)) positions[id] = (span.Start, text.Length);
+                else throw new InvalidDataException("A compatibility number alias ends before it starts.");
+            }
+            foreach (var token in node.Descendants())
+            {
+                if (token.Name == WordNamespace + "fldChar")
+                {
+                    var type = (string?)token.Attribute(WordNamespace + "fldCharType");
+                    if (type == "begin") fieldResults.Push(false);
+                    else if (type == "separate" && fieldResults.Count > 0)
+                    { fieldResults.Pop(); fieldResults.Push(true); }
+                    else if (type == "end" && fieldResults.Count > 0) fieldResults.Pop();
+                }
+                else if (token.Name == WordNamespace + "instrText" || token.Name == WordNamespace + "t")
+                {
+                    if (fieldResults.Count == 1
+                        && token.Value.IndexOf("MACROBUTTON MTPlaceRef", StringComparison.OrdinalIgnoreCase) < 0)
+                        text.Append(token.Value);
+                    else if (fieldResults.Count > 1 && fieldResults.Peek()) text.Append(token.Value);
+                }
+            }
+        }
+        var visible = text.ToString();
+        if (fieldResults.Count != 0 || visible.Length < 3 || visible[0] != '(' || visible[visible.Length - 1] != ')')
+            throw new InvalidDataException("The compatibility alias owner has no complete parenthesized MathType number.");
+        foreach (var id in aliases.Keys)
+            if (!positions.TryGetValue(id, out var span) || span.Start != 1 || span.End != visible.Length - 1)
+                throw new InvalidDataException("A compatibility alias must cover exactly the MathType number without parentheses.");
     }
 
     internal static Fragment Read(Word.InlineShape shape)
@@ -720,6 +769,12 @@ internal static class MathTypeWordOpenXml
             throw new InvalidDataException(
                 "MathType MTPlaceRef bookmark start/end counts differ.");
 
+        var numberAliasIds = new HashSet<string>(bookmarkStarts
+            .Where(node => IsVisualTeXNumberAlias((string?)node.Attribute(WordNamespace + "name") ?? ""))
+            .Select(node => (string)node.Attribute(WordNamespace + "id")!), StringComparer.Ordinal);
+        bool IsNumberAliasNode(XElement node) => numberAliasIds.Contains((string?)node.Attribute(WordNamespace + "id") ?? "");
+        var numberAliasesStarted = false;
+        var numberAliasesEnded = false;
         var nodes = new List<XElement>
         {
             FieldCharRun("begin"),
@@ -735,7 +790,7 @@ internal static class MathTypeWordOpenXml
         void InsertBookmarkStarts()
         {
             if (bookmarksInserted) return;
-            nodes.AddRange(bookmarkStarts.Select(node => new XElement(node)));
+            nodes.AddRange(bookmarkStarts.Where(node => !IsNumberAliasNode(node)).Select(node => new XElement(node)));
             bookmarksInserted = true;
         }
 
@@ -749,7 +804,17 @@ internal static class MathTypeWordOpenXml
                     || string.IsNullOrEmpty(segment.Value))
                     continue;
                 if (hiddenIncrementCount > 0) InsertBookmarkStarts();
+                if (segment.Value == ")" && numberAliasIds.Count > 0)
+                {
+                    nodes.AddRange(bookmarkEnds.Where(IsNumberAliasNode).Select(node => new XElement(node)));
+                    numberAliasesEnded = true;
+                }
                 nodes.Add(InstructionRun(segment.Value));
+                if (segment.Value == "(" && numberAliasIds.Count > 0)
+                {
+                    nodes.AddRange(bookmarkStarts.Where(IsNumberAliasNode).Select(node => new XElement(node)));
+                    numberAliasesStarted = true;
+                }
                 continue;
             }
 
@@ -769,7 +834,9 @@ internal static class MathTypeWordOpenXml
             throw new InvalidDataException(
                 "MathType MTPlaceRef has no visible sequence field.");
         InsertBookmarkStarts();
-        nodes.AddRange(bookmarkEnds.Select(node => new XElement(node)));
+        if (numberAliasIds.Count > 0 && (!numberAliasesStarted || !numberAliasesEnded))
+            throw new InvalidDataException("The new MathType number template has no explicit number-only alias boundaries.");
+        nodes.AddRange(bookmarkEnds.Where(node => !IsNumberAliasNode(node)).Select(node => new XElement(node)));
         nodes.Add(FieldCharRun("end"));
         return nodes;
     }

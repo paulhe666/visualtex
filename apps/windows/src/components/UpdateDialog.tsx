@@ -21,6 +21,15 @@ import type { Language } from "../stores/editorStore";
 import { localizeReleaseNotes } from "../update/releaseNotes";
 import type { UpdateCheckResult } from "../update/updateService";
 
+const WECHAT_PAY_IMAGE_URL = new URL(
+  "../../../../docs/images/wechat-pay.jpg",
+  import.meta.url,
+).href;
+const ALIPAY_IMAGE_URL = new URL(
+  "../../../../docs/images/alipay.jpg",
+  import.meta.url,
+).href;
+
 interface Props {
   open: boolean;
   language: Language;
@@ -292,39 +301,51 @@ export function UpdateDialog({
 
           <section
             className="update-community-card"
-            aria-label={isEn ? "VisualTeX QQ community" : "VisualTeX QQ 交流群"}
+            aria-label={isEn ? "VisualTeX support and community" : "VisualTeX 支持与交流"}
           >
             <div className="update-community-copy">
-              <span className="update-community-icon">
-                <UsersRound size={18} aria-hidden="true" />
+              <span className="update-community-icon" aria-hidden="true">
+                <UsersRound size={18} />
               </span>
               <div>
-                <small>{isEn ? "Community" : "交流社区"}</small>
-                <strong>{isEn ? "VisualTeX QQ Group" : "VisualTeX 交流群"}</strong>
+                <strong>{isEn ? "Support & community" : "支持与交流"}</strong>
                 <p>
                   {isEn
-                    ? "Scan with QQ or search the group number to discuss usage, report issues, and follow development updates."
-                    : "使用 QQ 扫码或搜索群号，交流使用方法、反馈问题并获取开发动态。"}
+                    ? "WeChat Pay and Alipay are optional tip channels. Tipping is entirely voluntary and never affects access to any VisualTeX feature. The QQ code is for community discussion."
+                    : "微信和支付宝为自愿打赏通道，是否打赏完全不影响 VisualTeX 的任何功能和正常使用；QQ群二维码用于交流讨论。"}
                 </p>
                 <span className="update-community-number">
-                  {isEn ? "Group number" : "群号"}：
+                  {isEn ? "QQ group: " : "QQ群号："}
                   <b>{VISUALTEX_QQ_GROUP_NUMBER}</b>
                 </span>
               </div>
             </div>
-            <figure className="update-community-qr">
-              <img
-                src={VISUALTEX_QQ_GROUP_QR_DATA_URL}
-                alt={
-                  isEn
-                    ? `QR code for VisualTeX QQ group ${VISUALTEX_QQ_GROUP_NUMBER}`
-                    : `VisualTeX QQ 交流群 ${VISUALTEX_QQ_GROUP_NUMBER} 二维码`
-                }
-                width={240}
-                height={240}
-              />
-              <figcaption>{isEn ? "Scan with QQ" : "使用 QQ 扫码加入"}</figcaption>
-            </figure>
+            <div className="update-community-qr-row">
+              <figure>
+                <img
+                  src={WECHAT_PAY_IMAGE_URL}
+                  alt={isEn ? "VisualTeX WeChat Pay QR code" : "VisualTeX 微信收款二维码"}
+                  loading="lazy"
+                />
+                <figcaption>{isEn ? "WeChat tip" : "微信打赏"}</figcaption>
+              </figure>
+              <figure>
+                <img
+                  src={ALIPAY_IMAGE_URL}
+                  alt={isEn ? "VisualTeX Alipay QR code" : "VisualTeX 支付宝收款二维码"}
+                  loading="lazy"
+                />
+                <figcaption>{isEn ? "Alipay tip" : "支付宝打赏"}</figcaption>
+              </figure>
+              <figure>
+                <img
+                  src={VISUALTEX_QQ_GROUP_QR_DATA_URL}
+                  alt={`VisualTeX QQ ${isEn ? "group" : "群"} ${VISUALTEX_QQ_GROUP_NUMBER} QR code`}
+                  loading="lazy"
+                />
+                <figcaption>{isEn ? "QQ group" : "QQ群"}</figcaption>
+              </figure>
+            </div>
           </section>
 
           <label className="update-preference-row">

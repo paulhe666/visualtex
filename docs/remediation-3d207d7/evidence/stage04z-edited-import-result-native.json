@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  1075998,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  1534752,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  3304558,
+        "name":  "Office MathML conversion did not produce an m:oMath node.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

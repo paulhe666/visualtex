@@ -1,0 +1,226 @@
+{
+    "name":  "文档20",
+    "fullName":  "文档20",
+    "saved":  false,
+    "end":  126,
+    "paragraphs":  7,
+    "tables":  [
+                   {
+                       "index":  1,
+                       "start":  1,
+                       "end":  124,
+                       "rows":  1,
+                       "cols":  3,
+                       "nesting":  1,
+                       "text":  "\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e(𝜔𝑓(𝜔))=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓(𝜔)\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸(𝜔)\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e(1)\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e",
+                       "cells":  [
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  1,
+                                         "row":  1,
+                                         "start":  1,
+                                         "end":  2
+                                     },
+                                     {
+                                         "math":  1,
+                                         "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e(𝜔𝑓(𝜔))=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓(𝜔)\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸(𝜔)\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  2,
+                                         "row":  1,
+                                         "start":  2,
+                                         "end":  62
+                                     },
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cTAB\u003e(1)\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  3,
+                                         "row":  1,
+                                         "start":  62,
+                                         "end":  123
+                                     }
+                                 ]
+                   }
+               ],
+    "maths":  [
+                  {
+                      "controlTags":  [
+
+                                      ],
+                      "type":  0,
+                      "size":  10.5,
+                      "start":  2,
+                      "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e(𝜔𝑓(𝜔))=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓(𝜔)\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸(𝜔)\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e",
+                      "index":  1,
+                      "tables":  1,
+                      "font":  "Latin Modern Math",
+                      "end":  61
+                  }
+              ],
+    "shapes":  [
+
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  122,
+                          "name":  "VTEq_29e89fe3822c489997df78ba0e86fe34",
+                          "text":  "(1)",
+                          "start":  63
+                      },
+                      {
+                          "end":  121,
+                          "name":  "VTEqCap_29e89fe3822c489997df78ba0e86fe34",
+                          "text":  "1",
+                          "start":  64
+                      },
+                      {
+                          "end":  121,
+                          "name":  "VTEqNum_29e89fe3822c489997df78ba0e86fe34",
+                          "text":  "1",
+                          "start":  64
+                      },
+                      {
+                          "end":  2,
+                          "name":  "VTOMML_29e89fe3822c489997df78ba0e86fe34",
+                          "text":  "",
+                          "start":  2
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  65,
+                       "end":  120,
+                       "index":  1
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  1,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  1,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  1,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  2,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  2,
+                      "line":  12,
+                      "alignment":  1,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Latin Modern Math",
+                      "inTable":  true,
+                      "end":  62,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e(𝜔𝑓(𝜔))=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓(𝜔)\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸(𝜔)\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  62,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  123,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e(1)\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  123,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  124,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  124,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  6,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  125,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  125,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  7,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  126,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "continuous",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      },
+                      {
+                          "value":  "29e89fe3-822c-4899-97df-78ba0e86fe34",
+                          "name":  "VisualTeXEquationNumberTailFormulaId"
+                      }
+                  ],
+    "xmlFonts":  [
+                     "\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" /\u003e"
+                 ],
+    "xmlMathCount":  1,
+    "customXml":  [
+
+                  ]
+}

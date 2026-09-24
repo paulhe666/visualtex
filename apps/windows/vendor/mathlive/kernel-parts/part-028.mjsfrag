@@ -1,0 +1,1538 @@
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.queryStyle(style)) != null ? _b3 : "none";
+  }
+  /** The offset closest to the location `(x, y)` in viewport coordinate.
+   *
+   * **`bias`**:  if `0`, the vertical midline is considered to the left or
+   * right sibling. If `-1`, the left sibling is favored, if `+1`, the right
+   * sibling is favored.
+   *
+   * @category Selection
+   */
+  getOffsetFromPoint(x, y, options) {
+    if (!this._mathfield) return -1;
+    return offsetFromPoint(this._mathfield, x, y, options);
+  }
+  getElementInfo(offset) {
+    return getElementInfo(this._mathfield, offset);
+  }
+  /**
+   * Reset the undo stack
+   *
+   * @category Undo
+   */
+  resetUndo() {
+    var _a3;
+    (_a3 = this._mathfield) == null ? void 0 : _a3.resetUndo();
+  }
+  /**
+   * Return whether there are undoable items
+   * @category Undo
+   */
+  canUndo() {
+    if (!this._mathfield) return false;
+    return this._mathfield.canUndo();
+  }
+  /**
+   * Return whether there are redoable items
+   * @category Undo
+   */
+  canRedo() {
+    if (!this._mathfield) return false;
+    return this._mathfield.canRedo();
+  }
+  /** @internal */
+  handleEvent(evt) {
+    var _a3, _b3, _c2, _d2, _e;
+    if (Scrim.state !== "closed") return;
+    if (((_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.menu) == null ? void 0 : _b3.state) !== "closed") return;
+    if (evt.type === "pointerdown") this.onPointerDown();
+    if (evt.type === "focus") return;
+    if (evt.type !== "blur") return;
+    const touch = isTouchCapable();
+    if (touch && ((_c2 = window == null ? void 0 : window.mathVirtualKeyboard) == null ? void 0 : _c2.visible)) return;
+    if (((_d2 = Scrim.scrim) == null ? void 0 : _d2.state) !== "closed" || touch && isInIframe()) return;
+    (_e = this._mathfield) == null ? void 0 : _e.onBlur({ dispatchEvents: false });
+  }
+  /**
+   * Custom elements lifecycle hooks
+   * @internal
+   */
+  connectedCallback() {
+    var _a3, _b3, _c2, _d2;
+    const shadowRoot = this.shadowRoot;
+    const host = shadowRoot.host;
+    const computedStyle = window.getComputedStyle(this);
+    const userSelect = computedStyle.userSelect !== "none";
+    if (userSelect) host.addEventListener("pointerdown", this, true);
+    else {
+      const span = shadowRoot.querySelector("span");
+      span.style.pointerEvents = "none";
+    }
+    host.addEventListener("focus", this, true);
+    host.addEventListener("blur", this, true);
+    this._observer = new MutationObserver(() => {
+      var _a4;
+      this.value = (_a4 = this.textContent) != null ? _a4 : "";
+    });
+    this._observer.observe(this, {
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
+    if (!isElementInternalsSupported()) {
+      if (!this.hasAttribute("role")) this.setAttribute("role", "math");
+      if (!this.hasAttribute("aria-label"))
+        this.setAttribute("aria-label", "math input field");
+      this.setAttribute("aria-multiline", "false");
+    }
+    if (userSelect && !this.hasAttribute("contenteditable"))
+      this.setAttribute("contenteditable", "true");
+    if (!this.hasAttribute("tabindex")) this.setAttribute("tabindex", "0");
+    const slot = shadowRoot.querySelector("slot:not([name])");
+    if (slot) {
+      try {
+        this._style = slot.assignedElements().filter((x) => x.tagName.toLowerCase() === "style").map((x) => x.textContent).join("");
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    if (this._style) {
+      const styleElement = document.createElement("style");
+      styleElement.textContent = this._style;
+      shadowRoot.appendChild(styleElement);
+    }
+    let value = "";
+    if (this.hasAttribute("value")) value = this.getAttribute("value");
+    else {
+      value = (_a3 = slot == null ? void 0 : slot.assignedNodes().map((x) => x.nodeType === 3 ? x.textContent : "").join("").trim()) != null ? _a3 : "";
+    }
+    this._mathfield = new _Mathfield(
+      shadowRoot.querySelector(":host > span"),
+      __spreadProps(__spreadValues({}, (_c2 = (_b3 = gDeferredState.get(this)) == null ? void 0 : _b3.options) != null ? _c2 : getOptionsFromAttributes(this)), {
+        eventSink: this,
+        value
+      })
+    );
+    if (!gDeferredState.has(this)) {
+      this.upgradeProperty("disabled");
+      this.upgradeProperty("readonly");
+      for (const attr of Object.keys(_MathfieldElement.optionsAttributes))
+        this.upgradeProperty(toCamelCase(attr));
+    }
+    if (!((_d2 = this._mathfield) == null ? void 0 : _d2.model)) {
+      this._mathfield = null;
+      return;
+    }
+    if (gDeferredState.has(this)) {
+      const mf = this._mathfield;
+      const state = gDeferredState.get(this);
+      const menuItems = state.menuItems;
+      mf.model.deferNotifications({ content: false, selection: false }, () => {
+        const value2 = state.value;
+        if (value2 !== void 0) mf.setValue(value2);
+        mf.model.selection = state.selection;
+        gDeferredState.delete(this);
+      });
+      if (menuItems) this.menuItems = menuItems;
+    }
+    window.queueMicrotask(() => {
+      if (!this.isConnected) return;
+      this.dispatchEvent(
+        new Event("mount", {
+          cancelable: false,
+          bubbles: true,
+          composed: true
+        })
+      );
+    });
+    void loadFonts();
+  }
+  /**
+   * Custom elements lifecycle hooks
+   * @internal
+   */
+  disconnectedCallback() {
+    var _a3, _b3, _c2;
+    this.shadowRoot.host.removeEventListener("pointerdown", this, true);
+    if (!this._mathfield) return;
+    (_a3 = this._observer) == null ? void 0 : _a3.disconnect();
+    this._observer = null;
+    window.queueMicrotask(
+      () => (
+        // Notify listeners that we have been unmounted
+        this.dispatchEvent(
+          new Event("unmount", {
+            cancelable: false,
+            bubbles: true,
+            composed: true
+          })
+        )
+      )
+    );
+    const options = get(
+      this._mathfield.options,
+      Object.keys(_MathfieldElement.optionsAttributes).map((x) => toCamelCase(x))
+    );
+    gDeferredState.set(this, {
+      value: this._mathfield.getValue(),
+      selection: this._mathfield.model.selection,
+      menuItems: (_c2 = (_b3 = this._mathfield.menu) == null ? void 0 : _b3.menuItems) != null ? _c2 : void 0,
+      options
+    });
+    this._mathfield.dispose();
+    this._mathfield = null;
+  }
+  /**
+   * Private lifecycle hooks
+   * @internal
+   */
+  upgradeProperty(prop) {
+    if (this.hasOwnProperty(prop)) {
+      const value = this[prop];
+      delete this[prop];
+      if (prop === "readonly" || prop === "read-only") prop = "readOnly";
+      this[prop] = value;
+    }
+  }
+  /**
+   * Custom elements lifecycle hooks
+   * @internal
+   */
+  attributeChangedCallback(name, oldValue, newValue) {
+    if (oldValue === newValue) return;
+    const hasValue = newValue !== null;
+    switch (name) {
+      case "contenteditable":
+        requestUpdate(this._mathfield);
+        break;
+      case "placeholder":
+        if (newValue === false) newValue = "";
+        this.placeholder = newValue;
+        break;
+      case "disabled":
+        this.disabled = hasValue;
+        break;
+      case "read-only":
+      case "readonly":
+        this.readOnly = hasValue;
+        break;
+      default:
+    }
+  }
+  get readonly() {
+    return this.hasAttribute("readonly") || this.hasAttribute("read-only");
+  }
+  set readonly(value) {
+    const isReadonly = Boolean(value);
+    if (isReadonly) {
+      this.setAttribute("readonly", "");
+      if (isElementInternalsSupported()) this._internals.ariaReadOnly = "true";
+      else this.setAttribute("aria-readonly", "true");
+      this.setAttribute("aria-readonly", "true");
+    } else {
+      if (isElementInternalsSupported()) this._internals.ariaReadOnly = "false";
+      else this.removeAttribute("aria-readonly");
+      this.removeAttribute("readonly");
+      this.removeAttribute("read-only");
+    }
+    this._setOptions({ readOnly: isReadonly });
+  }
+  get disabled() {
+    return this.hasAttribute("disabled");
+  }
+  set disabled(value) {
+    var _a3;
+    const isDisabled = Boolean(value);
+    if (isDisabled) this.setAttribute("disabled", "");
+    else this.removeAttribute("disabled");
+    if (isElementInternalsSupported())
+      this._internals.ariaDisabled = isDisabled ? "true" : "false";
+    else this.setAttribute("aria-disabled", isDisabled ? "true" : "false");
+    if (isDisabled && ((_a3 = this._mathfield) == null ? void 0 : _a3.hasFocus) && window.mathVirtualKeyboard.visible)
+      this._mathfield.executeCommand("hideVirtualKeyboard");
+  }
+  /**
+   * The content of the mathfield as a LaTeX expression.
+   * ```js
+   * document.querySelector('mf').value = '\\frac{1}{\\pi}'
+   * ```
+   *  @category Accessing and changing the content
+   */
+  get value() {
+    return this.getValue();
+  }
+  set value(value) {
+    this.setValue(value);
+  }
+  /**
+   * The mode of the element when it is empty:
+   * - `"math"`: equivalent to `\displaystyle` (display math mode)
+   * - `"inline-math"`: equivalent to `\inlinestyle` (inline math mode)
+   * - `"text"`: text mode
+   * @category Customization
+   */
+  get defaultMode() {
+    return this._getOption("defaultMode");
+  }
+  set defaultMode(value) {
+    this._setOptions({ defaultMode: value });
+  }
+  /**
+     * A dictionary of LaTeX macros to be used to interpret and render the content.
+     *
+     * For example, to add a new macro to the default macro dictionary:
+     *
+  ```javascript
+  mf.macros = {
+    ...mf.macros,
+    smallfrac: '^{#1}\\!\\!/\\!_{#2}',
+  };
+  ```
+     *
+     * Note that `...mf.macros` is used to keep the existing macros and add to
+     * them.
+     * Otherwise, all the macros are replaced with the new definition.
+     *
+     * The code above will support the following notation:
+     *
+      ```tex
+      \smallfrac{5}{16}
+      ```
+      @category Macros
+     */
+  get macros() {
+    if (!this._mathfield) throw new Error("Mathfield not mounted");
+    return this._getOption("macros");
+  }
+  set macros(value) {
+    this._setOptions({ macros: value });
+  }
+  /**
+   * @inheritDoc Registers
+   * @category Registers
+   */
+  get registers() {
+    if (!this._mathfield) throw new Error("Mathfield not mounted");
+    const that = this;
+    return new Proxy(
+      {},
+      {
+        get: (_, prop) => {
+          if (typeof prop !== "string") return void 0;
+          return that._getOption("registers")[prop];
+        },
+        set(_, prop, value) {
+          if (typeof prop !== "string") return false;
+          that._setOptions({
+            registers: __spreadProps(__spreadValues({}, that._getOption("registers")), { [prop]: value })
+          });
+          return true;
+        },
+        ownKeys: () => Reflect.ownKeys(that._getOption("registers")),
+        getOwnPropertyDescriptor: (_, prop) => {
+          const value = that._getOption("registers")[prop];
+          if (value !== void 0) {
+            return {
+              configurable: true,
+              enumerable: true,
+              value,
+              writable: true
+            };
+          }
+          return void 0;
+        }
+      }
+    );
+  }
+  set registers(value) {
+    this._setOptions({ registers: value });
+  }
+  /**
+   * Map a color name as used in commands such as `\textcolor{}{}` or
+   * `\colorbox{}{}` to a CSS color value.
+   *
+   * Use this option to override the standard mapping of colors such as "yellow"
+   * or "red".
+   *
+   * If the name is not one you expected, return `undefined` and the default
+   * color mapping will be applied.
+   *
+   * If a `backgroundColorMap()` function is not provided, the `colorMap()`
+   * function will be used instead.
+   *
+   * If `colorMap()` is not provided, default color mappings are applied.
+   *
+   * The following color names have been optimized for a legible foreground
+   * and background values, and are recommended:
+   * - `red`, `orange`, `yellow`, `lime`, `green`, `teal`, `blue`, `indigo`,
+   * `purple`, `magenta`, `black`, `dark-grey`, `grey`, `light-grey`, `white`
+   *
+   * @category Customization
+   */
+  get colorMap() {
+    return this._getOption("colorMap");
+  }
+  set colorMap(value) {
+    this._setOptions({ colorMap: value });
+  }
+  /** @category Customization */
+  get backgroundColorMap() {
+    return this._getOption("backgroundColorMap");
+  }
+  set backgroundColorMap(value) {
+    this._setOptions({ backgroundColorMap: value });
+  }
+  /**
+    * Control the letter shape style:
+  
+    | `letterShapeStyle` | xyz | ABC | αβɣ | ΓΔΘ |
+    | ------------------ | --- | --- | --- | --- |
+    | `iso`              | it  | it  | it  | it  |
+    | `tex`              | it  | it  | it  | up  |
+    | `french`           | it  | up  | up  | up  |
+    | `upright`          | up  | up  | up  | up  |
+  
+    (it) = italic (up) = upright
+  
+    * The default letter shape style is `auto`, which indicates that `french`
+    * should be used if the locale is "french", and `tex` otherwise.
+    *
+    * **Historical Note**
+    *
+    * Where do the "french" rules come from? The
+    * TeX standard font, Computer Modern, is based on Monotype 155M, itself
+    * based on the Porson greek font which was one of the most widely used
+    * Greek fonts in english-speaking countries. This font had upright
+    * capitals, but slanted lowercase. In France, the traditional font for
+    * greek was Didot, which has both upright capitals and lowercase.
+    *
+    * As for roman uppercase, they are recommended by "Lexique des règles
+    * typographiques en usage à l’Imprimerie Nationale". It should be noted
+    * that this convention is not universally followed.
+    *
+    * @category Customization
+  */
+  get letterShapeStyle() {
+    return this._getOption("letterShapeStyle");
+  }
+  set letterShapeStyle(value) {
+    this._setOptions({ letterShapeStyle: value });
+  }
+  /**
+   * Set the minimum relative font size for nested superscripts and fractions. The value
+   * should be a number between `0` and `1`. The size is in relative `em` units relative to the
+   * font size of the `math-field` element. Specifying a value of `0` allows the `math-field`
+   * to use its default sizing logic.
+   *
+   * **Default**: `0`
+   *
+   * @category Customization
+   */
+  get minFontScale() {
+    return this._getOption("minFontScale");
+  }
+  set minFontScale(value) {
+    this._setOptions({ minFontScale: value });
+  }
+  /**
+   * Sets the maximum number of columns for the matrix environment. The default is
+   * 10 columns to match the behavior of the amsmath matrix environment.
+   * **Default**: `10`
+   *
+   * @category Customization
+   */
+  get maxMatrixCols() {
+    return this._getOption("maxMatrixCols");
+  }
+  set maxMatrixCols(value) {
+    this._setOptions({ maxMatrixCols: value });
+  }
+  /**
+   * When `true`, during text input the field will switch automatically between
+   * 'math' and 'text' mode depending on what is typed and the context of the
+   * formula. If necessary, what was previously typed will be 'fixed' to
+   * account for the new info.
+   *
+   * For example, when typing "if x >0":
+   *
+   * | Type  | Interpretation |
+   * |---:|:---|
+   * | `i` | math mode, imaginary unit |
+   * | `if` | text mode, english word "if" |
+   * | `if x` | all in text mode, maybe the next word is xylophone? |
+   * | `if x >` | "if" stays in text mode, but now "x >" is in math mode |
+   * | `if x > 0` | "if" in text mode, "x > 0" in math mode |
+   *
+   * **Default**: `false`
+   *
+   * Manually switching mode (by typing `alt/option+=`) will temporarily turn
+   * off smart mode.
+   *
+   *
+   * **Examples**
+   *
+   * - `slope = rise/run`
+   * - `If x > 0, then f(x) = sin(x)`
+   * - `x^2 + sin (x) when x > 0`
+   * - `When x&lt;0, x^{2n+1}&lt;0`
+   * - `Graph x^2 -x+3 =0 for 0&lt;=x&lt;=5`
+   * - `Divide by x-3 and then add x^2-1 to both sides`
+   * - `Given g(x) = 4x – 3, when does g(x)=0?`
+   * - `Let D be the set {(x,y)|0&lt;=x&lt;=1 and 0&lt;=y&lt;=x}`
+   * - `\int\_{the unit square} f(x,y) dx dy`
+   * - `For all n in NN`
+   *
+   * @category Customization
+   */
+  get smartMode() {
+    return this._getOption("smartMode");
+  }
+  set smartMode(value) {
+    this._setOptions({ smartMode: value });
+  }
+  /**
+   *
+   * When `true` and an open fence is entered via `typedText()` it will
+   * generate a contextually appropriate markup, for example using
+   * `\left...\right` if applicable.
+   *
+   * When `false`, the literal value of the character will be inserted instead.
+   * @category Customization
+   */
+  get smartFence() {
+    return this._getOption("smartFence");
+  }
+  set smartFence(value) {
+    this._setOptions({ smartFence: value });
+  }
+  /**
+   * When `true` and a digit is entered in an empty superscript, the cursor
+   * leaps automatically out of the superscript. This makes entry of common
+   * polynomials easier and faster. If entering other characters (for example
+   * "n+1") the navigation out of the superscript must be done manually (by
+   * using the cursor keys or the spacebar to leap to the next insertion
+   * point).
+   *
+   * When `false`, the navigation out of the superscript must always be done
+   * manually.
+   * @category Customization
+   */
+  get smartSuperscript() {
+    return this._getOption("smartSuperscript");
+  }
+  set smartSuperscript(value) {
+    this._setOptions({ smartSuperscript: value });
+  }
+  /**
+   * This option controls how many levels of subscript/superscript can be entered. For
+   * example, if `scriptDepth` is "1", there can be one level of superscript or
+   * subscript. Attempting to enter a superscript while inside a superscript will
+   * be rejected. Setting a value of 0 will prevent entry of any superscript or
+   * subscript (but not limits for sum, integrals, etc...)
+   *
+   * This can make it easier to enter equations that fit what's expected for the
+   * domain where the mathfield is used.
+   *
+   * To control the depth of superscript and subscript independently, provide an
+   * array: the first element indicate the maximum depth for subscript and the
+   * second element the depth of superscript. Thus, a value of `[0, 1]` would
+   * suppress the entry of subscripts, and allow one level of superscripts.
+   * @category Customization
+   */
+  get scriptDepth() {
+    return this._getOption("scriptDepth");
+  }
+  set scriptDepth(value) {
+    this._setOptions({ scriptDepth: value });
+  }
+  /**
+   * If `true`, extra parentheses around a numerator or denominator are
+   * removed automatically.
+   *
+   * **Default**: `true`
+   * @category Customization
+   */
+  get removeExtraneousParentheses() {
+    return this._getOption("removeExtraneousParentheses");
+  }
+  set removeExtraneousParentheses(value) {
+    this._setOptions({ removeExtraneousParentheses: value });
+  }
+  /**
+   * The LaTeX string to insert when the spacebar is pressed (on the physical or
+   * virtual keyboard).
+   *
+   * Use `"\;"` for a thick space, `"\:"` for a medium space, `"\,"` for a
+   * thin space.
+   *
+   * Do not use `" "` (a regular space), as whitespace is skipped by LaTeX
+   * so this will do nothing.
+   *
+   * **Default**: `""` (empty string)
+   * @category Customization
+   */
+  get mathModeSpace() {
+    return this._getOption("mathModeSpace");
+  }
+  set mathModeSpace(value) {
+    this._setOptions({ mathModeSpace: value });
+  }
+  /**
+   * The symbol used to represent a placeholder in an expression.
+   *
+   * **Default**: `▢` `U+25A2 WHITE SQUARE WITH ROUNDED CORNERS`
+   *
+   * @category Customization
+   */
+  get placeholderSymbol() {
+    return this._getOption("placeholderSymbol");
+  }
+  set placeholderSymbol(value) {
+    this._setOptions({ placeholderSymbol: value });
+  }
+  /**
+   * A LaTeX string displayed inside the mathfield when there is no content.
+   * @category Customization
+   */
+  get placeholder() {
+    return this._getOption("contentPlaceholder");
+  }
+  set placeholder(value) {
+    this._setOptions({ contentPlaceholder: value });
+  }
+  /**
+   * If `"auto"` a popover with suggestions may be displayed when a LaTeX
+   * command is input.
+   *
+   * **Default**: `"auto"`
+   *
+   * @category Customization
+   */
+  get popoverPolicy() {
+    return this._getOption("popoverPolicy");
+  }
+  set popoverPolicy(value) {
+    this._setOptions({ popoverPolicy: value });
+  }
+  /**
+   *
+   * If `"auto"` a popover with commands to edit an environment (matrix)
+   * is displayed when the virtual keyboard is displayed.
+   *
+   * **Default**: `"auto"`
+   *
+   * @category Customization
+   */
+  get environmentPopoverPolicy() {
+    return this._getOption("environmentPopoverPolicy");
+  }
+  set environmentPopoverPolicy(value) {
+    this._setOptions({ environmentPopoverPolicy: value });
+  }
+  /**
+   * @category Menu
+   */
+  get menuItems() {
+    var _a3;
+    if (!this._mathfield) throw new Error("Mathfield not mounted");
+    return (_a3 = this._mathfield.menu._menuItems.map((x) => x.menuItem)) != null ? _a3 : [];
+  }
+  set menuItems(menuItems) {
+    var _a3;
+    if (!this._mathfield) throw new Error("Mathfield not mounted");
+    if (this._mathfield) {
+      const btn = (_a3 = this._mathfield.element) == null ? void 0 : _a3.querySelector(
+        "[part=menu-toggle]"
+      );
+      if (btn) btn.style.display = menuItems.length === 0 ? "none" : "";
+      this._mathfield.menu.menuItems = menuItems;
+    }
+  }
+  /**
+   * @category Virtual Keyboard
+   */
+  get mathVirtualKeyboardPolicy() {
+    return this._getOption("mathVirtualKeyboardPolicy");
+  }
+  set mathVirtualKeyboardPolicy(value) {
+    this._setOptions({ mathVirtualKeyboardPolicy: value });
+  }
+  /**
+   * The keys of this object literal indicate the sequence of characters
+   * that will trigger an inline shortcut.
+   * @category Keyboard Shortcuts
+   */
+  get inlineShortcuts() {
+    if (!this._mathfield) throw new Error("Mathfield not mounted");
+    return this._getOption("inlineShortcuts");
+  }
+  set inlineShortcuts(value) {
+    if (!this._mathfield) throw new Error("Mathfield not mounted");
+    this._setOptions({ inlineShortcuts: value });
+  }
+  /**
+   * Maximum time, in milliseconds, between consecutive characters for them to be
+   * considered part of the same shortcut sequence.
+   *
+   * A value of 0 is the same as infinity: any consecutive character will be
+   * candidate for an inline shortcut, regardless of the interval between this
+   * character and the previous one.
+   *
+   * A value of 750 will indicate that the maximum interval between two
+   * characters to be considered part of the same inline shortcut sequence is
+   * 3/4 of a second.
+   *
+   * This is useful to enter "+-" as a sequence of two characters, while also
+   * supporting the "±" shortcut with the same sequence.
+   *
+   * The first result can be entered by pausing slightly between the first and
+   * second character if this option is set to a value of 250 or so.
+   *
+   * Note that some operations, such as clicking to change the selection, or
+   * losing the focus on the mathfield, will automatically timeout the
+   * shortcuts.
+   * @category Keyboard Shortcuts
+   */
+  get inlineShortcutTimeout() {
+    return this._getOption("inlineShortcutTimeout");
+  }
+  set inlineShortcutTimeout(value) {
+    this._setOptions({ inlineShortcutTimeout: value });
+  }
+  /** @category Keyboard Shortcuts   */
+  get keybindings() {
+    if (!this._mathfield) throw new Error("Mathfield not mounted");
+    return this._getOption("keybindings");
+  }
+  set keybindings(value) {
+    if (!this._mathfield) throw new Error("Mathfield not mounted");
+    this._setOptions({ keybindings: value });
+  }
+  /** @category Styles
+   */
+  get onInsertStyle() {
+    const hook = this._getOption("onInsertStyle");
+    if (hook === void 0) return defaultInsertStyleHook;
+    return hook;
+  }
+  set onInsertStyle(value) {
+    this._setOptions({ onInsertStyle: value });
+  }
+  /**
+   * A hook invoked when a string of characters that could be
+   * interpreted as shortcut has been typed.
+   *
+   * If not a special shortcut, return the empty string `""`.
+   *
+   * Use this handler to detect multi character symbols, and return them wrapped appropriately,
+   * for example `\mathrm{${symbol}}`.
+   * @category Hooks
+   */
+  get onInlineShortcut() {
+    return this._getOption("onInlineShortcut");
+  }
+  set onInlineShortcut(value) {
+    this._setOptions({ onInlineShortcut: value });
+  }
+  /**
+   * A hook invoked when scrolling the mathfield into view is necessary.
+   *
+   * Use when scrolling the page would not solve the problem, e.g.
+   * when the mathfield is in another div that has scrollable content.
+   * @category Hooks
+   */
+  get onScrollIntoView() {
+    return this._getOption("onScrollIntoView");
+  }
+  set onScrollIntoView(value) {
+    this._setOptions({ onScrollIntoView: value });
+  }
+  /**
+   * This hook is invoked when the user has requested to export the content
+   * of the mathfield, for example when pressing ctrl/command+C.
+   *
+   * This hook should return as a string what should be exported.
+   *
+   * The `range` argument indicates which portion of the mathfield should be
+   * exported. It is not always equal to the current selection, but it can
+   * be used to export a format other than LaTeX.
+   *
+   * By default this is:
+   *
+   * ```js
+   *  return `\\begin{equation*}${latex}\\end{equation*}`;
+   * ```
+   * @category Hooks
+   */
+  get onExport() {
+    return this._getOption("onExport");
+  }
+  set onExport(value) {
+    this._setOptions({ onExport: value });
+  }
+  get readOnly() {
+    return this._getOption("readOnly");
+  }
+  set readOnly(value) {
+    this._setOptions({ readOnly: value });
+  }
+  /**
+   * This is a standard DOM property
+   * @internal */
+  get isSelectionEditable() {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.isSelectionEditable) != null ? _b3 : false;
+  }
+  /** @category Prompts */
+  setPromptState(id, state, locked) {
+    var _a3;
+    (_a3 = this._mathfield) == null ? void 0 : _a3.setPromptState(id, state, locked);
+  }
+  /** @category Prompts */
+  getPromptState(id) {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.getPromptState(id)) != null ? _b3 : [void 0, true];
+  }
+  /**
+   * An array of ranges representing the selection.
+   *
+   * It is guaranteed there will be at least one element. If a discontinuous
+   * selection is present, the result will include more than one element.
+   *
+   * @category Selection
+   *
+   */
+  get selection() {
+    if (this._mathfield) return this._mathfield.model.selection;
+    if (gDeferredState.has(this)) return gDeferredState.get(this).selection;
+    return { ranges: [[0, 0]], direction: "forward" };
+  }
+  /**
+   *
+   * @category Selection
+   */
+  set selection(sel) {
+    if (typeof sel === "number") sel = { ranges: [[sel, sel]] };
+    if (this._mathfield) {
+      this._mathfield.model.selection = sel;
+      requestUpdate(this._mathfield);
+      return;
+    }
+    if (gDeferredState.has(this)) {
+      gDeferredState.set(this, __spreadProps(__spreadValues({}, gDeferredState.get(this)), {
+        selection: sel
+      }));
+      return;
+    }
+    gDeferredState.set(this, {
+      value: void 0,
+      selection: sel,
+      options: getOptionsFromAttributes(this),
+      menuItems: void 0
+    });
+  }
+  /**
+   * @category Selection
+   */
+  get selectionIsCollapsed() {
+    const selection = this.selection;
+    return selection.ranges.length === 1 && selection.ranges[0][0] === selection.ranges[0][1];
+  }
+  /**
+   * The position of the caret/insertion point, from 0 to `lastOffset`.
+   *
+   * @category Selection
+   *
+   */
+  get position() {
+    if (this._mathfield) return this._mathfield.model.position;
+    if (gDeferredState.has(this))
+      return gDeferredState.get(this).selection.ranges[0][0];
+    return 0;
+  }
+  /**
+   * @category Selection
+   */
+  set position(offset) {
+    if (this._mathfield) {
+      this._mathfield.model.position = offset;
+      requestUpdate(this._mathfield);
+    }
+    if (gDeferredState.has(this)) {
+      gDeferredState.set(this, __spreadProps(__spreadValues({}, gDeferredState.get(this)), {
+        selection: { ranges: [[offset, offset]] }
+      }));
+      return;
+    }
+    gDeferredState.set(this, {
+      value: void 0,
+      selection: { ranges: [[offset, offset]] },
+      options: getOptionsFromAttributes(this),
+      menuItems: void 0
+    });
+  }
+  /**
+   * The last valid offset.
+   * @category Selection
+   */
+  get lastOffset() {
+    var _a3, _b3;
+    return (_b3 = (_a3 = this._mathfield) == null ? void 0 : _a3.model.lastOffset) != null ? _b3 : -1;
+  }
+};
+_MathfieldElement.version = "0.109.2";
+_MathfieldElement.openUrl = (href) => {
+  if (!href) return;
+  const url = new URL(href);
+  if (!["http:", "https:", "file:"].includes(url.protocol.toLowerCase())) {
+    _MathfieldElement.playSound("plonk");
+    return;
+  }
+  window.open(url, "_blank");
+};
+/** @internal */
+_MathfieldElement._fontsDirectory = "./fonts/";
+/** @internal */
+_MathfieldElement._soundsDirectory = "./sounds";
+/**
+ * When a key on the virtual keyboard is pressed, produce a short haptic
+ * feedback, if the device supports it.
+ * @category Virtual Keyboard
+ */
+_MathfieldElement.keypressVibration = true;
+/** @internal */
+_MathfieldElement._keypressSound = {
+  spacebar: "keypress-spacebar.wav",
+  return: "keypress-return.wav",
+  delete: "keypress-delete.wav",
+  default: "keypress-standard.wav"
+};
+/** @ignore */
+_MathfieldElement._plonkSound = "plonk.wav";
+/** @internal */
+_MathfieldElement.audioBuffers = {};
+/**
+ * Support for [Trusted Type](https://www.w3.org/TR/trusted-types/).
+ *
+ * This optional function will be called before a string of HTML is
+ * injected in the DOM, allowing that string to be sanitized
+ * according to a policy defined by the host.
+ *
+ * Consider using this option if you are displaying untrusted content. Read more about [Security Considerations](/mathfield/guides/security/)
+ *
+ */
+_MathfieldElement.createHTML = (x) => x;
+/** @internal */
+_MathfieldElement._speechEngineRate = "100%";
+/** @internal */
+_MathfieldElement._speechEngineVoice = "Joanna";
+/** @internal */
+_MathfieldElement._textToSpeechMarkup = "";
+/** @internal */
+_MathfieldElement._textToSpeechRules = "mathlive";
+/** @internal */
+_MathfieldElement._textToSpeechRulesOptions = {};
+/** @category Speech */
+_MathfieldElement.speakHook = defaultSpeakHook;
+/** @category Speech */
+_MathfieldElement.readAloudHook = defaultReadAloudHook;
+/**
+ * When switching from a tab to one that contains a mathfield that was
+ * previously focused, restore the focus to the mathfield.
+ *
+ * This is behavior consistent with `<textarea>`, however it can be
+ * disabled if it is not desired.
+ *
+ * **Default**: `true`
+ * @category Customization
+ */
+_MathfieldElement.restoreFocusWhenDocumentFocused = true;
+/** @internal */
+_MathfieldElement._decimalSeparator = ".";
+/** @internal */
+_MathfieldElement._scientificNotationTemplate = "#1\\times10^{#2}";
+/** @internal */
+_MathfieldElement._isFunction = (command) => {
+  var _a3, _b3;
+  const ce = globalThis.MathfieldElement.computeEngine;
+  return (_b3 = (_a3 = ce == null ? void 0 : ce.parse(command).domain) == null ? void 0 : _a3.isFunction) != null ? _b3 : false;
+};
+var MathfieldElement = _MathfieldElement;
+function toCamelCase(s) {
+  return s.replace(/[^a-zA-Z\d]+(.)/g, (_m, c) => c.toUpperCase());
+}
+function getOptionsFromAttributes(mfe) {
+  const result = { readOnly: false };
+  const attribs = MathfieldElement.optionsAttributes;
+  Object.keys(attribs).forEach((x) => {
+    var _a3;
+    if (mfe.hasAttribute(x)) {
+      let value = mfe.getAttribute(x);
+      if (x === "placeholder") result.contentPlaceholder = value != null ? value : "";
+      else if (attribs[x] === "boolean") result[toCamelCase(x)] = true;
+      else if (attribs[x] === "on/off") {
+        value = (_a3 = value == null ? void 0 : value.toLowerCase()) != null ? _a3 : "";
+        if (value === "on" || value === "true") result[toCamelCase(x)] = true;
+        else if (value === "off" || value === "false")
+          result[toCamelCase(x)] = false;
+        else result[toCamelCase(x)] = void 0;
+      } else if (attribs[x] === "number")
+        result[toCamelCase(x)] = Number.parseFloat(value != null ? value : "0");
+      else result[toCamelCase(x)] = value;
+    }
+  });
+  return result;
+}
+function isElementInternalsSupported() {
+  if (!("ElementInternals" in window) || !HTMLElement.prototype.attachInternals)
+    return false;
+  if (!("role" in window.ElementInternals.prototype)) return false;
+  return true;
+}
+var mathfield_element_default = MathfieldElement;
+var _a2, _b2, _c, _d;
+if (isBrowser() && !((_a2 = window.customElements) == null ? void 0 : _a2.get("math-field"))) {
+  (_c = window[_b2 = Symbol.for("io.cortexjs.mathlive")]) != null ? _c : window[_b2] = {};
+  const global = window[Symbol.for("io.cortexjs.mathlive")];
+  global.version = "0.109.2";
+  globalThis.MathfieldElement = MathfieldElement;
+  (_d = window.customElements) == null ? void 0 : _d.define("math-field", MathfieldElement);
+}
+
+// src/addons/static-render.ts
+function findEndOfMath(delimiter, text, startIndex) {
+  let index = startIndex;
+  let braceLevel = 0;
+  const delimLength = delimiter.length;
+  while (index < text.length) {
+    const character = text[index];
+    if (braceLevel <= 0 && text.slice(index, index + delimLength) === delimiter)
+      return index;
+    if (character === "\\") index++;
+    else if (character === "{") braceLevel++;
+    else if (character === "}") braceLevel--;
+    index++;
+  }
+  return -1;
+}
+function splitAtDelimiters(startData, leftDelim, rightDelim, mathstyle, format = "latex") {
+  const finalData = [];
+  for (const startDatum of startData) {
+    if (startDatum.type === "text") {
+      const text = startDatum.data;
+      let lookingForLeft = true;
+      let currIndex = 0;
+      let nextIndex;
+      nextIndex = text.indexOf(leftDelim);
+      if (nextIndex !== -1) {
+        currIndex = nextIndex;
+        if (currIndex > 0) {
+          finalData.push({
+            type: "text",
+            data: text.slice(0, currIndex)
+          });
+        }
+        lookingForLeft = false;
+      }
+      let done = false;
+      while (!done) {
+        if (lookingForLeft) {
+          nextIndex = text.indexOf(leftDelim, currIndex);
+          if (nextIndex === -1) {
+            done = true;
+            break;
+          }
+          if (currIndex !== nextIndex) {
+            finalData.push({
+              type: "text",
+              data: text.slice(currIndex, nextIndex)
+            });
+          }
+          currIndex = nextIndex;
+        } else {
+          nextIndex = findEndOfMath(
+            rightDelim,
+            text,
+            currIndex + leftDelim.length
+          );
+          if (nextIndex === -1) {
+            done = true;
+            break;
+          }
+          let formula = text.slice(currIndex + leftDelim.length, nextIndex);
+          if (format === "ascii-math")
+            [, formula] = parseMathString(formula, { format: "ascii-math" });
+          finalData.push({ type: "math", data: formula, mathstyle });
+          currIndex = nextIndex + rightDelim.length;
+        }
+        lookingForLeft = !lookingForLeft;
+      }
+      if (currIndex < text.length)
+        finalData.push({ type: "text", data: text.slice(currIndex) });
+    } else finalData.push(startDatum);
+  }
+  return finalData;
+}
+function splitWithDelimiters(text, options) {
+  var _a3, _b3, _c2, _d2, _e, _f, _g, _h;
+  let data = [{ type: "text", data: text }];
+  if ((_b3 = (_a3 = options.TeX) == null ? void 0 : _a3.delimiters) == null ? void 0 : _b3.display) {
+    options.TeX.delimiters.display.forEach(([openDelim, closeDelim]) => {
+      data = splitAtDelimiters(data, openDelim, closeDelim, "displaystyle");
+    });
+  }
+  if ((_d2 = (_c2 = options.TeX) == null ? void 0 : _c2.delimiters) == null ? void 0 : _d2.inline) {
+    options.TeX.delimiters.inline.forEach(([openDelim, closeDelim]) => {
+      data = splitAtDelimiters(data, openDelim, closeDelim, "textstyle");
+    });
+  }
+  if ((_f = (_e = options.asciiMath) == null ? void 0 : _e.delimiters) == null ? void 0 : _f.inline) {
+    options.asciiMath.delimiters.inline.forEach(([openDelim, closeDelim]) => {
+      data = splitAtDelimiters(
+        data,
+        openDelim,
+        closeDelim,
+        "textstyle",
+        "ascii-math"
+      );
+    });
+  }
+  if ((_h = (_g = options.asciiMath) == null ? void 0 : _g.delimiters) == null ? void 0 : _h.display) {
+    options.asciiMath.delimiters.display.forEach(([openDelim, closeDelim]) => {
+      data = splitAtDelimiters(
+        data,
+        openDelim,
+        closeDelim,
+        "displaystyle",
+        "ascii-math"
+      );
+    });
+  }
+  return data;
+}
+function createMathMLNode(latex, options) {
+  const span = document.createElement("span");
+  span.setAttribute("translate", "no");
+  try {
+    const html = "<math xmlns='http://www.w3.org/1998/Math/MathML'>" + options.renderToMathML(latex) + "</math>";
+    span.innerHTML = globalThis.MathfieldElement.createHTML(html);
+  } catch (error) {
+    console.error(
+      `MathLive 0.109.2:  Could not convert "${latex}"' to MathML with ${error}`
+    );
+    span.textContent = latex;
+  }
+  span.className = "ML__sr-only";
+  return span;
+}
+function createMarkupNode(text, options, mathstyle) {
+  try {
+    const html = options.renderToMarkup(text, __spreadProps(__spreadValues({}, options), {
+      defaultMode: mathstyle === "displaystyle" ? "math" : "inline-math"
+    }));
+    const element = document.createElement("span");
+    element.dataset.latex = text;
+    element.style.display = mathstyle === "displaystyle" ? "flex" : "inline-flex";
+    element.setAttribute("aria-hidden", "true");
+    element.setAttribute("translate", "no");
+    element.innerHTML = globalThis.MathfieldElement.createHTML(html);
+    return element;
+  } catch (error) {
+    console.error("Could not parse'" + text + "' with ", error);
+    return document.createTextNode(text);
+  }
+}
+function createAccessibleMarkupPair(latex, mathstyle, options) {
+  var _a3;
+  const markupNode = createMarkupNode(
+    latex,
+    options,
+    mathstyle ? mathstyle : "textstyle"
+  );
+  const accessibleContent = (_a3 = options.renderAccessibleContent) != null ? _a3 : "";
+  if (/\b(mathml|speakable-text)\b/i.test(accessibleContent)) {
+    const fragment = document.createElement("span");
+    if (/\bmathml\b/i.test(accessibleContent) && options.renderToMathML)
+      fragment.append(createMathMLNode(latex, options));
+    if (/\bspeakable-text\b/i.test(accessibleContent) && options.renderToSpeakableText) {
+      const span = document.createElement("span");
+      span.setAttribute("translate", "no");
+      const html = options.renderToSpeakableText(latex);
+      span.innerHTML = globalThis.MathfieldElement.createHTML(html);
+      span.className = "ML__sr-only";
+      fragment.append(span);
+    }
+    fragment.append(markupNode);
+    return fragment;
+  }
+  return markupNode;
+}
+function scanText2(text, options) {
+  var _a3;
+  if (/^\s*$/.test(text)) return null;
+  if (((_a3 = options.TeX) == null ? void 0 : _a3.processEnvironments) && /^\s*\\begin/.test(text))
+    return [createAccessibleMarkupPair(text, "", options)];
+  const runs = splitWithDelimiters(text, options);
+  if (runs.length === 1 && runs[0].type === "text") return null;
+  const result = [];
+  for (const run of runs) {
+    if (run.type === "text") result.push(run.data);
+    else {
+      result.push(
+        createAccessibleMarkupPair(
+          run.data,
+          run.mathstyle === "textstyle" ? "textstyle" : "displaystyle",
+          options
+        )
+      );
+    }
+  }
+  return result;
+}
+function scanElement(element, options) {
+  var _a3, _b3, _c2, _d2, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
+  if (element.childNodes.length === 1 && element.childNodes[0].nodeType === 3) {
+    const text = (_a3 = element.childNodes[0].textContent) != null ? _a3 : "";
+    if (((_b3 = options.TeX) == null ? void 0 : _b3.processEnvironments) && /^\s*\\begin/.test(text)) {
+      element.textContent = "";
+      element.append(createAccessibleMarkupPair(text, "", options));
+      return;
+    }
+    const runs = splitWithDelimiters(text, options);
+    if (runs.length === 1) {
+      const run = runs[0];
+      if (run.type === "text") return;
+      element.textContent = "";
+      element.append(
+        createAccessibleMarkupPair(
+          run.data,
+          run.mathstyle === "textstyle" ? "textstyle" : "displaystyle",
+          options
+        )
+      );
+      return;
+    }
+  }
+  const nodes = [...element.childNodes];
+  for (const childNode of nodes) {
+    if (childNode.nodeType === 3) {
+      const nodes2 = scanText2((_c2 = childNode.textContent) != null ? _c2 : "", options);
+      if (nodes2) childNode.replaceWith(...nodes2);
+    } else if (childNode.nodeType === 1) {
+      const tag = childNode.nodeName.toLowerCase();
+      if (tag === "script") {
+        const scriptNode = childNode;
+        const type = scriptNode.type.toLowerCase();
+        if (type === "module" || type === "javascript") continue;
+        let textContent = void 0;
+        if ((_d2 = options.processScriptTypePattern) == null ? void 0 : _d2.test(type))
+          textContent = (_e = scriptNode.textContent) != null ? _e : "";
+        else if ((_f = options.processMathJSONScriptTypePattern) == null ? void 0 : _f.test(type)) {
+          try {
+            textContent = (_h = options.serializeToLatex) == null ? void 0 : _h.call(
+              options,
+              JSON.parse((_g = scriptNode.textContent) != null ? _g : "")
+            );
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        if (textContent) {
+          let style = "textstyle";
+          for (const l of type.split(";")) {
+            const [key, value] = l.split("=");
+            if (key.trim() === "mode")
+              style = value.trim() === "display" ? "displaystyle" : "textstyle";
+          }
+          replaceWithMath(scriptNode, textContent, style, options);
+        }
+      } else {
+        const el = childNode;
+        if ((_i = options.texClassDisplayPattern) == null ? void 0 : _i.test(el.className)) {
+          replaceWithMath(el, (_j = el.textContent) != null ? _j : "", "displaystyle", options);
+          continue;
+        }
+        if ((_k = options.texClassInlinePattern) == null ? void 0 : _k.test(el.className)) {
+          replaceWithMath(el, (_l = el.textContent) != null ? _l : "", "textstyle", options);
+          continue;
+        }
+        const shouldProcess = ((_n = (_m = options.processClassPattern) == null ? void 0 : _m.test(el.className)) != null ? _n : false) || !(((_p = (_o = options.skipTags) == null ? void 0 : _o.includes(tag)) != null ? _p : false) || ((_r = (_q = options.ignoreClassPattern) == null ? void 0 : _q.test(el.className)) != null ? _r : false));
+        if (shouldProcess) scanElement(el, options);
+      }
+    }
+  }
+}
+var DEFAULT_AUTO_RENDER_OPTIONS = {
+  // Name of tags whose content will not be scanned for math delimiters
+  skipTags: [
+    "math-field",
+    "noscript",
+    "style",
+    "textarea",
+    "pre",
+    "code",
+    "annotation",
+    "annotation-xml"
+  ],
+  // <script> tags of the following types will be processed. Others, ignored.
+  processScriptType: "math/tex",
+  // <script> tag with this type will be processed as MathJSON
+  processMathJSONScriptType: "math/json",
+  // Regex pattern of the class name of elements whose contents should not
+  // be processed
+  ignoreClass: "^(tex2jax_ignore|ML__latex)$",
+  // Regex pattern of the class name of elements whose contents should
+  // be processed when they appear inside ones that are ignored.
+  processClass: "tex2jax_process",
+  // Indicate the format to use to render accessible content
+  renderAccessibleContent: "mathml",
+  asciiMath: {
+    delimiters: {
+      inline: [["`", "`"]]
+      // ASCII Math delimiters
+    }
+  },
+  TeX: {
+    processEnvironments: true,
+    delimiters: {
+      inline: [["\\(", "\\)"]],
+      display: [
+        ["$$", "$$"],
+        ["\\[", "\\]"]
+      ]
+    }
+  }
+};
+function _renderMathInElement(element, options) {
+  var _a3, _b3, _c2, _d2, _e, _f, _g, _h;
+  try {
+    const optionsPrivate = __spreadValues(__spreadValues({}, DEFAULT_AUTO_RENDER_OPTIONS), options);
+    optionsPrivate.ignoreClassPattern = new RegExp(
+      (_a3 = optionsPrivate.ignoreClass) != null ? _a3 : ""
+    );
+    optionsPrivate.processClassPattern = new RegExp(
+      (_b3 = optionsPrivate.processClass) != null ? _b3 : ""
+    );
+    optionsPrivate.processScriptTypePattern = new RegExp(
+      (_c2 = optionsPrivate.processScriptType) != null ? _c2 : ""
+    );
+    optionsPrivate.processMathJSONScriptTypePattern = new RegExp(
+      (_d2 = optionsPrivate.processMathJSONScriptType) != null ? _d2 : ""
+    );
+    if ((_f = (_e = optionsPrivate.TeX) == null ? void 0 : _e.className) == null ? void 0 : _f.display) {
+      optionsPrivate.texClassDisplayPattern = new RegExp(
+        optionsPrivate.TeX.className.display
+      );
+    }
+    if ((_h = (_g = optionsPrivate.TeX) == null ? void 0 : _g.className) == null ? void 0 : _h.inline) {
+      optionsPrivate.texClassInlinePattern = new RegExp(
+        optionsPrivate.TeX.className.inline
+      );
+    }
+    void loadFonts();
+    injectStylesheet("core");
+    scanElement(element, optionsPrivate);
+  } catch (error) {
+    if (error instanceof Error)
+      console.error("renderMathInElement(): " + error.message);
+    else {
+      console.error(
+        "renderMathInElement(): Could not render math for element",
+        element
+      );
+    }
+  }
+}
+function replaceWithMath(el, latex, style, options) {
+  el.parentNode.replaceChild(
+    createAccessibleMarkupPair(latex, style, options),
+    el
+  );
+}
+
+// src/virtual-keyboard/commands.ts
+function switchKeyboardLayer(mathfield, layerName) {
+  const keyboard = VirtualKeyboard.singleton;
+  if (!keyboard) return false;
+  keyboard.show();
+  hideVariantsPanel();
+  keyboard.currentLayer = layerName;
+  keyboard.render();
+  keyboard.focus();
+  return true;
+}
+function toggleVirtualKeyboard() {
+  const kbd = window.mathVirtualKeyboard;
+  if (kbd.visible) kbd.hide({ animate: true });
+  else kbd.show({ animate: true });
+  return false;
+}
+register2(
+  {
+    switchKeyboardLayer,
+    toggleVirtualKeyboard,
+    hideVirtualKeyboard: () => {
+      window.mathVirtualKeyboard.hide({ animate: true });
+      return false;
+    },
+    showVirtualKeyboard: () => {
+      window.mathVirtualKeyboard.show({ animate: true });
+      return false;
+    }
+  },
+  { target: "virtual-keyboard" }
+);
+
+// src/public/math-static-elements.ts
+var fontsLoaded = false;
+var fontLoadPromise = null;
+function ensureFontsLoaded() {
+  if (fontsLoaded) return;
+  if (!fontLoadPromise) {
+    fontLoadPromise = loadFonts().then(() => {
+      fontsLoaded = true;
+    });
+  }
+}
+var MathStaticElement = class extends HTMLElement {
+  constructor() {
+    super();
+    this._hasRendered = false;
+    this._shadowRoot = this.attachShadow({ mode: "open" });
+    if ("adoptedStyleSheets" in this._shadowRoot)
+      this._shadowRoot.adoptedStyleSheets = [getStylesheet("core")];
+    else {
+      const styleElement = document.createElement("style");
+      styleElement.textContent = getStylesheetContent("core");
+      this._shadowRoot.appendChild(styleElement);
+    }
+    this._contentSlot = document.createElement("div");
+    this._contentSlot.style.display = "none";
+    this._contentSlot.setAttribute("part", "content");
+    this._renderContainer = document.createElement("div");
+    this._renderContainer.setAttribute("part", "render");
+    this._renderContainer.setAttribute("aria-hidden", "true");
+    this._errorFallback = document.createElement("div");
+    this._errorFallback.style.display = "none";
+    this._errorFallback.setAttribute("part", "error");
+    this._shadowRoot.appendChild(this._contentSlot);
+    this._shadowRoot.appendChild(this._renderContainer);
+    this._shadowRoot.appendChild(this._errorFallback);
+    this.addEventListener("keydown", this._handleKeydown.bind(this));
+  }
+  /**
+   * Observed attributes that trigger re-rendering
+   */
+  static get observedAttributes() {
+    return [
+      "mode",
+      "format",
+      "macros",
+      "letter-shape-style",
+      "min-font-scale",
+      "max-matrix-cols"
+    ];
+  }
+  connectedCallback() {
+    ensureFontsLoaded();
+    if ("IntersectionObserver" in window && !this._hasRendered) {
+      this._observer = new IntersectionObserver(
+        (entries) => {
+          var _a3;
+          if (entries[0].isIntersecting && !this._hasRendered) {
+            this.render();
+            (_a3 = this._observer) == null ? void 0 : _a3.disconnect();
+          }
+        },
+        { rootMargin: "50px" }
+      );
+      this._observer.observe(this);
+    } else {
+      this.render();
+    }
+  }
+  disconnectedCallback() {
+    var _a3;
+    (_a3 = this._observer) == null ? void 0 : _a3.disconnect();
+  }
+  attributeChangedCallback(name, oldValue, newValue) {
+    if (oldValue !== newValue && this._hasRendered) this.render();
+  }
+  /**
+   * Handle keyboard navigation (accessibility enhancement)
+   */
+  _handleKeydown(event) {
+    const tabindex = this.getAttribute("tabindex");
+    if (tabindex === null) return;
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      const description = this.getAttribute("aria-label");
+      if (description && "speechSynthesis" in window) {
+        const utterance = new SpeechSynthesisUtterance(description);
+        speechSynthesis.speak(utterance);
+      }
+    }
+  }
+  /**
+   * The rendering mode: 'textstyle' or 'displaystyle'
+   */
+  get mode() {
+    const modeAttr = this.getAttribute("mode");
+    if (modeAttr === "textstyle" || modeAttr === "displaystyle")
+      return modeAttr;
+    return this.getDefaultMathstyle();
+  }
+  set mode(value) {
+    this.setAttribute("mode", value);
+  }
+  /**
+   * The input format: 'latex', 'ascii-math', or 'math-json'
+   */
+  get format() {
+    const formatAttr = this.getAttribute("format");
+    if (formatAttr === "latex" || formatAttr === "ascii-math" || formatAttr === "math-json")
+      return formatAttr;
+    return "latex";
+  }
+  set format(value) {
+    this.setAttribute("format", value);
+  }
+  /**
+   * Letter shape style option
+   */
+  get letterShapeStyle() {
+    const value = this.getAttribute("letter-shape-style");
+    if (value === "auto" || value === "tex" || value === "iso" || value === "french" || value === "upright")
+      return value;
+    return void 0;
+  }
+  set letterShapeStyle(value) {
+    if (value === void 0) this.removeAttribute("letter-shape-style");
+    else this.setAttribute("letter-shape-style", value);
+  }
+  /**
+   * Macros to use for rendering
+   */
+  get macros() {
+    var _a3;
+    return (_a3 = this.getAttribute("macros")) != null ? _a3 : void 0;
+  }
+  set macros(value) {
+    if (value === void 0) this.removeAttribute("macros");
+    else this.setAttribute("macros", value);
+  }
+  /**
+   * Minimum font scale
+   */
+  get minFontScale() {
+    const value = this.getAttribute("min-font-scale");
+    return value ? parseFloat(value) : void 0;
+  }
+  set minFontScale(value) {
+    if (value === void 0) this.removeAttribute("min-font-scale");
+    else this.setAttribute("min-font-scale", String(value));
+  }
+  /**
+   * Maximum matrix columns
+   */
+  get maxMatrixCols() {

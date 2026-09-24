@@ -1,0 +1,47 @@
+--- 
+
++++ 
+
+@@ -34,10 +34,10 @@
+
+           <ns1:path ns2:extrusionok="f" gradientshapeok="t" ns2:connecttype="rect" />
+           <ns2:lock ns1:ext="edit" aspectratio="t" />
+         </ns1:shapetype>
+-        <ns1:shape id="_x0000_i1025" type="#_x0000_t75" alt="visualtex:v1:deflate:lZJBa9wwEIX_StHZNrJkyZIhh7awNNCSQEP3kHZBtsZrUVve2nLaNOS_d8R6XUog0JuZ782beSM_kbnpYDCkIg9uXkwf4FfajtOw9IYkK_wC0-xGT6o8ISu7tthhaFFaU9rUWqXTgkma6tYCfhnGqQWZS4smwYUeUL4fJ_tmt3n3BmdFlwP7ulDK3tUHdtUcWETOw0yq-yfi4hxtwfJCtqmubZkW2tSpUq1KW2UMZ5ZJJfhrhs_fEtKMFuJsE1BxVibEuvnUm8dPyLBa92PzHat-GWqYACeHaYGEwI_FBMx_Z46k8kvfJ2QCb2HaOxu6WxypeSY0V5QXVJQyL3N9kXwAd-xC1HDUMCa0YlJKmgvJE1KbGWJWUjGW8bIQWhdClqrMqY6n9uGz-w23uHJOM3Hx3L2or4_yEUI4Y0wT3IA33Nj7Lt4UVjg_zgEGpD_xTa593OGmh3OecAn5D1uDbNDjSR7gZhj6nfNHmE6T8xtsJsAL270L3fbvkDyjWa5w5nKyr9C1921ck1EmU6pTKu5yXYmioizTlJeClecXprSi9K_l_zQ9_wE" style="width:69.35pt;height:25.25pt" ns2:ole="">
+-          <ns1:imagedata ns3:id="rId4" ns2:title="" />
++        <ns1:shape id="_x0000_i1027" type="#_x0000_t75" alt="visualtex:v1:deflate:lZJBa9wwEIX_StHZNrJkyZIhh7awNNCSQEP3kHZBtsZrUVve2nLaNOS_d8R6XUog0JuZ782beSM_kbnpYDCkIg9uXkwf4FfajtOw9IYkK_wC0-xGT6o8ISu7tthhaFFaU9rUWqXTgkma6tYCfhnGqQWZS4smwYUeUL4fJ_tmt3n3BmdFlwP7ulDK3tUHdtUcWETOw0yq-yfi4hxtwfJCtqmubZkW2tSpUq1KW2UMZ5ZJJfhrhs_fEtKMFuJsE1BxVibEuvnUm8dPyLBa92PzHat-GWqYACeHaYGEwI_FBMx_Z46k8kvfJ2QCb2HaOxu6WxypeSY0V5QXVJQyL3N9kXwAd-xC1HDUMCa0YlJKmgvJE1KbGWJWUjGW8bIQWhdClqrMqY6n9uGz-w23uHJOM3Hx3L2or4_yEUI4Y0wT3IA33Nj7Lt4UVjg_zgEGpD_xTa593OGmh3OecAn5D1uDbNDjSR7gZhj6nfNHmE6T8xtsJsAL270L3fbvkDyjWa5w5nKyr9C1921ck1EmU6pTKu5yXYmioizTlJeClecXprSi9K_l_zQ9_wE" style="width:69.35pt;height:25.25pt" ns2:ole="">
++          <ns1:imagedata ns3:id="rId6" ns2:title="" />
+         </ns1:shape>
+-        <ns2:OLEObject Type="Embed" ProgID="VisualTeX.Formula.1" ShapeID="_x0000_i1025" DrawAspect="Content" ObjectID="_1850172146" ns3:id="rId5">
++        <ns2:OLEObject Type="Embed" ProgID="VisualTeX.Formula.1" ShapeID="_x0000_i1027" DrawAspect="Content" ObjectID="_1850172251" ns3:id="rId7">
+           <ns2:FieldCodes>\s</ns2:FieldCodes>
+         </ns2:OLEObject>
+       </ns0:object>
+@@ -172,9 +172,9 @@
+
+       </ns0:rPr>
+       <ns0:object ns0:dxaOrig="846" ns0:dyaOrig="326">
+         <ns1:shape id="_x0000_i1026" type="#_x0000_t75" alt="visualtex:v1:deflate:lZJdi9QwFIb_iuS6LflomqbghQqDC8ouuDgXOwppczoN9mNM09V1mP_uCdOtiCDsTSHnOR_ve07PZG46GAypyKObF9MH-Jm2kx-W3pBkhZ_Bz24aScUSsrIbixW1oWAVg7TVvE5z3qi0ZkanwjRcqaJF3mCT4EIPmL6fvH2123r3Bmdh-HAYTOj8cIbL1_P2cJfD4YSfhVL-lr2mscCNMJPq4UxcnG6kbZWiNG2pxulFTdOyVXlqeK0tZ5KrQr58zOVLQprJQtRpAtZd6xNi3XzqzdNHZNF6PzXfMDouQw0eUE_wCyQEvi8m4K7uzZFU49L3CfEwWvB7Z0N3h0JKmUlZCF3kZS6UfObvwR27EBOEwAQhdMkEFzznTCe46RmifVJxnuVUCq0F55JqVRTxJmP45H7BHeplNNt67v6Jr9f7ACFcMVoJbsC1buxdF9cMK5yf5gAD0h94vJsxarjt4WomPDv8i61GNjjiPh7hdhj6nRuP4E_ejRtsPOB67d6FbvvJCMtoxkqcuZzsf-ha-ybK5JQXKdUplfdMV1JWVGWaaaGVvp6W0orSPy1fUnT5DQ" style="width:63.6pt;height:25.25pt" ns2:ole="">
+-          <ns1:imagedata ns3:id="rId6" ns2:title="" />
++          <ns1:imagedata ns3:id="rId8" ns2:title="" />
+         </ns1:shape>
+-        <ns2:OLEObject Type="Embed" ProgID="VisualTeX.Formula.1" ShapeID="_x0000_i1026" DrawAspect="Content" ObjectID="_1850172147" ns3:id="rId7">
++        <ns2:OLEObject Type="Embed" ProgID="VisualTeX.Formula.1" ShapeID="_x0000_i1026" DrawAspect="Content" ObjectID="_1850172252" ns3:id="rId9">
+           <ns2:FieldCodes>\s</ns2:FieldCodes>
+         </ns2:OLEObject>
+       </ns0:object>
+@@ -300,10 +300,10 @@
+
+         <ns0:position ns0:val="-8" />
+       </ns0:rPr>
+       <ns0:object ns0:dxaOrig="1112" ns0:dyaOrig="206">
+-        <ns1:shape id="_x0000_i1027" type="#_x0000_t75" alt="visualtex:v1:deflate:tVLBitswEP2VorNlRrYlS4Ye2kLoQssudOke6m6R7XEisJ2sLW-Thvx7RxsnhRYKPfRk897Mm_dGc2RTvcHesoI9u2m2ncc9b7djP3eWRQv5GcfJbQdWiIgt3E1DHTpBVRuZcp1iwzNpKm6lBG7qJK9UovK0kiTine-Qyh-2Y_NqddXuLM0iuCzd4L8defi2_nB6PF7-yrK3fjP2RySQ7x8TQqIr2Jz2r8tyeho9NezcKUi6ASdWfDkyF_yBaLQ2QnOAVvAMtOJVhsDrtpGIuWlVIv-HkdPXiNXbBkNW60n5PCFijZt2nT18JI5QNwS_BA9zX-GIZLm13YQRw6fZetr4vV2zYpi7LmIjDg2OD67xmzsyK0QSC6FASZMbgNSIS8l7dOuNDzWJiKXOM4AsVRmIVOURq-yEL1MLIWNihDFGC6VNJtPwuIP_5H7gHZkWEMuL5uoPfDmDD-j9maY83vW0_Sv3bhNeAxdyOkwee2K_0xXcvCS_7fCch3idxaBzkIKSKBBSpb9VLrGCARULAzIzWkKmUh1iDbSuZ7zt-27lhjWOu9GFqefV1SPS_psH5zfXS2Yihlho8jPvmr-wS--bECGBRHEwHOS9MIVUBcg4CZazvJwBkrcABcAvyX9pOv0E" style="width:82.75pt;height:16.05pt" ns2:ole="">
+-          <ns1:imagedata ns3:id="rId8" ns2:title="" />
++        <ns1:shape id="_x0000_i1025" type="#_x0000_t75" alt="visualtex:v1:deflate:tVLBitswEP2VorNlRrYlS4Ye2kLoQssudOke6m6R7XEisJ2sLW-Thvx7RxsnhRYKPfRk897Mm_dGc2RTvcHesoI9u2m2ncc9b7djP3eWRQv5GcfJbQdWiIgt3E1DHTpBVRuZcp1iwzNpKm6lBG7qJK9UovK0kiTine-Qyh-2Y_NqddXuLM0iuCzd4L8defi2_nB6PF7-yrK3fjP2RySQ7x8TQqIr2Jz2r8tyeho9NezcKUi6ASdWfDkyF_yBaLQ2QnOAVvAMtOJVhsDrtpGIuWlVIv-HkdPXiNXbBkNW60n5PCFijZt2nT18JI5QNwS_BA9zX-GIZLm13YQRw6fZetr4vV2zYpi7LmIjDg2OD67xmzsyK0QSC6FASZMbgNSIS8l7dOuNDzWJiKXOM4AsVRmIVOURq-yEL1MLIWNihDFGC6VNJtPwuIP_5H7gHZkWEMuL5uoPfDmDD-j9maY83vW0_Sv3bhNeAxdyOkwee2K_0xXcvCS_7fCch3idxaBzkIKSKBBSpb9VLrGCARULAzIzWkKmUh1iDbSuZ7zt-27lhjWOu9GFqefV1SPS_psH5zfXS2Yihlho8jPvmr-wS--bECGBRHEwHOS9MIVUBcg4CZazvJwBkrcABcAvyX9pOv0E" style="width:82.75pt;height:16.05pt" ns2:ole="">
++          <ns1:imagedata ns3:id="rId10" ns2:title="" />
+         </ns1:shape>
+-        <ns2:OLEObject Type="Embed" ProgID="VisualTeX.Formula.1" ShapeID="_x0000_i1027" DrawAspect="Content" ObjectID="_1850172148" ns3:id="rId9">
++        <ns2:OLEObject Type="Embed" ProgID="VisualTeX.Formula.1" ShapeID="_x0000_i1025" DrawAspect="Content" ObjectID="_1850172253" ns3:id="rId11">
+           <ns2:FieldCodes>\s</ns2:FieldCodes>
+         </ns2:OLEObject>
+       </ns0:object>

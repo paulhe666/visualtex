@@ -1,0 +1,84 @@
+
+> visualtex-windows@1.2.6 build:all
+> npm run build:desktop && npm run build:office:windows-native
+
+
+> visualtex-windows@1.2.6 build:desktop
+> tsc --noEmit && vite build
+
+vite v6.4.3 building for production...
+transforming...
+✓ 2301 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                           0.57 kB │ gzip:     0.39 kB
+dist/assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2            4.93 kB
+dist/assets/KaTeX_Size2-Regular-Dy4dx90m.woff2            5.21 kB
+dist/assets/KaTeX_Size1-Regular-mCD8mA8B.woff2            5.47 kB
+dist/assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2      6.91 kB
+dist/assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2         6.91 kB
+dist/assets/KaTeX_Script-Regular-D3wIWfF6.woff2           9.64 kB
+dist/assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2       10.34 kB
+dist/assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2         11.32 kB
+dist/assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2            11.35 kB
+dist/assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2        12.03 kB
+dist/assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2          12.22 kB
+dist/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2      13.57 kB
+dist/assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2         16.40 kB
+dist/assets/KaTeX_Math-Italic-t53AETM-.woff2             16.44 kB
+dist/assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2         16.78 kB
+dist/assets/KaTeX_Main-Italic-NWA7e6Wa.woff2             16.99 kB
+dist/assets/KaTeX_Main-Bold-Cx986IdX.woff2               25.32 kB
+dist/assets/KaTeX_Main-Regular-B22Nviop.woff2            26.27 kB
+dist/assets/KaTeX_AMS-Regular-BQhdFMY1.woff2             28.08 kB
+dist/assets/wechat-pay-CJMIPETn.jpg                     115.95 kB
+dist/assets/alipay-DlrAEpwt.jpg                         323.09 kB
+dist/assets/index-xbziGMoK.css                          367.68 kB │ gzip:    62.72 kB
+dist/assets/index-S3YQ7iAv.js                             8.36 kB │ gzip:     3.43 kB
+dist/assets/CustomSymbolDesignerDialog-qXrr6hUM.js       91.03 kB │ gzip:    27.69 kB
+dist/assets/main-VKJvQ0R4.js                          4,478.32 kB │ gzip: 1,454.91 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 8.43s
+
+> visualtex-windows@1.2.6 build:office:windows-native
+> tsc -p tsconfig.office.json --noEmit && vite build -c vite.office.windows-native.config.ts && node scripts/finalize_office_platform_build.mjs windows-native
+
+vite v6.4.3 building for production...
+transforming...
+✓ 2294 modules transformed.
+rendering chunks...
+computing gzip size...
+dist-office-windows-native/office-dialog.html                                   0.89 kB │ gzip:     0.49 kB
+dist-office-windows-native/assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2            4.93 kB
+dist-office-windows-native/assets/KaTeX_Size2-Regular-Dy4dx90m.woff2            5.21 kB
+dist-office-windows-native/assets/KaTeX_Size1-Regular-mCD8mA8B.woff2            5.47 kB
+dist-office-windows-native/assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2      6.91 kB
+dist-office-windows-native/assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2         6.91 kB
+dist-office-windows-native/assets/KaTeX_Script-Regular-D3wIWfF6.woff2           9.64 kB
+dist-office-windows-native/assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2       10.34 kB
+dist-office-windows-native/assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2         11.32 kB
+dist-office-windows-native/assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2            11.35 kB
+dist-office-windows-native/assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2        12.03 kB
+dist-office-windows-native/assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2          12.22 kB
+dist-office-windows-native/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2      13.57 kB
+dist-office-windows-native/assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2         16.40 kB
+dist-office-windows-native/assets/KaTeX_Math-Italic-t53AETM-.woff2             16.44 kB
+dist-office-windows-native/assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2         16.78 kB
+dist-office-windows-native/assets/KaTeX_Main-Italic-NWA7e6Wa.woff2             16.99 kB
+dist-office-windows-native/assets/KaTeX_Main-Bold-Cx986IdX.woff2               25.32 kB
+dist-office-windows-native/assets/KaTeX_Main-Regular-B22Nviop.woff2            26.27 kB
+dist-office-windows-native/assets/KaTeX_AMS-Regular-BQhdFMY1.woff2             28.08 kB
+dist-office-windows-native/assets/dialog-BkcOVQJV.css                         378.68 kB │ gzip:    64.88 kB
+dist-office-windows-native/assets/CustomSymbolDesignerDialog-KKzM6a4z.js       89.56 kB │ gzip:    27.65 kB
+dist-office-windows-native/assets/dialog-HL1bHzsS.js                        4,391.15 kB │ gzip: 1,424.75 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 4.68s
+Finalized Windows native Office companion UI layout.

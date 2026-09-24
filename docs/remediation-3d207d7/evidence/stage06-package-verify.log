@@ -1,0 +1,9 @@
+{
+  "checks": 37,
+  "allChecksPassed": true,
+  "installer": {
+    "path": "apps/windows/src-tauri/target/release/bundle/nsis/VisualTeX_1.2.6_x64-setup.exe",
+    "size": 323777910,
+    "sha256": "A324ACB61252C15D9EC06FE118DA76A17339ABA6B30B94447421879413181F19"
+  }
+}

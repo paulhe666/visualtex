@@ -1,0 +1,452 @@
+﻿[
+    {
+        "paragraph":  {
+                          "style":  "正文",
+                          "name":  "等线",
+                          "text":  "\t(1)\r\u0007",
+                          "size":  10.5,
+                          "start":  154,
+                          "other":  "+西文正文",
+                          "ascii":  "+西文正文",
+                          "codes":  [
+                                        9,
+                                        40,
+                                        49,
+                                        41,
+                                        13,
+                                        7
+                                    ],
+                          "end":  215
+                      },
+        "code":  " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+        "result":  {
+                       "style":  "正文",
+                       "name":  "等线",
+                       "text":  "1",
+                       "size":  10.5,
+                       "start":  211,
+                       "other":  "+西文正文",
+                       "ascii":  "+西文正文",
+                       "codes":  [
+                                     49
+                                 ],
+                       "end":  212
+                   },
+        "endingCharacters":  [
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "",
+                                     "size":  10.5,
+                                     "start":  212,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+
+                                               ],
+                                     "end":  213
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  ")",
+                                     "size":  10.5,
+                                     "start":  213,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   41
+                                               ],
+                                     "end":  214
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "\r\u0007",
+                                     "size":  10.5,
+                                     "start":  214,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   13,
+                                                   7
+                                               ],
+                                     "end":  215
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "\r\u0007",
+                                     "size":  10.5,
+                                     "start":  215,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   13,
+                                                   7
+                                               ],
+                                     "end":  216
+                                 }
+                             ]
+    },
+    {
+        "paragraph":  {
+                          "style":  "正文",
+                          "name":  "等线",
+                          "text":  "\t(2)\r\u0007",
+                          "size":  10.5,
+                          "start":  229,
+                          "other":  "+西文正文",
+                          "ascii":  "+西文正文",
+                          "codes":  [
+                                        9,
+                                        40,
+                                        50,
+                                        41,
+                                        13,
+                                        7
+                                    ],
+                          "end":  290
+                      },
+        "code":  " SEQ VisualTeXEquation \\r 2 \\* ARABIC \\* MERGEFORMAT ",
+        "result":  {
+                       "style":  "正文",
+                       "name":  "等线",
+                       "text":  "2",
+                       "size":  10.5,
+                       "start":  286,
+                       "other":  "+西文正文",
+                       "ascii":  "+西文正文",
+                       "codes":  [
+                                     50
+                                 ],
+                       "end":  287
+                   },
+        "endingCharacters":  [
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "",
+                                     "size":  10.5,
+                                     "start":  287,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+
+                                               ],
+                                     "end":  288
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  ")",
+                                     "size":  10.5,
+                                     "start":  288,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   41
+                                               ],
+                                     "end":  289
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "\r\u0007",
+                                     "size":  10.5,
+                                     "start":  289,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   13,
+                                                   7
+                                               ],
+                                     "end":  290
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "\r\u0007",
+                                     "size":  10.5,
+                                     "start":  290,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   13,
+                                                   7
+                                               ],
+                                     "end":  291
+                                 }
+                             ]
+    },
+    {
+        "paragraph":  {
+                          "style":  "正文",
+                          "name":  "等线",
+                          "text":  "\t(3)\r\u0007",
+                          "size":  10.5,
+                          "start":  383,
+                          "other":  "+西文正文",
+                          "ascii":  "+西文正文",
+                          "codes":  [
+                                        9,
+                                        40,
+                                        51,
+                                        41,
+                                        13,
+                                        7
+                                    ],
+                          "end":  444
+                      },
+        "code":  " SEQ VisualTeXEquation \\r 3 \\* ARABIC \\* MERGEFORMAT ",
+        "result":  {
+                       "style":  "正文",
+                       "name":  "等线",
+                       "text":  "3",
+                       "size":  10.5,
+                       "start":  440,
+                       "other":  "+西文正文",
+                       "ascii":  "+西文正文",
+                       "codes":  [
+                                     51
+                                 ],
+                       "end":  441
+                   },
+        "endingCharacters":  [
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "",
+                                     "size":  10.5,
+                                     "start":  441,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+
+                                               ],
+                                     "end":  442
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  ")",
+                                     "size":  10.5,
+                                     "start":  442,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   41
+                                               ],
+                                     "end":  443
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "\r\u0007",
+                                     "size":  10.5,
+                                     "start":  443,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   13,
+                                                   7
+                                               ],
+                                     "end":  444
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "\r\u0007",
+                                     "size":  10.5,
+                                     "start":  444,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   13,
+                                                   7
+                                               ],
+                                     "end":  445
+                                 }
+                             ]
+    },
+    {
+        "paragraph":  {
+                          "style":  "正文",
+                          "name":  "等线",
+                          "text":  "\t(4)\r\u0007",
+                          "size":  10.5,
+                          "start":  542,
+                          "other":  "+西文正文",
+                          "ascii":  "+西文正文",
+                          "codes":  [
+                                        9,
+                                        40,
+                                        52,
+                                        41,
+                                        13,
+                                        7
+                                    ],
+                          "end":  603
+                      },
+        "code":  " SEQ VisualTeXEquation \\r 4 \\* ARABIC \\* MERGEFORMAT ",
+        "result":  {
+                       "style":  "正文",
+                       "name":  "等线",
+                       "text":  "4",
+                       "size":  10.5,
+                       "start":  599,
+                       "other":  "+西文正文",
+                       "ascii":  "+西文正文",
+                       "codes":  [
+                                     52
+                                 ],
+                       "end":  600
+                   },
+        "endingCharacters":  [
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "",
+                                     "size":  10.5,
+                                     "start":  600,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+
+                                               ],
+                                     "end":  601
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  ")",
+                                     "size":  10.5,
+                                     "start":  601,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   41
+                                               ],
+                                     "end":  602
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "\r\u0007",
+                                     "size":  10.5,
+                                     "start":  602,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   13,
+                                                   7
+                                               ],
+                                     "end":  603
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "\r\u0007",
+                                     "size":  10.5,
+                                     "start":  603,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   13,
+                                                   7
+                                               ],
+                                     "end":  604
+                                 }
+                             ]
+    },
+    {
+        "paragraph":  {
+                          "style":  "正文",
+                          "name":  "等线",
+                          "text":  "\t(5)\r\u0007",
+                          "size":  10.5,
+                          "start":  654,
+                          "other":  "+西文正文",
+                          "ascii":  "+西文正文",
+                          "codes":  [
+                                        9,
+                                        40,
+                                        53,
+                                        41,
+                                        13,
+                                        7
+                                    ],
+                          "end":  715
+                      },
+        "code":  " SEQ VisualTeXEquation \\r 5 \\* ARABIC \\* MERGEFORMAT ",
+        "result":  {
+                       "style":  "正文",
+                       "name":  "等线",
+                       "text":  "5",
+                       "size":  10.5,
+                       "start":  711,
+                       "other":  "+西文正文",
+                       "ascii":  "+西文正文",
+                       "codes":  [
+                                     53
+                                 ],
+                       "end":  712
+                   },
+        "endingCharacters":  [
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "",
+                                     "size":  10.5,
+                                     "start":  712,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+
+                                               ],
+                                     "end":  713
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  ")",
+                                     "size":  10.5,
+                                     "start":  713,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   41
+                                               ],
+                                     "end":  714
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "\r\u0007",
+                                     "size":  10.5,
+                                     "start":  714,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   13,
+                                                   7
+                                               ],
+                                     "end":  715
+                                 },
+                                 {
+                                     "style":  "正文",
+                                     "name":  "等线",
+                                     "text":  "\r\u0007",
+                                     "size":  10.5,
+                                     "start":  715,
+                                     "other":  "+西文正文",
+                                     "ascii":  "+西文正文",
+                                     "codes":  [
+                                                   13,
+                                                   7
+                                               ],
+                                     "end":  716
+                                 }
+                             ]
+    }
+]

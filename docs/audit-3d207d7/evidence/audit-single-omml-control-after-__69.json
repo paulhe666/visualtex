@@ -1,0 +1,196 @@
+{
+    "name":  "文档69",
+    "fullName":  "文档69",
+    "saved":  false,
+    "end":  98,
+    "paragraphs":  5,
+    "tables":  [
+                   {
+                       "index":  1,
+                       "start":  0,
+                       "end":  97,
+                       "rows":  1,
+                       "cols":  3,
+                       "nesting":  1,
+                       "text":  "\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e𝑎\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e(0.1)\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e",
+                       "cells":  [
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  1,
+                                         "row":  1,
+                                         "start":  0,
+                                         "end":  1
+                                     },
+                                     {
+                                         "math":  1,
+                                         "text":  "\u003cCR\u003e𝑎\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  2,
+                                         "row":  1,
+                                         "start":  1,
+                                         "end":  33
+                                     },
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cTAB\u003e(0.1)\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  3,
+                                         "row":  1,
+                                         "start":  33,
+                                         "end":  96
+                                     }
+                                 ]
+                   }
+               ],
+    "maths":  [
+                  {
+                      "controlTags":  [
+
+                                      ],
+                      "type":  0,
+                      "size":  10.5,
+                      "start":  1,
+                      "text":  "\u003cCR\u003e𝑎\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0",
+                      "index":  1,
+                      "tables":  1,
+                      "font":  "Latin Modern Math",
+                      "end":  32
+                  }
+              ],
+    "shapes":  [
+
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  95,
+                          "name":  "VTEq_896c3846be2744288d27f657b89b1203",
+                          "text":  "(0.1)",
+                          "start":  34
+                      },
+                      {
+                          "end":  94,
+                          "name":  "VTEqCap_896c3846be2744288d27f657b89b1203",
+                          "text":  "0.1",
+                          "start":  35
+                      },
+                      {
+                          "end":  94,
+                          "name":  "VTEqNum_896c3846be2744288d27f657b89b1203",
+                          "text":  "0.1",
+                          "start":  35
+                      },
+                      {
+                          "end":  1,
+                          "name":  "VTOMML_896c3846be2744288d27f657b89b1203",
+                          "text":  "",
+                          "start":  1
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  38,
+                       "end":  93,
+                       "index":  1
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  1,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  1,
+                      "line":  12,
+                      "alignment":  1,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Latin Modern Math",
+                      "inTable":  true,
+                      "end":  33,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e𝑎\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑏\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  33,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  96,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e(0.1)\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  96,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  true,
+                      "end":  97,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  97,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  98,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "heading1-dot",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      },
+                      {
+                          "value":  "896c3846-be27-4428-8d27-f657b89b1203",
+                          "name":  "VisualTeXEquationNumberTailFormulaId"
+                      }
+                  ],
+    "xmlFonts":  [
+                     "\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" /\u003e"
+                 ],
+    "xmlMathCount":  1,
+    "customXml":  [
+
+                  ]
+}

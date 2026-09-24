@@ -1,0 +1,522 @@
+{
+  "time": "2026-09-05T17:46:46.261Z",
+  "head": {
+    "exitCode": 0,
+    "stdout": "3d207d7a81ff40014fd861b242cff96ea77060a2",
+    "stderr": ""
+  },
+  "status": {
+    "exitCode": 0,
+    "stdout": "M apps/windows/src-tauri/Cargo.toml\n?? docs/audit-3d207d7/",
+    "stderr": ""
+  },
+  "trackedDiff": {
+    "exitCode": 0,
+    "stdout": "",
+    "stderr": "warning: in the working copy of 'apps/windows/src-tauri/Cargo.toml', LF will be replaced by CRLF the next time Git touches it"
+  },
+  "originals": [
+    {
+      "document": "文档1",
+      "remainsUnsaved": true,
+      "comparedTopLevelProperties": [
+        "name",
+        "fullName",
+        "saved",
+        "end",
+        "paragraphs",
+        "tables",
+        "maths",
+        "shapes",
+        "controls",
+        "bookmarks",
+        "fields",
+        "paras",
+        "variables",
+        "xmlFonts",
+        "xmlMathCount",
+        "customXml"
+      ],
+      "differences": [],
+      "sameComparedStructure": true,
+      "beforeXmlSha256": "85fa713faa3072ccd552ddd598d9453383075799f5b0ce035a022bf905be00d7",
+      "afterXmlSha256": "018337283e4dab8267c537f140e9bf26666867fbff43dd5b95ccc5d84bd58f47",
+      "note": "Comparison uses properties captured in both snapshots; audit labels are excluded. It is not a claim that every internal Word state was captured."
+    },
+    {
+      "document": "文档22",
+      "remainsUnsaved": true,
+      "comparedTopLevelProperties": [
+        "name",
+        "fullName",
+        "saved",
+        "end",
+        "paragraphs",
+        "tables",
+        "maths",
+        "shapes",
+        "controls",
+        "bookmarks",
+        "fields",
+        "paras",
+        "variables",
+        "xmlFonts",
+        "xmlMathCount",
+        "customXml"
+      ],
+      "differences": [],
+      "sameComparedStructure": true,
+      "beforeXmlSha256": "5a9965e897221d9a89b338cdf96f9f7a1a3a0a8c7b842485cb0c3b24012ddbc1",
+      "afterXmlSha256": "6e4b5ac0a37235481416e83c77e94a81e758cd3a2a158da079e3b85b6a27ca04",
+      "note": "Comparison uses properties captured in both snapshots; audit labels are excluded. It is not a claim that every internal Word state was captured."
+    },
+    {
+      "document": "文档26",
+      "remainsUnsaved": true,
+      "comparedTopLevelProperties": [
+        "name",
+        "fullName",
+        "saved",
+        "end",
+        "paragraphs",
+        "tables",
+        "maths",
+        "shapes",
+        "controls",
+        "bookmarks",
+        "fields",
+        "paras",
+        "variables",
+        "xmlFonts",
+        "xmlMathCount",
+        "customXml"
+      ],
+      "differences": [],
+      "sameComparedStructure": true,
+      "beforeXmlSha256": "51dde2037565d6bf40c9bcc43210d074cfa07874d5774c56a01bf1da06bc892e",
+      "afterXmlSha256": "bded040dfc2f3136db1467a538b679e1a1deb9a66fec3464d9605afdb3dda0a2",
+      "note": "Comparison uses properties captured in both snapshots; audit labels are excluded. It is not a claim that every internal Word state was captured."
+    },
+    {
+      "document": "文档28",
+      "remainsUnsaved": true,
+      "comparedTopLevelProperties": [
+        "name",
+        "fullName",
+        "saved",
+        "end",
+        "paragraphs",
+        "tables",
+        "maths",
+        "shapes",
+        "controls",
+        "bookmarks",
+        "fields",
+        "paras",
+        "variables",
+        "xmlFonts",
+        "xmlMathCount",
+        "customXml"
+      ],
+      "differences": [],
+      "sameComparedStructure": true,
+      "beforeXmlSha256": "ee593742f89fc3c2ca42e54fa9d1a7f6d2741317d7ec5a52962dc3dd815cc5e6",
+      "afterXmlSha256": "1801127ce916b5e2fe5307dfa96fa93551c26637b3b02d0db6263c97d2fce243",
+      "note": "Comparison uses properties captured in both snapshots; audit labels are excluded. It is not a claim that every internal Word state was captured."
+    },
+    {
+      "document": "文档29",
+      "remainsUnsaved": true,
+      "comparedTopLevelProperties": [
+        "name",
+        "fullName",
+        "saved",
+        "end",
+        "paragraphs",
+        "tables",
+        "maths",
+        "shapes",
+        "controls",
+        "bookmarks",
+        "fields",
+        "paras",
+        "variables",
+        "xmlFonts",
+        "xmlMathCount",
+        "customXml"
+      ],
+      "differences": [],
+      "sameComparedStructure": true,
+      "beforeXmlSha256": "97d44f6223f17f9e6a8fd718d93e0186f87ddab47c95500aa5d6f0930c96cad4",
+      "afterXmlSha256": "5ea4078939992f2f8e748d469ae909e564737ca7af2f32f313d915690d62fd8b",
+      "note": "Comparison uses properties captured in both snapshots; audit labels are excluded. It is not a claim that every internal Word state was captured."
+    },
+    {
+      "document": "文档33",
+      "remainsUnsaved": true,
+      "comparedTopLevelProperties": [
+        "name",
+        "fullName",
+        "saved",
+        "end",
+        "paragraphs",
+        "tables",
+        "maths",
+        "shapes",
+        "controls",
+        "bookmarks",
+        "fields",
+        "paras",
+        "variables",
+        "xmlFonts",
+        "xmlMathCount",
+        "customXml"
+      ],
+      "differences": [],
+      "sameComparedStructure": true,
+      "beforeXmlSha256": "40c9ea3221181bfce1459b6aebdf548bb72bd9fcb011038426d001a9aed698eb",
+      "afterXmlSha256": "328ac64de2d330df51c30920c360ee485606b9c979dae7b6673c4745c924566e",
+      "note": "Comparison uses properties captured in both snapshots; audit labels are excluded. It is not a claim that every internal Word state was captured."
+    },
+    {
+      "document": "文档35",
+      "remainsUnsaved": true,
+      "comparedTopLevelProperties": [
+        "name",
+        "fullName",
+        "saved",
+        "end",
+        "paragraphs",
+        "tables",
+        "maths",
+        "shapes",
+        "controls",
+        "bookmarks",
+        "fields",
+        "paras",
+        "variables",
+        "xmlFonts",
+        "xmlMathCount",
+        "customXml"
+      ],
+      "differences": [],
+      "sameComparedStructure": true,
+      "beforeXmlSha256": "9e83bc51938a5410e59378b0a41088790d4781d0ef0b896702723bb83ee249c5",
+      "afterXmlSha256": "f867c8737704ea3bd3fcc7ac7c2a63f82d5ed46fcb6dd964c708f1e397ee5704",
+      "note": "Comparison uses properties captured in both snapshots; audit labels are excluded. It is not a claim that every internal Word state was captured."
+    },
+    {
+      "document": "文档36",
+      "remainsUnsaved": true,
+      "comparedTopLevelProperties": [
+        "name",
+        "fullName",
+        "saved",
+        "end",
+        "paragraphs",
+        "tables",
+        "maths",
+        "shapes",
+        "controls",
+        "bookmarks",
+        "fields",
+        "paras",
+        "variables",
+        "xmlFonts",
+        "xmlMathCount",
+        "customXml"
+      ],
+      "differences": [],
+      "sameComparedStructure": true,
+      "beforeXmlSha256": "35e17ad9473d5ff75fd681f835ade4a4ec60947ebeec0e1bf693b598cf7ff145",
+      "afterXmlSha256": "fa946748fdbf1a40b40ffb4af039cea3e9faddddcc1affa82bc1c705139e387d",
+      "note": "Comparison uses properties captured in both snapshots; audit labels are excluded. It is not a claim that every internal Word state was captured."
+    }
+  ],
+  "evidenceReferences": [
+    {
+      "prefix": "repro01-three-ole-",
+      "files": [
+        "repro01-three-ole-inventory.json",
+        "repro01-three-ole-__37.json",
+        "repro01-three-ole-__37.xml"
+      ]
+    },
+    {
+      "prefix": "repro01-converted-",
+      "files": [
+        "repro01-converted-inventory.json",
+        "repro01-converted-screen.png",
+        "repro01-converted-__37.json",
+        "repro01-converted-__37.xml"
+      ]
+    },
+    {
+      "prefix": "repro01-edit-failed-",
+      "files": [
+        "repro01-edit-failed-inventory.json",
+        "repro01-edit-failed-__37.json",
+        "repro01-edit-failed-__37.xml"
+      ]
+    },
+    {
+      "prefix": "audit-close-before-",
+      "files": [
+        "audit-close-before-inventory.json",
+        "audit-close-before-__59.json",
+        "audit-close-before-__59.xml"
+      ]
+    },
+    {
+      "prefix": "audit-close-after-",
+      "files": [
+        "audit-close-after-inventory.json",
+        "audit-close-after-__59.json",
+        "audit-close-after-__59.xml"
+      ]
+    },
+    {
+      "prefix": "audit-single-omml-control-after-",
+      "files": [
+        "audit-single-omml-control-after-inventory.json",
+        "audit-single-omml-control-after-__69.json",
+        "audit-single-omml-control-after-__69.xml"
+      ]
+    },
+    {
+      "prefix": "repro02-after-format-",
+      "files": [
+        "repro02-after-format-inventory.json",
+        "repro02-after-format-__40.json",
+        "repro02-after-format-__40.xml"
+      ]
+    },
+    {
+      "prefix": "audit-ref-final-before-",
+      "files": [
+        "audit-ref-final-before-inventory.json",
+        "audit-ref-final-before-__70.json",
+        "audit-ref-final-before-__70.xml"
+      ]
+    },
+    {
+      "prefix": "audit-ref-final-after-",
+      "files": [
+        "audit-ref-final-after-inventory.json",
+        "audit-ref-final-after-__70.json",
+        "audit-ref-final-after-__70.xml"
+      ]
+    },
+    {
+      "prefix": "repro03-left-vt-before-",
+      "files": [
+        "repro03-left-vt-before-inventory.json",
+        "repro03-left-vt-before-__43.json",
+        "repro03-left-vt-before-__43.xml"
+      ]
+    },
+    {
+      "prefix": "repro03-left-vt-after-",
+      "files": [
+        "repro03-left-vt-after-inventory.json",
+        "repro03-left-vt-after-__43.json",
+        "repro03-left-vt-after-__43.xml"
+      ]
+    },
+    {
+      "prefix": "repro03-right-mt-",
+      "files": [
+        "repro03-right-mt-after-inventory.json",
+        "repro03-right-mt-after-__45.json",
+        "repro03-right-mt-after-__45.xml",
+        "repro03-right-mt-before-inventory.json",
+        "repro03-right-mt-before-__45.json",
+        "repro03-right-mt-before-__45.xml",
+        "repro03-right-mt-confirm-native.json",
+        "repro03-right-mt-result-native.json",
+        "repro03-right-mt-result.png"
+      ]
+    },
+    {
+      "prefix": "audit-left-mt-before-",
+      "files": [
+        "audit-left-mt-before-inventory.json",
+        "audit-left-mt-before-__66.json",
+        "audit-left-mt-before-__66.xml"
+      ]
+    },
+    {
+      "prefix": "audit-left-mt-after-",
+      "files": [
+        "audit-left-mt-after-inventory.json",
+        "audit-left-mt-after-__66.json",
+        "audit-left-mt-after-__66.xml"
+      ]
+    },
+    {
+      "prefix": "repro03-control-",
+      "files": [
+        "repro03-control-after-inventory.json",
+        "repro03-control-after-__47.json",
+        "repro03-control-after-__47.xml",
+        "repro03-control-before-inventory.json",
+        "repro03-control-before-__47.json",
+        "repro03-control-before-__47.xml",
+        "repro03-control-confirm-native.json"
+      ]
+    },
+    {
+      "prefix": "repro04-omml-import-unumbered-",
+      "files": [
+        "repro04-omml-import-unumbered-inventory.json",
+        "repro04-omml-import-unumbered-__49.json",
+        "repro04-omml-import-unumbered-__49.xml"
+      ]
+    },
+    {
+      "prefix": "repro04-direct-omml-compare-",
+      "files": [
+        "repro04-direct-omml-compare-inventory.json",
+        "repro04-direct-omml-compare-__49.json",
+        "repro04-direct-omml-compare-__49.xml"
+      ]
+    },
+    {
+      "prefix": "repro04b-",
+      "files": [
+        "repro04b-omml-numbered-after-inventory.json",
+        "repro04b-omml-numbered-after-__50.json",
+        "repro04b-omml-numbered-after-__50.xml",
+        "repro04b-omml-numbered-preview-uia.json"
+      ]
+    },
+    {
+      "prefix": "repro04c-",
+      "files": [
+        "repro04c-native-numbered-after-inventory.json",
+        "repro04c-native-numbered-after-__51.json",
+        "repro04c-native-numbered-after-__51.xml",
+        "repro04c-native-numbered-preview-uia.json"
+      ]
+    },
+    {
+      "prefix": "repro04d-mathtype-cases-",
+      "files": [
+        "repro04d-mathtype-cases-after-inventory.json",
+        "repro04d-mathtype-cases-after-__52.json",
+        "repro04d-mathtype-cases-after-__52.xml",
+        "repro04d-mathtype-cases-preview-uia.json",
+        "repro04d-mathtype-cases-result-native.json",
+        "repro04d-mathtype-cases-result.png"
+      ]
+    },
+    {
+      "prefix": "repro04e-",
+      "files": [
+        "repro04e-before-import-inventory.json",
+        "repro04e-before-import-__57.json",
+        "repro04e-before-import-__57.xml",
+        "repro04e-seeded-omml-after-inventory.json",
+        "repro04e-seeded-omml-after-__57.json",
+        "repro04e-seeded-omml-after-__57.xml",
+        "repro04e-seeded-omml-preview-uia.json",
+        "repro04e-seeded-omml-result-native.json",
+        "repro04e-seeded-omml-result.png"
+      ]
+    },
+    {
+      "prefix": "repro04f-",
+      "files": [
+        "repro04f-after-edit-inventory.json",
+        "repro04f-after-edit-__58.json",
+        "repro04f-after-edit-__58.xml",
+        "repro04f-before-import-inventory.json",
+        "repro04f-before-import-__58.json",
+        "repro04f-before-import-__58.xml",
+        "repro04f-seeded-native-after-inventory.json",
+        "repro04f-seeded-native-after-__58.json",
+        "repro04f-seeded-native-after-__58.xml",
+        "repro04f-seeded-native-preview-uia.json",
+        "repro04f-unumbered-editor-uia.json"
+      ]
+    },
+    {
+      "prefix": "repro05-before-",
+      "files": [
+        "repro05-before-inventory.json",
+        "repro05-before-__53.json",
+        "repro05-before-__53.xml"
+      ]
+    },
+    {
+      "prefix": "repro05-omml-after-",
+      "files": [
+        "repro05-omml-after-inventory.json",
+        "repro05-omml-after-__53.json",
+        "repro05-omml-after-__53.xml"
+      ]
+    },
+    {
+      "prefix": "audit-omml-soft-clean-",
+      "files": [
+        "audit-omml-soft-clean-after-inventory.json",
+        "audit-omml-soft-clean-after-__63.json",
+        "audit-omml-soft-clean-after-__63.xml",
+        "audit-omml-soft-clean-confirm-native.json",
+        "audit-omml-soft-clean-editor-uia.json"
+      ]
+    },
+    {
+      "prefix": "audit-vt-soft-clean-after-",
+      "files": [
+        "audit-vt-soft-clean-after-inventory.json",
+        "audit-vt-soft-clean-after-__64.json",
+        "audit-vt-soft-clean-after-__64.xml"
+      ]
+    },
+    {
+      "prefix": "audit-mt-soft-clean-after-",
+      "files": [
+        "audit-mt-soft-clean-after-inventory.json",
+        "audit-mt-soft-clean-after-__65.json",
+        "audit-mt-soft-clean-after-__65.xml"
+      ]
+    },
+    {
+      "prefix": "audit-separator-single1-",
+      "files": [
+        "audit-separator-single1-inventory.json",
+        "audit-separator-single1-__43.json",
+        "audit-separator-single1-__43.xml"
+      ]
+    },
+    {
+      "prefix": "audit-separator-single2-",
+      "files": [
+        "audit-separator-single2-inventory.json",
+        "audit-separator-single2-__43.json",
+        "audit-separator-single2-__43.xml"
+      ]
+    },
+    {
+      "prefix": "audit-inline-mt-confirmed-",
+      "files": [
+        "audit-inline-mt-confirmed-anchors.json",
+        "audit-inline-mt-confirmed-inventory.json",
+        "audit-inline-mt-confirmed-__66.json",
+        "audit-inline-mt-confirmed-__66.xml"
+      ]
+    },
+    {
+      "prefix": "audit-inline-anchor-drift-",
+      "files": [
+        "audit-inline-anchor-drift-inventory.json",
+        "audit-inline-anchor-drift-structure.json",
+        "audit-inline-anchor-drift-__66.json",
+        "audit-inline-anchor-drift-__66.xml"
+      ]
+    }
+  ],
+  "missingEvidencePrefixes": [],
+  "allComparedOriginalStructuresUnchanged": true
+}

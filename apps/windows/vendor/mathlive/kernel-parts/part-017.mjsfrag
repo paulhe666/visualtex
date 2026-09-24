@@ -1,0 +1,1687 @@
+    gFontsState = "ready";
+    return;
+  }
+  document.body.classList.remove("ML__fonts-did-not-load");
+  if ("fonts" in document) {
+    const fontFamilies = [
+      "KaTeX_Main",
+      "KaTeX_Math",
+      "KaTeX_AMS",
+      "KaTeX_Caligraphic",
+      "KaTeX_Fraktur",
+      "KaTeX_SansSerif",
+      "KaTeX_Script",
+      "KaTeX_Typewriter",
+      "KaTeX_Size1",
+      "KaTeX_Size2",
+      "KaTeX_Size3",
+      "KaTeX_Size4"
+    ];
+    const fontsInDocument = Array.from(document.fonts).map((f) => f.family);
+    if (fontFamilies.every((x) => fontsInDocument.includes(x))) {
+      gFontsState = "ready";
+      return;
+    }
+    if (!globalThis.MathfieldElement.fontsDirectory) {
+      gFontsState = "not-loaded";
+      return;
+    }
+    let fontsFolder = await resolveUrl(
+      globalThis.MathfieldElement.fontsDirectory
+    );
+    if (!fontsFolder) {
+      document.body.classList.add("ML__fonts-did-not-load");
+      gFontsState = "error";
+      return;
+    }
+    if (fontsFolder.endsWith("/")) fontsFolder = fontsFolder.slice(0, -1);
+    const fonts = [
+      ["KaTeX_Main-Regular"],
+      ["KaTeX_Main-BoldItalic", { style: "italic", weight: "bold" }],
+      ["KaTeX_Main-Bold", { weight: "bold" }],
+      ["KaTeX_Main-Italic", { style: "italic" }],
+      ["KaTeX_Math-Italic", { style: "italic" }],
+      ["KaTeX_Math-BoldItalic", { style: "italic", weight: "bold" }],
+      ["KaTeX_AMS-Regular"],
+      ["KaTeX_Caligraphic-Regular"],
+      ["KaTeX_Caligraphic-Bold", { weight: "bold" }],
+      ["KaTeX_Fraktur-Regular"],
+      ["KaTeX_Fraktur-Bold", { weight: "bold" }],
+      ["KaTeX_SansSerif-Regular"],
+      ["KaTeX_SansSerif-Bold", { weight: "bold" }],
+      ["KaTeX_SansSerif-Italic", { style: "italic" }],
+      ["KaTeX_Script-Regular"],
+      ["KaTeX_Typewriter-Regular"],
+      ["KaTeX_Size1-Regular"],
+      ["KaTeX_Size2-Regular"],
+      ["KaTeX_Size3-Regular"],
+      ["KaTeX_Size4-Regular"]
+    ].map(
+      (x) => makeFontFace(
+        x[0].replace(/-[a-zA-Z]+$/, ""),
+        `${fontsFolder}/${x[0]}`,
+        x[1]
+      )
+    );
+    try {
+      const loadedFonts = await Promise.all(
+        fonts.map((x) => {
+          try {
+            return x.load();
+          } catch (e) {
+          }
+          return void 0;
+        })
+      );
+      loadedFonts.forEach((font) => document.fonts.add(font));
+      gFontsState = "ready";
+      return;
+    } catch (error) {
+      console.error(
+        `MathLive 0.109.2: The math fonts could not be loaded from "${fontsFolder}"`,
+        { cause: error }
+      );
+      document.body.classList.add("ML__fonts-did-not-load");
+    }
+    gFontsState = "error";
+  }
+}
+
+// src/common/hash-code.ts
+function hashCode(str, seed = 0) {
+  let h1 = 3735928559 ^ seed;
+  let h2 = 1103547991 ^ seed;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ h1 >>> 16, 2246822507);
+  h1 ^= Math.imul(h2 ^ h2 >>> 13, 3266489909);
+  h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507);
+  h2 ^= Math.imul(h1 ^ h1 >>> 13, 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+
+// src/editor-mathfield/render.ts
+function requestUpdate(mathfield, options) {
+  if (!mathfield || mathfield.dirty || !mathfield.field) return;
+  mathfield.resizeObserver.unobserve(mathfield.field);
+  mathfield.dirty = true;
+  requestAnimationFrame(() => {
+    if (isValidMathfield(mathfield) && mathfield.dirty) {
+      mathfield.atomBoundsCache = /* @__PURE__ */ new Map();
+      render(mathfield, options);
+      mathfield.resizeObserver.observe(mathfield.field);
+      mathfield.resizeObserverStarted = true;
+    }
+  });
+}
+function makeBox(mathfield, renderOptions) {
+  var _a3;
+  renderOptions = renderOptions != null ? renderOptions : {};
+  const context = new Context({
+    from: __spreadProps(__spreadValues({}, mathfield.context), {
+      atomIdsSettings: {
+        // Using the hash as a seed for the ID
+        // keeps the IDs the same until the content of the field changes.
+        seed: renderOptions.forHighlighting ? hashCode(
+          Atom.serialize([mathfield.model.root], {
+            expandMacro: false,
+            defaultMode: mathfield.options.defaultMode
+          })
+        ) : "random",
+        // The `groupNumbers` flag indicates that extra boxes should be generated
+        // to represent group of atoms, for example, a box to group
+        // consecutive digits to represent a number.
+        groupNumbers: (_a3 = renderOptions.forHighlighting) != null ? _a3 : false
+      },
+      letterShapeStyle: mathfield.options.letterShapeStyle
+    }),
+    mathstyle: mathfield.options.defaultMode === "inline-math" ? "textstyle" : "displaystyle"
+  });
+  const base = mathfield.model.root.render(context);
+  const wrapper = makeStruts(applyInterBoxSpacing(base, context), {
+    classes: mathfield.hasEditablePrompts ? "ML__latex ML__prompting" : "ML__latex",
+    attributes: {
+      // Sometimes Google Translate kicks in an attempts to 'translate' math
+      // This doesn't work very well, so turn off translate
+      "translate": "no",
+      // Hint to screen readers to not attempt to read this <span>.
+      // They should use instead the 'aria-label' attribute.
+      "aria-hidden": "true"
+    }
+  });
+  return wrapper;
+}
+function contentMarkup(mathfield, renderOptions) {
+  try {
+    const { model } = mathfield;
+    model.root.caret = void 0;
+    model.root.isSelected = false;
+    model.root.containsCaret = true;
+    for (const atom of model.atoms) {
+      atom.caret = void 0;
+      atom.isSelected = false;
+      atom.containsCaret = false;
+    }
+    if (model.selectionIsCollapsed) {
+      const atom = model.at(model.position);
+      atom.caret = mathfield.model.mode;
+      let ancestor = atom.parent;
+      while (ancestor) {
+        ancestor.containsCaret = true;
+        ancestor = ancestor.parent;
+      }
+    } else {
+      const atoms = model.getAtoms(model.selection, {
+        includeChildren: true,
+        includeFirstAtoms: true
+      });
+      for (const atom of atoms) atom.isSelected = true;
+    }
+    const box = makeBox(mathfield, renderOptions);
+    return box.toMarkup();
+  } catch (e) {
+    console.error(e);
+    return '<span class="ML__latex" translate="no" aria-hidden="true">\u{1F6AB}</span>';
+  }
+}
+function render(mathfield, renderOptions) {
+  if (!isValidMathfield(mathfield)) return;
+  renderOptions != null ? renderOptions : renderOptions = {};
+  const keyboardToggle = mathfield.element.querySelector(
+    "[part=virtual-keyboard-toggle]"
+  );
+  if (keyboardToggle)
+    keyboardToggle.style.display = mathfield.hasEditableContent ? "" : "none";
+  const field = mathfield.field;
+  if (!field) return;
+  const hasFocus = mathfield.isSelectionEditable && mathfield.hasFocus();
+  const isFocused = field.classList.contains("ML__focused");
+  if (isFocused && !hasFocus) field.classList.remove("ML__focused");
+  else if (!isFocused && hasFocus) field.classList.add("ML__focused");
+  let content = contentMarkup(mathfield, renderOptions);
+  const menuToggle = mathfield.element.querySelector("[part=menu-toggle]");
+  if (menuToggle) {
+    let hideMenu = false;
+    if (mathfield.disabled || mathfield.readOnly && !mathfield.hasEditableContent || mathfield.userSelect === "none")
+      hideMenu = true;
+    if (!hideMenu && mathfield.element.offsetWidth < 50) hideMenu = true;
+    menuToggle.style.display = hideMenu ? "none" : "";
+  }
+  if (mathfield.model.atoms.length <= 1) {
+    const placeholder = mathfield.options.contentPlaceholder;
+    if (placeholder) {
+      content += `<span part=placeholder class="ML__content-placeholder">${convertLatexToMarkup(
+        placeholder
+      )}</span>`;
+    }
+  }
+  field.innerHTML = globalThis.MathfieldElement.createHTML(content);
+  renderSelection(mathfield, renderOptions.interactive);
+  mathfield.updateToggleLayout();
+  mathfield.dirty = false;
+}
+function renderSelection(mathfield, interactive) {
+  var _a3;
+  const field = mathfield.field;
+  if (!field) return;
+  for (const element of field.querySelectorAll(
+    ".ML__selection, .ML__contains-highlight"
+  ))
+    element.remove();
+  if (!(interactive != null ? interactive : false) && gFontsState !== "error" && gFontsState !== "ready") {
+    setTimeout(() => {
+      if (gFontsState === "ready") renderSelection(mathfield);
+      else setTimeout(() => renderSelection(mathfield), 128);
+    }, 32);
+    return;
+  }
+  const model = mathfield.model;
+  (_a3 = mathfield.atomBoundsCache) == null ? void 0 : _a3.clear();
+  let _scaleFactor;
+  const scaleFactor = () => {
+    if (_scaleFactor !== void 0) return _scaleFactor;
+    const offsetWidth = field.offsetWidth;
+    const actualWidth = field.getBoundingClientRect().width;
+    _scaleFactor = Math.floor(actualWidth) / offsetWidth;
+    if (isNaN(_scaleFactor)) _scaleFactor = 1;
+    return _scaleFactor;
+  };
+  if (model.selectionIsCollapsed) {
+    updateSuggestionPopoverPosition(mathfield, { deferred: true });
+    let atom = model.at(model.position);
+    while (atom && atom.type !== "prompt" && !(atom.containsCaret && atom.displayContainsHighlight))
+      atom = atom.parent;
+    if ((atom == null ? void 0 : atom.containsCaret) && atom.displayContainsHighlight) {
+      const s2 = scaleFactor();
+      const bounds = adjustForScrolling(
+        mathfield,
+        getAtomBounds(mathfield, atom),
+        s2
+      );
+      if (bounds) {
+        bounds.left /= s2;
+        bounds.right /= s2;
+        bounds.top /= s2;
+        bounds.bottom /= s2;
+        const element = document.createElement("div");
+        element.classList.add("ML__contains-highlight");
+        element.style.position = "absolute";
+        element.style.left = `${bounds.left + 1}px`;
+        element.style.top = `${Math.ceil(bounds.top)}px`;
+        element.style.width = `${Math.ceil(bounds.right - bounds.left)}px`;
+        element.style.height = `${Math.ceil(bounds.bottom - bounds.top)}px`;
+        field.insertBefore(element, field.childNodes[0]);
+      }
+    }
+    return;
+  }
+  const s = scaleFactor();
+  const rects = unionRects(
+    getSelectionBounds(mathfield, { excludeAtomsWithBackground: true })
+  );
+  for (const x of rects) {
+    x.left /= s;
+    x.right /= s;
+    x.top /= s;
+    x.bottom /= s;
+    const selectionElement = document.createElement("div");
+    selectionElement.classList.add("ML__selection");
+    selectionElement.style.position = "absolute";
+    selectionElement.style.left = `${x.left}px`;
+    selectionElement.style.top = `${x.top}px`;
+    selectionElement.style.width = `${Math.ceil(x.right - x.left)}px`;
+    selectionElement.style.height = `${Math.max(1, Math.ceil(x.bottom - x.top - 1))}px`;
+    field.insertBefore(selectionElement, field.childNodes[0]);
+  }
+}
+function unionRects(rects) {
+  let result = [];
+  for (const rect of rects) {
+    let found = false;
+    for (const rect2 of result) {
+      if (rect.left === rect2.left && rect.right === rect2.right && rect.top === rect2.top && rect.bottom === rect2.bottom) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) result.push(rect);
+  }
+  rects = result;
+  result = [];
+  for (const rect of rects) {
+    let count = 0;
+    for (const rect2 of rects) {
+      if (rect.left >= rect2.left && rect.right <= rect2.right && rect.top >= rect2.top && rect.bottom <= rect2.bottom) {
+        count += 1;
+        if (count > 1) break;
+      }
+    }
+    if (count === 1) result.push(rect);
+  }
+  return result;
+}
+function reparse(mathfield) {
+  if (!mathfield) return;
+  const model = mathfield.model;
+  const selection = model.selection;
+  const content = Atom.serialize([model.root], {
+    expandMacro: false,
+    defaultMode: mathfield.options.defaultMode
+  });
+  ModeEditor.insert(model, content, {
+    insertionMode: "replaceAll",
+    selectionMode: "after",
+    format: "latex",
+    silenceNotifications: true,
+    mode: "math"
+  });
+  const wasSilent = model.silenceNotifications;
+  model.silenceNotifications = true;
+  model.selection = selection;
+  model.silenceNotifications = wasSilent;
+  requestUpdate(mathfield);
+}
+function reparseAllMathfields() {
+  for (const mathfield of document.querySelectorAll(".ML__mathfield"))
+    if ("_mathfield" in mathfield) reparse(mathfield._mathfield);
+}
+
+// src/editor/commands.ts
+var HAPTIC_FEEDBACK_DURATION = 3;
+var COMMANDS;
+function register2(commands, options) {
+  options = __spreadValues({
+    target: "mathfield",
+    canUndo: false,
+    audioFeedback: void 0,
+    changeContent: false,
+    changeSelection: false
+  }, options != null ? options : {});
+  if (!COMMANDS) COMMANDS = {};
+  for (const selector of Object.keys(commands)) {
+    console.assert(!COMMANDS[selector], "Selector already defined: ", selector);
+    COMMANDS[selector] = __spreadProps(__spreadValues({}, options), { fn: commands[selector] });
+  }
+}
+function getCommandInfo(command) {
+  let selector;
+  if (Array.isArray(command)) {
+    if (command[0] === "performWithFeedback") return getCommandInfo(command[1]);
+    selector = command[0];
+  } else selector = command;
+  return COMMANDS[selector];
+}
+function getCommandTarget(command) {
+  var _a3;
+  return (_a3 = getCommandInfo(command)) == null ? void 0 : _a3.target;
+}
+function perform(mathfield, command) {
+  var _a3, _b3;
+  command = parseCommand(command);
+  if (!command) return false;
+  let selector;
+  let args = [];
+  let handled = false;
+  let dirty = false;
+  if (isArray(command)) {
+    selector = command[0];
+    args = command.slice(1);
+  } else selector = command;
+  const info = COMMANDS[selector];
+  const commandTarget = info == null ? void 0 : info.target;
+  if (commandTarget === "model") {
+    if (!mathfield.isSelectionEditable && (info == null ? void 0 : info.changeContent)) {
+      mathfield.model.announce("plonk");
+      return false;
+    }
+    if (/^(delete|add)/.test(selector)) {
+      if (selector !== "deleteBackward") mathfield.flushInlineShortcutBuffer();
+      mathfield.snapshot(selector);
+    }
+    if (!/^complete/.test(selector)) removeSuggestion(mathfield);
+    COMMANDS[selector].fn(mathfield.model, ...args);
+    updateAutocomplete(mathfield);
+    dirty = true;
+    handled = true;
+  } else if (commandTarget === "virtual-keyboard") {
+    dirty = (_b3 = (_a3 = window.mathVirtualKeyboard) == null ? void 0 : _a3.executeCommand(command)) != null ? _b3 : false;
+    handled = true;
+  } else if (COMMANDS[selector]) {
+    if (!mathfield.isSelectionEditable && (info == null ? void 0 : info.changeContent)) {
+      mathfield.model.announce("plonk");
+      return false;
+    }
+    if (/^(undo|redo)/.test(selector)) mathfield.flushInlineShortcutBuffer();
+    dirty = COMMANDS[selector].fn(mathfield, ...args);
+    handled = true;
+  } else throw new Error(`Unknown command "${selector}"`);
+  if (commandTarget !== "virtual-keyboard") {
+    if (!mathfield.model.selectionIsCollapsed || (info == null ? void 0 : info.changeSelection) && selector !== "deleteBackward") {
+      mathfield.flushInlineShortcutBuffer();
+      if (!(info == null ? void 0 : info.changeContent)) mathfield.stopCoalescingUndo();
+      mathfield.defaultStyle = {};
+    }
+  }
+  if (dirty) {
+    if ((info == null ? void 0 : info.changeSelection) && handled) {
+      mathfield.dirty = true;
+      mathfield.scrollIntoView();
+    } else requestUpdate(mathfield);
+  }
+  return handled;
+}
+function performWithFeedback(mathfield, selector) {
+  var _a3;
+  if (!mathfield) return false;
+  mathfield.focus();
+  if (mathfield_element_default.keypressVibration && canVibrate())
+    navigator.vibrate(HAPTIC_FEEDBACK_DURATION);
+  const info = getCommandInfo(selector);
+  globalThis.MathfieldElement.playSound((_a3 = info == null ? void 0 : info.audioFeedback) != null ? _a3 : "keypress");
+  const result = mathfield.executeCommand(selector);
+  mathfield.scrollIntoView();
+  return result;
+}
+register2({
+  performWithFeedback: (mathfield, command) => performWithFeedback(mathfield, command)
+});
+function nextSuggestion(mathfield) {
+  updateAutocomplete(mathfield, { atIndex: mathfield.suggestionIndex + 1 });
+  return false;
+}
+function previousSuggestion(mathfield) {
+  updateAutocomplete(mathfield, { atIndex: mathfield.suggestionIndex - 1 });
+  return false;
+}
+register2(
+  { complete },
+  {
+    target: "mathfield",
+    audioFeedback: "return",
+    canUndo: true,
+    changeContent: true,
+    changeSelection: true
+  }
+);
+register2(
+  {
+    dispatchEvent: (mathfield, event, detail) => {
+      var _a3, _b3;
+      return (_b3 = (_a3 = mathfield.host) == null ? void 0 : _a3.dispatchEvent(new CustomEvent(event, { detail }))) != null ? _b3 : false;
+    }
+  },
+  { target: "mathfield" }
+);
+register2(
+  { nextSuggestion, previousSuggestion },
+  {
+    target: "mathfield",
+    audioFeedback: "keypress",
+    changeSelection: true
+  }
+);
+function parseCommand(command) {
+  if (!command) return void 0;
+  if (isArray(command) && command.length > 0) {
+    let selector2 = command[0];
+    selector2 = selector2.replace(/-\w/g, (m) => m[1].toUpperCase());
+    if (selector2 === "performWithFeedback" && command.length === 2)
+      return [selector2, parseCommand(command[1])];
+    return [selector2, ...command.slice(1)];
+  }
+  if (typeof command !== "string") return void 0;
+  const match = command.trim().match(/^([a-zA-Z0-9-]+)\((.*)\)$/);
+  if (match) {
+    const selector2 = match[1].replace(/-\w/g, (m) => m[1].toUpperCase());
+    const args = match[2].split(",").map((x) => x.trim());
+    return [
+      selector2,
+      ...args.map((arg) => {
+        if (/"[^"]*"/.test(arg)) return arg.slice(1, -1);
+        if (/'[^']*'/.test(arg)) return arg.slice(1, -1);
+        if (/^true$/.test(arg)) return true;
+        if (/^false$/.test(arg)) return false;
+        if (/^[-]?\d+$/.test(arg)) return parseInt(arg, 10);
+        if (/^\{.*\}$/.test(arg)) {
+          try {
+            return JSON.parse(arg);
+          } catch (e) {
+            console.error("Invalid argument:", arg);
+            return arg;
+          }
+        }
+        return parseCommand(arg);
+      })
+    ];
+  }
+  const selector = command.replace(/-\w/g, (m) => m[1].toUpperCase());
+  return selector;
+}
+
+// src/virtual-keyboard/proxy.ts
+var VIRTUAL_KEYBOARD_MESSAGE = "mathlive#virtual-keyboard-message";
+function isVirtualKeyboardMessage(evt) {
+  var _a3;
+  if (evt.type !== "message") return false;
+  const msg = evt;
+  return ((_a3 = msg.data) == null ? void 0 : _a3.type) === VIRTUAL_KEYBOARD_MESSAGE;
+}
+var VirtualKeyboardProxy = class _VirtualKeyboardProxy {
+  constructor() {
+    this.targetOrigin = window.origin;
+    this.originValidator = "none";
+    this.targetWindow = window.top;
+    this._boundingRect = new DOMRect(0, 0, 0, 0);
+    this._isShifted = false;
+    window.addEventListener("message", this);
+    this.sendMessage("proxy-created");
+    this.listeners = {};
+  }
+  static get singleton() {
+    if (!this._singleton) this._singleton = new _VirtualKeyboardProxy();
+    return this._singleton;
+  }
+  getKeycap(_keycap) {
+    return void 0;
+  }
+  setKeycap(keycap, value) {
+    this.sendMessage("update-setting", { setKeycap: { keycap, value } });
+  }
+  set alphabeticLayout(value) {
+    this.sendMessage("update-setting", { alphabeticLayout: value });
+  }
+  set layouts(value) {
+    this.sendMessage("update-setting", { layouts: value });
+  }
+  get normalizedLayouts() {
+    return [];
+  }
+  set editToolbar(value) {
+    this.sendMessage("update-setting", { editToolbar: value });
+  }
+  set container(value) {
+    throw new Error("Container inside an iframe cannot be changed");
+  }
+  show(options) {
+    const success = this.dispatchEvent(
+      new CustomEvent("before-virtual-keyboard-toggle", {
+        detail: { visible: true },
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      })
+    );
+    if (success) {
+      this.sendMessage("show", options);
+      this.dispatchEvent(new Event("virtual-keyboard-toggle"));
+    }
+  }
+  hide(options) {
+    const success = this.dispatchEvent(
+      new CustomEvent("before-virtual-keyboard-toggle", {
+        detail: { visible: false },
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      })
+    );
+    if (success) {
+      this.sendMessage("hide", options);
+      this.dispatchEvent(new Event("virtual-keyboard-toggle"));
+    }
+  }
+  get isShifted() {
+    return this._isShifted;
+  }
+  get visible() {
+    return this._boundingRect.height > 0;
+  }
+  set visible(value) {
+    if (value) this.show();
+    else this.hide();
+  }
+  get boundingRect() {
+    return this._boundingRect;
+  }
+  executeCommand(command) {
+    this.sendMessage("execute-command", { command });
+    return true;
+  }
+  updateToolbar(mf) {
+    this.sendMessage("update-toolbar", mf);
+  }
+  update(mf) {
+    this.sendMessage("update-setting", mf);
+  }
+  connect() {
+    this.sendMessage("connect");
+  }
+  disconnect() {
+    this.sendMessage("disconnect");
+  }
+  addEventListener(type, callback, _options) {
+    if (!this.listeners[type]) this.listeners[type] = /* @__PURE__ */ new Set();
+    if (!this.listeners[type].has(callback)) this.listeners[type].add(callback);
+  }
+  dispatchEvent(event) {
+    if (!this.listeners[event.type] || this.listeners[event.type].size === 0)
+      return true;
+    this.listeners[event.type].forEach((x) => {
+      if (typeof x === "function") x(event);
+      else x == null ? void 0 : x.handleEvent(event);
+    });
+    return !event.defaultPrevented;
+  }
+  removeEventListener(type, callback, _options) {
+    if (this.listeners[type]) this.listeners[type].delete(callback);
+  }
+  handleEvent(evt) {
+    if (isVirtualKeyboardMessage(evt)) {
+      if (!validateOrigin(evt.origin, this.originValidator)) {
+        throw new DOMException(
+          `Message from unknown origin (${evt.origin}) cannot be handled`,
+          "SecurityError"
+        );
+      }
+      this.handleMessage(evt.data);
+    }
+  }
+  handleMessage(msg) {
+    const { action } = msg;
+    if (action === "execute-command") {
+      const { command } = msg;
+      const commandTarget = getCommandTarget(command);
+      if (commandTarget === "virtual-keyboard") this.executeCommand(command);
+      return;
+    }
+    if (action === "synchronize-proxy") {
+      this._boundingRect = msg.boundingRect;
+      this._isShifted = msg.isShifted;
+      return;
+    }
+    if (action === "geometry-changed") {
+      this._boundingRect = msg.boundingRect;
+      this.dispatchEvent(new Event("geometrychange"));
+      return;
+    }
+  }
+  sendMessage(action, payload = {}) {
+    if (!this.targetWindow) {
+      throw new DOMException(
+        `A frame does not have access to the top window and can't communicate with the keyboard.`,
+        "SecurityError"
+      );
+    }
+    this.targetWindow.postMessage(
+      __spreadValues({
+        type: VIRTUAL_KEYBOARD_MESSAGE,
+        action
+      }, payload),
+      this.targetOrigin
+    );
+  }
+};
+
+// src/virtual-keyboard/data.ts
+var LAYOUTS = {
+  "numeric": {
+    label: "123",
+    labelClass: "MLK__tex-math",
+    tooltip: "keyboard.tooltip.numeric",
+    rows: [
+      [
+        {
+          latex: "x",
+          shift: "y",
+          variants: [
+            "y",
+            "z",
+            "t",
+            "r",
+            "x^2",
+            "x^n",
+            "x^{#?}",
+            "x_n",
+            "x_i",
+            "x_{#?}",
+            { latex: "f(#?)", class: "small" },
+            { latex: "g(#?)", class: "small" }
+          ]
+        },
+        { latex: "n", shift: "a", variants: ["i", "j", "p", "k", "a", "u"] },
+        "[separator-5]",
+        "[7]",
+        "[8]",
+        "[9]",
+        "[/]",
+        "[separator-5]",
+        {
+          latex: "\\exponentialE",
+          shift: "\\ln",
+          variants: [
+            "\\exp",
+            "\\times 10^{#?}",
+            "\\ln",
+            "\\log_{10}",
+            "\\log",
+            "\\lg",
+            "\\operatorname{lb}"
+          ]
+        },
+        {
+          latex: "\\imaginaryI",
+          variants: ["\\Re", "\\Im", "\\imaginaryJ", "\\Vert #0 \\Vert"]
+        },
+        {
+          latex: "\\pi",
+          shift: "\\sin",
+          variants: [
+            "\\prod",
+            { latex: "\\theta", aside: "theta" },
+            { latex: "\\rho", aside: "rho" },
+            { latex: "\\tau", aside: "tau" },
+            "\\sin",
+            "\\cos",
+            "\\tan"
+          ]
+        }
+      ],
+      [
+        {
+          label: "<",
+          latex: "<",
+          class: "hide-shift",
+          shift: { latex: "\\le", label: "\u2264" }
+        },
+        {
+          label: ">",
+          latex: ">",
+          class: "hide-shift",
+          shift: { latex: "\\ge", label: "\u2265" }
+        },
+        "[separator-5]",
+        "[4]",
+        "[5]",
+        "[6]",
+        "[*]",
+        "[separator-5]",
+        {
+          class: "hide-shift",
+          latex: "#@^2}",
+          shift: "#@^{\\prime}}"
+        },
+        {
+          latex: "#@^{#0}}",
+          class: "hide-shift",
+          shift: "#@_{#?}"
+        },
+        {
+          class: "hide-shift",
+          latex: "\\sqrt{#0}",
+          shift: { latex: "\\sqrt[#0]{#?}}" }
+        }
+      ],
+      [
+        "[(]",
+        "[)]",
+        "[separator-5]",
+        "[1]",
+        "[2]",
+        "[3]",
+        "[-]",
+        "[separator-5]",
+        {
+          latex: "\\int^{\\infty}_{0}\\!#?\\,\\mathrm{d}x",
+          class: "small hide-shift",
+          shift: "\\int",
+          variants: [
+            { latex: "\\int_{#?}^{#?}", class: "small" },
+            { latex: "\\int", class: "small" },
+            { latex: "\\iint", class: "small" },
+            { latex: "\\iiint", class: "small" },
+            { latex: "\\oint", class: "small" },
+            "\\mathrm{d}x",
+            { latex: "\\dfrac{\\mathrm{d}}{\\mathrm{d} x}", class: "small" },
+            { latex: "\\frac{\\partial}{\\partial x}", class: "small" },
+            "\\partial"
+          ]
+        },
+        {
+          class: "hide-shift",
+          latex: "\\forall",
+          shift: "\\exists"
+        },
+        { label: "[backspace]", width: 1 }
+      ],
+      [
+        { label: "[shift]", width: 2 },
+        "[separator-5]",
+        "[0]",
+        "[.]",
+        "[=]",
+        "[+]",
+        "[separator-5]",
+        "[left]",
+        "[right]",
+        { label: "[action]", width: 1 }
+      ]
+    ]
+  },
+  "greek": {
+    label: "&alpha;&beta;&gamma;",
+    labelClass: "MLK__tex-math",
+    tooltip: "keyboard.tooltip.greek",
+    rows: [
+      [
+        {
+          label: "<i>&#x03c6;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\varphi",
+          aside: "phi var.",
+          shift: "\\Phi"
+        },
+        {
+          label: "<i>&#x03c2;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\varsigma",
+          aside: "sigma var.",
+          shift: "\\Sigma"
+        },
+        {
+          label: "<i>&#x03f5;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\epsilon",
+          aside: "epsilon",
+          shift: '\\char"0190'
+        },
+        {
+          label: "<i>&rho;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\rho",
+          aside: "rho",
+          shift: '\\char"3A1'
+        },
+        {
+          label: "<i>&tau;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\tau",
+          aside: "tau",
+          shift: '\\char"3A4'
+        },
+        {
+          label: "<i>&upsilon;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\upsilon",
+          aside: "upsilon",
+          shift: "\\Upsilon"
+        },
+        {
+          label: "<i>&theta;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\theta",
+          aside: "theta",
+          shift: "\\Theta"
+        },
+        {
+          label: "<i>&iota;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\iota",
+          aside: "iota",
+          shift: '\\char"399'
+        },
+        {
+          label: "<i>&omicron;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\omicron",
+          aside: "omicron",
+          shift: '\\char"39F'
+        },
+        {
+          label: "<i>&pi;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\pi",
+          aside: "pi",
+          shift: "\\Pi"
+        }
+      ],
+      [
+        "[separator-5]",
+        {
+          label: "<i>&alpha;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\alpha",
+          aside: "alpha",
+          shift: '\\char"391'
+        },
+        {
+          label: "<i>&sigma;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\sigma",
+          aside: "sigma",
+          shift: "\\Sigma"
+        },
+        {
+          label: "<i>&delta;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\delta",
+          aside: "delta",
+          shift: "\\Delta"
+        },
+        {
+          latex: "\\phi",
+          class: "MLK__tex hide-shift",
+          insert: "\\phi",
+          aside: "phi",
+          shift: "\\Phi"
+        },
+        {
+          label: "<i>&gamma;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\gamma",
+          aside: "gamma",
+          shift: "\\Gamma"
+        },
+        {
+          label: "<i>&eta;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\eta",
+          aside: "eta",
+          shift: '\\char"397'
+        },
+        {
+          label: "<i>&xi;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\xi",
+          aside: "xi",
+          shift: "\\Xi"
+        },
+        {
+          label: "<i>&kappa;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\kappa",
+          aside: "kappa",
+          shift: "\\Kappa"
+        },
+        {
+          label: "<i>&lambda;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\lambda",
+          aside: "lambda",
+          shift: "\\Lambda"
+        },
+        "[separator-5]"
+      ],
+      [
+        "[shift]",
+        {
+          label: "<i>&zeta;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\zeta",
+          aside: "zeta",
+          shift: '\\char"396'
+        },
+        {
+          label: "<i>&chi;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\chi",
+          aside: "chi",
+          shift: '\\char"3A7'
+        },
+        {
+          label: "<i>&psi;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\psi",
+          aside: "psi",
+          shift: "\\Psi"
+        },
+        {
+          label: "<i>&omega;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\omega",
+          aside: "omega",
+          shift: "\\Omega"
+        },
+        {
+          label: "<i>&beta;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\beta",
+          aside: "beta",
+          shift: '\\char"392'
+        },
+        {
+          label: "<i>&nu;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\nu",
+          aside: "nu",
+          shift: '\\char"39D'
+        },
+        {
+          label: "<i>&mu;</i>",
+          class: "MLK__tex hide-shift",
+          insert: "\\mu",
+          aside: "mu",
+          shift: '\\char"39C'
+        },
+        "[backspace]"
+      ],
+      [
+        "[separator]",
+        {
+          label: "<i>&#x03b5;</i>",
+          class: "MLK__tex",
+          insert: "\\varepsilon",
+          aside: "epsilon var."
+        },
+        {
+          label: "<i>&#x03d1;</i>",
+          class: "MLK__tex",
+          insert: "\\vartheta",
+          aside: "theta var."
+        },
+        {
+          label: "<i>&#x3f0;</i>",
+          class: "MLK__tex",
+          insert: "\\varkappa",
+          aside: "kappa var."
+        },
+        {
+          label: "<i>&#x03d6;</i>",
+          class: "MLK__tex",
+          insert: "\\varpi",
+          aside: "pi var."
+        },
+        {
+          label: "<i>&#x03f1;</i>",
+          class: "MLK__tex",
+          insert: "\\varrho",
+          aside: "rho var."
+        },
+        "[left]",
+        "[right]",
+        "[action]"
+      ]
+    ]
+  },
+  "symbols": {
+    label: "&infin;\u2260\u2208",
+    labelClass: "MLK__tex",
+    tooltip: "keyboard.tooltip.symbols",
+    rows: [
+      [
+        {
+          latex: "\\sin",
+          shift: "\\sin^{-1}",
+          variants: [
+            { class: "small", latex: "\\sinh" },
+            { class: "small", latex: "\\sin^{-1}" },
+            { class: "small", latex: "\\operatorname{arsinh}" }
+          ]
+        },
+        "\\ln",
+        {
+          latex: "\\mathrm{abs}",
+          insert: "\\mathrm{abs}\\left(#0\\right)"
+        },
+        {
+          latex: "\\rightarrow",
+          shift: "\\Rightarrow",
+          variants: [
+            { latex: "\\implies", aside: "implies" },
+            { latex: "\\to", aside: "to" },
+            "\\dashv",
+            { latex: "\\roundimplies", aside: "round implies" }
+          ]
+        },
+        {
+          latex: "\\exists",
+          variants: ["\\nexists"],
+          shift: "\\nexists"
+        },
+        { latex: "\\in", shift: "\\notin", variants: ["\\notin", "\\owns"] },
+        "\\cup",
+        {
+          latex: "\\overrightarrow{#@}",
+          shift: "\\overleftarrow{#@}",
+          variants: [
+            "\\overleftarrow{#@}",
+            "\\bar{#@}",
+            "\\vec{#@}",
+            "\\hat{#@}",
+            "\\check{#@}",
+            "\\dot{#@}",
+            "\\ddot{#@}",
+            "\\mathring{#@}",
+            "\\breve{#@}",
+            "\\acute{#@}",
+            "\\tilde{#@}",
+            "\\grave{#@}"
+          ]
+        },
+        {
+          class: "small hide-shift",
+          latex: "\\lim_{#?}",
+          shift: "\\lim_{x\\to\\infty}",
+          variants: [
+            { class: "small", latex: "\\liminf_{#?}" },
+            { class: "small", latex: "\\limsup_{#?}" }
+          ]
+        },
+        "\\exponentialE"
+      ],
+      [
+        {
+          latex: "\\cos",
+          shift: "\\cos^{-1}",
+          variants: [
+            { class: "small", latex: "\\cosh" },
+            { class: "small", latex: "\\cos^{-1}" },
+            { class: "small", latex: "\\operatorname{arcosh}" }
+          ]
+        },
+        {
+          latex: "\\log",
+          shift: "\\log_{10}",
+          variants: ["\\log_{#0}", "\\log_{10}"]
+        },
+        "\\left\\vert#0\\right\\vert",
+        {
+          latex: "\\larr",
+          shift: "\\lArr",
+          variants: [
+            { latex: "\\impliedby", aside: "implied by" },
+            { latex: "\\gets", aside: "gets" },
+            "\\lArr",
+            "\\vdash",
+            { latex: "\\models", aside: "models" }
+          ]
+        },
+        {
+          latex: "\\forall",
+          shift: "\\lnot",
+          variants: [
+            { latex: "\\land", aside: "and" },
+            { latex: "\\lor", aside: "or" },
+            { latex: "\\oplus", aside: "xor" },
+            { latex: "\\lnot", aside: "not" },
+            { latex: "\\downarrow", aside: "nor" },
+            { latex: "\\uparrow", aside: "nand" },
+            { latex: "\\curlywedge", aside: "nor" },
+            { latex: "\\bar\\curlywedge", aside: "nand" }
+            // {latex:'\\barwedge', aside:'bar wedge'},
+            // {latex:'\\curlyvee', aside:'curly vee'},
+            // {latex:'\\veebar', aside:'vee bar'},
+          ]
+        },
+        { latex: "\\ni", shift: "\\not\\owns" },
+        "\\cap",
+        {
+          latex: "\\overline{#@}",
+          shift: "\\underline{#@}",
+          variants: [
+            "\\overbrace{#@}",
+            "\\overlinesegment{#@}",
+            "\\overleftrightarrow{#@}",
+            "\\overrightarrow{#@}",
+            "\\overleftarrow{#@}",
+            "\\overgroup{#@}",
+            "\\underbrace{#@}",
+            "\\underlinesegment{#@}",
+            "\\underleftrightarrow{#@}",
+            "\\underrightarrow{#@}",
+            "\\underleftarrow{#@}",
+            "\\undergroup{#@}"
+          ]
+        },
+        {
+          class: "hide-shift small",
+          latex: "\\int",
+          shift: "\\iint",
+          variants: [
+            { latex: "\\int_{#?}^{#?}", class: "small" },
+            { latex: "\\int", class: "small" },
+            { latex: "\\smallint", class: "small" },
+            { latex: "\\iint", class: "small" },
+            { latex: "\\iiint", class: "small" },
+            { latex: "\\oint", class: "small" },
+            "\\intop",
+            "\\iiint",
+            "\\oiint",
+            "\\oiiint",
+            "\\intclockwise",
+            "\\varointclockwise",
+            "\\ointctrclockwise",
+            "\\intctrclockwise"
+          ]
+        },
+        { latex: "\\pi", shift: "\\tau", variants: ["\\tau"] }
+      ],
+      [
+        {
+          latex: "\\tan",
+          shift: "\\tan^{-1}",
+          variants: [
+            { class: "small", latex: "\\tanh" },
+            { class: "small", latex: "\\tan^{-1}" },
+            { class: "small", latex: "\\operatorname{artanh}" },
+            { class: "small", latex: "\\arctan" },
+            { class: "small", latex: "\\operatorname{arctg}" },
+            { class: "small", latex: "\\operatorname{tg}" }
+          ]
+        },
+        {
+          latex: "\\exp",
+          insert: "\\exp\\left(#0\\right)",
+          variants: ["\\exponentialE^{#0}"]
+        },
+        "\\left\\Vert#0\\right\\Vert",
+        {
+          latex: "\\lrArr",
+          shift: "\\leftrightarrow",
+          variants: [
+            { latex: "\\iff", aside: "if and only if" },
+            "\\leftrightarrow",
+            "\\leftrightarrows",
+            "\\Leftrightarrow",
+            { latex: "^\\biconditional", aside: "biconditional" }
+          ]
+        },
+        { latex: "\\vert", shift: "!" },
+        {
+          latex: "#@^{\\complement}",
+          aside: "complement",
+          variants: [
+            { latex: "\\setminus", aside: "set minus" },
+            { latex: "\\smallsetminus", aside: "small set minus" }
+          ]
+        },
+        {
+          latex: "\\subset",
+          shift: "\\subseteq",
+          variants: [
+            "\\subset",
+            "\\subseteq",
+            "\\subsetneq",
+            "\\varsubsetneq",
+            "\\subsetneqq",
+            "\\nsubset",
+            "\\nsubseteq",
+            "\\supset",
+            "\\supseteq",
+            "\\supsetneq",
+            "\\supsetneqq",
+            "\\nsupset",
+            "\\nsupseteq"
+          ]
+        },
+        {
+          latex: "#@^{\\prime}",
+          shift: "#@^{\\doubleprime}",
+          variants: ["#@^{\\doubleprime}", "#@\\degree"]
+        },
+        {
+          latex: "\\mathrm{d}",
+          shift: "\\partial",
+          variants: [
+            "\\mathrm{d}x",
+            { latex: "\\dfrac{\\mathrm{d}}{\\mathrm{d} x}", class: "small" },
+            { latex: "\\frac{\\partial}{\\partial x}", class: "small" },
+            "\\partial"
+          ]
+        },
+        {
+          latex: "\\infty",
+          variants: ["\\aleph_0", "\\aleph_1", "\\omega", "\\mathfrak{m}"]
+        }
+      ],
+      [
+        { label: "[shift]", width: 2 },
+        {
+          class: "box",
+          latex: ",",
+          shift: ";",
+          variants: [";", "?"]
+        },
+        {
+          class: "box",
+          latex: "\\colon",
+          shift: "\\Colon",
+          variants: [
+            { latex: "\\Colon", aside: "such that", class: "box" },
+            { latex: ":", aside: "ratio", class: "box" },
+            { latex: "\\vdots", aside: "", class: "box" },
+            { latex: "\\ddots", aside: "", class: "box" },
+            { latex: "\\ldotp", aside: "low dot", class: "box" },
+            { latex: "\\cdotp", aside: "center dot", class: "box" },
+            { latex: "\\ldots", aside: "low ellipsis", class: "box" },
+            { latex: "\\cdots", aside: "center ellipsis", class: "box" },
+            { latex: "\\therefore", aside: "therefore", class: "box" },
+            { latex: "\\because", aside: "because", class: "box" }
+          ]
+        },
+        {
+          class: "box",
+          latex: "\\cdot",
+          aside: "centered dot",
+          shift: "\\ast",
+          variants: [
+            "\\circ",
+            "\\bigcirc",
+            "\\bullet",
+            "\\odot",
+            "\\oslash",
+            "\\circledcirc",
+            "\\ast",
+            "\\star",
+            "\\times",
+            "\\doteq",
+            "\\doteqdot"
+          ]
+        },
+        "[separator]",
+        "[left]",
+        "[right]",
+        {
+          label: "[backspace]",
+          width: 1,
+          class: "action hide-shift"
+        },
+        { label: "[action]", width: 1 }
+      ]
+    ]
+  },
+  "compact": {
+    label: "compact",
+    rows: [
+      [
+        "[+]",
+        "[-]",
+        "[*]",
+        "[/]",
+        "[=]",
+        "[.]",
+        "[(]",
+        "[)]",
+        "\\sqrt{#0}",
+        "#@^{#?}"
+      ],
+      ["[1]", "[2]", "[3]", "[4]", "[5]", "[6]", "[7]", "[8]", "[9]", "[0]"],
+      ["[hr]"],
+      [
+        "[undo]",
+        "[redo]",
+        "[separator]",
+        "[separator]",
+        "[separator]",
+        "[left]",
+        "[right]",
+        { label: "[backspace]", class: "action hide-shift" },
+        "[hide-keyboard]"
+      ]
+    ]
+  },
+  "minimalist": {
+    label: "minimalist",
+    layers: [
+      {
+        style: `
+          div.minimalist-backdrop {
+            display: flex;
+            justify-content: center;
+          }          
+          div.minimalist-container {
+            --keycap-height: 40px;
+            --keycap-max-width: 53px;
+            --keycap-small-font-size: 12px;
+            background: var(--keyboard-background);
+            padding: 20px 20px 0px 20px;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            border: 1px solid var(--keyboard-border);
+            box-shadow: 0 0 32px rgb(0 0 0 / 30%);
+          }        
+        `,
+        backdrop: "minimalist-backdrop",
+        container: "minimalist-container",
+        rows: [
+          [
+            "+",
+            "-",
+            "\\times",
+            { latex: "\\frac{#@}{#0}", class: "small" },
+            "=",
+            "[.]",
+            "(",
+            ")",
+            { latex: "\\sqrt{#0}", class: "small" },
+            { latex: "#@^{#?}", class: "small" }
+          ],
+          ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+          ["[hr]"],
+          [
+            "[undo]",
+            "[redo]",
+            "[separator]",
+            "[separator]",
+            "[separator]",
+            "[left]",
+            "[right]",
+            { label: "[backspace]", class: "action hide-shift" },
+            "[hide-keyboard]"
+          ]
+        ]
+      }
+    ]
+  },
+  "numeric-only": {
+    label: "123",
+    labelClass: "MLK__tex-math",
+    tooltip: "keyboard.tooltip.numeric",
+    id: "numeric-only",
+    rows: [
+      ["7", "8", "9", "[separator]", { label: "[backspace]", width: 2 }],
+      ["4", "5", "6", "[separator]", "[separator]", "[separator]"],
+      ["1", "2", "3", "[separator]", "[separator]", "[separator]"],
+      [
+        "0",
+        { label: "[.]", variants: [] },
+        "-",
+        "[separator]",
+        "[left]",
+        "[right]"
+      ]
+    ]
+  }
+};
+
+// src/virtual-keyboard/variants.ts
+var VARIANTS2 = {
+  // '0-extended': [
+  //   '\\emptyset',
+  //   '\\varnothing',
+  //   '\\infty',
+  //   { latex: '#?_0', insert: '#@_0' },
+  //   '\\circ',
+  //   '\\bigcirc',
+  //   '\\bullet',
+  // ],
+  "0": ["\\varnothing", "\\infty"],
+  "1": ["\\frac{1}{#@}", "#@^{-1}", "\\times 10^{#?}", "\\phi", "\\imaginaryI"],
+  "2": ["\\frac{1}{2}", "#@^2", "\\sqrt2", "\\exponentialE"],
+  "3": ["\\frac{1}{3}", "#@^3", "\\sqrt3", "\\pi"],
+  "4": ["\\frac{1}{4}", "#@^4"],
+  "5": ["\\frac{1}{5}", "#@^5", "\\sqrt5"],
+  "6": ["\\frac{1}{6}", "#@^6"],
+  "7": ["\\frac{1}{7}", "#@^7"],
+  "8": ["\\frac{1}{8}", "#@^8"],
+  "9": ["\\frac{1}{9}", "#@^9"],
+  ".": [".", ",", ";", "\\colon"],
+  ",": ["{,}", ".", ";", "\\colon"],
+  "a": [
+    { latex: "\\aleph", aside: "aleph" },
+    { latex: "\\forall", aside: "for all" },
+    "\xE5",
+    "\xE0",
+    "\xE1",
+    "\xE2",
+    "\xE4",
+    "\xE6"
+  ],
+  "A": [
+    { latex: "\\aleph", aside: "aleph" },
+    { latex: "\\forall", aside: "for all" },
+    "\xC5",
+    "\xC0",
+    "\xC1",
+    "\xC2",
+    "\xC4",
+    "\xC6"
+  ],
+  "b": [{ latex: "\\beth", aside: "beth" }],
+  "c": [{ latex: "\\C", aside: "set of complex numbers" }, "\xE7"],
+  "d": [{ latex: "\\daleth", aside: "daleth" }],
+  "e": [
+    { latex: "\\exponentialE", aside: "exponential e" },
+    { latex: "\\exists", aside: "there is" },
+    { latex: "\\nexists", aside: "there isn\u2019t" },
+    "\xE8",
+    "\xE9",
+    "\xEA",
+    "\xEB"
+  ],
+  "E": [
+    { latex: "\\exponentialE", aside: "exponential e" },
+    { latex: "\\exists", aside: "there is" },
+    { latex: "\\nexists", aside: "there isn\u2019t" },
+    "\xC8",
+    "\xC9",
+    "\xCA",
+    "\xCB"
+  ],
+  "g": [{ latex: "\\gimel", aside: "gimel" }],
+  "h": [
+    { latex: "\\hbar", aside: "h bar" },
+    { latex: "\\hslash", aside: "h slash" }
+  ],
+  "i": [{ latex: "\\imaginaryI", aside: "imaginary i" }, "\xEC", "\xED", "\xEE", "\xEF"],
+  "I": [{ latex: "\\imaginaryI", aside: "imaginary i" }, "\xCC", "\xCD", "\xCE", "\xCF"],
+  "j": [{ latex: "\\imaginaryJ", aside: "imaginary j" }],
+  "l": [{ latex: "\\ell", aside: "ell" }],
+  "n": [{ latex: "\\mathbb{N}", aside: "set of natural numbers" }, "\xF1"],
+  "o": ["\xF8", "\u0153", "\xF2", "\xF3", "\xF4", "\xF6"],
+  "O": ["\xF8", "\u0152", "\xD2", "\xD3", "\xD4", "\xD6"],
+  "p": [{ latex: "\\mathbb{P}", aside: "set of primes" }],
+  "q": [{ latex: "\\mathbb{Q}", aside: "set of rational numbers" }],
+  "r": [{ latex: "\\mathbb{R}", aside: "set of real numbers" }],
+  "u": ["\xF9", "\xFA", "\xFB", "\xFC"],
+  "U": ["\xD9", "\xDA", "\xDB", "\xDC"],
+  "z": [{ latex: "\\mathbb{Z}", aside: "set of integers" }],
+  "y": ["\xFD", "\xFF"],
+  "Y": ["\u0178"],
+  "space": [
+    {
+      latex: '\\char"203A\\!\\char"2039',
+      insert: "\\!",
+      aside: "negative thin space<br>\u207B\xB3\u29F8\u2081\u2088 em"
+    },
+    {
+      latex: '\\char"203A\\,\\char"2039',
+      insert: "\\,",
+      aside: "thin space<br>\xB3\u29F8\u2081\u2088 em"
+    },
+    {
+      latex: '\\char"203A\\:\\char"2039',
+      insert: "\\:",
+      aside: "medium space<br>\u2074\u29F8\u2081\u2088 em"
+    },
+    {
+      latex: '\\char"203A\\;\\char"2039',
+      insert: "\\;",
+      aside: "thick space<br>\u2075\u29F8\u2081\u2088 em"
+    },
+    {
+      latex: '\\char"203A\\ \\char"2039',
+      insert: "\\ ",
+      aside: "\u2153 em"
+    },
+    {
+      latex: '\\char"203A\\enspace\\char"2039',
+      insert: "\\enspace",
+      aside: "\xBD em"
+    },
+    {
+      latex: '\\char"203A\\quad\\char"2039',
+      insert: "\\quad",
+      aside: "1 em"
+    },
+    {
+      latex: '\\char"203A\\qquad\\char"2039',
+      insert: "\\qquad",
+      aside: "2 em"
+    }
+  ]
+};
+var gVariantPanelController;
+function showVariantsPanel(element, onClose) {
+  var _a3, _b3, _c2, _d2, _e;
+  const keyboard = VirtualKeyboard.singleton;
+  if (!keyboard) return;
+  const keycap = parentKeycap(element);
+  let variantDef = "";
+  if (window.mathVirtualKeyboard.isShifted) {
+    const shiftedDefinition = (_a3 = keyboard.getKeycap(keycap == null ? void 0 : keycap.id)) == null ? void 0 : _a3.shift;
+    if (typeof shiftedDefinition === "object" && "variants" in shiftedDefinition)
+      variantDef = (_b3 = shiftedDefinition.variants) != null ? _b3 : "";
+  } else variantDef = (_d2 = (_c2 = keyboard.getKeycap(keycap == null ? void 0 : keycap.id)) == null ? void 0 : _c2.variants) != null ? _d2 : "";
+  if (typeof variantDef === "string" && !hasVariants(variantDef) || Array.isArray(variantDef) && variantDef.length === 0) {
+    onClose == null ? void 0 : onClose();
+    return;
+  }
+  const variants = {};
+  let markup = "";
+  for (const variant of getVariants(variantDef)) {
+    const keycap2 = normalizeKeycap(variant);
+    const id = Date.now().toString(36).slice(-2) + Math.floor(Math.random() * 1e5).toString(36);
+    variants[id] = keycap2;
+    const [keycapMarkup, keycapCls] = renderKeycap(keycap2);
+    markup += `<div id=${id} class="item ${keycapCls}">${keycapMarkup}</div>`;
+  }
+  const variantPanel = document.createElement("div");
+  variantPanel.setAttribute("aria-hidden", "true");
+  variantPanel.className = "MLK__variant-panel";
+  variantPanel.style.height = "auto";
+  const l = Object.keys(variants).length;
+  let w = 5;
+  if (l === 1) w = 1;
+  else if (l === 2 || l === 4) w = 2;
+  else if (l === 3 || l === 5 || l === 6) w = 3;
+  else if (l >= 7 && l < 14) w = 4;
+  variantPanel.style.width = `calc(var(--variant-keycap-length) * ${w} + 12px)`;
+  variantPanel.innerHTML = mathfield_element_default.createHTML(markup);
+  Scrim.open({
+    root: (_e = keyboard == null ? void 0 : keyboard.container) == null ? void 0 : _e.querySelector(".ML__keyboard"),
+    child: variantPanel
+  });
+  gVariantPanelController = new AbortController();
+  const { signal } = gVariantPanelController;
+  const position = element == null ? void 0 : element.getBoundingClientRect();
+  if (position) {
+    if (position.top - variantPanel.clientHeight < 0) {
+      variantPanel.style.width = "auto";
+      if (l <= 6)
+        variantPanel.style.height = "56px";
+      else if (l <= 12)
+        variantPanel.style.height = "108px";
+      else if (l <= 18)
+        variantPanel.style.height = "205px";
+      else variantPanel.classList.add("compact");
+    }
+    const left = Math.max(
+      0,
+      Math.min(
+        window.innerWidth - variantPanel.offsetWidth,
+        (position.left + position.right - variantPanel.offsetWidth) / 2
+      )
+    );
+    const top = position.top - variantPanel.clientHeight + 5;
+    variantPanel.style.left = `${left}px`;
+    variantPanel.style.top = `${top}px`;
+    variantPanel.classList.add("is-visible");
+    requestAnimationFrame(() => {
+      var _a4;
+      variantPanel.addEventListener(
+        "pointerup",
+        (ev) => {
+          const target = parentKeycap(ev.target);
+          if (!(target == null ? void 0 : target.id) || !variants[target.id]) return;
+          executeKeycapCommand(variants[target.id]);
+          hideVariantsPanel();
+          onClose == null ? void 0 : onClose();
+          ev.preventDefault();
+        },
+        { capture: true, passive: false, signal }
+      );
+      variantPanel.addEventListener(
+        "pointerenter",
+        (ev) => {
+          const target = parentKeycap(ev.target);
+          if (!(target == null ? void 0 : target.id) || !variants[target.id]) return;
+          target.classList.add("is-active");
+        },
+        { capture: true, signal }
+      );
+      variantPanel.addEventListener(
+        "pointerleave",
+        (ev) => {
+          const target = parentKeycap(ev.target);
+          if (ev.target && "tagName" in ev.target && typeof ev.target.tagName === "string" && ev.target.tagName.toUpperCase() === "ASIDE")
+            return;
+          if (!(target == null ? void 0 : target.id) || !variants[target.id]) return;
+          target.classList.remove("is-active");
+        },
+        { capture: true, signal }
+      );
+      if ((_a4 = keyboard.getKeycap(keycap == null ? void 0 : keycap.id)) == null ? void 0 : _a4.stickyVariantPanel) {
+        window.addEventListener(

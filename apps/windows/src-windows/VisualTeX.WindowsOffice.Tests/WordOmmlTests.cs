@@ -88,6 +88,48 @@ public sealed class WordOmmlTests
             element => element.Value is "e" or "i");
     }
 
+    [Fact]
+    public void ExplicitUprightFunctionLettersDoNotUprightLaterMatchingVariable()
+    {
+        const string mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + "<mrow><mi mathvariant=\"normal\">s</mi>"
+            + "<mi mathvariant=\"normal\">i</mi>"
+            + "<mi mathvariant=\"normal\">n</mi><mi>x</mi></mrow>"
+            + "<mrow><mi>n</mi><mo>→</mo><mi>∞</mi></mrow>"
+            + "<mi mathvariant=\"normal\">e</mi></math>";
+        var omml =
+            $"<m:oMath xmlns:m=\"{MathNamespace}\">"
+            + "<m:r><m:rPr><m:nor/></m:rPr><m:t>sin</m:t></m:r>"
+            + "<m:r><m:t>x</m:t></m:r>"
+            + "<m:r><m:t>n→∞</m:t></m:r>"
+            + "<m:r><m:rPr><m:nor/></m:rPr><m:t>e</m:t></m:r>"
+            + "</m:oMath>";
+
+        var normalized = WordOmmlConverter.NormalizeExplicitUprightRuns(omml, mathMl);
+        var document = XDocument.Parse(normalized);
+        XNamespace math = MathNamespace;
+        var runs = document.Descendants(math + "r").ToArray();
+        XElement Run(string text) => runs.Single(run =>
+            string.Concat(run.Elements(math + "t").Select(node => node.Value)) == text);
+
+        Assert.Equal(
+            "p",
+            Run("sin").Element(math + "rPr")
+                ?.Element(math + "sty")
+                ?.Attribute(math + "val")
+                ?.Value);
+        Assert.Equal(
+            "p",
+            Run("e").Element(math + "rPr")
+                ?.Element(math + "sty")
+                ?.Attribute(math + "val")
+                ?.Value);
+        Assert.Null(
+            Run("n→∞").Element(math + "rPr")
+                ?.Element(math + "sty"));
+    }
+
     [Theory]
     [InlineData("lim")]
     [InlineData("max")]
@@ -1133,6 +1175,96 @@ public sealed class WordOmmlTests
         Assert.Contains(
             nary.Element(math + "e")?.Descendants(math + "t") ?? Enumerable.Empty<XElement>(),
             text => text.Value.Contains("f", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void NestedDoubleSummationPreservesEveryNativeNaryAndLimit()
+    {
+        const string mathMl =
+            "<math xmlns='http://www.w3.org/1998/Math/MathML' display='block'>"
+            + "<mi>u</mi><mo>=</mo>"
+            + "<munderover><mo>&#x2211;</mo><mrow><mi>n</mi><mo>=</mo><mn>1</mn></mrow><mi>N</mi></munderover>"
+            + "<munderover><mo>&#x2211;</mo><mrow><mi>m</mi><mo>=</mo><mn>1</mn></mrow><mi>M</mi></munderover>"
+            + "<mrow><msub><mi>a</mi><mrow><mi>n</mi><mi>m</mi></mrow></msub><mi>X</mi></mrow>"
+            + "<mo>+</mo>"
+            + "<munderover><mo>&#x2211;</mo><mrow><mi>p</mi><mo>=</mo><mn>0</mn></mrow><mi>P</mi></munderover>"
+            + "<munderover><mo>&#x2211;</mo><mrow><mi>q</mi><mo>=</mo><mn>0</mn></mrow><mi>Q</mi></munderover>"
+            + "<mrow><mfrac><msub><mi>b</mi><mrow><mi>p</mi><mi>q</mi></mrow></msub><mrow><mn>1</mn><mo>+</mo><msup><mi>x</mi><mn>2</mn></msup></mrow></mfrac></mrow>"
+            + "</math>";
+
+        var omml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+        var document = XDocument.Parse(omml);
+        XNamespace math = MathNamespace;
+        var naries = document.Descendants(math + "nary").ToArray();
+
+        Assert.Equal(4, naries.Length);
+        Assert.All(naries, nary =>
+        {
+            Assert.True(HasVisibleMathText(nary.Element(math + "sub")));
+            Assert.True(HasVisibleMathText(nary.Element(math + "sup")));
+            Assert.True(HasVisibleMathText(nary.Element(math + "e")));
+            Assert.Equal(
+                "∑",
+                nary.Element(math + "naryPr")?
+                    .Element(math + "chr")?
+                    .Attribute(math + "val")?
+                    .Value);
+        });
+
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: true);
+        var roundTripDocument = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        Assert.Equal(
+            4,
+            roundTripDocument
+                .Descendants(presentationMath + "mo")
+                .Count(op => op.Value == "∑"));
+    }
+
+    [Fact]
+    public void AsteriskOperatorRoundTripDoesNotBecomeAsciiIdentifier()
+    {
+        const string mathMl =
+            "<math xmlns='http://www.w3.org/1998/Math/MathML' display='block'>"
+            + "<msup><mi>f</mi><mo>&#x2217;</mo></msup>"
+            + "</math>";
+
+        var omml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(omml, display: true);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        var exponent = document.Descendants(presentationMath + "msup").Single()
+            .Elements()
+            .Skip(1)
+            .Single();
+
+        var asterisk = exponent
+            .DescendantsAndSelf(presentationMath + "mo")
+            .Single();
+        Assert.Equal("∗", asterisk.Value);
+    }
+
+    [Fact]
+    public void WordCanonicalAsciiAsteriskRestoresMathOperatorSemantics()
+    {
+        var omml =
+            $"<m:oMath xmlns:m='{MathNamespace}'>"
+            + "<m:sSup><m:e><m:r><m:t>f</m:t></m:r></m:e>"
+            + "<m:sup><m:r><m:t>*</m:t></m:r></m:sup></m:sSup>"
+            + "</m:oMath>";
+
+        var roundTrip = WordOmmlConverter.TransformOmmlToMathMl(
+            omml,
+            display: true);
+        var document = XDocument.Parse(roundTrip);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        var exponentOperator = document
+            .Descendants(presentationMath + "msup")
+            .Single()
+            .Descendants(presentationMath + "mo")
+            .Single();
+
+        Assert.Equal("∗", exponentOperator.Value);
     }
 
     [Fact]

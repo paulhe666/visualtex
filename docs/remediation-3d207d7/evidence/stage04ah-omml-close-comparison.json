@@ -1,0 +1,482 @@
+{
+  "before": "docs\\remediation-3d207d7\\evidence\\stage04ah-mt-transition-omml-result-__7.json",
+  "after": "docs\\remediation-3d207d7\\evidence\\stage04ah-omml-closed-__7.json",
+  "count": 95,
+  "differences": [
+    {
+      "path": "/bookmarks/1/end",
+      "before": 653,
+      "after": 652
+    },
+    {
+      "path": "/bookmarks/1/start",
+      "before": 590,
+      "after": 589
+    },
+    {
+      "path": "/bookmarks/2/end",
+      "before": 816,
+      "after": 815
+    },
+    {
+      "path": "/bookmarks/2/start",
+      "before": 753,
+      "after": 752
+    },
+    {
+      "path": "/bookmarks/4/end",
+      "before": 932,
+      "after": 931
+    },
+    {
+      "path": "/bookmarks/4/start",
+      "before": 869,
+      "after": 868
+    },
+    {
+      "path": "/bookmarks/6/end",
+      "before": 652,
+      "after": 651
+    },
+    {
+      "path": "/bookmarks/6/start",
+      "before": 591,
+      "after": 590
+    },
+    {
+      "path": "/bookmarks/7/end",
+      "before": 815,
+      "after": 814
+    },
+    {
+      "path": "/bookmarks/7/start",
+      "before": 754,
+      "after": 753
+    },
+    {
+      "path": "/bookmarks/9/end",
+      "before": 931,
+      "after": 930
+    },
+    {
+      "path": "/bookmarks/9/start",
+      "before": 870,
+      "after": 869
+    },
+    {
+      "path": "/bookmarks/11/end",
+      "before": 652,
+      "after": 651
+    },
+    {
+      "path": "/bookmarks/11/start",
+      "before": 591,
+      "after": 590
+    },
+    {
+      "path": "/bookmarks/12/end",
+      "before": 815,
+      "after": 814
+    },
+    {
+      "path": "/bookmarks/12/start",
+      "before": 754,
+      "after": 753
+    },
+    {
+      "path": "/bookmarks/14/end",
+      "before": 931,
+      "after": 930
+    },
+    {
+      "path": "/bookmarks/14/start",
+      "before": 870,
+      "after": 869
+    },
+    {
+      "path": "/bookmarks/18/end",
+      "before": 664,
+      "after": 663
+    },
+    {
+      "path": "/bookmarks/18/start",
+      "before": 664,
+      "after": 663
+    },
+    {
+      "path": "/bookmarks/20/end",
+      "before": 837,
+      "after": 836
+    },
+    {
+      "path": "/bookmarks/20/start",
+      "before": 837,
+      "after": 836
+    },
+    {
+      "path": "/bookmarks/21/end",
+      "before": 653,
+      "after": 652
+    },
+    {
+      "path": "/bookmarks/21/start",
+      "before": 590,
+      "after": 589
+    },
+    {
+      "path": "/end",
+      "before": 1023,
+      "after": 1022
+    },
+    {
+      "path": "/fields/6/end",
+      "before": 651,
+      "after": 650
+    },
+    {
+      "path": "/fields/6/start",
+      "before": 596,
+      "after": 595
+    },
+    {
+      "path": "/fields/7/end",
+      "before": 814,
+      "after": 813
+    },
+    {
+      "path": "/fields/7/start",
+      "before": 759,
+      "after": 758
+    },
+    {
+      "path": "/fields/8/end",
+      "before": 930,
+      "after": 929
+    },
+    {
+      "path": "/fields/8/start",
+      "before": 875,
+      "after": 874
+    },
+    {
+      "path": "/fields/9/end",
+      "before": 1022,
+      "after": 1021
+    },
+    {
+      "path": "/fields/9/start",
+      "before": 949,
+      "after": 948
+    },
+    {
+      "path": "/fields/10/end",
+      "before": 1020,
+      "after": 1019
+    },
+    {
+      "path": "/fields/10/start",
+      "before": 976,
+      "after": 975
+    },
+    {
+      "path": "/maths/3/end",
+      "before": 588,
+      "after": 587
+    },
+    {
+      "path": "/maths/3/text",
+      "before": "𝑖ℏ<CR>𝜕<CR>𝜕𝑡<CR>𝜓(𝐫,𝑡)=<CR>−<CR><CR>ℏ<CR>2<CR><CR>2𝑚<CR><CR>𝛻<CR>2<CR>+𝑉(𝐫,𝑡)<CR>𝜓(𝐫,𝑡)",
+      "after": "𝑖ℏ<CR>𝜕<CR>𝜕𝑡<CR>𝜓(𝐫,𝑡)=[−<CR><CR>ℏ<CR>2<CR><CR>2𝑚<CR><CR>∇<CR>2<CR>+𝑉(𝐫,𝑡)]𝜓(𝐫,𝑡)"
+    },
+    {
+      "path": "/maths/4/end",
+      "before": 751,
+      "after": 750
+    },
+    {
+      "path": "/maths/4/start",
+      "before": 664,
+      "after": 663
+    },
+    {
+      "path": "/maths/5/end",
+      "before": 867,
+      "after": 866
+    },
+    {
+      "path": "/maths/5/start",
+      "before": 837,
+      "after": 836
+    },
+    {
+      "path": "/paras/17/end",
+      "before": 589,
+      "after": 588
+    },
+    {
+      "path": "/paras/17/text",
+      "before": "𝑖ℏ<CR>𝜕<CR>𝜕𝑡<CR>𝜓(𝐫,𝑡)=<CR>−<CR><CR>ℏ<CR>2<CR><CR>2𝑚<CR><CR>𝛻<CR>2<CR>+𝑉(𝐫,𝑡)<CR>𝜓(𝐫,𝑡)<CR><CELL>",
+      "after": "𝑖ℏ<CR>𝜕<CR>𝜕𝑡<CR>𝜓(𝐫,𝑡)=[−<CR><CR>ℏ<CR>2<CR><CR>2𝑚<CR><CR>∇<CR>2<CR>+𝑉(𝐫,𝑡)]𝜓(𝐫,𝑡)<CR><CELL>"
+    },
+    {
+      "path": "/paras/18/end",
+      "before": 654,
+      "after": 653
+    },
+    {
+      "path": "/paras/18/start",
+      "before": 589,
+      "after": 588
+    },
+    {
+      "path": "/paras/19/end",
+      "before": 655,
+      "after": 654
+    },
+    {
+      "path": "/paras/19/start",
+      "before": 654,
+      "after": 653
+    },
+    {
+      "path": "/paras/20/end",
+      "before": 663,
+      "after": 662
+    },
+    {
+      "path": "/paras/20/start",
+      "before": 655,
+      "after": 654
+    },
+    {
+      "path": "/paras/21/end",
+      "before": 664,
+      "after": 663
+    },
+    {
+      "path": "/paras/21/start",
+      "before": 663,
+      "after": 662
+    },
+    {
+      "path": "/paras/22/end",
+      "before": 752,
+      "after": 751
+    },
+    {
+      "path": "/paras/22/start",
+      "before": 664,
+      "after": 663
+    },
+    {
+      "path": "/paras/23/end",
+      "before": 817,
+      "after": 816
+    },
+    {
+      "path": "/paras/23/start",
+      "before": 752,
+      "after": 751
+    },
+    {
+      "path": "/paras/24/end",
+      "before": 818,
+      "after": 817
+    },
+    {
+      "path": "/paras/24/start",
+      "before": 817,
+      "after": 816
+    },
+    {
+      "path": "/paras/25/end",
+      "before": 836,
+      "after": 835
+    },
+    {
+      "path": "/paras/25/start",
+      "before": 818,
+      "after": 817
+    },
+    {
+      "path": "/paras/26/end",
+      "before": 837,
+      "after": 836
+    },
+    {
+      "path": "/paras/26/start",
+      "before": 836,
+      "after": 835
+    },
+    {
+      "path": "/paras/27/end",
+      "before": 868,
+      "after": 867
+    },
+    {
+      "path": "/paras/27/start",
+      "before": 837,
+      "after": 836
+    },
+    {
+      "path": "/paras/28/end",
+      "before": 933,
+      "after": 932
+    },
+    {
+      "path": "/paras/28/start",
+      "before": 868,
+      "after": 867
+    },
+    {
+      "path": "/paras/29/end",
+      "before": 934,
+      "after": 933
+    },
+    {
+      "path": "/paras/29/start",
+      "before": 933,
+      "after": 932
+    },
+    {
+      "path": "/paras/30/end",
+      "before": 947,
+      "after": 946
+    },
+    {
+      "path": "/paras/30/start",
+      "before": 934,
+      "after": 933
+    },
+    {
+      "path": "/paras/31/end",
+      "before": 948,
+      "after": 947
+    },
+    {
+      "path": "/paras/31/start",
+      "before": 947,
+      "after": 946
+    },
+    {
+      "path": "/paras/32/end",
+      "before": 1023,
+      "after": 1022
+    },
+    {
+      "path": "/paras/32/start",
+      "before": 948,
+      "after": 947
+    },
+    {
+      "path": "/tables/1/cells/1/end",
+      "before": 589,
+      "after": 588
+    },
+    {
+      "path": "/tables/1/cells/1/text",
+      "before": "𝑖ℏ<CR>𝜕<CR>𝜕𝑡<CR>𝜓(𝐫,𝑡)=<CR>−<CR><CR>ℏ<CR>2<CR><CR>2𝑚<CR><CR>𝛻<CR>2<CR>+𝑉(𝐫,𝑡)<CR>𝜓(𝐫,𝑡)<CR><CELL>",
+      "after": "𝑖ℏ<CR>𝜕<CR>𝜕𝑡<CR>𝜓(𝐫,𝑡)=[−<CR><CR>ℏ<CR>2<CR><CR>2𝑚<CR><CR>∇<CR>2<CR>+𝑉(𝐫,𝑡)]𝜓(𝐫,𝑡)<CR><CELL>"
+    },
+    {
+      "path": "/tables/1/cells/2/end",
+      "before": 654,
+      "after": 653
+    },
+    {
+      "path": "/tables/1/cells/2/start",
+      "before": 589,
+      "after": 588
+    },
+    {
+      "path": "/tables/1/end",
+      "before": 655,
+      "after": 654
+    },
+    {
+      "path": "/tables/1/text",
+      "before": "<CR><CELL>𝑖ℏ<CR>𝜕<CR>𝜕𝑡<CR>𝜓(𝐫,𝑡)=<CR>−<CR><CR>ℏ<CR>2<CR><CR>2𝑚<CR><CR>𝛻<CR>2<CR>+𝑉(𝐫,𝑡)<CR>𝜓(𝐫,𝑡)<CR><CELL><TAB>(2.0-1)<CR><CELL><CR><CELL>",
+      "after": "<CR><CELL>𝑖ℏ<CR>𝜕<CR>𝜕𝑡<CR>𝜓(𝐫,𝑡)=[−<CR><CR>ℏ<CR>2<CR><CR>2𝑚<CR><CR>∇<CR>2<CR>+𝑉(𝐫,𝑡)]𝜓(𝐫,𝑡)<CR><CELL><TAB>(2.0-1)<CR><CELL><CR><CELL>"
+    },
+    {
+      "path": "/tables/2/cells/0/end",
+      "before": 664,
+      "after": 663
+    },
+    {
+      "path": "/tables/2/cells/0/start",
+      "before": 663,
+      "after": 662
+    },
+    {
+      "path": "/tables/2/cells/1/end",
+      "before": 752,
+      "after": 751
+    },
+    {
+      "path": "/tables/2/cells/1/start",
+      "before": 664,
+      "after": 663
+    },
+    {
+      "path": "/tables/2/cells/2/end",
+      "before": 817,
+      "after": 816
+    },
+    {
+      "path": "/tables/2/cells/2/start",
+      "before": 752,
+      "after": 751
+    },
+    {
+      "path": "/tables/2/end",
+      "before": 818,
+      "after": 817
+    },
+    {
+      "path": "/tables/2/start",
+      "before": 663,
+      "after": 662
+    },
+    {
+      "path": "/tables/3/cells/0/end",
+      "before": 837,
+      "after": 836
+    },
+    {
+      "path": "/tables/3/cells/0/start",
+      "before": 836,
+      "after": 835
+    },
+    {
+      "path": "/tables/3/cells/1/end",
+      "before": 868,
+      "after": 867
+    },
+    {
+      "path": "/tables/3/cells/1/start",
+      "before": 837,
+      "after": 836
+    },
+    {
+      "path": "/tables/3/cells/2/end",
+      "before": 933,
+      "after": 932
+    },
+    {
+      "path": "/tables/3/cells/2/start",
+      "before": 868,
+      "after": 867
+    },
+    {
+      "path": "/tables/3/end",
+      "before": 934,
+      "after": 933
+    },
+    {
+      "path": "/tables/3/start",
+      "before": 836,
+      "after": 835
+    }
+  ]
+}

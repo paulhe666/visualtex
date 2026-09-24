@@ -1,0 +1,39 @@
+{
+  "counts": [
+    {
+      "maths": 0,
+      "oles": 6,
+      "numbered": 5,
+      "sectionFields": 1
+    },
+    {
+      "maths": 0,
+      "oles": 6,
+      "numbered": 5,
+      "sectionFields": 1
+    },
+    {
+      "maths": 0,
+      "oles": 6,
+      "numbered": 5,
+      "sectionFields": 1
+    }
+  ],
+  "oleBinariesSameContinuous": true,
+  "oleBinariesSameRestored": true,
+  "proseFormattingSame": true,
+  "continuousNumbers": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+  ],
+  "referenceContinuous": [
+    "(5)"
+  ],
+  "referenceRestored": [
+    "(2.0-3)"
+  ],
+  "bookmarkNamesPreserved": true
+}

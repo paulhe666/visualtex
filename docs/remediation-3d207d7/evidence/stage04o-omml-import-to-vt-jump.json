@@ -1,0 +1,36 @@
+﻿{
+    "pid":  82668,
+    "time":  "2026-09-06T07:07:02.3291250Z",
+    "action":  "real mouse double-click",
+    "wordMacroButtonTarget":  null,
+    "after":  {
+                  "end":  410,
+                  "text":  "2",
+                  "start":  358
+              },
+    "before":  {
+                   "start":  88,
+                   "end":  88
+               },
+    "rectangle":  {
+                      "left":  1140,
+                      "width":  1,
+                      "top":  1245,
+                      "height":  1
+                  },
+    "passed":  true,
+    "target":  {
+                   "end":  410,
+                   "text":  "2",
+                   "start":  358
+               },
+    "actualReferenceRectangle":  {
+                                     "left":  1130,
+                                     "width":  0,
+                                     "top":  1216,
+                                     "height":  59
+                                 },
+    "wordExpandedTargetField":  null,
+    "bookmark":  "VTEqNum_24ea394543294f6d9a9a2256bec17893",
+    "document":  "文档131"
+}

@@ -1,0 +1,65 @@
+{
+  "id": "84049e39-d78b-4574-a100-e9d17d275793",
+  "mode": "create",
+  "host": "word",
+  "formulaId": "94c48135-3be4-4821-8b02-29a93c1e4d59",
+  "sourceDocumentId": "文档19",
+  "sourceObjectId": null,
+  "title": "Bulk imported Word formula",
+  "lines": [
+    {
+      "id": "61806e39-c530-4dca-ab56-0a74975e7341",
+      "latex": "\\mathrm{e}^{\\mathrm{i}\\pi}+1=0"
+    }
+  ],
+  "activeLineId": "61806e39-c530-4dca-ab56-0a74975e7341",
+  "codeFormat": "latex",
+  "displayMode": "block",
+  "objectMode": "wordOmml",
+  "numbered": false,
+  "mathTypeNumberPosition": "right",
+  "fontSizePt": 10.5,
+  "exportWidth": 240.0,
+  "exportHeight": 80.0,
+  "exportResult": {
+    "svg": "",
+    "svgBase64": "",
+    "mathMl": "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">\n  <msup>\n    <mrow data-mjx-texclass=\"ORD\">\n      <mi mathvariant=\"normal\">e</mi>\n    </mrow>\n    <mrow data-mjx-texclass=\"ORD\">\n      <mrow data-mjx-texclass=\"ORD\">\n        <mi mathvariant=\"normal\">i</mi>\n      </mrow>\n      <mi>&#x3C0;</mi>\n    </mrow>\n  </msup>\n  <mo>+</mo>\n  <mn>1</mn>\n  <mo>=</mo>\n  <mn>0</mn>\n</math>",
+    "pngBase64": null,
+    "width": 240.0,
+    "height": 80.0,
+    "baseline": 60.0,
+    "formulaLetterFont": "times",
+    "formulaChineseFont": "system"
+  },
+  "originalMetadata": {
+    "schema": "visualtex-formula",
+    "schemaVersion": 1,
+    "formulaId": "94c48135-3be4-4821-8b02-29a93c1e4d59",
+    "title": "Bulk imported Word formula",
+    "latex": "\\mathrm{e}^{\\mathrm{i}\\pi}+1=0",
+    "lines": [
+      {
+        "id": "61806e39-c530-4dca-ab56-0a74975e7341",
+        "latex": "\\mathrm{e}^{\\mathrm{i}\\pi}+1=0"
+      }
+    ],
+    "codeFormat": "latex",
+    "displayMode": "block",
+    "numbered": false,
+    "fontSizePt": 10.5,
+    "renderFontSizePt": 10.5,
+    "createdWithVersion": "1.2.6",
+    "updatedWithVersion": "1.2.6",
+    "createdAt": "2026-09-06T01:40:17.6446850+00:00",
+    "updatedAt": "2026-09-06T01:40:17.6446850+00:00"
+  },
+  "dirty": false,
+  "status": "committing",
+  "autoCommitOnClose": false,
+  "explicitCancel": false,
+  "error": null,
+  "createdAt": 1788658817645,
+  "updatedAt": 1788658817668,
+  "expiresAt": 1788745217668
+}

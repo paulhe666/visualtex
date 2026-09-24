@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
 use objc2::{rc::Retained, AnyThread, MainThreadMarker};
 #[cfg(target_os = "macos")]
-use objc2_app_kit::NSApplication;
+use objc2_app_kit::{
+    NSApplication, NSEvent, NSScreen, NSWindowCollectionBehavior,
+};
 #[cfg(target_os = "macos")]
 use objc2_core_services::{
     kAnyTransactionID, kAutoGenerateReturnID, keyErrorNumber, keyErrorString,
@@ -497,6 +499,8 @@ struct ResidentEditorFocusState {
     window_can_become_key: bool,
     window_is_key: bool,
     window_is_main: bool,
+    window_is_visible: bool,
+    window_on_active_space: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -844,20 +848,17 @@ pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String>
         let persist_result = persist_fast_open_claim(host, &session_id, &claim_path);
         let _ = fs::remove_file(&claim_path);
         persist_result?;
-        if host == OfficeHost::Word {
-            // AppleScriptTask uses this explicit acknowledgement to distinguish a
-            // current resident that accepted a prepared redraw/restore request
-            // from an older resident that merely claimed and rejected the inbox
-            // file. The marker is written only after full request/auxiliary-file
-            // validation succeeds.
-            atomic_write_runtime(
-                &fast_open_accept_path(parent, &session_id)?,
-                b"accepted\n",
-                0o600,
-            )?;
-            let url = format!("visualtex://office/open?session={session_id}");
-            handle_open_url_safely(app, &url)?;
-        }
+        // The resident process owns ordinary formula activation for both Word
+        // and PowerPoint. Once the sandbox request has been validated and
+        // claimed there is no reason to ask LaunchServices to reopen VisualTeX;
+        // doing so can raise the desktop workspace before the formula window.
+        atomic_write_runtime(
+            &fast_open_accept_path(parent, &session_id)?,
+            b"accepted\n",
+            0o600,
+        )?;
+        let url = format!("visualtex://office/open?session={session_id}");
+        handle_open_url_safely(app, &url)?;
         return Ok(true);
     }
     Ok(false)
@@ -2298,23 +2299,6 @@ fn office_host_name(host: OfficeHost) -> &'static str {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn restore_office_host_focus(host: OfficeHost) {
-    let bundle_identifier = match host {
-        OfficeHost::Word => "com.microsoft.Word",
-        OfficeHost::Powerpoint => "com.microsoft.Powerpoint",
-    };
-    if !crate::office::background::activate_application_by_bundle_identifier(bundle_identifier) {
-        eprintln!(
-            "Unable to return focus to {} after closing the VisualTeX formula editor",
-            office_host_name(host)
-        );
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn restore_office_host_focus(_host: OfficeHost) {}
-
 fn editor_window_label(host: OfficeHost) -> &'static str {
     match host {
         OfficeHost::Word => "office-native-word-editor",
@@ -2618,6 +2602,62 @@ fn clear_any_editor_session(host: OfficeHost) -> Option<MacOfflineOfficeEditorAc
 }
 
 #[cfg(target_os = "macos")]
+fn configure_resident_editor_space_behavior(window: &WebviewWindow) -> Result<(), String> {
+    window
+        .with_webview(move |webview| unsafe {
+            let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
+            let behavior = native_window.collectionBehavior()
+                | NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::CanJoinAllApplications
+                | NSWindowCollectionBehavior::FullScreenAuxiliary;
+            native_window.setCollectionBehavior(behavior);
+            native_window.setHidesOnDeactivate(false);
+        })
+        .map_err(|error| {
+            format!("Unable to configure the Office editor fullscreen behavior: {error}")
+        })
+}
+
+#[cfg(target_os = "macos")]
+fn center_resident_editor_on_pointer_screen(window: &WebviewWindow) -> Result<(), String> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    window
+        .with_webview(move |webview| unsafe {
+            let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
+            let positioned = MainThreadMarker::new().is_some_and(|main_thread| {
+                let pointer = NSEvent::mouseLocation();
+                let screens = NSScreen::screens(main_thread);
+                let target = (0..screens.count()).find_map(|index| {
+                    let screen = screens.objectAtIndex(index);
+                    let frame = screen.frame();
+                    let contains_pointer =
+                        pointer.x >= frame.origin.x
+                            && pointer.x < frame.origin.x + frame.size.width
+                            && pointer.y >= frame.origin.y
+                            && pointer.y < frame.origin.y + frame.size.height;
+                    contains_pointer.then(|| screen.visibleFrame())
+                });
+                let Some(screen_frame) = target else {
+                    return false;
+                };
+                let window_frame = native_window.frame();
+                let x = screen_frame.origin.x
+                    + (screen_frame.size.width - window_frame.size.width) / 2.0;
+                let y = screen_frame.origin.y
+                    + (screen_frame.size.height - window_frame.size.height) / 2.0;
+                native_window.setFrameOrigin(objc2_foundation::NSPoint::new(x, y));
+                true
+            });
+            let _ = sender.send(positioned);
+        })
+        .map_err(|error| {
+            format!("Unable to position the Office editor on the active display: {error}")
+        })?;
+    let _ = receiver.recv_timeout(Duration::from_millis(250));
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
 fn set_resident_editor_native_state(
     window: &WebviewWindow,
     alpha: f64,
@@ -2628,13 +2668,14 @@ fn set_resident_editor_native_state(
             let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
             native_window.setAlphaValue(alpha);
             native_window.setIgnoresMouseEvents(parked);
+            native_window.setHidesOnDeactivate(false);
             // Parked renderers are implementation windows, not destinations
             // for Window/Dock navigation while the user opens the workspace.
             native_window.setExcludedFromWindowsMenu(parked);
             native_window.setLevel(if parked {
                 objc2_app_kit::NSNormalWindowLevel
             } else {
-                objc2_app_kit::NSFloatingWindowLevel
+                objc2_app_kit::NSScreenSaverWindowLevel
             });
         })
         .map_err(|error| format!("Unable to update the resident Office editor window: {error}"))
@@ -2656,6 +2697,22 @@ fn wake_resident_editor_invisibly(window: &WebviewWindow) -> Result<(), String> 
     // stays CSS-hidden during silent conversions, so this does not expose the
     // editor while preventing the 0.001-alpha suspension observed on macOS 26.
     set_resident_editor_native_state(window, 0.01, true)
+}
+
+#[cfg(target_os = "macos")]
+fn order_resident_editor_behind(window: &WebviewWindow) -> Result<(), String> {
+    window
+        .with_webview(move |webview| unsafe {
+            let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
+            // AppKit's orderBack does not resign a key NSPanel. Release it
+            // first, then keep the parked renderer ordered for WebKit. This
+            // lets the same panel become key again on the next Office edit.
+            if native_window.isKeyWindow() {
+                native_window.orderOut(None);
+            }
+            native_window.orderBack(None);
+        })
+        .map_err(|error| format!("Unable to order the resident Office editor behind: {error}"))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -2696,10 +2753,9 @@ fn order_main_window_behind_office_editor(app: &AppHandle) -> Result<(), String>
     main_window
         .with_webview(move |webview| unsafe {
             let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
-            // ActivateAllWindows raises every normal-level VisualTeX window as
-            // one application group. Put only the desktop workspace one level
-            // below normal before activation so it stays behind Word/PowerPoint
-            // without being hidden, moved, minimized, or resized.
+            // Office editor activation targets only the formula window. Keep an
+            // already visible desktop workspace explicitly behind Office as an
+            // additional guard against LaunchServices or stale reopen events.
             native_window.setLevel(objc2_app_kit::NSNormalWindowLevel - 1);
             native_window.orderBack(None);
         })
@@ -2708,27 +2764,6 @@ fn order_main_window_behind_office_editor(app: &AppHandle) -> Result<(), String>
 
 #[cfg(not(target_os = "macos"))]
 fn order_main_window_behind_office_editor(_app: &AppHandle) -> Result<(), String> {
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn restore_main_window_level_after_office_editor(app: &AppHandle) -> Result<(), String> {
-    let Some(main_window) = app.get_webview_window("main") else {
-        return Ok(());
-    };
-    main_window
-        .with_webview(move |webview| unsafe {
-            let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
-            native_window.setLevel(objc2_app_kit::NSNormalWindowLevel);
-            // The Office host is active again when this runs. Keep the restored
-            // desktop workspace behind it until the user explicitly clicks it.
-            native_window.orderBack(None);
-        })
-        .map_err(|error| format!("Unable to restore the VisualTeX main window level: {error}"))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn restore_main_window_level_after_office_editor(_app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
@@ -2748,51 +2783,41 @@ fn inspect_resident_editor_focus(
                         window_can_become_key: native_window.canBecomeKeyWindow(),
                         window_is_key: native_window.isKeyWindow(),
                         window_is_main: native_window.isMainWindow(),
+                        window_is_visible: native_window.isVisible(),
+                        window_on_active_space: native_window.isOnActiveSpace(),
                     }
                 })
                 .unwrap_or_default();
             let _ = sender.send(state);
         })
-        .map_err(|error| format!("Unable to inspect the Office editor focus state: {error}"))?;
+        .map_err(|error| format!("Unable to inspect the Office editor window: {error}"))?;
     receiver
         .recv_timeout(Duration::from_millis(250))
-        .map_err(|error| format!("Timed out inspecting the Office editor focus state: {error}"))
+        .map_err(|error| format!("Timed out inspecting the Office editor window: {error}"))
 }
 
 #[cfg(target_os = "macos")]
-fn make_resident_editor_key(window: &WebviewWindow) -> Result<bool, String> {
+fn order_resident_editor_to_front(window: &WebviewWindow) -> Result<(), String> {
     let (sender, receiver) = mpsc::sync_channel(1);
     window
         .with_webview(move |webview| unsafe {
             let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
+            // The Tao window is created as an NSPanel for Office formula
+            // editors. Keep its WKWebView in place for the whole lifetime.
+            native_window.setAlphaValue(1.0);
+            native_window.setIgnoresMouseEvents(false);
+            native_window.setExcludedFromWindowsMenu(false);
+            native_window.setLevel(objc2_app_kit::NSScreenSaverWindowLevel);
             native_window.orderFrontRegardless();
-            native_window.makeKeyAndOrderFront(None);
             native_window.makeKeyWindow();
-            let _ = sender.send(native_window.isKeyWindow());
+            let webview_responder: &objc2_app_kit::NSResponder = &*webview.inner().cast();
+            native_window.makeFirstResponder(Some(webview_responder));
+            let _ = sender.send(());
         })
-        .map_err(|error| format!("Unable to make the Office editor key: {error}"))?;
-
-    let initially_key = receiver
+        .map_err(|error| format!("Unable to order the Office editor window: {error}"))?;
+    receiver
         .recv_timeout(Duration::from_millis(250))
-        .map_err(|error| format!("Timed out making the Office editor key: {error}"))?;
-    window.set_focus().map_err(|error| error.to_string())?;
-    if initially_key {
-        return Ok(true);
-    }
-
-    // Both AppKit activation and Tauri's focus message can complete one run-loop
-    // turn after their API call returns. Poll the actual NSWindow on the main
-    // thread for a short bounded interval instead of reading either state early.
-    for attempt in 0..12 {
-        let focus = inspect_resident_editor_focus(window)?;
-        if focus.window_is_key || window.is_focused().unwrap_or(false) {
-            return Ok(true);
-        }
-        if attempt < 11 {
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
-    Ok(false)
+        .map_err(|error| format!("Timed out ordering the Office editor window: {error}"))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -2804,26 +2829,16 @@ fn inspect_resident_editor_focus(
         window_can_become_key: true,
         window_is_key: window.is_focused().unwrap_or(false),
         window_is_main: window.is_focused().unwrap_or(false),
+        window_is_visible: window.is_visible().unwrap_or(false),
+        window_on_active_space: true,
     })
 }
 
-#[cfg(not(target_os = "macos"))]
-fn make_resident_editor_key(window: &WebviewWindow) -> Result<bool, String> {
-    window.set_focus().map_err(|error| error.to_string())?;
-    Ok(window.is_focused().unwrap_or(false))
-}
-
 #[cfg(target_os = "macos")]
-fn present_resident_editor_window(app: &AppHandle, window: &WebviewWindow) -> Result<(), String> {
-    // Keep the already-validated foreground sequence unchanged. Window-size
-    // restoration happens earlier while the resident editor is still parked.
-    set_resident_editor_parked(window, false)?;
-    window.show().map_err(|error| error.to_string())?;
-    window.unminimize().map_err(|error| error.to_string())?;
-    order_main_window_behind_office_editor(app)?;
-    crate::office::background::activate_foreground_app(app)?;
-    let _ = make_resident_editor_key(window)?;
-    window.set_focus().map_err(|error| error.to_string())
+fn present_resident_editor_window(_app: &AppHandle, window: &WebviewWindow) -> Result<(), String> {
+    configure_resident_editor_space_behavior(window)?;
+    center_resident_editor_on_pointer_screen(window)?;
+    order_resident_editor_to_front(window)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -2847,6 +2862,8 @@ fn set_resident_editor_content_visible(
 fn create_editor_window(app: &AppHandle, host: OfficeHost) -> Result<WebviewWindow, String> {
     let label = editor_window_label(host);
     if let Some(window) = app.get_webview_window(label) {
+        #[cfg(target_os = "macos")]
+        configure_resident_editor_space_behavior(&window)?;
         return Ok(window);
     }
 
@@ -2866,10 +2883,15 @@ fn create_editor_window(app: &AppHandle, host: OfficeHost) -> Result<WebviewWind
         .background_throttling(BackgroundThrottlingPolicy::Disabled)
         .build()
         .map_err(|error| format!("Unable to initialize the VisualTeX Office editor: {error}"))?;
+    #[cfg(target_os = "macos")]
+    configure_resident_editor_space_behavior(&window)?;
     // A freshly created WKWebView must stay above WebKit's suspension threshold
     // until React/MathLive report prewarm readiness. It is parked back at 0.001
     // immediately after that handshake.
     wake_resident_editor_invisibly(&window)?;
+    #[cfg(target_os = "macos")]
+    order_resident_editor_behind(&window)?;
+    #[cfg(not(target_os = "macos"))]
     window
         .show()
         .map_err(|error| format!("Unable to prewarm the VisualTeX Office editor: {error}"))?;
@@ -2955,9 +2977,16 @@ fn open_editor_window(
     // commit so Word never flashes the formula editor.
     if !silent {
         wake_resident_editor_for_hydration(&window)?;
-        window.center().map_err(|error| error.to_string())?;
-        window.show().map_err(|error| error.to_string())?;
-        window.unminimize().map_err(|error| error.to_string())?;
+        #[cfg(target_os = "macos")]
+        {
+            center_resident_editor_on_pointer_screen(&window)?;
+            order_resident_editor_behind(&window)?;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            window.show().map_err(|error| error.to_string())?;
+            window.unminimize().map_err(|error| error.to_string())?;
+        }
     }
     Ok(())
 }
@@ -3127,7 +3156,7 @@ pub fn get_macos_offline_office_editor_activation(
 
 #[tauri::command]
 pub fn report_macos_offline_office_editor_ready(
-    app: AppHandle,
+    _app: AppHandle,
     window: WebviewWindow,
     input: MacOfflineOfficeEditorReadyInput,
 ) -> Result<(), String> {
@@ -3204,20 +3233,12 @@ pub fn report_macos_offline_office_editor_ready(
         (inspect_resident_editor_focus(&window)?, false, false)
     } else {
         set_resident_editor_content_visible(&window, true)?;
-        set_resident_editor_parked(&window, false)?;
-        window.center().map_err(|error| error.to_string())?;
-        window.show().map_err(|error| error.to_string())?;
-        window.unminimize().map_err(|error| error.to_string())?;
-        order_main_window_behind_office_editor(&app)?;
-        crate::office::background::activate_foreground_app(&app)?;
-        if !inspect_resident_editor_focus(&window)?.app_active {
-            crate::office::background::activate_foreground_app_via_launch_services(&app)?;
-        }
-        let native_window_key = make_resident_editor_key(&window)?;
+        configure_resident_editor_space_behavior(&window)?;
+        center_resident_editor_on_pointer_screen(&window)?;
+        order_resident_editor_to_front(&window)?;
         let focus = inspect_resident_editor_focus(&window)?;
-        let window_focused =
-            native_window_key || focus.window_is_key || window.is_focused().unwrap_or(false);
-        let window_visible = window.is_visible().unwrap_or(false);
+        let window_focused = focus.window_is_key;
+        let window_visible = focus.window_is_visible && focus.window_on_active_space;
         (focus, window_focused, window_visible)
     };
     let show_focus_ms = active.received_at.elapsed().as_secs_f64() * 1000.0;
@@ -3229,7 +3250,15 @@ pub fn report_macos_offline_office_editor_ready(
         "window-show-focus",
         show_focus_ms,
         Some(input.generation),
-        json!({ "silent": silent }),
+        json!({
+            "silent": silent,
+            "appActive": focus.app_active,
+            "canBecomeKey": focus.window_can_become_key,
+            "isKey": focus.window_is_key,
+            "isMain": focus.window_is_main,
+            "isVisible": focus.window_is_visible,
+            "onActiveSpace": focus.window_on_active_space,
+        }),
     );
 
     let marker = MacOfflineOfficeEditorReadyMarker {
@@ -3337,6 +3366,9 @@ pub fn close_macos_offline_office_editor_window(
         set_resident_editor_content_visible(&window, false)?;
         set_resident_editor_parked(&window, true)
             .map_err(|error| format!("Unable to close the VisualTeX Office editor: {error}"))?;
+        #[cfg(target_os = "macos")]
+        order_resident_editor_behind(&window)
+            .map_err(|error| format!("Unable to close the VisualTeX Office editor: {error}"))?;
         *runtime.active_mut(host) = None;
     }
     let _ = window.emit(
@@ -3344,37 +3376,23 @@ pub fn close_macos_offline_office_editor_window(
         json!({ "sessionId": session_id, "generation": generation }),
     );
 
-    #[cfg(target_os = "macos")]
-    {
-        let main_visible = app
-            .get_webview_window("main")
-            .and_then(|main| main.is_visible().ok())
-            .unwrap_or(false);
-        if !has_open_office_editor(&app)
-            && !main_visible
-            && crate::office::background::is_background_mode()
-        {
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory)
-                .map_err(|error| {
-                    format!("Unable to return VisualTeX to Office background mode: {error}")
-                })?;
-        }
-    }
-    // Applying or cancelling a formula ends the temporary VisualTeX editing
-    // interaction. Explicitly return the foreground application to the Office
-    // host without changing the visibility of the user's main workspace.
-    restore_office_host_focus(host);
+    let parked_focus = inspect_resident_editor_focus(&window).ok();
+    // Formula editing never changes application activation policy or Office
+    // activation. Closing the overlay therefore only parks its own native window.
     queue_editor_performance(
         host,
         &session_id,
         "editor-visible-complete",
         0.0,
         Some(generation),
-        json!({ "parked": true, "officeFocusRequested": true }),
+        json!({
+            "parked": true,
+            "officeFocusRequested": false,
+            "isKeyAfterParking": parked_focus.map(|focus| focus.window_is_key),
+            "isVisibleAfterParking": parked_focus.map(|focus| focus.window_is_visible),
+            "onActiveSpaceAfterParking": parked_focus.map(|focus| focus.window_on_active_space),
+        }),
     );
-    if !has_open_office_editor(&app) {
-        restore_main_window_level_after_office_editor(&app)?;
-    }
     Ok(())
 }
 
@@ -3427,13 +3445,10 @@ pub(crate) fn focus_open_office_editor(app: &AppHandle) -> bool {
             };
             // A parked active window is still hydrating. Treat it as owned so
             // a second native double-click route cannot launch a duplicate.
-            // LaunchServices Reopen may still raise the desktop main window;
-            // demote only that window without focusing transparent editor content.
+            // Never touch the desktop main window during formula activation.
             if !active.ready {
-                let _ = order_main_window_behind_office_editor(app);
                 return true;
             }
-            let _ = window.show();
             let _ = present_resident_editor_window(app, &window);
             return true;
         }
@@ -3795,6 +3810,7 @@ thread_local! {
     // the same Word/PowerPoint Apply script on every formula edit.
     static OFFICE_VBA_APPLESCRIPT_CACHE: RefCell<Vec<(String, Retained<NSAppleScript>)>> =
         const { RefCell::new(Vec::new()) };
+
 }
 
 #[cfg(target_os = "macos")]

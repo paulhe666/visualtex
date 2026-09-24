@@ -1,0 +1,60 @@
+ControlType.ToolBar|快速访问工具栏||enabled=True|offscreen=False
+ControlType.Button|自动保存|Off|enabled=True|offscreen=False
+ControlType.Button|保存||enabled=True|offscreen=False
+ControlType.SplitButton|撤消书签||enabled=True|offscreen=False
+ControlType.Button|撤消书签||enabled=True|offscreen=False
+ControlType.MenuItem|更多选项||enabled=True|offscreen=False
+ControlType.Button|无法重复||enabled=False|offscreen=False
+ControlType.MenuItem|触摸/鼠标模式||enabled=True|offscreen=False
+ControlType.MenuItem|自定义工具栏||enabled=True|offscreen=False
+ControlType.TitleBar|‪文档142‬  -  Word||enabled=True|offscreen=False
+ControlType.MenuItem|键入搜索内容，并使用向上和向下键导航||enabled=True|offscreen=False
+ControlType.Edit|Microsoft 搜索|搜索|enabled=True|offscreen=False
+ControlType.MenuItem|po jian liao||enabled=True|offscreen=False
+ControlType.MenuItem|功能区显示选项||enabled=True|offscreen=False
+ControlType.Button|最小化||enabled=True|offscreen=False
+ControlType.Button|最大化||enabled=True|offscreen=False
+ControlType.Button|关闭||enabled=True|offscreen=False
+ControlType.Button|“文件”选项卡||enabled=True|offscreen=False
+ControlType.Tab|功能区选项卡||enabled=True|offscreen=False
+ControlType.TabItem|开始||enabled=True|offscreen=False
+ControlType.TabItem|VisualTeX||enabled=True|offscreen=False
+ControlType.TabItem|插入||enabled=True|offscreen=False
+ControlType.TabItem|绘图||enabled=True|offscreen=False
+ControlType.TabItem|设计||enabled=True|offscreen=False
+ControlType.TabItem|布局||enabled=True|offscreen=False
+ControlType.TabItem|引用||enabled=True|offscreen=False
+ControlType.TabItem|邮件||enabled=True|offscreen=False
+ControlType.TabItem|审阅||enabled=True|offscreen=False
+ControlType.TabItem|视图||enabled=True|offscreen=False
+ControlType.TabItem|MathType||enabled=True|offscreen=False
+ControlType.TabItem|帮助||enabled=True|offscreen=False
+ControlType.TabItem|表设计||enabled=True|offscreen=False
+ControlType.TabItem|布局||enabled=True|offscreen=False
+ControlType.TabItem|公式||enabled=True|offscreen=False
+ControlType.Button|共享|Off|enabled=True|offscreen=False
+ControlType.Text|共享||enabled=True|offscreen=False
+ControlType.Button|OLE 行内公式||enabled=True|offscreen=False
+ControlType.Button|OLE 行间公式||enabled=True|offscreen=False
+ControlType.Button|OMML 行内公式||enabled=True|offscreen=False
+ControlType.Button|OMML 行间公式||enabled=True|offscreen=False
+ControlType.Button|编辑所选公式||enabled=True|offscreen=False
+ControlType.MenuItem|VisualTeX → MathType||enabled=True|offscreen=False
+ControlType.MenuItem|MathType → VisualTeX||enabled=True|offscreen=False
+ControlType.MenuItem|OMML → MathType||enabled=True|offscreen=False
+ControlType.MenuItem|MathType → OMML||enabled=True|offscreen=False
+ControlType.MenuItem|VisualTeX → OMML||enabled=True|offscreen=False
+ControlType.MenuItem|OMML → VisualTeX||enabled=True|offscreen=False
+ControlType.Button|更新公式编号||enabled=True|offscreen=False
+ControlType.MenuItem|编号格式||enabled=True|offscreen=False
+ControlType.Button|插入公式引用||enabled=True|offscreen=False
+ControlType.Button|批量导入||enabled=True|offscreen=False
+ControlType.MenuItem|重绘所选||enabled=True|offscreen=False
+ControlType.MenuItem|重绘全文||enabled=True|offscreen=False
+ControlType.Button|减小||enabled=False|offscreen=False
+ControlType.Text|字号||enabled=False|offscreen=False
+ControlType.ComboBox|字号||enabled=False|offscreen=False
+ControlType.Edit|字号||enabled=False|offscreen=False
+ControlType.Button|打开||enabled=False|offscreen=False
+ControlType.Button|增大||enabled=False|offscreen=False
+ControlType.Button|折叠功能区|Off|enabled=True|offscreen=False

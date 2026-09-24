@@ -1,0 +1,54 @@
+{
+  "before": [
+    [
+      "/word/media/image1.emf",
+      "2366eff957c8f3cc611f852f66e7e855616d8f224a68c8b8979227858a4421a4"
+    ],
+    [
+      "/word/embeddings/oleObject1.bin",
+      "f9864e9f70f826ca63af0778dbf4c0df9fd9969bbf61c804ee4202ccd5c0211b"
+    ],
+    [
+      "/word/media/image2.emf",
+      "0eb0d67c7a0e7fade406b6751db92507e563d2ecca4a308ed982244c93998202"
+    ],
+    [
+      "/word/embeddings/oleObject2.bin",
+      "2dd7aec5e80f3306c0153b7e08a71751de05d22947a52144436d48f20f48e30c"
+    ],
+    [
+      "/word/media/image3.emf",
+      "141d2cf702c6832c780acbe65cc83790b949defc3d14d4c038de6b8a955fbea2"
+    ],
+    [
+      "/word/embeddings/oleObject3.bin",
+      "38bf63b05433c3f5647d24af6369d46ec655a137a18265254b71a8c1e8fe9b7a"
+    ]
+  ],
+  "after": [
+    [
+      "/word/media/image1.emf",
+      "2366eff957c8f3cc611f852f66e7e855616d8f224a68c8b8979227858a4421a4"
+    ],
+    [
+      "/word/embeddings/oleObject1.bin",
+      "f9864e9f70f826ca63af0778dbf4c0df9fd9969bbf61c804ee4202ccd5c0211b"
+    ],
+    [
+      "/word/media/image2.emf",
+      "0eb0d67c7a0e7fade406b6751db92507e563d2ecca4a308ed982244c93998202"
+    ],
+    [
+      "/word/embeddings/oleObject2.bin",
+      "2dd7aec5e80f3306c0153b7e08a71751de05d22947a52144436d48f20f48e30c"
+    ],
+    [
+      "/word/media/image3.emf",
+      "141d2cf702c6832c780acbe65cc83790b949defc3d14d4c038de6b8a955fbea2"
+    ],
+    [
+      "/word/embeddings/oleObject3.bin",
+      "38bf63b05433c3f5647d24af6369d46ec655a137a18265254b71a8c1e8fe9b7a"
+    ]
+  ]
+}

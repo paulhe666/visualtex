@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  200482,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  134984,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  134982,
+        "name":  "当前文档没有可引用的带编号公式。请先插入带编号的 VisualTeX 或 MathType 行间公式。",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

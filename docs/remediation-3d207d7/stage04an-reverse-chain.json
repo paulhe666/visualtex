@@ -1,0 +1,12 @@
+[
+  ["edit-source", "math", "4", "F=ma", "stage04an-omml-edit-force"],
+  ["snapshot", "stage04an-omml-force"],
+  ["convert", "omml-mt", "full", "stage04an-omml-mt-direct"],
+  ["snapshot", "stage04an-mt-direct"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04an-mt-direct-visible\"}"],
+  ["convert", "mt-vt", "full", "stage04an-mt-vt-direct"],
+  ["snapshot", "stage04an-vt-direct"],
+  ["convert", "vt-omml", "full", "stage04an-vt-omml-direct"],
+  ["snapshot", "stage04an-omml-final"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04an-omml-final-visible\"}"]
+]

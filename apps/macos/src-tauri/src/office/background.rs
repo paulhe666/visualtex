@@ -465,55 +465,6 @@ pub(crate) fn activate_foreground_app(_app: &AppHandle) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn activate_foreground_app_via_launch_services(
-    app: &AppHandle,
-) -> Result<(), String> {
-    prepare_foreground_app(app)?;
-    let identifier = &app.config().identifier;
-    let status = Command::new("/usr/bin/open")
-        .arg("-b")
-        .arg(identifier)
-        .status()
-        .map_err(|error| {
-            format!(
-                "Unable to ask LaunchServices to activate {identifier}: {error}"
-            )
-        })?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "LaunchServices could not activate {identifier}: open exited with {status}"
-        ))
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn activate_foreground_app_via_launch_services(
-    _app: &AppHandle,
-) -> Result<(), String> {
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn activate_application_by_bundle_identifier(bundle_identifier: &str) -> bool {
-    let identifier = NSString::from_str(bundle_identifier);
-    let applications = NSRunningApplication::runningApplicationsWithBundleIdentifier(&identifier);
-    applications.firstObject().is_some_and(|application| {
-        if let Some(main_thread) = MainThreadMarker::new() {
-            let current = NSApplication::sharedApplication(main_thread);
-            current.yieldActivationToApplication(&application);
-        }
-        application.activateWithOptions(NSApplicationActivationOptions::empty())
-    })
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn activate_application_by_bundle_identifier(_bundle_identifier: &str) -> bool {
-    false
-}
-
-#[cfg(target_os = "macos")]
 pub(crate) fn install_application_icon(app: &AppHandle) -> Result<(), String> {
     if APPLICATION_ICON_INSTALLED.load(Ordering::Acquire) {
         return Ok(());

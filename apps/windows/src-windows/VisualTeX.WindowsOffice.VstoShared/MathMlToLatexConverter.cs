@@ -96,6 +96,9 @@ internal static class MathMlToLatexConverter
             ["'"] = @"\prime ",
             ["′"] = @"\prime ",
             ["″"] = @"\prime\prime ",
+            ["‴"] = @"\prime\prime\prime ",
+            ["⁗"] = @"\prime\prime\prime\prime ",
+            ["‵"] = @"\backprime ",
             ["∀"] = @"\forall ",
             ["∃"] = @"\exists ",
             ["∣"] = @"\mid ",
@@ -610,13 +613,35 @@ internal static class MathMlToLatexConverter
         if (children.Count == 0) return string.Empty;
         var builder = new StringBuilder(GroupBase(ConvertElement(children[0])));
         var index = 1;
+        var postPair = 0;
         while (index < children.Count && children[index].Name.LocalName != "mprescripts")
         {
-            var sub = ConvertElement(children[index]);
-            var sup = index + 1 < children.Count ? ConvertElement(children[index + 1]) : string.Empty;
-            if (!string.IsNullOrEmpty(sub)) builder.Append("_{").Append(sub).Append('}');
-            if (!string.IsNullOrEmpty(sup)) builder.Append("^{").Append(sup).Append('}');
+            var sub = ScriptArgument(children[index]);
+            var sup = index + 1 < children.Count && children[index + 1].Name.LocalName != "mprescripts"
+                ? ScriptArgument(children[index + 1]) : string.Empty;
+            // Each additional pair is an adjacent script column, not a second
+            // superscript on the same TeX atom (which would be invalid TeX).
+            if (postPair++ > 0 && (sub.Length > 0 || sup.Length > 0)) builder.Append("{}");
+            if (sub.Length > 0) builder.Append("_{").Append(sub).Append('}');
+            if (sup.Length > 0) builder.Append("^{").Append(sup).Append('}');
             index += 2;
+        }
+        if (index < children.Count && children[index].Name.LocalName == "mprescripts")
+        {
+            var prescripts = new List<string>();
+            for (index++; index < children.Count; index += 2)
+            {
+                var sub = ScriptArgument(children[index]);
+                var sup = index + 1 < children.Count ? ScriptArgument(children[index + 1]) : string.Empty;
+                if (sub.Length == 0 && sup.Length == 0) continue;
+                prescripts.Add("{}"
+                    + (sub.Length > 0 ? "_{" + sub + "}" : string.Empty)
+                    + (sup.Length > 0 ? "^{" + sup + "}" : string.Empty));
+            }
+            // MathML lists prescript columns from the base outward. TeX is
+            // emitted from left to right, so those columns precede it in reverse.
+            prescripts.Reverse();
+            builder.Insert(0, string.Concat(prescripts));
         }
         return builder.ToString();
     }
@@ -651,18 +676,37 @@ internal static class MathMlToLatexConverter
             var escaped = EscapeMathIdentifier(token);
             if (variant.IndexOf("double-struck", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathbb{" + escaped + "}";
+            if (variant.IndexOf("bold-fraktur", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\boldsymbol{\mathfrak{" + escaped + "}}";
             if (variant.IndexOf("fraktur", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathfrak{" + escaped + "}";
+            if (variant.IndexOf("bold-script", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\boldsymbol{\mathcal{" + escaped + "}}";
             if (variant.IndexOf("script", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathcal{" + escaped + "}";
             if (variant.IndexOf("monospace", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathtt{" + escaped + "}";
+            if (variant.IndexOf("bold-sans-serif", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\boldsymbol{\mathsf{" + escaped + "}}";
             if (variant.IndexOf("sans-serif", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathsf{" + escaped + "}";
+            if (variant.IndexOf("bold-italic", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathbfit{" + escaped + "}";
             if (variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathbf{" + escaped + "}";
             if (explicitlyUpright)
                 return @"\mathrm{" + escaped + "}";
+        }
+        if (element.Name.LocalName == "mi"
+            && IsGreekIdentifier(token)
+            && (variant.IndexOf("bold-italic", StringComparison.OrdinalIgnoreCase) >= 0
+                || variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0))
+        {
+            // MathJax represents \boldsymbol/\bm lower Greek as bold-italic
+            // and upper Greek as bold. These identifiers are deliberately not
+            // part of IsLatinIdentifier(), so preserve the variant around the
+            // already-canonical Greek command instead of dropping it.
+            return @"\boldsymbol{" + ConvertToken(token).Trim() + "}";
         }
         return ConvertToken(token);
     }
@@ -745,6 +789,12 @@ internal static class MathMlToLatexConverter
         && token.All(character =>
             (character <= '\u024F' && char.IsLetterOrDigit(character))
             || character is '.' or ',');
+
+    private static bool IsGreekIdentifier(string token) =>
+        token.Length > 0
+        && token.All(character =>
+            character is >= '\u0370' and <= '\u03FF'
+            || character is >= '\u1F00' and <= '\u1FFF');
 
     private static string EscapeMathIdentifier(string value) =>
         value.Replace("\\", @"\backslash ")

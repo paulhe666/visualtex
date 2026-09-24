@@ -1,0 +1,65 @@
+{
+    "id":  "f4562693-13ca-449f-9dcc-1bc78683f466",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "96288e89-d138-429e-a9e7-208cee624c80",
+    "sourceDocumentId":  "文档157",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "f985adeb-9af7-4041-8ee6-63a1257b1cdb",
+                      "latex":  "\\begin{cases}\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega f\\left(\\omega\\right)\\right)=0 \\\\ \\frac{\\omega f\\left(\\omega\\right)}{2}\\frac{\\mathrm{d}E\\left(\\omega\\right)}{\\mathrm{d}\\omega}=\\sqrt{\\frac{m}{2}} \\end{cases}"
+                  }
+              ],
+    "activeLineId":  "f985adeb-9af7-4041-8ee6-63a1257b1cdb",
+    "codeFormat":  "latex",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e{\u003c/mo\u003e\n    \u003cmtable columnalign=\"left left\" columnspacing=\"1em\" rowspacing=\".2em\"\u003e\n      \u003cmtr\u003e\n        \u003cmtd\u003e\n          \u003cmfrac\u003e\n            \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n              \u003cmi mathvariant=\"normal\"\u003ed\u003c/mi\u003e\n            \u003c/mrow\u003e\n            \u003cmrow\u003e\n              \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n                \u003cmi mathvariant=\"normal\"\u003ed\u003c/mi\u003e\n              \u003c/mrow\u003e\n              \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n            \u003c/mrow\u003e\n          \u003c/mfrac\u003e\n          \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n            \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n            \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n            \u003cmi\u003ef\u003c/mi\u003e\n            \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n              \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n              \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n              \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n            \u003c/mrow\u003e\n            \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n          \u003c/mrow\u003e\n          \u003cmo\u003e=\u003c/mo\u003e\n          \u003cmn\u003e0\u003c/mn\u003e\n        \u003c/mtd\u003e\n      \u003c/mtr\u003e\n      \u003cmtr\u003e\n        \u003cmtd\u003e\n          \u003cmfrac\u003e\n            \u003cmrow\u003e\n              \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n              \u003cmi\u003ef\u003c/mi\u003e\n              \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n                \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n                \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n                \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n              \u003c/mrow\u003e\n            \u003c/mrow\u003e\n            \u003cmn\u003e2\u003c/mn\u003e\n          \u003c/mfrac\u003e\n          \u003cmfrac\u003e\n            \u003cmrow\u003e\n              \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n                \u003cmi mathvariant=\"normal\"\u003ed\u003c/mi\u003e\n              \u003c/mrow\u003e\n              \u003cmi\u003eE\u003c/mi\u003e\n              \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n                \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n                \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n                \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n              \u003c/mrow\u003e\n            \u003c/mrow\u003e\n            \u003cmrow\u003e\n              \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n                \u003cmi mathvariant=\"normal\"\u003ed\u003c/mi\u003e\n              \u003c/mrow\u003e\n              \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n            \u003c/mrow\u003e\n          \u003c/mfrac\u003e\n          \u003cmo\u003e=\u003c/mo\u003e\n          \u003cmsqrt\u003e\n            \u003cmfrac\u003e\n              \u003cmi\u003em\u003c/mi\u003e\n              \u003cmn\u003e2\u003c/mn\u003e\n            \u003c/mfrac\u003e\n          \u003c/msqrt\u003e\n        \u003c/mtd\u003e\n      \u003c/mtr\u003e\n    \u003c/mtable\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\" fence=\"true\" stretchy=\"true\" symmetric=\"true\"\u003e\u003c/mo\u003e\n  \u003c/mrow\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "96288e89-d138-429e-a9e7-208cee624c80",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "\\begin{cases}\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega f\\left(\\omega\\right)\\right)=0 \\\\ \\frac{\\omega f\\left(\\omega\\right)}{2}\\frac{\\mathrm{d}E\\left(\\omega\\right)}{\\mathrm{d}\\omega}=\\sqrt{\\frac{m}{2}} \\end{cases}",
+                             "lines":  [
+                                           {
+                                               "id":  "f985adeb-9af7-4041-8ee6-63a1257b1cdb",
+                                               "latex":  "\\begin{cases}\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega f\\left(\\omega\\right)\\right)=0 \\\\ \\frac{\\omega f\\left(\\omega\\right)}{2}\\frac{\\mathrm{d}E\\left(\\omega\\right)}{\\mathrm{d}\\omega}=\\sqrt{\\frac{m}{2}} \\end{cases}"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "block",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T10:20:12.8293846+00:00",
+                             "updatedAt":  "2026-09-06T10:20:12.8293846+00:00"
+                         },
+    "dirty":  false,
+    "status":  "failed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  "System.IO.InvalidDataException: The converted OMML row identities or number fields are incomplete.\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\r\n   在 VisualTeX.WordVsto.OfficeUiDispatcher.\u003c\u003ec__DisplayClass4_0`1.\u003cInvokeAsync\u003eg__Execute|0()\r\n--- 引发异常的上一位置中堆栈跟踪的末尾 ---\r\n   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()\r\n   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)\r\n   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()\r\n   在 VisualTeX.WordVsto.ThisAddIn.\u003cConvertFormulaFormatAsync\u003ed__165.MoveNext()",
+    "createdAt":  1788690012830,
+    "updatedAt":  1788690135679,
+    "expiresAt":  1788776535679
+}

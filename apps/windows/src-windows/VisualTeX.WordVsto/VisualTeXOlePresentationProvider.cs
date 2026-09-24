@@ -71,8 +71,8 @@ internal static class VisualTeXOlePresentationProvider
                 Numbered = false,
                 FontSizePt = FormulaFontSize.DefaultPt,
                 RenderFontSizePt = FormulaFontSize.DefaultPt,
-                CreatedWithVersion = "1.2.6",
-                UpdatedWithVersion = "1.2.6",
+                CreatedWithVersion = "1.2.7",
+                UpdatedWithVersion = "1.2.7",
                 CreatedAt = now,
                 UpdatedAt = now,
             };

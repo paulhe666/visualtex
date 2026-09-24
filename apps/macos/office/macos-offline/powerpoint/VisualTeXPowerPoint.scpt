@@ -184,7 +184,7 @@ on launchVisualTeXURL(visualTeXURL)
         -- validated URL through LaunchServices to the already-running production
         -- bundle instead. The heartbeat check above still guarantees that the
         -- resident process is the expected VisualTeX executable before dispatch.
-        do shell script "/usr/bin/open -b " & quoted form of "com.visualtex.studio" & space & quoted form of safeURL
+        do shell script "/usr/bin/open -g -b " & quoted form of "com.visualtex.studio" & space & quoted form of safeURL
         set diagnosticText to diagnosticText & "launchServices=ok" & linefeed
         my writeDiagnosticText(diagnosticPath, diagnosticText)
     on error launchMessage number launchNumber

@@ -1,0 +1,65 @@
+{
+    "id":  "a5fe9fa3-a9a2-45f3-b9f6-abb178e81178",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "21fbaa8e-e470-436d-9a94-b8d0a8e2d964",
+    "sourceDocumentId":  "文档138",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "17df956c-bd66-4893-915a-39cc1eb37bb3",
+                      "latex":  "\\frac{\\partial}{\\partial t}\\psi ^*\\left( \\vec{r} \\right) \\psi \\left( \\vec{r} \\right) =\\frac{i\\hbar}{2m}\\nabla \\cdot \\left[ \\psi ^*\\left( \\vec{r} \\right) \\nabla \\psi \\left( \\vec{r} \\right) -\\psi \\left( \\vec{r} \\right) \\nabla \\psi ^*\\left( r \\right) \\right]"
+                  }
+              ],
+    "activeLineId":  "17df956c-bd66-4893-915a-39cc1eb37bb3",
+    "codeFormat":  "latex",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"\u003e\n  \u003cmfrac\u003e\n    \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n      \u003cmi\u003et\u003c/mi\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n  \u003cmsup\u003e\n    \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n    \u003cmo\u003e\u0026#x2217;\u003c/mo\u003e\n  \u003c/msup\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmover\u003e\n        \u003cmi\u003er\u003c/mi\u003e\n        \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n      \u003c/mover\u003e\n    \u003c/mrow\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n  \u003c/mrow\u003e\n  \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmover\u003e\n        \u003cmi\u003er\u003c/mi\u003e\n        \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n      \u003c/mover\u003e\n    \u003c/mrow\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n  \u003c/mrow\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmfrac\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003ei\u003c/mi\u003e\n      \u003cmi data-mjx-alternate=\"1\"\u003e\u0026#x210F;\u003c/mi\u003e\n    \u003c/mrow\u003e\n    \u003cmrow\u003e\n      \u003cmn\u003e2\u003c/mn\u003e\n      \u003cmi\u003em\u003c/mi\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n  \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n  \u003cmo\u003e\u0026#x22C5;\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e[\u003c/mo\u003e\n    \u003cmsup\u003e\n      \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n      \u003cmo\u003e\u0026#x2217;\u003c/mo\u003e\n    \u003c/msup\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n        \u003cmover\u003e\n          \u003cmi\u003er\u003c/mi\u003e\n          \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n        \u003c/mover\u003e\n      \u003c/mrow\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n    \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n    \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n        \u003cmover\u003e\n          \u003cmi\u003er\u003c/mi\u003e\n          \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n        \u003c/mover\u003e\n      \u003c/mrow\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n    \u003cmo\u003e\u0026#x2212;\u003c/mo\u003e\n    \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n        \u003cmover\u003e\n          \u003cmi\u003er\u003c/mi\u003e\n          \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n        \u003c/mover\u003e\n      \u003c/mrow\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n    \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n    \u003cmsup\u003e\n      \u003cmi\u003e\u0026#x3C8;\u003c/mi\u003e\n      \u003cmo\u003e\u0026#x2217;\u003c/mo\u003e\n    \u003c/msup\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmi\u003er\u003c/mi\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\"\u003e]\u003c/mo\u003e\n  \u003c/mrow\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "21fbaa8e-e470-436d-9a94-b8d0a8e2d964",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "\\frac{\\partial}{\\partial t}\\psi ^*\\left( \\vec{r} \\right) \\psi \\left( \\vec{r} \\right) =\\frac{i\\hbar}{2m}\\nabla \\cdot \\left[ \\psi ^*\\left( \\vec{r} \\right) \\nabla \\psi \\left( \\vec{r} \\right) -\\psi \\left( \\vec{r} \\right) \\nabla \\psi ^*\\left( r \\right) \\right]",
+                             "lines":  [
+                                           {
+                                               "id":  "17df956c-bd66-4893-915a-39cc1eb37bb3",
+                                               "latex":  "\\frac{\\partial}{\\partial t}\\psi ^*\\left( \\vec{r} \\right) \\psi \\left( \\vec{r} \\right) =\\frac{i\\hbar}{2m}\\nabla \\cdot \\left[ \\psi ^*\\left( \\vec{r} \\right) \\nabla \\psi \\left( \\vec{r} \\right) -\\psi \\left( \\vec{r} \\right) \\nabla \\psi ^*\\left( r \\right) \\right]"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "block",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T08:46:28.3266298+00:00",
+                             "updatedAt":  "2026-09-06T08:46:28.3266298+00:00"
+                         },
+    "dirty":  false,
+    "status":  "failed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  "System.AggregateException: Conversion failed and Word undo recovery could not be verified. ---\u003e System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\r\n   --- 内部异常堆栈跟踪的结尾 ---\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\r\n   在 VisualTeX.WordVsto.OfficeUiDispatcher.\u003c\u003ec__DisplayClass4_0`1.\u003cInvokeAsync\u003eg__Execute|0()\r\n--- 引发异常的上一位置中堆栈跟踪的末尾 ---\r\n   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()\r\n   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)\r\n   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()\r\n   在 VisualTeX.WordVsto.ThisAddIn.\u003cConvertFormulaFormatAsync\u003ed__165.MoveNext()\r\n---\u003e (内部异常 #0) System.IO.InvalidDataException: OMML anchor d68fd2e3-6cfe-4c44-9cfc-fb160f2974d7 owns different formula content.\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.IndexConversionEquationIdentities(XElement body, IReadOnlyDictionary`2 expectedFingerprints, Func`2 fingerprint, IReadOnlyDictionary`2 exactAnchorOwners)\r\n   在 VisualTeX.WordVsto.WordOmmlNativeSource.RefreshFingerprintsFromDocumentOpenXml(Document document, IReadOnlyCollection`1 formulaIds, IReadOnlyDictionary`2 freshSourceOmml)\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\u003c---\r\n\r\n---\u003e (内部异常 #1) System.IO.InvalidDataException: Word undo did not restore the original content, numbering, bookmarks, formatting and metadata.\r\n   在 VisualTeX.WordVsto.WordDocumentEditSnapshot.Restore(Document document)\r\n   在 VisualTeX.WordVsto.WordFormulaService.ApplyFormulaFormatConversionPlan(WordFormulaFormatConversionPlan plan, IReadOnlyDictionary`2 prepared)\u003c---\r\n",
+    "createdAt":  1788684388327,
+    "updatedAt":  1788684407737,
+    "expiresAt":  1788770807737
+}

@@ -1,0 +1,1820 @@
+[
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "926,712,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX Native Office Formula Editor",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "926,712,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "926,712,1734,720",
+        "value":  "",
+        "enabled":  false
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX Native Office Formula Editor - Web 内容",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "926,713,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "926,713,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "Empty",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "926,713,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "926,713,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "RootWebArea",
+        "name":  "VisualTeX Native Office Formula Editor",
+        "offscreen":  false,
+        "type":  "ControlType.Document",
+        "rect":  "926,713,1734,720",
+        "value":  "https://127.0.0.1:43127/dialog?runtime=vsto-desktop\u0026sessionId=d410baba-e15f-4a88-8b92-702656605666",
+        "enabled":  true
+    },
+    {
+        "id":  "root",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "926,713,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "926,713,1734,687",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "926,713,1734,69",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "Word 公式排版",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "935,724,119,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "行内",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "937,726,58,42",
+        "value":  "",
+        "enabled":  false
+    },
+    {
+        "id":  "",
+        "name":  "行间",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "994,726,58,42",
+        "value":  "",
+        "enabled":  false
+    },
+    {
+        "id":  "",
+        "name":  "选择本次编辑后继续保持 Word OMML，或转换为 VisualTeX OLE",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1063,724,189,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "保存为",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1071,736,46,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式对象格式",
+        "offscreen":  false,
+        "type":  "ControlType.ComboBox",
+        "rect":  "1121,727,138,40",
+        "value":  "Word OMML",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式字号",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1261,724,189,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "字号",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1269,736,31,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式字号",
+        "offscreen":  false,
+        "type":  "ControlType.ComboBox",
+        "rect":  "1304,727,138,40",
+        "value":  "小四（12 磅）",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "编号",
+        "offscreen":  false,
+        "type":  "ControlType.CheckBox",
+        "rect":  "1465,736,21,22",
+        "value":  "On",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "编号",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1499,736,31,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "操作逻辑",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1812,724,127,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1821,736,17,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "在公式输入框中粘贴图片时使用的 OCR 模型",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1946,724,186,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1956,736,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OCR 识别模型",
+        "offscreen":  false,
+        "type":  "ControlType.ComboBox",
+        "rect":  "1981,727,151,40",
+        "value":  "均衡版 M（推荐）",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "缩小公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2140,726,43,42",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2151,736,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2184,736,51,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "60",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2197,739,17,16",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "%",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2213,739,9,16",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "放大公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2236,726,43,42",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2247,736,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "历史操作",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2285,724,366,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OCR",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2285,724,91,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2300,735,23,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "撤销",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2380,724,46,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2391,735,24,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "重做",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2430,724,45,46",
+        "value":  "",
+        "enabled":  false
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2440,735,25,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "取消",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2491,724,63,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "更新公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2558,724,93,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "第 1 行公式",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "943,792,1145,123",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " the fraction partial derivative of over partial derivative of \u0027T\u0027. End fraction. psi to the ∗; Open paren. vector \u0027R\u0027 Close paren. psi Open paren. vector \u0027R\u0027 Close paren. equals the fraction \u0027I\u0027 etch bar over 2 \u0027M\u0027. End fraction. nabla times [ psi to the ∗; Open paren. vector \u0027R\u0027 Close paren. nabla psi Open paren. vector \u0027R\u0027 Close paren. minus psi Open paren. vector \u0027R\u0027 Close paren. nabla psi to the ∗; Open paren. \u0027R\u0027 Close paren. ]",
+        "offscreen":  false,
+        "type":  "ControlType.Edit",
+        "rect":  "Empty",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "949,804,1133,99",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.StatusBar",
+        "rect":  "942,907,2,2",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "调整公式工具与源码区高度",
+        "offscreen":  false,
+        "type":  "ControlType.Thumb",
+        "rect":  "926,1083,1394,11",
+        "value":  "204",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式工具与 LaTeX 源码",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "926,1094,1394,306",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "底部编辑面板",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "926,1095,1394,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式对齐与格式",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "935,1095,332,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式对齐方式",
+        "offscreen":  false,
+        "type":  "ControlType.ToolBar",
+        "rect":  "938,1096,329,43",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "左对齐",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "938,1096,42,43",
+        "value":  "On",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "947,1105,24,25",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "居中",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "983,1096,42,43",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "992,1105,24,25",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "右对齐",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1028,1096,42,43",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1037,1105,24,25",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式格式",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1089,1096,178,43",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "切换选中内容的粗体状态",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1089,1096,43,43",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1099,1106,23,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "切换选中内容的斜体或正体状态",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1134,1096,43,43",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1144,1106,23,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "选中内容字体颜色",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1179,1096,43,43",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1189,1106,23,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "选中内容字体背景颜色",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1224,1096,43,43",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1234,1106,23,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "底部编辑面板",
+        "offscreen":  false,
+        "type":  "ControlType.Tab",
+        "rect":  "1480,1095,286,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式工具",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "1480,1095,142,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1504,1107,22,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "LaTeX 源码",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "1624,1095,142,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1640,1107,22,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "复制 LaTeX 源码",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2228,1095,39,40",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2237,1104,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "收起公式工具与源码",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2271,1095,40,40",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2280,1104,22,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "927,-14287,1392,15686",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "927,1141,1392,258",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Edit",
+        "rect":  "1002,1141,1294,258",
+        "value":  "\\frac{\\partial}{\\partial t}\\psi ^*\\left( \\vec{r} \\right) \\psi \\left( \\vec{r} \\right) =\\frac{i\\hbar}{2m}\\nabla \\cdot \\left[ \\psi ^*\\left( \\vec{r} \\right) \\nabla \\psi \\left( \\vec{r} \\right) -\\psi \\left( \\vec{r} \\right) \\nabla \\psi ^*\\left( r \\right) \\right]",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\frac",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1008,1159,50,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "{",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1057,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\partial",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1067,1159,80,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "}",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1146,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "{",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1156,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\partial",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1166,1159,80,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1245,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "t",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1255,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "}",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1265,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\psi",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1275,1159,40,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ^",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1314,1159,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "*",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1334,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\left",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1344,1159,51,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "( ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1394,1159,20,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\vec",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1413,1159,41,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "{",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1453,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "r",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1463,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "}",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1473,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1483,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\right",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1493,1159,60,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  ") ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1552,1159,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\psi",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1572,1159,40,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1611,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\left",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1621,1159,51,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "( ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1671,1159,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\vec",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1691,1159,40,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "{",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1730,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "r",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1740,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "}",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1750,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1760,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\right",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1770,1159,60,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  ") =",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1829,1159,31,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\frac",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1859,1159,50,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "{",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1908,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "i",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1918,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\hbar",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1928,1159,51,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "}",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1978,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "{",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1988,1159,10,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "2m",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1997,1159,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "}",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2017,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\nabla",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2027,1159,61,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2087,1159,10,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\cdot",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2096,1159,51,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2146,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\left",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2156,1159,50,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "[",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2205,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2215,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\psi",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2225,1159,41,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ^",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1008,1159,1268,52",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "*",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1017,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\left",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1027,1188,51,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "( ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1077,1188,21,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\vec",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1097,1188,40,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "{",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1136,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "r",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1146,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "}",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1156,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1166,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\right",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1176,1188,60,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  ") ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1235,1188,21,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\nabla",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1255,1188,60,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1314,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\psi",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1324,1188,41,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1364,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\left",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1374,1188,50,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "( ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1423,1188,21,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\vec",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1443,1188,41,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "{",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1483,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "r",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1493,1188,10,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "}",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1502,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1512,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\right",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1522,1188,61,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  ") -",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1582,1188,30,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\psi",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1611,1188,41,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1651,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\left",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1661,1188,50,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "( ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1710,1188,21,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\vec",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1730,1188,41,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "{",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1770,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "r",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1780,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "}",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1790,1188,10,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1799,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\right",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1809,1188,61,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  ") ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1869,1188,21,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\nabla",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1889,1188,60,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1948,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\psi",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1958,1188,40,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ^",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1997,1188,21,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "*",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2017,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\left",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2027,1188,51,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "( r ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2077,1188,40,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\right",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2116,1188,61,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  ") ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2176,1188,20,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "\\right",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2195,1188,61,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "]",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2255,1188,11,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "调整公式磁贴区宽度",
+        "offscreen":  false,
+        "type":  "ControlType.Thumb",
+        "rect":  "2319,782,11,618",
+        "value":  "220",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式工具栏",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2330,782,330,618",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式磁贴",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2331,782,329,618",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "磁贴分类",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2331,782,329,55",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "自定义",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2343,782,132,54",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "常用",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2474,782,132,54",
+        "value":  "On",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "收起公式磁贴",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2606,782,42,54",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2615,797,24,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "一元二次方程求根公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2343,849,282,94",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "欧拉恒等式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2343,953,282,93",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "勾股定理",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2343,1056,282,93",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "二项式定理",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2343,1158,282,100",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "高斯积分",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2343,1267,282,108",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "泰勒展开",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2343,1385,282,98",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "质能方程",
+        "offscreen":  true,
+        "type":  "ControlType.Button",
+        "rect":  "2343,1492,282,93",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "含时薛定谔方程",
+        "offscreen":  true,
+        "type":  "ControlType.Button",
+        "rect":  "2343,1595,282,110",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "高斯定律",
+        "offscreen":  true,
+        "type":  "ControlType.Button",
+        "rect":  "2343,1714,282,113",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "矩阵特征方程",
+        "offscreen":  true,
+        "type":  "ControlType.Button",
+        "rect":  "2343,1836,282,88",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "926,1400,1734,33",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "就绪",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "959,1405,33,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "1",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2533,1405,10,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2542,1405,6,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "行",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2547,1405,17,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "· ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2572,1405,9,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "255",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2580,1405,28,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2607,1405,5,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "字符",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2612,1405,33,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "Empty",
+        "value":  "",
+        "enabled":  true
+    }
+]

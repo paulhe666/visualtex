@@ -1,0 +1,284 @@
+{
+    "build":  "16.0.14334",
+    "version":  "16.0",
+    "statusBar":  "",
+    "active":  "文档20",
+    "documents":  [
+                      {
+                          "name":  "文档20",
+                          "key":  "stage04ak-cases-omml-__20",
+                          "saved":  false,
+                          "end":  126,
+                          "paragraphs":  7,
+                          "tables":  [
+                                         {
+                                             "index":  1,
+                                             "start":  1,
+                                             "end":  124,
+                                             "rows":  1,
+                                             "cols":  3,
+                                             "nesting":  1,
+                                             "text":  "\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e(𝜔𝑓(𝜔))=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓(𝜔)\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸(𝜔)\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e(1)\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                             "cells":  [
+                                                           {
+                                                               "math":  0,
+                                                               "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  1,
+                                                               "row":  1,
+                                                               "start":  1,
+                                                               "end":  2
+                                                           },
+                                                           {
+                                                               "math":  1,
+                                                               "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e(𝜔𝑓(𝜔))=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓(𝜔)\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸(𝜔)\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  2,
+                                                               "row":  1,
+                                                               "start":  2,
+                                                               "end":  62
+                                                           },
+                                                           {
+                                                               "math":  0,
+                                                               "text":  "\u003cTAB\u003e(1)\u003cCR\u003e\u003cCELL\u003e",
+                                                               "col":  3,
+                                                               "row":  1,
+                                                               "start":  62,
+                                                               "end":  123
+                                                           }
+                                                       ]
+                                         }
+                                     ],
+                          "maths":  [
+                                        {
+                                            "controlTags":  [
+
+                                                            ],
+                                            "type":  0,
+                                            "size":  10.5,
+                                            "start":  2,
+                                            "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e(𝜔𝑓(𝜔))=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓(𝜔)\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸(𝜔)\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e",
+                                            "index":  1,
+                                            "tables":  1,
+                                            "font":  "Latin Modern Math",
+                                            "end":  61
+                                        }
+                                    ],
+                          "shapes":  [
+
+                                     ],
+                          "controls":  [
+
+                                       ],
+                          "fields":  [
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+                                             "result":  "1",
+                                             "type":  12,
+                                             "start":  65,
+                                             "end":  120,
+                                             "index":  1
+                                         }
+                                     ],
+                          "bookmarks":  [
+                                            {
+                                                "end":  122,
+                                                "name":  "VTEq_29e89fe3822c489997df78ba0e86fe34",
+                                                "text":  "(1)",
+                                                "start":  63
+                                            },
+                                            {
+                                                "end":  121,
+                                                "name":  "VTEqCap_29e89fe3822c489997df78ba0e86fe34",
+                                                "text":  "1",
+                                                "start":  64
+                                            },
+                                            {
+                                                "end":  121,
+                                                "name":  "VTEqNum_29e89fe3822c489997df78ba0e86fe34",
+                                                "text":  "1",
+                                                "start":  64
+                                            },
+                                            {
+                                                "end":  2,
+                                                "name":  "VTOMML_29e89fe3822c489997df78ba0e86fe34",
+                                                "text":  "",
+                                                "start":  2
+                                            }
+                                        ],
+                          "paras":  [
+                                        {
+                                            "start":  0,
+                                            "line":  12,
+                                            "alignment":  1,
+                                            "index":  1,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  1,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  1,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  2,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  2,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  2,
+                                            "line":  12,
+                                            "alignment":  1,
+                                            "index":  3,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "Latin Modern Math",
+                                            "inTable":  true,
+                                            "end":  62,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed\u003cCR\u003ed𝜔\u003cCR\u003e(𝜔𝑓(𝜔))=0\u003cCR\u003e\u003cCR\u003e𝜔𝑓(𝜔)\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003ed𝐸(𝜔)\u003cCR\u003ed𝜔\u003cCR\u003e=\u003cCR\u003e\u003cCR\u003e𝑚\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  62,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  4,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  123,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e(1)\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  123,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  5,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  true,
+                                            "end":  124,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  124,
+                                            "line":  12,
+                                            "alignment":  0,
+                                            "index":  6,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  125,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  125,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  7,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  126,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e",
+                                            "size":  10.5
+                                        }
+                                    ],
+                          "xmlFonts":  [
+                                           "\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" /\u003e"
+                                       ],
+                          "xmlMathCount":  1
+                      }
+                  ],
+    "processes":  [
+                      {
+                          "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+                          "name":  "visualtex",
+                          "id":  108292,
+                          "start":  "2026-09-06T19:39:43.5667446+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  27664,
+                          "start":  "2026-09-05T23:07:41.2634623+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  55728,
+                          "start":  "2026-09-06T09:34:20.5498056+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  60152,
+                          "start":  "2026-09-06T09:19:28.3881752+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  71532,
+                          "start":  "2026-09-06T19:04:25.7118063+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  81452,
+                          "start":  "2026-09-06T18:17:42.9788964+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  82668,
+                          "start":  "2026-09-06T14:45:09.4153585+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  100440,
+                          "start":  "2026-09-06T16:25:56.9336162+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  101980,
+                          "start":  "2026-09-06T16:40:17.8412004+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  111272,
+                          "start":  "2026-09-06T18:29:30.4706807+08:00"
+                      }
+                  ],
+    "time":  "2026-09-06T20:00:50.6871801+08:00"
+}

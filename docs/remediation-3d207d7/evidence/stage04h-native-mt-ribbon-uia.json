@@ -1,0 +1,632 @@
+[
+    {
+        "id":  "",
+        "name":  "Ribbon",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1401,333,2196,242",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1401,333,2196,242",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1401,333,2196,242",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "Ribbon",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1401,333,2196,242",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "快速访问工具栏",
+        "offscreen":  false,
+        "type":  "ControlType.ToolBar",
+        "rect":  "1422,333,395,51",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "自动保存",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1422,336,154,44",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "保存",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1577,335,42,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VBA-Selection.TypeParagraph",
+        "offscreen":  false,
+        "type":  "ControlType.SplitButton",
+        "rect":  "1620,335,56,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VBA-Selection.TypeParagraph",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1620,335,37,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "更多选项",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "1657,335,19,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "重复键入",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1677,335,42,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "触摸/鼠标模式",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "1719,335,54,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "自定义工具栏",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "1775,335,42,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "‪文档71‬  -  Word",
+        "offscreen":  false,
+        "type":  "ControlType.TitleBar",
+        "rect":  "1817,334,418,50",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "TellMeControlAnchor",
+        "name":  "键入搜索内容，并使用向上和向下键导航",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "2235,341,552,35",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "TellMeTextBoxAutomationId",
+        "name":  "Microsoft 搜索",
+        "offscreen":  false,
+        "type":  "ControlType.Edit",
+        "rect":  "2287,346,499,26",
+        "value":  "搜索",
+        "enabled":  true
+    },
+    {
+        "id":  "MeControlWidget",
+        "name":  "po jian liao",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "3135,333,186,51",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "功能区显示选项",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "3321,333,69,51",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "最小化",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "3390,333,69,51",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "最大化",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "3459,333,69,51",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "关闭",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "3528,333,69,51",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "FileTabButton",
+        "name":  "“文件”选项卡",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1401,384,81,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "功能区选项卡",
+        "offscreen":  false,
+        "type":  "ControlType.Tab",
+        "rect":  "1483,384,2096,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "开始",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "1483,388,78,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "1562,388,138,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "插入",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "1701,388,78,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "绘图",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "1780,388,78,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "设计",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "1859,388,78,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "布局",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "1938,388,78,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "引用",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "2017,388,78,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "邮件",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "2096,388,78,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "审阅",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "2175,388,78,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "视图",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "2254,388,78,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "MathType",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "2333,388,141,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "帮助",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "2475,388,78,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "表格工具",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2554,384,178,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "表设计",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "2554,388,98,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "布局",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "2653,388,78,38",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "共享",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "3477,384,102,45",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "3501,397,18,18",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "共享",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "3525,393,42,27",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "下层功能区",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1401,429,2159,146",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1401,429,2159,146",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1401,430,1010,144",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OLE 行内公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1413,433,64,111",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OLE 行间公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1477,433,64,111",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OMML 行内公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1541,433,79,111",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OMML 行间公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1620,433,79,111",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "编辑所选公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1699,433,62,111",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX → MathType",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "1761,433,225,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "MathType → VisualTeX",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "1761,467,225,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OMML → MathType",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "1761,501,202,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "MathType → OMML",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "1986,433,202,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX → OMML",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "1986,467,197,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OMML → VisualTeX",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "1986,501,197,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "更新公式编号",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2188,433,149,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "编号格式",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "2188,467,98,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "插入公式引用",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2188,501,149,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "批量导入",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2337,433,62,111",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "LaTeX 重绘",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2411,430,148,144",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "重绘所选",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "2423,433,62,111",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "重绘全文",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "2485,433,62,111",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式字号",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2559,430,207,144",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "减小",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2571,433,77,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "字号",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2571,472,42,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "字号",
+        "offscreen":  false,
+        "type":  "ControlType.ComboBox",
+        "rect":  "2613,467,141,35",
+        "value":  "五号",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "字号",
+        "offscreen":  false,
+        "type":  "ControlType.Edit",
+        "rect":  "2614,469,121,30",
+        "value":  "五号",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "打开",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2735,468,18,33",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "增大",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2571,502,77,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "折叠功能区",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "3560,555,37,19",
+        "value":  "Off",
+        "enabled":  true
+    }
+]

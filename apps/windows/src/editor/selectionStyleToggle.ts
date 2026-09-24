@@ -59,6 +59,44 @@ const mathVariantCommands = new Set([
   "mathnormal",
 ]);
 
+const defaultUprightGreekCommands = new Set([
+  "Gamma",
+  "Delta",
+  "Theta",
+  "Lambda",
+  "Xi",
+  "Pi",
+  "Sigma",
+  "Upsilon",
+  "Phi",
+  "Psi",
+  "Omega",
+]);
+
+// Accent atoms are selected as a unit by MathLive. Their decoration does not
+// determine whether the base glyph is italic; apply the toggle to that body.
+const decorationCommands = new Set([
+  "hat", "widehat", "check", "widecheck", "breve", "acute", "grave",
+  "tilde", "widetilde", "bar", "overline", "underline", "vec", "dot",
+  "ddot", "dddot", "ddddot", "mathring", "overrightarrow", "overleftarrow",
+  "overleftrightarrow", "underleftarrow", "underrightarrow", "underleftrightarrow",
+]);
+
+function isDefaultUprightGreekSource(source: string) {
+  const normalized = source.replace(/\s+/g, "");
+  if (!normalized) return false;
+  let cursor = 0;
+  let matched = false;
+  while (cursor < normalized.length) {
+    if (normalized[cursor] !== "\\") return false;
+    const command = normalized.slice(cursor + 1).match(/^[A-Za-z]+/u)?.[0] ?? "";
+    if (!defaultUprightGreekCommands.has(command)) return false;
+    matched = true;
+    cursor += command.length + 1;
+  }
+  return matched;
+}
+
 function findMatchingBrace(source: string, openIndex: number) {
   let depth = 0;
   for (let index = openIndex; index < source.length; index += 1) {
@@ -199,7 +237,10 @@ function canonicalizeContextualVariantChain(
   if (queried.allBold) return `\\mathbf{${current}}`;
   if (queried.allItalic) return `\\mathit{${current}}`;
   if (queried.allUpright) return `\\mathrm{${current}}`;
-  return source.trim();
+  // A selected accent can report no uniform style even when its body has an
+  // explicit variant chain. The innermost variant controls that body; leaving
+  // it nested would make e.g. mathbf{mathbfit{Delta}} stay italic on toggle-off.
+  return `\\${chain.at(-1)!.command}{${current}}`;
 }
 
 function containsCommand(source: string, commands: ReadonlySet<string>) {
@@ -220,6 +261,7 @@ export function inferFormulaSelectionStyleState(
   const rootItalic = command ? italicCommands.has(command) : false;
   const rootUpright = command ? uprightCommands.has(command) : false;
   const containsUpright = containsCommand(source, uprightCommands);
+  const defaultUprightGreek = isDefaultUprightGreekSource(source);
   return {
     allBold: queried.allBold || rootBold,
     allBoldItalic:
@@ -234,8 +276,12 @@ export function inferFormulaSelectionStyleState(
     allItalic:
       queried.allItalic ||
       rootItalic ||
-      (!queried.allUpright && !rootUpright && !rootBold && !containsUpright),
-    allUpright: queried.allUpright || rootUpright,
+      (!queried.allUpright &&
+        !rootUpright &&
+        !rootBold &&
+        !containsUpright &&
+        !defaultUprightGreek),
+    allUpright: queried.allUpright || rootUpright || defaultUprightGreek,
   };
 }
 
@@ -243,11 +289,14 @@ export function toggleFormulaSelectionLatex(
   source: string,
   kind: FormulaSelectionToggleKind,
   queriedState: FormulaSelectionStyleState,
-) {
+): string {
   const normalized = canonicalizeContextualVariantChain(source, queriedState);
   if (!normalized) return normalized;
-  const state = inferFormulaSelectionStyleState(normalized, queriedState);
   const outer = parseOuterLatexCommand(normalized);
+  if (outer && decorationCommands.has(outer.command)) {
+    return `\\${outer.command}{${toggleFormulaSelectionLatex(outer.body, kind, queriedState)}}`;
+  }
+  const state = inferFormulaSelectionStyleState(normalized, queriedState);
 
   if (kind === "bold") {
     if (state.allBold || state.allBoldItalic) {
@@ -272,7 +321,9 @@ export function toggleFormulaSelectionLatex(
       return `\\mathbf{${outer.body}}`;
     }
     if (outer?.command === "mathit") {
-      return `\\mathrm{${outer.body}}`;
+      return isDefaultUprightGreekSource(outer.body)
+        ? outer.body
+        : `\\mathrm{${outer.body}}`;
     }
     return `\\mathrm{${removeItalicPreservingBold(normalized)}}`;
   }
@@ -284,6 +335,9 @@ export function toggleFormulaSelectionLatex(
   }
   if (outer?.command === "mathbf") {
     return `\\mathbfit{${outer.body}}`;
+  }
+  if (state.allUpright && isDefaultUprightGreekSource(normalized)) {
+    return `\\mathit{${normalized}}`;
   }
   return applyItalicPreservingBold(normalized);
 }

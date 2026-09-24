@@ -1,0 +1,3840 @@
+{
+  "time": "2026-09-06T13:58:26.810Z",
+  "scope": "Build/package identity only; no installation or Word acceptance",
+  "head": "3d207d7a81ff40014fd861b242cff96ea77060a2",
+  "uncommittedWorkingTree": true,
+  "installer": {
+    "path": "apps/windows/src-tauri/target/release/bundle/nsis/VisualTeX_1.2.6_x64-setup.exe",
+    "size": 323777910,
+    "sha256": "A324ACB61252C15D9EC06FE118DA76A17339ABA6B30B94447421879413181F19"
+  },
+  "checks": [
+    {
+      "label": "main executable: exact build bytes plus Tauri NSIS bundle marker",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/visualtex.exe",
+        "size": 22891008,
+        "sha256": "0ABA884B4D02EAB5F34C9B3BF2C9618673F95FD37F8C8AC4668B7CE5198D9A4C"
+      },
+      "built": {
+        "path": "apps/windows/src-tauri/target/release/visualtex.exe",
+        "size": 22891008,
+        "sha256": "06B3B9AD5951EC4BD2AAAF6673AC48D2BDFA4666F15549E4DF3283DEDBB4A476"
+      },
+      "expectedBundleMarkerChange": "UNK -> NSS",
+      "differentByteOffsets": [
+        18350656,
+        18350657,
+        18350658
+      ]
+    },
+    {
+      "label": "Office bridge",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/visualtex-windows-office-bridge.exe",
+        "size": 153624845,
+        "sha256": "85293DA9B9EC55641F783A770761769543D9EB0B383BD495890AB82E2198C42F"
+      },
+      "built": {
+        "path": "apps/windows/src-tauri/binaries/visualtex-windows-office-bridge-x86_64-pc-windows-msvc.exe",
+        "size": 153624845,
+        "sha256": "85293DA9B9EC55641F783A770761769543D9EB0B383BD495890AB82E2198C42F"
+      }
+    },
+    {
+      "label": "Office frontend assets\\CustomSymbolDesignerDialog-KKzM6a4z.js",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/CustomSymbolDesignerDialog-KKzM6a4z.js",
+        "size": 89558,
+        "sha256": "36BCBAF0F0E6DF1D67142869AB9FE7EDD034606B42877AE086465406AFC663F0"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/CustomSymbolDesignerDialog-KKzM6a4z.js",
+        "size": 89558,
+        "sha256": "36BCBAF0F0E6DF1D67142869AB9FE7EDD034606B42877AE086465406AFC663F0"
+      }
+    },
+    {
+      "label": "Office frontend assets\\dialog-BkcOVQJV.css",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/dialog-BkcOVQJV.css",
+        "size": 378684,
+        "sha256": "A3068CF4DBF46A80B8C73A9670B064074862E31325F139C0B26BB61DA301F284"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/dialog-BkcOVQJV.css",
+        "size": 378684,
+        "sha256": "A3068CF4DBF46A80B8C73A9670B064074862E31325F139C0B26BB61DA301F284"
+      }
+    },
+    {
+      "label": "Office frontend assets\\dialog-HL1bHzsS.js",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/dialog-HL1bHzsS.js",
+        "size": 4391151,
+        "sha256": "09423212A0C14E22908F00F47747F59F7DEE12085213CB48A6A2FF72928F6B1C"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/dialog-HL1bHzsS.js",
+        "size": 4391151,
+        "sha256": "09423212A0C14E22908F00F47747F59F7DEE12085213CB48A6A2FF72928F6B1C"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_AMS-Regular-BQhdFMY1.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_AMS-Regular-BQhdFMY1.woff2",
+        "size": 28076,
+        "sha256": "0CDD387C9590A1A9F9794560022DBB59654A7D86F187AA0C81495AD42D3A7308"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_AMS-Regular-BQhdFMY1.woff2",
+        "size": 28076,
+        "sha256": "0CDD387C9590A1A9F9794560022DBB59654A7D86F187AA0C81495AD42D3A7308"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2",
+        "size": 6912,
+        "sha256": "DE7701E42CF1F4CF0B766C03FB27977207EEE2F4FD5D76FA82188406DA43EA4C"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2",
+        "size": 6912,
+        "sha256": "DE7701E42CF1F4CF0B766C03FB27977207EEE2F4FD5D76FA82188406DA43EA4C"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Caligraphic-Regular-Di6jR-x-.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2",
+        "size": 6908,
+        "sha256": "5D53E70AD607C2352162DEC9E0923FB54ECDAFACCBF604CD8DCF7D00FACB989B"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2",
+        "size": 6908,
+        "sha256": "5D53E70AD607C2352162DEC9E0923FB54ECDAFACCBF604CD8DCF7D00FACB989B"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Fraktur-Bold-CL6g_b3V.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2",
+        "size": 11348,
+        "sha256": "74444EFD593C005E3F4573B44524704C0AF0A937FE911CCA9E94068D0D140D3F"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2",
+        "size": 11348,
+        "sha256": "74444EFD593C005E3F4573B44524704C0AF0A937FE911CCA9E94068D0D140D3F"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Fraktur-Regular-CTYiF6lA.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2",
+        "size": 11316,
+        "sha256": "51814D270D06FF0255DBA0799994FA4D8C84D11F09951D47595F4ABB1F3602DC"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2",
+        "size": 11316,
+        "sha256": "51814D270D06FF0255DBA0799994FA4D8C84D11F09951D47595F4ABB1F3602DC"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Main-Bold-Cx986IdX.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Main-Bold-Cx986IdX.woff2",
+        "size": 25324,
+        "sha256": "0F60D1B897938EC918C8CE073092411BAF9438F6739465693FF18B0F9D20B021"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Main-Bold-Cx986IdX.woff2",
+        "size": 25324,
+        "sha256": "0F60D1B897938EC918C8CE073092411BAF9438F6739465693FF18B0F9D20B021"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Main-BoldItalic-DxDJ3AOS.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2",
+        "size": 16780,
+        "sha256": "99CD42A3C072D918F2F44984A807CF7AA16E13545FD0875FC07C6C65F99E715B"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2",
+        "size": 16780,
+        "sha256": "99CD42A3C072D918F2F44984A807CF7AA16E13545FD0875FC07C6C65F99E715B"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Main-Italic-NWA7e6Wa.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Main-Italic-NWA7e6Wa.woff2",
+        "size": 16988,
+        "sha256": "97479CA6CCE906ABC961ECAC96FAA5F9CA2E61B8E7670D475826BCDEE9A7C267"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Main-Italic-NWA7e6Wa.woff2",
+        "size": 16988,
+        "sha256": "97479CA6CCE906ABC961ECAC96FAA5F9CA2E61B8E7670D475826BCDEE9A7C267"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Main-Regular-B22Nviop.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Main-Regular-B22Nviop.woff2",
+        "size": 26272,
+        "sha256": "C2342CD8B869E01752A9321DC17213FC40D4D04C79688C1D43F2CF316ABD7866"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Main-Regular-B22Nviop.woff2",
+        "size": 26272,
+        "sha256": "C2342CD8B869E01752A9321DC17213FC40D4D04C79688C1D43F2CF316ABD7866"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Math-BoldItalic-CZnvNsCZ.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2",
+        "size": 16400,
+        "sha256": "DC47344DBB6CB5B655C8460D561F4DF5F501B90C804AD3C6CEC65FE322351AB1"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2",
+        "size": 16400,
+        "sha256": "DC47344DBB6CB5B655C8460D561F4DF5F501B90C804AD3C6CEC65FE322351AB1"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Math-Italic-t53AETM-.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Math-Italic-t53AETM-.woff2",
+        "size": 16440,
+        "sha256": "7AF58C5EC8F132A2DDDE9027C6D7814DECCE4D3B822A11192A42A20E2E973264"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Math-Italic-t53AETM-.woff2",
+        "size": 16440,
+        "sha256": "7AF58C5EC8F132A2DDDE9027C6D7814DECCE4D3B822A11192A42A20E2E973264"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_SansSerif-Bold-D1sUS0GD.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2",
+        "size": 12216,
+        "sha256": "E99AE51144BF1232EFCC1BFE5ADD36262C6866B0FAAB24FA75740E1B98577A62"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2",
+        "size": 12216,
+        "sha256": "E99AE51144BF1232EFCC1BFE5ADD36262C6866B0FAAB24FA75740E1B98577A62"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_SansSerif-Italic-C3H0VqGB.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2",
+        "size": 12028,
+        "sha256": "00B26AC825E2095056396E0553B8AC26D3F8AD158C3826E28B4C45B385C4714A"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2",
+        "size": 12028,
+        "sha256": "00B26AC825E2095056396E0553B8AC26D3F8AD158C3826E28B4C45B385C4714A"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_SansSerif-Regular-DDBCnlJ7.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2",
+        "size": 10344,
+        "sha256": "68E8C73EF42AFD3CCEC58BF0FBA302CCE448938E7FC020A5E31F8A952EEE1342"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2",
+        "size": 10344,
+        "sha256": "68E8C73EF42AFD3CCEC58BF0FBA302CCE448938E7FC020A5E31F8A952EEE1342"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Script-Regular-D3wIWfF6.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Script-Regular-D3wIWfF6.woff2",
+        "size": 9644,
+        "sha256": "036D4E95149B69FF9BCC0CD55771EFEB25FFA3947293E69ACD78D5AC328C684B"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Script-Regular-D3wIWfF6.woff2",
+        "size": 9644,
+        "sha256": "036D4E95149B69FF9BCC0CD55771EFEB25FFA3947293E69ACD78D5AC328C684B"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Size1-Regular-mCD8mA8B.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Size1-Regular-mCD8mA8B.woff2",
+        "size": 5468,
+        "sha256": "6B47C40166B6DBE21A5DFCA7718413F2147FD2399BE1BA605D8AD39CEDF25DFE"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Size1-Regular-mCD8mA8B.woff2",
+        "size": 5468,
+        "sha256": "6B47C40166B6DBE21A5DFCA7718413F2147FD2399BE1BA605D8AD39CEDF25DFE"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Size2-Regular-Dy4dx90m.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Size2-Regular-Dy4dx90m.woff2",
+        "size": 5208,
+        "sha256": "D04C54219F9EAEC6D4D4FD42DFB28785975A4794D6B2FC71E566B9CD6DB842DD"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Size2-Regular-Dy4dx90m.woff2",
+        "size": 5208,
+        "sha256": "D04C54219F9EAEC6D4D4FD42DFB28785975A4794D6B2FC71E566B9CD6DB842DD"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Size4-Regular-Dl5lxZxV.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2",
+        "size": 4928,
+        "sha256": "A4AF7D414440A1C1790825CFB700CF9CF43B0F2C4B04F0EBC523011AD9853EC0"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2",
+        "size": 4928,
+        "sha256": "A4AF7D414440A1C1790825CFB700CF9CF43B0F2C4B04F0EBC523011AD9853EC0"
+      }
+    },
+    {
+      "label": "Office frontend assets\\KaTeX_Typewriter-Regular-CO6r4hn1.woff2",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2",
+        "size": 13568,
+        "sha256": "71D517D67827787CFABDF186914CC3358EDA539E37931941F2B2FD4A21F68C0B"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2",
+        "size": 13568,
+        "sha256": "71D517D67827787CFABDF186914CC3358EDA539E37931941F2B2FD4A21F68C0B"
+      }
+    },
+    {
+      "label": "Office frontend dialog\\index.html",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/office/dialog/index.html",
+        "size": 887,
+        "sha256": "3FFAB6EF05C162F8BCE0B613CDEAFFBD422EE648A9059441B919EC1FCB480320"
+      },
+      "built": {
+        "path": "apps/windows/dist-office-windows-native/dialog/index.html",
+        "size": 887,
+        "sha256": "3FFAB6EF05C162F8BCE0B613CDEAFFBD422EE648A9059441B919EC1FCB480320"
+      }
+    },
+    {
+      "label": "x64 MSI resource",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/windows-office/VisualTeX-WindowsOffice-VSTO-x64.msi",
+        "size": 1896448,
+        "sha256": "AAC442AFFB65C1D5DF157933DB1FD8AF3113DB6293D1136563B66B1396497A07"
+      },
+      "built": {
+        "path": "apps/windows/src-tauri/resources/windows-office/VisualTeX-WindowsOffice-VSTO-x64.msi",
+        "size": 1896448,
+        "sha256": "AAC442AFFB65C1D5DF157933DB1FD8AF3113DB6293D1136563B66B1396497A07"
+      }
+    },
+    {
+      "label": "x64 MSI build",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/windows-office/VisualTeX-WindowsOffice-VSTO-x64.msi",
+        "size": 1896448,
+        "sha256": "AAC442AFFB65C1D5DF157933DB1FD8AF3113DB6293D1136563B66B1396497A07"
+      },
+      "built": {
+        "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Installer/bin/x64/Release/VisualTeX-WindowsOffice-VSTO-x64.msi",
+        "size": 1896448,
+        "sha256": "AAC442AFFB65C1D5DF157933DB1FD8AF3113DB6293D1136563B66B1396497A07"
+      }
+    },
+    {
+      "label": "x64 Word VSTO from packaged MSI",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/x64/WordVstoAssembly",
+        "size": 1446400,
+        "sha256": "6861688D7AECF188B7A7B4C79DABBFBE6D35763FD54ECCBDC8C37025F58054AC"
+      },
+      "built": {
+        "path": "apps/windows/src-windows/VisualTeX.WordVsto/bin/x64/Release/net472/VisualTeX.WordVsto.dll",
+        "size": 1446400,
+        "sha256": "6861688D7AECF188B7A7B4C79DABBFBE6D35763FD54ECCBDC8C37025F58054AC"
+      }
+    },
+    {
+      "label": "x64 PowerPoint VSTO from packaged MSI",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/x64/PowerPointVstoAssembly",
+        "size": 207872,
+        "sha256": "541C790650BBAA6EC08749693768D9C8BA4E26A5FEBD0909F1F1ED8D29D0F651"
+      },
+      "built": {
+        "path": "apps/windows/src-windows/VisualTeX.PowerPointVsto/bin/x64/Release/net472/VisualTeX.PowerPointVsto.dll",
+        "size": 207872,
+        "sha256": "541C790650BBAA6EC08749693768D9C8BA4E26A5FEBD0909F1F1ED8D29D0F651"
+      }
+    },
+    {
+      "label": "x64 contracts from packaged MSI",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/x64/ContractsAssembly",
+        "size": 98816,
+        "sha256": "A1E18C6AB9108577F67A0B6FB2C9E4E09D46A1F7E5ED4A20873E8C46B96FC6AB"
+      },
+      "built": {
+        "path": "apps/windows/src-windows/VisualTeX.WordVsto/bin/x64/Release/net472/VisualTeX.WindowsOffice.Contracts.dll",
+        "size": 98816,
+        "sha256": "A1E18C6AB9108577F67A0B6FB2C9E4E09D46A1F7E5ED4A20873E8C46B96FC6AB"
+      }
+    },
+    {
+      "label": "x64 OLE from packaged MSI",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/x64/FormulaOleServerExecutable",
+        "size": 257024,
+        "sha256": "857916F7C97B3F57DEFA3E2B8D5A35E078133B5FD5E1D24A13A7BED0A236AD64"
+      },
+      "built": {
+        "path": "apps/windows/src-windows/artifacts/formula-ole-server/x64/Release/VisualTeX.FormulaOleServer.exe",
+        "size": 257024,
+        "sha256": "857916F7C97B3F57DEFA3E2B8D5A35E078133B5FD5E1D24A13A7BED0A236AD64"
+      }
+    },
+    {
+      "label": "x86 MSI resource",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/windows-office/VisualTeX-WindowsOffice-VSTO-x86.msi",
+        "size": 1880064,
+        "sha256": "6B4C06B2A4923C87CC914992D207CAC5630B64C6834935C718C44D7B63D82883"
+      },
+      "built": {
+        "path": "apps/windows/src-tauri/resources/windows-office/VisualTeX-WindowsOffice-VSTO-x86.msi",
+        "size": 1880064,
+        "sha256": "6B4C06B2A4923C87CC914992D207CAC5630B64C6834935C718C44D7B63D82883"
+      }
+    },
+    {
+      "label": "x86 MSI build",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/windows-office/VisualTeX-WindowsOffice-VSTO-x86.msi",
+        "size": 1880064,
+        "sha256": "6B4C06B2A4923C87CC914992D207CAC5630B64C6834935C718C44D7B63D82883"
+      },
+      "built": {
+        "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Installer/bin/x86/Release/VisualTeX-WindowsOffice-VSTO-x86.msi",
+        "size": 1880064,
+        "sha256": "6B4C06B2A4923C87CC914992D207CAC5630B64C6834935C718C44D7B63D82883"
+      }
+    },
+    {
+      "label": "x86 Word VSTO from packaged MSI",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/x86/WordVstoAssembly",
+        "size": 1446912,
+        "sha256": "A8E623F3983B606779065B81F30454CD55A849152DBA7A978ED75E8391D4B7AD"
+      },
+      "built": {
+        "path": "apps/windows/src-windows/VisualTeX.WordVsto/bin/x86/Release/net472/VisualTeX.WordVsto.dll",
+        "size": 1446912,
+        "sha256": "A8E623F3983B606779065B81F30454CD55A849152DBA7A978ED75E8391D4B7AD"
+      }
+    },
+    {
+      "label": "x86 PowerPoint VSTO from packaged MSI",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/x86/PowerPointVstoAssembly",
+        "size": 208384,
+        "sha256": "B8EA0277CB7BDF2538AC5395BD80AC02A239A46D4D1A86BF958C32CA3EAC1062"
+      },
+      "built": {
+        "path": "apps/windows/src-windows/VisualTeX.PowerPointVsto/bin/x86/Release/net472/VisualTeX.PowerPointVsto.dll",
+        "size": 208384,
+        "sha256": "B8EA0277CB7BDF2538AC5395BD80AC02A239A46D4D1A86BF958C32CA3EAC1062"
+      }
+    },
+    {
+      "label": "x86 contracts from packaged MSI",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/x86/ContractsAssembly",
+        "size": 98816,
+        "sha256": "DBCABCE94AB9873D4CC5007539B96ACB3BCF07091AD8430D30A1BA86F1A68559"
+      },
+      "built": {
+        "path": "apps/windows/src-windows/VisualTeX.WordVsto/bin/x86/Release/net472/VisualTeX.WindowsOffice.Contracts.dll",
+        "size": 98816,
+        "sha256": "DBCABCE94AB9873D4CC5007539B96ACB3BCF07091AD8430D30A1BA86F1A68559"
+      }
+    },
+    {
+      "label": "x86 OLE from packaged MSI",
+      "passed": true,
+      "packaged": {
+        "path": "docs/remediation-3d207d7/evidence/stage06-package-payload/x86/FormulaOleServerExecutable",
+        "size": 206848,
+        "sha256": "D8A60F2B792379695200E8A656C75583B160197D4983ACF10BB81D18FE1765B7"
+      },
+      "built": {
+        "path": "apps/windows/src-windows/artifacts/formula-ole-server/Win32/Release/VisualTeX.FormulaOleServer.exe",
+        "size": 206848,
+        "sha256": "D8A60F2B792379695200E8A656C75583B160197D4983ACF10BB81D18FE1765B7"
+      }
+    }
+  ],
+  "sourceFiles": [
+    {
+      "path": "apps/windows/package.json",
+      "size": 9672,
+      "sha256": "35D1F1B4E4A836180D519AA89D247FCEC5062691B3A96D31A9AF02BD14BAFAEC"
+    },
+    {
+      "path": "apps/windows/scripts/application_configuration_regression.mts",
+      "size": 14422,
+      "sha256": "6A0468750762A3FDEE093BD95F042D50BCDE5493E50F318AB1C694A59B4D3AA7"
+    },
+    {
+      "path": "apps/windows/scripts/application_data_regression.mts",
+      "size": 5633,
+      "sha256": "DD25C702A5BD87ED1DA6446FD83644AE0C7F0B8CF3E14A6CBEDB8FC0C3920FD8"
+    },
+    {
+      "path": "apps/windows/scripts/bounded_operator_template_audit.mts",
+      "size": 2048,
+      "sha256": "B2E2BC008856138624289E3D0EF2E39905ABA9D8C807B810A8A2DDCDF6306830"
+    },
+    {
+      "path": "apps/windows/scripts/browser_test_runtime.mjs",
+      "size": 2430,
+      "sha256": "86E0DD3F67D766DE54BC26C87E724F24671CC976E7080645051349DCF6A9EF5C"
+    },
+    {
+      "path": "apps/windows/scripts/build_office_for_platform.mjs",
+      "size": 329,
+      "sha256": "169ADA63CBDF1489559CC65FBD899102723D85A1CFF055CDE82E2C04265B8138"
+    },
+    {
+      "path": "apps/windows/scripts/build_platform_bundle.mjs",
+      "size": 1599,
+      "sha256": "61516EFD7BAA0F1C7A804C2E5FD7EC696FAC7FF5387D9F395069A8CE4A92A783"
+    },
+    {
+      "path": "apps/windows/scripts/build_vsto_flow_acceptance.ps1",
+      "size": 2219,
+      "sha256": "B31D26C9A3632B32E9AF5783FBD58AB4F05954B1B3AA38992CD7D3D7A198A959"
+    },
+    {
+      "path": "apps/windows/scripts/build_windows_office.ps1",
+      "size": 12409,
+      "sha256": "C870384363503EF475AC10B00CF138B5BC631AC0310C947A0CE54FB24267A82F"
+    },
+    {
+      "path": "apps/windows/scripts/build_windows_ole_bridge.ps1",
+      "size": 1966,
+      "sha256": "3784871FD0515C93E7D92B449074BCA73BEC1C68E144303CADE046B4DFC5153A"
+    },
+    {
+      "path": "apps/windows/scripts/check_powershell_syntax.ps1",
+      "size": 1045,
+      "sha256": "C85016F87E5E73D5B951E9B9ACF59BB319A72941AF71F69C1B2A7E5491001BFD"
+    },
+    {
+      "path": "apps/windows/scripts/clean_windows_release_outputs.mjs",
+      "size": 3851,
+      "sha256": "02E9E245DD905FCA0F78579620D409B78B9E066B1D3CBEAE49BA74950A2006D2"
+    },
+    {
+      "path": "apps/windows/scripts/close_empty_word_automation_instances.ps1",
+      "size": 2722,
+      "sha256": "9A979E1EDDF9210EB857188CDBB3AABF67D5346B427ED893B9F49C54971E2D37"
+    },
+    {
+      "path": "apps/windows/scripts/close_visualtex_gracefully.ps1",
+      "size": 781,
+      "sha256": "E6AD31DB8BE5754AFA139C0F2DAC64B2965995F0060593ABD5F8DDD6707C740B"
+    },
+    {
+      "path": "apps/windows/scripts/companion_payload_safety_regression.mts",
+      "size": 3594,
+      "sha256": "BEB3DB7A6967F3F05FB72317E562279E544D17DF4BA678BF94745CE3BD7B19E9"
+    },
+    {
+      "path": "apps/windows/scripts/custom_symbol_registry_regression.mts",
+      "size": 13743,
+      "sha256": "2804A9E2E2769C7338ACED7AA74878793BCF192401A18708F1CD36CABB38BC40"
+    },
+    {
+      "path": "apps/windows/scripts/document_import_compiled_latex_acceptance.mts",
+      "size": 5024,
+      "sha256": "FA5D60DE235CAD1DC92339287C55C32BE690CFF51544B77AD6C357474EF4F4DB"
+    },
+    {
+      "path": "apps/windows/scripts/document_import_compiled_markdown_acceptance.mts",
+      "size": 4845,
+      "sha256": "1AC070D5DC9BE6B489631B3F2DE3220ABF78BCF841F4AAAB259C6EAA1A1DF54A"
+    },
+    {
+      "path": "apps/windows/scripts/document_import_file_regression.mts",
+      "size": 4191,
+      "sha256": "267EAD2701795388494FBD7BAA572C55C2001013C756C708929238CC55CFAC8F"
+    },
+    {
+      "path": "apps/windows/scripts/document_import_parser_coverage.mts",
+      "size": 38852,
+      "sha256": "540ADF28B0A1A7DE9F1C39F7ADC5B0C097522BA9767E0C6759FD95F3B807A874"
+    },
+    {
+      "path": "apps/windows/scripts/document_import_preview_scale_regression.mjs",
+      "size": 16588,
+      "sha256": "EC3437F9286E103658705F43308FCF087A3ED5F5E58356E925865118E00DB3D3"
+    },
+    {
+      "path": "apps/windows/scripts/editor_history_regression.mjs",
+      "size": 36309,
+      "sha256": "91A6612463012A1696446E338F9F2E9CD240C35B5878CD510D9B464DB328CB56"
+    },
+    {
+      "path": "apps/windows/scripts/editor_regression_smoke.mjs",
+      "size": 65453,
+      "sha256": "91B835AC76CDC99263BF76EEDCC580611F726039910184BB83D74FA10C8C3B24"
+    },
+    {
+      "path": "apps/windows/scripts/ensure_windows_office_certificate.ps1",
+      "size": 12411,
+      "sha256": "EF88614E676428F8143135077289CE06CAE41F67E9E871F8391D7DFA3715E5D2"
+    },
+    {
+      "path": "apps/windows/scripts/evaluate_word_inline_baseline_results.mts",
+      "size": 6485,
+      "sha256": "277F5D82E6D9B056BD8CB343401E9BCDB31FEC75AE85C4C3C21702D116911A6D"
+    },
+    {
+      "path": "apps/windows/scripts/export_real_formula_canvas_pages.mts",
+      "size": 1516,
+      "sha256": "5C56ADB0B06C7D870654804F6BCF42C209D34F8EC6F0C16C9DB3A717E1510D61"
+    },
+    {
+      "path": "apps/windows/scripts/export_real_formula_fixtures.mts",
+      "size": 1373,
+      "sha256": "6B2B509DA858F7F88DA5B0A25CE371FBF2F539AF2994BFB77C9022A90BD4C7C1"
+    },
+    {
+      "path": "apps/windows/scripts/extended_integral_editor_acceptance.mjs",
+      "size": 633,
+      "sha256": "D6146D71866801D7F8F24D2BB952C93E38A4C1C27F344DF4738609F6768202CD"
+    },
+    {
+      "path": "apps/windows/scripts/finalize_office_platform_build.mjs",
+      "size": 720,
+      "sha256": "3B103E61D39AA6E8D2C520F69E39E0A895E845D40DB3B365D5F13AE5B702C13E"
+    },
+    {
+      "path": "apps/windows/scripts/fixtures/document-import-common-coverage.md",
+      "size": 1515,
+      "sha256": "A409CEF8E2E0C9BA995D65F75266F0B31EA656421548BC6D8CDC3BA0AE4FE6DA"
+    },
+    {
+      "path": "apps/windows/scripts/fixtures/document-import-common-coverage.tex",
+      "size": 3256,
+      "sha256": "8E8087AFBE6E8279D772A09AFEF2B4A010088AD2EA08EC75A3CD9FF3951F6643"
+    },
+    {
+      "path": "apps/windows/scripts/fixtures/document_import_include_fragment.tex",
+      "size": 51,
+      "sha256": "7CA7B9B842AFED2EFCC220B54B0B70130C57C899CA7335AAA1E2087423CC7024"
+    },
+    {
+      "path": "apps/windows/scripts/fixtures/document_import_input_fragment.tex",
+      "size": 48,
+      "sha256": "EFE71FED9BC40A8EDE63EA1F83EB4F5103E08896615C606FF1BE2E5BD41D4767"
+    },
+    {
+      "path": "apps/windows/scripts/fixtures/latex_100_formulas_4000_chinese.tex",
+      "size": 18434,
+      "sha256": "2563CEF439EA6B9E2EF6BB6182827E4578AD0E53B5CC537EE22097FC11EC7FB0"
+    },
+    {
+      "path": "apps/windows/scripts/fixtures/windows-office-latex-compatibility.md",
+      "size": 1629,
+      "sha256": "4D4B490A79C4BA0549C52B4EFE343A7949F692C8A1C31AF735C1730F4084B446"
+    },
+    {
+      "path": "apps/windows/scripts/fixtures/windows-office-special-operators.md",
+      "size": 521,
+      "sha256": "433890BD09AC0374C033359387DA06C92335952FC4C8DEB6797E9F1B6AA0D24B"
+    },
+    {
+      "path": "apps/windows/scripts/fixtures/windows-office-special-operators.tex",
+      "size": 629,
+      "sha256": "7D2AA525F69499D0730F9E490812DE03B4CED6621129FDF79E70E03005A4C527"
+    },
+    {
+      "path": "apps/windows/scripts/formula_hotkey_regression.mjs",
+      "size": 35209,
+      "sha256": "411C7FCB159C5A1DB5FBBC24BC739003D413CD1B0391B1B0114B60327545D0CF"
+    },
+    {
+      "path": "apps/windows/scripts/formula_style_toggle_regression.mts",
+      "size": 2979,
+      "sha256": "F0743B84FF2D479582C518321C0F6DE04D24EABEA70A4E1E805BC5B209150005"
+    },
+    {
+      "path": "apps/windows/scripts/generate_word_inline_baseline_fixtures.mts",
+      "size": 7851,
+      "sha256": "49217EC05B3A1C6B2BB14440657A804BC3A12CE6586C20B201C046CAA2175303"
+    },
+    {
+      "path": "apps/windows/scripts/history_manager_cases.ts",
+      "size": 21199,
+      "sha256": "69DF90E78158B3F56FDB01003E4CF0078475B92149461C23D8012C35B974FC21"
+    },
+    {
+      "path": "apps/windows/scripts/history_manager_smoke.mjs",
+      "size": 747,
+      "sha256": "4FD574362A231A32C997440E9302E788885447EE30B1CAE38FBD607D53AAC588"
+    },
+    {
+      "path": "apps/windows/scripts/inline_text_latex_format_regression.mts",
+      "size": 1210,
+      "sha256": "6A6B22CC63D1D78A67238AABE599084B886BE68B1EC44C44B2E24ED74813B02B"
+    },
+    {
+      "path": "apps/windows/scripts/input_behavior_regression.mjs",
+      "size": 33851,
+      "sha256": "D8157C0243704965698EDB873AB2E1E104881AA80CECC862D684851E855D6B23"
+    },
+    {
+      "path": "apps/windows/scripts/inspect_active_word_mathtype_numbering.ps1",
+      "size": 10644,
+      "sha256": "320CAB1C694E055A20A683EAACB641B47269DD60A42B9B6548305F8AD8E8040C"
+    },
+    {
+      "path": "apps/windows/scripts/inspect_running_office.ps1",
+      "size": 1793,
+      "sha256": "652AFBA8024338B5201FFED88D5E777DCA6C742F1AEB0926B91D63E50BB9FEAF"
+    },
+    {
+      "path": "apps/windows/scripts/install_current_windows_release_silently.ps1",
+      "size": 850,
+      "sha256": "AC692E151B0319CB275BF3E40FAEBDFAF92ED5CDED2A5C9B8C0695538DA77668"
+    },
+    {
+      "path": "apps/windows/scripts/install_windows_ole.ps1",
+      "size": 930,
+      "sha256": "DFE9ACBD615BA2A4506374F7759A28CE1D5527F3647D85FB42AA503DA086991B"
+    },
+    {
+      "path": "apps/windows/scripts/install_windows_vsto.ps1",
+      "size": 54767,
+      "sha256": "3D83307A8DBE509413BEEFFF9131950336E4BE812BDBB69732BABADF13D84AE5"
+    },
+    {
+      "path": "apps/windows/scripts/install_windows_vsto_runtime.ps1",
+      "size": 6844,
+      "sha256": "FD63610647197F327321FA1499312C2CDF281371CC3630AE89E55BD9CF894A9A"
+    },
+    {
+      "path": "apps/windows/scripts/integral_distribution_regression.mts",
+      "size": 3613,
+      "sha256": "951ACC826214E25D822508E9D4C746E42DE2C47D784151820F340C5DF60E700F"
+    },
+    {
+      "path": "apps/windows/scripts/latex_compatibility_regression.mts",
+      "size": 1113,
+      "sha256": "4BDFE78522DC9B466A5C7BE421160BB08FAAAEB933B6A71D36072337D1FAF7C2"
+    },
+    {
+      "path": "apps/windows/scripts/latex_format_smoke.mjs",
+      "size": 5701,
+      "sha256": "44C0F81FDD901BEFDE70164FA2145E516145A3F3DBE0F944F975E83CC6623E28"
+    },
+    {
+      "path": "apps/windows/scripts/math_type_alignment_geometry_acceptance.mts",
+      "size": 6883,
+      "sha256": "8BEFB221ACB8DF2182F3B4CAFB608D8BCA559CDD981EA3573197F1FD6FCB81B9"
+    },
+    {
+      "path": "apps/windows/scripts/math_variant_compatibility_regression.mts",
+      "size": 5848,
+      "sha256": "B3F7AA4944AED02584B2F680D29B6CE759268722BBDFCCB19E950E21D60FCBD7"
+    },
+    {
+      "path": "apps/windows/scripts/mathlive_contour_bm_regression.mjs",
+      "size": 25992,
+      "sha256": "148F97E3A155641841EF1419A07238B19EE15F23C24C3820EC835E2C660635C4"
+    },
+    {
+      "path": "apps/windows/scripts/mathlive_option_guard_regression.mts",
+      "size": 6044,
+      "sha256": "4D16773AA83E244615DEA9C09F4B2EE11F55B9BC53AC7582B15EA4D82F203BA6"
+    },
+    {
+      "path": "apps/windows/scripts/mathlive_runtime_safety_browser_regression.mjs",
+      "size": 9836,
+      "sha256": "5E35563BA32DEC5B7559BCAC0556273D065E8643780F682CAB9355819DEDF983"
+    },
+    {
+      "path": "apps/windows/scripts/mathlive_runtime_safety_patch_regression.mts",
+      "size": 1768,
+      "sha256": "BAE26D12B45DE642A9E227CC9DD961119BF7D5A86F39349423F37328CEDB0F2F"
+    },
+    {
+      "path": "apps/windows/scripts/mixed_latex_format_regression.mts",
+      "size": 3883,
+      "sha256": "B9AF24D018057EBC18A6510F0EBA83D108C15FC042E88A5D81AEF2305917861B"
+    },
+    {
+      "path": "apps/windows/scripts/mixed_line_mode_editor_regression.mjs",
+      "size": 12874,
+      "sha256": "006F9026F092A2D303DC01B48BB138F82A79499B1D9B25BA1BFC10AB9B094B74"
+    },
+    {
+      "path": "apps/windows/scripts/native_ui_payload_safety_regression.mts",
+      "size": 1742,
+      "sha256": "B0231EFC03ED4CE380E238DC7D54493F7BE90E9E62B73381DA503BB5D89E3DC0"
+    },
+    {
+      "path": "apps/windows/scripts/ocr_align_copy_acceptance.mts",
+      "size": 1176,
+      "sha256": "B294E1F76C0E058A8E6961B385B5E988D6149C080CAC26DCE86D836A66794CA5"
+    },
+    {
+      "path": "apps/windows/scripts/ocr_align_editor_geometry_acceptance.mjs",
+      "size": 10205,
+      "sha256": "165BC8EBEBE5EF52C3F5EFEA739B0CB4590D125EF8B8B3DE02349B3833F6FE37"
+    },
+    {
+      "path": "apps/windows/scripts/ocr_align_editor_geometry_acceptance.mts",
+      "size": 12896,
+      "sha256": "55DFAE417A4B112AD525D83E02F5E6A046C5EB6FEC15BC1BB66757748E052F2C"
+    },
+    {
+      "path": "apps/windows/scripts/ocr_cancel_rewarm_acceptance.py",
+      "size": 6488,
+      "sha256": "6B1AAE86EB6C2E1604B8113C2091F1B1DA94A6D842B63F149539EED9B234E8BA"
+    },
+    {
+      "path": "apps/windows/scripts/ocr_install_regression.ts",
+      "size": 10245,
+      "sha256": "79B2D3393EF7CB1013BCAA6651893EC8C6927C41D1BA7DA3BCBCAC3F67486280"
+    },
+    {
+      "path": "apps/windows/scripts/ocr_multiline_formula_regression.mts",
+      "size": 1798,
+      "sha256": "3CCED17320D12F5DAB3431E98442D780BD12AAC583645CD04D7CFD2825CB1197"
+    },
+    {
+      "path": "apps/windows/scripts/ocr_multiline_formula_rows_regression.ts",
+      "size": 1876,
+      "sha256": "84FA9959DE53D3D9AB1E32F6F98554034EBB7DC5BA73563CCB5C127FC28E3C1E"
+    },
+    {
+      "path": "apps/windows/scripts/ocr_payload_safety_regression.mts",
+      "size": 4987,
+      "sha256": "37156D532E20F9A250ADA93B58D6124A118F1A7EF2D37892E9205E15C10CC888"
+    },
+    {
+      "path": "apps/windows/scripts/ocr_provider_transport_regression.mts",
+      "size": 4811,
+      "sha256": "3893BFD54C7865AF986D88F589628CAAA57394DAC4E57D11D57C9F419E897C81"
+    },
+    {
+      "path": "apps/windows/scripts/ocr_warmup_regression.py",
+      "size": 5128,
+      "sha256": "8ED948FE39D81638C104D58E6AEF0E7248A7B4CD85B86E694C2ABEA68903D5E7"
+    },
+    {
+      "path": "apps/windows/scripts/office_apply_shortcut_regression.mts",
+      "size": 1070,
+      "sha256": "8238AC68E00D38FB81571AF50C36C3869E8AF9378FA9B94CD85787136AB868DA"
+    },
+    {
+      "path": "apps/windows/scripts/office_bridge_lifecycle_smoke.mjs",
+      "size": 15247,
+      "sha256": "71FFE8E0BFDC2E987D4EF7773ACA0C8D33E2F14F6447668ADD8C224BA97AADD4"
+    },
+    {
+      "path": "apps/windows/scripts/office_font_size_regression.mjs",
+      "size": 69456,
+      "sha256": "255FF0A0A070DCCF876D45EF0C85ECE4E99F436934F9015BDA75DF73EEE5A9E1"
+    },
+    {
+      "path": "apps/windows/scripts/office_formula_document_regression.mts",
+      "size": 10627,
+      "sha256": "FD531C262F815AE2450E5955E28D0B9F01886C98EFC0B57CDCFB758EA9B22930"
+    },
+    {
+      "path": "apps/windows/scripts/office_metadata_smoke.mjs",
+      "size": 3370,
+      "sha256": "420E2915000479509774F31529A0C9CA8BFC270B0575B31CA7DECEC5145EC1E4"
+    },
+    {
+      "path": "apps/windows/scripts/office_ocr_transport_smoke.mjs",
+      "size": 8170,
+      "sha256": "0ACE672B99CECDC1914D30E8B76C720FAC62B3C8468CFF9BA6F09ED56BFA3AC2"
+    },
+    {
+      "path": "apps/windows/scripts/office_oiint_export_fixture.mjs",
+      "size": 1791,
+      "sha256": "FFA0D7356C6D769E82E74521D55B64C45132A30537E2765AB69A596FB8D982E0"
+    },
+    {
+      "path": "apps/windows/scripts/office_session_payload_safety_regression.mts",
+      "size": 4684,
+      "sha256": "9AA7FF5B4BF1774867907548D0972DB8494B48A2DC2E242C98CBA5CC56EF3B24"
+    },
+    {
+      "path": "apps/windows/scripts/office_theme_sync_regression.mjs",
+      "size": 17598,
+      "sha256": "7A64DEE1178D8D00B4C2F1DD3C6768629CAED81073318419AA4486922B53A4B2"
+    },
+    {
+      "path": "apps/windows/scripts/package_windows_acceptance.mjs",
+      "size": 10846,
+      "sha256": "D6FB246971D942362D8685D072A34DEF794761404AA2E26E20497EBD271D9B47"
+    },
+    {
+      "path": "apps/windows/scripts/patch_generated_nsis.ps1",
+      "size": 6200,
+      "sha256": "1FBA31E6C436BB54D87CE79C36916782C30DE0B2196B156A6CCEF77AB4C95E64"
+    },
+    {
+      "path": "apps/windows/scripts/platform_onboarding_smoke.mjs",
+      "size": 10529,
+      "sha256": "132D73B8469CAC6DAF0E0822394A8EF19C08F7325E22D12905811E20FF0B6DC6"
+    },
+    {
+      "path": "apps/windows/scripts/powerpoint_adapter_smoke.mjs",
+      "size": 24625,
+      "sha256": "A69BF2691DCC4A53C946F08150699DE5EC23F9D51985510888B3C14676CB5425"
+    },
+    {
+      "path": "apps/windows/scripts/powerpoint_double_click_hook_safety_regression.mts",
+      "size": 1134,
+      "sha256": "1F6AD5E0633F8F150B4887B502C1B12584AEDD477F85BD926D9E6A02E96C8CC3"
+    },
+    {
+      "path": "apps/windows/scripts/prepare_office_platform_resources.mjs",
+      "size": 152,
+      "sha256": "8E2B40A57D4239315714028A176329E126F4CFD475DE609805D31C3430B02DB8"
+    },
+    {
+      "path": "apps/windows/scripts/prepare_offline_ocr_runtime.py",
+      "size": 27622,
+      "sha256": "65A335F60BEB934D53803A1A6C22E87541400365C5871335B991E94039D14EF8"
+    },
+    {
+      "path": "apps/windows/scripts/prepare_windows_ocr_models.ps1",
+      "size": 9067,
+      "sha256": "135EFD268CF9DB173316784EF6B373CDF88757AF00000EFF9C32111C6BD765CC"
+    },
+    {
+      "path": "apps/windows/scripts/prepare_windows_ocr_python.ps1",
+      "size": 25775,
+      "sha256": "156F7A77DF7A1E347A3BD3E44BE1AAAAABC5D7661DF313200D11100E7894BBAF"
+    },
+    {
+      "path": "apps/windows/scripts/prepare_windows_office_math_font.ps1",
+      "size": 5156,
+      "sha256": "AA9176C6330C93ED5CE032C791183557CDAB2D1755B3D0B8C1E80C9CC6C501A7"
+    },
+    {
+      "path": "apps/windows/scripts/prepare_windows_vsto_runtime.ps1",
+      "size": 5296,
+      "sha256": "E92578E59E809C3723216B9596DD83B25EBFFE897252C04DA46020A24B55A04B"
+    },
+    {
+      "path": "apps/windows/scripts/probe_damaged_mathtype_format_atomicity.ps1",
+      "size": 8165,
+      "sha256": "44DF41B497EFDDA81AA72C1FFFE738664AC1EC9C72FDF43285230D499364B2C0"
+    },
+    {
+      "path": "apps/windows/scripts/probe_mathtype_native_number_formats.ps1",
+      "size": 82648,
+      "sha256": "44796BB9D02FC4B61A020493CE03204E15BE089253953AADA2CA42B313415ECE"
+    },
+    {
+      "path": "apps/windows/scripts/probe_word_mathtype_field_formattedtext.ps1",
+      "size": 13442,
+      "sha256": "90271415A7232E6685F310F0430E76D94AD8899765380A1A7307FE337B679D2F"
+    },
+    {
+      "path": "apps/windows/scripts/real_windows_wrapper_acceptance.mjs",
+      "size": 20280,
+      "sha256": "07469E1945CE50F92E0E5E85A944A1E45D6C51746F3B0BFAA3FCD3D9868B3F03"
+    },
+    {
+      "path": "apps/windows/scripts/remove_windows_office_certificate.ps1",
+      "size": 4751,
+      "sha256": "01BD43D1ECB2562C3D7B0AAC574AD139A681C369769CFEADF356E2D993223D8E"
+    },
+    {
+      "path": "apps/windows/scripts/run_latest_macos_editor_regressions.mjs",
+      "size": 3313,
+      "sha256": "AF3A4BFA7840DF7EE95B3282063BAF57A61E97D98F386320CC19390105CB7370"
+    },
+    {
+      "path": "apps/windows/scripts/run_new_macos_editor_regressions.mjs",
+      "size": 898,
+      "sha256": "49FDAEB1A5F71CF65F90C55CF7EB8388059CB4E073D6F254F4AFDECDCDDA2739"
+    },
+    {
+      "path": "apps/windows/scripts/run_powerpoint_adapter_smoke.mjs",
+      "size": 1469,
+      "sha256": "A1A96C2B0AA07643AA275C7E7E541DAE38DF68116760BF208AB967A6D1D485A5"
+    },
+    {
+      "path": "apps/windows/scripts/run_special_operator_acceptance.ps1",
+      "size": 2404,
+      "sha256": "F83DCAB8FE6DAD2761CB9B8B9B4F2926310B8B861BFF0783CD1D8B2203492735"
+    },
+    {
+      "path": "apps/windows/scripts/run_upstream_macos_regression.mjs",
+      "size": 47165,
+      "sha256": "430CCC5AB33076B6AC2CE3BF50EDB732D09E8276A2904AFE5B6D0BEBBEF2D82E"
+    },
+    {
+      "path": "apps/windows/scripts/run_windows_office_acceptance.ps1",
+      "size": 40247,
+      "sha256": "56E7015660830EDBE0D3D302122E6872C6FC20CD00F5410DBF83D0E9E43F2434"
+    },
+    {
+      "path": "apps/windows/scripts/run_windows_powershell.mjs",
+      "size": 534,
+      "sha256": "53EE600629D79275883106BC09A9FB5CEA5BD92285745AA51CA1606A19734254"
+    },
+    {
+      "path": "apps/windows/scripts/run_windows_rust_tests.mjs",
+      "size": 1539,
+      "sha256": "C84BB0312D6B47C6AF3657059263275C65D0E5F2EE8C70282934BABA109AB34E"
+    },
+    {
+      "path": "apps/windows/scripts/run_word_inline_baseline_manifest.ps1",
+      "size": 5688,
+      "sha256": "90FFD26F8EE7D2A51D9C6188E153C89BCAAE10180058B95A1AF5B694B2BD3BA3"
+    },
+    {
+      "path": "apps/windows/scripts/silent_ocr_hud_payload_safety_regression.mts",
+      "size": 818,
+      "sha256": "C8F555C60D9E72BA7C2CFAED151E3E3B7826223715572CD50DD6ED01CC8FCB5B"
+    },
+    {
+      "path": "apps/windows/scripts/smoke_ocr_worker.py",
+      "size": 3487,
+      "sha256": "657DBC6DBF89C1DCB48E5CCEE816DF76E16C49CD8E3EA5656EA83CA27FE722A5"
+    },
+    {
+      "path": "apps/windows/scripts/source_editor_ux_regression.mts",
+      "size": 3216,
+      "sha256": "37517334B8E9C7E13C16E642CE166B0F0D25BCC83C8433530F5382E8DD567936"
+    },
+    {
+      "path": "apps/windows/scripts/source_structural_draft_regression.mts",
+      "size": 9783,
+      "sha256": "BC835C61946690F78B96959EBC3652172B51CE20542B9F528C598F28599A0EA5"
+    },
+    {
+      "path": "apps/windows/scripts/svg_export_smoke.mjs",
+      "size": 14209,
+      "sha256": "0E7617A800D6294BCFC21407CB0D0CF1DD31117534E1E1A04CC815002D22B14E"
+    },
+    {
+      "path": "apps/windows/scripts/svg_system_font_transform_regression.mts",
+      "size": 1724,
+      "sha256": "336177F8942CDA618BEE81EFC26EFDE94CC2DD1BE4339F91F1BDA5B6FFB8320A"
+    },
+    {
+      "path": "apps/windows/scripts/targeted_editor_regression.mjs",
+      "size": 374700,
+      "sha256": "E71F234E33016D99F06B6E565B0279F0D89F54144ACD7D499732E8A2C12476B1"
+    },
+    {
+      "path": "apps/windows/scripts/targeted_upright_typography_acceptance.mjs",
+      "size": 11219,
+      "sha256": "375462078B95FD2684770BD80AF05935B7A78DC92495AEA8AD3B9F51769686C3"
+    },
+    {
+      "path": "apps/windows/scripts/targeted_windows_editor_export_acceptance.mjs",
+      "size": 31294,
+      "sha256": "0F28EE5FC4FF29A6B0E4577562D5F10387D8F19F102954FEB9F28301F956E3E3"
+    },
+    {
+      "path": "apps/windows/scripts/tauri_build.mjs",
+      "size": 12205,
+      "sha256": "FBF70151D134D7F48D6CF0605A19AA89433E8CC2CC48570BA05D5C6F3AD30FD3"
+    },
+    {
+      "path": "apps/windows/scripts/test_installed_ribbon_icons.ps1",
+      "size": 10828,
+      "sha256": "DEB35805D17A8A9C9DDAC0D56F09BE05BE58172A3B659574E17111D550537B0E"
+    },
+    {
+      "path": "apps/windows/scripts/test_installed_word_mathtype_left_blank_ui.ps1",
+      "size": 14540,
+      "sha256": "1854C66419AC64B2239F6C1429AD4D41A6DE4AFC70FF857BE8159809B96B62FD"
+    },
+    {
+      "path": "apps/windows/scripts/test_installed_word_mathtype_left_ui_e2e.ps1",
+      "size": 24682,
+      "sha256": "2FEA1D6B175204B358C291B14FBA1746FF6FE4737C64915F6D6A3144CE712D36"
+    },
+    {
+      "path": "apps/windows/scripts/test_windows_formula_ole_server.ps1",
+      "size": 3962,
+      "sha256": "A134C45F75F104A653A25A0F9DD9991D056D92FA4A0F96C9176C3B3648E0EAA8"
+    },
+    {
+      "path": "apps/windows/scripts/test_windows_installed_release.ps1",
+      "size": 21556,
+      "sha256": "C497C48C28FD955B7FC9AAAE553A55DC1185941B01BD6E2374F2910F97022809"
+    },
+    {
+      "path": "apps/windows/scripts/test_windows_mathtype_compatibility_source.ps1",
+      "size": 3553,
+      "sha256": "B3992B934D8F7790B921841C6BB1FD0060682BB85DB1C200B9693BAB9F6FABDB"
+    },
+    {
+      "path": "apps/windows/scripts/test_windows_native_office_ole.ps1",
+      "size": 10865,
+      "sha256": "9E7CA23296359B435DF7050AEB51118F2CE7C1E08E16F2913B8644154C96C1C3"
+    },
+    {
+      "path": "apps/windows/scripts/test_windows_office_connection_readonly.ps1",
+      "size": 7599,
+      "sha256": "9E0B4CBE6A565E0DFD853F1874E659309D3ED91D180251D4DAA655549633AD07"
+    },
+    {
+      "path": "apps/windows/scripts/test_windows_office_path_resolution.ps1",
+      "size": 6504,
+      "sha256": "80E577E2930418FA0A63CB47D07C74D8ED11C6814D05362351199F1E55C04CE9"
+    },
+    {
+      "path": "apps/windows/scripts/test_windows_office_runtime.ps1",
+      "size": 74856,
+      "sha256": "5DCB91D401D77A23456779E318F4D96C4689B88589A6CDFBA52E604C1BD882A5"
+    },
+    {
+      "path": "apps/windows/scripts/test_windows_vsto_dependency_loading.ps1",
+      "size": 6533,
+      "sha256": "BDE6626758CAF4B833A244BCBC9C69EADDB5DA9571F297F20C9BFFE2B231850B"
+    },
+    {
+      "path": "apps/windows/scripts/test_windows_vsto_ribbon_dispatch.ps1",
+      "size": 9454,
+      "sha256": "18EA087DF84D1020C24B0A24FF88BADCE35E791C7EFD22CC128E877099CB7AF3"
+    },
+    {
+      "path": "apps/windows/scripts/test_word_ole_real_double_click.ps1",
+      "size": 10072,
+      "sha256": "234C511855898B868FA209D7910F4F429B2442D253A172D3B0F076E1764C345C"
+    },
+    {
+      "path": "apps/windows/scripts/test_word_omml_real_double_click.ps1",
+      "size": 5808,
+      "sha256": "22C40E5B8F2501643C02E4A76D2674D89357E7ECB0569846E3B6B1040E726645"
+    },
+    {
+      "path": "apps/windows/scripts/toolbar_template_completion_regression.mts",
+      "size": 3684,
+      "sha256": "B7534CBFA71B54D6316DB5EB1C8BB881F1485E87595E80A6997C7477D1FDD42A"
+    },
+    {
+      "path": "apps/windows/scripts/uninstall_windows_ole.ps1",
+      "size": 289,
+      "sha256": "E98B7478D5917965BCAA8F3237B073EC625D6206FCA5AF1D9704B5695AA3FB06"
+    },
+    {
+      "path": "apps/windows/scripts/uninstall_windows_vsto.ps1",
+      "size": 14378,
+      "sha256": "5DE44B5E0B3BEDCFE928213182DB68778EEE0E99537B3D91DB7A73FBF24B923C"
+    },
+    {
+      "path": "apps/windows/scripts/update_notes_smoke.mjs",
+      "size": 2325,
+      "sha256": "3A7E59042B7BFB6ECA9E7A1039683607EAD2D7C5851AD8F6EFDEC200ED00F8F5"
+    },
+    {
+      "path": "apps/windows/scripts/update_service_safety_regression.mts",
+      "size": 2613,
+      "sha256": "50666020A6B7BED50F13681635C4AB2CCD89748A171CEB05AA3C0054D779151E"
+    },
+    {
+      "path": "apps/windows/scripts/verify_embedded_frontend_assets.mjs",
+      "size": 2379,
+      "sha256": "4BF23A753BF234966E7D2964E8F02B17B0C546020CDFAC777806379CD2016936"
+    },
+    {
+      "path": "apps/windows/scripts/verify_frontend_dist.mjs",
+      "size": 2892,
+      "sha256": "309F5CEC289126871981B50F9580A449452AED64878F85096A14961F0D5C3DE0"
+    },
+    {
+      "path": "apps/windows/scripts/verify_installed_windows_release.ps1",
+      "size": 9117,
+      "sha256": "6D201A71179E0B5A35D28FA8869B31DEE4553A98EA17BEE83D17AB78CDACB2BB"
+    },
+    {
+      "path": "apps/windows/scripts/verify_office_manifests.mjs",
+      "size": 129,
+      "sha256": "C651FC953BE2020A79CE4E75705510D433160C3BEB2D8CD1743FABA77951689F"
+    },
+    {
+      "path": "apps/windows/scripts/verify_offline_ocr_bundle.py",
+      "size": 16602,
+      "sha256": "7879FECA4C2DC960302F8BD9A920EDC8B67ABBEC1781083388DE18E872D6E3C3"
+    },
+    {
+      "path": "apps/windows/scripts/verify_windows_release_artifacts.ps1",
+      "size": 23591,
+      "sha256": "55F021C8D1FC58A8F0C9F4A09157676F542A5C3DECF5975B22A44DE9E0D21883"
+    },
+    {
+      "path": "apps/windows/scripts/windows_app_lifecycle_smoke.mjs",
+      "size": 4703,
+      "sha256": "043449A8346E3F5D0C21B7EC59B1B25EF1A029F593D3D980A5D5A174F0939C3F"
+    },
+    {
+      "path": "apps/windows/scripts/windows_cases_regression.mjs",
+      "size": 17941,
+      "sha256": "AB80C294B275A2C5C0ED03CBE0DD2DFD663826D037BC08D54D6C1A76225494F4"
+    },
+    {
+      "path": "apps/windows/scripts/windows_ocr_editor_parity_regression.mjs",
+      "size": 13289,
+      "sha256": "34F7864A08F0064F2AA0B779DB43C1B711DDAA6CAECDF9460D8049765A327A9E"
+    },
+    {
+      "path": "apps/windows/scripts/windows_office_architecture_smoke.mjs",
+      "size": 80547,
+      "sha256": "86B293E54CAA71EB1CE7FF6E837E680395A12D59A4970ACE3675F012B0A5EB79"
+    },
+    {
+      "path": "apps/windows/scripts/windows_office_diagnostics_smoke.mjs",
+      "size": 10550,
+      "sha256": "7D8CB2BB285189AFA1EF2FE87AE20460EAEC201DBAD07FFE8B2025906AFD4D3B"
+    },
+    {
+      "path": "apps/windows/scripts/windows_office_math_font_payload_smoke.ps1",
+      "size": 4921,
+      "sha256": "E029AC944983388418187CDBD4AA211A561CF282FD225F2A3B12ED75410F8AD8"
+    },
+    {
+      "path": "apps/windows/scripts/windows_office_status_payload_safety_regression.mts",
+      "size": 2002,
+      "sha256": "F9865430229C704446C3734C98B60EF4AB2A10649F601B1E2684377BBDA45B6B"
+    },
+    {
+      "path": "apps/windows/scripts/windows_ole_payload_safety_regression.mts",
+      "size": 3054,
+      "sha256": "8F1F748B6E1E807A12BBD37D8608E85184B781F1B56DEDBE1C0F72D8910F0515"
+    },
+    {
+      "path": "apps/windows/scripts/windows_omml_font_numbering_regression.mjs",
+      "size": 4922,
+      "sha256": "C22324E8F7F27F7665D080918F1AB95ADFED973400216AFD679E72453F3B9638"
+    },
+    {
+      "path": "apps/windows/scripts/windows_powershell.mjs",
+      "size": 393,
+      "sha256": "26953E4BCE4C9D144A9C4E96A8222851D72A089779553A9F3C7ED667B7F3D6BC"
+    },
+    {
+      "path": "apps/windows/scripts/windows_quick_ocr_migration_regression.mjs",
+      "size": 3425,
+      "sha256": "370123C6E721F6BD7D38FB1B63923A238D9B0C088AA0E5315DD8A71A384D53A3"
+    },
+    {
+      "path": "apps/windows/scripts/windows_requested_workflow_regression.mjs",
+      "size": 3213,
+      "sha256": "821273079A30DE0BF6420EEECB7AD9DB55CE1508A3652854C6603564364C4268"
+    },
+    {
+      "path": "apps/windows/scripts/word_adapter_smoke.mjs",
+      "size": 19943,
+      "sha256": "D6B5892110331BB127652E006F8F1538707CBCBB19D3693F3235153C9820C933"
+    },
+    {
+      "path": "apps/windows/scripts/word_baseline_regression.mjs",
+      "size": 4538,
+      "sha256": "F68B9472881AAB35241A950690B44F73EC61929B678D6066C505F863AB06AFCB"
+    },
+    {
+      "path": "apps/windows/scripts/word_inline_baseline_probe.ps1",
+      "size": 16160,
+      "sha256": "EDC9B7C22D30EDA6BEC97E39D41548FE1007320E35C7173FBE2B3E06ED97DD48"
+    },
+    {
+      "path": "apps/windows/scripts/word_inline_isolated_baseline_probe.ps1",
+      "size": 36632,
+      "sha256": "55FE1C26588B30E5DD68560EE7F3F13088BFF84268D77532A183DFBA5D8F91D8"
+    },
+    {
+      "path": "apps/windows/scripts/word_inline_new_preview_probe.ps1",
+      "size": 52827,
+      "sha256": "B96087A92BF359A02FCF08689D6D0165EE32C9743C2766A59A9015701CDAAD0F"
+    },
+    {
+      "path": "apps/windows/scripts/word_omml_emf_quick_probe.ps1",
+      "size": 11935,
+      "sha256": "84B31D5FE22AF632EC862C686239D56CE073F4A68559A96C2AC07F172FFC6592"
+    },
+    {
+      "path": "apps/windows/scripts/word_ooxml_halfpoint_probe.ps1",
+      "size": 7311,
+      "sha256": "72998E63713F9C9A9CC913FAF478B6B3C7E3D62A99E6C594D95CF0200E6CD890"
+    },
+    {
+      "path": "apps/windows/src-tauri/Cargo.toml",
+      "size": 2796,
+      "sha256": "4F5CE1BA06CD0F660A3EEE4746E4C7CE6543362EDB6BF52A152455647C89E788"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/app_lifecycle.rs",
+      "size": 25753,
+      "sha256": "EE855A9E3363019885F34803729242E2772E13E172EA88EF38A6F264E3D88D4A"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/bin/ocr_install_acceptance.rs",
+      "size": 12136,
+      "sha256": "70BAAFCC64F53907803ED056963C74C9D50AA1981F201EC2E49D8EA6DBD128F6"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/bin/ocr_model_acceptance.rs",
+      "size": 22239,
+      "sha256": "FAF3F816C504E0098C71AA78F8DAB7A0B803B04C1D6FB0C27EED2F4C4E8E645B"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/bin/ocr_provider_connectivity_acceptance.rs",
+      "size": 2927,
+      "sha256": "86D2ACED240DF941762111824FA06A713CDD86308B5ABE451F98D2095CD3AFBA"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/bin/ocr_python_bundle_acceptance.rs",
+      "size": 15705,
+      "sha256": "9377C59E7437441202F135270DC49E3FDDCB6C51310BDB50A3FAFDCF29BDE79F"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/bin/ocr_storage_acceptance.rs",
+      "size": 13493,
+      "sha256": "E85A31FA86C57B645F301DAD29C42E0A396E89B5BAD1A0A58C3DD1507A925F8B"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/lib.rs",
+      "size": 178162,
+      "sha256": "EF12B7256DC939AB1D676AFEAA4EF5380C9896050FA88B097CB31E98CC5BB8D2"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/main.rs",
+      "size": 113,
+      "sha256": "D33EAEBBDC89BCF05BE425F00FD0ACDFC827F488FAE29DD78297CF9D4B9B8520"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/ocr/manager.rs",
+      "size": 9244,
+      "sha256": "07D5C8E1DDD8C923E6FE0EE7A94F410CDB2FEC1A9362CFA930B57EF2472790C7"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/ocr/mod.rs",
+      "size": 7080,
+      "sha256": "C8C977DDF14C224C967B727BFC40D865E6330B0810B2ED082B870482A6B38891"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/ocr/protocol.rs",
+      "size": 2453,
+      "sha256": "515D664CDA0502E0F4597D7B8272E072D4055F2C70C0522D12907FD5348C9F87"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/ocr_install.rs",
+      "size": 49370,
+      "sha256": "A15A6C3E91FB8DDBD38B626B0A692D1EB418FF7A935321FD20F51B6670BF3E66"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/ocr_models.rs",
+      "size": 53142,
+      "sha256": "33536D04BBBFDECBEFF8365A8816AAFB34BBFFBCC2FD004468DA5BBDCC93A575"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/ocr_offline.rs",
+      "size": 44606,
+      "sha256": "C90CE47B852E23A7BF91C5A468221613BBE44CA1FFE8EE5C56A207CA997AF209"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/ocr_provider.rs",
+      "size": 131255,
+      "sha256": "654B23257DFD3DE0F573C46F130BB6D1A9A34C0ED39B6F7F0F6AF71B4057E886"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/ocr_python_bundle.rs",
+      "size": 17035,
+      "sha256": "7D48E8208364897FC0B4698F2BEC97B4953AFED85B0C74785F1D8943E3248CE0"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/ocr_storage.rs",
+      "size": 26194,
+      "sha256": "34DFA1987024A802E8828B178C287C2CF25FDC8A0AC951A44CEC7A4462DC9643"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/certificate.rs",
+      "size": 13914,
+      "sha256": "257B7F23F454863EA9C8E01ED2ADBA871A4C0374BA65095A3ACDAD7E0A945898"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/formula_cache.rs",
+      "size": 10214,
+      "sha256": "E48178F7BB06869FADE4544B4B9DF78CCBADF82611CAD0E8457D46FECA7D1FB7"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/lifecycle.rs",
+      "size": 26498,
+      "sha256": "4DAA1E39F5176E521E6DC73260AE06B595B7E6154BF7EC0E18021217AEB49079"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/mod.rs",
+      "size": 599,
+      "sha256": "306283230180C3699B3C22F97B5D51B539D1432220197B875617E23D0124A33A"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/platform/mod.rs",
+      "size": 2143,
+      "sha256": "CA651D008C9D52DD88D1CADBF1E452C2B07C2557BEBBA0D12026F6CC1942192B"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/platform/non_macos_background.rs",
+      "size": 3576,
+      "sha256": "09BDB57873B03028D46770393AC58BA1D13B50320B716C07504FEA17933E975D"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/platform/non_macos_installer.rs",
+      "size": 3575,
+      "sha256": "E548B603CA0FC975A2D3BB6C3E66BDF5530067DD797A29A907FCB739CDD9D776"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/platform/non_macos_manifest.rs",
+      "size": 102,
+      "sha256": "C25323955A07D9FB72E38A9622229871E03AAF988B26723F41A97E27B108E7C2"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/platform/non_macos_powerpoint_native.rs",
+      "size": 5638,
+      "sha256": "67BBF2A43E0F0E1C461233197230DEBA7B74F9E18B672231352AC44FD9A6807B"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/platform/non_macos_word_native.rs",
+      "size": 456,
+      "sha256": "46E0CC4D67BC2B85365E9DE72258A9C32A95817DAE307DADAC45AFA1B86E92C6"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/platform/windows.rs",
+      "size": 1114,
+      "sha256": "0D64AA25CBEEDBCAD2978B5E5D96C26C33A42AB16355ECF86264F982F776BD76"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/server.rs",
+      "size": 129361,
+      "sha256": "13E63FD59B006C42F0473510FE961E95883AD997D27D52A2231D11E44F253C46"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/sessions.rs",
+      "size": 48804,
+      "sha256": "6803C45289331312DB49F3D56A92EBD541F82D4C8BF41AF325CA6344FD1BA9F8"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/state.rs",
+      "size": 12715,
+      "sha256": "35CB5BB3CC9D5C521ED16CAB42F0BB71A189698163F9AAE8D2BC0A6B3E682215"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/windows_backend.rs",
+      "size": 24696,
+      "sha256": "191F176CDFA2DE23317BC651C07998C1D6089043706699371DEDC499B685AE52"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/office/windows_pipe.rs",
+      "size": 11000,
+      "sha256": "6CF7132D8ACF73BBC214D921EE239E94367C6A3F6BC11CCC0B3C11E216760C28"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/system_math_glyphs.rs",
+      "size": 18405,
+      "sha256": "DDE3D3F82019C956DF4AD08604B352F78693D5173111C45A07D6814558972365"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/windows_quick_ocr.rs",
+      "size": 18458,
+      "sha256": "AD8DD39A6C8096E8AFFF3574537F0CDEF48894E9332986B6143BD8C57E61D24C"
+    },
+    {
+      "path": "apps/windows/src-tauri/src/windows_silent_ocr_hotkey.rs",
+      "size": 31489,
+      "sha256": "5FB13D25663F36DC5DB3A1F5DA576FCA6CE9592B834EB0E76543A193DE39C6F4"
+    },
+    {
+      "path": "apps/windows/src-tauri/tauri.conf.json",
+      "size": 1551,
+      "sha256": "3B35552491CF167C6A94C2B30E9277045A374AB3BA7B7ED1EB3780A6165023F2"
+    },
+    {
+      "path": "apps/windows/src-tauri/tauri.windows.conf.json",
+      "size": 1492,
+      "sha256": "A5CEE114461193AD50F12F4B0CABA454C746E1987302B5789EE7B5E43B866AF5"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer.Tests/FormulaOleServerSmoke.cpp",
+      "size": 38153,
+      "sha256": "53F8188B2AC786AAE07A5E0B1B604BCFF3A94706B98851EBFC88AD2EBFFA3E66"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer.Tests/VisualTeX.FormulaOleServer.Tests.vcxproj",
+      "size": 6074,
+      "sha256": "14EF94A4E2C41084905BDA5B4CB626A5381BCB168AF8DAB159B638F558881EC3"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer/FormulaOleContract.h",
+      "size": 2122,
+      "sha256": "CDD8949E048D928AE2FD77EC7932FBD643C689ACB3392F7E0558226EA5E1207E"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer/FormulaOleObject.cpp",
+      "size": 54218,
+      "sha256": "30B1C92FAF36ACF5581478A81B5181BB21037B903CCED0758B10DAFF0EA0ECC1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer/FormulaOleObject.h",
+      "size": 9241,
+      "sha256": "5C376706C8AC1FBA3412504940952979C31D9EFD38CF1EBFA5AEBF2111C4F8AB"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer/FormulaOleObject.rgs",
+      "size": 2438,
+      "sha256": "11D9CA51696701441288CCCE256421C7F9AA7AFD7E7BDF83D26A3402A17C2155"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer/FormulaOleServer.cpp",
+      "size": 6241,
+      "sha256": "A78A72FFBB9C3A6C87D3B33AA8E23BC58E6375DF44F4DD94CD3103A7573FEC17"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer/FormulaOleServer.idl",
+      "size": 1274,
+      "sha256": "115AC7EBE6F75F8670FE7188866F3E0435636C16B82619BD1FE14E74F1BFB81C"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer/FormulaOleServer.rc",
+      "size": 177,
+      "sha256": "DAB3AB2D2AB330FB6750BEDF053A21E912EF5210CBBC932A6A9685C3CC989FF6"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer/FormulaOleServer.rgs",
+      "size": 358,
+      "sha256": "A8993AEDA8FB255B175F92E60795DE281110240C3BF9964864FA84349389CEB2"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer/VisualTeX.FormulaOleServer.vcxproj",
+      "size": 7819,
+      "sha256": "120B29BF913CB9C884FF11419CE03FEFB50DBA034A8EA50AF788463689CE6E38"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer/dlldata.c",
+      "size": 853,
+      "sha256": "F6686E7B9640B986FCFA8FFD30BD3CB8F00B16FE873F6A7DDC2096223FF4BCC0"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.FormulaOleServer/resource.h",
+      "size": 84,
+      "sha256": "C00657392B6BD3C0D8B78EAF4D69DE67C3FA73675E502A0B38C84348B68D552A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.NativeOfficeOleAcceptance/Program.cs",
+      "size": 300324,
+      "sha256": "54969D0D0EA3E111250D7329E033AE8CBFC3C4DFAD94E588DFEAE5712B0FEC56"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.NativeOfficeOleAcceptance/VisualTeX.NativeOfficeOleAcceptance.csproj",
+      "size": 1801,
+      "sha256": "0D9C3F697144B3316FEE899B8ABADD0314C352DFC3FA4B4174CEC249DE6E8A31"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.NativeOfficeOleAcceptance/WordInlineBaselineManifestAcceptance.cs",
+      "size": 150,
+      "sha256": "EAA92C98D259020417B83474152FEFCB5EE3E639F6EE06459EA0ADF641471EE8"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.PowerPointVsto/AssemblyInfo.cs",
+      "size": 64,
+      "sha256": "5CCF6522BBEDC2F022FA3DB5156D2EF20DD152438716CB9118DBBD1A4B4061B9"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.PowerPointVsto/OfficeUiDispatcher.cs",
+      "size": 3384,
+      "sha256": "161F751E969B3322A2BB9378AD4EEA91DC71BF7C226A997FDAF1862C5D08DAA4"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.PowerPointVsto/PowerPointDoubleClickHook.cs",
+      "size": 6815,
+      "sha256": "1DC67B89FF5275CC011B5FC98BF61B78A740329D92A901C88E7897B65288EC5A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.PowerPointVsto/PowerPointFormulaService.cs",
+      "size": 74285,
+      "sha256": "6BD99400869D1C703BAE00716E7319246379FB14B858C6FA78E915F6918478B0"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.PowerPointVsto/PowerPointOlePreviewStage.cs",
+      "size": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.PowerPointVsto/PowerPointOmmlBridge.cs",
+      "size": 14501,
+      "sha256": "426C88CACD3F6B27279F5190EA73BFF8C7EAF7B204DBB8FBE8BC93BC93DAFC5A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.PowerPointVsto/ThisAddIn.cs",
+      "size": 33344,
+      "sha256": "123E4EEEAB6D9032CBD8C084B119D2ADFB6102A530C7B3963DE8DD6AD2F4CE9A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.PowerPointVsto/VisualTeX.PowerPointVsto.csproj",
+      "size": 2738,
+      "sha256": "04F91D1D5CC370DA8D042AF4B2A7AC34999F9AD88FBB9A57ACD85AEA4E072044"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.RealUserDocumentCrossReferenceAcceptance/IsExternalInit.cs",
+      "size": 90,
+      "sha256": "45E61C3AD6399B3E470E7E9BA7E7750AB12D936884C3EB581F1FEFFD9219EE3A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.RealUserDocumentCrossReferenceAcceptance/Program.cs",
+      "size": 29478,
+      "sha256": "1EC6A3265CC117BFE27F8960EC9797C52F1FE2D483E60E977CECA67A94B23E97"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.RealUserDocumentCrossReferenceAcceptance/VisualTeX.RealUserDocumentCrossReferenceAcceptance.csproj",
+      "size": 1426,
+      "sha256": "287717CF666B60D976758904FE63A2CDE65CD699480EEBF0443BCF7A82E46A12"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.TargetedTypographyCrossReferenceAcceptance/Program.cs",
+      "size": 48214,
+      "sha256": "D573B79E9795912F865B7DEE8826223147DC6BE80133E32E593FCB0BF69DCD35"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.TargetedTypographyCrossReferenceAcceptance/VisualTeX.TargetedTypographyCrossReferenceAcceptance.csproj",
+      "size": 1126,
+      "sha256": "B8881F230D580C7C89816EECE4FE38754DCEB1FB5EE9734E56BEF129D94DDC03"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/FormatConversionSessionBatchAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/MathTypeCapabilityResolutionAcceptance.cs",
+      "size": 3569,
+      "sha256": "5C51894170841C10109F7EB6A3DAF1F8D57C1FC8889CC2F000A5CF92C709BD4B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/MathTypeOleStorageRobustnessAcceptance.cs",
+      "size": 2640,
+      "sha256": "3FE4EBD4A072802C0FAE2CB7A261750151E32E7476923AEA0CD36C1C346389C3"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/MathTypeOutOfProcessPreviewAcceptance.cs",
+      "size": 7044,
+      "sha256": "7A17A25EA525A0E705FF513379AF29C9E4EFF068ABB34ED201E587684499B5C6"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/OfficeOleViewBoxAcceptance.cs",
+      "size": 9850,
+      "sha256": "EBE3F3B9D233E937132312F0F6BB679B872C40C0AED53B01BE51131B97B62E34"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/OfficePackageCommandAcceptance.cs",
+      "size": 5717,
+      "sha256": "56F7DCBB536C121732E8C967CF9F4F3B41E2A9E24CFFBAB7981435F498BF63AC"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/OfficeSessionMathTypeNumberPositionAcceptance.cs",
+      "size": 3612,
+      "sha256": "15A933EA661F5E3C4F75E43E25757F68301D951741038EE71E74EFD5AC3D93E9"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/OleFormulaFontAcceptance.cs",
+      "size": 19465,
+      "sha256": "71B956D8C432D6359FC36731E7CCB68C06F7F50706EF01DB15EC9B385CB8FDE7"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/PowerPointCopyConversionAcceptance.cs",
+      "size": 44406,
+      "sha256": "46935611119C0B4B436D41858D39395D21082DA2B82CF91653382C861DC0AC26"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/PowerPointDenseZOrderAcceptance.cs",
+      "size": 3289,
+      "sha256": "6AAA74CD26434AEED317D2198A3FDB54A55DFE63406F5D748179B628A274D58A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/PowerPointDirectOmmlStressAcceptance.cs",
+      "size": 4179,
+      "sha256": "684355D1FE59138DBCC05BFCEE2213F7F7DA06A1E3A9D40B22CE6DD955ED9DFE"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/PowerPointOleSvgGeometryAcceptance.cs",
+      "size": 78620,
+      "sha256": "62B15504E3F1368BCC235EE157FF1127B06B31F72FC9B5EAED8840D5360DB0F7"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/Program.cs",
+      "size": 309317,
+      "sha256": "56163E6B31035573A489C0A7C9C16A961A1C8288D4E3E4861E9A9BB70626F46F"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/VisualTeX.VstoFlowAcceptance.csproj",
+      "size": 2943,
+      "sha256": "B6159DEB444A8D3C7947BC7DD84065C59D5A8738E91EAD4926B4ABAAA8F11E6A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/Win32ThreadExecutionProbe.cs",
+      "size": 12911,
+      "sha256": "3C61352BA15988C1635F5488411421001EBA45B51D51DD75DDDD1A34A5D2E459"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordAccentRenderingAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordActiveDoc17NumberedMathTypeBulkAcceptance.cs",
+      "size": 14933,
+      "sha256": "D1D201BCA8053D8A96F180803106A8FF1C80609EC2E38A9B1E2E69297FA8F069"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordActiveMathTypeVisualTeXRoundTripCloneAcceptance.cs",
+      "size": 13026,
+      "sha256": "7A980AB132DB2CE3E5BB8CA64D67BBACBBA44555676166A22C8C176B93BC6491"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordActiveVisualTeXToMathTypeFixtureAcceptance.cs",
+      "size": 8304,
+      "sha256": "CF03B5BF2B6B3129A34317834970B04F8FEC05DA2CAD3D60B40DFB6CA00F58B3"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordBatchEquationNumberingAcceptance.cs",
+      "size": 70,
+      "sha256": "E9001D0A8B58D1635B73CECBDD4F063D21F1EA6AC23EE1AD40C9D54C769F09E1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordBatchEquationNumberingCurrentCloneAcceptance.cs",
+      "size": 87,
+      "sha256": "DAEB62F279BA3DA20F061FA9EF2F4A527FDABBE34D8ED48C98BADBF517F881DF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordBatchEquationNumberingSafetyAcceptance.cs",
+      "size": 77,
+      "sha256": "BA4A3CB3042814FACFFC998AFEC8CF6659D3B46CE54B8E740EAC12F962D84E38"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordBulkImportDialogOptionAcceptance.cs",
+      "size": 8063,
+      "sha256": "4EA9826F3BC462F9472707D08C615614B3CA11A1D13FFA734AECAF3C58388EED"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordBulkImportLatexSpacingAcceptance.cs",
+      "size": 9051,
+      "sha256": "196C88A8B9126AB1EF415127A9DFB0DC3B021213838BDEFF1CA78897A0258E9B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordBulkImportMathTypeAcceptance.cs",
+      "size": 8168,
+      "sha256": "20D6354D425E438FFE62FFF14D9C6D6B3EB706774B3244E32FA254DB0A6CD392"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordBulkImportMultilineAcceptance.cs",
+      "size": 16456,
+      "sha256": "CF155D11E1D81805FACE913B9EAB1FFC42C0F6AB7307F6C4FDA6AC6D20E0BF45"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordBulkImportNumberedMathTypeStressAcceptance.cs",
+      "size": 14600,
+      "sha256": "017F451DCEE899918D2C6692ED5522909DF795771DB9C613801B91647FB0E5CF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordBulkImportOleViewBoxAcceptance.cs",
+      "size": 12700,
+      "sha256": "232730ECA40BFCD183FCDE84EFD48AB5D10386508F2ABB5E64503308A61F86CB"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordBulkImportOmmlStressAcceptance.cs",
+      "size": 54613,
+      "sha256": "ABA5FD533594D3465E3A29456342CD17EE1EA9B32CDBA1EB8651DD5925B1CE65"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordBulkImportPerformanceAcceptance.cs",
+      "size": 16062,
+      "sha256": "F066D99DD84B2C3A70344AB0D48ADF014CC9501E62465CB946B7CFF2009D46ED"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordConvertedVisualTeXNumberingScaffoldAcceptance.cs",
+      "size": 7671,
+      "sha256": "6C3F0EAC35B4D6D2A23485F7EF46882567F7274E22F0BD98D06BAE7B481C0387"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordCopyPasteReeditAcceptance.cs",
+      "size": 11056,
+      "sha256": "F9C0C322D4C8C7B27505411A5A7751A5354F5282F5389B777DE833C20D643600"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordDisplaySpacingAcceptance.cs",
+      "size": 28908,
+      "sha256": "D099D4C99EF9B4A4A6274D021C0F8AE972C6935C2974DDAC3FB0F41CA0BE918A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordEditorNativeCloseAcceptance.cs",
+      "size": 20395,
+      "sha256": "86239070A3FE96B27C91AA8654187AE58EA9FC0481492B8FF50850F0F1FDAC23"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordEquationNumberFormatAcceptance.cs",
+      "size": 32052,
+      "sha256": "51412C979B8F57EE9DA90A9C89185EB24AF5CF1A10087DEE9A2E7BF395349A2D"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordFontSizePersistenceAcceptance.cs",
+      "size": 11149,
+      "sha256": "C9A620CB103E6D8CFB87649ADD24697B571046C790F4283FF3A463116972B178"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordFormatConversionRollbackResidualFixtureAcceptance.cs",
+      "size": 8080,
+      "sha256": "10FB743BB2249E1FA87305B742DDF6CAA923E99D754F97F41F15F852836C3923"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordFormulaFontAcceptance.cs",
+      "size": 41815,
+      "sha256": "748033DFC1FAB278C69EC2C8152904B066C498BFFAFB56D4110695BB272562C8"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordFormulaFormatConversionAcceptance.cs",
+      "size": 60570,
+      "sha256": "3E383C8EB06B894B8FEC3CB6236137CCDD9DBAAE333EF43AAFFB854A4E53328A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordFormulaFormatConversionDamagedHostAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordFormulaFormatConversionDistinctBatchAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordFormulaFormatConversionMixedHostAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordFormulaFormatConversionPerformanceAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordFormulaFormatConversionRibbonAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordFormulaFormatConversionSelectionAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordFormulaToLatexAcceptance.cs",
+      "size": 42285,
+      "sha256": "1034DCA72C516819A6190FF481BFE8BB5CE120F9AEC064A2C52BFCEF87B21718"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordHundredFormulaPerformance.cs",
+      "size": 35120,
+      "sha256": "E28D311D04618491D6C4F6BC18B28AA9C37E735DDC2C5AAC3143BD17C41AA51B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordInlineFractionLineGridAcceptance.cs",
+      "size": 17866,
+      "sha256": "1CB390F848F2363E9027F7334B9010DCD979E2881C8C31C5EAE528D917263A87"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordInstalledFiftyFormulaStressAcceptance.cs",
+      "size": 64679,
+      "sha256": "DE880ED5F5D146704CAB949F139D5C0A36962D8895C953E3BA92393EB777B1DD"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordInstalledFormulaFormatConversionAcceptance.cs",
+      "size": 52467,
+      "sha256": "AA0639AE295944880F3DC9DADF770CD963E2EBCF82FCC9D2449C6E1F427E1AFC"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordInstalledInlineOleRibbonReeditAcceptance.cs",
+      "size": 10510,
+      "sha256": "0C75A3ED06615277095A7D49D3F822499D9A883ECAA40AFF41810B91BDB2BE5C"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordInstalledMathTypeLeftUiE2eAcceptance.cs",
+      "size": 29870,
+      "sha256": "AAF3798B4AC70373272E611F70DCDD0F771180535420079702BFBE25BE2D7294"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordInstalledMathTypeNativeRegressionAcceptance.cs",
+      "size": 75212,
+      "sha256": "ACDC185BB305ADDE99ACDCB6801B3139A08621AE065795A3A80FF390720E2011"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordInstalledMathTypeReeditRegressionAcceptance.cs",
+      "size": 34149,
+      "sha256": "E23D5F699AAB967A5D83A81BB648B13C4AB34A7F1F6AA2E7C6B4367940BEEE73"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordInstalledVisualTeXNumberedSequenceUiAcceptance.cs",
+      "size": 8099,
+      "sha256": "D34D8E01871A1C7CEE90F0901365760771A610160ADEF29F0448ED249A04A212"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordLatexRedrawAcceptance.cs",
+      "size": 145316,
+      "sha256": "9BA5283697761A2FA9E760645B7D645E1A1628E3C688C8AC3E0416CD02A60E3F"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordLiveConversionResidualAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordLiveMathTypeVisualTeXRoundTripCloneAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordLiveVisualTeXBatchToMathTypeCloneAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordLiveVisualTeXToMathTypeCloneAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeActualMathJaxInsertionAcceptance.cs",
+      "size": 85,
+      "sha256": "AF6D2253020EA593903762E22A9161E770DC4BCD7AF9EBB6D269751D29CB8DCD"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeAddOleFromCfbAcceptance.cs",
+      "size": 15305,
+      "sha256": "D52CE91514AD8AF05DD13C9182459B4910F9249A83E9BA0C63A5DD67487AB18B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeAdjacentFormatConversionAcceptance.cs",
+      "size": 40969,
+      "sha256": "B3C18F5C7320045EEA91A80A0D5B5A78AD44E3A6D487156A95F03E436C8B0A66"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeDirectPasteSymbolsAcceptance.cs",
+      "size": 7793,
+      "sha256": "3B940996D94B92C3772C55DD309311C47F0FB5A8373414348D5765E72D23AA77"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeEmbeddedStorageProbe.cs",
+      "size": 20325,
+      "sha256": "088346CA8D251E9E7B0EAD3113866A0FACA11FC7D06899D2BA2CA68F82ED1177"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeInsertScalingAcceptance.cs",
+      "size": 26269,
+      "sha256": "DF72A4C43BBAC4DC1723FB551A40AA6D675A35F7DF8DC44F4DEE82B0E87A94D4"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeInsertionComplexityAcceptance.cs",
+      "size": 17229,
+      "sha256": "ED3EBDE7225DEA81172AECAA5732884747CAA771B24DB3773C66A47529A3010B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeNativeEditorAcceptance.cs",
+      "size": 52620,
+      "sha256": "B99F1A604B8C919C8E59E70577F4A47E3BB032795F4E5FC6229442B935851050"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeNativeFormatParityAcceptance.cs",
+      "size": 52197,
+      "sha256": "53874EC41122487FED06CD49BA6BDED991771FC8D2E37EDE150CE772CD2F0197"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeNativeNumberReferenceAcceptance.cs",
+      "size": 16822,
+      "sha256": "1613AB12FE4BD0A06A768ACAA81574CF083EDE565F86887BA9F7B90AE3774291"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeNumberFormatAcceptance.cs",
+      "size": 26271,
+      "sha256": "F9229AA4D36FFF313B7C86B3C0797A8952A5F8DDF968EF9D21D70BB568E48C97"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeOfflineStorageAcceptance.cs",
+      "size": 110387,
+      "sha256": "E95596FB8F524EE6506638C5110A54917426841B9854E5207E7BB712FB202EA5"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeOleCreateAcceptance.cs",
+      "size": 104659,
+      "sha256": "626E3E63E492E69D868B85D6E844C456B160C3030E64493EA0F66572BA81838E"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeOleInteropAcceptance.cs",
+      "size": 91856,
+      "sha256": "8C234557C02B69B2480BE1C5FC7D7939D6F838AD202B5E909A8FED3E13E2BB82"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeOleProductRoundTripAcceptance.cs",
+      "size": 65496,
+      "sha256": "8EE12FD1AF64E980B19B7B3BE6F3DD3F15BC694E92D315FEB476607FF436A471"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeOleRealDoubleClickAcceptance.cs",
+      "size": 30613,
+      "sha256": "F46E763EE38248B6356540A9734F00079A9FC38D2F220ECA42D74B3DE47AA30C"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeOpenXmlCloneAcceptance.cs",
+      "size": 23348,
+      "sha256": "416BD1913437C674AF24D6E1D1A0CE720CF3FE56833FDB149770B309766524CF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeServerNativeCreateAcceptance.cs",
+      "size": 85,
+      "sha256": "AF6D2253020EA593903762E22A9161E770DC4BCD7AF9EBB6D269751D29CB8DCD"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMathTypeToVisualTeXNumberedCoreAcceptance.cs",
+      "size": 22749,
+      "sha256": "3B5651712397307A51DCAC7DE3CBA8B0BE6280AD7D81DBA8FE776D02BA6F78A0"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMixedLegacyNumberingMigrationAcceptance.cs",
+      "size": 19159,
+      "sha256": "08BA9182EADF1F03AEC6F102F725E2EFAE0127D6DF99B40528007E953A8E0EE7"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordMixedVisualTeXSequenceAcceptance.cs",
+      "size": 12051,
+      "sha256": "50CD85655077A76C75D8C4F8CD58E567E794BF3CC4CB83CE48590785E5C9AEAC"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordNativeOmmlFirstDoubleClickAcceptance.cs",
+      "size": 19149,
+      "sha256": "1CA74A222838E58E5CE60D84CBAF57D1E7D5A0E3DB98D618A0D17A3AC6657477"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordNumberedFormulaPerformanceAcceptance.cs",
+      "size": 80244,
+      "sha256": "51F7F9243E0B0B0B84A0296FDB556F300E9032B812ED7822BD1175ED5FD97269"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordNumberedOmmlEmptyRowAcceptance.cs",
+      "size": 10195,
+      "sha256": "D19F5610C66CD8DBD17B61A4655B6ADBDF22FEE1AC3F7620FCB8F32E60801DC1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordNumberedOmmlFontSizeAcceptance.cs",
+      "size": 10019,
+      "sha256": "996A345F26610028EE65571F04007C51D5F320742BF8AE444635A0274D2CAB7D"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordNumberedOmmlTabScaleAcceptance.cs",
+      "size": 8653,
+      "sha256": "2FAD68A2520F845F1710A28232C4F4BB6AA7AF4592FC95D6656977F563723FD1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordNumberedOmmlTrueDisplayComplexAcceptance.cs",
+      "size": 23738,
+      "sha256": "AACF29062B6ECD41022CE0BC5AA26CE519A96785914761DE8067B1B517AD1B64"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOffice2019SequentialNumberedInsertionAcceptance.cs",
+      "size": 34851,
+      "sha256": "AAD4E73987167155793A237E4817A1ED5BAD9869605ACA198F3D38A1DED2EF22"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOffice2021OmmlBoundaryAcceptance.cs",
+      "size": 11032,
+      "sha256": "922733CE4B7B6B3DECB0374A48DF4A42293655AB824DB0D8CE097367DFA73EAD"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOleCopyEditAcceptance.cs",
+      "size": 25882,
+      "sha256": "7CC4D1743E4C9B2837B7C25BF5C13BD3641F2989B8683270137F872632E8101A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOleNumberingMigrationAcceptance.cs",
+      "size": 6633,
+      "sha256": "4D92410661DB10ADB590A1A612ABF3F1505A0CAE4BAFD87979CB23FDBD60F83A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlCopyPasteReeditAcceptance.cs",
+      "size": 8618,
+      "sha256": "976366752E47E1312AB902077E1B31DBDC6964EBFF370C90E481AB7068EFC12C"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlDisplayMigrationAcceptance.cs",
+      "size": 11038,
+      "sha256": "9C18235BECE39514C92E00AAD282A37A0A43DB166C199FB902732F8DEDE3A3EE"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlHashNumberProductionAcceptance.cs",
+      "size": 19375,
+      "sha256": "BE79E240D63890B4E37A0231EC939C06AACB63956D19B6587F3E6C8847C6D4E5"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlHashNumberPrototypeAcceptance.cs",
+      "size": 36632,
+      "sha256": "9C3EBEAF349FD406B5D71275E20041C7937E10A185007228C7B401A30653E5EB"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlHashToTableMigrationAcceptance.cs",
+      "size": 13193,
+      "sha256": "D60FA9E437A3CCF8B16038C8CFC90C52AA94B437614C9119A5EDCF4E7A5B78F1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlLegacyShapeMigrationAcceptance.cs",
+      "size": 12131,
+      "sha256": "D7271E95D81D4B22C37839BFFFC7399E1F7A9EAD0EC03603A5C78B3DA564D88A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlMathTypeFormatConversionAcceptance.cs",
+      "size": 180885,
+      "sha256": "E8DF2CE42E641FE4FE879351ED5FC331D5D1A7AC50B795D6A3555E90C9CF090A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlMathTypeTypographyAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlNativeAliasRecoveryAcceptance.cs",
+      "size": 7120,
+      "sha256": "34047CA05D2FDA5D7FED4135D91E5D8B352EACD777E15FCE202E1A4CB7807E67"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlNativeF9Acceptance.cs",
+      "size": 14387,
+      "sha256": "226E06AC7421CF8783A234E03512562C5AD931153643912EA61592C4DCAB29CB"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlNativeHashComplexFontAcceptance.cs",
+      "size": 10278,
+      "sha256": "1C2EC8F2D5B52439BD8892FF286B19F797FA7C5B0CC04D9F7EFB46A1E73BAD1B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlNativeHashCopyPasteAcceptance.cs",
+      "size": 10868,
+      "sha256": "B3B5E743688955AEAD778F2D242B7DE36D1575B4B71F0A0853326206C6D3E36E"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlNativeHashProductionAcceptance.cs",
+      "size": 36161,
+      "sha256": "839FCC934B9B30367C75F862B1A57C51FAC358DEFC2B5764D8F6787BB53EF344"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlNativeHashScaleAcceptance.cs",
+      "size": 9739,
+      "sha256": "1422F229B219C9445D4B34793B57A6092DB3133FC8117CDE69890DE07488A623"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlNativeNumberToggleAcceptance.cs",
+      "size": 10337,
+      "sha256": "70B081045942382E2AAA3C562594F7349732704E68EC03BCCAFA99B151BCEA09"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlNativeSequenceLifecycleAcceptance.cs",
+      "size": 41971,
+      "sha256": "531B8161EE855972918A55EB208715289209838D111DE13FF8142BB73BE99934"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlNumberingMigrationAcceptance.cs",
+      "size": 11102,
+      "sha256": "86C11C4EFC5980AE465926F7E48D57E88E44D35916D062B41FC9E524B44D7CEB"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlStyleSeparatorFieldProbeAcceptance.cs",
+      "size": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlStyleSeparatorLifecycleAcceptance.cs",
+      "size": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlStyleSeparatorProxySuppressionAcceptance.cs",
+      "size": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlStyleSeparatorRawJustificationMatrixAcceptance.cs",
+      "size": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlStyleSeparatorRefinementMatrixAcceptance.cs",
+      "size": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlStyleSeparatorRenderMatrixAcceptance.cs",
+      "size": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlStyleSeparatorRescueMatrixAcceptance.cs",
+      "size": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlStyleSeparatorTopologyMatrixAcceptance.cs",
+      "size": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlTabFormatConversionAcceptance.cs",
+      "size": 15156,
+      "sha256": "DC6174829D832127960FB1611C39DEF5810EE059D5931C89BE895EE6CEFF894F"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlTabNumberingAcceptance.cs",
+      "size": 62666,
+      "sha256": "0E82F820558963EB24953AEB09C39A7B7140F52EEB01F4C580D86E2CDDB98BB1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlTableComplexAcceptance.cs",
+      "size": 23011,
+      "sha256": "8907A083AAFA4A52136EDE29AE42CEB96E159915261924F4F42F385340CBD09C"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlTableNativeEditAcceptance.cs",
+      "size": 10728,
+      "sha256": "0ED5F8E9AC137FB7C0B4C4747B264589F0504BD714BE72ED2A82FE22BB48F41E"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlTableNavigableReferenceAcceptance.cs",
+      "size": 15728,
+      "sha256": "0FE4AEDA5F988AF7824B0B1DBD48843A4AD3398F0C2E062B88AFC77B599FD08B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlTableNumberLifecycleAcceptance.cs",
+      "size": 20643,
+      "sha256": "57FF35937B345A09587544011F283D8DC4D30470D604805E352A4BD00859EFF2"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlTableNumberStressAcceptance.cs",
+      "size": 21958,
+      "sha256": "66C8C71D30F4A7587F124BC2AB48577081B7D451EBE005797348553E1B82FD15"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlTrueDisplayFramePrototypeAcceptance.cs",
+      "size": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlTrueDisplayShapePrototypeAcceptance.cs",
+      "size": 34427,
+      "sha256": "0304C9F9BF67894442704BC1CBEE6946409013560EF9AF8CF0294FD1E005CD17"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlTrueDisplayTabPrototypeAcceptance.cs",
+      "size": 39186,
+      "sha256": "E53B49282F6588A96DD2678D354C90CD1FB44302D19FDC67A16E867095AEAD06"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordOmmlUserReportRegressionAcceptance.cs",
+      "size": 107598,
+      "sha256": "391D5FB33A8C98456CECFFFA9D783669EA3986162F7F2DCD699E65CD9AFAE398"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordRealMathTypeConversionCloneAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordRealMathTypeNumberedSafetyAcceptance.cs",
+      "size": 85,
+      "sha256": "AF6D2253020EA593903762E22A9161E770DC4BCD7AF9EBB6D269751D29CB8DCD"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordSelectionChangeIdleAcceptance.cs",
+      "size": 7924,
+      "sha256": "82CE032043E917BC00440013F40F62C94A568C76109D117C0EE496B20CCF3D2B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordSparseNumberedOmmlPerformanceAcceptance.cs",
+      "size": 33304,
+      "sha256": "95F8B75ACA668ABB603A21AB04A9E97D811607925738DF00A0664BEBB7DFC89D"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordUserHundredMathTypeConversionAcceptance.cs",
+      "size": 111785,
+      "sha256": "F0D02B8405C1D20AE13D2DD711563ACEA1C863ABFA330F226B0F3C81D782BB32"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordUserOmmlMathTypeRegressionAcceptance.cs",
+      "size": 11418,
+      "sha256": "F7B45EE74A0F8B26EB50950E7EE5E1F1F982C5FB42D5E0854A5C235731553003"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordVisualTeXMathTypeBatchRoundTripAcceptance.cs",
+      "size": 14925,
+      "sha256": "1FE15F7388AB2B07DFED2F2913E92461846867E22981EAE4EC43B7736B45D9AE"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordVisualTeXNumberParenthesisAcceptance.cs",
+      "size": 23907,
+      "sha256": "8FAAE58774E239C2A2E0CCF1C00B4BDC7D2BDCAA0660D1F2A55060DFAF0C8B30"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordVisualTeXNumberToggleAcceptance.cs",
+      "size": 21206,
+      "sha256": "C4FEAC8ED628F3568E0B77BD8BB72907C5E743636E21FAEC8757797668BFA4FB"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordVisualTeXOmmlTabAcceptance.cs",
+      "size": 36429,
+      "sha256": "39D41B9C405ECD9A1135EE2D23D6D9A1B5AAB0A0232187AF01B7EEF5C4709514"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.VstoFlowAcceptance/WordVisualTeXToMathTypeRollbackAcceptance.cs",
+      "size": 79,
+      "sha256": "EF4E77843590EA05C057741869D0C72CDE7F0E6929AB35BF1FD7AA31A172B2FF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/FormulaEquationTag.cs",
+      "size": 2854,
+      "sha256": "EC08A9598D8CA2502F2A532D8C4074364EE6FD0DA508FE617ECEE07D0D4A75B4"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/FormulaFontSize.cs",
+      "size": 10926,
+      "sha256": "620B8199E8F826118CAE55383D016DD4BCD9FE19B8C954150147E41BE33D16C1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/FormulaMetadata.cs",
+      "size": 7320,
+      "sha256": "541D755E7E1E60E521EC3D3CF4608F4C1CD5E29C15265F5E829218C083757232"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/FormulaMetadataCodec.cs",
+      "size": 2664,
+      "sha256": "E0609004F13317930B4B810A861B360089F6FBFD15B2E7FEB11AD47CD9F3322E"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/FormulaOleContract.cs",
+      "size": 2152,
+      "sha256": "6EE8C90E501A265F8CFD2621EF09184BA436F52D26E511AB767E0887740E806A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/FormulaOleInterop.cs",
+      "size": 2750,
+      "sha256": "7A33B92FF0BE4367009A081C73C8E75FEA47353EDAE26919287C023EA445C438"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/IPowerPointFormulaService.cs",
+      "size": 354,
+      "sha256": "C6BC1FA8BD543EC7F4B3C70009D07273EE236BCFB2CC5CCC20E3F9B9CB1DD487"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/IWindowsOfficeBackend.cs",
+      "size": 386,
+      "sha256": "9E37C3C2B66B24A894EC30E8B85327C4B7E96BD2EBCBD631E42061E4115714D3"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/IWordFormulaService.cs",
+      "size": 920,
+      "sha256": "676EE0B324C1F681B875A9B0E8C0AFEC586A1759D73F206E76CB3FF872AE3E09"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/JsonOptions.cs",
+      "size": 302,
+      "sha256": "C3E485F10A3D056BCD5D4DDC89A7CBEA2291B12613A59214145330C33EA87FF5"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/OfficeBridgeEvent.cs",
+      "size": 471,
+      "sha256": "82221860D2F1E11DE088B833720131BE87CDD117A0C47D4376C73FF44E67D4E8"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/OfficeBridgeRequest.cs",
+      "size": 512,
+      "sha256": "C287F0571F7D83A117371EF640ABABF465FAFD2F9C83C5718EE08C7B7767D1E7"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/OfficeBridgeResponse.cs",
+      "size": 1762,
+      "sha256": "124C75E160B50B2E810129EAA8277167CEECE3E2ED3E83ED960EFFD88363F864"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/OfficeComInterfaces.cs",
+      "size": 299,
+      "sha256": "B6542C72560BCBDEE26A1B92A348E1E6116DAE7ABF0280FCF2E0E51E759A5BE0"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/OfficeFormulaSizing.cs",
+      "size": 4493,
+      "sha256": "86DC497413037E2318662F11D0AFCDBBA6FAF677DC8B2CBCE6320BC45831073A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/SessionInfo.cs",
+      "size": 1112,
+      "sha256": "87E9126E601FBEF2BAFA9CE81F7E3A8066855A41E6FC779A2800A7EDBCBD6334"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/VisualTeX.WindowsOffice.Contracts.csproj",
+      "size": 653,
+      "sha256": "CA0A6311647A95C53BEBD2AF4D6B5E6FCBB970207467357E6320AE4A414BCB7B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/VisualTeXSessionClient.cs",
+      "size": 64608,
+      "sha256": "4CFEA630746754F9B6B2072DDAD943D11865DD6584D5C55D38C1F7A17868FF89"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Contracts/WordInlineAlignment.cs",
+      "size": 4119,
+      "sha256": "A586E618110D4D30937234388D3F73185E9948A3A3A01B7F87B7964688A91AAF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Installer/Package.wxs",
+      "size": 16914,
+      "sha256": "1B2979D2BE314151B323759C26D77E085400A7CE310F031ED4867A38FEAF35AD"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Installer/VisualTeX.WindowsOffice.Installer.wixproj",
+      "size": 2694,
+      "sha256": "E31FB90FA395244B0E31F5FFE92CDECB6CE01D8645E07056B9A82887F4A98AF4"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/CodecDiagnosticSink.cs",
+      "size": 337,
+      "sha256": "832BFA86D726363E5F324DAF6BC9F63FC340010A8AE00D5AB7BED6C385BA69BE"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/ComReleaseAndDoubleClickTests.cs",
+      "size": 1916,
+      "sha256": "807403093D04073854335D2956DECE3B10B6BA69E3F9CDD304C3837BA6DB0759"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/FormulaFontSizeTests.cs",
+      "size": 5348,
+      "sha256": "368F7F9A6EE98221D587FA851B972BFF9DC8DE6FE3FAA1AD800989D5A0424F60"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/FormulaOleContractTests.cs",
+      "size": 4447,
+      "sha256": "FF42C822AE294BB3AA28E769DACC479962393A9158E1429097C8D7621040399A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/GlobalUsings.cs",
+      "size": 21,
+      "sha256": "F006E57ED1A5B38955BADB20C52802393287EB620DEBF7D34D4CD51969B6C0FB"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/MathMlToLatexConverterTests.cs",
+      "size": 12562,
+      "sha256": "909667E79321F325A10D8C32645EF050B65A3FC198AB730D1B71FF4D44564792"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/MathTypeColorDefinitionTests.cs",
+      "size": 3029,
+      "sha256": "4126965C171E06322C173B9C383E98BA8069719C83B884DC47B7E7A2C06F74AF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/MathTypeFenceRoundTripTests.cs",
+      "size": 2027,
+      "sha256": "D2046609DA8FC3F624F29DF243A30F65271C784ACDE2218657D9DBF347F57BC6"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/MathTypeFontSizeTests.cs",
+      "size": 2162,
+      "sha256": "D5DE99BD6E961205ADB6D02896B0C2D15E23BC1D1644D824B9EE50B1B35F929A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/MetadataAndTempPathTests.cs",
+      "size": 2051,
+      "sha256": "D1AC00EA0D8663478C911A13D135E2FB78DDFE6CD70E46AE0BF929331F8406B1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/OfficeFormulaSizingTests.cs",
+      "size": 4281,
+      "sha256": "BCBFD8F175D8825E60F2387DE6BA3DA3FA4D56227CA95F2541E3D5CCF3160DAB"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/OfficeOlePreviewTests.cs",
+      "size": 16351,
+      "sha256": "90B3A742F8214AF3355134D8F09556DDAB0FE9CCCB518CEF369FE4C63895ABF0"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/PowerPointOleSizingTests.cs",
+      "size": 1844,
+      "sha256": "E61C063A49F049A8BEBEA46B02FFDA43FFAF0D7D1329FECA8916522FBDC9CE17"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/ProtocolSecurityTests.cs",
+      "size": 897,
+      "sha256": "F643B127EF6461EB23C9DC205EAE5BBEC31C75B7804D00D0CD8D98F95694A024"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/ReplacementTransactionTests.cs",
+      "size": 1340,
+      "sha256": "399010CCF1DD01C86EDD9AE6ABE51333D46AB74C90DDBD94B913DFF8B99BB895"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/RibbonIconDataTests.cs",
+      "size": 3488,
+      "sha256": "441668770212EB3925AEB689E087C2D182D633EB096AAE34DABEC73004862555"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/StaDispatcherTests.cs",
+      "size": 983,
+      "sha256": "F04126C3355EB72EF52714211B960B1BF9E5C43312ABA5BA29E1AAD9E0DEFDF8"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/VisualTeX.WindowsOffice.Tests.csproj",
+      "size": 4543,
+      "sha256": "B34D3B25C73E69FBB8E5155704DC3EA77DF9D0673A416C2A4DDAD9C78164C973"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/VisualTeXSessionClientCertificateTests.cs",
+      "size": 4115,
+      "sha256": "39CD868A55A19EFC25BC1BB97C41AA420ECD4B6F8C8F70A6FA4C950498139503"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/VisualTeXSessionVectorExportTests.cs",
+      "size": 4470,
+      "sha256": "24414B58AF3F02E86A9E3D60EE5B62D6F3A3651D912DFE41D5F89E9FEE5BF23A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordBookmarkRecoveryTests.cs",
+      "size": 2091,
+      "sha256": "CCA0F93276402A01BEFBD9BD8B30323419F11227C4A5F26D1572546D7E85D24F"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordBulkImportParserTests.cs",
+      "size": 32679,
+      "sha256": "2CC53ED28B91F9D4058852A27BFF56455F40ED4F0062A2D615C9BEB26D276A1A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordDoubleClickRoutingTests.cs",
+      "size": 3313,
+      "sha256": "426FBEAF6E02836549D8D4983C8C3A67B46CECADADE988BEB05A71F98A459FDF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordEquationNumberingTests.cs",
+      "size": 3061,
+      "sha256": "38D5F2DEE50DC686490C1965CE4E2A15E35F35F2402F63A3CC134D48604533C5"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordEquationNumberingVstoTests.cs",
+      "size": 2647,
+      "sha256": "65AFD61EF529A3733EA0195E6D8619CC382B0088995DC8D7BDBD78329E2C877D"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordInlineAlignmentTests.cs",
+      "size": 5327,
+      "sha256": "669601E303FFE583B2022E516EA01A74733FFDBD3D662DCD67561AEE86FC4A03"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordInlineObjectGeometryTests.cs",
+      "size": 2279,
+      "sha256": "380609E0E4BCB852845B9B67AC95D8B714F6EA9550B1CEA05C42634A00299B97"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordOleDisplayParagraphTests.cs",
+      "size": 1051,
+      "sha256": "1302F4C430636859248C618449DE8B988F0B22671F0361EEB0493AEB08EF06D2"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordOleSizingTests.cs",
+      "size": 1099,
+      "sha256": "BC8812AE0B5A1B0960B549EFE9D1ED477E2136626FB3935305492154C147D3C9"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordOmmlConversionIdentityTests.cs",
+      "size": 8333,
+      "sha256": "25A49881EFB57D9F2FC2D92F919A4681C0EBDA090DDC8FCCE235762AC3FDA86E"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordOmmlHashSequenceNumberingTests.cs",
+      "size": 9001,
+      "sha256": "B3090C2FB73E4CF79B7B4A989D6694F93E2C7203A4C7A5BA92D2025C14CA3F42"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordOmmlImportSignatureTests.cs",
+      "size": 5763,
+      "sha256": "42B4FCA3AD97BF3E38EEC2EF14AE3901BC107BD950AAD3109B98203BE68EE209"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordOmmlNativeHashNumberTests.cs",
+      "size": 6662,
+      "sha256": "9CE0C62F3DC22DB86CF43B266672E4FA438899D1D3D950429F1E32D5DAD9FADC"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordOmmlNativeSequenceXmlTests.cs",
+      "size": 18493,
+      "sha256": "DAB943C4741AA07B159C388E3F8063BE0C2F1B434F81E5006EDB29FCCFACD163"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordOmmlTests.cs",
+      "size": 59774,
+      "sha256": "2D7372C02E2A7CEDCE4D966C0706259DE40BDEE914F1B33224B472AED199CF5B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.Tests/WordUndoHistorySnapshotTests.cs",
+      "size": 1209,
+      "sha256": "A484FAB5B917297BBBDC0EA22DD1A600AD51262687A15EC946AC89EA0189EA1A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/MathMlToLatexConverter.cs",
+      "size": 33100,
+      "sha256": "225730505683A7EFF43D9E9A6EC883B5FD0D62872685758C2A95B3509C7568A1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/OfficeOlePreview.cs",
+      "size": 92407,
+      "sha256": "6350182A68AE9677866F24DBF5E7CC23CFB79EB708959453DDEB0FF571F0120D"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/OlePngPreviewExtractor.cs",
+      "size": 3931,
+      "sha256": "9305D228D11573EADBEAFC10E0AB8FD7DD3D8EB0BBB8F630DDE31E1D584863D9"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/RibbonIconData.cs",
+      "size": 16430,
+      "sha256": "21F1EB2A1C38D06013F2FF8BCB96D64062A3A77BD6BB7CB6053A345D3295D62A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/RibbonIconProvider.cs",
+      "size": 1620,
+      "sha256": "EDFEA48E105ECDF0EFBD042F1193764F2A25D8E25E15A2C7692E6C8787464616"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/RibbonVectorIconRenderer.cs",
+      "size": 11405,
+      "sha256": "C40AA62F523135CCB7098A4289D703046818C0D647A410693B1057539D03177C"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/VstoDependencyResolver.cs",
+      "size": 3917,
+      "sha256": "381A5E2EEFEE6A1B347DBA1B01406C219A329875283FEE29E598F4C77310ED96"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordBulkImportParser.cs",
+      "size": 66373,
+      "sha256": "2A6899658C7F7CA5B89486B2310C6B0B9EC3DA9AD541B21C353F341A40F77584"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordDocumentXml.cs",
+      "size": 3351,
+      "sha256": "DEDB61C168B5742BE2C3944A0BAF9EE931DEC0D5A2D7E3BD101BD5D285959DE1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordDoubleClickRouting.cs",
+      "size": 1353,
+      "sha256": "3236AE468BD606C6FF7DAD3AC56B7F8D6D66BDE65269546325362D70C4B06ED3"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordEquationNumbering.NumberEndTyping.cs",
+      "size": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordEquationNumbering.Performance.cs",
+      "size": 16644,
+      "sha256": "ED3B5E0F43A162FA01B5CCC272E33DBFE6CAFB566BC26080F4BC80E12D60E8FD"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordEquationNumbering.TableDisplay.cs",
+      "size": 151895,
+      "sha256": "242149123A4C45D1A24AEACA300CB52162A2F3019C9DA5C63398A3CEA656D407"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordEquationNumbering.TrueDisplay.cs",
+      "size": 259481,
+      "sha256": "988A4F59CFE0EF066DF3BC325D2A563EE330246EF6EAA15C37CCDE421D59B72F"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordEquationNumbering.cs",
+      "size": 519049,
+      "sha256": "00981D1C065D557362E64B4D52CFD873BEE1261796E217CA8AF57C03CA440AE3"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordFormulaMetadataReader.cs",
+      "size": 9268,
+      "sha256": "9D9A7E338C2FBD7A6430A2F4A297348DFB5CFD5D0BC0D6A49D99C375146E13C3"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordOleObjectAccessor.cs",
+      "size": 2256,
+      "sha256": "042C646AADFF8B7FAF0C227F6C2E462EC0E51013D8E989C76BDE5DF528F3F3DC"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordOmmlConverter.cs",
+      "size": 203314,
+      "sha256": "912A101BAAE9F1478C5734AF982AA93D4A40994FC554B24D391D12ABE49A411B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordOmmlFormulaStore.cs",
+      "size": 67094,
+      "sha256": "A925CF85C24F0DF2A93466435138DBE92D3A1969C589F8C3181370A3F0C9C1B1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.VstoShared/WordOmmlNativeSource.cs",
+      "size": 32094,
+      "sha256": "9FBEFB258059434D60B11CB2960493784A4AEA62848739B2AFDE7A7154449079"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOffice.sln",
+      "size": 10495,
+      "sha256": "276CE58B1517472043C7A3C049BAF32610C5DFA9BD42256116D57AA6D0C8B146"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/FileLogger.cs",
+      "size": 826,
+      "sha256": "E9AFEEE6662EBA293D637EA695FE1C4E7380DCD506A853B6D0DE5F1B628F2C90"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/FormulaDoubleClickDeduplicator.cs",
+      "size": 1156,
+      "sha256": "7BFF50DB161A09C6EAC2D8D307D4405DF5A52C367D88CA3DE81AE83607E51B53"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/MathTypeNativePreviewCommand.cs",
+      "size": 15761,
+      "sha256": "399451190E7A7E9F30DB40D932F8D32E0DBEFA20D19BC7FAF7FF65244972B108"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/MetadataCodec.cs",
+      "size": 3441,
+      "sha256": "BFC9CDB42AF1A5E03B3E371887FBE2FAE14418384BB824F483FF6F5F66E02130"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/NamedPipeServer.cs",
+      "size": 8767,
+      "sha256": "8F6EBDFF6F829B620F22BF1BE603FFC83E0506EB23AAE336D07974B8D3D89940"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/OfficeDoubleClickHook.cs",
+      "size": 6656,
+      "sha256": "FAAB94199CECECCE608C4375F0E1DE13B1156E8DC1D8DE0191C10C369AB7E64D"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/OfficeStaDispatcher.cs",
+      "size": 3828,
+      "sha256": "2AED86F6C1A71F714AD73E8829C9CC448825A00F31C267092A5B3DD144DFE56C"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/PowerPointOleService.cs",
+      "size": 22048,
+      "sha256": "110F21BA087F0FD80A5749A4402052C10FA89E5040613B738B8787CCA741ECC9"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/Program.cs",
+      "size": 5577,
+      "sha256": "9F3F219CF0947506FBAE54C2CEC2E4087B530D39B29AB0DB2943956BC2FADFE2"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/Properties/AssemblyInfo.cs",
+      "size": 107,
+      "sha256": "AD81AA83BD2A9EAF2A03F7FC5B4DAF9094251DEF2DADA0791CF4F84F99EBC473"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/ReplacementTransaction.cs",
+      "size": 711,
+      "sha256": "EA8A74739C89FBC5A8862921AA110895D14E767E2761A895E80E98F7AE55B668"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/RunningOfficeLocator.cs",
+      "size": 2094,
+      "sha256": "AB466901AF579E7F1CF85DAB340F9B97F014DBF6C78E67BCC41579786688DEF8"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/VisualTeX.WindowsOleBridge.csproj",
+      "size": 959,
+      "sha256": "B238736D35D12BD216B9C0A15D9D0C971D2946B957C0E1E4679633F1199F0CBC"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/WindowsOfficeBackend.cs",
+      "size": 11488,
+      "sha256": "21AA1BB751E214A8053ADCC51E786BD0FCD29C3984FC38F65927DE0E85E7979B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WindowsOleBridge/WordOleService.cs",
+      "size": 36267,
+      "sha256": "24F1E367C0822E93A6A6969A3011DE792FC00D3D0644D38E481211CDB1EFEEF4"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/AssemblyInfo.cs",
+      "size": 177,
+      "sha256": "457633B6ED1873A6366B4124306C6C6ACB542A433BD7CB407C0BB5AA86D77BC6"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/BatchEquationNumberDialog.cs",
+      "size": 71,
+      "sha256": "B9D77A4F632158D00CA5E652C33EFDFD7A7D6929404598F31CFABBFB973CF4CF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/BulkImportDialog.cs",
+      "size": 12344,
+      "sha256": "E1323F0B129B7B7939A5BC34D139A532E14202E955ECED721E819C1693B1F16B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/BulkImportMathTypeOption.cs",
+      "size": 9271,
+      "sha256": "5C0A5E3C6A22AAA5207F7267AFAAAFAF54747CAF662065F1D73B09BFF49998B9"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/EquationReferenceDialog.cs",
+      "size": 7451,
+      "sha256": "6E94D9B3A64481EA835A85B3072AEDDAA1CF08BCA19B360A9338AEEE6DB655A1"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/LatexRedrawDialog.cs",
+      "size": 3940,
+      "sha256": "8A8F28D5A48EDE1DF3AF353EFD3C5A178C12D4D7724D6407389C2D6E5C4C5A3A"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeDoubleClickPreference.cs",
+      "size": 3111,
+      "sha256": "B8B3E8139F7FE857CCE7336E9577143642EE6A7E241945F7A48176AF0B43DF4B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeEquationNumbering.cs",
+      "size": 35161,
+      "sha256": "A951950672D4A0E78DC0724704C64C385F69A7837070C04D8E7E58A91319832D"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeEquationReferences.cs",
+      "size": 47974,
+      "sha256": "BD7E0E46A8F98B66CDB582AD5289DF1C09B90CA72351CD5563586E50960F2E0C"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeMtefCodec.FontSize.cs",
+      "size": 5894,
+      "sha256": "C3ECB95AD7F7F9DB567ABFE1B9E870B97A19CBDC2684D43762B1780FE3D4F626"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeMtefCodec.cs",
+      "size": 247667,
+      "sha256": "B077DE76E445714C48DD6696151A8B138CAFF35C92F348B761C900C58BB9C3C0"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeNativePreviewRenderer.cs",
+      "size": 28495,
+      "sha256": "9E59FDA483454C15ACC0691BD854CC2515A986C0D96601B93D376C5102F3D8C4"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeOleBridge.cs",
+      "size": 20706,
+      "sha256": "1860DCCC7E32608FD00321E730B74D87B5C3129587A6A3D97D053BABCE69A9A2"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeOleClipboardProxy.cs",
+      "size": 30524,
+      "sha256": "CBAA9DF114034C2018886E851368CEBDF57FBD39C1BEB2615EC2FD57D0181B5D"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeOleInterop.cs",
+      "size": 93492,
+      "sha256": "5735A246E00AFF2FA53384C229E4DC76DA641EFD5788960D91F64B5E3001BF23"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeOleStorage.cs",
+      "size": 50166,
+      "sha256": "B09D495DFD20DC1F86D1F58CB47903271C8CE1AD276328017A5B76D1181D2E59"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeOutOfProcessPreviewRenderer.cs",
+      "size": 68,
+      "sha256": "EA43BED61D274984945F0FDC77F3363F99AEB9B118E5E4396102752CD2157C8B"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeWordCommandsBridge.cs",
+      "size": 18312,
+      "sha256": "2B23965D5ED161D6F535DFE3DD8088040F56AF15F18455FC801435E1D78A10A5"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/MathTypeWordOpenXml.cs",
+      "size": 65166,
+      "sha256": "B8F323A3D3BAA7F8EE325106DF2C537C65274B0183E07CF012515CE3498463DB"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/OfficeUiDispatcher.cs",
+      "size": 1970,
+      "sha256": "F3359CAAEDDF6E457574D80AFDAC126C0A0D0D94C2C231D355544DE92F9C2DAF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/PreparedWordBulkFormula.cs",
+      "size": 2446,
+      "sha256": "17016E362854B76438956D87C114DB7827032AD5C6C46F7FA2D3430216E7FA4C"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/ThisAddIn.FormatConversion.cs",
+      "size": 25830,
+      "sha256": "A10DD165C06A82AFA8DCEBCF431EB17B4E003E68608F62CD53D007D815AC8113"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/ThisAddIn.OmmlDisplayMigration.cs",
+      "size": 6752,
+      "sha256": "F830C6B1C78C6BD1C3D1120F329DD01745BC2C57095142197A426536B4E9342F"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/ThisAddIn.cs",
+      "size": 172421,
+      "sha256": "2DE54E0582F34C0695C543C7BE60CA30E4CA44782B15EACCC7602E4298011571"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/VisualTeX.WordVsto.csproj",
+      "size": 6032,
+      "sha256": "24C60B689A9E0A62DD2A2DA704E2EE9E7F6EFF5367559D3B342440BFBE0C6497"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/VisualTeXOlePresentationProvider.cs",
+      "size": 4830,
+      "sha256": "098B6B3CF271B92902B2D33A1852A5C337441540CEB1D51ED8FB42C5E7574E98"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordBookmarkRecoverySnapshot.cs",
+      "size": 6054,
+      "sha256": "646DBEE05D82AEC6C4DDB7E5F9E400EF455DD821DE2679ED94BFADA1766553A3"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordCharacterFormatting.cs",
+      "size": 7534,
+      "sha256": "DF28D0049BB93C7506E5D29DDF36888B2CF97742FBDF337F82700C9DD0DA72EC"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordDocumentEditSnapshot.cs",
+      "size": 9674,
+      "sha256": "566AE0DD79786E10207E343CD5DE519449E33AF1EC9FFCEBB8CF9E7F3D080217"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordDoubleClickHook.cs",
+      "size": 11334,
+      "sha256": "F0F7DE5CDC0E1C1BEFAB0A9D40B78FC698EF446F295EE2E06DBDED619401AB28"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordEquationReferenceFields.cs",
+      "size": 36326,
+      "sha256": "33E0024C5DADEE65799C0548F7D68B6F8CC0AA981D906A6040EBC2A5756B17C3"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordFormulaFormatConversion.cs",
+      "size": 1607,
+      "sha256": "9D11464CCBA5D240F837FEE4D25879AFF0654CA601303E481409D879094ACDC2"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordFormulaService.FormatConversion.cs",
+      "size": 270359,
+      "sha256": "3C12A205D3A21D38AD36D375474E2BD5D4650CBFE7081699E612549883695F02"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordFormulaService.Performance.cs",
+      "size": 1619,
+      "sha256": "4AF48B4FD2B59346FF99168EDD09FDEABDD11536CD0D4C865127968DC2F14ABC"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordFormulaService.cs",
+      "size": 731282,
+      "sha256": "82B3BCF040599109291984B46611C843123FDF6A38C22A9EAAE58980E8ABBEAC"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordInlineObjectGeometry.cs",
+      "size": 6500,
+      "sha256": "176F0700D9B820DC4E3B85C37DA92CB1408F2A3A2132D2DE24C4926FDB790FE6"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordLocalEditSnapshot.cs",
+      "size": 12020,
+      "sha256": "602138A42DC97F1C702EDE4115E09BC4BA9ECBEBA796D701C0C89CACECC6D5CF"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordOfficeMathFontLoader.cs",
+      "size": 7834,
+      "sha256": "2C56240BD710118DA8AA4742ED304AC1330BDE5F58166DB342D59E778D65B6FA"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordParagraphFormatting.cs",
+      "size": 2494,
+      "sha256": "EA495A023B92EEBE49C65415A1E8E32957951E3071CC17B6EA2AEB82BAA8BBD6"
+    },
+    {
+      "path": "apps/windows/src-windows/VisualTeX.WordVsto/WordUndoHistorySnapshot.cs",
+      "size": 4602,
+      "sha256": "E1F701B06D10A2807A5EFF49D7801ACE69C0F962FCADBCF9B64E9E9D345B2EF7"
+    },
+    {
+      "path": "apps/windows/src/App.tsx",
+      "size": 65978,
+      "sha256": "FF4F9731E7A16D80D39D6ECC0E24255EEBF524018DDADF3732C1AF0B01F01124"
+    },
+    {
+      "path": "apps/windows/src/assets/visualtexQqGroup.ts",
+      "size": 16857,
+      "sha256": "69BDA1D118E698EFF6486AFFC90C8C015EF3911CA5BEEBA578E1FB683B3E7C3E"
+    },
+    {
+      "path": "apps/windows/src/autocomplete/CommandSearchEngine.ts",
+      "size": 4124,
+      "sha256": "E5D7034699DA0D86C57E1B57F6A38B9499D83EA5A5F433FDB017D19F3139607E"
+    },
+    {
+      "path": "apps/windows/src/autocomplete/CommandSuggestionPopup.tsx",
+      "size": 3892,
+      "sha256": "FF47CA9681E096EB3950BAD2D3A2FD3FC4417504211C0B64557094E44B7E1291"
+    },
+    {
+      "path": "apps/windows/src/autocomplete/additionalCommands.ts",
+      "size": 35074,
+      "sha256": "20437D0CDC2F8E37C94EBAD6EB4657C5454EF6F963A08FA9CEB2D4F872AB95AC"
+    },
+    {
+      "path": "apps/windows/src/autocomplete/commandRegistry.ts",
+      "size": 31845,
+      "sha256": "9E6D849EE3C585FA1F6D5C2247695D2B0D0D005FFB288B037C7F7F67B965691D"
+    },
+    {
+      "path": "apps/windows/src/autocomplete/compatibilityCommands.ts",
+      "size": 16888,
+      "sha256": "87D691639BFA144B130FB6DA8309EFE88F4BAA0186107FB89E8962DE67C4F638"
+    },
+    {
+      "path": "apps/windows/src/autocomplete/latestSharedCommands.ts",
+      "size": 4829,
+      "sha256": "080C1DDEF7AA5FCBD0085610852E8B54E3E0F4FD93F2756A35BCDD96604A1965"
+    },
+    {
+      "path": "apps/windows/src/autocomplete/runtimeCommandRegistry.ts",
+      "size": 1367,
+      "sha256": "4C0F85784B59288903522E20B05323D936FD7AE5A0C44810E41CD1CF94BBFCBE"
+    },
+    {
+      "path": "apps/windows/src/clipboard/LatexCopyService.ts",
+      "size": 45498,
+      "sha256": "AD998870793EA0C15691823495928071D0F45FA6B2A3DCC86025D99192AC2881"
+    },
+    {
+      "path": "apps/windows/src/components/CustomSymbolDesignerCanvas.tsx",
+      "size": 42632,
+      "sha256": "742A0AF926B29C4D9E93AB302651FAB502181B75E0F00508A146E38237DAF396"
+    },
+    {
+      "path": "apps/windows/src/components/CustomSymbolDesignerDialog.tsx",
+      "size": 82054,
+      "sha256": "D44B5844596A73C47FBF01D7248A1A01DF12BA952C5621F3F373E81B7710873E"
+    },
+    {
+      "path": "apps/windows/src/components/ExportDialog.tsx",
+      "size": 12789,
+      "sha256": "5596EE7705885FE34811ACA03C100A038B9EE78C1CDEE2956ECF6995C450D39A"
+    },
+    {
+      "path": "apps/windows/src/components/FormulaHotkeyManagerDialog.tsx",
+      "size": 7424,
+      "sha256": "81A1E0E88983DAB711BD571AA228BBE3BBDB143E25986B96169E999BCD5A095A"
+    },
+    {
+      "path": "apps/windows/src/components/FormulaHotkeyRecorderDialog.tsx",
+      "size": 8513,
+      "sha256": "A6F8399D5269A1BE7587427DBDCE498226EEF7DB9885CC0CC4989964FC54A84D"
+    },
+    {
+      "path": "apps/windows/src/components/HelpDialog.tsx",
+      "size": 9331,
+      "sha256": "4DF03E0B0675CD306C701A79C759C69CE6892D70ADC267497130C67E4CDD3AFB"
+    },
+    {
+      "path": "apps/windows/src/components/HistoryPanel.tsx",
+      "size": 4200,
+      "sha256": "0D85C6AA1584BABF0CEACFA90AE34FC555612A369ACC0F1FE33E66D37DCD80C9"
+    },
+    {
+      "path": "apps/windows/src/components/InputBehaviorMenu.tsx",
+      "size": 22512,
+      "sha256": "87CF7CF0C23DF4343555AD60F456CF2C28DCF6B7CE0D5B4F0A8B043D591AEC60"
+    },
+    {
+      "path": "apps/windows/src/components/MathPreview.tsx",
+      "size": 12803,
+      "sha256": "0123EA971B136B90C8F9593580504AB934A24FD96B231D3031A29FCA9DA483D9"
+    },
+    {
+      "path": "apps/windows/src/components/OcrDialog.tsx",
+      "size": 106265,
+      "sha256": "C11E841FB3477A825051E70BA1170B4B67E0017EC76B20946669DEA2AD2D4600"
+    },
+    {
+      "path": "apps/windows/src/components/OfficeIntegrationSettings.tsx",
+      "size": 188,
+      "sha256": "DF1B83A7F27387350F993DA70DF67DD3D0A6AF35B46267D3D19D0AEBE0CBDC72"
+    },
+    {
+      "path": "apps/windows/src/components/OnboardingTour.tsx",
+      "size": 30826,
+      "sha256": "297F3126755F8D8D79175324DC1706247C41AD9CE11BADFCBA8C2ECE066B603E"
+    },
+    {
+      "path": "apps/windows/src/components/SettingsDialog.tsx",
+      "size": 61978,
+      "sha256": "61CA0307CDC2A7D3F31282F5568573D6EB108430CF658055EDD1B49E311B84F6"
+    },
+    {
+      "path": "apps/windows/src/components/UpdateDialog.tsx",
+      "size": 15065,
+      "sha256": "26873C5EC74EC7923A0AD7272F21E2FED79DC18142A9B7F436B88B0848784A38"
+    },
+    {
+      "path": "apps/windows/src/components/VisualTeXLogo.tsx",
+      "size": 2933,
+      "sha256": "E3E22298F5645D74AF0F290BBE917F0F9A08AC5498745259B952D6E00876F1E7"
+    },
+    {
+      "path": "apps/windows/src/components/WindowsOfficeIntegrationSettings.tsx",
+      "size": 28966,
+      "sha256": "98218814CBFFA70221EA73B25A95B4812AC448F5E545DBAC60A367AE369C96B0"
+    },
+    {
+      "path": "apps/windows/src/components/windowsOfficeStatusValidation.ts",
+      "size": 4586,
+      "sha256": "25E12140198D7929868A925AD6BE2E9C59CB982BF31D5EBA9A70CEBA33DD733B"
+    },
+    {
+      "path": "apps/windows/src/desktop/DesktopApp.tsx",
+      "size": 3048,
+      "sha256": "A7773C7D3E9F1067A41C6EDC89D27801B146DE8FF0D13BD58B51B2E59B20EB91"
+    },
+    {
+      "path": "apps/windows/src/desktop/main.tsx",
+      "size": 850,
+      "sha256": "CEE1334CD1D8557496AC98261D1A9F5B3C31E85FF5B3A30EA207D7FCC7F28566"
+    },
+    {
+      "path": "apps/windows/src/desktop/silentOcrHudPayload.ts",
+      "size": 611,
+      "sha256": "EC24513EE12EBE1D578ACB863F77E81163365CA5BA0C8122879DE097D45A1274"
+    },
+    {
+      "path": "apps/windows/src/editor/MathEditor.tsx",
+      "size": 368391,
+      "sha256": "CEE9832C61201B32E5B5A1ACF74F0A1F4DE735A58575556F969365C482B5C302"
+    },
+    {
+      "path": "apps/windows/src/editor/alignmentMarkers.ts",
+      "size": 1175,
+      "sha256": "5729FFDAEB1DCC6DA693C40AAE2803FB5B8D62ED8FFA4733DA75978810956F9B"
+    },
+    {
+      "path": "apps/windows/src/editor/boundedOperatorTemplate.ts",
+      "size": 1481,
+      "sha256": "E1416CDCC88CDEC2292498D27FE93C0E9C3AA55577E3840C34B180D1E70AB43A"
+    },
+    {
+      "path": "apps/windows/src/editor/formulaFontPreferences.ts",
+      "size": 6071,
+      "sha256": "F4529016C37DC2D5B0F401C552715F8CAF10530508C9F0FC029EF4939C62F4BE"
+    },
+    {
+      "path": "apps/windows/src/editor/formulaFontRuntime.ts",
+      "size": 3991,
+      "sha256": "EFFBE3AA85508AF73B24431FB408FB053E8DA5652ACFF1DB4ECE07D215DE3B6B"
+    },
+    {
+      "path": "apps/windows/src/editor/formulaLineMode.ts",
+      "size": 574,
+      "sha256": "54E73362B0649A58321515450E13E739818D141E21A8B8FAC4101B4A0E34B2BF"
+    },
+    {
+      "path": "apps/windows/src/editor/imeCompositionGuard.ts",
+      "size": 2444,
+      "sha256": "0AD5817FF79A8EBB20A93AF1B3D05ECC2F76CC817AD6DA083B95EBA78F5D1790"
+    },
+    {
+      "path": "apps/windows/src/editor/mathLiveIntegralCompatibility.ts",
+      "size": 5091,
+      "sha256": "80934D90308CC2CDBD8971FE4372DB6803794DAA28537A0B25CC27B655437C57"
+    },
+    {
+      "path": "apps/windows/src/editor/mathLiveOptionCompatibility.ts",
+      "size": 5097,
+      "sha256": "74FAB6B4B1EC10EA8DE9CAD49AE4D9CC43B4F8105D59911B8753F96AF612236C"
+    },
+    {
+      "path": "apps/windows/src/editor/nativeSuggestionPreviews.ts",
+      "size": 11505,
+      "sha256": "8912AFECB1312C971D1E326DA6ADD5200460E753586DD2F6F498733F26B9F319"
+    },
+    {
+      "path": "apps/windows/src/editor/normalizeChineseLatex.ts",
+      "size": 31786,
+      "sha256": "BADF93778EE7821939F5446B9089617DC7C8F1148DBF581EA1CA03EE148880AB"
+    },
+    {
+      "path": "apps/windows/src/editor/selectionStyleToggle.ts",
+      "size": 8161,
+      "sha256": "FA6AD809693BBDF277D49866956FD6A929247FE3367B71C21F32B983F08A7477"
+    },
+    {
+      "path": "apps/windows/src/errors/readErrorMessage.ts",
+      "size": 2205,
+      "sha256": "5A98EEC06BC2266186F24155F9E834D13150D390C93EEC09FC4A85D9E10BAFC1"
+    },
+    {
+      "path": "apps/windows/src/export/exportTypes.ts",
+      "size": 1005,
+      "sha256": "8D72102645FC4F1913C31A211D6B4E1C5078667ABBB399B4C6EEB0AD000D72E4"
+    },
+    {
+      "path": "apps/windows/src/export/latexToSvg.ts",
+      "size": 129,
+      "sha256": "302158566CC50E3B608EB0EC05B494199E33A28A134EE47CCA16346E9AFCB51A"
+    },
+    {
+      "path": "apps/windows/src/export/markdownExport.ts",
+      "size": 764,
+      "sha256": "5C8B8970EACAE0FC65E20A5F6F48E34D999CB3D7B194A1AB5E147B08B79EC976"
+    },
+    {
+      "path": "apps/windows/src/export/pngBackground.ts",
+      "size": 802,
+      "sha256": "F00D3D4A8CB5F3A7540FA7B9709CC20B397636F77B60DE26D0068D53D1A8FF00"
+    },
+    {
+      "path": "apps/windows/src/export/pngClipboard.ts",
+      "size": 2129,
+      "sha256": "82E8528C466DD087305369EA3EC3020A688D56C908220EAD67DD05E06BBDA410"
+    },
+    {
+      "path": "apps/windows/src/export/runtime.ts",
+      "size": 20616,
+      "sha256": "67E18F531F648F3D044B9E5E8ED5846253121619610B4F592183E39C67C4A5AF"
+    },
+    {
+      "path": "apps/windows/src/export/svgToBase64.ts",
+      "size": 42,
+      "sha256": "0A5C276EF8EFBE1873068F20DF2727C50628B359E062E6785A543E0332B32EFB"
+    },
+    {
+      "path": "apps/windows/src/export/svgToPng.ts",
+      "size": 112,
+      "sha256": "573CF5FC4CAFC92ECBEE5E62DD36CB391F09D9CE1BD4077D2781B34D0CA6A242"
+    },
+    {
+      "path": "apps/windows/src/history/HistoryManager.ts",
+      "size": 17714,
+      "sha256": "E4A4124738DE7644DF6ED00621CB074845B4251B3A828B8AB46F49B20E0395B1"
+    },
+    {
+      "path": "apps/windows/src/history/checkpointStore.ts",
+      "size": 3238,
+      "sha256": "CDE0F39295F8FEE6DAD6FDD765AEB6DD0077A36DD518A2892ED770D2694E4751"
+    },
+    {
+      "path": "apps/windows/src/history/documentHistory.ts",
+      "size": 6537,
+      "sha256": "3E39DDF7B0B8C44FF83B5FA46874E7075B8BB551C9A19EBDA9C2F92EA777DC06"
+    },
+    {
+      "path": "apps/windows/src/history/historyTypes.ts",
+      "size": 4414,
+      "sha256": "6A0C77EDC40F3AE09A564BC52B5E11E9534DF53B4E8862F434FB338667FA7038"
+    },
+    {
+      "path": "apps/windows/src/main.tsx",
+      "size": 1694,
+      "sha256": "21AF739E4930AA1D0088C74E5804238992F67CB9647B610E8B4EF560CB969084"
+    },
+    {
+      "path": "apps/windows/src/math/STIXTwoMath-OFL-1.1.txt",
+      "size": 4610,
+      "sha256": "D97E0ACA18E15A8A2A7A5C38B213ED11B3BBF9CA54341BC5B7DF3D0846C34048"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolDesignerArchive.ts",
+      "size": 5409,
+      "sha256": "129B11B87A0E01ACCB51361FE1FDCFB9C81F544EBF57822E6CF92EA3770FFAC1"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolDesignerCompiler.ts",
+      "size": 18377,
+      "sha256": "711E0CDDDF6A3752BD181E8EA8C74FBBDA0865E3C2D67CF1F846461C5D0C1686"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolDesignerGeometry.ts",
+      "size": 12502,
+      "sha256": "111DDE5F074131B9A944C362B06559C6A8A518933514127654FE3081B08EFCC8"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolDesignerTypes.ts",
+      "size": 2864,
+      "sha256": "D7A305D07E8A947C16119CA767975791A6DCD9A094CAE4A5A091E0FC27DB4B12"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolGlyphCompiler.ts",
+      "size": 12311,
+      "sha256": "8AF8030902A3DD92F77A73F96EE466347F5C1F6F1ED77FC0D573CD011794323F"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolPrototype.ts",
+      "size": 419,
+      "sha256": "1830C214B13856DBF79FE2FBAF2031B2C913C289F2750A870601EE42AEC8C467"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolReact.ts",
+      "size": 310,
+      "sha256": "39EB8FCB1BE8B59A0CADDFB114EF93404B0AB1FC1685045504026BABCFA7182E"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolRegistration.ts",
+      "size": 1631,
+      "sha256": "FBF98777F3517C6DD571A6C4CE9DFB2B49265BBD36B7B4664D486EA367AAF618"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolRegistry.ts",
+      "size": 39931,
+      "sha256": "D761C2930556A959EFD115C3C6CF97070B498849EE2559499352E75222A613B1"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolRendering.ts",
+      "size": 18302,
+      "sha256": "FB21EB9E2A4BB4BBAC2637E13A2FEEF9B532956ED810600ABC7902F352F5D681"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolSystemGlyphs.ts",
+      "size": 12491,
+      "sha256": "47F059735712222D43EDD0381CA5571E952C9760D0CB1671CD28F6542B0A7290"
+    },
+    {
+      "path": "apps/windows/src/math/customSymbolTypes.ts",
+      "size": 6152,
+      "sha256": "6B14F46C995B0EE0E2003277F1BD56BADA0ADF7C6F1FF81CC24E02F8FE1F2836"
+    },
+    {
+      "path": "apps/windows/src/math/esintGlyphs.generatedData.ts",
+      "size": 20721,
+      "sha256": "597E9CB30163CF00BAFC1EA6947F252950DC8528624589D0F7AA70084C70277A"
+    },
+    {
+      "path": "apps/windows/src/math/esintGlyphs.ts",
+      "size": 2204,
+      "sha256": "EFD22DDCE891DCB1989EC720FA92B8B67651D0697322819EC1CF430DAA6CFFC8"
+    },
+    {
+      "path": "apps/windows/src/math/extendedIntegralCompatibility.ts",
+      "size": 5017,
+      "sha256": "3E6CC9016CF3BFE9018D73DCC74F9842E10BD122C0DCBE6091A27DA5C9B96192"
+    },
+    {
+      "path": "apps/windows/src/math/formulaLineLatex.ts",
+      "size": 482,
+      "sha256": "7772265D32915F820FFB0719E784F8BC368A026E33814508719B5CF2A2AAD985"
+    },
+    {
+      "path": "apps/windows/src/math/integralGlyphs.ts",
+      "size": 1855,
+      "sha256": "C6F90EDA8865BADAD5DBBCA447DD177D5A7578E4F40B38ADD2BDBB6BB96276F9"
+    },
+    {
+      "path": "apps/windows/src/math/integralSvgExportCompatibility.ts",
+      "size": 3525,
+      "sha256": "8AE94806D64797A3E51867708F4D05185DCE8F7D4B0F26589D13A059A893EFA8"
+    },
+    {
+      "path": "apps/windows/src/math/latexCompatibility.ts",
+      "size": 19953,
+      "sha256": "699B8A9B4C0B8915E622B0C919B21A04EC9BF075F8A85309CAB4E99663933288"
+    },
+    {
+      "path": "apps/windows/src/math/latexEnvironment.ts",
+      "size": 2707,
+      "sha256": "469CECFC96AFF0BB311FFAAF36E9D630BD483A5731BC157F9306412FB0DC18AF"
+    },
+    {
+      "path": "apps/windows/src/math/mathLiveCompatibilityMacros.ts",
+      "size": 7874,
+      "sha256": "E2C3935817E2BD75F2499764BB2B4F4D099B363DDBEBA878D530672684B7B14A"
+    },
+    {
+      "path": "apps/windows/src/math/packageMacroCompatibility.ts",
+      "size": 2636,
+      "sha256": "035089D5D98CCF5CC2435212E755D6E54CF576624179CF9B7ACCEEB576A37874"
+    },
+    {
+      "path": "apps/windows/src/math/rareIntegralGlyphs.generatedData.ts",
+      "size": 15428,
+      "sha256": "6E0EB795B223E16D66DFD0CB8EAE24B116F85D026EC57F98C8BC0590F99A865B"
+    },
+    {
+      "path": "apps/windows/src/math/systemMathGlyphLibrary.ts",
+      "size": 2401,
+      "sha256": "5DFA20303A34C5D385E5B83280ECF49C9ED7F6C3CCDA4FCA78E5A87733312AA9"
+    },
+    {
+      "path": "apps/windows/src/math/systemMathGlyphPayloadValidation.ts",
+      "size": 3521,
+      "sha256": "59AC1F97BF9BFD735DBB66662B3F7FB15E5A36E60AFBBD3A6F7AD73C1E91E089"
+    },
+    {
+      "path": "apps/windows/src/ocr/installMultilineFormulaLineBridge.ts",
+      "size": 1752,
+      "sha256": "6B522F3C022700759E5FED74D9FCAFBADD9FCE9CDEEAACCB562672BDD4144DDC"
+    },
+    {
+      "path": "apps/windows/src/ocr/multilineFormula.ts",
+      "size": 6952,
+      "sha256": "617EA66B8303925B53285CB22FD7CB3C3A777059AEA12D9057D4A0B6612BCB30"
+    },
+    {
+      "path": "apps/windows/src/ocr/multilineFormulaLineExpansion.ts",
+      "size": 1468,
+      "sha256": "D5FDCBD4763A122D3914BEE7735349ABEF4B726DA55C953CD046BC3969065A8E"
+    },
+    {
+      "path": "apps/windows/src/ocr/ocrInstallState.ts",
+      "size": 1249,
+      "sha256": "B10F8C8EB375722CF0A7EF4D8A3D7014783C03DD957D3E630356C5E47EB32610"
+    },
+    {
+      "path": "apps/windows/src/ocr/ocrPayloadValidation.ts",
+      "size": 13720,
+      "sha256": "AACCD365C100E42DCD99F27F28178C48E119099A8174DE7EA741CF2F701D8054"
+    },
+    {
+      "path": "apps/windows/src/ocr/ocrService.ts",
+      "size": 22002,
+      "sha256": "3F3E295EC4778F59FECC6C6C9E5924A9E6F12F3CC184BCAB91BCD0805E0A3B7E"
+    },
+    {
+      "path": "apps/windows/src/ocr/ocrTransport.ts",
+      "size": 743,
+      "sha256": "6B398EC84A9A89BCC7C9EE11303D7E52BF5A02C30ADED8B7A667FC8CFE1D5C99"
+    },
+    {
+      "path": "apps/windows/src/ocr/quickOcr.ts",
+      "size": 4002,
+      "sha256": "02C6F420D05419397F90E72D93B71E05B840A268D28EE22FF7C18321CF40645B"
+    },
+    {
+      "path": "apps/windows/src/ocr/quickOcrPayloadValidation.ts",
+      "size": 1336,
+      "sha256": "7D324D317930CA406F5D62F15B711DF4A595792B3CC05421CD53BDF60300D066"
+    },
+    {
+      "path": "apps/windows/src/ocr/windowsQuickOcrRuntime.ts",
+      "size": 1022,
+      "sha256": "BA32D5F14978CBC4A44624F7C78C51380C85B825D71B206E03D0EFC8ACAE8D09"
+    },
+    {
+      "path": "apps/windows/src/office/adapters/OfficeHostAdapter.ts",
+      "size": 2570,
+      "sha256": "08272EACF088D4EA14722BEA83693958549218B30E4BD31F49B8F0507133676F"
+    },
+    {
+      "path": "apps/windows/src/office/adapters/PowerPointAdapter.ts",
+      "size": 38957,
+      "sha256": "5B65DB63B99A9E3E309402107D32FB08FBCF6F979E27C8D8962614938177FB9A"
+    },
+    {
+      "path": "apps/windows/src/office/adapters/WordAdapter.ts",
+      "size": 37584,
+      "sha256": "8FEB9882A22814086A3104E248088A226B14D2FFF843CD645BD864AB46FEDF86"
+    },
+    {
+      "path": "apps/windows/src/office/api/companionClient.ts",
+      "size": 8135,
+      "sha256": "F58AC431E68E9CA3454668AE56917F1AF9AAA75F3D230A700D14BA2053A86C3F"
+    },
+    {
+      "path": "apps/windows/src/office/api/companionPayloadValidation.ts",
+      "size": 6985,
+      "sha256": "21033A89D3B963E04C605D248D416CF04ACE3EECE0CE58684DD36C7A3958AE16"
+    },
+    {
+      "path": "apps/windows/src/office/api/ocrHttpTransport.ts",
+      "size": 8721,
+      "sha256": "3584B4DC7D26525293802C705111F9A13DEDC7AC3B46269B3926746602CA65C0"
+    },
+    {
+      "path": "apps/windows/src/office/api/sessionClient.ts",
+      "size": 45,
+      "sha256": "2D1781065E809A26E1FD990B3A94D25185168A92155613D7C97618BF7E10455B"
+    },
+    {
+      "path": "apps/windows/src/office/bridge/DialogController.ts",
+      "size": 3477,
+      "sha256": "358E1178F7756EA829A68419DD605D5E59ADF8E008D3AE1E29A96D8D28296D45"
+    },
+    {
+      "path": "apps/windows/src/office/bridge/OfficeBridge.ts",
+      "size": 11758,
+      "sha256": "4D508DEBC0E031A503C6541F75946C16B2A81EE5E7A6260278AEB9C017C9AF7A"
+    },
+    {
+      "path": "apps/windows/src/office/bridge/bridgeMessages.ts",
+      "size": 1214,
+      "sha256": "3697BC9A39AEE890559F57FB0D501E3982DBB320D9CFBAA9B1F0D514D2F32CAF"
+    },
+    {
+      "path": "apps/windows/src/office/dialog/OfficeDialogApp.tsx",
+      "size": 86743,
+      "sha256": "5EB263F213600C33C6EF05C84FF61C65878B76EE5DFDF7609826BCF68680B5CF"
+    },
+    {
+      "path": "apps/windows/src/office/dialog/dialogMessages.ts",
+      "size": 444,
+      "sha256": "B7D725699E747F947E09CFE6EA683AF836CFC5514BB77951365B6F2B9173F5BA"
+    },
+    {
+      "path": "apps/windows/src/office/dialog/main.tsx",
+      "size": 2650,
+      "sha256": "5BEAD38990FB43972CB5E2898F0F62085927694CCCA0F7C027D3B9F0810022F4"
+    },
+    {
+      "path": "apps/windows/src/office/dialog/officeApplyShortcut.ts",
+      "size": 1906,
+      "sha256": "567B961CFF86E6406041013667D7BAA44453934CADFA329EF926509FA7C27B2E"
+    },
+    {
+      "path": "apps/windows/src/office/dialog/useOfficeSession.ts",
+      "size": 4424,
+      "sha256": "CBFFFDA99D332C866C87D28C929004D7030878D01102F86B45F0F446E365BDC2"
+    },
+    {
+      "path": "apps/windows/src/office/documentImport/DocumentImportApp.tsx",
+      "size": 19672,
+      "sha256": "D7322017C2D17D84226C5DEAB3EB56E39AA0AFA36B45557D82018C95888ED0D0"
+    },
+    {
+      "path": "apps/windows/src/office/documentImport/documentImport.css",
+      "size": 16251,
+      "sha256": "385BB378921BA958B065FD3541F5BAACDFBB0420246788AA73254EE368671D65"
+    },
+    {
+      "path": "apps/windows/src/office/documentImport/documentImportFile.ts",
+      "size": 5153,
+      "sha256": "78D9DE887EA7239E170DA23A45BF39FAF69E28111EB99180E549CB7DFEDD6ABD"
+    },
+    {
+      "path": "apps/windows/src/office/documentImport/documentImportParser.ts",
+      "size": 66236,
+      "sha256": "2301D8EF2E859F5392B4334D0D01B62D020460217E4B4706B0AF32EF413944E7"
+    },
+    {
+      "path": "apps/windows/src/office/errors.ts",
+      "size": 37,
+      "sha256": "A5EF6AD2700C39D4EB7FC22F5601F0BD31704E4D8B68DE258692EF9210C820F3"
+    },
+    {
+      "path": "apps/windows/src/office/metadata/formulaMetadata.ts",
+      "size": 47,
+      "sha256": "49E0658E655848E768A669F5CD535B69EF7CD6C0E77AB48A9CB49F3F9A951B49"
+    },
+    {
+      "path": "apps/windows/src/office/metadata/powerpointMetadata.ts",
+      "size": 3619,
+      "sha256": "77D18663D4EDA12CECADF8E42989C7DDB06D1E4F01251B27F9DB0CDF22E60B50"
+    },
+    {
+      "path": "apps/windows/src/office/metadata/wordMetadata.ts",
+      "size": 2606,
+      "sha256": "B625B20D6F62ADAD6620BFD5AFF6A4BC49A7C18966F7FDBA58E8BB871F0825DD"
+    },
+    {
+      "path": "apps/windows/src/office/shared/errors.ts",
+      "size": 2159,
+      "sha256": "2D475B00C6B56BBE77E1DD36EC91B7EE22BC61E4F1022692098901C540F6AD8F"
+    },
+    {
+      "path": "apps/windows/src/office/shared/formulaEditorDocument.ts",
+      "size": 8666,
+      "sha256": "387EE0E6870D580524143B08CA6CA704854BEE677BC11BBEDE0BB6622BBE275E"
+    },
+    {
+      "path": "apps/windows/src/office/shared/formulaEquationTag.ts",
+      "size": 2295,
+      "sha256": "FC069A189ECAA7F63E4CEC11EEA01F4492F73689C59448AEEC88122B83581185"
+    },
+    {
+      "path": "apps/windows/src/office/shared/formulaMetadata.ts",
+      "size": 12986,
+      "sha256": "98006D8BFAEE51FC17178A7B11AEE5880C06D4FEF942E54B31ADEEB7B8B9A921"
+    },
+    {
+      "path": "apps/windows/src/office/shared/mathTypeAlignmentGeometry.ts",
+      "size": 5801,
+      "sha256": "66E94D3BB414C5C60A98F97894AD9DA77A8870BFE24DD90619608C2EC5FE0E9F"
+    },
+    {
+      "path": "apps/windows/src/office/shared/officeEditPersistence.ts",
+      "size": 329,
+      "sha256": "42C1FCEDC2314AEC6BE91CB8C4218FA2BEE8753E9E8E7E4CF69025A503280961"
+    },
+    {
+      "path": "apps/windows/src/office/shared/protocol.ts",
+      "size": 1861,
+      "sha256": "D24D030C6AFF8BF79CD85A01F7DDAAD0D4E883D8590087F3F41B657CD2BAF636"
+    },
+    {
+      "path": "apps/windows/src/office/shared/sessionClient.ts",
+      "size": 9209,
+      "sha256": "ACA814750D174DADE5DC25C33B570A4FBABD69B608D0A02B24DD3E7518F751E4"
+    },
+    {
+      "path": "apps/windows/src/office/shared/sessionPayloadValidation.ts",
+      "size": 10536,
+      "sha256": "DFB41D2A0916DCB870C3945323BA57E1A1C234513CEE5CDE2F987B31F0E214BD"
+    },
+    {
+      "path": "apps/windows/src/office/windows-ole/WindowsOleAdapter.ts",
+      "size": 4750,
+      "sha256": "CE3B7146387676BE0A5FBE74EA03FDE2047396AE4EA755CE0599D4E53ED9FABB"
+    },
+    {
+      "path": "apps/windows/src/office/windows-ole/WindowsOleBridge.ts",
+      "size": 794,
+      "sha256": "286E2B316B1D07671EB2AB6AC1039E07F1E1EF6D274F5AE88096378DBBA228F4"
+    },
+    {
+      "path": "apps/windows/src/office/windows-ole/WindowsOleClient.ts",
+      "size": 3349,
+      "sha256": "65BE9796F8FDA83C35963A1C2C0221D0CFF33A234E82B60099054D00CD415BAF"
+    },
+    {
+      "path": "apps/windows/src/office/windows-ole/main.ts",
+      "size": 337,
+      "sha256": "96A7B21C37F2C7F44C13D913A17B354A848BC7C471772E95143FD03AA78D420E"
+    },
+    {
+      "path": "apps/windows/src/office/windows-ole/windowsOlePayloadValidation.ts",
+      "size": 5080,
+      "sha256": "F0EA116F88DEC7C00C251F5F882D608BDF5AEF842F6E3169C6D9AD1C4506081D"
+    },
+    {
+      "path": "apps/windows/src/platform.ts",
+      "size": 1224,
+      "sha256": "836E2817D6B0F50594EB1C3C24F5135FBE426E4532C8256E8C8868CC9F140B39"
+    },
+    {
+      "path": "apps/windows/src/runtime/VisualTexErrorBoundary.tsx",
+      "size": 2784,
+      "sha256": "CBA87EA3F206FF5CFF3606B3D9F10F876514B78DFC0FAB68705AF19576515600"
+    },
+    {
+      "path": "apps/windows/src/runtime/applicationConfiguration.ts",
+      "size": 17499,
+      "sha256": "74EE60D357E98AB54AC4BE53D66F82ACED85E8C63B09A186BC4765CB15292B8E"
+    },
+    {
+      "path": "apps/windows/src/runtime/browserCompatibility.ts",
+      "size": 4365,
+      "sha256": "0789DB1DE560681C3DD98EA49EE2CA7C533E44F47BDE32386463EE31732101D2"
+    },
+    {
+      "path": "apps/windows/src/runtime/editorVisualPreferencesRuntime.ts",
+      "size": 1865,
+      "sha256": "938D533AD0F3E821F599F9D0A0FC79FE1082EA477F780DB03A46E2372B76B33C"
+    },
+    {
+      "path": "apps/windows/src/runtime/floatingLayerAutoAvoidance.ts",
+      "size": 7633,
+      "sha256": "4365FC782FD79DF270EFAD602EBBB33081438CAAEF0A3715056B45DD5457EB97"
+    },
+    {
+      "path": "apps/windows/src/runtime/safeStorage.ts",
+      "size": 2198,
+      "sha256": "1BD394F284C24D4BB01EFF27267E7AB2E150C277BB8ED606293111C92D07FC0B"
+    },
+    {
+      "path": "apps/windows/src/shortcuts/formulaHotkeys.ts",
+      "size": 11652,
+      "sha256": "6FF71F4EA43116A1EFFCC73D0BF282865F955E20494497522E69A2DBACCBEFC7"
+    },
+    {
+      "path": "apps/windows/src/shortcuts/greekLetterHotkeyRuntime.ts",
+      "size": 2591,
+      "sha256": "034197531F4049EE3E712DA54013672352F88718497029E370B0A2C71C6ED22C"
+    },
+    {
+      "path": "apps/windows/src/shortcuts/greekLetterHotkeys.ts",
+      "size": 5888,
+      "sha256": "FB937E53D4A47E74E9898AE659AAD17776ECC92BE3DD9CF6EFE962153A30EE74"
+    },
+    {
+      "path": "apps/windows/src/source-editor/LatexSourceEditor.tsx",
+      "size": 16907,
+      "sha256": "CE2AB2E07BD5CA2ED6C9BE30A9B67A4306C26B7BDA6CEC4BA863012115707B69"
+    },
+    {
+      "path": "apps/windows/src/source-editor/latexSourceEditorSupport.ts",
+      "size": 9104,
+      "sha256": "FFF310FF73023640B94BC81538070519EF2103FDDCCA4231FF9BB74FCB25A696"
+    },
+    {
+      "path": "apps/windows/src/stores/editorStore.ts",
+      "size": 36963,
+      "sha256": "8D80F7B65F44F72C3737BF139472E2F7559A04B66228A694E4A4F88B591B41DA"
+    },
+    {
+      "path": "apps/windows/src/stores/formulaHotkeyStore.ts",
+      "size": 6819,
+      "sha256": "1A3B1B18B0C9863A6A018D43FF5E9A77D99895CCEA8B50F6C749232DC9C8D456"
+    },
+    {
+      "path": "apps/windows/src/styles-custom-symbol-designer.css",
+      "size": 49804,
+      "sha256": "D4B11A22A1B58921D1A7CF2DC324D61C50300137F03E0B86A5A9679CA81DE082"
+    },
+    {
+      "path": "apps/windows/src/styles-editor-parity.css",
+      "size": 21835,
+      "sha256": "E138306E1F04CABC2E28147A06296FFC0609F597743982A8EC2B9408C32EA6AF"
+    },
+    {
+      "path": "apps/windows/src/styles-latest-macos-ui.css",
+      "size": 52838,
+      "sha256": "80D01500683D1EE46F081D80975AE5601ACF28648318460F9418BB69F0240C5C"
+    },
+    {
+      "path": "apps/windows/src/styles-macos-main.css",
+      "size": 47063,
+      "sha256": "09654729157C8497BB0524300DF19B4A69409648D3A99CEF6D7610F3E9A6E8DF"
+    },
+    {
+      "path": "apps/windows/src/styles-windows-shared-latest.css",
+      "size": 84830,
+      "sha256": "324A02931A0FDF42F57C963F18AF72B960C5C47B4595AD5794BC8824F0539664"
+    },
+    {
+      "path": "apps/windows/src/styles.css",
+      "size": 201581,
+      "sha256": "16B389DBC178ADEF91B81F8E3299DD6A28D0A94CA244000B1564979A3805877C"
+    },
+    {
+      "path": "apps/windows/src/themeCustomization.ts",
+      "size": 36648,
+      "sha256": "3176638B73CFFC4015D1BBE7FC1CB53DD0ECF8D80CCAE0CEC29D1A249B67539C"
+    },
+    {
+      "path": "apps/windows/src/themeSync.ts",
+      "size": 3410,
+      "sha256": "9FF846515924653BB703792005C2EA88199F8E7089BAB441F21A392FFDB54AD9"
+    },
+    {
+      "path": "apps/windows/src/toolbar/FormulaToolbar.tsx",
+      "size": 94196,
+      "sha256": "0C60E9CB24EB9538AB97389EE032E215B1A7071F2CF69BC7869CB683FE6649AB"
+    },
+    {
+      "path": "apps/windows/src/types/command.ts",
+      "size": 779,
+      "sha256": "1C6C0CD5F147BB05953EA44FFA4DF5F160C7BBF983EAA0CA5494A1E9A29AC6E1"
+    },
+    {
+      "path": "apps/windows/src/types/formula.ts",
+      "size": 2953,
+      "sha256": "FD68B1D024037F057C34776B02C1596F20E8457BAE8D6BAA1D26451075743D53"
+    },
+    {
+      "path": "apps/windows/src/update/releaseNotes.ts",
+      "size": 2911,
+      "sha256": "B882848B1A578CB15F12D5BFCDCFBE2B0BDA214958DAC39858940E018845EA94"
+    },
+    {
+      "path": "apps/windows/src/update/updateService.ts",
+      "size": 4980,
+      "sha256": "EB22393A4520F7FFCD0CA4457775E7AF3814E0DFB65C2D148CE98AA47C994E65"
+    },
+    {
+      "path": "apps/windows/src/vite-env.d.ts",
+      "size": 39,
+      "sha256": "424FAF9241DD699DDA995B367ED36665732DA1E6EC1F33B2FD40394488ECAC92"
+    },
+    {
+      "path": "apps/windows/src/workspace/EditorWorkspace.tsx",
+      "size": 67781,
+      "sha256": "760A3C345BAD53D15C52E0665E85E610CDFB9E4D872C74E462C5B4BA678F4B8C"
+    },
+    {
+      "path": "apps/windows/src/workspace/formulaColor.ts",
+      "size": 1708,
+      "sha256": "48E54B5D81425086322DA743BC38C93F7BAB12D252203045D7B6A904521B54B3"
+    },
+    {
+      "path": "apps/windows/src/workspace/workspacePanelPreferences.ts",
+      "size": 1599,
+      "sha256": "E1298F713CD87811588884E056D2099CAC967CBDA23F530C04B6551D9D57C6F8"
+    },
+    {
+      "path": "apps/windows/src/workspace/workspaceTypes.ts",
+      "size": 2053,
+      "sha256": "4BFED8C71DE340E68376AAE4C905321DA37BC45A150A1C5FFA9D7C7D2AFF0461"
+    }
+  ],
+  "allChecksPassed": true
+}

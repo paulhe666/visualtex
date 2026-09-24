@@ -1,0 +1,1635 @@
+defineFunction("upshape", "{:rest*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontShape: "n" })
+});
+defineFunction("slshape", "{:rest*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontShape: "sl" })
+});
+defineFunction("scshape", "{:rest*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontShape: "sc" })
+});
+defineFunction("textbf", "{:text*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontSeries: "b" })
+});
+defineFunction("textmd", "{:text*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontSeries: "m" })
+});
+defineFunction("textup", "{:text*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontShape: "n" })
+});
+defineFunction("textnormal", "{:text*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontShape: "n", fontSeries: "m" })
+});
+defineFunction("textsl", "{:text*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontShape: "sl" })
+});
+defineFunction("textit", "{:text*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontShape: "it" })
+});
+defineFunction("textsc", "{:text*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontShape: "sc" })
+});
+defineFunction("textrm", "{:text*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontFamily: "roman" })
+});
+defineFunction("textsf", "{:text*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontFamily: "sans-serif" })
+});
+defineFunction("texttt", "{:text*}", {
+  applyMode: "text",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontFamily: "monospace" })
+});
+defineFunction("mathbf", "{:math*}", {
+  applyMode: "math",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    variant: "normal",
+    variantStyle: "bold"
+  })
+});
+defineFunction("mathit", "{:math*}", {
+  applyMode: "math",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    variant: "main",
+    variantStyle: "italic"
+  })
+});
+defineFunction("mathnormal", "{:math*}", {
+  applyMode: "math",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    variant: "normal",
+    variantStyle: "italic"
+  })
+});
+defineFunction("mathbfit", "{:math*}", {
+  applyMode: "math",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    variant: "main",
+    variantStyle: "bolditalic"
+  })
+});
+defineFunction("mathrm", "{:math*}", {
+  applyMode: "math",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { variant: "normal", variantStyle: "up" })
+});
+defineFunction("mathsf", "{:math*}", {
+  applyMode: "math",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    variant: "sans-serif",
+    variantStyle: "up"
+  })
+});
+defineFunction("mathtt", "{:math*}", {
+  applyMode: "math",
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    variant: "monospace",
+    variantStyle: "up"
+  })
+});
+defineFunction("it", "{:rest*}", {
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    fontSeries: "m",
+    fontShape: "it",
+    fontFamily: "roman",
+    variantStyle: "italic"
+    // For math mode
+  })
+});
+defineFunction("rmfamily", "{:rest*}", {
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontFamily: "roman" })
+});
+defineFunction("sffamily", "{:rest*}", {
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontFamily: "sans-serif" })
+});
+defineFunction("ttfamily", "{:rest*}", {
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), { fontFamily: "monospace" })
+});
+defineFunction(["Bbb", "mathbb"], "{:math*}", {
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    variant: "double-struck",
+    variantStyle: removeItalic(style.variantStyle)
+  })
+});
+defineFunction(["frak", "mathfrak"], "{:math*}", {
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    variant: "fraktur",
+    variantStyle: removeItalic(style.variantStyle)
+  })
+});
+defineFunction("mathcal", "{:math*}", {
+  // Note that in LaTeX, \mathcal forces the 'up' variant. Use \bm to get bold
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    variant: "calligraphic",
+    variantStyle: removeItalic(style.variantStyle)
+  })
+});
+defineFunction("mathscr", "{:math*}", {
+  applyStyle: (style) => __spreadProps(__spreadValues({}, style), {
+    variant: "script",
+    variantStyle: removeItalic(style.variantStyle)
+  })
+});
+defineFunction("mbox", "{:text}", {
+  ifMode: "math",
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), {
+    type: "mord",
+    body: argAtoms(options.args[0]),
+    mode: "math"
+  })),
+  serialize: (atom, options) => latexCommand(
+    "\\mbox",
+    atom.bodyToLatex(__spreadProps(__spreadValues({}, options), { defaultMode: "text" }))
+  )
+});
+defineFunction("text", "{:text}", {
+  ifMode: "math",
+  applyMode: "text"
+});
+defineFunction(["class", "htmlClass"], "{name:string}{content:auto*}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { type: "mord", body: argAtoms(options.args[1]) })),
+  serialize: (atom, options) => {
+    if (!atom.args[0] || options.skipStyles) return atom.bodyToLatex(options);
+    return `${atom.command}{${atom.args[0]}}{${atom.bodyToLatex(
+      options
+    )}}`;
+  },
+  render: (atom, context) => {
+    var _a3;
+    return atom.createBox(context, {
+      classes: (_a3 = atom.args[0]) != null ? _a3 : "",
+      boxType: "lift"
+    });
+  }
+});
+defineFunction(["cssId", "htmlId"], "{id:string}{content:auto*}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { type: "mord", body: argAtoms(options.args[1]) })),
+  serialize: (atom, options) => {
+    var _a3;
+    if (!((_a3 = atom.args) == null ? void 0 : _a3[0]) || options.skipStyles) return atom.bodyToLatex(options);
+    return `${atom.command}{${atom.args[0]}}{${atom.bodyToLatex(
+      options
+    )}}`;
+  },
+  render: (atom, context) => {
+    var _a3;
+    const box = atom.createBox(context);
+    box.cssId = (_a3 = atom.args[0]) != null ? _a3 : "";
+    return box;
+  }
+});
+defineFunction("htmlData", "{data:string}{content:auto*}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { type: "mord", body: argAtoms(options.args[1]) })),
+  serialize: (atom, options) => {
+    var _a3;
+    if (!((_a3 = atom.args) == null ? void 0 : _a3[0]) || options.skipStyles) return atom.bodyToLatex(options);
+    return `\\htmlData{${atom.args[0]}}{${atom.bodyToLatex(
+      options
+    )}}`;
+  },
+  render: (atom, context) => {
+    var _a3;
+    const box = atom.createBox(context);
+    box.htmlData = (_a3 = atom.args[0]) != null ? _a3 : "";
+    return box;
+  }
+});
+defineFunction(["style", "htmlStyle"], "{data:string}{content:auto*}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { type: "mord", body: argAtoms(options.args[1]) })),
+  serialize: (atom, options) => {
+    var _a3;
+    if (!((_a3 = atom.args) == null ? void 0 : _a3[0]) || options.skipStyles) return atom.bodyToLatex(options);
+    return `${atom.command}{${atom.args[0]}}{${atom.bodyToLatex(
+      options
+    )}}`;
+  },
+  render: (atom, context) => {
+    var _a3;
+    const box = atom.createBox(context);
+    box.htmlStyle = (_a3 = atom.args[0]) != null ? _a3 : "";
+    return box;
+  }
+});
+defineFunction("href", "{url:string}{content:auto*}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { type: "mord", body: argAtoms(options.args[1]) })),
+  render: (atom, context) => {
+    var _a3;
+    const box = atom.createBox(context);
+    const href = (_a3 = atom.args[0]) != null ? _a3 : "";
+    if (href) box.htmlData = `href=${href}`;
+    return box;
+  }
+});
+defineFunction("em", "{:rest}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { body: argAtoms(options.args[0]) })),
+  serialize: (atom, options) => options.skipStyles ? atom.bodyToLatex(options) : `{\\em ${atom.bodyToLatex(options)}}`,
+  render: (atom, context) => atom.createBox(context, { classes: "ML__emph", boxType: "lift" })
+});
+defineFunction("emph", "{:auto}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { body: argAtoms(options.args[1]) })),
+  serialize: (atom, options) => options.skipStyles ? atom.bodyToLatex(options) : `\\emph{${atom.bodyToLatex(options)}}`,
+  render: (atom, context) => atom.createBox(context, { classes: "ML__emph", boxType: "lift" })
+});
+var DELIMITER_SIZES = {
+  "\\bigl": { mclass: "mopen", size: 1 },
+  "\\Bigl": { mclass: "mopen", size: 2 },
+  "\\biggl": { mclass: "mopen", size: 3 },
+  "\\Biggl": { mclass: "mopen", size: 4 },
+  "\\bigr": { mclass: "mclose", size: 1 },
+  "\\Bigr": { mclass: "mclose", size: 2 },
+  "\\biggr": { mclass: "mclose", size: 3 },
+  "\\Biggr": { mclass: "mclose", size: 4 },
+  "\\bigm": { mclass: "mrel", size: 1 },
+  "\\Bigm": { mclass: "mrel", size: 2 },
+  "\\biggm": { mclass: "mrel", size: 3 },
+  "\\Biggm": { mclass: "mrel", size: 4 },
+  "\\big": { mclass: "mord", size: 1 },
+  "\\Big": { mclass: "mord", size: 2 },
+  "\\bigg": { mclass: "mord", size: 3 },
+  "\\Bigg": { mclass: "mord", size: 4 }
+};
+defineFunction(
+  [
+    "bigl",
+    "Bigl",
+    "biggl",
+    "Biggl",
+    "bigr",
+    "Bigr",
+    "biggr",
+    "Biggr",
+    "bigm",
+    "Bigm",
+    "biggm",
+    "Biggm",
+    "big",
+    "Big",
+    "bigg",
+    "Bigg"
+  ],
+  "{:delim}",
+  {
+    createAtom: (options) => {
+      var _a3;
+      return new SizedDelimAtom(__spreadProps(__spreadValues({}, options), {
+        delim: (_a3 = options.args[0]) != null ? _a3 : ".",
+        size: DELIMITER_SIZES[options.command].size,
+        delimType: DELIMITER_SIZES[options.command].mclass
+      }));
+    },
+    // For compatibility with LaTeX, we serialize \bigl{x} as \biglx
+    serialize: (atom, options) => joinLatex([
+      atom.command,
+      /^[a-zA-Z]/.test(atom.value) ? `{${atom.value}}` : atom.value
+    ])
+  }
+);
+defineFunction(
+  [
+    "hspace",
+    "hspace*"
+    // \hspace* inserts a non-breakable space, but since we don't line break...
+    // it's the same as \hspace.
+  ],
+  "{width:value}",
+  {
+    createAtom: (options) => {
+      var _a3;
+      return new SpacingAtom(__spreadProps(__spreadValues({}, options), {
+        width: (_a3 = options.args[0]) != null ? _a3 : { dimension: 0 }
+      }));
+    }
+  }
+);
+defineFunction(["mkern", "kern", "mskip", "hskip", "mspace"], "{width:value}", {
+  createAtom: (options) => {
+    var _a3;
+    return new SpacingAtom(__spreadProps(__spreadValues({}, options), {
+      width: (_a3 = options.args[0]) != null ? _a3 : { dimension: 0 }
+    }));
+  }
+});
+defineFunction("mathchoice", "{:math}{:math}{:math}{:math}", {
+  // display, text, script and scriptscript
+  createAtom: (options) => new Atom(options),
+  render: (atom, context) => {
+    let i = 0;
+    const d = context.mathstyle.id;
+    if (d === T || d === Tc) i = 1;
+    if (d === S || d === Sc) i = 2;
+    if (d === SS || d === SSc) i = 3;
+    const body = argAtoms(atom.args[i]);
+    return Atom.createBox(context, body);
+  },
+  serialize: (atom, options) => `\\mathchoice{${Atom.serialize(
+    atom.args[0],
+    options
+  )}}{${Atom.serialize(atom.args[1], options)}}{${Atom.serialize(
+    atom.args[2],
+    options
+  )}}{${Atom.serialize(atom.args[3], options)}}`
+});
+defineFunction("mathop", "{:auto}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), {
+    type: "mop",
+    body: argAtoms(options.args[0]),
+    limits: "over-under",
+    isFunction: true,
+    captureSelection: true
+  })),
+  render: (atom, context) => {
+    var _a3;
+    let base = Atom.createBox(context, atom.body);
+    if (atom.superscript || atom.subscript) {
+      const limits = (_a3 = atom.subsupPlacement) != null ? _a3 : "auto";
+      base = limits === "over-under" || limits === "auto" && context.isDisplayStyle ? atom.attachLimits(context, { base }) : atom.attachSupsub(context, { base });
+    }
+    if (atom.caret) base.caret = atom.caret;
+    return new Box(atom.bind(context, base), {
+      type: "op",
+      isSelected: atom.isSelected,
+      classes: "ML__op-group"
+    });
+  },
+  serialize: (atom, options) => {
+    const result = [latexCommand(atom.command, atom.bodyToLatex(options))];
+    if (atom.explicitSubsupPlacement) {
+      if (atom.subsupPlacement === "over-under") result.push("\\limits");
+      if (atom.subsupPlacement === "adjacent") result.push("\\nolimits");
+      if (atom.subsupPlacement === "auto") result.push("\\displaylimits");
+    }
+    result.push(atom.supsubToLatex(options));
+    return joinLatex(result);
+  }
+});
+defineFunction(
+  [
+    "mathbin",
+    "mathrel",
+    "mathopen",
+    "mathclose",
+    "mathpunct",
+    "mathord",
+    "mathinner"
+  ],
+  "{:auto}",
+  {
+    createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), {
+      type: {
+        "\\mathbin": "mbin",
+        "\\mathrel": "mrel",
+        "\\mathopen": "mopen",
+        "\\mathclose": "mclose",
+        "\\mathpunct": "mpunct",
+        "\\mathord": "mord",
+        "\\mathinner": "minner"
+      }[options.command],
+      body: argAtoms(options.args[0])
+    }))
+  }
+);
+defineFunction(["operatorname", "operatorname*"], "{operator:math}", {
+  createAtom: (options) => {
+    const body = argAtoms(options.args[0]).map((x) => {
+      var _a3;
+      if (x.type !== "first") {
+        x.type = "mord";
+        x.value = (_a3 = { "\u2217": "*", "\u2212": "-" }[x.value]) != null ? _a3 : x.value;
+        x.isFunction = false;
+        if (!x.style.variant && !x.style.variantStyle) {
+          x.style.variant = "main";
+          x.style.variantStyle = "up";
+        }
+      }
+      return x;
+    });
+    return new Atom(__spreadProps(__spreadValues({}, options), {
+      type: "mop",
+      body,
+      isFunction: true,
+      limits: options.command === "\\operatorname" ? "adjacent" : "over-under"
+    }));
+  },
+  render: (atom, context) => {
+    var _a3;
+    let base = Atom.createBox(context, atom.body);
+    if (atom.superscript || atom.subscript) {
+      const limits = (_a3 = atom.subsupPlacement) != null ? _a3 : "auto";
+      base = limits === "over-under" || limits === "auto" && context.isDisplayStyle ? atom.attachLimits(context, { base }) : atom.attachSupsub(context, { base });
+    }
+    if (atom.caret) base.caret = atom.caret;
+    return new Box(atom.bind(context, base), {
+      type: "op",
+      isSelected: atom.isSelected,
+      classes: "ML__op-group"
+    });
+  },
+  serialize: (atom, options) => {
+    const result = [latexCommand(atom.command, atom.bodyToLatex(options))];
+    if (atom.explicitSubsupPlacement) {
+      if (atom.subsupPlacement === "over-under") result.push("\\limits");
+      if (atom.subsupPlacement === "adjacent") result.push("\\nolimits");
+      if (atom.subsupPlacement === "auto") result.push("\\displaylimits");
+    }
+    result.push(atom.supsubToLatex(options));
+    return joinLatex(result);
+  }
+});
+defineFunction(["char", "unicode"], "{charcode:value}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { type: options.mode === "text" ? "text" : "mord" })),
+  serialize: (atom) => {
+    var _a3;
+    return `${atom.command}${serializeLatexValue(
+      (_a3 = atom.args[0]) != null ? _a3 : { number: 10067, base: "hexadecimal" }
+    )}`;
+  },
+  render: (atom, context) => {
+    let value = context.evaluate(atom.args[0]);
+    if (!value || !("number" in value))
+      value = { number: 10067, base: "hexadecimal" };
+    atom.value = String.fromCodePoint(value.number);
+    return atom.createBox(context);
+  }
+});
+defineFunction("rule", "[raise:value]{width:value}{thickness:value}", {
+  createAtom: (options) => new Atom(options),
+  render: (atom, context) => {
+    var _a3, _b3, _c2;
+    const ctx = new Context(
+      { parent: context, mathstyle: "textstyle" },
+      atom.style
+    );
+    const shift = ctx.toEm((_a3 = atom.args[0]) != null ? _a3 : { dimension: 0 });
+    const width = ctx.toEm((_b3 = atom.args[1]) != null ? _b3 : { dimension: 10 });
+    const height = ctx.toEm((_c2 = atom.args[2]) != null ? _c2 : { dimension: 10 });
+    const result = new Box(null, {
+      classes: "ML__rule",
+      type: "ord"
+    });
+    result.width = width;
+    result.height = height + shift;
+    result.depth = -shift;
+    result.setStyle("border-right-width", width, "em");
+    result.setStyle("border-top-width", height, "em");
+    result.setStyle("border-color", atom.style.color);
+    result.setStyle("vertical-align", shift, "em");
+    if (atom.isSelected) result.setStyle("opacity", "50%");
+    atom.bind(ctx, result);
+    if (atom.caret) result.caret = atom.caret;
+    return result.wrap(context);
+  },
+  serialize: (atom) => `\\rule${atom.args[0] ? `[${serializeLatexValue(atom.args[0])}]` : ""}{${serializeLatexValue(atom.args[1])}}{${serializeLatexValue(
+    atom.args[2]
+  )}}`
+});
+defineFunction(["overline", "underline"], "{:auto}", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), { body: argAtoms(options.args[0]) })),
+  render: (atom, parentContext) => {
+    const position = atom.command.substring(1);
+    const context = new Context(
+      { parent: parentContext, mathstyle: "cramp" },
+      atom.style
+    );
+    const inner = Atom.createBox(context, atom.body);
+    if (!inner) return null;
+    const ruleThickness = context.metrics.defaultRuleThickness / context.scalingFactor;
+    const line = new Box(null, { classes: position + "-line" });
+    line.height = ruleThickness;
+    line.maxFontSize = ruleThickness * 1.125 * context.scalingFactor;
+    let stack;
+    if (position === "overline") {
+      stack = new VBox({
+        shift: 0,
+        children: [
+          { box: inner },
+          3 * ruleThickness,
+          { box: line },
+          ruleThickness
+        ]
+      });
+    } else {
+      stack = new VBox({
+        top: inner.height,
+        children: [
+          ruleThickness,
+          { box: line },
+          3 * ruleThickness,
+          { box: inner }
+        ]
+      });
+    }
+    if (atom.caret) stack.caret = atom.caret;
+    return new Box(stack, { classes: position, type: "ignore" });
+  }
+});
+defineFunction("overset", "{:auto}{base:auto}", {
+  createAtom: (options) => {
+    const body = argAtoms(options.args[1]);
+    return new OverunderAtom(__spreadProps(__spreadValues({}, options), {
+      above: argAtoms(options.args[0]),
+      body,
+      skipBoundary: false,
+      boxType: atomsBoxType(body)
+    }));
+  },
+  serialize: (atom, options) => latexCommand(
+    atom.command,
+    atom.aboveToLatex(options),
+    atom.bodyToLatex(options)
+  )
+});
+defineFunction("underset", "{:auto}{base:auto}", {
+  createAtom: (options) => {
+    const body = argAtoms(options.args[1]);
+    return new OverunderAtom(__spreadProps(__spreadValues({}, options), {
+      below: argAtoms(options.args[0]),
+      body,
+      skipBoundary: false,
+      boxType: atomsBoxType(body)
+    }));
+  },
+  serialize: (atom, options) => latexCommand(
+    atom.command,
+    atom.belowToLatex(options),
+    atom.bodyToLatex(options)
+  )
+});
+defineFunction("overunderset", "{above:auto}{below:auto}{base:auto}", {
+  createAtom: (options) => {
+    const body = argAtoms(options.args[2]);
+    return new OverunderAtom(__spreadProps(__spreadValues({}, options), {
+      above: argAtoms(options.args[0]),
+      below: argAtoms(options.args[1]),
+      body,
+      skipBoundary: false,
+      boxType: atomsBoxType(body)
+    }));
+  },
+  serialize: (atom, options) => latexCommand(
+    atom.command,
+    atom.belowToLatex(options),
+    atom.bodyToLatex(options)
+  )
+});
+defineFunction(
+  ["stackrel", "stackbin"],
+  "[below:auto]{above:auto}{base:auto}",
+  {
+    createAtom: (options) => new OverunderAtom(__spreadProps(__spreadValues({}, options), {
+      body: argAtoms(options.args[2]),
+      above: argAtoms(options.args[1]),
+      below: argAtoms(options.args[0]),
+      skipBoundary: false,
+      boxType: options.command === "\\stackrel" ? "rel" : "bin"
+    })),
+    serialize: (atom, options) => latexCommand(
+      atom.command,
+      atom.aboveToLatex(options),
+      atom.bodyToLatex(options)
+    )
+  }
+);
+defineFunction("smash", "[:string]{:auto}", {
+  createAtom: (options) => {
+    var _a3, _b3, _c2, _d2;
+    return new PhantomAtom(__spreadProps(__spreadValues({}, options), {
+      body: argAtoms(options.args[1]),
+      smashHeight: (_b3 = (_a3 = options.args[0]) == null ? void 0 : _a3.includes("t")) != null ? _b3 : true,
+      smashDepth: (_d2 = (_c2 = options.args[0]) == null ? void 0 : _c2.includes("b")) != null ? _d2 : true
+    }));
+  }
+});
+defineFunction("vphantom", "{:auto}", {
+  createAtom: (options) => new PhantomAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    isInvisible: true,
+    smashWidth: true
+  }))
+});
+defineFunction("hphantom", "{:auto}", {
+  createAtom: (options) => new PhantomAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    isInvisible: true,
+    smashHeight: true,
+    smashDepth: true
+  }))
+});
+defineFunction("phantom", "{:auto}", {
+  createAtom: (options) => new PhantomAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    isInvisible: true
+  }))
+});
+defineFunction("mathstrut", "", {
+  createAtom: (options) => new PhantomAtom(__spreadProps(__spreadValues({}, options), {
+    body: [new Atom({ value: "(" })],
+    isInvisible: true
+  }))
+});
+defineFunction("not", "{:math}", {
+  createAtom: (options) => {
+    const body = argAtoms(options.args[0]);
+    if (body.length === 0)
+      return new Atom(__spreadProps(__spreadValues({}, options), { type: "mrel", value: "\uE020" }));
+    return new Atom(__spreadProps(__spreadValues({}, options), {
+      body: [
+        new OverlapAtom(__spreadProps(__spreadValues({}, options), { body: "\uE020", align: "right" })),
+        ...body
+      ],
+      captureSelection: true
+    }));
+  },
+  serialize: (atom, options) => {
+    const arg = atom.args[0];
+    const isGroup = arg && typeof arg === "object" && "group" in arg;
+    if (atom.value !== "\uE020") {
+      return isGroup ? `\\not{${Atom.serialize(arg.group, options)}}` : `\\not${Atom.serialize(arg, options)}`;
+    }
+    return isGroup ? `\\not{}` : `\\not`;
+  },
+  render: (atom, context) => {
+    if (atom.value) return atom.createBox(context);
+    const isGroup = atom.args[0] && typeof atom.args[0] === "object" && "group" in atom.args[0];
+    const type = isGroup ? "ord" : atomsBoxType(argAtoms(atom.args[0]));
+    const box = Atom.createBox(context, atom.body, { type });
+    if (atom.caret) box.caret = atom.caret;
+    return atom.bind(context, box);
+  }
+});
+defineFunction(["ne", "neq"], "", {
+  createAtom: (options) => new Atom(__spreadProps(__spreadValues({}, options), {
+    type: "mrel",
+    body: [
+      new OverlapAtom(__spreadProps(__spreadValues({}, options), {
+        body: "\uE020",
+        align: "right",
+        boxType: "rel"
+      })),
+      new Atom(__spreadProps(__spreadValues({}, options), { value: "=" }))
+    ],
+    captureSelection: true
+  })),
+  serialize: (atom) => atom.command
+});
+defineFunction("rlap", "{:auto}", {
+  createAtom: (options) => new OverlapAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    align: "right"
+  }))
+});
+defineFunction("llap", "{:auto}", {
+  createAtom: (options) => new OverlapAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    align: "left"
+  }))
+});
+defineFunction("mathrlap", "{:math}", {
+  createAtom: (options) => new OverlapAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    align: "right"
+  }))
+});
+defineFunction("mathllap", "{:math}", {
+  createAtom: (options) => new OverlapAtom(__spreadProps(__spreadValues({}, options), {
+    body: argAtoms(options.args[0]),
+    align: "left"
+  }))
+});
+defineFunction("raisebox", "{:value}{:text}", {
+  createAtom: (options) => {
+    var _a3;
+    return new BoxAtom(__spreadProps(__spreadValues({}, options), {
+      body: argAtoms(options.args[1]),
+      padding: { dimension: 0 },
+      offset: (_a3 = options.args[0]) != null ? _a3 : { dimension: 0 }
+    }));
+  },
+  serialize: (atom, options) => {
+    var _a3;
+    return latexCommand(
+      "\\raisebox",
+      (_a3 = serializeLatexValue(atom.offset)) != null ? _a3 : "0pt",
+      atom.bodyToLatex(options)
+    );
+  }
+});
+defineFunction("raise", "{:value}{:auto}", {
+  createAtom: (options) => {
+    var _a3;
+    return new BoxAtom(__spreadProps(__spreadValues({}, options), {
+      body: argAtoms(options.args[1]),
+      padding: { dimension: 0 },
+      offset: (_a3 = options.args[0]) != null ? _a3 : { dimension: 0 }
+    }));
+  },
+  serialize: (atom, options) => {
+    var _a3;
+    return latexCommand(
+      "\\raise",
+      (_a3 = serializeLatexValue(atom.offset)) != null ? _a3 : "0pt",
+      atom.bodyToLatex(options)
+    );
+  }
+});
+defineFunction("lower", "{:value}{:auto}", {
+  createAtom: (options) => {
+    var _a3;
+    return new BoxAtom(__spreadProps(__spreadValues({}, options), {
+      body: argAtoms(options.args[1]),
+      padding: { dimension: 0 },
+      offset: (_a3 = multiplyLatexValue(options.args[0], -1)) != null ? _a3 : { dimension: 0 }
+    }));
+  },
+  serialize: (atom, options) => {
+    var _a3, _b3;
+    return latexCommand(
+      "\\lower",
+      (_b3 = serializeLatexValue(
+        multiplyLatexValue((_a3 = atom.offset) != null ? _a3 : { dimension: 0 }, -1)
+      )) != null ? _b3 : "0pt",
+      atom.bodyToLatex(options)
+    );
+  }
+});
+
+// src/latex-commands/symbols.ts
+defineSymbols("0123456789/@.?!");
+defineSymbolRange(65, 90);
+defineSymbolRange(97, 122);
+defineSymbols([
+  ["\\forall", 8704],
+  ["\\exists", 8707],
+  ["\\nexists", 8708, "mord", "ams"],
+  ["\\mid", 8739, "mrel"],
+  ["\\top", 8868],
+  ["\\bot", 8869]
+]);
+defineSymbols([
+  ["\\#", 35],
+  ["\\&", 38],
+  ["\\parallelogram", 9649],
+  ["\\spadesuit", 9824],
+  ["\\heartsuit", 9825],
+  ["\\diamondsuit", 9826],
+  ["\\clubsuit", 9827],
+  ["\\flat", 9837],
+  ["\\natural", 9838],
+  ["\\sharp", 9839]
+]);
+defineSymbols([
+  ["\\backslash", 92],
+  ["\\nabla", 8711],
+  ["\\partial", 8706],
+  ["\\ell", 8467],
+  ["\\hbar", 8463],
+  ["\\pounds", 163],
+  ["\\euro", 8364]
+  // NOTE: not TeX built-in, but textcomp package
+  // TODO Koppa, Stigma, Sampi
+]);
+defineSymbols(
+  [
+    ["\\rightarrow", 8594],
+    ["\\to", 8594],
+    ["\\leftarrow", 8592],
+    ["\\gets", 8592],
+    ["\\Rightarrow", 8658],
+    ["\\Leftarrow", 8656],
+    ["\\longrightarrow", 10230],
+    ["\\longleftarrow", 10229],
+    ["\\Longrightarrow", 10233],
+    ["\\implies", 10233],
+    ["\\Longleftarrow", 10232],
+    ["\\impliedby", 10232],
+    ["\\longleftrightarrow", 10231],
+    ["\\biconditional", 10231],
+    ["\\Longleftrightarrow", 10234],
+    ["\\mapsto", 8614],
+    ["\\longmapsto", 10236],
+    ["\\uparrow", 8593],
+    ["\\downarrow", 8595],
+    ["\\Uparrow", 8657],
+    ["\\Downarrow", 8659],
+    ["\\updownarrow", 8597],
+    ["\\Updownarrow", 8661],
+    ["\\hookrightarrow", 8618],
+    ["\\hookleftarrow", 8617],
+    ["\\rightharpoonup", 8640],
+    ["\\leftharpoonup", 8636],
+    ["\\rightharpoondown", 8641],
+    ["\\leftharpoondown", 8637],
+    ["\\searrow", 8600],
+    ["\\nearrow", 8599],
+    ["\\swarrow", 8601],
+    ["\\nwarrow", 8598],
+    ["\\originalof", 8886],
+    ["\\laplace", 8886],
+    ["\\imageof", 8887],
+    ["\\Laplace", 8887]
+  ],
+  "mrel"
+);
+defineSymbols([
+  ["\\mapsfrom", 8612, "mrel"],
+  ["\\Mapsfrom", 10502, "mrel"],
+  ["\\MapsTo", 10503, "mrel"],
+  ["\\Yup", 8516, "mord"],
+  ["\\lightning", 8623, "mrel"],
+  ["\\leftarrowtriangle", 8701, "mrel"],
+  ["\\rightarrowtriangle", 8702, "mrel"],
+  ["\\leftrightarrowtriangle", 8703, "mrel"],
+  ["\\boxdot", 8865, "mbin"],
+  ["\\bigtriangleup", 9651, "mbin"],
+  ["\\bigtriangledown", 9661, "mbin"],
+  ["\\boxbar", 9707, "mbin"],
+  ["\\Lbag", 10181, "mopen"],
+  ["\\Rbag", 10182, "mclose"],
+  ["\\llbracket", 10214, "mopen"],
+  ["\\rrbracket", 10215, "mclose"],
+  ["\\longmapsfrom", 10235, "mrel"],
+  ["\\Longmapsfrom", 10237, "mrel"],
+  ["\\Longmapsto", 10238, "mrel"],
+  ["\\boxslash", 10692, "mbin"],
+  ["\\boxbslash", 10693, "mbin"],
+  ["\\boxast", 10694, "mbin"],
+  ["\\boxcircle", 10695, "mbin"],
+  ["\\boxbox", 10696, "mbin"],
+  ["\\fatsemi", 10783, "mop"],
+  ["\\leftslice", 10918, "mrel"],
+  ["\\rightslice", 10919, "mrel"],
+  ["\\interleave", 10996, "mbin"],
+  ["\\biginterleave", 11004, "mop"],
+  ["\\sslash", 11005, "mbin"],
+  ["\\talloblong", 11006, "mbin"]
+]);
+defineSymbols([
+  // 'ams' Delimiters
+  ["\\lbrace", 123, "mopen"],
+  ["\\rbrace", 125, "mclose"],
+  ["\\lparen", 40, "mopen"],
+  // mathtools.sty
+  ["\\rparen", 41, "mclose"],
+  // mathtools.sty
+  ["\\langle", 10216, "mopen"],
+  ["\\rangle", 10217, "mclose"],
+  ["\\lfloor", 8970, "mopen"],
+  ["\\rfloor", 8971, "mclose"],
+  ["\\lceil", 8968, "mopen"],
+  ["\\rceil", 8969, "mclose"],
+  ["\\vert", 8739],
+  ["\\lvert", 8739, "mopen"],
+  ["\\rvert", 8739, "mclose"],
+  ["\\|", 8741],
+  ["\\Vert", 8741],
+  ["\\mVert", 8741],
+  ["\\lVert", 8741, "mopen"],
+  ["\\rVert", 8741, "mclose"],
+  ["\\lbrack", 91, "mopen"],
+  ["\\rbrack", 93, "mclose"],
+  ["\\{", 123, "mopen"],
+  ["\\}", 125, "mclose"],
+  ["(", 40, "mopen"],
+  [")", 41, "mclose"],
+  ["[", 91, "mopen"],
+  ["]", 93, "mclose"],
+  ["\\ulcorner", 9484, "mopen", "ams"],
+  ["\\urcorner", 9488, "mclose", "ams"],
+  ["\\llcorner", 9492, "mopen", "ams"],
+  ["\\lrcorner", 9496, "mclose", "ams"],
+  // Large Delimiters
+  ["\\lgroup", 10222, "mopen"],
+  ["\\rgroup", 10223, "mclose"],
+  ["\\lmoustache", 9136, "mopen"],
+  ["\\rmoustache", 9137, "mclose"]
+  // defineSymbol('\\ne', 0x2260, 'mrel'],
+  // defineSymbol('\\neq', 0x2260, 'mrel'],
+  // defineSymbol( '\\longequal', 0xF7D9,  'mrel',  MAIN],   // NOTE: Not TeX
+]);
+defineSymbols(
+  [
+    // 'ams' arrows
+    ["\\dashrightarrow", 8674],
+    ["\\dashleftarrow", 8672],
+    ["\\Rrightarrow", 8667],
+    ["\\Lleftarrow", 8666],
+    ["\\leftrightarrows", 8646],
+    ["\\rightleftarrows", 8644],
+    ["\\curvearrowright", 8631],
+    ["\\curvearrowleft", 8630],
+    ["\\rightrightarrows", 8649],
+    ["\\leftleftarrows", 8647],
+    ["\\upuparrows", 8648],
+    ["\\downdownarrows", 8650],
+    ["\\vartriangle", 9651],
+    ["\\triangleq", 8796],
+    ["\\vartriangleleft", 8882],
+    ["\\trianglelefteq", 8884],
+    ["\\ntriangleleft", 8938],
+    ["\\ntrianglelefteq", 8940],
+    ["\\vartriangleright", 8883],
+    ["\\trianglerighteq", 8885],
+    ["\\ntriangleright", 8939],
+    ["\\ntrianglerighteq", 8941],
+    ["\\blacktriangleleft", 9664],
+    ["\\blacktriangleright", 9654],
+    ["\\leftarrowtail", 8610],
+    ["\\rightarrowtail", 8611],
+    ["\\looparrowright", 8620],
+    ["\\looparrowleft", 8619],
+    ["\\twoheadleftarrow", 8606],
+    ["\\twoheadrightarrow", 8608],
+    ["\\twoheadrightarrowtail", 10518],
+    ["\\rightleftharpoons", 8652],
+    ["\\leftrightharpoons", 8651],
+    ["\\Rsh", 8625],
+    ["\\Lsh", 8624],
+    // 'ams' Relations
+    ["\\circlearrowright", 8635],
+    ["\\circlearrowleft", 8634],
+    ["\\restriction", 8638],
+    ["\\upharpoonright", 8638],
+    ["\\upharpoonleft", 8639],
+    ["\\downharpoonright", 8642],
+    ["\\downharpoonleft", 8643],
+    ["\\rightsquigarrow", 8669],
+    ["\\leadsto", 8669],
+    ["\\leftrightsquigarrow", 8621],
+    ["\\multimap", 8888],
+    // 'ams' Negated Arrows
+    ["\\nleftarrow", 8602],
+    ["\\nrightarrow", 8603],
+    ["\\nRightarrow", 8655],
+    ["\\nLeftarrow", 8653],
+    ["\\nleftrightarrow", 8622],
+    ["\\nLeftrightarrow", 8654],
+    ["\\nvrightarrow", 8696],
+    ["\\nvtwoheadrightarrow", 10496],
+    ["\\nvrightarrowtail", 10516],
+    ["\\nvtwoheadrightarrowtail", 10519],
+    // 'ams' Negated Relations
+    ["\\shortparallel", 8741],
+    ["\\nless", 8814],
+    ["\\nleqslant", 57360],
+    ["\\lneq", 10887],
+    ["\\lneqq", 8808],
+    ["\\nleqq", 57361],
+    ["\\lvertneqq", 57356],
+    ["\\lnsim", 8934],
+    ["\\lnapprox", 10889],
+    ["\\nprec", 8832],
+    ["\\npreceq", 8928],
+    ["\\precnsim", 8936],
+    ["\\precnapprox", 10937],
+    ["\\nsim", 8769],
+    ["\\nshortmid", 57350],
+    ["\\nmid", 8740],
+    ["\\nvdash", 8876],
+    ["\\nvDash", 8877],
+    ["\\ngtr", 8815],
+    ["\\ngeqslant", 57359],
+    ["\\ngeqq", 57358],
+    ["\\gneq", 10888],
+    ["\\gneqq", 8809],
+    ["\\gvertneqq", 57357],
+    ["\\gnsim", 8935],
+    ["\\gnapprox", 10890],
+    ["\\nsucc", 8833],
+    ["\\nsucceq", 8929],
+    ["\\succnsim", 8937],
+    ["\\succnapprox", 10938],
+    ["\\ncong", 8774],
+    ["\\nshortparallel", 57351],
+    ["\\nparallel", 8742],
+    ["\\nVDash", 8879],
+    ["\\nsupseteqq", 57368],
+    ["\\supsetneq", 8843],
+    ["\\varsupsetneq", 57371],
+    ["\\supsetneqq", 10956],
+    ["\\varsupsetneqq", 57369],
+    ["\\nVdash", 8878],
+    ["\\precneqq", 10933],
+    ["\\succneqq", 10934],
+    ["\\nsubseteqq", 57366],
+    ["\\leqslant", 10877],
+    ["\\geqslant", 10878],
+    ["\\gtrsim", 8819],
+    ["\\approxeq", 8778],
+    ["\\thickapprox", 8776],
+    ["\\lessapprox", 10885],
+    ["\\gtrapprox", 10886],
+    ["\\precapprox", 10935],
+    ["\\succapprox", 10936],
+    ["\\thicksim", 8764],
+    ["\\succsim", 8831],
+    ["\\precsim", 8830],
+    ["\\backsim", 8765],
+    ["\\eqsim", 8770],
+    ["\\backsimeq", 8909],
+    ["\\lesssim", 8818],
+    ["\\nleq", 8816],
+    ["\\ngeq", 8817],
+    ["\\smallsmile", 8995],
+    ["\\smallfrown", 8994],
+    ["\\leqq", 8806],
+    ["\\eqslantless", 10901],
+    ["\\lll", 8920],
+    ["\\lessgtr", 8822],
+    ["\\lesseqgtr", 8922],
+    ["\\lesseqqgtr", 10891],
+    ["\\risingdotseq", 8787],
+    ["\\fallingdotseq", 8786],
+    ["\\subseteqq", 10949],
+    ["\\Subset", 8912],
+    ["\\sqsubset", 8847],
+    ["\\preccurlyeq", 8828],
+    ["\\curlyeqprec", 8926],
+    ["\\vDash", 8872],
+    ["\\Vvdash", 8874],
+    ["\\bumpeq", 8783],
+    ["\\Bumpeq", 8782],
+    ["\\geqq", 8807],
+    ["\\eqslantgtr", 10902],
+    ["\\ggg", 8921],
+    ["\\gtrless", 8823],
+    ["\\gtreqless", 8923],
+    ["\\gtreqqless", 10892],
+    ["\\supseteqq", 10950],
+    ["\\Supset", 8913],
+    ["\\sqsupset", 8848],
+    ["\\succcurlyeq", 8829],
+    ["\\curlyeqsucc", 8927],
+    ["\\Vdash", 8873],
+    ["\\shortmid", 8739],
+    ["\\between", 8812],
+    ["\\pitchfork", 8916],
+    ["\\varpropto", 8733],
+    ["\\backepsilon", 8717],
+    ["\\llless", 8920],
+    ["\\gggtr", 8921],
+    ["\\doteqdot", 8785],
+    ["\\Doteq", 8785],
+    ["\\eqcirc", 8790],
+    ["\\circeq", 8791],
+    ["\\therefore", 8756],
+    ["\\because", 8757]
+  ],
+  "mrel",
+  "ams"
+);
+defineSymbols(
+  [
+    ["+", 43],
+    ["-", 8722],
+    ["\u2212", 8722],
+    ["\\pm", 177],
+    ["\\mp", 8723],
+    ["*", 8727],
+    ["\\times", 215],
+    ["\\div", 247],
+    ["\\divides", 8739],
+    ["\\cdot", 8901],
+    ["\\cap", 8745],
+    ["\\cup", 8746],
+    ["\\setminus", 8726],
+    ["\\land", 8743],
+    ["\\wedge", 8743],
+    ["\\lor", 8744],
+    ["\\vee", 8744],
+    ["\\circ", 8728],
+    ["\\bigcirc", 9711],
+    ["\\bullet", 8729],
+    ["\\oplus", 8853],
+    ["\\ominus", 8854],
+    ["\\otimes", 8855],
+    ["\\odot", 8857],
+    ["\\oslash", 8856],
+    ["\\bigtriangleup", 9651],
+    ["\\bigtriangledown", 9661],
+    ["\\triangleleft", 9667],
+    ["\\triangleright", 9657],
+    ["\\And", 38],
+    ["\\dagger", 8224],
+    ["\\dag", 8224],
+    ["\\ddag", 8225],
+    ["\\ddagger", 8225],
+    ["\\ast", 8727],
+    ["\\star", 8902],
+    ["\\bigstar", 9733],
+    ["\\diamond", 8900]
+  ],
+  "mbin"
+);
+defineSymbols(
+  [
+    ["\\lhd", 8882],
+    ["\\rhd", 8883],
+    ["\\lessdot", 8918],
+    ["\\gtrdot", 8919],
+    ["\\ltimes", 8905],
+    ["\\rtimes", 8906],
+    ["\\leftthreetimes", 8907],
+    ["\\rightthreetimes", 8908],
+    ["\\intercal", 8890],
+    ["\\dotplus", 8724],
+    ["\\doublebarwedge", 10846],
+    ["\\divideontimes", 8903],
+    ["\\centerdot", 8901],
+    ["\\smallsetminus", 8726],
+    ["\\barwedge", 8892],
+    ["\\veebar", 8891],
+    ["\\nor", 8891],
+    // NOTE: Not TeX, Mathematica
+    ["\\curlywedge", 8911],
+    ["\\curlyvee", 8910],
+    ["\\boxminus", 8863],
+    ["\\boxplus", 8862],
+    ["\\boxtimes", 8864],
+    ["\\boxdot", 8865],
+    ["\\circleddash", 8861],
+    ["\\circledast", 8859],
+    ["\\circledcirc", 8858],
+    ["\\unlhd", 8884],
+    ["\\unrhd", 8885]
+  ],
+  "mbin",
+  "ams"
+);
+defineSymbols([
+  ["\\surd", 8730],
+  ["\\S", 167],
+  // Section symbol: §
+  // From MnSymbol package
+  ["\\infty", 8734],
+  ["\\prime", 8242],
+  ["\\doubleprime", 8243],
+  // NOTE: Not in TeX, but Mathematica
+  ["\\angle", 8736],
+  ["`", 8216],
+  ["\\$", 36],
+  ["\\%", 37],
+  ["\\_", 95],
+  // Note: In TeX, greek symbols are only available in Math mode
+  ["\\alpha", 945],
+  ["\\beta", 946],
+  ["\\gamma", 947],
+  ["\\delta", 948],
+  ["\\epsilon", 1013],
+  ["\\varepsilon", 949],
+  ["\\zeta", 950],
+  ["\\eta", 951],
+  ["\\theta", 952],
+  ["\\vartheta", 977],
+  ["\\iota", 953],
+  ["\\kappa", 954],
+  ["\\varkappa", 1008, "mord", "ams"],
+  ["\\lambda", 955],
+  ["\\mu", 956],
+  ["\\nu", 957],
+  ["\\xi", 958],
+  ["\\omicron", 111],
+  ["\\pi", 960],
+  ["\\varpi", 982],
+  ["\\rho", 961],
+  ["\\varrho", 1009],
+  ["\\sigma", 963],
+  ["\\varsigma", 962],
+  ["\\tau", 964],
+  ["\\phi", 981],
+  ["\\varphi", 966],
+  ["\\upsilon", 965],
+  ["\\chi", 967],
+  ["\\psi", 968],
+  ["\\omega", 969],
+  ["\\Gamma", 915],
+  ["\\Delta", 916],
+  ["\\Theta", 920],
+  ["\\Lambda", 923],
+  ["\\Xi", 926],
+  ["\\Pi", 928],
+  ["\\Sigma", 931],
+  ["\\Upsilon", 933],
+  ["\\Phi", 934],
+  ["\\Psi", 936],
+  ["\\Omega", 937],
+  // 'ams' Greek
+  ["\\digamma", 989, "mord", "ams"],
+  ["\\varkappa", 1008, "mord", "ams"],
+  // See https://en.wikipedia.org/wiki/Koppa_(letter) for propert Unicode glyph
+  // In this caseL the "archaic" variant is used
+  ["\\coppa", 985, "mord", "ams"],
+  ["\\koppa", 985, "mord", "ams"],
+  ["\\Coppa", 984, "mord", "ams"],
+  ["\\Koppa", 984, "mord", "ams"],
+  ["\\sampi", 993, "mord", "ams"],
+  ["\\Sampi", 992, "mord", "ams"],
+  ["\\emptyset", 8709]
+]);
+defineSymbols(
+  [
+    ["=", 61],
+    ["<", 60],
+    ["\\lt", 60],
+    [">", 62],
+    ["\\gt", 62],
+    ["\\le", 8804],
+    ["\\leq", 8804],
+    ["\\ge", 8805],
+    ["\\geq", 8805],
+    ["\\ll", 8810],
+    ["\\gg", 8811],
+    ["\\coloneq", 8788],
+    // Prefered form as of Summer 2022. See § 3.7.3 https://ctan.math.illinois.edu/macros/latex/contrib/mathtools/mathtools.pdf)
+    ["\\coloneqq", 8788],
+    // Legacy form
+    ["\\colonequals", 8788],
+    // From the colonequals package
+    ["\\measeq", 8797],
+    // MEASSURED BY
+    ["\\eqdef", 8798],
+    ["\\questeq", 8799],
+    // QUESTIONED EQUAL TO
+    [":", 58],
+    ["\\cong", 8773],
+    ["\\equiv", 8801],
+    ["\\prec", 8826],
+    ["\\preceq", 10927],
+    ["\\succ", 8827],
+    ["\\succeq", 10928],
+    ["\\perp", 10178],
+    // Unicode U+27C2 is the perpendicular symbol
+    ["\\propto", 8733],
+    ["\\Colon", 8759],
+    ["\\smile", 8995],
+    ["\\frown", 8994],
+    ["\\sim", 8764],
+    ["\\doteq", 8784],
+    ["\\bowtie", 8904],
+    ["\\Join", 8904],
+    ["\\asymp", 8781],
+    ["\\sqsubseteq", 8849],
+    ["\\sqsupseteq", 8850],
+    ["\\approx", 8776],
+    // In TeX, '~' is a spacing command (non-breaking space).
+    // However, '~' is used as an ASCII Math shortctut character, so define a \\~
+    // command which maps to the '~' character
+    ["\\~", 126],
+    ["\\leftrightarrow", 8596],
+    ["\\Leftrightarrow", 8660],
+    ["\\models", 8872],
+    ["\\vdash", 8866],
+    ["\\dashv", 8867],
+    ["\\roundimplies", 10608],
+    ["\\in", 8712],
+    ["\\notin", 8713],
+    // defineSymbol('\\not', 0x0338],
+    // defineSymbol('\\not', 0xe020],
+    ["\\ni", 8715],
+    ["\\owns", 8715],
+    ["\\subset", 8834],
+    ["\\supset", 8835],
+    ["\\subseteq", 8838],
+    ["\\supseteq", 8839],
+    ["\\differencedelta", 8710],
+    ["\\mvert", 8739],
+    ["\\parallel", 8741],
+    ["\\simeq", 8771]
+  ],
+  "mrel"
+);
+defineSymbols(
+  [
+    ["\\lnot", 172],
+    ["\\neg", 172],
+    ["\\triangle", 9651],
+    ["\\subsetneq", 8842],
+    ["\\varsubsetneq", 57370],
+    ["\\subsetneqq", 10955],
+    ["\\varsubsetneqq", 57367],
+    ["\\nsubset", 8836],
+    // NOTE: Not TeX?
+    ["\\nsupset", 8837],
+    // NOTE: Not TeX?
+    ["\\nsubseteq", 8840],
+    ["\\nsupseteq", 8841]
+  ],
+  "mrel",
+  "ams"
+);
+defineSymbols([
+  ["\\wp", 8472],
+  ["\\aleph", 8501]
+]);
+defineSymbols(
+  [
+    ["\\blacktriangle", 9650],
+    ["\\hslash", 8463],
+    ["\\Finv", 8498],
+    ["\\Game", 8513],
+    ["\\eth", 240],
+    ["\\mho", 8487],
+    ["\\Bbbk", 107],
+    ["\\yen", 165],
+    ["\\square", 9633],
+    ["\\Box", 9633],
+    ["\\blacksquare", 9632],
+    ["\\circledS", 9416],
+    ["\\circledR", 174],
+    ["\\triangledown", 9661],
+    ["\\blacktriangledown", 9660],
+    ["\\checkmark", 10003],
+    ["\\diagup", 9585],
+    ["\\measuredangle", 8737],
+    ["\\sphericalangle", 8738],
+    ["\\backprime", 8245],
+    ["\\backdoubleprime", 8246],
+    ["\\Diamond", 9674],
+    ["\\lozenge", 9674],
+    ["\\blacklozenge", 10731],
+    ["\\varnothing", 8709],
+    ["\\complement", 8705],
+    ["\\maltese", 10016],
+    // 'ams' Hebrew
+    ["\\beth", 8502],
+    ["\\daleth", 8504],
+    ["\\gimel", 8503]
+  ],
+  "mord",
+  "ams"
+);
+defineSymbols(
+  [
+    // See http://tex.stackexchange.com/questions/41476/lengths-and-when-to-use-them
+    ["\\ ", 160],
+    ["~", 160]
+  ],
+  "space"
+);
+defineFunction(
+  ["!", ",", ":", ";", ">", "enskip", "enspace", "quad", "qquad"],
+  "",
+  {
+    createAtom: (options) => new SpacingAtom(options)
+  }
+);
+defineFunction("space", "", {
+  createAtom: (options) => new SpacingAtom(options)
+});
+defineSymbols(
+  [
+    ["\\colon", 58],
+    ["\\cdotp", 8901],
+    ["\\vdots", 8942, "mord"],
+    ["\\ldotp", 46],
+    [",", 44],
+    [";", 59]
+  ],
+  "mpunct"
+);
+defineSymbols(
+  [
+    ["\\cdots", 8943],
+    ["\\ddots", 8945],
+    ["\\ldots", 8230],
+    ["\\mathellipsis", 8230]
+  ],
+  "minner"
+);
+defineSymbols([
+  ["\\/", 47],
+  ["|", 8739, "mord"],
+  ["\\imath", 305],
+  ["\\jmath", 567],
+  ["\\degree", 176],
+  ["'", 8242],
+  // Prime
+  ['"', 8221]
+  // Double Prime
+  // defineSymbol( "\'', 0x2033,  'mord',  MAIN],       // Double Prime
+]);
+
+// src/core/modes-math.ts
+var VARIANTS = {
+  // Handle some special characters which are only available in "main" font (not "math")
+  "main": ["Main-Regular", "ML__cmr"],
+  "main-italic": ["Main-Italic", "ML__cmr ML__it"],
+  "main-bold": ["Main-Bold", "ML__cmr ML__bold"],
+  "main-bolditalic": ["Main-BoldItalic", "ML__cmr ML__bold ML__it"],
+  "normal": ["Main-Regular", "ML__cmr"],
+  // 'main' font. There is no 'math' regular (upright)
+  "normal-bold": ["Main-Bold", "ML__mathbf"],
+  // 'main' font. There is no 'math' bold
+  "normal-italic": ["Math-Italic", "ML__mathit"],
+  // Special metrics for 'math'
+  "normal-bolditalic": ["Math-BoldItalic", "ML__mathbfit"],
+  // Special metrics for 'math'
+  // Alias for 'normal' - used by \bf, \it, \rmfamily commands
+  "roman": ["Main-Regular", "ML__cmr"],
+  "roman-bold": ["Main-Bold", "ML__mathbf"],
+  "roman-italic": ["Math-Italic", "ML__mathit"],
+  "roman-bolditalic": ["Math-BoldItalic", "ML__mathbfit"],
+  // Extended math symbols, arrows, etc.. at their standard Unicode codepoints
+  "ams": ["AMS-Regular", "ML__ams"],
+  "ams-bold": ["AMS-Regular", "ML__ams ML__bold"],
+  "ams-italic": ["AMS-Regular", "ML__ams ML__it"],
+  "ams-bolditalic": ["AMS-Regular", "ML__ams ML__bold ML__it"],
+  "sans-serif": ["SansSerif-Regular", "ML__sans"],
+  "sans-serif-bold": ["SansSerif-Regular", "ML__sans ML__bold"],
+  "sans-serif-italic": ["SansSerif-Regular", "ML__sans ML__it"],
+  "sans-serif-bolditalic": ["SansSerif-Regular", "ML__sans ML__bold ML__it"],
+  "calligraphic": ["Caligraphic-Regular", "ML__cal"],
+  "calligraphic-bold": ["Caligraphic-Regular", "ML__cal ML__bold"],
+  "calligraphic-italic": ["Caligraphic-Regular", "ML__cal ML__it"],
+  "calligraphic-bolditalic": ["Caligraphic-Regular", "ML__cal ML__bold ML__it"],
+  "script": ["Script-Regular", "ML__script"],
+  "script-bold": ["Script-Regular", "ML__script ML__bold"],
+  "script-italic": ["Script-Regular", "ML__script ML__it"],
+  "script-bolditalic": ["Script-Regular", "ML__script ML__bold ML__it"],
+  "fraktur": ["Fraktur-Regular", "ML__frak"],
+  "fraktur-bold": ["Fraktur-Regular", "ML__frak ML__bold"],
+  "fraktur-italic": ["Fraktur-Regular", "ML__frak ML__it"],
+  "fraktur-bolditalic": ["Fraktur-Regular", "ML__frak ML__bold ML__it"],
+  "monospace": ["Typewriter-Regular", "ML__tt"],
+  "monospace-bold": ["Typewriter-Regular", "ML__tt ML__bold"],
+  "monospace-italic": ["Typewriter-Regular", "ML__tt ML__it"],
+  "monospace-bolditalic": ["Typewriter-Regular", "ML__tt ML__bold ML__it"],
+  // Blackboard characters are 'A-Z' in the AMS font
+  "double-struck": ["AMS-Regular", "ML__bb"],
+  "double-struck-bold": ["AMS-Regular", "ML__bb ML__bold"],
+  "double-struck-italic": ["AMS-Regular", "ML__bb ML_italic"],
+  "double-struck-bolditalic": ["AMS-Regular", "ML__bb ML_bolditalic"]
+};
+var VARIANT_REPERTOIRE = {
+  "double-struck": /^[A-Z ]$/,
+  "script": /^[A-Z ]$/,
+  "calligraphic": /^[\dA-Z ]$/,
+  "fraktur": /^[\dA-Za-z ]$|^[!"#$%&'()*+,\-./:;=?[]^’‘]$/,
+  "monospace": /^[\dA-Za-z ]$|^[!"&'()*+,\-./:;=?@[\]^_~\u0131\u0237\u0393\u0394\u0398\u039B\u039E\u03A0\u03A3\u03A5\u03A8\u03A9]$/,
+  "sans-serif": /^[\dA-Za-z ]$|^[!"&'()*+,\-./:;=?@[\]^_~\u0131\u0237\u0393\u0394\u0398\u039B\u039E\u03A0\u03A3\u03A5\u03A8\u03A9]$/
+};
+var GREEK_LOWERCASE = /^[\u03B1-\u03C9]|\u03D1|\u03D5|\u03D6|\u03F1|\u03F5]$/;
+var GREEK_UPPERCASE = /^[\u0393|\u0394\u0398\u039B\u039E\u03A0\u03A3\u03A5\u03A6\u03A8\u03A9]$/;
+var LETTER_SHAPE_RANGES = [
+  /^[a-z]$/,
+  // Lowercase latin
+  /^[A-Z]$/,
+  // Uppercase latin
+  GREEK_LOWERCASE,
+  GREEK_UPPERCASE
+];
+var LETTER_SHAPE_MODIFIER = {
+  iso: ["it", "it", "it", "it"],
+  tex: ["it", "it", "it", "up"],
+  french: ["it", "up", "up", "up"],
+  upright: ["up", "up", "up", "up"]
+};
+var MathMode = class extends Mode {
+  constructor() {
+    super("math");
+  }
+  createAtom(command, info, style) {
+    var _a3, _b3, _c2, _d2, _e, _f;
+    if (info === null) {
+      return new Atom({
+        type: "mord",
+        mode: "math",
+        command,
+        value: command,
+        style
+      });
+    }
+    let isFunction;
+    try {
+      isFunction = (_c2 = (_b3 = globalThis.MathfieldElement) == null ? void 0 : _b3.isFunction((_a3 = info.command) != null ? _a3 : command)) != null ? _c2 : false;
+    } catch (e) {
+      isFunction = false;
+    }
+    if (info.definitionType === "symbol") {
+      const result2 = new Atom({
+        type: (_d2 = info.type) != null ? _d2 : "mord",
+        mode: "math",
+        command: (_e = info.command) != null ? _e : command,
+        value: String.fromCodePoint(info.codepoint),
+        isFunction,
+        style
+      });
+      if (command.startsWith("\\")) result2.verbatimLatex = command;
+      return result2;
+    }
+    const result = new Atom({
+      type: "mord",
+      mode: "math",
+      command: (_f = info.command) != null ? _f : command,
+      value: command,
+      isFunction,
+      style
+    });
+    if (command.startsWith("\\")) result.verbatimLatex = command;
+    return result;
+  }
+  serialize(run, options) {
+    const result = emitBoldRun(run, __spreadProps(__spreadValues({}, options), { defaultMode: "math" }));
+    if (result.length === 0 || options.defaultMode !== "text") return result;
+    return ["$ ", ...result, " $"];
+  }
+  getFont(box, style) {
+    var _a3, _b3, _c2;
+    console.assert(style.variant !== void 0);
+    if (style.fontFamily) {
+      let variantKey = style.fontFamily;
+      if (style.fontSeries === "b" && style.fontShape === "it")
+        variantKey += "-bolditalic";
+      else if (style.fontSeries === "b") variantKey += "-bold";
+      else if (style.fontShape === "it") variantKey += "-italic";
+      const variant2 = (_a3 = VARIANTS[variantKey]) != null ? _a3 : VARIANTS[style.fontFamily];
+      if (!variant2) {
+        console.error(`Unknown font family variant: ${variantKey}`);
+        return null;
+      }
+      const [fontName2, classes2] = variant2;
+      if (classes2) box.classes += " " + classes2;
+      return fontName2;
+    }
+    let { variant } = style;
+    let { variantStyle } = style;
+    if (variant === "normal" && !variantStyle && /[\u00A3\u0131\u0237]/.test(box.value)) {
+      variant = "main";
+      variantStyle = "italic";
+    }
+    if (variant === "normal" && !variantStyle && box.value.length === 1) {
+      let italicize = false;
+      LETTER_SHAPE_RANGES.forEach((x, i) => {
+        var _a4;
+        if (x.test(box.value) && LETTER_SHAPE_MODIFIER[(_a4 = style.letterShapeStyle) != null ? _a4 : "tex"][i] === "it")
+          italicize = true;
+      });
+      if (italicize) variantStyle = addItalic(variantStyle);
+    }
+    if (variantStyle === "up") variantStyle = void 0;
+    const styledVariant = variantStyle ? variant + "-" + variantStyle : variant;
+    console.assert(VARIANTS[styledVariant] !== void 0);
+    const [fontName, classes] = VARIANTS[styledVariant];
+    if (VARIANT_REPERTOIRE[variant] && !VARIANT_REPERTOIRE[variant].test(box.value)) {
+      let v = mathVariantToUnicode(box.value, variant, variantStyle);
+      if (!v) {
+        v = (_b3 = mathVariantToUnicode(box.value, variant)) != null ? _b3 : box.value;
+        box.classes += (_c2 = {
+          "bold": " ML__bold",
+          "italic": " ML__it",
+          "bold-italic": " ML__bold ML__it"
+        }[variantStyle != null ? variantStyle : ""]) != null ? _c2 : "";
+      }
+      box.value = v;
+      return null;
+    }
+    if (GREEK_LOWERCASE.test(box.value)) box.classes += " lcGreek";
+    if (classes) box.classes += " " + classes;
+    return fontName;
+  }
+};
+function emitBoldRun(run, options) {
+  return getPropertyRuns(run, "bold").map((x) => {
+    const weight = weightString(x[0]);
+    if (weight !== "bold") return joinLatex(emitVariantRun(x, options));
+    if (weightString(x[0].parent) === "bold")
+      return joinLatex(emitVariantRun(x, options));
+    const value = joinLatex(x.map((x2) => {
+      var _a3;
+      return (_a3 = x2.value) != null ? _a3 : "";
+    }));
+    if (/^[a-zA-Z0-9]+$/.test(value))
+      return latexCommand("\\mathbf", joinLatex(emitVariantRun(x, options)));
+    return latexCommand("\\bm", joinLatex(emitVariantRun(x, options)));
+  });
+}
+function emitVariantRun(run, options) {
+  const { parent } = run[0];
+  const contextVariant = variantString(parent);
+  return getPropertyRuns(run, "variant").map((x) => {
+    const variant = variantString(x[0]);
+    let command = "";
+    if (variant && variant !== contextVariant) {
+      command = {
+        "calligraphic": "\\mathcal",
+        "calligraphic-uo": "\\mathcal",
+        "fraktur": "\\mathfrak",
+        "fraktur-uo": "\\mathfrak",
+        "double-struck": "\\mathbb",
+        "double-struck-uo": "\\mathbb",
+        "script": "\\mathscr",
+        "script-uo": "\\mathscr",
+        "monospace": "\\mathtt",
+        "monospace-uo": "\\mathtt",
+        "sans-serif": "\\mathsf",
+        "sans-serif-uo": "\\mathsf",
+        "normal": "",
+        "normal-up": "\\mathrm",
+        "normal-italic": "\\mathnormal",

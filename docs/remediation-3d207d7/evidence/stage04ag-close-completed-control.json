@@ -1,0 +1,33 @@
+﻿{
+    "activeDocument":  "文档6",
+    "remaining":  [
+                      {
+                          "saved":  false,
+                          "document":  "文档6",
+                          "end":  875
+                      },
+                      {
+                          "saved":  false,
+                          "document":  "文档4",
+                          "end":  1245
+                      }
+                  ],
+    "closed":  [
+                   {
+                       "action":  "closed-without-save",
+                       "completedControl":  false,
+                       "pid":  111272,
+                       "time":  "2026-09-06T10:47:36.0569018Z",
+                       "document":  "文档2",
+                       "emptyStarter":  true
+                   },
+                   {
+                       "action":  "closed-without-save",
+                       "completedControl":  true,
+                       "pid":  111272,
+                       "time":  "2026-09-06T10:47:36.3514006Z",
+                       "document":  "文档3",
+                       "emptyStarter":  false
+                   }
+               ]
+}

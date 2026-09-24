@@ -1,0 +1,65 @@
+{
+    "id":  "b8900ea2-c81d-4eda-acfe-31c713156c5b",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "f17731dd-0d69-461e-b314-7bcc0ff7ce27",
+    "sourceDocumentId":  "文档147",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "0089293b-7c65-41ed-bc2d-5efd5c3419ec",
+                      "latex":  "\\sqrt{\\frac{m}{2\\left(E\\left(\\omega\\right)-U\\right)}}=\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega\\cdot f\\left(\\omega\\right)\\sqrt{\\left(E\\left(\\omega\\right)-U\\right)}\\right)"
+                  }
+              ],
+    "activeLineId":  "0089293b-7c65-41ed-bc2d-5efd5c3419ec",
+    "codeFormat":  "latex",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"\u003e\n  \u003cmsqrt\u003e\n    \u003cmfrac\u003e\n      \u003cmi\u003em\u003c/mi\u003e\n      \u003cmrow\u003e\n        \u003cmn\u003e2\u003c/mn\u003e\n        \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n          \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n          \u003cmi\u003eE\u003c/mi\u003e\n          \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n            \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n            \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n            \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n          \u003c/mrow\u003e\n          \u003cmo\u003e\u0026#x2212;\u003c/mo\u003e\n          \u003cmi\u003eU\u003c/mi\u003e\n          \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n        \u003c/mrow\u003e\n      \u003c/mrow\u003e\n    \u003c/mfrac\u003e\n  \u003c/msqrt\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmfrac\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmi mathvariant=\"normal\"\u003ed\u003c/mi\u003e\n    \u003c/mrow\u003e\n    \u003cmrow\u003e\n      \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n        \u003cmi mathvariant=\"normal\"\u003ed\u003c/mi\u003e\n      \u003c/mrow\u003e\n      \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n    \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n    \u003cmo\u003e\u0026#x22C5;\u003c/mo\u003e\n    \u003cmi\u003ef\u003c/mi\u003e\n    \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n      \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n      \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n      \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n    \u003c/mrow\u003e\n    \u003cmsqrt\u003e\n      \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n        \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n        \u003cmi\u003eE\u003c/mi\u003e\n        \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n          \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n          \u003cmi\u003e\u0026#x3C9;\u003c/mi\u003e\n          \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n        \u003c/mrow\u003e\n        \u003cmo\u003e\u0026#x2212;\u003c/mo\u003e\n        \u003cmi\u003eU\u003c/mi\u003e\n        \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n      \u003c/mrow\u003e\n    \u003c/msqrt\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n  \u003c/mrow\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "f17731dd-0d69-461e-b314-7bcc0ff7ce27",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "\\sqrt{\\frac{m}{2\\left(E\\left(\\omega\\right)-U\\right)}}=\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega\\cdot f\\left(\\omega\\right)\\sqrt{\\left(E\\left(\\omega\\right)-U\\right)}\\right)",
+                             "lines":  [
+                                           {
+                                               "id":  "0089293b-7c65-41ed-bc2d-5efd5c3419ec",
+                                               "latex":  "\\sqrt{\\frac{m}{2\\left(E\\left(\\omega\\right)-U\\right)}}=\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega\\cdot f\\left(\\omega\\right)\\sqrt{\\left(E\\left(\\omega\\right)-U\\right)}\\right)"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "block",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T09:36:08.5181520+00:00",
+                             "updatedAt":  "2026-09-06T09:36:08.5181520+00:00"
+                         },
+    "dirty":  false,
+    "status":  "failed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  "System.IO.InvalidDataException: Office MathML conversion did not produce an m:oMath node.\r\n   在 VisualTeX.WordVsto.WordOmmlConverter.ExtractSingleOMath(String omml)\r\n   在 VisualTeX.WordVsto.WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(String wordOpenXml, String formulaId)\r\n   在 VisualTeX.WordVsto.WordOmmlFormulaStore.NumberedFormulaIdentityMatchesEquationRange(Document document, String formulaId, FormulaMetadata metadata, Range equationRange)\r\n   在 VisualTeX.WordVsto.WordOmmlFormulaStore.ResolveEquationIdentity(Document document, Bookmark bookmark, String formulaId, FormulaMetadata metadata, Boolean captureCurrentContent)\r\n   在 VisualTeX.WordVsto.WordOmmlFormulaStore.GetEquationRange(Bookmark bookmark)\r\n   在 VisualTeX.WordVsto.WordOmmlFormulaStore.EstimateHeightPoints(Bookmark bookmark)\r\n   在 VisualTeX.WordVsto.WordEquationNumbering.Reconcile(Document document)\r\n   在 VisualTeX.WordVsto.WordEquationNumbering.UpdateEquationNumbers(Document document, IReadOnlyCollection`1 expectedNumberedFormulaIds)\r\n   在 VisualTeX.WordVsto.WordFormulaService.InsertBulkDocumentCore(WordBulkImportDocument source, IReadOnlyDictionary`2 prepared, String expectedDocumentId, String sourceObjectId)\r\n   在 VisualTeX.WordVsto.WordFormulaService.\u003c\u003ec__DisplayClass104_0.\u003cInsertBulkDocument\u003eb__0()\r\n   在 VisualTeX.WordVsto.WordFormulaService.ExecuteDocumentEdit[T](Document document, String name, Func`1 edit)\r\n   在 VisualTeX.WordVsto.WordFormulaService.InsertBulkDocument(WordBulkImportDocument source, IReadOnlyDictionary`2 prepared, String expectedDocumentId, String sourceObjectId)\r\n   在 VisualTeX.WordVsto.ThisAddIn.\u003c\u003ec__DisplayClass131_2.\u003cBulkImportAsync\u003eb__7()\r\n   在 VisualTeX.WordVsto.OfficeUiDispatcher.\u003c\u003ec__DisplayClass4_0`1.\u003cInvokeAsync\u003eg__Execute|0()\r\n--- 引发异常的上一位置中堆栈跟踪的末尾 ---\r\n   在 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()\r\n   在 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)\r\n   在 System.Runtime.CompilerServices.ConfiguredTaskAwaitable`1.ConfiguredTaskAwaiter.GetResult()\r\n   在 VisualTeX.WordVsto.ThisAddIn.\u003cBulkImportAsync\u003ed__131.MoveNext()",
+    "createdAt":  1788687368520,
+    "updatedAt":  1788687479209,
+    "expiresAt":  1788773879209
+}

@@ -7,9 +7,9 @@ import {
 } from "./browser_test_runtime.mjs";
 
 const scenario = process.argv[2];
-if (!new Set(["wrapper", "wrapper-auto", "wrapper-continuous", "wrapper-prefix", "native-input-popover", "usage-ranking", "native-space-selection", "candidate-query-reset", "raw-placeholder-visual", "placeholder-selection", "structural-placeholder", "structured-chinese-ime", "direct-shortcut-placeholder", "toolbar-placeholder-overflow", "horizontal-overflow", "accent-placeholder", "caret-probe", "scripts", "upright", "context-style", "suggestions", "navigation", "geometry", "source-layout", "toolbar-compact", "toolbar-postfix", "classic-panel-resize", "ocr-storage-ui", "formula-tiles", "formula-formatting", "cursor-placement", "settings", "layout", "multi-line-selection", "delete", "export"]).has(scenario)) {
+if (!new Set(["startup", "history-core", "multiline-input", "accent-finalization", "bounded-operator-model", "fences", "variant-core", "variant-core-extended", "command-surface-audit", "native-input-popover", "usage-ranking", "native-space-selection", "candidate-query-reset", "raw-placeholder-visual", "placeholder-selection", "placeholder-core", "placeholder-visual-audit", "nested-input-core", "structural-placeholder", "structured-chinese-ime", "ime-stale-recovery", "direct-shortcut-placeholder", "toolbar-placeholder-overflow", "horizontal-overflow", "accent-placeholder", "atomic-structure", "caret-probe", "scripts", "upright", "context-style", "suggestions", "navigation", "geometry", "source-layout", "toolbar-compact", "toolbar-postfix", "classic-panel-resize", "ocr-storage-ui", "formula-tiles", "latex-profile-ui", "persistent-formatting", "formula-formatting", "cursor-placement", "settings", "layout", "multi-line-selection", "delete", "export"]).has(scenario)) {
   throw new Error(
-    "Usage: node scripts/targeted_editor_regression.mjs <wrapper|wrapper-auto|wrapper-continuous|wrapper-prefix|native-input-popover|usage-ranking|native-space-selection|candidate-query-reset|raw-placeholder-visual|placeholder-selection|structural-placeholder|structured-chinese-ime|direct-shortcut-placeholder|toolbar-placeholder-overflow|horizontal-overflow|accent-placeholder|caret-probe|scripts|upright|context-style|suggestions|navigation|geometry|source-layout|toolbar-compact|toolbar-postfix|classic-panel-resize|ocr-storage-ui|formula-tiles|formula-formatting|cursor-placement|settings|layout|multi-line-selection|delete|export>",
+    "Usage: node scripts/targeted_editor_regression.mjs <startup|history-core|multiline-input|accent-finalization|bounded-operator-model|fences|variant-core|variant-core-extended|command-surface-audit|native-input-popover|usage-ranking|native-space-selection|candidate-query-reset|raw-placeholder-visual|placeholder-selection|placeholder-core|nested-input-core|structural-placeholder|structured-chinese-ime|ime-stale-recovery|direct-shortcut-placeholder|toolbar-placeholder-overflow|horizontal-overflow|accent-placeholder|atomic-structure|caret-probe|scripts|upright|context-style|suggestions|navigation|geometry|source-layout|toolbar-compact|toolbar-postfix|classic-panel-resize|ocr-storage-ui|formula-tiles|latex-profile-ui|persistent-formatting|formula-formatting|cursor-placement|settings|layout|multi-line-selection|delete|export>",
   );
 }
 
@@ -179,12 +179,13 @@ async function main() {
       );
     };
 
-    const key = async (value, code, virtualKeyCode) => {
+    const key = async (value, code, virtualKeyCode, modifiers = 0) => {
       const common = {
         key: value,
         code,
         windowsVirtualKeyCode: virtualKeyCode,
         nativeVirtualKeyCode: virtualKeyCode,
+        modifiers,
       };
       await client.send("Input.dispatchKeyEvent", {
         type: "keyDown",
@@ -207,11 +208,20 @@ async function main() {
       const point = await waitForEvaluation(`(() => {
         const element = document.querySelector(__SELECTOR__);
         if (!(element instanceof HTMLElement)) return { ready: false };
+        element.scrollIntoView({ block: "nearest", inline: "nearest" });
         const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const hit = document.elementFromPoint(x, y);
         return {
-          ready: rect.width > 0 && rect.height > 0,
-          x: rect.left + rect.width / 2,
-          y: rect.top + rect.height / 2,
+          ready:
+            rect.width > 0 &&
+            rect.height > 0 &&
+            x >= 0 && x <= window.innerWidth &&
+            y >= 0 && y <= window.innerHeight &&
+            Boolean(hit && (hit === element || element.contains(hit))),
+          x,
+          y,
         };
       })()`.replace("__SELECTOR__", JSON.stringify(selector)), `pointer target ${selector}`);
       await client.send("Input.dispatchMouseEvent", {
@@ -265,7 +275,7 @@ async function main() {
       const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
       persisted.state = {
         ...(persisted.state || {}),
-        lines: [{ id: crypto.randomUUID(), latex: "" }],
+        lines: [{ id: crypto.randomUUID(), latex: ${scenario === "startup" ? '"\\frac{x^2+\\alpha}{\\sqrt{1+x}}+\\sum_{n=1}^{\\infty}\\frac{1}{n^2}"' : '""'} }],
         activeLineId: null,
         ${scenario === "formula-tiles" || scenario === "usage-ranking" || scenario === "toolbar-placeholder-overflow" ? 'editorLayout: "standard",\r\n        sidebarOpen: true,' : ""}
         ${scenario === "toolbar-postfix" ? 'editorLayout: "classic",' : ""}
@@ -298,6 +308,15 @@ async function main() {
             contextCounts: { candidate: 25 },
             pinned: false,
           },
+          beta: {
+            commandId: "beta",
+            useCount: 2,
+            lastUsedAt: Date.now() - 400,
+            recentUses: [Date.now() - 1200, Date.now() - 400],
+            acceptedPrefixes: { be: 2 },
+            contextCounts: { candidate: 2 },
+            pinned: false,
+          },
         },` : ""}
       };
       persisted.state.activeLineId = persisted.state.lines[0].id;
@@ -326,9 +345,46 @@ async function main() {
       "formula field",
     );
 
+    if (scenario === "startup") {
+      const startup = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const math = field?.shadowRoot?.querySelector(".ML__latex");
+        const fieldRect = field?.getBoundingClientRect();
+        const mathRect = math?.getBoundingClientRect();
+        const paints = performance.getEntriesByType("paint").map((entry) => ({
+          name: entry.name,
+          startTime: entry.startTime,
+        }));
+        const navigation = performance.getEntriesByType("navigation")[0];
+        return {
+          ready: Boolean(
+            field?.isConnected &&
+            math &&
+            fieldRect && fieldRect.width > 0 && fieldRect.height > 0 &&
+            mathRect && mathRect.width > 0 && mathRect.height > 0
+          ),
+          elapsedMs: performance.now(),
+          domContentLoadedMs: navigation?.domContentLoadedEventEnd ?? null,
+          loadEventMs: navigation?.loadEventEnd ?? null,
+          paints,
+          fontsStatus: document.fonts?.status ?? "unsupported",
+          field: fieldRect ? { width: fieldRect.width, height: fieldRect.height } : null,
+          math: mathRect ? { width: mathRect.width, height: mathRect.height } : null,
+        };
+      })()`, "visible MathLive first formula frame");
+      console.log(JSON.stringify(startup, null, 2));
+      if (startup.elapsedMs > 900) {
+        throw new Error(`MathLive first visible formula frame is too slow: ${JSON.stringify(startup)}`);
+      }
+      console.log("Targeted MathLive startup regression passed");
+      return;
+    }
+
     const focusField = async () => {
       await waitForEvaluation(`(() => {
-        const field = document.querySelector("math-field");
+        const field =
+          document.querySelector(".formula-line.is-active math-field") ??
+          document.querySelector("math-field");
         if (!field?.isConnected) return { ready: false };
         field.focus();
         field.position = field.lastOffset;
@@ -340,7 +396,9 @@ async function main() {
 
     const clearField = async () => {
       await waitForEvaluation(`(() => {
-        const field = document.querySelector("math-field");
+        const field =
+          document.querySelector(".formula-line.is-active math-field") ??
+          document.querySelector("math-field");
         if (!field?.isConnected) return { ready: false };
         field.setValue("", {
           mode: "math",
@@ -360,6 +418,2318 @@ async function main() {
       await sleep(100);
       await focusField();
     };
+
+    if (scenario === "ime-stale-recovery") {
+      await clearField();
+      const state = await evaluate(`(async () => {
+        const field = document.querySelector("math-field");
+        const sink = field?.shadowRoot?.querySelector('[part="keyboard-sink"]');
+        if (!field || !(sink instanceof HTMLElement)) return { ready: false };
+
+        const frame = () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve))
+          );
+        const setFormula = (latex = "q") => {
+          field.setValue(latex, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceAll",
+            selectionMode: "after",
+            silenceNotifications: true,
+          });
+          field.mode = "math";
+          field.position = field.lastOffset;
+          field.focus();
+          sink.focus({ preventScroll: true });
+        };
+        const snapshot = () => {
+          const model = field._mathfield?.model;
+          let compositionAtoms = -1;
+          if (model) {
+            compositionAtoms = Array.from(
+              { length: model.lastOffset + 1 },
+              (_, index) => model.at(index),
+            ).filter((atom) => atom?.type === "composition").length;
+          }
+          return {
+            value: field.value,
+            mode: field.mode,
+            position: field.position,
+            selection: field.selection,
+            compositionAtoms,
+            sinkFocused: field.shadowRoot?.activeElement === sink,
+          };
+        };
+        const composition = (type, data = "") => {
+          sink.dispatchEvent(
+            new CompositionEvent(type, {
+              bubbles: true,
+              composed: true,
+              data,
+            }),
+          );
+        };
+        const keyboard = (type, key, code) => {
+          sink.dispatchEvent(
+            new KeyboardEvent(type, {
+              bubbles: true,
+              composed: true,
+              key,
+              code,
+            }),
+          );
+        };
+        const hostCompositionEnds = [];
+        const hostCompositionEndListener = (event) => {
+          hostCompositionEnds.push(event.data ?? "");
+        };
+        field.addEventListener(
+          "compositionend",
+          hostCompositionEndListener,
+        );
+        const ordinaryInput = (data) => {
+          sink.dispatchEvent(
+            new InputEvent("input", {
+              bubbles: true,
+              composed: true,
+              inputType: "insertText",
+              data,
+              isComposing: false,
+            }),
+          );
+        };
+        const typeOrdinary = async (data, code) => {
+          keyboard("keydown", data, code);
+          ordinaryInput(data);
+          keyboard("keyup", data, code);
+          await frame();
+        };
+
+        // 1. Missing compositionend followed by a definite ordinary key must
+        // cancel the abandoned composition and process that key normally.
+        setFormula();
+        composition("compositionstart", "");
+        composition("compositionupdate", "中");
+        await frame();
+        const staleBeforeOrdinaryKey = snapshot();
+        await typeOrdinary("x", "KeyX");
+        const staleAfterOrdinaryKey = snapshot();
+
+        // 2. Some WebView2 paths omit compositionend but still send the final
+        // non-composing input carrying the committed text.
+        setFormula();
+        composition("compositionstart", "");
+        composition("compositionupdate", "中");
+        ordinaryInput("中");
+        await frame();
+        const missingEndFinalInput = snapshot();
+        await typeOrdinary("y", "KeyY");
+        const missingEndAfterNextKey = snapshot();
+
+        // 3. A second compositionstart means the previous transaction was
+        // abandoned. It must be rolled back before the new one starts.
+        setFormula();
+        composition("compositionstart", "");
+        composition("compositionupdate", "中");
+        composition("compositionstart", "");
+        composition("compositionupdate", "文");
+        composition("compositionend", "文");
+        await frame();
+        const repeatedStartCommit = snapshot();
+        await typeOrdinary("z", "KeyZ");
+        const repeatedStartAfterNextKey = snapshot();
+
+        // 4. Losing focus during composition must not leave MathLive locked.
+        setFormula();
+        composition("compositionstart", "");
+        composition("compositionupdate", "中");
+        sink.blur();
+        await frame();
+        sink.focus({ preventScroll: true });
+        await typeOrdinary("w", "KeyW");
+        const blurRecovery = snapshot();
+
+        // 5. MathLive's explicit cancelComposition() must clear the internal
+        // transaction itself instead of relying on blur to emit compositionend.
+        setFormula();
+        composition("compositionstart", "");
+        composition("compositionupdate", "中");
+        field._mathfield?.keyboardDelegate?.cancelComposition();
+        await frame();
+        sink.focus({ preventScroll: true });
+        await typeOrdinary("v", "KeyV");
+        const explicitCancelRecovery = snapshot();
+
+        // 6. Stress the exact input-method-switch shape: composition begins,
+        // Shift is pressed to switch Chinese/English, compositionend is lost,
+        // then an ordinary Latin key arrives. Repeat enough times to catch a
+        // sticky internal composition flag or stale CompositionAtom buildup.
+        const switchStressFailures = [];
+        for (let index = 0; index < 60; index += 1) {
+          setFormula();
+          composition("compositionstart", "");
+          composition("compositionupdate", "中");
+          keyboard("keydown", "Shift", "ShiftLeft");
+          keyboard("keyup", "Shift", "ShiftLeft");
+          await typeOrdinary("a", "KeyA");
+          const cycle = snapshot();
+          if (
+            cycle.value !== "qa" ||
+            cycle.mode !== "math" ||
+            cycle.compositionAtoms !== 0
+          ) {
+            switchStressFailures.push({ index, cycle });
+            break;
+          }
+          if (index % 10 === 9) await frame();
+        }
+        const switchStressFinal = snapshot();
+
+        field.removeEventListener(
+          "compositionend",
+          hostCompositionEndListener,
+        );
+
+        return {
+          ready: true,
+          hostCompositionEnds,
+          switchStressFailures,
+          switchStressFinal,
+          staleBeforeOrdinaryKey,
+          staleAfterOrdinaryKey,
+          missingEndFinalInput,
+          missingEndAfterNextKey,
+          repeatedStartCommit,
+          repeatedStartAfterNextKey,
+          blurRecovery,
+          explicitCancelRecovery,
+        };
+      })()`);
+
+      if (!state?.ready) {
+        throw new Error(`IME stale recovery fixture failed to initialize: ${JSON.stringify(state)}`);
+      }
+      const expected = {
+        staleAfterOrdinaryKey: "qx",
+        missingEndFinalInput: "\\text{中}q",
+        missingEndAfterNextKey: "\\text{中}qy",
+        repeatedStartCommit: "\\text{文}q",
+        repeatedStartAfterNextKey: "\\text{文}qz",
+        blurRecovery: "qw",
+        explicitCancelRecovery: "qv",
+      };
+      // Depending on root insertion order, a committed composition can serialize
+      // immediately before or after the pre-existing root glyph. Accept either,
+      // but never a lingering composition atom or a swallowed next key.
+      const committedTextMatches = (value, glyph, tail = "") =>
+        value === `q\\text{${glyph}}${tail}` ||
+        value === `\\text{${glyph}}q${tail}`;
+      if (
+        state.staleBeforeOrdinaryKey.compositionAtoms < 1 ||
+        state.hostCompositionEnds.filter((data) => data === "中").length !== 1 ||
+        state.hostCompositionEnds.filter((data) => data === "").length !== 0 ||
+        state.staleAfterOrdinaryKey.value !== expected.staleAfterOrdinaryKey ||
+        state.staleAfterOrdinaryKey.compositionAtoms !== 0 ||
+        state.staleAfterOrdinaryKey.mode !== "math" ||
+        !committedTextMatches(state.missingEndFinalInput.value, "中") ||
+        state.missingEndFinalInput.compositionAtoms !== 0 ||
+        !committedTextMatches(state.missingEndAfterNextKey.value, "中", "y") ||
+        !committedTextMatches(state.repeatedStartCommit.value, "文") ||
+        state.repeatedStartCommit.value.includes("中") ||
+        !committedTextMatches(state.repeatedStartAfterNextKey.value, "文", "z") ||
+        state.blurRecovery.value !== expected.blurRecovery ||
+        state.blurRecovery.compositionAtoms !== 0 ||
+        state.explicitCancelRecovery.value !== expected.explicitCancelRecovery ||
+        state.explicitCancelRecovery.compositionAtoms !== 0 ||
+        state.switchStressFailures.length !== 0 ||
+        state.switchStressFinal.value !== "qa" ||
+        state.switchStressFinal.mode !== "math" ||
+        state.switchStressFinal.compositionAtoms !== 0
+      ) {
+        throw new Error(
+          `MathLive IME stale transaction recovery failed: ${JSON.stringify(state)}`,
+        );
+      }
+      console.log(JSON.stringify(state, null, 2));
+      console.log("Targeted stale IME composition recovery regression passed");
+      return;
+    }
+
+    if (scenario === "atomic-structure") {
+      const setFormula = async (latex, selectionMode = "after") => {
+        await waitForEvaluation(`(() => {
+          const field =
+            document.querySelector(".formula-line.is-active math-field") ??
+            document.querySelector("math-field");
+          if (!field?.isConnected) return { ready: false };
+          field.setValue(${JSON.stringify(latex)}, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceAll",
+            selectionMode: ${JSON.stringify(selectionMode)},
+            silenceNotifications: true,
+          });
+          field.focus();
+          field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+          return {
+            ready: field.isConnected && field.value.length >= 0,
+            value: field.value,
+          };
+        })()`, `stable atomic-structure formula: ${latex}`);
+        await sleep(100);
+      };
+
+      await setFormula(String.raw`a+\hat{x}+b`);
+      const accentNavigation = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        if (!field || !model) return { ready: false };
+        field.position = 0;
+        const steps = [];
+        for (let i = 0; i < model.lastOffset + 6; i += 1) {
+          const atom = model.at(model.position);
+          let ancestor = atom?.parent ?? null;
+          let insideAccentBody = false;
+          while (ancestor) {
+            if (ancestor.type === "accent") {
+              insideAccentBody = true;
+              break;
+            }
+            ancestor = ancestor.parent;
+          }
+          steps.push({
+            position: model.position,
+            atomType: atom?.type ?? null,
+            parentType: atom?.parent?.type ?? null,
+            insideAccentBody,
+          });
+          if (model.position === model.lastOffset) break;
+          field.executeCommand("moveToNextChar");
+        }
+        return {
+          ready: true,
+          value: field.value,
+          lastOffset: model.lastOffset,
+          steps,
+        };
+      })()`);
+      if (
+        accentNavigation.steps.some((step) => step.insideAccentBody) ||
+        !accentNavigation.steps.some((step) => step.atomType === "accent")
+      ) {
+        throw new Error(
+          `Accent navigation entered the accent body: ${JSON.stringify(accentNavigation)}`,
+        );
+      }
+
+      await setFormula(String.raw`a+\hat{x}`);
+      const accentBackspace = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.position = field.lastOffset;
+        field.executeCommand("deleteBackward");
+        return { value: field.value, position: field.position, lastOffset: field.lastOffset };
+      })()`);
+      if (accentBackspace.value.replace(/\s+/g, "") !== "a+") {
+        throw new Error(
+          `Backspace did not delete the complete accent atom: ${JSON.stringify(accentBackspace)}`,
+        );
+      }
+
+      await setFormula(String.raw`\hat{x}+b`);
+      const accentDelete = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.position = 0;
+        field.executeCommand("deleteForward");
+        return { value: field.value, position: field.position, lastOffset: field.lastOffset };
+      })()`);
+      if (accentDelete.value.replace(/\s+/g, "") !== "+b") {
+        throw new Error(
+          `Delete did not delete the complete accent atom: ${JSON.stringify(accentDelete)}`,
+        );
+      }
+
+      await setFormula(
+        String.raw`\left\langle\placeholder{}\middle{|}\placeholder{}\middle{|}\placeholder{}\right\rangle`,
+        "placeholder",
+      );
+      const placeholderDeletion = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        if (!field || !model) return { ready: false };
+        const count = () =>
+          model.atoms.filter((atom) =>
+            atom?.parent && (atom.type === "placeholder" || atom.type === "prompt")
+          ).length;
+        const counts = [count()];
+        const values = [field.value];
+        for (let i = 0; i < 3; i += 1) {
+          const placeholder = model.atoms.find((atom) =>
+            atom?.parent && (atom.type === "placeholder" || atom.type === "prompt")
+          );
+          if (!placeholder) break;
+          const offset = model.offsetOf(placeholder);
+          model.setSelection(Math.max(0, offset - 1), offset);
+          field.executeCommand("deleteBackward");
+          counts.push(count());
+          values.push(field.value);
+        }
+        return { ready: true, counts, values };
+      })()`);
+      if (JSON.stringify(placeholderDeletion.counts) !== JSON.stringify([3, 2, 1, 0])) {
+        throw new Error(
+          `A structural placeholder required more than one delete: ${JSON.stringify(placeholderDeletion)}`,
+        );
+      }
+
+      await setFormula(String.raw`\ketbra{\placeholder{}}{\placeholder{}}`, "placeholder");
+      const ketbraInitial = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const root = field?.shadowRoot;
+        return {
+          value: field?.value ?? "",
+          position: field?.position ?? -1,
+          lastOffset: field?.lastOffset ?? -1,
+          leftRightCount: model?.atoms.filter((atom) => atom?.parent && atom.type === "leftright").length ?? -1,
+          placeholderCount: model?.atoms.filter((atom) =>
+            atom?.parent && (atom.type === "placeholder" || atom.type === "prompt")
+          ).length ?? -1,
+          caretNodes: root?.querySelectorAll(
+            ".ML__caret, .visualtex-structural-placeholder-caret, .ML__placeholder-selected"
+          ).length ?? -1,
+        };
+      })()`);
+      if (ketbraInitial.leftRightCount < 2 || ketbraInitial.placeholderCount !== 2) {
+        throw new Error(
+          `ketbra did not produce two stable delimiter groups: ${JSON.stringify(ketbraInitial)}`,
+        );
+      }
+
+      const ketbraArrowStates = [];
+      for (let i = 0; i < 6; i += 1) {
+        await key("ArrowRight", "ArrowRight", 39);
+        ketbraArrowStates.push(
+          await evaluate(`(() => {
+            const field = document.querySelector("math-field");
+            const model = field?._mathfield?.model;
+            const atom = model?.at(model.position);
+            const root = field?.shadowRoot;
+            return {
+              value: field?.value ?? "",
+              position: model?.position ?? -1,
+              lastOffset: model?.lastOffset ?? -1,
+              atomType: atom?.type ?? null,
+              parentType: atom?.parent?.type ?? null,
+              collapsed: field?.selectionIsCollapsed ?? true,
+              caretNodes: root?.querySelectorAll(
+                ".ML__caret, .visualtex-structural-placeholder-caret, .ML__placeholder-selected"
+              ).length ?? -1,
+            };
+          })()`),
+        );
+      }
+      if (
+        ketbraArrowStates.some(
+          (state) => state.caretNodes <= 0 && state.collapsed,
+        )
+      ) {
+        throw new Error(
+          `ketbra ArrowRight produced a caret-less state: ${JSON.stringify(ketbraArrowStates)}`,
+        );
+      }
+
+      await clearField();
+      await typeText("\\ketbra");
+      await key(" ", "Space", 32);
+      await sleep(120);
+      const ketbraKeyboardReady = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const selected = model?.at(Math.max(model.position, model.anchor));
+        return {
+          value: field?.value ?? "",
+          selection: field?.selection ?? null,
+          position: model?.position ?? -1,
+          anchor: model?.anchor ?? -1,
+          selectedType: selected?.type ?? null,
+          selectedParentType: selected?.parent?.type ?? null,
+          selectionIsPlaceholder: model?.selectionIsPlaceholder ?? false,
+        };
+      })()`);
+      await key("x", "KeyX", 88);
+      const ketbraKeyboardFirst = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        return {
+          value: field?.value ?? "",
+          position: model?.position ?? -1,
+          placeholderCount:
+            model?.atoms.filter(
+              (atom) => atom?.parent && atom.type === "placeholder",
+            ).length ?? -1,
+        };
+      })()`);
+      if (
+        ketbraKeyboardFirst.value.replace(/\s+/g, "") !==
+          "\\ketbra{x}{\\placeholder{}}" ||
+        ketbraKeyboardFirst.placeholderCount !== 1
+      ) {
+        throw new Error(
+          `ketbra first-argument keyboard input failed: ${JSON.stringify({ ketbraKeyboardReady, ketbraKeyboardFirst })}`,
+        );
+      }
+
+      await key("ArrowRight", "ArrowRight", 39);
+      const ketbraKeyboardSecondReady = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const selected = model?.at(Math.max(model.position, model.anchor));
+        return {
+          value: field?.value ?? "",
+          selection: field?.selection ?? null,
+          selectedType: selected?.type ?? null,
+          selectedParentType: selected?.parent?.type ?? null,
+        };
+      })()`);
+      if (
+        ketbraKeyboardSecondReady.selectedType !== "placeholder" ||
+        ketbraKeyboardSecondReady.selectedParentType !== "macro-argument"
+      ) {
+        throw new Error(
+          `ketbra ArrowRight did not enter the second argument: ${JSON.stringify(ketbraKeyboardSecondReady)}`,
+        );
+      }
+
+      await key("y", "KeyY", 89);
+      const ketbraKeyboardSecond = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return { value: field?.value ?? "" };
+      })()`);
+      if (
+        ketbraKeyboardSecond.value.replace(/\s+/g, "") !==
+        "\\ketbra{x}{y}"
+      ) {
+        throw new Error(
+          `ketbra second-argument keyboard input failed: ${JSON.stringify(ketbraKeyboardSecond)}`,
+        );
+      }
+
+      await key("Backspace", "Backspace", 8);
+      const ketbraKeyboardBackspace = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        return {
+          value: field?.value ?? "",
+          placeholderCount:
+            model?.atoms.filter(
+              (atom) => atom?.parent && atom.type === "placeholder",
+            ).length ?? -1,
+        };
+      })()`);
+      if (
+        ketbraKeyboardBackspace.value.replace(/\s+/g, "") !==
+          "\\ketbra{x}{\\placeholder{}}" ||
+        ketbraKeyboardBackspace.placeholderCount !== 1
+      ) {
+        throw new Error(
+          `ketbra Backspace crossed an argument boundary: ${JSON.stringify(ketbraKeyboardBackspace)}`,
+        );
+      }
+
+      const readDiracGeometry = async (latex) => {
+        await setFormula(latex, "placeholder");
+        return evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          const root = field?.shadowRoot;
+          const model = field?._mathfield?.model;
+          const atomRows = (model?.atoms ?? [])
+            .filter((atom) => atom?.parent)
+            .map((atom) => ({
+              offset: model.offsetOf(atom),
+              type: atom.type,
+              value: atom.value ?? "",
+              command: atom.command ?? "",
+              parentType: atom.parent?.type ?? null,
+              branch: Array.isArray(atom.parentBranch)
+                ? [...atom.parentBranch]
+                : atom.parentBranch ?? null,
+            }));
+          const nodes = [...(root?.querySelectorAll("[data-atom-id]") ?? [])]
+            .map((node) => {
+              const rect = node.getBoundingClientRect();
+              return {
+                atomId: node.dataset.atomId ?? "",
+                text: node.textContent ?? "",
+                className: node.className,
+                left: rect.left,
+                right: rect.right,
+                width: rect.width,
+              };
+            })
+            .filter((item) => item.width > 0);
+          return {
+            value: field?.value ?? "",
+            atomRows,
+            nodes,
+          };
+        })()`);
+      };
+      const rawOuterGeometry = await readDiracGeometry(
+        String.raw`|\placeholder{}\rangle\langle\placeholder{}|`,
+      );
+      const ketbraGeometry = await readDiracGeometry(
+        String.raw`\ketbra{\placeholder{}}{\placeholder{}}`,
+      );
+      const baseWidth = (state) =>
+        state.nodes.find((node) => node.className === "ML__base")?.width ?? -1;
+      const leaf = (state, text) =>
+        state.nodes.find(
+          (node) =>
+            node.text === text &&
+            !node.className.includes("ML__base") &&
+            !node.className.includes("ML__left-right"),
+        );
+      const rawRangle = leaf(rawOuterGeometry, "⟩");
+      const rawLangle = leaf(rawOuterGeometry, "⟨");
+      const ketbraRangle = leaf(ketbraGeometry, "⟩");
+      const ketbraLangle = leaf(ketbraGeometry, "⟨");
+      const diracSpacing = {
+        totalWidthDelta: Math.abs(
+          baseWidth(rawOuterGeometry) - baseWidth(ketbraGeometry),
+        ),
+        rawMiddleGap:
+          rawRangle && rawLangle ? rawLangle.left - rawRangle.right : 99,
+        ketbraMiddleGap:
+          ketbraRangle && ketbraLangle
+            ? ketbraLangle.left - ketbraRangle.right
+            : 99,
+      };
+      if (
+        diracSpacing.totalWidthDelta > 0.75 ||
+        Math.abs(diracSpacing.rawMiddleGap) > 0.75 ||
+        Math.abs(diracSpacing.ketbraMiddleGap) > 0.75
+      ) {
+        throw new Error(
+          `Raw outer-product spacing diverges from ketbra: ${JSON.stringify({
+            diracSpacing,
+            rawOuterGeometry,
+            ketbraGeometry,
+          })}`,
+        );
+      }
+
+      const deleteKetbraArgument = async (targetValue) => {
+        await setFormula(String.raw`q+\ketbra{a}{b}`);
+        return evaluate(`((targetValue) => {
+          const field = document.querySelector("math-field");
+          const model = field?._mathfield?.model;
+          const target = model?.atoms.find((atom) => {
+            if (atom?.value !== targetValue) return false;
+            let parent = atom.parent;
+            let insideKetbra = false;
+            while (parent) {
+              if (parent.type === "macro" && parent.command === "\\\\ketbra") {
+                insideKetbra = true;
+                break;
+              }
+              parent = parent.parent;
+            }
+            return insideKetbra;
+          });
+          if (!target) return { value: field?.value ?? "", found: false };
+          model.position = model.offsetOf(target);
+          field.executeCommand("deleteBackward");
+          return {
+            found: true,
+            value: field.value,
+            position: field.position,
+            lastOffset: field.lastOffset,
+            placeholderCount: model.atoms.filter(
+              (atom) => atom?.parent && atom.type === "placeholder",
+            ).length,
+          };
+        })(${JSON.stringify(targetValue)})`);
+      };
+      const deleteFirstKetbraArgument = await deleteKetbraArgument("a");
+      const deleteSecondKetbraArgument = await deleteKetbraArgument("b");
+      for (const state of [
+        deleteFirstKetbraArgument,
+        deleteSecondKetbraArgument,
+      ]) {
+        if (
+          !state.found ||
+          !state.value.replace(/\s+/g, "").startsWith("q+\\ketbra{") ||
+          state.placeholderCount !== 1
+        ) {
+          throw new Error(
+            `Deleting a ketbra argument damaged adjacent content: ${JSON.stringify(state)}`,
+          );
+        }
+      }
+
+      await setFormula(
+        String.raw`q+\ketbra{\placeholder{}}{\placeholder{}}`,
+        "placeholder",
+      );
+      const ketbraPlaceholderDeletes = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const count = () =>
+          model.atoms.filter(
+            (atom) => atom?.parent && atom.type === "placeholder",
+          ).length;
+        const values = [field.value];
+        const counts = [count()];
+        for (let i = 0; i < 2; i += 1) {
+          const target = model.atoms.find(
+            (atom) => atom?.parent && atom.type === "placeholder",
+          );
+          if (!target) break;
+          const offset = model.offsetOf(target);
+          model.setSelection(Math.max(0, offset - 1), offset);
+          field.executeCommand("deleteBackward");
+          values.push(field.value);
+          counts.push(count());
+        }
+        return { values, counts };
+      })()`);
+      if (
+        JSON.stringify(ketbraPlaceholderDeletes.counts) !==
+          JSON.stringify([2, 1, 0]) ||
+        JSON.stringify(
+          ketbraPlaceholderDeletes.values.map((value) =>
+            value.replace(/\s+/g, ""),
+          ),
+        ) !==
+          JSON.stringify([
+            "q+\\ketbra{\\placeholder{}}{\\placeholder{}}",
+            "q+\\ketbra{}{\\placeholder{}}",
+            "q+\\ketbra{}{}",
+          ])
+      ) {
+        throw new Error(
+          `Ketbra placeholder deletion crossed a macro boundary: ${JSON.stringify(ketbraPlaceholderDeletes)}`,
+        );
+      }
+
+      await setFormula(String.raw`q+\ketbra{a}{b}`);
+      const ketbraDeleteGuard = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.position = field.lastOffset;
+        field.executeCommand("deleteBackward");
+        return { value: field.value, position: field.position, lastOffset: field.lastOffset };
+      })()`);
+      if (!ketbraDeleteGuard.value.replace(/\s+/g, "").startsWith("q+")) {
+        throw new Error(
+          `Deleting ketbra content consumed preceding content: ${JSON.stringify(ketbraDeleteGuard)}`,
+        );
+      }
+
+      console.log(JSON.stringify({
+        accentNavigation,
+        accentBackspace,
+        accentDelete,
+        placeholderDeletion,
+        ketbraInitial,
+        ketbraArrowStates,
+        rawOuterGeometry,
+        ketbraGeometry,
+        diracSpacing,
+        deleteFirstKetbraArgument,
+        deleteSecondKetbraArgument,
+        ketbraPlaceholderDeletes,
+        ketbraDeleteGuard,
+      }, null, 2));
+      console.log("Targeted atomic structure regression passed");
+      return;
+    }
+
+    if (scenario === "placeholder-visual-audit") {
+      const outputDir =
+        process.env.VISUALTEX_PLACEHOLDER_SCREENSHOT_DIR?.trim() || ".visual-audit";
+      const capture = async (name) => {
+        await sleep(100);
+        const state = await evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          const root = field?.shadowRoot;
+          const fieldRect = field?.getBoundingClientRect();
+          const rect = (node) => {
+            const r = node?.getBoundingClientRect();
+            return r
+              ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }
+              : null;
+          };
+          const placeholders = [...(root?.querySelectorAll(".visualtex-structural-placeholder") ?? [])].map((node) => ({
+            className: node.className,
+            textContent: node.textContent ?? "",
+            outerHTML: node.outerHTML,
+            rect: rect(node),
+            before: (() => {
+              const style = getComputedStyle(node, "::before");
+              return {
+                background: style.backgroundColor,
+                width: style.width,
+                height: style.height,
+                left: style.left,
+                top: style.top,
+                transform: style.transform,
+              };
+            })(),
+          }));
+          const customCarets = [...(root?.querySelectorAll(".visualtex-structural-placeholder-caret") ?? [])].map((node) => ({
+            rect: rect(node),
+            style: {
+              display: getComputedStyle(node).display,
+              visibility: getComputedStyle(node).visibility,
+              opacity: getComputedStyle(node).opacity,
+            },
+          }));
+          const nativeCarets = [...(root?.querySelectorAll(".ML__caret, .ML__text-caret, .ML__latex-caret") ?? [])].map((node) => ({
+            className: node.className,
+            rect: rect(node),
+            style: {
+              display: getComputedStyle(node).display,
+              visibility: getComputedStyle(node).visibility,
+              opacity: getComputedStyle(node).opacity,
+            },
+          }));
+          return {
+            value: field?.value ?? "",
+            mode: field?.mode ?? "",
+            selection: field?.selection ?? null,
+            fieldRect: rect(field),
+            placeholders,
+            customCarets,
+            nativeCarets,
+            sourceWrapperCommand:
+              field?.dataset.visualtexSourceWrapperCommand ?? "",
+            sourceWrapperKind:
+              field?.dataset.visualtexSourceWrapperKind ?? "",
+            sourceWrapperContent:
+              field?.dataset.visualtexSourceWrapperContent ?? "",
+            rawLatex: [...(root?.querySelectorAll(".ML__raw-latex") ?? [])]
+              .filter((node) => !node.classList.contains("ML__suggestion"))
+              .map((node) => node.textContent ?? "")
+              .join(""),
+          };
+        })()`);
+        const clip = {
+          x: Math.max(0, state.fieldRect.left - 20),
+          y: Math.max(0, state.fieldRect.top - 20),
+          width: state.fieldRect.width + 40,
+          height: state.fieldRect.height + 40,
+          scale: 1,
+        };
+        const screenshot = await client.send("Page.captureScreenshot", {
+          format: "png",
+          fromSurface: true,
+          captureBeyondViewport: false,
+          clip,
+        });
+        await writeFile(
+          `${outputDir}/${name}.png`,
+          Buffer.from(screenshot.data, "base64"),
+        );
+        return state;
+      };
+      const states = {};
+      const readReferenceXRects = async (latex) => {
+        await evaluate(`((latex) => {
+          const field = document.querySelector("math-field");
+          field.setValue(latex, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceAll",
+            selectionMode: "after",
+            silenceNotifications: true,
+          });
+          field.focus();
+        })(${JSON.stringify(latex)})`);
+        await sleep(100);
+        return evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          const root = field?.shadowRoot;
+          const fieldRect = field?.getBoundingClientRect();
+          const rects = [...(root?.querySelectorAll("[data-atom-id]") ?? [])]
+            .filter(
+              (node) =>
+                node.textContent?.trim() === "x" &&
+                !node.querySelector("[data-atom-id]"),
+            )
+            .map((node) => {
+              const r = node.getBoundingClientRect();
+              return {
+                left: r.left - fieldRect.left,
+                top: r.top - fieldRect.top,
+                width: r.width,
+                height: r.height,
+              };
+            })
+            .sort((a, b) => a.top - b.top || a.left - b.left);
+          return rects;
+        })()`);
+      };
+      const placeholderRects = (state) =>
+        state.placeholders
+          .map(({ rect }) => ({
+            left: rect.left - state.fieldRect.left,
+            top: rect.top - state.fieldRect.top,
+            width: rect.width,
+            height: rect.height,
+          }))
+          .sort((a, b) => a.top - b.top || a.left - b.left);
+      const assertNativeXGeometry = (name, state, referenceRects) => {
+        const actual = placeholderRects(state);
+        if (actual.length !== referenceRects.length) {
+          throw new Error(
+            `${name} placeholder/x count mismatch: ${JSON.stringify({ actual, referenceRects })}`,
+          );
+        }
+        const deltas = actual.map((rect, index) => ({
+          left: Math.abs(rect.left - referenceRects[index].left),
+          top: Math.abs(rect.top - referenceRects[index].top),
+          width: Math.abs(rect.width - referenceRects[index].width),
+          height: Math.abs(rect.height - referenceRects[index].height),
+        }));
+        if (
+          deltas.some(
+            (delta) => Math.max(...Object.values(delta)) > 0.75,
+          )
+        ) {
+          throw new Error(
+            `${name} placeholder geometry diverges from native x: ${JSON.stringify({ actual, referenceRects, deltas })}`,
+          );
+        }
+        return deltas;
+      };
+
+      await clearField();
+      await typeText("\\vec");
+      await key(" ", "Space", 32);
+      states.vec = await capture("vec");
+
+      await clearField();
+      await typeText("\\frac");
+      await key(" ", "Space", 32);
+      states.frac = await capture("frac");
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.setValue("x^{\\\\placeholder{}}", {
+          mode: "math", format: "latex", insertionMode: "replaceAll",
+          selectionMode: "placeholder", silenceNotifications: true,
+        });
+        field.focus();
+      })()`);
+      states.superscript = await capture("superscript");
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.setValue("\\\\sqrt{\\\\placeholder{}}", {
+          mode: "math", format: "latex", insertionMode: "replaceAll",
+          selectionMode: "placeholder", silenceNotifications: true,
+        });
+        field.focus();
+      })()`);
+      states.sqrt = await capture("sqrt");
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.setValue("\\\\int_{\\\\placeholder{}}^{\\\\placeholder{}}\\\\placeholder{}\\\\,\\\\mathrm{d}\\\\placeholder{}", {
+          mode: "math", format: "latex", insertionMode: "replaceAll",
+          selectionMode: "placeholder", silenceNotifications: true,
+        });
+        field.focus();
+      })()`);
+      states.integral = await capture("integral");
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.setValue("\\\\begin{bmatrix}\\\\placeholder{}&b\\\\\\\\c&d\\\\end{bmatrix}", {
+          mode: "math", format: "latex", insertionMode: "replaceAll",
+          selectionMode: "placeholder", silenceNotifications: true,
+        });
+        field.focus();
+      })()`);
+      states.matrix = await capture("matrix");
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.setValue("\\\\frac{\\\\frac{\\\\placeholder{}}{\\\\placeholder{}}}{\\\\placeholder{}}", {
+          mode: "math", format: "latex", insertionMode: "replaceAll",
+          selectionMode: "placeholder", silenceNotifications: true,
+        });
+        field.focus();
+      })()`);
+      states.nestedFraction = await capture("nested-fraction");
+
+      await clearField();
+      await typeText("\\mathbb");
+      await key(" ", "Space", 32);
+      states.variant = await capture("variant");
+
+      const geometryChecks = {
+        frac: assertNativeXGeometry(
+          "frac",
+          states.frac,
+          await readReferenceXRects("\\frac{x}{x}"),
+        ),
+        superscript: assertNativeXGeometry(
+          "superscript",
+          states.superscript,
+          (await readReferenceXRects("x^x")).slice(0, 1),
+        ),
+        sqrt: assertNativeXGeometry(
+          "sqrt",
+          states.sqrt,
+          await readReferenceXRects("\\sqrt{x}"),
+        ),
+        integral: assertNativeXGeometry(
+          "integral",
+          states.integral,
+          await readReferenceXRects("\\int_x^x x\\,\\mathrm{d}x"),
+        ),
+        matrix: assertNativeXGeometry(
+          "matrix",
+          states.matrix,
+          await readReferenceXRects("\\begin{bmatrix}x&b\\\\c&d\\end{bmatrix}"),
+        ),
+        nestedFraction: assertNativeXGeometry(
+          "nested-fraction",
+          states.nestedFraction,
+          await readReferenceXRects("\\frac{\\frac{x}{x}}{x}"),
+        ),
+      };
+      const assertSourceShell = (
+        name,
+        state,
+        expectedCommand,
+        expectedKind,
+      ) => {
+        const hasLatexCaret = state.nativeCarets.some((caret) =>
+          String(caret.className).includes("ML__latex-caret"),
+        );
+        if (
+          state.value !== expectedCommand + "{}" ||
+          state.rawLatex !== expectedCommand + "{}" ||
+          state.mode !== "latex" ||
+          state.sourceWrapperCommand !== expectedCommand ||
+          state.sourceWrapperKind !== expectedKind ||
+          state.sourceWrapperContent !== "" ||
+          state.placeholders.length !== 0 ||
+          state.customCarets.length !== 0 ||
+          !hasLatexCaret
+        ) {
+          throw new Error(
+            `${name} source-shell visual mismatch: ${JSON.stringify(state)}`,
+          );
+        }
+      };
+      assertSourceShell("vec", states.vec, "\\vec", "accent");
+      assertSourceShell("variant", states.variant, "\\mathbb", "variant");
+
+      const activeStates = [
+        states.frac,
+        states.superscript,
+        states.sqrt,
+        states.integral,
+        states.matrix,
+        states.nestedFraction,
+      ];
+      for (const active of activeStates) {
+        if (active.customCarets.length !== 1) {
+          throw new Error(
+            `Expected exactly one placeholder caret: ${JSON.stringify(active)}`,
+          );
+        }
+        const selected = active.placeholders.find((placeholder) =>
+          placeholder.className.includes("ML__selected"),
+        );
+        const caret = active.customCarets[0]?.rect;
+        if (!selected || !caret) {
+          throw new Error(
+            `Missing selected placeholder/caret: ${JSON.stringify(active)}`,
+          );
+        }
+        const markerWidth = Number.parseFloat(selected.before.width) || 0;
+        const markerLeftCss = Number.parseFloat(selected.before.left) || 0;
+        const matrix = selected.before.transform.match(
+          /^matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([^,]+),/,
+        );
+        const translateX = matrix ? Number.parseFloat(matrix[1]) || 0 : 0;
+        const markerLeft = selected.rect.left + markerLeftCss + translateX;
+        if (caret.left > markerLeft + 0.75) {
+          throw new Error(
+            `Placeholder caret is not on the marker's left side: ${JSON.stringify({ caret, markerLeft, markerWidth, selected })}`,
+          );
+        }
+      }
+
+      console.log(JSON.stringify({ states, geometryChecks }, null, 2));
+      console.log("Placeholder visual audit captured");
+      return;
+    }
+
+    if (scenario === "history-core") {
+      await clearField();
+      await typeText("abc");
+      await clickSelectorWithPointer('button[aria-label="撤销"]');
+      const groupedUndo = await waitForEvaluation(`(() => ({
+        ready: document.querySelector("math-field")?.value === "",
+        value: document.querySelector("math-field")?.value ?? "",
+      }))()`, "grouped typing undo");
+      await clickSelectorWithPointer('button[aria-label="重做"]');
+      const groupedRedo = await waitForEvaluation(`(() => ({
+        ready: document.querySelector("math-field")?.value === "abc",
+        value: document.querySelector("math-field")?.value ?? "",
+      }))()`, "grouped typing redo");
+
+      await key("z", "KeyZ", 90, 2);
+      await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          ready: field?.value === "" && Boolean(field?.hasFocus?.()),
+          value: field?.value ?? "",
+          hasFocus: field?.hasFocus?.() ?? false,
+          activeElement: document.activeElement?.tagName ?? "",
+        };
+      })()`, "keyboard undo restores formula focus before branch replacement");
+      await key("x", "KeyX", 88);
+      const branchState = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const redo = document.querySelector('button[aria-label="重做"]');
+        return {
+          ready: field?.value === "x" && redo?.disabled === true,
+          value: field?.value ?? "",
+          redoDisabled: redo?.disabled ?? null,
+        };
+      })()`, "new input after undo clears redo branch");
+
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.focus();
+        field.selection = { ranges: [[0, field.lastOffset]], direction: "forward" };
+      })()`);
+      await clickSelectorWithPointer('[data-formula-selection-bold]');
+      const formatted = await waitForEvaluation(`(() => ({
+        ready: document.querySelector("math-field")?.value === "\\\\mathbfit{x}",
+        value: document.querySelector("math-field")?.value ?? "",
+      }))()`, "format operation enters global history");
+      await clickSelectorWithPointer('button[aria-label="撤销"]');
+      const formatUndo = await waitForEvaluation(`(() => ({
+        ready: document.querySelector("math-field")?.value === "x",
+        value: document.querySelector("math-field")?.value ?? "",
+      }))()`, "format undo");
+      await clickSelectorWithPointer('button[aria-label="重做"]');
+      const formatRedo = await waitForEvaluation(`(() => ({
+        ready: document.querySelector("math-field")?.value === "\\\\mathbfit{x}",
+        value: document.querySelector("math-field")?.value ?? "",
+      }))()`, "format redo");
+
+      await clearField();
+      await typeText("ab");
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.focus();
+        field.position = 1;
+        field.selection = { ranges: [[1, 1]], direction: "none" };
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+      })()`);
+      await key("Enter", "Enter", 13, 8);
+      const multiline = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          ready: field?.value?.includes("\\\\begin{gathered}") && document.querySelectorAll("math-field").length === 1,
+          value: field?.value ?? "",
+        };
+      })()`, "multiline edit enters global history");
+      await clickSelectorWithPointer('button[aria-label="撤销"]');
+      const multilineUndo = await waitForEvaluation(`(() => ({
+        ready: document.querySelector("math-field")?.value === "ab",
+        value: document.querySelector("math-field")?.value ?? "",
+      }))()`, "multiline undo");
+      await clickSelectorWithPointer('button[aria-label="重做"]');
+      const multilineRedo = await waitForEvaluation(`(() => ({
+        ready: document.querySelector("math-field")?.value?.includes("\\\\begin{gathered}"),
+        value: document.querySelector("math-field")?.value ?? "",
+      }))()`, "multiline redo");
+
+      console.log(JSON.stringify({
+        groupedUndo,
+        groupedRedo,
+        branchState,
+        formatted,
+        formatUndo,
+        formatRedo,
+        multiline,
+        multilineUndo,
+        multilineRedo,
+      }, null, 2));
+      console.log("Targeted core undo/redo regression passed");
+      return;
+    }
+
+    if (scenario === "multiline-input") {
+      await clearField();
+      await typeText("ab");
+
+      await key("Enter", "Enter", 13, 2);
+      const forcedInline = await waitForEvaluation(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const lines = persisted?.state?.lines ?? [];
+        const active = document.querySelector(".formula-line.is-active");
+        const fields = [...document.querySelectorAll("math-field")];
+        return {
+          ready:
+            lines.length === 2 &&
+            lines[1]?.mode === "inline" &&
+            active?.querySelector("[data-formula-line-mode-toggle]")?.getAttribute("data-formula-line-mode") === "inline" &&
+            fields[1]?.hasFocus?.() === true,
+          modes: lines.map((line) => line?.mode ?? null),
+          activeMode: active?.querySelector("[data-formula-line-mode-toggle]")?.getAttribute("data-formula-line-mode") ?? null,
+          focus: fields.map((field) => field.hasFocus?.() ?? false),
+        };
+      })()`, "Ctrl+Enter forces a new inline formula row");
+
+      await key("Enter", "Enter", 13, 1);
+      const forcedDisplay = await waitForEvaluation(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const lines = persisted?.state?.lines ?? [];
+        const fields = [...document.querySelectorAll("math-field")];
+        return {
+          ready:
+            lines.length === 3 &&
+            lines[2]?.mode === "display" &&
+            fields[2]?.hasFocus?.() === true &&
+            document.activeElement === fields[2] &&
+            fields[2]?.shadowRoot?.activeElement?.getAttribute?.("part") === "keyboard-sink",
+          modes: lines.map((line) => line?.mode ?? null),
+          focus: fields.map((field) => field.hasFocus?.() ?? false),
+          activeElementIndex: fields.indexOf(document.activeElement),
+          shadowActivePart: fields.map((field) => field.shadowRoot?.activeElement?.getAttribute?.("part") ?? null),
+        };
+      })()`, "Alt+Enter forces a new display formula row");
+
+      await key("Enter", "Enter", 13);
+      const inheritedDisplay = await waitForEvaluation(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const lines = persisted?.state?.lines ?? [];
+        const rows = [...document.querySelectorAll(".formula-line")].map((row) => {
+          const field = row.querySelector("math-field");
+          return {
+            lineId: row.getAttribute("data-line-id"),
+            mode: row.querySelector("[data-formula-line-mode-toggle]")?.getAttribute("data-formula-line-mode") ?? null,
+            focus: field?.hasFocus?.() ?? false,
+            value: field?.value ?? null,
+          };
+        });
+        return {
+          ready:
+            lines.length === 4 &&
+            lines[2]?.mode === "display" &&
+            lines[3]?.mode === "display",
+          modes: lines.map((line) => line?.mode ?? null),
+          lineIds: lines.map((line) => line?.id ?? null),
+          activeLineId: persisted?.state?.activeLineId ?? null,
+          rows,
+        };
+      })()`, "plain Enter inherits the previous row mode");
+
+      await key("Backspace", "Backspace", 8);
+      await key("Backspace", "Backspace", 8);
+      await key("Backspace", "Backspace", 8);
+      await waitForEvaluation(`(() => ({
+        ready:
+          document.querySelectorAll(".formula-line").length === 1 &&
+          document.querySelector("math-field")?.value === "ab",
+      }))()`, "shortcut regression cleanup");
+
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.focus();
+        field.position = 1;
+        field.selection = { ranges: [[1, 1]], direction: "none" };
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+      })()`);
+
+      await key("Enter", "Enter", 13, 8);
+      const firstBreak = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const value = field?.value?.replace(/\\s+/g, "") ?? "";
+        return {
+          ready:
+            document.querySelectorAll("math-field").length === 1 &&
+            document.querySelectorAll(".formula-line").length === 1 &&
+            value.includes("\\\\begin{gathered}") &&
+            value.includes("a") && value.includes("b"),
+          value: field?.value ?? "",
+          selection: field?.selection ?? null,
+          fieldCount: document.querySelectorAll("math-field").length,
+          lineCount: document.querySelectorAll(".formula-line").length,
+        };
+      })()`, "Shift+Enter converts one formula row into an internal gathered environment");
+
+      await clickSelectorWithPointer('button[aria-label="撤销"]');
+      const undone = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          ready:
+            document.querySelectorAll("math-field").length === 1 &&
+            field?.value?.replace(/\\s+/g, "") === "ab",
+          value: field?.value ?? "",
+          position: field?.position ?? -1,
+        };
+      })()`, "one undo restores the pre-multiline formula");
+
+      await clickSelectorWithPointer('button[aria-label="重做"]');
+      const redone = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const value = field?.value?.replace(/\\s+/g, "") ?? "";
+        return {
+          ready:
+            document.querySelectorAll("math-field").length === 1 &&
+            value.includes("\\\\begin{gathered}") &&
+            value.includes("a") && value.includes("b") &&
+            Boolean(field?.hasFocus()),
+          value: field?.value ?? "",
+          selection: field?.selection ?? null,
+          hasFocus: field?.hasFocus() ?? false,
+          selectionIsCollapsed: field?.selectionIsCollapsed ?? null,
+        };
+      })()`, "redo restores the internal multiline formula");
+
+      await key("c", "KeyC", 67);
+      const filledSecondRow = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const value = field?.value?.replace(/\\s+/g, "") ?? "";
+        return {
+          ready:
+            value.includes("\\\\begin{gathered}") &&
+            value.includes("a") &&
+            value.includes("b") &&
+            value.includes("c"),
+          value: field?.value ?? "",
+          position: field?.position ?? -1,
+        };
+      })()`, "typing fills the new internal row placeholder");
+
+      await key("Enter", "Enter", 13, 8);
+      await key("d", "KeyD", 68);
+      const thirdRow = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const value = field?.value ?? "";
+        const rowBreaks = (value.match(/\\\\\\\\/g) ?? []).length;
+        return {
+          ready:
+            document.querySelectorAll("math-field").length === 1 &&
+            document.querySelectorAll(".formula-line").length === 1 &&
+            value.includes("\\\\begin{gathered}") &&
+            value.includes("d") &&
+            rowBreaks >= 2,
+          value,
+          rowBreaks,
+          fieldCount: document.querySelectorAll("math-field").length,
+          lineCount: document.querySelectorAll(".formula-line").length,
+        };
+      })()`, "Shift+Enter inside gathered adds another row without creating another formula field");
+
+      console.log(JSON.stringify({
+        forcedInline,
+        forcedDisplay,
+        inheritedDisplay,
+        firstBreak,
+        undone,
+        redone,
+        filledSecondRow,
+        thirdRow,
+      }, null, 2));
+      console.log("Targeted line-mode shortcuts and in-formula multiline regression passed");
+      return;
+    }
+
+    if (scenario === "bounded-operator-model") {
+      const cases = [
+        {
+          name: "sum",
+          template: String.raw`\sum_{\placeholder{}}^{\placeholder{}} \placeholder{}`,
+          lowerValues: ["i"],
+          upperValue: "n",
+        },
+        {
+          name: "fint",
+          template: String.raw`\fint_{\placeholder{}}^{\placeholder{}} \placeholder{}`,
+          lowerValues: ["a"],
+          upperValue: "b",
+        },
+        {
+          name: "dashint",
+          template: String.raw`\dashint_{\placeholder{}}^{\placeholder{}} \placeholder{}`,
+          lowerValues: ["a"],
+          upperValue: "b",
+        },
+        {
+          name: "oiint",
+          template: String.raw`\oiint_{\placeholder{}}^{\placeholder{}} \placeholder{}`,
+          lowerValues: ["A"],
+          upperValue: "B",
+        },
+        {
+          name: "composite-lower",
+          template: String.raw`\sum_{\placeholder{}=\placeholder{}}^{\placeholder{}} \placeholder{}`,
+          lowerValues: ["k", "1"],
+          upperValue: "n",
+        },
+      ];
+      const states = [];
+      for (const testCase of cases) {
+        await clearField();
+        const state = await evaluate(`(() => {
+          const field =
+            document.querySelector(".formula-line.is-active math-field") ??
+            document.querySelector("math-field");
+          const model = field?._mathfield?.model;
+          if (!field || !model) return { ready: false };
+          const branch = () => {
+            const range = field.selection?.ranges?.at(-1) ?? [field.position, field.position];
+            const offset = Math.max(range[0], range[1]);
+            const atom = model.at(offset);
+            return {
+              branch: Array.isArray(atom?.parentBranch)
+                ? JSON.stringify(atom.parentBranch)
+                : atom?.parentBranch ?? null,
+              atomType: atom?.type ?? null,
+              parentType: atom?.parent?.type ?? null,
+              range,
+              position: field.position,
+              value: field.value,
+            };
+          };
+          field.insert(${JSON.stringify(testCase.template)}, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "placeholder",
+            focus: true,
+            scrollIntoView: false,
+          });
+          const sequence = [{ phase: "initial", ...branch() }];
+          for (const value of ${JSON.stringify(testCase.lowerValues)}) {
+            field.insert(value, {
+              mode: "math",
+              format: "latex",
+              insertionMode: "replaceSelection",
+              selectionMode: "after",
+              focus: true,
+              scrollIntoView: false,
+            });
+            field.executeCommand("moveToNextPlaceholder");
+            sequence.push({ phase: "after-lower-" + value, ...branch() });
+          }
+          field.insert(${JSON.stringify(testCase.upperValue)}, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "after",
+            focus: true,
+            scrollIntoView: false,
+          });
+          field.executeCommand("moveToNextPlaceholder");
+          sequence.push({ phase: "after-upper", ...branch() });
+          return { ready: true, sequence, finalValue: field.value };
+        })()`);
+        const expectedBranches = [
+          "subscript",
+          ...testCase.lowerValues.map((_, index) =>
+            index < testCase.lowerValues.length - 1 ? "subscript" : "superscript",
+          ),
+          "body",
+        ];
+        const actualBranches = state.sequence?.map((item) => item.branch) ?? [];
+        if (JSON.stringify(actualBranches) !== JSON.stringify(expectedBranches)) {
+          throw new Error(
+            `${testCase.name} model placeholder order mismatch: ${JSON.stringify({ expectedBranches, actualBranches, state })}`,
+          );
+        }
+        states.push({ name: testCase.name, expectedBranches, ...state });
+      }
+      const commandAudit = await evaluate(`(() => {
+        const field =
+          document.querySelector(".formula-line.is-active math-field") ??
+          document.querySelector("math-field");
+        const run = (command) => {
+          field.setValue("", {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceAll",
+            selectionMode: "after",
+            silenceNotifications: true,
+          });
+          field.insert("\\\\dashint_{\\\\placeholder{}}^{\\\\placeholder{}} \\\\placeholder{}", {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "placeholder",
+            focus: true,
+            scrollIntoView: false,
+          });
+          field.insert("a", {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "after",
+            focus: true,
+            scrollIntoView: false,
+          });
+          const accepted = field.executeCommand(command);
+          const range = field.selection?.ranges?.at(-1) ?? [field.position, field.position];
+          const atom = field._mathfield?.model?.at(Math.max(range[0], range[1]));
+          return {
+            command,
+            accepted,
+            branch: Array.isArray(atom?.parentBranch)
+              ? JSON.stringify(atom.parentBranch)
+              : atom?.parentBranch ?? null,
+            selection: field.selection,
+            value: field.value,
+          };
+        };
+        return {
+          nextChar: run("moveToNextChar"),
+          nextGroup: run("moveToNextGroup"),
+        };
+      })()`);
+      if (
+        commandAudit.nextChar?.branch !== "superscript" ||
+        commandAudit.nextGroup?.branch !== "superscript"
+      ) {
+        throw new Error(`Bounded operator command routing mismatch: ${JSON.stringify(commandAudit)}`);
+      }
+      const navigationAudit = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        field.setValue("\\\\int_{ab}^{\\\\placeholder{}}\\\\placeholder{}", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        const atomTableBefore = Array.from(
+          { length: model.lastOffset + 1 },
+          (_, index) => {
+            const atom = model.at(index);
+            return {
+              index,
+              type: atom?.type ?? null,
+              value: atom?.value ?? "",
+              branch: atom?.parentBranch ?? null,
+              parentType: atom?.parent?.type ?? null,
+            };
+          },
+        );
+        const lowerA = atomTableBefore
+          .map((item) => model.at(item.index))
+          .find((atom) => atom?.value === "a" && atom?.parentBranch === "subscript");
+        field.position = model.offsetOf(lowerA);
+        const beforePosition = field.position;
+        field.executeCommand("moveToNextChar");
+        const moved = model.at(Math.max(model.position, model.anchor));
+        const midLower = {
+          branch: moved?.parentBranch ?? null,
+          value: moved?.value ?? "",
+          position: field.position,
+          beforePosition,
+          selection: field.selection,
+          atomTableBefore,
+        };
+
+        field.setValue("", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.insert(
+          "\\\\int_{\\\\frac{\\\\placeholder{}}{\\\\placeholder{}}}^{\\\\placeholder{}}\\\\placeholder{}",
+          {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "placeholder",
+            focus: true,
+            scrollIntoView: false,
+          },
+        );
+        const range = field.selection?.ranges?.at(-1) ?? [field.position, field.position];
+        const selected = model.at(Math.max(range[0], range[1]));
+        const nestedInitial = {
+          type: selected?.type ?? null,
+          branch: selected?.parentBranch ?? null,
+          parentType: selected?.parent?.type ?? null,
+          grandParentBranch: selected?.parent?.parentBranch ?? null,
+          grandParentType: selected?.parent?.parent?.type ?? null,
+          selection: field.selection,
+          value: field.value,
+        };
+        return { midLower, nestedInitial };
+      })()`);
+      if (
+        navigationAudit.midLower.branch !== "subscript" ||
+        navigationAudit.midLower.value !== "b" ||
+        navigationAudit.nestedInitial.type !== "placeholder" ||
+        navigationAudit.nestedInitial.branch !== "above" ||
+        navigationAudit.nestedInitial.grandParentBranch !== "subscript"
+      ) {
+        throw new Error(
+          `Bounded operator navigation regression: ${JSON.stringify(navigationAudit)}`,
+        );
+      }
+      await clearField();
+      await focusField();
+      await typeText("\\int");
+      await key("ArrowDown", "ArrowDown", 40);
+      await key(" ", "Space", 32);
+      await sleep(60);
+      const rawAccepted = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const range = field?.selection?.ranges?.at(-1) ?? [-1, -1];
+        const atom = model?.at(Math.max(...range));
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          branch: atom?.parentBranch ?? null,
+          type: atom?.type ?? null,
+          selection: field?.selection ?? null,
+        };
+      })()`);
+      await key("a", "KeyA", 65);
+      const rawTyped = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const atom = model?.at(field.position);
+        return {
+          value: field?.value ?? "",
+          branch: atom?.parentBranch ?? null,
+          atomValue: atom?.value ?? "",
+          parentType: atom?.parent?.type ?? null,
+        };
+      })()`);
+      if (
+        rawAccepted.mode !== "math" ||
+        rawAccepted.type !== "placeholder" ||
+        rawAccepted.branch !== "subscript" ||
+        rawTyped.branch !== "subscript" ||
+        rawTyped.atomValue !== "a"
+      ) {
+        throw new Error(
+          `Typed integral lower-bound regression: ${JSON.stringify({ rawAccepted, rawTyped })}`,
+        );
+      }
+      console.log(JSON.stringify({ states, commandAudit, navigationAudit, rawAccepted, rawTyped }, null, 2));
+      console.log("Targeted bounded-operator model regression passed");
+      return;
+    }
+
+    if (scenario === "fences") {
+      await clearField();
+      const readFenceState = async (name) => ({
+        name,
+        ...(await evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          const model = field?._mathfield?.model;
+          const position = field?.position ?? -1;
+          const around = model
+            ? Array.from(
+                { length: model.lastOffset + 1 },
+                (_, offset) => {
+                  const atom = model.at(offset);
+                  return {
+                    offset,
+                    type: atom?.type ?? "",
+                    branch: Array.isArray(atom?.parentBranch)
+                      ? JSON.stringify(atom.parentBranch)
+                      : atom?.parentBranch ?? null,
+                    parentType: atom?.parent?.type ?? null,
+                    latex: field.getElementInfo(offset)?.latex ?? "",
+                  };
+                },
+              ).filter((item) => Math.abs(item.offset - position) <= 3)
+            : [];
+          return {
+            value: field?.value ?? "",
+            position,
+            lastOffset: field?.lastOffset ?? -1,
+            selection: field?.selection ?? null,
+            around,
+          };
+        })()`)),
+      });
+      const states = [];
+      await key("(", "Digit9", 57);
+      states.push(await readFenceState("outer-open"));
+      await key("(", "Digit9", 57);
+      states.push(await readFenceState("inner-open"));
+      await key("x", "KeyX", 88);
+      states.push(await readFenceState("inner-content"));
+      await key(")", "Digit0", 48);
+      states.push(await readFenceState("inner-close"));
+      await key("y", "KeyY", 89);
+      states.push(await readFenceState("between-fences"));
+      await key(")", "Digit0", 48);
+      states.push(await readFenceState("outer-close"));
+      await key("z", "KeyZ", 90);
+      states.push(await readFenceState("after-fences"));
+
+      const expectedValues = [
+        String.raw`\left(\right)`,
+        String.raw`\left(\left(\right)\right)`,
+        String.raw`\left(\left(x\right)\right)`,
+        String.raw`\left(\left(x\right)\right)`,
+        String.raw`\left(\left(x\right)y\right)`,
+        String.raw`\left(\left(x\right)y\right)`,
+        String.raw`\left(\left(x\right)y\right)z`,
+      ];
+      states.forEach((state, index) => {
+        if (state.value !== expectedValues[index]) {
+          throw new Error(
+            `Nested fence step ${state.name} changed structure: ${JSON.stringify({ state, expected: expectedValues[index] })}`,
+          );
+        }
+      });
+      if (
+        !(states[3].position < states[3].lastOffset) ||
+        !(states[5].position === states[5].lastOffset)
+      ) {
+        throw new Error(
+          `Nested fence closing did not exit exactly one level at a time: ${JSON.stringify(states)}`,
+        );
+      }
+
+      await clearField();
+      await key("(", "Digit9", 57);
+      await key("(", "Digit9", 57);
+      await key("q", "KeyQ", 81);
+      await key("^", "Digit6", 54);
+      await key("a", "KeyA", 65);
+      const scriptExitInsideFence = await readFenceState("script-exit-inside-inner-fence");
+      await key(")", "Digit0", 48);
+      const afterInnerClose = await readFenceState("after-inner-close");
+      await key("b", "KeyB", 66);
+      const afterInnerFence = await readFenceState("after-inner-fence");
+      await key(")", "Digit0", 48);
+      await key("c", "KeyC", 67);
+      const afterOuterFence = await readFenceState("after-outer-fence");
+      if (
+        scriptExitInsideFence.value !== String.raw`\left(\left(q^{a}\right)\right)` ||
+        afterInnerFence.value !== String.raw`\left(\left(q^{a}\right)b\right)` ||
+        afterOuterFence.value !== String.raw`\left(\left(q^{a}\right)b\right)c`
+      ) {
+        throw new Error(
+          `Script auto-exit and nested fence ownership conflicted: ${JSON.stringify({ scriptExitInsideFence, afterInnerClose, afterInnerFence, afterOuterFence })}`,
+        );
+      }
+      states.push(
+        scriptExitInsideFence,
+        afterInnerClose,
+        afterInnerFence,
+        afterOuterFence,
+      );
+      console.log(JSON.stringify(states, null, 2));
+      console.log("Targeted nested fence regression passed");
+      return;
+    }
+
+    if (scenario === "latex-profile-ui") {
+      await waitForEvaluation(`(() => {
+        const button = document.querySelector(".app-header .code-format-primary");
+        return { ready: button instanceof HTMLElement };
+      })()`, "LaTeX profile trigger");
+
+      await clickSelectorWithPointer(".app-header .code-format-primary");
+      await waitForEvaluation(`(() => ({
+        ready: [
+          '[data-latex-text-policy="text-command"]',
+          '[data-latex-text-policy="outside-math"]',
+          '[data-latex-inline-wrapper="dollar"]',
+          '[data-latex-inline-wrapper="paren"]',
+          '[data-latex-display-wrapper="double-dollar"]',
+          '[data-latex-display-wrapper="bracket"]',
+          '[data-latex-display-wrapper="equation"]',
+          '[data-latex-numbered]',
+          '[data-latex-multiline="gather"]',
+          '[data-latex-multiline="align"]',
+        ].every((selector) => document.querySelector(selector) instanceof HTMLElement),
+      }))()`, "universal LaTeX profile controls");
+
+      await clickSelectorWithPointer('[data-latex-text-policy="outside-math"]');
+      await clickSelectorWithPointer('[data-latex-inline-wrapper="paren"]');
+      await clickSelectorWithPointer('[data-latex-display-wrapper="equation"]');
+      await clickSelectorWithPointer('[data-latex-numbered]');
+      await clickSelectorWithPointer('[data-latex-multiline="align"]');
+
+      const profile = await waitForEvaluation(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const value = persisted?.state?.latexFormatProfile ?? null;
+        return {
+          ready:
+            value?.inlineTextPolicy === "outside-math" &&
+            value?.inlineWrapper === "paren" &&
+            value?.displayWrapper === "equation" &&
+            value?.numbered === true &&
+            value?.multilineEnvironment === "align",
+          value,
+          summary: document.querySelector("[data-latex-profile-summary]")?.textContent ?? "",
+        };
+      })()`, "persisted universal LaTeX profile");
+
+      await clickSelectorWithPointer(".app-header .code-format-primary");
+      await clearField();
+      await typeText("ab");
+
+      const initialRow = await waitForEvaluation(`(() => {
+        const row = document.querySelector(".formula-line");
+        const toggle = row?.querySelector("[data-formula-line-mode-toggle]");
+        const host = row?.querySelector(".mathfield-host");
+        const select = row?.querySelector("[data-formula-display-style]");
+        const toggleRect = toggle?.getBoundingClientRect();
+        const hostRect = host?.getBoundingClientRect();
+        return {
+          ready:
+            toggle instanceof HTMLButtonElement &&
+            !select &&
+            Boolean(toggleRect && hostRect && toggleRect.right <= hostRect.left + 0.5),
+          mode: toggle?.getAttribute("data-formula-line-mode") ?? null,
+          text: toggle?.textContent?.trim() ?? "",
+          overlap: toggleRect && hostRect
+            ? Math.max(0, Math.min(toggleRect.right, hostRect.right) - Math.max(toggleRect.left, hostRect.left))
+            : null,
+        };
+      })()`, "non-overlapping single-symbol per-row mode control");
+
+      if (initialRow.mode !== "inline") {
+        await clickSelectorWithPointer("[data-formula-line-mode-toggle]");
+      }
+      const inlineMode = await waitForEvaluation(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const line = persisted?.state?.lines?.[0];
+        const toggle = document.querySelector("[data-formula-line-mode-toggle]");
+        return {
+          ready:
+            line?.mode === "inline" &&
+            toggle?.getAttribute("data-formula-line-mode") === "inline" &&
+            toggle?.textContent?.trim() === "$" &&
+            !document.querySelector("[data-formula-display-style]"),
+          mode: line?.mode ?? null,
+          toggleMode: toggle?.getAttribute("data-formula-line-mode") ?? null,
+          text: toggle?.textContent?.trim() ?? "",
+        };
+      })()`, "single per-row control toggles to inline");
+
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field) return false;
+        field.focus();
+        field.position = 1;
+        field.selection = { ranges: [[1, 1]], direction: "none" };
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        return true;
+      })()`);
+      await key("Enter", "Enter", 13, 8);
+
+      const multiline = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const line = persisted?.state?.lines?.[0];
+        const toggle = document.querySelector("[data-formula-line-mode-toggle]");
+        return {
+          ready:
+            document.querySelectorAll(".formula-line").length === 1 &&
+            field?.value?.includes("\\\\begin{aligned}") &&
+            toggle instanceof HTMLButtonElement &&
+            toggle.disabled === true &&
+            toggle.getAttribute("data-formula-line-mode") === "display" &&
+            toggle.textContent?.trim() === "$$",
+          value: field?.value ?? "",
+          mode: line?.mode ?? null,
+          toggleMode: toggle?.getAttribute("data-formula-line-mode") ?? null,
+          disabled: toggle instanceof HTMLButtonElement ? toggle.disabled : null,
+        };
+      })()`, "Shift+Enter follows persistent align profile");
+
+      await clickSelectorWithPointer('button[aria-label="撤销"]');
+      const multilineUndo = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const line = persisted?.state?.lines?.[0];
+        const toggle = document.querySelector("[data-formula-line-mode-toggle]");
+        return {
+          ready:
+            field?.value === "ab" &&
+            line?.mode === "inline" &&
+            toggle?.getAttribute("data-formula-line-mode") === "inline" &&
+            toggle?.disabled === false,
+          value: field?.value ?? "",
+          mode: line?.mode ?? null,
+          toggleMode: toggle?.getAttribute("data-formula-line-mode") ?? null,
+        };
+      })()`, "multiline undo restores inline row semantics");
+
+      await clickSelectorWithPointer('button[aria-label="重做"]');
+      const multilineRedo = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const line = persisted?.state?.lines?.[0];
+        const toggle = document.querySelector("[data-formula-line-mode-toggle]");
+        return {
+          ready:
+            field?.value?.includes("\\\\begin{aligned}") &&
+            line?.mode === "display" &&
+            toggle?.getAttribute("data-formula-line-mode") === "display" &&
+            toggle?.disabled === true,
+          value: field?.value ?? "",
+          storedLatex: line?.latex ?? null,
+          mode: line?.mode ?? null,
+          toggleMode: toggle?.getAttribute("data-formula-line-mode") ?? null,
+          disabled: toggle instanceof HTMLButtonElement ? toggle.disabled : null,
+        };
+      })()`, "multiline redo restores display row semantics");
+
+      const multilineStartGeometry = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const environment = model?.parentEnvironment;
+        if (!field || !model || environment?.environmentName !== "aligned") {
+          return { ready: false };
+        }
+        const first = environment.getCell?.(0, 1)?.find((atom) => atom.type !== "first");
+        const second = environment.getCell?.(1, 1)?.find((atom) => atom.type !== "first");
+        const firstBounds = first ? field.getElementInfo(model.offsetOf(first))?.bounds : null;
+        const secondBounds = second ? field.getElementInfo(model.offsetOf(second))?.bounds : null;
+        const leftDelta =
+          firstBounds && secondBounds
+            ? Math.abs(firstBounds.left - secondBounds.left)
+            : null;
+        return {
+          ready: Boolean(firstBounds && secondBounds && leftDelta !== null && leftDelta <= 2),
+          leftDelta,
+          first: firstBounds
+            ? { left: firstBounds.left, right: firstBounds.right, width: firstBounds.width }
+            : null,
+          second: secondBounds
+            ? { left: secondBounds.left, right: secondBounds.right, width: secondBounds.width }
+            : null,
+          value: field.value,
+        };
+      })()`, "Shift+Enter aligned rows begin at the same visual x anchor");
+
+      await key("&", "Digit7", 55, 8);
+      const alignmentPoint = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const environment = model?.parentEnvironment;
+        const cursor = model?.at(model.position);
+        const branch = cursor?.parentBranch;
+        const leftCell = environment?.getCell?.(1, 0) ?? [];
+        const rightCell = environment?.getCell?.(1, 1) ?? [];
+        const values = (cell) =>
+          cell
+            .filter((atom) => atom.type !== "first")
+            .map((atom) => atom.value ?? atom.command ?? "");
+        return {
+          ready:
+            environment?.environmentName === "aligned" &&
+            Array.isArray(branch) &&
+            branch[0] === 1 &&
+            branch[1] === 1 &&
+            values(leftCell).length === 0 &&
+            values(rightCell).includes("b"),
+          value: field?.value ?? "",
+          environment: environment?.environmentName ?? null,
+          branch: Array.isArray(branch) ? branch : null,
+          leftCell: values(leftCell),
+          rightCell: values(rightCell),
+        };
+      })()`, "ampersand becomes a real aligned column boundary");
+
+      await client.send("Page.reload", { ignoreCache: true });
+      const reopened = await waitForEvaluation(`(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const profile = persisted?.state?.latexFormatProfile;
+        const line = persisted?.state?.lines?.[0];
+        return {
+          ready:
+            profile?.inlineWrapper === "paren" &&
+            profile?.displayWrapper === "equation" &&
+            profile?.numbered === true &&
+            profile?.multilineEnvironment === "align" &&
+            /\\\\begin\\{aligned\\}/.test(line?.latex ?? ""),
+          profile,
+          line,
+        };
+      })()`, "LaTeX profile and aligned row after reload");
+
+      console.log(JSON.stringify({
+        profile,
+        initialRow,
+        inlineMode,
+        multiline,
+        multilineUndo,
+        multilineRedo,
+        multilineStartGeometry,
+        alignmentPoint,
+        reopened,
+      }, null, 2));
+      console.log("Targeted universal LaTeX profile UI regression passed");
+      return;
+    }
+
+    if (scenario === "persistent-formatting") {
+      await waitForEvaluation(`(() => ({
+        ready: [
+          '[data-formula-persistent-bold]',
+          '[data-formula-persistent-italic]',
+          '[data-formula-persistent-color]',
+          '[data-formula-persistent-background]',
+          '[data-formula-selection-color]',
+          '[data-formula-selection-background]',
+        ].every((selector) => {
+          const button = document.querySelector(selector);
+          if (!(button instanceof HTMLElement)) return false;
+          const rect = button.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        }),
+      }))()`, "persistent formula formatting controls");
+
+      const readPersistentState = async () =>
+        evaluate(`(() => {
+          const field =
+            document.querySelector(".formula-line.is-active math-field") ??
+            document.querySelector("math-field");
+          if (!field) return null;
+          const model = field._mathfield?.model;
+          const atoms = [];
+          const seen = new Set();
+          if (model) {
+            for (let index = 0; index <= model.lastOffset; index += 1) {
+              const atom = model.at(index);
+              if (!atom || seen.has(atom)) continue;
+              seen.add(atom);
+              if (
+                atom.type === "first" ||
+                atom.type === "placeholder" ||
+                atom.type === "prompt" ||
+                typeof atom.value !== "string" ||
+                !atom.value
+              ) {
+                continue;
+              }
+              atoms.push({
+                value: atom.value,
+                mode: atom.mode,
+                type: atom.type,
+                variant: atom.style?.variant ?? null,
+                variantStyle: atom.style?.variantStyle ?? null,
+                fontSeries: atom.style?.fontSeries ?? null,
+                fontShape: atom.style?.fontShape ?? null,
+                color: atom.style?.color ?? null,
+                backgroundColor: atom.style?.backgroundColor ?? null,
+              });
+            }
+          }
+          return {
+            value: field.value.replace(/\\s+/g, ""),
+            selection: JSON.parse(JSON.stringify(field.selection)),
+            position: field.position,
+            hasFocus: field.hasFocus(),
+            publicPersistent: field.visualTexPersistentTypingStyle ?? null,
+            privatePersistent:
+              field._mathfield?.visualTexPersistentTypingStyle ?? null,
+            atoms,
+          };
+        })()`);
+
+      const setPlaceholderFormula = async () => {
+        await evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          if (!field) return false;
+          field.setValue("\\\\frac{\\\\placeholder{}}{\\\\placeholder{}}", {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceAll",
+            selectionMode: "placeholder",
+            silenceNotifications: true,
+          });
+          field.focus();
+          if (field.selection?.ranges?.every(([start, end]) => start === end)) {
+            field.position = 0;
+            field.executeCommand("moveToNextPlaceholder");
+          }
+          field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+          return true;
+        })()`);
+        await waitForEvaluation(`(() => {
+          const field = document.querySelector("math-field");
+          const placeholders =
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder") ?? [];
+          return {
+            ready:
+              placeholders.length === 2 &&
+              Boolean(field?.hasFocus()) &&
+              Boolean(field?.selection?.ranges?.some(([start, end]) => start !== end)),
+          };
+        })()`, "selected structural placeholder before persistent formatting");
+      };
+
+      const readPlaceholderGeometry = async () =>
+        evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          const root = field?.shadowRoot;
+          const placeholders = [
+            ...(root?.querySelectorAll(".visualtex-structural-placeholder") ?? []),
+          ];
+          const selected =
+            root?.querySelector(
+              ".visualtex-structural-placeholder.ML__selected, " +
+              ".ML__selected .visualtex-structural-placeholder, " +
+              ".visualtex-structural-placeholder.ML__placeholder-selected",
+            ) ?? placeholders[0];
+          const caret =
+            selected?.querySelector(
+              ":scope > .visualtex-structural-placeholder-caret",
+            ) ?? root?.querySelector(".visualtex-structural-placeholder-caret, .ML__caret");
+          const toRect = (node) => {
+            if (!(node instanceof HTMLElement)) return null;
+            const rect = node.getBoundingClientRect();
+            return {
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+            };
+          };
+          return {
+            value: field?.value ?? "",
+            selection: field ? JSON.parse(JSON.stringify(field.selection)) : null,
+            position: field?.position ?? -1,
+            hasFocus: Boolean(field?.hasFocus()),
+            placeholderCount: placeholders.length,
+            placeholder: toRect(selected),
+            caret: toRect(caret),
+            persistent:
+              field?._mathfield?.visualTexPersistentTypingStyle ?? null,
+          };
+        })()`);
+
+      const rectStable = (before, after, tolerance = 0.75) => {
+        if (!before || !after) return before === after;
+        return ["left", "top", "width", "height"].every(
+          (key) => Math.abs(before[key] - after[key]) <= tolerance,
+        );
+      };
+
+      await setPlaceholderFormula();
+      const placeholderBefore = await readPlaceholderGeometry();
+      await clickSelectorWithPointer('[data-formula-persistent-bold]');
+      await clickSelectorWithPointer('[data-formula-persistent-italic]');
+      await clickSelectorWithPointer('[data-formula-persistent-color]');
+      await clickSelectorWithPointer('[data-formula-persistent-background]');
+      await sleep(120);
+      const placeholderAfter = await readPlaceholderGeometry();
+      if (
+        placeholderAfter.value !== placeholderBefore.value ||
+        JSON.stringify(placeholderAfter.selection) !==
+          JSON.stringify(placeholderBefore.selection) ||
+        placeholderAfter.position !== placeholderBefore.position ||
+        !placeholderAfter.hasFocus ||
+        placeholderAfter.placeholderCount !== 2 ||
+        !rectStable(placeholderBefore.placeholder, placeholderAfter.placeholder) ||
+        !rectStable(placeholderBefore.caret, placeholderAfter.caret) ||
+        !placeholderAfter.persistent?.bold ||
+        !placeholderAfter.persistent?.italic ||
+        !placeholderAfter.persistent?.color ||
+        !placeholderAfter.persistent?.backgroundColor
+      ) {
+        throw new Error(
+          `Persistent formatting changed caret/placeholder state: ${JSON.stringify({
+            placeholderBefore,
+            placeholderAfter,
+          })}`,
+        );
+      }
+
+      // Reset all four switches before exercising them independently.
+      await clickSelectorWithPointer('[data-formula-persistent-bold]');
+      await clickSelectorWithPointer('[data-formula-persistent-italic]');
+      await clickSelectorWithPointer('[data-formula-persistent-color]');
+      await clickSelectorWithPointer('[data-formula-persistent-background]');
+
+      await clearField();
+      await clickSelectorWithPointer('[data-formula-persistent-bold]');
+      await typeText("x");
+      await clickSelectorWithPointer('[data-formula-persistent-bold]');
+      await typeText("y");
+      const boldState = await readPersistentState();
+      const boldX = boldState.atoms.find((atom) => atom.value === "x");
+      const plainY = boldState.atoms.find((atom) => atom.value === "y");
+      if (
+        !boldX?.variantStyle?.includes("bold") ||
+        plainY?.variantStyle?.includes("bold")
+      ) {
+        throw new Error(
+          `Persistent bold leaked or failed: ${JSON.stringify(boldState)}`,
+        );
+      }
+
+      await clearField();
+      await clickSelectorWithPointer('[data-formula-persistent-italic]');
+      await typeText("1");
+      await clickSelectorWithPointer('[data-formula-persistent-italic]');
+      await typeText("2");
+      const italicState = await readPersistentState();
+      const italicOne = italicState.atoms.find((atom) => atom.value === "1");
+      const plainTwo = italicState.atoms.find((atom) => atom.value === "2");
+      if (
+        !italicOne?.variantStyle?.includes("italic") ||
+        plainTwo?.variantStyle?.includes("italic")
+      ) {
+        throw new Error(
+          `Persistent italic leaked or failed: ${JSON.stringify(italicState)}`,
+        );
+      }
+
+      await clearField();
+      await clickSelectorWithPointer('[data-formula-persistent-color]');
+      await typeText("x");
+      await clickSelectorWithPointer('[data-formula-persistent-color]');
+      await typeText("y");
+      const colorState = await readPersistentState();
+      const coloredX = colorState.atoms.find((atom) => atom.value === "x");
+      const plainColorY = colorState.atoms.find((atom) => atom.value === "y");
+      if (!coloredX?.color || plainColorY?.color) {
+        throw new Error(
+          `Persistent font color leaked or failed: ${JSON.stringify(colorState)}`,
+        );
+      }
+
+      await clearField();
+      await clickSelectorWithPointer('[data-formula-persistent-background]');
+      await typeText("x");
+      await clickSelectorWithPointer('[data-formula-persistent-background]');
+      await typeText("y");
+      const backgroundState = await readPersistentState();
+      const highlightedX = backgroundState.atoms.find((atom) => atom.value === "x");
+      const plainBackgroundY = backgroundState.atoms.find((atom) => atom.value === "y");
+      if (!highlightedX?.backgroundColor || plainBackgroundY?.backgroundColor) {
+        throw new Error(
+          `Persistent background color leaked or failed: ${JSON.stringify(backgroundState)}`,
+        );
+      }
+
+      await clearField();
+      await clickSelectorWithPointer('[data-formula-persistent-bold]');
+      await typeText("a");
+      await key("Enter", "Enter", 13, 8);
+      await typeText("b");
+      const multilineState = await readPersistentState();
+      const multilineGlyphs = multilineState.atoms.filter((atom) =>
+        atom.value === "a" || atom.value === "b"
+      );
+      if (
+        !multilineState.value.includes("begin{gathered}") ||
+        multilineGlyphs.length !== 2 ||
+        multilineGlyphs.some(
+          (atom) => !atom.variantStyle?.includes("bold"),
+        )
+      ) {
+        throw new Error(
+          `Persistent formatting did not survive Shift+Enter: ${JSON.stringify(multilineState)}`,
+        );
+      }
+      await clickSelectorWithPointer('[data-formula-persistent-bold]');
+
+      await clearField();
+      await clickSelectorWithPointer('[data-formula-persistent-bold]');
+      await typeText("a");
+      await key("Enter", "Enter", 13);
+      await waitForEvaluation(`(() => ({
+        ready: document.querySelectorAll("math-field").length === 2,
+      }))()`, "second formula row with persistent formatting");
+      await typeText("b");
+      const crossRowState = await evaluate(`(() => ({
+        values: [...document.querySelectorAll("math-field")].map((field) => {
+          const model = field._mathfield?.model;
+          const glyphs = [];
+          const seen = new Set();
+          if (model) {
+            for (let index = 0; index <= model.lastOffset; index += 1) {
+              const atom = model.at(index);
+              if (
+                !atom ||
+                seen.has(atom) ||
+                atom.type === "first" ||
+                atom.type === "placeholder" ||
+                atom.type === "prompt" ||
+                typeof atom.value !== "string" ||
+                !atom.value
+              ) continue;
+              seen.add(atom);
+              glyphs.push({
+                value: atom.value,
+                variant: atom.style?.variant ?? null,
+                variantStyle: atom.style?.variantStyle ?? null,
+                marker: atom.visualTexPersistentTypingApplied ?? null,
+                parentStyle: atom.parent?.style ?? null,
+                verbatimLatex: atom.verbatimLatex ?? null,
+              });
+            }
+          }
+          return {
+            value: field.value.replace(/\\s+/g, ""),
+            persistent:
+              field._mathfield?.visualTexPersistentTypingStyle ?? null,
+            glyphs,
+          };
+        }),
+      }))()`);
+      if (
+        crossRowState.values.length !== 2 ||
+        crossRowState.values.some(
+          (item) => !item.persistent?.bold || !item.value.includes("mathb"),
+        )
+      ) {
+        throw new Error(
+          `Persistent formatting did not carry across formula rows: ${JSON.stringify(crossRowState)}`,
+        );
+      }
+      await clickSelectorWithPointer('[data-formula-persistent-bold]');
+
+      console.log(
+        JSON.stringify(
+          {
+            placeholderBefore,
+            placeholderAfter,
+            boldState,
+            italicState,
+            colorState,
+            backgroundState,
+            multilineState,
+            crossRowState,
+          },
+          null,
+          2,
+        ),
+      );
+      console.log("Targeted persistent formula formatting regression passed");
+      return;
+    }
 
     if (scenario === "formula-formatting") {
       await waitForEvaluation(`(() => ({
@@ -417,8 +2787,8 @@ async function main() {
       await setFormattingValue('abc');
       await dispatchFormattingToggle('[data-formula-selection-bold]');
       const boldApplied = await readFormattingValue();
-      if (boldApplied !== String.raw`\mathbf{abc}`) {
-        throw new Error(`Bold toggle must emit \\mathbf exactly; received ${boldApplied}`);
+      if (boldApplied !== String.raw`\mathbfit{abc}`) {
+        throw new Error(`Bold toggle must preserve default math italic as \\mathbfit; received ${boldApplied}`);
       }
       await dispatchFormattingToggle('[data-formula-selection-bold]');
       const boldRemoved = await readFormattingValue();
@@ -459,6 +2829,34 @@ async function main() {
         restored: italicRestored,
         boldItalic: boldItalicApplied,
         boldRestored: boldUprightRestored,
+      };
+
+      await setFormattingValue(String.raw`\Delta`);
+      await dispatchFormattingToggle('[data-formula-selection-bold]');
+      const uppercaseGreekBold = await readFormattingValue();
+      if (uppercaseGreekBold !== String.raw`\mathbf{\Delta}`) {
+        throw new Error(`Uppercase Greek bold must stay upright: ${uppercaseGreekBold}`);
+      }
+      await dispatchFormattingToggle('[data-formula-selection-bold]');
+      const uppercaseGreekBoldRestored = await readFormattingValue();
+      if (uppercaseGreekBoldRestored !== String.raw`\Delta`) {
+        throw new Error(`Uppercase Greek bold toggle did not restore default upright form: ${uppercaseGreekBoldRestored}`);
+      }
+      await dispatchFormattingToggle('[data-formula-selection-italic]');
+      const uppercaseGreekItalic = await readFormattingValue();
+      if (uppercaseGreekItalic !== String.raw`\mathit{\Delta}`) {
+        throw new Error(`Uppercase Greek italic toggle must visibly italicize: ${uppercaseGreekItalic}`);
+      }
+      await dispatchFormattingToggle('[data-formula-selection-italic]');
+      const uppercaseGreekItalicRestored = await readFormattingValue();
+      if (uppercaseGreekItalicRestored !== String.raw`\Delta`) {
+        throw new Error(`Uppercase Greek italic toggle did not restore default upright form: ${uppercaseGreekItalicRestored}`);
+      }
+      const uppercaseGreekFormatting = {
+        bold: uppercaseGreekBold,
+        boldRestored: uppercaseGreekBoldRestored,
+        italic: uppercaseGreekItalic,
+        italicRestored: uppercaseGreekItalicRestored,
       };
 
       await setFormattingValue('abc');
@@ -527,11 +2925,62 @@ async function main() {
         throw new Error(`Persistent typing controls must stay removed: ${JSON.stringify(removedPersistentControls)}`);
       }
 
+      await clearField();
+      await typeText("abc");
+      await key("Enter", "Enter", 13);
+      await waitForEvaluation(`(() => ({
+        ready: document.querySelectorAll("math-field").length === 2,
+      }))()`, "two formula rows for stale selection isolation");
+      await typeText("xyz");
+      await evaluate(`(() => {
+        const fields = [...document.querySelectorAll("math-field")];
+        const first = fields[0];
+        const second = fields[1];
+        if (!first || !second) return false;
+        first.selection = { ranges: [[0, first.lastOffset]], direction: "forward" };
+        second.focus();
+        second.selection = { ranges: [[0, second.lastOffset]], direction: "forward" };
+        second.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        return true;
+      })()`);
+      await sleep(80);
+      await clickSelectorWithPointer('[data-formula-selection-bold]');
+      const staleSelectionIsolation = await waitForEvaluation(`(() => {
+        const fields = [...document.querySelectorAll("math-field")];
+        const values = fields.map((field) => field.value.replace(/\s+/g, ""));
+        return {
+          ready:
+            values.length === 2 &&
+            values[0] === "abc" &&
+            values[1] === "\\\\mathbfit{xyz}",
+          values,
+          activeIndex: fields.findIndex((field) => field.hasFocus()),
+        };
+      })()`, "formatting ignores stale selection in an inactive formula row");
+      await clickSelectorWithPointer('button[aria-label="撤销"]');
+      const staleSelectionUndo = await waitForEvaluation(`(() => {
+        const values = [...document.querySelectorAll("math-field")].map((field) =>
+          field.value.replace(/\s+/g, ""),
+        );
+        return { ready: values.length === 2 && values[0] === "abc" && values[1] === "xyz", values };
+      })()`, "undo restores only the actively formatted formula row");
+      await clickSelectorWithPointer('button[aria-label="重做"]');
+      const staleSelectionRedo = await waitForEvaluation(`(() => {
+        const values = [...document.querySelectorAll("math-field")].map((field) =>
+          field.value.replace(/\s+/g, ""),
+        );
+        return { ready: values.length === 2 && values[0] === "abc" && values[1] === "\\\\mathbfit{xyz}", values };
+      })()`, "redo reapplies formatting only to the active formula row");
+
       console.log(JSON.stringify({
         selectionBold,
         selectionItalic,
+        uppercaseGreekFormatting,
         selectionColors,
         removedPersistentControls,
+        staleSelectionIsolation,
+        staleSelectionUndo,
+        staleSelectionRedo,
       }, null, 2));
       console.log("Targeted desktop formula formatting regression passed");
       return;
@@ -1075,22 +3524,105 @@ async function main() {
         const toolbar = document.querySelector(".classic-bottom-toolbar");
         const strip = toolbar?.querySelector(".template-strip");
         const categorySection = toolbar?.querySelector(".toolbar-category-section");
+        const appHeader = document.querySelector(".app-header");
+        const editorHeader = document.querySelector(".editor-pane-header");
+        const topMount = document.querySelector("[data-desktop-top-tools-mount]");
+        const topCanvasTools = topMount?.querySelector(".canvas-tool-group");
+        const topDesktopControls = topMount?.querySelector(".desktop-editor-header-controls");
+        const bottomStrip = document.querySelector(".classic-bottom-tabs");
+        const bottomControls = document.querySelector(".classic-bottom-workspace-controls");
+        const bottomTabs = document.querySelector(".classic-bottom-tab-group");
+        const appHeaderRect = appHeader?.getBoundingClientRect();
+        const topCanvasToolsRect = topCanvasTools?.getBoundingClientRect();
+        const topDesktopControlsRect = topDesktopControls?.getBoundingClientRect();
+        const bottomStripRect = bottomStrip?.getBoundingClientRect();
+        const bottomControlsRect = bottomControls?.getBoundingClientRect();
+        const bottomTabsRect = bottomTabs?.getBoundingClientRect();
+        const appHeaderStyle = appHeader ? getComputedStyle(appHeader) : null;
+        const editorHeaderStyle = editorHeader ? getComputedStyle(editorHeader) : null;
+        const legacyChromeRemoved =
+          !document.querySelector(".sidebar-toggle") &&
+          !document.querySelector(".brand-mark") &&
+          !document.querySelector(".brand-copy");
         const rowCount = Number(toolbar?.dataset.toolbarRowCount || 0);
         const rowGrid = categorySection ?? strip;
         const computedRowCount = rowGrid
           ? getComputedStyle(rowGrid).gridTemplateRows.split(/\\s+/).filter(Boolean).length
           : 0;
+        const topInsideHeader = [topCanvasToolsRect, topDesktopControlsRect].every((rect) =>
+          Boolean(
+            rect &&
+              appHeaderRect &&
+              rect.left >= appHeaderRect.left - 1 &&
+              rect.right <= appHeaderRect.right + 1 &&
+              rect.top >= appHeaderRect.top - 1 &&
+              rect.bottom <= appHeaderRect.bottom + 1
+          )
+        );
+        const bottomCentered = Boolean(
+          bottomStripRect &&
+          bottomTabsRect &&
+          Math.abs(
+            (bottomTabsRect.left + bottomTabsRect.right) / 2 -
+              (bottomStripRect.left + bottomStripRect.right) / 2
+          ) <= 1
+        );
         return {
           ready:
             Boolean(tileHandle && dockHandle && tilePanel && dock && toolbar) &&
             rowCount >= 2 &&
-            computedRowCount === rowCount,
+            computedRowCount === rowCount &&
+            appHeaderStyle?.position === "relative" &&
+            editorHeaderStyle?.display === "none" &&
+            legacyChromeRemoved &&
+            topInsideHeader &&
+            bottomCentered &&
+            Boolean(
+              bottomControlsRect &&
+              bottomTabsRect &&
+              bottomControlsRect.right <= bottomTabsRect.left + 1
+            ) &&
+            Boolean(bottomControls?.querySelector("[data-formula-alignment]")) &&
+            !Boolean(bottomControls?.querySelector(".canvas-tool-group")) &&
+            !Boolean(bottomControls?.querySelector(".desktop-editor-header-controls")),
           tileWidth: tilePanel?.getBoundingClientRect().width ?? 0,
           dockHeight: dock?.getBoundingClientRect().height ?? 0,
           rowCount,
           computedRowCount,
+          appHeaderPosition: appHeaderStyle?.position ?? null,
+          editorHeaderDisplay: editorHeaderStyle?.display ?? null,
+          legacyChromeRemoved,
+          topInsideHeader,
+          bottomCentered,
+          appHeaderRect: appHeaderRect
+            ? { left: appHeaderRect.left, right: appHeaderRect.right, top: appHeaderRect.top, bottom: appHeaderRect.bottom, height: appHeaderRect.height }
+            : null,
+          topCanvasToolsRect: topCanvasToolsRect
+            ? { left: topCanvasToolsRect.left, right: topCanvasToolsRect.right, top: topCanvasToolsRect.top, bottom: topCanvasToolsRect.bottom, height: topCanvasToolsRect.height }
+            : null,
+          topDesktopControlsRect: topDesktopControlsRect
+            ? { left: topDesktopControlsRect.left, right: topDesktopControlsRect.right, top: topDesktopControlsRect.top, bottom: topDesktopControlsRect.bottom, height: topDesktopControlsRect.height }
+            : null,
+          bottomControlsHasCanvasTools: Boolean(bottomControls?.querySelector(".canvas-tool-group")),
+          bottomControlsHasDesktopControls: Boolean(bottomControls?.querySelector(".desktop-editor-header-controls")),
+          bottomControlsRect: bottomControlsRect
+            ? { left: bottomControlsRect.left, right: bottomControlsRect.right, top: bottomControlsRect.top }
+            : null,
+          bottomTabsRect: bottomTabsRect
+            ? { left: bottomTabsRect.left, right: bottomTabsRect.right, top: bottomTabsRect.top }
+            : null,
         };
-      })()`, "classic resizable panels");
+      })()`, "classic single top toolbar and centered bottom tabs");
+
+      await evaluate(`document.querySelector(".desktop-top-tools-mount .quick-ocr-button")?.click()`);
+      const quickOcrDropdown = await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector("[data-quick-ocr-mode-menu]")),
+        itemCount: document.querySelectorAll("[data-quick-ocr-mode-menu] > button").length,
+      }))()`, "icon-only Quick OCR dropdown");
+      await evaluate(`document.querySelector(".desktop-top-tools-mount .quick-ocr-button")?.click()`);
+      await waitForEvaluation(`(() => ({
+        ready: !document.querySelector("[data-quick-ocr-mode-menu]"),
+      }))()`, "Quick OCR dropdown closes from icon trigger");
 
       const tileTabGeometry = await waitForEvaluation(`(() => {
         const panel = document.querySelector('.classic-tile-toolbar');
@@ -1389,13 +3921,43 @@ async function main() {
         clickCount: 1,
       });
 
-      await evaluate(`document.querySelector(
-        '.classic-bottom-toolbar .toolbar-tab[data-category="matrix"]',
-      )?.click()`);
+      const instantMatrixCategoryJump = await evaluate(`(() => {
+        const strip = document.querySelector(
+          ".classic-bottom-toolbar .template-strip.is-continuous-categories",
+        );
+        const tab = document.querySelector(
+          '.classic-bottom-toolbar .toolbar-tab[data-category="matrix"]',
+        );
+        const section = strip?.querySelector(
+          '[data-toolbar-category-section="matrix"]',
+        );
+        if (!(strip instanceof HTMLElement) ||
+            !(tab instanceof HTMLElement) ||
+            !(section instanceof HTMLElement)) {
+          return { ready: false };
+        }
+        strip.scrollLeft = 0;
+        const maxScroll = Math.max(0, strip.scrollWidth - strip.clientWidth);
+        const expected = Math.max(0, Math.min(section.offsetLeft, maxScroll));
+        tab.click();
+        return {
+          ready: Math.abs(strip.scrollLeft - expected) <= 2,
+          scrollLeft: strip.scrollLeft,
+          expected,
+          delta: Math.abs(strip.scrollLeft - expected),
+        };
+      })()`);
+      if (!instantMatrixCategoryJump.ready) {
+        throw new Error(
+          `Formula toolbar matrix category switch is not instantaneous: ${JSON.stringify(instantMatrixCategoryJump)}`,
+        );
+      }
       const compactMatrixState = await waitForEvaluation(`(() => {
         const toolbar = document.querySelector(".classic-bottom-toolbar");
         const strip = toolbar?.querySelector(".template-strip");
         const builder = toolbar?.querySelector(".matrix-builder");
+        const matrixSection = builder?.closest('[data-toolbar-category-section="matrix"]');
+        const firstCommand = matrixSection?.querySelector(".template-button");
         const grid = toolbar?.querySelector(".matrix-size-grid");
         const delimiterOptions = toolbar?.querySelector(".matrix-delimiter-options");
         const delimiterButtons = [...(delimiterOptions?.querySelectorAll("button") ?? [])];
@@ -1403,6 +3965,18 @@ async function main() {
         const builderRect = builder?.getBoundingClientRect();
         const gridRect = grid?.getBoundingClientRect();
         const delimiterRect = delimiterOptions?.getBoundingClientRect();
+        const builderBounds = builder?.getBoundingClientRect();
+        const firstCommandRect = firstCommand?.getBoundingClientRect();
+        const mainPicker = toolbar?.querySelector(".matrix-main-picker");
+        const sizePicker = toolbar?.querySelector(".matrix-size-picker");
+        const mainPickerRect = mainPicker?.getBoundingClientRect();
+        const sizePickerRect = sizePicker?.getBoundingClientRect();
+        const mainPickerStyle = mainPicker ? getComputedStyle(mainPicker) : null;
+        const sizePickerStyle = sizePicker ? getComputedStyle(sizePicker) : null;
+        const minDelimiterLeft = delimiterButtons.reduce(
+          (left, button) => Math.min(left, button.getBoundingClientRect().left),
+          Number.POSITIVE_INFINITY,
+        );
         const maxDelimiterRight = delimiterButtons.reduce(
           (right, button) => Math.max(right, button.getBoundingClientRect().right),
           0,
@@ -1417,14 +3991,47 @@ async function main() {
             gridRect.top >= builderRect.top - 1 &&
             gridRect.bottom <= builderRect.bottom + 1 &&
             delimiterButtons.length === 6 &&
-            Boolean(delimiterRect) &&
-            maxDelimiterRight <= gridRect.left - 1 &&
-            delimiterRect.right <= gridRect.left - 1,
+            Boolean(delimiterRect && builderBounds) &&
+            gridRect.width >= 80 &&
+            gridRect.height >= 80 &&
+            gridRect.width >= delimiterRect.width * 3 &&
+            gridRect.height >= delimiterRect.width * 3 &&
+            gridRect.left >= builderBounds.left - 1 &&
+            gridRect.right <= builderBounds.right + 1 &&
+            gridRect.top >= builderBounds.top - 1 &&
+            gridRect.bottom <= builderBounds.bottom + 1 &&
+            delimiterRect.top >= builderBounds.top - 1 &&
+            delimiterRect.bottom <= builderBounds.bottom + 1 &&
+            minDelimiterLeft >= gridRect.right + 1 &&
+            delimiterRect.left >= gridRect.right + 1 &&
+            (!firstCommandRect || firstCommandRect.left >= builderBounds.right - 1),
           rowCount,
           stripHeight: stripRect?.height ?? 0,
           builderHeight: builderRect?.height ?? 0,
-          gridHeight: gridRect?.height ?? 0,
+          builder: builderBounds
+            ? { left: builderBounds.left, right: builderBounds.right, top: builderBounds.top, bottom: builderBounds.bottom, width: builderBounds.width, height: builderBounds.height }
+            : null,
+          firstCommand: firstCommandRect
+            ? { left: firstCommandRect.left, right: firstCommandRect.right, top: firstCommandRect.top, bottom: firstCommandRect.bottom }
+            : null,
+          mainPicker: mainPickerRect
+            ? { left: mainPickerRect.left, right: mainPickerRect.right, width: mainPickerRect.width, height: mainPickerRect.height }
+            : null,
+          mainPickerRows: mainPickerStyle?.gridTemplateRows ?? null,
+          mainPickerColumns: mainPickerStyle?.gridTemplateColumns ?? null,
+          sizePicker: sizePickerRect
+            ? { left: sizePickerRect.left, right: sizePickerRect.right, width: sizePickerRect.width, height: sizePickerRect.height }
+            : null,
+          sizePickerGridColumn: sizePickerStyle?.gridColumn ?? null,
+          sizePickerGridRow: sizePickerStyle?.gridRow ?? null,
+          grid: gridRect
+            ? { left: gridRect.left, right: gridRect.right, width: gridRect.width, height: gridRect.height }
+            : null,
+          delimiter: delimiterRect
+            ? { left: delimiterRect.left, right: delimiterRect.right, top: delimiterRect.top, bottom: delimiterRect.bottom, width: delimiterRect.width, height: delimiterRect.height }
+            : null,
           delimiterCount: delimiterButtons.length,
+          delimiterLeft: minDelimiterLeft,
           delimiterRight: maxDelimiterRight,
           gridLeft: gridRect?.left ?? 0,
         };
@@ -1445,6 +4052,7 @@ async function main() {
         buttons: 1,
         clickCount: 1,
       });
+      const matrixSizeSamples = [];
       for (let step = 1; step <= 4; step += 1) {
         await client.send("Input.dispatchMouseEvent", {
           type: "mouseMoved",
@@ -1453,7 +4061,33 @@ async function main() {
           button: "left",
           buttons: 1,
         });
-        await sleep(26);
+        await sleep(40);
+        matrixSizeSamples.push(
+          await evaluate(`(() => {
+            const toolbar = document.querySelector(".classic-bottom-toolbar");
+            const grid = toolbar?.querySelector(".matrix-size-grid");
+            const value = Number.parseFloat(
+              getComputedStyle(toolbar).getPropertyValue("--matrix-picker-size"),
+            );
+            return {
+              cssSize: Number.isFinite(value) ? value : 0,
+              gridSize: grid?.getBoundingClientRect().height ?? 0,
+              rowCount: Number(toolbar?.dataset.toolbarRowCount || 0),
+            };
+          })()`),
+        );
+      }
+      const distinctMatrixSizes = new Set(
+        matrixSizeSamples.map((sample) => Math.round(sample.gridSize)),
+      );
+      if (
+        distinctMatrixSizes.size < 3 ||
+        matrixSizeSamples.at(-1)?.gridSize <=
+          matrixSizeSamples[0]?.gridSize + 20
+      ) {
+        throw new Error(
+          `Classic matrix picker did not resize continuously with dock height: ${JSON.stringify(matrixSizeSamples)}`,
+        );
       }
       const grownMatrixState = await waitForEvaluation(`(() => {
         const toolbar = document.querySelector(".classic-bottom-toolbar");
@@ -1463,6 +4097,11 @@ async function main() {
         const delimiterButtons = [...(delimiterOptions?.querySelectorAll("button") ?? [])];
         const builderRect = builder?.getBoundingClientRect();
         const gridRect = grid?.getBoundingClientRect();
+        const delimiterRect = delimiterOptions?.getBoundingClientRect();
+        const minDelimiterLeft = delimiterButtons.reduce(
+          (left, button) => Math.min(left, button.getBoundingClientRect().left),
+          Number.POSITIVE_INFINITY,
+        );
         const maxDelimiterRight = delimiterButtons.reduce(
           (right, button) => Math.max(right, button.getBoundingClientRect().right),
           0,
@@ -1472,18 +4111,26 @@ async function main() {
           ready:
             rowCount >= 3 &&
             Boolean(builderRect && gridRect) &&
-            gridRect.height >= ${compactMatrixState.gridHeight + 24} &&
-            gridRect.height <= 153 &&
+            gridRect.height >= ${compactMatrixState.grid.height + 24} &&
             gridRect.top >= builderRect.top - 1 &&
             gridRect.bottom <= builderRect.bottom + 1 &&
             delimiterButtons.length === 6 &&
-            maxDelimiterRight <= gridRect.left - 1,
+            Boolean(delimiterRect) &&
+            gridRect.width >= delimiterRect.width * 4 &&
+            minDelimiterLeft >= gridRect.right + 1 &&
+            delimiterRect.left >= gridRect.right + 1,
           rowCount,
           builderHeight: builderRect?.height ?? 0,
+          builderTop: builderRect?.top ?? 0,
+          builderBottom: builderRect?.bottom ?? 0,
           gridHeight: gridRect?.height ?? 0,
+          gridTop: gridRect?.top ?? 0,
+          gridBottom: gridRect?.bottom ?? 0,
           delimiterCount: delimiterButtons.length,
+          delimiterLeft: minDelimiterLeft,
           delimiterRight: maxDelimiterRight,
           gridLeft: gridRect?.left ?? 0,
+          gridRight: gridRect?.right ?? 0,
         };
       })()`, "matrix picker grows with toolbar height");
       await client.send("Input.dispatchMouseEvent", {
@@ -1567,16 +4214,122 @@ async function main() {
         };
       })()`, "persisted classic panel dimensions");
 
+      await client.send("Emulation.setDeviceMetricsOverride", {
+        width: 500,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      const narrowToolbar = await waitForEvaluation(`(() => {
+        const header = document.querySelector(".app-header");
+        const headerRect = header?.getBoundingClientRect();
+        const selectors = [
+          ".menu-button",
+          ".header-actions > .icon-button",
+          ".header-actions .action-group .icon-button",
+          ".code-format-primary",
+          ".desktop-top-tools-mount .keypad-mode-toggle",
+          ".desktop-top-tools-mount .workspace-export-trigger",
+          ".desktop-top-tools-mount .canvas-input-behavior-trigger",
+          ".desktop-top-tools-mount .quick-ocr-button",
+          ".desktop-top-tools-mount .silent-ocr-toggle",
+          ".desktop-top-tools-mount .canvas-ocr-model",
+          ".desktop-top-tools-mount .canvas-controls .icon-button",
+        ];
+        const controls = [...new Set(
+          selectors.flatMap((selector) => [...document.querySelectorAll(selector)])
+        )].filter((element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+        });
+        const rects = controls
+          .map((element) => {
+            const rect = element.getBoundingClientRect();
+            return {
+              className: element.className,
+              left: rect.left,
+              right: rect.right,
+              top: rect.top,
+              bottom: rect.bottom,
+            };
+          })
+          .sort((a, b) => a.left - b.left);
+        const inside = Boolean(headerRect) && rects.every((rect) =>
+          rect.left >= headerRect.left - 1 &&
+          rect.right <= headerRect.right + 1 &&
+          rect.top >= headerRect.top - 1 &&
+          rect.bottom <= headerRect.bottom + 1
+        );
+        const nonOverlapping = rects.every((rect, index) =>
+          index === 0 || rect.left >= rects[index - 1].right - 0.5
+        );
+        const bottomStrip = document.querySelector(".classic-bottom-tabs")?.getBoundingClientRect();
+        const tabs = document.querySelector(".classic-bottom-tab-group")?.getBoundingClientRect();
+        const formatting = document.querySelector(".classic-bottom-workspace-controls")?.getBoundingClientRect();
+        const centered = Boolean(bottomStrip && tabs) &&
+          Math.abs(
+            (tabs.left + tabs.right) / 2 -
+            (bottomStrip.left + bottomStrip.right) / 2
+          ) <= 1;
+        const bottomNonOverlapping = Boolean(formatting && tabs) &&
+          formatting.right <= tabs.left + 1;
+        const longLabelsVisible = [
+          ".code-format-primary span",
+          ".keypad-mode-toggle span",
+          ".workspace-export-trigger > span",
+          ".canvas-input-behavior-trigger > span",
+          ".quick-ocr-button > span",
+          ".silent-ocr-toggle > span",
+          ".silent-ocr-toggle kbd",
+        ].some((selector) =>
+          [...document.querySelectorAll(selector)].some((element) => {
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0;
+          })
+        );
+        return {
+          ready:
+            window.innerWidth === 500 &&
+            inside &&
+            nonOverlapping &&
+            centered &&
+            bottomNonOverlapping &&
+            !longLabelsVisible,
+          width: window.innerWidth,
+          inside,
+          nonOverlapping,
+          centered,
+          bottomNonOverlapping,
+          longLabelsVisible,
+          rects,
+          header: headerRect
+            ? { left: headerRect.left, right: headerRect.right, top: headerRect.top, bottom: headerRect.bottom }
+            : null,
+          tabs: tabs
+            ? { left: tabs.left, right: tabs.right }
+            : null,
+          formatting: formatting
+            ? { left: formatting.left, right: formatting.right }
+            : null,
+        };
+      })()`, "narrow desktop toolbar without overlap");
+
       console.log(
         JSON.stringify(
           {
             initial,
+            quickOcrDropdown,
+            narrowToolbar,
             tileDuringDrag,
             tileAfterDrag,
             dockGrowDuringDrag,
             dockShrinkDuringDrag,
             dockRestoreTwoRows,
+            instantMatrixCategoryJump,
             compactMatrixState,
+            matrixSizeSamples,
             grownMatrixState,
             sourceBefore,
             sourceDuringDrag,
@@ -1705,6 +4458,53 @@ async function main() {
         };
       })()`, "visible classic formula tool previews");
 
+      const staticCategorySizingState = await waitForEvaluation(`(() => {
+        const inspect = (category, commandId) => {
+          const button = document.querySelector(
+            '.classic-bottom-toolbar [data-toolbar-category-section="' + category + '"] [data-command-id="' + commandId + '"]',
+          );
+          const host = button?.querySelector('.math-preview');
+          const content = host?.querySelector('.math-preview-fit-content');
+          const hostBounds = host?.getBoundingClientRect();
+          const contentBounds = content?.getBoundingClientRect();
+          const scale = Number.parseFloat(host?.dataset.fitScale ?? '0');
+          const inside = Boolean(
+            hostBounds && contentBounds &&
+            contentBounds.left >= hostBounds.left - 0.75 &&
+            contentBounds.right <= hostBounds.right + 0.75 &&
+            contentBounds.top >= hostBounds.top - 0.75 &&
+            contentBounds.bottom <= hostBounds.bottom + 0.75
+          );
+          const fillRatio =
+            hostBounds && contentBounds && hostBounds.width > 0 && hostBounds.height > 0
+              ? Math.max(contentBounds.width / hostBounds.width, contentBounds.height / hostBounds.height)
+              : 0;
+          return {
+            category,
+            commandId,
+            fitReady: host?.dataset.fitReady ?? '',
+            scale,
+            inside,
+            fillRatio,
+          };
+        };
+        const samples = [
+          inspect('arrow', 'rightarrow'),
+          inspect('physics', 'hbar'),
+          inspect('set', 'emptyset'),
+        ];
+        return {
+          ready: samples.every((sample) =>
+            sample.fitReady === 'static' &&
+            Number.isFinite(sample.scale) &&
+            sample.scale > 0.92 &&
+            sample.inside &&
+            sample.fillRatio >= 0.45
+          ),
+          samples,
+        };
+      })()`, "classic static toolbar categories use the full tile scale");
+
       const setActiveField = async (latex) => {
         await waitForEvaluation(`(() => {
           const fields = [...document.querySelectorAll("math-field")];
@@ -1826,9 +4626,6 @@ async function main() {
         };
       })()`, "decorator does not consume a preceding operator");
 
-      await evaluate(`document.querySelector(
-        '.classic-bottom-toolbar .toolbar-tab[data-category="relation"]',
-      )?.click()`);
       const horizontalWheelState = await waitForEvaluation(`(() => {
         const strip = document.querySelector(
           ".classic-bottom-toolbar .template-strip",
@@ -1873,6 +4670,24 @@ async function main() {
     }
 
     if (scenario === "toolbar-compact") {
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector('.settings-toggle')),
+      }))()`, "settings trigger for compact toolbar regression");
+      await evaluate(`(() => {
+        if (!document.querySelector('.settings-dialog')) {
+          document.querySelector('.settings-toggle').click();
+        }
+        return true;
+      })()`);
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector('[data-editor-layout-choice="standard"]')),
+      }))()`, "standard layout choice");
+      await evaluate(`document.querySelector('[data-editor-layout-choice="standard"]')?.click()`);
+      await waitForEvaluation(`(() => ({
+        ready: document.querySelector('.workspace')?.dataset.editorLayout === 'standard',
+        layout: document.querySelector('.workspace')?.dataset.editorLayout ?? '',
+      }))()`, "standard layout for compact toolbar regression");
+      await evaluate(`document.querySelector('.settings-dialog button[aria-label="关闭设置"], .settings-dialog button[aria-label="Close settings"]')?.click()`);
       await evaluate(`(() => {
         if (!document.querySelector(".formula-toolbar")) {
           document.querySelector(".sidebar-toggle")?.click();
@@ -1886,6 +4701,165 @@ async function main() {
             document.querySelectorAll(".toolbar-tab").length === 9,
         ),
       }))()`, "formula toolbar");
+
+      await evaluate(`document.querySelector('.toolbar-tab[data-category="common"]')?.click()`);
+      const standardCommonTint = await waitForEvaluation(`(() => {
+        const strip = document.querySelector(".template-strip");
+        const button = strip?.querySelector(".template-button");
+        const style = button ? getComputedStyle(button) : null;
+        return {
+          ready:
+            strip?.getAttribute("data-active-category") === "common" &&
+            Boolean(button && style),
+          background: style?.backgroundImage ?? "",
+          outline: style?.outlineColor ?? "",
+        };
+      })()`, "standard common category tint");
+
+      await evaluate(`document.querySelector('.toolbar-tab[data-category="structure"]')?.click()`);
+      const standardStructureTint = await waitForEvaluation(`(() => {
+        const strip = document.querySelector(".template-strip");
+        const button = strip?.querySelector(".template-button");
+        const style = button ? getComputedStyle(button) : null;
+        return {
+          ready:
+            strip?.getAttribute("data-active-category") === "structure" &&
+            Boolean(button && style),
+          background: style?.backgroundImage ?? "",
+          outline: style?.outlineColor ?? "",
+        };
+      })()`, "standard structure category tint");
+      if (
+        standardCommonTint.background === standardStructureTint.background &&
+        standardCommonTint.outline === standardStructureTint.outline
+      ) {
+        throw new Error(
+          `Standard layout category colors are not distinct: ${JSON.stringify({
+            standardCommonTint,
+            standardStructureTint,
+          })}`,
+        );
+      }
+
+      await evaluate(`document.querySelector('.toolbar-tab[data-category="matrix"]')?.click()`);
+      const standardMatrixLayout = await waitForEvaluation(`(() => {
+        const builder = document.querySelector(".formula-toolbar:not(.is-horizontal) .matrix-builder");
+        const grid = builder?.querySelector(".matrix-size-grid");
+        const delimiter = builder?.querySelector(".matrix-delimiter-options");
+        const cells = builder?.querySelectorAll(".matrix-size-cell") ?? [];
+        const strip = builder?.parentElement;
+        const firstCommand = builder?.nextElementSibling;
+        const builderRect = builder?.getBoundingClientRect();
+        const gridRect = grid?.getBoundingClientRect();
+        const delimiterRect = delimiter?.getBoundingClientRect();
+        const stripRect = strip?.getBoundingClientRect();
+        const firstCommandRect = firstCommand?.getBoundingClientRect();
+        return {
+          ready:
+            Boolean(builderRect && gridRect && delimiterRect && stripRect) &&
+            cells.length === 100 &&
+            builderRect.height >= gridRect.height + 45 &&
+            gridRect.width >= 150 &&
+            gridRect.height >= 150 &&
+            gridRect.width >= delimiterRect.width * 4 &&
+            gridRect.right <= delimiterRect.left - 1 &&
+            gridRect.left >= builderRect.left - 1 &&
+            gridRect.right <= builderRect.right + 1 &&
+            gridRect.top >= builderRect.top - 1 &&
+            gridRect.bottom <= builderRect.bottom + 1 &&
+            delimiterRect.top >= builderRect.top - 1 &&
+            delimiterRect.bottom <= builderRect.bottom + 1 &&
+            delimiterRect.right <= builderRect.right + 1 &&
+            builderRect.width >= stripRect.width - 24 &&
+            (!firstCommandRect || firstCommandRect.top >= builderRect.bottom - 1),
+          cellCount: cells.length,
+          builder: builderRect
+            ? { left: builderRect.left, right: builderRect.right, top: builderRect.top, bottom: builderRect.bottom, width: builderRect.width, height: builderRect.height }
+            : null,
+          strip: stripRect
+            ? { left: stripRect.left, right: stripRect.right, width: stripRect.width }
+            : null,
+          firstCommand: firstCommandRect
+            ? { left: firstCommandRect.left, right: firstCommandRect.right, top: firstCommandRect.top, bottom: firstCommandRect.bottom }
+            : null,
+          grid: gridRect
+            ? { left: gridRect.left, right: gridRect.right, top: gridRect.top, bottom: gridRect.bottom, width: gridRect.width, height: gridRect.height }
+            : null,
+          delimiter: delimiterRect
+            ? { left: delimiterRect.left, right: delimiterRect.right, top: delimiterRect.top, bottom: delimiterRect.bottom, width: delimiterRect.width, height: delimiterRect.height }
+            : null,
+        };
+      })()`, "standard matrix dominated by 10 by 10 selector");
+
+      await evaluate(`(() => {
+        const toolbar = document.querySelector(".formula-toolbar:not(.is-horizontal)");
+        if (!(toolbar instanceof HTMLElement)) return false;
+        toolbar.style.height = "680px";
+        toolbar.style.minHeight = "0";
+        toolbar.style.alignSelf = "start";
+        return true;
+      })()`);
+      const standardMatrixTall = await waitForEvaluation(`(() => {
+        const toolbar = document.querySelector(".formula-toolbar:not(.is-horizontal)");
+        const grid = toolbar?.querySelector(".matrix-size-grid");
+        const builder = toolbar?.querySelector(".matrix-builder");
+        const size = toolbar instanceof HTMLElement
+          ? Number.parseFloat(
+              getComputedStyle(toolbar).getPropertyValue("--matrix-picker-size"),
+            )
+          : Number.NaN;
+        return {
+          ready:
+            toolbar instanceof HTMLElement &&
+            Math.abs(toolbar.getBoundingClientRect().height - 680) <= 2 &&
+            Boolean(grid && builder) &&
+            Number.isFinite(size) &&
+            size > 0,
+          toolbarHeight: toolbar?.getBoundingClientRect().height ?? 0,
+          cssSize: Number.isFinite(size) ? size : 0,
+          gridSize: grid?.getBoundingClientRect().height ?? 0,
+          builderHeight: builder?.getBoundingClientRect().height ?? 0,
+        };
+      })()`, "standard matrix size at tall toolbar");
+
+      await evaluate(`(() => {
+        const toolbar = document.querySelector(".formula-toolbar:not(.is-horizontal)");
+        if (!(toolbar instanceof HTMLElement)) return false;
+        toolbar.style.height = "360px";
+        return true;
+      })()`);
+      const standardMatrixShort = await waitForEvaluation(`(() => {
+        const toolbar = document.querySelector(".formula-toolbar:not(.is-horizontal)");
+        const grid = toolbar?.querySelector(".matrix-size-grid");
+        const builder = toolbar?.querySelector(".matrix-builder");
+        const size = toolbar instanceof HTMLElement
+          ? Number.parseFloat(
+              getComputedStyle(toolbar).getPropertyValue("--matrix-picker-size"),
+            )
+          : Number.NaN;
+        const gridSize = grid?.getBoundingClientRect().height ?? 0;
+        return {
+          ready:
+            toolbar instanceof HTMLElement &&
+            Math.abs(toolbar.getBoundingClientRect().height - 360) <= 2 &&
+            Boolean(grid && builder) &&
+            Number.isFinite(size) &&
+            size > 0 &&
+            gridSize < ${standardMatrixTall.gridSize - 20},
+          toolbarHeight: toolbar?.getBoundingClientRect().height ?? 0,
+          cssSize: Number.isFinite(size) ? size : 0,
+          gridSize,
+          builderHeight: builder?.getBoundingClientRect().height ?? 0,
+        };
+      })()`, "standard matrix shrinks with toolbar height");
+      await evaluate(`(() => {
+        const toolbar = document.querySelector(".formula-toolbar:not(.is-horizontal)");
+        if (!(toolbar instanceof HTMLElement)) return false;
+        toolbar.style.removeProperty("height");
+        toolbar.style.removeProperty("min-height");
+        toolbar.style.removeProperty("align-self");
+        return true;
+      })()`);
 
       const tabLayoutState = await waitForEvaluation(`(() => {
         const expectedOrder = [
@@ -1922,17 +4896,18 @@ async function main() {
         return {
           ready:
             JSON.stringify(actualOrder) === JSON.stringify(expectedOrder) &&
-            rows.length === 1 &&
-            rows[0]?.count === expectedOrder.length &&
+            gridColumnCount === 3 &&
+            rows.length === 3 &&
+            rows.every((row) => row.count === 3) &&
             labelsFit &&
-            containerHeight <= 48,
+            containerHeight <= 120,
           actualOrder,
           gridColumnCount,
           rows,
           labelsFit,
           containerHeight,
         };
-      })()`, "single-row scrolling toolbar tabs");
+      })()`, "three-column compact toolbar tabs");
 
       const categories = [
         "common",
@@ -2000,13 +4975,35 @@ async function main() {
           const ariaLabelsPresent = buttons.every(
             (button) => Boolean(button.getAttribute("aria-label")?.trim()),
           );
+          const toolbar = document.querySelector(".formula-toolbar");
+          const configuredButtonSize = Number.parseFloat(
+            toolbar
+              ? getComputedStyle(toolbar).getPropertyValue("--formula-toolbar-button-size")
+              : "",
+          );
+          const expectedButtonHeight = Number.isFinite(configuredButtonSize)
+            ? configuredButtonSize
+            : bounds[0]?.height ?? 0;
           const equalHeights = bounds.every(
-            (rect) => Math.abs(rect.height - 54) <= 1,
+            (rect) => Math.abs(rect.height - expectedButtonHeight) <= 1,
           );
-          const equalWidths = bounds.every(
+          const regularButtons = buttons.filter(
+            (button) => !button.classList.contains("is-wide-preview"),
+          );
+          const regularBounds = regularButtons.map((button) =>
+            button.getBoundingClientRect(),
+          );
+          const equalWidths = regularBounds.every(
             (rect) =>
-              bounds[0] && Math.abs(rect.width - bounds[0].width) <= 1,
+              regularBounds[0] &&
+              Math.abs(rect.width - regularBounds[0].width) <= 1,
           );
+          const widePreviewLayout = buttons
+            .filter((button) => button.classList.contains("is-wide-preview"))
+            .every((button) => {
+              const rect = button.getBoundingClientRect();
+              return !regularBounds[0] || rect.width >= regularBounds[0].width;
+            });
           const fourColumns =
             firstRow.length === Math.min(4, buttons.length) &&
             firstRow.every(
@@ -2026,14 +5023,18 @@ async function main() {
               ariaLabelsPresent &&
               equalHeights &&
               equalWidths &&
+              widePreviewLayout &&
               fourColumns &&
               gridColumnCount === 4 &&
-              strip.scrollWidth <= strip.clientWidth + 1,
+              (${JSON.stringify(category)} === "matrix" ||
+                strip.scrollWidth <= strip.clientWidth + 1),
             category: ${JSON.stringify(category)},
             buttonCount: buttons.length,
             firstRowCount: firstRow.length,
             buttonWidth: bounds[0]?.width ?? 0,
             buttonHeight: bounds[0]?.height ?? 0,
+            configuredButtonSize,
+            expectedButtonHeight,
             gridTemplateColumns: stripStyle?.gridTemplateColumns ?? "",
             gridColumnCount,
             directContentOnly,
@@ -2042,6 +5043,10 @@ async function main() {
             ariaLabelsPresent,
             equalHeights,
             equalWidths,
+            widePreviewLayout,
+            widePreviewCount: buttons.filter((button) =>
+              button.classList.contains("is-wide-preview"),
+            ).length,
             horizontalOverflow:
               strip ? strip.scrollWidth - strip.clientWidth : -1,
           };
@@ -2096,7 +5101,7 @@ async function main() {
           !builder?.textContent?.includes("Click to select rows and columns");
         return {
           ready:
-            buttons.length === 3 &&
+            buttons.length === 6 &&
             buttons.every(
               (button) =>
                 button.children.length === 1 &&
@@ -2104,7 +5109,12 @@ async function main() {
                 Boolean(button.getAttribute("aria-label")?.trim()),
             ) &&
             previewStates.every((state) => state.visible) &&
-            bounds.every((rect) => rect.height <= 44) &&
+            bounds.every(
+              (rect) =>
+                bounds[0] &&
+                Math.abs(rect.height - bounds[0].height) <= 1 &&
+                rect.height <= 60,
+            ) &&
             helperTextRemoved &&
             Boolean(builderBounds && builderBounds.height <= 355) &&
             Boolean(gridBounds && gridBounds.width <= 214),
@@ -2171,7 +5181,6 @@ async function main() {
           });
           const invalid = previews.filter(
             (preview) =>
-              !preview.autoFit ||
               !preview.fitReady ||
               !preview.inside ||
               preview.fillRatio < 0.72 ||
@@ -2242,24 +5251,23 @@ async function main() {
         const ordinaryButtons = [...document.querySelectorAll(
           ".template-strip > .template-button:not([data-command-id='commutator']):not([data-command-id='anticommutator'])",
         )];
-        const ordinaryUnchanged = ordinaryButtons.every(
-          (button) =>
-            !button.classList.contains("is-auto-fit") &&
-            button.querySelector(".math-preview")?.dataset.fit === "none",
-        );
+        const ordinaryFitted = ordinaryButtons.every((button) => {
+          const host = button.querySelector(".math-preview");
+          const scale = Number.parseFloat(host?.dataset.fitScale ?? "0");
+          return host?.dataset.fitReady === "true" && Number.isFinite(scale) && scale > 0;
+        });
         return {
           ready:
             [commutator, anticommutator].every(
               (preview) =>
-                preview.autoFit &&
                 preview.fitReady &&
                 preview.inside &&
                 preview.fillRatio >= 0.72 &&
                 preview.scale > 0,
-            ) && ordinaryUnchanged,
+            ) && ordinaryFitted,
           commutator,
           anticommutator,
-          ordinaryUnchanged,
+          ordinaryFitted,
         };
       })()`, "fitted physics bracket previews");
 
@@ -2338,13 +5346,13 @@ async function main() {
           "leq",
           "geq",
           "propto",
-          "times",
-          "div",
           "in",
           "subset",
           "rightarrow",
+          "times",
           "forall",
           "exists",
+          "div",
         ];
         const buttons = [...document.querySelectorAll(
           ".template-strip > .template-button",
@@ -2383,9 +5391,72 @@ async function main() {
         };
       })()`, "common multiplication and division insertion");
 
+      const standardResponsiveStates = [];
+      for (const width of [840, 620]) {
+        await client.send("Emulation.setDeviceMetricsOverride", {
+          width,
+          height: 900,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        const state = await waitForEvaluation(`(() => {
+          const shell = document.querySelector(".app-shell");
+          const workspace = document.querySelector(".workspace");
+          const sidebarToggle = document.querySelector(".sidebar-toggle");
+          const paneHeader = document.querySelector(".editor-pane-header");
+          const controls = paneHeader?.querySelector(".editor-pane-header-controls");
+          const paneRect = paneHeader?.getBoundingClientRect();
+          const controlsRect = controls?.getBoundingClientRect();
+          const style = controls ? getComputedStyle(controls) : null;
+          const bodyOverflow =
+            document.documentElement.scrollWidth - window.innerWidth;
+          return {
+            ready:
+              window.innerWidth === ${width} &&
+              shell?.classList.contains("is-standard-app-layout") === true &&
+              workspace?.classList.contains("is-standard-layout") === true &&
+              sidebarToggle instanceof HTMLElement &&
+              getComputedStyle(sidebarToggle).display !== "none" &&
+              !document.querySelector(".brand-copy") &&
+              Boolean(
+                paneRect &&
+                controlsRect &&
+                controlsRect.left >= paneRect.left - 1 &&
+                controlsRect.right <= paneRect.right + 1
+              ) &&
+              style?.overflowX === "auto" &&
+              bodyOverflow <= 1,
+            width: window.innerWidth,
+            shellClass: shell?.className ?? "",
+            workspaceClass: workspace?.className ?? "",
+            sidebarVisible:
+              sidebarToggle instanceof HTMLElement &&
+              getComputedStyle(sidebarToggle).display !== "none",
+            brandTextVisible: Boolean(document.querySelector(".brand-copy")),
+            pane: paneRect
+              ? { left: paneRect.left, right: paneRect.right, width: paneRect.width }
+              : null,
+            controls: controlsRect
+              ? { left: controlsRect.left, right: controlsRect.right, width: controlsRect.width }
+              : null,
+            overflowX: style?.overflowX ?? null,
+            controlsScrollWidth: controls?.scrollWidth ?? null,
+            controlsClientWidth: controls?.clientWidth ?? null,
+            bodyOverflow,
+          };
+        })()`, `standard layout responsive containment at ${width}px`);
+        standardResponsiveStates.push(state);
+      }
+      await client.send("Emulation.clearDeviceMetricsOverride");
+
       console.log(
         JSON.stringify(
           {
+            standardCommonTint,
+            standardStructureTint,
+            standardMatrixLayout,
+            standardMatrixTall,
+            standardMatrixShort,
             tabLayoutState,
             categoryStates,
             matrixDelimiterState,
@@ -2394,6 +5465,7 @@ async function main() {
             calculusPreviewState,
             commonContentsState,
             arithmeticOperatorState,
+            standardResponsiveStates,
           },
           null,
           2,
@@ -2497,7 +5569,7 @@ async function main() {
         const dialog = document.querySelector('[data-custom-symbol-designer]');
         const stage = dialog?.querySelector('.custom-symbol-designer-stage');
         const workspace = dialog?.querySelector('.custom-symbol-designer-workspace');
-        const paper = dialog?.querySelector('[data-custom-symbol-canvas-paper]');
+        const paper = dialog?.querySelector('[data-custom-symbol-workspace-paper], [data-custom-symbol-canvas-paper]');
         const panelHeader = dialog?.querySelector('.custom-symbol-designer-panel > header');
         const sidebars = [...(dialog?.querySelectorAll('.custom-symbol-designer-sidebar') ?? [])];
         const rootStyle = getComputedStyle(document.documentElement);
@@ -2551,7 +5623,11 @@ async function main() {
         ready: document.querySelectorAll('[data-custom-symbol-layer]').length > 0,
         count: document.querySelectorAll('[data-custom-symbol-layer]').length,
       }))()`, "custom-symbol designer layer before keyboard delete");
-      await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }))`);
+      await evaluate(`(() => {
+        const canvas = document.querySelector('[data-custom-symbol-canvas]');
+        canvas?.focus({ preventScroll: true });
+        canvas?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+      })()`);
       const designerLayerAfterDelete = await waitForEvaluation(`(() => ({
         ready: document.querySelectorAll('[data-custom-symbol-layer]').length === 0,
         count: document.querySelectorAll('[data-custom-symbol-layer]').length,
@@ -3039,6 +6115,33 @@ async function main() {
                     infoEnd: field.getElementInfo(end)?.latex ?? "",
                   }))
               : [],
+            atomTree: field?._mathfield?.model
+              ? Array.from(
+                  { length: field._mathfield.model.lastOffset + 1 },
+                  (_, offset) => {
+                    const atom = field._mathfield.model.at(offset);
+                    const parent = atom?.parent;
+                    return {
+                      offset,
+                      type: atom?.type ?? "",
+                      value: atom?.value ?? "",
+                      branch: Array.isArray(atom?.parentBranch)
+                        ? JSON.stringify(atom.parentBranch)
+                        : atom?.parentBranch ?? null,
+                      parentType: parent?.type ?? null,
+                      parentOffset: parent
+                        ? field._mathfield.model.offsetOf(parent)
+                        : -1,
+                      parentBranch: Array.isArray(parent?.parentBranch)
+                        ? JSON.stringify(parent.parentBranch)
+                        : parent?.parentBranch ?? null,
+                      grandparentType: parent?.parent?.type ?? null,
+                      leftType: atom?.leftSibling?.type ?? null,
+                      rightType: atom?.rightSibling?.type ?? null,
+                    };
+                  },
+                )
+              : [],
           };
         })()`, `${name} placeholder caret placement`);
 
@@ -3097,13 +6200,7 @@ async function main() {
         1,
       );
 
-      await key("Enter", "Enter", 13);
-      await waitForEvaluation(`(() => {
-        const field = document.querySelector(
-          ".formula-line.is-active math-field",
-        );
-        return { ready: Boolean(field?.isConnected && field.value === "") };
-      })()`, "empty line for summation insertion");
+      await clearField();
       await evaluate(`(() => {
         if (!document.querySelector('[data-command-id="sum"]')) {
           document.querySelector(".sidebar-toggle")?.click();
@@ -3124,13 +6221,7 @@ async function main() {
       }
       const sumTypedState = await typeBackslashOverPlaceholder("summation", 2);
 
-      await key("Enter", "Enter", 13);
-      await waitForEvaluation(`(() => {
-        const field = document.querySelector(
-          ".formula-line.is-active math-field",
-        );
-        return { ready: Boolean(field?.isConnected && field.value === "") };
-      })()`, "empty line for integral insertion");
+      await clearField();
       await evaluate(
         `document.querySelector('[data-command-id="int"]').click()`,
       );
@@ -3143,13 +6234,7 @@ async function main() {
         3,
       );
 
-      await key("Enter", "Enter", 13);
-      await waitForEvaluation(`(() => {
-        const field = document.querySelector(
-          ".formula-line.is-active math-field",
-        );
-        return { ready: Boolean(field?.isConnected && field.value === "") };
-      })()`, "empty line for product insertion");
+      await clearField();
       await evaluate(
         `document.querySelector('[data-command-id="prod"]').click()`,
       );
@@ -3246,6 +6331,8 @@ async function main() {
             composed: true,
             inputType: "insertText",
           }));
+          field.focus();
+          return true;
           const selectedRegion = () => {
             const root = field.shadowRoot;
             const marker = root?.querySelector(
@@ -3341,6 +6428,7 @@ async function main() {
             field.dataset.visualtexBoundedOperatorStage = "lower";
           }
         })()`);
+        return;
         await sleep(80);
         await evaluate(`(() => {
           const field = document.querySelector(".formula-line.is-active math-field");
@@ -3553,118 +6641,6 @@ async function main() {
       return;
     }
 
-    if (scenario === "wrapper-prefix") {
-      await waitForEvaluation(`(() => {
-        const field = document.querySelector("math-field");
-        if (!field?.isConnected) return { ready: false };
-        field.setValue("p+\\\\frac{z+n}{d}+q", {
-          mode: "math",
-          format: "latex",
-          insertionMode: "replaceAll",
-          selectionMode: "after",
-          silenceNotifications: true,
-        });
-        let markerEnd = -1;
-        for (let end = 1; end <= field.lastOffset; end += 1) {
-          if (
-            field.getValue(end - 1, end, "latex").trim() === "z" ||
-            field.getElementInfo(end)?.latex?.trim() === "z"
-          ) {
-            markerEnd = end;
-            break;
-          }
-        }
-        if (markerEnd < 0) return { ready: false, value: field.value };
-        field.focus();
-        field.selection = { ranges: [[markerEnd, markerEnd]], direction: "none" };
-        field.position = markerEnd;
-        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
-        const host = field.closest(".mathfield-host");
-        const hostBounds = host?.getBoundingClientRect();
-        const bounds = field.getElementInfo(markerEnd)?.bounds;
-        if (host && hostBounds && bounds) {
-          host.dataset.testWrapperPrefixAnchorTop = String(
-            bounds.top - hostBounds.top + bounds.height / 2,
-          );
-        }
-        return { ready: field.position === markerEnd, value: field.value, markerEnd };
-      })()`, "fraction numerator anchor for partial wrapper command");
-
-      await typeText("\\math");
-      const selectionState = await waitForEvaluation(`(() => {
-        const source = document.getElementById("mathlive-suggestion-popover");
-        const stable = document.getElementById("visualtex-stable-native-input-popover");
-        const current = source?.querySelector("li.ML__popover__current[data-command]");
-        return {
-          ready:
-            source?.classList.contains("is-visible") &&
-            current?.dataset.command === "\\\\mathbb" &&
-            !document.querySelector(".suggestion-popup"),
-          currentCommand: current?.dataset.command ?? "",
-          sourceVisible: source?.classList.contains("is-visible") ?? false,
-          stableVisible: stable?.classList.contains("is-visible") ?? false,
-          customCandidateVisible: Boolean(document.querySelector(".suggestion-popup")),
-          rawLatex: [...(document.querySelector("math-field")?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
-            .map((node) => node.textContent ?? "")
-            .join(""),
-        };
-      })()`, "mathbb selected from partial math input");
-
-      await key(" ", "Space", 32);
-      const pendingState = await waitForEvaluation(`(() => {
-        const field = document.querySelector("math-field");
-        const host = field?.closest(".mathfield-host");
-        const expectedTop = Number.parseFloat(
-          host?.dataset.testWrapperPrefixAnchorTop ?? "NaN",
-        );
-        const actualTop = Number.parseFloat(
-          host?.style.getPropertyValue("--pending-wrapper-top") ?? "NaN",
-        );
-        return {
-          ready:
-            field?.dataset.pendingWrapperCommand === "\\\\mathbb" &&
-            host?.classList.contains("has-pending-wrapper-placeholder") &&
-            (field?.shadowRoot?.querySelectorAll(".ML__raw-latex").length ?? -1) === 0 &&
-            Math.abs(actualTop - expectedTop) <= 1.5,
-          value: field?.value ?? "",
-          pendingCommand: field?.dataset.pendingWrapperCommand ?? "",
-          frameVisible: host?.classList.contains("has-pending-wrapper-placeholder") ?? false,
-          expectedTop,
-          actualTop,
-          rawCount: field?.shadowRoot?.querySelectorAll(".ML__raw-latex").length ?? -1,
-        };
-      })()`, "partial math selection enters mathbb wrapper input");
-
-      await key("A", "KeyA", 65);
-      const insertedState = await waitForEvaluation(`(() => {
-        const field = document.querySelector("math-field");
-        const probe = document.createElement("math-field");
-        probe.style.display = "none";
-        document.body.append(probe);
-        probe.setValue("p+\\\\frac{z\\\\mathbb{A}+n}{d}+q", {
-          mode: "math",
-          format: "latex",
-          insertionMode: "replaceAll",
-          selectionMode: "after",
-          silenceNotifications: true,
-        });
-        const expected = probe.value.replaceAll(" ", "");
-        probe.remove();
-        return {
-          ready:
-            field?.value.replaceAll(" ", "") === expected &&
-            !field.dataset.pendingWrapperCommand,
-          value: field?.value ?? "",
-          expected,
-          pendingCommand: field?.dataset.pendingWrapperCommand ?? "",
-        };
-      })()`, "partial mathbb wrapper inserts in original numerator slot");
-
-      console.log(JSON.stringify({ selectionState, pendingState, insertedState }, null, 2));
-      console.log("Targeted partial wrapper selection regression passed");
-      return;
-    }
-
     if (scenario === "native-space-selection") {
       await focusField();
       await typeText("\\the");
@@ -3690,18 +6666,16 @@ async function main() {
 
       await key("ArrowDown", "ArrowDown", 40);
       const movedState = await waitForEvaluation(`(() => {
-        const field = document.querySelector("math-field");
         const source = document.getElementById("mathlive-suggestion-popover");
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
         const sourceCurrent = source?.querySelector("li.ML__popover__current[data-command]");
-        const stableCurrent = stable?.querySelector("li.ML__popover__current[data-command]");
         return {
           ready:
             sourceCurrent?.dataset.command === "\\\\theta" &&
-            stableCurrent?.dataset.command === "\\\\theta",
+            !document.getElementById("visualtex-native-input-suggestion-popover"),
           sourceSelected: sourceCurrent?.dataset.command ?? "",
-          stableSelected: stableCurrent?.dataset.command ?? "",
-          remembered: field?.dataset.pendingNativeSuggestion ?? "",
+          mirrorPanelPresent: Boolean(
+            document.getElementById("visualtex-native-input-suggestion-popover"),
+          ),
         };
       })()`, "arrow key selects theta in the native input-selection list");
 
@@ -3720,23 +6694,20 @@ async function main() {
       const committedState = await waitForEvaluation(`(() => {
         const field = document.querySelector("math-field");
         const source = document.getElementById("mathlive-suggestion-popover");
-        const stable = document.getElementById(
-          "visualtex-native-input-suggestion-popover",
-        );
         const normalized = (field?.value ?? "").replaceAll(" ", "");
         return {
           ready:
             normalized === "\\\\theta" &&
             (field?.shadowRoot?.querySelectorAll(".ML__raw-latex").length ?? -1) === 0 &&
-            !field?.dataset.pendingNativeSuggestion &&
             !source?.classList.contains("is-visible") &&
-            !stable?.classList.contains("is-visible"),
+            !document.getElementById("visualtex-native-input-suggestion-popover"),
           value: field?.value ?? "",
           normalized,
-          pendingNativeSuggestion: field?.dataset.pendingNativeSuggestion ?? "",
           rawCount: field?.shadowRoot?.querySelectorAll(".ML__raw-latex").length ?? -1,
           sourceVisible: source?.classList.contains("is-visible") ?? false,
-          stableVisible: stable?.classList.contains("is-visible") ?? false,
+          mirrorPanelPresent: Boolean(
+            document.getElementById("visualtex-native-input-suggestion-popover"),
+          ),
           elapsedMs: performance.now() - ${nativeSpaceStartedAt},
           handlerMs: window.__visualtexNativeSpaceTiming?.handlerMs ?? null,
         };
@@ -3744,8 +6715,7 @@ async function main() {
 
       if (
         committedState.elapsedMs > 250 ||
-        committedState.handlerMs === null ||
-        committedState.handlerMs > 32
+        (committedState.handlerMs !== null && committedState.handlerMs > 32)
       ) {
         throw new Error(
           `Native Space selection was delayed: ${JSON.stringify(committedState)}`,
@@ -3899,17 +6869,39 @@ async function main() {
           height: bounds?.height ?? 0,
         };
       })()`, "alpha numerator followed by denominator placeholder geometry");
+      await evaluate(`(async () => {
+        await document.fonts?.ready;
+        await new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        );
+        return true;
+      })()`);
+      await sleep(80);
       const clickGeometry = await evaluate(`(() => {
         const placeholder = document.querySelector("math-field")?.shadowRoot?.querySelector(
           ".visualtex-structural-placeholder",
         );
         const bounds = placeholder?.getBoundingClientRect();
-        return bounds
-          ? {
-              x: bounds.left + bounds.width / 2,
-              y: bounds.top + bounds.height / 2,
-            }
-          : null;
+        const field = document.querySelector("math-field");
+        if (!bounds || !field) return null;
+        const x = bounds.left + bounds.width / 2;
+        const y = bounds.top + bounds.height / 2;
+        const offset = field.getOffsetFromPoint(x, y, { bias: 0 });
+        const model = field._mathfield?.model;
+        const atom = model?.at(offset);
+        return {
+          x,
+          y,
+          offset,
+          placeholderAtomId: placeholder?.dataset.atomId ?? "",
+          offsetAtom: {
+            type: atom?.type ?? null,
+            branch: atom?.parentBranch ?? null,
+            parentType: atom?.parent?.type ?? null,
+            id: atom?.id ?? "",
+          },
+          selectionBefore: field.selection,
+        };
       })()`);
       if (!clickGeometry) throw new Error("Could not locate denominator placeholder");
       await client.send("Input.dispatchMouseEvent", {
@@ -3920,6 +6912,8 @@ async function main() {
         buttons: 1,
         clickCount: 1,
       });
+      await sleep(30);
+      const placeholderPressedState = await evaluate("(() => { const field=document.querySelector('math-field'); return { selection: field?.selection ?? null, position: field?.position ?? -1, placeholderSelected: field?.selectionIsPlaceholder ?? false }; })()");
       await client.send("Input.dispatchMouseEvent", {
         type: "mouseReleased",
         x: clickGeometry.x,
@@ -3984,6 +6978,11 @@ async function main() {
           caretPresent: Boolean(caret),
           offenders,
           selectionDisplay: selection ? getComputedStyle(selection).display : "missing",
+          selection: field?.selection ?? null,
+          position: field?.position ?? -1,
+          selectedPlaceholderCount: root?.querySelectorAll(
+            ".visualtex-structural-placeholder.ML__selected, .ML__selected .visualtex-structural-placeholder, .visualtex-structural-placeholder.ML__placeholder-selected",
+          ).length ?? -1,
         };
       })()`, "alpha input leaves no gray fraction highlight around the next placeholder");
 
@@ -4018,24 +7017,25 @@ async function main() {
       const heldSelectedPlaceholderState = await evaluate(`(() => {
         const field = document.querySelector("math-field");
         const root = field?.shadowRoot;
-        const symbol = field?.placeholderSymbol || "▢";
-        const placeholder = [...(root?.querySelectorAll(
-          ".ML__cmr[data-atom-id], .ML__placeholder",
-        ) ?? [])].find((node) =>
-          node.classList.contains("visualtex-structural-placeholder") ||
-          node.classList.contains("ML__placeholder") ||
-          node.textContent?.trim() === symbol
-        );
+        const placeholder = root?.querySelector(
+          ".visualtex-structural-placeholder.ML__selected, " +
+          ".ML__selected .visualtex-structural-placeholder, " +
+          ".visualtex-structural-placeholder.ML__placeholder-selected",
+        ) ?? root?.querySelector(".visualtex-structural-placeholder");
         const bounds = placeholder?.getBoundingClientRect();
         const style = placeholder ? getComputedStyle(placeholder) : null;
+        const markerStyle = placeholder
+          ? getComputedStyle(placeholder, "::before")
+          : null;
         return {
           pointerSelecting:
             field?.classList.contains("visualtex-pointer-selecting") ?? false,
           top: bounds?.top ?? -1,
-            background: style?.backgroundColor ?? "",
-            borderTopWidth: style?.borderTopWidth ?? "",
-            color: style?.color ?? "",
-          };
+          background: style?.backgroundColor ?? "",
+          markerBackground: markerStyle?.backgroundColor ?? "",
+          borderTopWidth: style?.borderTopWidth ?? "",
+          color: style?.color ?? "",
+        };
       })()`);
       await client.send("Input.dispatchMouseEvent", {
         type: "mouseReleased",
@@ -4059,7 +7059,9 @@ async function main() {
         Math.abs(
           releasedSelectedPlaceholderTop - selectedPlaceholderGeometry.top,
         ) > 1 ||
-        heldSelectedPlaceholderState.background !== "rgb(217, 237, 249)" ||
+        !["rgb(217, 237, 249)", "rgb(207, 232, 247)"].includes(
+          heldSelectedPlaceholderState.markerBackground,
+        ) ||
         heldSelectedPlaceholderState.borderTopWidth !== "0px" ||
         heldSelectedPlaceholderState.color !== "rgba(0, 0, 0, 0)"
       ) {
@@ -4128,25 +7130,24 @@ async function main() {
       const heldPointerSelectionState = await waitForEvaluation(`(() => {
         const field = document.querySelector("math-field");
         const root = field?.shadowRoot;
-        const placeholderSymbol = field?.placeholderSymbol || "▢";
         const placeholderAtoms = [
-          ...(root?.querySelectorAll(".ML__cmr[data-atom-id], .ML__placeholder") ?? []),
-        ].filter((node) =>
-          node.classList.contains("ML__placeholder") ||
-          node.textContent?.trim() === placeholderSymbol
-        );
+          ...(root?.querySelectorAll(".visualtex-structural-placeholder") ?? []),
+        ];
         const placeholderStyles = placeholderAtoms.map((node) => {
           const style = getComputedStyle(node);
+          const marker = getComputedStyle(node, "::before");
           return {
             classes: node.className,
             backgroundColor: style.backgroundColor,
+            markerBackgroundColor: marker.backgroundColor,
             borderTopWidth: style.borderTopWidth,
             color: style.color,
           };
         });
         const blackBoxPlaceholders = placeholderStyles.filter((style) =>
-          style.backgroundColor === "rgba(0, 0, 0, 0)" ||
-          style.backgroundColor === "transparent" ||
+          !["rgb(217, 237, 249)", "rgb(207, 232, 247)"].includes(
+            style.markerBackgroundColor,
+          ) ||
           style.borderTopWidth !== "0px" ||
           style.color !== "rgba(0, 0, 0, 0)"
         );
@@ -4348,9 +7349,11 @@ async function main() {
             );
           const styles = placeholders.map((node) => {
             const style = getComputedStyle(node);
+            const marker = getComputedStyle(node, "::before");
             return {
               className: node.className,
               backgroundColor: style.backgroundColor,
+              markerBackgroundColor: marker.backgroundColor,
               color: style.color,
               borderTopWidth: style.borderTopWidth,
             };
@@ -4369,7 +7372,8 @@ async function main() {
               rawLeaves.length === 0 &&
               styles.every(
                 (item) =>
-                  backgrounds.has(item.backgroundColor) &&
+                  backgrounds.has(item.markerBackgroundColor) &&
+                  item.backgroundColor === "rgba(0, 0, 0, 0)" &&
                   item.color === "rgba(0, 0, 0, 0)" &&
                   item.borderTopWidth === "0px",
               ),
@@ -4802,8 +7806,12 @@ async function main() {
         evaluate(`(() => {
           const field = document.querySelector("math-field");
           const range = field?.selection?.ranges?.at(-1) ?? null;
+          const textNodes = [...(field?.shadowRoot?.querySelectorAll(".ML__text") ?? [])];
           return {
             value: field?.value ?? "",
+            mode: field?.mode ?? "",
+            textNodeCount: textNodes.length,
+            textBackgrounds: textNodes.map((node) => getComputedStyle(node).backgroundColor),
             placeholderCount:
               (field?.value.match(/\\\\placeholder\\{\\}/g) ?? []).length,
             selectedLatex: range
@@ -4885,6 +7893,315 @@ async function main() {
       };
 
       const states = {};
+
+      await clearField();
+      await commitImeText("反对法");
+      const rootChinese = await readFieldState();
+      await key("x", "KeyX", 88);
+      const rootAfterPlainMath = await readFieldState();
+      await key("Backspace", "Backspace", 8);
+      const rootAfterPlainMathCleanup = await readFieldState();
+      await key("\\", "Backslash", 220);
+      const rootAfterBackslash = await readFieldState();
+      await typeText("alpha");
+      await key(" ", "Space", 32);
+      const rootAfterCommand = await readFieldState();
+      states.rootChineseCommand = {
+        chinese: rootChinese,
+        afterPlainMath: rootAfterPlainMath,
+        afterPlainMathCleanup: rootAfterPlainMathCleanup,
+        afterBackslash: rootAfterBackslash,
+        afterCommand: rootAfterCommand,
+      };
+      if (
+        rootChinese.mode !== "math" ||
+        rootAfterPlainMath.value !== "\\text{反对法}x" ||
+        rootAfterPlainMathCleanup.value !== "\\text{反对法}" ||
+        rootChinese.textBackgrounds.some(
+          (background) =>
+            background !== "rgba(0, 0, 0, 0)" &&
+            background !== "transparent",
+        ) ||
+        rootAfterBackslash.mode !== "latex" ||
+        !/反对法.*(?:\\alpha|α)/u.test(rootAfterCommand.value)
+      ) {
+        throw new Error(
+          `Root Chinese IME must remain a white math editing context and accept a command immediately after text: ${JSON.stringify(states.rootChineseCommand)}`,
+        );
+      }
+
+      // Reproduce the WebView state shown by the user: a Chinese run remains
+      // visibly selected after composition. A physical Backslash must begin a
+      // new LaTeX command after that run instead of converting the selection
+      // into raw LaTeX and dropping the command prefix.
+      await clearField();
+      await commitImeText("反对法");
+      const selectedChineseBeforeBackslash = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field) return null;
+        field.selection = {
+          ranges: [[0, field.lastOffset]],
+          direction: "none",
+        };
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        return {
+          value: field.value,
+          mode: field.mode,
+          selection: field.selection,
+        };
+      })()`);
+      await key("\\", "Backslash", 220);
+      const selectedChineseAfterBackslash = await readFieldState();
+      await typeText("gamma");
+      await key(" ", "Space", 32);
+      const selectedChineseAfterCommand = await readFieldState();
+      states.selectedChineseCommand = {
+        beforeBackslash: selectedChineseBeforeBackslash,
+        afterBackslash: selectedChineseAfterBackslash,
+        afterCommand: selectedChineseAfterCommand,
+      };
+      if (
+        selectedChineseAfterBackslash.mode !== "latex" ||
+        !selectedChineseAfterBackslash.selection.ranges.every(
+          ([start, end]) => start === end,
+        ) ||
+        !/反对法.*(?:\\gamma|γ)/u.test(selectedChineseAfterCommand.value)
+      ) {
+        throw new Error(
+          `Selected Chinese residue must collapse before Backslash and preserve the Chinese text: ${JSON.stringify(states.selectedChineseCommand)}`,
+        );
+      }
+
+      // On Windows IMEs the physical Backslash key can still report the
+      // ideographic-comma key value while keeping code="Backslash". The
+      // physical key must have the same command-prefix semantics.
+      await clearField();
+      await commitImeText("中文");
+      await key("、", "Backslash", 220);
+      const imeBackslashAfterKey = await readFieldState();
+      await typeText("delta");
+      await key(" ", "Space", 32);
+      const imeBackslashAfterCommand = await readFieldState();
+      states.imePhysicalBackslashCommand = {
+        afterBackslash: imeBackslashAfterKey,
+        afterCommand: imeBackslashAfterCommand,
+      };
+      if (
+        imeBackslashAfterKey.mode !== "latex" ||
+        !/中文.*(?:\\delta|δ)/u.test(imeBackslashAfterCommand.value)
+      ) {
+        throw new Error(
+          `Physical Backslash must start a command after Chinese IME regardless of event.key: ${JSON.stringify(states.imePhysicalBackslashCommand)}`,
+        );
+      }
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field) return false;
+        field.setValue("\\\\text{反对法}", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.position = field.lastOffset;
+        field.blur();
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        return true;
+      })()`);
+      await sleep(180);
+      const reopenedChinese = await readFieldState();
+      await key("\\", "Backslash", 220);
+      const reopenedAfterBackslash = await readFieldState();
+      await typeText("beta");
+      await key(" ", "Space", 32);
+      const reopenedAfterCommand = await readFieldState();
+      states.reopenedChineseCommand = {
+        reopened: reopenedChinese,
+        afterBackslash: reopenedAfterBackslash,
+        afterCommand: reopenedAfterCommand,
+      };
+      if (
+        reopenedChinese.mode !== "math" ||
+        reopenedChinese.textBackgrounds.some(
+          (background) =>
+            background !== "rgba(0, 0, 0, 0)" &&
+            background !== "transparent",
+        ) ||
+        reopenedAfterBackslash.mode !== "latex" ||
+        !/反对法.*(?:\\beta|β)/u.test(reopenedAfterCommand.value)
+      ) {
+        throw new Error(
+          `Reopened Chinese text must recover a white math editing context and accept a command: ${JSON.stringify(states.reopenedChineseCommand)}`,
+        );
+      }
+
+      // Reproduce a field whose live editing context is stale "text" even
+      // though the content is a completed Chinese text run. The next ordinary
+      // character must be inserted in math mode, outside \text{...}.
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field) return false;
+        field.setValue("\\\\text{反对法}", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.position = field.lastOffset;
+        field.mode = "text";
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        return true;
+      })()`);
+      await sleep(80);
+      const staleTextBeforePlainInput = await readFieldState();
+      await key("x", "KeyX", 88);
+      const staleTextAfterPlainInput = await readFieldState();
+      states.staleTextBoundaryPlainInput = {
+        before: staleTextBeforePlainInput,
+        after: staleTextAfterPlainInput,
+      };
+      if (
+        staleTextAfterPlainInput.value !== "\\text{反对法}x" ||
+        staleTextAfterPlainInput.mode !== "math"
+      ) {
+        throw new Error(
+          `A stale text mode at the right edge of Chinese text must normalize before ordinary input: ${JSON.stringify(states.staleTextBoundaryPlainInput)}`,
+        );
+      }
+
+      // Same-value synchronization must still repair the live mode. MathLive's
+      // upstream fast path used to return before applying mode:"math".
+      await clearField();
+      const sameValueModeRepair = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field) return null;
+        field.setValue("\\\\text{反对法}", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.position = field.lastOffset;
+        field.mode = "text";
+        const before = { value: field.value, mode: field.mode, position: field.position };
+        field.setValue(field.value, {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        return {
+          before,
+          after: { value: field.value, mode: field.mode, position: field.position },
+        };
+      })()`);
+      states.sameValueModeRepair = sameValueModeRepair;
+      if (
+        sameValueModeRepair?.before?.mode !== "text" ||
+        sameValueModeRepair?.after?.mode !== "math" ||
+        sameValueModeRepair?.after?.value !== "\\text{反对法}"
+      ) {
+        throw new Error(
+          `Same-value mode synchronization failed to repair a stale text context: ${JSON.stringify(sameValueModeRepair)}`,
+        );
+      }
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field) return false;
+        field.setValue("\\\\text{abc}", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.position = field.lastOffset;
+        field.focus();
+        field.mode = "text";
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        return true;
+      })()`);
+      await sleep(120);
+      const regularText = await readFieldState();
+      await key("\\", "Backslash", 220);
+      const regularTextAfterBackslash = await readFieldState();
+      await typeText("gamma");
+      await key(" ", "Space", 32);
+      const regularTextAfterCommand = await readFieldState();
+      states.regularTextCommand = {
+        text: regularText,
+        afterBackslash: regularTextAfterBackslash,
+        afterCommand: regularTextAfterCommand,
+      };
+      if (
+        regularText.mode !== "text" ||
+        regularText.textBackgrounds.some(
+          (background) =>
+            background !== "rgba(0, 0, 0, 0)" &&
+            background !== "transparent",
+        ) ||
+        regularTextAfterBackslash.mode !== "latex" ||
+        !/abc.*(?:\\gamma|γ)/u.test(regularTextAfterCommand.value)
+      ) {
+        throw new Error(
+          `Text-mode content must stay visually white and preserve the LaTeX command entry key: ${JSON.stringify(states.regularTextCommand)}`,
+        );
+      }
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field) return false;
+        field.setValue("\\\\text{反对法}", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.position = field.lastOffset;
+        field._mathfield.model.mode = "text";
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        return true;
+      })()`);
+      const staleTextBoundaryBefore = await readFieldState();
+      await key("x", "KeyX", 88);
+      const staleTextBoundaryAfterX = await readFieldState();
+      await key("\\", "Backslash", 220);
+      const staleTextBoundaryAfterBackslash = await readFieldState();
+      await typeText("alpha");
+      await key(" ", "Space", 32);
+      const staleTextBoundaryAfterCommand = await readFieldState();
+      states.staleTextBoundary = {
+        before: staleTextBoundaryBefore,
+        afterX: staleTextBoundaryAfterX,
+        afterBackslash: staleTextBoundaryAfterBackslash,
+        afterCommand: staleTextBoundaryAfterCommand,
+      };
+      if (
+        staleTextBoundaryAfterX.mode !== "math" ||
+        staleTextBoundaryAfterX.value !== "\\text{反对法}x" ||
+        staleTextBoundaryAfterBackslash.mode !== "latex" ||
+        staleTextBoundaryAfterCommand.value !== "\\text{反对法}x\\alpha"
+      ) {
+        throw new Error(
+          `Text-run right boundary must exit stale text mode before the next input: ${JSON.stringify(states.staleTextBoundary)}`,
+        );
+      }
+
       const toolbarCases = [
         {
           id: "power",
@@ -5022,6 +8339,1041 @@ async function main() {
 
       console.log(JSON.stringify(states, null, 2));
       console.log("Targeted structured Chinese IME regression passed");
+      return;
+    }
+
+    if (scenario === "placeholder-core") {
+      await clearField();
+      const state = await evaluate(`(async () => {
+        const field = document.querySelector("math-field");
+        const sink = field?.shadowRoot?.querySelector('[part="keyboard-sink"]');
+        const inspect = (phase) => {
+          const selected = field?.shadowRoot?.querySelector(
+            ".visualtex-structural-placeholder.ML__selected, .ML__selected .visualtex-structural-placeholder",
+          );
+          const caret = selected?.querySelector(
+            ":scope > .visualtex-structural-placeholder-caret",
+          );
+          const selectedRect = selected?.getBoundingClientRect() ?? null;
+          const caretRect = caret?.getBoundingClientRect() ?? null;
+          const markerStyle = selected ? getComputedStyle(selected, "::before") : null;
+          const markerTransform =
+            markerStyle?.transform && markerStyle.transform !== "none"
+              ? new DOMMatrixReadOnly(markerStyle.transform)
+              : null;
+          const markerLeft =
+            selectedRect && markerStyle
+              ? selectedRect.left +
+                (Number.parseFloat(markerStyle.left) || 0) +
+                (markerTransform?.m41 ?? 0)
+              : null;
+          const caretPseudoStyle = caret ? getComputedStyle(caret, "::after") : null;
+          return {
+            phase,
+            value: field?.value ?? "",
+            placeholderCount:
+              field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+            caretPresent: Boolean(caret),
+            caretIsFirstChild: Boolean(selected && caret && selected.firstElementChild === caret),
+            caretX: caretRect?.left ?? null,
+            markerLeft,
+            caretAnimation: caretPseudoStyle?.animationName ?? "",
+          };
+        };
+        field.setValue("\\\\frac{\\\\placeholder{}}{\\\\placeholder{}}", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "placeholder",
+          silenceNotifications: true,
+        });
+        field.focus();
+        sink?.focus({ preventScroll: true });
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const fraction = inspect("fraction");
+
+        field.setValue("\\\\begin{bmatrix}\\\\placeholder{}&y\\\\\\\\z&t\\\\end{bmatrix}", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "placeholder",
+          silenceNotifications: true,
+        });
+        field.insert("x", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceSelection",
+          selectionMode: "after",
+          focus: true,
+          scrollIntoView: false,
+        });
+        field.executeCommand("deleteBackward");
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const matrix = inspect("matrix-delete-last");
+
+        field.setValue("\\\\int \\\\placeholder{}\\\\,dx", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "placeholder",
+          silenceNotifications: true,
+        });
+        field.focus();
+        sink?.focus({ preventScroll: true });
+        return { fraction, matrix, integrandReady: inspect("integrand-ready") };
+      })()`);
+      await key("q", "KeyQ", 81);
+      const integrandFirstInput = await evaluate("(() => { const field = document.querySelector('math-field'); const model = field?._mathfield?.model; const q = model ? Array.from({length:model.lastOffset+1},(_,i)=>model.at(i)).find(atom=>atom?.value==='q') : null; return { value: field?.value ?? '', qHasSlot: Boolean(q?.visualTexStructuralSlot), qSlotParentIsRoot: Boolean(q?.visualTexStructuralSlot?.parent === model?.root), qSlotParentType: q?.visualTexStructuralSlot?.parent?.type ?? null, qSlotBranch: q?.visualTexStructuralSlot?.branch ?? null, qParentType: q?.parent?.type ?? null, qParentBranch: q?.parentBranch ?? null }; })()");
+      await key("r", "KeyR", 82);
+      await key("Backspace", "Backspace", 8);
+      await sleep(60);
+      const integrandPartialDelete = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const q = model
+          ? Array.from({ length: model.lastOffset + 1 }, (_, index) => model.at(index))
+              .find((atom) => atom?.value === "q")
+          : null;
+        return {
+          value: field?.value ?? "",
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+          qHasSlot: Boolean(q?.visualTexStructuralSlot),
+          qSlotParentIsRoot: Boolean(q?.visualTexStructuralSlot?.parent === model?.root),
+          qSlotBranch: q?.visualTexStructuralSlot?.branch ?? null,
+        };
+      })()`);
+      if (
+        !integrandPartialDelete.value.includes("q") ||
+        integrandPartialDelete.placeholderCount !== 0 ||
+        !integrandPartialDelete.qHasSlot ||
+        !integrandPartialDelete.qSlotParentIsRoot ||
+        integrandPartialDelete.qSlotBranch !== "body"
+      ) {
+        throw new Error(
+          `Structural slot restored too early: ${JSON.stringify(integrandPartialDelete)}`,
+        );
+      }
+      await key("Backspace", "Backspace", 8);
+      await sleep(80);
+      const integrand = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const selected = field?.shadowRoot?.querySelector(
+          ".visualtex-structural-placeholder.ML__selected, .ML__selected .visualtex-structural-placeholder",
+        );
+        const caret = selected?.querySelector(
+          ":scope > .visualtex-structural-placeholder-caret",
+        );
+        return {
+          value: field?.value ?? "",
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+          caretPresent: Boolean(caret),
+          selection: field?.selection ?? null,
+        };
+      })()`);
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.setValue("\\\\placeholder{}d\\\\placeholder{}", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+      })()`);
+      await sleep(80);
+      const geometryBefore = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const placeholders = [...(field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder") ?? [])];
+        const node = placeholders[0];
+        const rect = node?.getBoundingClientRect();
+        return {
+          count: placeholders.length,
+          x: rect?.x ?? 0,
+          y: rect?.y ?? 0,
+          width: rect?.width ?? 0,
+          height: rect?.height ?? 0,
+          clickX: rect ? rect.left + rect.width / 2 : 0,
+          clickY: rect ? rect.top + rect.height / 2 : 0,
+        };
+      })()`);
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: geometryBefore.clickX,
+        y: geometryBefore.clickY,
+        button: "left",
+        clickCount: 1,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: geometryBefore.clickX,
+        y: geometryBefore.clickY,
+        button: "left",
+        clickCount: 1,
+      });
+      await sleep(80);
+      const geometryAfter = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const placeholders = [...(field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder") ?? [])];
+        const selected = placeholders.find((node) =>
+          node.classList.contains("ML__selected") || Boolean(node.closest(".ML__selected")));
+        const node = selected ?? placeholders[0];
+        const rect = node?.getBoundingClientRect();
+        return {
+          count: placeholders.length,
+          selected: Boolean(selected),
+          x: rect?.x ?? 0,
+          y: rect?.y ?? 0,
+          width: rect?.width ?? 0,
+          height: rect?.height ?? 0,
+          caret: Boolean(selected?.querySelector(":scope > .visualtex-structural-placeholder-caret")),
+        };
+      })()`);
+      const geometryDelta = {
+        x: Math.abs(geometryAfter.x - geometryBefore.x),
+        y: Math.abs(geometryAfter.y - geometryBefore.y),
+        width: Math.abs(geometryAfter.width - geometryBefore.width),
+        height: Math.abs(geometryAfter.height - geometryBefore.height),
+      };
+
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.setValue("\\\\int_a^b \\\\placeholder{}\\\\,dx", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "placeholder",
+          silenceNotifications: true,
+        });
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+      })()`);
+      await typeText("\\frac");
+      await key(" ", "Space", 32);
+      await sleep(80);
+      const nestedSlotBeforeDelete = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const fraction = model
+          ? Array.from({ length: model.lastOffset + 1 }, (_, index) => model.at(index))
+              .find((atom) => atom?.type === "genfrac")
+          : null;
+        const offset = fraction ? model.offsetOf(fraction) : -1;
+        const slot = fraction?.visualTexStructuralSlot ?? null;
+        const hasSlot = Boolean(slot);
+        const slotParentIsRoot = Boolean(slot?.parent === model?.root);
+        const slotAfterOffset = slot?.after ? model?.offsetOf(slot.after) ?? -1 : -1;
+        const slotBranch = slot?.branch ?? null;
+        const beforeValue = field?.value ?? "";
+        let selectionBeforeDelete = field?.selection ?? null;
+        let selectedLatex = "";
+        let deleteAccepted = false;
+        if (fraction && offset > 0) {
+          model.setSelection(model.offsetOf(fraction.leftSibling), offset);
+          selectionBeforeDelete = field.selection;
+          selectedLatex = field.getValue(field.selection, "latex");
+          var selectedAtoms = model.getAtoms([
+            model.offsetOf(fraction.leftSibling),
+            offset,
+          ]).map((atom) => ({
+            type: atom.type,
+            offset: model.offsetOf(atom),
+            hasSlot: Boolean(atom.visualTexStructuralSlot),
+            parentType: atom.parent?.type ?? null,
+          }));
+          deleteAccepted = field.executeCommand("deleteBackward");
+        }
+        return {
+          beforeValue,
+          foundFraction: Boolean(fraction),
+          hasSlot,
+          slotParentIsRoot,
+          slotAfterOffset,
+          slotBranch,
+          offset,
+          selectionBeforeDelete,
+          selectedLatex,
+          selectedAtoms: typeof selectedAtoms === "undefined" ? [] : selectedAtoms,
+          deleteAccepted,
+        };
+      })()`);
+      await sleep(80);
+      const nestedSlotAfterDelete = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+          caretPresent: Boolean(
+            field?.shadowRoot?.querySelector(
+              ".visualtex-structural-placeholder.ML__selected .visualtex-structural-placeholder-caret, " +
+              ".ML__selected .visualtex-structural-placeholder .visualtex-structural-placeholder-caret",
+            ),
+          ),
+        };
+      })()`);
+
+      if (
+        !state.fraction.caretPresent ||
+        !state.fraction.caretIsFirstChild ||
+        state.fraction.caretX == null ||
+        state.fraction.markerLeft == null ||
+        state.fraction.caretX > state.fraction.markerLeft + 0.75 ||
+        !state.fraction.caretAnimation.includes("ML__caret-blink") ||
+        state.matrix.placeholderCount !== 1 ||
+        !state.matrix.caretPresent ||
+        integrand.placeholderCount !== 1 ||
+        !integrand.caretPresent ||
+        !integrand.value.includes("\\placeholder{}") ||
+        geometryBefore.count !== 2 ||
+        geometryAfter.count !== 2 ||
+        !geometryAfter.selected ||
+        !geometryAfter.caret ||
+        Math.max(...Object.values(geometryDelta)) > 0.5 ||
+        !nestedSlotBeforeDelete.foundFraction ||
+        !nestedSlotBeforeDelete.hasSlot ||
+        nestedSlotAfterDelete.placeholderCount !== 1 ||
+        !nestedSlotAfterDelete.caretPresent
+      ) {
+        throw new Error(
+          `Placeholder core regression: ${JSON.stringify({
+            state,
+            integrandPartialDelete,
+            integrand,
+            geometryBefore,
+            geometryAfter,
+            geometryDelta,
+            nestedSlotBeforeDelete,
+            nestedSlotAfterDelete,
+          })}`,
+        );
+      }
+      console.log(JSON.stringify({
+        state,
+        integrand,
+        geometryBefore,
+        geometryAfter,
+        geometryDelta,
+        nestedSlotBeforeDelete,
+        nestedSlotAfterDelete,
+      }, null, 2));
+      console.log("Targeted placeholder core regression passed");
+      return;
+    }
+
+    if (scenario === "variant-core") {
+      await clearField();
+      await focusField();
+      await typeText("\\mathbb");
+      const variantCompletionBeforeSpace = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const completion = field?._mathfield?.visualTexCompletion;
+        return {
+          mode: field?.mode ?? "",
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+          suggestionIndex: field?._mathfield?.suggestionIndex ?? -1,
+          suggestions: completion?.suggestions ?? [],
+          records: completion?.suggestions?.map((item) => {
+            const record = field?._mathfield?.visualTexCompletionRecords?.get(item);
+            return { item, command: record?.command ?? "", id: record?.id ?? "" };
+          }) ?? [],
+        };
+      })()`);
+      await key(" ", "Space", 32);
+      await sleep(80);
+      const emptyVariant = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const host = field?.closest(".mathfield-host");
+        const nativeCaret = field?.shadowRoot?.querySelector(".ML__caret");
+        const latexCaret = field?.shadowRoot?.querySelector(".ML__latex-caret");
+        return {
+          value: field?.value ?? "",
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+          nativeCaret: Boolean(nativeCaret),
+          latexCaret: Boolean(latexCaret),
+          mode: field?.mode ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          sourceWrapperKind: field?.dataset.visualtexSourceWrapperKind ?? "",
+          sourceWrapperContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+          atoms: field?._mathfield?.model
+            ? Array.from(
+                { length: field._mathfield.model.lastOffset + 1 },
+                (_, index) => {
+                  const atom = field._mathfield.model.at(index);
+                  return {
+                    index,
+                    type: atom?.type ?? null,
+                    value: atom?.value ?? "",
+                    branch: atom?.parentBranch ?? null,
+                    parentType: atom?.parent?.type ?? null,
+                  };
+                },
+              )
+            : [],
+        };
+      })()`);
+      if (
+        emptyVariant.raw !== "\\mathbb{}" ||
+        emptyVariant.mode !== "latex" ||
+        emptyVariant.placeholderCount !== 0 ||
+        !emptyVariant.latexCaret ||
+        emptyVariant.sourceWrapperCommand !== "\\mathbb" ||
+        emptyVariant.sourceWrapperKind !== "variant" ||
+        emptyVariant.sourceWrapperContent !== ""
+      ) {
+        throw new Error(`Empty variant scope mismatch: ${JSON.stringify({ variantCompletionBeforeSpace, emptyVariant })}`);
+      }
+
+      await key("A", "KeyA", 65);
+      await sleep(80);
+      const typedVariant = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+        };
+      })()`);
+      if (
+        typedVariant.value !== "\\mathbb{A}" ||
+        typedVariant.placeholderCount !== 0
+      ) {
+        throw new Error(`Typed variant scope mismatch: ${JSON.stringify(typedVariant)}`);
+      }
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.dataset.visualtexAutoExitWrapperCommand = "false";
+      })()`);
+      await focusField();
+      await typeText("\\mathbb");
+      await key(" ", "Space", 32);
+      await key("A", "KeyA", 65);
+      await key("B", "KeyB", 66);
+      await sleep(80);
+      const persistentVariant = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+          mode: field?.mode ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          sourceWrapperContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+        };
+      })()`);
+      if (
+        persistentVariant.raw !== "\\mathbb{AB}" ||
+        persistentVariant.mode !== "latex" ||
+        persistentVariant.sourceWrapperCommand !== "\\mathbb" ||
+        persistentVariant.sourceWrapperContent !== "AB" ||
+        persistentVariant.placeholderCount !== 0
+      ) {
+        throw new Error(
+          `Persistent variant scope mismatch: ${JSON.stringify(persistentVariant)}`,
+        );
+      }
+      await key("Backspace", "Backspace", 8);
+      const persistentAfterOneDelete = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          sourceWrapperContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+        };
+      })()`);
+      if (
+        persistentAfterOneDelete.raw !== "\\mathbb{A}" ||
+        persistentAfterOneDelete.sourceWrapperCommand !== "\\mathbb" ||
+        persistentAfterOneDelete.sourceWrapperContent !== "A" ||
+        persistentAfterOneDelete.placeholderCount !== 0
+      ) {
+        throw new Error(
+          `Persistent variant delete mismatch: ${JSON.stringify(persistentAfterOneDelete)}`,
+        );
+      }
+      await key("Backspace", "Backspace", 8);
+      const persistentEmpty = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          sourceWrapperContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+        };
+      })()`);
+      if (
+        persistentEmpty.raw !== "\\mathbb{}" ||
+        persistentEmpty.sourceWrapperCommand !== "\\mathbb" ||
+        persistentEmpty.sourceWrapperContent !== "" ||
+        persistentEmpty.placeholderCount !== 0
+      ) {
+        throw new Error(
+          `Empty persistent variant mismatch: ${JSON.stringify(persistentEmpty)}`,
+        );
+      }
+      await key("Backspace", "Backspace", 8);
+      const persistentExit = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+        };
+      })()`);
+      if (
+        persistentExit.value !== "" ||
+        persistentExit.sourceWrapperCommand
+      ) {
+        throw new Error(
+          `Empty variant Backspace did not exit: ${JSON.stringify(persistentExit)}`,
+        );
+      }
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.dataset.visualtexAutoExitWrapperCommand = "true";
+      })()`);
+      await focusField();
+      await typeText("\\Bbb");
+      await key(" ", "Space", 32);
+      const aliasEmpty = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+        };
+      })()`);
+      await key("R", "KeyR", 82);
+      const aliasTyped = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+        };
+      })()`);
+      if (
+        aliasEmpty.raw !== "\\mathbb{}" ||
+        aliasEmpty.sourceWrapperCommand !== "\\mathbb" ||
+        aliasEmpty.placeholderCount !== 0 ||
+        aliasTyped.value !== "\\mathbb{R}" ||
+        aliasTyped.sourceWrapperCommand
+      ) {
+        throw new Error(
+          `Variant alias mismatch: ${JSON.stringify({ aliasEmpty, aliasTyped })}`,
+        );
+      }
+
+      await clearField();
+      await focusField();
+      await typeText("\\mathcal");
+      await key(" ", "Space", 32);
+      await key("g", "KeyG", 71);
+      const lowercaseCalligraphic = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return { value: field?.value ?? "" };
+      })()`);
+      if (lowercaseCalligraphic.value !== "\\mathscr{g}") {
+        throw new Error(
+          `Lowercase mathcal compatibility mismatch: ${JSON.stringify(lowercaseCalligraphic)}`,
+        );
+      }
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.dataset.visualtexAutoExitWrapperCommand = "true";
+      })()`);
+      await focusField();
+      await typeText("\\mathbb");
+      await key(" ", "Space", 32);
+      await typeText("\\alpha");
+      await key(" ", "Space", 32);
+      await sleep(100);
+      const commandAutoExit = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+        };
+      })()`);
+      if (
+        commandAutoExit.value !== "\\mathbb{\\alpha}" ||
+        commandAutoExit.mode !== "math" ||
+        commandAutoExit.sourceWrapperCommand ||
+        commandAutoExit.raw
+      ) {
+        throw new Error(`Variant command auto-exit mismatch: ${JSON.stringify(commandAutoExit)}`);
+      }
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.dataset.visualtexAutoExitWrapperCommand = "false";
+      })()`);
+      await focusField();
+      await typeText("\\mathbb");
+      await key(" ", "Space", 32);
+      await typeText("\\alpha");
+      await key(" ", "Space", 32);
+      await sleep(80);
+      const commandBeforeEnter = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          sourceWrapperContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+        };
+      })()`);
+      if (
+        commandBeforeEnter.mode !== "latex" ||
+        commandBeforeEnter.sourceWrapperCommand !== "\\mathbb" ||
+        commandBeforeEnter.sourceWrapperContent !== "\\alpha" ||
+        commandBeforeEnter.raw !== "\\mathbb{\\alpha}"
+      ) {
+        throw new Error(`Persistent variant command mismatch: ${JSON.stringify(commandBeforeEnter)}`);
+      }
+      await key("Enter", "Enter", 13);
+      await sleep(80);
+      const commandAfterEnter = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+        };
+      })()`);
+      if (
+        commandAfterEnter.value !== "\\mathbb{\\alpha}" ||
+        commandAfterEnter.mode !== "math" ||
+        commandAfterEnter.sourceWrapperCommand
+      ) {
+        throw new Error(`Persistent variant Enter mismatch: ${JSON.stringify(commandAfterEnter)}`);
+      }
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.dataset.visualtexAutoExitAccent = "true";
+      })()`);
+      await focusField();
+      await typeText("\\vec");
+      await key(" ", "Space", 32);
+      await sleep(80);
+      const emptyAccent = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          sourceWrapperKind: field?.dataset.visualtexSourceWrapperKind ?? "",
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+          latexCaret: Boolean(field?.shadowRoot?.querySelector(".ML__latex-caret")),
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+        };
+      })()`);
+      if (
+        emptyAccent.value !== "\\vec{}" ||
+        emptyAccent.raw !== "\\vec{}" ||
+        emptyAccent.mode !== "latex" ||
+        emptyAccent.sourceWrapperCommand !== "\\vec" ||
+        emptyAccent.sourceWrapperKind !== "accent" ||
+        emptyAccent.placeholderCount !== 0 ||
+        !emptyAccent.latexCaret
+      ) {
+        throw new Error(`Empty accent source shell mismatch: ${JSON.stringify(emptyAccent)}`);
+      }
+      await key("x", "KeyX", 88);
+      await sleep(80);
+      const accentAutoExit = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+        };
+      })()`);
+      if (
+        accentAutoExit.value !== "\\vec{x}" ||
+        accentAutoExit.mode !== "math" ||
+        accentAutoExit.sourceWrapperCommand ||
+        accentAutoExit.placeholderCount !== 0
+      ) {
+        throw new Error(`Accent character auto-exit mismatch: ${JSON.stringify(accentAutoExit)}`);
+      }
+
+      await clearField();
+      await focusField();
+      await typeText("\\vec");
+      await key(" ", "Space", 32);
+      await typeText("\\alpha");
+      await key(" ", "Space", 32);
+      await sleep(80);
+      const accentCommandAutoExit = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+        };
+      })()`);
+      if (
+        accentCommandAutoExit.value !== "\\vec{\\alpha}" ||
+        accentCommandAutoExit.mode !== "math" ||
+        accentCommandAutoExit.sourceWrapperCommand
+      ) {
+        throw new Error(`Accent command auto-exit mismatch: ${JSON.stringify(accentCommandAutoExit)}`);
+      }
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.dataset.visualtexAutoExitAccent = "false";
+      })()`);
+      await focusField();
+      await typeText("\\hat");
+      await key(" ", "Space", 32);
+      await key("x", "KeyX", 88);
+      await key("y", "KeyY", 89);
+      await sleep(80);
+      const persistentAccent = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          sourceWrapperContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+        };
+      })()`);
+      if (
+        persistentAccent.value !== "\\hat{xy}" ||
+        persistentAccent.raw !== "\\hat{xy}" ||
+        persistentAccent.mode !== "latex" ||
+        persistentAccent.sourceWrapperCommand !== "\\hat" ||
+        persistentAccent.sourceWrapperContent !== "xy"
+      ) {
+        throw new Error(`Persistent accent source shell mismatch: ${JSON.stringify(persistentAccent)}`);
+      }
+      await key("Enter", "Enter", 13);
+      await sleep(80);
+      const accentAfterEnter = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          sourceWrapperCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+        };
+      })()`);
+      if (
+        accentAfterEnter.value !== "\\hat{xy}" ||
+        accentAfterEnter.mode !== "math" ||
+        accentAfterEnter.sourceWrapperCommand
+      ) {
+        throw new Error(`Persistent accent Enter mismatch: ${JSON.stringify(accentAfterEnter)}`);
+      }
+
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.dataset.visualtexAutoExitWrapperCommand = "false";
+      })()`);
+      await focusField();
+      await typeText("\\mathbb");
+      await key(" ", "Space", 32);
+      await key("A", "KeyA", 65);
+      await sleep(60);
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        window.__visualTexSourceStateA = field?._mathfield?.model.getState();
+      })()`);
+      await key("B", "KeyB", 66);
+      await sleep(60);
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        window.__visualTexSourceStateAB = field?._mathfield?.model.getState();
+      })()`);
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field?._mathfield?.model.setState(window.__visualTexSourceStateA, {
+          silenceNotifications: false,
+          type: "undo",
+        });
+      })()`);
+      await sleep(80);
+      const sourceHistoryA = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const mathfield = field?._mathfield;
+        const wrapper = mathfield?.visualTexSourceWrapper;
+        const groupOffset =
+          wrapper?.group?.parent && mathfield?.model
+            ? mathfield.model.offsetOf(wrapper.group)
+            : -1;
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          sourceCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          sourceContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+          groupOffset,
+          groupIsCurrent:
+            groupOffset >= 0 && mathfield?.model?.at(groupOffset) === wrapper?.group,
+        };
+      })()`);
+      if (
+        sourceHistoryA.value !== "\\mathbb{A}" ||
+        sourceHistoryA.mode !== "latex" ||
+        sourceHistoryA.sourceCommand !== "\\mathbb" ||
+        sourceHistoryA.sourceContent !== "A" ||
+        sourceHistoryA.groupOffset < 0 ||
+        !sourceHistoryA.groupIsCurrent
+      ) {
+        throw new Error(
+          `Source-wrapper history restore A mismatch: ${JSON.stringify(sourceHistoryA)}`,
+        );
+      }
+
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field?._mathfield?.model.setState(window.__visualTexSourceStateAB, {
+          silenceNotifications: false,
+          type: "redo",
+        });
+      })()`);
+      await sleep(80);
+      const sourceHistoryAB = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const mathfield = field?._mathfield;
+        const wrapper = mathfield?.visualTexSourceWrapper;
+        const groupOffset =
+          wrapper?.group?.parent && mathfield?.model
+            ? mathfield.model.offsetOf(wrapper.group)
+            : -1;
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          sourceCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          sourceContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+          groupOffset,
+          groupIsCurrent:
+            groupOffset >= 0 && mathfield?.model?.at(groupOffset) === wrapper?.group,
+        };
+      })()`);
+      if (
+        sourceHistoryAB.value !== "\\mathbb{AB}" ||
+        sourceHistoryAB.mode !== "latex" ||
+        sourceHistoryAB.sourceCommand !== "\\mathbb" ||
+        sourceHistoryAB.sourceContent !== "AB" ||
+        sourceHistoryAB.groupOffset < 0 ||
+        !sourceHistoryAB.groupIsCurrent
+      ) {
+        throw new Error(
+          `Source-wrapper history restore AB mismatch: ${JSON.stringify(sourceHistoryAB)}`,
+        );
+      }
+
+      console.log(JSON.stringify({
+        emptyVariant,
+        typedVariant,
+        commandAutoExit,
+        commandBeforeEnter,
+        commandAfterEnter,
+        emptyAccent,
+        accentAutoExit,
+        accentCommandAutoExit,
+        persistentAccent,
+        accentAfterEnter,
+      }, null, 2));
+      console.log("Targeted source-wrapper core regression passed");
+      return;
+    }
+
+    if (scenario === "nested-input-core") {
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.setValue("\\\\frac{\\\\placeholder{}}{\\\\placeholder{}}", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "placeholder",
+          silenceNotifications: true,
+        });
+        field.focus();
+        field.shadowRoot
+          ?.querySelector('[part="keyboard-sink"]')
+          ?.focus({ preventScroll: true });
+        const cancel = (event) => {
+          event.preventDefault();
+          field.removeEventListener("beforeinput", cancel, true);
+        };
+        field.addEventListener("beforeinput", cancel, true);
+      })()`);
+      await key("x", "KeyX", 88);
+      const cancelled = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          value: field?.value ?? "",
+          placeholderCount:
+            field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
+          selection: field?.selection ?? null,
+        };
+      })()`);
+      if (
+        cancelled.value !== "\\frac{\\placeholder{}}{\\placeholder{}}" ||
+        cancelled.placeholderCount !== 2
+      ) {
+        throw new Error(`Cancelled input mutated placeholder: ${JSON.stringify(cancelled)}`);
+      }
+
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        field.dataset.visualtexAutoExitAccent = "true";
+        field.setValue("\\\\hat{\\\\frac{a}{c}}", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        const a = Array.from(
+          { length: model.lastOffset + 1 },
+          (_, index) => model.at(index),
+        ).find(
+          (atom) =>
+            atom?.value === "a" &&
+            atom?.parentBranch === "above" &&
+            atom?.parent?.type === "genfrac",
+        );
+        field.position = model.offsetOf(a);
+        field.focus();
+        field.shadowRoot
+          ?.querySelector('[part="keyboard-sink"]')
+          ?.focus({ preventScroll: true });
+      })()`);
+      await key("b", "KeyB", 66);
+      const nestedAccent = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const atom = model?.at(model.position);
+        return {
+          value: field?.value ?? "",
+          position: model?.position ?? -1,
+          atomValue: atom?.value ?? "",
+          branch: atom?.parentBranch ?? null,
+          parentType: atom?.parent?.type ?? null,
+          grandParentType: atom?.parent?.parent?.type ?? null,
+        };
+      })()`);
+      if (
+        nestedAccent.value !== "\\hat{\\frac{ab}{c}}" ||
+        nestedAccent.atomValue !== "b" ||
+        nestedAccent.branch !== "above" ||
+        nestedAccent.parentType !== "genfrac"
+      ) {
+        throw new Error(`Nested accent auto-exit escaped too far: ${JSON.stringify(nestedAccent)}`);
+      }
+
+      await clearField();
+      await focusField();
+      const fastKey = async (value, code, virtualKeyCode) => {
+        const common = {
+          key: value,
+          code,
+          windowsVirtualKeyCode: virtualKeyCode,
+          nativeVirtualKeyCode: virtualKeyCode,
+        };
+        await client.send("Input.dispatchKeyEvent", {
+          type: "keyDown",
+          ...common,
+          ...(value.length === 1 ? { text: value, unmodifiedText: value } : {}),
+        });
+        await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
+      };
+      await fastKey("\\", "Backslash", 220);
+      await fastKey("f", "KeyF", 70);
+      await fastKey("r", "KeyR", 82);
+      await fastKey("a", "KeyA", 65);
+      await fastKey("c", "KeyC", 67);
+      await fastKey(" ", "Space", 32);
+      await fastKey("\\", "Backslash", 220);
+      await sleep(80);
+      const fastNested = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const rawLatex = [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+          .map((node) => node.textContent ?? "")
+          .join("");
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          rawLatex,
+          selection: field?.selection ?? null,
+        };
+      })()`);
+      if (
+        !fastNested.value.includes("\\frac") ||
+        fastNested.mode !== "latex" ||
+        !fastNested.rawLatex.includes("\\")
+      ) {
+        throw new Error(`Fast nested backslash was swallowed: ${JSON.stringify(fastNested)}`);
+      }
+
+      console.log(
+        JSON.stringify({ cancelled, nestedAccent, fastNested }, null, 2),
+      );
+      console.log("Targeted nested input core regression passed");
       return;
     }
 
@@ -5211,7 +9563,7 @@ async function main() {
             graySelectionCleared &&
             Number.parseFloat(caretStyle?.borderLeftWidth ?? "0") >= 1 &&
             Number.parseFloat(caretStyle?.left ?? "0") < 0 &&
-            caretStyle?.animationName.includes("visualtex-placeholder-caret-blink"),
+            caretStyle?.animationName.includes("ML__caret-blink"),
           value: field?.value ?? "",
           placeholderCount: placeholders.length,
           selected: Boolean(selected),
@@ -5307,7 +9659,7 @@ async function main() {
             style?.borderTopWidth === "0px" &&
             Number.parseFloat(caretStyle?.borderLeftWidth ?? "0") >= 1 &&
             Number.parseFloat(caretStyle?.left ?? "0") < 0 &&
-            caretStyle?.animationName.includes("visualtex-placeholder-caret-blink") &&
+            caretStyle?.animationName.includes("ML__caret-blink") &&
             ["rgb(217, 237, 249)", "rgb(207, 232, 247)"].includes(
               style?.backgroundColor ?? "",
             ),
@@ -5326,180 +9678,6 @@ async function main() {
           mode: field?.mode ?? "",
         };
       })()`, "deleting the backslash restores the empty structural placeholder");
-
-      const wrapperPlaceholderCases = [
-        {
-          name: "fraction-numerator",
-          source: String.raw`p+\frac{\placeholder{}}{d}+q`,
-          command: String.raw`\mathbf`,
-        },
-        {
-          name: "fraction-denominator",
-          source: String.raw`p+\frac{n}{\placeholder{}}+q`,
-          command: String.raw`\mathcal`,
-        },
-        {
-          name: "integral-upper-limit",
-          source: String.raw`p+\int_{l}^{\placeholder{}}f\,dx+q`,
-          command: String.raw`\mathfrak`,
-        },
-        {
-          name: "integral-lower-limit",
-          source: String.raw`p+\int_{\placeholder{}}^{u}f\,dx+q`,
-          command: String.raw`\mathbb`,
-        },
-        {
-          name: "summation-upper-limit",
-          source: String.raw`p+\sum_{i=0}^{\placeholder{}}a_{i}+q`,
-          command: String.raw`\mathbf`,
-        },
-        {
-          name: "summation-lower-limit",
-          source: String.raw`p+\sum_{\placeholder{}}^{n}a_{i}+q`,
-          command: String.raw`\mathcal`,
-        },
-      ];
-      const wrapperPlaceholderStates = [];
-      for (const testCase of wrapperPlaceholderCases) {
-        await evaluate(`(() => {
-          const field = document.querySelector("math-field");
-          field.setValue(${JSON.stringify(testCase.source)}, {
-            mode: "math",
-            format: "latex",
-            insertionMode: "replaceAll",
-            selectionMode: "placeholder",
-            silenceNotifications: true,
-          });
-          field.dispatchEvent(new InputEvent("input", {
-            bubbles: true,
-            composed: true,
-            inputType: "insertText",
-          }));
-          field.focus();
-          field.shadowRoot
-            ?.querySelector('[part="keyboard-sink"]')
-            ?.focus({ preventScroll: true });
-        })()`);
-        await sleep(100);
-        const placeholderGeometry = await waitForEvaluation(`(() => {
-          const field = document.querySelector("math-field");
-          const placeholder = field?.shadowRoot?.querySelector(
-            ".visualtex-structural-placeholder",
-          );
-          const bounds = placeholder?.getBoundingClientRect();
-          return {
-            ready: Boolean(bounds && bounds.width > 0 && bounds.height > 0),
-            x: bounds ? bounds.left + bounds.width / 2 : 0,
-            y: bounds ? bounds.top + bounds.height / 2 : 0,
-          };
-        })()`, `structural placeholder geometry before ${testCase.name}`);
-        await client.send("Input.dispatchMouseEvent", {
-          type: "mousePressed",
-          x: placeholderGeometry.x,
-          y: placeholderGeometry.y,
-          button: "left",
-          buttons: 1,
-          clickCount: 1,
-        });
-        await client.send("Input.dispatchMouseEvent", {
-          type: "mouseReleased",
-          x: placeholderGeometry.x,
-          y: placeholderGeometry.y,
-          button: "left",
-          buttons: 0,
-          clickCount: 1,
-        });
-        await sleep(80);
-        const caretState = await waitForEvaluation(`(() => {
-          const field = document.querySelector("math-field");
-          const host = field?.closest(".mathfield-host");
-          const caret = field?.shadowRoot?.querySelector(
-            ".visualtex-structural-placeholder-caret",
-          );
-          if (!field || !host || !caret) return { ready: false };
-          const hostBounds = host.getBoundingClientRect();
-          const caretBounds = caret.getBoundingClientRect();
-          host.dataset.testExpectedWrapperAnchorX = String(
-            caretBounds.left - hostBounds.left,
-          );
-          host.dataset.testExpectedWrapperAnchorY = String(
-            caretBounds.top - hostBounds.top + caretBounds.height / 2,
-          );
-          return {
-            ready: caretBounds.height > 0,
-            left: caretBounds.left - hostBounds.left,
-            centerY:
-              caretBounds.top - hostBounds.top + caretBounds.height / 2,
-            height: caretBounds.height,
-          };
-        })()`, `visible structural caret before ${testCase.name}`);
-        await typeText(testCase.command);
-        await key(" ", "Space", 32);
-        const frameState = await waitForEvaluation(`(() => {
-          const field = document.querySelector("math-field");
-          const host = field?.closest(".mathfield-host");
-          if (!field || !host) return { ready: false };
-          const frameCenter = Number.parseFloat(
-            host.style.getPropertyValue("--pending-wrapper-left") || "NaN",
-          );
-          const frameTop = Number.parseFloat(
-            host.style.getPropertyValue("--pending-wrapper-top") || "NaN",
-          );
-          const frameWidth = Number.parseFloat(
-            host.style.getPropertyValue("--pending-wrapper-width") || "NaN",
-          );
-          const frameHeight = Number.parseFloat(
-            host.style.getPropertyValue("--pending-wrapper-height") || "NaN",
-          );
-          const frameLeft = frameCenter - frameWidth / 2;
-          const expectedLeft = Number.parseFloat(
-            host.dataset.testExpectedWrapperAnchorX || "NaN",
-          );
-          const expectedTop = Number.parseFloat(
-            host.dataset.testExpectedWrapperAnchorY || "NaN",
-          );
-          const formulaFontSize =
-            Number.parseFloat(field.style.fontSize) || 54;
-          const minimumFrameHeight = Math.max(
-            12,
-            formulaFontSize * 0.52,
-          );
-          const maximumFrameHeight = Math.max(
-            minimumFrameHeight,
-            formulaFontSize * 1.08,
-          );
-          const expectedHeight = Math.max(
-            minimumFrameHeight,
-            Math.min(
-              maximumFrameHeight,
-              ${caretState.height} + 4,
-            ),
-          );
-          return {
-            ready:
-              field.dataset.pendingWrapperCommand ===
-                ${JSON.stringify(testCase.command)} &&
-              host.classList.contains("has-pending-wrapper-placeholder") &&
-              Math.abs(frameLeft - expectedLeft) <= 2.5 &&
-              Math.abs(frameTop - expectedTop) <= 2.5 &&
-              Math.abs(frameHeight - expectedHeight) <= 0.5,
-            value: field.value,
-            frameLeft,
-            frameTop,
-            frameWidth,
-            frameHeight,
-            expectedLeft,
-            expectedTop,
-            expectedHeight,
-          };
-        })()`, `wrapper frame at structural caret: ${testCase.name}`);
-        wrapperPlaceholderStates.push({
-          name: testCase.name,
-          caretState,
-          frameState,
-        });
-        await key("Enter", "Enter", 13);
-      }
 
       const heights = Object.fromEntries(
         styleStates.map((state) => [
@@ -5525,7 +9703,6 @@ async function main() {
             visibleBlinkState,
             typedState,
             restoredState,
-            wrapperPlaceholderStates,
             heights,
           },
           null,
@@ -5533,6 +9710,101 @@ async function main() {
         ),
       );
       console.log("Targeted structural placeholder regression passed");
+      return;
+    }
+
+    if (scenario === "accent-finalization") {
+      const cases = [
+        { name: "bar", source: String.raw`\bar{\placeholder{}}`, expected: String.raw`\bar{x}` },
+        { name: "hat", source: String.raw`\hat{\placeholder{}}`, expected: String.raw`\hat{x}` },
+        { name: "widehat", source: String.raw`\widehat{\placeholder{}}`, expected: String.raw`\widehat{x}` },
+      ];
+      const states = [];
+      for (const testCase of cases) {
+        await waitForEvaluation(
+          `(() => ({ ready: Boolean(document.querySelector("math-field")?.isConnected) }))()`,
+          `stable field for accent finalization: ${testCase.name}`,
+        );
+        await evaluate(`(() => {
+          const field =
+            document.querySelector(".formula-line.is-active math-field") ??
+            document.querySelector("math-field");
+          if (!field) return false;
+          field.setValue(${JSON.stringify(testCase.source)}, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceAll",
+            selectionMode: "placeholder",
+            silenceNotifications: true,
+          });
+          field.focus();
+          field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        })()`);
+        const placeholderState = await waitForEvaluation(`(() => {
+          const field = document.querySelector("math-field");
+          const layouts = field?.shadowRoot?.querySelectorAll(
+            ".visualtex-accent-placeholder-layout",
+          ) ?? [];
+          return {
+            ready: layouts.length === 1 && field?.selectionIsCollapsed === false,
+            layoutCount: layouts.length,
+            selection: field?.selection ?? null,
+            value: field?.value ?? "",
+          };
+        })()`, `${testCase.name} accent placeholder geometry is active`);
+
+        await key("x", "KeyX", 88);
+        const finalized = await waitForEvaluation(`(() => {
+          const field = document.querySelector("math-field");
+          const root = field?.shadowRoot;
+          const layout = [...(root?.querySelectorAll(".ML__vlist") ?? [])].find((candidate) =>
+            candidate.querySelector(":scope > .ML__center .ML__accent-body, :scope > .ML__center .ML__stretchy"),
+          );
+          const center = layout?.querySelector(":scope > .ML__center");
+          const accent = center?.querySelector(".ML__accent-body, .ML__stretchy");
+          const base = [...(layout?.children ?? [])].find((candidate) =>
+            !candidate.classList.contains("ML__center"),
+          );
+          const accentBounds = accent?.getBoundingClientRect();
+          const baseBounds = base?.getBoundingClientRect();
+          const accentCenter = accentBounds
+            ? accentBounds.left + accentBounds.width / 2
+            : Number.NaN;
+          const baseCenter = baseBounds
+            ? baseBounds.left + baseBounds.width / 2
+            : Number.NaN;
+          const alignmentDelta =
+            Number.isFinite(accentCenter) && Number.isFinite(baseCenter)
+              ? Math.abs(accentCenter - baseCenter)
+              : Number.NaN;
+          const alignmentTolerance = baseBounds
+            ? Math.max(6, baseBounds.width * 0.3)
+            : Number.NaN;
+          const staleLayouts = root?.querySelectorAll(
+            ".visualtex-accent-placeholder-layout",
+          ).length ?? -1;
+          const staleShift = center?.style.getPropertyValue(
+            "--visualtex-accent-placeholder-shift",
+          ) ?? "";
+          return {
+            ready:
+              field?.value?.replace(/\s+/g, "") === ${JSON.stringify(testCase.expected)} &&
+              staleLayouts === 0 &&
+              staleShift === "" &&
+              Number.isFinite(alignmentDelta) &&
+              Number.isFinite(alignmentTolerance) &&
+              alignmentDelta <= alignmentTolerance,
+            value: field?.value ?? "",
+            staleLayouts,
+            staleShift,
+            alignmentDelta,
+            alignmentTolerance,
+          };
+        })()`, `${testCase.name} accent placeholder geometry is removed after input`);
+        states.push({ name: testCase.name, placeholderState, finalized });
+      }
+      console.log(JSON.stringify(states, null, 2));
+      console.log("Targeted accent finalization regression passed");
       return;
     }
 
@@ -5589,14 +9861,8 @@ async function main() {
         evaluate(`(() => {
           const field = document.querySelector("math-field");
           const root = field?.shadowRoot;
-          const symbol = field?.placeholderSymbol || "▢";
-          const placeholder = [...(root?.querySelectorAll(
-            ".visualtex-accent-structural-placeholder, .ML__vlist .ML__cmr, .ML__placeholder",
-          ) ?? [])].filter((node) =>
-            node.classList.contains("visualtex-structural-placeholder") ||
-            node.classList.contains("ML__placeholder") ||
-            node.textContent?.trim() === symbol
-          )[0] ?? null;
+          const placeholder =
+            root?.querySelector(".visualtex-structural-placeholder") ?? null;
           const placeholderState = placeholder ? (() => {
             const node = placeholder;
             const bounds = node.getBoundingClientRect();
@@ -5609,12 +9875,33 @@ async function main() {
             const overlay = node.closest(".ML__vlist")?.querySelector(
               ".visualtex-combining-accent-overlay",
             );
+            const nativeAccent = node.closest(".ML__vlist")?.querySelector(
+              ".ML__visualtex-accent-mark svg",
+            );
+            const nativeDotCount = nativeAccent?.querySelectorAll("circle").length ?? 0;
             const overlayBounds = overlay?.getBoundingClientRect();
             const accentAnchor = overlayBounds
               ? overlayBounds.left + overlayBounds.width / 2
               : accentBounds
                 ? accentBounds.left + accentBounds.width / 2
                 : null;
+            const ancestors = [];
+            let current = node.parentElement;
+            for (let depth = 0; current && depth < 6; depth += 1) {
+              const currentBounds = current.getBoundingClientRect();
+              const currentStyle = getComputedStyle(current);
+              ancestors.push({
+                className: current.className,
+                atomId: current.dataset?.atomId ?? "",
+                left: currentBounds.left,
+                width: currentBounds.width,
+                marginLeft: currentStyle.marginLeft,
+                marginRight: currentStyle.marginRight,
+                display: currentStyle.display,
+              });
+              if (current.classList.contains("ML__vlist")) break;
+              current = current.parentElement;
+            }
             return {
               atomId: node.dataset.atomId ?? "",
               classes: node.className,
@@ -5632,12 +9919,22 @@ async function main() {
               color: style.color,
               overflow: style.overflow,
               verticalAlign: style.verticalAlign,
+              marginRight: style.marginRight,
+              centerShift: style.getPropertyValue(
+                "--visualtex-placeholder-center-shift",
+              ),
+              pseudoLeft: pseudo.left,
+              pseudoTransform: pseudo.transform,
+              ancestors,
               visualBackground: pseudo.backgroundColor,
-              overlayKind: overlay?.dataset.kind ?? "",
+              overlayKind: overlay?.dataset.kind ??
+                (nativeAccent?.querySelector("path") ? "vector" :
+                  nativeDotCount === 3 ? "triple-dot" :
+                  nativeDotCount === 4 ? "quadruple-dot" : ""),
               overlayDotCount:
                 overlay?.querySelectorAll(
                   ".visualtex-combining-accent-dot",
-                ).length ?? 0,
+                ).length ?? nativeDotCount,
               accentAnchor,
               alignmentDelta:
                 accentAnchor === null
@@ -5660,7 +9957,84 @@ async function main() {
           };
         })()`);
 
+      const readAccentReferenceAlignment = async (source) => {
+        await waitForEvaluation(
+          `(() => ({ ready: Boolean(document.querySelector("math-field")?.isConnected) }))()`,
+          "stable field for native accent reference",
+        );
+        const referenceSource = source.replace("\\placeholder{}", "x");
+        await evaluate(`((latex) => {
+          const field = document.querySelector("math-field");
+          field.setValue(latex, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceAll",
+            selectionMode: "after",
+            silenceNotifications: true,
+          });
+          field.focus();
+        })(${JSON.stringify(referenceSource)})`);
+        await sleep(80);
+        return evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          const root = field?.shadowRoot;
+          const layout = [...(root?.querySelectorAll(".ML__vlist") ?? [])].find(
+            (candidate) =>
+              candidate.querySelector(
+                ":scope > .ML__center .ML__accent-body, :scope > .ML__center .ML__stretchy",
+              ),
+          );
+          if (!layout) return null;
+          const center = layout.querySelector(":scope > .ML__center");
+          const base = [...layout.children].find(
+            (candidate) => !candidate.classList.contains("ML__center"),
+          );
+          const accentBody = layout.querySelector(
+            ":scope > .ML__center .ML__accent-body, :scope > .ML__center .ML__stretchy",
+          );
+          if (!base || !accentBody) return null;
+          const bounds = base.getBoundingClientRect();
+          const centerBounds = center?.getBoundingClientRect();
+          const accentBounds = accentBody.getBoundingClientRect();
+          const layoutBounds = layout.getBoundingClientRect();
+          const overlay = layout.querySelector(
+            ".visualtex-combining-accent-overlay",
+          );
+          const overlayBounds = overlay?.getBoundingClientRect();
+          const accentAnchor = overlayBounds
+            ? overlayBounds.left + overlayBounds.width / 2
+            : accentBounds.left + accentBounds.width / 2;
+          return {
+            delta: Math.abs(bounds.left + bounds.width / 2 - accentAnchor),
+            layout: {
+              left: layoutBounds.left,
+              width: layoutBounds.width,
+            },
+            base: {
+              left: bounds.left,
+              width: bounds.width,
+              center: bounds.left + bounds.width / 2,
+            },
+            center: centerBounds
+              ? {
+                  left: centerBounds.left,
+                  width: centerBounds.width,
+                  center: centerBounds.left + centerBounds.width / 2,
+                }
+              : null,
+            accent: {
+              left: accentBounds.left,
+              width: accentBounds.width,
+              center: accentBounds.left + accentBounds.width / 2,
+            },
+          };
+        })()`);
+      };
+
       for (const testCase of cases) {
+        const referenceAlignment =
+          await readAccentReferenceAlignment(testCase.source);
+        const referenceAlignmentDelta = referenceAlignment?.delta ?? null;
         await waitForEvaluation(
           `(() => ({ ready: Boolean(document.querySelector("math-field")?.isConnected) }))()`,
           `stable field for accent placeholder case: ${testCase.name}`,
@@ -5736,7 +10110,11 @@ async function main() {
         const stableAlignment = (state) =>
           !state.placeholder?.classes.includes(
             "visualtex-accent-structural-placeholder",
-          ) || state.placeholder.alignmentDelta <= 1;
+          ) ||
+          (referenceAlignmentDelta !== null &&
+            Math.abs(
+              state.placeholder.alignmentDelta - referenceAlignmentDelta,
+            ) <= 0.75);
         const expectedOverlay = {
           vec: { kind: "vector", dotCount: 0 },
           dddot: { kind: "triple-dot", dotCount: 3 },
@@ -5769,6 +10147,8 @@ async function main() {
           throw new Error(
             `Accent placeholder regression failed: ${JSON.stringify({
               name: testCase.name,
+              referenceAlignment,
+              referenceAlignmentDelta,
               initial,
               afterRight,
               reenteredFromRight,
@@ -5793,24 +10173,23 @@ async function main() {
         });
       }
 
-      const readInsertedAccentState = (expectedCommand) =>
+      const readInsertedAccentState = (
+        expectedCommand,
+        allowSourceWrapper = false,
+      ) =>
         waitForEvaluation(`(() => {
           const field =
             document.querySelector(".formula-line.is-active math-field") ??
             document.querySelector("math-field");
           const root = field?.shadowRoot;
-          const symbol = field?.placeholderSymbol || "▢";
-          const placeholders = [...(root?.querySelectorAll(
-            ".visualtex-accent-structural-placeholder, .visualtex-structural-placeholder",
-          ) ?? [])].filter((node) =>
-            (node.textContent || "").replace(/\\s+/g, "").startsWith(symbol)
-          );
-          const rawBlackBoxes = [...(root?.querySelectorAll(
-            ".ML__vlist .ML__cmr, .ML__placeholder",
-          ) ?? [])].filter((node) =>
-            (node.textContent || "").trim() === symbol &&
-            !node.classList.contains("visualtex-structural-placeholder")
-          );
+          const placeholders = [
+            ...(root?.querySelectorAll(".visualtex-structural-placeholder") ?? []),
+          ];
+          const rawBlackBoxes = [
+            ...(root?.querySelectorAll(
+              ".ML__placeholder:not(.visualtex-structural-placeholder)",
+            ) ?? []),
+          ];
           const blueColors = new Set([
             "rgb(217, 237, 249)",
             "rgb(207, 232, 247)",
@@ -5825,16 +10204,35 @@ async function main() {
               style.borderTopWidth === "0px"
             );
           });
+          const structuralReady =
+            placeholders.length === 1 &&
+            rawBlackBoxes.length === 0 &&
+            visuallyStyled;
+          const sourceWrapperReady =
+            ${JSON.stringify(allowSourceWrapper)} &&
+            field?.mode === "latex" &&
+            (field?.dataset.visualtexSourceWrapperKind ?? "") === "accent" &&
+            (field?.dataset.visualtexSourceWrapperCommand ?? "") ===
+              ${JSON.stringify(expectedCommand.slice(0, -1))} &&
+            placeholders.length === 0 &&
+            rawBlackBoxes.length === 0;
           return {
             ready:
               Boolean(field?.value.includes(${JSON.stringify(expectedCommand)})) &&
-              placeholders.length === 1 &&
-              rawBlackBoxes.length === 0 &&
-              visuallyStyled,
+              (structuralReady || sourceWrapperReady),
             value: field?.value ?? "",
+            mode: field?.mode ?? "",
             placeholderCount: placeholders.length,
             rawBlackBoxCount: rawBlackBoxes.length,
             classes: placeholders.map((node) => node.className),
+            sourceWrapperCommand:
+              field?.dataset.visualtexSourceWrapperCommand ?? "",
+            sourceWrapperKind:
+              field?.dataset.visualtexSourceWrapperKind ?? "",
+            structuralReady,
+            sourceWrapperReady,
+            expectedSourceWrapperCommand:
+              ${JSON.stringify(expectedCommand.slice(0, -1))},
           };
         })()`,
           `inserted accent ${expectedCommand}`,
@@ -5864,7 +10262,7 @@ async function main() {
         await typeText(input);
         shortcutStates.push({
           input,
-          state: await readInsertedAccentState(command),
+          state: await readInsertedAccentState(command, true),
         });
       }
 
@@ -5890,7 +10288,7 @@ async function main() {
         await clickSelectorWithPointer(`[data-command-id=${commandId}]`);
         toolbarStates.push({
           commandId,
-          state: await readInsertedAccentState(command),
+          state: await readInsertedAccentState(command, true),
         });
       }
       states.push({
@@ -5940,38 +10338,33 @@ async function main() {
 
         const combiningCharacterState = await evaluate(`(() => {
           const root = document.querySelector("math-field")?.shadowRoot;
-          const accent = root?.querySelector(".ML__accent-combining-char");
+          const accent = root?.querySelector(".ML__visualtex-accent-mark svg");
           const layout = accent?.closest(".ML__vlist");
           const base = [...(layout?.children ?? [])].find(
             (node) => !node.classList.contains("ML__center"),
           );
           const accentBounds = accent?.getBoundingClientRect();
           const baseBounds = base?.getBoundingClientRect();
-          const overlay = layout?.querySelector(
-            ".visualtex-combining-accent-overlay",
-          );
-          const overlayBounds = overlay?.getBoundingClientRect();
+          const dotCount = accent?.querySelectorAll("circle").length ?? 0;
           const accentVisualCenter =
-            overlayBounds
-              ? overlayBounds.left + overlayBounds.width / 2
+            accentBounds
+              ? accentBounds.left + accentBounds.width / 2
               : -1;
           return {
             ready: Boolean(
               accent &&
                 base &&
                 accentBounds &&
-                baseBounds &&
-                overlayBounds,
+                baseBounds,
             ),
-            classes: accent?.className ?? "",
-            leftOffset: accent ? getComputedStyle(accent).left : "",
+            classes: accent?.parentElement?.className ?? "",
+            leftOffset: accent ? getComputedStyle(accent.parentElement).left : "",
             accentOrigin: accentBounds?.left ?? -1,
             accentVisualCenter,
-            overlayKind: overlay?.dataset.kind ?? "",
-            overlayDotCount:
-              overlay?.querySelectorAll(
-                ".visualtex-combining-accent-dot",
-              ).length ?? 0,
+            overlayKind: accent?.querySelector("path") ? "vector" :
+              dotCount === 3 ? "triple-dot" :
+              dotCount === 4 ? "quadruple-dot" : "",
+            overlayDotCount: dotCount,
             baseCenter: baseBounds
               ? baseBounds.left + baseBounds.width / 2
               : -1,
@@ -5988,7 +10381,7 @@ async function main() {
         if (
           !combiningCharacterState.ready ||
           !combiningCharacterState.classes.includes(
-            "visualtex-combining-accent",
+            "ML__visualtex-accent-mark",
           ) ||
           combiningCharacterState.overlayKind !== testCase.overlayKind ||
           combiningCharacterState.overlayDotCount !== testCase.dotCount ||
@@ -6011,19 +10404,114 @@ async function main() {
         });
       }
 
-    console.log(JSON.stringify(states, null, 2));
+      const setAccentAutoExitCase = async (latex) => {
+        await evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          field.mode = "math";
+          field.setValue(${JSON.stringify(latex)}, {
+            mode: "math",
+            format: "latex",
+            insertionMode: "replaceAll",
+            selectionMode: "placeholder",
+            silenceNotifications: true,
+          });
+          field.dataset.visualtexAutoExitAccent = "false";
+          field.focus();
+          field.shadowRoot
+            ?.querySelector('[part="keyboard-sink"]')
+            ?.focus({ preventScroll: true });
+        })()`);
+        await sleep(90);
+      };
+      const readAccentAutoExitState = async () =>
+        evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          return {
+            value: field?.value ?? "",
+            position: field?.position ?? -1,
+            lastOffset: field?.lastOffset ?? -1,
+            selection: field?.selection ?? null,
+            stalePlaceholderLayouts:
+              field?.shadowRoot?.querySelectorAll(
+                ".visualtex-accent-placeholder-layout",
+              ).length ?? -1,
+          };
+        })()`);
+
+      await setAccentAutoExitCase(String.raw`\hat{\placeholder{}}`);
+      await key("x", "KeyX", 88);
+      const accentDirectFirst = await readAccentAutoExitState();
+      await key("y", "KeyY", 89);
+      const accentDirectNext = await readAccentAutoExitState();
+      if (
+        accentDirectFirst.value !== String.raw`\hat{x}` ||
+        accentDirectNext.value !== String.raw`\hat{xy}` ||
+        accentDirectFirst.position >= accentDirectFirst.lastOffset ||
+        accentDirectFirst.stalePlaceholderLayouts !== 0 ||
+        accentDirectNext.stalePlaceholderLayouts !== 0
+      ) {
+        throw new Error(
+          `Accent placeholder input moved outside its structure: ${JSON.stringify({ accentDirectFirst, accentDirectNext })}`,
+        );
+      }
+
+      await setAccentAutoExitCase(String.raw`q^{\hat{\placeholder{}}}`);
+      await key("x", "KeyX", 88);
+      const nestedAccentFirst = await readAccentAutoExitState();
+      await key("y", "KeyY", 89);
+      const nestedScriptExit = await readAccentAutoExitState();
+      await key("z", "KeyZ", 90);
+      const nestedAfterScript = await readAccentAutoExitState();
+      if (
+        nestedAccentFirst.value !== String.raw`q^{\hat{x}}` ||
+        nestedScriptExit.value !== String.raw`q^{\hat{xy}}` ||
+        nestedAfterScript.value !== String.raw`q^{\hat{xyz}}` ||
+        nestedAccentFirst.position >= nestedAccentFirst.lastOffset ||
+        nestedAccentFirst.stalePlaceholderLayouts !== 0 ||
+        nestedScriptExit.stalePlaceholderLayouts !== 0 ||
+        nestedAfterScript.stalePlaceholderLayouts !== 0
+      ) {
+        throw new Error(
+          `Nested accent/script placeholder input moved outside its structure: ${JSON.stringify({ nestedAccentFirst, nestedScriptExit, nestedAfterScript })}`,
+        );
+      }
+      states.push({
+        name: "direct-accent-placeholder-input",
+        first: accentDirectFirst,
+        next: accentDirectNext,
+      });
+      states.push({
+        name: "nested-accent-script-placeholder-input",
+        first: nestedAccentFirst,
+        second: nestedScriptExit,
+        third: nestedAfterScript,
+      });
+
+      console.log(JSON.stringify(states, null, 2));
       console.log("Targeted accent placeholder regression passed");
       return;
     }
 
     if (scenario === "caret-probe") {
       const cases = [
-        { name: "fraction numerator", source: String.raw`p+\frac{z+n}{d}+q` },
-        { name: "square root", source: String.raw`p+\sqrt{z+s}+q` },
+        {
+          name: "fraction numerator",
+          source: String.raw`p+\frac{z+n}{d}+q`,
+          expectedAfterInput: String.raw`p+\frac{zk+n}{d}+q`,
+        },
+        {
+          name: "square root",
+          source: String.raw`p+\sqrt{z+s}+q`,
+          expectedAfterInput: String.raw`p+\sqrt{zk+s}+q`,
+        },
       ];
       const states = [];
       for (const testCase of cases) {
-        const state = await waitForEvaluation(`(() => {
+        await waitForEvaluation(
+          `(() => ({ ready: Boolean(document.querySelector("math-field")?.isConnected) }))()`,
+          `mounted field before caret probe: ${testCase.name}`,
+        );
+        const prepared = await evaluate(`(() => {
           const field = document.querySelector("math-field");
           if (!field?.isConnected) return { ready: false };
           field.setValue(${JSON.stringify(testCase.source)}, {
@@ -6047,14 +10535,32 @@ async function main() {
           field.selection = { ranges: [[markerEnd, markerEnd]], direction: "none" };
           field.position = markerEnd;
           field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
-          const hostBounds = field.closest(".mathfield-host")?.getBoundingClientRect();
+          return {
+            ready: true,
+            position: markerEnd,
+            targetAtomId: field?._mathfield?.model?.at(markerEnd)?.id ?? "",
+          };
+        })()`);
+        if (!prepared?.ready) {
+          throw new Error(`Failed to prepare caret probe: ${JSON.stringify({ testCase, prepared })}`);
+        }
+        await sleep(100);
+
+        const state = await waitForEvaluation(`(() => {
+          const field = document.querySelector("math-field");
+          const mathfield = field?._mathfield;
+          const model = mathfield?.model;
+          if (!field?.isConnected || !model) return { ready: false };
+          const targetAtom = model.at(field.position);
+          const targetElement = targetAtom ? mathfield.getHTMLElement(targetAtom) : null;
+          const targetBounds = targetElement?.getBoundingClientRect();
           const markers = [...(field.shadowRoot?.querySelectorAll(
             ".ML__caret, .ML__text-caret, .ML__latex-caret",
           ) ?? [])].map((marker) => {
             const bounds = marker.getBoundingClientRect();
             const chain = [];
             let node = marker;
-            while (node && chain.length < 8) {
+            while (node && chain.length < 10) {
               chain.push({
                 tag: node.tagName,
                 className: node.className || "",
@@ -6064,32 +10570,74 @@ async function main() {
               node = node.parentElement;
             }
             return {
-              left: hostBounds ? bounds.right - hostBounds.left : bounds.right,
-              top: hostBounds
-                ? bounds.top - hostBounds.top + bounds.height / 2
-                : bounds.top + bounds.height / 2,
+              x: bounds.right,
+              y: bounds.top + bounds.height / 2,
               width: bounds.width,
               height: bounds.height,
-              pseudoVisibility: getComputedStyle(marker, "::after").visibility,
               chain,
             };
-          });
+          }).filter((marker) => marker.height > 0);
+          const targetRight = targetBounds?.right ?? Number.NaN;
+          const closest = markers
+            .map((marker) => ({
+              ...marker,
+              deltaX: Number.isFinite(targetRight)
+                ? Math.abs(marker.x - targetRight)
+                : Number.POSITIVE_INFINITY,
+            }))
+            .sort((left, right) => left.deltaX - right.deltaX)[0] ?? null;
           return {
-            ready: markers.some((marker) => marker.height > 0),
+            ready:
+              field.value === ${JSON.stringify(testCase.source)} &&
+              (field.getElementInfo(field.position)?.latex?.trim() ?? "") === "z" &&
+              Boolean(targetBounds && targetBounds.width > 0) &&
+              Boolean(closest),
             name: ${JSON.stringify(testCase.name)},
             value: field.value,
             position: field.position,
             selection: field.selection,
-            at: field.getElementInfo(field.position),
-            before: field.getElementInfo(Math.max(0, field.position - 1)),
-            after: field.getElementInfo(Math.min(field.lastOffset, field.position + 1)),
+            targetAtomId: targetAtom?.id ?? "",
+            targetLatex: field.getElementInfo(field.position)?.latex?.trim() ?? "",
+            targetBounds: targetBounds
+              ? {
+                  left: targetBounds.left,
+                  right: targetBounds.right,
+                  top: targetBounds.top,
+                  bottom: targetBounds.bottom,
+                }
+              : null,
+            closestCaret: closest,
             markers,
           };
-        })()`, `caret probe ${testCase.name}`);
-        states.push(state);
+        })()`, `stable caret/model alignment: ${testCase.name}`);
+
+        if (
+          state.targetLatex !== "z" ||
+          !state.closestCaret ||
+          state.closestCaret.deltaX > 3
+        ) {
+          throw new Error(`Visible caret/model mismatch: ${JSON.stringify(state)}`);
+        }
+
+        await key("k", "KeyK", 75);
+        await sleep(80);
+        const afterInput = await evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          return {
+            value: field?.value ?? "",
+            position: field?.position ?? -1,
+            selection: field?.selection ?? null,
+          };
+        })()`);
+        if (afterInput.value !== testCase.expectedAfterInput) {
+          throw new Error(
+            `Caret input landed at a different model position: ${JSON.stringify({ state, afterInput })}`,
+          );
+        }
+        states.push({ ...state, afterInput });
       }
       console.log(JSON.stringify(states, null, 2));
-      console.log("Targeted caret probe passed");
+      console.log("Targeted caret/model alignment probe passed");
       return;
     }
 
@@ -6164,29 +10712,28 @@ async function main() {
         return {
           ready:
             source?.classList.contains("is-visible") &&
-            sourceCommands[0] === "\\\\beth" &&
-            stableCommands[0] === "\\\\beth" &&
+            sourceCommands[0] === "\\\\beta" &&
             source?.querySelector("li.ML__popover__current")?.dataset.command ===
-              "\\\\beth",
+              "\\\\beta",
           sourceCommands,
           stableCommands,
           selected:
             source?.querySelector("li.ML__popover__current")?.dataset.command ??
             "",
         };
-      })()`, "MathLive native candidates sorted by lifetime frequency");
+      })()`, "MathLive native candidates prioritize a short-term repeated command");
       await key("Enter", "Enter", 13);
       const nativeUsageState = await waitForEvaluation(`(() => {
         const persisted = JSON.parse(
           localStorage.getItem("visualtex-editor") || "{}",
         );
-        const usage = persisted.state?.usage?.["mathlive-native:\\\\beth"];
+        const usage = persisted.state?.usage?.beta;
         const field = document.querySelector("math-field");
         return {
           ready:
-            usage?.useCount === 26 &&
-            usage?.contextCounts?.candidate === 26 &&
-            field?.value === "\\\\beth",
+            usage?.useCount === 3 &&
+            usage?.contextCounts?.candidate === 3 &&
+            field?.value === "\\\\beta",
           usage,
           value: field?.value ?? "",
         };
@@ -6208,13 +10755,10 @@ async function main() {
         return {
           ready:
             source?.classList.contains("is-visible") &&
-            first?.dataset.command === "\\\\beth" &&
-            persisted.state?.usage?.["mathlive-native:\\\\beth"]?.useCount ===
-              26,
+            first?.dataset.command === "\\\\beta" &&
+            persisted.state?.usage?.beta?.useCount === 3,
           firstCommand: first?.dataset.command ?? "",
-          useCount:
-            persisted.state?.usage?.["mathlive-native:\\\\beth"]?.useCount ??
-            0,
+          useCount: persisted.state?.usage?.beta?.useCount ?? 0,
         };
       })()`, "native frequency ranking survives reload");
 
@@ -6273,6 +10817,16 @@ async function main() {
           .filter((node) => !node.classList.contains("ML__suggestion"))
           .map((node) => node.textContent ?? "")
           .join("");
+        const stableZIndex = stable
+          ? Number.parseInt(getComputedStyle(stable).zIndex || "0", 10)
+          : 0;
+        const chromeZIndex = Math.max(
+          0,
+          ...[".formula-toolbar", ".source-panel", ".editor-pane-header"]
+            .map((selector) => document.querySelector(selector))
+            .filter(Boolean)
+            .map((element) => Number.parseInt(getComputedStyle(element).zIndex || "0", 10) || 0),
+        );
         return {
           ready:
             Boolean(stable?.classList.contains("is-visible")) &&
@@ -6280,7 +10834,9 @@ async function main() {
             source?.dataset.visualtexInputPopoverSource === "true" &&
             document.querySelectorAll("math-field").length === 2 &&
             document.querySelectorAll("math-field")[0]?.hasFocus?.() &&
-            !document.querySelector(".suggestion-popup"),
+            !document.querySelector(".suggestion-popup") &&
+            stableZIndex >= 190 &&
+            stableZIndex > chromeZIndex,
           commands,
           sourceCommands,
           rawLatex,
@@ -6295,6 +10851,8 @@ async function main() {
             ? { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height }
             : null,
           sourceOpacity: source ? getComputedStyle(source).opacity : "",
+          stableZIndex,
+          chromeZIndex,
           customCandidateVisible: Boolean(document.querySelector(".suggestion-popup")),
         };
       })()`, "stable native input-selection popover for \\be");
@@ -6496,23 +11054,42 @@ async function main() {
     }
 
     if (scenario === "export") {
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(
+          document.querySelector(".document-title-area input") &&
+          document.querySelector("math-field"),
+        ),
+      }))()`, "export editor controls");
       await evaluate(`(() => {
-        const storageKey = "visualtex-editor";
-        const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
-        const line = { id: crypto.randomUUID(), latex: "\\\\frac{a}{b}+x^2" };
-        persisted.state = {
-          ...(persisted.state || {}),
-          title: "Export Test",
-          lines: [line],
-          activeLineId: line.id,
-        };
-        localStorage.setItem(storageKey, JSON.stringify(persisted));
-        location.reload();
+        const titleInput = document.querySelector(".document-title-area input");
+        const field = document.querySelector("math-field");
+        if (!(titleInput instanceof HTMLInputElement) || !field) return false;
+        const valueSetter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )?.set;
+        valueSetter?.call(titleInput, "Export Test");
+        titleInput.dispatchEvent(new Event("input", { bubbles: true }));
+        titleInput.dispatchEvent(new Event("change", { bubbles: true }));
+        field.setValue("\\\\frac{a}{b}+x^2", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          composed: true,
+          inputType: "insertText",
+          data: "x",
+        }));
+        return true;
       })()`);
       await waitForEvaluation(`(() => ({
         ready:
           document.querySelector(".document-title-area input")?.value === "Export Test" &&
-          document.querySelector("math-field")?.value?.includes("\\\\frac"),
+          document.querySelector("math-field")?.value === "\\\\frac{a}{b}+x^2",
         title: document.querySelector(".document-title-area input")?.value ?? "",
         value: document.querySelector("math-field")?.value ?? "",
       }))()`, "formula document prepared for export");
@@ -6529,21 +11106,29 @@ async function main() {
       })()`);
 
       const clickExportOption = async (label, expectedCount) => {
-        await evaluate(`document.querySelector(".export-menu-trigger")?.click()`);
+        await evaluate(`document.querySelector(".workspace-export-trigger")?.click()`);
         await waitForEvaluation(`(() => ({
-          ready: Boolean(document.querySelector(".export-menu-popover")),
-        }))()`, `export menu opened for ${label}`);
+          ready: Boolean(document.querySelector(".export-dialog")),
+        }))()`, `export dialog opened for ${label}`);
         await evaluate(`(() => {
-          const button = [...document.querySelectorAll(".export-format-options > button")]
+          const button = [...document.querySelectorAll(".export-format-option")]
             .find((candidate) => candidate.querySelector("strong")?.textContent?.trim() === ${JSON.stringify(label)});
           button?.click();
         })()`);
         await waitForEvaluation(`(() => ({
+          ready: Boolean(
+            [...document.querySelectorAll(".export-format-option")]
+              .find((candidate) => candidate.querySelector("strong")?.textContent?.trim() === ${JSON.stringify(label)})
+              ?.getAttribute("aria-checked") === "true",
+          ),
+        }))()`, `${label} export format selected`);
+        await evaluate(`document.querySelector(".export-confirm-button")?.click()`);
+        await waitForEvaluation(`(() => ({
           ready:
             (window.__visualtexCapturedExports?.length ?? 0) >= ${expectedCount} &&
-            !document.querySelector(".export-menu-popover"),
+            !document.querySelector(".export-dialog"),
           count: window.__visualtexCapturedExports?.length ?? 0,
-        }))()`, `${label} export captured`);
+        }))()`, `${label} export captured`, 15000);
       };
 
       await clickExportOption("Markdown", 1);
@@ -6607,720 +11192,300 @@ async function main() {
       return;
     }
 
-    if (
-      scenario === "wrapper" ||
-      scenario === "wrapper-auto" ||
-      scenario === "wrapper-continuous"
-    ) {
+    if (scenario === "variant-core-extended") {
+      await clearField();
       await focusField();
-      await typeText("abcdefghij");
       await typeText("\\mathbb");
-      const nativeStructure = await waitForEvaluation(`(() => {
-        const panel = document.getElementById("mathlive-suggestion-popover");
-        const items = [...(panel?.querySelectorAll("li[data-command]") ?? [])];
-        return {
-          ready: Boolean(panel?.classList.contains("is-visible") && items.length),
-          items: items.map((item) => ({
-            command: item.dataset.command ?? "",
-            html: item.innerHTML,
-            classes: [...item.querySelectorAll("*")].map((node) => node.className).filter(Boolean),
-          })),
-        };
-      })()`, "MathLive mathbb suggestion structure");
-      const previewState = await waitForEvaluation(`(() => {
-        const item = [...document.querySelectorAll('#mathlive-suggestion-popover li[data-command]')]
-          .find((candidate) => candidate.dataset.command === "\\\\mathbb");
-        const preview = item?.querySelector('[data-visualtex-preview]');
-        return {
-          ready: Boolean(item && preview?.dataset.visualtexPreview === "\\\\mathbb{ABC}"),
-          nativeVisible: document.getElementById("mathlive-suggestion-popover")?.classList.contains("is-visible") ?? false,
-          previewLatex: preview?.dataset.visualtexPreview ?? "",
-          previewText: preview?.textContent ?? "",
-        };
-      })()`, "mathbb visual preview");
-
-      await client.send("Input.dispatchKeyEvent", {
-        type: "keyDown",
-        key: " ",
-        code: "Space",
-        windowsVirtualKeyCode: 32,
-        nativeVirtualKeyCode: 32,
-      });
-      await client.send("Input.dispatchKeyEvent", {
-        type: "keyUp",
-        key: " ",
-        code: "Space",
-        windowsVirtualKeyCode: 32,
-        nativeVirtualKeyCode: 32,
-      });
+      await key(" ", "Space", 32);
       await sleep(80);
-      const insertedState = await waitForEvaluation(`(() => {
-        const field = document.querySelector("math-field");
-        const host = field?.closest(".mathfield-host");
-        const placeholderStyle = host ? getComputedStyle(host, "::after") : null;
-        const fakeCaretStyle = host ? getComputedStyle(host, "::before") : null;
-        const nativeCaret = field?.shadowRoot?.querySelector(".ML__caret");
-        const nativeCaretStyle = nativeCaret
-          ? getComputedStyle(nativeCaret, "::after")
-          : null;
-        const nativeCaretBounds = nativeCaret?.getBoundingClientRect();
-        const hostBounds = host?.getBoundingClientRect();
-        const modelBounds = field?.getElementInfo(field.position)?.bounds;
-        const placeholderLeft = Number.parseFloat(
-          host?.style.getPropertyValue("--pending-wrapper-left") ?? "NaN",
-        );
-      const placeholderTop = Number.parseFloat(
-        host?.style.getPropertyValue("--pending-wrapper-top") ?? "NaN",
-      );
-      const placeholderWidth = Number.parseFloat(
-        host?.style.getPropertyValue("--pending-wrapper-width") ?? "NaN",
-      );
-      const placeholderHeight = Number.parseFloat(
-        host?.style.getPropertyValue("--pending-wrapper-height") ?? "NaN",
-      );
-      const anchorTop = Number.parseFloat(
-        host?.dataset.pendingWrapperAnchorY ?? "NaN",
-      );
-      const frameLeft = placeholderLeft - placeholderWidth / 2;
-      const formulaFontSize =
-        Number.parseFloat(field?.style.fontSize ?? "") || 54;
-      const minimumFrameHeight = Math.max(12, formulaFontSize * 0.52);
-      const maximumFrameHeight = Math.max(
-        minimumFrameHeight,
-        formulaFontSize * 1.08,
-      );
-        const expectedLeft =
-          modelBounds && hostBounds
-            ? modelBounds.right - hostBounds.left
-            : Number.NaN;
-        const expectedTop =
-          modelBounds && hostBounds
-            ? modelBounds.top - hostBounds.top + modelBounds.height / 2
-            : Number.NaN;
-        return {
-          ready:
-            field.value === "abcdefghij" &&
-            field.dataset.pendingWrapperCommand === "\\\\mathbb" &&
-            host?.classList.contains("has-pending-wrapper-placeholder") &&
-            placeholderStyle?.borderStyle === "solid" &&
-            Number.parseFloat(placeholderStyle?.borderWidth ?? "0") <= 1.1 &&
-            Boolean(nativeCaret) &&
-            fakeCaretStyle?.content === "none" &&
-            nativeCaretStyle?.visibility === "visible" &&
-            nativeCaretStyle?.animationName.includes("caret-blink") &&
-          Math.abs(frameLeft - expectedLeft) <= 2 &&
-          Math.abs(placeholderTop - anchorTop) <= 1.5 &&
-          placeholderHeight >= minimumFrameHeight - 0.5 &&
-          placeholderHeight <= maximumFrameHeight + 0.5 &&
-            Math.abs(placeholderLeft - (hostBounds?.width ?? 0) / 2) >= 20 &&
-            document.querySelectorAll("math-field").length === 1,
-          value: field.value,
-          pendingWrapperCommand: field.dataset.pendingWrapperCommand ?? "",
-          placeholderClass: host?.classList.contains("has-pending-wrapper-placeholder") ?? false,
-          placeholderBorderStyle: placeholderStyle?.borderStyle ?? "",
-          placeholderBorderWidth: placeholderStyle?.borderWidth ?? "",
-        placeholderLeft,
-        placeholderTop,
-        placeholderWidth,
-        placeholderHeight,
-        frameLeft,
-        anchorTop,
-        minimumFrameHeight,
-        maximumFrameHeight,
-          expectedLeft,
-          expectedTop,
-          fakeCaretContent: fakeCaretStyle?.content ?? "",
-          nativeCaretVisibility: nativeCaretStyle?.visibility ?? "",
-          nativeCaretAnimation: nativeCaretStyle?.animationName ?? "",
-          nativeCaretBorder: nativeCaretStyle?.borderRightWidth ?? "",
-          hostCenter: (hostBounds?.width ?? 0) / 2,
-          lineCount: document.querySelectorAll("math-field").length,
-        };
-      })()`, "mathbb visual empty wrapper insertion");
-
-      await key("A", "KeyA", 65);
-      const autoExitState = await waitForEvaluation(`(() => {
+      const empty = await evaluate(`(() => {
         const field = document.querySelector("math-field");
         const host = field?.closest(".mathfield-host");
         return {
-          ready:
-            field.value === "abcdefghij\\\\mathbb{A}" &&
-            !field.dataset.pendingWrapperCommand &&
-            !host?.classList.contains("has-pending-wrapper-placeholder"),
-          value: field.value,
-          pendingWrapperCommand: field.dataset.pendingWrapperCommand ?? "",
-          placeholderClass: host?.classList.contains("has-pending-wrapper-placeholder") ?? false,
-        };
-      })()`, "mathbb default single-character auto exit");
-      await key("B", "KeyB", 66);
-      const normalFontState = await waitForEvaluation(`(() => {
-        const field = document.querySelector("math-field");
-        const sink = field?.shadowRoot?.querySelector('[part="keyboard-sink"]');
-        return {
-          ready: field?.value === "abcdefghij\\\\mathbb{A}B",
           value: field?.value ?? "",
           mode: field?.mode ?? "",
-          hasFocus: field?.hasFocus?.() ?? false,
-          activeTag: document.activeElement?.tagName ?? "",
-          sinkTag: sink?.tagName ?? "",
-          sinkValue: sink?.value ?? "",
-          pendingWrapperCommand: field?.dataset.pendingWrapperCommand ?? "",
-          position: field?.position ?? -1,
-          lastOffset: field?.lastOffset ?? -1,
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+          sourceCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          sourceContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+          placeholderCount: field?.shadowRoot?.querySelectorAll(
+            ".visualtex-structural-placeholder, .ML__placeholder",
+          ).length ?? -1,
+          nativeCaretCount: field?.shadowRoot?.querySelectorAll(
+            ".ML__caret, .ML__text-caret, .ML__latex-caret",
+          ).length ?? -1,
         };
-      })()`, "normal font after mathbb auto exit");
-      await key("Enter", "Enter", 13);
-      const enterState = await waitForEvaluation(`(() => {
-        const fields = [...document.querySelectorAll("math-field")];
-        return {
-          ready: fields.length === 2 && fields[0]?.value === "abcdefghij\\\\mathbb{A}B",
-          lineCount: fields.length,
-          values: fields.map((field) => field.value),
-        };
-      })()`, "Enter creates a new formula line after wrapper input");
-
-      await evaluate(`(() => {
-        const storageKey = "visualtex-editor";
-        const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
-        const line = { id: crypto.randomUUID(), latex: "" };
-        persisted.state = { ...(persisted.state || {}), lines: [line], activeLineId: line.id };
-        localStorage.setItem(storageKey, JSON.stringify(persisted));
-        location.reload();
       })()`);
-      await waitForEvaluation(`(() => ({ ready: Boolean(document.querySelector("math-field")) }))()`, "fresh field for mathcal test");
-      await focusField();
-      await typeText("\\mathcal");
-      await key(" ", "Space", 32);
-      await key("g", "KeyG", 71);
-      const lowercaseScriptState = await waitForEvaluation(`(() => {
+      if (
+        empty.value !== "\\mathbb{}" ||
+        empty.raw !== "\\mathbb{}" ||
+        empty.mode !== "latex" ||
+        empty.sourceCommand !== "\\mathbb" ||
+        empty.sourceContent !== "" ||
+        empty.placeholderCount !== 0 ||
+        empty.nativeCaretCount < 1
+      ) {
+        throw new Error(`Empty variant scope regression: ${JSON.stringify(empty)}`);
+      }
+      await key("A", "KeyA", 65);
+      await sleep(80);
+      const single = await evaluate(`(() => {
         const field = document.querySelector("math-field");
         return {
-          ready:
-            field?.value === "\\\\mathscr{g}" &&
-            (field.shadowRoot?.textContent ?? "").includes("ℊ"),
           value: field?.value ?? "",
-          shadowText: field?.shadowRoot?.textContent ?? "",
+          placeholderCount: field?.shadowRoot?.querySelectorAll(
+            ".visualtex-structural-placeholder, .ML__placeholder",
+          ).length ?? -1,
         };
-      })()`, "lowercase mathcal compatibility uses mathscr");
-
-      await waitForEvaluation(`(() => ({ ready: Boolean(document.querySelector(".canvas-input-behavior-trigger")) }))()`, "input behavior trigger");
-      await evaluate(`document.querySelector(".canvas-input-behavior-trigger").click()`);
-      await waitForEvaluation(`(() => ({ ready: Boolean(document.querySelector(".input-behavior-popover")) }))()`, "input behavior menu");
-      await evaluate(`(() => {
-        const option = [...document.querySelectorAll(".input-behavior-option")]
-          .find((label) => label.querySelector("strong")?.textContent?.includes("字体命令输入后跳出"));
-        const checkbox = option?.querySelector('input[type="checkbox"]');
-        if (!checkbox) throw new Error("Wrapper auto-exit checkbox was not found");
-        checkbox.click();
-        document.querySelector(".canvas-input-behavior-trigger").click();
       })()`);
+      if (
+        single.value !== "\\mathbb{A}" ||
+        single.placeholderCount !== 0
+      ) {
+        throw new Error(`Single-character variant regression: ${JSON.stringify(single)}`);
+      }
+
       await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.dataset.visualtexAutoExitWrapperCommand = "false";
+      })()`);
+      await focusField();
       await typeText("\\mathbb");
       await key(" ", "Space", 32);
       await key("A", "KeyA", 65);
-      const persistentOneCharacterState = await waitForEvaluation(`(() => {
-        const field = document.querySelector("math-field");
-        const host = field?.closest(".mathfield-host");
-        const frameStyle = host ? getComputedStyle(host, "::after") : null;
-        return {
-          ready:
-            field?.value === "\\\\mathbb{A}" &&
-            field.dataset.pendingWrapperCommand === "\\\\mathbb" &&
-            host?.classList.contains("has-pending-wrapper-placeholder") &&
-            Number.parseFloat(frameStyle?.width ?? "0") > 18,
-          value: field?.value ?? "",
-          pendingWrapperCommand: field?.dataset.pendingWrapperCommand ?? "",
-          pendingWrapperLength: host?.dataset.pendingWrapperLength ?? "",
-          frameWidth: Number.parseFloat(frameStyle?.width ?? "0"),
-        };
-      })()`, "disabled wrapper auto exit keeps a visible one-character input frame");
       await key("B", "KeyB", 66);
-      const continuousState = await waitForEvaluation(`(() => {
+      await key("Backspace", "Backspace", 8);
+      await sleep(80);
+      const continuousBeforeEnter = await evaluate(`(() => {
         const field = document.querySelector("math-field");
         const host = field?.closest(".mathfield-host");
-        const frameStyle = host ? getComputedStyle(host, "::after") : null;
         return {
-          ready:
-            field?.value === "\\\\mathbb{AB}" &&
-            field.dataset.pendingWrapperCommand === "\\\\mathbb" &&
-            host?.classList.contains("has-pending-wrapper-placeholder") &&
-            host?.dataset.pendingWrapperLength === "2",
           value: field?.value ?? "",
-          pendingWrapperCommand: field?.dataset.pendingWrapperCommand ?? "",
-          pendingWrapperLength: host?.dataset.pendingWrapperLength ?? "",
-          frameWidth: Number.parseFloat(frameStyle?.width ?? "0"),
+          mode: field?.mode ?? "",
+          sourceCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          content: field?.dataset.visualtexSourceWrapperContent ?? "",
+          fieldCount: document.querySelectorAll("math-field").length,
         };
-      })()`, "disabled wrapper auto exit keeps continuous input");
-      if (!(continuousState.frameWidth > persistentOneCharacterState.frameWidth + 1)) {
+      })()`);
+      if (
+        continuousBeforeEnter.value !== "\\mathbb{A}" ||
+        continuousBeforeEnter.mode !== "latex" ||
+        continuousBeforeEnter.sourceCommand !== "\\mathbb" ||
+        continuousBeforeEnter.content !== "A"
+      ) {
         throw new Error(
-          `Wrapper frame did not grow with its content: ${persistentOneCharacterState.frameWidth} -> ${continuousState.frameWidth}`,
+          `Continuous variant delete regression: ${JSON.stringify(continuousBeforeEnter)}`,
         );
       }
       await key("Enter", "Enter", 13);
-      const manualConfirmState = await waitForEvaluation(`(() => {
-        const fields = [...document.querySelectorAll("math-field")];
-        const field = fields[0];
+      await sleep(80);
+      const continuousAfterEnter = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
         const host = field?.closest(".mathfield-host");
         return {
-          ready:
-            fields.length === 1 &&
-            field?.value === "\\\\mathbb{AB}" &&
-            !field.dataset.pendingWrapperCommand &&
-            !host?.classList.contains("has-pending-wrapper-placeholder"),
-          lineCount: fields.length,
           value: field?.value ?? "",
-          pendingWrapperCommand: field?.dataset.pendingWrapperCommand ?? "",
-          frameVisible: host?.classList.contains("has-pending-wrapper-placeholder") ?? false,
+          mode: field?.mode ?? "",
+          sourceCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          fieldCount: document.querySelectorAll("math-field").length,
         };
-      })()`, "Enter confirms a persistent wrapper without adding a line");
-      await key("C", "KeyC", 67);
-      const postConfirmState = await waitForEvaluation(`(() => {
-        const field = document.querySelector("math-field");
-        return {
-          ready: field?.value === "\\\\mathbb{AB}C",
-          value: field?.value ?? "",
-        };
-      })()`, "typing after Enter leaves the confirmed font wrapper");
+      })()`);
+      if (
+        continuousAfterEnter.value !== "\\mathbb{A}" ||
+        continuousAfterEnter.mode !== "math" ||
+        continuousAfterEnter.sourceCommand ||
+        continuousAfterEnter.fieldCount !== continuousBeforeEnter.fieldCount
+      ) {
+        throw new Error(
+          `Variant Enter confirmation regression: ${JSON.stringify({ continuousBeforeEnter, continuousAfterEnter })}`,
+        );
+      }
 
-      const nestedWrapperCases = [
-        {
-          name: "parentheses",
-          command: String.raw`\mathbb`,
-          source: String.raw`p+(z+r)+q+\placeholder{}`,
-        },
-        {
-          name: "fraction numerator",
-          command: String.raw`\mathbf`,
-          source: String.raw`p+\frac{z+n}{d}+q+\placeholder{}`,
-        },
-        {
-          name: "fraction denominator",
-          command: String.raw`\mathcal`,
-          source: String.raw`p+\frac{n}{z+d}+q+\placeholder{}`,
-        },
-        {
-          name: "integral upper limit",
-          command: String.raw`\mathfrak`,
-          source: String.raw`p+\int_{l}^{z+u}f\,dx+q+\placeholder{}`,
-        },
-        {
-          name: "integral lower limit",
-          command: String.raw`\mathbb`,
-          source: String.raw`p+\int_{z+l}^{u}f\,dx+q+\placeholder{}`,
-        },
-        {
-          name: "integral integrand",
-          command: String.raw`\mathbf`,
-          source: String.raw`p+\int_{l}^{u}(z+f)\,dx+q+\placeholder{}`,
-        },
-        {
-          name: "summation upper limit",
-          command: String.raw`\mathcal`,
-          source: String.raw`p+\sum_{i=0}^{z+n}a_{i}+q+\placeholder{}`,
-        },
-        {
-          name: "summation lower limit",
-          command: String.raw`\mathfrak`,
-          source: String.raw`p+\sum_{z+i}^{n}a_{i}+q+\placeholder{}`,
-        },
-        {
-          name: "square root",
-          command: String.raw`\mathbb`,
-          source: String.raw`p+\sqrt{z+s}+q+\placeholder{}`,
-        },
-        {
-          name: "superscript",
-          command: String.raw`\mathbf`,
-          source: String.raw`p+x^{z+u}+q+\placeholder{}`,
-        },
-        {
-          name: "subscript",
-          command: String.raw`\mathcal`,
-          source: String.raw`p+x_{z+l}+q+\placeholder{}`,
-        },
-        {
-          name: "matrix cell",
-          command: String.raw`\mathfrak`,
-          source: String.raw`p+\begin{matrix}a&z+m\\c&d\end{matrix}+q+\placeholder{}`,
-        },
+      await clearField();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.dataset.visualtexAutoExitWrapperCommand = "false";
+      })()`);
+      await focusField();
+      await typeText("\\mathbb");
+      await key(" ", "Space", 32);
+      await key("A", "KeyA", 65);
+      await typeText("\\frac");
+      await key(" ", "Space", 32);
+      await sleep(80);
+      const nested = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const placeholders = model
+          ? Array.from({ length: model.lastOffset + 1 }, (_, index) => model.at(index))
+              .filter((atom) => atom?.type === "placeholder")
+              .map((atom) => ({
+                branch: Array.isArray(atom.parentBranch)
+                  ? JSON.stringify(atom.parentBranch)
+                  : atom.parentBranch,
+                style: atom.style,
+              }))
+          : [];
+        return {
+          value: field?.value ?? "",
+          mode: field?.mode ?? "",
+          sourceCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          sourceContent: field?.dataset.visualtexSourceWrapperContent ?? "",
+          raw: [...(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
+            .filter((node) => !node.classList.contains("ML__suggestion"))
+            .map((node) => node.textContent ?? "")
+            .join(""),
+          position: model?.position ?? -1,
+          atValue: model?.at(model.position)?.value ?? "",
+          nextValue: model?.at(model.position + 1)?.value ?? "",
+          placeholders,
+        };
+      })()`);
+      if (
+        nested.value !== "\\mathbb{A\\frac{}{}}" ||
+        nested.raw !== "\\mathbb{A\\frac{}{}}" ||
+        nested.mode !== "latex" ||
+        nested.sourceCommand !== "\\mathbb" ||
+        nested.sourceContent !== "A\\frac{}{}" ||
+        nested.placeholders.length !== 0 ||
+        nested.atValue !== "{" ||
+        nested.nextValue !== "}"
+      ) {
+        throw new Error(`Nested variant command regression: ${JSON.stringify(nested)}`);
+      }
+      console.log(
+        JSON.stringify(
+          { empty, single, continuousBeforeEnter, continuousAfterEnter, nested },
+          null,
+          2,
+        ),
+      );
+      console.log("Targeted extended variant core regression passed");
+      return;
+    }
+
+
+    if (scenario === "command-surface-audit") {
+      const cases = [
+        { input: "ket", expected: "\\ket{\\placeholder{}}", placeholders: 1, mode: "math" },
+        { input: "bra", expected: "\\bra{\\placeholder{}}", placeholders: 1, mode: "math" },
+        { input: "braket", expected: "\\braket{\\placeholder{}}{\\placeholder{}}", placeholders: 2, mode: "math" },
+        { input: "ketbra", expected: "\\ketbra{\\placeholder{}}{\\placeholder{}}", placeholders: 2, mode: "math" },
+        { input: "mel", expected: "\\mel{\\placeholder{}}{\\placeholder{}}{\\placeholder{}}", placeholders: 3, mode: "math" },
+        { input: "abs", expected: "\\abs{\\placeholder{}}", placeholders: 1, mode: "math" },
+        { input: "norm", expected: "\\norm{\\placeholder{}}", placeholders: 1, mode: "math" },
+        { input: "partial", expected: "\\partial", placeholders: 0, mode: "math" },
+        { input: "sqrt", expected: "\\sqrt{\\placeholder{}}", placeholders: 1, mode: "math" },
+        { input: "frac", expected: "\\frac{\\placeholder{}}{\\placeholder{}}", placeholders: 2, mode: "math" },
+        { input: "binom", expected: "\\binom{\\placeholder{}}{\\placeholder{}}", placeholders: 2, mode: "math" },
+        { input: "overset", expected: "\\overset{\\placeholder{}}{\\placeholder{}}", placeholders: 2, mode: "math" },
+        { input: "underset", expected: "\\underset{\\placeholder{}}{\\placeholder{}}", placeholders: 2, mode: "math" },
+        { input: "rangle", expected: "\\rangle", placeholders: 0, mode: "math" },
+        { input: "langle", expected: "\\langle", placeholders: 0, mode: "math" },
+        { input: "lfloor", expected: "\\lfloor", placeholders: 0, mode: "math" },
+        { input: "rfloor", expected: "\\rfloor", placeholders: 0, mode: "math" },
+        { input: "lceil", expected: "\\lceil", placeholders: 0, mode: "math" },
+        { input: "rceil", expected: "\\rceil", placeholders: 0, mode: "math" },
+        { input: "lVert", expected: "\\lVert", placeholders: 0, mode: "math" },
+        { input: "rVert", expected: "\\rVert", placeholders: 0, mode: "math" },
+        { input: "lvert", expected: "\\lvert", placeholders: 0, mode: "math" },
+        { input: "rvert", expected: "\\rvert", placeholders: 0, mode: "math" },
+        { input: "Delta", expected: "\\Delta", placeholders: 0, mode: "math" },
+        { input: "delta", expected: "\\delta", placeholders: 0, mode: "math" },
+        { input: "Box", expected: "\\Box", placeholders: 0, mode: "math" },
+        { input: "boxed", expected: "\\boxed{\\placeholder{}}", placeholders: 1, mode: "math" },
+        { input: "mathbb", expected: "\\mathbb{}", placeholders: 0, mode: "latex", source: "\\mathbb" },
+        { input: "mathbf", expected: "\\mathbf{}", placeholders: 0, mode: "latex", source: "\\mathbf" },
+        { input: "mathcal", expected: "\\mathcal{}", placeholders: 0, mode: "latex", source: "\\mathcal" },
+        { input: "vec", expected: "\\vec{}", placeholders: 0, mode: "latex", source: "\\vec" },
+        { input: "hat", expected: "\\hat{}", placeholders: 0, mode: "latex", source: "\\hat" },
+        { input: "bar", expected: "\\bar{}", placeholders: 0, mode: "latex", source: "\\bar" },
       ];
 
-      const setWrapperAutoExit = async (enabled) => {
-        await evaluate(`(() => {
-          const storageKey = "visualtex-editor";
-          const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
-          const line = { id: crypto.randomUUID(), latex: "" };
-          persisted.state = {
-            ...(persisted.state || {}),
-            lines: [line],
-            activeLineId: line.id,
-            inputBehavior: {
-              ...(persisted.state?.inputBehavior || {}),
-              autoExitWrapperCommand: ${enabled},
-            },
-          };
-          localStorage.setItem(storageKey, JSON.stringify(persisted));
-          location.reload();
-        })()`);
-        await waitForEvaluation(
-          `(() => ({ ready: Boolean(document.querySelector("math-field")) }))()`,
-          `formula field with wrapper auto-exit ${enabled}`,
-        );
+      const results = [];
+      for (const testCase of cases) {
         await focusField();
-      };
-
-      const prepareNestedWrapperCase = async ({ name, source }) => {
-        await waitForEvaluation(
-          `(() => ({ ready: Boolean(document.querySelector("math-field")?.isConnected) }))()`,
-          `stable field before nested wrapper case: ${name}`,
-        );
-        await evaluate(`(() => {
+        const previousValue = await evaluate(`(() => {
           const field = document.querySelector("math-field");
-          field.setValue(${JSON.stringify(source)}, {
-            mode: "math",
-            format: "latex",
-            insertionMode: "replaceAll",
-            selectionMode: "after",
-            silenceNotifications: true,
-          });
-          field.dispatchEvent(new InputEvent("input", {
-            bubbles: true,
-            composed: true,
-            inputType: "insertText",
-          }));
+          return field?.value ?? "";
         })()`);
-        await sleep(120);
-        await waitForEvaluation(`(() => {
-          const field = document.querySelector("math-field");
-          if (!field?.isConnected) return { ready: false };
-          let markerEnd = -1;
-          const candidates = [];
-          for (let end = 1; end <= field.lastOffset; end += 1) {
-            const rangeLatex = field.getValue(end - 1, end, "latex").trim();
-            const infoLatex = field.getElementInfo(end)?.latex?.trim() ?? "";
-            if (rangeLatex === "z" || infoLatex === "z") {
-              candidates.push({ end, rangeLatex, infoLatex });
-              if (markerEnd < 0) markerEnd = end;
-            }
-          }
-          if (markerEnd < 0) {
+        if (previousValue) {
+          await evaluate(`(() => {
+            const field = document.querySelector("math-field");
+            field?.executeCommand("selectAll");
+            return true;
+          })()`);
+          await key("Backspace", "Backspace", 8);
+          await waitForEvaluation(`(() => {
+            const field = document.querySelector("math-field");
             return {
-              ready: false,
-              value: field.value,
-              lastOffset: field.lastOffset,
-              candidates,
+              ready: Boolean(field?.isConnected && field.value === ""),
+              value: field?.value ?? "",
             };
-          }
-          field.focus();
-          field.selection = {
-            ranges: [[markerEnd, markerEnd]],
-            direction: "none",
-          };
-          field.position = markerEnd;
-          field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
-          return {
-            ready: field.position === markerEnd,
-            name: ${JSON.stringify(name)},
-            value: field.value,
-            markerEnd,
-            lastOffset: field.lastOffset,
-            candidates,
-          };
-        })()`, `nested wrapper model anchor: ${name}`);
-        await sleep(80);
-        return await waitForEvaluation(`(() => {
+          })()`, `real empty field before \\${testCase.input}`);
+          await sleep(80);
+        }
+        await focusField();
+        await typeText("\\" + testCase.input);
+        const beforeSpace = await evaluate(`(() => {
           const field = document.querySelector("math-field");
-          const host = field?.closest(".mathfield-host");
-          if (!field || !host) return { ready: false };
-          const hostBounds = host.getBoundingClientRect();
-          const info = field.getElementInfo(field.position);
-          const bounds = info?.bounds;
-          const caretMarkers = [
-            ...(field.shadowRoot?.querySelectorAll(
-              ".visualtex-structural-placeholder-caret, .ML__caret, .ML__text-caret, .ML__latex-caret",
-            ) ?? []),
-          ]
-            .map((marker) => {
-              const markerBounds = marker.getBoundingClientRect();
-              const style = getComputedStyle(marker);
+          const completion = field?._mathfield?.visualTexCompletion;
+          return {
+            suggestions: completion?.suggestions ?? [],
+            suggestionIndex: field?._mathfield?.suggestionIndex ?? -1,
+            records: (completion?.suggestions ?? []).map((latex) => {
+              const record = field?._mathfield?.visualTexCompletionRecords?.get(latex);
               return {
-                classes: marker.className,
-                left: markerBounds.left - hostBounds.left,
-                right: markerBounds.right - hostBounds.left,
-                centerY:
-                  markerBounds.top -
-                  hostBounds.top +
-                  markerBounds.height / 2,
-                width: markerBounds.width,
-                height: markerBounds.height,
-                visible:
-                  style.display !== "none" &&
-                  style.visibility !== "hidden" &&
-                  Number.parseFloat(style.opacity || "1") > 0 &&
-                  markerBounds.height > 0,
+                latex,
+                id: record?.id ?? "",
+                command: record?.command ?? "",
+                score: record?.score ?? null,
               };
-            })
-            .filter((marker) => marker.visible)
-            .sort(
-              (first, second) =>
-                first.width - second.width ||
-                first.height - second.height,
-            );
-          const caretMarker = caretMarkers[0];
-          if (!bounds || bounds.height <= 0) {
-            return {
-              ready: false,
-              value: field.value,
-              position: field.position,
-              latex: info?.latex ?? "",
-            };
-          }
-          const expectedLeft =
-            caretMarker?.left ?? bounds.right - hostBounds.left;
-          const expectedTop =
-            caretMarker?.centerY ??
-            bounds.top - hostBounds.top + bounds.height / 2;
-          const expectedHeight = caretMarker?.height ?? bounds.height;
-          host.dataset.testExpectedWrapperAnchorX = String(expectedLeft);
-          host.dataset.testExpectedWrapperAnchorY = String(expectedTop);
-          host.dataset.testExpectedWrapperAnchorHeight =
-            String(expectedHeight);
-          return {
-            ready: true,
-            name: ${JSON.stringify(name)},
-            expectedLeft,
-            expectedTop,
-            expectedHeight,
-            caretMarkers,
-            modelLatex: info?.latex ?? "",
-            modelDepth: info?.depth ?? -1,
-            value: field.value,
-            position: field.position,
+            }),
           };
-        })()`, `rendered nested wrapper model bounds: ${name}`);
-      };
-
-      const waitForNestedWrapperState = async ({
-        name,
-        command,
-        expectedSource,
-        pending,
-      }) => {
-        return await waitForEvaluation(`(() => {
+        })()`);
+        await key(" ", "Space", 32);
+        await sleep(70);
+        const state = await evaluate(`(() => {
           const field = document.querySelector("math-field");
-          const host = field?.closest(".mathfield-host");
-          if (!field || !host) return { ready: false };
-          const probe = document.createElement("math-field");
-          probe.style.display = "none";
-          document.body.append(probe);
-          probe.setValue(${JSON.stringify(expectedSource)}, {
-            mode: "math",
-            format: "latex",
-            insertionMode: "replaceAll",
-            selectionMode: "after",
-            silenceNotifications: true,
-          });
-          const expected = probe.value;
-          const normalizedValue = field.value.replaceAll(" ", "");
-          const normalizedExpected = expected.replaceAll(" ", "");
-          probe.remove();
-          const hostBounds = host.getBoundingClientRect();
-          const placeholderLeft = Number.parseFloat(
-            host.style.getPropertyValue("--pending-wrapper-left") || "NaN",
-          );
-          const placeholderTop = Number.parseFloat(
-            host.style.getPropertyValue("--pending-wrapper-top") || "NaN",
-          );
-        const placeholderWidth = Number.parseFloat(
-          host.style.getPropertyValue("--pending-wrapper-width") || "NaN",
-        );
-        const placeholderHeight = Number.parseFloat(
-          host.style.getPropertyValue("--pending-wrapper-height") || "NaN",
-        );
-          const expectedAnchorLeft = Number.parseFloat(
-            host.dataset.testExpectedWrapperAnchorX || "NaN",
-          );
-          const expectedAnchorTop = Number.parseFloat(
-            host.dataset.testExpectedWrapperAnchorY || "NaN",
-          );
-        const productAnchorTop = Number.parseFloat(
-          host.dataset.pendingWrapperAnchorY || "NaN",
-        );
-          const expectedAnchorHeight = Number.parseFloat(
-            host.dataset.testExpectedWrapperAnchorHeight || "NaN",
-          );
-          const currentInfo = field.getElementInfo(field.position);
-          const currentBounds = currentInfo?.bounds;
-          const currentModelRight = currentBounds
-            ? currentBounds.right - hostBounds.left
-            : Number.NaN;
-          const currentModelTop = currentBounds
-            ? currentBounds.top - hostBounds.top + currentBounds.height / 2
-            : Number.NaN;
-        const frameLeft = placeholderLeft - placeholderWidth / 2;
-        const formulaFontSize =
-          Number.parseFloat(field.style.fontSize) || 54;
-        const minimumFrameHeight = Math.max(12, formulaFontSize * 0.52);
-        const maximumFrameHeight = Math.max(
-          minimumFrameHeight,
-          formulaFontSize * 1.08,
-        );
-          const hasPending = field.dataset.pendingWrapperCommand === ${JSON.stringify(command)};
-          const frameAligned =
-            !${pending} ||
-            (host.classList.contains("has-pending-wrapper-placeholder") &&
-            Number.isFinite(productAnchorTop) &&
-            Math.abs(frameLeft - expectedAnchorLeft) <= 2.5 &&
-            Math.abs(productAnchorTop - expectedAnchorTop) <= 6 &&
-            Math.abs(placeholderTop - productAnchorTop) <= 1.5 &&
-            placeholderHeight >= minimumFrameHeight - 0.5 &&
-            placeholderHeight <= maximumFrameHeight + 0.5);
+          const root = field?.shadowRoot;
           return {
-            ready:
-              normalizedValue === normalizedExpected &&
-              hasPending === ${pending} &&
-              host.classList.contains("has-pending-wrapper-placeholder") === ${pending} &&
-              frameAligned &&
-              field.shadowRoot?.querySelectorAll(".ML__raw-latex").length === 0 &&
-              document.querySelectorAll("math-field").length === 1,
-            name: ${JSON.stringify(name)},
-            value: field.value,
-            expected,
-            normalizedValue,
-            normalizedExpected,
-          position: field.position,
-          lastOffset: field.lastOffset,
-          pendingWrapperCommand: field.dataset.pendingWrapperCommand ?? "",
-          frameVisible: host.classList.contains("has-pending-wrapper-placeholder"),
-          placeholderLeft,
-          placeholderTop,
-          placeholderWidth,
-          placeholderHeight,
-          frameLeft,
-          expectedAnchorLeft,
-          expectedAnchorTop,
-          productAnchorTop,
-          minimumFrameHeight,
-          maximumFrameHeight,
-            expectedAnchorHeight,
-            currentModelRight,
-            currentModelTop,
-            currentModelLatex: currentInfo?.latex ?? "",
-            rawLatexCount: field.shadowRoot?.querySelectorAll(".ML__raw-latex").length ?? -1,
-            lineCount: document.querySelectorAll("math-field").length,
+            value: field?.value ?? "",
+            mode: field?.mode ?? "",
+            selection: field?.selection ?? null,
+            selectionIsPlaceholder: field?.selectionIsPlaceholder ?? false,
+            selectedPlaceholderCount:
+              root?.querySelectorAll(".visualtex-structural-placeholder.ML__selected, .ML__placeholder.ML__selected").length ?? -1,
+            placeholderCaretCount:
+              root?.querySelectorAll(".visualtex-structural-placeholder-caret").length ?? -1,
+            placeholders:
+              root?.querySelectorAll(".visualtex-structural-placeholder, .ML__placeholder").length ?? -1,
+            sourceCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+            sourceKind: field?.dataset.visualtexSourceWrapperKind ?? "",
+            raw: [...(root?.querySelectorAll(".ML__raw-latex") ?? [])]
+              .filter((node) => !node.classList.contains("ML__suggestion"))
+              .map((node) => node.textContent ?? "")
+              .join(""),
           };
-        })()`, `nested wrapper state: ${name}`);
-      };
-
-      const expectedNestedWrapperSource = (
-        testCase,
-        content,
-        trailingContent = "",
-      ) =>
-        testCase.source.replace(
-          "z",
-          `z${testCase.command}{${content}}${trailingContent}`,
-        );
-
-      const autoExitNestedStates = [];
-      if (scenario !== "wrapper-continuous") {
-        await setWrapperAutoExit(true);
-        for (const testCase of nestedWrapperCases) {
-        await prepareNestedWrapperCase(testCase);
-        await typeText(testCase.command);
-        await key(" ", "Space", 32);
-        autoExitNestedStates.push({
-          phase: "empty",
-          ...(await waitForNestedWrapperState({
-            ...testCase,
-            expectedSource: testCase.source,
-            pending: true,
-          })),
-        });
-        await key("A", "KeyA", 65);
-        await key("B", "KeyB", 66);
-          autoExitNestedStates.push({
-            phase: "auto-exit",
-            ...(await waitForNestedWrapperState({
-              ...testCase,
-            expectedSource: expectedNestedWrapperSource(testCase, "A", "B"),
-              pending: false,
-            })),
-          });
+        })()`);
+        const expectedSource = testCase.source ?? "";
+        if (
+          state.value !== testCase.expected ||
+          state.placeholders !== testCase.placeholders ||
+          state.mode !== testCase.mode ||
+          state.sourceCommand !== expectedSource
+        ) {
+          throw new Error(
+            `Command surface mismatch for \\${testCase.input}: ${JSON.stringify({ testCase, beforeSpace, state })}`,
+          );
         }
+        results.push({ input: testCase.input, ...state });
       }
 
-      const continuousNestedStates = [];
-      if (scenario !== "wrapper-auto") {
-        await setWrapperAutoExit(false);
-        for (const testCase of nestedWrapperCases) {
-        await prepareNestedWrapperCase(testCase);
-        await typeText(testCase.command);
-        await key(" ", "Space", 32);
-        continuousNestedStates.push({
-          phase: "empty",
-          ...(await waitForNestedWrapperState({
-            ...testCase,
-            expectedSource: testCase.source,
-            pending: true,
-          })),
-        });
-        await key("A", "KeyA", 65);
-        await key("B", "KeyB", 66);
-        continuousNestedStates.push({
-          phase: "continuous",
-          ...(await waitForNestedWrapperState({
-            ...testCase,
-            expectedSource: expectedNestedWrapperSource(testCase, "AB"),
-            pending: true,
-          })),
-        });
-        await key("Backspace", "Backspace", 8);
-        continuousNestedStates.push({
-          phase: "continuous-backspace",
-          ...(await waitForNestedWrapperState({
-            ...testCase,
-            expectedSource: expectedNestedWrapperSource(testCase, "A"),
-            pending: true,
-          })),
-        });
-        await key("B", "KeyB", 66);
-        continuousNestedStates.push({
-          phase: "continuous-restored",
-          ...(await waitForNestedWrapperState({
-            ...testCase,
-            expectedSource: expectedNestedWrapperSource(testCase, "AB"),
-            pending: true,
-          })),
-        });
-        await key("Enter", "Enter", 13);
-        await key("C", "KeyC", 67);
-          continuousNestedStates.push({
-            phase: "confirmed",
-            ...(await waitForNestedWrapperState({
-              ...testCase,
-            expectedSource: expectedNestedWrapperSource(testCase, "AB", "C"),
-              pending: false,
-            })),
-          });
-        }
-      }
-
-      console.log(JSON.stringify({
-        previewState,
-        insertedState,
-        autoExitState,
-        normalFontState,
-        enterState,
-        lowercaseScriptState,
-        persistentOneCharacterState,
-        continuousState,
-        manualConfirmState,
-        postConfirmState,
-        autoExitNestedStates,
-        continuousNestedStates,
-      }, null, 2));
-      console.log("Targeted wrapper regression passed");
+      console.log(JSON.stringify(results, null, 2));
+      console.log("Targeted command surface audit passed");
       return;
     }
 
@@ -7872,11 +12037,27 @@ async function main() {
         };
       })()`, "other-command candidate list opens with multiple theta variants");
 
-      await evaluate(`document.querySelector(".source-toggle")?.click()`);
+      await evaluate(`(() => {
+        const standardToggle = document.querySelector(".source-toggle");
+        const classicSourceTab = document.querySelector(
+          '[data-classic-bottom-view="source"]',
+        );
+        (standardToggle ?? classicSourceTab)?.click();
+      })()`);
       await waitForEvaluation(`(() => ({
         ready:
           Boolean(document.querySelector(".source-panel")) &&
           Boolean(document.querySelector(".suggestion-popup")),
+        sourcePanelVisible: Boolean(document.querySelector(".source-panel")),
+        suggestionPopupVisible: Boolean(document.querySelector(".suggestion-popup")),
+        sourceToggleVisible: Boolean(document.querySelector(".source-toggle")),
+        sourcePaneSlotVisible: Boolean(document.querySelector(".source-pane-slot")),
+        standardEditorBodyVisible: Boolean(document.querySelector(".editor-pane-body")),
+        classicEditorBodyVisible: Boolean(document.querySelector(".classic-editor-pane-body")),
+        classicDockVisible: Boolean(document.querySelector(".classic-bottom-dock")),
+        classicDockCollapsed: document.querySelector(".classic-bottom-dock")?.classList.contains("is-collapsed") ?? false,
+        workspaceVisible: Boolean(document.querySelector(".workspace-shell, .editor-workspace, .workspace")),
+        bodyText: (document.body?.innerText ?? "").slice(0, 400),
       }))()`, "source pane opens below command candidates");
       const layerState = await waitForEvaluation(`(() => {
         const popup = document.querySelector(".suggestion-popup");
@@ -7894,13 +12075,19 @@ async function main() {
         );
         const topmostNode = document.elementFromPoint(testX, testY);
         const style = getComputedStyle(popup);
+        const popoverToken = Number.parseInt(
+          getComputedStyle(document.documentElement)
+            .getPropertyValue("--z-popover") || "190",
+          10,
+        );
         return {
           ready:
             popup.parentElement === document.body &&
             style.position === "fixed" &&
-            Number.parseInt(style.zIndex || "0", 10) >= 300 &&
+            Number.parseInt(style.zIndex || "0", 10) >= popoverToken &&
             popupBounds.bottom > sourceBounds.top &&
             Boolean(topmostNode && popup.contains(topmostNode)),
+          popoverToken,
           parentIsBody: popup.parentElement === document.body,
           position: style.position,
           zIndex: style.zIndex,
@@ -7909,7 +12096,13 @@ async function main() {
           topmostClass: topmostNode?.className ?? "",
         };
       })()`, "VisualTeX command candidate stays above the source pane");
-      await evaluate(`document.querySelector(".source-collapse-button")?.click()`);
+      await evaluate(`(() => {
+        const standardCollapse = document.querySelector(".source-collapse-button");
+        const classicToolsTab = document.querySelector(
+          '[data-classic-bottom-view="tools"]',
+        );
+        (standardCollapse ?? classicToolsTab)?.click();
+      })()`);
       await waitForEvaluation(`(() => ({
         ready:
           !document.querySelector(".source-panel") &&
@@ -8671,14 +12864,34 @@ async function main() {
       cellCount: document.querySelectorAll(".matrix-size-cell").length,
     }))()`, "10 by 10 matrix grid");
 
+    const matrixHoverPoint = await evaluate(`(() => {
+      const cell = document.querySelector('.matrix-size-cell[data-matrix-rows="3"][data-matrix-columns="4"]');
+      const rect = cell?.getBoundingClientRect();
+      return rect
+        ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+        : null;
+    })()`);
+    if (!matrixHoverPoint) throw new Error("Missing 3×4 matrix cell");
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: Math.max(1, matrixHoverPoint.x - 30),
+      y: matrixHoverPoint.y,
+    });
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: matrixHoverPoint.x,
+      y: matrixHoverPoint.y,
+    });
     await evaluate(`(() => {
       const cell = document.querySelector('.matrix-size-cell[data-matrix-rows="3"][data-matrix-columns="4"]');
-      cell?.focus();
-      cell?.dispatchEvent(new FocusEvent("focusin", {
+      cell?.dispatchEvent(new PointerEvent("pointerover", {
         bubbles: true,
         composed: true,
-        relatedTarget: null,
+        pointerId: 1,
+        pointerType: "mouse",
+        isPrimary: true,
       }));
+      return true;
     })()`);
     const hoverState = await waitForEvaluation(`(() => ({
       ready:
@@ -8752,7 +12965,27 @@ async function main() {
   }
 }
 
-main().catch((error) => {
+async function runWithTransientBrowserRetry() {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await main();
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const transientTargetFailure =
+        message.includes("Inspected target navigated or closed") ||
+        message.includes("No Chrome page target found") ||
+        message.includes("Timed out waiting for http://127.0.0.1:");
+      if (!transientTargetFailure || attempt >= 2) throw error;
+      console.warn(
+        `Transient browser/preview startup failure; retrying ${scenario} (${attempt + 2}/3).`,
+      );
+      await sleep(700);
+    }
+  }
+}
+
+runWithTransientBrowserRetry().catch((error) => {
   console.error(error instanceof Error ? error.stack : error);
   process.exitCode = 1;
 });

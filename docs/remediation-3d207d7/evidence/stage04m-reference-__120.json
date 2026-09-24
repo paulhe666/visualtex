@@ -1,0 +1,240 @@
+{
+    "name":  "文档120",
+    "fullName":  "文档120",
+    "saved":  false,
+    "end":  425,
+    "paragraphs":  6,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+                   {
+                       "start":  24,
+                       "alternative":  null,
+                       "width":  58.05,
+                       "index":  1,
+                       "type":  1,
+                       "height":  16.05,
+                       "prog":  "Equation.DSMT4",
+                       "end":  50
+                   },
+                   {
+                       "start":  326,
+                       "alternative":  null,
+                       "width":  58.05,
+                       "index":  2,
+                       "type":  1,
+                       "height":  16.05,
+                       "prog":  "Equation.DSMT4",
+                       "end":  352
+                   }
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  324,
+                          "name":  "ZEqnNum100279",
+                          "text":  "(2)",
+                          "start":  279
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " EMBED Equation.DSMT4 ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  25,
+                       "end":  49,
+                       "index":  1
+                   },
+                   {
+                       "nested":  2,
+                       "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  52,
+                       "end":  168,
+                       "index":  2
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  92,
+                       "end":  122,
+                       "index":  3
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  124,
+                       "end":  165,
+                       "index":  4
+                   },
+                   {
+                       "nested":  2,
+                       "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                       "result":  "",
+                       "type":  51,
+                       "start":  209,
+                       "end":  325,
+                       "index":  5
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                       "result":  "",
+                       "type":  12,
+                       "start":  249,
+                       "end":  279,
+                       "index":  6
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                       "result":  "2",
+                       "type":  12,
+                       "start":  281,
+                       "end":  322,
+                       "index":  7
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED Equation.DSMT4 ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  327,
+                       "end":  351,
+                       "index":  8
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON ZEqnNum100279 \u0013 REF ZEqnNum100279 \\* CHARFORMAT \\! \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  355,
+                       "end":  424,
+                       "index":  9
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF ZEqnNum100279 \\* CHARFORMAT \\! ",
+                       "result":  "(2)",
+                       "type":  3,
+                       "start":  382,
+                       "end":  422,
+                       "index":  10
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "",
+                      "inTable":  false,
+                      "end":  23,
+                      "lineRule":  0,
+                      "text":  "正文 Arial 14 pt；首次编号样式。\u003cCR\u003e",
+                      "size":  14
+                  },
+                  {
+                      "start":  23,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Arial",
+                      "inTable":  false,
+                      "end":  169,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                      "size":  14
+                  },
+                  {
+                      "start":  169,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "",
+                      "inTable":  false,
+                      "end":  208,
+                      "lineRule":  0,
+                      "text":  "第二段正文 Times New Roman 12 pt，编号继续用已有样式。\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  208,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Arial",
+                      "inTable":  false,
+                      "end":  353,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cTAB\u003e\u0001\u003cCR\u003e",
+                      "size":  14
+                  },
+                  {
+                      "start":  353,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  354,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  354,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  6,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  425,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cCR\u003e",
+                      "size":  12
+                  }
+              ],
+    "variables":  [
+
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}

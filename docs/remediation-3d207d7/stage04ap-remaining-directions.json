@@ -1,0 +1,10 @@
+[
+  ["convert", "omml-vt", "full", "stage04ap-omml-vt-resumed"],
+  ["snapshot", "stage04ap-vt-direct"],
+  ["convert", "vt-mt", "full", "stage04ap-vt-mt-direct"],
+  ["snapshot", "stage04ap-mt-direct"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04ap-mt-direct-visible\"}"],
+  ["convert", "mt-omml", "full", "stage04ap-mt-omml-direct"],
+  ["snapshot", "stage04ap-omml-final"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04ap-omml-final-visible\"}"]
+]

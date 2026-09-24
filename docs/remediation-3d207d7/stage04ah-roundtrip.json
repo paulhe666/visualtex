@@ -1,0 +1,16 @@
+[
+ ["edit","4","keep","keep","close"],
+ ["snapshot","stage04ah-omml-closed"],
+ ["edit-source","math","4","E=mc^2","stage04ah-omml-edit"],
+ ["snapshot","stage04ah-omml-edited"],
+ ["convert","omml-vt","full","stage04ah-omml-vt"],
+ ["snapshot","stage04ah-vt-converted"],
+ ["ui","{\"Action\":\"screenshot\",\"Label\":\"stage04ah-vt-converted\"}"],
+ ["edit-ole","4","keep","keep","close"],
+ ["snapshot","stage04ah-vt-closed"],
+ ["edit-source","ole","4","a^2+b^2=c^2","stage04ah-vt-edit"],
+ ["snapshot","stage04ah-vt-edited"],
+ ["convert","vt-mt","full","stage04ah-vt-mt"],
+ ["snapshot","stage04ah-mt-roundtrip"],
+ ["ui","{\"Action\":\"screenshot\",\"Label\":\"stage04ah-mt-roundtrip\"}"]
+]

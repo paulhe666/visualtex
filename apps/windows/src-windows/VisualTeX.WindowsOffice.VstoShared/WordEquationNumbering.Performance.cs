@@ -178,10 +178,10 @@ internal static partial class WordEquationNumbering
                     tables = bookmarkRange.Tables;
                     if (tables.Count != 1) return false;
                     table = tables[1];
-                    if (table.Rows.Count != 1 || table.Columns.Count != 3)
+                    if (!TryGetManagedNumberTableRowIndex(table, bookmarkRange, 3, out var rowIndex))
                         return false;
 
-                    numberCell = table.Cell(1, 3);
+                    numberCell = table.Cell(rowIndex, 3);
                     numberRange = numberCell.Range.Duplicate;
                     numberFields = numberRange.Fields;
                     var fields = new List<Field>();
@@ -203,7 +203,7 @@ internal static partial class WordEquationNumbering
                     tableRange = table.Range;
                     numberedHosts.Add(
                         new PerformanceCanonicalNumberedHost(
-                            tableRange.Start,
+                            numberRange.Start,
                             fields,
                             directSequenceCode,
                             numberRange.Text ?? string.Empty));

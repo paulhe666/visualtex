@@ -1,0 +1,155 @@
+{
+    "name":  "文档19",
+    "fullName":  "文档19",
+    "saved":  false,
+    "end":  43,
+    "paragraphs":  5,
+    "tables":  [
+
+               ],
+    "maths":  [
+                  {
+                      "controlTags":  [
+
+                                      ],
+                      "type":  0,
+                      "size":  10.5,
+                      "start":  2,
+                      "text":  "\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0",
+                      "index":  1,
+                      "tables":  0,
+                      "font":  "Latin Modern Math",
+                      "end":  13
+                  },
+                  {
+                      "controlTags":  [
+
+                                      ],
+                      "type":  0,
+                      "size":  10.5,
+                      "start":  15,
+                      "text":  "\u003cCR\u003e−∞\u003cCR\u003e∞\u003cCR\u003e\u003cCR\u003ee\u003cCR\u003e−\u003cCR\u003e𝑥\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed𝑥=\u003cCR\u003e𝜋\u003cCR\u003e",
+                      "index":  2,
+                      "tables":  0,
+                      "font":  "Latin Modern Math",
+                      "end":  42
+                  }
+              ],
+    "shapes":  [
+
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  2,
+                          "name":  "VTOMML_cbb82bbf04ca488eb72ad711af707697",
+                          "text":  "",
+                          "start":  2
+                      },
+                      {
+                          "end":  15,
+                          "name":  "VTOMML_da10956969b0402f9375b7b2d4ede2e7",
+                          "text":  "",
+                          "start":  15
+                      }
+                  ],
+    "fields":  [
+
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  1,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  1,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  2,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  2,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Latin Modern Math",
+                      "inTable":  false,
+                      "end":  14,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003ee\u003cCR\u003ei𝜋\u003cCR\u003e+1=0\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  14,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  15,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  15,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Latin Modern Math",
+                      "inTable":  false,
+                      "end":  43,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e−∞\u003cCR\u003e∞\u003cCR\u003e\u003cCR\u003ee\u003cCR\u003e−\u003cCR\u003e𝑥\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCR\u003ed𝑥=\u003cCR\u003e𝜋\u003cCR\u003e\u003cCR\u003e",
+                      "size":  10.5
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "heading2-dot",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      },
+                      {
+                          "value":  "54a07af8-b7ef-4543-aa47-f65d6662b634",
+                          "name":  "VisualTeXEquationNumberTailFormulaId"
+                      }
+                  ],
+    "xmlFonts":  [
+                     "\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" /\u003e"
+                 ],
+    "xmlMathCount":  2,
+    "customXml":  [
+
+                  ]
+}

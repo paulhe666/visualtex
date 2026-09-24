@@ -1,15 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   escapeMathLiveTextForMarkup,
   escapeMathLiveTextForXml,
   patchVisualTexMathLiveRuntimeSafety,
 } from "../vite.mathliveRuntimeSafety.ts";
+import { loadVisualTexMathLiveKernel } from "../vite.mathliveIntegralCompatibility.ts";
 
-const source = readFileSync(
-  new URL("../node_modules/mathlive/mathlive.mjs", import.meta.url),
-  "utf8",
-);
+const source = loadVisualTexMathLiveKernel();
 assert.match(source, /MathLive 0\.109\.2/);
 
 const patched = patchVisualTexMathLiveRuntimeSafety(source);

@@ -679,55 +679,33 @@ async fn run_silent_ocr(app: AppHandle, configuration: SilentOcrConfiguration) -
         return Ok(());
     };
 
-    emit_hud(&app, "running", "正在检查 OCR 提供器…", 22);
     let ocr = app
         .try_state::<OcrState>()
         .ok_or_else(|| "OCR runtime is unavailable".to_string())?
         .inner()
         .clone();
     let active_provider = ocr.active_provider(&app)?;
-    let requested = configuration.model;
-    let model = if active_provider == crate::ocr_provider::LOCAL_PROVIDER {
-        let runtime = ocr.runtime_status(app.clone(), false).await?;
-        if !runtime.installed {
-            return Err("请先在 VisualTeX 中安装 OCR 运行环境".to_string());
-        }
-        if runtime.installed_models.iter().any(|item| item == &requested) {
-            requested
-        } else if runtime
-            .installed_models
-            .iter()
-            .any(|item| item == &runtime.default_model)
-        {
-            runtime.default_model.clone()
-        } else {
-            runtime
-                .installed_models
-                .first()
-                .cloned()
-                .ok_or_else(|| "没有可用的 OCR 模型".to_string())?
-        }
-    } else {
-        requested
-    };
-
     emit_hud(
         &app,
         "running",
         if active_provider == crate::ocr_provider::LOCAL_PROVIDER {
-            "正在使用本地模型识别公式…"
+            "正在启动本地公式识别…"
         } else {
             "正在通过已配置的 OCR API 识别公式…"
         },
-        36,
+        24,
     );
+    // Keep silent OCR's installed-model fallback, but perform runtime validation,
+    // fallback selection and inference inside one OCR mutation. The previous path
+    // called runtime_status() here and recognize_local() immediately called it a
+    // second time, doubling the environment scan before every hotkey recognition.
     let recognition = ocr
-        .recognize(
+        .recognize_with_local_fallback(
             app.clone(),
             OcrImageRequest {
                 bytes,
                 extension: "png".to_string(),
-                model,
+                model: configuration.model,
             },
         )
         .await?;

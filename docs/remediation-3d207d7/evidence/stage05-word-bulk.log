@@ -1,0 +1,24 @@
+﻿2026-09-06T21:42:09.1006791+08:00 converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:42:09.1452741+08:00 converter-created sessionId=ed48b761-2a39-4462-8fc9-202b8388d791
+2026-09-06T21:42:09.1462734+08:00 converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:42:09.1492743+08:00 converter-created sessionId=34f44ee0-fd0b-463e-90ec-9609988b0937
+2026-09-06T21:42:30.8471191+08:00 converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:42:30.8524493+08:00 converter-created sessionId=af8eb71e-a69b-45f5-9fb2-36de9c43418b
+2026-09-06T21:42:30.8529846+08:00 converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:42:30.8565212+08:00 converter-created sessionId=1f7fe3d9-a195-495a-9641-c074ae6e6563
+2026-09-06T21:42:52.0404259+08:00 converter-create display=block mode=nativeOle latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:42:52.0454260+08:00 converter-created sessionId=838502d5-e629-47ff-b3a5-20bc46b0ebe1
+2026-09-06T21:42:52.0454260+08:00 converter-create display=block mode=nativeOle latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:42:52.0484256+08:00 converter-created sessionId=2c8e5bb8-5b32-4bfb-bffc-eed43c57abf8
+2026-09-06T21:43:14.6240863+08:00 converter-create display=block mode=nativeOle latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:43:14.6280861+08:00 converter-created sessionId=1a7f9725-5595-46e0-a5a4-c53d658da672
+2026-09-06T21:43:14.6280861+08:00 converter-create display=block mode=nativeOle latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:43:14.6320861+08:00 converter-created sessionId=6d2ca911-2042-4fe4-8164-a3611b6b1f2d
+2026-09-06T21:43:36.3914558+08:00 converter-create display=block mode=mathTypeOle latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:43:36.3954567+08:00 converter-created sessionId=96f81aee-357b-44c9-9d71-06cadb26b533
+2026-09-06T21:43:36.3964569+08:00 converter-create display=block mode=mathTypeOle latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:43:36.4004570+08:00 converter-created sessionId=254c3497-f16d-4af9-b82c-1b40cd342d44
+2026-09-06T21:43:57.1933560+08:00 converter-create display=block mode=mathTypeOle latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:43:57.1963553+08:00 converter-created sessionId=3aac0b8b-64f3-4b49-8924-de94986cc510
+2026-09-06T21:43:57.1973552+08:00 converter-create display=block mode=mathTypeOle latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:43:57.2013589+08:00 converter-created sessionId=d3546b02-db0e-4983-a4c1-b442a321c3f9

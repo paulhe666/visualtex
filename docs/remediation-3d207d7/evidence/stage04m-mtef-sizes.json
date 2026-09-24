@@ -1,0 +1,107 @@
+{
+    "equations":  [
+                      {
+                          "preferences":  [
+                                              {
+                                                  "offset":  110,
+                                                  "sizes":  [
+                                                                {
+                                                                    "value":  "12",
+                                                                    "unit":  2
+                                                                },
+                                                                {
+                                                                    "value":  "58",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "42",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "100",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "75",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "1",
+                                                                    "unit":  2
+                                                                }
+                                                            ]
+                                              }
+                                          ],
+                          "part":  "/word/embeddings/oleObject1.bin",
+                          "nativeLength":  330,
+                          "initialSizes":  [
+                                               {
+                                                   "offset":  216,
+                                                   "bytes":  "0A",
+                                                   "tag":  10
+                                               }
+                                           ]
+                      },
+                      {
+                          "preferences":  [
+                                              {
+                                                  "offset":  110,
+                                                  "sizes":  [
+                                                                {
+                                                                    "value":  "12",
+                                                                    "unit":  2
+                                                                },
+                                                                {
+                                                                    "value":  "58",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "42",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "100",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "75",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "150",
+                                                                    "unit":  4
+                                                                },
+                                                                {
+                                                                    "value":  "1",
+                                                                    "unit":  2
+                                                                }
+                                                            ]
+                                              }
+                                          ],
+                          "part":  "/word/embeddings/oleObject2.bin",
+                          "nativeLength":  330,
+                          "initialSizes":  [
+                                               {
+                                                   "offset":  216,
+                                                   "bytes":  "0A",
+                                                   "tag":  10
+                                               }
+                                           ]
+                      }
+                  ],
+    "source":  "evidence/stage04m-second-__120.xml",
+    "formatReference":  "https://docs.wiris.com/en_US/mathtype-mtef-v5-mathtype-40-and-later",
+    "assemblySha256":  "02C3E3FA3ED74E86002B6C6110300446B230A5743E9DC5E5BEFE50B4BE3E457C"
+}

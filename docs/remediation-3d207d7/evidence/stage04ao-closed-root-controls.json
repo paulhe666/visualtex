@@ -1,0 +1,16 @@
+﻿[
+    {
+        "time":  "2026-09-06T13:09:09.0255320Z",
+        "pid":  94656,
+        "source":  "stage04al-cases-roundtrip-omml-__8.json",
+        "action":  "closed-without-save",
+        "document":  "文档8"
+    },
+    {
+        "time":  "2026-09-06T13:09:09.2167545Z",
+        "pid":  71532,
+        "source":  "stage04ak-cases-ab-__20.json",
+        "action":  "closed-without-save",
+        "document":  "文档20"
+    }
+]

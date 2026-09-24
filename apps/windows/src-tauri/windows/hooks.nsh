@@ -2,7 +2,9 @@
 ; The production path installs the per-user Ribbon COM add-ins and ATL OLE
 ; LocalServer. Legacy Office.js Trusted Catalog resources are not installed.
 
-!define VISUALTEX_INSTALLER_VERSION "1.2.6"
+!define VISUALTEX_INSTALLER_VERSION "1.2.7"
+!define VISUALTEX_RUNTIME_GUARD_SOURCE "${__FILEDIR__}\..\..\scripts\manage_private_mathtype_runtime.ps1"
+!define VISUALTEX_OFFICE_PROCESS_GUARD_SOURCE "${__FILEDIR__}\..\..\scripts\office_process_guard.ps1"
 
 Var VisualTeXOfficeChoice
 Var VisualTeXOfficeOnlyRadio
@@ -16,6 +18,51 @@ Var VisualTeXAcceptanceMode
 ; same-version maintenance page defaults to "Uninstall VisualTeX" directly at
 ; control creation time. Do not use a GUI timer here: it races the generated
 ; page and does not reliably change the checked radio button.
+
+!macro VisualTeXRunOfficeProcessGuard MODE
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\visualtex-office-process-guard.ps1" "${VISUALTEX_OFFICE_PROCESS_GUARD_SOURCE}"
+  nsExec::ExecToStack /TIMEOUT=20000 `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\visualtex-office-process-guard.ps1" -Mode ${MODE}`
+  Pop $0
+  Pop $1
+  DetailPrint "Office process guard ${MODE}: ExitCode=$0 Output=$1"
+!macroend
+
+Function VisualTeXEnsureOfficeProcessesClosed
+visualtex_office_guard_check:
+  !insertmacro VisualTeXRunOfficeProcessGuard Check
+  ${If} $0 == "0"
+    Push "0"
+    Return
+  ${EndIf}
+  ${If} $0 != "10"
+    IfSilent visualtex_office_guard_silent_failure 0
+    MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "无法检查当前 Office 进程，尚未开始安装 Office 插件。$\r$\n$\r$\n$1$\r$\n$\r$\n可重试，或取消本次 Office 集成。$\r$\n$\r$\nOffice process inspection failed before Office integration was changed. Retry or cancel." IDRETRY visualtex_office_guard_check IDCANCEL visualtex_office_guard_declined
+  ${EndIf}
+
+  IfSilent visualtex_office_guard_silent_blocked 0
+  MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "检测到 Microsoft Office 进程仍在运行：$\r$\n$\r$\n$1$\r$\n$\r$\n其中可能包含没有任何可见窗口的后台 COM/OLE 进程（例如 POWERPNT.EXE -Embedding）。强制关闭会立即结束这些 Office 进程，未保存的 Office 文档可能丢失。$\r$\n$\r$\n是否强制关闭这些 Office 进程并继续安装？选择“否”不会关闭任何进程。$\r$\n$\r$\nMicrosoft Office processes are still running, including possible hidden COM/OLE instances. Force close them and continue?" IDYES visualtex_office_guard_force_close IDNO visualtex_office_guard_declined
+
+visualtex_office_guard_force_close:
+  !insertmacro VisualTeXRunOfficeProcessGuard Stop
+  ${If} $0 == "0"
+    Push "0"
+    Return
+  ${EndIf}
+  IfSilent visualtex_office_guard_silent_failure 0
+  MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "无法完全关闭所有 Office 进程：$\r$\n$\r$\n$1$\r$\n$\r$\n可重试，或取消本次 Office 集成。$\r$\n$\r$\nThe installer could not close every Office process. Retry or cancel Office integration." IDRETRY visualtex_office_guard_check IDCANCEL visualtex_office_guard_declined
+
+visualtex_office_guard_declined:
+  Push "1"
+  Return
+visualtex_office_guard_silent_blocked:
+  DetailPrint "Silent Office integration refused to force-close running Office processes: $1"
+  Push "2"
+  Return
+visualtex_office_guard_silent_failure:
+  DetailPrint "Office process guard failed: ExitCode=$0 Output=$1"
+  Push "3"
+FunctionEnd
 
 Function VisualTeXRepairMainUninstallRegistration
   ; Older 1.2.3 builds could leave the remembered install directory while the
@@ -82,31 +129,20 @@ FunctionEnd
 Function VisualTeXOfficePageLeave
   ${NSD_GetState} $VisualTeXOfficeNativeRadio $0
   ${If} $0 == ${BST_CHECKED}
-    nsExec::ExecToStack `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -Command "if (Get-Process WINWORD,POWERPNT,EXCEL,OUTLOOK,ONENOTE,MSACCESS,MSPUB,VISIO,MSPROJECT -ErrorAction SilentlyContinue) { exit 1 }; exit 0"`
+    ; First interactive guard. This catches both visible Office applications and
+    ; hidden COM/OLE servers such as POWERPNT.EXE -Embedding before payload work.
+    ; Choosing No must leave the user on this page and must never terminate Office.
+    Call VisualTeXEnsureOfficeProcessesClosed
     Pop $1
-    Pop $2
     ${If} $1 != "0"
-      MessageBox MB_ICONEXCLAMATION|MB_YESNO "检测到 Microsoft Office 仍在运行。强制关闭会立即结束 Word、PowerPoint、Excel、Outlook、OneNote、Access、Publisher、Visio 和 Project；未保存的 Office 文档可能丢失。$\r$\n$\r$\n是否强制关闭所有这些 Office 进程并继续安装？选择“否”将返回上一页，由您自行保存并关闭 Office。$\r$\n$\r$\nMicrosoft Office is still running. Force closing will terminate all common Office apps immediately and may discard unsaved work.$\r$\n$\r$\nForce close all Office processes and continue? Choose No to go back and close Office yourself." IDYES visualtex_force_close_office IDNO visualtex_office_close_declined
-
-visualtex_force_close_office:
-      nsExec::ExecToStack `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -Command "Get-Process WINWORD,POWERPNT,EXCEL,OUTLOOK,ONENOTE,MSACCESS,MSPUB,VISIO,MSPROJECT -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 800; if (Get-Process WINWORD,POWERPNT,EXCEL,OUTLOOK,ONENOTE,MSACCESS,MSPUB,VISIO,MSPROJECT -ErrorAction SilentlyContinue) { exit 1 }; exit 0"`
-      Pop $1
-      Pop $2
-      ${If} $1 != "0"
-        MessageBox MB_ICONSTOP "无法完全关闭所有 Office 进程。请保存工作并在任务管理器中关闭残留的 Office 进程后重试。$\r$\n$\r$\nThe installer could not close every Office process. Save your work, close the remaining Office processes in Task Manager, and try again."
-        Abort
-      ${EndIf}
-      Goto visualtex_office_process_check_done
-
-visualtex_office_close_declined:
       Abort
-
-visualtex_office_process_check_done:
     ${EndIf}
     StrCpy $VisualTeXOfficeChoice "native"
-    Return
+    Goto visualtex_office_choice_done
   ${EndIf}
   StrCpy $VisualTeXOfficeChoice "none"
+visualtex_office_choice_done:
+  Call VisualTeXPromptPrivateMathTypeRuntimeClosure
 FunctionEnd
 
 Function VisualTeXOcrPageCreate
@@ -173,6 +209,70 @@ FunctionEnd
   ${EndIf}
 !macroend
 
+; Keep the process inspection in a bundled script: short -File invocations avoid
+; command-line truncation, nested escaping and quoting custom install paths.
+; This same script is embedded into both installer and uninstaller; an old or
+; partially removed installation therefore cannot supply a stale guard script.
+!macro VisualTeXRunPrivateRuntimeGuard MODE
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\visualtex-runtime-maintenance.ps1" "${VISUALTEX_RUNTIME_GUARD_SOURCE}"
+  nsExec::ExecToStack /TIMEOUT=15000 `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\visualtex-runtime-maintenance.ps1" -InstallRoot "$INSTDIR" -Mode ${MODE}`
+  Pop $0
+  Pop $1
+  DetailPrint "Private MathType runtime ${MODE}: ExitCode=$0 Output=$1"
+!macroend
+
+!macro VisualTeXStopPrivateMathTypeRuntimeBody
+  ; Never terminate a user's separately installed MathType. The guard verifies
+  ; both executable name and canonical path, and rechecks process identity.
+  !insertmacro VisualTeXRunPrivateRuntimeGuard Stop
+!macroend
+
+Function VisualTeXStopPrivateMathTypeRuntime
+  !insertmacro VisualTeXStopPrivateMathTypeRuntimeBody
+FunctionEnd
+
+Function un.VisualTeXStopPrivateMathTypeRuntime
+  !insertmacro VisualTeXStopPrivateMathTypeRuntimeBody
+FunctionEnd
+
+!macro VisualTeXPromptPrivateMathTypeRuntimeBody PREFIX
+visualtex_runtime_check:
+  !insertmacro VisualTeXRunPrivateRuntimeGuard Check
+  ${If} $0 == "0"
+    Return
+  ${EndIf}
+  ${If} $0 != "10"
+    Goto visualtex_runtime_check_failed
+  ${EndIf}
+  ; Unattended maintenance must not kill a helper without interactive consent.
+  IfSilent visualtex_runtime_abort 0
+  MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "检测到 VisualTeX 自带的私有 MathType Runtime 正在运行。$\r$\n$\r$\n是否关闭 VisualTeX 私有 MathType Runtime 并继续安装/卸载？$\r$\n仅处理此目录下的 MathType.exe 和 MathTypeLib.exe：$\r$\n$INSTDIR\mathtype-runtime$\r$\n$\r$\n请先结束 VisualTeX 的公式转换。不会关闭独立安装的 MathType，也不会关闭 Word。选择“否”取消本次操作。$\r$\n$\r$\nClose the VisualTeX-owned runtime and continue? A separately installed MathType and Word will not be closed." IDYES visualtex_close_private_mathtype_now IDNO visualtex_keep_private_mathtype
+visualtex_close_private_mathtype_now:
+  Call ${PREFIX}VisualTeXStopPrivateMathTypeRuntime
+  ${If} $0 == "0"
+    Return
+  ${EndIf}
+visualtex_runtime_check_failed:
+  SetDetailsView show
+  IfSilent visualtex_runtime_abort 0
+  MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "无法完成 VisualTeX 私有 runtime 的检查或关闭，尚未继续覆盖文件。$\r$\n返回值：$0$\r$\n$1$\r$\n$\r$\n可重试，或取消本次操作。独立安装的 MathType 不会被关闭。$\r$\n$\r$\nRuntime inspection/closure failed. Retry or cancel without replacing files." IDRETRY visualtex_runtime_check IDCANCEL visualtex_keep_private_mathtype
+visualtex_runtime_abort:
+  SetErrorLevel 1
+  Quit
+visualtex_keep_private_mathtype:
+  SetErrorLevel 1
+  Abort
+!macroend
+
+Function VisualTeXPromptPrivateMathTypeRuntimeClosure
+  !insertmacro VisualTeXPromptPrivateMathTypeRuntimeBody ""
+FunctionEnd
+
+Function un.VisualTeXPromptPrivateMathTypeRuntimeClosure
+  !insertmacro VisualTeXPromptPrivateMathTypeRuntimeBody "un."
+FunctionEnd
+
 !macro NSIS_HOOK_PREINSTALL
   ; Normalize the two legacy 1.2.3 install locations back to Tauri's canonical
   ; current-user directory. Preserve genuinely custom directories.
@@ -181,6 +281,11 @@ FunctionEnd
   ${ElseIf} $INSTDIR == "$APPDATA\VisualTeX"
     StrCpy $INSTDIR "$LOCALAPPDATA\VisualTeX"
   ${EndIf}
+
+  ; Recheck after the destination page as well: custom paths and helpers that
+  ; restarted since the early maintenance page still require explicit consent.
+  ; Do not remove the runtime tree before successful payload extraction.
+  Call VisualTeXPromptPrivateMathTypeRuntimeClosure
 
   ; Custom pages are skipped by NSIS /S. A release acceptance install may use
   ; /VISUALTEXOFFICE=skip to leave the machine's existing Office integration
@@ -206,20 +311,27 @@ FunctionEnd
     StrCpy $VisualTeXOfficeChoice "native"
   ${EndIf}
 
-  ClearErrors
-  ${GetOptions} $0 "/VISUALTEXOCR=" $1
-  ${IfNot} ${Errors}
-    ${If} $1 == "install"
-      StrCpy $VisualTeXOcrChoice "install"
-    ${ElseIf} $1 == "none"
-      StrCpy $VisualTeXOcrChoice "none"
-    ${Else}
-      Abort "Unsupported /VISUALTEXOCR value: $1"
+  !ifdef VISUALTEX_NO_OCR_BUNDLE
+    ; The lightweight installer is compiled without worker/Python/wheel/model
+    ; resources. Keep the runtime choice pinned to none even for unattended
+    ; installs so logs and resource hooks reflect the actual package contents.
+    StrCpy $VisualTeXOcrChoice "none"
+  !else
+    ClearErrors
+    ${GetOptions} $0 "/VISUALTEXOCR=" $1
+    ${IfNot} ${Errors}
+      ${If} $1 == "install"
+        StrCpy $VisualTeXOcrChoice "install"
+      ${ElseIf} $1 == "none"
+        StrCpy $VisualTeXOcrChoice "none"
+      ${Else}
+        Abort "Unsupported /VISUALTEXOCR value: $1"
+      ${EndIf}
     ${EndIf}
-  ${EndIf}
-  ${If} $VisualTeXOcrChoice == ""
-    StrCpy $VisualTeXOcrChoice "install"
-  ${EndIf}
+    ${If} $VisualTeXOcrChoice == ""
+      StrCpy $VisualTeXOcrChoice "install"
+    ${EndIf}
+  !endif
 
   ${If} $VisualTeXAcceptanceMode == "1"
     DetailPrint "Installed-release acceptance mode: preserving existing Office integration and skipping machine prerequisite prompts."
@@ -285,6 +397,27 @@ visualtex_vsto_runtime_ready:
     nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\ensure_windows_office_certificate.ps1" -VisualTeXPath "$INSTDIR\${MAINBINARYNAME}.exe"`
     Pop $0
     StrCmp $0 "0" 0 visualtex_office_failed
+
+    ; Recheck at the last safe moment immediately before MSI/COM registration.
+    ; Office can be activated by COM/OLE after the earlier custom page (including
+    ; a windowless POWERPNT.EXE -Embedding), so the early check alone has a race.
+    ; Interactive installs ask again before any forced termination. Silent installs
+    ; fail Office integration rather than killing user processes without consent.
+    Call VisualTeXEnsureOfficeProcessesClosed
+    Pop $0
+    ${If} $0 != "0"
+      DetailPrint "Office integration was not started because running Office processes were not closed. GuardResult=$0"
+      ${If} $0 == "1"
+        IfSilent 0 visualtex_office_late_guard_declined_interactive
+        SetErrorLevel 1
+        Goto visualtex_office_done
+visualtex_office_late_guard_declined_interactive:
+        MessageBox MB_ICONINFORMATION "已取消关闭正在运行的 Office 进程。VisualTeX 主程序已安装，但本次未修改 Word/PowerPoint Office 集成。关闭相关 Office 进程后可重新运行安装包。$\r$\n$\r$\nNo Office process was terminated. The main VisualTeX application is installed, but Office integration was skipped."
+        Goto visualtex_office_done
+      ${EndIf}
+      SetErrorLevel 1
+      Goto visualtex_office_done
+    ${EndIf}
 
     nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_vsto.ps1" -PackageDirectory "$INSTDIR\windows-office" -VisualTeXPath "$INSTDIR\${MAINBINARYNAME}.exe"`
     Pop $0
@@ -373,6 +506,10 @@ visualtex_postinstall_cleanup_done:
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  ; Release VisualTeX's private MathType/MathPage runtime before the uninstaller
+  ; removes the application tree. The path-scoped guard cannot touch a separate
+  ; MathType installation.
+  Call un.VisualTeXPromptPrivateMathTypeRuntimeClosure
   IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 visualtex_preuninstall_done
   nsExec::ExecToStack `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
   Pop $0

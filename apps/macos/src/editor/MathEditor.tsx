@@ -1,3 +1,4 @@
+import { formatLatexLines } from "../clipboard/LatexCopyService";
 import {
   useEffect,
   useLayoutEffect,
@@ -5,7 +6,9 @@ import {
   useRef,
   useState,
   forwardRef,
+  Component,
   type CSSProperties,
+  type ErrorInfo,
   type ReactNode,
 } from "react";
 import {
@@ -70,6 +73,10 @@ import {
   convertVisualTexLatexToMarkup,
   installMathLiveContourIntegralShadowStyle,
 } from "./mathLiveIntegralCompatibility";
+import {
+  inspectMathLiveSourceSafety,
+  mathLiveSourceSafetyMessage,
+} from "./mathLiveSourceSafety";
 import { composeCustomSymbolMacrosForMathfield } from "../math/customSymbolRegistry";
 import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
 import {
@@ -129,9 +136,103 @@ export interface MathEditorFocusOptions {
   moveToEnd?: boolean;
 }
 
+interface FormulaFieldErrorBoundaryProps {
+  recoveryKey: string;
+  children: ReactNode;
+}
+
+interface FormulaFieldErrorBoundaryState {
+  error: unknown | null;
+  recoveryKey: string;
+}
+
+function FormulaFieldRenderFallback({ message }: { message: string }) {
+  return (
+    <div
+      role="status"
+      className="formula-field-render-fallback"
+      style={{
+        minHeight: 42,
+        boxSizing: "border-box",
+        display: "flex",
+        alignItems: "center",
+        padding: "8px 12px",
+        border: "1px solid rgba(190, 18, 60, 0.28)",
+        borderRadius: 6,
+        color: "#9f1239",
+        background: "rgba(255, 241, 242, 0.72)",
+        fontSize: 12,
+      }}
+    >
+      {message}
+    </div>
+  );
+}
+
+class FormulaFieldErrorBoundary extends Component<
+  FormulaFieldErrorBoundaryProps,
+  FormulaFieldErrorBoundaryState
+> {
+  state: FormulaFieldErrorBoundaryState = {
+    error: null,
+    recoveryKey: this.props.recoveryKey,
+  };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
+  }
+
+  static getDerivedStateFromProps(
+    props: FormulaFieldErrorBoundaryProps,
+    state: FormulaFieldErrorBoundaryState,
+  ) {
+    if (props.recoveryKey === state.recoveryKey) return null;
+    return { error: null, recoveryKey: props.recoveryKey };
+  }
+
+  componentDidCatch(error: unknown, info: ErrorInfo) {
+    console.error("VisualTeX isolated a formula renderer failure", error, info);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <FormulaFieldRenderFallback message="该行公式渲染失败，源码已保留。可在 LaTeX 源码区修改或删除这一行。" />
+    );
+  }
+}
+
 const EDITOR_LAYOUT_REFRESH_EVENT = "visualtex-editor-layout-refresh";
 const VISUALTEX_MULTILINE_LATEX_CLIPBOARD_TYPE =
   "application/x-visualtex-multiline-latex";
+
+function safeConvertVisualTexLatexToMarkup(
+  ...args: Parameters<typeof convertVisualTexLatexToMarkup>
+) {
+  const source = args[0];
+  if (typeof source === "string") {
+    const issue = inspectMathLiveSourceSafety(source);
+    if (issue) {
+      console.warn(
+        "VisualTeX skipped a structurally unsafe auxiliary MathLive render.",
+        { sourceLength: source.length, issue },
+      );
+      return "";
+    }
+  }
+  try {
+    return convertVisualTexLatexToMarkup(...args);
+  } catch (error) {
+    console.warn(
+      "VisualTeX skipped a non-essential MathLive markup render after an exception.",
+      {
+        sourceLength: typeof source === "string" ? source.length : 0,
+        error,
+      },
+    );
+    return "";
+  }
+}
 
 export interface MathEditorHandle {
   insertCommand: (command: LatexCommand, source?: "toolbar" | "history" | "shortcut") => void;
@@ -1310,26 +1411,34 @@ function predictedFormulaRowHeight(
   );
   let renderedHeight = latex.trim() ? 0 : metrics.fontSize * 1.2;
 
+  // Keep the accurate pre-mount measurement for ordinary formulas because
+  // early pointer hit testing depends on the correct row geometry. The render
+  // itself is now guarded: structurally dangerous LaTeX is rejected before it
+  // reaches MathLive, and any remaining renderer exception falls back to the
+  // heuristic height instead of taking down the React root.
   if (measurementHost && latex.trim()) {
-    const probe = document.createElement("span");
-    probe.setAttribute("aria-hidden", "true");
-    probe.style.position = "absolute";
-    probe.style.left = "-100000px";
-    probe.style.top = "0";
-    probe.style.display = "inline-block";
-    probe.style.width = "max-content";
-    probe.style.maxWidth = "none";
-    probe.style.whiteSpace = "nowrap";
-    probe.style.visibility = "hidden";
-    probe.style.pointerEvents = "none";
-    probe.style.fontSize = metrics.fontSize + "px";
-    probe.style.lineHeight = "normal";
-    probe.innerHTML = convertVisualTexLatexToMarkup(latex, {
+    const markup = safeConvertVisualTexLatexToMarkup(latex, {
       defaultMode: "math",
     });
-    measurementHost.append(probe);
-    renderedHeight = probe.getBoundingClientRect().height;
-    probe.remove();
+    if (markup) {
+      const probe = document.createElement("span");
+      probe.setAttribute("aria-hidden", "true");
+      probe.style.position = "absolute";
+      probe.style.left = "-100000px";
+      probe.style.top = "0";
+      probe.style.display = "inline-block";
+      probe.style.width = "max-content";
+      probe.style.maxWidth = "none";
+      probe.style.whiteSpace = "nowrap";
+      probe.style.visibility = "hidden";
+      probe.style.pointerEvents = "none";
+      probe.style.fontSize = metrics.fontSize + "px";
+      probe.style.lineHeight = "normal";
+      probe.innerHTML = markup;
+      measurementHost.append(probe);
+      renderedHeight = probe.getBoundingClientRect().height;
+      probe.remove();
+    }
   }
 
   return Math.ceil(
@@ -1938,10 +2047,6 @@ function getScriptCaretContext(
   };
 }
 
-function getScriptCaretRegion(field: MathfieldElement) {
-  return getScriptCaretContext(field)?.region ?? null;
-}
-
 function scriptAutoExitWasConsumed(
   field: MathfieldElement,
   autoExitKey: string | null,
@@ -2070,440 +2175,6 @@ function moveCaretThroughEnabledAutoExitContainers(
     moved = true;
   }
   return moved;
-}
-
-const customVerticalStructurePattern =
-  /^\\(?:overset|underset|overunderset|stackrel|stackbin|x[A-Za-z]+)(?=\s|\[|\{|$)/;
-
-type VerticalModelBounds = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
-type CustomVerticalRole = "upper" | "base" | "lower";
-
-type CustomVerticalModelBranch = {
-  start: number;
-  end: number;
-  offsets: number[];
-  role: CustomVerticalRole;
-};
-
-function verticalModelBounds(
-  field: MathfieldElement,
-  offset: number,
-): VerticalModelBounds | null {
-  const bounds = field.getElementInfo(offset)?.bounds;
-  if (
-    !bounds ||
-    !Number.isFinite(bounds.left) ||
-    !Number.isFinite(bounds.top) ||
-    !Number.isFinite(bounds.width) ||
-    !Number.isFinite(bounds.height) ||
-    bounds.height <= 0
-  ) {
-    return null;
-  }
-  return {
-    left: bounds.left,
-    top: bounds.top,
-    width: bounds.width,
-    height: bounds.height,
-  };
-}
-
-function customVerticalRoles(
-  containerLatex: string,
-  branchCount: number,
-): CustomVerticalRole[] {
-  if (/^\\(?:overset|stackrel|stackbin)(?=\s|\{|$)/.test(containerLatex)) {
-    return ["base", "upper"].slice(0, branchCount) as CustomVerticalRole[];
-  }
-  if (/^\\underset(?=\s|\{|$)/.test(containerLatex)) {
-    return ["base", "lower"].slice(0, branchCount) as CustomVerticalRole[];
-  }
-  if (/^\\overunderset(?=\s|\{|$)/.test(containerLatex)) {
-    return ["base", "lower", "upper"].slice(
-      0,
-      branchCount,
-    ) as CustomVerticalRole[];
-  }
-  if (/^\\x[A-Za-z]+(?=\s|\[|\{|$)/.test(containerLatex)) {
-    return (branchCount >= 2 ? ["upper", "lower"] : ["upper"]).slice(
-      0,
-      branchCount,
-    ) as CustomVerticalRole[];
-  }
-  return [];
-}
-
-function customVerticalModelBranches(
-  field: MathfieldElement,
-  containerEnd: number,
-  containerDepth: number,
-) {
-  let start = containerEnd - 1;
-  while (start >= 0) {
-    const depth = field.getElementInfo(start)?.depth;
-    if (typeof depth !== "number" || depth <= containerDepth) break;
-    start -= 1;
-  }
-  start += 1;
-
-  const childDepth = containerDepth + 1;
-  const groups: Array<{ start: number; offsets: number[] }> = [];
-  let current: { start: number; offsets: number[] } | null = null;
-  for (let offset = start; offset < containerEnd; offset += 1) {
-    const info = field.getElementInfo(offset);
-    const latex = (info?.latex ?? "").trim();
-    if (info?.depth === childDepth && !latex) {
-      if (current) groups.push(current);
-      current = { start: offset, offsets: [offset] };
-      continue;
-    }
-    if (!current) current = { start, offsets: [] };
-    current.offsets.push(offset);
-  }
-  if (current) groups.push(current);
-
-  const meaningful = groups.filter((group) =>
-    group.offsets.some((offset) =>
-      Boolean((field.getElementInfo(offset)?.latex ?? "").trim()),
-    ),
-  );
-  const containerLatex =
-    field.getElementInfo(containerEnd)?.latex?.trim() ?? "";
-  const roles = customVerticalRoles(containerLatex, meaningful.length);
-  return meaningful.flatMap((group, index) => {
-    const role = roles[index];
-    if (!role) return [];
-    const nextStart = meaningful[index + 1]?.start ?? containerEnd;
-    return [
-      {
-        start: group.start,
-        end: nextStart,
-        offsets: group.offsets,
-        role,
-      } satisfies CustomVerticalModelBranch,
-    ];
-  });
-}
-
-function customVerticalBranchTargetOffset(
-  field: MathfieldElement,
-  branch: CustomVerticalModelBranch,
-) {
-  const candidates = branch.offsets.filter((offset) => {
-    const latex = (field.getElementInfo(offset)?.latex ?? "").trim();
-    return Boolean(latex) && !customVerticalStructurePattern.test(latex);
-  });
-  return candidates[0] ?? null;
-}
-
-function moveWithinCustomVerticalStructureByModel(
-  field: MathfieldElement,
-  direction: "up" | "down",
-  sourceOffset: number,
-) {
-  const currentInfo = field.getElementInfo(sourceOffset);
-  const currentDepth = currentInfo?.depth;
-  if (typeof currentDepth !== "number" || currentDepth <= 0) return false;
-
-  const containers: Array<{ end: number; depth: number }> = [];
-  for (let offset = sourceOffset + 1; offset <= field.lastOffset; offset += 1) {
-    const info = field.getElementInfo(offset);
-    const depth = info?.depth;
-    const latex = (info?.latex ?? "").trim();
-    if (
-      typeof depth === "number" &&
-      depth < currentDepth &&
-      customVerticalStructurePattern.test(latex)
-    ) {
-      containers.push({ end: offset, depth });
-    }
-  }
-  containers.sort(
-    (left, right) => right.depth - left.depth || left.end - right.end,
-  );
-
-  for (const container of containers) {
-    const branches = customVerticalModelBranches(
-      field,
-      container.end,
-      container.depth,
-    );
-    const currentBranch = branches.find(
-      (branch) => sourceOffset >= branch.start && sourceOffset < branch.end,
-    );
-    if (!currentBranch) continue;
-
-    const hasBaseBranch = branches.some((branch) => branch.role === "base");
-    const targetRole: CustomVerticalRole | null =
-      direction === "up"
-        ? currentBranch.role === "lower"
-          ? hasBaseBranch
-            ? "base"
-            : "upper"
-          : currentBranch.role === "base"
-            ? "upper"
-            : null
-        : currentBranch.role === "upper"
-          ? hasBaseBranch
-            ? "base"
-            : "lower"
-          : currentBranch.role === "base"
-            ? "lower"
-            : null;
-    if (!targetRole) continue;
-    const targetBranch = branches.find((branch) => branch.role === targetRole);
-    if (!targetBranch) continue;
-    const targetOffset = customVerticalBranchTargetOffset(field, targetBranch);
-    if (targetOffset === null || targetOffset === sourceOffset) continue;
-
-    const targetLatex =
-      field.getElementInfo(targetOffset)?.latex?.trim() ?? "";
-    if (targetLatex === "\\placeholder{}" && targetOffset > 0) {
-      field.selection = {
-        ranges: [[targetOffset - 1, targetOffset]],
-        direction: "none",
-      };
-    } else {
-      field.selection = {
-        ranges: [[targetOffset, targetOffset]],
-        direction: "none",
-      };
-      field.position = targetOffset;
-    }
-    // This fallback only runs from an active keydown inside the current
-    // Mathfield. Re-focusing MathLive here can make scripted x-arrow structures
-    // restore their previous branch before the key event unwinds on Chromium.
-    // Keep the existing focus and only commit the final model selection.
-    return true;
-  }
-  return false;
-}
-
-function moveWithinCustomVerticalStructure(
-  field: MathfieldElement,
-  direction: "up" | "down",
-  sourceOffset?: number,
-) {
-  const caret = activeMathCaretMarker(field);
-  // Ordinary scripts, large-operator limits and fractions already have mature
-  // native navigation. The custom fallback only handles the atom types for
-  // which MathLive reports moveUp/moveDown success without changing offsets.
-  if (
-    sourceOffset === undefined &&
-    caret?.closest(".ML__msubsup, .ML__op-group, .ML__mfrac")
-  ) {
-    return false;
-  }
-
-  const currentOffset =
-    sourceOffset === undefined
-      ? Math.max(
-          field.position,
-          ...field.selection.ranges.flatMap(([start, end]) => [start, end]),
-        )
-      : Math.max(0, Math.min(field.lastOffset, sourceOffset));
-  const currentInfo = field.getElementInfo(currentOffset);
-  const currentDepth = currentInfo?.depth;
-  if (typeof currentDepth !== "number" || currentDepth <= 0) return false;
-
-  const modelBounds = verticalModelBounds(field, currentOffset);
-  if (
-    !modelBounds &&
-    moveWithinCustomVerticalStructureByModel(field, direction, currentOffset)
-  ) {
-    return true;
-  }
-  const markerBounds = caret?.getBoundingClientRect();
-  // The model offset is authoritative for the mathematical branch. Prefer its
-  // geometry (including the Windows caret-probe fallback) and use the current
-  // DOM caret only when the requested model offset has no measurable geometry.
-  const currentX = modelBounds
-    ? modelBounds.left + Math.max(0, modelBounds.width) / 2
-    : markerBounds?.left ?? 0;
-  const currentY = modelBounds
-    ? modelBounds.top + modelBounds.height / 2
-    : markerBounds?.height
-      ? markerBounds.top + markerBounds.height / 2
-      : 0;
-  if (!Number.isFinite(currentX) || !Number.isFinite(currentY)) return false;
-
-  const containers: Array<{
-    end: number;
-    depth: number;
-  }> = [];
-  for (let offset = currentOffset + 1; offset <= field.lastOffset; offset += 1) {
-    const info = field.getElementInfo(offset);
-    const depth = info?.depth;
-    const latex = (info?.latex ?? "").trim();
-    if (
-      typeof depth === "number" &&
-      depth < currentDepth &&
-      customVerticalStructurePattern.test(latex)
-    ) {
-      containers.push({ end: offset, depth });
-    }
-  }
-  containers.sort((left, right) => right.depth - left.depth || left.end - right.end);
-
-  for (const container of containers) {
-    let start = container.end - 1;
-    while (start >= 0) {
-      const depth = field.getElementInfo(start)?.depth;
-      if (typeof depth !== "number" || depth <= container.depth) break;
-      start -= 1;
-    }
-    start += 1;
-
-    const entries: Array<{
-      offset: number;
-      latex: string;
-      x: number;
-      y: number;
-    }> = [];
-    for (let offset = start; offset < container.end; offset += 1) {
-      const info = field.getElementInfo(offset);
-      if (info?.depth !== container.depth + 1) continue;
-      const bounds = verticalModelBounds(field, offset);
-      if (!bounds) continue;
-      const latex = (info.latex ?? "").trim();
-      // Empty branch sentinels have a negative width and accurately represent
-      // the visual band. Positive-width empty atoms are internal layout boxes
-      // and would create false intermediate bands for stackrel/stackbin.
-      if (!latex && bounds.width >= 0) continue;
-      entries.push({
-        offset,
-        latex,
-        x: bounds.left + Math.max(0, bounds.width) / 2,
-        y: bounds.top + bounds.height / 2,
-      });
-    }
-    if (entries.length < 2) continue;
-
-    entries.sort((left, right) => left.y - right.y);
-    const bands: Array<{
-      y: number;
-      entries: typeof entries;
-    }> = [];
-    for (const entry of entries) {
-      const previous = bands.at(-1);
-      if (previous && Math.abs(previous.y - entry.y) <= 14) {
-        previous.entries.push(entry);
-        previous.y =
-          previous.entries.reduce((sum, item) => sum + item.y, 0) /
-          previous.entries.length;
-      } else {
-        bands.push({ y: entry.y, entries: [entry] });
-      }
-    }
-    if (bands.length < 2) continue;
-
-    let currentBandIndex = 0;
-    for (let index = 1; index < bands.length; index += 1) {
-      if (
-        Math.abs(bands[index].y - currentY) <
-        Math.abs(bands[currentBandIndex].y - currentY)
-      ) {
-        currentBandIndex = index;
-      }
-    }
-    const targetBandIndex =
-      currentBandIndex + (direction === "up" ? -1 : 1);
-    const targetBand = bands[targetBandIndex];
-    if (!targetBand) continue;
-
-    const leafCandidates: Array<{
-      offset: number;
-      latex: string;
-      x: number;
-      y: number;
-    }> = [];
-    for (let offset = start; offset < container.end; offset += 1) {
-      const info = field.getElementInfo(offset);
-      const bounds = verticalModelBounds(field, offset);
-      const latex = (info?.latex ?? "").trim();
-      if (
-        typeof info?.depth !== "number" ||
-        info.depth <= container.depth ||
-        !bounds ||
-        !latex ||
-        customVerticalStructurePattern.test(latex)
-      ) {
-        continue;
-      }
-      // Structured closing atoms contain braces. Their visible descendants are
-      // better caret targets; placeholders are the only brace-bearing leaf we
-      // select directly.
-      if (latex !== "\\placeholder{}" && latex.includes("{")) continue;
-      leafCandidates.push({
-        offset,
-        latex,
-        x: bounds.left + bounds.width / 2,
-        y: bounds.top + bounds.height / 2,
-      });
-    }
-
-    const leafTarget = leafCandidates
-      .filter(
-        (candidate) =>
-          candidate.offset !== currentOffset &&
-          Math.abs(candidate.y - targetBand.y) <= 18,
-      )
-      .sort(
-        (left, right) =>
-          Math.abs(left.y - targetBand.y) * 4 +
-          Math.abs(left.x - currentX) -
-          (Math.abs(right.y - targetBand.y) * 4 +
-            Math.abs(right.x - currentX)),
-      )[0];
-
-    let targetOffset = leafTarget?.offset ??
-      field.getOffsetFromPoint(currentX, targetBand.y, { bias: 1 });
-    if (
-      targetOffset < start ||
-      targetOffset >= container.end ||
-      targetOffset === currentOffset
-    ) {
-      const candidate = [...targetBand.entries]
-        .filter((entry) => entry.offset !== currentOffset)
-        .sort(
-          (left, right) =>
-            Math.abs(left.x - currentX) - Math.abs(right.x - currentX),
-        )[0];
-      if (!candidate) continue;
-      targetOffset = candidate.offset;
-    }
-
-    const targetLatex =
-      field.getElementInfo(targetOffset)?.latex?.trim() ?? "";
-    if (targetLatex === "\\placeholder{}" && targetOffset > 0) {
-      field.selection = {
-        ranges: [[targetOffset - 1, targetOffset]],
-        direction: "none",
-      };
-    } else {
-      field.selection = {
-        ranges: [[targetOffset, targetOffset]],
-        direction: "none",
-      };
-      field.position = targetOffset;
-    }
-    field.focus();
-    field.shadowRoot
-      ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
-      ?.focus({ preventScroll: true });
-    return true;
-  }
-  return moveWithinCustomVerticalStructureByModel(
-    field,
-    direction,
-    currentOffset,
-  );
 }
 
 const previousTargetToolbarCommandIds = new Set([
@@ -2691,9 +2362,6 @@ function FormulaField(props: FormulaFieldProps) {
   const defaultInlineShortcutsRef =
     useRef<VisualTexInlineShortcutDefinitions | null>(null);
   const lastSnapshotRef = useRef<ReturnType<typeof captureFieldSnapshot> | null>(null);
-  const previousSelectionSnapshotRef =
-    useRef<ReturnType<typeof captureFieldSnapshot> | null>(null);
-  const lastSelectionChangeAtRef = useRef(0);
   const compositionStartRef = useRef<ReturnType<typeof captureFieldSnapshot> | null>(null);
   const sizingZoomRef = useRef(props.zoom);
   const sizingRowVerticalInsetRef = useRef(props.formulaRowVerticalInset);
@@ -2807,13 +2475,19 @@ function FormulaField(props: FormulaFieldProps) {
       }
       const nextHeight = Math.max(measuredHeight, initialHeightFloor);
 
-      field.classList.toggle("is-simple-formula", !hasTallStructure);
-      field.style.height = nextHeight + "px";
-      field.style.minHeight = nextHeight + "px";
-      host.closest<HTMLElement>(".formula-line")?.style.setProperty(
-        "--formula-row-height",
-        nextHeight + "px",
-      );
+      const shouldBeSimple = !hasTallStructure;
+      if (field.classList.contains("is-simple-formula") !== shouldBeSimple) {
+        field.classList.toggle("is-simple-formula", shouldBeSimple);
+      }
+      const nextHeightPx = nextHeight + "px";
+      if (field.style.height !== nextHeightPx) field.style.height = nextHeightPx;
+      if (field.style.minHeight !== nextHeightPx) {
+        field.style.minHeight = nextHeightPx;
+      }
+      const row = host.closest<HTMLElement>(".formula-line");
+      if (row?.style.getPropertyValue("--formula-row-height") !== nextHeightPx) {
+        row?.style.setProperty("--formula-row-height", nextHeightPx);
+      }
     };
     const syncFrameSize = (measureImmediately = false) => {
       window.cancelAnimationFrame(resizeFrame);
@@ -3065,8 +2739,6 @@ function FormulaField(props: FormulaFieldProps) {
       if (normalizeChineseLatex(field.value) !== lastSnapshotRef.current.latex) {
         return;
       }
-      previousSelectionSnapshotRef.current = lastSnapshotRef.current;
-      lastSelectionChangeAtRef.current = performance.now();
       lastSnapshotRef.current = {
         ...lastSnapshotRef.current,
         selection,
@@ -3089,65 +2761,6 @@ function FormulaField(props: FormulaFieldProps) {
       rawCommandAnchors.delete(field);
 
       propsRef.current.onCommitPending();
-    };
-  const moveWithinCustomVerticalStructureFromRecentSelection = (
-    direction: "up" | "down",
-  ) => {
-    const currentLatex = normalizeChineseLatex(field.value);
-    const recentNativeSelectionChange =
-      performance.now() - lastSelectionChangeAtRef.current <= 250;
-    const candidateOffsets: number[] = [];
-    const pushSelectionOffset = (selection: MathSelectionSnapshot | null) => {
-      const range = selection?.ranges.at(-1);
-      if (!range) return;
-      const offset = Math.max(0, Math.min(field.lastOffset, range[1]));
-      if (!candidateOffsets.includes(offset)) candidateOffsets.push(offset);
-    };
-
-    pushSelectionOffset(captureSelection(field));
-    if (lastSnapshotRef.current?.latex === currentLatex) {
-      pushSelectionOffset(lastSnapshotRef.current.selection);
-    }
-    if (
-      recentNativeSelectionChange &&
-      previousSelectionSnapshotRef.current?.latex === currentLatex
-    ) {
-      pushSelectionOffset(previousSelectionSnapshotRef.current.selection);
-    }
-
-    return candidateOffsets.some((offset) =>
-      moveWithinCustomVerticalStructure(field, direction, offset),
-    );
-  };
-  const handleWindowRawWrapperKeyDown = (event: KeyboardEvent) => {
-    if (!event.composedPath().includes(field)) return;
-    const verticalStructureDirection =
-      !event.defaultPrevented &&
-      !event.metaKey &&
-      !event.ctrlKey &&
-      !event.altKey &&
-      !event.shiftKey &&
-      event.key === "ArrowUp"
-        ? "up"
-        : !event.defaultPrevented &&
-            !event.metaKey &&
-            !event.ctrlKey &&
-            !event.altKey &&
-            !event.shiftKey &&
-            event.key === "ArrowDown"
-          ? "down"
-          : null;
-    if (
-      verticalStructureDirection &&
-      moveWithinCustomVerticalStructureFromRecentSelection(
-        verticalStructureDirection,
-      )
-    ) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      propsRef.current.onInputActivity(field);
-      return;
-    }
     };
     const scheduleInputActivity = () => {
       window.requestAnimationFrame(() => {
@@ -3214,32 +2827,6 @@ function FormulaField(props: FormulaFieldProps) {
       if (
         accentNavigationDirection &&
         selectAdjacentAccentPlaceholder(field, accentNavigationDirection)
-      ) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        propsRef.current.onInputActivity(field);
-        return;
-      }
-
-      const verticalStructureDirection =
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.shiftKey &&
-        event.key === "ArrowUp"
-          ? "up"
-          : !event.metaKey &&
-              !event.ctrlKey &&
-              !event.altKey &&
-              !event.shiftKey &&
-              event.key === "ArrowDown"
-            ? "down"
-            : null;
-      if (
-        verticalStructureDirection &&
-        moveWithinCustomVerticalStructureFromRecentSelection(
-          verticalStructureDirection,
-        )
       ) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -3491,7 +3078,6 @@ function FormulaField(props: FormulaFieldProps) {
     field.addEventListener("selection-change", handleSelectionChange);
     field.addEventListener("focus", handleFocus);
     field.addEventListener("blur", handleBlur);
-    window.addEventListener("keydown", handleWindowRawWrapperKeyDown, true);
     field.addEventListener("keydown", handleKeyDown, true);
     field.addEventListener("keyup", handleKeyUp, true);
     const keyboardSink =
@@ -3590,7 +3176,6 @@ function FormulaField(props: FormulaFieldProps) {
       field.removeEventListener("selection-change", handleSelectionChange);
       field.removeEventListener("focus", handleFocus);
       field.removeEventListener("blur", handleBlur);
-      window.removeEventListener("keydown", handleWindowRawWrapperKeyDown, true);
       field.removeEventListener("keydown", handleKeyDown, true);
       field.removeEventListener("keyup", handleKeyUp, true);
       if (VISUALTEX_IME_DIAGNOSTICS_ENABLED) {
@@ -3808,10 +3393,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       lines,
       activeLineId,
       formulaAlignment,
+      latexCodeFormat,
       zoom,
       persistentTypingStyle = {
         bold: false,
-        italic: false,
+        italic: null,
         color: null,
         backgroundColor: null,
       },
@@ -3900,7 +3486,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     previewOnlyRef.current = previewOnly;
 
     useEffect(() => {
-      installCustomSymbolGlobalStyle();
+      // Do not eagerly materialize every persisted custom-symbol SVG mask on
+      // initial startup. Runtime edits still refresh the complete global style
+      // so already-mounted non-shadow previews update immediately.
+      installCustomSymbolGlobalStyle(undefined, customSymbolRevision > 0);
       fieldRefs.current.forEach((field) => refreshCustomSymbolMathfield(field));
     }, [customSymbolRevision]);
 
@@ -3908,6 +3497,14 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const resolvedActiveLineId =
       lines.find((line) => line.id === activeLineId)?.id ?? lines[0]?.id ?? null;
     activeLineIdRef.current = resolvedActiveLineId;
+    // A plain row edit must not tear down every earlier explicit-alignment
+    // field. Include the row position for Office's reusable line slots, where
+    // inserting a row can move a marker to a different mounted mathfield.
+    const alignmentRowsSignature = lines.flatMap((line, index) =>
+      hasVisualTexAlignmentMarker(line.latex)
+        ? [`${index}\u0000${line.id}\u0000${line.latex}`]
+        : [],
+    ).join("\u0001");
 
     const resolveExplicitAlignmentVisualAnchor = (marker: HTMLElement) => {
       const markerBounds = marker.getBoundingClientRect();
@@ -4119,13 +3716,16 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         window.removeEventListener(EDITOR_LAYOUT_REFRESH_EVENT, schedule);
       };
     }, [
+      customSymbolRevision,
       fieldRenderEpoch,
       formulaAlignment,
       formulaInsetLeft,
       formulaInsetRight,
+      formulaLetterFont,
+      formulaChineseFont,
       formulaRowVerticalInset,
       latexFormatProfile.multilineEnvironment,
-      lines,
+      alignmentRowsSignature,
       showLineNumbers,
       zoom,
     ]);
@@ -6107,8 +5707,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
 
       const rawCommandActive = hasRawLatexInput(field);
-      // Let native completion own Enter/Tab/arrows while typing a command.
-      if (rawCommandActive || field.mode === "latex") return;
+      // Let native completion own keys while a command is actually pending.
+      // Escape can leave MathLive in latex mode with no raw input; that state
+      // must still allow formula-row navigation.
+      if (rawCommandActive || (field.mode === "latex" &&
+          event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
       const currentState = useEditorStore.getState();
 
       const activeEnvironment = activeMathLiveEnvironmentName(field);
@@ -6355,36 +5958,16 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         !event.metaKey &&
         !event.shiftKey
       ) {
-        const scriptRegion = getScriptCaretRegion(field);
-        const requestedRegion = event.key === "ArrowUp" ? "upper" : "lower";
-        if (scriptRegion) {
+        // Ask the kernel for every formula, regardless of its LaTeX command
+        // spelling. A changed selection means an actual inner branch move;
+        // otherwise the arrow may move to a different formula row below.
+        const beforeSelection = captureSelection(field);
+        field.executeCommand(event.key === "ArrowUp" ? "moveUp" : "moveDown");
+        const afterSelection = captureSelection(field);
+        if (JSON.stringify(beforeSelection) !== JSON.stringify(afterSelection)) {
           event.preventDefault();
           event.stopImmediatePropagation();
-          if (scriptRegion !== requestedRegion) {
-            field.executeCommand("moveToOpposite");
-          }
           return;
-        }
-
-        // Chromium can report a successful vertical MathLive movement even for
-        // a flat formula such as \\alpha, which traps ArrowUp/ArrowDown on the
-        // current row. WebKit returns false in that case. Restrict native
-        // vertical navigation to formulas that actually have vertical
-        // structure so Windows matches the verified macOS row behavior.
-        if (tallFormulaPattern.test(field.value)) {
-          const beforeSelection = captureSelection(field);
-          const movedInsideFormula = field.executeCommand(
-            event.key === "ArrowUp" ? "moveUp" : "moveDown",
-          );
-          const afterSelection = captureSelection(field);
-          if (
-            movedInsideFormula &&
-            JSON.stringify(beforeSelection) !== JSON.stringify(afterSelection)
-          ) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            return;
-          }
         }
 
         const direction = event.key === "ArrowUp" ? -1 : 1;
@@ -6519,8 +6102,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       target: MathEditorSelectionTarget | null = captureSelectionTarget(),
     ) => {
       if (interactionReadOnly || !target?.selections.length) return false;
+      const clearsBackground =
+        style.kind === "backgroundColor" && style.value === "none";
       if (
         (style.kind === "color" || style.kind === "backgroundColor") &&
+        !clearsBackground &&
         !isSafeFormulaStyleColor(style.value)
       ) {
         return false;
@@ -7132,7 +6718,27 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         const session = pointerSelectionSessionRef.current;
         if (!session || event.pointerId !== session.pointerId) return;
         pointerSelectionSessionRef.current = null;
-        if (!session.active) return;
+        // WebKit can deliver pointerup past the last pointermove. Use the
+        // release coordinates as the final selection endpoint; otherwise a
+        // quick reverse drag can leave only part of a ket/fraction highlighted.
+        const releaseFocus = resolveMultiLineSelectionPoint(
+          event.clientX,
+          event.clientY,
+        );
+        if (!session.active) {
+          const distance = Math.hypot(
+            event.clientX - session.startX,
+            event.clientY - session.startY,
+          );
+          if (
+            distance < 5 ||
+            !releaseFocus ||
+            (releaseFocus.lineId === session.anchor.lineId &&
+              !session.allowSameLine)
+          ) return;
+          session.active = true;
+        }
+        if (releaseFocus) applyMultiLineSelection(session.anchor, releaseFocus);
 
         // Do not prevent or stop this pointerup. MathLive owns pointer capture
         // on the active mathfield and must finish its own drag tracker first.
@@ -7204,7 +6810,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           JSON.stringify({ version: 1, lines: selectedLines }),
         );
         event.clipboardData.setData("application/x-latex", latex);
-        event.clipboardData.setData("text/plain", latex);
+        event.clipboardData.setData("text/plain", formatLatexLines(selectedLines, latexCodeFormat));
         event.preventDefault();
         event.stopImmediatePropagation();
         if (event.type === "cut") deleteMultiLineSelection();
@@ -7328,6 +6934,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               : line.mode === "inline"
                 ? "inline"
                 : "display";
+            const safetyIssue = inspectMathLiveSourceSafety(line.latex);
             return (
               <div
                 className={
@@ -7391,6 +6998,29 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                     </span>
                   </button>
                 ) : null}
+                {safetyIssue ? (
+                  <FormulaFieldRenderFallback
+                    message={`${mathLiveSourceSafetyMessage(safetyIssue, language)} ${
+                      language === "en"
+                        ? "The LaTeX source is preserved; edit or remove this row in the source panel."
+                        : "LaTeX 源码仍完整保留，可在源码区修改或删除这一行。"
+                    }`}
+                  />
+                ) : (
+                  <FormulaFieldErrorBoundary
+                    recoveryKey={[
+                      lineId,
+                      line.latex,
+                      zoom,
+                      formulaRowVerticalInset,
+                      formulaLetterFont,
+                      formulaChineseFont,
+                      autoPairDelimiters,
+                      interactionReadOnly,
+                      previewOnly,
+                      fieldRenderEpoch,
+                    ].join("\u0000")}
+                  >
                 <FormulaField
                   key={`formula-field-${reuseLineSlots ? index : lineId}-${fieldRenderEpoch}`}
                   lineId={lineId}
@@ -7434,6 +7064,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                   onContextMenu={openContextMenu}
                   onPasteLatexLines={pasteLatexLines}
                 />
+                  </FormulaFieldErrorBoundary>
+                )}
               </div>
             );
           })}

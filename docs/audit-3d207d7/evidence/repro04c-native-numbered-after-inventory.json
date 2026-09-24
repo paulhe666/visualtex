@@ -1,0 +1,695 @@
+{
+    "build":  "16.0.14334",
+    "version":  "16.0",
+    "active":  "文档51",
+    "documents":  [
+                      {
+                          "name":  "文档51",
+                          "key":  "repro04c-native-numbered-after-__51",
+                          "saved":  false,
+                          "end":  928,
+                          "paragraphs":  21,
+                          "tables":  [
+
+                                     ],
+                          "maths":  [
+
+                                    ],
+                          "shapes":  [
+                                         {
+                                             "start":  54,
+                                             "alternative":  "visualtex:v1:deflate:vZJRb9MwEMe_SuUnkOLIdhw3jsQDQ1RMAm0SE30gCDnxpbFwks5xykbV7z5nTVsm4JXX-93d__53t0dD1UCrUI52ZhiV9fCA6961o1UomuEXcIPpO5TTCM3sWoeKpSY8q2WCa-Al5iqtcamkwGmdAdCKVYmemnjjLYT0q9H-WJh22zsPerHunV5clKwKyiGpKIZ75_fv8VgUFmr_6qEonNk0_vXhTVHUTlV7etjXMyyKvoWNOqXsvu-3zeEliy4NJhnTwYDyr3tkJgdElVJTSrDIWIV5yjnOWKoxKytK6gpUVZb_a7jDtwhVvYZV2InyQe2oGiFthq1Vj58CC1HTTR5CuBvbEhwEG7WyA0QI7kflw53u1Abl3WhthBx0GtzaaN_cBgM0TWIpk4xwmVDBiUhOKR9gmmLKYTwWgjAWNkIzKTnlESrVAM-qOQ00SwkhnEpBhZByeonOfza_4DYMTUmcnnqu_ojP5_4I3h9x8ONNGy5yZu-a6UIww-Fx8NAG-jN8y_Wz8xsLRz_-ZPIFm42cYRdWsoObtrUr023AbZ3pzrByEHas18Y35x9HNGaxCJLjVv8Nkphm6Fz6dpqSESYwkZikd1TkKc0TEVMplwllxUgIuyIkJ-TS8p9F6XIpU5n8XnR4Ag",
+                                             "width":  115.35,
+                                             "index":  1,
+                                             "type":  1,
+                                             "height":  18.4,
+                                             "prog":  "VisualTeX.Formula.1",
+                                             "end":  88
+                                         },
+                                         {
+                                             "start":  90,
+                                             "alternative":  "visualtex:v1:deflate:5VTLbtswEPwVg6cWsARSFKkHkENT1GiAFgnQoD6UPVDi2iaih0NRaVNB_54VLDsJ6vQHygtBzu7s7GipgXTlDmpNcvJgu15XHn4Hm9bVfaXJcga_g-ts25CcLcmMXRnMKBJdlEKLAEwpg1hCEWRFyYMiyyBJk3TDDUMSb30FGH7ZV3cLW-9b58Es1q0zi-dKlcbKGKRUAVvbDKXuoBuV2jhdDkrV2u9cPZhxfHlQqq1hq3GvYOPfzcfF5vVZKWe3O__-uF_QhcK1OJH_M2scojMyPr0VfEbdhVLdvfPDzFJPjCNWh8bMbU792wY6kv8YiJ2sTYURlDIdmFjqIC5iGqRFIYNE00Qa0NGGZ_-9a-PPJSlbAyucIu3RhoMdS2Jst6_041fEpjGt2vIOb5u-LsAB2utdD0sC9732ONe3ekvypq-qJXHIDm5tjd_doK8s5mGScZHFXFIumJDHkM8wKZ9iJAuzVFJckh1jCtQ3fVCS8ziMMz6hnAqWiCSdnlDjv9k_cIOSGQ3FkXP11_38PL6A9wcYu_G2xkE5YR930-DADHaPnYca0V_4uq6aScN1BYd-_LHJV9jcyAls0JIHuK7ramWbLbi9s80JLB2gw2Zt_e70TyAsjEKJJfu9OQfSkKXklPphUhnRSAY0C6i4ZTIXLOcyZFmWcBapntLoktKc0mfKN5MEx7RYvkwanwA",
+                                             "width":  107.75,
+                                             "index":  2,
+                                             "type":  1,
+                                             "height":  46.5,
+                                             "prog":  "VisualTeX.Formula.1",
+                                             "end":  124
+                                         },
+                                         {
+                                             "start":  244,
+                                             "alternative":  "visualtex:v1:deflate:3VPBbtQwEP2VlU8gJZEdO4kTiQNFrKgEaiUKe8AcnHiya9VJto5TKFH-HUebTQsUiTMn2_Nmnuc9j0fUVwdoJCrQve4HaRx8D-vONoORKFjAz2B73bWoIAFasEvlK0idc1JmPIwVLUMGQEJeqzIEpYCUCYeM1Z7EaWfAp18M5najm2NnHajNrrNq83iTkf5mnyREf2fdKERtZTU20xgLYaB2L94uqxBdA3sphNX7g3sZfjrvpunVUiVEI93BNqOapqeHpXT6nalSndvUz_Ov_fxjE-fNLEm30KPiy4j07FZNY1xTqkLKYxmymiWhJDwNq6yqgFeSqTz9H42Yvgao6hRs_VtL55WdFAZI6f5o5MMHj_loabrq1kfboSnBgnfM2QECBHeDdH76buQeFe1gTIAstArsTit3uPZWUZJF3kiGCU0zwrPknPEO5g7mlIRFjOZ5ztM4zTDPOQtQKXuYn8gT4IimOMaYc5In3K_znLfuo_4B175jgqOVc_tHfJnh9-DcCfZinG7806_Ym8M8CrCA_UPvoPHoN_8FLtu5hysDJznurPEXbBGygq135B6umsZsdbsHe7S6XcHKgjdY7bQ7rB8XkSiO5ukajuo5EHsD0Vr6eu4yxnEa4jzEyQ1Ji4QUNI1InmeUxGLAOL7AuMD4kfKvRYzThMXsadH0Ew",
+                                             "width":  237.8,
+                                             "index":  3,
+                                             "type":  1,
+                                             "height":  40.75,
+                                             "prog":  "VisualTeX.Formula.1",
+                                             "end":  278
+                                         },
+                                         {
+                                             "start":  427,
+                                             "alternative":  "visualtex:v1:deflate:1VPbatwwEP0Vo6cWbKOLZVuGPjSF0EBLAg3JQ5yAbI3XIrJ3K8tp02X_vWN2s9tL-gF9E3PmzJwzM9qSqe1h0KQiT3aatQvwPenWfpidJvEBvAE_2fVIKhaTA3ZhkFGYFoBqmahCiCTjTZZo07QJz0GWDWRF0SksEmxwgOlns3uM7LBZ-wAmul17E506OY2dMcnWdd9oH9V153W7reuN9sFqtzs9o7DD92Tf1PWgQ990W7-Lw9voHZIcdOEuSo7spdYD3235gJxRN04_8KieKeVn0c2fBera21Uf7l-rvki0I0ykutsSu7gHw5XIeZkI6HSSybZNyrLrEqFMZozKGpGV_4Ox3X1M2rWBc9yFDqh0rzgmxk4bp58_I4bRxq3bR4yO89CAB5xA8DPEBL7OOuB1XOsVqcbZuZh4GA34W2tCf4XWecFSJUpRSkpVkctcvKR8hEXWkiOzNBNMqjLPhRCUFmVMGj3BMnNSCZYypCsllCwkU1IshziGL_YHXKFkRlP5UvP8r_jhyD5BCHsY3QQ74C6P2Id-2S0cwOl5CjAg-g1v9GJcNFw62PsJLyZ_ww5GjuCII3mCy2Fw53Zcgd94Ox7B1gNO2Nza0B9_FmEpT3NsOW_MayBN2XJMB-r7RSWnPE-oSqi8ZnklWSXylCn8iozv74DSitJTyX-SMlFIoeivpN1P",
+                                             "width":  203.9,
+                                             "index":  4,
+                                             "type":  1,
+                                             "height":  40.75,
+                                             "prog":  "VisualTeX.Formula.1",
+                                             "end":  461
+                                         },
+                                         {
+                                             "start":  589,
+                                             "alternative":  "visualtex:v1:deflate:7VTbbtQwEP2VyE-AkmgcZ504Eg8UqaISqJWo6ENTJG8y6Vp1ksVxymW1_86Eze62gnJ5520058ztjMcbNlQrbDUr2L0ZRm09foma3rWj1SycwQ_oBtN3rOAhm7GzmiJkKgTUmYxSgDxKtZCRVhIjyBuRQqZxkSEl8cZbJPrJaO8C065757EOrnpXB8dKVlNlIpVl43S1Kcu1dt5ouz2agd-SPZjg44uytNj4Z0FZ3mO1cVsynLld-efBjvE0_nIuYMpytdRuu0laytrppdVEqurez8HXwd8U2wf-vmj0J8LjRMeS7iHlh3EzaWU6HFhxvWFmWkMOtIc8wWiZSx6lCBipusKoyZSoGt4omaf_Ff4Hhbc3Iav6Gk_pdWpPku2kC1lthrXVX98RRt6l7as78nZju0SHtArvRgwZfhq1p3u51Les6EZrQ-awq9FdmdqvLmgHYpHFIBdCKS6VSnie7ylvcGph4qQqFrkE4ItcKp6CFCFb6gGn5bMiUXGa0dmBEpDR2oWYTrPz7803vKCWOcSLfc7Tn_zz2b1F73cwTeNNS4_qgL1eTY8MZ3D4OnhsCf1MV3vWTT2cW9zN4_dDPsLmQQ5gR5Lc43nb2lPT3aJbO9MdwMohKVxfGb86_DWMx0ksqeS4rn8FQsxzdgh9NXWZQCIjUBEsLrksFrwQMuZKZYIn5QiQnAAUAMeUTwYJBRykehi0_Q4",
+                                             "width":  267.75,
+                                             "index":  5,
+                                             "type":  1,
+                                             "height":  37.05,
+                                             "prog":  "VisualTeX.Formula.1",
+                                             "end":  623
+                                         },
+                                         {
+                                             "start":  761,
+                                             "alternative":  "visualtex:v1:deflate:vVJNj5RAEP0rpE-aAOkPYIDEg2sycRPNbuLGOYiHhi6GdpsPm2Z0nfDfLTIso1GvnrpT71W9elV1JmPVQCtJTk56nKRx8D2oe9tORhJ_BT-CHXXfkZz5ZMVuFWZAzVmmBA94msVBFMkkyEoOQawqEZcR39VljUWcdgaQfjOZR0-3Q28dKO_QW-VdlYxEZSQVRW1ldS6KQVqnpZmvX8_NRWGb3isKA7V7ge8JqrOdfYdfq4-Ne-kVE6X8pig6WRqJ4Ur1biV-mV_RRUl3MJL805noxQRLRVVxFgV1xtEET-sgTRMalDHUVIlEUFX9x_7mzz6pegV7nIx0KHgR9onS42Dk03vEMFqavnrEaDe1JVhAI85O4BP4OkmHu3qQR5J3kzE-sdApsAetXHOPDliUhVEcc0pZFgvG42fGW1g6XCjIEDgCyuI0yVhEE-GTUo6wTI7kHPN3EaU0E3SXJkyI5So690H_gHvsmNFwq7n_I75u_B04d4HRjNMtbmTD3jTLhmAFx6fRQYvoNzyY227p4c7AxY579vgbthrZwA4ncoK7tjV73R3BDlZ3G1hZwAGrg3bNduaEhTxMUHIa1N9AGrKUbKmvly455UlAs4DGDyzJY5aLJGRZtsMBXzZOaU7pteQ_kwReXBSxX5Pmnw",
+                                             "width":  111.95,
+                                             "index":  6,
+                                             "type":  1,
+                                             "height":  37.05,
+                                             "prog":  "VisualTeX.Formula.1",
+                                             "end":  795
+                                         }
+                                     ],
+                          "controls":  [
+
+                                       ],
+                          "fields":  [
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  55,
+                                             "end":  87,
+                                             "index":  1
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  91,
+                                             "end":  123,
+                                             "index":  2
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " REF VTEqNum_b7abc5a5edc646eb9bc3b99e7878f3d1 \\h \\* CHARFORMAT ",
+                                             "result":  "0-1",
+                                             "type":  3,
+                                             "start":  127,
+                                             "end":  195,
+                                             "index":  3
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ VisualTeXEquation \\r 1 \\* ARABIC ",
+                                             "result":  "1",
+                                             "type":  12,
+                                             "start":  201,
+                                             "end":  241,
+                                             "index":  4
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  245,
+                                             "end":  277,
+                                             "index":  5
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " REF VTEqNum_1f981b782d3b4ee18fdbedde1b58e74f \\h \\* CHARFORMAT ",
+                                             "result":  "0-2",
+                                             "type":  3,
+                                             "start":  281,
+                                             "end":  349,
+                                             "index":  6
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ VisualTeXEquation \\r 2 \\* ARABIC ",
+                                             "result":  "2",
+                                             "type":  12,
+                                             "start":  355,
+                                             "end":  395,
+                                             "index":  7
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  428,
+                                             "end":  460,
+                                             "index":  8
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " REF VTEqNum_7dcee0a5973342b4adbc26e58be477f9 \\h \\* CHARFORMAT ",
+                                             "result":  "2-1",
+                                             "type":  3,
+                                             "start":  464,
+                                             "end":  532,
+                                             "index":  9
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ VisualTeXEquation \\r 1 \\* ARABIC ",
+                                             "result":  "1",
+                                             "type":  12,
+                                             "start":  538,
+                                             "end":  578,
+                                             "index":  10
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  590,
+                                             "end":  622,
+                                             "index":  11
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " REF VTEqNum_64330d7640084a36a96e08f3407ae57e \\h \\* CHARFORMAT ",
+                                             "result":  "2-2",
+                                             "type":  3,
+                                             "start":  626,
+                                             "end":  694,
+                                             "index":  12
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ VisualTeXEquation \\r 2 \\* ARABIC ",
+                                             "result":  "2",
+                                             "type":  12,
+                                             "start":  700,
+                                             "end":  740,
+                                             "index":  13
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  762,
+                                             "end":  794,
+                                             "index":  14
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " REF VTEqNum_ef219d32289544a69b2e5dc35b427fbf \\h \\* CHARFORMAT ",
+                                             "result":  "2-3",
+                                             "type":  3,
+                                             "start":  798,
+                                             "end":  866,
+                                             "index":  15
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ VisualTeXEquation \\r 3 \\* ARABIC ",
+                                             "result":  "3",
+                                             "type":  12,
+                                             "start":  872,
+                                             "end":  912,
+                                             "index":  16
+                                         }
+                                     ],
+                          "bookmarks":  [
+                                            {
+                                                "end":  351,
+                                                "name":  "VTEq_1f981b782d3b4ee18fdbedde1b58e74f",
+                                                "text":  "\u003cTAB\u003e(0-2)",
+                                                "start":  278
+                                            },
+                                            {
+                                                "end":  696,
+                                                "name":  "VTEq_64330d7640084a36a96e08f3407ae57e",
+                                                "text":  "\u003cTAB\u003e(2-2)",
+                                                "start":  623
+                                            },
+                                            {
+                                                "end":  534,
+                                                "name":  "VTEq_7dcee0a5973342b4adbc26e58be477f9",
+                                                "text":  "\u003cTAB\u003e(2-1)",
+                                                "start":  461
+                                            },
+                                            {
+                                                "end":  197,
+                                                "name":  "VTEq_b7abc5a5edc646eb9bc3b99e7878f3d1",
+                                                "text":  "\u003cTAB\u003e(0-1)",
+                                                "start":  124
+                                            },
+                                            {
+                                                "end":  868,
+                                                "name":  "VTEq_ef219d32289544a69b2e5dc35b427fbf",
+                                                "text":  "\u003cTAB\u003e(2-3)",
+                                                "start":  795
+                                            },
+                                            {
+                                                "end":  397,
+                                                "name":  "VTEqCap_1f981b782d3b4ee18fdbedde1b58e74f",
+                                                "text":  "0-2\u003cCR\u003e",
+                                                "start":  352
+                                            },
+                                            {
+                                                "end":  742,
+                                                "name":  "VTEqCap_64330d7640084a36a96e08f3407ae57e",
+                                                "text":  "2-2\u003cCR\u003e",
+                                                "start":  697
+                                            },
+                                            {
+                                                "end":  580,
+                                                "name":  "VTEqCap_7dcee0a5973342b4adbc26e58be477f9",
+                                                "text":  "2-1\u003cCR\u003e",
+                                                "start":  535
+                                            },
+                                            {
+                                                "end":  243,
+                                                "name":  "VTEqCap_b7abc5a5edc646eb9bc3b99e7878f3d1",
+                                                "text":  "0-1\u003cCR\u003e",
+                                                "start":  198
+                                            },
+                                            {
+                                                "end":  914,
+                                                "name":  "VTEqCap_ef219d32289544a69b2e5dc35b427fbf",
+                                                "text":  "2-3\u003cCR\u003e",
+                                                "start":  869
+                                            },
+                                            {
+                                                "end":  396,
+                                                "name":  "VTEqNum_1f981b782d3b4ee18fdbedde1b58e74f",
+                                                "text":  "0-2",
+                                                "start":  352
+                                            },
+                                            {
+                                                "end":  741,
+                                                "name":  "VTEqNum_64330d7640084a36a96e08f3407ae57e",
+                                                "text":  "2-2",
+                                                "start":  697
+                                            },
+                                            {
+                                                "end":  579,
+                                                "name":  "VTEqNum_7dcee0a5973342b4adbc26e58be477f9",
+                                                "text":  "2-1",
+                                                "start":  535
+                                            },
+                                            {
+                                                "end":  242,
+                                                "name":  "VTEqNum_b7abc5a5edc646eb9bc3b99e7878f3d1",
+                                                "text":  "0-1",
+                                                "start":  198
+                                            },
+                                            {
+                                                "end":  913,
+                                                "name":  "VTEqNum_ef219d32289544a69b2e5dc35b427fbf",
+                                                "text":  "2-3",
+                                                "start":  869
+                                            },
+                                            {
+                                                "end":  278,
+                                                "name":  "VTO_1f981b782d3b4ee18fdbedde1b58e74f",
+                                                "text":  "0-1\u003cCR\u003e\u003cTAB\u003e\u0001",
+                                                "start":  198
+                                            },
+                                            {
+                                                "end":  623,
+                                                "name":  "VTO_64330d7640084a36a96e08f3407ae57e",
+                                                "text":  "\u003cTAB\u003e\u0001",
+                                                "start":  588
+                                            },
+                                            {
+                                                "end":  88,
+                                                "name":  "VTO_7d048f93fe4b4a5fba965f8ee1c2c3da",
+                                                "text":  "\u0001",
+                                                "start":  54
+                                            },
+                                            {
+                                                "end":  461,
+                                                "name":  "VTO_7dcee0a5973342b4adbc26e58be477f9",
+                                                "text":  "\u003cTAB\u003e\u0001",
+                                                "start":  426
+                                            },
+                                            {
+                                                "end":  124,
+                                                "name":  "VTO_b7abc5a5edc646eb9bc3b99e7878f3d1",
+                                                "text":  "\u003cTAB\u003e\u0001",
+                                                "start":  89
+                                            },
+                                            {
+                                                "end":  795,
+                                                "name":  "VTO_ef219d32289544a69b2e5dc35b427fbf",
+                                                "text":  "\u003cTAB\u003e\u0001",
+                                                "start":  760
+                                            }
+                                        ],
+                          "paras":  [
+                                        {
+                                            "start":  0,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  1,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  15,
+                                            "lineRule":  0,
+                                            "text":  "思考分析力学被发明出来的原因\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  15,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  2,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  31,
+                                            "lineRule":  0,
+                                            "text":  "系统有很多约束，解决多约束问题\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  31,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  3,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  42,
+                                            "lineRule":  0,
+                                            "text":  "力学和光学统一起来？\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  42,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  4,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  89,
+                                            "lineRule":  0,
+                                            "text":  "这几个公式不知道对不对：\u0001\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  89,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  5,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  198,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(0-1)\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  198,
+                                            "line":  1,
+                                            "alignment":  3,
+                                            "index":  6,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线 Light",
+                                            "inTable":  false,
+                                            "end":  243,
+                                            "lineRule":  4,
+                                            "text":  "0-1\u003cCR\u003e",
+                                            "size":  11
+                                        },
+                                        {
+                                            "start":  243,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  7,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  352,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(0-2)\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  352,
+                                            "line":  1,
+                                            "alignment":  3,
+                                            "index":  8,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线 Light",
+                                            "inTable":  false,
+                                            "end":  397,
+                                            "lineRule":  4,
+                                            "text":  "0-2\u003cCR\u003e",
+                                            "size":  11
+                                        },
+                                        {
+                                            "start":  397,
+                                            "line":  28.9,
+                                            "alignment":  3,
+                                            "index":  9,
+                                            "hidden":  0,
+                                            "before":  17,
+                                            "after":  16.5,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  403,
+                                            "lineRule":  5,
+                                            "text":  "薛定谔方程\u003cCR\u003e",
+                                            "size":  22
+                                        },
+                                        {
+                                            "start":  403,
+                                            "line":  28.9,
+                                            "alignment":  3,
+                                            "index":  10,
+                                            "hidden":  0,
+                                            "before":  17,
+                                            "after":  16.5,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  419,
+                                            "lineRule":  5,
+                                            "text":  "波函数的统计解释和几率守恒方程\u003cCR\u003e",
+                                            "size":  22
+                                        },
+                                        {
+                                            "start":  419,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  11,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  426,
+                                            "lineRule":  0,
+                                            "text":  "薛定谔方程：\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  426,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  12,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  535,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(2-1)\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  535,
+                                            "line":  1,
+                                            "alignment":  3,
+                                            "index":  13,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线 Light",
+                                            "inTable":  false,
+                                            "end":  580,
+                                            "lineRule":  4,
+                                            "text":  "2-1\u003cCR\u003e",
+                                            "size":  11
+                                        },
+                                        {
+                                            "start":  580,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  14,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  588,
+                                            "lineRule":  0,
+                                            "text":  "自己推导一下：\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  588,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  15,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  697,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(2-2)\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  697,
+                                            "line":  1,
+                                            "alignment":  3,
+                                            "index":  16,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线 Light",
+                                            "inTable":  false,
+                                            "end":  742,
+                                            "lineRule":  4,
+                                            "text":  "2-2\u003cCR\u003e",
+                                            "size":  11
+                                        },
+                                        {
+                                            "start":  742,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  17,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  760,
+                                            "lineRule":  0,
+                                            "text":  "有这个可以得到类似的密度守恒方程：\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  760,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  18,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  869,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(2-3)\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  869,
+                                            "line":  1,
+                                            "alignment":  3,
+                                            "index":  19,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线 Light",
+                                            "inTable":  false,
+                                            "end":  914,
+                                            "lineRule":  4,
+                                            "text":  "2-3\u003cCR\u003e",
+                                            "size":  11
+                                        },
+                                        {
+                                            "start":  914,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  20,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  927,
+                                            "lineRule":  0,
+                                            "text":  "定态的相加不一定为定态。\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  927,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  21,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  928,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e",
+                                            "size":  10.5
+                                        }
+                                    ],
+                          "xmlFonts":  [
+
+                                       ],
+                          "xmlMathCount":  0
+                      }
+                  ],
+    "processes":  [
+                      {
+                          "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+                          "name":  "visualtex",
+                          "id":  20944,
+                          "start":  "2026-09-05T23:07:20.5116736+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  27664,
+                          "start":  "2026-09-05T23:07:41.2634623+08:00"
+                      }
+                  ],
+    "time":  "2026-09-06T00:51:49.2938905+08:00"
+}

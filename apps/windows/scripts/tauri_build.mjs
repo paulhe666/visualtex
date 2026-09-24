@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import process from "node:process";
@@ -24,7 +24,7 @@ function run(command, args, env = process.env) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-function preparePatchedNsisTemplate() {
+function preparePatchedNsisTemplate({ noOcrBundle = false } = {}) {
   const nativePackage =
     process.arch === "arm64"
       ? "@tauri-apps/cli-win32-arm64-msvc"
@@ -51,6 +51,17 @@ function preparePatchedNsisTemplate() {
   if (!template) {
     throw new Error(
       `Unable to extract the exact NSIS installer template from ${nativeCliPath}`,
+    );
+  }
+
+  if (noOcrBundle) {
+    const hookInclude = '!include "{{installer_hooks}}"';
+    if (!template.includes(hookInclude)) {
+      throw new Error("The Tauri NSIS installer-hooks include changed unexpectedly");
+    }
+    template = template.replace(
+      hookInclude,
+      `!define VISUALTEX_NO_OCR_BUNDLE\n${hookInclude}`,
     );
   }
 
@@ -167,17 +178,26 @@ function preparePatchedNsisTemplate() {
     "; 6. Start menu shortcut page",
     "Var AppStartMenuFolder",
   ].join("\n");
-  const newInstallerPageSequence = [
-    "; 6. Choose install directory page",
-    "!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive",
-    "!insertmacro MUI_PAGE_DIRECTORY",
-    "",
-    "; 7. VisualTeX optional offline OCR resources choice",
-    "Page custom VisualTeXOcrPageCreate VisualTeXOcrPageLeave",
-    "",
-    "; 8. Start menu shortcut page",
-    "Var AppStartMenuFolder",
-  ].join("\n");
+  const newInstallerPageSequence = noOcrBundle
+    ? [
+        "; 6. Choose install directory page",
+        "!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive",
+        "!insertmacro MUI_PAGE_DIRECTORY",
+        "",
+        "; 7. Start menu shortcut page",
+        "Var AppStartMenuFolder",
+      ].join("\n")
+    : [
+        "; 6. Choose install directory page",
+        "!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive",
+        "!insertmacro MUI_PAGE_DIRECTORY",
+        "",
+        "; 7. VisualTeX optional offline OCR resources choice",
+        "Page custom VisualTeXOcrPageCreate VisualTeXOcrPageLeave",
+        "",
+        "; 8. Start menu shortcut page",
+        "Var AppStartMenuFolder",
+      ].join("\n");
   if (!template.includes(oldInstallerPageSequence)) {
     throw new Error(
       "The Tauri NSIS installer page sequence changed unexpectedly; refusing a build where the VisualTeX OCR choice might be hidden",
@@ -213,7 +233,7 @@ function preparePatchedNsisTemplate() {
 
   const output = resolve(
     "src-tauri",
-    "target",
+    noOcrBundle ? "target-no-ocr" : "target",
     "nsis-template",
     "visualtex-installer.nsi",
   );
@@ -229,7 +249,7 @@ function releaseArguments(args) {
     if (argument === "--debug" || argument === "-d") {
       throw new Error("VisualTeX Windows installer builds must use release mode");
     }
-    if (argument === "--no-bundle") continue;
+    if (argument === "--no-bundle" || argument === "--no-ocr-bundle") continue;
     if (argument === "--bundles" || argument === "-b") {
       index += 1;
       continue;
@@ -244,71 +264,155 @@ const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const tauri = process.platform === "win32" ? "tauri.cmd" : "tauri";
 const node = process.execPath;
 const powershell = process.platform === "win32" ? windowsPowerShellPath() : "powershell";
+const noOcrBundle =
+  process.argv.includes("--no-ocr-bundle") ||
+  process.env.VISUALTEX_NO_OCR_BUNDLE === "1";
 if (process.argv.includes("--prepare-nsis-template-only")) {
   if (process.platform !== "win32") {
     throw new Error("VisualTeX NSIS template preparation is Windows-only");
   }
-  preparePatchedNsisTemplate();
+  preparePatchedNsisTemplate({ noOcrBundle });
   process.exit(0);
 }
 const forwarded = releaseArguments(process.argv.slice(2));
 
 if (process.platform !== "win32") {
+  if (noOcrBundle) {
+    throw new Error("The no-OCR installer flavor is Windows-only");
+  }
   run(npm, ["run", "build:desktop"]);
   run(node, ["scripts/verify_frontend_dist.mjs"]);
   run(tauri, ["build", ...forwarded]);
   process.exit(0);
 }
 
-// 1. Remove only stale release/codegen outputs that can cause Tauri to reuse an
-// old embedded asset table. User artifacts, logs and native build caches remain.
-run(node, ["scripts/clean_windows_release_outputs.mjs"]);
+const noOcrTargetRoot = resolve("src-tauri", "target-no-ocr");
+const targetRoot = noOcrBundle ? noOcrTargetRoot : resolve("src-tauri", "target");
+const flavorEnvironment = noOcrBundle
+  ? {
+      ...process.env,
+      VISUALTEX_NO_OCR_BUNDLE: "1",
+      CARGO_TARGET_DIR: noOcrTargetRoot,
+    }
+  : process.env;
+const flavorConfigArguments = noOcrBundle
+  ? ["--config", "src-tauri/tauri.no-ocr.conf.json"]
+  : ["--config", "src-tauri/tauri.ocr-bundle.conf.json"];
 
-// 2. Prepare the exact Tauri-version NSIS template with VisualTeX's verified
-// maintenance default, then prepare OCR, Office UI, VSTO/OLE and externalBin inputs.
-preparePatchedNsisTemplate();
-run(npm, ["run", "build:bundle"]);
+// 1. Remove only stale outputs for this flavor. The lightweight build uses its
+// own Cargo/Tauri target tree so it cannot overwrite the already-accepted full
+// installer or reuse its generated resource table.
+const cleanArguments = ["scripts/clean_windows_release_outputs.mjs"];
+if (noOcrBundle) cleanArguments.push("--target-dir", "src-tauri/target-no-ocr");
+run(node, cleanArguments, flavorEnvironment);
+
+// 2. Prepare the exact Tauri-version NSIS template and native bundle inputs.
+// The lightweight flavor deliberately skips private OCR Python preparation.
+preparePatchedNsisTemplate({ noOcrBundle });
+run(npm, ["run", "build:bundle"], flavorEnvironment);
 
 // 3. Build the main frontend exactly once, then validate every referenced asset
 // before Tauri build.rs/codegen is allowed to execute.
-run(npm, ["run", "build:desktop"]);
-run(node, ["scripts/verify_frontend_dist.mjs"]);
+run(npm, ["run", "build:desktop"], flavorEnvironment);
+run(node, ["scripts/verify_frontend_dist.mjs"], flavorEnvironment);
 
 // 4. Build the Rust application without bundling. beforeBuildCommand performs
 // validation only and therefore cannot rebuild or replace dist.
-run(tauri, ["build", "--no-bundle", ...forwarded], {
-  ...process.env,
-  VISUALTEX_FRONTEND_PREBUILT: "1",
-});
-run(node, [
-  "scripts/verify_embedded_frontend_assets.mjs",
-  "--exe",
-  "src-tauri/target/release/visualtex.exe",
-]);
+run(
+  tauri,
+  ["build", "--no-bundle", ...flavorConfigArguments, ...forwarded],
+  {
+    ...flavorEnvironment,
+    VISUALTEX_FRONTEND_PREBUILT: "1",
+  },
+);
+const builtExecutable = resolve(targetRoot, "release", "visualtex.exe");
+run(
+  node,
+  ["scripts/verify_embedded_frontend_assets.mjs", "--exe", builtExecutable],
+  flavorEnvironment,
+);
 
 // 5. Bundle directly with the verified custom NSIS template. This avoids
 // depending on Tauri's ephemeral generated installer.nsi after makensis exits.
-run(tauri, ["bundle", "--bundles", "nsis", ...forwarded], {
-  ...process.env,
-  VISUALTEX_FRONTEND_PREBUILT: "1",
-});
+run(
+  tauri,
+  ["bundle", "--bundles", "nsis", ...flavorConfigArguments, ...forwarded],
+  {
+    ...flavorEnvironment,
+    VISUALTEX_FRONTEND_PREBUILT: "1",
+  },
+);
 
-// 6. Static package verification plus a clean-directory installed-runtime smoke
-// test. The smoke test launches the exact installed visualtex.exe and requires
-// the runtime asset resolver to log a successful index.html/JS/CSS preflight.
-run(powershell, [
-  "-NoProfile",
-  "-ExecutionPolicy",
-  "Bypass",
-  "-File",
-  "scripts/verify_windows_release_artifacts.ps1",
-]);
-if (process.env.VISUALTEX_SKIP_INSTALL_SMOKE !== "1") {
+const baseConfig = JSON.parse(readFileSync(resolve("src-tauri", "tauri.conf.json"), "utf8"));
+const version = String(baseConfig.version ?? "").trim();
+if (!version) throw new Error("VisualTeX version is missing from tauri.conf.json");
+const generatedInstaller = resolve(
+  targetRoot,
+  "release",
+  "bundle",
+  "nsis",
+  `VisualTeX_${version}_x64-setup.exe`,
+);
+if (!existsSync(generatedInstaller)) {
+  throw new Error(`Expected NSIS installer is missing: ${generatedInstaller}`);
+}
+
+// 6. Verify the correct flavor and run the clean-directory installed-runtime
+// smoke. For the lightweight flavor, publish a distinct local artifact name only
+// after verification; the accepted full installer remains untouched.
+if (noOcrBundle) {
+  run(
+    powershell,
+    [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "scripts/verify_windows_no_ocr_installer.ps1",
+      "-InstallerPath",
+      generatedInstaller,
+    ],
+    flavorEnvironment,
+  );
+  if (process.env.VISUALTEX_SKIP_INSTALL_SMOKE !== "1") {
+    run(
+      powershell,
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "scripts/test_windows_installed_release.ps1",
+        "-InstallerPath",
+        generatedInstaller,
+      ],
+      flavorEnvironment,
+    );
+  }
+  const deliveryDirectory = resolve("src-tauri", "target", "release", "bundle", "nsis");
+  const deliveryInstaller = resolve(
+    deliveryDirectory,
+    `VisualTeX_${version}_x64-no-ocr-setup.exe`,
+  );
+  mkdirSync(deliveryDirectory, { recursive: true });
+  copyFileSync(generatedInstaller, deliveryInstaller);
+  console.log(`No-OCR installer copied without replacing the full installer: ${deliveryInstaller}`);
+} else {
   run(powershell, [
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
-    "scripts/test_windows_installed_release.ps1",
+    "scripts/verify_windows_release_artifacts.ps1",
   ]);
+  if (process.env.VISUALTEX_SKIP_INSTALL_SMOKE !== "1") {
+    run(powershell, [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "scripts/test_windows_installed_release.ps1",
+    ]);
+  }
 }

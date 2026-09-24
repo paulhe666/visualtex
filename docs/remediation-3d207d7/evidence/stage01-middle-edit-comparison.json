@@ -1,0 +1,306 @@
+[
+  {
+    "label": "stage01-three-omml",
+    "mathText": [
+      "a2+b2=c2",
+      "eiπ+1=0",
+      "-∞∞e-x2dx=π"
+    ],
+    "maths": [
+      {
+        "controlTags": [],
+        "type": 0,
+        "size": 10.5,
+        "start": 1,
+        "text": "<CR>𝑎<CR>2<CR>+<CR>𝑏<CR>2<CR>=<CR>𝑐<CR>2<CR>",
+        "index": 1,
+        "tables": 1,
+        "font": "Latin Modern Math",
+        "end": 21
+      },
+      {
+        "controlTags": [],
+        "type": 0,
+        "size": 10.5,
+        "start": 89,
+        "text": "<CR>e<CR>i𝜋<CR>+1=0",
+        "index": 2,
+        "tables": 1,
+        "font": "Latin Modern Math",
+        "end": 100
+      },
+      {
+        "controlTags": [],
+        "type": 0,
+        "size": 10.5,
+        "start": 168,
+        "text": "<CR>−∞<CR>∞<CR><CR>e<CR>−<CR>𝑥<CR>2<CR><CR><CR>d𝑥=<CR>𝜋<CR>",
+        "index": 3,
+        "tables": 1,
+        "font": "Latin Modern Math",
+        "end": 195
+      }
+    ],
+    "fields": [
+      {
+        "nested": 0,
+        "code": " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+        "result": "1",
+        "type": 12,
+        "start": 29,
+        "end": 84,
+        "index": 1
+      },
+      {
+        "nested": 0,
+        "code": " SEQ VisualTeXEquation \\r 2 \\* ARABIC \\* MERGEFORMAT ",
+        "result": "2",
+        "type": 12,
+        "start": 108,
+        "end": 163,
+        "index": 2
+      },
+      {
+        "nested": 0,
+        "code": " SEQ VisualTeXEquation \\r 3 \\* ARABIC \\* MERGEFORMAT ",
+        "result": "3",
+        "type": 12,
+        "start": 203,
+        "end": 258,
+        "index": 3
+      }
+    ],
+    "bookmarks": [
+      {
+        "end": 165,
+        "name": "VTEq_4204922a00de41ba9d64872c2471248e",
+        "text": "(0.0.2)",
+        "start": 102
+      },
+      {
+        "end": 86,
+        "name": "VTEq_4da6f5af34634cb48563a3873a50bad2",
+        "text": "(0.0.1)",
+        "start": 23
+      },
+      {
+        "end": 260,
+        "name": "VTEq_592333df2e994418adbe521cae7d357b",
+        "text": "(0.0.3)",
+        "start": 197
+      },
+      {
+        "end": 164,
+        "name": "VTEqCap_4204922a00de41ba9d64872c2471248e",
+        "text": "0.0.2",
+        "start": 103
+      },
+      {
+        "end": 85,
+        "name": "VTEqCap_4da6f5af34634cb48563a3873a50bad2",
+        "text": "0.0.1",
+        "start": 24
+      },
+      {
+        "end": 259,
+        "name": "VTEqCap_592333df2e994418adbe521cae7d357b",
+        "text": "0.0.3",
+        "start": 198
+      },
+      {
+        "end": 164,
+        "name": "VTEqNum_4204922a00de41ba9d64872c2471248e",
+        "text": "0.0.2",
+        "start": 103
+      },
+      {
+        "end": 85,
+        "name": "VTEqNum_4da6f5af34634cb48563a3873a50bad2",
+        "text": "0.0.1",
+        "start": 24
+      },
+      {
+        "end": 259,
+        "name": "VTEqNum_592333df2e994418adbe521cae7d357b",
+        "text": "0.0.3",
+        "start": 198
+      },
+      {
+        "end": 89,
+        "name": "VTOMML_4204922a00de41ba9d64872c2471248e",
+        "text": "",
+        "start": 89
+      },
+      {
+        "end": 1,
+        "name": "VTOMML_4da6f5af34634cb48563a3873a50bad2",
+        "text": "",
+        "start": 1
+      },
+      {
+        "end": 168,
+        "name": "VTOMML_592333df2e994418adbe521cae7d357b",
+        "text": "",
+        "start": 168
+      }
+    ],
+    "tables": [
+      [
+        3,
+        3
+      ]
+    ]
+  },
+  {
+    "label": "stage01-middle-edit",
+    "mathText": [
+      "a2+b2=c2",
+      "eiπ+1=0a2+b2=c2",
+      "-∞∞e-x2dx=π"
+    ],
+    "maths": [
+      {
+        "controlTags": [],
+        "type": 0,
+        "size": 10.5,
+        "start": 1,
+        "text": "<CR>𝑎<CR>2<CR>+<CR>𝑏<CR>2<CR>=<CR>𝑐<CR>2<CR>",
+        "index": 1,
+        "tables": 1,
+        "font": "Latin Modern Math",
+        "end": 21
+      },
+      {
+        "controlTags": [],
+        "type": 0,
+        "size": 10.5,
+        "start": 89,
+        "text": "<CR>e<CR>i𝜋<CR>+1=0<CR>𝑎<CR>2<CR>+<CR>𝑏<CR>2<CR>=<CR>𝑐<CR>2<CR>",
+        "index": 2,
+        "tables": 1,
+        "font": "Latin Modern Math",
+        "end": 120
+      },
+      {
+        "controlTags": [],
+        "type": 0,
+        "size": 10.5,
+        "start": 188,
+        "text": "<CR>−∞<CR>∞<CR><CR>e<CR>−<CR>𝑥<CR>2<CR><CR><CR>d𝑥=<CR>𝜋<CR>",
+        "index": 3,
+        "tables": 1,
+        "font": "Latin Modern Math",
+        "end": 215
+      }
+    ],
+    "fields": [
+      {
+        "nested": 0,
+        "code": " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+        "result": "1",
+        "type": 12,
+        "start": 29,
+        "end": 84,
+        "index": 1
+      },
+      {
+        "nested": 0,
+        "code": " SEQ VisualTeXEquation \\r 2 \\* ARABIC \\* MERGEFORMAT ",
+        "result": "2",
+        "type": 12,
+        "start": 128,
+        "end": 183,
+        "index": 2
+      },
+      {
+        "nested": 0,
+        "code": " SEQ VisualTeXEquation \\r 3 \\* ARABIC \\* MERGEFORMAT ",
+        "result": "3",
+        "type": 12,
+        "start": 223,
+        "end": 278,
+        "index": 3
+      }
+    ],
+    "bookmarks": [
+      {
+        "end": 185,
+        "name": "VTEq_4204922a00de41ba9d64872c2471248e",
+        "text": "(0.0.2)",
+        "start": 122
+      },
+      {
+        "end": 86,
+        "name": "VTEq_4da6f5af34634cb48563a3873a50bad2",
+        "text": "(0.0.1)",
+        "start": 23
+      },
+      {
+        "end": 280,
+        "name": "VTEq_592333df2e994418adbe521cae7d357b",
+        "text": "(0.0.3)",
+        "start": 217
+      },
+      {
+        "end": 184,
+        "name": "VTEqCap_4204922a00de41ba9d64872c2471248e",
+        "text": "0.0.2",
+        "start": 123
+      },
+      {
+        "end": 85,
+        "name": "VTEqCap_4da6f5af34634cb48563a3873a50bad2",
+        "text": "0.0.1",
+        "start": 24
+      },
+      {
+        "end": 279,
+        "name": "VTEqCap_592333df2e994418adbe521cae7d357b",
+        "text": "0.0.3",
+        "start": 218
+      },
+      {
+        "end": 184,
+        "name": "VTEqNum_4204922a00de41ba9d64872c2471248e",
+        "text": "0.0.2",
+        "start": 123
+      },
+      {
+        "end": 85,
+        "name": "VTEqNum_4da6f5af34634cb48563a3873a50bad2",
+        "text": "0.0.1",
+        "start": 24
+      },
+      {
+        "end": 279,
+        "name": "VTEqNum_592333df2e994418adbe521cae7d357b",
+        "text": "0.0.3",
+        "start": 218
+      },
+      {
+        "end": 89,
+        "name": "VTOMML_4204922a00de41ba9d64872c2471248e",
+        "text": "",
+        "start": 89
+      },
+      {
+        "end": 1,
+        "name": "VTOMML_4da6f5af34634cb48563a3873a50bad2",
+        "text": "",
+        "start": 1
+      },
+      {
+        "end": 188,
+        "name": "VTOMML_592333df2e994418adbe521cae7d357b",
+        "text": "",
+        "start": 188
+      }
+    ],
+    "tables": [
+      [
+        3,
+        3
+      ]
+    ]
+  }
+]

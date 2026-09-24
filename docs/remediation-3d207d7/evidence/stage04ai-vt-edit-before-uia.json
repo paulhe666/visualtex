@@ -1,0 +1,1019 @@
+[
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1053,712,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX Native Office Formula Editor",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1053,712,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1053,712,1734,720",
+        "value":  "",
+        "enabled":  false
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX Native Office Formula Editor - Web 内容",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1053,713,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1053,713,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "Empty",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1053,713,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "1053,713,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "RootWebArea",
+        "name":  "VisualTeX Native Office Formula Editor",
+        "offscreen":  false,
+        "type":  "ControlType.Document",
+        "rect":  "1053,713,1734,720",
+        "value":  "https://127.0.0.1:43127/dialog?runtime=vsto-desktop\u0026sessionId=89b639ff-5880-4c95-bceb-5df2ab7887e6",
+        "enabled":  true
+    },
+    {
+        "id":  "root",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1053,713,1734,720",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1053,713,1734,687",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1053,713,1734,69",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "Word 公式排版",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1062,724,119,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "行内",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1064,726,58,42",
+        "value":  "",
+        "enabled":  false
+    },
+    {
+        "id":  "",
+        "name":  "行间",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1121,726,58,42",
+        "value":  "",
+        "enabled":  false
+    },
+    {
+        "id":  "",
+        "name":  "选择本次编辑后继续保持 Word OMML，或转换为 VisualTeX OLE",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1190,724,189,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "保存为",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1198,736,46,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式对象格式",
+        "offscreen":  false,
+        "type":  "ControlType.ComboBox",
+        "rect":  "1248,727,138,40",
+        "value":  "VisualTeX OLE",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式字号",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1388,724,189,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "字号",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1396,736,31,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式字号",
+        "offscreen":  false,
+        "type":  "ControlType.ComboBox",
+        "rect":  "1431,727,138,40",
+        "value":  "五号（10.5 磅）",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "编号",
+        "offscreen":  false,
+        "type":  "ControlType.CheckBox",
+        "rect":  "1592,736,21,22",
+        "value":  "On",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "编号",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1626,736,31,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "操作逻辑",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1939,724,127,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1948,736,17,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "在公式输入框中粘贴图片时使用的 OCR 模型",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2073,724,186,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2083,736,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OCR 识别模型",
+        "offscreen":  false,
+        "type":  "ControlType.ComboBox",
+        "rect":  "2108,727,151,40",
+        "value":  "均衡版 M（推荐）",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "缩小公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2267,726,43,42",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2278,736,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2311,736,51,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "60",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2324,739,17,16",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "%",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2340,739,9,16",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "放大公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2363,726,43,42",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2374,736,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "历史操作",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2412,724,366,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OCR",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2412,724,91,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2427,735,23,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "撤销",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2507,724,46,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2518,735,24,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "重做",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2557,724,45,46",
+        "value":  "",
+        "enabled":  false
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2567,735,25,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "取消",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2618,724,63,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "更新公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2685,724,93,46",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "第 1 行公式",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1070,792,182,71",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " \u0027capital E\u0027 equals \u0027M\u0027 \u0027C\u0027 squared ",
+        "offscreen":  false,
+        "type":  "ControlType.Edit",
+        "rect":  "Empty",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1076,793,170,69",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  true,
+        "type":  "ControlType.StatusBar",
+        "rect":  "1069,865,2,3",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "调整公式工具与源码区高度",
+        "offscreen":  false,
+        "type":  "ControlType.Thumb",
+        "rect":  "1053,1083,1394,11",
+        "value":  "204",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式工具与 LaTeX 源码",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1053,1094,1394,306",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "底部编辑面板",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1053,1095,1394,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式对齐与格式",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1062,1095,332,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式对齐方式",
+        "offscreen":  false,
+        "type":  "ControlType.ToolBar",
+        "rect":  "1065,1096,329,43",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "左对齐",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1065,1096,42,43",
+        "value":  "On",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1074,1105,24,25",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "居中",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1110,1096,42,43",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1119,1105,24,25",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "右对齐",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1155,1096,42,43",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1164,1105,24,25",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式格式",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1216,1096,178,43",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "切换选中内容的粗体状态",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1216,1096,43,43",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1226,1106,23,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "切换选中内容的斜体或正体状态",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1261,1096,43,43",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1271,1106,23,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "选中内容字体颜色",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1306,1096,43,43",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1316,1106,23,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "选中内容字体背景颜色",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "1351,1096,43,43",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1361,1106,23,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "底部编辑面板",
+        "offscreen":  false,
+        "type":  "ControlType.Tab",
+        "rect":  "1607,1095,286,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式工具",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "1607,1095,142,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1631,1107,22,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "LaTeX 源码",
+        "offscreen":  false,
+        "type":  "ControlType.TabItem",
+        "rect":  "1751,1095,142,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "1767,1107,22,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "复制 LaTeX 源码",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2355,1095,39,40",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2364,1104,21,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "收起公式工具与源码",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2398,1095,40,40",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2407,1104,22,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1054,-14287,1392,15686",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1054,1141,1392,258",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Edit",
+        "rect":  "1129,1141,1294,258",
+        "value":  "E=mc^{2}",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "E=mc",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1135,1159,40,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "^",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1174,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "{",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1184,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "2",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1194,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "}",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1204,1159,11,22",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "调整公式磁贴区宽度",
+        "offscreen":  false,
+        "type":  "ControlType.Thumb",
+        "rect":  "2446,782,11,618",
+        "value":  "220",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式工具栏",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2457,782,330,618",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式磁贴",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2458,782,329,618",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "磁贴分类",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2458,782,329,55",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "自定义",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2470,782,132,54",
+        "value":  "Off",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "常用",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2601,782,132,54",
+        "value":  "On",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "收起公式磁贴",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2733,782,42,54",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2742,797,24,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "一元二次方程求根公式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2470,849,282,94",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "欧拉恒等式",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2470,953,282,93",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "勾股定理",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2470,1056,282,93",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "二项式定理",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2470,1158,282,100",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "高斯积分",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2470,1267,282,108",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "泰勒展开",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2470,1385,282,98",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "质能方程",
+        "offscreen":  true,
+        "type":  "ControlType.Button",
+        "rect":  "2470,1492,282,93",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "含时薛定谔方程",
+        "offscreen":  true,
+        "type":  "ControlType.Button",
+        "rect":  "2470,1595,282,110",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "高斯定律",
+        "offscreen":  true,
+        "type":  "ControlType.Button",
+        "rect":  "2470,1714,282,113",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "矩阵特征方程",
+        "offscreen":  true,
+        "type":  "ControlType.Button",
+        "rect":  "2470,1836,282,88",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1053,1400,1734,33",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "就绪",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1086,1405,33,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "1",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2678,1405,10,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2687,1405,5,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "行",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2691,1405,18,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "· ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2717,1405,9,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "8",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2725,1405,10,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " ",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2734,1405,5,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "字符",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2739,1405,33,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "Empty",
+        "value":  "",
+        "enabled":  true
+    }
+]

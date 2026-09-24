@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  266846,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  397908,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  856656,
+        "name":  "A numbered OMML table disappeared before row grouping.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

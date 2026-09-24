@@ -1,7 +1,7 @@
 {
   "name": "visualtex-windows",
   "private": true,
-  "version": "1.2.6",
+  "version": "1.2.7",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -18,6 +18,7 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "node scripts/tauri_build.mjs",
+    "tauri:build:no-ocr": "node scripts/tauri_build.mjs --no-ocr-bundle",
     "clean:windows-release": "node scripts/clean_windows_release_outputs.mjs",
     "clean:windows-local:dry-run": "node scripts/clean_windows_release_outputs.mjs --acceptance --dry-run",
     "clean:windows-local": "node scripts/clean_windows_release_outputs.mjs --acceptance",

@@ -98,6 +98,7 @@ interface OcrDialogProps {
   onInsert: (latex: string) => void;
   onAppend: (latex: string) => void;
   onNotify: (message: string) => void;
+  onProviderConfigurationChange?: (configuration: OcrProviderConfiguration) => void;
 }
 
 function readableBytes(bytes: number) {
@@ -220,6 +221,7 @@ export function OcrDialog({
   onInsert,
   onAppend,
   onNotify,
+  onProviderConfigurationChange,
 }: OcrDialogProps) {
   const isEn = language === "en";
   const dialogRef = useRef<HTMLElement>(null);
@@ -231,6 +233,7 @@ export function OcrDialog({
   const installingRef = useRef(false);
   const modelCancelRequestedRef = useRef(false);
   const runtimeRequestGenerationRef = useRef(0);
+  const providerRequestGenerationRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const objectUrlRef = useRef<string | null>(null);
   const [runtime, setRuntime] = useState<OcrRuntimeStatus | null>(null);
@@ -380,15 +383,20 @@ export function OcrDialog({
   }, [isEn]);
 
   const refreshProviderConfiguration = useCallback(async () => {
+    const requestGeneration = ++providerRequestGenerationRef.current;
     if (!isTauriEnvironment() && !isOfficeCompanionEnvironment()) {
-      setProviderConfiguration(FALLBACK_OCR_PROVIDER_CONFIGURATION);
-      setProviderLoaded(true);
-      setProviderDirty(false);
+      if (requestGeneration === providerRequestGenerationRef.current) {
+        setProviderConfiguration(FALLBACK_OCR_PROVIDER_CONFIGURATION);
+        setProviderLoaded(true);
+        setProviderDirty(false);
+      }
       return;
     }
     try {
       const configuration = await getOcrProviderConfiguration();
+      if (requestGeneration !== providerRequestGenerationRef.current) return;
       setProviderConfiguration(configuration);
+      onProviderConfigurationChange?.(configuration);
       setOpenAiApiKey("");
       setClearOpenAiApiKey(false);
       setMathpixAppKey("");
@@ -399,6 +407,7 @@ export function OcrDialog({
       setClearSimpleTexAccessToken(false);
       setProviderDirty(false);
     } catch (providerError) {
+      if (requestGeneration !== providerRequestGenerationRef.current) return;
       // Keep a complete editable fallback visible so a damaged native provider
       // configuration can be repaired by one explicit Save instead of trapping
       // the user behind a permanently disabled settings screen.
@@ -414,9 +423,11 @@ export function OcrDialog({
       setProviderDirty(true);
       setError(readError(providerError));
     } finally {
-      setProviderLoaded(true);
+      if (requestGeneration === providerRequestGenerationRef.current) {
+        setProviderLoaded(true);
+      }
     }
-  }, []);
+  }, [onProviderConfigurationChange]);
 
   const updateProviderConfiguration = useCallback(
     (update: (current: OcrProviderConfiguration) => OcrProviderConfiguration) => {
@@ -464,6 +475,7 @@ export function OcrDialog({
         },
       });
       setProviderConfiguration(saved);
+      onProviderConfigurationChange?.(saved);
       setOpenAiApiKey("");
       setClearOpenAiApiKey(false);
       setMathpixAppKey("");
@@ -491,6 +503,7 @@ export function OcrDialog({
     isEn,
     mathpixAppKey,
     onNotify,
+    onProviderConfigurationChange,
     openAiApiKey,
     paddleOcrAccessToken,
     providerConfiguration,
@@ -555,31 +568,48 @@ export function OcrDialog({
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setProviderLoaded(false);
+      return;
+    }
     setError("");
 
     let cancelled = false;
     const frame = window.requestAnimationFrame(() => {
       if (cancelled) return;
-      // Re-read the pointer and actual runtime files every time the dialog is
-      // opened. Keeping the previous React object here made a changed path or
-      // deleted environment appear unchanged after reopening the dialog.
+      // Provider configuration is the only state every OCR mode needs. Local
+      // Python/model checks are deferred to the local-provider effect below, so
+      // opening this dialog while an API provider is active does not scan the
+      // Paddle environment or model catalog at all.
       void refreshProviderConfiguration();
-      void refreshRuntime(false);
-      void refreshInstallStatus();
-      void refreshModelCatalog();
     });
     return () => {
       cancelled = true;
+      providerRequestGenerationRef.current += 1;
       runtimeRequestGenerationRef.current += 1;
       window.cancelAnimationFrame(frame);
     };
+  }, [open, refreshProviderConfiguration]);
+
+  useEffect(() => {
+    if (!open || !providerLoaded) return;
+    if (!usingLocalProvider) {
+      // Ignore a slow local status response if the user switches to an API while
+      // that check is still resolving.
+      runtimeRequestGenerationRef.current += 1;
+      setCheckingRuntime(false);
+      return;
+    }
+    void refreshRuntime(false);
+    void refreshInstallStatus();
+    void refreshModelCatalog();
   }, [
     open,
+    providerLoaded,
     refreshInstallStatus,
     refreshModelCatalog,
-    refreshProviderConfiguration,
     refreshRuntime,
+    usingLocalProvider,
   ]);
 
   useEffect(() => {

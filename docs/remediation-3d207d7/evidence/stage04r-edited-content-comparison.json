@@ -1,0 +1,32 @@
+[
+  {
+    "index": 1,
+    "sameText": true,
+    "actual": "<CR>𝐸−𝑢(𝑥)<CR>=<CR>1<CR>𝑓(𝜔)<CR>𝑣<CR>𝑝ℎ<CR>(𝜔,𝑥)<CR>"
+  },
+  {
+    "index": 2,
+    "sameText": true,
+    "actual": "<CR><CR><CR>d<CR>d𝜔<CR>(𝜔𝑓(𝜔))=0<CR><CR>𝜔𝑓(𝜔)<CR>2<CR><CR>d𝐸(𝜔)<CR>d𝜔<CR>=<CR><CR>𝑚<CR>2<CR><CR><CR><CR>"
+  },
+  {
+    "index": 3,
+    "sameText": false,
+    "actual": "𝐸=𝑚<CR>𝑐<CR>2<CR>"
+  },
+  {
+    "index": 4,
+    "sameText": true,
+    "actual": "𝑖ℏ<CR>𝜕<CR>𝜕𝑡<CR>𝜓(𝐫,𝑡)=[−<CR><CR>ℏ<CR>2<CR><CR>2𝑚<CR><CR>∇<CR>2<CR>+𝑉(𝐫,𝑡)]𝜓(𝐫,𝑡)"
+  },
+  {
+    "index": 5,
+    "sameText": true,
+    "actual": "<CR>𝜕<CR>𝜕𝑡<CR><CR>𝜓<CR>∗<CR>(<CR>𝑟<CR>)𝜓(<CR>𝑟<CR>)=<CR>𝑖ℏ<CR>2𝑚<CR>∇⋅[<CR>𝜓<CR>∗<CR>(<CR>𝑟<CR>)∇𝜓(<CR>𝑟<CR>)−𝜓(<CR>𝑟<CR>)∇<CR>𝜓<CR>∗<CR>(𝑟)]"
+  },
+  {
+    "index": 6,
+    "sameText": true,
+    "actual": "<CR>𝜕<CR>𝜕𝑡<CR>𝜌(<CR>𝑟<CR>,𝑡)+∇⋅<CR>𝑗<CR>=0"
+  }
+]

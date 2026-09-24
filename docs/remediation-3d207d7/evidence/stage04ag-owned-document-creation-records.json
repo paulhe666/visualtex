@@ -1,0 +1,377 @@
+[
+  {
+    "pid": null,
+    "label": "baseline-row-edit",
+    "stdout": "NEW_DOCUMENT|文档71|baseline-row-edit"
+  },
+  {
+    "pid": 59000,
+    "label": "stage01-row-edit",
+    "stdout": "NEW_DOCUMENT|文档3|stage01-row-edit"
+  },
+  {
+    "pid": 48952,
+    "label": "stage01b-row-matrix",
+    "stdout": "NEW_DOCUMENT|文档5|stage01b-row-matrix"
+  },
+  {
+    "pid": 48952,
+    "label": "stage01b-nx3-edges",
+    "stdout": "NEW_DOCUMENT|文档8|stage01b-nx3-edges"
+  },
+  {
+    "pid": 27256,
+    "label": "stage01c-row-font",
+    "stdout": "NEW_DOCUMENT|文档7|stage01c-row-font"
+  },
+  {
+    "pid": 20148,
+    "label": "stage01d-font",
+    "stdout": "NEW_DOCUMENT|文档10|stage01d-font"
+  },
+  {
+    "pid": 45060,
+    "label": "stage01e-bulk-A",
+    "stdout": "NEW_DOCUMENT|文档12|stage01e-bulk-A"
+  },
+  {
+    "pid": 45060,
+    "label": "stage01e-bulk-B",
+    "stdout": "NEW_DOCUMENT|文档13|stage01e-bulk-B"
+  },
+  {
+    "pid": 31292,
+    "label": "stage02-vt-tail",
+    "stdout": "NEW_DOCUMENT|文档15|stage02-vt-tail"
+  },
+  {
+    "pid": 60152,
+    "label": "stage02b-vt-tail",
+    "stdout": "NEW_DOCUMENT|文档17|stage02b-vt-tail"
+  },
+  {
+    "pid": 55728,
+    "label": "stage02c-vt-tail",
+    "stdout": "NEW_DOCUMENT|文档19|stage02c-vt-tail"
+  },
+  {
+    "pid": 61960,
+    "label": "stage02d-vt-tail",
+    "stdout": "NEW_DOCUMENT|文档21|stage02d-vt-tail"
+  },
+  {
+    "pid": 63424,
+    "label": "stage02e-vt-tail",
+    "stdout": "NEW_DOCUMENT|文档24|stage02e-vt-tail"
+  },
+  {
+    "pid": 63624,
+    "label": "stage02f-vt-tail",
+    "stdout": "NEW_DOCUMENT|文档27|stage02f-vt-tail"
+  },
+  {
+    "pid": 62856,
+    "label": "stage02g-vt-tail",
+    "stdout": ""
+  },
+  {
+    "pid": 62856,
+    "label": "stage02g-vt-tail",
+    "stdout": "NEW_DOCUMENT|文档31|stage02g-vt-tail"
+  },
+  {
+    "pid": 27668,
+    "label": "stage02h-vt-tail",
+    "stdout": "NEW_DOCUMENT|文档34|stage02h-vt-tail"
+  },
+  {
+    "pid": 65336,
+    "label": "stage02i-vt-tail",
+    "stdout": "NEW_DOCUMENT|文档39|stage02i-vt-tail"
+  },
+  {
+    "pid": 65336,
+    "label": "stage02i-vt-prose-reference",
+    "stdout": "NEW_DOCUMENT|文档41|stage02i-vt-prose-reference"
+  },
+  {
+    "pid": 43732,
+    "label": "stage03-reference",
+    "stdout": "NEW_DOCUMENT|文档46|stage03-reference"
+  },
+  {
+    "pid": 67956,
+    "label": "stage03b-reference",
+    "stdout": "NEW_DOCUMENT|文档60|stage03b-reference"
+  },
+  {
+    "pid": 68872,
+    "label": "stage03c-reference",
+    "stdout": "NEW_DOCUMENT|文档67|stage03c-reference"
+  },
+  {
+    "pid": 20052,
+    "label": "stage03d-reference",
+    "stdout": "NEW_DOCUMENT|文档73|stage03d-reference"
+  },
+  {
+    "pid": 27764,
+    "label": "stage03e-reference",
+    "stdout": "NEW_DOCUMENT|文档75|stage03e-reference"
+  },
+  {
+    "pid": 67744,
+    "label": "stage03f-reference",
+    "stdout": "NEW_DOCUMENT|文档77|stage03f-reference"
+  },
+  {
+    "pid": 31432,
+    "label": "stage03g-reference",
+    "stdout": "NEW_DOCUMENT|文档79|stage03g-reference"
+  },
+  {
+    "pid": 68776,
+    "label": "stage03h-reference",
+    "stdout": "NEW_DOCUMENT|文档81|stage03h-reference"
+  },
+  {
+    "pid": 68776,
+    "label": "stage03h-mathtype-cases",
+    "stdout": "NEW_DOCUMENT|文档83|stage03h-mathtype-cases"
+  },
+  {
+    "pid": 68776,
+    "label": "stage03h-mathtype-cases-actual",
+    "stdout": "NEW_DOCUMENT|文档84|stage03h-mathtype-cases-actual"
+  },
+  {
+    "pid": 71976,
+    "label": "stage03i-mathtype-adjacent",
+    "stdout": "NEW_DOCUMENT|文档85|stage03i-mathtype-adjacent"
+  },
+  {
+    "pid": 71660,
+    "label": "stage03j-mathtype-tail",
+    "stdout": "NEW_DOCUMENT|文档87|stage03j-mathtype-tail"
+  },
+  {
+    "pid": 75740,
+    "label": "stage03k-native-edit",
+    "stdout": ""
+  },
+  {
+    "pid": 75740,
+    "label": "stage03k-native-edit",
+    "stdout": "NEW_DOCUMENT|文档89|stage03k-native-edit"
+  },
+  {
+    "pid": 75740,
+    "label": "stage04-redraw-before-fix",
+    "stdout": "NEW_DOCUMENT|文档90|stage04-redraw-before-fix"
+  },
+  {
+    "pid": 78632,
+    "label": "stage04a-omml-soft",
+    "stdout": "NEW_DOCUMENT|文档92|stage04a-omml-soft"
+  },
+  {
+    "pid": 78632,
+    "label": "stage04a-vt-soft",
+    "stdout": "NEW_DOCUMENT|文档93|stage04a-vt-soft"
+  },
+  {
+    "pid": 78632,
+    "label": "stage04a-mt-soft",
+    "stdout": "NEW_DOCUMENT|文档94|stage04a-mt-soft"
+  },
+  {
+    "pid": 78632,
+    "label": "stage04a-multiline",
+    "stdout": "NEW_DOCUMENT|文档95|stage04a-multiline"
+  },
+  {
+    "pid": 69024,
+    "label": "stage04b-multiline",
+    "stdout": "NEW_DOCUMENT|文档97|stage04b-multiline"
+  },
+  {
+    "pid": 59088,
+    "label": "stage04c-reference-font",
+    "stdout": "NEW_DOCUMENT|文档99|stage04c-reference-font"
+  },
+  {
+    "pid": 81992,
+    "label": "stage04d-western-body",
+    "stdout": "NEW_DOCUMENT|文档101|stage04d-western-body"
+  },
+  {
+    "pid": 75288,
+    "label": "stage04e-inherited-aliases",
+    "stdout": "NEW_DOCUMENT|文档103|stage04e-inherited-aliases"
+  },
+  {
+    "pid": 75288,
+    "label": "stage04e-distinct-body-size",
+    "stdout": "NEW_DOCUMENT|文档106|stage04e-distinct-body-size"
+  },
+  {
+    "pid": 75288,
+    "label": "stage04e-distinct-body-size-retry",
+    "stdout": "NEW_DOCUMENT|文档107|stage04e-distinct-body-size-retry"
+  },
+  {
+    "pid": 14912,
+    "label": "stage04g-distinct-size",
+    "stdout": "NEW_DOCUMENT|文档108|stage04g-distinct-size"
+  },
+  {
+    "pid": 70976,
+    "label": "stage04h-distinct-size",
+    "stdout": "NEW_DOCUMENT|文档110|stage04h-distinct-size"
+  },
+  {
+    "pid": 70976,
+    "label": "stage04h-native-mathtype-control",
+    "stdout": "NEW_DOCUMENT|文档111|stage04h-native-mathtype-control"
+  },
+  {
+    "pid": 20812,
+    "label": "stage04i-native-compat",
+    "stdout": "NEW_DOCUMENT|文档113|stage04i-native-compat"
+  },
+  {
+    "pid": 87080,
+    "label": "stage04j-recovery-control",
+    "stdout": "NEW_DOCUMENT|文档115|stage04j-recovery-control"
+  },
+  {
+    "pid": 79048,
+    "label": "stage04k-identical",
+    "stdout": "NEW_DOCUMENT|文档117|stage04k-identical"
+  },
+  {
+    "pid": 88240,
+    "label": "stage04l-identical",
+    "stdout": "NEW_DOCUMENT|文档119|stage04l-identical"
+  },
+  {
+    "pid": 90792,
+    "label": "stage04m-native-style-continuation",
+    "stdout": "NEW_DOCUMENT|文档120|stage04m-native-style-continuation"
+  },
+  {
+    "pid": 90792,
+    "label": "stage04m-mt-import",
+    "stdout": "NEW_DOCUMENT|文档122|stage04m-mt-import"
+  },
+  {
+    "pid": 75316,
+    "label": "stage04m-debug-import",
+    "stdout": "NEW_DOCUMENT|文档123|stage04m-debug-import"
+  },
+  {
+    "pid": 84748,
+    "label": "stage04n-mt-import",
+    "stdout": "NEW_DOCUMENT|文档125|stage04n-mt-import"
+  },
+  {
+    "pid": 82668,
+    "label": "stage04o-mt-import",
+    "stdout": "NEW_DOCUMENT|文档127|stage04o-mt-import"
+  },
+  {
+    "pid": 82668,
+    "label": "stage04o-omml-empty",
+    "stdout": "NEW_DOCUMENT|文档131|stage04o-omml-empty"
+  },
+  {
+    "pid": 70992,
+    "label": "stage04p-mt-import",
+    "stdout": "NEW_DOCUMENT|文档127|stage04p-mt-import"
+  },
+  {
+    "pid": 84536,
+    "label": "stage04q-mt-matrix",
+    "stdout": "NEW_DOCUMENT|文档129|stage04q-mt-matrix"
+  },
+  {
+    "pid": 84580,
+    "label": "stage04r-omml-empty",
+    "stdout": "NEW_DOCUMENT|文档132|stage04r-omml-empty"
+  },
+  {
+    "pid": 79736,
+    "label": "stage04s-vt-empty",
+    "stdout": "NEW_DOCUMENT|文档134|stage04s-vt-empty"
+  },
+  {
+    "pid": 100440,
+    "label": "stage04t-vt-empty",
+    "stdout": "NEW_DOCUMENT|文档136|stage04t-vt-empty"
+  },
+  {
+    "pid": 101980,
+    "label": "stage04u-recovery",
+    "stdout": "NEW_DOCUMENT|文档138|stage04u-recovery"
+  },
+  {
+    "pid": 101568,
+    "label": "stage04w-vt",
+    "stdout": ""
+  },
+  {
+    "pid": 101568,
+    "label": "stage04w-vt",
+    "stdout": "NEW_DOCUMENT|文档140|stage04w-vt"
+  },
+  {
+    "pid": 100856,
+    "label": "stage04x-vt",
+    "stdout": ""
+  },
+  {
+    "pid": 100856,
+    "label": "stage04x-vt",
+    "stdout": "NEW_DOCUMENT|文档142|stage04x-vt"
+  },
+  {
+    "pid": 105892,
+    "label": "stage04y-omml",
+    "stdout": "NEW_DOCUMENT|文档144|stage04y-omml"
+  },
+  {
+    "pid": 85192,
+    "label": "stage04z-omml",
+    "stdout": "NEW_DOCUMENT|文档146|stage04z-omml"
+  },
+  {
+    "pid": 85192,
+    "label": "stage04z-edited",
+    "stdout": "NEW_DOCUMENT|文档147|stage04z-edited"
+  },
+  {
+    "pid": 87408,
+    "label": "stage04aa-edited",
+    "stdout": "NEW_DOCUMENT|文档149|stage04aa-edited"
+  },
+  {
+    "pid": 27936,
+    "label": "stage04ab-omml",
+    "stdout": "NEW_DOCUMENT|文档151|stage04ab-omml"
+  },
+  {
+    "pid": 109548,
+    "label": "stage04ac-seeded-omml",
+    "stdout": "NEW_DOCUMENT|文档153|stage04ac-seeded-omml"
+  },
+  {
+    "pid": 108116,
+    "label": "stage04ae-vt",
+    "stdout": "NEW_DOCUMENT|文档155|stage04ae-vt"
+  },
+  {
+    "pid": 81452,
+    "label": "stage04af-vt",
+    "stdout": "NEW_DOCUMENT|文档157|stage04af-vt"
+  }
+]

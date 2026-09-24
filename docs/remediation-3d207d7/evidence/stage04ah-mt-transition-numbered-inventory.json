@@ -1,0 +1,730 @@
+{
+    "build":  "16.0.14334",
+    "version":  "16.0",
+    "statusBar":  "",
+    "active":  "文档7",
+    "documents":  [
+                      {
+                          "name":  "文档7",
+                          "key":  "stage04ah-mt-transition-numbered-__7",
+                          "saved":  false,
+                          "end":  1481,
+                          "paragraphs":  17,
+                          "tables":  [
+
+                                     ],
+                          "maths":  [
+
+                                    ],
+                          "shapes":  [
+                                         {
+                                             "start":  54,
+                                             "alternative":  null,
+                                             "width":  124.05,
+                                             "index":  1,
+                                             "type":  1,
+                                             "height":  32.05,
+                                             "prog":  "Equation.DSMT4",
+                                             "end":  80
+                                         },
+                                         {
+                                             "start":  82,
+                                             "alternative":  null,
+                                             "width":  100.9,
+                                             "index":  2,
+                                             "type":  1,
+                                             "height":  60.95,
+                                             "prog":  "Equation.DSMT4",
+                                             "end":  108
+                                         },
+                                         {
+                                             "start":  317,
+                                             "alternative":  null,
+                                             "width":  198.9,
+                                             "index":  3,
+                                             "type":  1,
+                                             "height":  34.95,
+                                             "prog":  "Equation.DSMT4",
+                                             "end":  343
+                                         },
+                                         {
+                                             "start":  737,
+                                             "alternative":  null,
+                                             "width":  171.05,
+                                             "index":  4,
+                                             "type":  1,
+                                             "height":  33.1,
+                                             "prog":  "Equation.DSMT4",
+                                             "end":  763
+                                         },
+                                         {
+                                             "start":  980,
+                                             "alternative":  null,
+                                             "width":  239.9,
+                                             "index":  5,
+                                             "type":  1,
+                                             "height":  28.1,
+                                             "prog":  "Equation.DSMT4",
+                                             "end":  1006
+                                         },
+                                         {
+                                             "start":  1233,
+                                             "alternative":  null,
+                                             "width":  88.05,
+                                             "index":  6,
+                                             "type":  1,
+                                             "height":  28.1,
+                                             "prog":  "Equation.DSMT4",
+                                             "end":  1259
+                                         }
+                                     ],
+                          "controls":  [
+
+                                       ],
+                          "fields":  [
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED Equation.DSMT4 ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  55,
+                                             "end":  79,
+                                             "index":  1
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED Equation.DSMT4 ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  83,
+                                             "end":  107,
+                                             "index":  2
+                                         },
+                                         {
+                                             "nested":  4,
+                                             "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT \u0015-\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                                             "result":  "",
+                                             "type":  51,
+                                             "start":  110,
+                                             "end":  315,
+                                             "index":  3
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                                             "result":  "",
+                                             "type":  12,
+                                             "start":  150,
+                                             "end":  180,
+                                             "index":  4
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "0",
+                                             "type":  12,
+                                             "start":  182,
+                                             "end":  224,
+                                             "index":  5
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "0",
+                                             "type":  12,
+                                             "start":  227,
+                                             "end":  268,
+                                             "index":  6
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "1",
+                                             "type":  12,
+                                             "start":  271,
+                                             "end":  312,
+                                             "index":  7
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED Equation.DSMT4 ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  318,
+                                             "end":  342,
+                                             "index":  8
+                                         },
+                                         {
+                                             "nested":  4,
+                                             "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT \u0015-\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                                             "result":  "",
+                                             "type":  51,
+                                             "start":  345,
+                                             "end":  550,
+                                             "index":  9
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                                             "result":  "",
+                                             "type":  12,
+                                             "start":  385,
+                                             "end":  415,
+                                             "index":  10
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "0",
+                                             "type":  12,
+                                             "start":  417,
+                                             "end":  459,
+                                             "index":  11
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "0",
+                                             "type":  12,
+                                             "start":  462,
+                                             "end":  503,
+                                             "index":  12
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "2",
+                                             "type":  12,
+                                             "start":  506,
+                                             "end":  547,
+                                             "index":  13
+                                         },
+                                         {
+                                             "nested":  3,
+                                             "code":  " MACROBUTTON MTEditEquationSection2 公式章 2 节 0\u0013 SEQ MTEqn \\r \\h \\* MERGEFORMAT \u0015\u0013 SEQ MTSec \\r 0 \\h \\* MERGEFORMAT \u0015\u0013 SEQ MTChap \\r 2 \\h \\* MERGEFORMAT \u0015",
+                                             "result":  "",
+                                             "type":  51,
+                                             "start":  574,
+                                             "end":  727,
+                                             "index":  14
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\r \\h \\* MERGEFORMAT ",
+                                             "result":  "",
+                                             "type":  12,
+                                             "start":  620,
+                                             "end":  653,
+                                             "index":  15
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTSec \\r 0 \\h \\* MERGEFORMAT ",
+                                             "result":  "",
+                                             "type":  12,
+                                             "start":  654,
+                                             "end":  689,
+                                             "index":  16
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTChap \\r 2 \\h \\* MERGEFORMAT ",
+                                             "result":  "",
+                                             "type":  12,
+                                             "start":  690,
+                                             "end":  726,
+                                             "index":  17
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED Equation.DSMT4 ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  738,
+                                             "end":  762,
+                                             "index":  18
+                                         },
+                                         {
+                                             "nested":  4,
+                                             "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT \u0015-\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                                             "result":  "",
+                                             "type":  51,
+                                             "start":  765,
+                                             "end":  970,
+                                             "index":  19
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                                             "result":  "",
+                                             "type":  12,
+                                             "start":  805,
+                                             "end":  835,
+                                             "index":  20
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "2",
+                                             "type":  12,
+                                             "start":  837,
+                                             "end":  879,
+                                             "index":  21
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "0",
+                                             "type":  12,
+                                             "start":  882,
+                                             "end":  923,
+                                             "index":  22
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "1",
+                                             "type":  12,
+                                             "start":  926,
+                                             "end":  967,
+                                             "index":  23
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED Equation.DSMT4 ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  981,
+                                             "end":  1005,
+                                             "index":  24
+                                         },
+                                         {
+                                             "nested":  4,
+                                             "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT \u0015-\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                                             "result":  "",
+                                             "type":  51,
+                                             "start":  1008,
+                                             "end":  1213,
+                                             "index":  25
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                                             "result":  "",
+                                             "type":  12,
+                                             "start":  1048,
+                                             "end":  1078,
+                                             "index":  26
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "2",
+                                             "type":  12,
+                                             "start":  1080,
+                                             "end":  1122,
+                                             "index":  27
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "0",
+                                             "type":  12,
+                                             "start":  1125,
+                                             "end":  1166,
+                                             "index":  28
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "2",
+                                             "type":  12,
+                                             "start":  1169,
+                                             "end":  1210,
+                                             "index":  29
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " EMBED Equation.DSMT4 ",
+                                             "result":  "\u0001",
+                                             "type":  58,
+                                             "start":  1234,
+                                             "end":  1258,
+                                             "index":  30
+                                         },
+                                         {
+                                             "nested":  4,
+                                             "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u0015.\u0013 SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT \u0015-\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                                             "result":  "",
+                                             "type":  51,
+                                             "start":  1261,
+                                             "end":  1466,
+                                             "index":  31
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\h \\* MERGEFORMAT ",
+                                             "result":  "",
+                                             "type":  12,
+                                             "start":  1301,
+                                             "end":  1331,
+                                             "index":  32
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "2",
+                                             "type":  12,
+                                             "start":  1333,
+                                             "end":  1375,
+                                             "index":  33
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTSec \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "0",
+                                             "type":  12,
+                                             "start":  1378,
+                                             "end":  1419,
+                                             "index":  34
+                                         },
+                                         {
+                                             "nested":  0,
+                                             "code":  " SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT ",
+                                             "result":  "3",
+                                             "type":  12,
+                                             "start":  1422,
+                                             "end":  1463,
+                                             "index":  35
+                                         }
+                                     ],
+                          "bookmarks":  [
+
+                                        ],
+                          "paras":  [
+                                        {
+                                            "start":  0,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  1,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  15,
+                                            "lineRule":  0,
+                                            "text":  "思考分析力学被发明出来的原因\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  15,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  2,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  31,
+                                            "lineRule":  0,
+                                            "text":  "系统有很多约束，解决多约束问题\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  31,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  3,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  42,
+                                            "lineRule":  0,
+                                            "text":  "力学和光学统一起来？\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  42,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  4,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  81,
+                                            "lineRule":  0,
+                                            "text":  "这几个公式不知道对不对：\u0001\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  81,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  5,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  316,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  316,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  6,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  551,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  551,
+                                            "line":  28.9,
+                                            "alignment":  3,
+                                            "index":  7,
+                                            "hidden":  0,
+                                            "before":  17,
+                                            "after":  16.5,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  557,
+                                            "lineRule":  5,
+                                            "text":  "薛定谔方程\u003cCR\u003e",
+                                            "size":  22
+                                        },
+                                        {
+                                            "start":  557,
+                                            "line":  28.9,
+                                            "alignment":  3,
+                                            "index":  8,
+                                            "hidden":  0,
+                                            "before":  17,
+                                            "after":  16.5,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  573,
+                                            "lineRule":  5,
+                                            "text":  "波函数的统计解释和几率守恒方程\u003cCR\u003e",
+                                            "size":  22
+                                        },
+                                        {
+                                            "start":  573,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  9,
+                                            "hidden":  -1,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  729,
+                                            "lineRule":  0,
+                                            "text":  "\u0015\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  729,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  10,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  736,
+                                            "lineRule":  0,
+                                            "text":  "薛定谔方程：\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  736,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  11,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  971,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  971,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  12,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  979,
+                                            "lineRule":  0,
+                                            "text":  "自己推导一下：\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  979,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  13,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  1214,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  1214,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  14,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  1232,
+                                            "lineRule":  0,
+                                            "text":  "有这个可以得到类似的密度守恒方程：\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  1232,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  15,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  1467,
+                                            "lineRule":  0,
+                                            "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e\u0015\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  1467,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  16,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  1480,
+                                            "lineRule":  0,
+                                            "text":  "定态的相加不一定为定态。\u003cCR\u003e",
+                                            "size":  10.5
+                                        },
+                                        {
+                                            "start":  1480,
+                                            "line":  12,
+                                            "alignment":  3,
+                                            "index":  17,
+                                            "hidden":  0,
+                                            "before":  0,
+                                            "after":  0,
+                                            "font":  "等线",
+                                            "inTable":  false,
+                                            "end":  1481,
+                                            "lineRule":  0,
+                                            "text":  "\u003cCR\u003e",
+                                            "size":  10.5
+                                        }
+                                    ],
+                          "xmlFonts":  [
+
+                                       ],
+                          "xmlMathCount":  0
+                      }
+                  ],
+    "processes":  [
+                      {
+                          "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+                          "name":  "visualtex",
+                          "id":  76424,
+                          "start":  "2026-09-06T11:34:53.8994379+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  27664,
+                          "start":  "2026-09-05T23:07:41.2634623+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  55728,
+                          "start":  "2026-09-06T09:34:20.5498056+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  60152,
+                          "start":  "2026-09-06T09:19:28.3881752+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  71532,
+                          "start":  "2026-09-06T19:04:25.7118063+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  81452,
+                          "start":  "2026-09-06T18:17:42.9788964+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  82668,
+                          "start":  "2026-09-06T14:45:09.4153585+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  100440,
+                          "start":  "2026-09-06T16:25:56.9336162+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  101980,
+                          "start":  "2026-09-06T16:40:17.8412004+08:00"
+                      },
+                      {
+                          "path":  "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+                          "name":  "WINWORD",
+                          "id":  111272,
+                          "start":  "2026-09-06T18:29:30.4706807+08:00"
+                      }
+                  ],
+    "time":  "2026-09-06T19:11:25.2485544+08:00"
+}

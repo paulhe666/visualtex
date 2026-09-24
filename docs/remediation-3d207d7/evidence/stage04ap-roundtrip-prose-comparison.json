@@ -1,0 +1,588 @@
+{
+  "before": "docs\\remediation-3d207d7\\evidence\\stage04ap-omml-imported-__21.xml",
+  "after": "docs\\remediation-3d207d7\\evidence\\stage04ap-omml-roundtrip-__21.xml",
+  "scope": "ordinary text/runs and paragraph properties, including mixed inline formula paragraphs; field paragraphs excluded",
+  "equal": true,
+  "beforeCount": 10,
+  "afterCount": 10,
+  "beforeParagraphs": [
+    {
+      "text": "思考分析力学被发明出来的原因",
+      "paragraphProperties": [
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pPr",
+        {},
+        "",
+        [
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pStyle",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "a7"
+            },
+            "",
+            []
+          ],
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numPr",
+            {},
+            "",
+            [
+              [
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ilvl",
+                {
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "0"
+                },
+                "",
+                []
+              ],
+              [
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numId",
+                {
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "1"
+                },
+                "",
+                []
+              ]
+            ]
+          ],
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ind",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLineChars": "0"
+            },
+            "",
+            []
+          ]
+        ]
+      ],
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "思考分析力学被发明出来的原因",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "系统有很多约束，解决多约束问题",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "系统有很多约束，解决多约束问题",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "力学和光学统一起来？",
+      "paragraphProperties": [
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pPr",
+        {},
+        "",
+        [
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pStyle",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "a7"
+            },
+            "",
+            []
+          ],
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numPr",
+            {},
+            "",
+            [
+              [
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ilvl",
+                {
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "0"
+                },
+                "",
+                []
+              ],
+              [
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numId",
+                {
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "1"
+                },
+                "",
+                []
+              ]
+            ]
+          ],
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ind",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLineChars": "0"
+            },
+            "",
+            []
+          ]
+        ]
+      ],
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "力学和光学统一起来？",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "这几个公式不知道对不对：",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "这几个公式不知道对不对：",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "薛定谔方程",
+      "paragraphProperties": [
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pPr",
+        {},
+        "",
+        [
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pStyle",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "1"
+            },
+            "",
+            []
+          ]
+        ]
+      ],
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "薛定谔方程",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "波函数的统计解释和几率守恒方程",
+      "paragraphProperties": [
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pPr",
+        {},
+        "",
+        [
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pStyle",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "2"
+            },
+            "",
+            []
+          ]
+        ]
+      ],
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "波函数的统计解释和几率守恒方程",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "薛定谔方程：",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "薛定谔方程：",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "自己推导一下：",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "自己推导一下：",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "有这个可以得到类似的密度守恒方程：",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "有这个可以得到类似的密度守恒方程：",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "定态的相加不一定为定态。",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "定态的相加不一定为定态。",
+              []
+            ]
+          ]
+        ]
+      ]
+    }
+  ],
+  "afterParagraphs": [
+    {
+      "text": "思考分析力学被发明出来的原因",
+      "paragraphProperties": [
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pPr",
+        {},
+        "",
+        [
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pStyle",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "a7"
+            },
+            "",
+            []
+          ],
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numPr",
+            {},
+            "",
+            [
+              [
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ilvl",
+                {
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "0"
+                },
+                "",
+                []
+              ],
+              [
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numId",
+                {
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "1"
+                },
+                "",
+                []
+              ]
+            ]
+          ],
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ind",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLineChars": "0"
+            },
+            "",
+            []
+          ]
+        ]
+      ],
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "思考分析力学被发明出来的原因",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "系统有很多约束，解决多约束问题",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "系统有很多约束，解决多约束问题",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "力学和光学统一起来？",
+      "paragraphProperties": [
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pPr",
+        {},
+        "",
+        [
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pStyle",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "a7"
+            },
+            "",
+            []
+          ],
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numPr",
+            {},
+            "",
+            [
+              [
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ilvl",
+                {
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "0"
+                },
+                "",
+                []
+              ],
+              [
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numId",
+                {
+                  "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "1"
+                },
+                "",
+                []
+              ]
+            ]
+          ],
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ind",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLineChars": "0"
+            },
+            "",
+            []
+          ]
+        ]
+      ],
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "力学和光学统一起来？",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "这几个公式不知道对不对：",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "这几个公式不知道对不对：",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "薛定谔方程",
+      "paragraphProperties": [
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pPr",
+        {},
+        "",
+        [
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pStyle",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "1"
+            },
+            "",
+            []
+          ]
+        ]
+      ],
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "薛定谔方程",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "波函数的统计解释和几率守恒方程",
+      "paragraphProperties": [
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pPr",
+        {},
+        "",
+        [
+          [
+            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pStyle",
+            {
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "2"
+            },
+            "",
+            []
+          ]
+        ]
+      ],
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "波函数的统计解释和几率守恒方程",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "薛定谔方程：",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "薛定谔方程：",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "自己推导一下：",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "自己推导一下：",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "有这个可以得到类似的密度守恒方程：",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "有这个可以得到类似的密度守恒方程：",
+              []
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "text": "定态的相加不一定为定态。",
+      "paragraphProperties": null,
+      "runs": [
+        [
+          null,
+          [
+            [
+              "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+              {},
+              "定态的相加不一定为定态。",
+              []
+            ]
+          ]
+        ]
+      ]
+    }
+  ]
+}

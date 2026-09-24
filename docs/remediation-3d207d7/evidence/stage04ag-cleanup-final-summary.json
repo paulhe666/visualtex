@@ -1,0 +1,29 @@
+{
+  "closedDocuments": 115,
+  "normallyExitedProcesses": 50,
+  "processes": 8,
+  "workingSetMB": 3352.0,
+  "pids": [
+    27664,
+    55728,
+    60152,
+    81452,
+    82668,
+    100440,
+    101980,
+    111272
+  ],
+  "activeTestDocuments": [
+    {
+      "saved": false,
+      "document": "文档6",
+      "end": 875
+    },
+    {
+      "saved": false,
+      "document": "文档4",
+      "end": 1245
+    }
+  ],
+  "time": "2026-09-06T10:48:04.9788995Z"
+}

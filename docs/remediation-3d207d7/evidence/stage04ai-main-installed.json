@@ -1,0 +1,57 @@
+﻿{
+    "lastCompletedEditor":  "3c0e744f-da31-41da-86f0-8c75cd5d0daf",
+    "wordProcessesBefore":  [
+                                {
+                                    "Id":  27664,
+                                    "StartTime":  "\/Date(1788620861263)\/"
+                                },
+                                {
+                                    "Id":  55728,
+                                    "StartTime":  "\/Date(1788658460549)\/"
+                                },
+                                {
+                                    "Id":  60152,
+                                    "StartTime":  "\/Date(1788657568388)\/"
+                                },
+                                {
+                                    "Id":  71532,
+                                    "StartTime":  "\/Date(1788692665711)\/"
+                                },
+                                {
+                                    "Id":  81452,
+                                    "StartTime":  "\/Date(1788689862978)\/"
+                                },
+                                {
+                                    "Id":  82668,
+                                    "StartTime":  "\/Date(1788677109415)\/"
+                                },
+                                {
+                                    "Id":  100440,
+                                    "StartTime":  "\/Date(1788683156933)\/"
+                                },
+                                {
+                                    "Id":  101980,
+                                    "StartTime":  "\/Date(1788684017841)\/"
+                                },
+                                {
+                                    "Id":  111272,
+                                    "StartTime":  "\/Date(1788690570470)\/"
+                                }
+                            ],
+    "afterSha256":  "1A6BB6016CB33F22E19E3DEE7836E23DB13F775DC3D0B0B78E5B8EF0CA980FDD",
+    "beforeSha256":  "3029A2FC92F646FABEAE17B4B7A2CF8820DA63DE926089F294A1086AD167F729",
+    "previousPid":  76424,
+    "label":  "stage04ai",
+    "time":  "2026-09-06T11:39:43.5952575Z",
+    "backup":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04ai-main-before.exe",
+    "oleProcessesBefore":  [
+                               {
+                                   "Id":  41976,
+                                   "StartTime":  "\/Date(1788622755401)\/",
+                                   "Path":  "C:\\Program Files\\VisualTeX\\WindowsOffice\\VSTO\\VisualTeX.FormulaOleServer.exe"
+                               }
+                           ],
+    "pid":  108292,
+    "nsisInstalled":  false,
+    "installed":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe"
+}

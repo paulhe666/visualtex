@@ -1,0 +1,605 @@
+[
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,412,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX Native Office Formula Editor",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,412,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,412,2070,1320",
+        "value":  "",
+        "enabled":  false
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX Native Office Formula Editor - Web 内容",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "Empty",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "RootWebArea",
+        "name":  "VisualTeX Native Office Formula Editor",
+        "offscreen":  false,
+        "type":  "ControlType.Document",
+        "rect":  "885,413,2070,1320",
+        "value":  "https://127.0.0.1:43127/dialog/2cf68ca5-0297-4f31-a8dc-32a7fc3a31c7?runtime=vsto-bulk-import",
+        "enabled":  true
+    },
+    {
+        "id":  "root",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "885,413,2070,1320",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "885,413,2070,94",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "909,432,54,55",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "Word 文档批量导入",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "979,430,198,31",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "左侧编辑源码，右侧实时查看 Word 导入结构",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "979,465,330,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "源格式",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1862,447,50,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "源格式",
+        "offscreen":  false,
+        "type":  "ControlType.ComboBox",
+        "rect":  "1922,438,187,43",
+        "value":  "自动识别",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式格式",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2145,447,66,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "公式格式",
+        "offscreen":  false,
+        "type":  "ControlType.ComboBox",
+        "rect":  "2221,438,221,43",
+        "value":  "VisualTeX OLE",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "勾选后，为本次导入中的每一个行间公式添加编号；编号样式使用当前 Word 文档的 VisualTeX 编号格式。",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2462,432,234,55",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "所有行间公式添加编号",
+        "offscreen":  false,
+        "type":  "ControlType.CheckBox",
+        "rect":  "2480,448,23,23",
+        "value":  "On",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "所有行间公式添加编号",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2513,447,165,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "导入 .tex / .md",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2709,433,222,52",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2736,447,25,25",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "903,524,958,1106",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "LaTeX / Markdown 源码",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "982,543,217,27",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "支持正文、标题、列表、引用、代码块和混合公式",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "982,574,330,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "1,164",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1758,557,37,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " 字符",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1794,557,35,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "文档源码",
+        "offscreen":  false,
+        "type":  "ControlType.Edit",
+        "rect":  "904,612,956,1017",
+        "value":  "思考分析力学被发明出来的原因\n\\begin{itemize}\n    \\item 系统有很多约束，解决多约束问题\n    \\item 力学和光学统一起来？\n\\end{itemize}\n这几个公式不知道对不对：\n$\\sqrt{E-u\\left(x\\right)}=\\frac{1}{f\\left(\\omega\\right)v_{ph}\\left(\\omega,x\\right)}$\n$$\\begin{cases}\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega f\\left(\\omega\\right)\\right)=0 \\\\ \\frac{\\omega f\\left(\\omega\\right)}{2}\\frac{\\mathrm{d}E\\left(\\omega\\right)}{\\mathrm{d}\\omega}=\\sqrt{\\frac{m}{2}} \\end{cases}$$\n$$\\sqrt{\\frac{m}{2\\left(E\\left(\\omega\\right)-U\\right)}}=\\frac{\\mathrm{d}}{\\mathrm{d}\\omega}\\left(\\omega\\cdot f\\left(\\omega\\right)\\sqrt{\\left(E\\left(\\omega\\right)-U\\right)}\\right)$$\n\\chapter{薛定谔方程}\n\\section{波函数的统计解释和几率守恒方程}\n薛定谔方程：\\[\ni\\hbar \\frac{\\partial}{\\partial t}\\psi(\\mathbf{r},t)\n=\n\\left[\n-\\frac{\\hbar^2}{2m}\\nabla^2 + V(\\mathbf{r},t)\n\\right]\\psi(\\mathbf{r},t)\n\\]\n自己推导一下：$$\\frac{\\partial}{\\partial t}\\psi ^*\\left( \\vec{r} \\right) \\psi \\left( \\vec{r} \\right) =\\frac{i\\hbar}{2m}\\nabla \\cdot \\left[ \\psi ^*\\left( \\vec{r} \\right) \\nabla \\psi \\left( \\vec{r} \\right) -\\psi \\left( \\vec{r} \\right) \\nabla \\psi ^*\\left( r \\right) \\right] $$\n有这个可以得到类似的密度守恒方程：$$\\frac{\\partial}{\\partial t}\\rho \\left( \\vec{r},t \\right) +\\nabla \\cdot \\vec{j}=0$$\n\n定态的相加不一定为定态。",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "1878,524,1059,1106",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "Word 结构预览",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1957,543,135,27",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "按最终导入层级模拟正文、公式与段落间距",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1957,574,286,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "预览统计",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "2715,550,202,37",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "15",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2727,557,17,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " 块",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2743,557,20,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "1",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2791,557,9,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " 行内",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2799,557,35,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "5",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2862,557,9,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  " 行间",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "2870,557,35,21",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Document",
+        "rect":  "1879,662,1034,1432",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "思考分析力学被发明出来的原因",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1915,697,365,32",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "•",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1969,755,12,36",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "系统有很多约束，解决多约束问题",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1993,757,391,32",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "•",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1969,805,12,35",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "力学和光学统一起来？",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1993,807,261,31",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "这几个公式不知道对不对：",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1915,865,313,32",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2227,851,284,45",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2275,933,243,91",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2114,1071,565,77",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "薛定谔方程",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1915,1184,962,72",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "波函数的统计解释和几率守恒方程",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1915,1304,962,47",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "薛定谔方程：",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1915,1378,157,32",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2156,1447,481,77",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "自己推导一下：",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "1915,1564,183,32",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  true,
+        "type":  "ControlType.Image",
+        "rect":  "2077,1633,639,68",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "有这个可以得到类似的密度守恒方程：",
+        "offscreen":  true,
+        "type":  "ControlType.Text",
+        "rect":  "1915,1741,443,32",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  true,
+        "type":  "ControlType.Image",
+        "rect":  "2270,1810,253,68",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "定态的相加不一定为定态。",
+        "offscreen":  true,
+        "type":  "ControlType.Text",
+        "rect":  "1915,1918,313,32",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Group",
+        "rect":  "885,1648,2070,85",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "909,1679,23,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "预览解析正常；Word 将按当前结构化预览结果插入。",
+        "offscreen":  false,
+        "type":  "ControlType.Text",
+        "rect":  "940,1679,392,23",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "取消",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2606,1665,119,52",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2628,1679,25,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "导入到 Word",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "2737,1665,194,52",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Image",
+        "rect":  "2759,1679,25,24",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "",
+        "offscreen":  false,
+        "type":  "ControlType.Pane",
+        "rect":  "Empty",
+        "value":  "",
+        "enabled":  true
+    }
+]

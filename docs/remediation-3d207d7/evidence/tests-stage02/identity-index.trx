@@ -1,0 +1,64 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="423dba37-daeb-4094-81d1-687c1527a5f2" name="pojian_liao@DESKTOP-VM8VUAQ 2026-09-06 03:22:56" runUser="DESKTOP-VM8VUAQ\CodexSandboxOffline" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-06T03:22:56.9994704+08:00" queuing="2026-09-06T03:22:56.9994705+08:00" start="2026-09-06T03:22:56.2176326+08:00" finish="2026-09-06T03:22:57.0037424+08:00" />
+  <TestSettings name="default" id="45aed7b5-0f40-49cd-a501-1e5124fac66a">
+    <Deployment runDeploymentRoot="pojian_liao_DESKTOP-VM8VUAQ_2026-09-06_03_22_56" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="39341e4f-7db4-4e1f-9fd5-2e2454a38de7" testId="f592b08a-36e6-8edf-78d5-e9e8f0247f11" testName="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.NumberedRowContentMismatchCannotRecoverFromAnotherRow" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0003148" startTime="2026-09-06T03:22:56.9438865+08:00" endTime="2026-09-06T03:22:56.9438866+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="39341e4f-7db4-4e1f-9fd5-2e2454a38de7" />
+    <UnitTestResult executionId="c7bd1e54-4b03-4446-bc9e-5877ddef5827" testId="faf0209c-31ad-ac94-4c64-99dc2fa7ea81" testName="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.TwoAnchorsCannotClaimOneEquation" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0003583" startTime="2026-09-06T03:22:56.9442701+08:00" endTime="2026-09-06T03:22:56.9442702+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c7bd1e54-4b03-4446-bc9e-5877ddef5827" />
+    <UnitTestResult executionId="96b0abc4-cef2-4a28-9b7a-2b494533d6f7" testId="1f92c8bb-3e6b-5e25-429b-a5c9011302b9" testName="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.CollapsedAnchorInSameParagraphOwnsItsFormula" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0005800" startTime="2026-09-06T03:22:56.9435403+08:00" endTime="2026-09-06T03:22:56.9435403+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="96b0abc4-cef2-4a28-9b7a-2b494533d6f7" />
+    <UnitTestResult executionId="5ee8599d-ecbe-451a-a7fe-7e8b3dc09a5e" testId="87762f89-0cc3-368b-f63b-de38807bb0cf" testName="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.DisplacedAnchorCannotOverwriteFollowingFormulaFingerprint" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0026223" startTime="2026-09-06T03:22:56.9412928+08:00" endTime="2026-09-06T03:22:56.9412929+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5ee8599d-ecbe-451a-a7fe-7e8b3dc09a5e" />
+    <UnitTestResult executionId="beaf068f-6cc6-4d5d-9055-af481e46d983" testId="ad349cbc-b513-12ab-3515-5a7766312f75" testName="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.IdenticalContentsRemainDistinctThroughNumberedRowIdentity" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0015691" startTime="2026-09-06T03:22:56.9429125+08:00" endTime="2026-09-06T03:22:56.9429126+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="beaf068f-6cc6-4d5d-9055-af481e46d983" />
+    <UnitTestResult executionId="080afa31-39db-4e84-ac27-64a821cc6e1b" testId="6b765091-880e-c286-3583-b7328159c092" testName="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.DriftRecoveryRequiresGlobalUniqueness" computerName="DESKTOP-VM8VUAQ" duration="00:00:00.0537899" startTime="2026-09-06T03:22:56.9392277+08:00" endTime="2026-09-06T03:22:56.9392391+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="080afa31-39db-4e84-ac27-64a821cc6e1b" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.DisplacedAnchorCannotOverwriteFollowingFormulaFingerprint" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="87762f89-0cc3-368b-f63b-de38807bb0cf">
+      <Execution id="5ee8599d-ecbe-451a-a7fe-7e8b3dc09a5e" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests" name="DisplacedAnchorCannotOverwriteFollowingFormulaFingerprint" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.DriftRecoveryRequiresGlobalUniqueness" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="6b765091-880e-c286-3583-b7328159c092">
+      <Execution id="080afa31-39db-4e84-ac27-64a821cc6e1b" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests" name="DriftRecoveryRequiresGlobalUniqueness" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.TwoAnchorsCannotClaimOneEquation" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="faf0209c-31ad-ac94-4c64-99dc2fa7ea81">
+      <Execution id="c7bd1e54-4b03-4446-bc9e-5877ddef5827" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests" name="TwoAnchorsCannotClaimOneEquation" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.IdenticalContentsRemainDistinctThroughNumberedRowIdentity" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="ad349cbc-b513-12ab-3515-5a7766312f75">
+      <Execution id="beaf068f-6cc6-4d5d-9055-af481e46d983" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests" name="IdenticalContentsRemainDistinctThroughNumberedRowIdentity" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.CollapsedAnchorInSameParagraphOwnsItsFormula" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="1f92c8bb-3e6b-5e25-429b-a5c9011302b9">
+      <Execution id="96b0abc4-cef2-4a28-9b7a-2b494533d6f7" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests" name="CollapsedAnchorInSameParagraphOwnsItsFormula" />
+    </UnitTest>
+    <UnitTest name="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests.NumberedRowContentMismatchCannotRecoverFromAnotherRow" storage="c:\users\pojian_liao\desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\visualtex.windowsoffice.tests\bin\debug\net8.0-windows\visualtex.windowsoffice.tests.dll" id="f592b08a-36e6-8edf-78d5-e9e8f0247f11">
+      <Execution id="39341e4f-7db4-4e1f-9fd5-2e2454a38de7" />
+      <TestMethod codeBase="C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="VisualTeX.WindowsOffice.Tests.WordOmmlConversionIdentityTests" name="NumberedRowContentMismatchCannotRecoverFromAnotherRow" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="f592b08a-36e6-8edf-78d5-e9e8f0247f11" executionId="39341e4f-7db4-4e1f-9fd5-2e2454a38de7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="faf0209c-31ad-ac94-4c64-99dc2fa7ea81" executionId="c7bd1e54-4b03-4446-bc9e-5877ddef5827" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1f92c8bb-3e6b-5e25-429b-a5c9011302b9" executionId="96b0abc4-cef2-4a28-9b7a-2b494533d6f7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="87762f89-0cc3-368b-f63b-de38807bb0cf" executionId="5ee8599d-ecbe-451a-a7fe-7e8b3dc09a5e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ad349cbc-b513-12ab-3515-5a7766312f75" executionId="beaf068f-6cc6-4d5d-9055-af481e46d983" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6b765091-880e-c286-3583-b7328159c092" executionId="080afa31-39db-4e84-ac27-64a821cc6e1b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="6" executed="6" passed="6" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 8.0.29)&#xD;
+[xUnit.net 00:00:00.24]   Discovering: VisualTeX.WindowsOffice.Tests&#xD;
+[xUnit.net 00:00:00.29]   Discovered:  VisualTeX.WindowsOffice.Tests&#xD;
+[xUnit.net 00:00:00.29]   Starting:    VisualTeX.WindowsOffice.Tests&#xD;
+[xUnit.net 00:00:00.37]   Finished:    VisualTeX.WindowsOffice.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

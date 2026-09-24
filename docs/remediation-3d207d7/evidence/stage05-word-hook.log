@@ -1,0 +1,163 @@
+2026-09-06T21:40:53.2597731+08:00 pid=64844 tid=1 word-addin-loaded pid=64844 assembly=C:\Users\pojian_liao\AppData\Local\VisualTeX\office\remediation-builds\6861688D7AECF188B7A7B4C79DABBFBE6D35763FD54ECCBDC8C37025F58054AC\VisualTeX.WordVsto.dll mvid=07fcc2f9-cdec-461b-9ee9-629301c5d181
+2026-09-06T21:40:53.5828048+08:00 pid=64844 tid=1 hook-started handle=0x227758B
+2026-09-06T21:40:53.7740996+08:00 pid=64844 tid=10 mathtype-native-preview-shared-prewarm-complete
+2026-09-06T21:41:54.2009673+08:00 pid=64844 tid=12 left-down x=1872 y=722 wordForeground=True
+2026-09-06T21:41:54.7768012+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX Set Equation Number Format recording=False level=0
+2026-09-06T21:41:54.7777990+08:00 pid=64844 tid=1 word-undo-started name=VisualTeX Set Equation Number Format recording=True level=1
+2026-09-06T21:41:54.8138004+08:00 pid=64844 tid=1 word-undo-end recording=False level=0
+2026-09-06T21:42:09.1006791+08:00 pid=64844 tid=1 bulk-import converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:42:09.1442730+08:00 pid=64844 tid=9 bulk-import converter-created sessionId=ed48b761-2a39-4462-8fc9-202b8388d791
+2026-09-06T21:42:09.1452741+08:00 pid=64844 tid=9 bulk-import converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:42:09.1492743+08:00 pid=64844 tid=13 bulk-import converter-created sessionId=34f44ee0-fd0b-463e-90ec-9609988b0937
+2026-09-06T21:42:09.2393855+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX 重绘 LaTeX 公式 recording=False level=0
+2026-09-06T21:42:09.2403845+08:00 pid=64844 tid=1 word-undo-started name=VisualTeX 重绘 LaTeX 公式 recording=True level=1
+2026-09-06T21:42:10.6078003+08:00 pid=64844 tid=1 word-undo-end recording=False level=0
+2026-09-06T21:42:30.8471191+08:00 pid=64844 tid=1 bulk-import converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:42:30.8524493+08:00 pid=64844 tid=18 bulk-import converter-created sessionId=af8eb71e-a69b-45f5-9fb2-36de9c43418b
+2026-09-06T21:42:30.8529846+08:00 pid=64844 tid=18 bulk-import converter-create display=block mode=wordOmml latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:42:30.8559875+08:00 pid=64844 tid=19 bulk-import converter-created sessionId=1f7fe3d9-a195-495a-9641-c074ae6e6563
+2026-09-06T21:42:30.9112432+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX 重绘 LaTeX 公式 recording=False level=0
+2026-09-06T21:42:30.9122411+08:00 pid=64844 tid=1 word-undo-started name=VisualTeX 重绘 LaTeX 公式 recording=True level=1
+2026-09-06T21:42:31.9464358+08:00 pid=64844 tid=1 word-undo-end recording=False level=0
+2026-09-06T21:42:52.0394278+08:00 pid=64844 tid=1 bulk-import converter-create display=block mode=nativeOle latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:42:52.0444254+08:00 pid=64844 tid=5 bulk-import converter-created sessionId=838502d5-e629-47ff-b3a5-20bc46b0ebe1
+2026-09-06T21:42:52.0454260+08:00 pid=64844 tid=5 bulk-import converter-create display=block mode=nativeOle latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:42:52.0484256+08:00 pid=64844 tid=9 bulk-import converter-created sessionId=2c8e5bb8-5b32-4bfb-bffc-eed43c57abf8
+2026-09-06T21:42:52.3431996+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX 重绘 LaTeX 公式 recording=False level=0
+2026-09-06T21:42:52.3431996+08:00 pid=64844 tid=1 word-undo-started name=VisualTeX 重绘 LaTeX 公式 recording=True level=1
+2026-09-06T21:42:52.8588910+08:00 pid=64844 tid=1 word-undo-end recording=False level=0
+2026-09-06T21:42:54.8761931+08:00 pid=64844 tid=12 left-down x=1332 y=734 wordForeground=True
+2026-09-06T21:42:55.3794779+08:00 pid=64844 tid=1 cache-active formulaId=a963465d-a557-4472-9cf5-4d66908939d1 objectMode=nativeOle rect=439,656,1595,842
+2026-09-06T21:42:56.6608775+08:00 pid=64844 tid=12 left-down x=3277 y=1290 wordForeground=True
+2026-09-06T21:43:14.6230862+08:00 pid=64844 tid=1 bulk-import converter-create display=block mode=nativeOle latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:43:14.6270861+08:00 pid=64844 tid=14 bulk-import converter-created sessionId=1a7f9725-5595-46e0-a5a4-c53d658da672
+2026-09-06T21:43:14.6280861+08:00 pid=64844 tid=14 bulk-import converter-create display=block mode=nativeOle latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:43:14.6310869+08:00 pid=64844 tid=6 bulk-import converter-created sessionId=6d2ca911-2042-4fe4-8164-a3611b6b1f2d
+2026-09-06T21:43:14.9168889+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX 重绘 LaTeX 公式 recording=False level=0
+2026-09-06T21:43:14.9168889+08:00 pid=64844 tid=1 word-undo-started name=VisualTeX 重绘 LaTeX 公式 recording=True level=1
+2026-09-06T21:43:15.2365971+08:00 pid=64844 tid=1 word-undo-end recording=False level=0
+2026-09-06T21:43:36.3914558+08:00 pid=64844 tid=1 bulk-import converter-create display=block mode=mathTypeOle latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:43:36.3954567+08:00 pid=64844 tid=15 bulk-import converter-created sessionId=96f81aee-357b-44c9-9d71-06cadb26b533
+2026-09-06T21:43:36.3954567+08:00 pid=64844 tid=15 bulk-import converter-create display=block mode=mathTypeOle latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:43:36.3994570+08:00 pid=64844 tid=18 bulk-import converter-created sessionId=254c3497-f16d-4af9-b82c-1b40cd342d44
+2026-09-06T21:43:36.4889292+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX 重绘 LaTeX 公式 recording=False level=0
+2026-09-06T21:43:36.4899294+08:00 pid=64844 tid=1 word-undo-started name=VisualTeX 重绘 LaTeX 公式 recording=True level=1
+2026-09-06T21:43:36.8712954+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX Insert MathType OLE Numbered Display Formula recording=True level=1
+2026-09-06T21:43:36.8772955+08:00 pid=64844 tid=1 mathtype-insert-perf stage=resolve-insertion numbered=True inline=False deltaMs=6 totalMs=6
+2026-09-06T21:43:36.8792969+08:00 pid=64844 tid=1 mathtype-insert-perf stage=clear-incomplete-number-row numbered=True inline=False deltaMs=1 totalMs=7
+2026-09-06T21:43:36.8822963+08:00 pid=64844 tid=1 mathtype-insert-perf stage=number-template-heading-state numbered=True inline=False deltaMs=4 totalMs=11
+2026-09-06T21:43:36.8840861+08:00 pid=64844 tid=1 mathtype-insert-perf stage=prepare-display-row numbered=True inline=False deltaMs=1 totalMs=12
+2026-09-06T21:43:36.9020910+08:00 pid=64844 tid=1 mathtype-insert-perf stage=build-flat-opc numbered=True inline=False deltaMs=18 totalMs=30
+2026-09-06T21:43:36.9020910+08:00 pid=64844 tid=1 mathtype-insert-perf stage=pre-insert-bookkeeping numbered=True inline=False deltaMs=1 totalMs=31
+2026-09-06T21:43:36.9425682+08:00 pid=64844 tid=1 mathtype-insert-perf stage=insert-flat-opc numbered=True inline=False deltaMs=40 totalMs=71
+2026-09-06T21:43:36.9455686+08:00 pid=64844 tid=1 mathtype-insert-perf stage=resolve-new-shape numbered=True inline=False deltaMs=3 totalMs=74
+2026-09-06T21:43:36.9605652+08:00 pid=64844 tid=1 mathtype-insert-perf stage=set-shape-geometry numbered=True inline=False deltaMs=15 totalMs=89
+2026-09-06T21:43:36.9605652+08:00 pid=64844 tid=1 mathtype-insert-perf stage=repair-inline-paragraph numbered=True inline=False deltaMs=0 totalMs=89
+2026-09-06T21:43:36.9615651+08:00 pid=64844 tid=1 mathtype-insert-perf stage=refresh-native-shape numbered=True inline=False deltaMs=1 totalMs=90
+2026-09-06T21:43:36.9695673+08:00 pid=64844 tid=1 mathtype-insert-perf stage=relocate-left-mathtype-field-scaffold numbered=True inline=False deltaMs=8 totalMs=98
+2026-09-06T21:43:36.9965645+08:00 pid=64844 tid=1 mathtype-insert-perf stage=complete numbered=True inline=False deltaMs=27 totalMs=125
+2026-09-06T21:43:37.3452393+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX Insert MathType OLE Numbered Display Formula recording=True level=1
+2026-09-06T21:43:37.3532400+08:00 pid=64844 tid=1 mathtype-insert-perf stage=resolve-insertion numbered=True inline=False deltaMs=8 totalMs=8
+2026-09-06T21:43:37.3542403+08:00 pid=64844 tid=1 mathtype-insert-perf stage=clear-incomplete-number-row numbered=True inline=False deltaMs=1 totalMs=9
+2026-09-06T21:43:37.3562419+08:00 pid=64844 tid=1 mathtype-insert-perf stage=number-template-heading-state numbered=True inline=False deltaMs=2 totalMs=11
+2026-09-06T21:43:37.3572417+08:00 pid=64844 tid=1 mathtype-insert-perf stage=prepare-display-row numbered=True inline=False deltaMs=0 totalMs=11
+2026-09-06T21:43:37.3632388+08:00 pid=64844 tid=1 mathtype-insert-perf stage=build-flat-opc numbered=True inline=False deltaMs=6 totalMs=17
+2026-09-06T21:43:37.3632388+08:00 pid=64844 tid=1 mathtype-insert-perf stage=pre-insert-bookkeeping numbered=True inline=False deltaMs=1 totalMs=18
+2026-09-06T21:43:37.4002053+08:00 pid=64844 tid=1 mathtype-insert-perf stage=insert-flat-opc numbered=True inline=False deltaMs=37 totalMs=55
+2026-09-06T21:43:37.4012028+08:00 pid=64844 tid=1 mathtype-insert-perf stage=resolve-new-shape numbered=True inline=False deltaMs=1 totalMs=56
+2026-09-06T21:43:37.4302036+08:00 pid=64844 tid=1 mathtype-insert-perf stage=set-shape-geometry numbered=True inline=False deltaMs=29 totalMs=85
+2026-09-06T21:43:37.4312045+08:00 pid=64844 tid=1 mathtype-insert-perf stage=repair-inline-paragraph numbered=True inline=False deltaMs=0 totalMs=85
+2026-09-06T21:43:37.4312045+08:00 pid=64844 tid=1 mathtype-insert-perf stage=refresh-native-shape numbered=True inline=False deltaMs=1 totalMs=86
+2026-09-06T21:43:37.4362035+08:00 pid=64844 tid=1 mathtype-insert-perf stage=relocate-left-mathtype-field-scaffold numbered=True inline=False deltaMs=5 totalMs=91
+2026-09-06T21:43:37.4592026+08:00 pid=64844 tid=1 mathtype-insert-perf stage=complete numbered=True inline=False deltaMs=23 totalMs=114
+2026-09-06T21:43:37.5441464+08:00 pid=64844 tid=1 word-undo-end recording=False level=0
+2026-09-06T21:43:57.1933560+08:00 pid=64844 tid=1 bulk-import converter-create display=block mode=mathTypeOle latex=\frac{\partial}{\partial t}\psi ^*\left( \vec{r} \right) \psi \left( \vec{r} \right) =\frac{i\hbar}{2m}\nabla \cdot \left[ \psi ^*\left( \vec{r} \right) \nabla \psi \left( \vec{r} \right) -\psi \left( \vec{r} \right) \nabla \psi ^*\left( r \right) \right]
+2026-09-06T21:43:57.1963553+08:00 pid=64844 tid=22 bulk-import converter-created sessionId=3aac0b8b-64f3-4b49-8924-de94986cc510
+2026-09-06T21:43:57.1973552+08:00 pid=64844 tid=22 bulk-import converter-create display=block mode=mathTypeOle latex=\frac{\partial}{\partial t}\rho \left( \vec{r},t \right) +\nabla \cdot \vec{j}=0
+2026-09-06T21:43:57.2013589+08:00 pid=64844 tid=22 bulk-import converter-created sessionId=d3546b02-db0e-4983-a4c1-b442a321c3f9
+2026-09-06T21:43:57.2879715+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX 重绘 LaTeX 公式 recording=False level=0
+2026-09-06T21:43:57.2879715+08:00 pid=64844 tid=1 word-undo-started name=VisualTeX 重绘 LaTeX 公式 recording=True level=1
+2026-09-06T21:43:57.6132571+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX Insert MathType OLE Numbered Display Formula recording=True level=1
+2026-09-06T21:43:57.6172552+08:00 pid=64844 tid=1 mathtype-insert-perf stage=resolve-insertion numbered=True inline=False deltaMs=3 totalMs=3
+2026-09-06T21:43:57.6172552+08:00 pid=64844 tid=1 mathtype-insert-perf stage=clear-incomplete-number-row numbered=True inline=False deltaMs=1 totalMs=4
+2026-09-06T21:43:57.6182573+08:00 pid=64844 tid=1 mathtype-insert-perf stage=number-template-heading-state numbered=True inline=False deltaMs=1 totalMs=5
+2026-09-06T21:43:57.6182573+08:00 pid=64844 tid=1 mathtype-insert-perf stage=prepare-display-row numbered=True inline=False deltaMs=0 totalMs=5
+2026-09-06T21:43:57.6248933+08:00 pid=64844 tid=1 mathtype-insert-perf stage=build-flat-opc numbered=True inline=False deltaMs=7 totalMs=12
+2026-09-06T21:43:57.6260042+08:00 pid=64844 tid=1 mathtype-insert-perf stage=pre-insert-bookkeeping numbered=True inline=False deltaMs=0 totalMs=12
+2026-09-06T21:43:57.6625232+08:00 pid=64844 tid=1 mathtype-insert-perf stage=insert-flat-opc numbered=True inline=False deltaMs=37 totalMs=49
+2026-09-06T21:43:57.6635263+08:00 pid=64844 tid=1 mathtype-insert-perf stage=resolve-new-shape numbered=True inline=False deltaMs=1 totalMs=50
+2026-09-06T21:43:57.6955251+08:00 pid=64844 tid=1 mathtype-insert-perf stage=set-shape-geometry numbered=True inline=False deltaMs=32 totalMs=82
+2026-09-06T21:43:57.6955251+08:00 pid=64844 tid=1 mathtype-insert-perf stage=repair-inline-paragraph numbered=True inline=False deltaMs=0 totalMs=82
+2026-09-06T21:43:57.6955251+08:00 pid=64844 tid=1 mathtype-insert-perf stage=refresh-native-shape numbered=True inline=False deltaMs=0 totalMs=82
+2026-09-06T21:43:57.6991570+08:00 pid=64844 tid=1 mathtype-insert-perf stage=relocate-left-mathtype-field-scaffold numbered=True inline=False deltaMs=4 totalMs=86
+2026-09-06T21:43:57.7211553+08:00 pid=64844 tid=1 mathtype-insert-perf stage=complete numbered=True inline=False deltaMs=21 totalMs=107
+2026-09-06T21:43:58.0702406+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX Insert MathType OLE Numbered Display Formula recording=False level=0
+2026-09-06T21:43:58.0702406+08:00 pid=64844 tid=1 word-undo-started name=VisualTeX Insert MathType OLE Numbered Display Formula recording=True level=1
+2026-09-06T21:43:58.0782403+08:00 pid=64844 tid=1 mathtype-insert-perf stage=resolve-insertion numbered=True inline=False deltaMs=8 totalMs=8
+2026-09-06T21:43:58.0792402+08:00 pid=64844 tid=1 mathtype-insert-perf stage=clear-incomplete-number-row numbered=True inline=False deltaMs=0 totalMs=8
+2026-09-06T21:43:58.0792402+08:00 pid=64844 tid=1 mathtype-insert-perf stage=number-template-heading-state numbered=True inline=False deltaMs=1 totalMs=9
+2026-09-06T21:43:58.0802401+08:00 pid=64844 tid=1 mathtype-insert-perf stage=prepare-display-row numbered=True inline=False deltaMs=1 totalMs=10
+2026-09-06T21:43:58.0862402+08:00 pid=64844 tid=1 mathtype-insert-perf stage=build-flat-opc numbered=True inline=False deltaMs=5 totalMs=15
+2026-09-06T21:43:58.0862402+08:00 pid=64844 tid=1 mathtype-insert-perf stage=pre-insert-bookkeeping numbered=True inline=False deltaMs=1 totalMs=16
+2026-09-06T21:43:58.1200510+08:00 pid=64844 tid=1 mathtype-insert-perf stage=insert-flat-opc numbered=True inline=False deltaMs=33 totalMs=49
+2026-09-06T21:43:58.1200510+08:00 pid=64844 tid=1 mathtype-insert-perf stage=resolve-new-shape numbered=True inline=False deltaMs=1 totalMs=50
+2026-09-06T21:43:58.1410527+08:00 pid=64844 tid=1 mathtype-insert-perf stage=set-shape-geometry numbered=True inline=False deltaMs=20 totalMs=70
+2026-09-06T21:43:58.1410527+08:00 pid=64844 tid=1 mathtype-insert-perf stage=repair-inline-paragraph numbered=True inline=False deltaMs=1 totalMs=71
+2026-09-06T21:43:58.1410527+08:00 pid=64844 tid=1 mathtype-insert-perf stage=refresh-native-shape numbered=True inline=False deltaMs=0 totalMs=71
+2026-09-06T21:43:58.1450532+08:00 pid=64844 tid=1 mathtype-insert-perf stage=relocate-left-mathtype-field-scaffold numbered=True inline=False deltaMs=4 totalMs=75
+2026-09-06T21:43:58.1670531+08:00 pid=64844 tid=1 mathtype-insert-perf stage=complete numbered=True inline=False deltaMs=21 totalMs=96
+2026-09-06T21:43:58.1670531+08:00 pid=64844 tid=1 word-undo-end recording=False level=0
+2026-09-06T21:43:58.2546072+08:00 pid=64844 tid=1 word-undo-end recording=False level=0
+2026-09-06T21:44:10.0579590+08:00 pid=64844 tid=12 left-down x=1445 y=832 wordForeground=True
+2026-09-06T21:44:10.4029183+08:00 pid=64844 tid=12 left-down x=1445 y=832 wordForeground=True
+2026-09-06T21:44:10.4049186+08:00 pid=64844 tid=12 double-click elapsedMs=345.738 withinX=True withinY=True nativeOleTarget=False suppressSecondDown=False dispatchCallback=True
+2026-09-06T21:44:10.4959253+08:00 pid=64844 tid=19 callback-begin interceptedNativeOle=False x=1445 y=832
+2026-09-06T21:44:10.4969269+08:00 pid=64844 tid=19 addin-callback-received interceptedNativeOle=False x=1445 y=832
+2026-09-06T21:44:10.4979257+08:00 pid=64844 tid=19 callback-end
+2026-09-06T21:44:10.4999257+08:00 pid=64844 tid=1 addin-coordinate-selection formulaId=<null> objectMode=<null>
+2026-09-06T21:44:10.7561993+08:00 pid=64844 tid=1 window-before-double-click-mathtype-released-to-native-editor-unclaimed
+2026-09-06T21:44:12.2423947+08:00 pid=64844 tid=12 left-down x=3812 y=9 wordForeground=False
+2026-09-06T21:44:14.4492962+08:00 pid=64844 tid=12 left-down x=1517 y=985 wordForeground=True
+2026-09-06T21:44:43.0098889+08:00 pid=64844 tid=12 left-down x=1820 y=1993 wordForeground=True
+2026-09-06T21:44:44.9596097+08:00 pid=64844 tid=12 left-down x=2265 y=1773 wordForeground=False
+2026-09-06T21:45:35.0531249+08:00 pid=64844 tid=12 left-down x=1897 y=1997 wordForeground=False
+2026-09-06T21:45:36.5743571+08:00 pid=64844 tid=12 left-down x=2373 y=1907 wordForeground=False
+2026-09-06T21:45:37.6653402+08:00 pid=64844 tid=12 left-down x=2372 y=1627 wordForeground=False
+2026-09-06T21:45:38.7830750+08:00 pid=64844 tid=12 left-down x=2305 y=1600 wordForeground=False
+2026-09-06T21:45:41.2464023+08:00 pid=64844 tid=12 left-down x=3535 y=976 wordForeground=False
+2026-09-06T21:45:42.7453261+08:00 pid=64844 tid=12 left-down x=2685 y=1869 wordForeground=False
+2026-09-06T21:46:37.9560654+08:00 pid=64844 tid=12 left-down x=1982 y=2015 wordForeground=False
+2026-09-06T21:46:45.2232019+08:00 pid=64844 tid=12 left-down x=852 y=2147 wordForeground=False
+2026-09-06T21:46:48.6913294+08:00 pid=64844 tid=12 left-down x=2927 y=1203 wordForeground=False
+2026-09-06T21:47:00.4570850+08:00 pid=64844 tid=12 left-down x=1718 y=624 wordForeground=False
+2026-09-06T21:47:02.5968721+08:00 pid=64844 tid=12 left-down x=2217 y=1462 wordForeground=False
+2026-09-06T21:47:32.0555756+08:00 pid=64844 tid=12 left-down x=1235 y=828 wordForeground=True
+2026-09-06T21:47:33.6011750+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX Insert Equation Reference recording=False level=0
+2026-09-06T21:47:33.6021750+08:00 pid=64844 tid=1 word-undo-started name=VisualTeX Insert Equation Reference recording=True level=1
+2026-09-06T21:47:33.6511747+08:00 pid=64844 tid=1 word-undo-end recording=True level=1
+2026-09-06T21:47:33.6521746+08:00 pid=64844 tid=1 reference-insertion-complete target=MathType 公式 (2)
+2026-09-06T21:47:39.9293301+08:00 pid=64844 tid=12 left-down x=1049 y=502 wordForeground=True
+2026-09-06T21:47:40.6199785+08:00 pid=64844 tid=1 word-undo-begin name=VisualTeX Set Equation Number Format recording=False level=0
+2026-09-06T21:47:40.6209795+08:00 pid=64844 tid=1 word-undo-started name=VisualTeX Set Equation Number Format recording=True level=1
+2026-09-06T21:47:41.0023563+08:00 pid=64844 tid=1 word-undo-end recording=False level=0
+2026-09-06T21:47:45.5422168+08:00 pid=64844 tid=12 left-down x=403 y=1089 wordForeground=True
+2026-09-06T21:47:45.9307288+08:00 pid=64844 tid=12 left-down x=403 y=1089 wordForeground=True
+2026-09-06T21:47:45.9307288+08:00 pid=64844 tid=12 double-click elapsedMs=387.765 withinX=True withinY=True nativeOleTarget=False suppressSecondDown=False dispatchCallback=True
+2026-09-06T21:47:46.0303893+08:00 pid=64844 tid=21 callback-begin interceptedNativeOle=False x=403 y=1089
+2026-09-06T21:47:46.0303893+08:00 pid=64844 tid=21 addin-callback-received interceptedNativeOle=False x=403 y=1089
+2026-09-06T21:47:46.0303893+08:00 pid=64844 tid=21 callback-end
+2026-09-06T21:47:46.0303893+08:00 pid=64844 tid=1 addin-coordinate-selection formulaId=<null> objectMode=<null>
+2026-09-06T21:47:56.3707502+08:00 pid=64844 tid=12 left-down x=584 y=1013 wordForeground=True
+2026-09-06T21:48:00.7043923+08:00 pid=64844 tid=12 left-down x=2608 y=1634 wordForeground=True
+2026-09-06T21:48:24.3508115+08:00 pid=64844 tid=12 left-down x=1927 y=1995 wordForeground=False
+2026-09-06T21:48:26.6870533+08:00 pid=64844 tid=12 left-down x=2318 y=1897 wordForeground=False
+2026-09-06T21:57:13.6152970+08:00 pid=64844 tid=12 left-down x=1938 y=2024 wordForeground=False
+2026-09-06T21:57:15.2040899+08:00 pid=64844 tid=12 left-down x=2338 y=1891 wordForeground=False
+2026-09-06T21:59:58.8238072+08:00 pid=64844 tid=12 left-down x=2320 y=1675 wordForeground=False
+2026-09-06T22:00:02.8536156+08:00 pid=64844 tid=12 left-down x=686 y=2131 wordForeground=False
+2026-09-06T22:00:05.5186456+08:00 pid=64844 tid=12 left-down x=1008 y=1231 wordForeground=False
+2026-09-06T22:00:05.9434597+08:00 pid=64844 tid=12 left-down x=1008 y=1231 wordForeground=False
+2026-09-06T22:00:08.2284612+08:00 pid=64844 tid=12 left-down x=2052 y=1288 wordForeground=False
+2026-09-06T22:00:08.9357737+08:00 pid=64844 tid=12 left-down x=2052 y=1288 wordForeground=False
+2026-09-06T22:00:09.9975235+08:00 pid=64844 tid=12 left-down x=2052 y=1288 wordForeground=False
+2026-09-06T22:00:11.0126990+08:00 pid=64844 tid=12 left-down x=2052 y=1288 wordForeground=False

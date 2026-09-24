@@ -1,0 +1,13 @@
+﻿{
+    "label":  "stage02b-mechanisms",
+    "unsupportedRejected":  true,
+    "aliasRewritten":  true,
+    "dllSha256":  "3BDE60401B2CAFD3AD1662BA7E6702C1CE90DA23F5B62B7074ED1466A7F5840C",
+    "kind":  "data-only supplementary verification, not real Word acceptance",
+    "recovery":  {
+                     "equal":  true,
+                     "original":  "JPXYgDv/iV2COsXMfQQO7nQCBqvN6h0i2ekldXhEuCw=",
+                     "recovered":  "JPXYgDv/iV2COsXMfQQO7nQCBqvN6h0i2ekldXhEuCw="
+                 },
+    "secondRewriteStable":  true
+}

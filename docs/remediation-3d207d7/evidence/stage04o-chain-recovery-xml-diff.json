@@ -1,0 +1,37 @@
+{
+  "before": "docs\\remediation-3d207d7\\evidence\\stage04o-word-hook.log.recovery-a3510f930852442db7f5f34a899d42ad-before.xml",
+  "after": "docs\\remediation-3d207d7\\evidence\\stage04o-word-hook.log.recovery-a3510f930852442db7f5f34a899d42ad-after.xml",
+  "count": 6,
+  "differences": [
+    {
+      "path": "/children/3/children/1/children/1/children/1/attrs/style",
+      "before": "width:134pt;height:35pt",
+      "after": "width:134pt;height:34.95pt"
+    },
+    {
+      "path": "/children/5/children/2/children/1/children/0/attrs/style",
+      "before": "width:111pt;height:68pt",
+      "after": "width:110.9pt;height:68.05pt"
+    },
+    {
+      "path": "/children/7/children/2/children/1/children/0/attrs/style",
+      "before": "width:42pt;height:16pt",
+      "after": "width:42.05pt;height:16.05pt"
+    },
+    {
+      "path": "/children/12/children/2/children/1/children/0/attrs/style",
+      "before": "width:189pt;height:33pt",
+      "after": "width:188.95pt;height:33.1pt"
+    },
+    {
+      "path": "/children/15/children/2/children/1/children/0/attrs/style",
+      "before": "width:255pt;height:31pt",
+      "after": "width:254.9pt;height:31pt"
+    },
+    {
+      "path": "/children/18/children/2/children/1/children/0/attrs/style",
+      "before": "width:97pt;height:31pt",
+      "after": "width:96.95pt;height:31pt"
+    }
+  ]
+}

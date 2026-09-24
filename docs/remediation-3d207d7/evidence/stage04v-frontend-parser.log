@@ -1,0 +1,33 @@
+
+> visualtex-windows@1.2.6 test:document-import-parser
+> tsx scripts/document_import_parser_coverage.mts
+
+Shared Word/frontend heading cases: 6 passed
+{
+  "summary": [
+    {
+      "label": "Markdown baseline",
+      "supported": 12,
+      "total": 12,
+      "unsupported": []
+    },
+    {
+      "label": "LaTeX baseline",
+      "supported": 20,
+      "total": 20,
+      "unsupported": []
+    },
+    {
+      "label": "Markdown extended/common dialect features",
+      "supported": 21,
+      "total": 21,
+      "unsupported": []
+    },
+    {
+      "label": "LaTeX extended/document features",
+      "supported": 37,
+      "total": 37,
+      "unsupported": []
+    }
+  ]
+}

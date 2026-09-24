@@ -1,0 +1,20 @@
+[
+  ["new", "stage04ao-omml-seeded"],
+  ["number-format", "continuous", "stage04ao-omml-continuous"],
+  ["insert", "omml", "block", "right", "勾股定理"],
+  ["reference", "1", "stage04ao-omml-seed-reference"],
+  ["snapshot", "stage04ao-omml-seed"],
+  ["next"],
+  ["import", "omml", "true", "stage04ao-omml-import", "import-source.tex"],
+  ["snapshot", "stage04ao-omml-imported"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04ao-omml-imported-visible\"}"],
+  ["edit", "4", "keep", "keep", "close"],
+  ["snapshot", "stage04ao-omml-closed"],
+  ["edit-source", "math", "4", "E=mc^2", "stage04ao-omml-edit"],
+  ["reference", "3", "stage04ao-omml-ref"],
+  ["number-format", "heading2-dash", "stage04ao-omml-format"],
+  ["snapshot", "stage04ao-omml-ready"],
+  ["convert", "omml-mt", "full", "stage04ao-omml-mt"],
+  ["snapshot", "stage04ao-mt-converted"],
+  ["ui", "{\"Action\":\"screenshot\",\"Label\":\"stage04ao-mt-converted-visible\"}"]
+]

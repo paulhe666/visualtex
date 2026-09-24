@@ -1,0 +1,11 @@
+{
+  "document": "文档31",
+  "allComEqual": true,
+  "maths": 0,
+  "ole": 3,
+  "fields": 7,
+  "end": 353,
+  "runtimeRecoveryAllComponents": true,
+  "conversionPassed": false,
+  "error": "COM and Word XML disagree on the complete equation inventory."
+}

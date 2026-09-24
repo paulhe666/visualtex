@@ -47,6 +47,46 @@ assert.equal(
   String.raw`\mathbf{abc}`,
 );
 assert.equal(
+  toggleFormulaSelectionLatex(String.raw`\Delta`, "bold", none),
+  String.raw`\mathbf{\Delta}`,
+  "uppercase Greek is upright by default and must become bold upright",
+);
+assert.equal(
+  toggleFormulaSelectionLatex(String.raw`\Delta`, "italic", none),
+  String.raw`\mathit{\Delta}`,
+  "italic toggle must visibly italicize an upright uppercase Greek letter",
+);
+for (const decoration of ["hat", "vec", "widehat", "bar", "overline", "dot"]) {
+  assert.equal(
+    toggleFormulaSelectionLatex(`\\${decoration}{\\Delta}`, "bold", none),
+    `\\${decoration}{\\mathbf{\\Delta}}`,
+    "decorations must preserve the base symbol's upright Greek semantics",
+  );
+  assert.equal(
+    toggleFormulaSelectionLatex(`\\${decoration}{\\Delta}`, "italic", none),
+    `\\${decoration}{\\mathit{\\Delta}}`,
+  );
+  assert.equal(
+    toggleFormulaSelectionLatex(`\\${decoration}{\\mathbf{\\Delta}}`, "bold", bold),
+    `\\${decoration}{\\Delta}`,
+  );
+}
+assert.equal(
+  toggleFormulaSelectionLatex(String.raw`\vec{\hat{\Delta}}`, "bold", none),
+  String.raw`\vec{\hat{\mathbf{\Delta}}}`,
+  "nested decorations must not add a bold-italic wrapper around the accent",
+);
+assert.equal(
+  toggleFormulaSelectionLatex(String.raw`\mathit{\Delta}`, "italic", italic),
+  String.raw`\Delta`,
+  "second italic toggle must restore the default upright uppercase Greek form",
+);
+assert.equal(
+  toggleFormulaSelectionLatex(String.raw`\mathbf{\Delta}`, "italic", bold),
+  String.raw`\mathbfit{\Delta}`,
+  "italic toggle must preserve bold while italicizing uppercase Greek",
+);
+assert.equal(
   toggleFormulaSelectionLatex(String.raw`\mathbfit{abc}`, "bold", boldItalic),
   "abc",
 );
@@ -126,4 +166,9 @@ assert.equal(
   String.raw`\mathrm{\mathbf{x}+y}`,
 );
 
+assert.equal(
+  toggleFormulaSelectionLatex(String.raw`\hat{\bm{\mathbfit{\Delta}}}`, "italic", none),
+  String.raw`\hat{\mathbf{\Delta}}`,
+  "nested serialized variants must toggle italic off even if the accent reports no uniform style",
+);
 console.log("VisualTeX formula bold/italic toggle regression passed");

@@ -1,0 +1,61 @@
+{
+  "id": "78fc2006-86cd-43c6-97bf-b853896bee3b",
+  "mode": "edit",
+  "host": "word",
+  "formulaId": "76bd0b9a-b639-4d25-97d3-1d17c8bf2d95",
+  "sourceDocumentId": "文档89",
+  "sourceObjectId": "visualtex-word-vsto-range:1:21",
+  "title": "Word Formula",
+  "lines": [
+    {
+      "id": "556ea0bf-5f4d-4bc2-a4dc-e05db3b1144d",
+      "latex": "x^{2}+b^{2}=c^{2}"
+    }
+  ],
+  "activeLineId": "556ea0bf-5f4d-4bc2-a4dc-e05db3b1144d",
+  "codeFormat": "raw",
+  "displayMode": "block",
+  "objectMode": "wordOmml",
+  "numbered": true,
+  "mathTypeNumberPosition": "right",
+  "fontSizePt": 10.5,
+  "exportWidth": 0.0,
+  "exportHeight": 0.0,
+  "exportResult": null,
+  "originalMetadata": {
+    "schema": "visualtex-formula",
+    "schemaVersion": 1,
+    "formulaId": "76bd0b9a-b639-4d25-97d3-1d17c8bf2d95",
+    "title": "Word Formula",
+    "latex": "x^{2}+b^{2}=c^{2}",
+    "lines": [
+      {
+        "id": "556ea0bf-5f4d-4bc2-a4dc-e05db3b1144d",
+        "latex": "x^{2}+b^{2}=c^{2}"
+      }
+    ],
+    "codeFormat": "raw",
+    "displayMode": "block",
+    "numbered": true,
+    "renderWidthPx": 93.59380340576172,
+    "renderHeightPx": 33.52259826660156,
+    "baseline": 22.37459945678711,
+    "fontSizePt": 10.5,
+    "renderFontSizePt": 10.5,
+    "formulaLetterFont": "times",
+    "formulaChineseFont": "system",
+    "nativeOmmlFingerprint": "66f17eeece57f7105363ba6a15b456e35514fa55ce52239b99b04d6bb7daa181",
+    "createdWithVersion": "1.0.18",
+    "updatedWithVersion": "1.0.18",
+    "createdAt": "2026-09-06T03:36:27.8255090+00:00",
+    "updatedAt": "2026-09-06T03:36:27.8255090+00:00"
+  },
+  "dirty": false,
+  "status": "editing",
+  "autoCommitOnClose": true,
+  "explicitCancel": false,
+  "error": null,
+  "createdAt": 1788665853986,
+  "updatedAt": 1788665854050,
+  "expiresAt": 1788752254050
+}

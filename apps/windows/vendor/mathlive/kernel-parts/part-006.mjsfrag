@@ -1,0 +1,1476 @@
+      svgMarkup += '"';
+      if (this.svgStyle) svgMarkup += this.svgStyle;
+      svgMarkup += ` viewBox="0 0 ${Math.floor(100 * this.width) / 100} ${Math.floor(100 * (this.height + this.depth)) / 100}"`;
+      svgMarkup += `>${this.svgOverlay}</svg>`;
+    }
+    const props = [];
+    const classes = this.classes.split(" ");
+    classes.push(
+      (_c2 = {
+        latex: "ML__raw-latex",
+        placeholder: "ML__placeholder",
+        error: "ML__error"
+      }[this.type]) != null ? _c2 : ""
+    );
+    if (this.caret === "latex") classes.push("ML__latex-caret");
+    if (this.isSelected) classes.push("ML__selected");
+    const classList = classes.length === 1 ? classes[0] : classes.filter((x, e, a) => x.length > 0 && a.indexOf(x) === e).join(" ");
+    if (classList.length > 0)
+      props.push(`class=${sanitizeAttributeValue(`"${classList}"`)}`);
+    if (this.id) props.push(` data-atom-id=${sanitizeAttributeValue(this.id)}`);
+    if (this.cssId) {
+      props.push(
+        ` id=${sanitizeAttributeValue(`"${this.cssId.replace(/ /g, "-")}"`)}`
+      );
+    }
+    if (this.attributes) {
+      props.push(
+        ...Object.keys(this.attributes).map(
+          (x) => `${sanitizeAttributeName(x)}=${sanitizeAttributeValue(this.attributes[x])}`
+        )
+      );
+    }
+    if (this.htmlData) {
+      const entries = this.htmlData.split(",");
+      for (const entry of entries) {
+        const matched = entry.match(/([^=]+)=(.+$)/);
+        if (matched) {
+          const key = sanitizeAttributeName(matched[1]);
+          if (key) {
+            if (key === "href") {
+              const url = new URL(matched[2]);
+              if (url.protocol !== "http:" && url.protocol !== "https:")
+                throw new Error(`Invalid URL: ${matched[2]}`);
+              props.push(`href="${matched[2].replace(/"/g, "&quot;")}"`);
+            } else
+              props.push(`data-${key}=${sanitizeAttributeValue(matched[2])}`);
+          }
+        } else {
+          const key = sanitizeAttributeName(entry);
+          if (key) props.push(`data-${key} `);
+        }
+      }
+    }
+    const cssProps = (_d2 = this.cssProperties) != null ? _d2 : {};
+    if (this.hasExplicitWidth) {
+      if (cssProps.width === void 0)
+        cssProps.width = `${Math.ceil(this._width * 100) / 100}em`;
+    }
+    const styles = Object.keys(cssProps).map((x) => `${x}:${cssProps[x]}`);
+    if (this.scale !== void 0 && this.scale !== 1 && (body.length > 0 || svgMarkup.length > 0))
+      styles.push(`font-size: ${Math.ceil(this.scale * 1e4) / 100}%`);
+    if (this.htmlStyle) {
+      for (const entry of this.htmlStyle.split(";")) {
+        const matched = entry.match(/([^:]+):(.+$)/);
+        if (matched) {
+          const key = matched[1].trim().replace(/ /g, "-");
+          if (key) styles.push(`${key}:${matched[2]}`);
+        }
+      }
+    }
+    if (styles.length > 0)
+      props.push(`style=${sanitizeAttributeValue(styles.join(";"))}`);
+    let result = "";
+    if (props.length > 0 || svgMarkup.length > 0)
+      result = `<span ${props.join(" ")}>${body}${svgMarkup}</span>`;
+    else result = body;
+    if (this.caret === "text") result += '<span class="ML__text-caret"></span>';
+    else if (this.caret === "math") result += '<span class="ML__caret"></span>';
+    return result;
+  }
+  /**
+   * Can this box be coalesced with 'box'?
+   * This is used to 'coalesce' (i.e. group together) a series of boxes that are
+   * identical except for their value, and to avoid generating redundant boxes.
+   * That is: '12' ->
+   *      "<span class='crm'>12</span>"
+   * rather than:
+   *      "<span class='crm'>1</span><span class='crm'>2</span>"
+   */
+  tryCoalesceWith(box) {
+    if (this.svgBody || !this.value) return false;
+    if (box.svgBody || !box.value) return false;
+    const hasChildren = this.children && this.children.length > 0;
+    const boxHasChildren = box.children && box.children.length > 0;
+    if (hasChildren || boxHasChildren) return false;
+    if (box.cssProperties || this.cssProperties) {
+      for (const prop of [
+        "border",
+        "border-left",
+        "border-right",
+        "border-right-width",
+        "left",
+        "margin",
+        "margin-left",
+        "margin-right",
+        "padding",
+        "position",
+        "width"
+      ]) {
+        if (box.cssProperties && prop in box.cssProperties) return false;
+        if (this.cssProperties && prop in this.cssProperties) return false;
+      }
+    }
+    const thisStyleCount = this.cssProperties ? Object.keys(this.cssProperties).length : 0;
+    const boxStyleCount = box.cssProperties ? Object.keys(box.cssProperties).length : 0;
+    if (thisStyleCount !== boxStyleCount) return false;
+    if (thisStyleCount > 0) {
+      for (const prop of Object.keys(this.cssProperties)) {
+        if (this.cssProperties[prop] !== box.cssProperties[prop])
+          return false;
+      }
+    }
+    const classes = this.classes.trim().replace(/\s+/g, " ").split(" ");
+    const boxClasses = box.classes.trim().replace(/\s+/g, " ").split(" ");
+    if (classes.length !== boxClasses.length) return false;
+    classes.sort();
+    boxClasses.sort();
+    for (const [i, class_] of classes.entries()) {
+      if (class_ === "ML__vertical-separator") return false;
+      if (class_ !== boxClasses[i]) return false;
+    }
+    this.value += box.value;
+    this.height = Math.max(this.height, box.height);
+    this.depth = Math.max(this.depth, box.depth);
+    this._width = this._width + box._width;
+    this.maxFontSize = Math.max(this.maxFontSize, box.maxFontSize);
+    this.italic = box.italic;
+    return true;
+  }
+};
+function coalesceRecursive(boxes) {
+  if (!boxes || boxes.length === 0) return [];
+  boxes[0].children = coalesceRecursive(boxes[0].children);
+  const result = [boxes[0]];
+  for (let i = 1; i < boxes.length; i++) {
+    if (!result[result.length - 1].tryCoalesceWith(boxes[i])) {
+      boxes[i].children = coalesceRecursive(boxes[i].children);
+      result.push(boxes[i]);
+    }
+  }
+  return result;
+}
+function coalesce(box) {
+  if (box.children) box.children = coalesceRecursive(box.children);
+  return box;
+}
+function makeStruts(content, options) {
+  if (!content) return new Box(null, options);
+  const topStrut = new Box(null, { classes: "ML__strut", type: "ignore" });
+  topStrut.setStyle("height", Math.max(0, content.height), "em");
+  const struts = [topStrut];
+  if (content.depth !== 0) {
+    const bottomStrut = new Box(null, {
+      classes: "ML__strut--bottom",
+      type: "ignore"
+    });
+    bottomStrut.setStyle("height", content.height + content.depth, "em");
+    bottomStrut.setStyle("vertical-align", -content.depth, "em");
+    struts.push(bottomStrut);
+  }
+  struts.push(content);
+  return new Box(struts, __spreadProps(__spreadValues({}, options), { type: "lift" }));
+}
+function makeSVGBox(svgBodyName) {
+  const height = svgBodyHeight(svgBodyName) / 2;
+  const box = new Box(null, { maxFontSize: 0 });
+  box.height = height + 0.166;
+  box.depth = height - 0.166;
+  box.svgBody = svgBodyName;
+  return box;
+}
+function horizontalLayout(box, fontName) {
+  var _a3;
+  if (box.type === "latex") {
+    box.height = 0.9;
+    box.depth = 0.2;
+    box._width = 1;
+    return;
+  }
+  if (box.value) {
+    box.height = -Infinity;
+    box.depth = -Infinity;
+    box._width = 0;
+    box.skew = -Infinity;
+    box.italic = -Infinity;
+    for (let i = 0; i < box.value.length; i++) {
+      const metrics = getCharacterMetrics(box.value.codePointAt(i), fontName);
+      box.height = Math.max(box.height, metrics.height);
+      box.depth = Math.max(box.depth, metrics.depth);
+      box._width += metrics.width;
+      box.skew = metrics.skew;
+      box.italic = metrics.italic;
+    }
+    return;
+  }
+  if (box.children && box.children.length > 0) {
+    let height = -Infinity;
+    let depth = -Infinity;
+    let maxFontSize = 0;
+    for (const child of box.children) {
+      if (child.height > height) height = child.height;
+      if (child.depth > depth) depth = child.depth;
+      maxFontSize = Math.max(maxFontSize, (_a3 = child.maxFontSize) != null ? _a3 : 0);
+    }
+    box.height = height;
+    box.depth = depth;
+    box._width = box.children.reduce((acc, x) => acc + x.width, 0);
+    box.maxFontSize = maxFontSize;
+  }
+}
+function sanitizeAttributeName(attribute) {
+  attribute = attribute.trim().replace(/ /g, "-");
+  if (attribute.length === 0) throw new Error(`Invalid empty attribute name`);
+  const invalidAttributeName = /[\x20\x09\x0a\x0c\x0d"'>/=\x00-\x1f]/;
+  if (invalidAttributeName.test(attribute))
+    throw new Error(`Invalid attribute name "${attribute}"`);
+  return attribute;
+}
+function sanitizeAttributeValue(value) {
+  value = value.trim();
+  if (value.startsWith('"') && value.endsWith('"')) {
+    if (/"/.test(value.slice(1, -1)))
+      throw new Error(`Invalid attribute value: ${value}`);
+    return value;
+  }
+  if (value.startsWith("'") && value.endsWith("'")) {
+    if (/'/.test(value.slice(1, -1)))
+      throw new Error(`Invalid attribute value: ${value}`);
+    return value;
+  }
+  if (value.length === 0) throw new Error(`Invalid empty attribute value`);
+  return `"${value.replace(/"/g, "&quot;")}"`;
+}
+
+// src/core/v-box.ts
+function getVListChildrenAndDepth(params) {
+  if ("individualShift" in params) {
+    const oldChildren = params.individualShift;
+    let prevChild = oldChildren[0];
+    if (prevChild == null) return [null, 0];
+    const children = [prevChild];
+    const depth = -prevChild.shift - prevChild.box.depth;
+    let currPos = depth;
+    for (let i = 1; i < oldChildren.length; i++) {
+      const child = oldChildren[i];
+      const diff = -child.shift - currPos - child.box.depth;
+      const size = diff - (prevChild.box.height + prevChild.box.depth);
+      currPos = currPos + diff;
+      children.push(size);
+      children.push(child);
+      prevChild = child;
+    }
+    return [children, depth];
+  }
+  if ("top" in params) {
+    let bottom = params.top;
+    for (const child of params.children) {
+      bottom -= typeof child === "number" ? child : child.box.height + child.box.depth;
+    }
+    return [params.children, bottom];
+  } else if ("bottom" in params) return [params.children, -params.bottom];
+  else if ("firstBaseline" in params) {
+    const firstChild = params.firstBaseline[0];
+    if (typeof firstChild === "number")
+      throw new Error("First child must be an element.");
+    return [params.firstBaseline, -firstChild.box.depth];
+  } else if ("shift" in params) {
+    const firstChild = params.children[0];
+    if (typeof firstChild === "number")
+      throw new Error("First child must be an element.");
+    return [params.children, -firstChild.box.depth - params.shift];
+  }
+  return [null, 0];
+}
+function makeRows(params) {
+  var _a3;
+  const [children, depth] = getVListChildrenAndDepth(params);
+  if (!children) return [[], 0, 0];
+  const pstrut = new Box(null, { classes: "ML__pstrut" });
+  let pstrutSize = 0;
+  for (const child of children) {
+    if (typeof child !== "number") {
+      const box = child.box;
+      pstrutSize = Math.max(pstrutSize, box.maxFontSize, box.height);
+    }
+  }
+  pstrutSize += 2;
+  pstrut.height = pstrutSize;
+  pstrut.setStyle("height", pstrutSize, "em");
+  const realChildren = [];
+  let minPos = depth;
+  let maxPos = depth;
+  let currPos = depth;
+  let width = 0;
+  for (const child of children) {
+    if (typeof child === "number") currPos += child;
+    else {
+      const box = child.box;
+      const classes = (_a3 = child.classes) != null ? _a3 : [];
+      const childWrap = new Box([pstrut, box], {
+        classes: classes.join(" "),
+        style: child.style
+      });
+      box.setStyle("height", box.height + box.depth, "em");
+      box.setStyle("display", "inline-block");
+      childWrap.setStyle("top", -pstrutSize - currPos - box.depth, "em");
+      if (child.marginLeft)
+        childWrap.setStyle("margin-left", child.marginLeft, "em");
+      if (child.marginRight)
+        childWrap.setStyle("margin-right", child.marginRight, "em");
+      realChildren.push(childWrap);
+      currPos += box.height + box.depth;
+      width = Math.max(width, childWrap.width);
+    }
+    minPos = Math.min(minPos, currPos);
+    maxPos = Math.max(maxPos, currPos);
+  }
+  realChildren.forEach((child) => {
+    child.softWidth = width;
+  });
+  const vlist = new Box(realChildren, { classes: "ML__vlist" });
+  vlist.softWidth = width;
+  vlist.height = maxPos;
+  vlist.setStyle("height", maxPos, "em");
+  if (minPos >= 0)
+    return [[new Box(vlist, { classes: "ML__vlist-r" })], maxPos, -minPos];
+  const depthStrut = new Box(new Box(null), { classes: "ML__vlist" });
+  depthStrut.height = -minPos;
+  depthStrut.setStyle("height", -minPos, "em");
+  const topStrut = new Box(8203, {
+    classes: "ML__vlist-s",
+    maxFontSize: 0
+  });
+  topStrut.softWidth = 0;
+  topStrut.height = 0;
+  topStrut.depth = 0;
+  return [
+    [
+      new Box([vlist, topStrut], { classes: "ML__vlist-r" }),
+      new Box(depthStrut, { classes: "ML__vlist-r" })
+    ],
+    maxPos,
+    -minPos
+  ];
+}
+var VBox = class extends Box {
+  constructor(content, options) {
+    var _a3;
+    const [rows, height, depth] = makeRows(content);
+    super(rows.length === 1 ? rows[0] : rows, {
+      type: options == null ? void 0 : options.type,
+      classes: ((_a3 = options == null ? void 0 : options.classes) != null ? _a3 : "") + " ML__vlist-t" + (rows.length === 2 ? " ML__vlist-t2" : "")
+    });
+    this.height = height;
+    this.depth = depth;
+    this.softWidth = rows.reduce((acc, row) => Math.max(acc, row.width), 0);
+  }
+};
+function makeLimitsStack(context, options) {
+  var _a3, _b3, _c2, _d2, _e;
+  const metrics = context.metrics;
+  const base = new Box(options.base);
+  const baseShift = (_a3 = options.baseShift) != null ? _a3 : 0;
+  const slant = (_b3 = options.slant) != null ? _b3 : 0;
+  let aboveShift = 0;
+  let belowShift = 0;
+  if (options.above) {
+    aboveShift = (_c2 = options.aboveShift) != null ? _c2 : Math.max(
+      metrics.bigOpSpacing1,
+      metrics.bigOpSpacing3 - options.above.depth
+    );
+  }
+  if (options.below) {
+    belowShift = (_d2 = options.belowShift) != null ? _d2 : Math.max(
+      metrics.bigOpSpacing2,
+      metrics.bigOpSpacing4 - options.below.height
+    );
+  }
+  let result = null;
+  if (options.below && options.above) {
+    const bottom = metrics.bigOpSpacing5 + options.below.height + options.below.depth + belowShift + base.depth + baseShift;
+    result = new VBox({
+      bottom,
+      children: [
+        metrics.bigOpSpacing5,
+        {
+          box: options.below,
+          marginLeft: -slant,
+          classes: ["ML__center"]
+        },
+        belowShift,
+        //  We need to center the base to account for the case where the
+        // above/below is wider
+        { box: base, classes: ["ML__center"] },
+        aboveShift,
+        {
+          box: options.above,
+          marginLeft: slant,
+          classes: ["ML__center"]
+        },
+        metrics.bigOpSpacing5
+      ]
+    }).wrap(context);
+  } else if (options.below && !options.above) {
+    result = new VBox({
+      top: base.height - baseShift,
+      children: [
+        metrics.bigOpSpacing5,
+        {
+          box: options.below,
+          marginLeft: -slant,
+          classes: ["ML__center"]
+        },
+        belowShift,
+        { box: base, classes: ["ML__center"] }
+      ]
+    }).wrap(context);
+  } else if (!options.below && options.above) {
+    const bottom = base.depth + baseShift;
+    result = new VBox({
+      bottom,
+      children: [
+        { box: base, classes: ["ML__center"] },
+        aboveShift,
+        {
+          box: options.above,
+          marginLeft: slant,
+          classes: ["ML__center"]
+        },
+        metrics.bigOpSpacing5
+      ]
+    }).wrap(context);
+  } else {
+    const bottom = base.depth + baseShift;
+    result = new VBox({
+      bottom,
+      children: [{ box: base }, metrics.bigOpSpacing5]
+    }).wrap(context);
+  }
+  return new Box(result, { type: (_e = options.type) != null ? _e : "op" });
+}
+
+// src/core/mathstyle.ts
+var D = 7;
+var Dc = 6;
+var T = 5;
+var Tc = 4;
+var S = 3;
+var Sc = 2;
+var SS = 1;
+var SSc = 0;
+var Mathstyle = class {
+  constructor(id, sizeDelta, cramped) {
+    this.id = id;
+    this.sizeDelta = sizeDelta;
+    this.cramped = cramped;
+    const metricsIndex = { "-4": 2, "-3": 1, 0: 0 }[sizeDelta];
+    this.metrics = Object.keys(FONT_METRICS).reduce((acc, x) => {
+      return __spreadProps(__spreadValues({}, acc), { [x]: FONT_METRICS[x][metricsIndex] });
+    }, {});
+  }
+  getFontSize(size) {
+    return Math.max(1, size + this.sizeDelta);
+  }
+  /**
+   * Get the style of a superscript given a base in the current style.
+   */
+  get sup() {
+    return MATHSTYLES[[SSc, SS, SSc, SS, Sc, S, Sc, S][this.id]];
+  }
+  /**
+   * Get the style of a subscript given a base in the current style.
+   */
+  get sub() {
+    return MATHSTYLES[[SSc, SSc, SSc, SSc, Sc, Sc, Sc, Sc][this.id]];
+  }
+  /**
+   * Get the style of a fraction numerator given the fraction in the current
+   * style.
+   * See TeXBook p 141.
+   */
+  get fracNum() {
+    return MATHSTYLES[[SSc, SS, SSc, SS, Sc, S, Tc, T][this.id]];
+  }
+  /**
+   * Get the style of a fraction denominator given the fraction in the current
+   * style.
+   * See TeXBook p 141.
+   */
+  get fracDen() {
+    return MATHSTYLES[[SSc, SSc, SSc, SSc, Sc, Sc, Tc, Tc][this.id]];
+  }
+  /**
+   * Get the cramped version of a style (in particular, cramping a cramped style
+   * doesn't change the style).
+   */
+  get cramp() {
+    return MATHSTYLES[[SSc, SSc, Sc, Sc, Tc, Tc, Dc, Dc][this.id]];
+  }
+  /**
+   * Return if this style is tightly spaced (scriptstyle/scriptscriptstyle)
+   */
+  get isTight() {
+    return this.sizeDelta < 0;
+  }
+};
+var NUMERIC_MATHSTYLES = {
+  7: new Mathstyle(D, 0, false),
+  6: new Mathstyle(Dc, 0, true),
+  5: new Mathstyle(T, 0, false),
+  4: new Mathstyle(Tc, 0, true),
+  3: new Mathstyle(S, -3, false),
+  2: new Mathstyle(Sc, -3, true),
+  1: new Mathstyle(SS, -4, false),
+  0: new Mathstyle(SSc, -4, true)
+};
+var MATHSTYLES = __spreadProps(__spreadValues({}, NUMERIC_MATHSTYLES), {
+  displaystyle: NUMERIC_MATHSTYLES[D],
+  textstyle: NUMERIC_MATHSTYLES[T],
+  scriptstyle: NUMERIC_MATHSTYLES[S],
+  scriptscriptstyle: NUMERIC_MATHSTYLES[SS]
+});
+
+// src/core/registers-utils.ts
+function convertDimensionToPt(value, precision) {
+  var _a3;
+  if (!value) return 0;
+  const f = {
+    pt: 1,
+    mm: 7227 / 2540,
+    cm: 7227 / 254,
+    ex: 35271 / 8192,
+    px: 3 / 4,
+    em: PT_PER_EM,
+    bp: 803 / 800,
+    dd: 1238 / 1157,
+    pc: 12,
+    in: 72.27,
+    mu: 10 / 18
+  }[(_a3 = value.unit) != null ? _a3 : "pt"];
+  if (Number.isFinite(precision)) {
+    const factor = 10 ** precision;
+    return Math.round(value.dimension / PT_PER_EM * f * factor) / factor;
+  }
+  return value.dimension * f;
+}
+function convertDimensionToEm(value, precision) {
+  if (value === null) return 0;
+  const result = convertDimensionToPt(value) / PT_PER_EM;
+  if (Number.isFinite(precision)) {
+    const factor = 10 ** precision;
+    return Math.round(result * factor) / factor;
+  }
+  return result;
+}
+function serializeDimension(value) {
+  var _a3;
+  return `${value.dimension}${(_a3 = value.unit) != null ? _a3 : "pt"}`;
+}
+function serializeGlue(value) {
+  let result = serializeDimension(value.glue);
+  if (value.grow && value.grow.dimension !== 0)
+    result += ` plus ${serializeDimension(value.grow)}`;
+  if (value.shrink && value.shrink.dimension !== 0)
+    result += ` minus ${serializeDimension(value.shrink)}`;
+  return result;
+}
+function serializeLatexValue(value) {
+  var _a3, _b3;
+  if (value === null || value === void 0) return null;
+  let result = "";
+  if ("dimension" in value) result = `${value.dimension}${(_a3 = value.unit) != null ? _a3 : "pt"}`;
+  if ("glue" in value) result = serializeGlue(value);
+  if ("number" in value) {
+    if (!("base" in value) || value.base === "decimal")
+      result = Number(value.number).toString();
+    else if (value.base === "alpha")
+      result = `\`${String.fromCodePoint(value.number)}`;
+    else {
+      const i = Math.round(value.number) >>> 0;
+      if (value.base === "hexadecimal") {
+        result = Number(i).toString(16).toUpperCase();
+        if (i <= 255) result = result.padStart(2, "0");
+        else if (i <= 65535) result = result.padStart(4, "0");
+        else if (i <= 16777215) result = result.padStart(6, "0");
+        else result = result.padStart(8, "0");
+        result = `"${result}`;
+      } else if (value.base === "octal") {
+        result = Number(i).toString(8);
+        if (i <= 63) result = result.padStart(2, "0");
+        else if (i <= 30583) result = result.padStart(4, "0");
+        else result = result.padStart(8, "0");
+        result = `'${result}`;
+      }
+    }
+  }
+  if ("register" in value) {
+    if ("factor" in value) {
+      if (value.factor === -1) result = "-";
+      else if (value.factor !== 1) result = Number(value.factor).toString();
+    }
+    if ("global" in value && value.global) result += "\\global";
+    result += `\\${value.register}`;
+  }
+  if ("string" in value) result = value.string;
+  if ((_b3 = value.relax) != null ? _b3 : false) result += "\\relax";
+  return result;
+}
+function multiplyLatexValue(value, factor) {
+  if (value === null || value === void 0) return null;
+  if ("number" in value) return __spreadProps(__spreadValues({}, value), { number: value.number * factor });
+  if ("register" in value) {
+    if ("factor" in value && value.factor)
+      return __spreadProps(__spreadValues({}, value), { factor: value.factor * factor });
+    return __spreadProps(__spreadValues({}, value), { factor });
+  }
+  if ("dimension" in value)
+    return __spreadProps(__spreadValues({}, value), { dimension: value.dimension * factor });
+  if ("glue" in value) {
+    if (value.shrink && value.grow) {
+      return {
+        glue: multiplyLatexValue(value.glue, factor),
+        shrink: multiplyLatexValue(value.shrink, factor),
+        grow: multiplyLatexValue(value.grow, factor)
+      };
+    }
+    if (value.shrink) {
+      return {
+        glue: multiplyLatexValue(value.glue, factor),
+        shrink: multiplyLatexValue(value.shrink, factor)
+      };
+    }
+    if (value.grow) {
+      return {
+        glue: multiplyLatexValue(value.glue, factor),
+        grow: multiplyLatexValue(value.grow, factor)
+      };
+    }
+    return {
+      glue: multiplyLatexValue(value.glue, factor)
+    };
+  }
+  return null;
+}
+
+// src/core/registers.ts
+var DEFAULT_REGISTERS = {
+  "p@": { dimension: 1 },
+  "z@": { dimension: 0 },
+  "maxdimen": { dimension: 16383.99999 },
+  "hfuzz": { dimension: 0.1 },
+  "vfuzz": { dimension: 0.1 },
+  "overfullrule": { dimension: 5 },
+  "hsize": { dimension: 6.5, unit: "in" },
+  "vsize": { dimension: 8.9, unit: "in" },
+  "parindent": { dimension: 20 },
+  "maxdepth": { dimension: 4 },
+  "splitmaxdepth": { register: "maxdimen" },
+  "boxmaxdepth": { register: "maxdimen" },
+  "delimitershortfall": { dimension: 5 },
+  //      @todo used in makeLeftRightDelim()
+  "nulldelimiterspace": { dimension: 1.2, unit: "pt" },
+  "scriptspace": { dimension: 0.5 },
+  // In pt.
+  "topskip": { dimension: 10 },
+  "splittopskip": { dimension: 10 },
+  "normalbaselineskip": { dimension: 12 },
+  "normallineskip": { dimension: 1 },
+  "normallineskiplimit": { dimension: 0 },
+  // The vertical space between the lines for all math expressions which
+  // allow multiple lines (see array, multline)
+  "jot": { dimension: 3 },
+  // The space between adjacent `|` columns in an array definition.
+  // From article.cls.txt:455
+  "doublerulesep": { dimension: 2 },
+  // The width of separator lines in {array} environments.
+  "arrayrulewidth": { dimension: 0.4 },
+  "arraycolsep": { dimension: 5 },
+  // Two values from LaTeX source2e:
+  "fboxsep": { dimension: 3 },
+  // From letter.dtx:1626
+  "fboxrule": { dimension: 0.4 },
+  // From letter.dtx:1627
+  "z@skip": {
+    glue: { dimension: 0 },
+    shrink: { dimension: 0 },
+    grow: { dimension: 0 }
+  },
+  "hideskip": {
+    glue: { dimension: -1e3 },
+    grow: { dimension: 1, unit: "fill" }
+  },
+  // LaTeX
+  "@flushglue": {
+    glue: { dimension: 0 },
+    grow: { dimension: 1, unit: "fill" }
+  },
+  // LaTeX
+  "parskip": {
+    glue: { dimension: 0 },
+    grow: { dimension: 1 }
+  },
+  // @todo  the "shortskip" are used if the formula starts to the right of the
+  // line before (i.e. centered and short line before)
+  "abovedisplayskip": {
+    glue: { dimension: 12 },
+    grow: { dimension: 3 },
+    shrink: { dimension: 9 }
+  },
+  "abovedisplayshortskip": {
+    glue: { dimension: 0 },
+    grow: { dimension: 3 }
+  },
+  "belowdisplayskip": {
+    glue: { dimension: 12 },
+    grow: { dimension: 3 },
+    shrink: { dimension: 9 }
+  },
+  "belowdisplayshortskip": {
+    glue: { dimension: 7 },
+    grow: { dimension: 3 },
+    shrink: { dimension: 4 }
+  },
+  "parfillskip": {
+    glue: { dimension: 0 },
+    grow: { dimension: 1, unit: "fil" }
+  },
+  "thinmuskip": { glue: { dimension: 3, unit: "mu" } },
+  "medmuskip": {
+    glue: { dimension: 4, unit: "mu" },
+    grow: { dimension: 2, unit: "mu" },
+    shrink: { dimension: 4, unit: "mu" }
+  },
+  "thickmuskip": {
+    glue: { dimension: 5, unit: "mu" },
+    grow: { dimension: 5, unit: "mu" }
+  },
+  "smallskipamount": {
+    glue: { dimension: 3 },
+    grow: { dimension: 1 },
+    shrink: { dimension: 1 }
+  },
+  "medskipamount": {
+    glue: { dimension: 6 },
+    grow: { dimension: 2 },
+    shrink: { dimension: 3 }
+  },
+  "bigskipamount": {
+    glue: { dimension: 12 },
+    grow: { dimension: 2 },
+    shrink: { dimension: 4 }
+  },
+  // From TeXBook p.348
+  // See also https://ctan.math.washington.edu/tex-archive/info/macros2e/macros2e.pdf
+  // 'voidb@x'
+  "pretolerance": 100,
+  "tolerance": 200,
+  "hbadness": 1e3,
+  "vbadness": 1e3,
+  "linepenalty": 10,
+  "hyphenpenalty": 50,
+  "exhyphenpenalty": 50,
+  "binoppenalty": 700,
+  "relpenalty": 500,
+  "clubpenalty": 150,
+  "widowpenalty": 150,
+  "displaywidowpenalty": 50,
+  "brokenpenalty": 100,
+  "predisplaypenalty": 1e4,
+  "doublehyphendemerits": 1e4,
+  "finalhyphendemerits": 5e3,
+  "adjdemerits": 1e4,
+  "tracinglostchars": 1,
+  "uchyph": 1,
+  "delimiterfactor": 901,
+  "defaulthyphenchar": "\\-",
+  "defaultskewchar": -1,
+  "newlinechar": -1,
+  "showboxbreadth": 5,
+  "showboxdepth": 3,
+  "errorcontextlines": 5,
+  "interdisplaylinepenalty": 100,
+  "interfootnotelinepenalty": 100,
+  "baselineSkip": 1.2,
+  "arraystretch": 1,
+  "month": (/* @__PURE__ */ new Date()).getMonth() + 1,
+  "day": (/* @__PURE__ */ new Date()).getDate(),
+  "year": (/* @__PURE__ */ new Date()).getFullYear()
+};
+function getDefaultRegisters() {
+  return __spreadValues({}, DEFAULT_REGISTERS);
+}
+
+// src/core/context-utils.ts
+function getDefaultContext() {
+  return {
+    registers: getDefaultRegisters(),
+    smartFence: false,
+    renderPlaceholder: void 0,
+    placeholderSymbol: "\u25A2",
+    letterShapeStyle: l10n.locale.startsWith("fr") ? "french" : "tex",
+    minFontScale: 0,
+    maxMatrixCols: 10,
+    colorMap: defaultColorMap,
+    backgroundColorMap: defaultBackgroundColorMap,
+    getMacro: (token) => getMacroDefinition(token, getMacros())
+  };
+}
+
+// src/core/context.ts
+var Context = class _Context {
+  constructor(options, style) {
+    var _a3, _b3, _c2, _d2, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o;
+    let template;
+    if (options == null ? void 0 : options.parent) {
+      this.parent = options.parent;
+      template = options.parent;
+      this.registers = {};
+    } else {
+      template = __spreadValues(__spreadValues({}, getDefaultContext()), (_a3 = options == null ? void 0 : options.from) != null ? _a3 : {});
+      this.registers = template.registers;
+    }
+    if (template.atomIdsSettings)
+      this.atomIdsSettings = __spreadValues({}, template.atomIdsSettings);
+    this.renderPlaceholder = template.renderPlaceholder;
+    this.isPhantom = (_d2 = (_c2 = options == null ? void 0 : options.isPhantom) != null ? _c2 : (_b3 = this.parent) == null ? void 0 : _b3.isPhantom) != null ? _d2 : false;
+    this.letterShapeStyle = template.letterShapeStyle;
+    this.minFontScale = template.minFontScale;
+    this.maxMatrixCols = template.maxMatrixCols;
+    if ((style == null ? void 0 : style.color) && style.color !== "none") this.color = style.color;
+    else this.color = (_f = (_e = this.parent) == null ? void 0 : _e.color) != null ? _f : "";
+    if ((style == null ? void 0 : style.backgroundColor) && style.backgroundColor !== "none")
+      this.backgroundColor = style.backgroundColor;
+    else this.backgroundColor = (_h = (_g = this.parent) == null ? void 0 : _g.backgroundColor) != null ? _h : "";
+    if ((style == null ? void 0 : style.fontSize) && style.fontSize !== "auto" && style.fontSize !== ((_i = this.parent) == null ? void 0 : _i.size))
+      this.size = style.fontSize;
+    else this.size = (_k = (_j = this.parent) == null ? void 0 : _j.size) != null ? _k : DEFAULT_FONT_SIZE;
+    let mathstyle = (_m = (_l = this.parent) == null ? void 0 : _l.mathstyle) != null ? _m : MATHSTYLES.displaystyle;
+    if (typeof (options == null ? void 0 : options.mathstyle) === "string") {
+      if (template instanceof _Context) {
+        switch (options.mathstyle) {
+          case "cramp":
+            mathstyle = mathstyle.cramp;
+            break;
+          case "superscript":
+            mathstyle = mathstyle.sup;
+            break;
+          case "subscript":
+            mathstyle = mathstyle.sub;
+            break;
+          case "numerator":
+            mathstyle = mathstyle.fracNum;
+            break;
+          case "denominator":
+            mathstyle = mathstyle.fracDen;
+            break;
+        }
+      }
+      switch (options.mathstyle) {
+        case "textstyle":
+          mathstyle = MATHSTYLES.textstyle;
+          break;
+        case "displaystyle":
+          mathstyle = MATHSTYLES.displaystyle;
+          break;
+        case "scriptstyle":
+          mathstyle = MATHSTYLES.scriptstyle;
+          break;
+        case "scriptscriptstyle":
+          mathstyle = MATHSTYLES.scriptscriptstyle;
+          break;
+        case "":
+        case "auto":
+          break;
+      }
+    }
+    this.mathstyle = mathstyle;
+    this.smartFence = template.smartFence;
+    this.placeholderSymbol = template.placeholderSymbol;
+    this.colorMap = (_n = template.colorMap) != null ? _n : ((x) => x);
+    this.backgroundColorMap = (_o = template.backgroundColorMap) != null ? _o : ((x) => x);
+    this.getMacro = template.getMacro;
+    console.assert(this.parent !== void 0 || this.registers !== void 0);
+  }
+  makeID() {
+    if (!this.atomIdsSettings) return void 0;
+    if (this.atomIdsSettings.overrideID) return this.atomIdsSettings.overrideID;
+    if (typeof this.atomIdsSettings.seed !== "number") {
+      return `${Date.now().toString(36).slice(-2)}${Math.floor(
+        Math.random() * 1e5
+      ).toString(36)}`;
+    }
+    const result = this.atomIdsSettings.seed.toString(36);
+    this.atomIdsSettings.seed += 1;
+    return result;
+  }
+  // Scale a value, in em, to account for the fontsize and mathstyle
+  // of this context
+  scale(value) {
+    return value * this.effectiveFontSize;
+  }
+  get scalingFactor() {
+    if (!this.parent) return 1;
+    return this.effectiveFontSize / this.parent.effectiveFontSize;
+  }
+  get isDisplayStyle() {
+    return this.mathstyle.id === D || this.mathstyle.id === Dc;
+  }
+  get isCramped() {
+    return this.mathstyle.cramped;
+  }
+  get isTight() {
+    return this.mathstyle.isTight;
+  }
+  get metrics() {
+    return this.mathstyle.metrics;
+  }
+  // Return the font size, in em relative to the mathfield fontsize,
+  // accounting both for the base font size and the mathstyle
+  get effectiveFontSize() {
+    return Math.max(
+      FONT_SCALE[Math.max(1, this.size + this.mathstyle.sizeDelta)],
+      this.minFontScale
+    );
+  }
+  getRegister(name) {
+    if (this.registers && name in this.registers) return this.registers[name];
+    if (this.parent) return this.parent.getRegister(name);
+    return void 0;
+  }
+  getRegisterAsNumber(name) {
+    const val = this.getRegister(name);
+    if (typeof val === "number") return val;
+    if (typeof val === "string") return Number(val);
+    return void 0;
+  }
+  getRegisterAsGlue(name) {
+    if (this.registers && name in this.registers) {
+      const value = this.registers[name];
+      if (typeof value === "object" && "glue" in value) return value;
+      else if (typeof value === "object" && "dimension" in value)
+        return { glue: { dimension: value.dimension } };
+      else if (typeof value === "number") return { glue: { dimension: value } };
+      return void 0;
+    }
+    if (this.parent) return this.parent.getRegisterAsGlue(name);
+    return void 0;
+  }
+  getRegisterAsEm(name, precision) {
+    return convertDimensionToEm(this.getRegisterAsDimension(name), precision);
+  }
+  getRegisterAsDimension(name) {
+    if (this.registers && name in this.registers) {
+      const value = this.registers[name];
+      if (typeof value === "object" && "glue" in value) return value.glue;
+      else if (typeof value === "object" && "dimension" in value) return value;
+      else if (typeof value === "number") return { dimension: value };
+      return void 0;
+    }
+    if (this.parent) return this.parent.getRegisterAsDimension(name);
+    return void 0;
+  }
+  setRegister(name, value) {
+    if (value === void 0) {
+      delete this.registers[name];
+      return;
+    }
+    this.registers[name] = value;
+  }
+  evaluate(value) {
+    if (!value || !("register" in value)) return value;
+    let context = this;
+    if ("global" in value && value.global)
+      while (context.parent) context = context.parent;
+    let factor = 1;
+    if ("factor" in value && value.factor !== 1 && value.factor !== void 0)
+      factor = value.factor;
+    const val = context.getRegister(value.register);
+    if (val === void 0) return void 0;
+    if (typeof val === "string")
+      return { string: Number(val).toString() + val };
+    if (typeof val === "number") return { number: factor * val };
+    const result = context.evaluate(val);
+    if (result === void 0) return void 0;
+    if ("string" in result)
+      return { string: Number(val).toString() + result.string };
+    if ("number" in result) return { number: factor * result.number };
+    if ("dimension" in result)
+      return __spreadProps(__spreadValues({}, result), { dimension: factor * result.dimension });
+    if ("glue" in result) {
+      return __spreadProps(__spreadValues({}, result), {
+        glue: __spreadProps(__spreadValues({}, result.glue), { dimension: factor * result.glue.dimension }),
+        shrink: result.shrink ? __spreadProps(__spreadValues({}, result.shrink), { dimension: factor * result.shrink.dimension }) : void 0,
+        grow: result.grow ? __spreadProps(__spreadValues({}, result.grow), { dimension: factor * result.grow.dimension }) : void 0
+      });
+    }
+    return value;
+  }
+  toDimension(value) {
+    const val = this.evaluate(value);
+    if (val === void 0) return null;
+    if ("dimension" in val) return val;
+    if ("glue" in val) return val.glue;
+    if ("number" in val) return { dimension: val.number };
+    if ("string" in val) {
+      const number = parseFloat(val.string);
+      const m = val.string.match(/(mm|cm|ex|px|em|bp|dd|pc|in|mu)$/);
+      if (m) return { dimension: number, unit: m[0] };
+      return { dimension: number };
+    }
+    return null;
+  }
+  toEm(value, precision) {
+    if (value === null) return 0;
+    const dimen = this.toDimension(value);
+    if (dimen === null) return 0;
+    return convertDimensionToPt(dimen, precision) / PT_PER_EM;
+  }
+  toNumber(value) {
+    if (value === null) return null;
+    const val = this.evaluate(value);
+    if (val === void 0) return null;
+    if ("number" in val) return val.number;
+    if ("dimension" in val) return val.dimension;
+    if ("glue" in val) return val.glue.dimension;
+    if ("string" in val) return Number(val.string);
+    return null;
+  }
+  toColor(value) {
+    var _a3, _b3;
+    if (value === null) return null;
+    const val = this.evaluate(value);
+    if (val === void 0) return null;
+    if ("string" in val) return (_b3 = (_a3 = this.colorMap) == null ? void 0 : _a3.call(this, val.string)) != null ? _b3 : val.string;
+    return null;
+  }
+  toBackgroundColor(value) {
+    var _a3, _b3;
+    if (value === null) return null;
+    const val = this.evaluate(value);
+    if (val === void 0) return null;
+    if ("string" in val)
+      return (_b3 = (_a3 = this.backgroundColorMap) == null ? void 0 : _a3.call(this, val.string)) != null ? _b3 : val.string;
+    return null;
+  }
+};
+
+// src/core/atom-class.ts
+var NAMED_BRANCHES = [
+  "body",
+  "above",
+  "below",
+  "superscript",
+  "subscript"
+];
+function isNamedBranch(branch) {
+  return typeof branch === "string" && NAMED_BRANCHES.includes(branch);
+}
+function isCellBranch(branch) {
+  return branch !== void 0 && Array.isArray(branch) && branch.length === 2;
+}
+var Atom = class _Atom {
+  constructor(options) {
+    // If `true`, the atom is the root of the tree. That's the case for
+    // some environment, such as `lines`, etc...
+    this.isRoot = false;
+    var _a3, _b3, _c2, _d2, _e, _f, _g;
+    this.type = options.type;
+    if (typeof options.value === "string") this.value = options.value;
+    this.command = (_b3 = (_a3 = options.command) != null ? _a3 : this.value) != null ? _b3 : "";
+    this.mode = (_c2 = options.mode) != null ? _c2 : "math";
+    if (options.isFunction) this.isFunction = true;
+    if (options.isRoot || this.type === "root") this.isRoot = true;
+    if (options.limits) this.subsupPlacement = options.limits;
+    this.style = __spreadValues({}, (_d2 = options.style) != null ? _d2 : {});
+    this.displayContainsHighlight = (_e = options.displayContainsHighlight) != null ? _e : false;
+    this.captureSelection = (_f = options.captureSelection) != null ? _f : false;
+    this.skipBoundary = (_g = options.skipBoundary) != null ? _g : false;
+    if (options.verbatimLatex !== void 0 && options.verbatimLatex !== null)
+      this.verbatimLatex = options.verbatimLatex;
+    if (options.args) this.args = options.args;
+    if (options.body) this.body = options.body;
+    this._changeCounter = 0;
+  }
+  /**
+   * Return a list of boxes equivalent to atoms.
+   *
+   * While an atom represent an abstract element (for example 'genfrac'),
+   * a box corresponds to something to draw on screen (a character, a line,
+   * etc...).
+   *
+   * @param context Font family, variant, size, color, and other info useful
+   * to render an expression
+   */
+  static createBox(context, atoms, options) {
+    var _a3;
+    if (!atoms) return null;
+    const runs = getStyleRuns(atoms);
+    const boxes = [];
+    for (const run of runs) {
+      const style = run[0].style;
+      const box = renderStyleRun(context, run, {
+        style: {
+          color: style.color,
+          backgroundColor: style.backgroundColor,
+          fontSize: style.fontSize
+        }
+      });
+      if (box) boxes.push(box);
+    }
+    if (boxes.length === 0) return null;
+    const classes = ((_a3 = options == null ? void 0 : options.classes) != null ? _a3 : "").trim();
+    if (boxes.length === 1 && !classes && !(options == null ? void 0 : options.type))
+      return boxes[0].wrap(context);
+    return new Box(boxes, { classes, type: options == null ? void 0 : options.type }).wrap(context);
+  }
+  /**
+   * Given an atom or an array of atoms, return a LaTeX string representation
+   */
+  static serialize(value, options) {
+    return Mode.serialize(value, options);
+  }
+  /**
+   * The common ancestor between two atoms
+   */
+  static commonAncestor(a, b) {
+    if (a === b) return a.parent;
+    if (a.parent === b.parent) return a.parent;
+    const parents = /* @__PURE__ */ new WeakSet();
+    let { parent } = a;
+    while (parent) {
+      parents.add(parent);
+      parent = parent.parent;
+    }
+    parent = b.parent;
+    while (parent) {
+      if (parents.has(parent)) return parent;
+      parent = parent.parent;
+    }
+    console.assert(Boolean(parent));
+    return void 0;
+  }
+  static fromJson(json) {
+    if (typeof json === "string")
+      return new _Atom({ type: "mord", value: json, mode: "math" });
+    return new _Atom(json);
+  }
+  toJson() {
+    if (this._json) return this._json;
+    const result = {};
+    if (this.type) result.type = this.type;
+    if (this.mode !== "math") result.mode = this.mode;
+    if (this.command && this.command !== this.value)
+      result.command = this.command;
+    if (this.value !== void 0) result.value = this.value;
+    if (this.style && Object.keys(this.style).length > 0)
+      result.style = __spreadValues({}, this.style);
+    if (this.verbatimLatex !== void 0)
+      result.verbatimLatex = this.verbatimLatex;
+    if (this.subsupPlacement) result.subsupPlacement = this.subsupPlacement;
+    if (this.explicitSubsupPlacement) result.explicitSubsupPlacement = true;
+    if (this.isFunction) result.isFunction = true;
+    if (this.displayContainsHighlight) result.displayContainsHighlight = true;
+    if (this.skipBoundary) result.skipBoundary = true;
+    if (this.captureSelection) result.captureSelection = true;
+    if (this.args) result.args = argumentsToJson(this.args);
+    if (this._branches) {
+      for (const branch of Object.keys(this._branches)) {
+        if (this._branches[branch]) {
+          result[branch] = this._branches[branch].filter(
+            (x) => x.type !== "first"
+          ).map((x) => x.toJson());
+        }
+      }
+    }
+    if (result.type === "mord") {
+      if (Object.keys(result).length === 2 && "value" in result)
+        return result.value;
+    }
+    this._json = result;
+    return result;
+  }
+  // Used to detect changes and send appropriate notifications
+  get changeCounter() {
+    if (this.parent) return this.parent.changeCounter;
+    return this._changeCounter;
+  }
+  set isDirty(dirty) {
+    if (!dirty) return;
+    this._json = void 0;
+    if (!this.parent) this._changeCounter++;
+    if ("verbatimLatex" in this) this.verbatimLatex = void 0;
+    this._children = void 0;
+    if (this.parent) this.parent.isDirty = true;
+  }
+  /**
+   * Serialize the atom  to LaTeX.
+   * Used internally by Mode: does not serialize styling. To serialize
+   * one or more atoms, use `Atom.serialize()`
+   */
+  _serialize(options) {
+    if (!(options.expandMacro || options.skipStyles || options.skipPlaceholders) && typeof this.verbatimLatex === "string")
+      return this.verbatimLatex;
+    const def = getDefinition(this.command, this.mode);
+    if (def == null ? void 0 : def.serialize) return def.serialize(this, options);
+    if (this.body && this.command) {
+      return joinLatex([
+        latexCommand(this.command, this.bodyToLatex(options)),
+        this.supsubToLatex(options)
+      ]);
+    }
+    if (this.body) {
+      return joinLatex([
+        this.bodyToLatex(options),
+        this.supsubToLatex(options)
+      ]);
+    }
+    if (!this.value || this.value === "\u200B") return "";
+    return this.command;
+  }
+  bodyToLatex(options) {
+    var _a3;
+    const defaultMode = (_a3 = options.defaultMode) != null ? _a3 : this.mode === "math" ? "math" : "text";
+    return Mode.serialize(this.body, __spreadProps(__spreadValues({}, options), { defaultMode }));
+  }
+  aboveToLatex(options) {
+    return Mode.serialize(this.above, options);
+  }
+  belowToLatex(options) {
+    return Mode.serialize(this.below, options);
+  }
+  supsubToLatex(options) {
+    let result = "";
+    options = __spreadProps(__spreadValues({}, options), { defaultMode: "math" });
+    if (this.branch("subscript") !== void 0) {
+      const sub = Mode.serialize(this.subscript, options);
+      if (sub.length === 0) result += "_{}";
+      else if (sub.length === 1) {
+        if (/^[0-9]$/.test(sub)) result += `_${sub}`;
+        else result += `_{${sub}}`;
+      } else result += `_{${sub}}`;
+    }
+    if (this.branch("superscript") !== void 0) {
+      const sup = Mode.serialize(this.superscript, options);
+      if (sup.length === 0) result += "^{}";
+      else if (sup.length === 1) {
+        if (sup === "\u2032") result += "^\\prime ";
+        else if (sup === "\u2033") result += "^\\doubleprime ";
+        else if (/^[0-9]$/.test(sup)) result += `^${sup}`;
+        else result += `^{${sup}}`;
+      } else result += `^{${sup}}`;
+    }
+    return result;
+  }
+  get treeDepth() {
+    let result = 1;
+    let atom = this.parent;
+    while (atom) {
+      atom = atom.parent;
+      result += 1;
+    }
+    return result;
+  }
+  get inCaptureSelection() {
+    let atom = this;
+    while (atom) {
+      if (atom.captureSelection) return true;
+      atom = atom.parent;
+    }
+    return false;
+  }
+  /** Return the parent editable prompt, if it exists */
+  get parentPrompt() {
+    let atom = this.parent;
+    while (atom) {
+      if (atom.type === "prompt" && !atom.captureSelection) return atom;
+      atom = atom.parent;
+    }
+    return null;
+  }
+  /**
+   * Return the atoms in the branch, if it exists, otherwise null
+   */
+  branch(name) {
+    if (!isNamedBranch(name)) return void 0;
+    if (!this._branches) return void 0;
+    return this._branches[name];
+  }
+  /**
+   * Return all the branches that exist.
+   * Some of them may be empty.
+   */
+  get branches() {
+    if (!this._branches) return [];
+    const result = [];
+    for (const branch of NAMED_BRANCHES)
+      if (this._branches[branch]) result.push(branch);
+    return result;
+  }
+  /**
+   * Return the atoms in the branch, if it exists, otherwise create it.
+   *
+   * Return mutable array of atoms in the branch, since isDirty is
+   * set to true
+   */
+  createBranch(name) {
+    console.assert(isNamedBranch(name));
+    if (!isNamedBranch(name)) return [];
+    if (!this._branches) {
+      this._branches = {
+        [name]: [this.makeFirstAtom(name)]
+      };
+    } else if (!this._branches[name])
+      this._branches[name] = [this.makeFirstAtom(name)];
+    this.isDirty = true;
+    return this._branches[name];
+  }
+  get row() {
+    if (!isCellBranch(this.parentBranch)) return -1;
+    return this.parentBranch[0];
+  }
+  get col() {
+    if (!isCellBranch(this.parentBranch)) return -1;
+    return this.parentBranch[1];
+  }
+  get body() {
+    var _a3;
+    return (_a3 = this._branches) == null ? void 0 : _a3.body;
+  }
+  set body(atoms) {
+    this.setChildren(atoms, "body");
+  }
+  get superscript() {
+    var _a3;
+    return (_a3 = this._branches) == null ? void 0 : _a3.superscript;
+  }
+  set superscript(atoms) {
+    this.setChildren(atoms, "superscript");
+  }
+  get subscript() {
+    var _a3;
+    return (_a3 = this._branches) == null ? void 0 : _a3.subscript;
+  }
+  set subscript(atoms) {
+    this.setChildren(atoms, "subscript");
+  }
+  get above() {
+    var _a3;
+    return (_a3 = this._branches) == null ? void 0 : _a3.above;
+  }
+  set above(atoms) {
+    this.setChildren(atoms, "above");
+  }
+  get below() {
+    var _a3;
+    return (_a3 = this._branches) == null ? void 0 : _a3.below;
+  }
+  set below(atoms) {
+    this.setChildren(atoms, "below");
+  }
+  applyStyle(style, options) {
+    this.isDirty = true;
+    if (options == null ? void 0 : options.unstyledOnly) {
+      if (style.color && !this.style.color) this.style.color = style.color;
+      if (style.backgroundColor && !this.style.backgroundColor)
+        this.style.backgroundColor = style.backgroundColor;
+      if (style.fontFamily && !this.style.fontFamily)
+        this.style.fontFamily = style.fontFamily;
+      if (style.fontShape && !this.style.fontShape)
+        this.style.fontShape = style.fontShape;
+      if (style.fontSeries && !this.style.fontSeries)
+        this.style.fontSeries = style.fontSeries;
+      if (style.fontSize && !this.style.fontSize)
+        this.style.fontSize = style.fontSize;
+      if (style.variant && !this.style.variant)
+        this.style.variant = style.variant;
+      if (style.variantStyle && !this.style.variantStyle)
+        this.style.variantStyle = style.variantStyle;
+    } else this.style = __spreadValues(__spreadValues({}, this.style), style);
+    if (this.style.fontFamily === "none") delete this.style.fontFamily;
+    if (this.style.fontShape === "auto") delete this.style.fontShape;
+    if (this.style.fontSeries === "auto") delete this.style.fontSeries;
+    if (this.style.color === "none") {
+      delete this.style.color;
+      delete this.style.verbatimColor;
+    }
+    if (this.style.backgroundColor === "none") {
+      delete this.style.backgroundColor;
+      delete this.style.verbatimBackgroundColor;
+    }
+    if (this.style.fontSize === "auto") delete this.style.fontSize;
+    for (const child of this.children) child.applyStyle(style, options);
+  }
+  getInitialBaseElement() {
+    var _a3, _b3, _c2;
+    if (this.hasEmptyBranch("body")) return this;
+    console.assert(((_a3 = this.body) == null ? void 0 : _a3[0].type) === "first");
+    return (_c2 = (_b3 = this.body[1]) == null ? void 0 : _b3.getInitialBaseElement()) != null ? _c2 : this;
+  }
+  getFinalBaseElement() {
+    if (this.hasEmptyBranch("body")) return this;
+    return this.body[this.body.length - 1].getFinalBaseElement();
+  }
+  isCharacterBox() {
+    if (this.type === "leftright" || this.type === "genfrac" || this.type === "subsup" || this.type === "delim" || this.type === "array" || this.type === "surd")
+      return false;
+    return this.getFinalBaseElement().type === "mord";
+  }
+  hasEmptyBranch(branch) {
+    const atoms = this.branch(branch);
+    if (!atoms) return true;
+    console.assert(atoms.length > 0);
+    console.assert(atoms[0].type === "first");
+    return atoms.length === 1;
+  }
+  /*
+   * Setting `null` does nothing
+   * Setting `[]` adds an empty list (the branch is created)
+   * The children should *not* start with a `"first"` atom:
+   * the `first` atom will be added if necessary
+   */
+  setChildren(children, branch) {
+    var _a3;
+    if (!children) return;
+    console.assert(isNamedBranch(branch));
+    if (!isNamedBranch(branch)) return;
+    const newBranch = ((_a3 = children[0]) == null ? void 0 : _a3.type) === "first" ? [...children] : [this.makeFirstAtom(branch), ...children];
+    if (this._branches) this._branches[branch] = newBranch;
+    else this._branches = { [branch]: newBranch };
+    for (const child of children) {
+      child.parent = this;
+      child.parentBranch = branch;
+    }
+    this.isDirty = true;
+  }
+  makeFirstAtom(branch) {
+    const result = new _Atom({ type: "first", mode: this.mode });
+    result.parent = this;
+    result.parentBranch = branch;
+    return result;
+  }
+  addChild(child, branch) {
+    console.assert(child.type !== "first");
+    this.createBranch(branch).push(child);
+    this.isDirty = true;
+    child.parent = this;
+    child.parentBranch = branch;
+  }
+  addChildBefore(child, before) {
+    console.assert(before.parentBranch !== void 0);
+    const branch = this.createBranch(before.parentBranch);
+    branch.splice(branch.indexOf(before), 0, child);
+    this.isDirty = true;
+    child.parent = this;
+    child.parentBranch = before.parentBranch;
+  }
+  addChildAfter(child, after) {
+    console.assert(after.parentBranch !== void 0);
+    const branch = this.createBranch(after.parentBranch);
+    branch.splice(branch.indexOf(after) + 1, 0, child);
+    this.isDirty = true;
+    child.parent = this;
+    child.parentBranch = after.parentBranch;
+  }
+  addChildren(children, branchName) {
+    const branch = this.createBranch(branchName);

@@ -247,7 +247,7 @@ const latexBaseline: CoverageCase[] = [
     check: (parsed) => {
       const allFormulas = formulas(parsed);
       return (
-        exactLatexUserFixture.length === 8743 &&
+        exactLatexUserFixture.replace(/\r\n/g, "\n").length === 8743 &&
         blocksOf(parsed, "heading").length === 23 &&
         allFormulas.length === 100 &&
         allFormulas.filter((run) => !run.display).length === 60 &&
@@ -300,7 +300,7 @@ const latexBaseline: CoverageCase[] = [
 \subparagraph{P5}`,
     check: (parsed) => {
       const headings = blocksOf(parsed, "heading");
-      return headings.length === 7 && headings.map((block) => block.level).join(",") === "1,1,1,2,3,4,5";
+      return headings.length === 7 && headings.map((block) => block.level).join(",") === "1,2,3,4,5,6,7";
     },
   },
   {
@@ -1012,6 +1012,17 @@ const results = {
   markdownExtended: evaluate(markdownExtended),
   latexExtended: evaluate(latexExtended),
 };
+
+// The installed import window serializes this parser's blocks to Word. Keep
+// its heading contract identical to the VSTO source-parser fallback.
+const headingCases: Array<{ source: string; levels: number[] }> = JSON.parse(
+  readFileSync(new URL("../test-fixtures/document-import-heading-hierarchy.json", import.meta.url), "utf8"),
+);
+for (const fixture of headingCases) {
+  assert.deepEqual(blocksOf(parseDocumentImport(fixture.source, "latex"), "heading")
+    .map((block) => block.level), fixture.levels, fixture.source);
+}
+console.log(`Shared Word/frontend heading cases: ${headingCases.length} passed`);
 
 const summary = [
   summarize("Markdown baseline", results.markdownBaseline),

@@ -125,6 +125,24 @@ internal sealed class CompanionConfiguration
 
 public sealed class VisualTeXSessionClient : IDisposable
 {
+    internal const int ConverterTransportBatchSize = 256;
+
+    internal static IReadOnlyList<IReadOnlyList<string>> ChunkConverterSessionIds(
+        IReadOnlyList<string> sessionIds)
+    {
+        if (sessionIds is null) throw new ArgumentNullException(nameof(sessionIds));
+        var chunks = new List<IReadOnlyList<string>>();
+        for (var offset = 0; offset < sessionIds.Count; offset += ConverterTransportBatchSize)
+        {
+            var count = Math.Min(ConverterTransportBatchSize, sessionIds.Count - offset);
+            var batch = new string[count];
+            for (var index = 0; index < count; index++)
+                batch[index] = sessionIds[offset + index];
+            chunks.Add(batch);
+        }
+        return chunks;
+    }
+
     private readonly CompanionConfiguration _configuration;
     private readonly VisualTeXCompanionException? _configurationException;
     private readonly HttpClient _http;
@@ -368,10 +386,10 @@ public sealed class VisualTeXSessionClient : IDisposable
     {
         if (sessionIds is null)
             throw new ArgumentNullException(nameof(sessionIds));
-        if (sessionIds.Count == 0 || sessionIds.Count > 256)
+        if (sessionIds.Count == 0)
             throw new ArgumentOutOfRangeException(
                 nameof(sessionIds),
-                "VisualTeX batch conversion requires between 1 and 256 Sessions.");
+                "VisualTeX batch conversion requires at least one Session.");
         var validated = new List<string>(sessionIds.Count);
         foreach (var sessionId in sessionIds)
         {
@@ -381,14 +399,22 @@ public sealed class VisualTeXSessionClient : IDisposable
             validated.Add(sessionId);
         }
         EnsureAuthorizationHeader();
-        var json = JsonSerializer.Serialize(
-            new { sessionIds = validated },
-            JsonOptions.Default);
-        using var response = await SendTrackedAsync(() => _http.PostAsync(
-            "/api/v1/app/converter/convert-batch",
-            new StringContent(json, Encoding.UTF8, "application/json"),
-            cancellationToken)).ConfigureAwait(false);
-        await EnsureSuccessAsync(response).ConfigureAwait(false);
+
+        // Keep the transport batch small enough for older VisualTeX Companion
+        // builds while allowing an arbitrary total number of Sessions. Companion
+        // queues append requests in order, so 257 Sessions become 256 + 1 rather
+        // than failing at the historical total-count ceiling.
+        foreach (var batch in ChunkConverterSessionIds(validated))
+        {
+            var json = JsonSerializer.Serialize(
+                new { sessionIds = batch },
+                JsonOptions.Default);
+            using var response = await SendTrackedAsync(() => _http.PostAsync(
+                "/api/v1/app/converter/convert-batch",
+                new StringContent(json, Encoding.UTF8, "application/json"),
+                cancellationToken)).ConfigureAwait(false);
+            await EnsureSuccessAsync(response).ConfigureAwait(false);
+        }
     }
 
     public async Task OpenBulkImportAsync(

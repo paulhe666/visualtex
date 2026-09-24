@@ -1787,11 +1787,14 @@ fn write_export_file(path: String, data_base64: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_ocr_provider_configuration(
+async fn get_ocr_provider_configuration(
     app: AppHandle,
     state: State<'_, OcrState>,
 ) -> Result<ocr_provider::OcrProviderConfigurationView, String> {
-    state.provider_configuration(&app)
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.provider_configuration(&app))
+        .await
+        .map_err(|error| format!("Unable to finish OCR provider configuration lookup: {error}"))?
 }
 
 #[tauri::command]

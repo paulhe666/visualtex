@@ -1,0 +1,7 @@
+# Preserve audit and acceptance logs as evidence, including earlier failed runs.
+!/evidence/**/*.log
+
+# Generated runtime backups and extracted installer payloads stay on this machine.
+/evidence/stage04ai-main-before.exe
+/evidence/stage04ai-office-ui-backup/
+/evidence/stage06-package-payload/

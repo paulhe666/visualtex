@@ -1,0 +1,686 @@
+{
+    "name":  "文档134",
+    "fullName":  "文档134",
+    "saved":  false,
+    "end":  908,
+    "paragraphs":  21,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+                   {
+                       "start":  54,
+                       "alternative":  "visualtex:v1:deflate:vZJNj9MwEIb_SuUTSElkO4kbR-LAIipWAu1KrOiBIOTEk8bCSbqOU3ap-t93sk1bVsCV6zzz9c47ezJUDbSK5GRnhlFZDw9h3bt2tIoEM_wCbjB9R3IWkJlda6ygNZMi48swq8ssTEQswzIDHlaMJRRSWUrQ2MQbbwHTr0b7Y2Habe886MW6d3pxmWQVTsakohjund-_D8eisFD7Vw9F4cym8a8Pb4qidqras8O-nmFR9C1s1Cll932_bQ4vWXBpMI0xHQwk_7onZlLAZF1zlfJQVqBQgY5RQVqGNM1KwUohUy3-13KHbwGpeg0rvInyOO04NSDaDFurHj8hw6jpJg0Y7sa2BIcXzmtlBwgI3I_Ko093akPybrQ2IA46DW5ttG9uUQBL40jKOKOJjJlIqIhPKR9g2mLK4UkkBOUcjWWZlAlLAlKqAZ6n5gxpllJKE7SeCSHl9BKd_2x-wS0uzWiUnnqu_ojPdn8E748Y9XjToiNn9q6ZHIIZDo-DhxbpT_yW62flNxaOevxJ5As2CznDDk-yg5u2tSvTbcBtnenOsHKAN9Zr45vzjxMW8Wgyfdzqv0EasYycS99OW3LKRUhlSMUdzXKa5pxHVC5TFtNipJRfUZpTemn5z6IlzxhLk9-LDk8",
+                       "width":  115.35,
+                       "index":  1,
+                       "type":  1,
+                       "height":  18.4,
+                       "prog":  "VisualTeX.Formula.1",
+                       "end":  88
+                   },
+                   {
+                       "start":  90,
+                       "alternative":  "visualtex:v1:deflate:5VRNb5wwEP0rK59aaUG2AYORcmiqrhqpVSI1ag51DwYPu1b42BiTNkX89wwKu0nUTf9AuVj2m3nz5jH2SPpyB40mObm3_aBrD7-DqnPNUGuyXsDv4HrbtSRna7JgFwYzZFRCLEsZlGmWBXGS8qDQsQmk5kXJTUpFnCGJt74GDD8f6tuVbfad82BWN50zq-dKtcbKGKRUAVvbjqXuoZ-UqpwuR6Ua7XeuGc00vdwo1TWw1bjWUPl3y3ZVvd4r5ex2598f1jO6UvitjuT_zJpGfkLGp7eCT6g7U6q_c35cWJqZccLq0Jqlzbl_20JP8h8jsbO1QrCkqioTlEbyIGaJDHQGVZByVolCplnK4__etennmpSdgQ1OkfZow5Mda2Jsv6_1w1fE8LSou_IWT9uhKcAB2uvdAGsCd4P2ONfXekvydqjrNXHIDu7GGr-7Ql9ZHIWpjBIZR4JGCUvEIeQzzMrnGMFCmQmKn2CHmAL1zT-U5FEcxjKa0YgmLE3SbL5Crf9m_8AVSmY0TA6cm7_Ol-vxBbx_grEbbxsclCP2cTcPDixg_9B7aBD9hbfrop01XNbw1I8_NPkKWxo5gi1acg-XTVNvbLsFt3e2PYKlA3TY3Fi_O74JhIU8FFhy2JtTIA3Z_AgsqR9mlZxyEVAZUHFNs5wmOechlWnCIqoGSvk5pTmlz5RvJokMzU2il0nTIw",
+                       "width":  107.75,
+                       "index":  2,
+                       "type":  1,
+                       "height":  46.5,
+                       "prog":  "VisualTeX.Formula.1",
+                       "end":  124
+                   },
+                   {
+                       "start":  240,
+                       "alternative":  "visualtex:v1:deflate:3VNNb9QwEP0rK59ASqKxk806kThQREUlUCtR6AFzcOLJrtV8bB2nUFb570y02bRAkThzsj1vvt6b8YH15Q4bzXJ2b_tB1x6_h1XnmqHWLJjBz-h627Us5wGbsQtDERzSDcpMhFIjD5MiMaHMOIQ8MxySROo0AUrira-R3M-G-nZlm33nPJrVTefM6rFSrakyOSnV3zl_UKpyujw040EoVWPlX7ydT6W6BrdaKWe3O_8y_HS6jeOrOUqpRvudaw5mHJ8-5tDx90yl6fyqej7_0s8_NnG6TJRsiz3LvxyYndSqBBRCYhXGscEwKSsdykJgWCUpF2UGMo2L_1GI8WvAys7gOc1ae2J2ZBgwY_t9rR8-EEbWou7KW7K2Q1OgQ1LMuwEDhneD9rR913rL8nao64A5bA26G2v87oqkivkm4pJ2jcfphsvN-uTxDqcOJpd1EiVxlmUyFekGZCaTgBW6x2lElACiOAUBICXP1pLOac9b_9H-wCvqmEO05Dz_wz7v8Hv0_ggTGW8bGv2CvdlNq4Az2D_0HhtCv9EXuGinHi5rPNLxJ46_YDORBWxJkXu8bJr63LZbdHtn2wUsHZLA5sb63fJxGY9ElFLJYW-eA4EEZEvo66lLASINIQshvQaZwzoXIoJss-YxqAFAnAHkAI8p_xqUJkLGSfY0aPwJ",
+                       "width":  237.8,
+                       "index":  3,
+                       "type":  1,
+                       "height":  40.75,
+                       "prog":  "VisualTeX.Formula.1",
+                       "end":  274
+                   },
+                   {
+                       "start":  419,
+                       "alternative":  "visualtex:v1:deflate:1VPbatwwEP0Vo6cWbDOyVrZs6ENTCA20JNCQfYgTkO3ZtYjs3cpy2nTxv3fM3npJP6BvYs6cmXNmRjs21C12mhXs2Qyjth6_R6uN60arWXgA79ANZtOzgofsgF01xBCVhJVsVLSQPIsWqFWk60xGUnJVLzhkgIKKeOMtUvrFaJ8C0203zmMTLDeuCc6drKbOlGTKsq20C8py5XS9K8utdt5oO52fgZ_oPZg3Zdlp31arnZtC_zZ4RySLK38fRCf2XOsxmXZJR5xeV1Y_JkE5AiQXwd2fBcrSmXXrH16rPks0PQ6suN8xM7vPGt1UeQpRUilB7hcQ6TSBqFY6qyuOQmH1PxibHkJWbxq8pF1oT0r3ikPWmGFr9ctnwiha2U39RNF-7Cp0SBPwbsSQ4ddRe7qOW71mRT9aGzKHfYNuaRrf3pD1JONxLpRQEiDPUpmKY8pHnGXNOXIRLwSXuUpTIQRApkJW6QHnmbNC8JgTPc9FLjPJcynmQ-z9F_MDb0gyh1gea17-FT8c2Sf0fg-TG2862uUJ-9DOu8UDOLwMHjtCv9GNXvWzhmuLez_-aPI37GDkBPY0kme87jp7afo1uq0z_QmsHdKEm6Xx7elnMR4ncUotx23zGggxV-xEfT-rTCBJI8gjSG9BFSCLJIlpvpIL2N8BQAFwLvlPEs0VVJ79Spp-Ag",
+                       "width":  203.9,
+                       "index":  4,
+                       "type":  1,
+                       "height":  40.75,
+                       "prog":  "VisualTeX.Formula.1",
+                       "end":  453
+                   },
+                   {
+                       "start":  577,
+                       "alternative":  "visualtex:v1:deflate:7VRNb9QwEP0rkU-Aksh24iSOxIEiragEaiUq9tAUybEnu1adZHGcQlntf6_DZndbQfm4cxvNe_P1xuMtGuQaWoFKdKeHURgH36Kmt-1oBApn8BPYQfcdKkmIZuxc-QhOlGoE4VHSFEmUUkKjmhAWKayI5FhwDswncdoZ8PSz0dwGut301oEKlr1VwamSEb6yJ1VVY4XcVtVGWKeF2Z3MwO28Pejg86uqMtC4F0FV3YHc2p03rF6t3ctgz3gefz0X0FW1roXdbWnrs3aiNsKTpOrdHHwd_E2xQ-Dvi0Z_IjxNdCppH1N-GDeTVrqDAZXXW6SnNeSyplJCHRWgRJSmTEQ1zesoE6SRjSw45_l_hf9B4d1NiGSvYOFfp3Besr10IVJ62Bhx_8Fj3lubXt56bze2NVjwq3B2hBDBl1E4fy9XYoXKbjQmRBY6BXaplVtf-h0kLI9xxhLOScY5JUVxoLyDqYWJk_I4KTKMCSsyTlKcJSGqxQDT8lFJeZzmKcaYJzgvMpIk02l27qP-Dpe-ZYJjdsi5-Mk_n917cG4P-2mcbv2jOmJv19Mjgxkc7gcHrUe_-qs976YeLgzs53GHIZ9g8yBHsPOS3MFF25qF7lZgN1Z3R1Ba8AqrpXbr41-DSEzjzJccN-pXII5JgY6hb6YuKaZZhHmEsytclJiVlMaY54wkuBoxpmcYlxifUj4bxBgrEpY9Dto9AA",
+                       "width":  267.75,
+                       "index":  5,
+                       "type":  1,
+                       "height":  37.05,
+                       "prog":  "VisualTeX.Formula.1",
+                       "end":  611
+                   },
+                   {
+                       "start":  745,
+                       "alternative":  "visualtex:v1:deflate:vVNNj5RAEP0rkz5pAqSApvlIPLgmEzfR7CZunIN4aOhiaLeBsWlW1wn_3WKHndGoV0906r2qV6-qOLKxbrGTrGAPepykcfjdbwbbTUYybwU_oh310LMi9NiKXSvKiEBkoknRlymCz2Ua-rmsYz_NQfFcKBBhRkWcdgaJfjWZ-43uDoN1qDa7warNRclIUiZSWTZW1seyPEjrtDTz5blxc1nadtiUpcHGvaDvA9ZHO3uOnlbvW_dyU04A0VVZ9rIyksK1GtxK_DK_gkVJ9ziy4tOR6cWE5FUDTYJ-nMTc51Ge-VlTod_UecRTVFJkzX_sb_7ssXpQuKXJSEeCJ2GPKT0ejHx8TxhFKzPU9xTtp65Ci2TE2Qk9hl8n6WhXd3LPin4yxmMWe4V2p5Vrb8lByPOAJ0kEEOZJHEbJM-MtLh0uFGLEmSBCkok85CBij1VyxGVyrIgoP-UAkMeQZiKM4-UqevdB_8Bb6jiE4Fxz-0d83fg7dO4EkxmnO9rIGXvTLhvCFRwfR4cdod_oYK77pYcbgyc77tnjb9hq5Az2NJEHvOk6s9X9Hu3B6v4M1hZpwGqnXXs-cxYGUSBIcjqov4EQPN31mvraPf0KkfAh90HcQVZAUkRRAHmahDGcNg5QAFxK_jMp5sDzLPs1af4J",
+                       "width":  111.95,
+                       "index":  6,
+                       "type":  1,
+                       "height":  37.05,
+                       "prog":  "VisualTeX.Formula.1",
+                       "end":  779
+                   }
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  345,
+                          "name":  "VTEq_1067e8928ae14b4d891019d10448a640",
+                          "text":  "\u003cTAB\u003e(2)",
+                          "start":  274
+                      },
+                      {
+                          "end":  850,
+                          "name":  "VTEq_20686f7ea7e04a719ac3790d496d0618",
+                          "text":  "\u003cTAB\u003e(5)",
+                          "start":  779
+                      },
+                      {
+                          "end":  524,
+                          "name":  "VTEq_3b50f5d845174ea8ac755518c41070e3",
+                          "text":  "\u003cTAB\u003e(3)",
+                          "start":  453
+                      },
+                      {
+                          "end":  682,
+                          "name":  "VTEq_91ddfa193f834212b115d0d1c90a99e5",
+                          "text":  "\u003cTAB\u003e(4)",
+                          "start":  611
+                      },
+                      {
+                          "end":  195,
+                          "name":  "VTEq_93ce49c9c7884572ba4d9a2bc2d70648",
+                          "text":  "\u003cTAB\u003e(1)",
+                          "start":  124
+                      },
+                      {
+                          "end":  389,
+                          "name":  "VTEqCap_1067e8928ae14b4d891019d10448a640",
+                          "text":  "2\u003cCR\u003e",
+                          "start":  346
+                      },
+                      {
+                          "end":  894,
+                          "name":  "VTEqCap_20686f7ea7e04a719ac3790d496d0618",
+                          "text":  "5\u003cCR\u003e",
+                          "start":  851
+                      },
+                      {
+                          "end":  568,
+                          "name":  "VTEqCap_3b50f5d845174ea8ac755518c41070e3",
+                          "text":  "3\u003cCR\u003e",
+                          "start":  525
+                      },
+                      {
+                          "end":  726,
+                          "name":  "VTEqCap_91ddfa193f834212b115d0d1c90a99e5",
+                          "text":  "4\u003cCR\u003e",
+                          "start":  683
+                      },
+                      {
+                          "end":  239,
+                          "name":  "VTEqCap_93ce49c9c7884572ba4d9a2bc2d70648",
+                          "text":  "1\u003cCR\u003e",
+                          "start":  196
+                      },
+                      {
+                          "end":  388,
+                          "name":  "VTEqNum_1067e8928ae14b4d891019d10448a640",
+                          "text":  "2",
+                          "start":  346
+                      },
+                      {
+                          "end":  893,
+                          "name":  "VTEqNum_20686f7ea7e04a719ac3790d496d0618",
+                          "text":  "5",
+                          "start":  851
+                      },
+                      {
+                          "end":  567,
+                          "name":  "VTEqNum_3b50f5d845174ea8ac755518c41070e3",
+                          "text":  "3",
+                          "start":  525
+                      },
+                      {
+                          "end":  725,
+                          "name":  "VTEqNum_91ddfa193f834212b115d0d1c90a99e5",
+                          "text":  "4",
+                          "start":  683
+                      },
+                      {
+                          "end":  238,
+                          "name":  "VTEqNum_93ce49c9c7884572ba4d9a2bc2d70648",
+                          "text":  "1",
+                          "start":  196
+                      },
+                      {
+                          "end":  88,
+                          "name":  "VTO_0f1968278fb84639b8e2c1140e59b9ed",
+                          "text":  "\u0001",
+                          "start":  54
+                      },
+                      {
+                          "end":  274,
+                          "name":  "VTO_1067e8928ae14b4d891019d10448a640",
+                          "text":  "\u0001",
+                          "start":  240
+                      },
+                      {
+                          "end":  779,
+                          "name":  "VTO_20686f7ea7e04a719ac3790d496d0618",
+                          "text":  "\u003cTAB\u003e\u0001",
+                          "start":  744
+                      },
+                      {
+                          "end":  453,
+                          "name":  "VTO_3b50f5d845174ea8ac755518c41070e3",
+                          "text":  "\u003cTAB\u003e\u0001",
+                          "start":  418
+                      },
+                      {
+                          "end":  611,
+                          "name":  "VTO_91ddfa193f834212b115d0d1c90a99e5",
+                          "text":  "\u003cTAB\u003e\u0001",
+                          "start":  576
+                      },
+                      {
+                          "end":  124,
+                          "name":  "VTO_93ce49c9c7884572ba4d9a2bc2d70648",
+                          "text":  "\u003cTAB\u003e\u0001",
+                          "start":  89
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  55,
+                       "end":  87,
+                       "index":  1
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  91,
+                       "end":  123,
+                       "index":  2
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_93ce49c9c7884572ba4d9a2bc2d70648 \\h \\* CHARFORMAT ",
+                       "result":  "1",
+                       "type":  3,
+                       "start":  127,
+                       "end":  193,
+                       "index":  3
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 1 \\* ARABIC ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  197,
+                       "end":  237,
+                       "index":  4
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  241,
+                       "end":  273,
+                       "index":  5
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_1067e8928ae14b4d891019d10448a640 \\h \\* CHARFORMAT ",
+                       "result":  "2",
+                       "type":  3,
+                       "start":  277,
+                       "end":  343,
+                       "index":  6
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 2 \\* ARABIC ",
+                       "result":  "2",
+                       "type":  12,
+                       "start":  347,
+                       "end":  387,
+                       "index":  7
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  420,
+                       "end":  452,
+                       "index":  8
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_3b50f5d845174ea8ac755518c41070e3 \\h \\* CHARFORMAT ",
+                       "result":  "3",
+                       "type":  3,
+                       "start":  456,
+                       "end":  522,
+                       "index":  9
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 3 \\* ARABIC ",
+                       "result":  "3",
+                       "type":  12,
+                       "start":  526,
+                       "end":  566,
+                       "index":  10
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  578,
+                       "end":  610,
+                       "index":  11
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_91ddfa193f834212b115d0d1c90a99e5 \\h \\* CHARFORMAT ",
+                       "result":  "4",
+                       "type":  3,
+                       "start":  614,
+                       "end":  680,
+                       "index":  12
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 4 \\* ARABIC ",
+                       "result":  "4",
+                       "type":  12,
+                       "start":  684,
+                       "end":  724,
+                       "index":  13
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " EMBED VisualTeX.Formula.1 \\s ",
+                       "result":  "\u0001",
+                       "type":  58,
+                       "start":  746,
+                       "end":  778,
+                       "index":  14
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_20686f7ea7e04a719ac3790d496d0618 \\h \\* CHARFORMAT ",
+                       "result":  "5",
+                       "type":  3,
+                       "start":  782,
+                       "end":  848,
+                       "index":  15
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 5 \\* ARABIC ",
+                       "result":  "5",
+                       "type":  12,
+                       "start":  852,
+                       "end":  892,
+                       "index":  16
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  15,
+                      "lineRule":  0,
+                      "text":  "思考分析力学被发明出来的原因\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  15,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  31,
+                      "lineRule":  0,
+                      "text":  "系统有很多约束，解决多约束问题\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  31,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  42,
+                      "lineRule":  0,
+                      "text":  "力学和光学统一起来？\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  42,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  89,
+                      "lineRule":  0,
+                      "text":  "这几个公式不知道对不对：\u0001\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  89,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  196,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(1)\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  196,
+                      "line":  1,
+                      "alignment":  3,
+                      "index":  6,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线 Light",
+                      "inTable":  false,
+                      "end":  239,
+                      "lineRule":  4,
+                      "text":  "1\u003cCR\u003e",
+                      "size":  11
+                  },
+                  {
+                      "start":  239,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  7,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  346,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(2)\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  346,
+                      "line":  1,
+                      "alignment":  3,
+                      "index":  8,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线 Light",
+                      "inTable":  false,
+                      "end":  389,
+                      "lineRule":  4,
+                      "text":  "2\u003cCR\u003e",
+                      "size":  11
+                  },
+                  {
+                      "start":  389,
+                      "line":  28.9,
+                      "alignment":  3,
+                      "index":  9,
+                      "hidden":  0,
+                      "before":  17,
+                      "after":  16.5,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  395,
+                      "lineRule":  5,
+                      "text":  "薛定谔方程\u003cCR\u003e",
+                      "size":  22
+                  },
+                  {
+                      "start":  395,
+                      "line":  28.9,
+                      "alignment":  3,
+                      "index":  10,
+                      "hidden":  0,
+                      "before":  17,
+                      "after":  16.5,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  411,
+                      "lineRule":  5,
+                      "text":  "波函数的统计解释和几率守恒方程\u003cCR\u003e",
+                      "size":  22
+                  },
+                  {
+                      "start":  411,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  11,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  418,
+                      "lineRule":  0,
+                      "text":  "薛定谔方程：\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  418,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  12,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  525,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(3)\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  525,
+                      "line":  1,
+                      "alignment":  3,
+                      "index":  13,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线 Light",
+                      "inTable":  false,
+                      "end":  568,
+                      "lineRule":  4,
+                      "text":  "3\u003cCR\u003e",
+                      "size":  11
+                  },
+                  {
+                      "start":  568,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  14,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  576,
+                      "lineRule":  0,
+                      "text":  "自己推导一下：\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  576,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  15,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  683,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(4)\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  683,
+                      "line":  1,
+                      "alignment":  3,
+                      "index":  16,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线 Light",
+                      "inTable":  false,
+                      "end":  726,
+                      "lineRule":  4,
+                      "text":  "4\u003cCR\u003e",
+                      "size":  11
+                  },
+                  {
+                      "start":  726,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  17,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  744,
+                      "lineRule":  0,
+                      "text":  "有这个可以得到类似的密度守恒方程：\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  744,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  18,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  851,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e\u0001\u003cTAB\u003e(5)\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  851,
+                      "line":  1,
+                      "alignment":  3,
+                      "index":  19,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线 Light",
+                      "inTable":  false,
+                      "end":  894,
+                      "lineRule":  4,
+                      "text":  "5\u003cCR\u003e",
+                      "size":  11
+                  },
+                  {
+                      "start":  894,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  20,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  907,
+                      "lineRule":  0,
+                      "text":  "定态的相加不一定为定态。\u003cCR\u003e",
+                      "size":  10.5
+                  },
+                  {
+                      "start":  907,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  21,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "等线",
+                      "inTable":  false,
+                      "end":  908,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  10.5
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "continuous",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      },
+                      {
+                          "value":  "20686f7e-a7e0-4a71-9ac3-790d496d0618",
+                          "name":  "VisualTeXEquationNumberTailFormulaId"
+                      }
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}

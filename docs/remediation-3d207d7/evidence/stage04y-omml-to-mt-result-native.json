@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  1665606,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  5269376,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  2910416,
+        "name":  "Complete-host replacement requires a verified numbered OMML row.",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

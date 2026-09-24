@@ -1,0 +1,411 @@
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `node scripts/verify_frontend_dist.mjs`
+Verified deterministic Tauri frontend dist: index.html + 2 referenced JS/CSS assets
+Frontend manifest: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-tauri\target\release\frontend-dist-manifest.json
+warn: could not canonicalize path C:\Users\pojian_liao
+   Compiling visualtex v1.2.6 (C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-tauri)
+warning: value assigned to `last_error` is never read
+    --> src\lib.rs:2113:26
+     |
+2113 |     let mut last_error = None;
+     |                          ^^^^ this value is reassigned later and never used
+...
+2121 |             Err(error) => last_error = Some(error),
+     |                           ---------- `last_error` is overwritten here before the previous value is read
+     |
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `emit_progress` is never used
+    --> src\lib.rs:1344:4
+     |
+1344 | fn emit_progress(
+     |    ^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `starts_companion` is never used
+   --> src\app_lifecycle.rs:315:12
+    |
+280 | impl AppRunMode {
+    | --------------- method in this implementation
+...
+315 |     pub fn starts_companion(self) -> bool {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: method `step_complete` is never used
+   --> src\ocr_install.rs:145:12
+    |
+118 | impl InstallSnapshot {
+    | -------------------- method in this implementation
+...
+145 |     pub fn step_complete(&self, step: &str) -> bool {
+    |            ^^^^^^^^^^^^^
+
+warning: method `active_pid` is never used
+   --> src\ocr_install.rs:199:12
+    |
+166 | impl InstallControl {
+    | ------------------- method in this implementation
+...
+199 |     pub fn active_pid(&self) -> u32 {
+    |            ^^^^^^^^^^
+
+warning: method `control` is never used
+   --> src\ocr_install.rs:235:12
+    |
+230 | impl InstallLease {
+    | ----------------- method in this implementation
+...
+235 |     pub fn control(&self) -> &Arc<InstallControl> {
+    |            ^^^^^^^
+
+warning: function `recognize_paddleocr_aistudio_at` is never used
+    --> src\ocr_provider.rs:1556:10
+     |
+1556 | async fn recognize_paddleocr_aistudio_at(
+     |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `download_and_parse_paddleocr_result` is never used
+    --> src\ocr_provider.rs:1746:10
+     |
+1746 | async fn download_and_parse_paddleocr_result(result_url: &str) -> Result<Vec<String>, String> {
+     |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `sha256_file` is never used
+   --> src\ocr_models.rs:304:4
+    |
+304 | fn sha256_file(path: &Path) -> Result<String, String> {
+    |    ^^^^^^^^^^^
+
+warning: function `extract_archive` is never used
+   --> src\ocr_models.rs:414:4
+    |
+414 | fn extract_archive(archive_path: &Path, destination: &Path) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `verify_pack` is never used
+   --> src\ocr_models.rs:513:4
+    |
+513 | fn verify_pack(pack_root: &Path) -> Result<ModelPackManifest, String> {
+    |    ^^^^^^^^^^^
+
+warning: constant `OFFLINE_RUNTIME_LAYOUT_VERSION` is never used
+  --> src\ocr_offline.rs:14:7
+   |
+14 | const OFFLINE_RUNTIME_LAYOUT_VERSION: u32 = 3;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `OFFLINE_BUNDLE_RESOURCE` is never used
+  --> src\ocr_offline.rs:15:7
+   |
+15 | const OFFLINE_BUNDLE_RESOURCE: &str = "ocr/offline/macos-arm64";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `INSTALLED_MANIFEST_FILE` is never used
+  --> src\ocr_offline.rs:16:7
+   |
+16 | const INSTALLED_MANIFEST_FILE: &str = "offline-manifest.json";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `KNOWN_MODELS` is never used
+  --> src\ocr_offline.rs:17:7
+   |
+17 | const KNOWN_MODELS: &[&str] = &[
+   |       ^^^^^^^^^^^^
+
+warning: constant `OPTIONAL_MODELS` is never used
+  --> src\ocr_offline.rs:22:7
+   |
+22 | const OPTIONAL_MODELS: &[&str] = &["PP-FormulaNet_plus-S", "PP-FormulaNet_plus-L"];
+   |       ^^^^^^^^^^^^^^^
+
+warning: constant `MAX_OPTIONAL_MODEL_PACK_BYTES` is never used
+  --> src\ocr_offline.rs:23:7
+   |
+23 | const MAX_OPTIONAL_MODEL_PACK_BYTES: u64 = 1024 * 1024 * 1024;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_ARCHIVE_ENTRIES` is never used
+  --> src\ocr_offline.rs:24:7
+   |
+24 | const MAX_ARCHIVE_ENTRIES: usize = 200_000;
+   |       ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MAX_ARCHIVE_UNPACKED_BYTES` is never used
+  --> src\ocr_offline.rs:25:7
+   |
+25 | const MAX_ARCHIVE_UNPACKED_BYTES: u64 = 3 * 1024 * 1024 * 1024;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `expected_model_hashes` is never used
+  --> src\ocr_offline.rs:27:4
+   |
+27 | fn expected_model_hashes(model: &str) -> Option<BTreeMap<&'static str, &'static str>> {
+   |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `OfflineFileRecord` is never constructed
+  --> src\ocr_offline.rs:78:12
+   |
+78 | pub struct OfflineFileRecord {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `OfflineArchiveSet` is never constructed
+  --> src\ocr_offline.rs:86:12
+   |
+86 | pub struct OfflineArchiveSet {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `OfflineModelManifest` is never constructed
+  --> src\ocr_offline.rs:93:12
+   |
+93 | pub struct OfflineModelManifest {
+   |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `OfflineBundleManifest` is never constructed
+   --> src\ocr_offline.rs:100:12
+    |
+100 | pub struct OfflineBundleManifest {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `OfflineBundle` is never constructed
+   --> src\ocr_offline.rs:111:12
+    |
+111 | pub struct OfflineBundle {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `OptionalModelPackManifest` is never constructed
+   --> src\ocr_offline.rs:118:8
+    |
+118 | struct OptionalModelPackManifest {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `read_manifest` is never used
+   --> src\ocr_offline.rs:134:4
+    |
+134 | fn read_manifest(root: &Path) -> Result<OfflineBundleManifest, String> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `locate_bundle` is never used
+   --> src\ocr_offline.rs:171:8
+    |
+171 | pub fn locate_bundle(app: &AppHandle) -> Result<OfflineBundle, String> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `bundle_available` is never used
+   --> src\ocr_offline.rs:199:8
+    |
+199 | pub fn bundle_available(app: &AppHandle) -> bool {
+    |        ^^^^^^^^^^^^^^^^
+
+warning: function `write_synced_file` is never used
+   --> src\ocr_offline.rs:203:4
+    |
+203 | fn write_synced_file(path: &Path, data: &[u8]) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `sync_directory` is never used
+   --> src\ocr_offline.rs:227:4
+    |
+227 | fn sync_directory(_path: &Path) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `sha256_file` is never used
+   --> src\ocr_offline.rs:231:4
+    |
+231 | fn sha256_file(path: &Path) -> Result<String, String> {
+    |    ^^^^^^^^^^^
+
+warning: function `verify_record` is never used
+   --> src\ocr_offline.rs:252:4
+    |
+252 | fn verify_record(root: &Path, record: &OfflineFileRecord) -> Result<PathBuf, String> {
+    |    ^^^^^^^^^^^^^
+
+warning: function `validate_archive_path` is never used
+   --> src\ocr_offline.rs:275:4
+    |
+275 | fn validate_archive_path(path: &Path) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_archive_link` is never used
+   --> src\ocr_offline.rs:290:4
+    |
+290 | fn validate_archive_link(entry_path: &Path, link: &Path) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `extract_archive` is never used
+   --> src\ocr_offline.rs:328:4
+    |
+328 | fn extract_archive(archive_path: &Path, destination: &Path) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `verify_installed_tree` is never used
+   --> src\ocr_offline.rs:401:4
+    |
+401 | fn verify_installed_tree(root: &Path, manifest: &OfflineBundleManifest) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `ensure_python_executable` is never used
+   --> src\ocr_offline.rs:440:4
+    |
+440 | fn ensure_python_executable(_root: &Path) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `preserve_optional_models` is never used
+   --> src\ocr_offline.rs:444:4
+    |
+444 | fn preserve_optional_models(old_root: &Path, new_root: &Path) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `copy_directory_without_links` is never used
+   --> src\ocr_offline.rs:462:4
+    |
+462 | fn copy_directory_without_links(source: &Path, target: &Path) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `install_bundle` is never used
+   --> src\ocr_offline.rs:493:8
+    |
+493 | pub fn install_bundle(
+    |        ^^^^^^^^^^^^^^
+
+warning: function `collect_regular_files` is never used
+   --> src\ocr_offline.rs:579:4
+    |
+579 | fn collect_regular_files(root: &Path) -> Result<Vec<PathBuf>, String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `verify_optional_pack` is never used
+   --> src\ocr_offline.rs:612:4
+    |
+612 | fn verify_optional_pack(pack_root: &Path) -> Result<OptionalModelPackManifest, String> {
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `remove_path` is never used
+   --> src\ocr_offline.rs:680:4
+    |
+680 | fn remove_path(path: &Path) -> Result<(), String> {
+    |    ^^^^^^^^^^^
+
+warning: struct `OptionalModelActivation` is never constructed
+   --> src\ocr_offline.rs:707:8
+    |
+707 | struct OptionalModelActivation<'a> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `activate` is never used
+   --> src\ocr_offline.rs:719:8
+    |
+718 | impl OptionalModelActivation<'_> {
+    | -------------------------------- method in this implementation
+719 |     fn activate(&self, mut sync: impl FnMut(&Path) -> Result<(), String>) -> Result<(), String> {
+    |        ^^^^^^^^
+
+warning: function `install_optional_model_pack` is never used
+   --> src\ocr_offline.rs:799:8
+    |
+799 | pub fn install_optional_model_pack(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `remove_optional_model` is never used
+   --> src\ocr_offline.rs:885:8
+    |
+885 | pub fn remove_optional_model(runtime_root: &Path, model: &str) -> Result<(), String> {
+    |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `installed_models` is never used
+   --> src\ocr_offline.rs:906:8
+    |
+906 | pub fn installed_models(root: &Path) -> Vec<String> {
+    |        ^^^^^^^^^^^^^^^^
+
+warning: function `offline_install_assets_from_root` is never used
+   --> src\ocr_python_bundle.rs:412:8
+    |
+412 | pub fn offline_install_assets_from_root(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `install_bundle_from_root` is never used
+   --> src\ocr_python_bundle.rs:438:8
+    |
+438 | pub fn install_bundle_from_root(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `pause_launch_agent_for_quit` is never used
+  --> src\office\platform\non_macos_background.rs:65:8
+   |
+65 | pub fn pause_launch_agent_for_quit() -> Result<(), String> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `reveal_main_window` is never used
+  --> src\office\platform\non_macos_background.rs:89:8
+   |
+89 | pub fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `hide_main_window` is never used
+  --> src\office\platform\non_macos_background.rs:93:8
+   |
+93 | pub fn hide_main_window(app: &AppHandle) -> Result<(), String> {
+   |        ^^^^^^^^^^^^^^^^
+
+warning: function `open_office_application` is never used
+  --> src\office\platform\non_macos_installer.rs:90:8
+   |
+90 | pub fn open_office_application(host: ManifestHost) -> Result<(), String> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `ManifestHost` is never used
+ --> src\office\platform\non_macos_manifest.rs:2:10
+  |
+2 | pub enum ManifestHost {
+  |          ^^^^^^^^^^^^
+
+warning: constant `SHAPE_PREFIX` is never used
+ --> src\office\platform\non_macos_powerpoint_native.rs:6:7
+  |
+6 | const SHAPE_PREFIX: &str = "VisualTeX_";
+  |       ^^^^^^^^^^^^
+
+warning: constant `MAX_EVENTS` is never used
+ --> src\office\platform\non_macos_powerpoint_native.rs:7:7
+  |
+7 | const MAX_EVENTS: usize = 64;
+  |       ^^^^^^^^^^
+
+warning: field `next_cursor` is never read
+  --> src\office\platform\non_macos_powerpoint_native.rs:47:5
+   |
+46 | struct InteractionState {
+   |        ---------------- field in this struct
+47 |     next_cursor: u64,
+   |     ^^^^^^^^^^^
+   |
+   = note: `InteractionState` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: method `push_edit_selected` is never used
+  --> src\office\platform\non_macos_powerpoint_native.rs:59:12
+   |
+58 | impl PowerPointInteractionBus {
+   | ----------------------------- method in this implementation
+59 |     pub fn push_edit_selected(&self, host: &'static str, shape_name: String, formula_id: String) {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: function `formula_id_from_shape_name` is never used
+   --> src\office\platform\non_macos_powerpoint_native.rs:168:8
+    |
+168 | pub fn formula_id_from_shape_name(shape_name: &str) -> Option<String> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `pipe_name` is never used
+  --> src\office\windows_pipe.rs:76:12
+   |
+61 | impl WindowsPipeClient {
+   | ---------------------- method in this implementation
+...
+76 |     pub fn pipe_name(&self) -> &str {
+   |            ^^^^^^^^^
+
+warning: `visualtex` (lib) generated 62 warnings
+    Finished `release` profile [optimized] target(s) in 54.07s
+       Built application at: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-tauri\target\release\visualtex.exe

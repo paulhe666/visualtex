@@ -1,0 +1,46 @@
+﻿{
+    "bookmark":  "VTEqNum_a02a77cf61594b4bb88504d56a1c4aa3",
+    "wordMacroButtonTarget":  null,
+    "actualReferenceRectangle":  {
+                                     "left":  1164,
+                                     "width":  0,
+                                     "top":  1092,
+                                     "height":  59
+                                 },
+    "passed":  true,
+    "target":  {
+                   "end":  297,
+                   "frames":  0,
+                   "text":  "0.0-2",
+                   "start":  236
+               },
+    "before":  {
+                   "start":  92,
+                   "end":  92
+               },
+    "pid":  77768,
+    "completeReferenceRectangle":  {
+                                       "left":  1164,
+                                       "width":  103,
+                                       "top":  1092,
+                                       "height":  59
+                                   },
+    "rectangle":  {
+                      "left":  1164,
+                      "width":  103,
+                      "top":  1092,
+                      "height":  59
+                  },
+    "wordExpandedTargetField":  null,
+    "time":  "2026-09-06T13:36:03.9809618Z",
+    "navigationBookmark":  "VTEqNum_a02a77cf61594b4bb88504d56a1c4aa3",
+    "visualReviewRequired":  true,
+    "selectionMatched":  true,
+    "after":  {
+                  "end":  297,
+                  "text":  "0.0-2",
+                  "start":  236
+              },
+    "document":  "文档21",
+    "action":  "real mouse double-click"
+}

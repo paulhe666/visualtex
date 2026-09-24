@@ -1,0 +1,112 @@
+{
+    "name":  "文档99",
+    "fullName":  "文档99",
+    "saved":  false,
+    "end":  60,
+    "paragraphs":  5,
+    "tables":  [
+
+               ],
+    "maths":  [
+
+              ],
+    "shapes":  [
+
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+
+                  ],
+    "fields":  [
+
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  9,
+                      "lineRule":  0,
+                      "text":  "第一段正文：$$\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  9,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  21,
+                      "lineRule":  0,
+                      "text":  "x^2+y^2=z^2\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  21,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  37,
+                      "lineRule":  0,
+                      "text":  "$$这一段保留在第一公式之后。\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  37,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  59,
+                      "lineRule":  0,
+                      "text":  "第二段正文：$$E=mc^2$$结尾正文。\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  59,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  60,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  12
+                  }
+              ],
+    "variables":  [
+
+                  ],
+    "xmlFonts":  [
+
+                 ],
+    "xmlMathCount":  0,
+    "customXml":  [
+
+                  ]
+}

@@ -1,0 +1,34 @@
+{
+  "stage04r-omml-before-vt-__132": [
+    {
+      "index": 11,
+      "text": "薛定谔方程",
+      "style": {
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "1"
+      }
+    },
+    {
+      "index": 12,
+      "text": "波函数的统计解释和几率守恒方程",
+      "style": {
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "1"
+      }
+    }
+  ],
+  "stage04r-vt-converted-__132": [
+    {
+      "index": 10,
+      "text": "薛定谔方程",
+      "style": {
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "1"
+      }
+    },
+    {
+      "index": 11,
+      "text": "波函数的统计解释和几率守恒方程",
+      "style": {
+        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val": "1"
+      }
+    }
+  ]
+}

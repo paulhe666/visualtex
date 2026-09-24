@@ -1,0 +1,10 @@
+[
+  {
+    "label": "stage04e-distinct-size-insert",
+    "tailXml": "<ns0:p xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" ns0:rsidR=\"00000000\" ns0:rsidRDefault=\"002874B2\" />"
+  },
+  {
+    "label": "stage04g-distinct-size-insert",
+    "tailXml": "<ns0:p xmlns:ns0=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" ns0:rsidR=\"00000000\" ns0:rsidRPr=\"00BA12E1\" ns0:rsidRDefault=\"00BA12E1\"><ns0:pPr><ns0:rPr><ns0:rFonts ns0:ascii=\"Arial\" ns0:eastAsia=\"宋体\" ns0:hAnsi=\"Arial\" /><ns0:sz ns0:val=\"28\" /></ns0:rPr></ns0:pPr></ns0:p>"
+  }
+]

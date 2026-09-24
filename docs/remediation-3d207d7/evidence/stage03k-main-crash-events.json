@@ -1,0 +1,17 @@
+[
+  {
+    "TimeCreated": "2026-09-06T11:34:06.2426322+08:00",
+    "Id": 1001,
+    "Message": "故障存储段 1331729738975398601，类型 5\r\n事件名称: FaultTolerantHeap\r\n响应: 不可用\r\nCab ID: 0\r\n\r\n问题签名:\r\nP1: visualtex.exe\r\nP2: 1.2.6.0\r\nP3: 6A9C2EAF\r\nP4: ffffbaad\r\nP5: \r\nP6: \r\nP7: \r\nP8: \r\nP9: \r\nP10: \r\n\r\n附加文件:\r\n\\\\?\\C:\\Windows\\SERVIC~1\\LOCALS~1\\AppData\\Local\\Temp\\FTHC604.tmp\\fthempty.txt\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WERC615.tmp.WERInternalMetadata.xml\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WERC645.tmp.xml\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WERC643.tmp.csv\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WERC673.tmp.txt\r\n\r\n可在此处获取这些文件:\r\n\r\n\r\n分析符号: \r\n重新检查解决方案: 0\r\n报告 ID: 1d723474-4370-4474-bf12-8fe40364c779\r\n报告状态: 268435456\r\n哈希存储段: 5f05800b54e2896d127b41244c73cac9\r\nCab GUID: 0"
+  },
+  {
+    "TimeCreated": "2026-09-06T11:34:05.4237347+08:00",
+    "Id": 1001,
+    "Message": "故障存储段 2243948161581970623，类型 4\r\n事件名称: APPCRASH\r\n响应: 不可用\r\nCab ID: 0\r\n\r\n问题签名:\r\nP1: visualtex.exe\r\nP2: 1.2.6.0\r\nP3: 6a9c2eaf\r\nP4: StackHash_ab00\r\nP5: 10.0.19041.6456\r\nP6: 7ec9c15d\r\nP7: c0000374\r\nP8: PCH_58_FROM_ntdll+0x000000000009E0F4\r\nP9: \r\nP10: \r\n\r\n附加文件:\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WERC643.tmp.dmp\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WERC6E0.tmp.WERInternalMetadata.xml\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WERC700.tmp.xml\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WERC700.tmp.csv\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp\\WERC730.tmp.txt\r\n\r\n可在此处获取这些文件:\r\n\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\ReportArchive\\AppCrash_visualtex.exe_9924fce95c74b350ea51476bbcef243e4a90a578_6a612e9e_04ebdb15-68d9-44c4-b4ae-a6b5b3e53eae\r\n\r\n分析符号: \r\n重新检查解决方案: 0\r\n报告 ID: 7fc40a05-b22b-448c-a6ed-c0f5a4f950f0\r\n报告状态: 268435456\r\n哈希存储段: 61a70e0d40424a314f241af6c97bf4bf\r\nCab GUID: 0"
+  },
+  {
+    "TimeCreated": "2026-09-06T11:34:04.0543198+08:00",
+    "Id": 1000,
+    "Message": "错误应用程序名称: visualtex.exe，版本: 1.2.6.0，时间戳: 0x6a9c2eaf\r\n错误模块名称: ntdll.dll，版本: 10.0.19041.6456，时间戳: 0x7ec9c15d\r\n异常代码: 0xc0000374\r\n错误偏移量: 0x00000000000ff489\r\n错误进程 ID: 0x51d0\r\n错误应用程序启动时间: 0x01dd3d483f9c1740\r\n错误应用程序路径: C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe\r\n错误模块路径: C:\\Windows\\SYSTEM32\\ntdll.dll\r\n报告 ID: 7fc40a05-b22b-448c-a6ed-c0f5a4f950f0\r\n错误程序包全名: \r\n错误程序包相对应用程序 ID: "
+  }
+]

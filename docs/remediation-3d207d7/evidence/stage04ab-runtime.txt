@@ -1,0 +1,12 @@
+SESSION|48d97ffb-343b-4619-9e5d-b3dea152b911|doc=文档151|mode=edit|object=wordOmml|display=block|numbered=True|status=completed|error=
+SESSION|eea8e81d-adf7-4a20-8b77-22b0c5f6aaa1|doc=文档151|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+SESSION|394e7fcd-3312-40f1-8dc7-cabf5216997a|doc=文档151|mode=create|object=wordOmml|display=inline|numbered=False|status=completed|error=
+SESSION|a6dfb30b-7eda-43d0-89e6-aee11abdc6cc|doc=文档151|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+SESSION|d71a219d-cf93-42c6-935d-0522b968ef34|doc=文档151|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+SESSION|26fff1b8-af60-43f2-8fd8-9cb63a76dc25|doc=文档151|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+SESSION|2ad891c9-bef3-46e2-88c4-078134c3ce03|doc=文档151|mode=create|object=wordOmml|display=block|numbered=False|status=completed|error=
+{
+    "path":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\visualtex.exe",
+    "sha256":  "3029A2FC92F646FABEAE17B4B7A2CF8820DA63DE926089F294A1086AD167F729",
+    "process":  "visualtex"
+}

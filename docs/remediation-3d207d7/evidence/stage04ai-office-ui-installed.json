@@ -1,0 +1,128 @@
+﻿{
+    "source":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\apps\\windows\\dist-office-windows-native",
+    "backup":  "C:\\Users\\pojian_liao\\Desktop\\devspace\\visualtex1.2.3-reference-3d207d7\\docs\\remediation-3d207d7\\evidence\\stage04ai-office-ui-backup",
+    "destination":  "C:\\Users\\pojian_liao\\AppData\\Local\\VisualTeX\\office",
+    "label":  "stage04ai",
+    "files":  [
+                  {
+                      "before":  null,
+                      "file":  "assets\\CustomSymbolDesignerDialog-KKzM6a4z.js",
+                      "after":  "36BCBAF0F0E6DF1D67142869AB9FE7EDD034606B42877AE086465406AFC663F0"
+                  },
+                  {
+                      "before":  "A3068CF4DBF46A80B8C73A9670B064074862E31325F139C0B26BB61DA301F284",
+                      "file":  "assets\\dialog-BkcOVQJV.css",
+                      "after":  "A3068CF4DBF46A80B8C73A9670B064074862E31325F139C0B26BB61DA301F284"
+                  },
+                  {
+                      "before":  null,
+                      "file":  "assets\\dialog-HL1bHzsS.js",
+                      "after":  "09423212A0C14E22908F00F47747F59F7DEE12085213CB48A6A2FF72928F6B1C"
+                  },
+                  {
+                      "before":  "0CDD387C9590A1A9F9794560022DBB59654A7D86F187AA0C81495AD42D3A7308",
+                      "file":  "assets\\KaTeX_AMS-Regular-BQhdFMY1.woff2",
+                      "after":  "0CDD387C9590A1A9F9794560022DBB59654A7D86F187AA0C81495AD42D3A7308"
+                  },
+                  {
+                      "before":  "DE7701E42CF1F4CF0B766C03FB27977207EEE2F4FD5D76FA82188406DA43EA4C",
+                      "file":  "assets\\KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2",
+                      "after":  "DE7701E42CF1F4CF0B766C03FB27977207EEE2F4FD5D76FA82188406DA43EA4C"
+                  },
+                  {
+                      "before":  "5D53E70AD607C2352162DEC9E0923FB54ECDAFACCBF604CD8DCF7D00FACB989B",
+                      "file":  "assets\\KaTeX_Caligraphic-Regular-Di6jR-x-.woff2",
+                      "after":  "5D53E70AD607C2352162DEC9E0923FB54ECDAFACCBF604CD8DCF7D00FACB989B"
+                  },
+                  {
+                      "before":  "74444EFD593C005E3F4573B44524704C0AF0A937FE911CCA9E94068D0D140D3F",
+                      "file":  "assets\\KaTeX_Fraktur-Bold-CL6g_b3V.woff2",
+                      "after":  "74444EFD593C005E3F4573B44524704C0AF0A937FE911CCA9E94068D0D140D3F"
+                  },
+                  {
+                      "before":  "51814D270D06FF0255DBA0799994FA4D8C84D11F09951D47595F4ABB1F3602DC",
+                      "file":  "assets\\KaTeX_Fraktur-Regular-CTYiF6lA.woff2",
+                      "after":  "51814D270D06FF0255DBA0799994FA4D8C84D11F09951D47595F4ABB1F3602DC"
+                  },
+                  {
+                      "before":  "0F60D1B897938EC918C8CE073092411BAF9438F6739465693FF18B0F9D20B021",
+                      "file":  "assets\\KaTeX_Main-Bold-Cx986IdX.woff2",
+                      "after":  "0F60D1B897938EC918C8CE073092411BAF9438F6739465693FF18B0F9D20B021"
+                  },
+                  {
+                      "before":  "99CD42A3C072D918F2F44984A807CF7AA16E13545FD0875FC07C6C65F99E715B",
+                      "file":  "assets\\KaTeX_Main-BoldItalic-DxDJ3AOS.woff2",
+                      "after":  "99CD42A3C072D918F2F44984A807CF7AA16E13545FD0875FC07C6C65F99E715B"
+                  },
+                  {
+                      "before":  "97479CA6CCE906ABC961ECAC96FAA5F9CA2E61B8E7670D475826BCDEE9A7C267",
+                      "file":  "assets\\KaTeX_Main-Italic-NWA7e6Wa.woff2",
+                      "after":  "97479CA6CCE906ABC961ECAC96FAA5F9CA2E61B8E7670D475826BCDEE9A7C267"
+                  },
+                  {
+                      "before":  "C2342CD8B869E01752A9321DC17213FC40D4D04C79688C1D43F2CF316ABD7866",
+                      "file":  "assets\\KaTeX_Main-Regular-B22Nviop.woff2",
+                      "after":  "C2342CD8B869E01752A9321DC17213FC40D4D04C79688C1D43F2CF316ABD7866"
+                  },
+                  {
+                      "before":  "DC47344DBB6CB5B655C8460D561F4DF5F501B90C804AD3C6CEC65FE322351AB1",
+                      "file":  "assets\\KaTeX_Math-BoldItalic-CZnvNsCZ.woff2",
+                      "after":  "DC47344DBB6CB5B655C8460D561F4DF5F501B90C804AD3C6CEC65FE322351AB1"
+                  },
+                  {
+                      "before":  "7AF58C5EC8F132A2DDDE9027C6D7814DECCE4D3B822A11192A42A20E2E973264",
+                      "file":  "assets\\KaTeX_Math-Italic-t53AETM-.woff2",
+                      "after":  "7AF58C5EC8F132A2DDDE9027C6D7814DECCE4D3B822A11192A42A20E2E973264"
+                  },
+                  {
+                      "before":  "E99AE51144BF1232EFCC1BFE5ADD36262C6866B0FAAB24FA75740E1B98577A62",
+                      "file":  "assets\\KaTeX_SansSerif-Bold-D1sUS0GD.woff2",
+                      "after":  "E99AE51144BF1232EFCC1BFE5ADD36262C6866B0FAAB24FA75740E1B98577A62"
+                  },
+                  {
+                      "before":  "00B26AC825E2095056396E0553B8AC26D3F8AD158C3826E28B4C45B385C4714A",
+                      "file":  "assets\\KaTeX_SansSerif-Italic-C3H0VqGB.woff2",
+                      "after":  "00B26AC825E2095056396E0553B8AC26D3F8AD158C3826E28B4C45B385C4714A"
+                  },
+                  {
+                      "before":  "68E8C73EF42AFD3CCEC58BF0FBA302CCE448938E7FC020A5E31F8A952EEE1342",
+                      "file":  "assets\\KaTeX_SansSerif-Regular-DDBCnlJ7.woff2",
+                      "after":  "68E8C73EF42AFD3CCEC58BF0FBA302CCE448938E7FC020A5E31F8A952EEE1342"
+                  },
+                  {
+                      "before":  "036D4E95149B69FF9BCC0CD55771EFEB25FFA3947293E69ACD78D5AC328C684B",
+                      "file":  "assets\\KaTeX_Script-Regular-D3wIWfF6.woff2",
+                      "after":  "036D4E95149B69FF9BCC0CD55771EFEB25FFA3947293E69ACD78D5AC328C684B"
+                  },
+                  {
+                      "before":  "6B47C40166B6DBE21A5DFCA7718413F2147FD2399BE1BA605D8AD39CEDF25DFE",
+                      "file":  "assets\\KaTeX_Size1-Regular-mCD8mA8B.woff2",
+                      "after":  "6B47C40166B6DBE21A5DFCA7718413F2147FD2399BE1BA605D8AD39CEDF25DFE"
+                  },
+                  {
+                      "before":  "D04C54219F9EAEC6D4D4FD42DFB28785975A4794D6B2FC71E566B9CD6DB842DD",
+                      "file":  "assets\\KaTeX_Size2-Regular-Dy4dx90m.woff2",
+                      "after":  "D04C54219F9EAEC6D4D4FD42DFB28785975A4794D6B2FC71E566B9CD6DB842DD"
+                  },
+                  {
+                      "before":  "A4AF7D414440A1C1790825CFB700CF9CF43B0F2C4B04F0EBC523011AD9853EC0",
+                      "file":  "assets\\KaTeX_Size4-Regular-Dl5lxZxV.woff2",
+                      "after":  "A4AF7D414440A1C1790825CFB700CF9CF43B0F2C4B04F0EBC523011AD9853EC0"
+                  },
+                  {
+                      "before":  "71D517D67827787CFABDF186914CC3358EDA539E37931941F2B2FD4A21F68C0B",
+                      "file":  "assets\\KaTeX_Typewriter-Regular-CO6r4hn1.woff2",
+                      "after":  "71D517D67827787CFABDF186914CC3358EDA539E37931941F2B2FD4A21F68C0B"
+                  },
+                  {
+                      "before":  "C8FBC95C7501FAAA67B4AA29C2B62AEB8233806237B0C8397947AD693F745DF5",
+                      "file":  "dialog\\index.html",
+                      "after":  "3FFAB6EF05C162F8BCE0B613CDEAFFBD422EE648A9059441B919EC1FCB480320"
+                  }
+              ],
+    "time":  "2026-09-06T11:35:36.7736460Z",
+    "companionPid":  76424,
+    "companionSha256":  "3029A2FC92F646FABEAE17B4B7A2CF8820DA63DE926089F294A1086AD167F729",
+    "nsisInstalled":  false,
+    "wordRestarted":  false
+}

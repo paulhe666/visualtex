@@ -1,0 +1,22 @@
+{
+    "document":  "文档66",
+    "mathFont":  "Latin Modern Math",
+    "anchors":  [
+                    {
+                        "insideMath":  false,
+                        "name":  "VTOMML_e40001d7610947c1a9a0efd0246638f9",
+                        "parentXml":  "\u003cw:body xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"\u003e\u003cw:p w:rsidR=\"00E231B7\" w:rsidRDefault=\"00E231B7\" w:rsidP=\"00E231B7\"\u003e\u003cw:pPr\u003e\u003cw:pStyle w:val=\"MTDisplayEquation\" /\u003e\u003c/w:pPr\u003e\u003cw:r\u003e\u003cw:fldChar w:fldCharType=\"begin\" /\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:instrText xml:space=\"preserve\"\u003e MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u003c/w:instrText\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:fldChar w:fldCharType=\"begin\" /\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:instrText xml:space=\"preserve\"\u003e SEQ MTEqn \\h \\* MERGEFORMAT \u003c/w:instrText\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:fldChar w:fldCharType=\"end\" /\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:instrText\u003e(\u003c/w:instrText\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:fldChar w:fldCharType=\"begin\" /\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:instrText xml:space=\"preserve\"\u003e SEQ MTChap \\c \\* Arabic \\* MERGEFORMAT \u003c/w:instrText\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:fldChar w:fldCharType=\"separate\" /\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:rPr\u003e\u003cw:noProof /\u003e\u003c/w:rPr\u003e\u003cw:instrText\u003e0\u003c/w:instrText\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:fldChar w:fldCharType=\"end\" /\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:instrText\u003e.\u003c/w:instrText\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:fldChar w:fldCharType=\"begin\" /\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:instrText xml:space=\"preserve\"\u003e SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u003c/w:instrText\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:fldChar w:fldCharType=\"separate\" /\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:rPr\u003e\u003cw:noProof /\u003e\u003c/w:rPr\u003e\u003cw:instrText\u003e1\u003c/w:instrText\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:fldChar w:fldCharType=\"end\" /\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:instrText\u003e)\u003c/w:instrText\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:fldChar w:fldCharType=\"end\" /\u003e\u003c/w:r\u003e\u003cw:r\u003e\u003cw:tab /\u003e\u003c/w:r\u003e\u003cw:r w:rsidRPr=\"00814282\"\u003e\u003cw:rPr\u003e\u003cw:position w:val=\"-6\" /\u003e\u003c/w:rPr\u003e\u003cw:object w:dxaOrig=\"1160\" w:dyaOrig=\"320\"\u003e\u003cv:shapetype id=\"_x0000_t75\" coordsize=\"21600,21600\" o:spt=\"75\" o:preferrelative=\"t\" path=\"m@4@5l@4@11@9@11@9@5xe\" filled=\"f\" stroked=\"f\" xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:v=\"urn:schemas-microsoft-com:vml\"\u003e\u003cv:stroke joinstyle=\"miter\" /\u003e\u003cv:formulas\u003e\u003cv:f eqn=\"if lineDrawn pixelLineWidth 0\" /\u003e\u003cv:f eqn=\"sum @0 1 0\" /\u003e\u003cv:f eqn=\"sum 0 0 @1\" /\u003e\u003cv:f eqn=\"prod @2 1 2\" /\u003e\u003cv:f eqn=\"prod @3 21600 pixelWidth\" /\u003e\u003cv:f eqn=\"prod @3 21600 pixelHeight\" /\u003e\u003cv:f eqn=\"sum @0 0 1\" /\u003e\u003cv:f eqn=\"prod @6 1 2\" /\u003e\u003cv:f eqn=\"prod @7 21600 pixelWidth\" /\u003e\u003cv:f eqn=\"sum @8 21600 0\" /\u003e\u003cv:f eqn=\"prod @7 21600 pixelHeight\" /\u003e\u003cv:f eqn=\"sum @10 21600 0\" /\u003e\u003c/v:formulas\u003e\u003cv:path o:extrusionok=\"f\" gradientshapeok=\"t\" o:connecttype=\"rect\" /\u003e\u003co:lock v:ext=\"edit\" aspectratio=\"t\" /\u003e\u003c/v:shapetype\u003e\u003cv:shape id=\"_x0000_i1025\" type=\"#_x0000_t75\" style=\"width:58.05pt;height:16.05pt\" o:ole=\"\" xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:v=\"urn:schemas-microsoft-com:vml\"\u003e\u003cv:imagedata r:",
+                        "parents":  [
+                                        "w:body",
+                                        "w:document",
+                                        "pkg:xmlData",
+                                        "/word/document.xml",
+                                        "pkg:package",
+                                        "#document"
+                                    ]
+                    }
+                ],
+    "separators":  [
+
+                   ]
+}

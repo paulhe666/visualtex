@@ -1,0 +1,68 @@
+{
+  "stage04ap-omml-imported": [
+    {
+      "index": 1,
+      "sizes": {},
+      "xml": ""
+    },
+    {
+      "index": 2,
+      "sizes": {},
+      "xml": ""
+    },
+    {
+      "index": 3,
+      "sizes": {},
+      "xml": "<ns0:oMath xmlns:ns0=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:ns1=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rad><ns0:radPr><ns0:degHide ns0:val=\"1\" /><ns0:ctrlPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /></ns1:rPr></ns0:ctrlPr></ns0:radPr><ns0:deg /><ns0:e><ns0:f><ns0:fPr><ns0:ctrlPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /></ns1:rPr></ns0:ctrlPr></ns0:fPr><ns0:num><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:szCs ns1:val=\"21\" /></ns1:rPr><ns0:t>m</ns0:t></ns0:r></ns0:num><ns0:den><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:szCs ns1:val=\"21\" /></ns1:rPr><ns0:t>2(E(ω)-U)</ns0:t></ns0:r></ns0:den></ns0:f></ns0:e></ns0:rad><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:szCs ns1:val=\"21\" /></ns1:rPr><ns0:t>=</ns0:t></ns0:r><ns0:f><ns0:fPr><ns0:ctrlPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /></ns1:rPr></ns0:ctrlPr></ns0:fPr><ns0:num><ns0:r><ns0:rPr><ns0:sty ns0:val=\"p\" /></ns0:rPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:noProof /><ns1:szCs ns1:val=\"21\" /></ns1:rPr><ns0:t>d</ns0:t></ns0:r></ns0:num><ns0:den><ns0:r><ns0:rPr><ns0:sty ns0:val=\"p\" /></ns0:rPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:noProof /><ns1:szCs ns1:val=\"21\" /></ns1:rPr><ns0:t>d</ns0:t></ns0:r><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:szCs ns1:val=\"21\" /></ns1:rPr><ns0:t>ω</ns0:t></ns0:r></ns0:den></ns0:f><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:szCs ns1:val=\"21\" /></ns1:rPr><ns0:t>(ω⋅f(ω)</ns0:t></ns0:r><ns0:rad><ns0:radPr><ns0:degHide ns0:val=\"1\" /><ns0:ctrlPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /></ns1:rPr></ns0:ctrlPr></ns0:radPr><ns0:deg /><ns0:e><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:szCs ns1:val=\"21\" /></ns1:rPr><ns0:t>(E(ω)-U)</ns0:t></ns0:r></ns0:e></ns0:rad><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:szCs ns1:val=\"21\" /></ns1:rPr><ns0:t>)</ns0:t></ns0:r></ns0:oMath>"
+    },
+    {
+      "index": 4,
+      "sizes": {},
+      "xml": ""
+    },
+    {
+      "index": 5,
+      "sizes": {},
+      "xml": ""
+    },
+    {
+      "index": 6,
+      "sizes": {},
+      "xml": ""
+    }
+  ],
+  "stage04ap-omml-size12": [
+    {
+      "index": 1,
+      "sizes": {},
+      "xml": ""
+    },
+    {
+      "index": 2,
+      "sizes": {},
+      "xml": ""
+    },
+    {
+      "index": 3,
+      "sizes": {
+        "24": 9
+      },
+      "xml": "<ns0:oMath xmlns:ns0=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:ns1=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><ns0:rad><ns0:radPr><ns0:degHide ns0:val=\"1\" /><ns0:ctrlPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /></ns1:rPr></ns0:ctrlPr></ns0:radPr><ns0:deg /><ns0:e><ns0:f><ns0:fPr><ns0:ctrlPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /></ns1:rPr></ns0:ctrlPr></ns0:fPr><ns0:num><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:sz ns1:val=\"24\" /><ns1:szCs ns1:val=\"24\" /></ns1:rPr><ns0:t>m</ns0:t></ns0:r></ns0:num><ns0:den><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:sz ns1:val=\"24\" /><ns1:szCs ns1:val=\"24\" /></ns1:rPr><ns0:t>2(E(ω)-U)</ns0:t></ns0:r></ns0:den></ns0:f></ns0:e></ns0:rad><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:sz ns1:val=\"24\" /><ns1:szCs ns1:val=\"24\" /></ns1:rPr><ns0:t>=</ns0:t></ns0:r><ns0:f><ns0:fPr><ns0:ctrlPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /></ns1:rPr></ns0:ctrlPr></ns0:fPr><ns0:num><ns0:r><ns0:rPr><ns0:sty ns0:val=\"p\" /></ns0:rPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:noProof /><ns1:sz ns1:val=\"24\" /><ns1:szCs ns1:val=\"24\" /></ns1:rPr><ns0:t>d</ns0:t></ns0:r></ns0:num><ns0:den><ns0:r><ns0:rPr><ns0:sty ns0:val=\"p\" /></ns0:rPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:noProof /><ns1:sz ns1:val=\"24\" /><ns1:szCs ns1:val=\"24\" /></ns1:rPr><ns0:t>d</ns0:t></ns0:r><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:sz ns1:val=\"24\" /><ns1:szCs ns1:val=\"24\" /></ns1:rPr><ns0:t>ω</ns0:t></ns0:r></ns0:den></ns0:f><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:sz ns1:val=\"24\" /><ns1:szCs ns1:val=\"24\" /></ns1:rPr><ns0:t>(ω⋅f(ω)</ns0:t></ns0:r><ns0:rad><ns0:radPr><ns0:degHide ns0:val=\"1\" /><ns0:ctrlPr><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /></ns1:rPr></ns0:ctrlPr></ns0:radPr><ns0:deg /><ns0:e><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:sz ns1:val=\"24\" /><ns1:szCs ns1:val=\"24\" /></ns1:rPr><ns0:t>(E(ω)-U)</ns0:t></ns0:r></ns0:e></ns0:rad><ns0:r><ns1:rPr><ns1:rFonts ns1:ascii=\"Latin Modern Math\" ns1:hAnsi=\"Latin Modern Math\" /><ns1:sz ns1:val=\"24\" /><ns1:szCs ns1:val=\"24\" /></ns1:rPr><ns0:t>)</ns0:t></ns0:r></ns0:oMath>"
+    },
+    {
+      "index": 4,
+      "sizes": {},
+      "xml": ""
+    },
+    {
+      "index": 5,
+      "sizes": {},
+      "xml": ""
+    },
+    {
+      "index": 6,
+      "sizes": {},
+      "xml": ""
+    }
+  ]
+}

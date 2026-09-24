@@ -1,0 +1,36 @@
+﻿{
+    "bookmarks":  [
+                      {
+                          "end":  143,
+                          "name":  "VTEqNum_6fa7d1fbac004cb0b3a4508c2ba1c51e",
+                          "text":  "1",
+                          "start":  100
+                      }
+                  ],
+    "selection":  {
+                      "start":  28,
+                      "rangeText":  null,
+                      "fields":  [
+
+                                 ],
+                      "rangeEnd":  28,
+                      "type":  1,
+                      "rangeStart":  28,
+                      "end":  28,
+                      "text":  "\u0015"
+                  },
+    "pid":  68776,
+    "end":  271,
+    "document":  "文档81",
+    "numberHosts":  [
+                        {
+                            "codeStart":  29,
+                            "resultEnd":  145,
+                            "rangeText":  "\u0015\r",
+                            "type":  51,
+                            "code":  " MACROBUTTON MTPlaceRef \\* MERGEFORMAT \u0013 SEQ MTEqn \\h \\* MERGEFORMAT \u0015(\u0013 SEQ MTEqn \\c \\* Arabic \\* MERGEFORMAT \u0015)",
+                            "resultStart":  145,
+                            "codeEnd":  144
+                        }
+                    ]
+}

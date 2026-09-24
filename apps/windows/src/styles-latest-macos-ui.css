@@ -2082,7 +2082,7 @@ math-field[data-visualtex-greek-mode="true"] {
 
 .formula-editor-context-menu {
   position: fixed;
-  z-index: 2050;
+  z-index: var(--z-popover, 190);
   min-width: 176px;
   padding: 4px;
   border: 1px solid var(--border-strong);

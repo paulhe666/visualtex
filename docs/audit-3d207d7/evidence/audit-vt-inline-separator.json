@@ -1,0 +1,63 @@
+{
+    "document":  "文档43",
+    "mathFont":  "Latin Modern Math",
+    "anchors":  [
+                    {
+                        "insideMath":  false,
+                        "name":  "VTOMML_8f35a23275974d3fab11853450fb393a",
+                        "parentXml":  "\u003cw:tr w:rsidR=\"00C61233\" w:rsidTr=\"00A6708D\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"\u003e\u003cw:tblPrEx\u003e\u003cw:tblCellMar\u003e\u003cw:top w:w=\"0\" w:type=\"dxa\" /\u003e\u003cw:bottom w:w=\"0\" w:type=\"dxa\" /\u003e\u003c/w:tblCellMar\u003e\u003c/w:tblPrEx\u003e\u003cw:trPr\u003e\u003cw:cantSplit /\u003e\u003cw:trHeight w:val=\"333\" /\u003e\u003c/w:trPr\u003e\u003cw:tc\u003e\u003cw:tcPr\u003e\u003cw:tcW w:w=\"1200\" w:type=\"dxa\" /\u003e\u003cw:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"auto\" /\u003e\u003cw:vAlign w:val=\"center\" /\u003e\u003c/w:tcPr\u003e\u003cw:p w:rsidR=\"00C61233\" w:rsidRDefault=\"00C61233\" w:rsidP=\"00A6708D\"\u003e\u003cw:pPr\u003e\u003cw:jc w:val=\"left\" /\u003e\u003c/w:pPr\u003e\u003c/w:p\u003e\u003c/w:tc\u003e\u003cw:bookmarkStart w:id=\"0\" w:name=\"VTOMML_8f35a23275974d3fab11853450fb393a\" /\u003e\u003cw:bookmarkEnd w:id=\"0\" /\u003e\u003cw:tc\u003e\u003cw:tcPr\u003e\u003cw:tcW w:w=\"5906\" w:type=\"dxa\" /\u003e\u003cw:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"auto\" /\u003e\u003cw:vAlign w:val=\"center\" /\u003e\u003c/w:tcPr\u003e\u003cw:p w:rsidR=\"00C61233\" w:rsidRDefault=\"00C61233\" w:rsidP=\"00A6708D\"\u003e\u003cw:pPr\u003e\u003cw:snapToGrid w:val=\"0\" /\u003e\u003cw:jc w:val=\"center\" /\u003e\u003c/w:pPr\u003e\u003cm:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"\u003e\u003cm:oMath\u003e\u003cm:sSup\u003e\u003cm:sSupPr\u003e\u003cm:ctrlPr\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003c/m:ctrlPr\u003e\u003c/m:sSupPr\u003e\u003cm:e\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003ea\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:e\u003e\u003cm:sup\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003e2\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:sup\u003e\u003c/m:sSup\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003e+\u003c/m:t\u003e\u003c/m:r\u003e\u003cm:sSup\u003e\u003cm:sSupPr\u003e\u003cm:ctrlPr\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003c/m:ctrlPr\u003e\u003c/m:sSupPr\u003e\u003cm:e\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003eb\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:e\u003e\u003cm:sup\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003e2\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:sup\u003e\u003c/m:sSup\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003e=\u003c/m:t\u003e\u003c/m:r\u003e\u003cm:sSup\u003e\u003cm:sSupPr\u003e\u003cm:ctrlPr\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003c/m:ctrlPr\u003e\u003c/m:sSupPr\u003e\u003cm:e\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21",
+                        "parents":  [
+                                        "w:tr",
+                                        "w:tbl",
+                                        "w:body",
+                                        "w:document",
+                                        "pkg:xmlData",
+                                        "/word/document.xml"
+                                    ]
+                    },
+                    {
+                        "insideMath":  false,
+                        "name":  "VTOMML_a002062785a241cf8ee0c307647c22fa",
+                        "parentXml":  "\u003cw:tr w:rsidR=\"00C61233\" w:rsidTr=\"00A6708D\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"\u003e\u003cw:tblPrEx\u003e\u003cw:tblCellMar\u003e\u003cw:top w:w=\"0\" w:type=\"dxa\" /\u003e\u003cw:bottom w:w=\"0\" w:type=\"dxa\" /\u003e\u003c/w:tblCellMar\u003e\u003c/w:tblPrEx\u003e\u003cw:trPr\u003e\u003cw:cantSplit /\u003e\u003cw:trHeight w:val=\"333\" /\u003e\u003c/w:trPr\u003e\u003cw:tc\u003e\u003cw:tcPr\u003e\u003cw:tcW w:w=\"1200\" w:type=\"dxa\" /\u003e\u003cw:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"auto\" /\u003e\u003cw:vAlign w:val=\"center\" /\u003e\u003c/w:tcPr\u003e\u003cw:p w:rsidR=\"00C61233\" w:rsidRDefault=\"00C61233\" w:rsidP=\"00A6708D\"\u003e\u003cw:pPr\u003e\u003cw:jc w:val=\"left\" /\u003e\u003c/w:pPr\u003e\u003c/w:p\u003e\u003c/w:tc\u003e\u003cw:bookmarkStart w:id=\"5\" w:name=\"VTOMML_a002062785a241cf8ee0c307647c22fa\" /\u003e\u003cw:bookmarkEnd w:id=\"5\" /\u003e\u003cw:tc\u003e\u003cw:tcPr\u003e\u003cw:tcW w:w=\"5906\" w:type=\"dxa\" /\u003e\u003cw:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"auto\" /\u003e\u003cw:vAlign w:val=\"center\" /\u003e\u003c/w:tcPr\u003e\u003cw:p w:rsidR=\"00C61233\" w:rsidRDefault=\"00C61233\" w:rsidP=\"00A6708D\"\u003e\u003cw:pPr\u003e\u003cw:snapToGrid w:val=\"0\" /\u003e\u003cw:jc w:val=\"center\" /\u003e\u003c/w:pPr\u003e\u003cm:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"\u003e\u003cm:oMath\u003e\u003cm:sSup\u003e\u003cm:sSupPr\u003e\u003cm:ctrlPr\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003c/m:ctrlPr\u003e\u003c/m:sSupPr\u003e\u003cm:e\u003e\u003cm:r\u003e\u003cm:rPr\u003e\u003cm:nor /\u003e\u003c/m:rPr\u003e\u003cw:rPr\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003ee\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:e\u003e\u003cm:sup\u003e\u003cm:r\u003e\u003cm:rPr\u003e\u003cm:nor /\u003e\u003c/m:rPr\u003e\u003cw:rPr\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003ei\u003c/m:t\u003e\u003c/m:r\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003eπ\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:sup\u003e\u003c/m:sSup\u003e\u003cm:r\u003e\u003cw:rPr\u003e\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" /\u003e\u003cw:szCs w:val=\"21\" /\u003e\u003c/w:rPr\u003e\u003cm:t\u003e+1=0\u003c/m:t\u003e\u003c/m:r\u003e\u003c/m:oMath\u003e\u003c/m:oMathPara\u003e\u003c/w:p\u003e\u003c/w:tc\u003e\u003cw:tc\u003e\u003cw:tcPr\u003e\u003cw:tcW w:w=\"1200\" w:type=\"dxa\" /\u003e\u003cw:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"auto\" /\u003e\u003cw:vAlign w:val=\"center\" /\u003e\u003c/w:tcPr\u003e\u003cw:p w:rsidR=\"00C61233\" w:rsidRDefault=\"00C61233\" w:rsidP=\"00A6708D\"\u003e\u003cw:pPr\u003e\u003cw:tabs\u003e\u003cw:tab w:val=\"right\" w:pos=\"1200\" /\u003e\u003c/w:tabs\u003e\u003cw:snapToGrid w:val=\"0\" /\u003e\u003cw:jc w:val=\"left\" /\u003e\u003c/w:pPr\u003e\u003cw:r\u003e\u003cw:tab /\u003e\u003c/w:r\u003e\u003cw:bookmarkStart w:id=\"6\" w:name=\"VTEq_a002062785a241cf8ee0c307647c22fa\" /\u003e\u003cw:r w:rsidRPr=\"000E5DFF\"\u003e\u003cw:rPr\u003e\u003cw:rFonts w:hAnsi=\"等线\" /\u003e\u003cw:kern w:val=\"0\" /\u003e\u003c/w:rPr\u003e\u003cw:t\u003e(\u003c/w:t\u003e\u003c/w:r\u003e\u003cw:bookmarkStart w:id=\"7\" w:name=\"VTEqCap_a002062785a241cf8ee0c307647c22fa\" /\u003e\u003cw:bookmarkStart w:id=\"8\" w:name=\"VTEqNum_a002062785a241cf8ee0c307647c22fa\" /\u003e\u003cw:r w:rsidRPr=\"000E5DFF\"\u003e\u003cw:rPr\u003e\u003cw:rFonts w:hAnsi=\"等线\" /\u003e\u003cw:kern w:val=\"",
+                        "parents":  [
+                                        "w:tr",
+                                        "w:tbl",
+                                        "w:body",
+                                        "w:document",
+                                        "pkg:xmlData",
+                                        "/word/document.xml"
+                                    ]
+                    }
+                ],
+    "separators":  [
+                       {
+                           "start":  86,
+                           "previous":  [
+                                            0,
+                                            86
+                                        ],
+                           "maths":  0,
+                           "fields":  0,
+                           "shapes":  0,
+                           "tables":  0,
+                           "frames":  0,
+                           "codes":  [
+                                         13
+                                     ],
+                           "paragraphs":  1,
+                           "end":  87,
+                           "bookmarks":  [
+                                             {
+                                                 "end":  199,
+                                                 "name":  "VTO_d57820ec06d4401d95ea3a356510a913",
+                                                 "start":  86
+                                             }
+                                         ],
+                           "text":  "\r",
+                           "next":  [
+                                        87,
+                                        164
+                                    ]
+                       }
+                   ]
+}

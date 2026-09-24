@@ -1,0 +1,17 @@
+C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\VisualTeX.WindowsOffice.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: 无法加载源 https://api.nuget.org/v3/index.json 的服务索引。
+C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj : warning NU1900: 获取包漏洞数据时出错: 无法加载源 https://api.nuget.org/v3/index.json 的服务索引。
+C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOleBridge\VisualTeX.WindowsOleBridge.csproj : warning NU1900: 获取包漏洞数据时出错: 无法加载源 https://api.nuget.org/v3/index.json 的服务索引。
+  VisualTeX.WindowsOffice.Contracts -> C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Contracts\bin\Debug\netstandard2.0\VisualTeX.WindowsOffice.Contracts.dll
+  VisualTeX.WindowsOleBridge -> C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOleBridge\bin\Debug\net8.0-windows\win-x64\visualtex-windows-office-bridge.dll
+C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.cs(5657,50): warning CS8602: 解引用可能出现空引用。 [C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\VisualTeX.WindowsOffice.Tests.csproj]
+C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\WordBulkImportParserTests.cs(625,23): warning xUnit2031: Do not use a Where clause to filter before calling Assert.Single. Use the overload of Assert.Single that accepts a filtering function. (https://xunit.net/xunit.analyzers/rules/xUnit2031) [C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\VisualTeX.WindowsOffice.Tests.csproj]
+CSC : warning CS1762: 由于程序集“Microsoft.Office.Interop.Word, Version=15.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c”创建了对嵌入互操作程序集“office, Version=15.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c”的间接引用，因此创建了对该程序集的引用。请考虑更改其中一个程序集的“嵌入互操作类型”属性。 [C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\VisualTeX.WindowsOffice.Tests.csproj]
+  VisualTeX.WindowsOffice.Tests -> C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll
+C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\apps\windows\src-windows\VisualTeX.WindowsOffice.Tests\bin\Debug\net8.0-windows\VisualTeX.WindowsOffice.Tests.dll (.NETCoreApp,Version=v8.0)的测试运行
+VSTest 版本 17.11.1 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+结果文件: C:\Users\pojian_liao\Desktop\devspace\visualtex1.2.3-reference-3d207d7\docs\remediation-3d207d7\evidence\test-results\stage04ab.trx
+
+已通过! - 失败:     0，通过:   418，已跳过:     0，总计:   418，持续时间: 305 ms - VisualTeX.WindowsOffice.Tests.dll (net8.0)

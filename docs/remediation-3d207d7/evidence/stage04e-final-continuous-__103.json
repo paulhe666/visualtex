@@ -1,0 +1,514 @@
+{
+    "name":  "文档103",
+    "fullName":  "文档103",
+    "saved":  false,
+    "end":  527,
+    "paragraphs":  16,
+    "tables":  [
+                   {
+                       "index":  1,
+                       "start":  7,
+                       "end":  91,
+                       "rows":  1,
+                       "cols":  3,
+                       "nesting":  1,
+                       "text":  "\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e𝑥\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑦\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑧\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e(1)\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e",
+                       "cells":  [
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  1,
+                                         "row":  1,
+                                         "start":  7,
+                                         "end":  8
+                                     },
+                                     {
+                                         "math":  1,
+                                         "text":  "\u003cCR\u003e𝑥\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑦\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑧\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  2,
+                                         "row":  1,
+                                         "start":  8,
+                                         "end":  29
+                                     },
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cTAB\u003e(1)\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  3,
+                                         "row":  1,
+                                         "start":  29,
+                                         "end":  90
+                                     }
+                                 ]
+                   },
+                   {
+                       "index":  2,
+                       "start":  112,
+                       "end":  187,
+                       "rows":  1,
+                       "cols":  3,
+                       "nesting":  1,
+                       "text":  "\u003cCR\u003e\u003cCELL\u003e𝐸=𝑚\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e\u003cTAB\u003e(2)\u003cCR\u003e\u003cCELL\u003e\u003cCR\u003e\u003cCELL\u003e",
+                       "cells":  [
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  1,
+                                         "row":  1,
+                                         "start":  112,
+                                         "end":  113
+                                     },
+                                     {
+                                         "math":  1,
+                                         "text":  "𝐸=𝑚\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  2,
+                                         "row":  1,
+                                         "start":  113,
+                                         "end":  125
+                                     },
+                                     {
+                                         "math":  0,
+                                         "text":  "\u003cTAB\u003e(2)\u003cCR\u003e\u003cCELL\u003e",
+                                         "col":  3,
+                                         "row":  1,
+                                         "start":  125,
+                                         "end":  186
+                                     }
+                                 ]
+                   }
+               ],
+    "maths":  [
+                  {
+                      "controlTags":  [
+
+                                      ],
+                      "type":  0,
+                      "size":  12,
+                      "start":  8,
+                      "text":  "\u003cCR\u003e𝑥\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑦\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑧\u003cCR\u003e2\u003cCR\u003e",
+                      "index":  1,
+                      "tables":  1,
+                      "font":  "Latin Modern Math",
+                      "end":  28
+                  },
+                  {
+                      "controlTags":  [
+
+                                      ],
+                      "type":  0,
+                      "size":  12,
+                      "start":  113,
+                      "text":  "𝐸=𝑚\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e",
+                      "index":  2,
+                      "tables":  1,
+                      "font":  "Latin Modern Math",
+                      "end":  124
+                  }
+              ],
+    "shapes":  [
+
+               ],
+    "controls":  [
+
+                 ],
+    "bookmarks":  [
+                      {
+                          "end":  89,
+                          "name":  "VTEq_3cf107a529cd456081bf575555198534",
+                          "text":  "(1)",
+                          "start":  30
+                      },
+                      {
+                          "end":  185,
+                          "name":  "VTEq_86b0ba212fe54bd1b8ba094f36e3ccf8",
+                          "text":  "(2)",
+                          "start":  126
+                      },
+                      {
+                          "end":  88,
+                          "name":  "VTEqCap_3cf107a529cd456081bf575555198534",
+                          "text":  "1",
+                          "start":  31
+                      },
+                      {
+                          "end":  184,
+                          "name":  "VTEqCap_86b0ba212fe54bd1b8ba094f36e3ccf8",
+                          "text":  "2",
+                          "start":  127
+                      },
+                      {
+                          "end":  184,
+                          "name":  "VTEqNum_138a8895f65840fbb469682042e57e47",
+                          "text":  "2",
+                          "start":  127
+                      },
+                      {
+                          "end":  88,
+                          "name":  "VTEqNum_3cf107a529cd456081bf575555198534",
+                          "text":  "1",
+                          "start":  31
+                      },
+                      {
+                          "end":  184,
+                          "name":  "VTEqNum_6a319116fb6a4df0af12bee279bcc8ee",
+                          "text":  "2",
+                          "start":  127
+                      },
+                      {
+                          "end":  184,
+                          "name":  "VTEqNum_86b0ba212fe54bd1b8ba094f36e3ccf8",
+                          "text":  "2",
+                          "start":  127
+                      },
+                      {
+                          "end":  8,
+                          "name":  "VTOMML_3cf107a529cd456081bf575555198534",
+                          "text":  "",
+                          "start":  8
+                      },
+                      {
+                          "end":  113,
+                          "name":  "VTOMML_86b0ba212fe54bd1b8ba094f36e3ccf8",
+                          "text":  "",
+                          "start":  113
+                      },
+                      {
+                          "end":  185,
+                          "name":  "ZEqnNum100273",
+                          "text":  "(2)",
+                          "start":  126
+                      }
+                  ],
+    "fields":  [
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 1 \\* ARABIC \\* MERGEFORMAT ",
+                       "result":  "1",
+                       "type":  12,
+                       "start":  32,
+                       "end":  87,
+                       "index":  1
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " SEQ VisualTeXEquation \\r 2 \\* ARABIC \\* MERGEFORMAT ",
+                       "result":  "2",
+                       "type":  12,
+                       "start":  128,
+                       "end":  183,
+                       "index":  2
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON VTEqNum_6a319116fb6a4df0af12bee279bcc8ee \u0013 REF VTEqNum_6a319116fb6a4df0af12bee279bcc8ee \\* CHARFORMAT \\! \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  196,
+                       "end":  317,
+                       "index":  3
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_6a319116fb6a4df0af12bee279bcc8ee \\* CHARFORMAT \\! ",
+                       "result":  "2",
+                       "type":  3,
+                       "start":  250,
+                       "end":  315,
+                       "index":  4
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON ZEqnNum100273 \u0013 REF VTEqNum_138a8895f65840fbb469682042e57e47 \\h \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  320,
+                       "end":  401,
+                       "index":  5
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_138a8895f65840fbb469682042e57e47 \\h ",
+                       "result":  "2",
+                       "type":  3,
+                       "start":  347,
+                       "end":  399,
+                       "index":  6
+                   },
+                   {
+                       "nested":  1,
+                       "code":  " GOTOBUTTON VTEqNum_138a8895f65840fbb469682042e57e47 \u0013 REF VTEqNum_138a8895f65840fbb469682042e57e47 \\* CHARFORMAT \\! \u0015",
+                       "result":  "",
+                       "type":  50,
+                       "start":  404,
+                       "end":  525,
+                       "index":  7
+                   },
+                   {
+                       "nested":  0,
+                       "code":  " REF VTEqNum_138a8895f65840fbb469682042e57e47 \\* CHARFORMAT \\! ",
+                       "result":  "2",
+                       "type":  3,
+                       "start":  458,
+                       "end":  523,
+                       "index":  8
+                   }
+               ],
+    "paras":  [
+                  {
+                      "start":  0,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  1,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  7,
+                      "lineRule":  0,
+                      "text":  "第一段正文：\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  7,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  2,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  8,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  8,
+                      "line":  12,
+                      "alignment":  1,
+                      "index":  3,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Latin Modern Math",
+                      "inTable":  true,
+                      "end":  29,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e𝑥\u003cCR\u003e2\u003cCR\u003e+\u003cCR\u003e𝑦\u003cCR\u003e2\u003cCR\u003e=\u003cCR\u003e𝑧\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  29,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  4,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  90,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e(1)\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  90,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  5,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  91,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  91,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  6,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  105,
+                      "lineRule":  0,
+                      "text":  "这一段保留在第一公式之后。\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  105,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  7,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  112,
+                      "lineRule":  0,
+                      "text":  "第二段正文：\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  112,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  8,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  113,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  113,
+                      "line":  12,
+                      "alignment":  1,
+                      "index":  9,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Latin Modern Math",
+                      "inTable":  true,
+                      "end":  125,
+                      "lineRule":  0,
+                      "text":  "𝐸=𝑚\u003cCR\u003e𝑐\u003cCR\u003e2\u003cCR\u003e\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  125,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  10,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  186,
+                      "lineRule":  0,
+                      "text":  "\u003cTAB\u003e(2)\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  186,
+                      "line":  12,
+                      "alignment":  0,
+                      "index":  11,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  true,
+                      "end":  187,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e\u003cCELL\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  187,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  12,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "宋体",
+                      "inTable":  false,
+                      "end":  193,
+                      "lineRule":  0,
+                      "text":  "结尾正文。\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  193,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  13,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  194,
+                      "lineRule":  0,
+                      "text":  "\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  194,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  14,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  319,
+                      "lineRule":  0,
+                      "text":  "(\u0015)\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  319,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  15,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  402,
+                      "lineRule":  0,
+                      "text":  "\u0015\u003cCR\u003e",
+                      "size":  12
+                  },
+                  {
+                      "start":  402,
+                      "line":  12,
+                      "alignment":  3,
+                      "index":  16,
+                      "hidden":  0,
+                      "before":  0,
+                      "after":  0,
+                      "font":  "Times New Roman",
+                      "inTable":  false,
+                      "end":  527,
+                      "lineRule":  0,
+                      "text":  "(\u0015)\u003cCR\u003e",
+                      "size":  12
+                  }
+              ],
+    "variables":  [
+                      {
+                          "value":  "continuous",
+                          "name":  "VisualTeXEquationNumberFormat"
+                      },
+                      {
+                          "value":  "86b0ba21-2fe5-4bd1-b8ba-094f36e3ccf8",
+                          "name":  "VisualTeXEquationNumberTailFormulaId"
+                      }
+                  ],
+    "xmlFonts":  [
+                     "\u003cw:rFonts w:ascii=\"Latin Modern Math\" w:hAnsi=\"Latin Modern Math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" /\u003e"
+                 ],
+    "xmlMathCount":  2,
+    "customXml":  [
+
+                  ]
+}

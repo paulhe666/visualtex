@@ -1,0 +1,30 @@
+[
+  {
+    "stage": "before",
+    "needle": "开头正文",
+    "runs": [
+      "<w:r xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:rPr><w:rFonts w:ascii=\"宋体\" w:eastAsia=\"宋体\" w:hAnsi=\"宋体\" /><w:sz w:val=\"24\" /></w:rPr><w:t>开头正文：保留顺序与字体。</w:t></w:r>"
+    ]
+  },
+  {
+    "stage": "before",
+    "needle": "这是公式之后",
+    "runs": [
+      "<w:r xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:rPr><w:rFonts w:ascii=\"宋体\" w:eastAsia=\"宋体\" w:hAnsi=\"宋体\" /><w:sz w:val=\"24\" /></w:rPr><w:t>这是公式之后的正文，字体为宋体十二磅。</w:t></w:r>"
+    ]
+  },
+  {
+    "stage": "after",
+    "needle": "开头正文",
+    "runs": [
+      "<w:r xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:rPr><w:rFonts w:ascii=\"宋体\" w:eastAsia=\"宋体\" w:hAnsi=\"宋体\" /><w:sz w:val=\"24\" /></w:rPr><w:t>开头正文：保留顺序与字体。</w:t></w:r>"
+    ]
+  },
+  {
+    "stage": "after",
+    "needle": "这是公式之后",
+    "runs": [
+      "<w:r w:rsidRPr=\"001D3496\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:rPr><w:rFonts w:ascii=\"宋体\" w:eastAsia=\"宋体\" w:hAnsi=\"宋体\" /><w:sz w:val=\"24\" /></w:rPr><w:t>这是公式之后的正文，字体为宋体十二磅。</w:t></w:r>"
+    ]
+  }
+]

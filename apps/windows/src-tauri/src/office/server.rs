@@ -214,6 +214,15 @@ struct BatchConversionRequest {
     session_ids: Vec<String>,
 }
 
+const OFFICE_BATCH_CONVERSION_QUEUE_CHUNK_SIZE: usize = 256;
+
+fn chunk_office_batch_conversion(session_ids: Vec<String>) -> Vec<Vec<String>> {
+    session_ids
+        .chunks(OFFICE_BATCH_CONVERSION_QUEUE_CHUNK_SIZE)
+        .map(|chunk| chunk.to_vec())
+        .collect()
+}
+
 fn office_batch_conversion_queue() -> &'static Mutex<VecDeque<Vec<String>>> {
     OFFICE_BATCH_CONVERSION_QUEUE.get_or_init(|| Mutex::new(VecDeque::new()))
 }
@@ -977,10 +986,13 @@ fn queue_desktop_batch_conversion(
     session_ids: Vec<String>,
 ) -> Result<(), String> {
     let window = ensure_desktop_conversion_window(&app)?;
-    office_batch_conversion_queue()
+    let mut queue = office_batch_conversion_queue()
         .lock()
-        .map_err(|_| "The VisualTeX batch conversion queue is unavailable".to_string())?
-        .push_back(session_ids);
+        .map_err(|_| "The VisualTeX batch conversion queue is unavailable".to_string())?;
+    for chunk in chunk_office_batch_conversion(session_ids) {
+        queue.push_back(chunk);
+    }
+    drop(queue);
     // The queue is authoritative. This event only avoids waiting for the next
     // frontend poll and may safely be missed while the hidden WebView starts.
     let _ = window.eval(
@@ -1234,11 +1246,11 @@ async fn open_desktop_batch_conversion(
     State(context): State<ServerContext>,
     Json(request): Json<BatchConversionRequest>,
 ) -> Response {
-    if request.session_ids.is_empty() || request.session_ids.len() > 256 {
+    if request.session_ids.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
-                "error": "Batch conversion requires between 1 and 256 Session ids"
+                "error": "Batch conversion requires at least one Session id"
             })),
         )
             .into_response();
@@ -2764,6 +2776,16 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
     use tower::ServiceExt;
+
+    #[test]
+    fn batch_conversion_chunking_does_not_cap_total_sessions_at_256() {
+        let session_ids = (0..1000)
+            .map(|index| format!("session-{index:04}"))
+            .collect::<Vec<_>>();
+        let chunks = chunk_office_batch_conversion(session_ids.clone());
+        assert_eq!(chunks.iter().map(Vec::len).collect::<Vec<_>>(), vec![256, 256, 256, 232]);
+        assert_eq!(chunks.into_iter().flatten().collect::<Vec<_>>(), session_ids);
+    }
 
     fn test_state(temp: &TempDir) -> OfficeCompanionState {
         let root = temp.path().join("office-data");

@@ -1,0 +1,65 @@
+{
+    "id":  "d2664d5f-38e9-440c-bbc4-e259a32fbce6",
+    "mode":  "create",
+    "host":  "word",
+    "formulaId":  "48afe9a9-497e-479f-b7fb-eaf9e9a3f026",
+    "sourceDocumentId":  "文档131",
+    "sourceObjectId":  null,
+    "title":  "Bulk imported Word formula",
+    "lines":  [
+                  {
+                      "id":  "b5145a41-d15a-40b2-a0f6-6632174e86f2",
+                      "latex":  "\\frac{\\partial}{\\partial t}\\rho \\left( \\vec{r},t \\right) +\\nabla \\cdot \\vec{j}=0"
+                  }
+              ],
+    "activeLineId":  "b5145a41-d15a-40b2-a0f6-6632174e86f2",
+    "codeFormat":  "latex",
+    "displayMode":  "block",
+    "objectMode":  "wordOmml",
+    "numbered":  false,
+    "mathTypeNumberPosition":  "right",
+    "fontSizePt":  10.5,
+    "exportWidth":  240.0,
+    "exportHeight":  80.0,
+    "exportResult":  {
+                         "svg":  "",
+                         "svgBase64":  "",
+                         "mathMl":  "\u003cmath xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\"\u003e\n  \u003cmfrac\u003e\n    \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n    \u003cmrow\u003e\n      \u003cmi\u003e\u0026#x2202;\u003c/mi\u003e\n      \u003cmi\u003et\u003c/mi\u003e\n    \u003c/mrow\u003e\n  \u003c/mfrac\u003e\n  \u003cmi\u003e\u0026#x3C1;\u003c/mi\u003e\n  \u003cmrow data-mjx-texclass=\"INNER\"\u003e\n    \u003cmo data-mjx-texclass=\"OPEN\"\u003e(\u003c/mo\u003e\n    \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n      \u003cmover\u003e\n        \u003cmi\u003er\u003c/mi\u003e\n        \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n      \u003c/mover\u003e\n    \u003c/mrow\u003e\n    \u003cmo\u003e,\u003c/mo\u003e\n    \u003cmi\u003et\u003c/mi\u003e\n    \u003cmo data-mjx-texclass=\"CLOSE\"\u003e)\u003c/mo\u003e\n  \u003c/mrow\u003e\n  \u003cmo\u003e+\u003c/mo\u003e\n  \u003cmi mathvariant=\"normal\"\u003e\u0026#x2207;\u003c/mi\u003e\n  \u003cmo\u003e\u0026#x22C5;\u003c/mo\u003e\n  \u003cmrow data-mjx-texclass=\"ORD\"\u003e\n    \u003cmover\u003e\n      \u003cmi\u003ej\u003c/mi\u003e\n      \u003cmo stretchy=\"false\"\u003e\u0026#x2192;\u003c/mo\u003e\n    \u003c/mover\u003e\n  \u003c/mrow\u003e\n  \u003cmo\u003e=\u003c/mo\u003e\n  \u003cmn\u003e0\u003c/mn\u003e\n\u003c/math\u003e",
+                         "pngBase64":  null,
+                         "width":  240.0,
+                         "height":  80.0,
+                         "baseline":  60.0,
+                         "formulaLetterFont":  "times",
+                         "formulaChineseFont":  "system"
+                     },
+    "originalMetadata":  {
+                             "schema":  "visualtex-formula",
+                             "schemaVersion":  1,
+                             "formulaId":  "48afe9a9-497e-479f-b7fb-eaf9e9a3f026",
+                             "title":  "Bulk imported Word formula",
+                             "latex":  "\\frac{\\partial}{\\partial t}\\rho \\left( \\vec{r},t \\right) +\\nabla \\cdot \\vec{j}=0",
+                             "lines":  [
+                                           {
+                                               "id":  "b5145a41-d15a-40b2-a0f6-6632174e86f2",
+                                               "latex":  "\\frac{\\partial}{\\partial t}\\rho \\left( \\vec{r},t \\right) +\\nabla \\cdot \\vec{j}=0"
+                                           }
+                                       ],
+                             "codeFormat":  "latex",
+                             "displayMode":  "block",
+                             "numbered":  false,
+                             "fontSizePt":  10.5,
+                             "renderFontSizePt":  10.5,
+                             "createdWithVersion":  "1.2.6",
+                             "updatedWithVersion":  "1.2.6",
+                             "createdAt":  "2026-09-06T06:53:37.3049313+00:00",
+                             "updatedAt":  "2026-09-06T06:53:37.3049313+00:00"
+                         },
+    "dirty":  false,
+    "status":  "completed",
+    "autoCommitOnClose":  false,
+    "explicitCancel":  false,
+    "error":  null,
+    "createdAt":  1788677617306,
+    "updatedAt":  1788677635019,
+    "expiresAt":  1788764035019
+}

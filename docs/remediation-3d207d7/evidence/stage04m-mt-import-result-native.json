@@ -1,0 +1,20 @@
+[
+    {
+        "handle":  1070280,
+        "name":  "确定",
+        "id":  2,
+        "class":  "Button"
+    },
+    {
+        "handle":  873654,
+        "name":  "",
+        "id":  20,
+        "class":  "Static"
+    },
+    {
+        "handle":  1856662,
+        "name":  "对 COM 组件的调用返回了错误 HRESULT E_FAIL。",
+        "id":  65535,
+        "class":  "Static"
+    }
+]

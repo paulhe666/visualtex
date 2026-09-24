@@ -1,0 +1,233 @@
+{
+  "scope": "Recorded real document before the first body paragraph; all blank paragraphs included.",
+  "rows": [
+    {
+      "label": "mt-before-omml",
+      "blankCount": 1,
+      "blanks": [
+        {
+          "start": 234,
+          "end": 235,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    },
+    {
+      "label": "omml-converted",
+      "blankCount": 2,
+      "blanks": [
+        {
+          "start": 88,
+          "end": 89,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 89,
+          "end": 90,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    },
+    {
+      "label": "vt-converted",
+      "blankCount": 2,
+      "blanks": [
+        {
+          "start": 158,
+          "end": 159,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 159,
+          "end": 160,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    },
+    {
+      "label": "mt-roundtrip",
+      "blankCount": 2,
+      "blanks": [
+        {
+          "start": 235,
+          "end": 236,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 236,
+          "end": 237,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    },
+    {
+      "label": "omml-second",
+      "blankCount": 3,
+      "blanks": [
+        {
+          "start": 88,
+          "end": 89,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 89,
+          "end": 90,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 90,
+          "end": 91,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    },
+    {
+      "label": "mt-direct",
+      "blankCount": 3,
+      "blanks": [
+        {
+          "start": 235,
+          "end": 236,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 236,
+          "end": 237,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 237,
+          "end": 238,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    },
+    {
+      "label": "vt-direct",
+      "blankCount": 3,
+      "blanks": [
+        {
+          "start": 158,
+          "end": 159,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 159,
+          "end": 160,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 160,
+          "end": 161,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    },
+    {
+      "label": "omml-final",
+      "blankCount": 4,
+      "blanks": [
+        {
+          "start": 88,
+          "end": 89,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 89,
+          "end": 90,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 90,
+          "end": 91,
+          "alignment": 0,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        },
+        {
+          "start": 91,
+          "end": 92,
+          "alignment": 3,
+          "font": "等线",
+          "size": 10.5,
+          "line": 12,
+          "lineRule": 0
+        }
+      ]
+    }
+  ]
+}

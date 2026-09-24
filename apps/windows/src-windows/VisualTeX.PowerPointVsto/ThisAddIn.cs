@@ -61,7 +61,7 @@ public interface IPowerPointRibbonCallbacks
 [ProgId("VisualTeX.PowerPointVsto")]
 [ClassInterface(ClassInterfaceType.None)]
 [ComDefaultInterface(typeof(IPowerPointRibbonCallbacks))]
-public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, IPowerPointRibbonCallbacks
+public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, IPowerPointRibbonCallbacks
 {
     private const int AllowAnyProcessToSetForeground = -1;
 
@@ -151,7 +151,8 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
 
     public string DiagnosticLastError { get; private set; } = string.Empty;
 
-    public string GetCustomUI(string ribbonId) => RibbonXml;
+    public string GetCustomUI(string ribbonId) =>
+        OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml;
 
     public void OnConnection(
         object application,
@@ -210,7 +211,7 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         {
             var size = _formulaService?.GetSelectedFormulaFontSize();
             return size.HasValue
-                ? FormulaFontSize.FormatDisplay(size.Value)
+                ? FormulaFontSize.FormatDisplay(size.Value, OfficePluginLanguage.IsEnglish)
                 : string.Empty;
         }
         catch { return string.Empty; }
@@ -227,20 +228,26 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         try
         {
             var current = _formulaService?.GetSelectedFormulaFontSize()
-                ?? throw new InvalidOperationException("请先选择一个公式。");
+                ?? throw new InvalidOperationException(T("请先选择一个公式。", "Select a formula first."));
             ApplyFormulaFontSize(FormulaFontSize.PreviousPreset(current));
         }
-        catch (Exception error) { ReportError($"无法设置公式字号：{error.Message}"); }
+        catch (Exception error)
+        {
+            ReportError(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+        }
     }
     public void OnIncreaseFormulaFontSize(Office.IRibbonControl control)
     {
         try
         {
             var current = _formulaService?.GetSelectedFormulaFontSize()
-                ?? throw new InvalidOperationException("请先选择一个公式。");
+                ?? throw new InvalidOperationException(T("请先选择一个公式。", "Select a formula first."));
             ApplyFormulaFontSize(FormulaFontSize.NextPreset(current));
         }
-        catch (Exception error) { ReportError($"无法设置公式字号：{error.Message}"); }
+        catch (Exception error)
+        {
+            ReportError(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+        }
     }
     public void OnNewFormula(object control) => BeginSession("create", "crossPlatformPicture", null);
     public void OnEditSelected(object control) => BeginSelectedSession(null);
@@ -257,11 +264,11 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         {
             (_sessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable."))
                 .OpenDesktop();
-            SetStatus("VisualTeX 已打开。");
+            SetStatus(T("VisualTeX 已打开。", "VisualTeX is open."));
         }
         catch (Exception error)
         {
-            SetStatus($"无法打开 VisualTeX：{error.Message}");
+            SetStatus(T($"无法打开 VisualTeX：{error.Message}", $"Unable to open VisualTeX: {error.Message}"));
         }
     }
 
@@ -281,7 +288,8 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         }
     }
 
-    private static double ParseFontSize(string value) => FormulaFontSize.Parse(value);
+    private static double ParseFontSize(string value) =>
+        FormulaFontSize.Parse(value, OfficePluginLanguage.IsEnglish);
 
     private void ApplyFormulaFontSize(double value)
     {
@@ -290,11 +298,13 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             var applied = (_formulaService
                     ?? throw new InvalidOperationException("PowerPoint formula service is unavailable."))
                 .SetSelectedFormulaFontSize(value);
-            SetStatus($"公式字号已设置为 {FormulaFontSize.Describe(applied)}。");
+            SetStatus(T(
+                $"公式字号已设置为 {FormulaFontSize.Describe(applied)}。",
+                $"Formula font size set to {FormulaFontSize.Describe(applied, english: true)}."));
         }
         catch (Exception error)
         {
-            ReportError($"无法设置公式字号：{error.Message}");
+            ReportError(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
         }
         finally { InvalidateFormulaFontControls(); }
     }
@@ -673,9 +683,10 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
         var dispatcher = _dispatcher;
         var application = _application;
         if (dispatcher is null || application is null) return;
+        var userMessage = OfficePluginLanguage.SafeStatusMessage(message);
         dispatcher.Post(() =>
         {
-            try { ((dynamic)application).StatusBar = message; } catch { }
+            try { ((dynamic)application).StatusBar = userMessage; } catch { }
         });
     }
 
@@ -709,7 +720,8 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
     private void ReportError(string message)
     {
         DiagnosticLastError = message;
-        SetStatus(message);
+        var userMessage = OfficePluginLanguage.SafeErrorMessage(message);
+        SetStatus(userMessage);
         if (string.Equals(
                 Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                 "1",
@@ -722,7 +734,7 @@ public sealed class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensibility, 
             try
             {
                 System.Windows.Forms.MessageBox.Show(
-                    message,
+                    userMessage,
                     "VisualTeX PowerPoint",
                     System.Windows.Forms.MessageBoxButtons.OK,
                     System.Windows.Forms.MessageBoxIcon.Warning);

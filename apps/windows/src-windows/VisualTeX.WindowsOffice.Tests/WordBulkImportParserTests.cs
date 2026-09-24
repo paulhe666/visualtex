@@ -4,6 +4,24 @@ namespace VisualTeX.WindowsOffice.Tests;
 
 public sealed class WordBulkImportParserTests
 {
+    public static IEnumerable<object[]> HeadingHierarchyCases()
+    {
+        using var fixture = System.Text.Json.JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, "document-import-heading-hierarchy.json")));
+        foreach (var item in fixture.RootElement.EnumerateArray())
+            yield return new object[] { item.GetProperty("source").GetString()!,
+                string.Join(",", item.GetProperty("levels").EnumerateArray().Select(level => level.GetInt32())) };
+    }
+
+    [Theory]
+    [MemberData(nameof(HeadingHierarchyCases))]
+    public void LatexHeadingHierarchyPreservesArticleAndBookStructure(string source, string expected)
+    {
+        var document = WordBulkImportParser.Parse(source, WordBulkSourceFormat.Latex, WordBulkFormulaObjectMode.Omml);
+        Assert.Equal(expected, string.Join(",", document.Blocks
+            .Where(block => block.Kind == WordBulkBlockKind.Heading).Select(block => block.Level)));
+    }
+
     [Fact]
     public void MarkdownProducesNativeTextAndIndependentInlineAndDisplayFormulas()
     {
@@ -744,6 +762,29 @@ public sealed class WordBulkImportParserTests
         var span = Assert.Single(spans);
         Assert.Equal("x", span.Latex);
         Assert.Equal("\\(x\\)", source.Substring(span.Start, span.Length));
+    }
+
+    [Fact]
+    public void RedrawScannerTreatsWordTableCellEndsAsHardFormulaBoundaries()
+    {
+        const string source =
+            "左格 $unclosed\r\a"
+            + "右格正文 和 $b$\r\a"
+            + "第三格 $$c+d$$\r\a"
+            + "第四格 \\begin{align}x&=1\r\a"
+            + "第五格 y&=2\\end{align}\r\a"
+            + "第六格 \\(z\\)";
+
+        var spans = WordBulkImportParser.FindFormulaSpans(source);
+
+        Assert.Equal(3, spans.Count);
+        Assert.Equal(new[] { "b", "c+d", "z" }, spans.Select(span => span.Latex).ToArray());
+        Assert.Equal(new[] { "inline", "block", "inline" }, spans.Select(span => span.DisplayMode).ToArray());
+        Assert.Equal("$b$", source.Substring(spans[0].Start, spans[0].Length));
+        Assert.Equal("$$c+d$$", source.Substring(spans[1].Start, spans[1].Length));
+        Assert.Equal("\\(z\\)", source.Substring(spans[2].Start, spans[2].Length));
+        Assert.All(spans, span =>
+            Assert.DoesNotContain('\a', source.Substring(span.Start, span.Length)));
     }
 
     [Fact]

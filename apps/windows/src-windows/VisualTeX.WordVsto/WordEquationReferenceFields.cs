@@ -15,20 +15,6 @@ internal static class WordEquationReferenceFields
 {
     private const string MathTypeSectionStyleName = "MTEquationSection";
 
-    private sealed class CharacterFormatting
-    {
-        internal int? Bold { get; set; }
-        internal int? Italic { get; set; }
-        internal WdUnderline? Underline { get; set; }
-        internal WdColor? Color { get; set; }
-        internal float? Size { get; set; }
-        internal int? Position { get; set; }
-        internal string? Name { get; set; }
-        internal string? NameAscii { get; set; }
-        internal string? NameFarEast { get; set; }
-        internal string? NameBi { get; set; }
-    }
-
     internal static void InsertNavigableReference(
         Document document,
         Selection selection,
@@ -51,12 +37,14 @@ internal static class WordEquationReferenceFields
         Range? goToCode = null;
         Range? nestedInsertion = null;
         Field? refField = null;
+        Fields? insertionFields = null;
         Fields? finalNestedFields = null;
         Field? finalRefField = null;
         Range? finalRefCode = null;
         Range? finalRefResult = null;
         Range? goToResult = null;
         Range? selectionRange = null;
+        var phase = "capture insertion formatting";
         try
         {
             bookmarks = document.Bookmarks;
@@ -66,7 +54,7 @@ internal static class WordEquationReferenceFields
 
             sourceFormattingRange = selection.Range.Duplicate;
             sourceFormattingRange.Collapse(WdCollapseDirection.wdCollapseStart);
-            var formatting = CaptureFormatting(sourceFormattingRange);
+            var formatting = WordCharacterFormatting.Capture(sourceFormattingRange);
             if (preferredInsertionColor.HasValue)
             {
                 var requested = preferredInsertionColor.Value;
@@ -76,55 +64,103 @@ internal static class WordEquationReferenceFields
                         : WdColor.wdColorAutomatic;
             }
 
-            if (!string.IsNullOrEmpty(prefix))
-                selection.TypeText(prefix);
+            var referenceStart = selection.Start;
+            phase = "insert reference delimiters";
+            // Keep both literal delimiters outside the field before creating it.
+            // Typing a suffix at a stale field-end Range can split the nested REF.
+            if (!string.IsNullOrEmpty(prefix) || !string.IsNullOrEmpty(suffix))
+                selection.TypeText(prefix + suffix);
+            selection.SetRange(referenceStart + prefix.Length, referenceStart + prefix.Length);
 
             insertion = selection.Range.Duplicate;
             insertion.Collapse(WdCollapseDirection.wdCollapseStart);
+            var placeholder = "VTREF_" + Guid.NewGuid().ToString("N");
+            phase = "create GOTOBUTTON field";
             goToField = document.Fields.Add(
                 insertion,
                 WdFieldType.wdFieldGoToButton,
-                bookmarkName + " ",
-                true);
+                ResolveNavigationBookmark(document, bookmarkName) + " " + placeholder,
+                false);
+            if (goToField is null)
+                throw new InvalidDataException("Word did not return the inserted GOTOBUTTON field.");
+            goToField.ShowCodes = true;
 
             // The nested REF is deliberately placed inside GOTOBUTTON.Code. Word
             // renders its result as the visible number and routes a double-click
             // on the enclosing field to the bookmark.
             goToCode = goToField.Code;
+            phase = "resolve nested REF insertion slot";
             NormalizeInternalStyle(goToCode);
-            ApplyFormatting(goToCode, formatting);
-            nestedInsertion = document.Range(goToCode.End, goToCode.End);
-            refField = document.Fields.Add(
+            formatting.Apply(goToCode);
+            var placeholderOffset = (goToCode.Text ?? throw new InvalidDataException("Word returned an empty GOTOBUTTON code."))
+                .IndexOf(placeholder, StringComparison.Ordinal);
+            if (placeholderOffset < 0)
+                throw new InvalidDataException("Word lost the reference's internal insertion slot.");
+            nestedInsertion = document.Range(goToCode.Start + placeholderOffset,
+                goToCode.Start + placeholderOffset + placeholder.Length);
+            if (nestedInsertion.Text != placeholder)
+                throw new InvalidDataException("The nested reference insertion slot is not inside its field code.");
+            // Remove only the exact private slot we just created. Word's
+            // Fields.Add does not reliably replace noncollapsed code text.
+            // A collapsed insertion inside the code avoids that replacement.
+            var nestedStart = nestedInsertion.Start;
+            nestedInsertion.Text = string.Empty;
+            nestedInsertion.SetRange(nestedStart, nestedStart);
+            phase = "insert nested REF field";
+            insertionFields = nestedInsertion.Fields;
+            refField = insertionFields.Add(
                 nestedInsertion,
                 WdFieldType.wdFieldRef,
                 bookmarkName + " \\* CHARFORMAT \\!",
-                true);
-            try { refField.ShowCodes = false; } catch { }
-            try { goToField.ShowCodes = false; } catch { }
+                false);
+            // Word can return null for a successful insertion into another
+            // field's code. Read the actual field tree; never repeat the insert.
+            Release(refField);
+            refField = null;
+            Release(goToCode);
+            goToCode = goToField.Code;
+            finalNestedFields = goToCode.Fields;
+            if (finalNestedFields.Count != 1)
+                throw new InvalidDataException($"Word created {finalNestedFields.Count} nested reference fields; exactly one is required.");
+            refField = finalNestedFields[1];
+            finalRefCode = refField.Code;
+            if (refField.Type != WdFieldType.wdFieldRef
+                || !TryReadVisualTeXNumberBookmark(finalRefCode.Text, out var insertedBookmark)
+                || !string.Equals(insertedBookmark, bookmarkName, StringComparison.OrdinalIgnoreCase)
+                || finalRefCode.Start <= goToCode.Start || finalRefCode.End >= goToCode.End)
+                throw new InvalidDataException("Word created a reference outside its intended field or to a different bookmark.");
+            Release(finalRefCode);
+            finalRefCode = null;
+            Release(finalNestedFields);
+            finalNestedFields = null;
+            phase = "refresh nested REF field";
+            refField.ShowCodes = false;
+            goToField.ShowCodes = false;
 
             // Updating the nested field can rematerialize the complete outer field
             // and reapply Word's default red GOTOBUTTON formatting. Reacquire and
             // normalize the final field tree after the update.
-            try { refField.Update(); } catch { }
+            refField.Update();
             Release(goToCode);
             goToCode = goToField.Code;
             NormalizeInternalStyle(goToCode);
-            ApplyFormatting(goToCode, formatting);
+            formatting.Apply(goToCode);
 
             finalNestedFields = goToCode.Fields;
+            phase = "validate refreshed reference field tree";
             if (finalNestedFields.Count != 1)
                 throw new InvalidDataException(
                     "公式引用未能保留一个完整的嵌套 REF 字段。");
             finalRefField = finalNestedFields[1];
             finalRefCode = finalRefField.Code;
             NormalizeInternalStyle(finalRefCode);
-            ApplyFormatting(finalRefCode, formatting);
-            try { finalRefField.Update(); } catch { }
+            formatting.Apply(finalRefCode);
+            finalRefField.Update();
 
             Release(goToCode);
             goToCode = goToField.Code;
             NormalizeInternalStyle(goToCode);
-            ApplyFormatting(goToCode, formatting);
+            formatting.Apply(goToCode);
 
             Release(finalRefResult);
             finalRefResult = null;
@@ -141,20 +177,39 @@ internal static class WordEquationReferenceFields
             finalRefField = finalNestedFields[1];
             finalRefResult = finalRefField.Result;
             NormalizeInternalStyle(finalRefResult);
-            ApplyFormatting(finalRefResult, formatting);
+            formatting.Apply(finalRefResult);
+            if ((goToCode.Text ?? string.Empty).IndexOf("VTREF_", StringComparison.Ordinal) >= 0
+                || !HasCurrentReferenceResult(document, bookmarkName, finalRefResult))
+                throw new InvalidDataException("The created reference does not display its current equation number cleanly.");
+            Range? trailingCode = null;
+            try
+            {
+                trailingCode = document.Range(finalRefResult.End + 1, goToCode.End);
+                if (!string.IsNullOrWhiteSpace(trailingCode.Text))
+                    throw new InvalidDataException("Unexpected text follows the number in the navigable reference.");
+                // GOTOBUTTON renders code whitespace after its display text.
+                // Remove only the verified whitespace in this new field's own
+                // code, leaving field markers and document text untouched.
+                if (trailingCode.End > trailingCode.Start) trailingCode.Text = string.Empty;
+            }
+            finally { Release(trailingCode); }
+            Release(goToCode);
+            goToCode = goToField.Code;
 
             goToResult = goToField.Result;
+            phase = "restore insertion point after reference";
             var after = Math.Max(goToResult.End + 1, goToCode.End + 2);
             after = Math.Max(
                 document.Content.Start,
                 Math.Min(after, Math.Max(document.Content.Start, document.Content.End - 1)));
-            selection.SetRange(after, after);
+            selection.SetRange(after + suffix.Length, after + suffix.Length);
             selectionRange = selection.Range;
             NormalizeInternalStyle(selectionRange);
-            ApplyFormatting(selectionRange, formatting);
-
-            if (!string.IsNullOrEmpty(suffix))
-                selection.TypeText(suffix);
+            formatting.Apply(selectionRange);
+        }
+        catch (Exception error)
+        {
+            throw new InvalidOperationException($"Could not {phase} for equation reference '{bookmarkName}'.", error);
         }
         finally
         {
@@ -165,6 +220,7 @@ internal static class WordEquationReferenceFields
             Release(finalRefField);
             Release(finalNestedFields);
             Release(refField);
+            Release(insertionFields);
             Release(nestedInsertion);
             Release(goToCode);
             Release(goToField);
@@ -218,7 +274,7 @@ internal static class WordEquationReferenceFields
                                 targetBookmarkName,
                                 StringComparison.OrdinalIgnoreCase))
                             continue;
-                        try { nestedField.Update(); } catch { }
+                        RefreshFieldPreservingFormatting(nestedField);
                         matches = true;
                         break;
                     }
@@ -255,6 +311,7 @@ internal static class WordEquationReferenceFields
 
         Fields? outerFields = null;
         var updated = 0;
+        var failures = new List<Exception>();
         try
         {
             outerFields = document.Fields;
@@ -297,10 +354,12 @@ internal static class WordEquationReferenceFields
                             continue;
 
                         nestedResult = nestedField.Result;
-                        var formatting = CaptureReferenceHostFormatting(
-                            document,
-                            outerField,
-                            nestedResult);
+                        if (HasCurrentReferenceResult(document, bookmarkName, nestedResult))
+                        {
+                            if (UpdateNavigationTarget(document, outerField, bookmarkName)) updated++;
+                            break;
+                        }
+                        var formatting = WordCharacterFormatting.Capture(nestedResult);
 
                         // The REF is nested inside GOTOBUTTON.Code and therefore is
                         // not part of document.Fields' top-level enumeration. Update
@@ -344,22 +403,22 @@ internal static class WordEquationReferenceFields
                                     StringComparison.OrdinalIgnoreCase))
                                 continue;
                             NormalizeInternalStyle(nestedCode);
-                            ApplyFormatting(nestedCode, formatting);
+                            formatting.Apply(nestedCode);
                             nestedResult = nestedField.Result;
                             NormalizeInternalStyle(nestedResult);
-                            ApplyFormatting(nestedResult, formatting);
+                            formatting.Apply(nestedResult);
                             break;
                         }
-                        try { outerField.ShowCodes = false; } catch { }
+                        outerField.ShowCodes = false;
+                        UpdateNavigationTarget(document, outerField, bookmarkName);
                         updated++;
                         break;
                     }
                 }
-                catch (COMException)
+                catch (COMException error)
                 {
-                    // A protected or temporarily busy field must not prevent the
-                    // remaining references from refreshing. Ordinary REF fields are
-                    // still handled by WordEquationNumbering's normal pass.
+                    failures.Add(new InvalidOperationException(
+                        $"Word could not refresh navigable formula reference {outerIndex}.", error));
                 }
                 finally
                 {
@@ -373,10 +432,244 @@ internal static class WordEquationReferenceFields
             }
         }
         finally { Release(outerFields); }
+        if (failures.Count > 0)
+            throw new AggregateException("Some formula references could not be refreshed.", failures);
         return updated;
     }
 
-    private static bool TryReadVisualTeXNumberBookmark(
+    private static string ResolveNavigationBookmark(Document document, string numberBookmarkName)
+    {
+        Bookmarks? bookmarks = null;
+        Bookmark? numberBookmark = null;
+        Range? numberRange = null;
+        Frames? frames = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            if (!bookmarks.Exists(numberBookmarkName))
+                throw new InvalidDataException($"Reference number bookmark '{numberBookmarkName}' is missing.");
+            numberBookmark = bookmarks[numberBookmarkName];
+            numberRange = numberBookmark.Range;
+            frames = numberRange.Frames;
+            if (frames.Count == 0) return numberBookmarkName;
+
+            // A clipped caption remains the REF value source. Navigation must use
+            // the corresponding visible number. Compatibility aliases can retain
+            // an older FormulaId, so prove ownership through the exact live number
+            // range and an existing canonical visible bookmark, never proximity.
+            string? navigationName = null;
+            for (var index = 1; index <= bookmarks.Count; index++)
+            {
+                Bookmark? candidate = null;
+                Bookmark? visible = null;
+                Range? candidateRange = null;
+                Range? visibleRange = null;
+                Range? visibleNumberText = null;
+                Frames? visibleFrames = null;
+                try
+                {
+                    candidate = bookmarks[index];
+                    var name = candidate.Name;
+                    const string prefix = "VTEqNum_";
+                    if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                        || !Guid.TryParseExact(name.Substring(prefix.Length), "N", out var formulaId))
+                        continue;
+                    candidateRange = candidate.Range;
+                    if (candidateRange.StoryType != numberRange.StoryType
+                        || candidateRange.Start != numberRange.Start || candidateRange.End != numberRange.End)
+                        continue;
+                    var visibleName = WordEquationNumbering.EquationBookmarkName(formulaId.ToString("D"));
+                    if (!bookmarks.Exists(visibleName)) continue;
+                    visible = bookmarks[visibleName];
+                    visibleRange = visible.Range;
+                    visibleNumberText = WordEquationNumbering.FindVisibleEquationNumberTextRange(
+                        document, formulaId.ToString("D"));
+                    visibleFrames = visibleRange.Frames;
+                    if (visibleFrames.Count != 0 || visibleRange.StoryType != WdStoryType.wdMainTextStory
+                        || visibleNumberText is null || visibleNumberText.StoryType != visibleRange.StoryType
+                        || visibleNumberText.Start < visibleRange.Start || visibleNumberText.End > visibleRange.End
+                        || visibleNumberText.Text != "(" + numberRange.Text + ")")
+                        continue;
+                    if (navigationName is not null && navigationName != visibleName)
+                        throw new InvalidDataException("The clipped number has multiple visible navigation owners.");
+                    navigationName = visibleName;
+                }
+                finally
+                {
+                    Release(visibleFrames);
+                    Release(visibleNumberText);
+                    Release(visibleRange);
+                    Release(candidateRange);
+                    Release(visible);
+                    Release(candidate);
+                }
+            }
+            return navigationName
+                ?? throw new InvalidDataException("The clipped number has no verified visible navigation owner.");
+        }
+        finally
+        {
+            Release(frames);
+            Release(numberRange);
+            Release(numberBookmark);
+            Release(bookmarks);
+        }
+    }
+
+    private static bool UpdateNavigationTarget(Document document, Field outerField, string numberBookmarkName)
+    {
+        Range? code = null;
+        Range? token = null;
+        Fields? nested = null;
+        Field? firstNested = null;
+        Range? firstCode = null;
+        try
+        {
+            var target = ResolveNavigationBookmark(document, numberBookmarkName);
+            code = outerField.Code;
+            var match = Regex.Match(code.Text ?? string.Empty,
+                @"^\s*GOTOBUTTON\s+(?<target>[^\s\\]+)", RegexOptions.IgnoreCase);
+            if (!match.Success) throw new InvalidDataException("The navigable reference lost its GOTOBUTTON target.");
+            var group = match.Groups["target"];
+            if (string.Equals(group.Value, target, StringComparison.OrdinalIgnoreCase)) return false;
+            nested = code.Fields;
+            if (nested.Count != 1) throw new InvalidDataException("The navigable reference must contain exactly one REF.");
+            firstNested = nested[1];
+            firstCode = firstNested.Code;
+            if (firstNested.Type != WdFieldType.wdFieldRef || code.Start + group.Index + group.Length >= firstCode.Start - 1)
+                throw new InvalidDataException("The navigation token overlaps the nested reference.");
+            token = code.Duplicate;
+            token.SetRange(code.Start + group.Index, code.Start + group.Index + group.Length);
+            // Replace only the leading bookmark token; assigning Code.Text would
+            // destroy the nested REF and its user character formatting.
+            token.Text = target;
+            return true;
+        }
+        finally
+        {
+            Release(firstCode);
+            Release(firstNested);
+            Release(nested);
+            Release(token);
+            Release(code);
+        }
+    }
+
+    internal static void RefreshFieldPreservingFormatting(Field field)
+    {
+        Range? code = null;
+        Range? result = null;
+        try
+        {
+            code = field.Code;
+            result = field.Result;
+            var formatting = WordCharacterFormatting.Capture(result);
+            // CHARFORMAT must use the reference's own typeface; the target can
+            // be a hidden number field with a different size or internal style.
+            formatting.Apply(code);
+            field.Update();
+            Release(result);
+            result = field.Result;
+            formatting.Apply(result);
+        }
+        finally { Release(result); Release(code); }
+    }
+
+    private static bool IsGeneratedNumberReference(Document document, Field field, string name) =>
+        name.StartsWith("VTEqNum_", StringComparison.OrdinalIgnoreCase)
+        && WordEquationNumbering.IsGeneratedEquationNumberReference(document, field, name.Substring(8));
+
+    internal static IReadOnlyDictionary<string, int> CaptureReferenceCounts(Document document)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        Fields? fields = null;
+        Bookmarks? bookmarks = null;
+        try
+        {
+            fields = document.Fields;
+            bookmarks = document.Bookmarks;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Field? field = null;
+                Range? code = null;
+                try
+                {
+                    field = fields[index];
+                    if (field.Type != WdFieldType.wdFieldRef) continue;
+                    code = field.Code;
+                    if (!TryReadVisualTeXNumberBookmark(code.Text, out var name)
+                        || !bookmarks.Exists(name) || IsGeneratedNumberReference(document, field, name))
+                        continue;
+                    counts.TryGetValue(name, out var count);
+                    counts[name] = count + 1;
+                }
+                finally { Release(code); Release(field); }
+            }
+            return counts;
+        }
+        finally { Release(bookmarks); Release(fields); }
+    }
+
+    internal static void ValidateReferences(Document document, IReadOnlyDictionary<string, int> expectedCounts)
+    {
+        var actualCounts = expectedCounts.Keys.ToDictionary(name => name, _ => 0, StringComparer.OrdinalIgnoreCase);
+        Bookmarks? bookmarks = null;
+        Fields? fields = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            foreach (var name in expectedCounts.Keys)
+                if (!bookmarks.Exists(name))
+                    throw new InvalidDataException($"Conversion lost reference target '{name}'.");
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Field? field = null;
+                Range? code = null;
+                Range? result = null;
+                try
+                {
+                    field = fields[index];
+                    if (field.Type != WdFieldType.wdFieldRef) continue;
+                    code = field.Code;
+                    if (!TryReadVisualTeXNumberBookmark(code.Text, out var name)
+                        || !actualCounts.ContainsKey(name) || IsGeneratedNumberReference(document, field, name)) continue;
+                    result = field.Result;
+                    if (!HasCurrentReferenceResult(document, name, result))
+                        throw new InvalidDataException($"Reference '{name}' does not display its current target number.");
+                    actualCounts[name]++;
+                }
+                finally { Release(result); Release(code); Release(field); }
+            }
+            foreach (var expected in expectedCounts)
+                if (actualCounts[expected.Key] != expected.Value)
+                    throw new InvalidDataException($"Reference '{expected.Key}' retained {actualCounts[expected.Key]}/{expected.Value} fields.");
+        }
+        finally { Release(fields); Release(bookmarks); }
+    }
+
+    private static bool HasCurrentReferenceResult(Document document, string bookmarkName, Range result)
+    {
+        Bookmarks? bookmarks = null;
+        Bookmark? bookmark = null;
+        Range? target = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            if (!bookmarks.Exists(bookmarkName)) return false;
+            bookmark = bookmarks[bookmarkName];
+            target = bookmark.Range;
+            return string.Equals(result.Text, target.Text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Release(target);
+            Release(bookmark);
+            Release(bookmarks);
+        }
+    }
+
+    internal static bool TryReadVisualTeXNumberBookmark(
         string? code,
         out string bookmarkName)
     {
@@ -390,186 +683,71 @@ internal static class WordEquationReferenceFields
         var candidate = match.Groups["quoted"].Success
             ? match.Groups["quoted"].Value
             : match.Groups["plain"].Value;
-        if (!candidate.StartsWith("VTEqNum_", StringComparison.OrdinalIgnoreCase))
+        var visualTeX = candidate.StartsWith("VTEqNum_", StringComparison.OrdinalIgnoreCase)
+            && candidate.Length == 40 && Guid.TryParseExact(candidate.Substring(8), "N", out _);
+        if (!visualTeX && !candidate.StartsWith("ZEqnNum", StringComparison.OrdinalIgnoreCase))
             return false;
         bookmarkName = candidate;
         return true;
     }
 
-    private static CharacterFormatting CaptureReferenceHostFormatting(
-        Document document,
-        Field outerField,
-        Range fallbackRange)
+    internal static int UpdateReferences(Document document, ISet<string>? targetBookmarkNames = null)
     {
-        Range? outerCode = null;
-        Paragraphs? paragraphs = null;
-        Paragraph? paragraph = null;
-        Range? paragraphRange = null;
-        Range? probe = null;
+        var updated = UpdateNavigableReferences(document, targetBookmarkNames);
+        Fields? fields = null;
+        var nestedStarts = new HashSet<int>();
+        var failures = new List<Exception>();
         try
         {
-            outerCode = outerField.Code;
-            if (outerCode.StoryType != WdStoryType.wdMainTextStory)
-                return CaptureFormatting(fallbackRange);
-            paragraphs = outerCode.Paragraphs;
-            if (paragraphs.Count != 1)
-                return CaptureFormatting(fallbackRange);
-            paragraph = paragraphs[1];
-            paragraphRange = paragraph.Range.Duplicate;
-            var fieldStart = Math.Max(
-                paragraphRange.Start,
-                outerCode.Start - 1);
-
-            // The visible character immediately before GOTOBUTTON (for example
-            // the user-typed prefix or '(') is the most faithful source of the
-            // surrounding body formatting. It is outside Word's field tree, so a
-            // field update cannot silently make it bold or switch its typeface.
-            if (fieldStart > paragraphRange.Start)
+            fields = document.Fields;
+            // Word exposes nested REF both through GOTOBUTTON.Code.Fields and
+            // Document.Fields. Refresh each once, preserving the host formatting.
+            for (var index = 1; index <= fields.Count; index++)
             {
-                probe = document.Range(fieldStart - 1, fieldStart);
-                var text = probe.Text ?? string.Empty;
-                if (text.Length > 0 && text[0] != '\r' && text[0] != '\a')
-                    return CaptureFormatting(probe);
-                Release(probe);
-                probe = null;
-            }
-
-            // At paragraph start there may be no preceding character. The paragraph
-            // mark still carries the body style and is likewise outside the nested
-            // REF result that Word can rematerialize during renumbering.
-            if (paragraphRange.End > paragraphRange.Start)
-            {
-                probe = paragraphRange.Duplicate;
-                probe.SetRange(paragraphRange.End - 1, paragraphRange.End);
-                return CaptureFormatting(probe);
-            }
-            return CaptureFormatting(fallbackRange);
-        }
-        catch
-        {
-            return CaptureFormatting(fallbackRange);
-        }
-        finally
-        {
-            Release(probe);
-            Release(paragraphRange);
-            Release(paragraph);
-            Release(paragraphs);
-            Release(outerCode);
-        }
-    }
-
-    private static CharacterFormatting CaptureFormatting(Range range)
-    {
-        Microsoft.Office.Interop.Word.Font? font = null;
-        try
-        {
-            font = range.Font;
-            var formatting = new CharacterFormatting();
-            try
-            {
-                var value = font.Bold;
-                if (value != (int)WdConstants.wdUndefined) formatting.Bold = value;
-            }
-            catch { }
-            try
-            {
-                var value = font.Italic;
-                if (value != (int)WdConstants.wdUndefined) formatting.Italic = value;
-            }
-            catch { }
-            try
-            {
-                var value = font.Underline;
-                if ((int)value != (int)WdConstants.wdUndefined) formatting.Underline = value;
-            }
-            catch { }
-            try
-            {
-                var value = font.Color;
-                if (value == WdColor.wdColorAutomatic || (int)value >= 0)
-                    formatting.Color = value;
-            }
-            catch { }
-            try
-            {
-                var value = font.Size;
-                if (value > 0 && value < 1000) formatting.Size = value;
-            }
-            catch { }
-            try
-            {
-                var value = font.Position;
-                if (value != (int)WdConstants.wdUndefined) formatting.Position = value;
-            }
-            catch { }
-            static string? ReadName(Func<string?> read)
-            {
+                Field? outer = null;
+                Range? code = null;
+                Fields? nested = null;
                 try
                 {
-                    var value = read();
-                    return string.IsNullOrWhiteSpace(value) ? null : value;
+                    outer = fields[index];
+                    if (outer.Type != WdFieldType.wdFieldGoToButton) continue;
+                    code = outer.Code;
+                    nested = code.Fields;
+                    for (var child = 1; child <= nested.Count; child++)
+                    {
+                        Field? item = null;
+                        Range? childCode = null;
+                        try { item = nested[child]; childCode = item.Code; nestedStarts.Add(childCode.Start); }
+                        finally { Release(childCode); Release(item); }
+                    }
                 }
-                catch { return null; }
+                finally { Release(nested); Release(code); Release(outer); }
             }
-            formatting.Name = ReadName(() => font.Name);
-            formatting.NameAscii = ReadName(() => font.NameAscii);
-            formatting.NameFarEast = ReadName(() => font.NameFarEast);
-            formatting.NameBi = ReadName(() => font.NameBi);
-            return formatting;
+            for (var index = fields.Count; index >= 1; index--)
+            {
+                Field? field = null;
+                Range? code = null;
+                Range? result = null;
+                try
+                {
+                    field = fields[index];
+                    if (field.Type != WdFieldType.wdFieldRef) continue;
+                    code = field.Code;
+                    if (nestedStarts.Contains(code.Start)
+                        || !TryReadVisualTeXNumberBookmark(code.Text, out var name)
+                        || (targetBookmarkNames is not null && !targetBookmarkNames.Contains(name))) continue;
+                    result = field.Result;
+                    if (HasCurrentReferenceResult(document, name, result)) continue;
+                    RefreshFieldPreservingFormatting(field);
+                    updated++;
+                }
+                catch (COMException error) { failures.Add(new InvalidOperationException($"Word could not refresh formula reference {index}.", error)); }
+                finally { Release(result); Release(code); Release(field); }
+            }
         }
-        finally { Release(font); }
-    }
-
-    private static void ApplyFormatting(Range range, CharacterFormatting formatting)
-    {
-        Microsoft.Office.Interop.Word.Font? font = null;
-        try
-        {
-            font = range.Font;
-            if (formatting.Bold.HasValue)
-            {
-                try { font.Bold = formatting.Bold.Value; } catch { }
-            }
-            if (formatting.Italic.HasValue)
-            {
-                try { font.Italic = formatting.Italic.Value; } catch { }
-            }
-            if (formatting.Underline.HasValue)
-            {
-                try { font.Underline = formatting.Underline.Value; } catch { }
-            }
-            if (formatting.Color.HasValue)
-            {
-                try { font.Color = formatting.Color.Value; } catch { }
-            }
-            if (formatting.Size.HasValue)
-            {
-                try { font.Size = formatting.Size.Value; } catch { }
-            }
-            if (formatting.Position.HasValue)
-            {
-                try { font.Position = formatting.Position.Value; } catch { }
-            }
-            if (!string.IsNullOrWhiteSpace(formatting.Name))
-            {
-                try { font.Name = formatting.Name; } catch { }
-            }
-            if (!string.IsNullOrWhiteSpace(formatting.NameAscii))
-            {
-                try { font.NameAscii = formatting.NameAscii; } catch { }
-            }
-            if (!string.IsNullOrWhiteSpace(formatting.NameFarEast))
-            {
-                try { font.NameFarEast = formatting.NameFarEast; } catch { }
-            }
-            if (!string.IsNullOrWhiteSpace(formatting.NameBi))
-            {
-                try { font.NameBi = formatting.NameBi; } catch { }
-            }
-            try { font.Hidden = 0; } catch { }
-        }
-        finally { Release(font); }
+        finally { Release(fields); }
+        if (failures.Count > 0) throw new AggregateException("Some formula references could not be refreshed.", failures);
+        return updated;
     }
 
     private static void NormalizeInternalStyle(Range range)
@@ -577,11 +755,8 @@ internal static class WordEquationReferenceFields
         Style? style = null;
         try
         {
-            try { style = range.get_Style() as Style; }
-            catch { }
-            var styleName = string.Empty;
-            try { styleName = style?.NameLocal ?? string.Empty; }
-            catch { }
+            style = range.get_Style() as Style;
+            var styleName = style?.NameLocal ?? string.Empty;
             if (!string.Equals(
                     styleName,
                     MathTypeSectionStyleName,
@@ -589,8 +764,10 @@ internal static class WordEquationReferenceFields
                 return;
 
             object defaultParagraphFont = WdBuiltinStyle.wdStyleDefaultParagraphFont;
-            try { range.set_Style(ref defaultParagraphFont); } catch { }
-            try { range.Font.Hidden = 0; } catch { }
+            range.set_Style(ref defaultParagraphFont);
+            Microsoft.Office.Interop.Word.Font? font = null;
+            try { font = range.Font; font.Hidden = 0; }
+            finally { Release(font); }
         }
         finally { Release(style); }
     }

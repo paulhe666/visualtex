@@ -34,7 +34,7 @@ import {
   useEditorStore,
 } from "../../stores/editorStore";
 import {
-  copyFormulaLines,
+  copyFormulaLinesUniversal,
   isLatexCodeFormat,
 } from "../../clipboard/LatexCopyService";
 import type {
@@ -47,8 +47,6 @@ import type {
 } from "../../editor/MathEditor";
 import { readErrorMessage } from "../../errors/readErrorMessage";
 import {
-  DEFAULT_FORMULA_CHINESE_FONT,
-  DEFAULT_FORMULA_LETTER_FONT,
   type FormulaChineseFont,
   type FormulaLetterFont,
 } from "../../editor/formulaFontPreferences";
@@ -91,15 +89,20 @@ import { saveCustomTheme } from "../../themeCustomization";
 import {
   DEFAULT_OCR_MODEL,
   OCR_MODELS,
+  OCR_RECOGNIZER_OPTIONS,
   cancelOcrRecognition,
   fileToOcrRequest,
   getOcrProviderConfiguration,
-  getOcrRuntimeStatus,
   listenOcrRecognitionProgress,
   normalizeOcrFormulaLines,
+  ocrProviderDisplayLabel,
+  ocrRecognizerSelection,
+  parseOcrRecognizerSelection,
   recognizeFormulaImage,
+  setActiveOcrProvider,
   warmupOcrModel,
   type OcrModelName,
+  type OcrProviderId,
 } from "../../ocr/ocrService";
 
 type InlineOcrStatus =
@@ -250,7 +253,6 @@ function applyOfficeEditorPreferences(
   if (settings.language === "cn" || settings.language === "en") {
     editor.setLanguage(settings.language);
   }
-  if (typeof settings.zoom === "number") editor.setZoom(settings.zoom);
   if (settings.formulaAlignment) {
     editor.setFormulaAlignment(settings.formulaAlignment);
   }
@@ -394,16 +396,17 @@ export function OfficeDialogApp() {
   const loadedSessionIdRef = useRef("");
   const skipAutosaveForSessionRef = useRef("");
   const originalFingerprintRef = useRef("");
-  const loadedUiFingerprintRef = useRef("");
   const lastSavedFingerprintRef = useRef("");
   const readyMessageSentRef = useRef(false);
   const finalizingRef = useRef(false);
   const commitFromShortcutRef = useRef<() => void>(() => undefined);
   const closeFromNativeWindowRef = useRef<() => void>(() => undefined);
   const exportRunIdRef = useRef(0);
+  const activeSessionIdentityRef = useRef({ sessionId: "", formulaId: "" });
   const conversionStartedRef = useRef(false);
   const batchConversionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const initialEditorFocusSessionRef = useRef("");
+  const initialSynchronizedZoomAppliedRef = useRef(false);
   const latestCompleteExportRef = useRef<{
     fingerprint: string;
     exportResult: OfficeExportResult;
@@ -433,6 +436,9 @@ export function OfficeDialogApp() {
       ? (stored as OcrModelName)
       : DEFAULT_OCR_MODEL;
   });
+  const [activeOcrProvider, setActiveOcrProviderId] =
+    useState<OcrProviderId>("local");
+  const [ocrProviderLoaded, setOcrProviderLoaded] = useState(false);
   const [inlineOcr, setInlineOcr] = useState<InlineOcrState | null>(null);
   const startupOcrModelRef = useRef(ocrModel);
   const inlineOcrBusyRef = useRef(false);
@@ -440,6 +446,13 @@ export function OfficeDialogApp() {
   const inlineOcrRunIdRef = useRef(0);
   const inlineOcrClearTimerRef = useRef<number | null>(null);
   const { sessionId, session, loading, error, reload, save } = useOfficeSession();
+
+  useEffect(() => {
+    activeSessionIdentityRef.current = {
+      sessionId: session?.id ?? "",
+      formulaId: session?.formulaId ?? "",
+    };
+  }, [session?.id, session?.formulaId]);
 
   useEffect(() => {
     if (readLocalStorage(OFFICE_EDITOR_ZOOM_60_MIGRATION_KEY) !== "done") {
@@ -452,7 +465,6 @@ export function OfficeDialogApp() {
     loadedSessionIdRef.current = "";
     skipAutosaveForSessionRef.current = "";
     originalFingerprintRef.current = "";
-    loadedUiFingerprintRef.current = "";
     lastSavedFingerprintRef.current = "";
     readyMessageSentRef.current = false;
     finalizingRef.current = false;
@@ -470,6 +482,7 @@ export function OfficeDialogApp() {
   const setTheme = useEditorStore((state) => state.setTheme);
   const setEditorLayout = useEditorStore((state) => state.setEditorLayout);
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
+  const latexFormatProfile = useEditorStore((state) => state.latexFormatProfile);
   const formulaLetterFont = useEditorStore((state) => state.formulaLetterFont);
   const formulaChineseFont = useEditorStore((state) => state.formulaChineseFont);
   const addHistory = useEditorStore((state) => state.addHistory);
@@ -530,10 +543,16 @@ export function OfficeDialogApp() {
         ]);
         if (!disposed) {
           // Shared visual/editor preferences stay live, but Office-window view
-          // state (source tab and resizable panel dimensions) is deliberately
-          // excluded inside applyOfficeEditorPreferences. Those values persist
-          // in this Office WebView and must never be overwritten by the main
-          // app's 500ms companion snapshot.
+          // state must not be rewritten continuously from the companion. Seed
+          // zoom once from the main editor, then let this Office window own later
+          // +/- changes instead of snapping back on the 500 ms sync interval.
+          if (!initialSynchronizedZoomAppliedRef.current) {
+            const initialZoom = preferences.editorPreferences?.settings?.zoom;
+            if (typeof initialZoom === "number") {
+              useEditorStore.getState().setZoom(initialZoom);
+            }
+            initialSynchronizedZoomAppliedRef.current = true;
+          }
           applyOfficeEditorPreferences(
             preferences,
             applyTheme,
@@ -596,6 +615,10 @@ export function OfficeDialogApp() {
   const selectedOcrModel =
     OCR_MODELS.find((item) => item.id === ocrModel) ??
     OCR_MODELS.find((item) => item.id === DEFAULT_OCR_MODEL)!;
+  const selectedOcrRecognizer = ocrRecognizerSelection(
+    activeOcrProvider,
+    ocrModel,
+  );
   const inlineOcrModel =
     OCR_MODELS.find((item) => item.id === inlineOcr?.model) ?? selectedOcrModel;
   const inlineOcrIsBusy =
@@ -643,11 +666,10 @@ export function OfficeDialogApp() {
 
   useEffect(() => {
     if (!session || loadedSessionIdRef.current === session.id) return;
-    // Font/layout preferences now participate in the immutable Office formula
-    // fingerprint and rendered OLE/OMML output. Do not establish the Session
-    // baseline before companion preferences have been applied, otherwise a
-    // later preference sync looks like a half-loaded render and autosave can
-    // suppress the required font redraw indefinitely.
+    // Capture the complete state actually presented when editing starts, after
+    // preferences are ready. Opening a legacy/native formula with missing font
+    // metadata is not a font edit. Later source, number, size and font changes
+    // still differ from this immutable baseline and are persisted normally.
     if (!officePreferencesReady) return;
     loadedSessionIdRef.current = session.id;
     skipAutosaveForSessionRef.current = session.id;
@@ -703,23 +725,10 @@ export function OfficeDialogApp() {
       loadedNumbered,
       loadedMathTypeNumberPosition,
       loadedFontSizePt,
-      session.originalMetadata?.formulaLetterFont ?? DEFAULT_FORMULA_LETTER_FONT,
-      session.originalMetadata?.formulaChineseFont ?? DEFAULT_FORMULA_CHINESE_FONT,
-    );
-    const loadedUiFingerprint = documentFingerprint(
-      session.title,
-      nextLines,
-      loadedCodeFormat,
-      session.displayMode,
-      session.objectMode,
-      loadedNumbered,
-      loadedMathTypeNumberPosition,
-      loadedFontSizePt,
       formulaLetterFont,
       formulaChineseFont,
     );
     originalFingerprintRef.current = loadedFingerprint;
-    loadedUiFingerprintRef.current = loadedUiFingerprint;
     lastSavedFingerprintRef.current = loadedFingerprint;
     latestCompleteExportRef.current = session.exportResult?.pngBase64
       ? { fingerprint: loadedFingerprint, exportResult: session.exportResult }
@@ -757,7 +766,8 @@ export function OfficeDialogApp() {
       }
     };
     const formulaHasFocus = () =>
-      document.activeElement?.tagName === "MATH-FIELD";
+      document.activeElement?.tagName === "MATH-FIELD" ||
+      document.activeElement?.classList.contains("vt-core-input") === true;
     const focusWhenVisible = () => {
       if (document.visibilityState === "visible") focusFirstLine();
     };
@@ -833,7 +843,13 @@ export function OfficeDialogApp() {
       applyEntry: async (entry, direction) => {
         const target = applyHistoryEntryToEditor(entry, direction);
         if (!target) return;
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        if (
+          entry.type === "add-line" ||
+          entry.type === "remove-line" ||
+          entry.type === "replace-document"
+        ) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        }
         await editorRef.current?.restoreSelection(
           target.lineId,
           target.latex,
@@ -877,14 +893,14 @@ export function OfficeDialogApp() {
   );
   const sessionRenderedLatex = persistedRenderedLatex;
 
-  const generateSvgExportResult = useCallback((
+  const generateSvgExportResult = useCallback(async (
     sourceLatex: string = currentRenderedLatex,
     sourceDisplayMode: "inline" | "block" = displayMode,
     sourceFontSizePt: number = officeFontSizePt,
     sourceFormulaLetterFont: FormulaLetterFont = formulaLetterFont,
     sourceFormulaChineseFont: FormulaChineseFont = formulaChineseFont,
     sourceObjectMode: OfficeObjectMode = objectMode,
-  ): OfficeExportResult | null => {
+  ): Promise<OfficeExportResult | null> => {
     if (!sourceLatex.trim()) return null;
     // A MathType OLE's Word preview represents MathType, not VisualTeX's editor
     // theme.  The standalone Equation Native prefix uses MathType's Times-based
@@ -897,16 +913,15 @@ export function OfficeDialogApp() {
     const outputLetterFont: FormulaLetterFont =
       isMathTypeOle ? "times" : sourceFormulaLetterFont;
     // Equation Native created by VisualTeX carries MathType's Full Size equation
-    // preferences.  Its own equation geometry is independent of whether Word later
-    // places the OLE inline or in an MTDisplayEquation paragraph.  Do not feed
-    // Word's inline/block choice back into MathJax, because that changes fraction,
-    // limit and operator sizing and was the source of the 6a43aec inline-height
-    // regression.  The current standalone MathType preferences are 12 pt, matching
-    // the Equation Native prefix; Word placement is handled later by the VSTO.
-    const outputFontSizePt = isMathTypeOle ? 12 : sourceFontSizePt;
+    // preferences. Its geometry is independent of whether Word later places the
+    // OLE inline or in an MTDisplayEquation paragraph. Keep MathType typography
+    // on the Times family, but render at the Session's semantic size so a 10.5 pt
+    // Word paragraph does not preview at 12 pt while the committed MTEF is 10.5 pt.
+    // Word placement is handled later by the VSTO.
+    const outputFontSizePt = sourceFontSizePt;
     const outputDisplayMode = isMathTypeOle || sourceDisplayMode === "block";
     const mathTypeVerticalPaddingPx = outputFontSizePt * 0.5;
-    const svg = latexToSvg(sourceLatex, {
+    const svg = await latexToSvg(sourceLatex, {
       displayMode: outputDisplayMode,
       fontSizePt: outputFontSizePt,
       paddingPx: isMathTypeOle ? 0 : sourceDisplayMode === "inline" ? 1 : 10,
@@ -920,7 +935,7 @@ export function OfficeDialogApp() {
       formulaLetterFont: outputLetterFont,
       formulaChineseFont: sourceFormulaChineseFont,
     });
-    const rawMathMl = latexToMathMl(sourceLatex, outputDisplayMode);
+    const rawMathMl = await latexToMathMl(sourceLatex, outputDisplayMode);
     const mathMl = isMathTypeOle
       ? annotateMathTypeAlignmentGeometry(rawMathMl, svg.svg, svg.width)
       : rawMathMl;
@@ -970,7 +985,7 @@ export function OfficeDialogApp() {
     sourceDisplayMode: "inline" | "block" = displayMode,
     sourceFontSizePt: number = officeFontSizePt,
   ): Promise<OfficeExportResult | null> => {
-    const base = generateSvgExportResult(
+    const base = await generateSvgExportResult(
       sourceLatex,
       sourceDisplayMode,
       sourceFontSizePt,
@@ -1012,7 +1027,7 @@ export function OfficeDialogApp() {
     const sourceFormulaChineseFont =
       sourceSession.originalMetadata?.formulaChineseFont ?? formulaChineseFont;
     if (sourceSession.objectMode === "wordOmml") {
-      const mathMl = latexToMathMl(
+      const mathMl = await latexToMathMl(
         conversionLatex,
         sourceSession.displayMode === "block",
       );
@@ -1036,7 +1051,7 @@ export function OfficeDialogApp() {
         formulaChineseFont: sourceFormulaChineseFont,
       };
     }
-    const base = generateSvgExportResult(
+    const base = await generateSvgExportResult(
       conversionLatex,
       sourceSession.displayMode,
       conversionFontSizePt,
@@ -1275,16 +1290,10 @@ export function OfficeDialogApp() {
       // autosave suppressed until every field matches the immutable Session
       // fingerprint; otherwise the half-loaded render is briefly persisted as
       // a false dirty edit.
-      if (currentFingerprint !== loadedUiFingerprintRef.current) return;
+      if (currentFingerprint !== originalFingerprintRef.current) return;
       skipAutosaveForSessionRef.current = "";
-      if (currentFingerprint === originalFingerprintRef.current) {
-        lastSavedFingerprintRef.current = currentFingerprint;
-        return;
-      }
-      // The UI is fully loaded, but a persisted/global visual preference (for
-      // example formula fonts) differs from the formula's original metadata.
-      // Fall through so this stable difference is exported instead of being
-      // mistaken for a half-loaded Session.
+      lastSavedFingerprintRef.current = currentFingerprint;
+      return;
     }
     if (
       lastSavedFingerprintRef.current === currentFingerprint &&
@@ -1332,105 +1341,81 @@ export function OfficeDialogApp() {
       saveIncompleteDraft();
       return;
     }
-    try {
-      // MathJax SVG generation is synchronous. Persist it immediately instead
-      // of waiting for PNG rasterization, so closing the Office dialog cannot
-      // lose the final keystrokes.
-      const exportResult = generateSvgExportResult(
-        sessionRenderedLatex,
-        displayMode,
-        officeFontSizePt,
-        formulaLetterFont,
-        formulaChineseFont,
-        objectMode,
+    const draftUpdate = {
+      title,
+      lines: persistedLines,
+      activeLineId: persistedActiveLineId,
+      codeFormat: persistedOfficeCodeFormat(session.codeFormat, latexCodeFormat),
+      displayMode,
+      objectMode,
+      numbered: displayMode === "block" && numbered,
+      mathTypeNumberPosition,
+      fontSizePt: officeFontSizePt,
+      dirty,
+      status: "editing",
+      autoCommitOnClose,
+      exportResult: null,
+      exportWidth: 0,
+      exportHeight: 0,
+      error: null,
+    } as const;
+    latestCompleteExportRef.current = null;
+    void save(draftUpdate).catch((reason) => {
+      if (runId !== exportRunIdRef.current) return;
+      setToast(
+        readErrorMessage(
+          reason,
+          isEn ? "Unable to save the Office formula" : "无法保存 Office 公式",
+        ),
       );
-      const draftUpdate = {
-        title,
-        lines: persistedLines,
-        activeLineId: persistedActiveLineId,
-        codeFormat: persistedOfficeCodeFormat(session.codeFormat, latexCodeFormat),
-        displayMode,
-        objectMode,
-        numbered: displayMode === "block" && numbered,
-        mathTypeNumberPosition,
-        fontSizePt: officeFontSizePt,
-        dirty,
-        status: "editing",
-        autoCommitOnClose,
-        exportResult,
-        exportWidth: exportResult?.width ?? 0,
-        exportHeight: exportResult?.height ?? 0,
-        error: null,
-      } as const;
-      void save(draftUpdate)
-        .then((saved) => {
-          if (saved && runId === exportRunIdRef.current) {
-            lastSavedFingerprintRef.current = currentFingerprint;
-          }
-        })
-        .catch((reason) => {
-          const message =
-            reason instanceof Error
-              ? reason.message
-              : isEn
-                ? "Unable to save the Office formula"
-                : "无法保存 Office 公式";
-          setToast(message);
-        });
-      // Windows OLE inserts a PNG file. Keep rasterization off the critical
-      // keystroke-save path, but persist the full export as soon as it is
-      // ready so the title-bar close button has a committable final draft.
-      if (
-        exportResult &&
-        !(session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
-      ) {
-        void generateExportResult(
+    });
+    void (async () => {
+      try {
+        const base = await generateSvgExportResult(
           sessionRenderedLatex,
           displayMode,
           officeFontSizePt,
-        ).then((completeExport) => {
-            if (
-              !completeExport?.pngBase64 ||
-              runId !== exportRunIdRef.current ||
-              finalizingRef.current
-            ) {
-              return;
-            }
-            latestCompleteExportRef.current = {
-              fingerprint: currentFingerprint,
-              exportResult: completeExport,
-            };
-            return save({
-              ...draftUpdate,
-              exportResult: completeExport,
-              exportWidth: completeExport.width,
-              exportHeight: completeExport.height,
-            }).then((saved) => {
-              if (saved && runId === exportRunIdRef.current) {
-                lastSavedFingerprintRef.current = currentFingerprint;
-              }
-            });
-          })
-          .catch(() => {
-            // The immediate SVG save is still recoverable. The explicit
-            // insert/update path reports rasterization errors to the user.
-          });
-      } else {
-        latestCompleteExportRef.current = null;
+          formulaLetterFont,
+          formulaChineseFont,
+          objectMode,
+        );
+        if (!base || runId !== exportRunIdRef.current || finalizingRef.current) return;
+        const requirePng =
+          objectMode !== "wordOmml" &&
+          objectMode !== "mathTypeOle" &&
+          !(session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT);
+        const completeExport = requirePng
+          ? await rasterizeSvgExportResult(base)
+          : base;
+        if (runId !== exportRunIdRef.current || finalizingRef.current) return;
+        if (requirePng && !completeExport.pngBase64) return;
+        latestCompleteExportRef.current = {
+          fingerprint: currentFingerprint,
+          exportResult: completeExport,
+        };
+        const saved = await save({
+          ...draftUpdate,
+          exportResult: completeExport,
+          exportWidth: completeExport.width,
+          exportHeight: completeExport.height,
+        });
+        if (saved && runId === exportRunIdRef.current) {
+          lastSavedFingerprintRef.current = currentFingerprint;
+        }
+      } catch (reason) {
+        if (runId !== exportRunIdRef.current || finalizingRef.current) return;
+        if (isIncompleteLatexDraft(latex, reason)) {
+          saveIncompleteDraft();
+          return;
+        }
+        setToast(
+          readErrorMessage(
+            reason,
+            isEn ? "Unable to export the Office formula" : "无法导出 Office 公式",
+          ),
+        );
       }
-    } catch (reason) {
-      if (isIncompleteLatexDraft(latex, reason)) {
-        saveIncompleteDraft();
-        return;
-      }
-      const message =
-        reason instanceof Error
-          ? reason.message
-          : isEn
-            ? "Unable to export the Office formula"
-            : "无法导出 Office 公式";
-      setToast(message);
-    }
+    })();
   }, [
     sessionId,
     session?.id,
@@ -1463,22 +1448,17 @@ export function OfficeDialogApp() {
     const finalDraftUpdate = (status: "editing" | "committing") => {
       const cached = latestCompleteExportRef.current;
       const unchangedEdit = session?.mode === "edit" && !dirty;
+      // Unload/keepalive is deliberately synchronous. Never start a fresh
+      // WASM/font export here; use only an export that already completed while
+      // the editor was open. The regular Session effect persists new core
+      // exports as soon as their fingerprint is current.
       const exportResult = unchangedEdit
         ? cached?.fingerprint === currentFingerprint
           ? cached.exportResult
           : session?.exportResult ?? null
         : cached?.fingerprint === currentFingerprint
           ? cached.exportResult
-          : isIncompleteLatexDraft(latex)
-            ? null
-            : generateSvgExportResult(
-                sessionRenderedLatex,
-                displayMode,
-                officeFontSizePt,
-                formulaLetterFont,
-                formulaChineseFont,
-                objectMode,
-              );
+          : null;
       return {
         title,
         lines: persistedLines,
@@ -1618,7 +1598,10 @@ export function OfficeDialogApp() {
     const markEditorReady = () => {
       if (cancelled) return;
       const field = document.querySelector<HTMLElement>("math-field");
-      if (!field?.isConnected && attempt < 20) {
+      const coreEditor = document.querySelector<HTMLElement>(
+        '[data-engine="visualtex-core"] .vt-core-input',
+      );
+      if (!field?.isConnected && !coreEditor?.isConnected && attempt < 20) {
         attempt += 1;
         window.setTimeout(markEditorReady, 16);
         return;
@@ -1645,12 +1628,37 @@ export function OfficeDialogApp() {
   }, [toast]);
 
   useEffect(() => {
-    if (IS_VSTO_CONVERT_RUNTIME) return;
+    if (IS_VSTO_CONVERT_RUNTIME) {
+      setOcrProviderLoaded(true);
+      return;
+    }
+    let cancelled = false;
+    void getOcrProviderConfiguration()
+      .then((configuration) => {
+        if (!cancelled) setActiveOcrProviderId(configuration.activeProvider);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setOcrProviderLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      IS_VSTO_CONVERT_RUNTIME ||
+      !ocrProviderLoaded ||
+      activeOcrProvider !== "local"
+    ) {
+      return;
+    }
     const timer = window.setTimeout(() => {
       void warmupOcrModel(startupOcrModelRef.current).catch(() => undefined);
     }, 300);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [activeOcrProvider, ocrProviderLoaded]);
 
   useEffect(() => {
     if (!inlineOcrIsBusy) return;
@@ -1692,7 +1700,46 @@ export function OfficeDialogApp() {
     startupOcrModelRef.current = nextModel;
     setOcrModel(nextModel);
     writeLocalStorage(OCR_MODEL_STORAGE_KEY, nextModel);
-    void warmupOcrModel(nextModel).catch(() => undefined);
+    if (activeOcrProvider === "local") {
+      void warmupOcrModel(nextModel).catch(() => undefined);
+    }
+  };
+
+  const handleOcrRecognizerChange = async (selection: string) => {
+    if (inlineOcrBusyRef.current) return;
+    const parsed = parseOcrRecognizerSelection(selection);
+    if (!parsed) return;
+    try {
+      if (parsed.provider === "local") {
+        const saved = await setActiveOcrProvider("local");
+        setActiveOcrProviderId(saved.activeProvider);
+        if (parsed.model) {
+          startupOcrModelRef.current = parsed.model;
+          setOcrModel(parsed.model);
+          writeLocalStorage(OCR_MODEL_STORAGE_KEY, parsed.model);
+          void warmupOcrModel(parsed.model).catch(() => undefined);
+        }
+        return;
+      }
+      const saved = await setActiveOcrProvider(parsed.provider);
+      setActiveOcrProviderId(saved.activeProvider);
+      setToast(
+        isEn
+          ? `OCR recognizer: ${ocrProviderDisplayLabel(saved.activeProvider, true)}`
+          : `OCR 识别器：${ocrProviderDisplayLabel(saved.activeProvider, false)}`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : isEn
+              ? "Unable to switch OCR recognizer"
+              : "无法切换 OCR 识别器";
+      setToast(message);
+      setOcrOpen(true);
+    }
   };
 
   const cancelInlineOcr = async () => {
@@ -1735,61 +1782,29 @@ export function OfficeDialogApp() {
     const runId = ++inlineOcrRunIdRef.current;
     inlineOcrBusyRef.current = true;
     inlineOcrCancelRequestedRef.current = false;
+    const usingLocalProvider = activeOcrProvider === "local";
+    const remoteSourceLabel = usingLocalProvider
+      ? undefined
+      : ocrProviderDisplayLabel(activeOcrProvider, isEn);
     setInlineOcr({
       status: "running",
-      message: isEn ? "Checking the OCR provider…" : "正在检查 OCR 提供器…",
+      message: usingLocalProvider
+        ? isEn
+          ? "Starting local formula recognition…"
+          : "正在启动本地公式识别…"
+        : isEn
+          ? `Sending the image to ${remoteSourceLabel}…`
+          : `正在通过 ${remoteSourceLabel} 识别公式…`,
       seconds: 0,
       model: ocrModel,
+      sourceLabel: remoteSourceLabel,
     });
 
     let unlisten: (() => void) | undefined;
     try {
-      const providerConfiguration = await getOcrProviderConfiguration();
-      const usingLocalProvider = providerConfiguration.activeProvider === "local";
-      if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
-      if (usingLocalProvider) {
-        const runtime = await getOcrRuntimeStatus();
-        if (inlineOcrCancelRequestedRef.current) throw new Error("OCR_CANCELLED");
-        if (!runtime.installed) {
-          setOcrOpen(true);
-          throw new Error(
-            isEn
-              ? "Install the OCR runtime before pasting an image"
-              : "请先安装 OCR 运行环境，再在公式框中粘贴图片",
-          );
-        }
-
-        if (!runtime.installedModels.includes(ocrModel)) {
-          setOcrOpen(true);
-          throw new Error(
-            isEn
-              ? `Install ${selectedOcrModel.labelEn} before using it for OCR`
-              : `请先安装${selectedOcrModel.labelZh}模型，再使用该模型进行 OCR`,
-          );
-        }
-      } else {
-        const remoteSourceLabel =
-          providerConfiguration.activeProvider === "paddleocr"
-            ? `PaddleOCR · ${providerConfiguration.paddleOcr.model}`
-            : providerConfiguration.activeProvider === "simpletex"
-              ? `SimpleTex · ${providerConfiguration.simpleTex.model}`
-            : providerConfiguration.activeProvider === "mathpix"
-              ? "Mathpix"
-              : providerConfiguration.activeProvider === "ollama"
-                ? `Ollama · ${providerConfiguration.ollama.model || "API"}`
-                : `OpenAI API · ${providerConfiguration.openAiCompatible.model || "API"}`;
-        setInlineOcr((current) =>
-          current
-            ? {
-                ...current,
-                sourceLabel: remoteSourceLabel,
-                message: isEn
-                  ? "Sending the image to the configured OCR API…"
-                  : "正在将图片发送到已配置的 OCR API…",
-              }
-            : current,
-        );
-      }
+      // Native OCR owns the only runtime/provider validation for this request.
+      // Avoid scanning the local Python/model environment here and then scanning
+      // it again inside recognize_local().
       const availableOcrModel = ocrModel;
 
       unlisten = await listenOcrRecognitionProgress((progress) => {
@@ -1842,6 +1857,7 @@ export function OfficeDialogApp() {
             : "识别完成，已插入原光标位置",
         seconds: current?.seconds ?? 0,
         model: ocrModel,
+        sourceLabel: current?.sourceLabel,
       }));
       setToast(
         isEn ? "Pasted image converted to LaTeX" : "粘贴图片已转换为 LaTeX",
@@ -1862,6 +1878,7 @@ export function OfficeDialogApp() {
           message: isEn ? "OCR cancelled" : "OCR 已取消",
           seconds: current?.seconds ?? 0,
           model: ocrModel,
+          sourceLabel: current?.sourceLabel,
         }));
         scheduleInlineOcrClear(1200);
       } else {
@@ -1872,7 +1889,16 @@ export function OfficeDialogApp() {
           message: visibleMessage,
           seconds: current?.seconds ?? 0,
           model: ocrModel,
+          sourceLabel: current?.sourceLabel,
         }));
+        if (
+          usingLocalProvider &&
+          /(runtime is not installed|python executable is missing|model .* is not installed|package metadata is missing)/i.test(
+            visibleMessage,
+          )
+        ) {
+          setOcrOpen(true);
+        }
         setToast(visibleMessage);
         scheduleInlineOcrClear(4500);
       }
@@ -1888,13 +1914,15 @@ export function OfficeDialogApp() {
   const saveCurrentSession = useCallback(
     async (status: "editing" | "committing" | "cancelled") => {
       if (!session) throw new Error("Office Session 尚未加载。");
-      const exportResult =
-        status === "cancelled"
-          ? session.exportResult
-          : objectMode === "wordOmml" ||
-              objectMode === "mathTypeOle" ||
-              (session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
-            ? generateSvgExportResult(
+      let exportResult: OfficeExportResult | null;
+      if (status === "cancelled") {
+        exportResult = session.exportResult;
+      } else {
+        exportResult =
+          objectMode === "wordOmml" ||
+          objectMode === "mathTypeOle" ||
+          (session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
+            ? await generateSvgExportResult(
                 sessionRenderedLatex,
                 displayMode,
                 officeFontSizePt,
@@ -1907,6 +1935,7 @@ export function OfficeDialogApp() {
                 displayMode,
                 officeFontSizePt,
               );
+      }
       if (status === "committing" && !exportResult) {
         throw new Error(isEn ? "Formula export is empty" : "公式导出结果为空");
       }
@@ -2071,13 +2100,14 @@ export function OfficeDialogApp() {
   }, [sessionId]);
 
   const handleCopy = async () => {
-    await copyFormulaLines(lines, latexCodeFormat);
+    await copyFormulaLinesUniversal(lines, latexFormatProfile);
     addHistory(latex);
     setToast(isEn ? "LaTeX copied" : "LaTeX 已复制");
   };
 
   if (
     loading ||
+    (session && loadedSessionIdRef.current !== session.id) ||
     (session?.host === "powerpoint" &&
       session.mode === "create" &&
       session.status === "created" &&
@@ -2105,35 +2135,17 @@ export function OfficeDialogApp() {
     );
   }
 
+  if (IS_VSTO_CONVERT_RUNTIME) {
+    return (
+      <div className="office-dialog-state" data-office-headless-converter>
+        <LoaderCircle className="is-spinning" size={28} />
+        <strong>{isEn ? "Converting Office formulas…" : "正在转换 Office 公式…"}</strong>
+      </div>
+    );
+  }
+
   const officeHeaderLeadingControls = (
     <>
-      {session.host === "word" ? (
-        <div
-          className="office-display-mode-setting"
-          role="group"
-          aria-label={isEn ? "Word formula layout" : "Word 公式排版"}
-        >
-          <button
-            type="button"
-            className={displayMode === "inline" ? "is-active" : ""}
-            onClick={() => {
-              setDisplayMode("inline");
-              setNumbered(false);
-            }}
-            disabled={session.mode === "edit"}
-          >
-            {isEn ? "Inline" : "行内"}
-          </button>
-          <button
-            type="button"
-            className={displayMode === "block" ? "is-active" : ""}
-            onClick={() => setDisplayMode("block")}
-            disabled={session.mode === "edit"}
-          >
-            {isEn ? "Display" : "行间"}
-          </button>
-        </div>
-      ) : null}
       {session.host === "word" &&
       ((session.mode === "create" && session.objectMode !== "wordOmml") ||
         (session.mode === "edit" &&
@@ -2366,11 +2378,11 @@ export function OfficeDialogApp() {
         onPasteImage={handleEditorImagePaste}
         onCopy={handleCopy}
         onReplaceDocument={replaceDocumentWithHistory}
-        ocrModel={ocrModel}
-        ocrModels={OCR_MODELS}
+        ocrRecognizer={selectedOcrRecognizer}
+        ocrRecognizers={OCR_RECOGNIZER_OPTIONS}
         ocrBusy={inlineOcrIsBusy}
-        onOcrModelChange={(model) =>
-          handleOcrModelChange(model as OcrModelName)
+        onOcrRecognizerChange={(recognizer) =>
+          void handleOcrRecognizerChange(recognizer)
         }
         ocrOverlay={
           inlineOcr ? (
@@ -2435,6 +2447,9 @@ export function OfficeDialogApp() {
         onInsert={(value) => editorRef.current?.insertLatex(value, "ocr")}
         onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
         onNotify={setToast}
+        onProviderConfigurationChange={(configuration) =>
+          setActiveOcrProviderId(configuration.activeProvider)
+        }
       />
 
       {toast && (

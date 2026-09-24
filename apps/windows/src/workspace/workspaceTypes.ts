@@ -14,8 +14,9 @@ export type WorkspaceMode =
 
 export type WorkspaceExportFormat = "markdown" | "svg" | "png";
 
-export interface WorkspaceOcrModelOption {
+export interface WorkspaceOcrRecognizerOption {
   id: string;
+  group?: "local" | "api";
   labelZh: string;
   labelEn: string;
 }
@@ -32,6 +33,7 @@ export interface EditorWorkspaceProps {
   officeHeaderLeadingControls?: ReactNode;
   officeHeaderTrailingActions?: ReactNode;
   desktopHeaderControls?: ReactNode;
+  desktopTopToolsMount?: HTMLElement | null;
   keypadMode?: boolean;
 
   onPrimaryAction?: () => Promise<void>;
@@ -40,6 +42,7 @@ export interface EditorWorkspaceProps {
 
   editorRef: RefObject<MathEditorHandle | null>;
   editorInstanceKey?: string;
+  sourceDocumentRevision?: number;
   reuseEditorLineSlots?: boolean;
   sidebarOpen: boolean;
   onSidebarOpenChange: (open: boolean) => void;
@@ -55,10 +58,10 @@ export interface EditorWorkspaceProps {
     source: ReplaceDocumentEntry["source"],
   ) => boolean;
 
-  ocrModel?: string;
-  ocrModels?: readonly WorkspaceOcrModelOption[];
+  ocrRecognizer?: string;
+  ocrRecognizers?: readonly WorkspaceOcrRecognizerOption[];
   ocrBusy?: boolean;
-  onOcrModelChange?: (model: string) => void;
+  onOcrRecognizerChange?: (recognizer: string) => void;
   onQuickOcr?: () => void;
   quickOcrCaptureMode?: QuickOcrCaptureMode;
   onQuickOcrCaptureModeChange?: (mode: QuickOcrCaptureMode) => void;

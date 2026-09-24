@@ -23,7 +23,7 @@ const packageVersion = JSON.parse(readFileSync(join(repositoryRoot, "package.jso
 
 function usage() {
   process.stderr.write(
-    "Usage: node scripts/package_macos_offline_addins.mjs --word /path/VisualTeX.dotm [--word-shell /path/known-good-VisualTeX.dotm] (--word-only | --powerpoint /path/VisualTeX.pptm [--powerpoint-shell /path/known-good-VisualTeX.ppam]) [--ribbon-icons-archive /path/visualtex-icons.zip] [--artifacts-dir /path/to/final/files] [--root-word-output /path/VisualTeX.dotm] [--root-powerpoint-output /path/VisualTeX.ppam] [--install-macos]\n",
+    "Usage: node scripts/package_macos_offline_addins.mjs [--word /path/VisualTeX.dotm [--word-shell /path/known-good-VisualTeX.dotm]] (--word-only | --powerpoint-only --powerpoint /path/VisualTeX.pptm --powerpoint-shell /path/known-good-VisualTeX.ppam | --powerpoint /path/VisualTeX.pptm [--powerpoint-shell /path/known-good-VisualTeX.ppam]) [--ribbon-icons-archive /path/visualtex-icons.zip] [--artifacts-dir /path/to/final/files] [--root-word-output /path/VisualTeX.dotm] [--root-powerpoint-output /path/VisualTeX.ppam] [--install-macos]\n",
   );
 }
 
@@ -42,7 +42,13 @@ const rootPowerPointOutput = argument("--root-powerpoint-output");
 const ribbonIconsArchive = argument("--ribbon-icons-archive");
 const installMacos = process.argv.includes("--install-macos");
 const wordOnly = process.argv.includes("--word-only");
-if (!wordInput || (!wordOnly && !powerpointInput) || (wordOnly && powerpointInput)) {
+const powerpointOnly = process.argv.includes("--powerpoint-only");
+const invalidMode =
+  (wordOnly && powerpointOnly) ||
+  (wordOnly && Boolean(powerpointInput)) ||
+  (powerpointOnly && (!powerpointInput || !powerpointShell || Boolean(wordInput))) ||
+  (!wordOnly && !powerpointOnly && (!wordInput || !powerpointInput));
+if (invalidMode) {
   usage();
   process.exit(2);
 }
@@ -132,7 +138,7 @@ function validateMacroContainer(path, kind, options = {}) {
       packageVersion,
       ...(kind === "Word"
         ? [
-            "word-office-performance-20260801-r90",
+            "word-office-performance-20260801-r93",
             "word-structured-document-import-20260730-r61",
             "VTWordRibbonDocumentImport",
             "word-latex-redraw-20260802-r1",
@@ -144,6 +150,7 @@ function validateMacroContainer(path, kind, options = {}) {
             "VTWordRibbonApplyImageFontSizePreset",
             "VisualTeX_EditImageField",
             "VisualTeX_EditSelectedImageFromNativeMonitor",
+            "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
             "VisualTeX_RunWordNumberedCopyIdentityRegression",
             "VTEnsureVisualTeXImageMacroButton",
             "VTAppendText",
@@ -501,55 +508,71 @@ function installMacosArtifacts(wordOutput, powerpointOutput) {
 }
 
 try {
-  // A newly VBE-compiled Word DOTM is already a complete, valid OOXML template.
-  // Reusing the previously packaged resources/VisualTeX.dotm as an implicit
-  // shell causes document.xml, relationships and template metadata from older
-  // builds to survive indefinitely. On Word for Mac that stale shell can consume
-  // the first Finder/LaunchServices open-document request, leaving only Word open
-  // until the user double-clicks the document a second time. Use the current
-  // compiled DOTM directly unless a shell is explicitly requested by the caller.
-  const resolvedWordShell = wordShell ? resolve(wordShell) : undefined;
-  const wordOutput = packageAddin(
-    resolve(wordInput),
-    "Word",
-    "VisualTeX.dotm",
-    join(offlineRoot, "word", "customUI14.xml"),
-    resolvedWordShell,
-  );
-  let manifest;
+  let wordOutput;
   let powerpointOutput;
-  if (wordOnly) {
-    const manifestPath = join(resourcesRoot, "addins.json");
-    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    manifest.pluginVersion = packageVersion;
-    manifest.files["VisualTeX.dotm"] = { sha256: sha256(wordOutput) };
-  } else {
+  let manifest;
+  const manifestPath = join(resourcesRoot, "addins.json");
+
+  if (powerpointOnly) {
+    // A PowerPoint-only rebuild must not rewrite the verified Word DOTM. This is
+    // used for isolated PPAM VBA updates where the Word resource has a different
+    // reviewed binary identity from the currently installed Startup template.
     powerpointOutput = packageAddin(
       resolve(powerpointInput),
       "PowerPoint",
       "VisualTeX.ppam",
       join(offlineRoot, "powerpoint", "customUI14.xml"),
-      powerpointShell ? resolve(powerpointShell) : undefined,
+      resolve(powerpointShell),
     );
-    manifest = {
-      schemaVersion: 1,
-      pluginVersion: packageVersion,
-      files: {
-        "VisualTeX.dotm": { sha256: sha256(wordOutput) },
-        "VisualTeX.ppam": { sha256: sha256(powerpointOutput) },
-      },
-    };
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    manifest.pluginVersion = packageVersion;
+    manifest.files["VisualTeX.ppam"] = { sha256: sha256(powerpointOutput) };
+  } else {
+    // A newly VBE-compiled Word DOTM is already a complete, valid OOXML template.
+    // Reusing the previously packaged resources/VisualTeX.dotm as an implicit
+    // shell causes document.xml, relationships and template metadata from older
+    // builds to survive indefinitely. Use the current compiled DOTM directly
+    // unless a shell is explicitly requested by the caller.
+    const resolvedWordShell = wordShell ? resolve(wordShell) : undefined;
+    wordOutput = packageAddin(
+      resolve(wordInput),
+      "Word",
+      "VisualTeX.dotm",
+      join(offlineRoot, "word", "customUI14.xml"),
+      resolvedWordShell,
+    );
+    if (wordOnly) {
+      manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      manifest.pluginVersion = packageVersion;
+      manifest.files["VisualTeX.dotm"] = { sha256: sha256(wordOutput) };
+    } else {
+      powerpointOutput = packageAddin(
+        resolve(powerpointInput),
+        "PowerPoint",
+        "VisualTeX.ppam",
+        join(offlineRoot, "powerpoint", "customUI14.xml"),
+        powerpointShell ? resolve(powerpointShell) : undefined,
+      );
+      manifest = {
+        schemaVersion: 1,
+        pluginVersion: packageVersion,
+        files: {
+          "VisualTeX.dotm": { sha256: sha256(wordOutput) },
+          "VisualTeX.ppam": { sha256: sha256(powerpointOutput) },
+        },
+      };
+    }
   }
-  writeFileSync(
-    join(resourcesRoot, "addins.json"),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-    "utf8",
-  );
+
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   if (artifactsDirectory) {
-    syncArtifact(wordOutput, resolve(artifactsDirectory));
+    if (wordOutput) syncArtifact(wordOutput, resolve(artifactsDirectory));
     if (powerpointOutput) syncArtifact(powerpointOutput, resolve(artifactsDirectory));
   }
   if (rootWordOutput) {
+    if (!wordOutput) {
+      throw new Error("--root-word-output requires a Word package build.");
+    }
     atomicCopy(wordOutput, resolve(rootWordOutput));
   }
   if (rootPowerPointOutput) {
@@ -558,11 +581,18 @@ try {
     }
     atomicCopy(powerpointOutput, resolve(rootPowerPointOutput));
   }
-  if (installMacos) installMacosArtifacts(wordOutput, powerpointOutput);
+  if (installMacos) {
+    if (powerpointOnly) {
+      throw new Error("--install-macos is not supported with --powerpoint-only.");
+    }
+    installMacosArtifacts(wordOutput, powerpointOutput);
+  }
   process.stdout.write(
-    wordOnly
-      ? `Packaged ${basename(wordOutput)} with the reviewed Word Ribbon XML; PowerPoint was not touched.\n`
-      : "Packaged VisualTeX.dotm and VisualTeX.ppam with fixed filenames and reviewed Ribbon XML.\n",
+    powerpointOnly
+      ? "Packaged VisualTeX.ppam only; Word resources were left byte-for-byte untouched.\n"
+      : wordOnly
+        ? `Packaged ${basename(wordOutput)} with the reviewed Word Ribbon XML; PowerPoint was not touched.\n`
+        : "Packaged VisualTeX.dotm and VisualTeX.ppam with fixed filenames and reviewed Ribbon XML.\n",
   );
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
