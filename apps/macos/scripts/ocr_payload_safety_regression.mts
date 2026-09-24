@@ -81,6 +81,21 @@ const providers = {
   },
 };
 assert.equal(decodeOcrProviderConfiguration(providers), providers);
+const legacyProviders = {
+  ...providers,
+  openAiCompatible: { ...providers.openAiCompatible, hasApiKey: null },
+  mathpix: { ...providers.mathpix, hasAppKey: null },
+  paddleOcr: { ...providers.paddleOcr, hasAccessToken: null },
+  simpleTex: { ...providers.simpleTex, hasAccessToken: null },
+};
+assert.equal(decodeOcrProviderConfiguration(legacyProviders), legacyProviders);
+assert.throws(
+  () => decodeOcrProviderConfiguration({
+    ...legacyProviders,
+    mathpix: { ...legacyProviders.mathpix, hasAppKey: "unknown" },
+  }),
+  /mathpix\.hasAppKey/,
+);
 assert.throws(
   () => decodeOcrProviderConfiguration({ ...providers, activeProvider: "unknown" }),
   /activeProvider/,

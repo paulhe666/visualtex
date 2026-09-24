@@ -250,7 +250,7 @@ export interface OcrProviderConfiguration {
     baseUrl: string;
     model: string;
     prompt: string;
-    hasApiKey: boolean;
+    hasApiKey: boolean | null;
   };
   ollama: {
     baseUrl: string;
@@ -260,15 +260,15 @@ export interface OcrProviderConfiguration {
   mathpix: {
     baseUrl: string;
     appId: string;
-    hasAppKey: boolean;
+    hasAppKey: boolean | null;
   };
   paddleOcr: {
     model: PaddleOcrApiModel;
-    hasAccessToken: boolean;
+    hasAccessToken: boolean | null;
   };
   simpleTex: {
     model: SimpleTexApiModel;
-    hasAccessToken: boolean;
+    hasAccessToken: boolean | null;
   };
 }
 

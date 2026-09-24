@@ -138,10 +138,10 @@ export function buildOcrQuickSelectionOptions(
   const ollamaModelZh = configuredModelLabel(configuration.ollama.model, false);
   const ollamaModelEn = configuredModelLabel(configuration.ollama.model, true);
   const mathpixReady = Boolean(
-    configuration.mathpix.appId.trim() && configuration.mathpix.hasAppKey,
+    configuration.mathpix.appId.trim() && configuration.mathpix.hasAppKey !== false,
   );
-  const paddleReady = configuration.paddleOcr.hasAccessToken;
-  const simpleTexReady = configuration.simpleTex.hasAccessToken;
+  const paddleReady = configuration.paddleOcr.hasAccessToken !== false;
+  const simpleTexReady = configuration.simpleTex.hasAccessToken !== false;
 
   return [
     ...localOptions,

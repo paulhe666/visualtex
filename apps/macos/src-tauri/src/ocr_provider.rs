@@ -149,7 +149,7 @@ struct OpenAiCompatibleConfigurationView {
     base_url: String,
     model: String,
     prompt: String,
-    has_api_key: bool,
+    has_api_key: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -165,21 +165,21 @@ struct OllamaConfigurationView {
 struct MathpixConfigurationView {
     base_url: String,
     app_id: String,
-    has_app_key: bool,
+    has_app_key: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PaddleOcrConfigurationView {
     model: String,
-    has_access_token: bool,
+    has_access_token: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SimpleTexConfigurationView {
     model: String,
-    has_access_token: bool,
+    has_access_token: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -288,6 +288,8 @@ struct StoredOpenAiCompatibleConfiguration {
     base_url: String,
     model: String,
     prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    has_api_key: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -303,18 +305,23 @@ struct StoredOllamaConfiguration {
 struct StoredMathpixConfiguration {
     base_url: String,
     app_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    has_app_key: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StoredPaddleOcrConfiguration {
     model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    has_access_token: Option<bool>,
 }
 
 impl Default for StoredPaddleOcrConfiguration {
     fn default() -> Self {
         Self {
             model: "PaddleOCR-VL-1.6".to_string(),
+            has_access_token: Some(false),
         }
     }
 }
@@ -323,12 +330,15 @@ impl Default for StoredPaddleOcrConfiguration {
 #[serde(rename_all = "camelCase")]
 struct StoredSimpleTexConfiguration {
     model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    has_access_token: Option<bool>,
 }
 
 impl Default for StoredSimpleTexConfiguration {
     fn default() -> Self {
         Self {
             model: "standard".to_string(),
+            has_access_token: Some(false),
         }
     }
 }
@@ -343,6 +353,7 @@ impl Default for StoredOcrProviderConfiguration {
                 base_url: "https://api.openai.com/v1".to_string(),
                 model: String::new(),
                 prompt: DEFAULT_PROMPT.to_string(),
+                has_api_key: Some(false),
             },
             ollama: StoredOllamaConfiguration {
                 base_url: "http://127.0.0.1:11434".to_string(),
@@ -352,6 +363,7 @@ impl Default for StoredOcrProviderConfiguration {
             mathpix: StoredMathpixConfiguration {
                 base_url: "https://api.mathpix.com".to_string(),
                 app_id: String::new(),
+                has_app_key: Some(false),
             },
             paddle_ocr: StoredPaddleOcrConfiguration::default(),
             simple_tex: StoredSimpleTexConfiguration::default(),
@@ -377,7 +389,7 @@ impl OcrProviderState {
         app: &AppHandle,
         update: OcrProviderConfigurationUpdate,
     ) -> Result<OcrProviderConfigurationView, String> {
-        let _previous = self.load_for_update(app)?;
+        let previous = self.load_for_update(app)?;
         let active_provider = normalize_provider(&update.active_provider)?.to_string();
         let protocol = normalize_openai_protocol(&update.open_ai_compatible.protocol)?.to_string();
         let openai_base_url = normalize_base_url(&update.open_ai_compatible.base_url)?;
@@ -397,37 +409,35 @@ impl OcrProviderState {
         let paddle_ocr_model = normalize_paddleocr_model(&update.paddle_ocr.model)?.to_string();
         let simpletex_model = normalize_simpletex_model(&update.simple_tex.model)?.to_string();
 
-        let current_openai_secret = secret_exists(OPENAI_API_KEY_ACCOUNT)?;
-        let current_mathpix_secret = secret_exists(MATHPIX_APP_KEY_ACCOUNT)?;
-        let current_paddle_ocr_secret = secret_exists(PADDLEOCR_ACCESS_TOKEN_ACCOUNT)?;
-        let current_simpletex_secret = secret_exists(SIMPLETEX_ACCESS_TOKEN_ACCOUNT)?;
         let openai_replacement = normalize_secret_update(update.open_ai_compatible.api_key)?;
         let mathpix_replacement = normalize_secret_update(update.mathpix.app_key)?;
         let paddle_ocr_replacement = normalize_secret_update(update.paddle_ocr.access_token)?;
         let simpletex_replacement = normalize_secret_update(update.simple_tex.access_token)?;
-        let has_openai_secret = if update.open_ai_compatible.clear_api_key {
-            false
-        } else {
-            openai_replacement.is_some() || current_openai_secret
-        };
-        let has_mathpix_secret = if update.mathpix.clear_app_key {
-            false
-        } else {
-            mathpix_replacement.is_some() || current_mathpix_secret
-        };
-        let has_paddle_ocr_secret = if update.paddle_ocr.clear_access_token {
-            false
-        } else {
-            paddle_ocr_replacement.is_some() || current_paddle_ocr_secret
-        };
-        let has_simpletex_secret = if update.simple_tex.clear_access_token {
-            false
-        } else {
-            simpletex_replacement.is_some() || current_simpletex_secret
-        };
+        let has_openai_secret = updated_secret_status(
+            previous.open_ai_compatible.has_api_key,
+            openai_replacement.as_deref(),
+            update.open_ai_compatible.clear_api_key,
+        );
+        let has_mathpix_secret = updated_secret_status(
+            previous.mathpix.has_app_key,
+            mathpix_replacement.as_deref(),
+            update.mathpix.clear_app_key,
+        );
+        let has_paddle_ocr_secret = updated_secret_status(
+            previous.paddle_ocr.has_access_token,
+            paddle_ocr_replacement.as_deref(),
+            update.paddle_ocr.clear_access_token,
+        );
+        let has_simpletex_secret = updated_secret_status(
+            previous.simple_tex.has_access_token,
+            simpletex_replacement.as_deref(),
+            update.simple_tex.clear_access_token,
+        );
 
-        validate_secret_transport(&openai_base_url, has_openai_secret, "API key")?;
-        validate_secret_transport(&mathpix_base_url, has_mathpix_secret, "app_key")?;
+        // Unknown means a pre-migration Keychain item may exist. Preserve the
+        // transport guard without reading any credential while saving settings.
+        validate_secret_transport(&openai_base_url, has_openai_secret != Some(false), "API key")?;
+        validate_secret_transport(&mathpix_base_url, has_mathpix_secret != Some(false), "app_key")?;
 
         let next = StoredOcrProviderConfiguration {
             schema_version: CONFIGURATION_SCHEMA_VERSION,
@@ -437,6 +447,7 @@ impl OcrProviderState {
                 base_url: openai_base_url,
                 model: openai_model,
                 prompt: openai_prompt,
+                has_api_key: has_openai_secret,
             },
             ollama: StoredOllamaConfiguration {
                 base_url: ollama_base_url,
@@ -446,19 +457,22 @@ impl OcrProviderState {
             mathpix: StoredMathpixConfiguration {
                 base_url: mathpix_base_url,
                 app_id: mathpix_app_id,
+                has_app_key: has_mathpix_secret,
             },
             paddle_ocr: StoredPaddleOcrConfiguration {
                 model: paddle_ocr_model,
+                has_access_token: has_paddle_ocr_secret,
             },
             simple_tex: StoredSimpleTexConfiguration {
                 model: simpletex_model,
+                has_access_token: has_simpletex_secret,
             },
         };
         validate_active_provider_configuration(
             &next,
-            has_mathpix_secret,
-            has_paddle_ocr_secret,
-            has_simpletex_secret,
+            has_mathpix_secret != Some(false),
+            has_paddle_ocr_secret != Some(false),
+            has_simpletex_secret != Some(false),
         )?;
 
         apply_secret_update(
@@ -508,14 +522,11 @@ impl OcrProviderState {
             running: self.remote_recognition_running.clone(),
         };
         let configuration = self.load(app)?;
-        let has_mathpix_secret = secret_exists(MATHPIX_APP_KEY_ACCOUNT)?;
-        let has_paddle_ocr_secret = secret_exists(PADDLEOCR_ACCESS_TOKEN_ACCOUNT)?;
-        let has_simpletex_secret = secret_exists(SIMPLETEX_ACCESS_TOKEN_ACCOUNT)?;
         validate_active_provider_configuration(
             &configuration,
-            has_mathpix_secret,
-            has_paddle_ocr_secret,
-            has_simpletex_secret,
+            configuration.mathpix.has_app_key != Some(false),
+            configuration.paddle_ocr.has_access_token != Some(false),
+            configuration.simple_tex.has_access_token != Some(false),
         )?;
         let progress = RemoteRecognitionProgress::new(app, &request.model);
         emit_remote_provider_progress(
@@ -578,7 +589,7 @@ fn configuration_view(
             base_url: configuration.open_ai_compatible.base_url.clone(),
             model: configuration.open_ai_compatible.model.clone(),
             prompt: configuration.open_ai_compatible.prompt.clone(),
-            has_api_key: secret_exists(OPENAI_API_KEY_ACCOUNT)?,
+            has_api_key: configuration.open_ai_compatible.has_api_key,
         },
         ollama: OllamaConfigurationView {
             base_url: configuration.ollama.base_url.clone(),
@@ -588,15 +599,15 @@ fn configuration_view(
         mathpix: MathpixConfigurationView {
             base_url: configuration.mathpix.base_url.clone(),
             app_id: configuration.mathpix.app_id.clone(),
-            has_app_key: secret_exists(MATHPIX_APP_KEY_ACCOUNT)?,
+            has_app_key: configuration.mathpix.has_app_key,
         },
         paddle_ocr: PaddleOcrConfigurationView {
             model: normalize_paddleocr_model(&configuration.paddle_ocr.model)?.to_string(),
-            has_access_token: secret_exists(PADDLEOCR_ACCESS_TOKEN_ACCOUNT)?,
+            has_access_token: configuration.paddle_ocr.has_access_token,
         },
         simple_tex: SimpleTexConfigurationView {
             model: normalize_simpletex_model(&configuration.simple_tex.model)?.to_string(),
-            has_access_token: secret_exists(SIMPLETEX_ACCESS_TOKEN_ACCOUNT)?,
+            has_access_token: configuration.simple_tex.has_access_token,
         },
     })
 }
@@ -694,20 +705,6 @@ fn keychain_entry(account: &str) -> Result<keyring::Entry, String> {
         .map_err(|error| format!("Unable to access the macOS Keychain for OCR: {error}"))
 }
 
-fn secret_exists(account: &str) -> Result<bool, String> {
-    match keychain_entry(account)?.get_password() {
-        Ok(mut secret) => {
-            let exists = !secret.is_empty();
-            unsafe { secret.as_mut_vec().fill(0) };
-            Ok(exists)
-        }
-        Err(keyring::Error::NoEntry) => Ok(false),
-        Err(error) => Err(format!(
-            "Unable to read the OCR secret from macOS Keychain: {error}"
-        )),
-    }
-}
-
 fn read_secret(account: &str) -> Result<Option<SensitiveString>, String> {
     match keychain_entry(account)?.get_password() {
         Ok(secret) if secret.is_empty() => Ok(None),
@@ -731,11 +728,28 @@ fn normalize_secret_update(value: Option<String>) -> Result<Option<String>, Stri
     Ok(Some(normalized.to_string()))
 }
 
+fn updated_secret_status(
+    previous: Option<bool>,
+    replacement: Option<&str>,
+    clear: bool,
+) -> Option<bool> {
+    if clear {
+        Some(false)
+    } else if replacement.is_some() {
+        Some(true)
+    } else {
+        previous
+    }
+}
+
 fn apply_secret_update(
     account: &str,
     replacement: Option<&str>,
     clear: bool,
 ) -> Result<(), String> {
+    if !clear && replacement.is_none() {
+        return Ok(());
+    }
     let entry = keychain_entry(account)?;
     if clear {
         match entry.delete_credential() {
@@ -1079,7 +1093,11 @@ async fn recognize_remote_inner(
 
     let (provider, model, formulas) = match configuration.active_provider.as_str() {
         OPENAI_COMPATIBLE_PROVIDER => {
-            let api_key = read_secret(OPENAI_API_KEY_ACCOUNT)?;
+            let api_key = if configuration.open_ai_compatible.has_api_key == Some(false) {
+                None
+            } else {
+                read_secret(OPENAI_API_KEY_ACCOUNT)?
+            };
             validate_secret_transport(
                 &configuration.open_ai_compatible.base_url,
                 api_key.is_some(),
@@ -2370,6 +2388,25 @@ mod tests {
         assert_eq!(configuration.active_provider, LOCAL_PROVIDER);
         assert_eq!(configuration.open_ai_compatible.protocol, "responses");
         assert!(!configuration.open_ai_compatible.prompt.is_empty());
+        assert_eq!(configuration.open_ai_compatible.has_api_key, Some(false));
+    }
+
+    #[test]
+    fn provider_configuration_view_does_not_read_legacy_keychain_entries() {
+        let mut configuration = StoredOcrProviderConfiguration::default();
+        configuration.open_ai_compatible.has_api_key = None;
+        configuration.mathpix.has_app_key = None;
+        configuration.paddle_ocr.has_access_token = None;
+        configuration.simple_tex.has_access_token = None;
+        let view = configuration_view(&configuration).unwrap();
+        assert_eq!(view.open_ai_compatible.has_api_key, None);
+        assert_eq!(view.mathpix.has_app_key, None);
+        assert_eq!(view.paddle_ocr.has_access_token, None);
+        assert_eq!(view.simple_tex.has_access_token, None);
+
+        assert_eq!(updated_secret_status(None, None, false), None);
+        assert_eq!(updated_secret_status(None, Some("new-key"), false), Some(true));
+        assert_eq!(updated_secret_status(Some(true), None, true), Some(false));
     }
 
     #[test]
@@ -2645,6 +2682,7 @@ mod tests {
             base_url: base_url.clone(),
             model: "vision-model".to_string(),
             prompt: "Return formula JSON".to_string(),
+            has_api_key: None,
         };
         assert_eq!(
             recognize_openai_compatible(&client, &openai_configuration, None, data_url,)
@@ -2667,6 +2705,7 @@ mod tests {
 
         let simpletex_configuration = StoredSimpleTexConfiguration {
             model: "standard".to_string(),
+            has_access_token: None,
         };
         assert_eq!(
             recognize_simpletex_at(
@@ -2699,6 +2738,7 @@ mod tests {
 
         let paddle_configuration = StoredPaddleOcrConfiguration {
             model: "PaddleOCR-VL-1.6".to_string(),
+            has_access_token: None,
         };
         assert_eq!(
             recognize_paddleocr_aistudio_at(
@@ -2719,6 +2759,7 @@ mod tests {
 
         let quota_configuration = StoredPaddleOcrConfiguration {
             model: "PaddleOCR-VL-1.6".to_string(),
+            has_access_token: None,
         };
         let quota_error = recognize_paddleocr_aistudio_at(
             &client,
@@ -2736,6 +2777,7 @@ mod tests {
         let mathpix_configuration = StoredMathpixConfiguration {
             base_url: base_url.clone(),
             app_id: "app-id".to_string(),
+            has_app_key: None,
         };
         assert_eq!(
             recognize_mathpix(&client, &mathpix_configuration, "app-key", data_url,)

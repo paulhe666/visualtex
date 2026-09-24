@@ -98,6 +98,12 @@ function readError(error: unknown) {
   }
 }
 
+function credentialStatusLabel(status: boolean | null, isEn: boolean, clearing: boolean) {
+  if (clearing || status === false) return "";
+  if (status === true) return isEn ? " · saved" : " · 已保存";
+  return isEn ? " · not checked" : " · 未确认";
+}
+
 const OCR_MODEL_PACKAGE_EXTENSION = ".vtxocrmodel";
 
 const FALLBACK_OCR_PROVIDER_CONFIGURATION: OcrProviderConfiguration = {
@@ -1092,11 +1098,7 @@ export function OcrDialog({
                   <label className="ocr-provider-field">
                     <span>
                       {isEn ? "API key" : "API 密钥"}
-                      {providerConfiguration.openAiCompatible.hasApiKey && !clearOpenAiApiKey
-                        ? isEn
-                          ? " · saved"
-                          : " · 已保存"
-                        : ""}
+                      {credentialStatusLabel(providerConfiguration.openAiCompatible.hasApiKey, isEn, clearOpenAiApiKey)}
                     </span>
                     <input
                       type="password"
@@ -1104,10 +1106,14 @@ export function OcrDialog({
                       disabled={recognizing || savingProvider || clearOpenAiApiKey}
                       autoComplete="new-password"
                       placeholder={
-                        providerConfiguration.openAiCompatible.hasApiKey
+                        providerConfiguration.openAiCompatible.hasApiKey === true
                           ? isEn
                             ? "Leave blank to keep the saved key"
                             : "留空将继续使用已保存密钥"
+                          : providerConfiguration.openAiCompatible.hasApiKey === null
+                            ? isEn
+                              ? "Leave blank to keep any existing key"
+                              : "留空将保留可能已保存的密钥"
                           : isEn
                             ? "Leave blank when the endpoint does not require authentication"
                             : "接口无需鉴权时可留空"
@@ -1118,7 +1124,7 @@ export function OcrDialog({
                       }}
                     />
                   </label>
-                  {providerConfiguration.openAiCompatible.hasApiKey && (
+                  {providerConfiguration.openAiCompatible.hasApiKey !== false && (
                     <label className="ocr-provider-clear-secret">
                       <input
                         type="checkbox"
@@ -1245,11 +1251,7 @@ export function OcrDialog({
                   <label className="ocr-provider-field">
                     <span>
                       app_key
-                      {providerConfiguration.mathpix.hasAppKey && !clearMathpixAppKey
-                        ? isEn
-                          ? " · saved"
-                          : " · 已保存"
-                        : ""}
+                      {credentialStatusLabel(providerConfiguration.mathpix.hasAppKey, isEn, clearMathpixAppKey)}
                     </span>
                     <input
                       type="password"
@@ -1257,10 +1259,14 @@ export function OcrDialog({
                       disabled={recognizing || savingProvider || clearMathpixAppKey}
                       autoComplete="new-password"
                       placeholder={
-                        providerConfiguration.mathpix.hasAppKey
+                        providerConfiguration.mathpix.hasAppKey === true
                           ? isEn
                             ? "Leave blank to keep the saved key"
                             : "留空将继续使用已保存密钥"
+                          : providerConfiguration.mathpix.hasAppKey === null
+                            ? isEn
+                              ? "Leave blank to keep any existing key"
+                              : "留空将保留可能已保存的密钥"
                           : "app_key"
                       }
                       onChange={(event) => {
@@ -1269,7 +1275,7 @@ export function OcrDialog({
                       }}
                     />
                   </label>
-                  {providerConfiguration.mathpix.hasAppKey && (
+                  {providerConfiguration.mathpix.hasAppKey !== false && (
                     <label className="ocr-provider-clear-secret">
                       <input
                         type="checkbox"
@@ -1316,9 +1322,7 @@ export function OcrDialog({
                   <label className="ocr-provider-field is-wide">
                     <span>
                       {isEn ? "Access token" : "访问令牌"}
-                      {providerConfiguration.paddleOcr.hasAccessToken && !clearPaddleOcrAccessToken
-                        ? isEn ? " · saved" : " · 已保存"
-                        : ""}
+                      {credentialStatusLabel(providerConfiguration.paddleOcr.hasAccessToken, isEn, clearPaddleOcrAccessToken)}
                     </span>
                     <input
                       type="password"
@@ -1326,8 +1330,10 @@ export function OcrDialog({
                       disabled={recognizing || savingProvider || clearPaddleOcrAccessToken}
                       autoComplete="new-password"
                       placeholder={
-                        providerConfiguration.paddleOcr.hasAccessToken
+                        providerConfiguration.paddleOcr.hasAccessToken === true
                           ? isEn ? "Leave blank to keep the saved token" : "留空将继续使用已保存令牌"
+                          : providerConfiguration.paddleOcr.hasAccessToken === null
+                            ? isEn ? "Leave blank to keep any existing token" : "留空将保留可能已保存的令牌"
                           : isEn ? "TOKEN from AI Studio" : "AI Studio 中的 TOKEN"
                       }
                       onChange={(event) => {
@@ -1336,7 +1342,7 @@ export function OcrDialog({
                       }}
                     />
                   </label>
-                  {providerConfiguration.paddleOcr.hasAccessToken && (
+                  {providerConfiguration.paddleOcr.hasAccessToken !== false && (
                     <label className="ocr-provider-clear-secret">
                       <input
                         type="checkbox"
@@ -1391,11 +1397,7 @@ export function OcrDialog({
                   <label className="ocr-provider-field is-wide">
                     <span>
                       {isEn ? "User access token (UAT)" : "用户授权令牌（UAT）"}
-                      {providerConfiguration.simpleTex.hasAccessToken && !clearSimpleTexAccessToken
-                        ? isEn
-                          ? " · saved"
-                          : " · 已保存"
-                        : ""}
+                      {credentialStatusLabel(providerConfiguration.simpleTex.hasAccessToken, isEn, clearSimpleTexAccessToken)}
                     </span>
                     <input
                       type="password"
@@ -1403,10 +1405,14 @@ export function OcrDialog({
                       disabled={recognizing || savingProvider || clearSimpleTexAccessToken}
                       autoComplete="new-password"
                       placeholder={
-                        providerConfiguration.simpleTex.hasAccessToken
+                        providerConfiguration.simpleTex.hasAccessToken === true
                           ? isEn
                             ? "Leave blank to keep the saved token"
                             : "留空将继续使用已保存令牌"
+                          : providerConfiguration.simpleTex.hasAccessToken === null
+                            ? isEn
+                              ? "Leave blank to keep any existing token"
+                              : "留空将保留可能已保存的令牌"
                           : "SimpleTex UAT"
                       }
                       onChange={(event) => {
@@ -1415,7 +1421,7 @@ export function OcrDialog({
                       }}
                     />
                   </label>
-                  {providerConfiguration.simpleTex.hasAccessToken && (
+                  {providerConfiguration.simpleTex.hasAccessToken !== false && (
                     <label className="ocr-provider-clear-secret">
                       <input
                         type="checkbox"
