@@ -7039,6 +7039,13 @@ internal static partial class WordOmmlConverter
         }
     }
 
+    internal static void PrewarmOmmlReadPipeline()
+    {
+        _ = GetOmmlToMathMlTransform();
+        _ = MathMlToLatexConverter.Convert(
+            @"<math xmlns=""http://www.w3.org/1998/Math/MathML"" display=""inline""><mi>x</mi></math>");
+    }
+
     private static XslCompiledTransform GetOmmlToMathMlTransform()
     {
         lock (TransformLock)

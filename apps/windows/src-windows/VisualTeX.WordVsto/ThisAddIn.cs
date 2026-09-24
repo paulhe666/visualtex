@@ -2437,7 +2437,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         try
         {
             await client.EnsureHealthyAsync(cancellationToken).ConfigureAwait(false);
+            var ommlReadPrewarm = Task.Run(
+                WordOmmlConverter.PrewarmOmmlReadPipeline,
+                cancellationToken);
+            // Pay the reusable Office editor WebView cold-start cost while Word
+            // itself is starting, not on the user's first Edit Formula click.
+            // The companion remains WebView-free until Word explicitly requests
+            // this prewarm, preserving office-background/bootstrap startup.
+            await client.PrewarmEditorAsync(cancellationToken).ConfigureAwait(false);
             await client.PrewarmConverterAsync(cancellationToken).ConfigureAwait(false);
+            await ommlReadPrewarm.ConfigureAwait(false);
         }
         catch
         {
@@ -2659,10 +2668,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         RegisterActiveSessionOperation(operationCancellation);
         cancellationToken = operationCancellation.Token;
 
+        var traceOpenPerformanceToHook = !string.IsNullOrWhiteSpace(
+            Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH"));
         var openPerformance = string.Equals(
-            Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
-            "1",
-            StringComparison.Ordinal)
+                Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                "1",
+                StringComparison.Ordinal)
+            || traceOpenPerformanceToHook
             ? Stopwatch.StartNew()
             : null;
         long openPerformanceCheckpoint = 0;
@@ -2670,8 +2682,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             if (openPerformance is null) return;
             var elapsed = openPerformance.ElapsedMilliseconds;
-            Console.WriteLine(
-                $"    [perf] OpenSession.{stage}: +{elapsed - openPerformanceCheckpoint}ms ({elapsed}ms total)");
+            var message =
+                $"[perf] OpenSession.{stage}: +{elapsed - openPerformanceCheckpoint}ms ({elapsed}ms total)";
+            Console.WriteLine("    " + message);
+            if (traceOpenPerformanceToHook)
+                WordDoubleClickHook.TraceMessage(message);
             openPerformanceCheckpoint = elapsed;
         }
 
@@ -2938,12 +2953,41 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     if (mathMl is null)
                         throw new InvalidOperationException(
                             "VisualTeX Word OMML MathML payload is unavailable.");
-                    return service.ApplyOmmlVisualTeXHostSession(
-                        session,
-                        selection.ObjectMode,
-                        mathMl,
-                        pngPath: null,
-                        emfPath: null);
+                    if (!traceOpenPerformanceToHook)
+                    {
+                        return service.ApplyOmmlVisualTeXHostSession(
+                            session,
+                            selection.ObjectMode,
+                            mathMl,
+                            pngPath: null,
+                            emfPath: null);
+                    }
+
+                    var ommlApplyWatch = Stopwatch.StartNew();
+                    using var ommlMetrics = new WordOperationMetrics();
+                    try
+                    {
+                        return service.ApplyOmmlVisualTeXHostSession(
+                            session,
+                            selection.ObjectMode,
+                            mathMl,
+                            pngPath: null,
+                            emfPath: null);
+                    }
+                    finally
+                    {
+                        ommlApplyWatch.Stop();
+                        WordDoubleClickHook.TraceMessage(
+                            $"[perf] ApplySession.omml-write: {ommlApplyWatch.Elapsed.TotalMilliseconds:0.0}ms");
+                        foreach (var entry in ommlMetrics.Entries
+                                     .OrderByDescending(item => item.Value.Milliseconds))
+                        {
+                            WordDoubleClickHook.TraceMessage(
+                                $"[perf] ApplySession.omml-stage {entry.Key}: "
+                                + $"calls={entry.Value.Calls} "
+                                + $"inclusive={entry.Value.Milliseconds:0.0}ms");
+                        }
+                    }
                 }
                 if (string.Equals(
                         session.ObjectMode,
@@ -3007,6 +3051,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
+            WordDoubleClickHook.TraceMessage(
+                $"ribbon-session-failed sessionId={sessionId ?? "<pending>"} mode={mode} "
+                + $"error={error.GetType().FullName}: {error}");
             var failureMessage = OfficePluginLanguage.FormatOperationError(
                 error,
                 "VisualTeX Word 写入失败",

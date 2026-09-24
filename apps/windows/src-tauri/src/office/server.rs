@@ -30,9 +30,28 @@ use tower_http::services::ServeDir;
 use uuid::Uuid;
 
 #[cfg(target_os = "windows")]
-use tauri::webview::PageLoadEvent;
+use std::ffi::c_void;
+#[cfg(target_os = "windows")]
+use tauri::webview::{PageLoadEvent, PageLoadPayload};
 #[cfg(target_os = "windows")]
 use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
+#[cfg(target_os = "windows")]
+const SW_HIDE: i32 = 0;
+#[cfg(target_os = "windows")]
+const SW_SHOWNOACTIVATE: i32 = 4;
+#[cfg(target_os = "windows")]
+const SW_RESTORE: i32 = 9;
+
+#[cfg(target_os = "windows")]
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn ShowWindow(hwnd: *mut c_void, command: i32) -> i32;
+    fn IsWindowVisible(hwnd: *mut c_void) -> i32;
+    fn UpdateWindow(hwnd: *mut c_void) -> i32;
+    fn BringWindowToTop(hwnd: *mut c_void) -> i32;
+    fn SetForegroundWindow(hwnd: *mut c_void) -> i32;
+}
 
 const INSTALL_TOKEN_HEADER: &str = "x-visualtex-install-token";
 const OFFICE_CSP: &str = "default-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self' https://*.office.com https://*.officeapps.live.com";
@@ -448,6 +467,56 @@ fn office_editor_session_id_from_url(url: &tauri::Url) -> Option<String> {
 }
 
 #[cfg(target_os = "windows")]
+fn handle_office_editor_page_load(
+    window: WebviewWindow,
+    payload: PageLoadPayload<'_>,
+) {
+    crate::app_lifecycle::append_lifecycle_log(format!(
+        "Office editor page-load event={:?} url={}",
+        payload.event(),
+        payload.url()
+    ));
+    if matches!(payload.event(), PageLoadEvent::Started) {
+        OFFICE_EDITOR_PAGE_READY.store(false, std::sync::atomic::Ordering::Release);
+        return;
+    }
+    if !matches!(payload.event(), PageLoadEvent::Finished) {
+        return;
+    }
+
+    let Some(loaded_session_id) = office_editor_session_id_from_url(payload.url()) else {
+        let editor_is_inactive = OFFICE_EDITOR_ACTIVE_SESSION
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .map(|current| current.is_none())
+            .unwrap_or(false);
+        if editor_is_inactive {
+            OFFICE_EDITOR_PAGE_READY.store(true, std::sync::atomic::Ordering::Release);
+            crate::app_lifecycle::append_lifecycle_log(
+                "hidden Office editor WebView prewarm shell is ready",
+            );
+        } else {
+            crate::app_lifecycle::append_lifecycle_log(
+                "Office editor ignored shell page-load completion after a Session became active",
+            );
+        }
+        return;
+    };
+    if !office_editor_session_is_active(&loaded_session_id) {
+        crate::app_lifecycle::append_lifecycle_log(format!(
+            "Office editor ignored stale page-load completion for session={loaded_session_id}"
+        ));
+        return;
+    }
+    OFFICE_EDITOR_PAGE_READY.store(true, std::sync::atomic::Ordering::Release);
+    if let Err(error) = bring_session_window_to_front(&window, Some(loaded_session_id.clone())) {
+        crate::app_lifecycle::append_lifecycle_log(format!(
+            "Office editor could not reveal loaded session={loaded_session_id}: {error}"
+        ));
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn switch_office_editor_session(window: &WebviewWindow, session_id: &str) -> Result<(), String> {
     let encoded = serde_json::to_string(session_id)
         .map_err(|error| format!("Unable to encode the Office Session id: {error}"))?;
@@ -642,33 +711,10 @@ pub(crate) fn request_desktop_editor_window_close(app: &tauri::AppHandle) -> Res
                 ))
             );
             if terminal || std::time::Instant::now() >= deadline {
-                let cleanup_owned_editor = OFFICE_EDITOR_WINDOW_TRANSITION_LOCK
-                    .get_or_init(|| Mutex::new(()))
-                    .lock()
-                    .ok()
-                    .and_then(|_transition| {
-                        let owns_editor = OFFICE_EDITOR_ACTIVE_SESSION
-                            .get_or_init(|| Mutex::new(None))
-                            .lock()
-                            .map(|mut current| {
-                                if current.as_deref() != Some(session_id.as_str()) {
-                                    return false;
-                                }
-                                *current = None;
-                                true
-                            })
-                            .unwrap_or(false);
-                        if owns_editor {
-                            if let Some(editor) = app.get_webview_window(OFFICE_EDITOR_WINDOW_LABEL) {
-                                let _ = editor.set_always_on_top(false);
-                                let _ = editor.request_user_attention(None);
-                                let _ = editor.hide();
-                                clear_office_editor_session(&editor);
-                            }
-                        }
-                        Some(owns_editor)
-                    })
-                    .unwrap_or(false);
+                let cleanup_owned_editor =
+                    hide_owned_office_editor_on_main_thread(app.clone(), session_id.clone())
+                        .await
+                        .unwrap_or(false);
                 if !cleanup_owned_editor {
                     crate::app_lifecycle::append_lifecycle_log(format!(
                         "native Office editor stale close cleanup skipped for session={session_id}"
@@ -694,6 +740,73 @@ pub(crate) fn request_desktop_editor_window_close(app: &tauri::AppHandle) -> Res
 }
 
 #[cfg(target_os = "windows")]
+fn prime_office_editor_native_presentation(window: &WebviewWindow) -> Result<(), String> {
+    let hwnd = window
+        .hwnd()
+        .map_err(|error| format!("Unable to resolve the VisualTeX Session HWND: {error}"))?;
+    let original_position = window.outer_position().ok();
+    if let Err(error) = window.set_position(tauri::PhysicalPosition::new(-32_000, -32_000)) {
+        crate::app_lifecycle::append_lifecycle_log(format!(
+            "Office editor prewarm could not move HWND off-screen: {error}"
+        ));
+    }
+    unsafe {
+        let _ = ShowWindow(hwnd.0, SW_SHOWNOACTIVATE);
+        let _ = UpdateWindow(hwnd.0);
+        if IsWindowVisible(hwnd.0) == 0 {
+            return Err(
+                "VisualTeX Session HWND remained hidden during native presentation prewarm."
+                    .to_string(),
+            );
+        }
+        let _ = ShowWindow(hwnd.0, SW_HIDE);
+        if IsWindowVisible(hwnd.0) != 0 {
+            return Err(
+                "VisualTeX Session HWND remained visible after native presentation prewarm."
+                    .to_string(),
+            );
+        }
+    }
+    if let Some(position) = original_position {
+        let _ = window.set_position(position);
+    }
+    crate::app_lifecycle::append_lifecycle_log(
+        "hidden Office editor HWND native presentation prewarm completed",
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn force_office_editor_window_visible(window: &WebviewWindow) -> Result<(), String> {
+    let hwnd = window
+        .hwnd()
+        .map_err(|error| format!("Unable to resolve the VisualTeX Session HWND: {error}"))?;
+    unsafe {
+        let _ = ShowWindow(hwnd.0, SW_RESTORE);
+        let _ = BringWindowToTop(hwnd.0);
+        let _ = SetForegroundWindow(hwnd.0);
+        if IsWindowVisible(hwnd.0) == 0 {
+            return Err("VisualTeX Session HWND remained hidden after synchronous ShowWindow.".to_string());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn force_office_editor_window_hidden(window: &WebviewWindow) -> Result<(), String> {
+    let hwnd = window
+        .hwnd()
+        .map_err(|error| format!("Unable to resolve the VisualTeX Session HWND: {error}"))?;
+    unsafe {
+        let _ = ShowWindow(hwnd.0, SW_HIDE);
+        if IsWindowVisible(hwnd.0) != 0 {
+            return Err("VisualTeX Session HWND remained visible after synchronous hide.".to_string());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 fn bring_session_window_to_front(
     window: &WebviewWindow,
     guarded_editor_session: Option<String>,
@@ -702,6 +815,7 @@ fn bring_session_window_to_front(
         .show()
         .map_err(|error| format!("Unable to show the VisualTeX Session window: {error}"))?;
     let _ = window.unminimize();
+    force_office_editor_window_visible(window)?;
     // Give the editor one immediate foreground attempt. Office can briefly
     // reactivate itself while a Ribbon/double-click callback unwinds, so keep
     // the editor top-most for a short interval and make at most one delayed
@@ -726,6 +840,224 @@ fn bring_session_window_to_front(
         let _ = repair_window.set_always_on_top(false);
     });
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+async fn hide_owned_office_editor_on_main_thread(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<bool, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let scheduled_app = app.clone();
+    app.run_on_main_thread(move || {
+        let result = (|| -> Result<bool, String> {
+            let _transition = OFFICE_EDITOR_WINDOW_TRANSITION_LOCK
+                .get_or_init(|| Mutex::new(()))
+                .lock()
+                .map_err(|_| {
+                    "VisualTeX Office editor window transition state is unavailable.".to_string()
+                })?;
+            let owns_editor = OFFICE_EDITOR_ACTIVE_SESSION
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .map_err(|_| {
+                    "VisualTeX Office editor Session state is unavailable.".to_string()
+                })
+                .map(|mut current| {
+                    if current.as_deref() != Some(session_id.as_str()) {
+                        return false;
+                    }
+                    *current = None;
+                    true
+                })?;
+            if owns_editor {
+                if let Some(editor) =
+                    scheduled_app.get_webview_window(OFFICE_EDITOR_WINDOW_LABEL)
+                {
+                    let _ = editor.set_always_on_top(false);
+                    let _ = editor.request_user_attention(None);
+                    let _ = editor.hide();
+                    force_office_editor_window_hidden(&editor)?;
+                    clear_office_editor_session(&editor);
+                }
+            }
+            Ok(owns_editor)
+        })();
+        let _ = sender.send(result);
+    })
+    .map_err(|error| {
+        format!("Unable to schedule Office editor cleanup on the UI thread: {error}")
+    })?;
+    receiver.await.map_err(|error| {
+        format!("Office editor cleanup UI-thread task was cancelled: {error}")
+    })?
+}
+
+#[cfg(target_os = "windows")]
+async fn hide_inactive_office_editor_on_main_thread(
+    app: tauri::AppHandle,
+) -> Result<bool, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let scheduled_app = app.clone();
+    app.run_on_main_thread(move || {
+        let result = (|| -> Result<bool, String> {
+            let _transition = OFFICE_EDITOR_WINDOW_TRANSITION_LOCK
+                .get_or_init(|| Mutex::new(()))
+                .lock()
+                .map_err(|_| {
+                    "VisualTeX Office editor window transition state is unavailable.".to_string()
+                })?;
+            let editor_is_inactive = OFFICE_EDITOR_ACTIVE_SESSION
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .map_err(|_| {
+                    "VisualTeX Office editor Session state is unavailable.".to_string()
+                })
+                .map(|current| current.is_none())?;
+            if editor_is_inactive {
+                if let Some(editor) =
+                    scheduled_app.get_webview_window(OFFICE_EDITOR_WINDOW_LABEL)
+                {
+                    let _ = editor.set_always_on_top(false);
+                    let _ = editor.request_user_attention(None);
+                    let _ = editor.hide();
+                    force_office_editor_window_hidden(&editor)?;
+                    clear_office_editor_session(&editor);
+                }
+            }
+            Ok(editor_is_inactive)
+        })();
+        let _ = sender.send(result);
+    })
+    .map_err(|error| {
+        format!("Unable to schedule inactive Office editor cleanup on the UI thread: {error}")
+    })?;
+    receiver.await.map_err(|error| {
+        format!("Inactive Office editor cleanup UI-thread task was cancelled: {error}")
+    })?
+}
+
+#[cfg(target_os = "windows")]
+fn prewarm_desktop_editor_window(app: tauri::AppHandle) -> Result<(), String> {
+    let _transition = OFFICE_EDITOR_WINDOW_TRANSITION_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| "VisualTeX Office editor window transition state is unavailable.".to_string())?;
+    if app.get_webview_window(OFFICE_EDITOR_WINDOW_LABEL).is_some() {
+        return Ok(());
+    }
+    let active_session = OFFICE_EDITOR_ACTIVE_SESSION
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|_| "VisualTeX Office editor Session state is unavailable.".to_string())?
+        .clone();
+    if active_session.is_some() {
+        return Ok(());
+    }
+
+    let url = tauri::Url::parse(&format!(
+        "https://127.0.0.1:{}/dialog?runtime=vsto-desktop",
+        crate::office::state::OFFICE_PORT,
+    ))
+    .map_err(|error| format!("Unable to construct the VisualTeX editor prewarm URL: {error}"))?;
+    let (saved_editor_width, saved_editor_height) = load_office_editor_window_size(&app);
+    OFFICE_EDITOR_PAGE_READY.store(false, std::sync::atomic::Ordering::Release);
+    WebviewWindowBuilder::new(
+        &app,
+        OFFICE_EDITOR_WINDOW_LABEL,
+        WebviewUrl::External(url),
+    )
+    .title("Office 公式编辑器")
+    .inner_size(saved_editor_width, saved_editor_height)
+    .min_inner_size(640.0, 480.0)
+    .resizable(true)
+    .center()
+    .focused(false)
+    .visible(false)
+    .on_page_load(handle_office_editor_page_load)
+    .build()
+    .map(|_| {
+        crate::app_lifecycle::append_lifecycle_log(
+            "created hidden Office editor WebView prewarm shell",
+        );
+    })
+    .map_err(|error| format!("Unable to prewarm the VisualTeX Session window: {error}"))
+}
+
+#[cfg(target_os = "windows")]
+async fn prime_office_editor_native_presentation_on_main_thread(
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let scheduled_app = app.clone();
+    app.run_on_main_thread(move || {
+        let result = (|| -> Result<(), String> {
+            let _transition = OFFICE_EDITOR_WINDOW_TRANSITION_LOCK
+                .get_or_init(|| Mutex::new(()))
+                .lock()
+                .map_err(|_| {
+                    "VisualTeX Office editor window transition state is unavailable.".to_string()
+                })?;
+            let editor_is_inactive = OFFICE_EDITOR_ACTIVE_SESSION
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .map_err(|_| {
+                    "VisualTeX Office editor Session state is unavailable.".to_string()
+                })?
+                .is_none();
+            if !editor_is_inactive {
+                return Ok(());
+            }
+            let window = scheduled_app
+                .get_webview_window(OFFICE_EDITOR_WINDOW_LABEL)
+                .ok_or_else(|| {
+                    "VisualTeX Office editor prewarm window is unavailable.".to_string()
+                })?;
+            prime_office_editor_native_presentation(&window)
+        })();
+        let _ = sender.send(result);
+    })
+    .map_err(|error| {
+        format!("Unable to schedule Office editor native prewarm on the UI thread: {error}")
+    })?;
+    receiver.await.map_err(|error| {
+        format!("Office editor native prewarm UI-thread task was cancelled: {error}")
+    })?
+}
+
+#[cfg(target_os = "windows")]
+async fn prewarm_desktop_editor_window_on_main_thread(
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let scheduled_app = app.clone();
+    app.run_on_main_thread(move || {
+        let result = prewarm_desktop_editor_window(scheduled_app);
+        let _ = sender.send(result);
+    })
+    .map_err(|error| {
+        format!("Unable to schedule Office editor prewarm on the UI thread: {error}")
+    })?;
+    receiver.await.map_err(|error| {
+        format!("Office editor prewarm UI-thread task was cancelled: {error}")
+    })??;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        if office_editor_page_is_ready() {
+            return prime_office_editor_native_presentation_on_main_thread(app.clone()).await;
+        }
+        let editor_is_active = OFFICE_EDITOR_ACTIVE_SESSION
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .map(|current| current.is_some())
+            .unwrap_or(false);
+        if editor_is_active {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    Err("VisualTeX Office editor prewarm shell did not become ready in time.".to_string())
 }
 
 #[cfg(target_os = "windows")]
@@ -833,40 +1165,7 @@ fn open_desktop_session_window(app: tauri::AppHandle, session_id: String) -> Res
         .center()
         .focused(false)
         .visible(false)
-        .on_page_load(|window, payload| {
-            crate::app_lifecycle::append_lifecycle_log(format!(
-                "Office editor page-load event={:?} url={}",
-                payload.event(),
-                payload.url()
-            ));
-            if matches!(payload.event(), PageLoadEvent::Started) {
-                OFFICE_EDITOR_PAGE_READY.store(false, std::sync::atomic::Ordering::Release);
-                return;
-            }
-            if !matches!(payload.event(), PageLoadEvent::Finished) {
-                return;
-            }
-            let Some(loaded_session_id) = office_editor_session_id_from_url(payload.url()) else {
-                crate::app_lifecycle::append_lifecycle_log(
-                    "Office editor ignored page-load completion without a valid Session id",
-                );
-                return;
-            };
-            if !office_editor_session_is_active(&loaded_session_id) {
-                crate::app_lifecycle::append_lifecycle_log(format!(
-                    "Office editor ignored stale page-load completion for session={loaded_session_id}"
-                ));
-                return;
-            }
-            OFFICE_EDITOR_PAGE_READY.store(true, std::sync::atomic::Ordering::Release);
-            if let Err(error) =
-                bring_session_window_to_front(&window, Some(loaded_session_id.clone()))
-            {
-                crate::app_lifecycle::append_lifecycle_log(format!(
-                    "Office editor could not reveal loaded session={loaded_session_id}: {error}"
-                ));
-            }
-        })
+        .on_page_load(handle_office_editor_page_load)
         .build();
     if let Err(error) = build_result {
         OFFICE_EDITOR_PAGE_READY.store(false, std::sync::atomic::Ordering::Release);
@@ -884,6 +1183,25 @@ fn open_desktop_session_window(app: tauri::AppHandle, session_id: String) -> Res
     }
     schedule_office_editor_reveal_fallback(app, session_id);
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+async fn open_desktop_session_window_on_main_thread(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<(), String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let scheduled_app = app.clone();
+    app.run_on_main_thread(move || {
+        let result = open_desktop_session_window(scheduled_app, session_id);
+        let _ = sender.send(result);
+    })
+    .map_err(|error| {
+        format!("Unable to schedule Office editor open on the UI thread: {error}")
+    })?;
+    receiver.await.map_err(|error| {
+        format!("Office editor open UI-thread task was cancelled: {error}")
+    })?
 }
 
 #[cfg(target_os = "windows")]
@@ -1068,26 +1386,14 @@ async fn close_desktop_session(
         tauri::async_runtime::spawn(async move {
             // Return the HTTP response before closing the WebView that issued
             // the request; otherwise WebView2 can cancel the fetch and leave a
-            // blank native window behind. Serialize this delayed cleanup with
-            // every new editor open so an old Session can never clear a newer one.
+            // blank native window behind. The hide/clear itself must execute on
+            // Tauri's main thread while holding the transition lock. Calling
+            // WebviewWindow::hide/eval from this Tokio worker only queues UI
+            // messages; releasing the lock before those messages execute lets a
+            // later Session show first and then get hidden by this stale cleanup.
             tokio::time::sleep(std::time::Duration::from_millis(120)).await;
-            if let Ok(_transition) = OFFICE_EDITOR_WINDOW_TRANSITION_LOCK
-                .get_or_init(|| Mutex::new(()))
-                .lock()
-            {
-                let editor_still_inactive = OFFICE_EDITOR_ACTIVE_SESSION
-                    .get_or_init(|| Mutex::new(None))
-                    .lock()
-                    .map(|current| current.is_none())
-                    .unwrap_or(false);
-                if editor_was_active && editor_still_inactive {
-                    if let Some(window) = app.get_webview_window(OFFICE_EDITOR_WINDOW_LABEL) {
-                        let _ = window.set_always_on_top(false);
-                        let _ = window.request_user_attention(None);
-                        let _ = window.hide();
-                        clear_office_editor_session(&window);
-                    }
-                }
+            if editor_was_active {
+                let _ = hide_inactive_office_editor_on_main_thread(app.clone()).await;
             }
             for label in disposable_labels {
                 if let Some(window) = app.get_webview_window(&label) {
@@ -1134,22 +1440,11 @@ async fn open_desktop_session(
             )
                 .into_response();
         };
-        match tokio::task::spawn_blocking(move || {
-            open_desktop_session_window(app, session_id)
-        })
-        .await
-        {
-            Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
-            Ok(Err(error)) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": error })),
-            )
-                .into_response(),
+        match open_desktop_session_window_on_main_thread(app, session_id).await {
+            Ok(()) => StatusCode::NO_CONTENT.into_response(),
             Err(error) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "error": format!("VisualTeX Session window task failed: {error}")
-                })),
+                Json(serde_json::json!({ "error": error })),
             )
                 .into_response(),
         }
@@ -1207,6 +1502,28 @@ async fn open_desktop_bulk_import(
                 Json(serde_json::json!({
                     "error": format!("VisualTeX import window task failed: {error}")
                 })),
+            )
+                .into_response(),
+        }
+    }
+}
+
+async fn prewarm_desktop_editor(State(context): State<ServerContext>) -> Response {
+    #[cfg(not(target_os = "windows"))]
+    {
+        return StatusCode::NO_CONTENT.into_response();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let Some(app) = context.companion.app.clone() else {
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        };
+        match prewarm_desktop_editor_window_on_main_thread(app).await {
+            Ok(()) => StatusCode::NO_CONTENT.into_response(),
+            Err(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": error })),
             )
                 .into_response(),
         }
@@ -2356,8 +2673,35 @@ async fn patch_session(
     Json(patch): Json<serde_json::Value>,
 ) -> Response {
     let store = context.companion.session_store.clone();
-    match run_session_operation(move || store.patch(&session_id, patch)).await {
-        Ok(session) => Json(session).into_response(),
+    let patch_session_id = session_id.clone();
+    #[cfg(target_os = "windows")]
+    let app = context.companion.app.clone();
+    match run_session_operation(move || store.patch(&patch_session_id, patch)).await {
+        Ok(session) => {
+            #[cfg(target_os = "windows")]
+            let hide_editor =
+                matches!(
+                    session.status,
+                    OfficeSessionStatus::Completed
+                        | OfficeSessionStatus::Cancelled
+                        | OfficeSessionStatus::Failed
+                )
+                || (session.mode == OfficeSessionMode::Edit
+                    && session.status == OfficeSessionStatus::Committing
+                    && session.object_mode == "wordOmml");
+            if hide_editor {
+                if let Some(app) = app {
+                    if let Err(error) =
+                        hide_owned_office_editor_on_main_thread(app, session_id.clone()).await
+                    {
+                        crate::app_lifecycle::append_lifecycle_log(format!(
+                            "edit-committing/terminal Session could not synchronously hide Office editor session={session_id}: {error}"
+                        ));
+                    }
+                }
+            }
+            Json(session).into_response()
+        }
         Err(error) => session_error_response(error),
     }
 }
@@ -2506,6 +2850,10 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         .route(
             "/app/sessions/{session_id}/open",
             post(open_desktop_session),
+        )
+        .route(
+            "/app/editor/prewarm",
+            post(prewarm_desktop_editor),
         )
         .route(
             "/app/converter/prewarm",
@@ -2719,14 +3067,16 @@ pub async fn run(companion: OfficeCompanionState) -> Result<(), String> {
         ),
     );
 
-    let result = axum_server::from_tcp_rustls(listener, tls)
+    let server = axum_server::from_tcp_rustls(listener, tls)
         .map_err(|error| {
             let error = format!("Unable to create Office TLS server: {error}");
             append_office_log(&companion.paths, "companion.log", &error);
             error
         })?
         .handle(handle)
-        .serve(build_router(companion.clone()).into_make_service())
+        .serve(build_router(companion.clone()).into_make_service());
+
+    let result = server
         .await
         .map_err(|error| format!("VisualTeX Office companion server failed: {error}"));
 

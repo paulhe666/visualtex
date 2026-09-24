@@ -146,12 +146,14 @@ public sealed class VisualTeXSessionClient : IDisposable
     private readonly CompanionConfiguration _configuration;
     private readonly VisualTeXCompanionException? _configurationException;
     private readonly HttpClient _http;
+    private readonly SemaphoreSlim _editorPrewarmGate = new(1, 1);
     private readonly SemaphoreSlim _converterPrewarmGate = new(1, 1);
     private string? _installToken;
     private static readonly object ClientLogLock = new();
     private string _lastServerCertificateThumbprint = string.Empty;
     private string _lastTlsPolicyErrors = string.Empty;
     private bool _hasValidatedServerCertificate;
+    private bool _editorPrewarmed;
     private bool _converterPrewarmed;
     private bool _disposed;
     private long _lastHealthyUtcTicks;
@@ -339,6 +341,27 @@ public sealed class VisualTeXSessionClient : IDisposable
             new StringContent("{}", Encoding.UTF8, "application/json"),
             cancellationToken)).ConfigureAwait(false);
         await EnsureSuccessAsync(response).ConfigureAwait(false);
+    }
+
+    public async Task PrewarmEditorAsync(CancellationToken cancellationToken)
+    {
+        if (_editorPrewarmed) return;
+        await _editorPrewarmGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_editorPrewarmed) return;
+            EnsureAuthorizationHeader();
+            using var response = await SendTrackedAsync(() => _http.PostAsync(
+                "/api/v1/app/editor/prewarm",
+                new StringContent("{}", Encoding.UTF8, "application/json"),
+                cancellationToken)).ConfigureAwait(false);
+            await EnsureSuccessAsync(response).ConfigureAwait(false);
+            _editorPrewarmed = true;
+        }
+        finally
+        {
+            _editorPrewarmGate.Release();
+        }
     }
 
     public async Task PrewarmConverterAsync(CancellationToken cancellationToken)
@@ -619,6 +642,47 @@ public sealed class VisualTeXSessionClient : IDisposable
 
     private static CompanionConfiguration LoadConfiguration()
     {
+        var acceptancePortText = Environment.GetEnvironmentVariable(
+            "VISUALTEX_ACCEPTANCE_OFFICE_COMPANION_PORT");
+        if (int.TryParse(
+                acceptancePortText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var acceptancePort)
+            && acceptancePort is > 0 and <= 65535)
+        {
+            var acceptanceProtocolText = Environment.GetEnvironmentVariable(
+                "VISUALTEX_ACCEPTANCE_OFFICE_PROTOCOL_VERSION");
+            _ = int.TryParse(
+                acceptanceProtocolText,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var acceptanceProtocol);
+            return new CompanionConfiguration
+            {
+                ExecutablePath = (
+                    Environment.GetEnvironmentVariable(
+                        "VISUALTEX_ACCEPTANCE_OFFICE_EXECUTABLE_PATH")
+                    ?? string.Empty).Trim().Trim('"'),
+                AppDataRoot = (
+                    Environment.GetEnvironmentVariable(
+                        "VISUALTEX_ACCEPTANCE_OFFICE_APP_DATA_ROOT")
+                    ?? string.Empty).Trim().Trim('"'),
+                CertificatePath = (
+                    Environment.GetEnvironmentVariable(
+                        "VISUALTEX_ACCEPTANCE_OFFICE_CERTIFICATE_PATH")
+                    ?? string.Empty).Trim().Trim('"'),
+                CertificateThumbprint = (
+                    Environment.GetEnvironmentVariable(
+                        "VISUALTEX_ACCEPTANCE_OFFICE_CERTIFICATE_THUMBPRINT")
+                    ?? string.Empty).Trim(),
+                CompanionPort = acceptancePort,
+                ProtocolVersion = acceptanceProtocol > 0
+                    ? acceptanceProtocol
+                    : 1,
+            };
+        }
+
         const string registryPath = @"HKCU\Software\VisualTeX\OfficeIntegration";
         var diagnostic = new CompanionHealthDiagnostic
         {
@@ -1303,6 +1367,7 @@ public sealed class VisualTeXSessionClient : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _editorPrewarmGate.Dispose();
         _converterPrewarmGate.Dispose();
         _http.Dispose();
     }

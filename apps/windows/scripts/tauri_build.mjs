@@ -147,6 +147,36 @@ function preparePatchedNsisTemplate({ noOcrBundle = false, targetRoot = null } =
   }
   template = template.replace(oldSameVersionLeave, newSameVersionLeave);
 
+  const oldUninstallOrdering = [
+    "Section Uninstall",
+    "",
+    "  !ifmacrodef NSIS_HOOK_PREUNINSTALL",
+    "    !insertmacro NSIS_HOOK_PREUNINSTALL",
+    "  !endif",
+    "",
+    '  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"',
+  ].join("\n");
+  const newUninstallOrdering = [
+    "Section Uninstall",
+    "",
+    "  ; Refuse the uninstall before any destructive VisualTeX hook runs.",
+    "  ; The Office-uninstall hook removes the machine-wide VSTO MSI, so running",
+    "  ; it before CheckIfAppIsRunning can leave the desktop app installed but",
+    "  ; its Word/PowerPoint integration removed when a same-version reinstall",
+    "  ; meets a still-running VisualTeX process.",
+    '  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"',
+    "",
+    "  !ifmacrodef NSIS_HOOK_PREUNINSTALL",
+    "    !insertmacro NSIS_HOOK_PREUNINSTALL",
+    "  !endif",
+  ].join("\n");
+  if (!template.includes(oldUninstallOrdering)) {
+    throw new Error(
+      "The Tauri NSIS uninstall ordering changed unexpectedly; refusing a build where Office integration could be removed before the running-app guard",
+    );
+  }
+  template = template.replace(oldUninstallOrdering, newUninstallOrdering);
+
   const oldMaintenancePageAnchor = [
     "; 4. Custom page to ask user if he wants to reinstall/uninstall",
     ";    only if a previous installation was detected",

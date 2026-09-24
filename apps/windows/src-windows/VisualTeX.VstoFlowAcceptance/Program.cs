@@ -650,6 +650,10 @@ internal static partial class Program
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
                 mode,
+                "word-physical-ui-edit-performance",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
                 "word-installed-mathtype-reedit-regression",
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
@@ -1253,6 +1257,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-installed-inline-ole-ribbon-reedit", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordInstalledInlineOleRibbonReeditAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-physical-ui-edit-performance", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordPhysicalUiEditPerformanceAcceptance(client, artifactRoot);
             }
             else if (string.Equals(mode, "word-installed-visualtex-numbered-sequence-ui", StringComparison.OrdinalIgnoreCase))
             {
