@@ -1,10 +1,72 @@
 /** Model commands compiled into the MathLive module, with no React/DOM dependency. */
 export function patchVisualTexMathLiveEditingKernel(source: string) {
+  let patched = source;
   const anchor = "// src/editor/undo.ts";
-  if (source.split(anchor).length !== 2) {
+  if (patched.split(anchor).length !== 2) {
     throw new Error("VisualTeX MathLive editing kernel anchor changed");
   }
-  return source.replace(anchor, String.raw`
+
+  const backwardPreflightAnchor = [
+    '  if (!model.contentWillChange({ inputType: "deleteContentBackward" }))',
+    '    return false;',
+    '  if (!model.selectionIsCollapsed)',
+  ].join("\n");
+  if (patched.split(backwardPreflightAnchor).length !== 2) {
+    throw new Error("VisualTeX MathLive backward empty-row preflight anchor changed");
+  }
+  patched = patched.replace(
+    backwardPreflightAnchor,
+    [
+      '  if (!model.contentWillChange({ inputType: "deleteContentBackward" }))',
+      '    return false;',
+      '  const visualTexEmptyRow = visualTexEmptyEnvironmentRowInfo(model);',
+      '  if (visualTexEmptyRow) {',
+      '    return model.deferNotifications(',
+      '      { content: true, selection: true, type: "deleteContentBackward" },',
+      '      () => visualTexDeleteEmptyEnvironmentRowAt(',
+      '        model,',
+      '        visualTexEmptyRow.array,',
+      '        visualTexEmptyRow.row,',
+      '        visualTexEmptyRow.column,',
+      '        "backward",',
+      '      ),',
+      '    );',
+      '  }',
+      '  if (!model.selectionIsCollapsed)',
+    ].join("\n"),
+  );
+
+  const forwardPreflightAnchor = [
+    '  if (!model.contentWillChange({ inputType: "deleteContentForward" }))',
+    '    return false;',
+    '  if (!model.selectionIsCollapsed)',
+  ].join("\n");
+  if (patched.split(forwardPreflightAnchor).length !== 2) {
+    throw new Error("VisualTeX MathLive forward empty-row preflight anchor changed");
+  }
+  patched = patched.replace(
+    forwardPreflightAnchor,
+    [
+      '  if (!model.contentWillChange({ inputType: "deleteContentForward" }))',
+      '    return false;',
+      '  const visualTexEmptyRow = visualTexEmptyEnvironmentRowInfo(model);',
+      '  if (visualTexEmptyRow) {',
+      '    return model.deferNotifications(',
+      '      { content: true, selection: true, type: "deleteContentForward" },',
+      '      () => visualTexDeleteEmptyEnvironmentRowAt(',
+      '        model,',
+      '        visualTexEmptyRow.array,',
+      '        visualTexEmptyRow.row,',
+      '        visualTexEmptyRow.column,',
+      '        "forward",',
+      '      ),',
+      '    );',
+      '  }',
+      '  if (!model.selectionIsCollapsed)',
+    ].join("\n"),
+  );
+
+  return patched.replace(anchor, String.raw`
 // VisualTeX: edit the existing atom tree instead of serializing and reparsing it.
 function visualTexDefaultItalic(atom, mathfield) {
   const shape = atom.style.letterShapeStyle || mathfield.letterShapeStyle || "tex";
@@ -108,14 +170,14 @@ function visualTexRestoreInheritedPersistentStyle(mathfield, atoms) {
   }
 }
 function visualTexApplyPersistentFontStyle(atom, mathfield, persistent) {
-  if (!persistent.bold && !persistent.italic) return;
+  if (!persistent.bold && persistent.italic === null) return;
   const font = visualTexAtomFont(atom, mathfield);
   if (persistent.bold) font.bold = true;
-  if (persistent.italic) font.italic = true;
+  if (persistent.italic !== null) font.italic = persistent.italic;
   const style = { ...atom.style };
   if (atom.mode === "text") {
     if (persistent.bold) style.fontSeries = font.bold ? "b" : "m";
-    if (persistent.italic) style.fontShape = font.italic ? "it" : "n";
+    if (persistent.italic !== null) style.fontShape = font.italic ? "it" : "n";
   } else if (atom.mode === "math") {
     const variant = style.variant || "normal";
     if (!["normal", "main", "ams"].includes(variant)) {
@@ -144,7 +206,7 @@ function visualTexApplyPersistentTypingStyle(mathfield, atoms) {
   const persistent = mathfield.visualTexPersistentTypingStyle;
   if (!persistent || (
     !persistent.bold &&
-    !persistent.italic &&
+    persistent.italic === null &&
     !persistent.color &&
     !persistent.backgroundColor
   )) return;
@@ -233,6 +295,55 @@ function visualTexToggleSelectionStyle(model, kind, requestedSelection) {
 }
 function visualTexAlignedCellIsEmpty(cell) {
   return !cell || cell.every(atom => atom.type === "first");
+}
+function visualTexEnvironmentCellIsEmpty(cell) {
+  return !cell || cell.every(atom =>
+    atom.type === "first" || atom.type === "placeholder" || atom.type === "prompt");
+}
+function visualTexEnvironmentCellBranch(model, array) {
+  if (!(array instanceof ArrayAtom)) return null;
+  const cursor = model.at(model.position);
+  const candidates = [cursor, cursor?.rightSibling, cursor?.leftSibling];
+  for (const candidate of candidates) {
+    if (candidate?.parent === array && Array.isArray(candidate.parentBranch)) {
+      return candidate.parentBranch;
+    }
+  }
+  return null;
+}
+function visualTexEmptyEnvironmentRowInfo(model) {
+  const array = model.parentEnvironment;
+  const branch = visualTexEnvironmentCellBranch(model, array);
+  if (!Array.isArray(branch) ||
+      !visualTexCanDeleteEmptyEnvironmentRow(array, branch[0])) return null;
+  return { array, row: branch[0], column: branch[1] };
+}
+function visualTexCanDeleteEmptyEnvironmentRow(array, row) {
+  if (!(array instanceof ArrayAtom) ||
+      !["cases", "dcases", "rcases"].includes(array.environmentName) ||
+      array.rowCount <= 1 ||
+      row < 0 ||
+      row >= array.rowCount) return false;
+  for (let column = 0; column < array.colCount; column += 1) {
+    if (!visualTexEnvironmentCellIsEmpty(array.getCell(row, column))) return false;
+  }
+  return true;
+}
+function visualTexDeleteEmptyEnvironmentRowAt(model, array, row, column, direction) {
+  if (!visualTexCanDeleteEmptyEnvironmentRow(array, row)) return false;
+  array.removeRow(row);
+  const targetRow = direction === "backward"
+    ? Math.max(0, row - 1)
+    : Math.min(row, array.rowCount - 1);
+  const targetColumn = Math.max(0, Math.min(column || 0, array.colCount - 1));
+  setPositionInCell(
+    model,
+    array,
+    targetRow,
+    targetColumn,
+    direction === "backward" ? "end" : "start",
+  );
+  return true;
 }
 function visualTexProvisionalAlignRows(array) {
   if (!(array.visualTexProvisionalAlignRows instanceof Set)) {

@@ -1171,29 +1171,47 @@
   font-size: 17px;
 }
 
-/* The settings font preview must be driven by its local preference variables,
-   not by MathLive's bundled KaTeX families or the globally persisted font. */
-.formula-font-live-preview .math-preview .ML__mathit,
-.formula-font-live-preview .math-preview .ML__mathnormal,
-.formula-font-live-preview .math-preview .ML__mathbfit,
-.formula-font-live-preview .math-preview .ML__lcGreek,
-.formula-font-live-preview .math-preview .ML__ucGreek,
-.formula-font-live-preview .math-preview .ML__latin {
+/* The settings font preview changes only mathematical letter glyphs.
+   Operators and relation symbols (for example \cdot, +, =, \times) must keep
+   MathLive/KaTeX's native symbol fonts and metrics across font preferences. */
+.formula-font-live-preview
+  .math-preview
+  .ML__mathit.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__mathnormal.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__mathbfit.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__lcGreek.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__ucGreek.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__latin.visualtex-formula-letter-glyph {
   font-family: var(--visualtex-formula-italic-font-family) !important;
 }
 
-.formula-font-live-preview .math-preview .ML__cmr,
-.formula-font-live-preview .math-preview .ML__mathbf,
-.formula-font-live-preview .math-preview .ML__mathrm,
-.formula-font-live-preview .math-preview .ML__operator_name {
+.formula-font-live-preview
+  .math-preview
+  .ML__cmr.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__mathbf.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__mathrm.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__operator_name.visualtex-formula-letter-glyph {
   font-family: var(--visualtex-formula-upright-font-family) !important;
 }
 
-.formula-font-live-preview .math-preview .ML__text,
-.formula-font-live-preview .math-preview .ML__text span,
-.formula-font-live-preview .math-preview .ML__textord {
-  font-family: var(--visualtex-formula-chinese-font-family),
-    var(--visualtex-formula-upright-font-family) !important;
+.formula-font-live-preview .math-preview .visualtex-chinese-glyph {
+  font-family: var(--visualtex-formula-chinese-font-family) !important;
 }
 
 /* Formula row vertical spacing is a live editor preference. */

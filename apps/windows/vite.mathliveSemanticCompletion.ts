@@ -6,8 +6,17 @@ export function patchVisualTexMathLiveSemanticCompletion(source: string) {
     if (source.split(from).length !== 2) throw new Error("MathLive semantic completion anchor changed: " + from.slice(0, 70));
     source = source.replace(from, to);
   };
+  const nativeCompletionTemplateOverrides = new Map<string, string>([
+    [
+      "\\begin{cases}",
+      "\\begin{cases}\\placeholder{} & \\placeholder{}\\end{cases}",
+    ],
+  ]);
   const records = commandRegistry.map(c => ({
-    id: c.id, command: c.command, latex: c.insertTemplate, preview: c.previewLatex,
+    id: c.id,
+    command: c.command,
+    latex: nativeCompletionTemplateOverrides.get(c.command) ?? c.insertTemplate,
+    preview: c.previewLatex,
     // Search can still use translated keywords, but the native list only
     // presents the command and its mathematical preview.
     label: "", words: [c.labelEn, ...c.aliases, ...c.keywords], priority: c.defaultPriority,
@@ -85,6 +94,12 @@ function suggest(mf, s) {
     "\\vert", "\\Vert",
   ]);
   const exactLiteralDelimiter = literalDelimiterCommands.has(s);
+  // \partial is an atomic MathLive symbol even though VisualTeX also exposes
+  // a richer partial-derivative fraction template under the same discovery
+  // name. An exact raw command must preserve the literal symbol; prefix/search
+  // queries still keep the semantic derivative template available.
+  const exactAtomicNativeCommands = new Set(["\\partial"]);
+  const exactAtomicNative = exactAtomicNativeCommands.has(s);
   const results = new Map();
   const family = /^(int|integ)/.test(query) ? ["int-bare", "int", "oint", "intplain", "iint", "iiint"] :
     /^(sum|summ)/.test(query) ? ["sum", "series", "sigma", "Sigma"] :
@@ -113,13 +128,21 @@ function suggest(mf, s) {
     }, 6000);
   }
   for (const record of visualTexCompletionCatalog) {
-    const name = record.command.replace(/^\\/, "");
+    // Raw LaTeX command completion must only consider actual control
+    // sequences. Plain-symbol catalog entries such as the physics constant
+    // "c" must never outrank the real command "\\c" just because stripping
+    // a leading backslash makes their names look identical.
+    if (!record.command.startsWith("\\")) continue;
+    const name = record.command.slice(1);
     const normalizedName = name.toLowerCase();
     const rawQuery = s.slice(1);
-    // When the user has typed a literal delimiter command exactly,
-    // semantic templates must not participate at all. For example \langle is
-    // a single delimiter, not "expectation", "braket" or "matrix element".
-    if (exactLiteralDelimiter) continue;
+    // When the user has typed a literal delimiter or an atomic native
+    // symbol exactly, semantic templates must not replace that literal source.
+    // Prefix discovery remains unchanged for non-exact queries.
+    if (
+      exactLiteralDelimiter ||
+      (exactAtomicNative && record.command === s && record.latex !== s)
+    ) continue;
     let score = -Infinity;
     if (name === rawQuery) score = 5000;
     else if (normalizedName === query) score = 760;
@@ -146,7 +169,11 @@ function suggest(mf, s) {
     // \\norm must never compete with their editable VisualTeX template as a
     // bare command. Large operators are the intentional exception: \\int,
     // \\sum, ... are meaningful by themselves and therefore keep both forms.
-    if (parameterizedCatalogCommands.has(command) && !bareOperatorCommands.has(command)) continue;
+    if (
+      parameterizedCatalogCommands.has(command) &&
+      !bareOperatorCommands.has(command) &&
+      !(exactAtomicNative && command === s)
+    ) continue;
     const exact = command === s;
     const usageId = "mathlive-native:" + command;
     const score = (exact ? 5000 : 445 - (command.length - s.length)) +
@@ -294,7 +321,9 @@ function createSuggestionPopover(mf, html) {
       const owner = panel.visualTexMathfield;
       if (!item || !owner) return;
       const entries = owner.visualTexCompletion?.suggestions || [];
-      const index = entries.indexOf(item.dataset.command);
+      const insertionLatex =
+        item.dataset.visualtexInsertionLatex || item.dataset.command;
+      const index = entries.indexOf(insertionLatex);
       if (index < 0) return;
       owner.suggestionIndex = index;
       complete(owner, "accept-all"); owner.dirty = true; owner.focus();
@@ -304,6 +333,12 @@ function createSuggestionPopover(mf, html) {
   panel.visualTexMathfield = mf;
   panel.setAttribute("aria-hidden", "false");
   panel.innerHTML = globalThis.MathfieldElement.createHTML(html);
+  for (const item of panel.querySelectorAll("li[data-command]")) {
+    const insertionLatex = item.dataset.command || "";
+    const info = visualTexCompletionInfo(mf, insertionLatex);
+    item.dataset.visualtexInsertionLatex = insertionLatex;
+    item.dataset.command = info.command || insertionLatex;
+  }
   return panel;
 }
 ` + source.slice(createEnd);
@@ -318,6 +353,65 @@ function createSuggestionPopover(mf, html) {
   replace(`  if (!isSuggestionPopoverVisible()) return;
   if (((_a3 = mf.model.at(mf.model.position))`, `  if (!isSuggestionPopoverVisible() || document.getElementById("mathlive-suggestion-popover")?.visualTexMathfield !== mf) return;
   if (((_a3 = mf.model.at(mf.model.position))`);
+  // Keep command candidates inside the actual visible viewport. MathLive's
+  // stock placement chooses above/below but can still produce a negative top
+  // when the panel is taller than the available side, which clips the first
+  // candidates near the top of the editor.
+  replace(`  const spaceAbove = position.y - position.height;
+  const spaceBelow = viewportHeight - scrollbarHeight - virtualkeyboardHeight - position.y;
+  if (spaceBelow < spaceAbove) {
+    panel.classList.add("ML__popover--reverse-direction");
+    panel.classList.remove("top-tip");
+    panel.classList.add("bottom-tip");
+    panel.style.top = \`\${position.y - position.height - panel.offsetHeight - 15}px\`;
+  } else {
+    panel.classList.remove("ML__popover--reverse-direction");
+    panel.classList.add("top-tip");
+    panel.classList.remove("bottom-tip");
+    panel.style.top = \`\${position.y + 15}px\`;
+  }`, `  const viewportPadding = 8;
+  const tipGap = 15;
+  const viewportRight = viewportWidth - scrollbarWidth - viewportPadding;
+  const viewportBottom =
+    viewportHeight - scrollbarHeight - virtualkeyboardHeight - viewportPadding;
+  const centeredLeft = position.x - panel.offsetWidth / 2;
+  panel.style.left = \`\${Math.max(
+    viewportPadding,
+    Math.min(centeredLeft, viewportRight - panel.offsetWidth),
+  )}px\`;
+
+  const spaceAbove = Math.max(
+    0,
+    position.y - position.height - viewportPadding - tipGap,
+  );
+  const spaceBelow = Math.max(0, viewportBottom - position.y - tipGap);
+  const placeAbove = spaceAbove > spaceBelow;
+  const availableHeight = Math.max(
+    36,
+    Math.min(320, placeAbove ? spaceAbove : spaceBelow),
+  );
+  panel.style.setProperty(
+    "--visualtex-suggestion-max-height",
+    \`\${availableHeight}px\`,
+  );
+
+  if (placeAbove) {
+    panel.classList.add("ML__popover--reverse-direction");
+    panel.classList.remove("top-tip");
+    panel.classList.add("bottom-tip");
+    panel.style.top = \`\${Math.max(
+      viewportPadding,
+      position.y - position.height - panel.offsetHeight - tipGap,
+    )}px\`;
+  } else {
+    panel.classList.remove("ML__popover--reverse-direction");
+    panel.classList.add("top-tip");
+    panel.classList.remove("bottom-tip");
+    panel.style.top = \`\${Math.max(
+      viewportPadding,
+      Math.min(position.y + tipGap, viewportBottom - panel.offsetHeight),
+    )}px\`;
+  }`);
   replace(`  { nextSuggestion, previousSuggestion },`, `  { nextSuggestion, previousSuggestion, visualTexDismissSuggestions: mf => { hideSuggestionPopover(mf); return false; } },`);
   return source;
 }

@@ -1,3 +1,4 @@
+import { VISUALTEX_CORE_LATEX_ALIASES } from "../math/coreLatexAliases";
 import type { CommandCategory, LatexCommand } from "../types/command";
 
 interface CompatibilityCommandSpec {
@@ -13,11 +14,33 @@ interface CompatibilityCommandSpec {
   priority?: number;
   wrapper?: boolean;
   canonicalWrapperCommand?: string;
+  sourceWrapperKind?: "variant" | "accent";
+  directPlaceholderWrapper?: boolean;
   rawPlaceholderTemplate?: string;
   sourceSupported?: boolean;
 }
 
+const coreLatexAliasSpecs: CompatibilityCommandSpec[] =
+  VISUALTEX_CORE_LATEX_ALIASES.map((alias) => ({
+    id: `core-alias-${alias.id}`,
+    command: `\\${alias.name}`,
+    insertTemplate: `\\${alias.name}`,
+    previewLatex: alias.previewLatex,
+    labelZh: alias.labelZh,
+    labelEn: alias.labelEn,
+    aliases: alias.aliases,
+    keywords: alias.keywords,
+    category: alias.category,
+    priority: alias.priority,
+  }));
+
 const specs: CompatibilityCommandSpec[] = [
+  ...coreLatexAliasSpecs,
+  { id: "core-pod", command: "\\pod", insertTemplate: "\\pod{\\placeholder{}}", previewLatex: "\\quad(n)", labelZh: "同余括号", labelEn: "Modulo parenthesis", aliases: ["pod"], keywords: ["amsmath", "同余", "模"], category: "relation", priority: 68, rawPlaceholderTemplate: "\\pod{\\placeholder{}}" },
+  { id: "core-substack", command: "\\substack", insertTemplate: "\\substack{\\placeholder{}}", previewLatex: "\\begin{array}{c}i<j\\\\i+j=n\\end{array}", labelZh: "多行下标", labelEn: "Substack", aliases: ["substack"], keywords: ["amsmath", "多行", "下标"], category: "structure", priority: 74, rawPlaceholderTemplate: "\\substack{\\placeholder{}}" },
+  { id: "core-prescript", command: "\\prescript", insertTemplate: "\\prescript{\\placeholder{}}{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\prescript{14}{6}{C}", labelZh: "左上下标", labelEn: "Prescript", aliases: ["prescript"], keywords: ["mathtools", "左上标", "左下标"], category: "structure", priority: 70, rawPlaceholderTemplate: "\\prescript{\\placeholder{}}{\\placeholder{}}{\\placeholder{}}" },
+  { id: "core-sideset", command: "\\sideset", insertTemplate: "\\sideset{_\\placeholder{}^\\placeholder{}}{_\\placeholder{}^\\placeholder{}}{\\placeholder{}}", previewLatex: "\\sideset{_a^b}{_c^d}{\\sum}", labelZh: "算符左右标记", labelEn: "Side-set operator", aliases: ["sideset"], keywords: ["amsmath", "算符", "上下标"], category: "structure", priority: 66 },
+
   // unicode-math style math alphabet commands. VisualTeX keeps these spellings
   // in source while supplying rendering-only compatibility macros.
   { id: "sym-up", command: "\\symup", insertTemplate: "\\symup{\\placeholder{}}", previewLatex: "\\symup{ABC}", labelZh: "Unicode 数学正体", labelEn: "Unicode math upright", aliases: ["symup"], keywords: ["正体", "unicode math", "字体"], wrapper: true },
@@ -57,15 +80,15 @@ const specs: CompatibilityCommandSpec[] = [
   // Common package shorthand commands already supported by the compatibility
   // macro layer. Registering them here makes raw-command completion and Space
   // confirmation consistent with \mathbb and \bm.
-  { id: "shortcut-abs", command: "\\abs", insertTemplate: "\\abs{\\placeholder{}}", previewLatex: "\\abs{x}", labelZh: "绝对值简称", labelEn: "Absolute value shorthand", aliases: ["abs"], keywords: ["physics", "简称", "绝对值"], category: "structure", priority: 86, wrapper: true },
-  { id: "shortcut-norm", command: "\\norm", insertTemplate: "\\norm{\\placeholder{}}", previewLatex: "\\norm{\\mathbf{x}}", labelZh: "范数简称", labelEn: "Norm shorthand", aliases: ["norm"], keywords: ["physics", "简称", "范数"], category: "matrix", priority: 86, wrapper: true },
-  { id: "shortcut-dd", command: "\\dd", insertTemplate: "\\dd{\\placeholder{}}", previewLatex: "\\dd{x}", labelZh: "微分元简称", labelEn: "Differential shorthand", aliases: ["dd"], keywords: ["physics", "简称", "微分"], category: "calculus", priority: 88, wrapper: true },
-  { id: "shortcut-bra", command: "\\bra", insertTemplate: "\\bra{\\placeholder{}}", previewLatex: "\\bra{\\psi}", labelZh: "Bra 简称", labelEn: "Bra shorthand", aliases: ["bra"], keywords: ["physics", "狄拉克"], category: "physics", priority: 90, wrapper: true },
-  { id: "shortcut-ket", command: "\\ket", insertTemplate: "\\ket{\\placeholder{}}", previewLatex: "\\ket{\\psi}", labelZh: "Ket 简称", labelEn: "Ket shorthand", aliases: ["ket"], keywords: ["physics", "狄拉克"], category: "physics", priority: 90, wrapper: true },
-  { id: "shortcut-expval", command: "\\expval", insertTemplate: "\\expval{\\placeholder{}}", previewLatex: "\\expval{A}", labelZh: "期望值简称", labelEn: "Expectation shorthand", aliases: ["expval"], keywords: ["physics", "期望值"], category: "physics", priority: 84, wrapper: true },
+  { id: "shortcut-abs", command: "\\abs", insertTemplate: "\\abs{\\placeholder{}}", previewLatex: "\\abs{x}", labelZh: "绝对值简称", labelEn: "Absolute value shorthand", aliases: ["abs"], keywords: ["physics", "简称", "绝对值"], category: "structure", priority: 86, wrapper: true, directPlaceholderWrapper: true },
+  { id: "shortcut-norm", command: "\\norm", insertTemplate: "\\norm{\\placeholder{}}", previewLatex: "\\norm{\\mathbf{x}}", labelZh: "范数简称", labelEn: "Norm shorthand", aliases: ["norm"], keywords: ["physics", "简称", "范数"], category: "matrix", priority: 86, wrapper: true, directPlaceholderWrapper: true },
+  { id: "shortcut-dd", command: "\\dd", insertTemplate: "\\dd{\\placeholder{}}", previewLatex: "\\dd{x}", labelZh: "微分元简称", labelEn: "Differential shorthand", aliases: ["dd"], keywords: ["physics", "简称", "微分"], category: "calculus", priority: 88, wrapper: true, directPlaceholderWrapper: true },
+  { id: "shortcut-bra", command: "\\bra", insertTemplate: "\\bra{\\placeholder{}}", previewLatex: "\\bra{\\psi}", labelZh: "Bra 简称", labelEn: "Bra shorthand", aliases: ["bra"], keywords: ["physics", "狄拉克"], category: "physics", priority: 90, wrapper: true, directPlaceholderWrapper: true },
+  { id: "shortcut-ket", command: "\\ket", insertTemplate: "\\ket{\\placeholder{}}", previewLatex: "\\ket{\\psi}", labelZh: "Ket 简称", labelEn: "Ket shorthand", aliases: ["ket"], keywords: ["physics", "狄拉克"], category: "physics", priority: 90, wrapper: true, directPlaceholderWrapper: true },
+  { id: "shortcut-expval", command: "\\expval", insertTemplate: "\\expval{\\placeholder{}}", previewLatex: "\\expval{A}", labelZh: "期望值简称", labelEn: "Expectation shorthand", aliases: ["expval"], keywords: ["physics", "期望值"], category: "physics", priority: 84, wrapper: true, directPlaceholderWrapper: true },
   { id: "shortcut-vb", command: "\\vb", insertTemplate: "\\vb{\\placeholder{}}", previewLatex: "\\vb{v}", labelZh: "粗向量简称", labelEn: "Bold vector shorthand", aliases: ["vb"], keywords: ["physics", "向量", "简称"], category: "physics", priority: 84, wrapper: true },
-  { id: "shortcut-va", command: "\\va", insertTemplate: "\\va{\\placeholder{}}", previewLatex: "\\va{v}", labelZh: "箭头粗向量简称", labelEn: "Arrow vector shorthand", aliases: ["va"], keywords: ["physics", "向量", "简称"], category: "physics", priority: 82, wrapper: true },
-  { id: "shortcut-vu", command: "\\vu", insertTemplate: "\\vu{\\placeholder{}}", previewLatex: "\\vu{e}", labelZh: "单位向量简称", labelEn: "Unit vector shorthand", aliases: ["vu"], keywords: ["physics", "单位向量", "简称"], category: "physics", priority: 82, wrapper: true },
+  { id: "shortcut-va", command: "\\va", insertTemplate: "\\va{\\placeholder{}}", previewLatex: "\\va{v}", labelZh: "箭头粗向量简称", labelEn: "Arrow vector shorthand", aliases: ["va"], keywords: ["physics", "向量", "简称"], category: "physics", priority: 82, wrapper: true, sourceWrapperKind: "accent" },
+  { id: "shortcut-vu", command: "\\vu", insertTemplate: "\\vu{\\placeholder{}}", previewLatex: "\\vu{e}", labelZh: "单位向量简称", labelEn: "Unit vector shorthand", aliases: ["vu"], keywords: ["physics", "单位向量", "简称"], category: "physics", priority: 82, wrapper: true, sourceWrapperKind: "accent" },
 
   { id: "shortcut-comm", command: "\\comm", insertTemplate: "\\comm{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\comm{A}{B}", labelZh: "对易子简称", labelEn: "Commutator shorthand", aliases: ["comm"], keywords: ["physics", "对易子"], category: "physics", priority: 84, rawPlaceholderTemplate: "\\comm{\\placeholder{}}{\\placeholder{}}" },
   { id: "shortcut-acomm", command: "\\acomm", insertTemplate: "\\acomm{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\acomm{A}{B}", labelZh: "反对易子简称", labelEn: "Anticommutator shorthand", aliases: ["acomm"], keywords: ["physics", "反对易子"], category: "physics", priority: 80, rawPlaceholderTemplate: "\\acomm{\\placeholder{}}{\\placeholder{}}" },
@@ -117,6 +140,12 @@ export const compatibilityRequiredArgumentCounts = new Map<string, number>([
   }),
 ]);
 
+export const compatibilityWrapperCommands = new Set(
+  specs
+    .filter((spec) => spec.wrapper)
+    .map((spec) => spec.command),
+);
+
 export const compatibilityWrapperPreviews = new Map<string, string>(
   specs
     .filter((spec) => spec.wrapper)
@@ -127,6 +156,28 @@ export const compatibilityWrapperCanonicalTargets = new Map<string, string>(
   specs
     .filter((spec) => spec.wrapper && spec.canonicalWrapperCommand)
     .map((spec) => [spec.command, spec.canonicalWrapperCommand!]),
+);
+
+export const compatibilityDirectPlaceholderWrappers = new Set(
+  specs
+    .filter((spec) => spec.wrapper && spec.directPlaceholderWrapper)
+    .map((spec) => spec.command),
+);
+
+export const compatibilitySourceWrapperKinds = new Map<
+  string,
+  "variant" | "accent"
+>(
+  specs
+    .filter(
+      (spec) =>
+        spec.wrapper &&
+        !spec.directPlaceholderWrapper,
+    )
+    .map((spec) => [
+      spec.command,
+      spec.sourceWrapperKind ?? "variant",
+    ]),
 );
 
 export const compatibilityRawPlaceholderTemplates = new Map<string, string>(

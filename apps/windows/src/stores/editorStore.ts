@@ -30,6 +30,7 @@ import { normalizeFormulaLinePhysicalWhitespace } from "../math/formulaLineLatex
 import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
 import { createUuid } from "../runtime/browserCompatibility";
 import { safeStorage } from "../runtime/safeStorage";
+import { editorPersistenceStorage } from "../runtime/editorPersistenceStorage";
 import {
   DEFAULT_PNG_EXPORT_BACKGROUND,
   normalizePngExportBackground,
@@ -866,7 +867,7 @@ export const useEditorStore = create<EditorState>()(
     }),
     {
       name: "visualtex-editor",
-      storage: createJSONStorage(() => safeStorage),
+      storage: createJSONStorage(() => editorPersistenceStorage),
       partialize: (state) => ({
         title: state.title,
         lines: state.lines,

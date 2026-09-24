@@ -1,7 +1,19 @@
+import { VISUALTEX_CORE_MATHLIVE_MACROS } from "./coreLatexAliases";
+import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "./physicsKernelMacros";
+
 export type VisualTexPackageCompatibilityMacro = readonly [
   replacement: string,
   argumentCount: number,
 ];
+
+const coreAndPhysicsCompatibilityMacros = Object.fromEntries(
+  [...VISUALTEX_CORE_MATHLIVE_MACROS, ...VISUALTEX_PHYSICS_KERNEL_MACROS].map(
+    (definition) => [
+      definition.name,
+      [definition.def, definition.args] as const,
+    ],
+  ),
+) as Record<string, VisualTexPackageCompatibilityMacro>;
 
 /**
  * Curated package-style aliases whose supported braced forms can be rewritten
@@ -12,6 +24,8 @@ export type VisualTexPackageCompatibilityMacro = readonly [
  * depend on a third-party editor/renderer contract.
  */
 export const VISUALTEX_PACKAGE_COMPATIBILITY_MACROS = Object.freeze({
+  ...coreAndPhysicsCompatibilityMacros,
+
   // bm
   bm: ["\\boldsymbol{#1}", 1] as const,
 

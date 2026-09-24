@@ -105,7 +105,7 @@ function compatibilityMacroDefinition(
   return typeof definition.def === "string" &&
     typeof definition.args === "number" &&
     Number.isInteger(definition.args) &&
-    definition.args > 0
+    definition.args >= 0
     ? { def: definition.def, args: definition.args }
     : null;
 }

@@ -29,6 +29,7 @@ import {
   PanelRightOpen,
   Plus,
   ScanLine,
+  Type,
   X,
 } from "lucide-react";
 import {
@@ -220,7 +221,9 @@ export function EditorWorkspace({
   const [formulaTextColor, setFormulaTextColor] = useState("#2563eb");
   const [formulaBackgroundColor, setFormulaBackgroundColor] = useState("#fef3c7");
   const [persistentFormulaBold, setPersistentFormulaBold] = useState(false);
-  const [persistentFormulaItalic, setPersistentFormulaItalic] = useState(false);
+  const [persistentFormulaShape, setPersistentFormulaShape] = useState<
+    "auto" | "italic" | "upright"
+  >("auto");
   const [
     persistentFormulaTextColorEnabled,
     setPersistentFormulaTextColorEnabled,
@@ -848,7 +851,9 @@ export function EditorWorkspace({
         zoom={zoom}
         persistentTypingStyle={{
           bold: persistentFormulaBold,
-          italic: persistentFormulaItalic,
+          italic: persistentFormulaShape === "auto"
+            ? null
+            : persistentFormulaShape === "italic",
           color: persistentFormulaTextColorEnabled ? formulaTextColor : null,
           backgroundColor: persistentFormulaBackgroundColorEnabled
             ? formulaBackgroundColor
@@ -1118,24 +1123,43 @@ export function EditorWorkspace({
                         type="button"
                         className={
                           "icon-button compact formula-formatting-button is-persistent-action" +
-                          (persistentFormulaItalic ? " is-active" : "")
+                          (persistentFormulaShape !== "auto" ? " is-active" : "")
                         }
                         aria-label={
-                          isEn ? "Persistent italic input" : "持久化斜体输入"
+                          isEn
+                            ? `Persistent input shape: ${persistentFormulaShape}`
+                            : `输入字形：${persistentFormulaShape === "auto" ? "自动" : persistentFormulaShape === "italic" ? "持久斜体" : "持久正体"}`
                         }
                         title={
                           isEn
-                            ? "Persistent italic · affects newly entered glyphs only"
-                            : "持久化斜体 · 仅作用于之后新输入的字符"
+                            ? persistentFormulaShape === "auto"
+                              ? "Automatic math shape · click for persistent italic"
+                              : persistentFormulaShape === "italic"
+                                ? "Persistent italic · click for persistent upright"
+                                : "Persistent upright · click to restore automatic math shape"
+                            : persistentFormulaShape === "auto"
+                              ? "自动数学字形 · 点击启用持久斜体"
+                              : persistentFormulaShape === "italic"
+                                ? "持久斜体 · 点击切换为持久正体"
+                                : "持久正体 · 点击恢复自动数学字形"
                         }
-                        aria-pressed={persistentFormulaItalic}
+                        aria-pressed={persistentFormulaShape !== "auto"}
                         data-formula-persistent-italic
+                        data-formula-persistent-shape={persistentFormulaShape}
                         onPointerDown={preserveFormulaFocus}
                         onClick={() =>
-                          setPersistentFormulaItalic((enabled) => !enabled)
+                          setPersistentFormulaShape((shape) =>
+                            shape === "auto"
+                              ? "italic"
+                              : shape === "italic"
+                                ? "upright"
+                                : "auto",
+                          )
                         }
                       >
-                        <Italic size={15} strokeWidth={2.2} />
+                        {persistentFormulaShape === "upright"
+                          ? <Type size={15} strokeWidth={2.2} />
+                          : <Italic size={15} strokeWidth={2.2} />}
                       </button>
 
                       <button
@@ -1373,7 +1397,7 @@ export function EditorWorkspace({
               </PortalOrInline>
               <PortalOrInline
                 target={
-                  !isOfficeWorkspace && editorLayout === "classic"
+                  !isOfficeWorkspace && !keypadMode && editorLayout === "classic"
                     ? desktopTopToolsMount ?? null
                     : null
                 }
@@ -1745,18 +1769,16 @@ export function EditorWorkspace({
                     </button>
                   </div>
                   <div className="classic-bottom-actions">
-                    {sourceOpen && classicDockOpen && (
-                      <button
-                        type="button"
-                        className="icon-button compact classic-bottom-copy"
-                        data-classic-bottom-copy
-                        onClick={() => void onCopy()}
-                        aria-label={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
-                        title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
-                      >
-                        <Copy size={14} />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="icon-button compact classic-bottom-copy"
+                      data-classic-bottom-copy
+                      onClick={() => void onCopy()}
+                      aria-label={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                    >
+                      <Copy size={14} />
+                    </button>
                     <button
                       type="button"
                       className="icon-button compact classic-bottom-collapse"

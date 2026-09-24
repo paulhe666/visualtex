@@ -1,4 +1,9 @@
+import { patchVisualTexMathLiveCoreCompatibility } from "./vite.mathliveCoreCompatibility";
 import { patchVisualTexMathLiveEditingKernel } from "./vite.mathliveEditingKernel";
+import {
+  sourceWrapperCanonicalTargets,
+  sourceWrapperKinds,
+} from "./src/editor/sourceWrapperRegistry";
 import { patchVisualTexMathLiveSelection } from "./vite.mathliveSelection";
 import { patchVisualTexMathLiveSemanticCompletion } from "./vite.mathliveSemanticCompletion";
 
@@ -27,7 +32,13 @@ function replaceExactly(
  * build instead of silently changing behavior.
  */
 export function patchVisualTexMathLiveBehavior(source: string) {
-  let patched = source;
+  let patched = patchVisualTexMathLiveCoreCompatibility(source);
+  const sourceWrapperKindsSource = JSON.stringify(
+    Object.fromEntries(sourceWrapperKinds),
+  );
+  const sourceWrapperCanonicalTargetsSource = JSON.stringify(
+    Object.fromEntries(sourceWrapperCanonicalTargets),
+  );
 
   patched = replaceExactly(
     patched,
@@ -319,27 +330,18 @@ export function patchVisualTexMathLiveBehavior(source: string) {
       "  model.setSelection(offset - 1, offset);",
       "  return true;",
       "}",
+      `var VISUALTEX_SOURCE_WRAPPER_KINDS = ${sourceWrapperKindsSource};`,
+      `var VISUALTEX_SOURCE_WRAPPER_CANONICAL_TARGETS = ${sourceWrapperCanonicalTargetsSource};`,
       "function visualTexCanonicalVariantInputCommand(command) {",
-      "  return ({",
-      '    "\\\\bf": "\\\\mathbf", "\\\\bfseries": "\\\\mathbf",',
-      '    "\\\\it": "\\\\mathit", "\\\\rm": "\\\\mathrm", "\\\\sf": "\\\\mathsf", "\\\\tt": "\\\\mathtt",',
-      '    "\\\\cal": "\\\\mathcal", "\\\\Bbb": "\\\\mathbb", "\\\\frak": "\\\\mathfrak",',
-      '    "\\\\bold": "\\\\mathbfit", "\\\\boldmath": "\\\\mathbfit", "\\\\pmb": "\\\\mathbfit",',
-      '    "\\\\simbfit": "\\\\symbfit",',
-      "  })[command] || command;",
-      "}",
-      "function visualTexIsVariantInputCommand(command) {",
-      "  const canonical = visualTexCanonicalVariantInputCommand(command);",
-      '  return ["\\\\mathbf", "\\\\mathbb", "\\\\mathit", "\\\\mathrm", "\\\\mathsf", "\\\\mathtt", "\\\\mathcal", "\\\\mathscr", "\\\\mathfrak", "\\\\boldsymbol", "\\\\bm", "\\\\mathbfit", "\\\\mathnormal", "\\\\symup", "\\\\symit", "\\\\symbf", "\\\\symbfup", "\\\\symbfit", "\\\\symbb", "\\\\symcal", "\\\\symbfcal", "\\\\symscr", "\\\\symbfscr", "\\\\symfrak", "\\\\symbffrak", "\\\\symsfup", "\\\\symsfit", "\\\\symbfsfup", "\\\\symbfsfit", "\\\\symtt"].includes(canonical);',
-      "}",
-      "function visualTexIsAccentSourceCommand(command) {",
-      '  return ["\\\\acute", "\\\\grave", "\\\\dot", "\\\\ddot", "\\\\dddot", "\\\\ddddot", "\\\\tilde", "\\\\bar", "\\\\breve", "\\\\check", "\\\\hat", "\\\\vec", "\\\\widehat", "\\\\widetilde", "\\\\overline", "\\\\overrightarrow", "\\\\overleftarrow", "\\\\overleftrightarrow", "\\\\mathring"].includes(command);',
+      "  return VISUALTEX_SOURCE_WRAPPER_CANONICAL_TARGETS[command] || command;",
       "}",
       "function visualTexSourceWrapperKind(command) {",
       "  const canonical = visualTexCanonicalVariantInputCommand(command);",
-      '  if (visualTexIsVariantInputCommand(canonical)) return "variant";',
-      '  if (visualTexIsAccentSourceCommand(canonical)) return "accent";',
-      "  return null;",
+      "  return VISUALTEX_SOURCE_WRAPPER_KINDS[command] ||",
+      "    VISUALTEX_SOURCE_WRAPPER_KINDS[canonical] || null;",
+      "}",
+      "function visualTexIsAccentSourceCommand(command) {",
+      "  return visualTexSourceWrapperKind(command) === \"accent\";",
       "}",
       "function visualTexSourceWrapperTemplate(input) {",
       '  if (typeof input !== "string") return null;',
@@ -540,8 +542,7 @@ export function patchVisualTexMathLiveBehavior(source: string) {
       "function visualTexAutoExitAccentAfterDirectInput(mathfield, atom) {",
       "  if (mathfield.visualTexCompositionCommit) return false;",
       '  if ((mathfield.host == null ? void 0 : mathfield.host.dataset.visualtexAutoExitAccent) !== "true") return false;',
-      '  const visualTexAutoExitAccentCommands = ["\\\\acute", "\\\\grave", "\\\\dot", "\\\\ddot", "\\\\dddot", "\\\\ddddot", "\\\\tilde", "\\\\bar", "\\\\breve", "\\\\check", "\\\\hat", "\\\\vec", "\\\\widehat", "\\\\widetilde", "\\\\overline", "\\\\overrightarrow", "\\\\overleftarrow", "\\\\overleftrightarrow", "\\\\mathring"];',
-      '  if (atom?.type === "accent" && visualTexAutoExitAccentCommands.includes(atom.command)) {',
+      '  if (atom?.type === "accent" && visualTexIsAccentSourceCommand(atom.command)) {',
       "    const previousPosition = mathfield.model.position;",
       "    const target = mathfield.model.offsetOf(atom);",
       "    if (target >= 0 && target !== previousPosition) {",
@@ -554,7 +555,7 @@ export function patchVisualTexMathLiveBehavior(source: string) {
       "  let current = atom;",
       "  while (current == null ? void 0 : current.parent) {",
       '    if (current.parent.type === "accent") {',
-      "      if (!visualTexAutoExitAccentCommands.includes(current.parent.command)) return false;",
+      "      if (!visualTexIsAccentSourceCommand(current.parent.command)) return false;",
       "      if (current !== atom) return false;",
       "      const previousPosition = mathfield.model.position;",
       "      const target = mathfield.model.offsetOf(current.parent);",
@@ -574,10 +575,9 @@ export function patchVisualTexMathLiveBehavior(source: string) {
       "  const parent = slot.parent;",
       "  const branch = slot.branch;",
 
-      '  const accentCommands = ["\\\\acute", "\\\\grave", "\\\\dot", "\\\\ddot", "\\\\dddot", "\\\\ddddot", "\\\\tilde", "\\\\bar", "\\\\breve", "\\\\check", "\\\\hat", "\\\\vec", "\\\\widehat", "\\\\widetilde", "\\\\overline", "\\\\overrightarrow", "\\\\overleftarrow", "\\\\overleftrightarrow", "\\\\mathring"];',
       '  if (parent.type === "accent" && branch === "body" &&',
       '      (mathfield.host == null ? void 0 : mathfield.host.dataset.visualtexAutoExitAccent) === "true" &&',
-      "      accentCommands.includes(parent.command)) {",
+      "      visualTexIsAccentSourceCommand(parent.command)) {",
       "    const previous = model.position;",
       "    const target = model.offsetOf(parent);",
       "    if (target >= 0 && target !== previous) {",

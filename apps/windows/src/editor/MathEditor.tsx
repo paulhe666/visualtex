@@ -46,6 +46,7 @@ import {
   compatibilityRawPlaceholderTemplates,
   compatibilityWrapperPreviews,
 } from "../autocomplete/compatibilityCommands";
+import { accentSourceWrapperTemplates } from "./sourceWrapperRegistry";
 import {
   createFormulaLine,
   useEditorStore,
@@ -83,6 +84,10 @@ import { installMathLiveOptionMutationGuard } from "./mathLiveOptionCompatibilit
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompatibilityMacros";
 import { hasBoundedOperatorPlaceholderOrder } from "./boundedOperatorTemplate";
 import {
+  nativeSuggestionPreviewHasVisibleInk,
+  resolveNativeSuggestionPreview,
+} from "./nativeSuggestionPreviews";
+import {
   configureMathLiveCompletion,
   dismissMathLiveSuggestions,
   insertMathLiveAlignmentPoint,
@@ -96,6 +101,9 @@ import { copyFormulaDocumentPngToClipboard } from "../export/pngClipboard";
 import {
   formulaChineseFontFamily,
   formulaLetterFontFamilies,
+  markVisualTexFormulaFontGlyphs,
+  VISUALTEX_FORMULA_CHINESE_GLYPH_CLASS,
+  VISUALTEX_FORMULA_LETTER_GLYPH_CLASS,
   type FormulaChineseFont,
   type FormulaLetterFont,
 } from "./formulaFontPreferences";
@@ -1021,27 +1029,7 @@ const nativePlaceholderSelectionCommands = new Set([
   "\\tfrac",
   "\\sqrt",
 ]);
-const accentCommandTemplates = new Map<string, string>([
-  ["\\acute", "\\acute{\\placeholder{}}"],
-  ["\\grave", "\\grave{\\placeholder{}}"],
-  ["\\dot", "\\dot{\\placeholder{}}"],
-  ["\\ddot", "\\ddot{\\placeholder{}}"],
-  ["\\dddot", "\\dddot{\\placeholder{}}"],
-  ["\\ddddot", "\\ddddot{\\placeholder{}}"],
-  ["\\tilde", "\\tilde{\\placeholder{}}"],
-  ["\\bar", "\\bar{\\placeholder{}}"],
-  ["\\breve", "\\breve{\\placeholder{}}"],
-  ["\\check", "\\check{\\placeholder{}}"],
-  ["\\hat", "\\hat{\\placeholder{}}"],
-  ["\\vec", "\\vec{\\placeholder{}}"],
-  ["\\widehat", "\\widehat{\\placeholder{}}"],
-  ["\\widetilde", "\\widetilde{\\placeholder{}}"],
-  ["\\overline", "\\overline{\\placeholder{}}"],
-  ["\\overrightarrow", "\\overrightarrow{\\placeholder{}}"],
-  ["\\overleftarrow", "\\overleftarrow{\\placeholder{}}"],
-  ["\\overleftrightarrow", "\\overleftrightarrow{\\placeholder{}}"],
-  ["\\mathring", "\\mathring{\\placeholder{}}"],
-]);
+const accentCommandTemplates = accentSourceWrapperTemplates;
 const CASES_ENVIRONMENT_COMMAND = "\\begin{cases}";
 const CASES_ENVIRONMENT_TEMPLATE =
   "\\begin{cases}\\placeholder{} & \\placeholder{}\\end{cases}";
@@ -1262,9 +1250,6 @@ const visualTexFormulaItalicFontProperty =
   "--visualtex-formula-italic-font-family";
 const visualTexFormulaChineseFontProperty =
   "--visualtex-formula-chinese-font-family";
-const visualTexChineseGlyphClass = "visualtex-chinese-glyph";
-const visualTexChineseGlyphPattern =
-  /^[\p{Script=Han}㑇㑈㑉㑊㑋㑌㑍㑎㑏㑐㑑㑒㑓㑔㑕㑖㑗㑘㑙]+$/u;
 const visualTexPlaceholderClass = "visualtex-structural-placeholder";
 const visualTexAccentPlaceholderClass =
   "visualtex-accent-structural-placeholder";
@@ -1352,20 +1337,74 @@ function repaintMathLiveCaret(field: MathfieldElement) {
 }
 const visualTexPointerSelectingFields = new WeakSet<MathfieldElement>();
 
-function markVisualTexChineseGlyphs(field: MathfieldElement) {
-  const shadowRoot = field.shadowRoot;
-  if (!shadowRoot) return;
-  shadowRoot
-    .querySelectorAll<HTMLElement>(
-      ".ML__cmr, .ML__mathbf, .ML__mathit, .ML__mathbfit, .ML__text",
-    )
-    .forEach((node) => {
-      const text = (node.textContent ?? "").trim();
-      node.classList.toggle(
-        visualTexChineseGlyphClass,
-        Boolean(text) && visualTexChineseGlyphPattern.test(text),
-      );
+function markVisualTexFormulaGlyphFonts(field: MathfieldElement) {
+  if (!field.shadowRoot) return;
+  markVisualTexFormulaFontGlyphs(field.shadowRoot);
+}
+
+function decorateNativeSuggestionPanel(panel: HTMLElement | null) {
+  if (!panel) return;
+
+  panel.querySelectorAll<HTMLElement>("li[data-command]").forEach((item) => {
+    const command = item.dataset.command ?? "";
+    const preview = item.querySelector<HTMLElement>(".ML__popover__command");
+    if (!command || !preview) return;
+
+    const decoratedCommand = preview.dataset.visualtexPreviewCommand;
+    if (
+      preview.dataset.visualtexPreview &&
+      decoratedCommand === command
+    ) {
+      return;
+    }
+
+    if (preview.dataset.visualtexPreview) {
+      preview.innerHTML = convertVisualTexLatexToMarkup(command, {
+        defaultMode: "math",
+      });
+      delete preview.dataset.visualtexPreview;
+      delete preview.dataset.visualtexPreviewKind;
+      delete preview.dataset.visualtexPreviewCommand;
+      delete item.dataset.visualtexPreviewKind;
+      item.classList.remove("has-visualtex-command-preview");
+    }
+
+    const resolved = resolveNativeSuggestionPreview(command, preview);
+    if (!resolved) return;
+    let previewLatex = resolved.latex;
+    let previewKind = resolved.kind;
+
+    preview.innerHTML = convertVisualTexLatexToMarkup(previewLatex, {
+      defaultMode: "math",
     });
+    if (!nativeSuggestionPreviewHasVisibleInk(preview)) {
+      preview.innerHTML = convertVisualTexLatexToMarkup("\\boxed{?}", {
+        defaultMode: "math",
+      });
+      previewLatex = "\\boxed{?}";
+      previewKind = "fallback";
+    }
+
+    preview.querySelectorAll<HTMLElement>(".ML__cmr").forEach((node) => {
+      if (node.textContent?.trim() !== "▢") return;
+      node.classList.add("visualtex-native-preview-placeholder");
+    });
+    preview.dataset.visualtexPreview = previewLatex;
+    preview.dataset.visualtexPreviewKind = previewKind;
+    preview.dataset.visualtexPreviewCommand = command;
+    preview.setAttribute("aria-label", command);
+    item.dataset.visualtexPreviewKind = previewKind;
+    item.classList.add("has-visualtex-command-preview");
+  });
+}
+
+function decorateNativeSuggestionPreviews() {
+  decorateNativeSuggestionPanel(
+    document.getElementById("mathlive-suggestion-popover"),
+  );
+  decorateNativeSuggestionPanel(
+    document.getElementById("visualtex-native-input-suggestion-popover"),
+  );
 }
 
 function syncStructuralPlaceholderSelection(field: MathfieldElement) {
@@ -1394,43 +1433,43 @@ function installVisualTexFormulaFontStyle(field: MathfieldElement) {
   const style = document.createElement("style");
   style.id = visualTexFormulaFontStyleId;
   style.textContent = `
-    .ML__cmr:not(.ML__it) {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}:not(.ML__it) {
       font-family: var(${visualTexFormulaUprightFontProperty}, KaTeX_Main, serif) !important;
       font-style: normal !important;
     }
 
-    .ML__cmr:not(.ML__bold):not(.ML__it) {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}:not(.ML__bold):not(.ML__it) {
       font-weight: 400 !important;
     }
 
-    .ML__cmr.ML__bold:not(.ML__it),
-    .ML__mathbf:not(.lcGreek) {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}.ML__bold:not(.ML__it),
+    .ML__mathbf.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}:not(.lcGreek) {
       font-family: var(${visualTexFormulaUprightFontProperty}, KaTeX_Main, serif) !important;
       font-style: normal !important;
       font-weight: 700 !important;
     }
 
-    .ML__cmr.ML__it,
-    .ML__mathit {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}.ML__it,
+    .ML__mathit.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS} {
       font-family: var(${visualTexFormulaItalicFontProperty}, KaTeX_Math, KaTeX_Main, serif) !important;
       font-style: italic !important;
     }
 
-    .ML__cmr.ML__it:not(.ML__bold),
-    .ML__mathit {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}.ML__it:not(.ML__bold),
+    .ML__mathit.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS} {
       font-weight: 400 !important;
     }
 
-    .ML__cmr.ML__bold.ML__it,
-    .lcGreek.ML__mathbf,
-    .ML__mathbfit {
+    .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}.ML__bold.ML__it,
+    .lcGreek.ML__mathbf.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS},
+    .ML__mathbfit.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS} {
       font-family: var(${visualTexFormulaItalicFontProperty}, KaTeX_Math, KaTeX_Main, serif) !important;
       font-style: italic !important;
       font-weight: 700 !important;
     }
 
     .ML__text,
-    .${visualTexChineseGlyphClass} {
+    .${VISUALTEX_FORMULA_CHINESE_GLYPH_CLASS} {
       font-family: var(${visualTexFormulaChineseFontProperty}, var(--_text-font-family)) !important;
     }
   `;
@@ -1443,7 +1482,7 @@ function applyVisualTexFormulaFonts(
   chineseFont: FormulaChineseFont,
 ) {
   installVisualTexFormulaFontStyle(field);
-  markVisualTexChineseGlyphs(field);
+  markVisualTexFormulaGlyphFonts(field);
   const letterFamilies = formulaLetterFontFamilies(letterFont);
   field.style.setProperty(
     visualTexFormulaUprightFontProperty,
@@ -3104,6 +3143,7 @@ function FormulaField(props: FormulaFieldProps) {
         inferEditSource(inputType),
       );
       propsRef.current.onInputActivity(field);
+      decorateNativeSuggestionPreviews();
       syncFrameSize();
       window.requestAnimationFrame(() => {
         if (!field.isConnected) return;
@@ -3223,6 +3263,7 @@ function FormulaField(props: FormulaFieldProps) {
       window.requestAnimationFrame(() => {
         if (!field.isConnected) return;
         propsRef.current.onInputActivity(field);
+        decorateNativeSuggestionPreviews();
       });
     };
   const handleKeyDown = (event: KeyboardEvent) => {
@@ -3600,7 +3641,7 @@ function FormulaField(props: FormulaFieldProps) {
       : null;
     const inputMutationObserver = field.shadowRoot
     ? new MutationObserver(() => {
-        markVisualTexChineseGlyphs(field);
+        markVisualTexFormulaGlyphFonts(field);
         syncStructuralPlaceholderSelection(field);
         syncPostOperatorCaretSpacing(field);
         syncFrameSize();
@@ -3860,7 +3901,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       zoom,
       persistentTypingStyle = {
         bold: false,
-        italic: false,
+        italic: null,
         color: null,
         backgroundColor: null,
       },
@@ -3944,6 +3985,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const customSymbolRevision = useCustomSymbolRevision();
     const isEn = language === "en";
     const interactionReadOnly = readOnly || previewOnly;
+    const showLineModeMarkers =
+      showLineModeControls && (!readOnly || previewOnly);
     previewOnlyRef.current = previewOnly;
 
     useEffect(() => {
@@ -7348,9 +7391,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         className={
           "editor-surface multi-line-editor" +
           (showLineNumbers ? " has-line-numbers" : "") +
-          (!interactionReadOnly && showLineModeControls
-            ? " has-mixed-line-modes"
-            : "") +
+          (showLineModeMarkers ? " has-mixed-line-modes" : "") +
           (interactionReadOnly ? " is-read-only-preview" : "") +
           (previewOnly ? " is-source-preview-only" : "")
         }
@@ -7394,11 +7435,11 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                     {String(index + 1).padStart(2, "0")}
                   </span>
                 ) : null}
-                {!interactionReadOnly && showLineModeControls ? (
+                {showLineModeMarkers ? (
                   <button
                     type="button"
                     className="formula-line-mode-toggle is-active"
-                    disabled={lineHasInternalMultiline}
+                    disabled={lineHasInternalMultiline || interactionReadOnly}
                     data-formula-line-mode-toggle
                     data-formula-line-mode={effectiveLineMode}
                     aria-label={

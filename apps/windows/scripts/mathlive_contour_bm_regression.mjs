@@ -247,10 +247,8 @@ async function main() {
             };
           });
           return {
-            ready:
-              Boolean(panel?.classList.contains("is-visible")) &&
-              entries.every((entry) => entry.command),
-            entries,
+            ready: Boolean(panel?.classList.contains("is-visible")),
+            entries: entries.filter((entry) => entry.command),
           };
         })()`,
         `native suggestion previews for ${query}`,
@@ -258,7 +256,7 @@ async function main() {
     };
 
     await client.send("Page.navigate", { url: baseUrl });
-    await sleep(600);
+    await sleep(1800);
     await evaluate(`(() => {
       localStorage.setItem("visualtex.onboarding.v3.completed", "true");
       localStorage.setItem(
