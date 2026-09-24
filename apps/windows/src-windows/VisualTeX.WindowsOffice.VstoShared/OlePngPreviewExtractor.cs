@@ -6,7 +6,45 @@ namespace VisualTeX.WindowsOffice.VstoShared;
 internal static class OlePngPreviewExtractor
 {
     private const int DvAspectContent = 1;
+    private const short CfEnhMetafile = 14;
     private const int MaxPngBytes = 64 * 1024 * 1024;
+    private const int MaxEmfBytes = 64 * 1024 * 1024;
+
+    internal sealed class PreviewFiles : IDisposable
+    {
+        internal string EmfPath { get; set; } = string.Empty;
+        internal string PngPath { get; set; } = string.Empty;
+
+        public void Dispose()
+        {
+            DeleteIfPresent(EmfPath);
+            DeleteIfPresent(PngPath);
+        }
+
+        private static void DeleteIfPresent(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+            try { File.Delete(path); } catch { }
+        }
+    }
+
+    public static PreviewFiles MaterializeForUpdate(
+        object oleObject,
+        string formulaId)
+    {
+        var previews = new PreviewFiles();
+        try
+        {
+            previews.PngPath = MaterializePng(oleObject, formulaId);
+            previews.EmfPath = MaterializeEmf(oleObject, formulaId);
+            return previews;
+        }
+        catch
+        {
+            previews.Dispose();
+            throw;
+        }
+    }
 
     public static string MaterializePng(object oleObject, string formulaId)
     {
@@ -71,6 +109,70 @@ internal static class OlePngPreviewExtractor
         }
     }
 
+    private static string MaterializeEmf(
+        object oleObject,
+        string formulaId)
+    {
+        if (oleObject is not System.Runtime.InteropServices.ComTypes.IDataObject dataObject)
+            throw new InvalidOperationException(
+                "The selected OLE object does not expose an IDataObject preview.");
+
+        var format = new FORMATETC
+        {
+            cfFormat = CfEnhMetafile,
+            dwAspect = (DVASPECT)DvAspectContent,
+            lindex = -1,
+            ptd = IntPtr.Zero,
+            tymed = TYMED.TYMED_ENHMF,
+        };
+
+        dataObject.GetData(ref format, out var medium);
+        try
+        {
+            if (medium.tymed != TYMED.TYMED_ENHMF
+                || medium.unionmember == IntPtr.Zero)
+                throw new InvalidDataException(
+                    "The OLE enhanced-metafile preview is unavailable.");
+
+            var byteCount =
+                GetEnhMetaFileBits(
+                    medium.unionmember,
+                    0,
+                    null);
+            if (byteCount == 0
+                || byteCount > MaxEmfBytes)
+                throw new InvalidDataException(
+                    "The OLE enhanced-metafile preview size is invalid.");
+
+            var bytes = new byte[checked((int)byteCount)];
+            if (GetEnhMetaFileBits(
+                    medium.unionmember,
+                    byteCount,
+                    bytes) != byteCount)
+                throw new InvalidDataException(
+                    "The OLE enhanced-metafile preview could not be read completely.");
+
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "VisualTeX",
+                "office",
+                "temp");
+            Directory.CreateDirectory(root);
+            var safeFormulaId = Guid.TryParse(formulaId, out var id)
+                ? id.ToString("N")
+                : Guid.NewGuid().ToString("N");
+            var path = Path.Combine(
+                root,
+                $"{safeFormulaId}-{Guid.NewGuid():N}-ole-export.emf");
+            File.WriteAllBytes(path, bytes);
+            return path;
+        }
+        finally
+        {
+            ReleaseStgMedium(ref medium);
+        }
+    }
+
     private static void ValidatePng(byte[] bytes)
     {
         if (bytes.Length < 8
@@ -84,6 +186,12 @@ internal static class OlePngPreviewExtractor
             || bytes[7] != 10)
             throw new InvalidDataException("The OLE PNG preview signature is invalid.");
     }
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern uint GetEnhMetaFileBits(
+        IntPtr enhancedMetafile,
+        uint bufferSize,
+        [Out] byte[]? buffer);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint RegisterClipboardFormat(string format);

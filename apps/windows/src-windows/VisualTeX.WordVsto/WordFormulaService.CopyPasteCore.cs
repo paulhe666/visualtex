@@ -137,6 +137,9 @@ internal sealed partial class WordFormulaService
         var metadata = CreateHostCoreSnapshotMetadata(
             host,
             payload);
+        var visualTeXExtent = CaptureVisualTeXHostExtent(
+            document,
+            host);
         var documentId = DocumentIdentity(document);
 
         return new WordFormulaCopySnapshot
@@ -161,6 +164,8 @@ internal sealed partial class WordFormulaService
             CoreSemanticSignature = HostCoreSemanticSignature(payload),
             CoreMathMl = payload.MathMl,
             CoreLatex = payload.Latex,
+            CoreVisualTeXWidthPt = visualTeXExtent.WidthPt,
+            CoreVisualTeXHeightPt = visualTeXExtent.HeightPt,
             UsesHostCore = true,
         };
     }
@@ -195,6 +200,9 @@ internal sealed partial class WordFormulaService
             var metadata = CreateHostCoreSnapshotMetadata(
                 source,
                 payload);
+            var visualTeXExtent = CaptureVisualTeXHostExtent(
+                document,
+                source);
             items.Add(new WordFormulaCopyGroupItem
             {
                 Metadata = metadata,
@@ -211,6 +219,8 @@ internal sealed partial class WordFormulaService
                 CoreHostKind = source.Kind,
                 CoreSemanticSignature =
                     HostCoreSemanticSignature(payload),
+                CoreVisualTeXWidthPt = visualTeXExtent.WidthPt,
+                CoreVisualTeXHeightPt = visualTeXExtent.HeightPt,
             });
         }
 
@@ -245,6 +255,8 @@ internal sealed partial class WordFormulaService
                 HostCoreSemanticSignature(firstPayload),
             CoreMathMl = firstPayload.MathMl,
             CoreLatex = firstPayload.Latex,
+            CoreVisualTeXWidthPt = first.CoreVisualTeXWidthPt,
+            CoreVisualTeXHeightPt = first.CoreVisualTeXHeightPt,
             UsesHostCore = true,
         };
     }
@@ -274,6 +286,11 @@ internal sealed partial class WordFormulaService
                 selected.Start;
             snapshot.CorePendingPasteEnd =
                 selected.End;
+            snapshot.CorePendingPasteStoryEndBefore =
+                ReadStoryEnd(
+                    document,
+                    selected.StoryType);
+            snapshot.CorePendingVisualTeXPhysicalPasteObserved = false;
             snapshot.CorePendingPasteArmed = true;
             snapshot.TrackingDocumentId =
                 snapshot.CorePendingPasteDocumentId;
@@ -375,6 +392,21 @@ internal sealed partial class WordFormulaService
                 snapshot.CorePendingPasteStoryType)
                 return false;
 
+            var replacedLength = Math.Max(
+                0,
+                snapshot.CorePendingPasteEnd
+                - snapshot.CorePendingPasteStart);
+            var currentStoryEnd =
+                ReadStoryEnd(
+                    document,
+                    snapshot.CorePendingPasteStoryType);
+            if (currentStoryEnd >= 0
+                && snapshot.CorePendingPasteStoryEndBefore >= 0
+                && currentStoryEnd
+                    - snapshot.CorePendingPasteStoryEndBefore
+                    + replacedLength > 0)
+                return true;
+
             var currentEnd = Math.Max(
                 selected.Start,
                 selected.End);
@@ -390,6 +422,26 @@ internal sealed partial class WordFormulaService
             Release(selected);
             Release(selection);
             Release(document);
+        }
+    }
+
+    private static int ReadStoryEnd(
+        Document document,
+        WdStoryType storyType)
+    {
+        Range? story = null;
+        try
+        {
+            story = document.StoryRanges[storyType];
+            return story.End;
+        }
+        catch
+        {
+            return -1;
+        }
+        finally
+        {
+            Release(story);
         }
     }
 
@@ -430,6 +482,40 @@ internal sealed partial class WordFormulaService
             var pastedEnd = Math.Max(
                 selected.Start,
                 selected.End);
+
+            // Word does not reliably move Selection after pasting an embedded
+            // OLE object.  On Office 2021 an inline VisualTeX copy can occupy a
+            // non-empty range while Selection remains collapsed at the original
+            // insertion point. Infer the exact inserted span from the current
+            // story-length delta plus the length of the pre-paste selection; the
+            // post-paste Selection is only an additional upper bound.
+            var replacedLength = Math.Max(
+                0,
+                snapshot.CorePendingPasteEnd
+                - snapshot.CorePendingPasteStart);
+            var currentStoryEnd =
+                ReadStoryEnd(
+                    document,
+                    snapshot.CorePendingPasteStoryType);
+            if (currentStoryEnd >= 0
+                && snapshot.CorePendingPasteStoryEndBefore >= 0)
+            {
+                var insertedLength =
+                    currentStoryEnd
+                    - snapshot.CorePendingPasteStoryEndBefore
+                    + replacedLength;
+                if (insertedLength > 0)
+                {
+                    var inferredEnd =
+                        pastedStart + insertedLength;
+                    pastedEnd = Math.Max(
+                        pastedEnd,
+                        Math.Min(
+                            currentStoryEnd,
+                            inferredEnd));
+                }
+            }
+
             if (pastedEnd <= pastedStart)
                 return PastedFormulaRepairResult.NotReady;
 
@@ -540,12 +626,35 @@ internal sealed partial class WordFormulaService
             throw new InvalidDataException(
                 "The local paste region contains more than one physical VisualTeX copy of the tracked source.");
 
-        RekeyPastedVisualTeXHost(
-            document,
-            matches[0],
-            snapshot.Metadata,
-            snapshot.CoreSemanticSignature,
-            snapshot.VisibleNumber);
+        // The exact pasted InlineShape and its copied Word-side metadata already
+        // prove that the user's native paste succeeded.  The embedded OLE server
+        // can still be dormant for a short time after Word paints the object, so
+        // remember the physical paste before waiting for authoritative COM access.
+        snapshot.CorePendingVisualTeXPhysicalPasteObserved = true;
+        if (!IsPastedVisualTeXAuthorityReady(
+                document,
+                matches[0],
+                snapshot.Metadata,
+                snapshot.CoreSemanticSignature))
+            return PastedFormulaRepairResult.NotReady;
+
+        if (!TryRekeyPastedVisualTeXHost(
+                document,
+                matches[0],
+                snapshot.Metadata,
+                snapshot.CoreSemanticSignature,
+                snapshot.VisibleNumber,
+                snapshot.CoreVisualTeXWidthPt,
+                snapshot.CoreVisualTeXHeightPt))
+            return PastedFormulaRepairResult.NotReady;
+
+        if (snapshot.Metadata.Numbered)
+        {
+            WordFormulaNumberingKernel.RefreshCanonicalNumbers(
+                document,
+                kindFilter: WordFormulaHostKind.VisualTeX,
+                minimumExpectedNumbered: 1);
+        }
         return PastedFormulaRepairResult.Repaired;
     }
 
@@ -603,11 +712,18 @@ internal sealed partial class WordFormulaService
                 "Word pasted an unnumbered OMML source as a numbered equation.");
         }
 
-        // Do not assign FormulaId/VTEqNum during Paste. Bookmark writes and field
-        // updates become separate Word undo records even inside a Custom
-        // UndoRecord. The pasted native OMath is already complete Word content;
-        // VisualTeX adopts private identity only when the user later edits or
-        // explicitly references that equation.
+        // Pure OMML remains pure Word content: no VisualTeX identity or
+        // VTEqNum bookmark is assigned here.  The copied SEQ field initially
+        // carries Word's cached source result, though, so refresh the native OMML
+        // counter stream immediately.  The user must never see two identical
+        // equation numbers after a successful paste.
+        if (snapshot.Metadata.Numbered)
+        {
+            WordFormulaNumberingKernel.RefreshCanonicalNumbers(
+                document,
+                kindFilter: WordFormulaHostKind.Omml,
+                minimumExpectedNumbered: 1);
+        }
         return PastedFormulaRepairResult.Repaired;
     }
 
@@ -649,16 +765,39 @@ internal sealed partial class WordFormulaService
                 throw new InvalidDataException(
                     "Two copied VisualTeX group items resolved to the same pasted host.");
 
+            snapshot.CorePendingVisualTeXPhysicalPasteObserved = true;
+            foreach (var pair in mapped)
+            {
+                if (!IsPastedVisualTeXAuthorityReady(
+                        document,
+                        pair.Host,
+                        pair.Item.Metadata,
+                        pair.Item.CoreSemanticSignature))
+                    return PastedFormulaRepairResult.NotReady;
+            }
+
             foreach (var pair in mapped
                          .OrderByDescending(
                              item => item.Host.Range.Start))
             {
-                RekeyPastedVisualTeXHost(
+                if (!TryRekeyPastedVisualTeXHost(
+                        document,
+                        pair.Host,
+                        pair.Item.Metadata,
+                        pair.Item.CoreSemanticSignature,
+                        pair.Item.VisibleNumber,
+                        pair.Item.CoreVisualTeXWidthPt,
+                        pair.Item.CoreVisualTeXHeightPt))
+                    throw new InvalidDataException(
+                        "A preflight-ready pasted VisualTeX group item became unavailable while receiving fresh identity.");
+            }
+
+            if (mapped.Any(pair => pair.Item.Metadata.Numbered))
+            {
+                WordFormulaNumberingKernel.RefreshCanonicalNumbers(
                     document,
-                    pair.Host,
-                    pair.Item.Metadata,
-                    pair.Item.CoreSemanticSignature,
-                    pair.Item.VisibleNumber);
+                    kindFilter: WordFormulaHostKind.VisualTeX,
+                    minimumExpectedNumbered: mapped.Count(pair => pair.Item.Metadata.Numbered));
             }
 
             return PastedFormulaRepairResult.Repaired;
@@ -712,6 +851,16 @@ internal sealed partial class WordFormulaService
                 }
             }
 
+            var numberedCount =
+                orderedItems.Count(item => item.Metadata.Numbered);
+            if (numberedCount > 0)
+            {
+                WordFormulaNumberingKernel.RefreshCanonicalNumbers(
+                    document,
+                    kindFilter: WordFormulaHostKind.Omml,
+                    minimumExpectedNumbered: numberedCount);
+            }
+
             return PastedFormulaRepairResult.Repaired;
         }
 
@@ -724,12 +873,30 @@ internal sealed partial class WordFormulaService
         string sourceFormulaId,
         string? expectedSemanticSignature)
     {
+        if (candidate.Kind !=
+            WordFormulaHostKind.VisualTeX)
+            return false;
+
+        // CaptureVisualTeXIndex reads AlternativeText/Title without activating the
+        // freshly pasted OLE server.  Word copies those fields synchronously with
+        // the InlineShape, so they are the correct low-cost witness for locating
+        // the physical paste while the COM object is still starting.  They are
+        // never used as authority for the final write: re-keying below still
+        // requires the embedded IVisualTeXFormulaObject to become readable.
+        var cached = candidate.Metadata;
+        if (cached is not null
+            && string.Equals(
+                cached.FormulaId,
+                sourceFormulaId,
+                StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                HostCoreSemanticSignature(cached),
+                expectedSemanticSignature,
+                StringComparison.Ordinal))
+            return true;
+
         try
         {
-            if (candidate.Kind !=
-                WordFormulaHostKind.VisualTeX)
-                return false;
-
             var payload =
                 WordFormulaHostSemanticReader.Read(
                     document,
@@ -776,12 +943,52 @@ internal sealed partial class WordFormulaService
         }
     }
 
-    private static void RekeyPastedVisualTeXHost(
+    private static bool IsPastedVisualTeXAuthorityReady(
+        Document document,
+        WordFormulaHostDescriptor candidate,
+        FormulaMetadata copiedMetadata,
+        string? expectedSemanticSignature)
+    {
+        InlineShape? shape = null;
+        try
+        {
+            shape = GetExactVisualTeXShape(
+                document,
+                candidate);
+            var embedded =
+                WordFormulaMetadataReader
+                    .TryReadEmbeddedNativeOle(shape);
+            if (embedded is null)
+                return false;
+
+            if (!string.Equals(
+                    embedded.FormulaId,
+                    copiedMetadata.FormulaId,
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException(
+                    "The pasted VisualTeX host no longer carries the copied source identity.");
+            if (!string.Equals(
+                    HostCoreSemanticSignature(embedded),
+                    expectedSemanticSignature,
+                    StringComparison.Ordinal))
+                throw new InvalidDataException(
+                    "The pasted VisualTeX OLE payload no longer matches the copied source semantics.");
+            return true;
+        }
+        finally
+        {
+            Release(shape);
+        }
+    }
+
+    private static bool TryRekeyPastedVisualTeXHost(
         Document document,
         WordFormulaHostDescriptor candidate,
         FormulaMetadata copiedMetadata,
         string? expectedSemanticSignature,
-        string? copiedVisibleNumber)
+        string? copiedVisibleNumber,
+        float? copiedWidthPt,
+        float? copiedHeightPt)
     {
         InlineShape? shape = null;
         Range? shapeRange = null;
@@ -792,9 +999,9 @@ internal sealed partial class WordFormulaService
                 candidate);
             var embedded =
                 WordFormulaMetadataReader
-                    .TryReadEmbeddedNativeOle(shape)
-                ?? throw new InvalidDataException(
-                    "The pasted VisualTeX host has no authoritative embedded metadata.");
+                    .TryReadEmbeddedNativeOle(shape);
+            if (embedded is null)
+                return false;
 
             if (!string.Equals(
                     embedded.FormulaId,
@@ -812,12 +1019,30 @@ internal sealed partial class WordFormulaService
             fresh.NativeOmmlFingerprint = null;
             fresh.Validate();
 
+            try
+            {
+                // Write the authoritative payload before touching Word bookmarks.
+                // A freshly pasted OLE can be visible while its in-proc server is
+                // still unavailable; in that case retry without damaging the
+                // already-successful native paste.
+                WordFormulaMetadataReader.Write(
+                    shape,
+                    fresh);
+            }
+            catch (Exception error) when (
+                error is COMException
+                or InvalidOperationException
+                or InvalidCastException)
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"copy-paste-core-visualtex-authority-not-ready "
+                    + $"{error.GetType().Name}:{error.Message}");
+                return false;
+            }
+
             RemoveLocalVisualTeXIdentityBookmarks(
                 shape,
                 embedded.FormulaId);
-            WordFormulaMetadataReader.Write(
-                shape,
-                fresh);
             WordFormulaIdentityStore.BindVisualTeX(
                 shape,
                 fresh.FormulaId);
@@ -851,6 +1076,17 @@ internal sealed partial class WordFormulaService
                     "An unnumbered VisualTeX copy retained a numbering container.");
             }
 
+            // Word owns the physical InlineShape extent.  A copied VisualTeX OLE
+            // is rehydrated from embedded storage before this repair runs; the OLE
+            // server can therefore report the EMF's natural extent even when the
+            // source InlineShape had a different host-controlled size.  Preserve
+            // the exact copied Word geometry rather than deriving any DPI/scale
+            // compensation from the preview.
+            RestorePastedVisualTeXHostExtent(
+                shape,
+                copiedWidthPt,
+                copiedHeightPt);
+
             var verified =
                 WordFormulaHostSemanticReader.Read(
                     document,
@@ -882,6 +1118,7 @@ internal sealed partial class WordFormulaService
                 + $"formulaId={fresh.FormulaId} "
                 + $"range={refreshed.Range.Start}:{refreshed.Range.End} "
                 + $"numbered={fresh.Numbered}");
+            return true;
         }
         finally
         {
@@ -950,6 +1187,81 @@ internal sealed partial class WordFormulaService
             Release(shapes);
             Release(range);
         }
+    }
+
+    private static (float? WidthPt, float? HeightPt) CaptureVisualTeXHostExtent(
+        Document document,
+        WordFormulaHostDescriptor host)
+    {
+        if (host.Kind != WordFormulaHostKind.VisualTeX)
+            return (null, null);
+
+        InlineShape? shape = null;
+        try
+        {
+            shape = GetExactVisualTeXShape(document, host);
+            var width = shape.Width;
+            var height = shape.Height;
+            if (float.IsNaN(width)
+                || float.IsInfinity(width)
+                || float.IsNaN(height)
+                || float.IsInfinity(height)
+                || width <= 0
+                || height <= 0)
+                throw new InvalidDataException(
+                    "The copied VisualTeX OLE has an invalid Word host extent.");
+            return (width, height);
+        }
+        finally
+        {
+            Release(shape);
+        }
+    }
+
+    private static void RestorePastedVisualTeXHostExtent(
+        InlineShape shape,
+        float? widthPt,
+        float? heightPt)
+    {
+        if (!widthPt.HasValue || !heightPt.HasValue)
+            return;
+
+        var width = widthPt.Value;
+        var height = heightPt.Value;
+        if (float.IsNaN(width)
+            || float.IsInfinity(width)
+            || float.IsNaN(height)
+            || float.IsInfinity(height)
+            || width <= 0
+            || height <= 0)
+            throw new InvalidDataException(
+                "The captured VisualTeX copy extent is invalid.");
+
+        Microsoft.Office.Core.MsoTriState? originalLock = null;
+        try
+        {
+            originalLock = shape.LockAspectRatio;
+            shape.LockAspectRatio =
+                Microsoft.Office.Core.MsoTriState.msoFalse;
+            shape.Width = width;
+            shape.Height = height;
+        }
+        finally
+        {
+            if (originalLock.HasValue)
+            {
+                try { shape.LockAspectRatio = originalLock.Value; }
+                catch { }
+            }
+        }
+
+        const float tolerancePt = 0.15f;
+        if (Math.Abs(shape.Width - width) > tolerancePt
+            || Math.Abs(shape.Height - height) > tolerancePt)
+            throw new InvalidDataException(
+                $"The pasted VisualTeX OLE did not preserve its Word host extent. "
+                + $"Expected {width:F2}x{height:F2} pt, got "
+                + $"{shape.Width:F2}x{shape.Height:F2} pt.");
     }
 
     private static void RemoveLocalVisualTeXIdentityBookmarks(
@@ -1121,6 +1433,15 @@ internal sealed partial class WordFormulaService
         return "mathml:"
             + NormalizeHostCoreSemanticText(
                 payload.MathMl ?? string.Empty);
+    }
+
+    private static string HostCoreSemanticSignature(
+        FormulaMetadata metadata)
+    {
+        var latex =
+            NormalizeHostCoreSemanticText(
+                metadata.Latex);
+        return "latex:" + latex;
     }
 
     private static string NormalizeHostCoreSemanticText(
@@ -1340,6 +1661,8 @@ internal sealed partial class WordFormulaService
             string.Empty;
         snapshot.CorePendingPasteStart = 0;
         snapshot.CorePendingPasteEnd = 0;
+        snapshot.CorePendingPasteStoryEndBefore = 0;
+        snapshot.CorePendingVisualTeXPhysicalPasteObserved = false;
         snapshot.CorePendingOmmlMergeTarget = false;
         snapshot.CorePendingOmmlTargetStart = 0;
         snapshot.CorePendingOmmlTargetEnd = 0;
@@ -1357,6 +1680,8 @@ internal sealed partial class WordFormulaService
             string.Empty;
         snapshot.CorePendingPasteStart = 0;
         snapshot.CorePendingPasteEnd = 0;
+        snapshot.CorePendingPasteStoryEndBefore = 0;
+        snapshot.CorePendingVisualTeXPhysicalPasteObserved = false;
         snapshot.CorePendingOmmlMergeTarget = false;
         snapshot.CorePendingOmmlTargetStart = 0;
         snapshot.CorePendingOmmlTargetEnd = 0;

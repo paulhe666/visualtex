@@ -17,6 +17,8 @@ internal sealed partial class WordFormulaService
         internal int BlankParagraphsBefore { get; set; }
         internal WordFormulaHostKind CoreHostKind { get; set; }
         internal string? CoreSemanticSignature { get; set; }
+        internal float? CoreVisualTeXWidthPt { get; set; }
+        internal float? CoreVisualTeXHeightPt { get; set; }
     }
 
     private sealed class PastedNativeOleGroupCandidate
@@ -54,12 +56,16 @@ internal sealed partial class WordFormulaService
         internal string? CoreSemanticSignature { get; set; }
         internal string? CoreMathMl { get; set; }
         internal string? CoreLatex { get; set; }
+        internal float? CoreVisualTeXWidthPt { get; set; }
+        internal float? CoreVisualTeXHeightPt { get; set; }
         internal bool UsesHostCore { get; set; }
         internal bool CorePendingPasteArmed { get; set; }
         internal string CorePendingPasteDocumentId { get; set; } = string.Empty;
         internal WdStoryType CorePendingPasteStoryType { get; set; }
         internal int CorePendingPasteStart { get; set; }
         internal int CorePendingPasteEnd { get; set; }
+        internal int CorePendingPasteStoryEndBefore { get; set; }
+        internal bool CorePendingVisualTeXPhysicalPasteObserved { get; set; }
         internal bool CorePendingOmmlMergeTarget { get; set; }
         internal int CorePendingOmmlTargetStart { get; set; }
         internal int CorePendingOmmlTargetEnd { get; set; }
@@ -607,7 +613,7 @@ internal sealed partial class WordFormulaService
                             snapshot.MathTypeNumberPosition,
                             snapshot.MathTypeNumberFieldResults))
                         throw new InvalidDataException(
-                            "The copied MathType equation number could not be restored without renumbering the document.");
+                            "The copied MathType equation number could not be restored before the immediate paste renumber.");
 
                     if (snapshot.MathTypeParagraphLayout
                         is not null)
@@ -615,8 +621,22 @@ internal sealed partial class WordFormulaService
                             shape,
                             snapshot.MathTypeParagraphLayout);
                 }
-                perf?.Mark(
-                    "mathtype-preserve-number-scaffold");
+                if (metadata.Numbered)
+                {
+                    // A copied MathType MTPlaceRef carries Word's cached field
+                    // result from the source. Refresh the native MathType counter
+                    // stream immediately so the paste is never left displaying
+                    // the source equation number.
+                    MathTypeEquationNumbering.UpdateEquationNumbers(
+                        document);
+                    perf?.Mark(
+                        "mathtype-immediate-number-refresh");
+                }
+                else
+                {
+                    perf?.Mark(
+                        "mathtype-preserve-number-scaffold");
+                }
             }
             else
             {

@@ -227,6 +227,7 @@ try {
         "HKLM:\Software\Classes\VisualTeX.Formula",
         "HKLM:\Software\Classes\CLSID\{8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B}",
         "HKLM:\Software\Classes\Interface\{6C672AF0-7321-4D21-B325-868CB34592C2}",
+        "HKLM:\Software\Classes\Interface\{A59B7798-6F24-4CF0-B378-E951BFFAFB3A}",
         "HKLM:\Software\Classes\TypeLib\{DF66EC66-3B3A-4675-A7BE-30456A04EB96}",
         "HKLM:\Software\Classes\AppID\{3C72FF7F-B04A-4FD0-AA7D-61D110D8B3C1}",
         "HKLM:\Software\Classes\AppID\VisualTeX.FormulaOleServer.exe",
@@ -240,6 +241,7 @@ try {
         "HKCU:\Software\Classes\VisualTeX.Formula",
         "HKCU:\Software\Classes\CLSID\{8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B}",
         "HKCU:\Software\Classes\Interface\{6C672AF0-7321-4D21-B325-868CB34592C2}",
+        "HKCU:\Software\Classes\Interface\{A59B7798-6F24-4CF0-B378-E951BFFAFB3A}",
         "HKCU:\Software\Classes\TypeLib\{DF66EC66-3B3A-4675-A7BE-30456A04EB96}",
         "HKCU:\Software\Classes\AppID\{3C72FF7F-B04A-4FD0-AA7D-61D110D8B3C1}",
         "HKCU:\Software\Classes\AppID\VisualTeX.FormulaOleServer.exe"

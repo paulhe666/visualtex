@@ -166,6 +166,9 @@ assert.ok(nativeOleRegistration.includes("Insertable"));
 assert.ok(nativeOleRegistration.includes("VersionIndependentProgID"));
 assert.ok(nativeOleRegistration.includes("ProxyStubClsid32"));
 assert.ok(nativeOleRegistration.includes("00020424-0000-0000-C000-000000000046"));
+assert.ok(nativeOleRegistration.includes("6C672AF0-7321-4D21-B325-868CB34592C2"));
+assert.ok(nativeOleRegistration.includes("A59B7798-6F24-4CF0-B378-E951BFFAFB3A"));
+assert.ok(nativeOleRegistration.includes("IVisualTeXFormulaMetadata"));
 assert.ok(nativeOleRegistration.includes("DF66EC66-3B3A-4675-A7BE-30456A04EB96"));
 
 const nativeOleSmoke = await source(
@@ -1063,6 +1066,7 @@ assert.ok(installVsto.includes("Get-FileHash"));
 assert.ok(installVsto.includes("Wait-ForRelatedProductCount"));
 assert.ok(installVsto.includes("product state did not settle"));
 assert.ok(installVsto.includes("Assert-NativeOleRegistration"));
+assert.ok(installVsto.includes("A59B7798-6F24-4CF0-B378-E951BFFAFB3A"));
 assert.ok(installVsto.includes("ServerExecutable"));
 assert.ok(installVsto.includes("3,1,32,1"));
 assert.ok(installVsto.includes("VisualTeX.FormulaOleServer.exe"));
@@ -1119,6 +1123,7 @@ for (const required of [
 ]) {
   assert.ok(prepareVstoRuntime.includes(required), `VSTO Runtime preparation missing ${required}`);
 }
+assert.ok(uninstallVsto.includes("A59B7798-6F24-4CF0-B378-E951BFFAFB3A"));
 assert.ok(uninstallVsto.includes("DF66EC66-3B3A-4675-A7BE-30456A04EB96"));
 assert.ok(uninstallVsto.includes('Name "NativeOleEnabled"'));
 assert.ok(uninstallVsto.includes("Resolve-PowerShellExecutable"));
@@ -1162,6 +1167,9 @@ assert.ok(dependencyLoadingSmoke.includes("System.Text.Json, Version=8.0.0.0"));
 assert.ok(dependencyLoadingSmoke.includes("\\net472\\VisualTeX.WordVsto.dll"));
 assert.ok(dependencyLoadingSmoke.includes("\\net472\\VisualTeX.PowerPointVsto.dll"));
 assert.ok(nativeMsi.includes("3,1,32,1"));
+assert.ok(nativeMsi.includes("6C672AF0-7321-4D21-B325-868CB34592C2"));
+assert.ok(nativeMsi.includes("A59B7798-6F24-4CF0-B378-E951BFFAFB3A"));
+assert.ok(nativeMsi.includes("IVisualTeXFormulaMetadata"));
 assert.ok(nativeMsi.includes('Name="CodeBase"'));
 assert.ok(nativeMsi.includes('Name="Mode" Type="string" Value="vsto"'));
 assert.ok(nativeMsi.includes('Scope="perMachine"'));
@@ -1205,6 +1213,8 @@ for (const msiRequirement of [
   "Ole32.dll",
   "VisualTeX.Formula.1",
   "ProxyStubClsid32",
+  "A59B7798-6F24-4CF0-B378-E951BFFAFB3A",
+  "IVisualTeXFormulaMetadata",
   "DF66EC66-3B3A-4675-A7BE-30456A04EB96",
   "NativeOleEnabled",
   "FilesAndRegistryVerified",

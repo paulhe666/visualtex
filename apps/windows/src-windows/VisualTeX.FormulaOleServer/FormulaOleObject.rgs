@@ -21,6 +21,12 @@ HKCU
                     TypeLib = s '{DF66EC66-3B3A-4675-A7BE-30456A04EB96}'
                     Version = s '1.0'
                 }
+                ForceRemove {A59B7798-6F24-4CF0-B378-E951BFFAFB3A} = s 'IVisualTeXFormulaMetadata'
+                {
+                    ProxyStubClsid32 = s '{00020424-0000-0000-C000-000000000046}'
+                    TypeLib = s '{DF66EC66-3B3A-4675-A7BE-30456A04EB96}'
+                    Version = s '1.0'
+                }
             }
             NoRemove CLSID
             {

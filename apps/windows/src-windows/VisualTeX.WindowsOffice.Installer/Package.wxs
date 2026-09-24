@@ -173,6 +173,19 @@
           <RegistryValue Type="string" Value="1.0" />
         </RegistryKey>
       </RegistryKey>
+      <RegistryKey Root="HKLM" Key="Software\Classes\Interface\{A59B7798-6F24-4CF0-B378-E951BFFAFB3A}">
+        <RegistryValue Type="string" Value="IVisualTeXFormulaMetadata" />
+        <RegistryKey Key="ProxyStubClsid32">
+          <RegistryValue Type="string" Value="{00020424-0000-0000-C000-000000000046}" />
+        </RegistryKey>
+        <RegistryKey Key="TypeLib">
+          <RegistryValue Type="string" Value="{DF66EC66-3B3A-4675-A7BE-30456A04EB96}" />
+          <RegistryValue Name="Version" Type="string" Value="1.0" />
+        </RegistryKey>
+        <RegistryKey Key="Version">
+          <RegistryValue Type="string" Value="1.0" />
+        </RegistryKey>
+      </RegistryKey>
       <RegistryKey Root="HKLM" Key="Software\Classes\TypeLib\{DF66EC66-3B3A-4675-A7BE-30456A04EB96}\1.0">
         <RegistryValue Type="string" Value="VisualTeX Formula OLE Type Library" />
 <?if $(var.InstallerPlatform) = x64 ?>

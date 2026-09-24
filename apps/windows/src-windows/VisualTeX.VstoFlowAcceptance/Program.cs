@@ -1692,6 +1692,10 @@ internal static partial class Program
             {
                 RunWordCopyPasteReeditAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-copy-paste-regression", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordCopyPasteRegressionAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-omml-copy-paste-reedit", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordOmmlCopyPasteReeditAcceptance(artifactRoot);

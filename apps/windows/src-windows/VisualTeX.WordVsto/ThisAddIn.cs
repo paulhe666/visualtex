@@ -1141,14 +1141,32 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 {
                     if (generation != Volatile.Read(ref _activePasteUndoGeneration))
                         return;
-                    if (snapshot.UsesHostCore)
+                    if (snapshot.UsesHostCore
+                        && snapshot.CoreHostKind == WordFormulaHostKind.VisualTeX
+                        && snapshot.CorePendingVisualTeXPhysicalPasteObserved)
+                    {
+                        // Word has already materialized the exact copied
+                        // VisualTeX InlineShape.  A slow OLE server must never turn
+                        // that successful native paste into an automatic Undo.
+                        // Close only our custom record; keep the pending snapshot
+                        // alive so a later selection change can finish the
+                        // authoritative FormulaId re-key once COM is ready.
+                        EndActivePasteUndoRecord(
+                            snapshot,
+                            "watchdog-timeout-physical-paste-preserved");
+                    }
+                    else if (snapshot.UsesHostCore)
+                    {
                         RollbackActivePasteUndoRecord(
                             snapshot,
                             "watchdog-timeout");
+                    }
                     else
+                    {
                         EndActivePasteUndoRecord(
                             snapshot,
                             "watchdog-timeout");
+                    }
                 });
             },
             CancellationToken.None,
@@ -1501,14 +1519,31 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             catch (Exception error)
             {
                 Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
-                if (snapshot.UsesHostCore)
+                if (snapshot.UsesHostCore
+                    && snapshot.CoreHostKind == WordFormulaHostKind.VisualTeX
+                    && snapshot.CorePendingVisualTeXPhysicalPasteObserved)
+                {
+                    // The exact copied InlineShape is already present. Identity
+                    // repair is secondary bookkeeping and must never erase a
+                    // successful user paste if a legacy/slow OLE server rejects a
+                    // follow-up metadata write. Keep the snapshot armed so later
+                    // selection activity can retry the repair.
+                    EndActivePasteUndoRecord(
+                        snapshot,
+                        "repair-error-physical-paste-preserved");
+                }
+                else if (snapshot.UsesHostCore)
+                {
                     RollbackActivePasteUndoRecord(
                         snapshot,
                         "repair-error");
+                }
                 else
+                {
                     EndActivePasteUndoRecord(
                         snapshot,
                         "repair-error");
+                }
                 WordDoubleClickHook.TraceMessage(
                     $"paste-repair-failed mode={snapshot.ObjectMode} "
                     + $"attempt={attempt} error={error.GetType().Name}:{error.Message}");
@@ -1563,6 +1598,19 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         if (attempt >= 6)
         {
             Interlocked.Exchange(ref _copyPasteSelectionRepairPending, 0);
+            if (snapshot.UsesHostCore
+                && snapshot.CoreHostKind == WordFormulaHostKind.VisualTeX
+                && snapshot.CorePendingVisualTeXPhysicalPasteObserved)
+            {
+                EndActivePasteUndoRecord(
+                    snapshot,
+                    "repair-timeout-physical-paste-preserved");
+                WordDoubleClickHook.TraceMessage(
+                    $"paste-repair-timeout-preserved mode={snapshot.ObjectMode} "
+                    + $"attempts={attempt + 1}");
+                return;
+            }
+
             if (snapshot.UsesHostCore)
                 RollbackActivePasteUndoRecord(
                     snapshot,

@@ -34,6 +34,7 @@ $serverArtifacts = Join-Path $root "src-windows\artifacts\formula-ole-server"
 $testArtifacts = Join-Path $root "src-windows\artifacts\formula-ole-server-tests"
 $clsid = "{8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B}"
 $iid = "{6C672AF0-7321-4D21-B325-868CB34592C2}"
+$metadataIid = "{A59B7798-6F24-4CF0-B378-E951BFFAFB3A}"
 $libid = "{DF66EC66-3B3A-4675-A7BE-30456A04EB96}"
 
 function Assert-RegistryEntryRemoved {
@@ -90,6 +91,7 @@ try {
 
         Assert-RegistryEntryRemoved -Key "HKCU\Software\Classes\CLSID\$clsid" -RegistryView $target.RegistryView
         Assert-RegistryEntryRemoved -Key "HKCU\Software\Classes\Interface\$iid" -RegistryView $target.RegistryView
+        Assert-RegistryEntryRemoved -Key "HKCU\Software\Classes\Interface\$metadataIid" -RegistryView $target.RegistryView
         Assert-RegistryEntryRemoved -Key "HKCU\Software\Classes\TypeLib\$libid" -RegistryView $target.RegistryView
     }
 

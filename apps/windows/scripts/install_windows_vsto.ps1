@@ -520,6 +520,7 @@ function Remove-LegacyPerUserOfficeRegistration {
         "HKCU:\Software\Classes\VisualTeX.Formula",
         "HKCU:\Software\Classes\CLSID\{8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B}",
         "HKCU:\Software\Classes\Interface\{6C672AF0-7321-4D21-B325-868CB34592C2}",
+        "HKCU:\Software\Classes\Interface\{A59B7798-6F24-4CF0-B378-E951BFFAFB3A}",
         "HKCU:\Software\Classes\TypeLib\{DF66EC66-3B3A-4675-A7BE-30456A04EB96}",
         "HKCU:\Software\Classes\AppID\{3C72FF7F-B04A-4FD0-AA7D-61D110D8B3C1}",
         "HKCU:\Software\Classes\AppID\VisualTeX.FormulaOleServer.exe"
@@ -857,6 +858,7 @@ function Assert-ManagedComActivation([string]$ProgId) {
 function Assert-NativeOleRegistration([string]$InstallRoot, [string]$Architecture) {
     $clsid = "{8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B}"
     $iid = "{6C672AF0-7321-4D21-B325-868CB34592C2}"
+    $metadataIid = "{A59B7798-6F24-4CF0-B378-E951BFFAFB3A}"
     $libid = "{DF66EC66-3B3A-4675-A7BE-30456A04EB96}"
     $server = Join-Path $InstallRoot "VisualTeX.FormulaOleServer.exe"
     if (-not (Test-Path -LiteralPath $server -PathType Leaf)) { throw "Native Formula OLE LocalServer is missing: $server" }
@@ -876,6 +878,8 @@ function Assert-NativeOleRegistration([string]$InstallRoot, [string]$Architectur
     Assert-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) "Software\Classes\CLSID\$clsid\VersionIndependentProgID" "(default)" "VisualTeX.Formula" $Architecture | Out-Null
     Assert-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) "Software\Classes\Interface\$iid\ProxyStubClsid32" "(default)" "{00020424-0000-0000-C000-000000000046}" $Architecture | Out-Null
     Assert-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) "Software\Classes\Interface\$iid\TypeLib" "(default)" $libid $Architecture | Out-Null
+    Assert-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) "Software\Classes\Interface\$metadataIid\ProxyStubClsid32" "(default)" "{00020424-0000-0000-C000-000000000046}" $Architecture | Out-Null
+    Assert-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) "Software\Classes\Interface\$metadataIid\TypeLib" "(default)" $libid $Architecture | Out-Null
     $typeLibraryPlatform = if ($Architecture -eq "x86") { "win32" } else { "win64" }
     $typeLibrary = [string](Get-RegistryValue ([Microsoft.Win32.RegistryHive]::LocalMachine) "Software\Classes\TypeLib\$libid\1.0\0\$typeLibraryPlatform" "(default)" $Architecture)
     if (-not [string]::Equals($typeLibrary, $server, [StringComparison]::OrdinalIgnoreCase)) {

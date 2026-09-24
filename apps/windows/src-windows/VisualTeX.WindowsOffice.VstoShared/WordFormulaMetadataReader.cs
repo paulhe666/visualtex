@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -111,19 +112,50 @@ internal static class WordFormulaMetadataReader
         {
             OLEFormat? format = null;
             object? oleObject = null;
+            IVisualTeXFormulaObject? formula = null;
+            OlePngPreviewExtractor.PreviewFiles? preservedPreview = null;
+            var usedLegacyUpdate = false;
             try
             {
                 format = shape.OLEFormat;
                 oleObject = WordOleObjectAccessor.GetRunningObject(format);
-                if (oleObject is not IVisualTeXFormulaObject formula)
-                    throw new InvalidOperationException(
+                formula = oleObject as IVisualTeXFormulaObject
+                    ?? throw new InvalidOperationException(
                         "The VisualTeX native OLE object is unavailable.");
-                FormulaOleInterop.UpdateMetadata(formula, metadata);
+                try
+                {
+                    FormulaOleInterop.UpdateMetadata(formula, metadata);
+                }
+                catch (NotSupportedException)
+                {
+                    // Pre-IVisualTeXFormulaMetadata servers can still persist a
+                    // metadata change through the original UpdateFromFiles API.
+                    // Preserve the object's own current EMF/PNG presentation and
+                    // feed those exact bytes back with the new metadata so a copy
+                    // re-key never requires a newer installed OLE server and never
+                    // re-renders or visually changes the formula.
+                    preservedPreview =
+                        OlePngPreviewExtractor.MaterializeForUpdate(
+                            oleObject,
+                            metadata.FormulaId);
+                    FormulaOleInterop.Update(
+                        formula,
+                        metadata,
+                        preservedPreview.EmfPath,
+                        preservedPreview.PngPath);
+                    usedLegacyUpdate = true;
+                }
                 CacheMetadata(shape, metadata);
                 return;
             }
             finally
             {
+                if (usedLegacyUpdate && formula is not null)
+                {
+                    try { FormulaOleInterop.CloseAfterSave(formula); }
+                    catch { }
+                }
+                preservedPreview?.Dispose();
                 Release(oleObject);
                 Release(format);
             }
