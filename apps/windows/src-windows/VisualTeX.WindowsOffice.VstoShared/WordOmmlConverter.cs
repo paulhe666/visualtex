@@ -1757,6 +1757,185 @@ internal static partial class WordOmmlConverter
         }
     }
 
+    private static bool IsOnlyParagraphInTableCell(
+        Range paragraphRange)
+    {
+        Cells? cells = null;
+        Cell? cell = null;
+        Range? cellRange = null;
+        Paragraphs? paragraphs = null;
+        try
+        {
+            if (!Convert.ToBoolean(
+                    paragraphRange.get_Information(
+                        WdInformation.wdWithInTable)))
+                return false;
+
+            cells =
+                paragraphRange.Cells;
+            if (cells.Count != 1)
+                return false;
+
+            cell =
+                cells[1];
+            cellRange =
+                cell.Range.Duplicate;
+            paragraphs =
+                cellRange.Paragraphs;
+            return paragraphs.Count == 1;
+        }
+        finally
+        {
+            Release(paragraphs);
+            Release(cellRange);
+            Release(cell);
+            Release(cells);
+        }
+    }
+
+    private static bool TryRemoveRedundantEmptyTableParagraph(
+        Document document,
+        OMath insertedMath)
+    {
+        Range? mathRange = null;
+        Cells? cells = null;
+        Cell? cell = null;
+        Range? cellRange = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? firstParagraph = null;
+        Paragraph? secondParagraph = null;
+        Range? firstRange = null;
+        Range? secondRange = null;
+        Tables? secondTables = null;
+        InlineShapes? secondShapes = null;
+        OMaths? secondMaths = null;
+        Fields? secondFields = null;
+        Frames? secondFrames = null;
+        Range? redundantBreak = null;
+        try
+        {
+            mathRange =
+                insertedMath.Range.Duplicate;
+            if (!Convert.ToBoolean(
+                    mathRange.get_Information(
+                        WdInformation.wdWithInTable)))
+                return false;
+
+            cells =
+                mathRange.Cells;
+            if (cells.Count != 1)
+                return false;
+
+            cell =
+                cells[1];
+            cellRange =
+                cell.Range.Duplicate;
+            paragraphs =
+                cellRange.Paragraphs;
+            if (paragraphs.Count != 2)
+                return false;
+
+            firstParagraph =
+                paragraphs[1];
+            secondParagraph =
+                paragraphs[2];
+            firstRange =
+                firstParagraph.Range.Duplicate;
+            secondRange =
+                secondParagraph.Range.Duplicate;
+
+            // The OMath must remain in the original first paragraph. The second
+            // paragraph must be completely empty except for Word's structural
+            // paragraph/cell terminators; otherwise it is user-authored content
+            // and must never be removed.
+            if (mathRange.Start < firstRange.Start
+                || mathRange.End > firstRange.End)
+                return false;
+
+            secondTables =
+                secondRange.Tables;
+            secondShapes =
+                secondRange.InlineShapes;
+            secondMaths =
+                secondRange.OMaths;
+            secondFields =
+                secondRange.Fields;
+            secondFrames =
+                secondRange.Frames;
+            // Range.Tables includes the owning user table for any range
+            // inside a cell. Only an additional nested table makes this tail
+            // paragraph non-empty.
+            if (secondTables.Count > 1
+                || secondShapes.Count != 0
+                || secondMaths.Count != 0
+                || secondFields.Count != 0
+                || secondFrames.Count != 0)
+                return false;
+
+            var secondText =
+                secondRange.Text
+                ?? string.Empty;
+            var hasParagraphTerminator = false;
+            foreach (var character in secondText)
+            {
+                if (character == (char)13)
+                {
+                    hasParagraphTerminator = true;
+                    continue;
+                }
+
+                if (character == (char)7
+                    || character == (char)10
+                    || character == (char)9
+                    || character == (char)11
+                    || char.IsWhiteSpace(character))
+                    continue;
+
+                return false;
+            }
+            if (!hasParagraphTerminator)
+                return false;
+
+            // Delete only the paragraph mark separating the original paragraph
+            // from Word's newly-created empty tail paragraph. The cell's own
+            // terminal paragraph/cell mark lives in the second paragraph and is
+            // intentionally preserved.
+            if (firstRange.End <= firstRange.Start)
+                return false;
+            redundantBreak =
+                document.Range(
+                    firstRange.End - 1,
+                    firstRange.End);
+            var breakText =
+                redundantBreak.Text
+                ?? string.Empty;
+            if (breakText.Length != 1
+                || breakText[0] != (char)13)
+                return false;
+
+            redundantBreak.Delete();
+            return true;
+        }
+        finally
+        {
+            Release(redundantBreak);
+            Release(secondFrames);
+            Release(secondFields);
+            Release(secondMaths);
+            Release(secondShapes);
+            Release(secondTables);
+            Release(secondRange);
+            Release(firstRange);
+            Release(secondParagraph);
+            Release(firstParagraph);
+            Release(paragraphs);
+            Release(cellRange);
+            Release(cell);
+            Release(cells);
+            Release(mathRange);
+        }
+    }
+
     internal static Range ReplaceWithPreparedOmmlInParagraph(
         Document targetDocument,
         Range targetRange,
@@ -1857,6 +2036,9 @@ internal static partial class WordOmmlConverter
                 paragraphs[1];
             paragraphRange =
                 paragraph.Range.Duplicate;
+            var singleParagraphTableCellBeforeInsert =
+                IsOnlyParagraphInTableCell(
+                    paragraphRange);
 
             var paragraphXml =
                 XDocument.Parse(
@@ -1887,6 +2069,17 @@ internal static partial class WordOmmlConverter
                 != 1)
                 throw new InvalidDataException(
                     $"Word paragraph XML contains {ordinaryMarkerNodes.Length} ordinary and {mathMarkerNodes.Length} mathematical copies of the OMML insertion marker.");
+
+            var markerNodeForParagraph =
+                ordinaryMarkerNodes.Length == 1
+                    ? ordinaryMarkerNodes[0]
+                    : mathMarkerNodes[0];
+            var targetParagraphXml =
+                markerNodeForParagraph
+                    .Ancestors(word + "p")
+                    .SingleOrDefault()
+                ?? throw new InvalidDataException(
+                    "The OMML insertion marker has no unique containing Word paragraph.");
 
             var equation =
                 XElement.Parse(
@@ -2059,6 +2252,36 @@ internal static partial class WordOmmlConverter
                     replacements.ToArray());
             }
 
+            if (Convert.ToBoolean(
+                    paragraphRange.get_Information(
+                        WdInformation.wdWithInTable)))
+            {
+                // A paragraph range inside a table serializes with its containing
+                // w:tbl/w:tr/w:tc context. Re-inserting that complete package into
+                // the same cell manufactures a nested table. Keep all package
+                // parts, but reduce /word/document.xml to the exact edited w:p so
+                // Word replaces only the existing paragraph in-place.
+                var mainBody =
+                    WordDocumentXml.GetRequiredMainDocumentBody(
+                        paragraphXml);
+                var standaloneParagraph =
+                    new XElement(
+                        targetParagraphXml);
+                var sectionProperties =
+                    mainBody
+                        .Elements(word + "sectPr")
+                        .LastOrDefault();
+                var standaloneSectionProperties =
+                    sectionProperties is null
+                        ? null
+                        : new XElement(sectionProperties);
+                mainBody.RemoveNodes();
+                mainBody.Add(standaloneParagraph);
+                if (standaloneSectionProperties is not null)
+                    mainBody.Add(
+                        standaloneSectionProperties);
+            }
+
             paragraphRange.InsertXML(
                 paragraphXml.ToString(
                     SaveOptions.DisableFormatting));
@@ -2094,6 +2317,23 @@ internal static partial class WordOmmlConverter
             // Do not add a trailing sentinel or force that native promotion back
             // to inline. Explicit display requests remain authoritative above.
             insertedMath.BuildUp();
+
+            if (singleParagraphTableCellBeforeInsert
+                && TryRemoveRedundantEmptyTableParagraph(
+                    targetDocument,
+                    insertedMath))
+            {
+                Release(insertedMath);
+                insertedMath =
+                    FindMathAtPosition(
+                        targetDocument,
+                        insertionStart,
+                        ResolveCurrentParagraphEnd(
+                            targetDocument,
+                            insertionStart))
+                    ?? throw new InvalidOperationException(
+                        "Word lost the table-cell OMath after removing its redundant empty paragraph.");
+            }
 
             if (followingEmptyParagraphGuard is not null)
             {

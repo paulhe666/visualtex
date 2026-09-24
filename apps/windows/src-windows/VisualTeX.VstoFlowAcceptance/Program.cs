@@ -1102,6 +1102,10 @@ internal static partial class Program
             {
                 RunWordMathTypeWmfWindowPdfAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-latex-redraw-omml-table", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordLatexRedrawOmmlTableAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "mathtype-window-inventory", StringComparison.OrdinalIgnoreCase))
             {
                 RunMathTypeWindowInventory();
