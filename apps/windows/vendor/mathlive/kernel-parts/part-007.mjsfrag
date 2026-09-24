@@ -1530,19 +1530,9 @@ var DEFAULT_KEYBINDINGS = [
     ifMode: "math",
     command: ["insert", "\\backslash"]
   },
-  // "|" key} override command mode
-  {
-    key: "[NumpadDivide]",
-    ifMode: "math",
-    command: ["insert", "\\frac{#@}{#?}"]
-  },
-  // ??
-  {
-    key: "alt+[NumpadDivide]",
-    ifMode: "math",
-    command: ["insert", "\\frac{#?}{#@}"]
-  },
-  // ??
+  // VisualTeX: slash keys are literal input. MathLive's native
+  // NumpadDivide fraction shortcut bypassed the product shortcut setting and
+  // unexpectedly replaced ordinary division with a stacked fraction.
   // Accessibility
   { key: "shift+alt+k", command: "toggleKeystrokeCaption" },
   { key: "alt+[Space]", command: "toggleContextMenu" },
@@ -1593,23 +1583,9 @@ var DEFAULT_KEYBINDINGS = [
     ifMode: "text",
     command: ["switchMode", "math"]
   },
-  {
-    key: "/",
-    ifMode: "math",
-    command: ["insert", "\\frac{#@}{#?}"]
-  },
-  {
-    key: "alt+/",
-    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
-    ifMode: "math",
-    command: ["insert", "/"]
-  },
-  {
-    key: "alt+shift+/",
-    ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],
-    ifMode: "math",
-    command: ["insert", "/"]
-  },
+  // VisualTeX: "/" is deliberately left unbound so the keyboard
+  // input path inserts a literal slash. Explicit \frac remains available from
+  // command input, toolbar tiles and completion candidates.
   {
     key: "alt+[BracketLeft]",
     ifLayout: ["apple.en-intl", "windows.en-intl", "linux.en"],

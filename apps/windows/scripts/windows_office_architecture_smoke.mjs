@@ -265,7 +265,7 @@ const wordVstoService = await source(
   "src-windows/VisualTeX.WordVsto/WordFormulaService.cs",
 );
 const wordVstoFormatConversion = await source(
-  "src-windows/VisualTeX.WordVsto/WordFormulaService.FormatConversion.cs",
+  "src-windows/VisualTeX.WordVsto/WordFormulaService.FormatConversionCore.cs",
 );
 const officeFormulaSizing = await source(
   "src-windows/VisualTeX.WindowsOffice.Contracts/OfficeFormulaSizing.cs",
@@ -866,22 +866,45 @@ for (const binding of [
   assert.ok(powerpointVsto.includes(`id="${binding[0]}`));
   assert.ok(powerpointVsto.includes(binding[1]));
 }
-for (const menuId of [
+for (const splitButtonId of [
+  "VisualTeX.WordVsto.VisualTeXToMathType",
+  "VisualTeX.WordVsto.MathTypeToVisualTeX",
+  "VisualTeX.WordVsto.OmmlToMathType",
+  "VisualTeX.WordVsto.MathTypeToOmml",
   "VisualTeX.WordVsto.VisualTeXToOmml",
   "VisualTeX.WordVsto.OmmlToVisualTeX",
 ]) {
-  const menuStart = wordVsto.indexOf(`<menu id="${menuId}"`);
-  assert.ok(menuStart >= 0, `Word Ribbon is missing ${menuId}`);
-  const menuEnd = wordVsto.indexOf(">", menuStart);
-  const menuTag = wordVsto.slice(menuStart, menuEnd + 1);
-  assert.ok(!menuTag.includes("getImage="), `${menuId} unexpectedly has getImage`);
-  assert.ok(!menuTag.includes("imageMso="), `${menuId} unexpectedly has imageMso`);
+  const splitStart = wordVsto.indexOf(`<splitButton id="${splitButtonId}"`);
+  assert.ok(splitStart >= 0, `Word Ribbon is missing splitButton ${splitButtonId}`);
+  const splitEnd = wordVsto.indexOf("</splitButton>", splitStart);
+  assert.ok(splitEnd > splitStart, `Word Ribbon splitButton ${splitButtonId} is not closed`);
+  const splitBlock = wordVsto.slice(splitStart, splitEnd + "</splitButton>".length);
+  assert.ok(
+    splitBlock.includes('onAction="OnConvertFormulaFormatDefault"'),
+    `${splitButtonId} main button does not execute the saved default scope`,
+  );
+  assert.ok(
+    splitBlock.includes('getPressed="GetFormatConversionScopePressed"'),
+    `${splitButtonId} scope menu does not expose the saved default`,
+  );
+  assert.ok(
+    splitBlock.includes('onAction="OnFormatConversionScopeChanged"'),
+    `${splitButtonId} scope menu cannot update the saved default`,
+  );
+  assert.ok(
+    splitBlock.includes('label="默认：转换所选"') &&
+      splitBlock.includes('label="默认：转换全文"'),
+    `${splitButtonId} scope menu is missing selection/document defaults`,
+  );
 }
 for (const callback of [
   "OnConvertVisualTeXToOmmlSelection",
   "OnConvertVisualTeXToOmmlDocument",
   "OnConvertOmmlToVisualTeXSelection",
   "OnConvertOmmlToVisualTeXDocument",
+  "OnConvertFormulaFormatDefault",
+  "GetFormatConversionScopePressed",
+  "OnFormatConversionScopeChanged",
 ]) {
   assert.ok(wordVsto.includes(callback), `Word Ribbon is missing ${callback}`);
 }

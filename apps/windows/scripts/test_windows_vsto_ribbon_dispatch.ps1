@@ -127,9 +127,20 @@ function Test-RibbonComDispatch(
                 'VisualTeX.WordVsto.VisualTeXToOmml',
                 'VisualTeX.WordVsto.OmmlToVisualTeX'
             )) {
-                $controlMarker = 'id="{0}"' -f $requiredFormatControl
-                if ($ribbonXml -notmatch [regex]::Escape($controlMarker)) {
-                    throw "$ClassName Ribbon XML is missing format conversion control $requiredFormatControl."
+                $splitMarker = '<splitButton id="{0}"' -f $requiredFormatControl
+                if ($ribbonXml -notmatch [regex]::Escape($splitMarker)) {
+                    throw "$ClassName Ribbon XML format conversion control $requiredFormatControl is not a splitButton."
+                }
+            }
+            foreach ($requiredScopeMarker in @(
+                'onAction="OnConvertFormulaFormatDefault"',
+                'getPressed="GetFormatConversionScopePressed"',
+                'onAction="OnFormatConversionScopeChanged"',
+                'tag="nativeOle|mathTypeOle|selection"',
+                'tag="nativeOle|mathTypeOle|document"'
+            )) {
+                if ($ribbonXml -notmatch [regex]::Escape($requiredScopeMarker)) {
+                    throw "$ClassName Ribbon XML is missing split-button scope behavior $requiredScopeMarker."
                 }
             }
 
@@ -219,7 +230,10 @@ Test-RibbonComDispatch `
         "OnConvertVisualTeXToOmmlSelection",
         "OnConvertVisualTeXToOmmlDocument",
         "OnConvertOmmlToVisualTeXSelection",
-        "OnConvertOmmlToVisualTeXDocument"
+        "OnConvertOmmlToVisualTeXDocument",
+        "OnConvertFormulaFormatDefault",
+        "GetFormatConversionScopePressed",
+        "OnFormatConversionScopeChanged"
     )
 
 Test-RibbonComDispatch `

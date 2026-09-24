@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
 
@@ -5,6 +6,239 @@ namespace VisualTeX.WordVsto;
 
 public sealed partial class ThisAddIn
 {
+    private const string FormatConversionScopeRegistryPath =
+        @"Software\VisualTeX\WordVsto\FormatConversionDefaults";
+
+    private readonly object _formatConversionScopeSync = new();
+    private readonly Dictionary<string, bool> _formatConversionWholeDocumentDefaults =
+        new(StringComparer.Ordinal);
+
+    private static readonly string[] FormatConversionScopeControlIds =
+    {
+        "VisualTeX.WordVsto.VisualTeXToMathTypeScopeSelection",
+        "VisualTeX.WordVsto.VisualTeXToMathTypeScopeDocument",
+        "VisualTeX.WordVsto.MathTypeToVisualTeXScopeSelection",
+        "VisualTeX.WordVsto.MathTypeToVisualTeXScopeDocument",
+        "VisualTeX.WordVsto.OmmlToMathTypeScopeSelection",
+        "VisualTeX.WordVsto.OmmlToMathTypeScopeDocument",
+        "VisualTeX.WordVsto.MathTypeToOmmlScopeSelection",
+        "VisualTeX.WordVsto.MathTypeToOmmlScopeDocument",
+        "VisualTeX.WordVsto.VisualTeXToOmmlScopeSelection",
+        "VisualTeX.WordVsto.VisualTeXToOmmlScopeDocument",
+        "VisualTeX.WordVsto.OmmlToVisualTeXScopeSelection",
+        "VisualTeX.WordVsto.OmmlToVisualTeXScopeDocument",
+    };
+
+    public void OnConvertFormulaFormatDefault(object control)
+    {
+        if (control is not Microsoft.Office.Core.IRibbonControl ribbonControl
+            || !TryParseFormatConversionPairTag(
+                ribbonControl.Tag,
+                out var sourceMode,
+                out var targetMode))
+        {
+            SetStatus("无法识别公式格式转换方向。");
+            return;
+        }
+
+        var wholeDocument =
+            GetFormatConversionWholeDocumentDefault(sourceMode, targetMode);
+        _ = ConvertFormulaFormatAsync(
+            wholeDocument,
+            sourceMode,
+            targetMode);
+    }
+
+    public bool GetFormatConversionScopePressed(
+        Microsoft.Office.Core.IRibbonControl control)
+    {
+        if (!TryParseFormatConversionScopeTag(
+                control?.Tag,
+                out var sourceMode,
+                out var targetMode,
+                out var wholeDocument))
+            return false;
+
+        return GetFormatConversionWholeDocumentDefault(sourceMode, targetMode)
+            == wholeDocument;
+    }
+
+    public void OnFormatConversionScopeChanged(
+        Microsoft.Office.Core.IRibbonControl control,
+        bool pressed)
+    {
+        _ = pressed;
+        if (!TryParseFormatConversionScopeTag(
+                control?.Tag,
+                out var sourceMode,
+                out var targetMode,
+                out var wholeDocument))
+            return;
+
+        SetFormatConversionWholeDocumentDefault(
+            sourceMode,
+            targetMode,
+            wholeDocument);
+
+        var sourceLabel = FormatConversionModeLabel(sourceMode);
+        var targetLabel = FormatConversionModeLabel(targetMode);
+        SetStatus(
+            wholeDocument
+                ? $"{sourceLabel} → {targetLabel} 默认范围已设为“转换全文”。"
+                : $"{sourceLabel} → {targetLabel} 默认范围已设为“转换所选”。");
+    }
+
+    private bool GetFormatConversionWholeDocumentDefault(
+        string sourceMode,
+        string targetMode)
+    {
+        var key = FormatConversionPreferenceKey(sourceMode, targetMode);
+        lock (_formatConversionScopeSync)
+        {
+            if (_formatConversionWholeDocumentDefaults.TryGetValue(
+                    key,
+                    out var cached))
+                return cached;
+
+            var wholeDocument = false;
+            try
+            {
+                using var registryKey =
+                    Registry.CurrentUser.OpenSubKey(
+                        FormatConversionScopeRegistryPath,
+                        writable: false);
+                var value = registryKey?.GetValue(key);
+                wholeDocument =
+                    value is not null
+                    && Convert.ToInt32(
+                        value,
+                        System.Globalization.CultureInfo.InvariantCulture) != 0;
+            }
+            catch
+            {
+                wholeDocument = false;
+            }
+
+            _formatConversionWholeDocumentDefaults[key] = wholeDocument;
+            return wholeDocument;
+        }
+    }
+
+    private void SetFormatConversionWholeDocumentDefault(
+        string sourceMode,
+        string targetMode,
+        bool wholeDocument)
+    {
+        var key = FormatConversionPreferenceKey(sourceMode, targetMode);
+        lock (_formatConversionScopeSync)
+        {
+            _formatConversionWholeDocumentDefaults[key] = wholeDocument;
+            try
+            {
+                using var registryKey =
+                    Registry.CurrentUser.CreateSubKey(
+                        FormatConversionScopeRegistryPath,
+                        writable: true);
+                registryKey?.SetValue(
+                    key,
+                    wholeDocument ? 1 : 0,
+                    RegistryValueKind.DWord);
+            }
+            catch
+            {
+                // Keep the in-process preference even if the user profile
+                // temporarily rejects persistence.
+            }
+        }
+
+        InvalidateFormatConversionScopeControls();
+    }
+
+    private void InvalidateFormatConversionScopeControls()
+    {
+        var ribbon = _ribbonUi;
+        if (ribbon is null) return;
+        try
+        {
+            dynamic ui = ribbon;
+            foreach (var controlId in FormatConversionScopeControlIds)
+                ui.InvalidateControl(controlId);
+        }
+        catch { }
+    }
+
+    private static bool TryParseFormatConversionPairTag(
+        string? tag,
+        out string sourceMode,
+        out string targetMode)
+    {
+        sourceMode = string.Empty;
+        targetMode = string.Empty;
+        if (string.IsNullOrWhiteSpace(tag))
+            return false;
+
+        var parts = tag!.Split('|');
+        if (parts.Length != 2
+            || !IsSupportedFormatConversionMode(parts[0])
+            || !IsSupportedFormatConversionMode(parts[1])
+            || string.Equals(parts[0], parts[1], StringComparison.Ordinal))
+            return false;
+
+        sourceMode = parts[0];
+        targetMode = parts[1];
+        return true;
+    }
+
+    private static bool TryParseFormatConversionScopeTag(
+        string? tag,
+        out string sourceMode,
+        out string targetMode,
+        out bool wholeDocument)
+    {
+        sourceMode = string.Empty;
+        targetMode = string.Empty;
+        wholeDocument = false;
+        if (string.IsNullOrWhiteSpace(tag))
+            return false;
+
+        var parts = tag!.Split('|');
+        if (parts.Length != 3
+            || !IsSupportedFormatConversionMode(parts[0])
+            || !IsSupportedFormatConversionMode(parts[1])
+            || string.Equals(parts[0], parts[1], StringComparison.Ordinal))
+            return false;
+
+        if (string.Equals(parts[2], "selection", StringComparison.Ordinal))
+            wholeDocument = false;
+        else if (string.Equals(parts[2], "document", StringComparison.Ordinal))
+            wholeDocument = true;
+        else
+            return false;
+
+        sourceMode = parts[0];
+        targetMode = parts[1];
+        return true;
+    }
+
+    private static bool IsSupportedFormatConversionMode(string mode) =>
+        string.Equals(
+            mode,
+            FormulaOleContract.NativeOleMode,
+            StringComparison.Ordinal)
+        || string.Equals(
+            mode,
+            FormulaOleContract.MathTypeOleMode,
+            StringComparison.Ordinal)
+        || string.Equals(
+            mode,
+            FormulaOleContract.WordOmmlMode,
+            StringComparison.Ordinal);
+
+    private static string FormatConversionPreferenceKey(
+        string sourceMode,
+        string targetMode) =>
+        sourceMode + "-to-" + targetMode;
+
     public void OnConvertVisualTeXToMathTypeSelection(object control) =>
         _ = ConvertFormulaFormatAsync(
             wholeDocument: false,

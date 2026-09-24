@@ -105,7 +105,6 @@ var REVERSE_KEYBINDINGS = {
   "\\infty": "alt+[Digit5]",
   "\\differentialD": "alt+d",
   "\\partial": "shift+alt+d",
-  "\\frac": "Slash",
   "\\emptyset": "alt+o",
   "\\varnothing": "shift+alt+o",
   "\\~": "~"
