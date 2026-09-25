@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import type { Language } from "../stores/editorStore";
+import { RELEASE_WELCOME_VERSION } from "../update/releaseWelcome";
 import { localizeReleaseNotes } from "../update/releaseNotes";
 import type { UpdateCheckResult } from "../update/updateService";
 import wechatPayImageUrl from "../../../../docs/images/wechat-pay.jpg";
@@ -118,8 +119,8 @@ export function UpdateDialog({
     : "";
   const title = releaseWelcome
     ? isEn
-      ? `What's new in VisualTeX ${result?.latestVersion ?? "1.2.7"}`
-      : `VisualTeX ${result?.latestVersion ?? "1.2.7"} 更新内容`
+      ? `What's new in VisualTeX ${result?.latestVersion ?? RELEASE_WELCOME_VERSION}`
+      : `VisualTeX ${result?.latestVersion ?? RELEASE_WELCOME_VERSION} 更新内容`
     : checking
       ? isEn
         ? "Checking for updates"

@@ -14,6 +14,7 @@ const SHAPE_PREFIX: &str = "VisualTeX_";
 const WORD_METADATA_PREFIX: &str = "visualtex:v1:deflate:";
 const WORD_SELECTION_FIELD_SEPARATOR: &str = "<VISUALTEX_WORD_FIELD>";
 const WORD_DOUBLE_CLICK_BOUNDS_FILE: &str = "double-click-screen-bounds.txt";
+const WORD_DOUBLE_CLICK_TARGET_BOUNDS_FILE: &str = "double-click-target-screen-bounds.txt";
 const POWERPOINT_SNAPSHOT_FIELD_SEPARATOR: &str = "<VISUALTEX_PPT_FIELD>";
 const POWERPOINT_SNAPSHOT_RECORD_SEPARATOR: &str = "<VISUALTEX_PPT_RECORD>";
 const MAX_EVENTS: usize = 64;
@@ -941,6 +942,33 @@ where
     None
 }
 
+fn word_target_after_double_click<ReadBounds, Wait>(
+    mut read_bounds: ReadBounds,
+    mut wait: Wait,
+    click_x: f64,
+    click_y: f64,
+) -> bool
+where
+    ReadBounds: FnMut() -> Result<WordScreenBounds, String>,
+    Wait: FnMut(Duration),
+{
+    // Word can leave the previously selected formula active after a double-click
+    // on blank document space. Resolve the settled target through VBA, but only
+    // accept it when the actual AppKit click is inside Word's GetPoint bounds.
+    for delay in [0_u64, 20, 35, 55] {
+        if delay > 0 {
+            wait(Duration::from_millis(delay));
+        }
+        let Ok(bounds) = read_bounds() else {
+            continue;
+        };
+        if bounds.contains(click_x, click_y) {
+            return true;
+        }
+    }
+    false
+}
+
 fn powerpoint_selection_after_double_click<ReadSelection, Wait>(
     mut read_selection: ReadSelection,
     mut wait: Wait,
@@ -1124,14 +1152,20 @@ pub fn start_double_click_monitor(
                     // Route that settled selection through the same strict VBA
                     // target resolver used by WindowBeforeDoubleClick. The VBA
                     // handler remains a no-op for ordinary Word content.
+                    if !word_target_after_double_click(
+                        selected_word_double_click_target_bounds,
+                        std::thread::sleep,
+                        click_x,
+                        click_y,
+                    ) {
+                        return;
+                    }
                     if crate::office::macos_offline::focus_open_office_editor(&app) {
                         return;
                     }
-                    if let Err(error) =
-                        crate::office::macos_offline::run_double_click_edit_macro(
-                            crate::office::sessions::OfficeHost::Word,
-                        )
-                    {
+                    if let Err(error) = crate::office::macos_offline::run_double_click_edit_macro(
+                        crate::office::sessions::OfficeHost::Word,
+                    ) {
                         eprintln!("Unable to route the Word native formula double-click: {error}");
                     }
                     let _ = crate::office::macos_offline::focus_open_office_editor(&app);
@@ -1215,22 +1249,41 @@ fn frontmost_bundle_id() -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn word_double_click_bounds_path() -> Result<PathBuf, String> {
+fn word_double_click_bounds_path_for(file_name: &str) -> Result<PathBuf, String> {
     let home = std::env::var_os("HOME")
         .ok_or_else(|| "Unable to resolve the macOS home directory".to_string())?;
     Ok(PathBuf::from(home)
         .join("Library/Application Scripts/com.microsoft.Word/VisualTeXRuntime")
-        .join(WORD_DOUBLE_CLICK_BOUNDS_FILE))
+        .join(file_name))
 }
 
 #[cfg(target_os = "macos")]
-fn read_word_double_click_bounds() -> Result<WordScreenBounds, String> {
-    let path = word_double_click_bounds_path()?;
-    let text = read_to_string(&path)
-        .map_err(|error| format!("Unable to read Word double-click bounds {}: {error}", path.display()))?;
+fn word_double_click_bounds_path() -> Result<PathBuf, String> {
+    word_double_click_bounds_path_for(WORD_DOUBLE_CLICK_BOUNDS_FILE)
+}
+
+#[cfg(target_os = "macos")]
+fn word_double_click_target_bounds_path() -> Result<PathBuf, String> {
+    word_double_click_bounds_path_for(WORD_DOUBLE_CLICK_TARGET_BOUNDS_FILE)
+}
+
+#[cfg(target_os = "macos")]
+fn read_word_screen_bounds(
+    path: &std::path::Path,
+    label: &str,
+) -> Result<WordScreenBounds, String> {
+    let text = read_to_string(&path).map_err(|error| {
+        format!(
+            "Unable to read Word {label} bounds {}: {error}",
+            path.display()
+        )
+    })?;
     let fields = text.trim().split('|').collect::<Vec<_>>();
     if fields.len() != 5 || fields[0] != "PASS" {
-        return Err(format!("Word returned invalid double-click bounds: {}", text.trim()));
+        return Err(format!(
+            "Word returned invalid {label} bounds: {}",
+            text.trim()
+        ));
     }
     let parse_number = |value: &str, label: &str| {
         value
@@ -1245,6 +1298,25 @@ fn read_word_double_click_bounds() -> Result<WordScreenBounds, String> {
         width: parse_number(fields[3], "width")?,
         height: parse_number(fields[4], "height")?,
     })
+}
+
+#[cfg(target_os = "macos")]
+fn read_word_double_click_bounds() -> Result<WordScreenBounds, String> {
+    read_word_screen_bounds(&word_double_click_bounds_path()?, "double-click")
+}
+
+#[cfg(target_os = "macos")]
+fn selected_word_double_click_target_bounds() -> Result<WordScreenBounds, String> {
+    let bounds_path = word_double_click_target_bounds_path()?;
+    let _ = remove_file(&bounds_path);
+    run_applescript_with_timeout(
+        r#"tell application "Microsoft Word"
+if not (exists active document) then error "No active Word document"
+run VB macro macro name "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds"
+end tell"#,
+        APPLESCRIPT_QUERY_TIMEOUT,
+    )?;
+    read_word_screen_bounds(&bounds_path, "double-click target")
 }
 
 #[cfg(target_os = "macos")]
@@ -1542,6 +1614,84 @@ mod tests {
                 Duration::from_millis(55),
             ]
         );
+    }
+
+    #[test]
+    fn word_double_click_target_retries_until_the_clicked_native_formula_settles() {
+        let mut attempts = 0;
+        let mut waits = Vec::new();
+        let matched = word_target_after_double_click(
+            || {
+                attempts += 1;
+                if attempts < 3 {
+                    return Err("Word selection is still settling".to_string());
+                }
+                Ok(WordScreenBounds {
+                    left: 200.0,
+                    top: 300.0,
+                    width: 120.0,
+                    height: 40.0,
+                })
+            },
+            |delay| waits.push(delay),
+            240.0,
+            320.0,
+        );
+
+        assert!(matched);
+        assert_eq!(attempts, 3);
+        assert_eq!(
+            waits,
+            vec![Duration::from_millis(20), Duration::from_millis(35)]
+        );
+    }
+
+    #[test]
+    fn word_double_click_target_rejects_blank_space_near_a_stale_formula() {
+        let mut attempts = 0;
+        let mut waits = Vec::new();
+        let matched = word_target_after_double_click(
+            || {
+                attempts += 1;
+                Ok(WordScreenBounds {
+                    left: 300.0,
+                    top: 400.0,
+                    width: 72.0,
+                    height: 18.0,
+                })
+            },
+            |delay| waits.push(delay),
+            200.0,
+            409.0,
+        );
+
+        assert!(!matched);
+        assert_eq!(attempts, 4);
+        assert_eq!(
+            waits,
+            vec![
+                Duration::from_millis(20),
+                Duration::from_millis(35),
+                Duration::from_millis(55),
+            ]
+        );
+    }
+
+    #[test]
+    fn word_double_click_target_rejects_an_unresolved_selection() {
+        let mut attempts = 0;
+        let matched = word_target_after_double_click(
+            || {
+                attempts += 1;
+                Err("No VisualTeX formula target".to_string())
+            },
+            |_| {},
+            200.0,
+            409.0,
+        );
+
+        assert!(!matched);
+        assert_eq!(attempts, 4);
     }
 
     #[test]

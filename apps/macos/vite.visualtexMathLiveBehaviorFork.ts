@@ -1,3 +1,4 @@
+import { patchVisualTexMathLiveCoreCompatibility } from "./vite.mathliveCoreCompatibility";
 import { patchVisualTexMathLiveEditingKernel } from "./vite.mathliveEditingKernel";
 import { patchVisualTexMathLiveSelection } from "./vite.mathliveSelection";
 import { patchVisualTexMathLiveSemanticCompletion } from "./vite.mathliveSemanticCompletion";
@@ -27,7 +28,7 @@ function replaceExactly(
  * build instead of silently changing behavior.
  */
 export function patchVisualTexMathLiveBehavior(source: string) {
-  let patched = source;
+  let patched = patchVisualTexMathLiveCoreCompatibility(source);
 
   patched = replaceExactly(
     patched,

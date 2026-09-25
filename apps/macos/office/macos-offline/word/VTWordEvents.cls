@@ -39,16 +39,16 @@ End Sub
 
 Private Sub App_DocumentOpen(ByVal Doc As Word.Document)
     On Error Resume Next
+    VTMigrateOpenedDocumentImageMacroButtons Doc
     VTEnsureApplicationPrewarmScheduled
-    VTEnsureImageMacroMigrationScheduled
     VTInvalidateWordEquationNumberingFormatControl
     On Error GoTo 0
 End Sub
 
 Private Sub App_NewDocument(ByVal Doc As Word.Document)
     On Error Resume Next
+    VTMigrateOpenedDocumentImageMacroButtons Doc
     VTEnsureApplicationPrewarmScheduled
-    VTEnsureImageMacroMigrationScheduled
     VTInvalidateWordEquationNumberingFormatControl
     On Error GoTo 0
 End Sub

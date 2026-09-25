@@ -3,7 +3,8 @@ import type { CommandUsage } from "../types/command";
 
 export interface MathLivePersistentTypingStyle {
   bold: boolean;
-  italic: boolean;
+  // null follows MathLive's normal math alphabet; false forces upright.
+  italic: boolean | null;
   color: string | null;
   backgroundColor: string | null;
 }
@@ -304,6 +305,17 @@ function syncStableNativeInputPopover() {
   stable.classList.toggle("bottom-tip", source.classList.contains("bottom-tip"));
   stable.style.left = source.style.left;
   stable.style.top = source.style.top;
+  const maxCandidateHeight = source.style.getPropertyValue(
+    "--visualtex-suggestion-max-height",
+  );
+  if (maxCandidateHeight) {
+    stable.style.setProperty(
+      "--visualtex-suggestion-max-height",
+      maxCandidateHeight,
+    );
+  } else {
+    stable.style.removeProperty("--visualtex-suggestion-max-height");
+  }
   stable.classList.add("is-visible");
   stable.setAttribute("aria-hidden", "false");
 }

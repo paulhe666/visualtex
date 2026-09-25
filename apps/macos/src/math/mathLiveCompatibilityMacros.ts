@@ -1,5 +1,8 @@
 import type { MacroDictionary } from "mathlive";
-import { VISUALTEX_MATHLIVE_PACKAGE_MACROS } from "./packageMacroCompatibility";
+import {
+  VISUALTEX_CORE_MATHLIVE_COMPATIBILITY_MACROS,
+  VISUALTEX_MATHLIVE_PACKAGE_MACROS,
+} from "./packageMacroCompatibility";
 
 const macro = (def: string): MacroDictionary[string] => ({
   def,
@@ -21,6 +24,7 @@ const inputAliasMacro = (def: string): MacroDictionary[string] => ({
  * source spellings such as `\\bm{...}` and `\\symbfit{...}` intact.
  */
 export const VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS: MacroDictionary = {
+  ...VISUALTEX_CORE_MATHLIVE_COMPATIBILITY_MACROS,
   ...VISUALTEX_MATHLIVE_PACKAGE_MACROS,
 
   // MathLive accepts \nicefrac as source but does not expose its two
@@ -96,7 +100,7 @@ function compatibilityMacroDefinition(
   return typeof definition.def === "string" &&
     typeof definition.args === "number" &&
     Number.isInteger(definition.args) &&
-    definition.args > 0
+    definition.args >= 0
     ? { def: definition.def, args: definition.args }
     : null;
 }

@@ -1345,6 +1345,14 @@ var Parser = class {
    */
   scanMacro(macro) {
     var _a3;
+    // The physics matrix commands must parse their braced contents in a real
+    // tabular context, even when the host supplies static-renderer macros.
+    if (
+      VISUALTEX_PHYSICS_MATRIX_WRAPPERS?.[macro.slice(1)] ||
+      macro === "\\substack" ||
+      macro === "\\qq" ||
+      macro === "\\qqtext"
+    ) return null;
     const def = this.context.getMacro(macro);
     if (!def) return null;
     const initialIndex = this.index;

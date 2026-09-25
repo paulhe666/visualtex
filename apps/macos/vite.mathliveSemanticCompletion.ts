@@ -331,6 +331,65 @@ function createSuggestionPopover(mf, html) {
   replace(`  if (!isSuggestionPopoverVisible()) return;
   if (((_a3 = mf.model.at(mf.model.position))`, `  if (!isSuggestionPopoverVisible() || document.getElementById("mathlive-suggestion-popover")?.visualTexMathfield !== mf) return;
   if (((_a3 = mf.model.at(mf.model.position))`);
+  // Keep command candidates inside the actual visible viewport. MathLive's
+  // stock placement chooses above/below but can still produce a negative top
+  // when the panel is taller than the available side, which clips the first
+  // candidates near the top of the editor.
+  replace(`  const spaceAbove = position.y - position.height;
+  const spaceBelow = viewportHeight - scrollbarHeight - virtualkeyboardHeight - position.y;
+  if (spaceBelow < spaceAbove) {
+    panel.classList.add("ML__popover--reverse-direction");
+    panel.classList.remove("top-tip");
+    panel.classList.add("bottom-tip");
+    panel.style.top = \`\${position.y - position.height - panel.offsetHeight - 15}px\`;
+  } else {
+    panel.classList.remove("ML__popover--reverse-direction");
+    panel.classList.add("top-tip");
+    panel.classList.remove("bottom-tip");
+    panel.style.top = \`\${position.y + 15}px\`;
+  }`, `  const viewportPadding = 8;
+  const tipGap = 15;
+  const viewportRight = viewportWidth - scrollbarWidth - viewportPadding;
+  const viewportBottom =
+    viewportHeight - scrollbarHeight - virtualkeyboardHeight - viewportPadding;
+  const centeredLeft = position.x - panel.offsetWidth / 2;
+  panel.style.left = \`\${Math.max(
+    viewportPadding,
+    Math.min(centeredLeft, viewportRight - panel.offsetWidth),
+  )}px\`;
+
+  const spaceAbove = Math.max(
+    0,
+    position.y - position.height - viewportPadding - tipGap,
+  );
+  const spaceBelow = Math.max(0, viewportBottom - position.y - tipGap);
+  const placeAbove = spaceAbove > spaceBelow;
+  const availableHeight = Math.max(
+    36,
+    Math.min(320, placeAbove ? spaceAbove : spaceBelow),
+  );
+  panel.style.setProperty(
+    "--visualtex-suggestion-max-height",
+    \`\${availableHeight}px\`,
+  );
+
+  if (placeAbove) {
+    panel.classList.add("ML__popover--reverse-direction");
+    panel.classList.remove("top-tip");
+    panel.classList.add("bottom-tip");
+    panel.style.top = \`\${Math.max(
+      viewportPadding,
+      position.y - position.height - panel.offsetHeight - tipGap,
+    )}px\`;
+  } else {
+    panel.classList.remove("ML__popover--reverse-direction");
+    panel.classList.add("top-tip");
+    panel.classList.remove("bottom-tip");
+    panel.style.top = \`\${Math.max(
+      viewportPadding,
+      Math.min(position.y + tipGap, viewportBottom - panel.offsetHeight),
+    )}px\`;
+  }`);
   replace(`  { nextSuggestion, previousSuggestion },`, `  { nextSuggestion, previousSuggestion, visualTexDismissSuggestions: mf => { hideSuggestionPopover(mf); return false; } },`);
   return source;
 }

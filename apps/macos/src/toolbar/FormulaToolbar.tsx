@@ -710,6 +710,16 @@ const hiddenToolbarCommandIds = new Set([
   "shortcut-mel",
 ]);
 const wideToolbarCommandIds = new Set([
+  "shortcut-pb",
+  "commutator",
+  "anticommutator",
+  "outerproduct",
+  "physics-pmqty",
+  "physics-bmqty",
+  "physics-vmqty",
+  "physics-spmqty",
+  "physics-sbmqty",
+  "physics-vev",
   "matrixelement",
   "expectation-operator",
   "matrix-dots",

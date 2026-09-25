@@ -3232,6 +3232,16 @@ kbd {
   cursor: default;
 }
 
+.multi-line-editor.is-source-preview-only .formula-line-mode-toggle:disabled {
+  opacity: 0.34;
+}
+
+.multi-line-editor.is-source-preview-only
+  .formula-line.is-active
+  .formula-line-mode-toggle:disabled {
+  opacity: 0.68;
+}
+
 .workspace.has-active-line-highlight .formula-line:hover {
   background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
 }
@@ -8121,7 +8131,10 @@ html body #mathlive-suggestion-popover.bottom-tip::after {
 }
 
 html body #mathlive-suggestion-popover ul {
-  max-height: 320px;
+  max-height: min(
+    320px,
+    var(--visualtex-suggestion-max-height, 320px)
+  );
   padding: 6px !important;
   background: var(--surface);
   overscroll-behavior: contain;
@@ -8164,7 +8177,8 @@ html body #mathlive-suggestion-popover li.has-visualtex-command-preview .ML__pop
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
+  padding-block: 3px;
   font-size: 1.1rem !important;
 }
 
@@ -16014,7 +16028,10 @@ html body #visualtex-native-input-suggestion-popover.bottom-tip::after {
 }
 
 html body #visualtex-native-input-suggestion-popover ul {
-  max-height: 320px;
+  max-height: min(
+    320px,
+    var(--visualtex-suggestion-max-height, 320px)
+  );
   display: flex;
   flex-flow: column;
   align-items: flex-start;
@@ -16076,7 +16093,8 @@ html body #visualtex-native-input-suggestion-popover li.has-visualtex-command-pr
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
+  padding-block: 3px;
   font-size: 1.1rem;
 }
 

@@ -1360,6 +1360,33 @@ async function main() {
       );
       const physicsCommandIds =
         physicsState.staticCategoryDetails.physics.commandIds;
+      const physicsPreviewAudit = await evaluate(`(() => {
+        const section = document.querySelector(
+          '[data-toolbar-category-section="physics"]',
+        );
+        return [...(section?.querySelectorAll(
+          ':scope > .template-button[data-command-id]',
+        ) ?? [])].map((button) => {
+          const preview = button.querySelector('.math-preview');
+          const latex = preview?.querySelector('.ML__latex');
+          return {
+            id: button.dataset.commandId,
+            preview: button.dataset.previewLatex,
+            scale: Number(preview?.dataset.fitScale ?? 0),
+            error: Boolean(preview?.querySelector('.ML__error')),
+            text: latex?.textContent ?? '',
+          };
+        });
+      })()`);
+      assert.ok(physicsPreviewAudit.length >= 70, 'physics toolbar lost too many commands');
+      for (const item of physicsPreviewAudit) {
+        assert.equal(item.error, false, `${item.id}: preview has a MathLive error`);
+        assert.ok(item.scale >= 0.7, `${item.id}: preview is too small (${item.scale})`);
+      }
+      const previewById = new Map(physicsPreviewAudit.map((item) => [item.id, item]));
+      assert.match(previewById.get('physics-vqty')?.text ?? '', /x/);
+      assert.match(previewById.get('physics-vev')?.text ?? '', /A/);
+      assert.match(previewById.get('physics-flatfrac')?.text ?? '', /a\s*\/\s*b/);
       for (const canonicalId of [
         'bra',
         'ket',
@@ -1369,10 +1396,22 @@ async function main() {
         'anticommutator',
         'outerproduct',
         'matrixelement',
+        'physics-pqty',
+        'physics-pmqty',
+        'physics-order',
+        'physics-dotproduct',
+        'physics-derivative',
+        'physics-functionalderivative',
+        'physics-vev',
       ]) {
         assert.ok(physicsCommandIds.includes(canonicalId), canonicalId);
       }
       for (const duplicateId of [
+        'physics-Bqty',
+        'physics-qq',
+        'physics-qif',
+        'physics-qgiven',
+        'physics-qcomma',
         'shortcut-bra',
         'shortcut-ket',
         'shortcut-expval',

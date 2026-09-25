@@ -457,9 +457,130 @@ function moveToClosestAtomVertically(model, fromAtom, toAtoms, extend, direction
   }
   model.announce(`move ${direction}`);
 }
+// VisualTeX: vertical navigation follows the atom tree from the innermost
+// structure outward. A script inside a numerator must visit its sibling
+// script before the denominator; once no local branch exists, the same key
+// can continue through the enclosing fraction or matrix row.
+function visualTexSameVerticalBranch(left, right) {
+  if (Array.isArray(left) && Array.isArray(right))
+    return left[0] === right[0] && left[1] === right[1];
+  return left === right;
+}
+function visualTexAtomInVerticalBranch(atom, owner, branch) {
+  let child = atom;
+  while (child?.parent && child.parent !== owner) child = child.parent;
+  return child?.parent === owner && visualTexSameVerticalBranch(child.parentBranch, branch);
+}
+function visualTexVerticalTarget(model, source, owner, branch) {
+  const targetBranch = Array.isArray(branch)
+    ? owner.getCell(branch[0], branch[1])
+    : owner.branch(branch);
+  if (!targetBranch?.length) return null;
+  const sourceElement = model.mathfield.getHTMLElement(source);
+  const sourceRect = sourceElement ? getLocalDOMRect(sourceElement) : null;
+  const sourceX = sourceRect?.right ?? 0;
+  const sourceY = sourceRect ? sourceRect.top + sourceRect.height / 2 : 0;
+  const candidates = [];
+  const start = model.offsetOf(targetBranch[0]);
+  const end = model.offsetOf(targetBranch[targetBranch.length - 1]);
+  if (start < 0 || end < start) return null;
+  for (let offset = start; offset <= end; offset++) {
+    const atom = model.at(offset);
+    if (!atom || atom.type === "first" || !visualTexAtomInVerticalBranch(atom, owner, branch))
+      continue;
+    if (!isValidPosition(model, offset)) continue;
+    if (model.mathfield.hasEditablePrompts && atom.type !== "prompt") continue;
+    const element = model.mathfield.getHTMLElement(atom);
+    if (!element) continue;
+    const rect = getLocalDOMRect(element);
+    if (!rect.height) continue;
+    const x = Math.abs(rect.right - sourceX);
+    const y = Math.abs(rect.top + rect.height / 2 - sourceY);
+    // Prefer a visible leaf over the enclosing fraction/array atom. Within
+    // the destination branch, choose the nearest vertical band first and use
+    // horizontal distance to resolve peers on that band.
+    const structural = atom.children?.length ? 1 : 0;
+    candidates.push({ offset, structural, score: y * 2 + x });
+  }
+  candidates.sort((a, b) => a.structural - b.structural || a.score - b.score || a.offset - b.offset);
+  if (candidates.length) return candidates[0].offset;
+  if (model.mathfield.hasEditablePrompts) return null;
+  return model.offsetOf(targetBranch[0]);
+}
+function visualTexMoveVertical(model, direction, extend) {
+  const source = model.at(model.position);
+  if (!source) return false;
+  const step = direction === "up" ? -1 : 1;
+  const tryBranch = (owner, branch) => {
+    if (!owner || branch === null || branch === void 0) return false;
+    const target = visualTexVerticalTarget(model, source, owner, branch);
+    if (target === null || target === model.position) return false;
+    const moved = extend
+      ? model.setSelection(model.anchor, target)
+      : model.setPositionHandlingPlaceholder(target);
+    if (moved === false) return false;
+    model.mathfield.stopCoalescingUndo();
+    model.announce(`move ${direction}`);
+    return true;
+  };
+
+  for (let child = source; child?.parent; child = child.parent) {
+    const owner = child.parent;
+    const branch = child.parentBranch;
+    if (owner instanceof ArrayAtom && isCellBranch(branch)) {
+      const nextRow = branch[0] + step;
+      if (nextRow >= 0 && nextRow < owner.rows.length &&
+        tryBranch(owner, [nextRow, branch[1]])) return true;
+    } else if (branch === "superscript" || branch === "subscript") {
+      if (branch === "superscript" && step > 0 && owner.branch("subscript") &&
+        tryBranch(owner, "subscript")) return true;
+      if (branch === "subscript" && step < 0 && owner.branch("superscript") &&
+        tryBranch(owner, "superscript")) return true;
+      // Braces and other annotated over/under atoms use script branches for
+      // the label and a body branch for their editable base.
+      if (owner.type === "overunder" &&
+        ((branch === "superscript" && step > 0) ||
+          (branch === "subscript" && step < 0)) &&
+        tryBranch(owner, "body")) return true;
+      // A lone script has a baseline, unlike a fraction's two exclusive rows.
+      if (owner.type === "subsup" && owner.leftSibling &&
+        ((branch === "superscript" && step > 0) ||
+          (branch === "subscript" && step < 0))) {
+        const baseline = model.offsetOf(owner.leftSibling);
+        if (baseline >= 0 && baseline !== model.position &&
+          (extend ? model.setSelection(model.anchor, baseline) :
+            model.setPositionHandlingPlaceholder(baseline)) !== false) {
+          model.mathfield.stopCoalescingUndo();
+          model.announce(`move ${direction}`);
+          return true;
+        }
+      }
+    } else if (branch === "above" && step > 0) {
+      if ((owner.type === "overunder" || owner.type === "surd") &&
+        tryBranch(owner, "body")) return true;
+      if (owner.branch("below") && tryBranch(owner, "below")) return true;
+    } else if (branch === "below" && step < 0) {
+      if (owner.type === "overunder" && owner.branch("body") &&
+        tryBranch(owner, "body")) return true;
+      if (owner.branch("above") && tryBranch(owner, "above")) return true;
+    } else if (branch === "body") {
+      const attached = child.rightSibling;
+      if (attached?.type === "subsup" &&
+        tryBranch(attached, step < 0 ? "superscript" : "subscript")) return true;
+      if (owner.type === "surd" && step < 0 &&
+        tryBranch(owner, "above")) return true;
+      if (owner.type === "overunder" && (
+        tryBranch(owner, step < 0 ? "above" : "below") ||
+        tryBranch(owner, step < 0 ? "superscript" : "subscript")
+      )) return true;
+    }
+  }
+  return false;
+}
 function moveUpward(model, options) {
   var _a3, _b3;
   const extend = (_a3 = options == null ? void 0 : options.extend) != null ? _a3 : false;
+  if (visualTexMoveVertical(model, "up", extend)) return true;
   if (!extend) model.collapseSelection("backward");
   const handleDeadEnd = () => {
     var _a4, _b4;
@@ -507,6 +628,7 @@ function moveUpward(model, options) {
 function moveDownward(model, options) {
   var _a3, _b3;
   const extend = (_a3 = options == null ? void 0 : options.extend) != null ? _a3 : false;
+  if (visualTexMoveVertical(model, "down", extend)) return true;
   if (!extend) model.collapseSelection("forward");
   const handleDeadEnd = () => {
     var _a4, _b4;

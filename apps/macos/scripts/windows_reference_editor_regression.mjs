@@ -2631,8 +2631,26 @@ async function main() {
         );
       }
 
-      // Reset all four switches before exercising them independently.
+      // Italic cycles through italic, upright, then automatic. The other
+      // persistent switches retain their independent on/off behavior.
       await clickSelectorWithPointer('[data-formula-persistent-bold]');
+      await clickSelectorWithPointer('[data-formula-persistent-italic]');
+      const uprightButton = await evaluate(`(() => {
+        const button = document.querySelector('[data-formula-persistent-italic]');
+        return {
+          shape: button?.getAttribute('data-formula-persistent-shape'),
+          label: button?.getAttribute('aria-label'),
+          pressed: button?.getAttribute('aria-pressed'),
+        };
+      })()`);
+      if (
+        uprightButton.shape !== 'upright' ||
+        (!uprightButton.label?.includes('upright') &&
+          !uprightButton.label?.includes('正体')) ||
+        uprightButton.pressed !== 'true'
+      ) {
+        throw new Error(`Persistent upright control state is unclear: ${JSON.stringify(uprightButton)}`);
+      }
       await clickSelectorWithPointer('[data-formula-persistent-italic]');
       await clickSelectorWithPointer('[data-formula-persistent-color]');
       await clickSelectorWithPointer('[data-formula-persistent-background]');
@@ -2658,18 +2676,41 @@ async function main() {
       await clickSelectorWithPointer('[data-formula-persistent-italic]');
       await typeText("1");
       await clickSelectorWithPointer('[data-formula-persistent-italic]');
-      await typeText("2");
+      await typeText("x");
+      const uprightState = await readPersistentState();
+      await clickSelectorWithPointer('[data-formula-persistent-italic]');
+      await typeText("y");
       const italicState = await readPersistentState();
       const italicOne = italicState.atoms.find((atom) => atom.value === "1");
-      const plainTwo = italicState.atoms.find((atom) => atom.value === "2");
+      const uprightX = italicState.atoms.find((atom) => atom.value === "x");
+      const autoY = italicState.atoms.find((atom) => atom.value === "y");
       if (
         !italicOne?.variantStyle?.includes("italic") ||
-        plainTwo?.variantStyle?.includes("italic")
+        uprightState.privatePersistent?.italic !== false ||
+        uprightX?.variantStyle !== "up" ||
+        italicState.privatePersistent?.italic !== null ||
+        autoY?.variantStyle === "up"
       ) {
         throw new Error(
-          `Persistent italic leaked or failed: ${JSON.stringify(italicState)}`,
+          `Persistent italic/upright cycle failed: ${JSON.stringify({ uprightState, italicState })}`,
         );
       }
+
+      await clearField();
+      await clickSelectorWithPointer('[data-formula-persistent-italic]');
+      await clickSelectorWithPointer('[data-formula-persistent-italic]');
+      await clickSelectorWithPointer('[data-formula-persistent-bold]');
+      await typeText("z");
+      const boldUprightState = await readPersistentState();
+      if (
+        boldUprightState.privatePersistent?.italic !== false ||
+        !boldUprightState.privatePersistent?.bold ||
+        boldUprightState.atoms.find((atom) => atom.value === "z")?.variantStyle !== "bold"
+      ) {
+        throw new Error(`Persistent bold/upright combination failed: ${JSON.stringify(boldUprightState)}`);
+      }
+      await clickSelectorWithPointer('[data-formula-persistent-italic]');
+      await clickSelectorWithPointer('[data-formula-persistent-bold]');
 
       await clearField();
       await clickSelectorWithPointer('[data-formula-persistent-color]');
@@ -2977,9 +3018,40 @@ async function main() {
         throw new Error(`Formula background color was not applied to the selected content: ${backgroundColorApplied}`);
       }
 
+      await evaluate(`(() => {
+        const field = document.querySelector('math-field');
+        if (!field) return false;
+        field.focus();
+        field.selection = { ranges: [[0, field.lastOffset]], direction: 'forward' };
+        return true;
+      })()`);
+      await clickSelectorWithPointer('[data-formula-selection-background]');
+      const noBackgroundAction = await evaluate(`(() => {
+        const button = document.querySelector('[data-formula-background-none]');
+        return {
+          exists: Boolean(button),
+          text: button?.textContent?.trim() ?? '',
+          label: button?.getAttribute('aria-label') ?? '',
+        };
+      })()`);
+      if (!noBackgroundAction.exists || (!noBackgroundAction.text.includes('None') && !noBackgroundAction.text.includes('无背景'))) {
+        throw new Error(`No-background action is missing or unclear: ${JSON.stringify(noBackgroundAction)}`);
+      }
+      await clickSelectorWithPointer('[data-formula-background-none]');
+      await sleep(100);
+      const backgroundColorCleared = await readFormattingValue();
+      if (
+        backgroundColorCleared.toLowerCase().includes('fef3c7') ||
+        backgroundColorCleared.toLowerCase().includes('background-color') ||
+        !backgroundColorCleared.includes('xyz')
+      ) {
+        throw new Error(`Formula background color was not cleared cleanly: ${backgroundColorCleared}`);
+      }
+
       const selectionColors = {
         text: textColorApplied,
         background: backgroundColorApplied,
+        clearedBackground: backgroundColorCleared,
         popover: compactColorPopover,
       };
 

@@ -691,6 +691,123 @@ defineTabularEnvironment(
   "[columns:colspec]",
   makeEnvironment
 );
+// physics.sty matrix shorthands need a real tabular parse. A regular MathLive
+// macro expands too late: its argument ampersands become literal \& atoms and
+// source serialization loses the matrix column separators.
+var VISUALTEX_PHYSICS_MATRIX_WRAPPERS = {
+  pmqty: ["\\begin{pmatrix}", "\\end{pmatrix}"],
+  Pmqty: ["\\left\\lgroup\\begin{matrix}", "\\end{matrix}\\right\\rgroup"],
+  bmqty: ["\\begin{bmatrix}", "\\end{bmatrix}"],
+  vmqty: ["\\begin{vmatrix}", "\\end{vmatrix}"],
+  matrixquantity: ["\\begin{matrix}", "\\end{matrix}"],
+  mqty: ["\\begin{matrix}", "\\end{matrix}"],
+  matrixdeterminant: ["\\begin{vmatrix}", "\\end{vmatrix}"],
+  mdet: ["\\begin{vmatrix}", "\\end{vmatrix}"],
+  spmqty: ["\\left(\\begin{smallmatrix}", "\\end{smallmatrix}\\right)"],
+  sPmqty: ["\\left\\lgroup\\begin{smallmatrix}", "\\end{smallmatrix}\\right\\rgroup"],
+  sbmqty: ["\\left[\\begin{smallmatrix}", "\\end{smallmatrix}\\right]"],
+  svmqty: ["\\left\\lvert\\begin{smallmatrix}", "\\end{smallmatrix}\\right\\rvert"],
+  smallmatrixquantity: ["\\begin{smallmatrix}", "\\end{smallmatrix}"],
+  smqty: ["\\begin{smallmatrix}", "\\end{smallmatrix}"],
+  smallmatrixdeterminant: ["\\left\\lvert\\begin{smallmatrix}", "\\end{smallmatrix}\\right\\rvert"],
+  smdet: ["\\left\\lvert\\begin{smallmatrix}", "\\end{smallmatrix}\\right\\rvert"]
+};
+defineFunction(Object.keys(VISUALTEX_PHYSICS_MATRIX_WRAPPERS), "", {
+  ifMode: "math",
+  parse: (parser) => {
+    parser.skipWhitespace();
+    if (parser.peek() !== "<{>") {
+      parser.onError({ code: "missing-argument" });
+      return [""];
+    }
+    return [parser.scanLiteralGroup()];
+  },
+  createAtom: (options) => {
+    const [open, close] = VISUALTEX_PHYSICS_MATRIX_WRAPPERS[options.command.slice(1)];
+    const argument = options.args[0] ?? "";
+    const atom = new MacroAtom(options.command, {
+      args: `{${argument}}`,
+      body: parseLatex(open + argument + close),
+      style: options.style,
+      expand: false,
+      captureSelection: false
+    });
+    atom._serialize = (serializeOptions) => {
+      const expanded = atom.bodyToLatex(serializeOptions);
+      if (!expanded.startsWith(open) || !expanded.endsWith(close)) return expanded;
+      return options.command + "{" + expanded.slice(open.length, -close.length) + "}";
+    };
+    return atom;
+  }
+});
+// A tracked source argument must contain the real array, not a flat A\\B
+// string, so vertical navigation can traverse \\substack rows.
+defineFunction("substack", "", {
+  ifMode: "math",
+  parse: (parser) => {
+    parser.skipWhitespace();
+    if (parser.peek() !== "<{>") {
+      parser.onError({ code: "missing-argument" });
+      return [""];
+    }
+    return [parser.scanLiteralGroup()];
+  },
+  createAtom: (options) => {
+    const argument = options.args[0] ?? "";
+    const open = "\\begin{array}{c}";
+    const close = "\\end{array}";
+    const tracked = new MacroArgumentAtom(
+      1,
+      parseLatex(open + argument + close),
+      { style: options.style }
+    );
+    const atom = new MacroAtom(options.command, {
+      args: `{${argument}}`,
+      argumentCount: 1,
+      body: [tracked],
+      style: options.style,
+      expand: false,
+      captureSelection: false
+    });
+    atom._serialize = (serializeOptions) => {
+      const expanded = tracked.bodyToLatex(serializeOptions);
+      if (!expanded.startsWith(open) || !expanded.endsWith(close)) return expanded;
+      return options.command + "{" + expanded.slice(open.length, -close.length) + "}";
+    };
+    return atom;
+  }
+});
+// \qq and \qqtext have text arguments. A generic macro reparses their text
+// wrapper into the editable argument and rewrites \qq{if} as \qq{\text{if}}.
+defineFunction(["qq", "qqtext"], "", {
+  ifMode: "math",
+  parse: (parser) => {
+    parser.skipWhitespace();
+    if (parser.peek() !== "<{>") {
+      parser.onError({ code: "missing-argument" });
+      return [""];
+    }
+    return [parser.scanLiteralGroup()];
+  },
+  createAtom: (options) => {
+    const argument = options.args[0] ?? "";
+    const open = "\\quad\\text{";
+    const close = "}\\quad";
+    const atom = new MacroAtom(options.command, {
+      args: `{${argument}}`,
+      body: parseLatex(open + argument + close),
+      style: options.style,
+      expand: false,
+      captureSelection: false
+    });
+    atom._serialize = (serializeOptions) => {
+      const expanded = atom.bodyToLatex(serializeOptions);
+      if (!expanded.startsWith(open) || !expanded.endsWith(close)) return expanded;
+      return options.command + "{" + expanded.slice(open.length, -close.length) + "}";
+    };
+    return atom;
+  }
+});
 defineTabularEnvironment(["cases", "dcases", "rcases"], "", makeEnvironment);
 function makeEnvironment(name, content = [[[]]], rowGaps = [], args = [], maxMatrixCols) {
   switch (name) {

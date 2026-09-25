@@ -4,7 +4,7 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-office-performance-20260801-r90"
+    "word-office-performance-20260801-r93"
 Private Const VT_WORD_LATEX_REDRAW_REVISION As String = _
     "word-latex-redraw-20260802-r1"
 Private Const VT_WORD_DOCUMENT_IMPORT_REVISION As String = _
@@ -55,7 +55,7 @@ Private Const VT_WORD_IMAGE_EDIT_MACRO As String = _
     "VisualTeX_EditImageField"
 Private Const VT_WORD_IMAGE_MACRO_SCHEMA_VARIABLE As String = _
     "VT_ImageMacroButtonSchema"
-Private Const VT_WORD_IMAGE_MACRO_SCHEMA_VERSION As String = "7"
+Private Const VT_WORD_IMAGE_MACRO_SCHEMA_VERSION As String = "8"
 Private Const VT_WORD_NUMBERED_IMAGE_STYLE_NAME As String = _
     "VisualTeX Numbered Equation"
 Private Const VT_WORD_IMAGE_EDIT_DEBOUNCE_SECONDS As Double = 0.75
@@ -192,7 +192,7 @@ Public Sub VisualTeX_InitializeWordHost()
     ' run before Finder's first open-document AppleEvent is consumed, leaving
     ' Word open with no document until the user double-clicks the file again.
     VTEnsureApplicationPrewarmScheduled
-    VTEnsureImageMacroMigrationScheduled
+    VisualTeX_MigrateImageMacroButtons
     VTEnsureOrphanWatchScheduled
     VTWriteWordHealth
     On Error GoTo 0
@@ -233,7 +233,7 @@ End Sub
 Public Sub AutoOpen()
     If VTWordVbeBuildTemplateActive() Then Exit Sub
     On Error Resume Next
-    VTEnsureImageMacroMigrationScheduled
+    VisualTeX_MigrateImageMacroButtons
     On Error GoTo 0
 End Sub
 
@@ -11229,11 +11229,15 @@ Public Sub VisualTeX_RunWordNativeRegression()
     Dim builtInTargetRange As Range
     Dim newParagraph As Paragraph
     Dim diagnosticRange As Range
+    Dim paragraphMarkRange As Range
     Dim crossReferenceTextFound As Boolean
     Dim crossReferenceNumberFound As Boolean
     Dim referenceResult As String
     Dim invariantSnapshot As String
     Dim invariantParagraphStart As Long
+    Dim expectedUnnumberedPosition As Long
+    Dim actualUnnumberedPosition As Long
+    Dim paragraphMarkPosition As Long
     Dim inlineTableAdvance As Single
     Dim displayTableAdvance As Single
     Dim integralDisplayAdvance As Double
@@ -11754,15 +11758,29 @@ Public Sub VisualTeX_RunWordNativeRegression()
     VTNormalizeUnnumberedDisplayParagraph placeholder.Range
     Set diagnosticRange = testDocument.Range( _
         Start:=0, End:=0).Paragraphs(1).Range.Duplicate
+    expectedUnnumberedPosition = VTExpectedImageFormulaPosition( _
+        placeholder, CDbl(VTVisibleEquationNumberFontSize(testDocument)), _
+        "The unnumbered image regression paragraph-mark alignment")
+    actualUnnumberedPosition = CLng(placeholder.Range.Font.Position)
+    Set paragraphMarkRange = testDocument.Range( _
+        Start:=diagnosticRange.End - 1, End:=diagnosticRange.End)
+    paragraphMarkPosition = CLng(paragraphMarkRange.Font.Position)
     If diagnosticRange.ParagraphFormat.Alignment <> wdAlignParagraphCenter Or _
-       VTCustomTabStopCount(diagnosticRange) <> 0 Then
+       VTCustomTabStopCount(diagnosticRange) <> 0 Or _
+       expectedUnnumberedPosition >= 0 Or _
+       actualUnnumberedPosition <> expectedUnnumberedPosition Or _
+       paragraphMarkPosition <> 0 Then
         Err.Raise vbObjectError + 7524, "VisualTeX", _
-            "The unnumbered image display formula is not centered" & _
+            "The unnumbered image display formula or its paragraph mark" & _
+            " is not visually centered" & _
             " [alignment=" & _
             CStr(diagnosticRange.ParagraphFormat.Alignment) & _
             "; tabs=" & _
             CStr(diagnosticRange.ParagraphFormat.TabStops.Count) & _
             "; customTabs=" & CStr(VTCustomTabStopCount(diagnosticRange)) & _
+            "; formulaPosition=" & CStr(actualUnnumberedPosition) & _
+            "; expectedPosition=" & CStr(expectedUnnumberedPosition) & _
+            "; paragraphMarkPosition=" & CStr(paragraphMarkPosition) & _
             "; style=" & CStr(diagnosticRange.Style) & "]."
     End If
 
@@ -13684,7 +13702,7 @@ Private Function VTParagraphHasNumberHelperGeometry( _
     ' full-size native SEQ caption clipped inside a 0.1-point square at the
     ' bottom-right page boundary. Word then keeps its private _Ref on the pure
     ' helper caption instead of the preceding tab/image/visible-REF formula row.
-    ' Keep both prior Mac geometries as migration signatures so schema 7 can
+    ' Keep both prior Mac geometries as migration signatures so schema 8 can
     ' still recognize and repair documents created before this production Frame.
     If paragraphRange.Frames.Count = 1 Then
         Set helperFrame = paragraphRange.Frames(1)
@@ -17372,7 +17390,7 @@ Public Sub VTWordRibbonOnLoad(ByVal ribbon As IRibbonUI)
     VTInitializeWordDoubleClickTrace
     VTInitializeWordEvents
     VTEnsureApplicationPrewarmScheduled
-    VTEnsureImageMacroMigrationScheduled
+    VisualTeX_MigrateImageMacroButtons
     VTEnsureOrphanWatchScheduled
     VTEnsureImageSizeWatchScheduled
     VTInvalidateWordImageFontSizeControl
@@ -18422,6 +18440,58 @@ Failed:
     On Error GoTo 0
 End Sub
 
+Public Sub VisualTeX_WriteSelectedDoubleClickTargetScreenBounds()
+    Dim formulaShape As InlineShape
+    Dim nativeBookmark As Bookmark
+    Dim targetRange As Range
+    Dim screenLeft As Long
+    Dim screenTop As Long
+    Dim screenWidth As Long
+    Dim screenHeight As Long
+    Dim statusPath As String
+    Dim boundsErrorNumber As Long
+    Dim boundsErrorDescription As String
+
+    statusPath = VTApplicationSupportRoot() & _
+        "/double-click-target-screen-bounds.txt"
+    On Error GoTo Failed
+    If Documents.Count = 0 Or Selection Is Nothing Then
+        Err.Raise vbObjectError + 7593, "VisualTeX", _
+            "There is no selected Word formula for double-click target testing."
+    End If
+    Set formulaShape = VTVisualTeXInlineShapeAtSelection(Selection)
+    If Not formulaShape Is Nothing Then
+        Set targetRange = formulaShape.Range.Duplicate
+    ElseIf VTTryFindNativeFormulaBookmarkLocally( _
+       Selection.Range, nativeBookmark) Then
+        Set targetRange = nativeBookmark.Range.Duplicate
+    End If
+    If targetRange Is Nothing Then
+        Err.Raise vbObjectError + 7593, "VisualTeX", _
+            "The current Word selection is not a VisualTeX formula target."
+    End If
+    ActiveWindow.GetPoint _
+        screenLeft, screenTop, screenWidth, screenHeight, targetRange
+    If screenWidth <= 0 Or screenHeight <= 0 Then
+        Err.Raise vbObjectError + 7593, "VisualTeX", _
+            "Word returned invalid formula target screen bounds."
+    End If
+    VTWriteTextAtomic statusPath, _
+        "PASS|" & CStr(screenLeft) & "|" & CStr(screenTop) & "|" & _
+        CStr(screenWidth) & "|" & CStr(screenHeight) & vbLf
+    Exit Sub
+
+Failed:
+    boundsErrorNumber = Err.Number
+    boundsErrorDescription = Err.Description
+    On Error Resume Next
+    VTWriteTextAtomic statusPath, _
+        "FAIL|" & CStr(boundsErrorNumber) & "|" & _
+        Replace$(Replace$(boundsErrorDescription, vbCr, " "), _
+            vbLf, " ") & vbLf
+    On Error GoTo 0
+End Sub
+
 Public Sub VisualTeX_WriteSelectedPictureScreenBoundsRegression()
     Dim targetRange As Range
     Dim screenLeft As Long
@@ -18583,11 +18653,12 @@ Private Sub VTMigrateDocumentImageMacroButtons( _
     internalMutationStarted = True
     VTCleanupDocumentEmptyVisualTeXImageMacroButtons documentObject
     ' Earlier schemas retired the old 1x3 image table and introduced a dedicated
-    ' Return-to-Normal paragraph style. Schema 7 converges every numbered image to
+    ' Return-to-Normal paragraph style. Schema 8 converges every numbered image to
     ' the validated Windows OLE architecture: one external native SEQ helper
     ' immediately after the visible formula row plus one right-tab REF in that row.
     ' It also persists the painted-ink centre so vertical alignment is measured
-    ' from actual artwork rather than the InlineShape outer box.
+    ' from actual artwork rather than the InlineShape outer box, and reapplies the
+    ' centred baseline to existing unnumbered display images when a document opens.
     VTMigrateLegacyNumberedImageTables documentObject
     For imageIndex = documentObject.InlineShapes.Count To 1 Step -1
         Set formulaShape = documentObject.InlineShapes(imageIndex)
@@ -18596,7 +18667,7 @@ Private Sub VTMigrateDocumentImageMacroButtons( _
                 VTEnsureVisualTeXImageMacroButton(formulaShape)
             If VTTryParseFormulaReference( _
                formulaShape.Title, formulaId, displayMode, numbered) Then
-                If displayMode = "block" And numbered Then
+                If displayMode = "block" Then
                     If Not VTTryReadWordImageInkCenterYRatio( _
                        documentObject, formulaId, inkCenterYRatio) Then
                         If Not VTTryReadCachedWordImageInkCenterYRatio( _
@@ -18606,13 +18677,18 @@ Private Sub VTMigrateDocumentImageMacroButtons( _
                         VTSetWordImageInkCenterYRatio _
                             documentObject, formulaId, inkCenterYRatio
                     End If
-                    Set migratedRange = VTInsertEquationNumber( _
-                        formulaShape, formulaId, "VisualTeX formula", True)
-                    If migratedRange Is Nothing Then
-                        Err.Raise vbObjectError + 7593, "VisualTeX", _
-                            "The numbered image schema migration lost its formula row."
+                    If numbered Then
+                        Set migratedRange = VTInsertEquationNumber( _
+                            formulaShape, formulaId, "VisualTeX formula", True)
+                        If migratedRange Is Nothing Then
+                            Err.Raise vbObjectError + 7593, "VisualTeX", _
+                                "The numbered image schema migration lost its formula row."
+                        End If
+                        requiresNumberReconcile = True
+                    Else
+                        VTNormalizeUnnumberedDisplayParagraph formulaShape.Range
+                        VTNormalizeImageDisplayParagraph formulaShape.Range
                     End If
-                    requiresNumberReconcile = True
                 End If
             End If
         End If
@@ -18667,6 +18743,13 @@ Public Sub VisualTeX_MigrateImageMacroButtons()
     Next documentObject
     On Error GoTo 0
     VT_WORD_IMAGE_MACRO_MIGRATION_RUNNING = False
+End Sub
+
+Public Sub VTMigrateOpenedDocumentImageMacroButtons( _
+    ByVal documentObject As Word.Document)
+
+    If documentObject Is Nothing Or VTWordVbeBuildTemplateActive() Then Exit Sub
+    VTMigrateDocumentImageMacroButtons documentObject
 End Sub
 
 Public Sub VisualTeX_EditSelected()
@@ -29089,14 +29172,35 @@ Private Function VTExpectedNumberedImageFormulaPosition( _
     ByVal numberRange As Range, _
     ByVal valueLabel As String) As Long
 
-    Dim formulaHeight As Double
     Dim numberSize As Double
-    Dim inkCenterYRatio As Double
-    Dim formulaInkCenterAboveBaseline As Double
-    Dim numberInkCenterAboveBaseline As Double
-    Dim rawPosition As Double
 
     If formulaShape Is Nothing Or numberRange Is Nothing Then
+        Err.Raise vbObjectError + 7564, "VisualTeX", _
+            valueLabel & " target is missing."
+    End If
+    numberSize = CDbl(numberRange.Font.Size)
+    If numberSize <= 0# Or _
+       numberSize > VT_WORD_MAX_FORMULA_FONT_SIZE_PT Then
+        numberSize = CDbl(VTVisibleEquationNumberFontSize( _
+            formulaShape.Range.Document))
+    End If
+    VTExpectedNumberedImageFormulaPosition = _
+        VTExpectedImageFormulaPosition( _
+            formulaShape, numberSize, valueLabel)
+End Function
+
+Private Function VTExpectedImageFormulaPosition( _
+    ByVal formulaShape As InlineShape, _
+    ByVal baselineTextSize As Double, _
+    ByVal valueLabel As String) As Long
+
+    Dim formulaHeight As Double
+    Dim inkCenterYRatio As Double
+    Dim formulaInkCenterAboveBaseline As Double
+    Dim baselineTextInkCenterAboveBaseline As Double
+    Dim rawPosition As Double
+
+    If formulaShape Is Nothing Then
         Err.Raise vbObjectError + 7564, "VisualTeX", _
             valueLabel & " target is missing."
     End If
@@ -29105,42 +29209,82 @@ Private Function VTExpectedNumberedImageFormulaPosition( _
         Err.Raise vbObjectError + 7564, "VisualTeX", _
             "The numbered image Equation has an invalid rendered height."
     End If
-    numberSize = CDbl(numberRange.Font.Size)
-    If numberSize <= 0# Or _
-       numberSize > VT_WORD_MAX_FORMULA_FONT_SIZE_PT Then
-        numberSize = CDbl(VTVisibleEquationNumberFontSize( _
+    If baselineTextSize <= 0# Or _
+       baselineTextSize > VT_WORD_MAX_FORMULA_FONT_SIZE_PT Then
+        baselineTextSize = CDbl(VTVisibleEquationNumberFontSize( _
             formulaShape.Range.Document))
     End If
-    If numberSize <= 0# Or _
-       numberSize > VT_WORD_MAX_FORMULA_FONT_SIZE_PT Then
+    If baselineTextSize <= 0# Or _
+       baselineTextSize > VT_WORD_MAX_FORMULA_FONT_SIZE_PT Then
         Err.Raise vbObjectError + 7564, "VisualTeX", _
-            "The numbered image Equation has an invalid number size."
+            "The image Equation has an invalid baseline text size."
     End If
 
     inkCenterYRatio = VTNumberedImageInkCenterYRatio(formulaShape)
     ' An inline picture's bottom edge sits on Word's text baseline before
     ' Font.Position is applied. The PNG alpha bounds therefore place the painted
     ' formula centre formulaHeight * (1 - inkCenterYRatio) points above that
-    ' baseline. The visible REF is Cambria Math at Position 0; its actual glyph
-    ' path centre is the font-size-scaled constant below. Equating those two
-    ' centres gives the one permitted picture-only Position correction.
+    ' baseline. Ordinary paragraph text (including the numbered layout and its
+    ' paragraph mark) stays at Position 0; the font-size-scaled glyph-centre
+    ' constant below lets the picture share that visual centre. Equating those
+    ' two centres gives the one permitted picture-only Position correction.
     formulaInkCenterAboveBaseline = _
         formulaHeight * (1# - inkCenterYRatio)
-    numberInkCenterAboveBaseline = _
-        numberSize * _
+    baselineTextInkCenterAboveBaseline = _
+        baselineTextSize * _
         VT_WORD_EQUATION_NUMBER_INK_CENTER_ABOVE_BASELINE_RATIO
     rawPosition = _
-        numberInkCenterAboveBaseline - formulaInkCenterAboveBaseline
+        baselineTextInkCenterAboveBaseline - formulaInkCenterAboveBaseline
     If rawPosition < -256# Then rawPosition = -256#
     If rawPosition > 256# Then rawPosition = 256#
     If rawPosition >= 0# Then
-        VTExpectedNumberedImageFormulaPosition = _
+        VTExpectedImageFormulaPosition = _
             CLng(Int(rawPosition + 0.5#))
     Else
-        VTExpectedNumberedImageFormulaPosition = _
+        VTExpectedImageFormulaPosition = _
             -CLng(Int((-rawPosition) + 0.5#))
     End If
 End Function
+
+Private Sub VTApplyUnnumberedImageFormulaVerticalAlignment( _
+    ByVal formulaRange As Range)
+
+    Dim formulaShape As InlineShape
+    Dim paragraphRange As Range
+    Dim paragraphMarkRange As Range
+    Dim baselineTextSize As Double
+    Dim formulaPosition As Long
+
+    If formulaRange Is Nothing Then Exit Sub
+    Set paragraphRange = formulaRange.Paragraphs(1).Range.Duplicate
+    If paragraphRange.InlineShapes.Count <> 1 Or _
+       paragraphRange.OMaths.Count <> 0 Then Exit Sub
+
+    Set formulaShape = paragraphRange.InlineShapes(1)
+    baselineTextSize = CDbl(VTVisibleEquationNumberFontSize( _
+        paragraphRange.Document))
+    formulaPosition = VTExpectedImageFormulaPosition( _
+        formulaShape, baselineTextSize, _
+        "The unnumbered image Equation paragraph-mark alignment")
+    With formulaShape.Range.Font
+        .Superscript = False
+        .Subscript = False
+        .Position = formulaPosition
+    End With
+
+    ' Keep Return/typing on Word's ordinary paragraph baseline. Moving only the
+    ' picture gives an unnumbered display the same visual-centre relationship as
+    ' the centre/right-tab numbered layout without contaminating the next line.
+    If paragraphRange.End > paragraphRange.Start Then
+        Set paragraphMarkRange = paragraphRange.Document.Range( _
+            Start:=paragraphRange.End - 1, End:=paragraphRange.End)
+        With paragraphMarkRange.Font
+            .Superscript = False
+            .Subscript = False
+            .Position = 0
+        End With
+    End If
+End Sub
 
 Private Function VTTryCalculateCurrentNumberedImagePaintedCenterDeltaPoints( _
     ByVal formulaShape As InlineShape, _
@@ -35475,6 +35619,7 @@ Private Sub VTNormalizeUnnumberedDisplayParagraph( _
         .FirstLineIndent = 0!
         .TabStops.ClearAll
     End With
+    VTApplyUnnumberedImageFormulaVerticalAlignment formulaRange
 End Sub
 
 Private Sub VTNormalizeImageDisplayParagraph(ByVal formulaRange As Range)
@@ -35489,6 +35634,118 @@ Private Sub VTNormalizeImageDisplayParagraph(ByVal formulaRange As Range)
         .SpaceBefore = 0!
         .SpaceAfter = 0!
     End With
+End Sub
+
+Public Sub VisualTeX_RunWordUnnumberedImageParagraphMarkRegression()
+    Const formulaId As String = _
+        "73737373-7373-4737-8737-737373737373"
+
+    Dim testDocument As Document
+    Dim formulaShape As InlineShape
+    Dim insertionRange As Range
+    Dim paragraphRange As Range
+    Dim paragraphMarkRange As Range
+    Dim fixtureRoot As String
+    Dim resultPath As String
+    Dim imagePath As String
+    Dim imageFileName As String
+    Dim expectedPosition As Long
+    Dim actualPosition As Long
+    Dim paragraphMarkPosition As Long
+    Dim regressionStage As String
+    Dim regressionErrorNumber As Long
+    Dim regressionErrorDescription As String
+
+    fixtureRoot = VTApplicationSupportRoot() & "/Tests"
+    resultPath = fixtureRoot & _
+        "/word-unnumbered-image-paragraph-mark-regression-result.txt"
+    On Error GoTo RegressionFailed
+    If Documents.Count > 0 Then
+        Err.Raise vbObjectError + 7613, "VisualTeX regression", _
+            "The unnumbered-image paragraph-mark regression requires Word" & _
+            " to have no open documents."
+    End If
+
+    regressionStage = "resolve-real-image"
+    imageFileName = Dir$(VTApplicationSupportRoot() & "/ImageDocuments/*.png")
+    If Len(imageFileName) > 0 Then
+        imagePath = VTApplicationSupportRoot() & "/ImageDocuments/" & imageFileName
+    Else
+        imagePath = VTPlaceholderImagePath()
+    End If
+
+    regressionStage = "create-visible-fixture"
+    Set testDocument = Documents.Add(Visible:=True)
+    testDocument.Activate
+    testDocument.ActiveWindow.View.Type = wdPrintView
+    testDocument.ActiveWindow.View.ShowAll = True
+    testDocument.ActiveWindow.View.Zoom.Percentage = 150
+    testDocument.Styles(wdStyleNormal).Font.Size = 11!
+    testDocument.Content.Text = _
+        "Unnumbered image display: centered paragraph mark" & vbCr
+    Set insertionRange = testDocument.Range( _
+        Start:=testDocument.Content.End - 1, _
+        End:=testDocument.Content.End - 1)
+    Set formulaShape = testDocument.InlineShapes.AddPicture( _
+        FileName:=imagePath, LinkToFile:=False, _
+        SaveWithDocument:=True, Range:=insertionRange)
+    formulaShape.LockAspectRatio = msoTrue
+    formulaShape.Height = 40!
+    formulaShape.Title = VTFormulaReference(formulaId, "block", False)
+    VTSetWordFormulaFormat testDocument, formulaId, "block", False
+    VTSetWordImageInkCenterYRatio testDocument, formulaId, 0.5
+
+    regressionStage = "normalize-unnumbered-display"
+    VTNormalizeUnnumberedDisplayParagraph formulaShape.Range
+    VTNormalizeImageDisplayParagraph formulaShape.Range
+    Set paragraphRange = formulaShape.Range.Paragraphs(1).Range.Duplicate
+    Set paragraphMarkRange = testDocument.Range( _
+        Start:=paragraphRange.End - 1, End:=paragraphRange.End)
+    expectedPosition = VTExpectedImageFormulaPosition( _
+        formulaShape, CDbl(VTVisibleEquationNumberFontSize(testDocument)), _
+        "The unnumbered image paragraph-mark regression")
+    actualPosition = CLng(formulaShape.Range.Font.Position)
+    paragraphMarkPosition = CLng(paragraphMarkRange.Font.Position)
+
+    regressionStage = "verify-layout"
+    If paragraphRange.ParagraphFormat.Alignment <> wdAlignParagraphCenter Or _
+       VTCustomTabStopCount(paragraphRange) <> 0 Or _
+       expectedPosition >= 0 Or actualPosition <> expectedPosition Or _
+       paragraphMarkPosition <> 0 Then
+        Err.Raise vbObjectError + 7613, "VisualTeX regression", _
+            "The unnumbered image and paragraph mark do not share the" & _
+            " expected visual-center baseline" & _
+            " [alignment=" & CStr(paragraphRange.ParagraphFormat.Alignment) & _
+            "; customTabs=" & CStr(VTCustomTabStopCount(paragraphRange)) & _
+            "; formulaPosition=" & CStr(actualPosition) & _
+            "; expectedPosition=" & CStr(expectedPosition) & _
+            "; paragraphMarkPosition=" & CStr(paragraphMarkPosition) & "]."
+    End If
+
+    regressionStage = "write-result"
+    VTWriteTextAtomic resultPath, _
+        "PASS" & vbLf & _
+        "formulaPosition=" & CStr(actualPosition) & vbLf & _
+        "paragraphMarkPosition=" & CStr(paragraphMarkPosition) & vbLf & _
+        "height=" & CStr(formulaShape.Height) & vbLf & _
+        "visualInspection=visible-word-show-all" & vbLf
+    testDocument.Range(Start:=0, End:=0).Select
+    Exit Sub
+
+RegressionFailed:
+    regressionErrorNumber = Err.Number
+    regressionErrorDescription = Err.Description
+    On Error Resume Next
+    VTWriteTextAtomic resultPath, _
+        "FAIL" & vbLf & _
+        "stage=" & regressionStage & vbLf & _
+        "errorNumber=" & CStr(regressionErrorNumber) & vbLf & _
+        "errorDescription=" & _
+            Replace$(Replace$(regressionErrorDescription, vbCr, " "), vbLf, " ") & vbLf
+    On Error GoTo 0
+    Err.Raise regressionErrorNumber, _
+        "VisualTeX unnumbered image paragraph-mark regression", _
+        regressionStage & ": " & regressionErrorDescription
 End Sub
 
 Private Sub VTDeleteTrailingInlineNativeSeparator( _
@@ -40407,6 +40664,9 @@ Private Sub VTApplyWordImageFormulaFontSize( _
         If numbered Then
             VTRefreshNumberedImageFormulaFontLayout _
                 formulaShape, formulaId, requestedFontSizePt
+        Else
+            VTApplyUnnumberedImageFormulaVerticalAlignment _
+                formulaShape.Range
         End If
     End If
     persistedWordFontSizePt = VTInlineShapeWordFontSize(formulaShape)
@@ -40521,6 +40781,9 @@ Private Sub VTSynchronizeWordImageFormulaShape( _
     If displayMode = "inline" Then
         VTApplyWordInlineImageBaseline _
             formulaShape, referenceHeightPt, referenceBaselinePt
+    ElseIf displayMode = "block" And Not numbered Then
+        VTApplyUnnumberedImageFormulaVerticalAlignment _
+            formulaShape.Range
     End If
 End Sub
 

@@ -36,12 +36,14 @@ const supportedScenarios = [
   "suggestions",
   "navigation",
   "geometry",
+  "selection-geometry",
   "source-layout",
   "source-editor-ux",
   "source-preview-only",
   "source-auto-close-completion",
   "source-structural-draft",
   "toolbar-template-completion",
+  "physics-toolbar",
   "toolbar-compact",
   "formula-tiles",
   "cursor-placement",
@@ -55,6 +57,7 @@ const supportedScenarios = [
   "delete",
   "export",
   "modulo-aligned",
+  "row-stability",
 ];
 const scenario = process.argv[2];
 if (!supportedScenarios.includes(scenario)) {
@@ -785,18 +788,118 @@ async function main() {
           },
         };
         localStorage.setItem(storageKey, JSON.stringify(persisted));
-        location.reload();
+        return true;
       })()`);
+      await client.send("Page.reload", { ignoreCache: true });
       await waitForEvaluation(`(() => ({
-        ready:
-          Boolean(document.querySelector("math-field")) &&
-          Boolean(document.querySelector(".source-toggle")),
-      }))()`, "standard editor with collapsed source");
+        ready: Boolean(document.querySelector("math-field")),
+      }))()`, "source-preview formula field after reload");
+      const loadedSourcePreviewLayout = await evaluate(`document.querySelector(".workspace")?.dataset.editorLayout ?? ""`);
+      if (loadedSourcePreviewLayout !== "standard") {
+        await evaluate(`document.querySelector(".settings-toggle")?.click()`);
+        await waitForEvaluation(`(() => ({
+          ready: Boolean(document.querySelector('[data-editor-layout-choice="standard"]')),
+        }))()`, "source-preview standard layout setting");
+        await evaluate(`document.querySelector('[data-editor-layout-choice="standard"]')?.click()`);
+        await waitForEvaluation(`(() => ({
+          ready: document.querySelector(".workspace")?.dataset.editorLayout === "standard",
+        }))()`, "source-preview switched to standard layout");
+        await evaluate(`document.querySelector(".settings-dialog .dialog-header .icon-button")?.click()`);
+        await sleep(80);
+      }
+      await waitForEvaluation(`(() => {
+        const workspace = document.querySelector(".workspace");
+        const sourcePanel = document.querySelector(".source-panel, .source-pane-slot");
+        const sourceToggle = document.querySelector(".source-toggle");
+        return {
+          ready: Boolean(document.querySelector("math-field")) &&
+            Boolean(sourceToggle || sourcePanel),
+          workspaceClass: workspace?.className ?? "",
+          sourcePanelVisible: Boolean(sourcePanel),
+          sourceToggleVisible: Boolean(sourceToggle),
+          sourceOpenStored:
+            localStorage.getItem("visualtex-desktop-editor-source-open") ?? "",
+          editorState:
+            JSON.parse(localStorage.getItem("visualtex-editor") || "{}").state
+              ?.editorLayout ?? "",
+        };
+      })()`, "standard editor source controls");
       await evaluate(`(() => {
-        const standardToggle = document.querySelector(".source-toggle");
-        const classicToggle = document.querySelector('[data-classic-bottom-view="source"]');
-        (standardToggle || classicToggle)?.click();
+        const laterButton = [...document.querySelectorAll('.office-first-run-backdrop button')]
+          .find((button) => /Later|稍后处理/.test(button.textContent || ''));
+        if (laterButton instanceof HTMLElement) laterButton.click();
+        return true;
       })()`);
+      await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field?.isConnected) return { ready: false };
+        field.setValue("x", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.position = field.lastOffset;
+        field.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          composed: true,
+          inputType: "insertText",
+        }));
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+        return { ready: field.value === "x" && field.hasFocus() };
+      })()`, "source-preview display fixture");
+      await key("Enter", "Enter", 13, 2);
+      await waitForEvaluation(`(() => {
+        const rows = [...document.querySelectorAll(".formula-line")];
+        const fields = [...document.querySelectorAll("math-field")];
+        const secondToggle = rows[1]?.querySelector("[data-formula-line-mode-toggle]");
+        return {
+          ready:
+            rows.length === 2 &&
+            fields.length === 2 &&
+            secondToggle?.getAttribute("data-formula-line-mode") === "inline",
+          rowCount: rows.length,
+          fieldCount: fields.length,
+          secondMode: secondToggle?.getAttribute("data-formula-line-mode") ?? "",
+        };
+      })()`, "source-preview inline fixture row");
+      await waitForEvaluation(`(() => {
+        const fields = [...document.querySelectorAll("math-field")];
+        const field = fields[1];
+        if (!field?.isConnected) return { ready: false };
+        field.setValue("y", {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.position = field.lastOffset;
+        field.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          composed: true,
+          inputType: "insertText",
+        }));
+        const rows = [...document.querySelectorAll(".formula-line")];
+        const modes = rows.map((row) =>
+          row.querySelector("[data-formula-line-mode-toggle]")?.getAttribute("data-formula-line-mode") ?? "",
+        );
+        return {
+          ready: fields[0]?.value === "x" && field.value === "y" && modes.join(",") === "display,inline",
+          values: fields.map((item) => item.value),
+          modes,
+        };
+      })()`, "source-preview mixed line-mode fixture");
+      const sourceEditorAlreadyVisible = await evaluate(`Boolean(document.querySelector(".source-panel .cm-content"))`);
+      if (!sourceEditorAlreadyVisible) {
+        await evaluate(`(() => {
+          const standardToggle = document.querySelector(".source-toggle");
+          const classicToggle = document.querySelector('[data-classic-bottom-view="source"]');
+          (standardToggle || classicToggle)?.click();
+        })()`);
+      }
       await waitForEvaluation(`(() => ({
         ready: Boolean(document.querySelector(".source-panel .cm-content")),
       }))()`, "source editor is visible");
@@ -808,6 +911,29 @@ async function main() {
         return true;
       })()`);
       await sleep(80);
+
+      const markerStateBeforeSourceFocus = await evaluate(`(() =>
+        [...document.querySelectorAll(".formula-line")].map((line) => {
+          const toggle = line.querySelector("[data-formula-line-mode-toggle]");
+          return {
+            lineId: line.getAttribute("data-line-id") ?? "",
+            mode: toggle?.getAttribute("data-formula-line-mode") ?? "",
+            text: toggle?.textContent?.trim() ?? "",
+          };
+        })
+      )()`);
+      assert.ok(
+        markerStateBeforeSourceFocus.length > 0,
+        "formula line mode markers exist before source focus",
+      );
+      assert.ok(
+        markerStateBeforeSourceFocus.every(
+          (item) =>
+            (item.mode === "inline" && item.text === "$") ||
+            (item.mode === "display" && item.text === "$$"),
+        ),
+        `line mode marker text must match the stored mode before source focus: ${JSON.stringify(markerStateBeforeSourceFocus)}`,
+      );
 
       const sourceFocusPoint = await evaluate(`(() => {
         const lines = [...document.querySelectorAll(".source-panel .cm-line")];
@@ -856,14 +982,23 @@ async function main() {
           ".ML__caret, .ML__text-caret, .ML__latex-caret, .visualtex-structural-placeholder-caret",
         ) ?? [])];
         const lineStyle = line ? getComputedStyle(line) : null;
+        const modeToggle = line?.querySelector("[data-formula-line-mode-toggle]");
+        const modeToggleStyle = modeToggle ? getComputedStyle(modeToggle) : null;
         return {
           ready:
             document.documentElement.classList.contains("visualtex-source-editor-focused") &&
             workspace?.classList.contains("is-source-editor-focused") &&
             surface?.classList.contains("is-source-preview-only") &&
+            surface?.classList.contains("has-mixed-line-modes") &&
             field?.classList.contains("visualtex-source-preview-only") &&
             field?.readOnly === true &&
             field?.selectionIsCollapsed === true &&
+            Boolean(modeToggle) &&
+            modeToggle?.disabled === true &&
+            ["inline", "display"].includes(modeToggle?.getAttribute("data-formula-line-mode") || "") &&
+            modeToggleStyle?.display !== "none" &&
+            modeToggleStyle?.visibility !== "hidden" &&
+            Number.parseFloat(modeToggleStyle?.opacity || "0") > 0 &&
             !document.querySelector(".suggestion-popup") &&
             !isPainted(native) &&
             !isPainted(stable) &&
@@ -888,15 +1023,45 @@ async function main() {
             return style.display !== "none" && Number.parseFloat(style.opacity || "1") > 0;
           }).length,
           lineBackground: lineStyle?.backgroundColor ?? "",
+          modeMarkerPresent: Boolean(modeToggle),
+          modeMarkerMode: modeToggle?.getAttribute("data-formula-line-mode") ?? "",
+          modeMarkerDisabled: modeToggle?.disabled ?? false,
+          modeMarkerOpacity: modeToggleStyle?.opacity ?? "",
+          modeMarkers: [...document.querySelectorAll(".formula-line")].map((row) => {
+            const toggle = row.querySelector("[data-formula-line-mode-toggle]");
+            return {
+              lineId: row.getAttribute("data-line-id") ?? "",
+              mode: toggle?.getAttribute("data-formula-line-mode") ?? "",
+              text: toggle?.textContent?.trim() ?? "",
+              disabled: toggle?.disabled ?? false,
+            };
+          }),
         };
       })()`, "source focus turns the visual editor into clean live preview");
+      assert.deepEqual(
+        focusedState.modeMarkers.map(({ lineId, mode, text }) => ({ lineId, mode, text })),
+        markerStateBeforeSourceFocus,
+        `source focus must preserve every formula line's $/$$ marker and mode: ${JSON.stringify(focusedState.modeMarkers)}`,
+      );
+      assert.ok(
+        focusedState.modeMarkers.every(
+          (item) =>
+            item.disabled &&
+            ((item.mode === "inline" && item.text === "$") ||
+              (item.mode === "display" && item.text === "$$")),
+        ),
+        `source preview mode markers must stay visible, correct, and read-only: ${JSON.stringify(focusedState.modeMarkers)}`,
+      );
 
       const sourceInsertionPoint = await evaluate(`(() => {
         const lines = [...document.querySelectorAll(".source-panel .cm-line")];
-        const target =
-          lines.find((line, index) => index > 0 && !line.textContent?.trim()) ??
-          lines[1] ??
-          lines[0];
+        const targetIndex = lines.findIndex((line, index) =>
+          index > 0 &&
+          index < lines.length - 1 &&
+          lines[index - 1]?.textContent?.trim() === "$$" &&
+          lines[index + 1]?.textContent?.trim() === "$$",
+        );
+        const target = targetIndex >= 0 ? lines[targetIndex] : lines[1] ?? lines[0];
         const rect = target?.getBoundingClientRect();
         return rect
           ? { x: rect.left + 8, y: rect.top + rect.height / 2 }
@@ -993,8 +1158,21 @@ async function main() {
           fieldPreviewOnly: field?.classList.contains("visualtex-source-preview-only") ?? true,
           resetVisible: Boolean(document.querySelector("[data-source-reset]")),
           sourceErrorVisible: Boolean(document.querySelector(".source-error-chip")),
+          modeMarkers: [...document.querySelectorAll(".formula-line")].map((row) => {
+            const toggle = row.querySelector("[data-formula-line-mode-toggle]");
+            return {
+              lineId: row.getAttribute("data-line-id") ?? "",
+              mode: toggle?.getAttribute("data-formula-line-mode") ?? "",
+              text: toggle?.textContent?.trim() ?? "",
+            };
+          }),
         };
       })()`, "one visual click accepts the previewable source and enters formula editing");
+      assert.deepEqual(
+        restoredInteractionState.modeMarkers,
+        markerStateBeforeSourceFocus,
+        `leaving source focus must not mutate line modes or their $/$$ markers: ${JSON.stringify(restoredInteractionState.modeMarkers)}`,
+      );
 
       await clearField();
       await typeText("\\th");
@@ -1020,6 +1198,7 @@ async function main() {
       })()`, "visual command candidates return after source focus leaves");
 
       console.log(JSON.stringify({
+        markerStateBeforeSourceFocus,
         focusedState,
         liveRenderState,
         restoredInteractionState,
@@ -2170,6 +2349,55 @@ async function main() {
         "Toolbar template completion browser regression passed",
         JSON.stringify({ toolbarState, insertionResults }),
       );
+      return;
+    }
+
+    if (scenario === "physics-toolbar") {
+      await evaluate(`(() => {
+        if (!document.querySelector('.formula-toolbar')) {
+          document.querySelector('.sidebar-toggle')?.click();
+        }
+      })()`);
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector('.formula-line math-field')) &&
+          Boolean(document.querySelector('[data-command-id="physics-pqty"]')),
+      }))()`, "physics toolbar and editable formula");
+
+      const insertionResults = [];
+      for (const name of [
+        "pqty",
+        "vqty",
+        "pmqty",
+        "order",
+        "derivative",
+        "functionalderivative",
+        "vev",
+        "flatfrac",
+      ]) {
+        const clicked = await evaluate(`(() => {
+          const field = document.querySelector('.formula-line math-field');
+          const button = document.querySelector('[data-command-id="physics-${name}"]');
+          if (!field || !button) return false;
+          field.setValue('', { mode: 'math', format: 'latex' });
+          field.focus();
+          field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus();
+          button.click();
+          return true;
+        })()`);
+        assert.equal(clicked, true, `physics-${name}: button not found`);
+        const result = await waitForEvaluation(`(() => {
+          const field = document.querySelector('.formula-line math-field');
+          const value = field?.value ?? '';
+          return {
+            ready: value.includes(${JSON.stringify(`\\${name}`)}),
+            value,
+            error: Boolean(field?.shadowRoot?.querySelector('.ML__error')),
+          };
+        })()`, `physics-${name} insertion`);
+        assert.equal(result.error, false, `physics-${name}: invalid insertion`);
+        insertionResults.push({ name, ...result });
+      }
+      console.log("Physics toolbar insertion regression passed", JSON.stringify(insertionResults));
       return;
     }
 
@@ -3710,6 +3938,83 @@ async function main() {
       })()`);
       console.log(JSON.stringify(geometry, null, 2));
       console.log("Targeted geometry probe passed");
+      return;
+    }
+
+    if (scenario === "selection-geometry") {
+      const formula = String.raw`x+\ket{n_{+}},\ket{n_{-}}=\begin{pmatrix}\sin\frac{\theta}{2}\\-\cos\frac{\theta}{2}\end{pmatrix}a^{affff}`;
+      const setup = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field?.isConnected) return { ready: false };
+        field.setValue(${JSON.stringify(formula)}, {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+          silenceNotifications: true,
+        });
+        field.focus();
+        const model = field._mathfield?.model;
+        const ket = model?.atoms.filter((atom) => atom.command === "\\\\ket").at(-1);
+        return {
+          ready: Boolean(ket),
+          ketIndex: ket ? model.offsetOf(ket) : -1,
+          leftOffset: ket ? model.offsetOf(ket.leftSibling) : -1,
+        };
+      })()`, "nested ket selection setup");
+      await sleep(80);
+      const geometry = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const root = field.shadowRoot;
+        const ketId = field._mathfield.model.at(${setup.ketIndex}).id;
+        const ket = root.querySelector('[data-atom-id="' + ketId + '"]')
+          ?.getBoundingClientRect();
+        const content = root.querySelector('[part="content"]')?.getBoundingClientRect();
+        return {
+          ket: ket && { left: ket.left, right: ket.right, top: ket.top, bottom: ket.bottom },
+          contentRight: content?.right,
+        };
+      })()`);
+      assert.ok(geometry.ket && Number.isFinite(geometry.contentRight), JSON.stringify(geometry));
+
+      const mouse = (type, x, y, buttons) => client.send("Input.dispatchMouseEvent", {
+        type, x, y, button: "left", buttons, clickCount: 1,
+      });
+      const y = (geometry.ket.top + geometry.ket.bottom) / 2;
+      const probes = [];
+      for (const [label, startX] of [
+        ["kernel", geometry.contentRight - 20],
+        ["multi-line", geometry.contentRight + 10],
+      ]) {
+        // The release, not an intermediate move, must be the final endpoint.
+        await mouse("mousePressed", startX, y, 1);
+        await mouse("mouseMoved", geometry.ket.right + 10, y, 1);
+        await mouse("mouseReleased", geometry.ket.left - 10, y, 0);
+        await sleep(80);
+        const probe = await evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          const [start, end] = field.selection.ranges[0];
+          const rects = [...field.shadowRoot.querySelectorAll(".ML__selection")]
+            .map((element) => element.getBoundingClientRect());
+          return {
+            start,
+            latex: field.getValue(start, end, "latex").slice(0, 30),
+            left: Math.min(...rects.map((rect) => rect.left)),
+            right: Math.max(...rects.map((rect) => rect.right)),
+            rectCount: rects.length,
+            multiLine: field.classList.contains("has-visualtex-multi-line-selection"),
+          };
+        })()`);
+        assert.equal(probe.start, setup.leftOffset - 1, JSON.stringify({ label, probe }));
+        assert.equal(probe.latex.startsWith(",\\ket{n_{-}}="), true, JSON.stringify({ label, probe }));
+        assert.equal(probe.rectCount, 1, JSON.stringify({ label, probe }));
+        assert.ok(probe.left < geometry.ket.left, JSON.stringify({ label, probe }));
+        assert.ok(probe.right > geometry.ket.right + 100, JSON.stringify({ label, probe }));
+        assert.equal(probe.multiLine, label === "multi-line", JSON.stringify({ label, probe }));
+        probes.push({ label, ...probe });
+      }
+      console.log(JSON.stringify({ probes }, null, 2));
+      console.log("Targeted pointer release selection geometry regression passed");
       return;
     }
 
@@ -6382,6 +6687,31 @@ async function main() {
           latex: String.raw`\overset{U}{\underset{L}{B}}`,
           anchor: "B",
         },
+        {
+          name: "fraction-numerator-superscript",
+          latex: String.raw`\frac{x_{L}^{U}}{D}`,
+          anchor: "U",
+        },
+        {
+          name: "fraction-numerator-subscript",
+          latex: String.raw`\frac{x_{L}^{U}}{D}`,
+          anchor: "L",
+        },
+        {
+          name: "nested-fraction",
+          latex: String.raw`\frac{\frac{A}{B}}{C}`,
+          anchor: "B",
+        },
+        { name: "scripts", latex: String.raw`x_{L}^{U}`, anchor: "U" },
+        { name: "sqrt-index", latex: String.raw`\sqrt[L]{R}`, anchor: "L" },
+        { name: "binomial", latex: String.raw`\binom{N}{D}`, anchor: "N" },
+        { name: "matrix", latex: String.raw`\begin{matrix}A&B\\C&D\end{matrix}`, anchor: "A" },
+        { name: "substack", latex: String.raw`\substack{A\\B}`, anchor: "A" },
+        { name: "sum-limits", latex: String.raw`\sum_{L}^{U}`, anchor: "U" },
+        { name: "xarrow", latex: String.raw`\xrightarrow[L]{U}`, anchor: "U" },
+        { name: "overbrace", latex: String.raw`\overbrace{A}^{U}`, anchor: "U" },
+        { name: "underbrace", latex: String.raw`\underbrace{A}_{L}`, anchor: "L" },
+        { name: "matrix-in-fraction", latex: String.raw`\frac{\begin{matrix}A\\B\end{matrix}}{C}`, anchor: "B" },
       ];
       const results = [];
       for (const testCase of cases) {
@@ -6453,10 +6783,19 @@ async function main() {
           for (let offset = 0; offset <= field.lastOffset; offset += 1) {
             const info = field.getElementInfo(offset);
             const bounds = info?.bounds;
+            const atom = field._mathfield?.model?.at(offset);
+            const ancestors = [];
+            for (let child = atom; child?.parent && ancestors.length < 8; child = child.parent) {
+              ancestors.push({ type: child.parent.type, branch: child.parentBranch });
+            }
             offsets.push({
               offset,
               latex: info?.latex ?? "",
               depth: info?.depth ?? null,
+              type: atom?.type ?? null,
+              parentBranch: atom?.parentBranch ?? null,
+              parentType: atom?.parent?.type ?? null,
+              ancestors,
               bounds: bounds
                 ? {
                     top: bounds.top,
@@ -6603,6 +6942,129 @@ async function main() {
         secondKey: "ArrowDown",
         secondExpected: "B",
       });
+      await runTwoBand({
+        name: "ordinary-scripts",
+        latex: String.raw`x_{L}^{U}`,
+        anchor: "U",
+        firstKey: "ArrowDown",
+        firstExpected: "L",
+        secondKey: "ArrowUp",
+        secondExpected: "U",
+      });
+      await runTwoBand({
+        name: "integral-limits",
+        latex: String.raw`\int_{L}^{U} f`,
+        anchor: "U",
+        firstKey: "ArrowDown",
+        firstExpected: "L",
+        secondKey: "ArrowUp",
+        secondExpected: "U",
+      });
+      await runTwoBand({
+        name: "sum-limits",
+        latex: String.raw`\sum_{L}^{U}`,
+        anchor: "U",
+        firstKey: "ArrowDown",
+        firstExpected: "L",
+        secondKey: "ArrowUp",
+        secondExpected: "U",
+      });
+      await runTwoBand({
+        name: "root-index",
+        latex: String.raw`\sqrt[L]{R}`,
+        anchor: "L",
+        firstKey: "ArrowDown",
+        firstExpected: "R",
+        secondKey: "ArrowUp",
+        secondExpected: "L",
+      });
+      await runTwoBand({
+        name: "overbrace-label",
+        latex: String.raw`\overbrace{A}^{U}`,
+        anchor: "U",
+        firstKey: "ArrowDown",
+        firstExpected: "A",
+        secondKey: "ArrowUp",
+        secondExpected: "U",
+      });
+      await runTwoBand({
+        name: "underbrace-label",
+        latex: String.raw`\underbrace{A}_{L}`,
+        anchor: "A",
+        firstKey: "ArrowDown",
+        firstExpected: "L",
+        secondKey: "ArrowUp",
+        secondExpected: "A",
+      });
+      await runTwoBand({
+        name: "binomial",
+        latex: String.raw`\binom{N}{D}`,
+        anchor: "N",
+        firstKey: "ArrowDown",
+        firstExpected: "D",
+        secondKey: "ArrowUp",
+        secondExpected: "N",
+      });
+      await runTwoBand({
+        name: "matrix-column",
+        latex: String.raw`\begin{matrix}A&B\\C&D\end{matrix}`,
+        anchor: "B",
+        firstKey: "ArrowDown",
+        firstExpected: "D",
+        secondKey: "ArrowUp",
+        secondExpected: "B",
+      });
+      for (const [name, latex, anchor, below] of [
+        ["parenthesized-matrix", String.raw`\begin{pmatrix}A&B\\C&D\end{pmatrix}`, "B", "D"],
+        ["bracketed-matrix", String.raw`\begin{bmatrix}A&B\\C&D\end{bmatrix}`, "B", "D"],
+        ["braced-matrix", String.raw`\begin{Bmatrix}A&B\\C&D\end{Bmatrix}`, "B", "D"],
+        ["determinant-matrix", String.raw`\begin{vmatrix}A&B\\C&D\end{vmatrix}`, "B", "D"],
+        ["double-bar-matrix", String.raw`\begin{Vmatrix}A&B\\C&D\end{Vmatrix}`, "B", "D"],
+        ["small-matrix", String.raw`\begin{smallmatrix}A&B\\C&D\end{smallmatrix}`, "B", "D"],
+        ["array", String.raw`\begin{array}{cc}A&B\\C&D\end{array}`, "B", "D"],
+        ["cases", String.raw`\begin{cases}A&B\\C&D\end{cases}`, "A", "C"],
+        ["display-cases", String.raw`\begin{dcases}A&B\\C&D\end{dcases}`, "A", "C"],
+        ["right-cases", String.raw`\begin{rcases}A&B\\C&D\end{rcases}`, "A", "C"],
+        ["aligned", String.raw`\begin{aligned}A&=B\\C&=D\end{aligned}`, "A", "C"],
+        ["gathered", String.raw`\begin{gathered}A\\B\end{gathered}`, "A", "B"],
+        ["split", String.raw`\begin{split}A&=B\\C&=D\end{split}`, "A", "C"],
+      ]) {
+        await runTwoBand({
+          name,
+          latex,
+          anchor,
+          firstKey: "ArrowDown",
+          firstExpected: below,
+          secondKey: "ArrowUp",
+          secondExpected: anchor,
+        });
+      }
+      for (const [name, latex] of [
+        ["display-fraction", String.raw`\dfrac{N}{D}`],
+        ["text-fraction", String.raw`\tfrac{N}{D}`],
+        ["continuous-fraction", String.raw`\cfrac{N}{D}`],
+        ["display-binomial", String.raw`\dbinom{N}{D}`],
+        ["text-binomial", String.raw`\tbinom{N}{D}`],
+      ]) {
+        await runTwoBand({
+          name,
+          latex,
+          anchor: "N",
+          firstKey: "ArrowDown",
+          firstExpected: "D",
+          secondKey: "ArrowUp",
+          secondExpected: "N",
+        });
+      }
+      await runTwoBand({
+        name: "substack-rows",
+        latex: String.raw`\substack{A\\B}`,
+        anchor: "A",
+        firstKey: "ArrowDown",
+        firstExpected: "B",
+        secondKey: "ArrowUp",
+        secondExpected: "A",
+      });
 
       await prepareAt(String.raw`\overset{U}{\underset{L}{B}}`, "B");
       await key("ArrowUp", "ArrowUp", 38);
@@ -6745,6 +7207,108 @@ async function main() {
         triplePlaceholderLower,
         triplePlaceholderBaseAgain,
       });
+
+      await prepareAt(String.raw`\frac{x_{L}^{U}}{D}`, "U");
+      await key("ArrowDown", "ArrowDown", 40);
+      const nestedScriptLower = await readPosition("L", "fraction numerator upper to lower script");
+      await key("ArrowDown", "ArrowDown", 40);
+      const nestedScriptDenominator = await readPosition("D", "fraction numerator lower script to denominator");
+      await key("ArrowUp", "ArrowUp", 38);
+      const nestedScriptReturn = await readPosition("L", "fraction denominator to nearest numerator script");
+      await key("ArrowUp", "ArrowUp", 38);
+      const nestedScriptUpper = await readPosition("U", "fraction lower to upper script");
+      results.push({
+        name: "fraction-with-scripts",
+        nestedScriptLower,
+        nestedScriptDenominator,
+        nestedScriptReturn,
+        nestedScriptUpper,
+      });
+
+      await prepareAt(String.raw`\frac{\frac{A}{B}}{C}`, "B");
+      await key("ArrowDown", "ArrowDown", 40);
+      const nestedFractionOuterDenominator = await readPosition("C", "nested fraction inner to outer denominator");
+      await key("ArrowUp", "ArrowUp", 38);
+      const nestedFractionInnerDenominator = await readPosition("B", "nested fraction outer to inner denominator");
+      results.push({ name: "nested-fraction", nestedFractionOuterDenominator, nestedFractionInnerDenominator });
+
+      await prepareAt(String.raw`\frac{\begin{matrix}A\\B\end{matrix}}{C}`, "B");
+      await key("ArrowDown", "ArrowDown", 40);
+      const matrixOuterDenominator = await readPosition("C", "matrix last row to enclosing denominator");
+      await key("ArrowUp", "ArrowUp", 38);
+      const matrixReturn = await readPosition("B", "enclosing denominator to matrix last row");
+      results.push({ name: "matrix-in-fraction", matrixOuterDenominator, matrixReturn });
+
+      const runNestedPath = async (name, latex, anchor, keys, expected) => {
+        await prepareAt(latex, anchor);
+        const positions = [];
+        for (let index = 0; index < keys.length; index += 1) {
+          const direction = keys[index];
+          await key(direction, direction, direction === "ArrowUp" ? 38 : 40);
+          positions.push(await readPosition(expected[index], `${name} step ${index + 1}`));
+        }
+        results.push({ name, positions });
+      };
+      await runNestedPath(
+        "fraction-over-under-stack",
+        String.raw`\frac{\overset{U}{\underset{L}{B}}}{D}`,
+        "U",
+        ["ArrowDown", "ArrowDown", "ArrowDown", "ArrowUp", "ArrowUp", "ArrowUp"],
+        ["B", "L", "D", "L", "B", "U"],
+      );
+      await runNestedPath(
+        "indexed-root-in-fraction",
+        String.raw`\frac{\sqrt[L]{R}}{D}`,
+        "L",
+        ["ArrowDown", "ArrowDown", "ArrowUp", "ArrowUp"],
+        ["R", "D", "R", "L"],
+      );
+      await runNestedPath(
+        "operator-limits-in-fraction",
+        String.raw`\frac{\sum_{L}^{U}}{D}`,
+        "U",
+        ["ArrowDown", "ArrowDown", "ArrowUp", "ArrowUp"],
+        ["L", "D", "L", "U"],
+      );
+      await runNestedPath(
+        "script-in-matrix-row",
+        String.raw`\begin{matrix}x_{L}^{U}\\D\end{matrix}`,
+        "U",
+        ["ArrowDown", "ArrowDown", "ArrowUp", "ArrowUp"],
+        ["L", "D", "L", "U"],
+      );
+      await runNestedPath(
+        "single-script-in-fraction",
+        String.raw`\frac{x^{U}}{D}`,
+        "U",
+        ["ArrowDown", "ArrowDown", "ArrowUp"],
+        ["x", "D", "x"],
+      );
+      await runNestedPath(
+        "overbrace-in-fraction",
+        String.raw`\frac{\overbrace{A}^{U}}{D}`,
+        "U",
+        ["ArrowDown", "ArrowDown", "ArrowUp", "ArrowUp"],
+        ["A", "D", "A", "U"],
+      );
+      await runNestedPath(
+        "substack-in-operator-limit",
+        String.raw`\sum_{\substack{A\\B}}^{U}`,
+        "B",
+        ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown"],
+        ["A", "U", "A", "B"],
+      );
+
+      await prepareAt(String.raw`\substack{A\\B}`, "B");
+      await typeText("C");
+      const editedSubstack = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          ready: (field?.value ?? "").replace(/\\s+/g, "") === "\\\\substack{A\\\\\\\\BC}",
+          value: field?.value ?? "",
+        };
+      })()`, "editing the lower substack row preserves its source command");
+      results.push({ name: "substack-edit", editedSubstack });
 
       console.log(JSON.stringify(results, null, 2));
       console.log("Vertical structure navigation regression passed");
@@ -7486,6 +8050,127 @@ async function main() {
         undersetPreview,
       }, null, 2));
       console.log("Targeted native input-selection popover regression passed");
+      return;
+    }
+
+    if (scenario === "row-stability") {
+      const marker = String.raw`\class{visualtex-align-marker}{\kern0pt}`;
+      const values = [
+        `a+b${marker}=c`,
+        `long_variable${marker}=d`,
+        `p${marker}=q`,
+        ...Array.from({ length: 12 }, (_, index) => `x_${index}+y_${index}=z_${index}`),
+      ];
+      await client.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        const lines = ${JSON.stringify(values)}.map((latex, index) => ({
+          id: "visual-row-stability-" + index, latex, mode: "display",
+        }));
+        persisted.state = {
+          ...(persisted.state || {}),
+          lines,
+          activeLineId: lines.at(-1).id,
+        };
+        localStorage.setItem("visualtex-editor", JSON.stringify(persisted));
+      })();` });
+      await client.send("Page.reload", { ignoreCache: true });
+      await waitForEvaluation(`(() => ({
+        ready: document.querySelectorAll(".formula-line math-field").length === ${values.length} &&
+          document.querySelectorAll(".mathfield-host.has-explicit-align-marker").length === 3,
+        fieldCount: document.querySelectorAll(".formula-line math-field").length,
+        alignedCount: document.querySelectorAll(".mathfield-host.has-explicit-align-marker").length,
+        firstValues: [...document.querySelectorAll(".formula-line math-field")].slice(0, 3).map((field) => field.value),
+      }))()`, "stable multi-row alignment layout");
+      await evaluate(`(async () => {
+        const rows = [...document.querySelectorAll(".formula-line")];
+        const last = rows.at(-1).querySelector("math-field");
+        last.focus({ preventScroll: true });
+        last.position = last.lastOffset;
+        last.shadowRoot.querySelector('[part="keyboard-sink"]').focus({ preventScroll: true });
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const scroller = document.querySelector(".editor-pane-scroll");
+        scroller.scrollTop = scroller.scrollHeight;
+        const tracked = rows.slice(0, 3).map((row) => ({
+          row,
+          host: row.querySelector(".mathfield-host"),
+          field: row.querySelector("math-field"),
+        }));
+        const mutations = [];
+        const observer = new MutationObserver((records) => {
+          for (const record of records) {
+            if (record.type !== "attributes" && record.type !== "childList") continue;
+            mutations.push({
+              type: record.type,
+              target: record.target.nodeName,
+              attribute: record.attributeName,
+            });
+          }
+        });
+        for (const item of tracked) {
+          observer.observe(item.host, { attributes: true, attributeFilter: ["class", "style"] });
+          observer.observe(item.field, { attributes: true, attributeFilter: ["style", "data-visualtex-alignment-marker-count"] });
+          const alignmentStyle = item.field.shadowRoot.getElementById("visualtex-alignment-marker-style");
+          if (alignmentStyle) observer.observe(alignmentStyle, { childList: true });
+        }
+        window.__visualtexRowStabilityProbe = {
+          tracked, mutations, observer, scroller,
+          before: {
+            scrollTop: scroller.scrollTop,
+            geometry: tracked.map(({ row }) => ({
+              top: row.getBoundingClientRect().top,
+              height: row.getBoundingClientRect().height,
+            })),
+          },
+        };
+      })()`);
+      await key("x", "KeyX", 88);
+      await sleep(160);
+      const result = await evaluate(`(() => {
+        const probe = window.__visualtexRowStabilityProbe;
+        probe.observer.disconnect();
+        return {
+          mutations: probe.mutations,
+          fieldsPreserved: probe.tracked.every(({ row, field }) => row.querySelector("math-field") === field),
+          lastValue: [...document.querySelectorAll(".formula-line math-field")].at(-1)?.value,
+          scrollDelta: probe.scroller.scrollTop - probe.before.scrollTop,
+          geometryDelta: probe.tracked.map(({ row }, index) => ({
+            top: row.getBoundingClientRect().top - probe.before.geometry[index].top,
+            height: row.getBoundingClientRect().height - probe.before.geometry[index].height,
+          })),
+        };
+      })()`);
+      assert.equal(result.fieldsPreserved, true, "Earlier MathLive fields must not remount during a last-row edit");
+      assert.equal(result.mutations.length, 0,
+        `Editing an unrelated last row must not rewrite earlier aligned rows: ${JSON.stringify(result.mutations)}`);
+      assert.ok(Math.abs(result.scrollDelta) <= 1,
+        `Last-row input must not move the editor viewport: ${JSON.stringify(result)}`);
+      assert.ok(result.geometryDelta.every(({ top, height }) => Math.abs(top) <= 1 && Math.abs(height) <= 1),
+        `Earlier rows must keep their screen geometry: ${JSON.stringify(result)}`);
+      assert.match(result.lastValue ?? "", /x$/, "Last row must accept typed text");
+      const realignment = await evaluate(`(async () => {
+        const tracked = window.__visualtexRowStabilityProbe.tracked;
+        const before = tracked.slice(0, 2).map(({ field }) => field.style.marginLeft);
+        const edited = tracked[2].field;
+        edited.setValue(${JSON.stringify(`this_is_a_much_longer_column_than_before${marker}=q`)}, {
+          mode: "math", format: "latex", insertionMode: "replaceAll",
+          selectionMode: "after", silenceNotifications: true,
+        });
+        edited.dispatchEvent(new InputEvent("input", {
+          bubbles: true, composed: true, inputType: "insertText", data: "x",
+        }));
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return {
+          before,
+          after: tracked.slice(0, 2).map(({ field }) => field.style.marginLeft),
+          alignedCount: document.querySelectorAll(".mathfield-host.has-explicit-align-marker").length,
+          fieldsPreserved: tracked.every(({ row, field }) => row.querySelector("math-field") === field),
+        };
+      })()`);
+      assert.equal(realignment.alignedCount, 3, "Marker rows must remain aligned after editing one of them");
+      assert.equal(realignment.fieldsPreserved, true, "Alignment updates must not remount earlier formulas");
+      assert.notDeepEqual(realignment.after, realignment.before,
+        `A changed alignment column must still realign the group: ${JSON.stringify(realignment)}`);
+      console.log("Multi-row visual stability regression passed");
       return;
     }
 
@@ -9901,6 +10586,9 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
     }
 
     if (scenario === "navigation") {
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector("math-field")),
+      }))()`, "initial formula field before navigation fixture");
       await evaluate(`(() => {
         const storageKey = "visualtex-editor";
         const persisted = JSON.parse(localStorage.getItem(storageKey) || "{}");
@@ -9920,6 +10608,9 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
       })()`);
       await waitForEvaluation(`(() => ({
         ready: document.querySelectorAll("math-field").length === 2,
+        count: document.querySelectorAll("math-field").length,
+        body: document.body.textContent?.slice(0, 160),
+        storageLines: JSON.parse(localStorage.getItem("visualtex-editor") || "{}").state?.lines?.length,
       }))()`, "two formula fields for navigation");
       await evaluate(`(() => {
         const field = document.querySelectorAll("math-field")[1];

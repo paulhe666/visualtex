@@ -28,6 +28,24 @@ export function patchVisualTexMathLiveSelection(source: string) {
     '`-${atom.parentBranch[0]}/${atom.parentBranch[1]}`',
   );
 
+  // A quick drag can release beyond a structure without delivering a final
+  // pointermove there. Treat pointerup/mouseup as the terminal sample before
+  // dropping capture, so the painted selection reaches the release position.
+  replace(
+    '      element.addEventListener("pointerup", onCancel, options);',
+    `      element.addEventListener("pointerup", (upEvent) => {
+        onMove(upEvent);
+        onCancel(upEvent);
+      }, options);`,
+  );
+  replace(
+    '      window.addEventListener("mouseup", onCancel, options);',
+    `      window.addEventListener("mouseup", (upEvent) => {
+        onMove(upEvent);
+        onCancel(upEvent);
+      }, options);`,
+  );
+
   // Accent atoms keep MathLive's kernel-level atomic navigation semantics:
   // skipBoundary=true and captureSelection=true. VisualTeX must not reopen
   // internal caret stops for a rendered accent after its argument is committed.

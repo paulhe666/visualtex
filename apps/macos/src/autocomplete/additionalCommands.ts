@@ -56,6 +56,7 @@ const complexCommands: LatexCommand[] = [
   makeCommand("acuteaccent", "\\acute", "\\acute{\\placeholder{}}", "\\acute{x}", "尖音重音", "Acute accent", "structure", 71, ["acute"], ["尖音", "重音"]),
   makeCommand("graveaccent", "\\grave", "\\grave{\\placeholder{}}", "\\grave{x}", "重音符", "Grave accent", "structure", 70, ["grave"], ["重音符"]),
   makeCommand("ringaccent", "\\mathring", "\\mathring{\\placeholder{}}", "\\mathring{x}", "圆圈重音", "Ring accent", "structure", 69, ["ring accent"], ["圆圈", "重音"]),
+  makeCommand("cedilla-accent", "\\c", "\\c{\\placeholder{}}", "\\c{c}", "下加软音符", "Cedilla accent", "structure", 68, ["cedilla"], ["软音符", "重音"]),
   makeCommand("overrightarrow", "\\overrightarrow", "\\overrightarrow{\\placeholder{}}", "\\overrightarrow{AB}", "上方右箭头", "Over-arrow right", "structure", 77, ["over arrow"], ["向量箭头"]),
   makeCommand("overleftarrow", "\\overleftarrow", "\\overleftarrow{\\placeholder{}}", "\\overleftarrow{AB}", "上方左箭头", "Over-arrow left", "structure", 74, ["over left arrow"], ["向量箭头"]),
   makeCommand("underline", "\\underline", "\\underline{\\placeholder{}}", "\\underline{x}", "下划线", "Underline", "structure", 73, ["underline"], ["下划线"]),
@@ -63,6 +64,8 @@ const complexCommands: LatexCommand[] = [
   makeCommand("underbrace", "\\underbrace", "\\underbrace{\\placeholder{}}_{\\placeholder{}}", "\\underbrace{a+\\cdots+a}_{n}", "下花括号", "Underbrace", "structure", 72, ["underbrace"], ["下括注"]),
   makeCommand("cases", "\\begin{cases}", "\\begin{cases}\\placeholder{} & \\placeholder{} \\\\ \\placeholder{} & \\placeholder{}\\end{cases}", "f(x)=\\begin{cases}x&x>0\\\\0&x\\leq0\\end{cases}", "分段函数", "Cases", "structure", 85, ["cases", "piecewise"], ["分段函数"]),
   makeCommand("boxed", "\\boxed", "\\boxed{\\placeholder{}}", "\\boxed{x}", "方框公式", "Boxed", "structure", 70, ["boxed", "box"], ["方框"]),
+  makeCommand("quad-space", "\\quad", "\\quad", "A\\quad B", "一字宽空格", "Quad space", "common", 66, ["quad"], ["空格", "spacing"]),
+  makeCommand("qquad-space", "\\qquad", "\\qquad", "A\\qquad B", "双字宽空格", "Double quad space", "common", 64, ["qquad"], ["空格", "spacing"]),
 
   // 微积分与常用函数
   makeCommand("int-bare", "\\int", "\\int", "\\int", "裸积分符号", "Bare integral", "calculus", 100, ["bare integral", "integral symbol"], ["裸积分", "积分符号"]),
