@@ -1518,13 +1518,15 @@ var DEFAULT_KEYBINDINGS = [
   {
     key: "[NumpadDivide]",
     ifMode: "math",
-    command: ["insert", "\\frac{#@}{#?}"]
+    // VisualTeX keeps slash input literal. Fractions are inserted explicitly
+    // through \\frac, the toolbar, or dedicated fraction actions.
+    command: ["insert", "/"]
   },
   // ??
   {
     key: "alt+[NumpadDivide]",
     ifMode: "math",
-    command: ["insert", "\\frac{#?}{#@}"]
+    command: ["insert", "/"]
   },
   // ??
   // Accessibility
@@ -1580,7 +1582,9 @@ var DEFAULT_KEYBINDINGS = [
   {
     key: "/",
     ifMode: "math",
-    command: ["insert", "\\frac{#@}{#?}"]
+    // MathLive normally turns a typed slash into a structural fraction.
+    // VisualTeX intentionally preserves the character the user typed.
+    command: ["insert", "/"]
   },
   {
     key: "alt+/",
