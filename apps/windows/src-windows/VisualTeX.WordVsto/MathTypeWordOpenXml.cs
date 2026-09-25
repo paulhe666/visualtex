@@ -916,7 +916,9 @@ internal static class MathTypeWordOpenXml
         byte[] rewrittenCompoundFile,
         byte[] previewWmf,
         float widthPt,
-        float heightPt)
+        float heightPt,
+        float? originalWidthPt = null,
+        float? originalHeightPt = null)
     {
         if (!MathTypeOleStorage.LooksLikeMathTypeCompoundFile(rewrittenCompoundFile))
             throw new InvalidDataException(
@@ -926,6 +928,7 @@ internal static class MathTypeWordOpenXml
         if (!(widthPt > 0) || !(heightPt > 0))
             throw new InvalidDataException(
                 $"Invalid MathType preview size {widthPt}x{heightPt} pt.");
+        previewWmf = WordFormulaService.EnsureMathTypePlaceableWmfWindowRecords(previewWmf);
 
         var document = XDocument.Parse(sourceWordOpenXml, LoadOptions.PreserveWhitespace);
         var references = ResolveObjectReferences(document);
@@ -933,7 +936,12 @@ internal static class MathTypeWordOpenXml
         var previewPart = FindPart(document, references.PreviewPartName);
         previewPart.SetAttributeValue(PackageNamespace + "contentType", "image/x-wmf");
         WriteBinaryPart(document, references.PreviewPartName, previewWmf);
-        UpdateShapeSize(document, widthPt, heightPt);
+        UpdateShapeSize(
+            document,
+            widthPt,
+            heightPt,
+            originalWidthPt ?? widthPt,
+            originalHeightPt ?? heightPt);
 
         var rewrittenXml = document.ToString(SaveOptions.DisableFormatting);
         var validation = Read(rewrittenXml);
@@ -1282,26 +1290,34 @@ internal static class MathTypeWordOpenXml
             $"Flat OPC MathType VML shape has no valid {property} in '{style}'.");
     }
 
-    private static void UpdateShapeSize(XDocument document, float widthPt, float heightPt)
+    private static void UpdateShapeSize(
+        XDocument document,
+        float widthPt,
+        float heightPt,
+        float originalWidthPt,
+        float originalHeightPt)
     {
         var shape = document.Descendants(VmlNamespace + "shape").SingleOrDefault(element =>
             element.Attribute(OfficeNamespace + "ole") is not null)
             ?? document.Descendants(VmlNamespace + "shape").LastOrDefault()
             ?? throw new InvalidDataException("Flat OPC MathType object has no VML shape.");
-        var style = (string?)shape.Attribute("style") ?? string.Empty;
-        style = ReplaceStylePoints(style, "width", widthPt);
-        style = ReplaceStylePoints(style, "height", heightPt);
-        shape.SetAttributeValue("style", style);
+        var geometry = WordFormulaService.CalculateMathTypeWordPresentationGeometry(
+            (string?)shape.Attribute("style") ?? string.Empty,
+            widthPt,
+            heightPt,
+            originalWidthPt,
+            originalHeightPt);
+        shape.SetAttributeValue("style", geometry.ShapeStyle);
 
         var wordObject = document.Descendants(WordNamespace + "object").SingleOrDefault();
         if (wordObject is not null)
         {
             wordObject.SetAttributeValue(
                 WordNamespace + "dxaOrig",
-                MathTypeOriginalTwips(widthPt));
+                geometry.OriginalWidthTwips);
             wordObject.SetAttributeValue(
                 WordNamespace + "dyaOrig",
-                MathTypeOriginalTwips(heightPt));
+                geometry.OriginalHeightTwips);
         }
     }
 
@@ -1310,25 +1326,6 @@ internal static class MathTypeWordOpenXml
 
     private static int MathTypeOriginalTwips(float valuePt) =>
         checked(MathTypeOriginalPoints(valuePt) * 20);
-
-    private static string ReplaceStylePoints(string style, string property, float valuePt)
-    {
-        var replacement = valuePt.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + "pt";
-        var segments = style.Split(';').ToList();
-        var replaced = false;
-        for (var index = 0; index < segments.Count; index++)
-        {
-            var parts = segments[index].Split(new[] { ':' }, 2);
-            if (parts.Length != 2
-                || !string.Equals(parts[0].Trim(), property, StringComparison.OrdinalIgnoreCase))
-                continue;
-            segments[index] = parts[0] + ":" + replacement;
-            replaced = true;
-            break;
-        }
-        if (!replaced) segments.Add(property + ":" + replacement);
-        return string.Join(";", segments);
-    }
 
     private static void WriteUInt16(byte[] bytes, int offset, ushort value)
     {

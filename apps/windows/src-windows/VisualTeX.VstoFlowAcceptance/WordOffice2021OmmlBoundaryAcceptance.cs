@@ -188,11 +188,17 @@ internal static partial class Program
             }
             Word.Range? secondParagraphRange = null;
             Word.Range? finalFollowingText = null;
+            Word.Paragraphs? finalMathParagraphs = null;
             try
             {
                 finalMath = document.OMaths[2];
                 finalMathRange = finalMath.Range;
-                secondParagraphRange = document.Paragraphs[2].Range;
+                finalMathParagraphs = finalMathRange.Paragraphs;
+                AssertEqual(
+                    1,
+                    finalMathParagraphs.Count,
+                    "Word 2021 edited inline OMML escaped its owning paragraph.");
+                secondParagraphRange = finalMathParagraphs[1].Range;
                 finalFollowingText = document.Range(
                     finalMathRange.End,
                     secondParagraphRange.End - 1);
@@ -203,6 +209,7 @@ internal static partial class Program
             }
             finally
             {
+                Release(finalMathParagraphs);
                 Release(finalFollowingText);
                 Release(secondParagraphRange);
                 Release(finalMathRange);

@@ -786,18 +786,21 @@ internal static partial class Program
                 AssertEqual(0, olePresentationEntries.Length,
                     $"MathType OLE #{index} contains an internal OlePres stream {stage}; genuine MathType Equation.DSMT4 storage leaves presentation ownership to Word.");
 
+                // The Flat OPC fragment above contains the exact external
+                // WMF presentation Word renders for this OLE. Validate that payload
+                // directly instead of Range.Copy()/OleGetClipboard: clipboard
+                // materialization can activate or terminate an isolated /Automation
+                // Word process even though the stored Equation.DSMT4 object is healthy.
                 var mathTypeProcessesBeforePreview = SnapshotMathTypeProcessIds();
-                var preview = ReadInlineShapeEnhancedMetafile(shape);
+                var previewSummary = DescribeStoredMathTypeWmfDrawingRecords(
+                    fragment.PreviewWmf);
                 var startedDuringPreview = SnapshotMathTypeProcessIds()
                     .Except(mathTypeProcessesBeforePreview)
                     .ToArray();
                 AssertEqual(0, startedDuringPreview.Length,
-                    $"Reading the live Word preview for MathType OLE #{index} started MathType.exe {stage}.");
-                var ink = DescribeEmfInkBounds(preview);
-                AssertTrue(!string.Equals(ink, "empty", StringComparison.Ordinal),
-                    $"MathType OLE #{index} copied from Word as an empty live preview {stage}.");
+                    $"Reading the stored Word preview for MathType OLE #{index} started MathType.exe {stage}.");
                 Console.WriteLine(
-                    $"[VISIBLE MATHTYPE PREVIEW] #{index} {stage}: {shape.Width:0.###}x{shape.Height:0.###} pt; {ink}");
+                    $"[VISIBLE MATHTYPE PREVIEW] #{index} {stage}: {shape.Width:0.###}x{shape.Height:0.###} pt; {previewSummary}");
             }
             finally
             {
@@ -809,6 +812,58 @@ internal static partial class Program
             $"No MathType OLE objects were available for live-preview validation {stage}.");
         Console.WriteLine(
             $"[VISIBLE MATHTYPE PREVIEW] Every MathType OLE used a non-empty Word metafile presentation with no internal OlePres stream {stage}; count={mathTypeCount}.");
+    }
+
+    private static string DescribeStoredMathTypeWmfDrawingRecords(
+        byte[] previewWmf)
+    {
+        // Reuse the product's strict placeable-WMF validator first. It verifies
+        // the Aldus header, declared payload length, record bounds and logical
+        // window geometry without touching OLE activation or the clipboard.
+        var validated = WordFormulaService.EnsureMathTypePlaceableWmfWindowRecords(
+            previewWmf);
+        const int firstRecordOffset = 40; // 22-byte placeable + 18-byte METAHEADER.
+        var recordCount = 0;
+        var drawingCount = 0;
+        var drawingFunctions = new HashSet<ushort>
+        {
+            0x0324, // META_POLYGON
+            0x0325, // META_POLYLINE
+            0x0538, // META_POLYPOLYGON
+            0x0418, // META_ELLIPSE
+            0x041B, // META_RECTANGLE
+            0x061C, // META_ROUNDRECT
+            0x0521, // META_TEXTOUT
+            0x0A32, // META_EXTTEXTOUT
+            0x0922, // META_BITBLT
+            0x0B23, // META_STRETCHBLT
+            0x0940, // META_DIBBITBLT
+            0x0B41, // META_DIBSTRETCHBLT
+            0x0D33, // META_SETDIBTODEV
+            0x0F43, // META_STRETCHDIB
+            0x061D, // META_PATBLT
+        };
+        for (var offset = firstRecordOffset;
+             offset + 6 <= validated.Length;)
+        {
+            var words = BitConverter.ToUInt32(validated, offset);
+            if (words < 3 || words > int.MaxValue / 2)
+                throw new InvalidDataException(
+                    "Stored MathType WMF contains an invalid record length.");
+            var size = checked((int)words * 2);
+            if (offset + size > validated.Length)
+                throw new InvalidDataException(
+                    "Stored MathType WMF contains a truncated record.");
+            var function = BitConverter.ToUInt16(validated, offset + 4);
+            recordCount++;
+            if (drawingFunctions.Contains(function))
+                drawingCount++;
+            offset += size;
+            if (function == 0) break;
+        }
+        AssertTrue(recordCount > 1 && drawingCount > 0,
+            $"MathType external Word preview has no drawing records: records={recordCount}, drawing={drawingCount}, bytes={validated.Length}.");
+        return $"wmfBytes={validated.Length}; records={recordCount}; drawing={drawingCount}";
     }
 
     private static OfficeSessionDocument CreateInstalledFormatSourceSession(

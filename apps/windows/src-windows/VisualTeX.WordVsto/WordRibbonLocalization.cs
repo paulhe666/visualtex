@@ -112,6 +112,9 @@ public sealed partial class ThisAddIn
           </comboBox>
           <button id="VisualTeX.WordVsto.FontSizeIncrease" label="Increase" imageMso="FontSizeIncrease" getEnabled="GetFormulaFontSizeEnabled" onAction="OnIncreaseFormulaFontSize" />
         </group>
+        <group id="VisualTeX.WordVsto.CompatibilityRepairGroup" label="Compatibility Repair">
+          <button id="VisualTeX.WordVsto.RepairInlineBaselines" label="Repair Formula Baselines" size="large" screentip="Scan and repair inline equation offsets" supertip="Scan inline MathType / VisualTeX OLE equations across the document. VisualTeX formulas are calibrated from their own saved render baseline; MathType formulas use a stable document baseline profile. After confirmation, only vertical offsets are repaired; formula content, font size, numbering and references are not changed." tag="repairBaseline" getImage="GetRibbonImage" onAction="OnRepairInlineFormulaBaselines" />
+        </group>
       </tab>
     </tabs>
   </ribbon>

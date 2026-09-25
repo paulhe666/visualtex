@@ -423,9 +423,15 @@ internal static class MathTypeOleInterop
         }
 
         var now = DateTimeOffset.UtcNow.ToString("O");
+        var formulaId =
+            WordFormulaIdentityStore.TryResolveMathType(
+                shape,
+                out var durableFormulaId)
+                ? durableFormulaId
+                : Guid.NewGuid().ToString("D");
         var metadata = new FormulaMetadata
         {
-            FormulaId = Guid.NewGuid().ToString("D"),
+            FormulaId = formulaId,
             Title = "MathType Formula",
             Latex = latex,
             Lines = new List<FormulaLine>

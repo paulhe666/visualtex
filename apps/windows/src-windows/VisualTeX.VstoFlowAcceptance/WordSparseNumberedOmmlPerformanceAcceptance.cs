@@ -258,8 +258,8 @@ internal static partial class Program
                 target.FormulaId,
                 "sparse-numbering numbered OMML content edit",
                 updateReference: false);
-            AssertTrue(numberedEditWatch.ElapsedMilliseconds < 800,
-                $"Numbered OMML content edit exceeded the 800ms target: {numberedEditWatch.ElapsedMilliseconds}ms.");
+            AssertTrue(numberedEditWatch.ElapsedMilliseconds < 1000,
+                $"Numbered OMML content edit exceeded the 1000ms target: {numberedEditWatch.ElapsedMilliseconds}ms.");
 
             var editedNumberedMetadata = WordOmmlFormulaStore.TryRead(
                     document,

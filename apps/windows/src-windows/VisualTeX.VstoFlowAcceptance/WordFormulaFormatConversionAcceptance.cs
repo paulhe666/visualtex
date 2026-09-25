@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
@@ -391,15 +392,26 @@ internal static partial class Program
                 MathMl: "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msup><mi>a</mi><mn>2</mn></msup><mo>+</mo><msup><mi>b</mi><mn>2</mn></msup><mo>=</mo><msup><mi>c</mi><mn>2</mn></msup></math>",
                 Numbered: true),
         };
+        var countSetting = Environment.GetEnvironmentVariable(
+            "VISUALTEX_ACCEPTANCE_NUMBERED_ROUNDTRIP_COUNT");
+        var formulaCount = string.IsNullOrWhiteSpace(countSetting) ? formulas.Length
+            : int.TryParse(countSetting, out var requestedCount)
+                && requestedCount >= 3 && requestedCount <= 100
+                ? requestedCount
+                : throw new InvalidDataException(
+                    "VISUALTEX_ACCEPTANCE_NUMBERED_ROUNDTRIP_COUNT must be between 3 and 100.");
+        var fixtureFormulas = Enumerable.Range(0, formulaCount)
+            .Select(index => formulas[index % formulas.Length]).ToArray();
         Word.Application? application = null;
         try
         {
-            application = CreateWordApplication(visible: false);
+            if (AttachActiveWord) throw new InvalidOperationException("OMML↔VisualTeX roundtrip acceptance must never attach an active user Word.");
+            application = CreateFreshAcceptanceAutomationWord(artifactRoot);
             RunOmmlVisualTeXNumberedRoundTripAcceptance(
                 application,
                 pngPath,
                 emfPath,
-                formulas,
+                fixtureFormulas,
                 artifactRoot);
         }
         finally
@@ -895,6 +907,159 @@ internal static partial class Program
         }
     }
 
+    private static void RunWordRealSingleOmmlToVisualTeXAcceptance(string artifactRoot)
+    {
+        var sourcePath = Environment.GetEnvironmentVariable("VISUALTEX_REAL_SINGLE_OMML_SOURCE");
+        if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+            throw new FileNotFoundException(
+                "VISUALTEX_REAL_SINGLE_OMML_SOURCE must point to the saved real repro document.",
+                sourcePath);
+
+        Directory.CreateDirectory(artifactRoot);
+        var outputPath = Path.Combine(artifactRoot, "real-single-omml-to-visualtex.docx");
+        File.Copy(Path.GetFullPath(sourcePath), outputPath, overwrite: false);
+
+        var olePreviewRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VisualTeX",
+            "office",
+            "temp",
+            "real-single-omml-to-visualtex-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(olePreviewRoot);
+        var pngPath = Path.Combine(olePreviewRoot, "preview.png");
+        var svgPath = Path.Combine(olePreviewRoot, "preview.svg");
+        WriteAcceptancePng(pngPath, "real single OMML", 360, 112);
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"360\" height=\"112\" viewBox=\"0 0 360 112\"><text x=\"8\" y=\"72\" font-family=\"Cambria Math\" font-size=\"32\">real single OMML</text></svg>");
+        var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(svgPath, 360, 112);
+
+        Word.Application? application = null;
+        Word.Document? document = null;
+        Word.Document? reopened = null;
+        Word.OMaths? maths = null;
+        Word.OMath? math = null;
+        Word.Range? equationRange = null;
+        Word.Selection? selection = null;
+        try
+        {
+            if (AttachActiveWord)
+                throw new InvalidOperationException(
+                    "Real single OMML acceptance must never attach an active user Word.");
+            application = CreateFreshAcceptanceAutomationWord(artifactRoot);
+            document = application.Documents.Open(
+                outputPath,
+                ReadOnly: false,
+                AddToRecentFiles: false,
+                Visible: false);
+            document.Activate();
+
+            maths = document.OMaths;
+            AssertEqual(1, maths.Count,
+                "The saved real repro no longer contains exactly one OMML equation.");
+            math = maths[1];
+            equationRange = math.Range.Duplicate;
+
+            var nativeBefore = CountVisualTeXNativeOleShapes(document);
+            var ommlBefore = document.OMaths.Count;
+            AssertTrue(nativeBefore >= 100,
+                "The saved real repro no longer represents the large OLE document.");
+
+            selection = application.Selection;
+            var caret = equationRange.Start;
+            if (equationRange.End > equationRange.Start + 1)
+                caret = equationRange.Start + 1;
+            selection.SetRange(caret, caret);
+
+            var service = new WordFormulaService(application);
+            var captureWatch = Stopwatch.StartNew();
+            var plan = service.CaptureFormulaFormatConversionPlan(
+                wholeDocument: false,
+                FormulaOleContract.WordOmmlMode,
+                FormulaOleContract.NativeOleMode);
+            captureWatch.Stop();
+
+            AssertEqual(1, plan.Targets.Count,
+                "Single-selection capture did not resolve exactly the selected real OMML.");
+            AssertTrue(captureWatch.Elapsed < TimeSpan.FromSeconds(5),
+                $"Single-selection OMML capture is still performing document-scale work: {captureWatch.Elapsed.TotalMilliseconds:0.###} ms.");
+
+            var target = plan.Targets[0];
+            var mathMl = target.SourceMathMl
+                ?? throw new InvalidDataException("The selected real OMML produced no MathML.");
+            var session = CreateSimpleFormatTargetSession(
+                target,
+                FormulaOleContract.NativeOleMode,
+                mathMl);
+            session.ExportResult!.Width = 360;
+            session.ExportResult.Height = 112;
+            session.ExportResult.Baseline = 84;
+
+            var prepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal)
+            {
+                [target.Id] = new PreparedWordBulkFormula
+                {
+                    Run = new WordBulkRun
+                    {
+                        Id = target.Id,
+                        IsFormula = true,
+                        Latex = target.Latex,
+                        DisplayMode = target.DisplayMode,
+                    },
+                    Session = session,
+                    MathMl = mathMl,
+                    PngPath = pngPath,
+                    EmfPath = emfPath,
+                },
+            };
+
+            var applyWatch = Stopwatch.StartNew();
+            var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+            applyWatch.Stop();
+
+            AssertEqual(1, result.FormulaCount,
+                "Real single OMML→VisualTeX did not commit one target.");
+            AssertEqual(0, result.FailedFormulaCount,
+                $"Real single OMML→VisualTeX failed: {string.Join(" | ", result.Failures)}");
+            AssertEqual(ommlBefore - 1, document.OMaths.Count,
+                "Real single OMML→VisualTeX left the selected OMath behind.");
+            AssertEqual(nativeBefore + 1, CountVisualTeXNativeOleShapes(document),
+                "Real single OMML→VisualTeX changed the wrong OLE inventory.");
+
+            document.Save();
+            document.Close(Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
+            reopened = application.Documents.Open(
+                outputPath,
+                ReadOnly: false,
+                AddToRecentFiles: false,
+                Visible: false);
+            AssertEqual(ommlBefore - 1, reopened.OMaths.Count,
+                "Save/reopen restored or duplicated the converted OMML.");
+            AssertEqual(nativeBefore + 1, CountVisualTeXNativeOleShapes(reopened),
+                "Save/reopen changed the real single-conversion VisualTeX inventory.");
+
+            Console.WriteLine(
+                $"[REAL SINGLE OMML→VT PASS] originalOles={nativeBefore}; captureMs={captureWatch.Elapsed.TotalMilliseconds:0.###}; applyMs={applyWatch.Elapsed.TotalMilliseconds:0.###}; saveReopen=PASS; output={outputPath}");
+        }
+        finally
+        {
+            try { reopened?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            try { document?.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
+            Release(selection);
+            Release(equationRange);
+            Release(math);
+            Release(maths);
+            Release(reopened);
+            Release(document);
+            try { QuitWordApplicationIfOwned(application); } catch { }
+            Release(application);
+            ForceComCleanup();
+            try { Directory.Delete(olePreviewRoot, recursive: true); } catch { }
+        }
+    }
+
     private static void RunSimpleFormatConversionRollbackBridgeAcceptance(
         Word.Application application,
         WordFormulaService service,
@@ -963,11 +1128,23 @@ internal static partial class Program
             Environment.SetEnvironmentVariable(
                 "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
                 target.SourceFormulaId);
-            var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
-            AssertEqual(0, result.FormulaCount,
-                "Injected rollback conversion unexpectedly reported a converted formula.");
-            AssertEqual(1, result.FailedFormulaCount,
-                "Injected rollback conversion did not report exactly one failure.");
+            Exception? expectedFailure = null;
+            try
+            {
+                _ = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+            }
+            catch (Exception error)
+            {
+                expectedFailure = error;
+            }
+            if (expectedFailure is null)
+                throw new InvalidDataException(
+                    "Injected rollback conversion did not fail after deleting the source host.");
+            AssertTrue(
+                expectedFailure.ToString().IndexOf(
+                    "Injected format-conversion failure after deleting the source host.",
+                    StringComparison.OrdinalIgnoreCase) >= 0,
+                "Injected rollback conversion lost its primary failure: " + expectedFailure);
             AssertEqual(1, CountVisualTeXNativeOleShapes(rollbackDocument),
                 "Injected rollback did not restore exactly one VisualTeX source formula.");
             AssertEqual(0, CountMathTypeOleShapes(rollbackDocument),

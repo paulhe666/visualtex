@@ -30,10 +30,13 @@ public static class OfficeFormulaSizing
         float maximumWidth = float.PositiveInfinity,
         float maximumHeight = float.PositiveInfinity,
         double? originalFontSizePt = null,
-        double? originalRenderFontSizePt = null)
+        double? originalRenderFontSizePt = null,
+        bool preserveIndependentAxisScale = false)
     {
         var next = NaturalSize(newRenderWidth, newRenderHeight);
         var scale = 1f;
+        var horizontalScale = float.NaN;
+        var verticalScale = float.NaN;
         if (originalRenderWidth is > 0 && originalRenderHeight is > 0
             && currentWidth > 0 && currentHeight > 0)
         {
@@ -47,8 +50,8 @@ public static class OfficeFormulaSizing
                 (float)originalRenderWidth.Value * PointsPerPixel);
             var previousHeight = Math.Max(0.01f,
                 (float)originalRenderHeight.Value * PointsPerPixel);
-            var horizontalScale = currentWidth / previousWidth;
-            var verticalScale = currentHeight / previousHeight;
+            horizontalScale = currentWidth / previousWidth;
+            verticalScale = currentHeight / previousHeight;
 
             // Formula height is the visual font-size reference. Prefer it over
             // the geometric mean so picture→OLE conversion cannot become
@@ -70,17 +73,44 @@ public static class OfficeFormulaSizing
         {
             scale = currentWidth / next.Width;
         }
+        var semanticScale = 1f;
         if (originalFontSizePt is > 0 && originalRenderFontSizePt is > 0)
         {
-            var semanticScale = FormulaFontSize.Normalize(originalFontSizePt)
+            semanticScale = FormulaFontSize.Normalize(originalFontSizePt)
                 / FormulaFontSize.Normalize(originalRenderFontSizePt);
             if (IsPositiveFinite(semanticScale)) scale /= semanticScale;
+            else semanticScale = 1f;
         }
         if (!IsPositiveFinite(scale)) scale = 1f;
         scale = Math.Max(0.1f, Math.Min(10f, scale));
 
-        var width = next.Width * scale;
-        var height = next.Height * scale;
+        float width;
+        float height;
+        if (preserveIndependentAxisScale
+            && IsPositiveFinite(horizontalScale)
+            && IsPositiveFinite(verticalScale))
+        {
+            // A VisualTeX inline OLE can intentionally carry different Word X/Y
+            // presentation scales after a format conversion. Treat those scales as
+            // host presentation state, not as semantic font-size evidence. Applying
+            // only the height scale on every edit slowly changes the width even when
+            // the user restores the original LaTeX. Preserve each axis independently
+            // so content edits are reversible while the semantic/render font size is
+            // unchanged. Other families keep the established uniform-height rule.
+            var widthScale = horizontalScale / semanticScale;
+            var heightScale = verticalScale / semanticScale;
+            if (!IsPositiveFinite(widthScale)) widthScale = scale;
+            if (!IsPositiveFinite(heightScale)) heightScale = scale;
+            widthScale = Math.Max(0.1f, Math.Min(10f, widthScale));
+            heightScale = Math.Max(0.1f, Math.Min(10f, heightScale));
+            width = next.Width * widthScale;
+            height = next.Height * heightScale;
+        }
+        else
+        {
+            width = next.Width * scale;
+            height = next.Height * scale;
+        }
         var fitScale = Math.Min(
             1f,
             Math.Min(

@@ -8,10 +8,10 @@ namespace VisualTeX.WordVsto;
 /// while its generated formula host is replaced. Character formatting is separate.</summary>
 internal sealed class WordParagraphFormatting : IDisposable
 {
-    private readonly string styleName;
+    private readonly string? styleName;
     private ParagraphFormat? format;
 
-    private WordParagraphFormatting(string styleName, ParagraphFormat format)
+    private WordParagraphFormatting(string? styleName, ParagraphFormat format)
     {
         this.styleName = styleName;
         this.format = format;
@@ -23,6 +23,7 @@ internal sealed class WordParagraphFormatting : IDisposable
         Paragraph? paragraph = null;
         Range? range = null;
         Style? style = null;
+        Range? paragraphMark = null;
         ParagraphFormat? paragraphFormat = null;
         try
         {
@@ -31,14 +32,32 @@ internal sealed class WordParagraphFormatting : IDisposable
                 throw new InvalidDataException("Paragraph formatting requires one identified owner.");
             paragraph = paragraphs[1];
             range = paragraph.Range;
-            style = range.get_Style() as Style
-                ?? throw new InvalidDataException("The formula host has no identifiable paragraph style.");
+            object? styleObject = range.get_Style();
+            style = styleObject as Style;
+
+            // Range.Style is null when one paragraph contains mixed character
+            // styles (for example an EMBED field plus a REF result), even though
+            // the paragraph itself still has one stable paragraph style. Resolve
+            // the final paragraph mark separately before deciding the style is
+            // unavailable.
+            if (style is null && range.End > range.Start)
+            {
+                paragraphMark = range.Document.Range(
+                    range.End - 1,
+                    range.End);
+                styleObject = paragraphMark.get_Style();
+                style = styleObject as Style;
+            }
+
             paragraphFormat = range.ParagraphFormat;
-            return new WordParagraphFormatting(style.NameLocal, paragraphFormat.Duplicate);
+            return new WordParagraphFormatting(
+                style?.NameLocal,
+                paragraphFormat.Duplicate);
         }
         finally
         {
             Release(paragraphFormat);
+            Release(paragraphMark);
             Release(style);
             Release(range);
             Release(paragraph);
@@ -55,8 +74,16 @@ internal sealed class WordParagraphFormatting : IDisposable
             paragraphs = owner.Paragraphs;
             if (paragraphs.Count != 1)
                 throw new InvalidDataException("The replacement no longer owns one paragraph.");
-            object style = styleName;
-            owner.set_Style(ref style);
+            // All current replacement callers retain the original
+            // paragraph mark. If Word still cannot expose a Style object after the
+            // paragraph-mark fallback, leaving Style untouched is safer than
+            // coercing user content to Normal; the retained mark already carries
+            // the original style. Direct paragraph formatting is always restored.
+            if (!string.IsNullOrWhiteSpace(styleName))
+            {
+                object style = styleName!;
+                owner.set_Style(ref style);
+            }
             owner.ParagraphFormat = format;
         }
         finally { Release(paragraphs); }

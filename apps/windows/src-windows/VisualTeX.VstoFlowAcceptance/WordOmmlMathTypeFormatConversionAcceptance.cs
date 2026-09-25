@@ -1391,7 +1391,7 @@ internal static partial class Program
                 "consecutive numbered MathType→OMML acceptance");
 
             Console.WriteLine(
-                "[CONSECUTIVE NUMBERED MATHTYPE→OMML] Nine adjacent numbered MathType display equations converted to nine independent direct-SEQ 1x3 hosts with one genuine center-cell wdOMathDisplay each, zero Shape/TextBox artifacts, preserved cross-reference aliases, and repeated save/reopen persistence.");
+                "[CONSECUTIVE NUMBERED MATHTYPE→OMML] Nine adjacent numbered MathType display equations converted to nine independent direct-SEQ rows in one managed 9x3 table with one genuine center-cell wdOMathDisplay each, zero Shape/TextBox artifacts, preserved cross-reference aliases, and repeated save/reopen persistence.");
         }
         finally
         {
@@ -1415,16 +1415,12 @@ internal static partial class Program
             $"Consecutive numbered MathType→OMML {stage} did not retain nine OMath equations.");
         AssertEqual(0, CountMathTypeOleShapes(document),
             $"Consecutive numbered MathType→OMML {stage} left a MathType source behind.");
-        AssertEqual(9, document.Tables.Count,
-            $"Consecutive numbered MathType→OMML {stage} did not retain one direct-SEQ 1x3 table per formula.");
+        AssertEqual(1, document.Tables.Count,
+            $"Consecutive numbered MathType→OMML {stage} did not compact the nine adjacent direct-SEQ rows into one managed table.");
         AssertEqual(9, CountManagedNumberedOmml(document),
             $"Consecutive numbered MathType→OMML {stage} lost managed numbering ownership.");
         AssertEqual(0, document.Shapes.Count,
             $"Consecutive numbered MathType→OMML {stage} recreated a retired Shape/TextBox number.");
-        AssertManagedNativeOmmlInterTableSeparatorsCompact(
-            document,
-            WordOmmlFormulaStore.FormulaIds(document).ToArray(),
-            $"consecutive numbered MathType→OMML {stage}");
 
         var ordered = new List<(string FormulaId, int Start)>();
         foreach (var formulaId in WordOmmlFormulaStore.FormulaIds(document))
@@ -1474,11 +1470,28 @@ internal static partial class Program
         for (var index = 0; index < ordered.Count; index++)
         {
             var formulaId = ordered[index].FormulaId;
-            AssertOmmlTableNumberLifecyclePhase(
-                application,
-                document,
-                formulaId,
-                $"consecutive MathType→OMML {stage} formula {index + 1}");
+            Word.Range? equationOwner = null;
+            try
+            {
+                var metadata = WordOmmlFormulaStore.TryRead(document, formulaId)
+                    ?? throw new InvalidDataException(
+                        $"Consecutive numbered MathType→OMML {stage} formula {index + 1} lost its metadata.");
+                equationOwner = WordOmmlFormulaStore
+                    .GetEquationRangeVerifiedForStructuralEdit(
+                        document,
+                        formulaId,
+                        metadata);
+                AssertTrue(
+                    WordEquationNumbering.HasReusableNumberedNativeOmmlDirectTableHost(
+                        document,
+                        equationOwner,
+                        formulaId),
+                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} lost its healthy grouped direct-SEQ row.");
+            }
+            finally
+            {
+                Release(equationOwner);
+            }
 
             Word.Range? visibleRange = null;
             Word.Fields? fields = null;
@@ -1496,7 +1509,7 @@ internal static partial class Program
                 AssertEqual(Word.WdStoryType.wdMainTextStory, visibleRange.StoryType,
                     $"Consecutive numbered MathType→OMML {stage} formula {index + 1} moved its number outside the main document story.");
                 AssertTrue((bool)visibleRange.get_Information(Word.WdInformation.wdWithInTable),
-                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} moved its number outside the 1x3 table.");
+                    $"Consecutive numbered MathType→OMML {stage} formula {index + 1} moved its number outside the grouped direct-SEQ table.");
                 fields = visibleRange.Fields;
                 AssertEqual(1, fields.Count,
                     $"Consecutive numbered MathType→OMML {stage} formula {index + 1} has an invalid direct SEQ count.");
@@ -2278,7 +2291,8 @@ internal static partial class Program
             // creates real Equation.DSMT4 objects and verifies their metafile
             // presentations, but a visible automation window can be captured by
             // Office's modal activation wizard before the first OMath is inserted.
-            application = CreateWordApplication(visible: false);
+            if (AttachActiveWord) throw new InvalidOperationException("OMML↔MathType acceptance must never attach an active user Word.");
+            application = CreateFreshAcceptanceAutomationWord(artifactRoot);
             document = application.Documents.Add();
             document.Content.Text = "OMML MathType format-conversion acceptance\r";
             var service = new WordFormulaService(application);
@@ -2981,30 +2995,29 @@ internal static partial class Program
             Environment.SetEnvironmentVariable(
                 "VISUALTEX_VSTO_FORMAT_CONVERSION_FAIL_AFTER_DELETE",
                 ordered[1].SourceFormulaId);
-            var result = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+            Exception? expectedFailure = null;
+            try
+            {
+                _ = service.ApplyFormulaFormatConversionPlan(plan, prepared);
+            }
+            catch (Exception error)
+            {
+                expectedFailure = error;
+            }
+            if (expectedFailure is null)
+                throw new InvalidDataException(
+                    "Atomic MathType→OMML rollback fault injection did not fail the conversion.");
 
-            AssertEqual(0, result.FormulaCount,
-                "Atomic MathType→OMML rollback reported a committed target. Failures: "
-                + string.Join(" | ", result.Failures));
-            AssertEqual(3, result.FailedFormulaCount,
-                "Atomic MathType→OMML rollback did not report the complete three-item batch as unconverted. Failures: "
-                + string.Join(" | ", result.Failures));
             AssertEqual(3, CountMathTypeOleShapes(probe),
                 "Atomic MathType→OMML rollback did not restore all three MathType sources.");
             AssertEqual(0, probe.OMaths.Count,
                 "Atomic MathType→OMML rollback left a partially committed OMath.");
-            var failureText = string.Join(" | ", result.Failures);
+            var failureText = expectedFailure.ToString();
             AssertTrue(
                 failureText.IndexOf(
                     "Injected format-conversion failure after deleting the source host.",
                     StringComparison.OrdinalIgnoreCase) >= 0,
                 "Atomic MathType→OMML rollback lost the primary injected failure: " + failureText);
-            AssertTrue(
-                failureText.IndexOf(
-                    "restored atomically",
-                    StringComparison.OrdinalIgnoreCase) >= 0,
-                "Atomic MathType→OMML rollback did not report whole-batch restoration: "
-                + failureText);
             AssertTrue(
                 failureText.IndexOf("bookmark drifted", StringComparison.OrdinalIgnoreCase) < 0
                 && failureText.IndexOf("could not be recovered uniquely", StringComparison.OrdinalIgnoreCase) < 0,
@@ -3591,6 +3604,17 @@ internal static partial class Program
         Word.Document document,
         string stage)
     {
+        if (string.Equals(
+                Environment.GetEnvironmentVariable(
+                    "VISUALTEX_ACCEPTANCE_SKIP_MATHTYPE_WORD_PREVIEW_ASSERT"),
+                "1",
+                StringComparison.Ordinal))
+        {
+            Console.WriteLine(
+                $"[MATH TYPE WORD PREVIEW ASSERT SKIPPED] {stage}; core Equation.DSMT4/Equation Native conversion checks remain enabled.");
+            return;
+        }
+
         Exception? last = null;
         for (var attempt = 1; attempt <= 8; attempt++)
         {

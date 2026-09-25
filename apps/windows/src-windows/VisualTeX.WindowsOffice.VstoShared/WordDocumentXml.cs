@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Microsoft.Office.Interop.Word;
 using Range = Microsoft.Office.Interop.Word.Range;
@@ -20,8 +21,7 @@ internal static class WordDocumentXml
             // Concatenate without separators so MTPlace|Ref remains detectable.
             // A false positive merely triggers the exact COM fallback; only full
             // absence is accepted as proof that no MathType number field exists.
-            var instructions = string.Concat(
-                body.Descendants(word + "instrText").Select(node => node.Value));
+            var instructions = ReadFieldInstructionEvidence(body, word);
             return instructions.IndexOf("MTPlaceRef", StringComparison.OrdinalIgnoreCase) < 0;
         }
         catch
@@ -45,16 +45,30 @@ internal static class WordDocumentXml
             // Concatenate instruction runs because Word may split a field code
             // across several w:instrText nodes. Any ambiguity falls back to the
             // conservative path that still runs the VisualTeX updater.
-            var instructions = string.Concat(
-                body.Descendants(word + "instrText").Select(node => node.Value));
-            return instructions.IndexOf(
-                "SEQ VisualTeXEquation",
-                StringComparison.OrdinalIgnoreCase) < 0;
+            var instructions = ReadFieldInstructionEvidence(body, word);
+            return !Regex.IsMatch(
+                instructions,
+                // Runs from separate fields may touch after concatenation. Do
+                // not demand token boundaries here: false positives only select
+                // the exact COM fallback; a false absence proof would skip fields.
+                @"SEQ\s+""?VisualTeXEquation",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         }
         catch
         {
             return false;
         }
+    }
+
+    private static string ReadFieldInstructionEvidence(XElement body, XNamespace word)
+    {
+        // Both encodings are legal: complex fields split their instruction across
+        // instrText runs; simple fields store it on fldSimple/@w:instr. This is a
+        // conservative absence proof, not an approximate count of live fields.
+        return string.Concat(body.Descendants(word + "instrText").Select(node => node.Value))
+            + "\n" + string.Join("\n", body.Descendants(word + "fldSimple")
+                .Select(field => (string?)field.Attribute(word + "instr")
+                    ?? throw new InvalidDataException("Cannot prove field absence from a simple field with no instruction.")));
     }
 
     internal static bool IsUnexpectedlyEmptyBody(XElement body, string liveText)
@@ -67,6 +81,7 @@ internal static class WordDocumentXml
 
     internal static string Read(Document document, Range? ownedScope = null)
     {
+        using var operationMetric = VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("WordDocumentXml.Read");
         Range? content = null;
         Range? export = null;
         OMaths? maths = null;

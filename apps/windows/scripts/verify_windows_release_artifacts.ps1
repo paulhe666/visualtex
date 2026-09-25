@@ -1,12 +1,18 @@
 [CmdletBinding()]
 param(
-    [string]$ExpectedAppVersion = "1.2.7",
-    [string]$ExpectedOfficeMsiVersion = "1.0.43.0"
+    [string]$ExpectedAppVersion = "1.2.8",
+    [string]$ExpectedOfficeMsiVersion = "1.0.43.0",
+    [string]$TargetRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$installerPath = Join-Path $root "src-tauri\target\release\bundle\nsis\VisualTeX_${ExpectedAppVersion}_x64-setup.exe"
+$resolvedTargetRoot = if ([string]::IsNullOrWhiteSpace($TargetRoot)) {
+    Join-Path $root "src-tauri\target"
+} else {
+    [IO.Path]::GetFullPath((Join-Path $root $TargetRoot))
+}
+$installerPath = Join-Path $resolvedTargetRoot "release\bundle\nsis\VisualTeX_${ExpectedAppVersion}_x64-setup.exe"
 $resourceX64 = Join-Path $root "src-tauri\resources\windows-office\VisualTeX-WindowsOffice-VSTO-x64.msi"
 $resourceX86 = Join-Path $root "src-tauri\resources\windows-office\VisualTeX-WindowsOffice-VSTO-x86.msi"
 $manifestX64 = Join-Path $root "src-tauri\resources\windows-office\VisualTeX-WindowsOffice-VSTO-x64.sha256.json"
@@ -15,10 +21,18 @@ $vstoRuntime = Join-Path $root "src-tauri\resources\windows-office\vstor_redist.
 $vstoRuntimeManifest = Join-Path $root "src-tauri\resources\windows-office\vstor_redist.sha256.json"
 $buildX64 = Join-Path $root "src-windows\VisualTeX.WindowsOffice.Installer\bin\x64\Release\VisualTeX-WindowsOffice-VSTO-x64.msi"
 $buildX86 = Join-Path $root "src-windows\VisualTeX.WindowsOffice.Installer\bin\x86\Release\VisualTeX-WindowsOffice-VSTO-x86.msi"
+$wordBuildX64 = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\x64\Release\net472\VisualTeX.WordVsto.dll"
+$wordBuildX86 = Join-Path $root "src-windows\VisualTeX.WordVsto\bin\x86\Release\net472\VisualTeX.WordVsto.dll"
+$powerPointBuildX64 = Join-Path $root "src-windows\VisualTeX.PowerPointVsto\bin\x64\Release\net472\VisualTeX.PowerPointVsto.dll"
+$powerPointBuildX86 = Join-Path $root "src-windows\VisualTeX.PowerPointVsto\bin\x86\Release\net472\VisualTeX.PowerPointVsto.dll"
+$oleServerBuildX64 = Join-Path $root "src-windows\artifacts\formula-ole-server\x64\Release\VisualTeX.FormulaOleServer.exe"
+$oleServerBuildX86 = Join-Path $root "src-windows\artifacts\formula-ole-server\Win32\Release\VisualTeX.FormulaOleServer.exe"
 $ocrPythonRoot = Join-Path $root "src-tauri\resources\ocr-python\windows-x64"
 $ocrPythonManifestPath = Join-Path $ocrPythonRoot "manifest.json"
 $ocrModelRoot = Join-Path $root "src-tauri\resources\ocr-models\windows-x64"
 $ocrModelCatalogPath = Join-Path $ocrModelRoot "catalog.json"
+$officeUiRoot = Join-Path $root "dist-office-windows-native"
+$officeDialogIndex = Join-Path $officeUiRoot "dialog\index.html"
 $paths = @(
     $installerPath,
     $resourceX64,
@@ -29,8 +43,15 @@ $paths = @(
     $vstoRuntimeManifest,
     $buildX64,
     $buildX86,
+    $wordBuildX64,
+    $wordBuildX86,
+    $powerPointBuildX64,
+    $powerPointBuildX86,
+    $oleServerBuildX64,
+    $oleServerBuildX86,
     $ocrPythonManifestPath,
-    $ocrModelCatalogPath
+    $ocrModelCatalogPath,
+    $officeDialogIndex
 )
 
 foreach ($path in $paths) {
@@ -175,6 +196,35 @@ if ($unexpectedModelResourceFiles.Count -ne 0) {
 }
 Write-Host "OCR model catalog verified; S/M/L model packages are excluded from bundled resources."
 
+# The desktop process refuses to start if the Windows Office companion UI is
+# absent from the packaged resources. Validate the finalized Office bundle
+# itself, not only the MSI/native integration payloads.
+$officeDialogHtml = Get-Content -LiteralPath $officeDialogIndex -Raw -Encoding UTF8
+$officeAssetMatches = [regex]::Matches(
+    $officeDialogHtml,
+    '(?i)(?:src|href)="(?:\.\./|/)?assets/([^"]+)"'
+)
+if ($officeAssetMatches.Count -lt 2) {
+    throw "Finalized Windows Office UI does not reference the expected JS/CSS assets: $officeDialogIndex"
+}
+$officeAssetNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$officeJsCount = 0
+$officeCssCount = 0
+foreach ($match in $officeAssetMatches) {
+    $assetName = [string]$match.Groups[1].Value
+    if (-not $officeAssetNames.Add($assetName)) { continue }
+    $assetPath = Join-Path (Join-Path $officeUiRoot "assets") $assetName
+    if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf)) {
+        throw "Finalized Windows Office UI references a missing asset: $assetPath"
+    }
+    if ($assetName.EndsWith(".js", [StringComparison]::OrdinalIgnoreCase)) { $officeJsCount++ }
+    if ($assetName.EndsWith(".css", [StringComparison]::OrdinalIgnoreCase)) { $officeCssCount++ }
+}
+if ($officeJsCount -lt 1 -or $officeCssCount -lt 1) {
+    throw "Finalized Windows Office UI must contain at least one JavaScript and one CSS asset."
+}
+Write-Host ("Windows Office companion UI verified: dialog/index.html + {0} referenced assets" -f $officeAssetNames.Count)
+
 function Assert-MsiComponentBitness {
     param(
         [object]$Installer,
@@ -290,13 +340,44 @@ if ([string]$runtimeVersion.ProductVersion -ne "10.0.60917.00" -or
 }
 
 foreach ($entry in @(
-    @{ Msi = $resourceX64; Manifest = $manifestX64 },
-    @{ Msi = $resourceX86; Manifest = $manifestX86 }
+    @{
+        Msi = $resourceX64
+        Manifest = $manifestX64
+        Architecture = "x64"
+        Word = $wordBuildX64
+        PowerPoint = $powerPointBuildX64
+        OleServer = $oleServerBuildX64
+    },
+    @{
+        Msi = $resourceX86
+        Manifest = $manifestX86
+        Architecture = "x86"
+        Word = $wordBuildX86
+        PowerPoint = $powerPointBuildX86
+        OleServer = $oleServerBuildX86
+    }
 )) {
     $manifest = Get-Content -LiteralPath $entry.Manifest -Raw | ConvertFrom-Json
     $actualHash = (Get-FileHash -LiteralPath $entry.Msi -Algorithm SHA256).Hash
     if ($manifest.package.sha256 -ne $actualHash) {
         throw "Office MSI hash manifest does not match $($entry.Msi)."
+    }
+
+    # A resource MSI can match its own manifest but still be stale relative to
+    # a later Word/PPT/OLE rebuild in this same working tree. Reject that state
+    # before NSIS is accepted, so installed Office code cannot silently lag the
+    # source/build that was just tested.
+    $currentWordHash = (Get-FileHash -LiteralPath $entry.Word -Algorithm SHA256).Hash
+    $currentPowerPointHash = (Get-FileHash -LiteralPath $entry.PowerPoint -Algorithm SHA256).Hash
+    $currentOleServerHash = (Get-FileHash -LiteralPath $entry.OleServer -Algorithm SHA256).Hash
+    if (-not [string]::Equals([string]$manifest.word.sha256, $currentWordHash, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "$($entry.Architecture) Office MSI is stale relative to the current Word VSTO build. Manifest=$($manifest.word.sha256); Current=$currentWordHash."
+    }
+    if (-not [string]::Equals([string]$manifest.powerPoint.sha256, $currentPowerPointHash, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "$($entry.Architecture) Office MSI is stale relative to the current PowerPoint VSTO build. Manifest=$($manifest.powerPoint.sha256); Current=$currentPowerPointHash."
+    }
+    if (-not [string]::Equals([string]$manifest.formulaOleServer.sha256, $currentOleServerHash, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "$($entry.Architecture) Office MSI is stale relative to the current Formula OLE server build. Manifest=$($manifest.formulaOleServer.sha256); Current=$currentOleServerHash."
     }
 }
 
@@ -430,6 +511,7 @@ if (-not (Test-Path -LiteralPath $windowsTauriConfigPath -PathType Leaf)) {
 $windowsTauriConfig = Get-Content -LiteralPath $windowsTauriConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $windowsResources = @($windowsTauriConfig.bundle.resources.PSObject.Properties)
 foreach ($requiredResource in @(
+    @{ Source = "../dist-office-windows-native/"; Destination = "office/" },
     @{ Source = "resources/windows-office/VisualTeX-WindowsOffice-VSTO-x64.msi"; Destination = "windows-office/VisualTeX-WindowsOffice-VSTO-x64.msi" },
     @{ Source = "resources/windows-office/VisualTeX-WindowsOffice-VSTO-x64.sha256.json"; Destination = "windows-office/VisualTeX-WindowsOffice-VSTO-x64.sha256.json" },
     @{ Source = "resources/windows-office/VisualTeX-WindowsOffice-VSTO-x86.msi"; Destination = "windows-office/VisualTeX-WindowsOffice-VSTO-x86.msi" },
@@ -444,7 +526,8 @@ foreach ($requiredResource in @(
 }
 
 & node.exe (Join-Path $root "scripts\verify_embedded_frontend_assets.mjs") `
-    --exe (Join-Path $root "src-tauri\target\release\visualtex.exe")
+    --dist (Join-Path $root "dist") `
+    --exe (Join-Path $resolvedTargetRoot "release\visualtex.exe")
 if ($LASTEXITCODE -ne 0) {
     throw "The release VisualTeX.exe failed embedded frontend verification."
 }

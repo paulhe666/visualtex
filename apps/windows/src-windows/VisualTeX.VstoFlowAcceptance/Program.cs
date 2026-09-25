@@ -24,6 +24,7 @@ internal static partial class Program
     private const uint MouseLeftDown = 0x0002;
     private const uint MouseLeftUp = 0x0004;
     private const double WordPerformanceLimitMilliseconds = 500.0;
+    private const double WordPerformanceOutlierLimitMilliseconds = 550.0;
 
     [ComImport]
     [Guid("00000016-0000-0000-C000-000000000046")]
@@ -256,6 +257,9 @@ internal static partial class Program
     [DllImport("kernel32.dll")]
     private static extern IntPtr GetConsoleWindow();
 
+    [DllImport("kernel32.dll")]
+    private static extern uint SetErrorMode(uint mode);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect
     {
@@ -405,8 +409,19 @@ internal static partial class Program
     private static int Main(string[] args)
     {
         try { SetProcessDpiAwarenessContext(new IntPtr(-4)); } catch { }
-        var instanceMutexName = Environment.GetEnvironmentVariable(
-            "VISUALTEX_VSTO_ACCEPTANCE_MUTEX_NAME");
+        // An acceptance failure must be reported through acceptance.log/exit code,
+        // never as a modal Windows "application error" dialog over the user's
+        // active Office document.
+        try { SetErrorMode(0x0001u | 0x0002u); } catch { }
+        var instanceMutexName = args
+            .FirstOrDefault(argument =>
+                argument.StartsWith(
+                    "--mutex-name=",
+                    StringComparison.OrdinalIgnoreCase))
+            ?.Substring("--mutex-name=".Length);
+        if (string.IsNullOrWhiteSpace(instanceMutexName))
+            instanceMutexName = Environment.GetEnvironmentVariable(
+                "VISUALTEX_VSTO_ACCEPTANCE_MUTEX_NAME");
         if (string.IsNullOrWhiteSpace(instanceMutexName))
             instanceMutexName = @"Local\VisualTeX.VstoFlowAcceptance";
         using var instanceMutex = new Mutex(
@@ -440,6 +455,133 @@ internal static partial class Program
         Console.SetOut(new TeeTextWriter(originalOut, log));
         Console.SetError(new TeeTextWriter(originalError, log));
         Console.WriteLine($"Acceptance mode: {mode}");
+
+        if (string.Equals(
+                mode,
+                "word-active-omml-semantic-audit",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var activeAuditMessageFilter =
+                    OfficeComMessageFilter.Register();
+                RunActiveOmmlSemanticAuditAcceptance();
+                Console.WriteLine("VisualTeX active OMML semantic audit passed.");
+                Console.WriteLine($"Artifacts: {artifactRoot}");
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(
+                    $"{error.GetType().FullName} (0x{error.HResult:X8}): "
+                    + error.Message);
+                Console.Error.WriteLine($"Acceptance artifacts retained: {artifactRoot}");
+                return 1;
+            }
+        }
+
+        if (string.Equals(
+                mode,
+                "word-active-native-number-semantic-audit",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var activeNativeNumberMessageFilter =
+                    OfficeComMessageFilter.Register();
+                RunActiveNativeNumberSemanticAuditAcceptance();
+                Console.WriteLine(
+                    "VisualTeX active Word-native number semantic audit passed.");
+                Console.WriteLine($"Artifacts: {artifactRoot}");
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(
+                    $"{error.GetType().FullName} (0x{error.HResult:X8}): "
+                    + error.Message);
+                Console.Error.WriteLine(
+                    $"Acceptance artifacts retained: {artifactRoot}");
+                return 1;
+            }
+        }
+
+        if (string.Equals(
+                mode,
+                "word-field-free-native-number-edit",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var fieldFreeNativeNumberMessageFilter =
+                    OfficeComMessageFilter.Register();
+                RunWordFieldFreeNativeNumberEditAcceptance(
+                    artifactRoot);
+                Console.WriteLine(
+                    "VisualTeX field-free Word-native number edit acceptance passed.");
+                Console.WriteLine($"Artifacts: {artifactRoot}");
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(
+                    $"{error.GetType().FullName} (0x{error.HResult:X8}): "
+                    + error.Message);
+                Console.Error.WriteLine(
+                    $"Acceptance artifacts retained: {artifactRoot}");
+                return 1;
+            }
+        }
+
+        // This exact-document core mode owns all of its input and prepares OMML
+        // locally. Run it before companion startup and keep every initialization
+        // step inside the same exception boundary so a harness problem is logged
+        // and returned, not surfaced as an unhandled CLR dialog.
+        if (string.Equals(
+                mode,
+                "word-exact-mathtype-omml-core-clone",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-exact-mathtype-visualtex-core-clone",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                Console.WriteLine("Exact core initialization: COM message filter.");
+                using var exactMessageFilter = OfficeComMessageFilter.Register();
+                Console.WriteLine("Exact core initialization: Word add-in suppression.");
+                using var exactWordSuppression =
+                    UserOfficeAddInAutoLoadSuppression.Create(
+                        "Word",
+                        "VisualTeX.WordVsto");
+                Console.WriteLine("Exact core initialization complete.");
+                if (string.Equals(
+                        mode,
+                        "word-exact-mathtype-visualtex-core-clone",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    RunExactMathTypeVisualTeXCoreCloneAcceptance(
+                        artifactRoot);
+                }
+                else
+                {
+                    RunExactMathTypeOmmlCoreCloneAcceptance(
+                        artifactRoot);
+                }
+                Console.WriteLine("VisualTeX real VSTO formula flow acceptance passed.");
+                Console.WriteLine($"Artifacts: {artifactRoot}");
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(
+                    $"{error.GetType().FullName} (0x{error.HResult:X8}): "
+                    + error.Message);
+                Console.Error.WriteLine($"Acceptance artifacts retained: {artifactRoot}");
+                return 1;
+            }
+        }
 
         using var officeMessageFilter = OfficeComMessageFilter.Register();
         var exerciseInstalledWordAddIn = string.Equals(
@@ -512,6 +654,14 @@ internal static partial class Program
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
                 mode,
+                "word-user-visualtex-to-omml-regression",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-user-omml-to-visualtex-regression",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
                 "word-active-user-100-failure-inspect",
                 StringComparison.OrdinalIgnoreCase)
             || string.Equals(
@@ -521,18 +671,30 @@ internal static partial class Program
             || string.Equals(
                 mode,
                 "word-active-mathtype-omml-copy-diagnostic",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-installed-exact-mathtype-omml-clone",
                 StringComparison.OrdinalIgnoreCase);
-        using var installedWordAutoLoadSuppression = exerciseInstalledWordAddIn
+        var directOmmlCoreAcceptance = string.Equals(
+            mode,
+            "word-omml-complex-recovery",
+            StringComparison.OrdinalIgnoreCase);
+        using var installedWordAutoLoadSuppression =
+            exerciseInstalledWordAddIn || directOmmlCoreAcceptance
             ? null
             : UserOfficeAddInAutoLoadSuppression.Create("Word", "VisualTeX.WordVsto");
         var exerciseInstalledPowerPointAddIn = string.Equals(
             mode,
             "powerpoint-installed-ole-presentation",
             StringComparison.OrdinalIgnoreCase);
-        using var installedPowerPointAutoLoadSuppression = exerciseInstalledPowerPointAddIn
+        using var installedPowerPointAutoLoadSuppression =
+            exerciseInstalledPowerPointAddIn || directOmmlCoreAcceptance
             ? null
             : UserOfficeAddInAutoLoadSuppression.Create("PowerPoint", "VisualTeX.PowerPointVsto");
-        Console.WriteLine(exerciseInstalledWordAddIn
+        Console.WriteLine(directOmmlCoreAcceptance
+            ? "Registry add-in suppression is skipped for the direct isolated OMML core acceptance; its private Word host disconnects the installed add-in before creating the fixture document."
+            : exerciseInstalledWordAddIn
             ? "Installed Word add-in remains enabled for this MathType real-environment stability acceptance."
             : exerciseInstalledPowerPointAddIn
                 ? "Installed Word add-in auto-load is suppressed; installed PowerPoint add-in remains enabled for this acceptance."
@@ -549,15 +711,70 @@ internal static partial class Program
             || string.Equals(
                 mode,
                 "word-deep-format-rollback",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-omml-complex-recovery",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-omml-native-edit-to-visualtex",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-omml-insert-no-top-flash",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-visualtex-paragraph-mark-alignment",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-host-core-minimal",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-host-core-omml-conversion-matrix",
                 StringComparison.OrdinalIgnoreCase))
         {
             try
             {
                 if (string.Equals(
                         mode,
-                        "word-deep-format-rollback",
+                        "word-host-core-minimal",
                         StringComparison.OrdinalIgnoreCase))
+                    RunWordHostCoreMinimalAcceptance(artifactRoot);
+                else if (string.Equals(
+                             mode,
+                             "word-host-core-omml-conversion-matrix",
+                             StringComparison.OrdinalIgnoreCase))
+                    RunPureOmmlMixedConversionMatrixAcceptance(artifactRoot);
+                else if (string.Equals(
+                             mode,
+                             "word-deep-format-rollback",
+                             StringComparison.OrdinalIgnoreCase))
                     RunWordDeepFormatRollbackAcceptance(artifactRoot);
+                else if (string.Equals(
+                             mode,
+                             "word-omml-complex-recovery",
+                             StringComparison.OrdinalIgnoreCase))
+                    RunWordOmmlComplexRecoveryAcceptance(artifactRoot);
+                else if (string.Equals(
+                             mode,
+                             "word-omml-native-edit-to-visualtex",
+                             StringComparison.OrdinalIgnoreCase))
+                    RunWordOmmlNativeEditToVisualTeXAcceptance(artifactRoot);
+                else if (string.Equals(
+                             mode,
+                             "word-omml-insert-no-top-flash",
+                             StringComparison.OrdinalIgnoreCase))
+                    RunWordOmmlInsertNoTopFlashAcceptance(artifactRoot);
+                else if (string.Equals(
+                             mode,
+                             "word-visualtex-paragraph-mark-alignment",
+                             StringComparison.OrdinalIgnoreCase))
+                    RunWordVisualTeXParagraphMarkAlignmentAcceptance(
+                        artifactRoot);
                 else
                     RunWordSparseNumberedOmmlPerformanceAcceptance(artifactRoot);
                 Console.WriteLine("VisualTeX real VSTO formula flow acceptance passed.");
@@ -724,6 +941,14 @@ internal static partial class Program
             {
                 RunActiveMathTypeOmmlLiveDiagnostic(artifactRoot);
             }
+            else if (string.Equals(mode, "word-installed-exact-mathtype-omml-clone", StringComparison.OrdinalIgnoreCase))
+            {
+                RunInstalledExactMathTypeOmmlCloneAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-exact-mathtype-omml-core-clone", StringComparison.OrdinalIgnoreCase))
+            {
+                RunExactMathTypeOmmlCoreCloneAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-active-mathtype-source-double-click", StringComparison.OrdinalIgnoreCase))
             {
                 RunActiveMathTypeSourceDoubleClickProbe();
@@ -739,6 +964,14 @@ internal static partial class Program
             else if (string.Equals(mode, "word-user-100-omml-to-mathtype", StringComparison.OrdinalIgnoreCase))
             {
                 RunUserOmmlMathTypeConversionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-user-visualtex-to-omml-regression", StringComparison.OrdinalIgnoreCase))
+            {
+                RunUserVisualTeXOmmlRegressionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-user-omml-to-visualtex-regression", StringComparison.OrdinalIgnoreCase))
+            {
+                RunUserOmmlVisualTeXRegressionAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-user-100-mathtype-reverse", StringComparison.OrdinalIgnoreCase))
             {
@@ -867,6 +1100,26 @@ internal static partial class Program
             else if (string.Equals(mode, "word-single-numbered-omml-to-visualtex", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordSingleNumberedOmmlToVisualTeXAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-real-single-omml-to-visualtex", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordRealSingleOmmlToVisualTeXAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-staged-omml-rollback", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordStagedOmmlRollbackAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-staged-unnumbered-omml-rollback", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordStagedUnnumberedOmmlRollbackAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-prepare-managed-unnumbered-perf-fixture", StringComparison.OrdinalIgnoreCase))
+            {
+                RunPrepareManagedUnnumberedOmmlPerformanceFixtureAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-ole-recovery-ownership", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOleRecoveryOwnershipAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-omml-visualtex-numbered-roundtrip", StringComparison.OrdinalIgnoreCase))
             {
@@ -1019,6 +1272,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-latex-redraw-omml-only", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordLatexRedrawOmmlOnly(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-complex-recovery", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlComplexRecoveryAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-latex-redraw-mathtype", StringComparison.OrdinalIgnoreCase))
             {
@@ -1226,6 +1483,10 @@ internal static partial class Program
             {
                 RunWordEditorNativeClose(client, artifactRoot);
             }
+            else if (string.Equals(mode, "word-complex-omml-session-commit", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordComplexOmmlCommitClose(client, artifactRoot);
+            }
             else if (string.Equals(mode, "word-numbered-omml-tab-scale", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordNumberedOmmlTabScaleAcceptance(artifactRoot);
@@ -1395,6 +1656,7 @@ internal static partial class Program
             Console.Error.WriteLine(
                 $"{error.GetType().FullName} (0x{error.HResult:X8}): "
                 + error.Message);
+            Console.Error.WriteLine(error.StackTrace);
             Console.Error.WriteLine($"Acceptance artifacts retained: {artifactRoot}");
             return 1;
         }

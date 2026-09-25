@@ -56,6 +56,20 @@ internal sealed class OfficeOleInkSafeVectorPreview
     internal float BaselinePixels { get; }
 }
 
+internal readonly struct OfficeOleVerticalInkMetrics
+{
+    internal OfficeOleVerticalInkMetrics(
+        float inkHeightRatio,
+        float bottomWhitespaceRatio)
+    {
+        InkHeightRatio = inkHeightRatio;
+        BottomWhitespaceRatio = bottomWhitespaceRatio;
+    }
+
+    internal float InkHeightRatio { get; }
+    internal float BottomWhitespaceRatio { get; }
+}
+
 internal static class OfficeOlePreview
 {
     private const long MaximumSvgBytes = 16L * 1024L * 1024L;
@@ -65,8 +79,151 @@ internal static class OfficeOlePreview
     private const int DesktopHorzRes = 118;
     internal static string LastRecordingDiagnostics { get; private set; } = string.Empty;
 
+    internal static OfficeOleVerticalInkMetrics? TryMeasureVerticalInkMetrics(
+        string emfPath)
+    {
+        if (string.IsNullOrWhiteSpace(emfPath) || !File.Exists(emfPath))
+            return null;
+        try
+        {
+            using var metafile = new Metafile(emfPath);
+            return MeasureVerticalInkMetrics(metafile);
+        }
+        catch { return null; }
+    }
+
+    internal static OfficeOleVerticalInkMetrics? TryMeasureVerticalInkMetrics(
+        byte[] emfBytes)
+    {
+        if (emfBytes is null || emfBytes.Length == 0) return null;
+        try
+        {
+            using var stream = new MemoryStream(emfBytes, writable: false);
+            using var metafile = new Metafile(stream);
+            return MeasureVerticalInkMetrics(metafile);
+        }
+        catch { return null; }
+    }
+
+    private static OfficeOleVerticalInkMetrics? MeasureVerticalInkMetrics(
+        Metafile metafile)
+    {
+        const int width = 640;
+        const int height = 240;
+        using var bitmap = new Bitmap(
+            width,
+            height,
+            PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(Color.White);
+            graphics.DrawImage(metafile, 0, 0, width, height);
+        }
+
+        var minY = height;
+        var maxY = -1;
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                if (pixel.R >= 245
+                    && pixel.G >= 245
+                    && pixel.B >= 245)
+                    continue;
+                minY = Math.Min(minY, y);
+                maxY = Math.Max(maxY, y);
+            }
+        }
+        if (maxY < minY) return null;
+
+        var inkHeightRatio = (maxY - minY + 1f) / height;
+        var bottomWhitespaceRatio = (height - 1f - maxY) / height;
+        if (!(inkHeightRatio > 0.01f)
+            || float.IsNaN(inkHeightRatio)
+            || float.IsInfinity(inkHeightRatio)
+            || float.IsNaN(bottomWhitespaceRatio)
+            || float.IsInfinity(bottomWhitespaceRatio))
+            return null;
+        return new OfficeOleVerticalInkMetrics(
+            inkHeightRatio,
+            bottomWhitespaceRatio);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RectLong
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SizeLong
+    {
+        public int Cx;
+        public int Cy;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct EnhancedMetafileHeader
+    {
+        public uint Type;
+        public uint Size;
+        public RectLong Bounds;
+        public RectLong Frame;
+        public uint Signature;
+        public uint Version;
+        public uint Bytes;
+        public uint Records;
+        public ushort Handles;
+        public ushort Reserved;
+        public uint DescriptionCharacters;
+        public uint DescriptionOffset;
+        public uint PaletteEntries;
+        public SizeLong Device;
+        public SizeLong Millimeters;
+    }
+
     [DllImport("gdi32.dll")]
     private static extern int GetDeviceCaps(IntPtr hdc, int index);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr SetEnhMetaFileBits(uint bufferSize, byte[] data);
+
+    [DllImport("gdi32.dll")]
+    private static extern uint GetEnhMetaFileHeader(
+        IntPtr enhancedMetafile,
+        uint bufferSize,
+        ref EnhancedMetafileHeader header);
+
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateEnhMetaFileW(
+        IntPtr referenceDeviceContext,
+        string? fileName,
+        ref RectLong frame,
+        string? description);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CloseEnhMetaFile(IntPtr deviceContext);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PlayEnhMetaFile(
+        IntPtr deviceContext,
+        IntPtr enhancedMetafile,
+        ref RectLong destination);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteEnhMetaFile(IntPtr enhancedMetafile);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr window, IntPtr deviceContext);
     private static readonly HashSet<uint> BitmapEmfRecords = new()
     {
         76,  // EMR_STRETCHBLT
@@ -250,6 +407,225 @@ internal static class OfficeOlePreview
                 try { File.Delete(generatedPngPath); } catch { }
             }
             throw;
+        }
+    }
+
+    internal static OfficeOleInkSafePreview CreateVerticallyShiftedPreviewFromSvg(
+        string svgPath,
+        float widthPixels,
+        float heightPixels,
+        float? baselinePixels,
+        float verticalShiftPixels,
+        string? fallbackPngPath = null,
+        float safetyPaddingPixels = 1f)
+    {
+        if (string.IsNullOrWhiteSpace(svgPath))
+            throw new ArgumentException("SVG preview path is required.", nameof(svgPath));
+        if (!File.Exists(svgPath))
+            throw new FileNotFoundException("SVG preview does not exist.", svgPath);
+        if (!IsPositiveFinite(widthPixels) || !IsPositiveFinite(heightPixels))
+            throw new InvalidDataException("Shifted SVG preview dimensions are invalid.");
+        if (float.IsNaN(verticalShiftPixels) || float.IsInfinity(verticalShiftPixels))
+            throw new InvalidDataException("SVG preview vertical shift is invalid.");
+        if (Math.Abs(verticalShiftPixels) > Math.Min(2f, heightPixels * 0.2f))
+            throw new InvalidDataException("SVG preview vertical shift exceeds the safe sub-point range.");
+
+        var directory = Path.GetDirectoryName(svgPath)
+            ?? throw new InvalidOperationException("SVG preview has no parent directory.");
+        var emfPath = Path.Combine(directory, $"{Guid.NewGuid():N}.emf");
+        string? generatedPngPath = null;
+        try
+        {
+            var renderer = SvgVectorRenderer.Load(svgPath);
+            var geometry = renderer.ResolveInkSafeGeometry(
+                widthPixels,
+                heightPixels,
+                baselinePixels,
+                safetyPaddingPixels);
+            // Repair must not change the OLE server's natural extent. Installed-font
+            // expansion changes that extent, so leave those rare formulas untouched
+            // rather than trading a sub-pixel baseline defect for a resize regression.
+            if (geometry.IsExpanded
+                || Math.Abs(geometry.WidthPixels - widthPixels) > 0.01f
+                || Math.Abs(geometry.HeightPixels - heightPixels) > 0.01f)
+                throw new InvalidOperationException(
+                    "The formula preview requires an expanded ink frame and cannot be shifted safely in place.");
+
+            var unitsPerPixelY = geometry.ViewBox.Height / geometry.HeightPixels;
+            var shiftedViewBox = new SvgViewBox(
+                geometry.ViewBox.X,
+                geometry.ViewBox.Y - verticalShiftPixels * unitsPerPixelY,
+                geometry.ViewBox.Width,
+                geometry.ViewBox.Height);
+            renderer.Render(
+                emfPath,
+                widthPixels,
+                heightPixels,
+                usePowerPointStablePhysicalFrame: false,
+                horizontalSafetyInsetPixels: 0f,
+                shiftedViewBox);
+
+            var canReuseFallback = Math.Abs(verticalShiftPixels) <= 0.0001f
+                && !renderer.ContainsTextOutlines
+                && !string.IsNullOrWhiteSpace(fallbackPngPath)
+                && File.Exists(fallbackPngPath);
+            var pngPath = canReuseFallback
+                ? fallbackPngPath!
+                : generatedPngPath = Path.Combine(directory, $"{Guid.NewGuid():N}.png");
+            if (!canReuseFallback)
+                renderer.RenderPng(pngPath, widthPixels, heightPixels, shiftedViewBox);
+            ValidateVectorEmf(emfPath);
+
+            var shiftedBaseline = geometry.BaselinePixels + verticalShiftPixels;
+            shiftedBaseline = Math.Max(0f, Math.Min(heightPixels, shiftedBaseline));
+            return new OfficeOleInkSafePreview(
+                emfPath,
+                pngPath,
+                widthPixels,
+                heightPixels,
+                shiftedBaseline);
+        }
+        catch
+        {
+            try { File.Delete(emfPath); } catch { }
+            if (!string.IsNullOrWhiteSpace(generatedPngPath))
+            {
+                try { File.Delete(generatedPngPath); } catch { }
+            }
+            throw;
+        }
+    }
+
+    internal static OfficeOleInkSafePreview CreateVerticallyShiftedPreviewFromEmfBytes(
+        byte[] sourceEmfBytes,
+        float renderWidthPixels,
+        float renderHeightPixels,
+        float baselinePixels,
+        float verticalShiftPixels)
+    {
+        if (sourceEmfBytes is null || sourceEmfBytes.Length < 88)
+            throw new InvalidDataException("Source EMF preview is unavailable or truncated.");
+        if (!IsPositiveFinite(renderWidthPixels) || !IsPositiveFinite(renderHeightPixels))
+            throw new InvalidDataException("Source EMF render dimensions are invalid.");
+        if (float.IsNaN(baselinePixels)
+            || float.IsInfinity(baselinePixels)
+            || baselinePixels < 0f
+            || baselinePixels > renderHeightPixels)
+            throw new InvalidDataException("Source EMF baseline is invalid.");
+        if (float.IsNaN(verticalShiftPixels)
+            || float.IsInfinity(verticalShiftPixels)
+            || Math.Abs(verticalShiftPixels) > Math.Min(2f, renderHeightPixels * 0.2f))
+            throw new InvalidDataException("EMF vertical shift exceeds the safe sub-point range.");
+
+        var tempRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VisualTeX",
+            "office",
+            "temp");
+        Directory.CreateDirectory(tempRoot);
+        var emfPath = Path.Combine(tempRoot, $"{Guid.NewGuid():N}.emf");
+        var pngPath = Path.Combine(tempRoot, $"{Guid.NewGuid():N}.png");
+
+        IntPtr sourceMetafile = IntPtr.Zero;
+        IntPtr referenceDc = IntPtr.Zero;
+        IntPtr recordingDc = IntPtr.Zero;
+        IntPtr recordedMetafile = IntPtr.Zero;
+        try
+        {
+            sourceMetafile = SetEnhMetaFileBits((uint)sourceEmfBytes.Length, sourceEmfBytes);
+            if (sourceMetafile == IntPtr.Zero)
+                throw new InvalidDataException("VisualTeX could not materialize the current EMF preview.");
+
+            var header = new EnhancedMetafileHeader();
+            var headerSize = (uint)Marshal.SizeOf<EnhancedMetafileHeader>();
+            if (GetEnhMetaFileHeader(sourceMetafile, headerSize, ref header) == 0)
+                throw new InvalidDataException("VisualTeX could not read the current EMF preview header.");
+            var frameWidth = Math.Max(1, header.Frame.Right - header.Frame.Left);
+            var frameHeight = Math.Max(1, header.Frame.Bottom - header.Frame.Top);
+            if (header.Device.Cx <= 0 || header.Device.Cy <= 0
+                || header.Millimeters.Cx <= 0 || header.Millimeters.Cy <= 0)
+                throw new InvalidDataException("The current EMF preview has invalid device metrics.");
+
+            var canvasWidth = Math.Max(
+                1,
+                (int)Math.Round(frameWidth / 100d * header.Device.Cx / header.Millimeters.Cx));
+            var canvasHeight = Math.Max(
+                1,
+                (int)Math.Round(frameHeight / 100d * header.Device.Cy / header.Millimeters.Cy));
+            var shiftCanvasPixels = (int)Math.Round(
+                canvasHeight * verticalShiftPixels / renderHeightPixels,
+                MidpointRounding.AwayFromZero);
+
+            referenceDc = GetDC(IntPtr.Zero);
+            if (referenceDc == IntPtr.Zero)
+                throw new InvalidOperationException("VisualTeX could not acquire a reference display DC.");
+            var frame = header.Frame;
+            recordingDc = CreateEnhMetaFileW(referenceDc, emfPath, ref frame, null);
+            if (recordingDc == IntPtr.Zero)
+                throw new InvalidOperationException("VisualTeX could not create a shifted EMF recording DC.");
+
+            var destination = new RectLong
+            {
+                Left = 0,
+                Top = shiftCanvasPixels,
+                Right = canvasWidth,
+                Bottom = canvasHeight + shiftCanvasPixels,
+            };
+            if (!PlayEnhMetaFile(recordingDc, sourceMetafile, ref destination))
+                throw new InvalidDataException("VisualTeX could not replay the current EMF preview.");
+
+            recordedMetafile = CloseEnhMetaFile(recordingDc);
+            recordingDc = IntPtr.Zero;
+            if (recordedMetafile == IntPtr.Zero)
+                throw new InvalidDataException("VisualTeX could not finalize the shifted EMF preview.");
+            DeleteEnhMetaFile(recordedMetafile);
+            recordedMetafile = IntPtr.Zero;
+            ValidateVectorEmf(emfPath);
+
+            var scale = Math.Min(2d, 8192d / Math.Max(renderWidthPixels, renderHeightPixels));
+            if (!(scale > 0d) || double.IsNaN(scale) || double.IsInfinity(scale)) scale = 1d;
+            var pixelWidth = Math.Max(1, checked((int)Math.Ceiling(renderWidthPixels * scale)));
+            var pixelHeight = Math.Max(1, checked((int)Math.Ceiling(renderHeightPixels * scale)));
+            using (var bitmap = new Bitmap(pixelWidth, pixelHeight, PixelFormat.Format32bppArgb))
+            {
+                bitmap.SetResolution((float)(96d * scale), (float)(96d * scale));
+                using var graphics = Graphics.FromImage(bitmap);
+                graphics.Clear(Color.Transparent);
+                using var shiftedMetafile = new Metafile(emfPath);
+                graphics.DrawImage(shiftedMetafile, 0, 0, pixelWidth, pixelHeight);
+                bitmap.Save(pngPath, ImageFormat.Png);
+            }
+
+            var shiftedBaseline = Math.Max(
+                0f,
+                Math.Min(renderHeightPixels, baselinePixels + verticalShiftPixels));
+            return new OfficeOleInkSafePreview(
+                emfPath,
+                pngPath,
+                renderWidthPixels,
+                renderHeightPixels,
+                shiftedBaseline);
+        }
+        catch
+        {
+            try { File.Delete(emfPath); } catch { }
+            try { File.Delete(pngPath); } catch { }
+            throw;
+        }
+        finally
+        {
+            if (recordingDc != IntPtr.Zero)
+            {
+                try
+                {
+                    var abandoned = CloseEnhMetaFile(recordingDc);
+                    if (abandoned != IntPtr.Zero) DeleteEnhMetaFile(abandoned);
+                }
+                catch { }
+            }
+            if (recordedMetafile != IntPtr.Zero) DeleteEnhMetaFile(recordedMetafile);
+            if (sourceMetafile != IntPtr.Zero) DeleteEnhMetaFile(sourceMetafile);
+            if (referenceDc != IntPtr.Zero) ReleaseDC(IntPtr.Zero, referenceDc);
         }
     }
 

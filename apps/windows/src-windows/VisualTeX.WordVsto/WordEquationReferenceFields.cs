@@ -15,6 +15,282 @@ internal static class WordEquationReferenceFields
 {
     private const string MathTypeSectionStyleName = "MTEquationSection";
 
+    internal static void InsertNativeWordEquationReference(
+        Document document,
+        Selection selection,
+        int nativeReferenceItem,
+        string prefix,
+        string suffix,
+        WdColor? preferredInsertionColor = null)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (selection is null) throw new ArgumentNullException(nameof(selection));
+        if (nativeReferenceItem <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(nativeReferenceItem));
+        if (document.ReadOnly)
+            throw new UnauthorizedAccessException(
+                "当前 Word 文档为只读状态。");
+
+        Range? sourceFormattingRange = null;
+        Range? insertion = null;
+        Range? probe = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? result = null;
+        Range? selectedResult = null;
+        Range? selectionRange = null;
+        try
+        {
+            sourceFormattingRange =
+                selection.Range.Duplicate;
+            sourceFormattingRange.Collapse(
+                WdCollapseDirection.wdCollapseStart);
+            var formatting =
+                WordCharacterFormatting.Capture(
+                    sourceFormattingRange);
+            if (preferredInsertionColor.HasValue)
+            {
+                var requested =
+                    preferredInsertionColor.Value;
+                formatting.Color =
+                    requested == WdColor.wdColorAutomatic
+                    || (int)requested >= 0
+                        ? requested
+                        : WdColor.wdColorAutomatic;
+            }
+
+            if (!string.IsNullOrEmpty(prefix))
+                selection.TypeText(prefix);
+
+            var referenceStart =
+                selection.Start;
+            insertion =
+                selection.Range.Duplicate;
+            insertion.Collapse(
+                WdCollapseDirection.wdCollapseStart);
+            insertion.InsertCrossReference(
+                ReferenceType:
+                    WdCaptionLabelID.wdCaptionEquation,
+                ReferenceKind:
+                    WdReferenceKind.wdOnlyLabelAndNumber,
+                ReferenceItem:
+                    nativeReferenceItem,
+                InsertAsHyperlink: true,
+                IncludePosition: false);
+
+            var probeEnd =
+                Math.Min(
+                    document.Content.End,
+                    referenceStart + 256);
+            probe =
+                document.Range(
+                    referenceStart,
+                    probeEnd);
+            fields = probe.Fields;
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
+            {
+                Release(result);
+                result = null;
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                if (field.Type !=
+                    WdFieldType.wdFieldRef)
+                    continue;
+                code =
+                    field.Code.Duplicate;
+                result =
+                    field.Result.Duplicate;
+                if (result.End < referenceStart)
+                    continue;
+                if (selectedResult is not null
+                    && selectedResult.Start <=
+                        result.Start)
+                    continue;
+                Release(selectedResult);
+                selectedResult =
+                    result.Duplicate;
+            }
+
+            if (selectedResult is null)
+                throw new InvalidDataException(
+                    "Word did not materialize a native REF field for the selected Equation item.");
+
+            // Keep Word's native equation-reference result exactly as Word
+            // materialized it. A native REF result can itself be OMath, and
+            // forcing ordinary text properties such as Subscript/Superscript
+            // onto that mathematical range is invalid in desktop Word.
+
+            var after =
+                Math.Max(
+                    document.Content.Start,
+                    Math.Min(
+                        selectedResult.End + 1,
+                        Math.Max(
+                            document.Content.Start,
+                            document.Content.End - 1)));
+            selection.SetRange(
+                after,
+                after);
+            if (!string.IsNullOrEmpty(suffix))
+                selection.TypeText(suffix);
+
+            selectionRange =
+                selection.Range;
+            NormalizeInternalStyle(
+                selectionRange);
+            formatting.Apply(
+                selectionRange);
+        }
+        finally
+        {
+            Release(selectionRange);
+            Release(selectedResult);
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(probe);
+            Release(insertion);
+            Release(sourceFormattingRange);
+        }
+    }
+
+    internal static void InsertDirectReference(
+        Document document,
+        Selection selection,
+        string bookmarkName,
+        string prefix,
+        string suffix,
+        WdColor? preferredInsertionColor = null)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        if (selection is null) throw new ArgumentNullException(nameof(selection));
+        if (string.IsNullOrWhiteSpace(bookmarkName))
+            throw new ArgumentException(
+                "Equation reference bookmark is required.",
+                nameof(bookmarkName));
+        if (document.ReadOnly)
+            throw new UnauthorizedAccessException(
+                "当前 Word 文档为只读状态。");
+
+        Bookmarks? bookmarks = null;
+        Range? sourceFormattingRange = null;
+        Range? insertion = null;
+        Field? refField = null;
+        Range? refCode = null;
+        Range? refResult = null;
+        Range? selectionRange = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            if (!bookmarks.Exists(bookmarkName))
+                throw new InvalidDataException(
+                    $"公式引用目标书签“{bookmarkName}”已不存在。文档内容可能已发生变化。");
+
+            sourceFormattingRange =
+                selection.Range.Duplicate;
+            sourceFormattingRange.Collapse(
+                WdCollapseDirection.wdCollapseStart);
+            var formatting =
+                WordCharacterFormatting.Capture(
+                    sourceFormattingRange);
+            if (preferredInsertionColor.HasValue)
+            {
+                var requested =
+                    preferredInsertionColor.Value;
+                formatting.Color =
+                    requested == WdColor.wdColorAutomatic
+                    || (int)requested >= 0
+                        ? requested
+                        : WdColor.wdColorAutomatic;
+            }
+
+            if (!string.IsNullOrEmpty(prefix))
+                selection.TypeText(prefix);
+
+            insertion =
+                selection.Range.Duplicate;
+            insertion.Collapse(
+                WdCollapseDirection.wdCollapseStart);
+
+            // One native REF field is sufficient. The \h switch gives Word's own
+            // hyperlink/navigation behavior without the historical GOTOBUTTON
+            // wrapper or a nested field tree. Avoid Field.Update here: Fields.Add
+            // materializes the current REF result, while explicit Update can make
+            // desktop Word close the surrounding Custom UndoRecord.
+            refField = document.Fields.Add(
+                insertion,
+                WdFieldType.wdFieldRef,
+                bookmarkName + " \\h \\* CHARFORMAT",
+                false);
+            if (refField is null)
+                throw new InvalidDataException(
+                    "Word did not return the inserted REF field.");
+
+            refCode = refField.Code;
+            if (refField.Type != WdFieldType.wdFieldRef
+                || !TryReadVisualTeXNumberBookmark(
+                    refCode.Text,
+                    out var insertedBookmark)
+                || !string.Equals(
+                    insertedBookmark,
+                    bookmarkName,
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException(
+                    "Word created a REF field for a different equation target.");
+
+            refField.ShowCodes = false;
+            refResult = refField.Result;
+            NormalizeInternalStyle(
+                refResult);
+            formatting.Apply(
+                refResult);
+            if (!HasCurrentReferenceResult(
+                    document,
+                    bookmarkName,
+                    refResult))
+                throw new InvalidDataException(
+                    "Word did not materialize the current equation number in the new REF field.");
+
+            var after =
+                Math.Max(
+                    document.Content.Start,
+                    Math.Min(
+                        refResult.End + 1,
+                        Math.Max(
+                            document.Content.Start,
+                            document.Content.End - 1)));
+            selection.SetRange(
+                after,
+                after);
+            if (!string.IsNullOrEmpty(suffix))
+                selection.TypeText(suffix);
+
+            selectionRange =
+                selection.Range;
+            NormalizeInternalStyle(
+                selectionRange);
+            formatting.Apply(
+                selectionRange);
+        }
+        finally
+        {
+            Release(selectionRange);
+            Release(refResult);
+            Release(refCode);
+            Release(refField);
+            Release(insertion);
+            Release(sourceFormattingRange);
+            Release(bookmarks);
+        }
+    }
+
     internal static void InsertNavigableReference(
         Document document,
         Selection selection,
@@ -230,79 +506,6 @@ internal static class WordEquationReferenceFields
         }
     }
 
-    internal static int FreezeNavigableReferences(
-        Document document,
-        string targetBookmarkName)
-    {
-        if (document is null) throw new ArgumentNullException(nameof(document));
-        if (string.IsNullOrWhiteSpace(targetBookmarkName)) return 0;
-
-        Fields? outerFields = null;
-        var frozen = 0;
-        try
-        {
-            outerFields = document.Fields;
-            for (var outerIndex = outerFields.Count; outerIndex >= 1; outerIndex--)
-            {
-                Field? outerField = null;
-                Range? outerCode = null;
-                Fields? nestedFields = null;
-                Field? nestedField = null;
-                Range? nestedCode = null;
-                try
-                {
-                    outerField = outerFields[outerIndex];
-                    if (outerField.Type != WdFieldType.wdFieldGoToButton)
-                        continue;
-                    outerCode = outerField.Code;
-                    nestedFields = outerCode.Fields;
-                    var matches = false;
-                    for (var nestedIndex = 1; nestedIndex <= nestedFields.Count; nestedIndex++)
-                    {
-                        Release(nestedCode);
-                        nestedCode = null;
-                        Release(nestedField);
-                        nestedField = nestedFields[nestedIndex];
-                        if (nestedField.Type != WdFieldType.wdFieldRef)
-                            continue;
-                        nestedCode = nestedField.Code;
-                        if (!TryReadVisualTeXNumberBookmark(
-                                nestedCode.Text,
-                                out var bookmarkName)
-                            || !string.Equals(
-                                bookmarkName,
-                                targetBookmarkName,
-                                StringComparison.OrdinalIgnoreCase))
-                            continue;
-                        RefreshFieldPreservingFormatting(nestedField);
-                        matches = true;
-                        break;
-                    }
-                    if (!matches) continue;
-
-                    // The nested REF lives in GOTOBUTTON.Code, so document.Fields
-                    // never enumerates it as an ordinary top-level REF. Unlinking
-                    // only after the nested result is current lets Word replace the
-                    // complete navigable field tree with exactly the visible number.
-                    // This is the required semantic when the target equation itself
-                    // is restored to plain LaTeX and its bookmark is about to vanish.
-                    outerField.Unlink();
-                    frozen++;
-                }
-                finally
-                {
-                    Release(nestedCode);
-                    Release(nestedField);
-                    Release(nestedFields);
-                    Release(outerCode);
-                    Release(outerField);
-                }
-            }
-        }
-        finally { Release(outerFields); }
-        return frozen;
-    }
-
     internal static int UpdateNavigableReferences(
         Document document,
         ISet<string>? targetBookmarkNames = null)
@@ -319,6 +522,7 @@ internal static class WordEquationReferenceFields
             {
                 Field? outerField = null;
                 Range? outerCode = null;
+                Range? directResult = null;
                 Fields? nestedFields = null;
                 Field? nestedField = null;
                 Range? nestedCode = null;
@@ -326,6 +530,41 @@ internal static class WordEquationReferenceFields
                 try
                 {
                     outerField = outerFields[outerIndex];
+
+                    if (outerField.Type == WdFieldType.wdFieldRef)
+                    {
+                        outerCode = outerField.Code;
+                        if (!TryReadVisualTeXNumberBookmark(
+                                outerCode.Text,
+                                out var directBookmark)
+                            || (targetBookmarkNames is not null
+                                && !targetBookmarkNames.Contains(
+                                    directBookmark)))
+                            continue;
+
+                        directResult =
+                            outerField.Result;
+                        if (!HasCurrentReferenceResult(
+                                document,
+                                directBookmark,
+                                directResult))
+                        {
+                            var formatting =
+                                WordCharacterFormatting.Capture(
+                                    directResult);
+                            outerField.Update();
+                            Release(directResult);
+                            directResult =
+                                outerField.Result;
+                            NormalizeInternalStyle(
+                                directResult);
+                            formatting.Apply(
+                                directResult);
+                            updated++;
+                        }
+                        continue;
+                    }
+
                     if (outerField.Type != WdFieldType.wdFieldGoToButton)
                         continue;
 
@@ -426,6 +665,7 @@ internal static class WordEquationReferenceFields
                     Release(nestedCode);
                     Release(nestedField);
                     Release(nestedFields);
+                    Release(directResult);
                     Release(outerCode);
                     Release(outerField);
                 }
@@ -578,6 +818,410 @@ internal static class WordEquationReferenceFields
     private static bool IsGeneratedNumberReference(Document document, Field field, string name) =>
         name.StartsWith("VTEqNum_", StringComparison.OrdinalIgnoreCase)
         && WordEquationNumbering.IsGeneratedEquationNumberReference(document, field, name.Substring(8));
+
+    internal static string CreateNativeOmmlNumberReferenceBookmark(
+        Document document,
+        WordFormulaHostDescriptor host)
+    {
+        if (document is null)
+            throw new ArgumentNullException(nameof(document));
+        if (host is null
+            || host.Kind != WordFormulaHostKind.Omml)
+            throw new ArgumentException(
+                "A native Word reference bookmark requires one OMML host.",
+                nameof(host));
+
+        var numbering =
+            WordFormulaNumberingResolver.ResolveLocal(
+                document,
+                host);
+        if (!numbering.Numbered
+            || numbering.ContainerKind !=
+                WordFormulaNumberingContainerKind.CanonicalNativeOmml
+            || numbering.NumberRange is null)
+            throw new InvalidDataException(
+                "The converted OMML host has no canonical native equation-number range.");
+
+        Range? numberRange = null;
+        Bookmarks? bookmarks = null;
+        Bookmark? created = null;
+        Range? createdRange = null;
+        try
+        {
+            numberRange =
+                WordFormulaHostSemanticReader.CreateRange(
+                    document,
+                    numbering.NumberRange);
+            bookmarks = document.Bookmarks;
+
+            string? name = null;
+            for (var attempt = 0;
+                 attempt < 64;
+                 attempt++)
+            {
+                var bytes =
+                    Guid.NewGuid().ToByteArray();
+                var value =
+                    BitConverter.ToUInt32(
+                        bytes,
+                        0)
+                    % 1_000_000_000u;
+                var candidate =
+                    "_Ref"
+                    + value.ToString("D9");
+                if (bookmarks.Exists(candidate))
+                    continue;
+                name = candidate;
+                break;
+            }
+            if (name is null)
+                throw new InvalidOperationException(
+                    "VisualTeX could not allocate a unique native Word _Ref bookmark.");
+
+            // A referenced pure OMML equation may own Word's ordinary hidden
+            // _Ref bookmark, but never a VisualTeX FormulaId/private numbering
+            // bookmark. Bind only the exact native number result (STYLEREF+SEQ
+            // when applicable), so an existing number-only REF keeps displaying
+            // exactly the same label after conversion.
+            created =
+                bookmarks.Add(
+                    name,
+                    numberRange);
+            createdRange =
+                created.Range.Duplicate;
+            if (createdRange.StoryType !=
+                    numberRange.StoryType
+                || createdRange.Start !=
+                    numberRange.Start
+                || createdRange.End !=
+                    numberRange.End)
+                throw new InvalidDataException(
+                    "Word changed the native equation-number range while creating its _Ref target.");
+
+            return name;
+        }
+        finally
+        {
+            Release(createdRange);
+            Release(created);
+            Release(bookmarks);
+            Release(numberRange);
+        }
+    }
+
+    internal static int MigrateReferenceTargets(
+        Document document,
+        IReadOnlyDictionary<string, string> replacements,
+        IReadOnlyDictionary<string, int> expectedReferenceCounts)
+    {
+        if (document is null)
+            throw new ArgumentNullException(nameof(document));
+        if (replacements is null)
+            throw new ArgumentNullException(nameof(replacements));
+        if (expectedReferenceCounts is null)
+            throw new ArgumentNullException(nameof(expectedReferenceCounts));
+        if (replacements.Count == 0)
+            return 0;
+
+        var migrated =
+            replacements.Keys.ToDictionary(
+                name => name,
+                _ => 0,
+                StringComparer.OrdinalIgnoreCase);
+        var total = 0;
+
+        // First repair legacy navigable references. Their outer GOTOBUTTON target
+        // and nested REF must move together to the same native _Ref bookmark.
+        Fields? outerFields = null;
+        try
+        {
+            outerFields = document.Fields;
+            for (var index = 1;
+                 index <= outerFields.Count;
+                 index++)
+            {
+                Field? outer = null;
+                Range? outerCode = null;
+                Fields? nestedFields = null;
+                Field? nested = null;
+                Range? nestedCode = null;
+                try
+                {
+                    outer = outerFields[index];
+                    if (outer.Type !=
+                        WdFieldType.wdFieldGoToButton)
+                        continue;
+                    outerCode = outer.Code;
+                    nestedFields = outerCode.Fields;
+                    for (var child = 1;
+                         child <= nestedFields.Count;
+                         child++)
+                    {
+                        Release(nestedCode);
+                        nestedCode = null;
+                        Release(nested);
+                        nested = nestedFields[child];
+                        if (nested.Type !=
+                            WdFieldType.wdFieldRef)
+                            continue;
+                        nestedCode =
+                            nested.Code.Duplicate;
+                        if (!TryReadReferenceBookmark(
+                                nestedCode.Text,
+                                out var oldName)
+                            || !replacements.TryGetValue(
+                                oldName,
+                                out var newName))
+                            continue;
+
+                        _ = UpdateNavigationTarget(
+                            document,
+                            outer,
+                            newName);
+                        ReplaceReferenceTargetToken(
+                            nestedCode,
+                            oldName,
+                            newName);
+                        RefreshMigratedReference(
+                            document,
+                            nested,
+                            newName);
+                        outer.ShowCodes = false;
+                        migrated[oldName]++;
+                        total++;
+                        break;
+                    }
+                }
+                finally
+                {
+                    Release(nestedCode);
+                    Release(nested);
+                    Release(nestedFields);
+                    Release(outerCode);
+                    Release(outer);
+                }
+            }
+        }
+        finally { Release(outerFields); }
+
+        // Reacquire the document field inventory because updating a nested REF can
+        // rematerialize its outer field tree. Direct REF fields are then migrated
+        // in-place by replacing only their target token; switches, parentheses,
+        // surrounding prose and character formatting remain user-owned.
+        Fields? fields = null;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
+            {
+                Field? field = null;
+                Range? code = null;
+                try
+                {
+                    field = fields[index];
+                    if (field.Type !=
+                        WdFieldType.wdFieldRef)
+                        continue;
+                    code = field.Code.Duplicate;
+                    if (!TryReadReferenceBookmark(
+                            code.Text,
+                            out var oldName)
+                        || !replacements.TryGetValue(
+                            oldName,
+                            out var newName))
+                        continue;
+
+                    ReplaceReferenceTargetToken(
+                        code,
+                        oldName,
+                        newName);
+                    RefreshMigratedReference(
+                        document,
+                        field,
+                        newName);
+                    field.ShowCodes = false;
+                    migrated[oldName]++;
+                    total++;
+                }
+                finally
+                {
+                    Release(code);
+                    Release(field);
+                }
+            }
+        }
+        finally { Release(fields); }
+
+        foreach (var replacement in
+                 replacements)
+        {
+            expectedReferenceCounts.TryGetValue(
+                replacement.Key,
+                out var expected);
+            if (migrated[replacement.Key] !=
+                expected)
+                throw new InvalidDataException(
+                    $"Equation reference migration retained {migrated[replacement.Key]}/{expected} references for '{replacement.Key}'.");
+
+            if (CountReferencesToBookmark(
+                    document,
+                    replacement.Key)
+                != 0)
+                throw new InvalidDataException(
+                    $"Equation reference migration left a stale REF target '{replacement.Key}' in the document.");
+        }
+
+        return total;
+    }
+
+    private static void RefreshMigratedReference(
+        Document document,
+        Field field,
+        string bookmarkName)
+    {
+        Range? result = null;
+        OMaths? maths = null;
+        try
+        {
+            result = field.Result.Duplicate;
+            var formatting =
+                WordCharacterFormatting.Capture(
+                    result);
+            field.Update();
+
+            Release(result);
+            result = field.Result.Duplicate;
+            maths = result.OMaths;
+            if (maths.Count == 0)
+            {
+                NormalizeInternalStyle(
+                    result);
+                formatting.Apply(
+                    result);
+            }
+
+            if (!HasCurrentReferenceResult(
+                    document,
+                    bookmarkName,
+                    result))
+                throw new InvalidDataException(
+                    $"Migrated equation REF '{bookmarkName}' does not display its current native number.");
+        }
+        finally
+        {
+            Release(maths);
+            Release(result);
+        }
+    }
+
+    private static int CountReferencesToBookmark(
+        Document document,
+        string bookmarkName)
+    {
+        Fields? fields = null;
+        var count = 0;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
+            {
+                Field? field = null;
+                Range? code = null;
+                try
+                {
+                    field = fields[index];
+                    if (field.Type !=
+                        WdFieldType.wdFieldRef)
+                        continue;
+                    code = field.Code;
+                    if (TryReadReferenceBookmark(
+                            code.Text,
+                            out var current)
+                        && string.Equals(
+                            current,
+                            bookmarkName,
+                            StringComparison.OrdinalIgnoreCase))
+                        count++;
+                }
+                finally
+                {
+                    Release(code);
+                    Release(field);
+                }
+            }
+            return count;
+        }
+        finally { Release(fields); }
+    }
+
+    private static void ReplaceReferenceTargetToken(
+        Range code,
+        string expectedBookmark,
+        string replacementBookmark)
+    {
+        var text =
+            code.Text
+            ?? string.Empty;
+        var match =
+            Regex.Match(
+                text,
+                @"^\s*REF\s+(?:""(?<quoted>[^""]+)""|(?<plain>[^\s\\]+))",
+                RegexOptions.IgnoreCase
+                | RegexOptions.CultureInvariant);
+        if (!match.Success)
+            throw new InvalidDataException(
+                "The equation reference lost its REF target token.");
+
+        var group =
+            match.Groups["quoted"].Success
+                ? match.Groups["quoted"]
+                : match.Groups["plain"];
+        if (!string.Equals(
+                group.Value,
+                expectedBookmark,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException(
+                $"The equation REF changed from '{expectedBookmark}' before migration.");
+
+        Range? token = null;
+        try
+        {
+            token = code.Duplicate;
+            token.SetRange(
+                code.Start + group.Index,
+                code.Start + group.Index + group.Length);
+            token.Text =
+                replacementBookmark;
+        }
+        finally { Release(token); }
+    }
+
+    private static bool TryReadReferenceBookmark(
+        string? code,
+        out string bookmarkName)
+    {
+        bookmarkName = string.Empty;
+        if (string.IsNullOrWhiteSpace(code))
+            return false;
+        var match =
+            Regex.Match(
+                code!,
+                @"^\s*REF\s+(?:""(?<quoted>[^""]+)""|(?<plain>[^\s\\]+))",
+                RegexOptions.IgnoreCase
+                | RegexOptions.CultureInvariant);
+        if (!match.Success)
+            return false;
+        bookmarkName =
+            match.Groups["quoted"].Success
+                ? match.Groups["quoted"].Value
+                : match.Groups["plain"].Value;
+        return !string.IsNullOrWhiteSpace(
+            bookmarkName);
+    }
 
     internal static IReadOnlyDictionary<string, int> CaptureReferenceCounts(Document document)
     {
@@ -735,6 +1379,14 @@ internal static class WordEquationReferenceFields
                     code = field.Code;
                     if (nestedStarts.Contains(code.Start)
                         || !TryReadVisualTeXNumberBookmark(code.Text, out var name)
+                        // VTEq_*'s own visible-number REF is an internal numbering
+                        // artifact, not a user equation reference. Numbering has
+                        // already finalized and verified this field before the
+                        // document-wide reference pass. Updating it again can make
+                        // Word 2021 absorb the adjacent ')' into Field.Result.
+                        // CaptureReferenceCounts/ValidateReferences already exclude
+                        // the same generated field; refresh must use that contract.
+                        || IsGeneratedNumberReference(document, field, name)
                         || (targetBookmarkNames is not null && !targetBookmarkNames.Contains(name))) continue;
                     result = field.Result;
                     if (HasCurrentReferenceResult(document, name, result)) continue;

@@ -76,6 +76,18 @@ internal static partial class Program
             AssertTrue(
                 !document.Bookmarks.Exists(WordEquationNumbering.EquationBookmarkName(formulaId)),
                 "The unnumbered VisualTeX source unexpectedly owns a visible equation number.");
+            AssertVisualTeXUnnumberedDisplayBaseline(
+                document,
+                shape,
+                originalMetadata,
+                "fresh unnumbered VisualTeX display");
+            document.Save();
+            File.Copy(
+                documentPath,
+                Path.Combine(
+                    artifactRoot,
+                    "visualtex-unnumbered-display-before-toggle.docx"),
+                overwrite: true);
 
             shapeRange = shape.Range;
             var editSession = CreateNumberedPerformanceSession(
@@ -123,9 +135,107 @@ internal static partial class Program
                 formulaId,
                 updateReference: true,
                 context: "saved/reopened unnumbered-to-numbered edit");
+            document.Activate();
+
+            Release(shapeRange);
+            shapeRange = null;
+            Release(shape);
+            shape = FindVisualTeXOleByFormulaIdForNumberToggle(
+                document,
+                formulaId);
+            updatedMetadata =
+                WordFormulaMetadataReader.TryRead(
+                    shape)
+                ?? throw new InvalidDataException(
+                    "Numbered-to-unnumbered source lost metadata.");
+            shapeRange =
+                shape.Range.Duplicate;
+            var disableSession =
+                CreateNumberedPerformanceSession(
+                    "edit",
+                    formulaId,
+                    document.FullName,
+                    WordRangeReference(
+                        shapeRange.Start,
+                        shapeRange.End),
+                    updatedMetadata,
+                    latex: @"x=3");
+            disableSession.Numbered = false;
+            disableSession.ExportResult =
+                new OfficeExportDocument
+                {
+                    Width = 180,
+                    Height = 60,
+                    Baseline = 45,
+                };
+
+            service.ReplaceOle(
+                disableSession,
+                pngPath,
+                emfPath);
+            Release(shapeRange);
+            shapeRange = null;
+            Release(shape);
+            shape = null;
+
+            shape =
+                FindVisualTeXOleByFormulaIdForNumberToggle(
+                    document,
+                    formulaId);
+            var disabledMetadata =
+                WordFormulaMetadataReader.TryRead(
+                    shape)
+                ?? throw new InvalidDataException(
+                    "Numbered-to-unnumbered result lost metadata.");
+            AssertTrue(
+                !disabledMetadata.Numbered,
+                "Numbered-to-unnumbered edit did not persist Numbered=false.");
+            AssertVisualTeXUnnumberedDisplayBaseline(
+                document,
+                shape,
+                disabledMetadata,
+                "numbered-to-unnumbered self-contained detach");
+            AssertNoSelfContainedVisualTeXNumberingArtifacts(
+                document,
+                formulaId,
+                "numbered-to-unnumbered self-contained detach");
+
+            document.Save();
+            document.Close(
+                Word.WdSaveOptions.wdSaveChanges);
+            Release(document);
+            document = null;
+            document =
+                application.Documents.Open(
+                    documentPath,
+                    ReadOnly: false,
+                    Visible: false);
+            Release(shape);
+            shape = null;
+            shape =
+                FindVisualTeXOleByFormulaIdForNumberToggle(
+                    document,
+                    formulaId);
+            disabledMetadata =
+                WordFormulaMetadataReader.TryRead(
+                    shape)
+                ?? throw new InvalidDataException(
+                    "Saved/reopened unnumbered result lost metadata.");
+            AssertTrue(
+                !disabledMetadata.Numbered,
+                "Saved/reopened result restored Numbered=true after detach.");
+            AssertVisualTeXUnnumberedDisplayBaseline(
+                document,
+                shape,
+                disabledMetadata,
+                "saved/reopened numbered-to-unnumbered self-contained detach");
+            AssertNoSelfContainedVisualTeXNumberingArtifacts(
+                document,
+                formulaId,
+                "saved/reopened numbered-to-unnumbered self-contained detach");
 
             Console.WriteLine(
-                "VisualTeX unnumbered->numbered edit acceptance passed: ReplaceOle completed without stale COM access, the host uses MathType-style center/right tabs, and save/reopen retained Numbered=true.");
+                "VisualTeX number-toggle acceptance passed: unnumbered→self-contained VisualTeXPlaceRef→unnumbered completed through ReplaceOle, removed the number field/TAB cleanly, and both states survived save/reopen.");
         }
         finally
         {
@@ -348,6 +458,113 @@ internal static partial class Program
         }
     }
 
+    private static void AssertNoSelfContainedVisualTeXNumberingArtifacts(
+        Word.Document document,
+        string formulaId,
+        string context)
+    {
+        Word.Bookmarks? bookmarks = null;
+        Word.InlineShape? shape = null;
+        Word.Range? shapeRange = null;
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? paragraphRange = null;
+        Word.Fields? fields = null;
+        Word.Field? field = null;
+        Word.Range? code = null;
+        try
+        {
+            bookmarks =
+                document.Bookmarks;
+            var guid =
+                Guid.Parse(
+                    formulaId)
+                    .ToString("N");
+            AssertTrue(
+                !bookmarks.Exists(
+                    "VTEqCap_" + guid),
+                context
+                + ": detached self-contained VisualTeX host has a VTEqCap bookmark.");
+            AssertTrue(
+                !bookmarks.Exists(
+                    "VTEqNum_" + guid),
+                context
+                + ": detached self-contained VisualTeX host has a VTEqNum bookmark without a live number.");
+
+            shape =
+                FindVisualTeXOleByFormulaIdForNumberToggle(
+                    document,
+                    formulaId);
+            shapeRange =
+                shape.Range.Duplicate;
+            paragraphs =
+                shapeRange.Paragraphs;
+            AssertEqual(
+                1,
+                paragraphs.Count,
+                context
+                + ": detached VisualTeX OLE spans more than one paragraph.");
+            paragraph =
+                paragraphs[1];
+            paragraphRange =
+                paragraph.Range.Duplicate;
+            fields =
+                paragraphRange.Fields;
+            for (var index = 1;
+                 index <= fields.Count;
+                 index++)
+            {
+                Release(code);
+                code = null;
+                Release(field);
+                field =
+                    fields[index];
+                if (field.Type !=
+                    Word.WdFieldType.wdFieldMacroButton)
+                    continue;
+                code =
+                    field.Code.Duplicate;
+                AssertTrue(
+                    !WordVisualTeXParagraphNumbering
+                        .IsPlaceRefCode(
+                            code.Text),
+                    context
+                    + ": VisualTeXPlaceRef survived numbered detach.");
+            }
+
+            var owner =
+                WordFormulaHostResolver.ResolveLocal(
+                    document,
+                    shapeRange,
+                    WordFormulaHostKind.VisualTeX)
+                ?? throw new InvalidDataException(
+                    context
+                    + ": detached VisualTeX OLE is no longer resolvable.");
+            var numbering =
+                WordFormulaNumberingResolver.ResolveLocal(
+                    document,
+                    owner);
+            AssertTrue(
+                !numbering.Numbered
+                && numbering.ContainerKind ==
+                    WordFormulaNumberingContainerKind.None,
+                context
+                + ": numbering resolver still reports a container after detach.");
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
+            Release(shape);
+            Release(bookmarks);
+        }
+    }
+
     private static void ToggleOfficeEditorNumberCheckbox(
         IntPtr editorWindow,
         TimeSpan timeout)
@@ -452,6 +669,116 @@ internal static partial class Program
         {
             Release(shape);
             Release(shapes);
+        }
+    }
+
+    private static void AssertVisualTeXUnnumberedDisplayBaseline(
+        Word.Document document,
+        Word.InlineShape shape,
+        FormulaMetadata metadata,
+        string context)
+    {
+        Word.Range? shapeRange = null;
+        Word.Paragraphs? paragraphs = null;
+        Word.Paragraph? paragraph = null;
+        Word.Range? ownerRange = null;
+        Word.Range? objectResultRange = null;
+        Word.Font? objectResultFont = null;
+        Word.Range? paragraphMark = null;
+        Word.Font? paragraphMarkFont = null;
+        Word.ParagraphFormat? paragraphFormat = null;
+        Word.TabStops? tabStops = null;
+        Word.TabStop? tabStop = null;
+        Word.Range? prefix = null;
+        try
+        {
+            AssertTrue(!metadata.Numbered, context + ": fixture is unexpectedly numbered.");
+            AssertEqual("block", metadata.DisplayMode, context + ": fixture is not display math.");
+
+            shapeRange = shape.Range;
+            paragraphs = shapeRange.Paragraphs;
+            AssertEqual(1, paragraphs.Count, context + ": formula does not own one paragraph.");
+            paragraph = paragraphs[1];
+            ownerRange = paragraph.Range;
+            paragraphFormat = paragraph.Format;
+            AssertEqual(
+                Word.WdParagraphAlignment.wdAlignParagraphJustify,
+                paragraphFormat.Alignment,
+                context + ": unnumbered display paragraph is not using the shared tab-driven display layout.");
+            tabStops = paragraphFormat.TabStops;
+            var hasCenterTab = false;
+            var hasRightTab = false;
+            for (var index = 1; index <= tabStops.Count; index++)
+            {
+                Release(tabStop); tabStop = null;
+                tabStop = tabStops[index];
+                hasCenterTab |=
+                    tabStop.Alignment == Word.WdTabAlignment.wdAlignTabCenter;
+                hasRightTab |=
+                    tabStop.Alignment == Word.WdTabAlignment.wdAlignTabRight;
+            }
+            AssertTrue(
+                hasCenterTab && hasRightTab,
+                context + ": unnumbered display paragraph lost the shared center/right tab stops.");
+            prefix = document.Range(ownerRange.Start, shapeRange.Start);
+            AssertEqual(
+                "\t",
+                prefix.Text,
+                context + ": unnumbered display OLE is not anchored by one leading center tab.");
+
+            for (var position = shapeRange.Start; position < shapeRange.End; position++)
+            {
+                Release(objectResultFont); objectResultFont = null;
+                Release(objectResultRange); objectResultRange = null;
+                objectResultRange = document.Range(position, position + 1);
+                if (!string.Equals(objectResultRange.Text, "\u0001", StringComparison.Ordinal))
+                    continue;
+                objectResultFont = objectResultRange.Font;
+                break;
+            }
+            if (objectResultFont is null)
+                throw new InvalidDataException(context + ": VisualTeX OLE has no U+0001 object-result character.");
+
+            AssertTrue(
+                metadata.WordDisplayPreviewInkHeightRatio.HasValue
+                && metadata.WordDisplayPreviewBottomWhitespaceRatio.HasValue,
+                context + ": display preview ink metrics were not persisted.");
+            paragraphMark = document.Range(ownerRange.End - 1, ownerRange.End);
+            AssertEqual("\r", paragraphMark.Text, context + ": formula is not followed by one ordinary paragraph mark.");
+            paragraphMarkFont = paragraphMark.Font;
+            var expectedPosition = WordInlineAlignment.CalculateDisplayInkCenterPosition(
+                shape.Height,
+                (float)metadata.WordDisplayPreviewInkHeightRatio!.Value,
+                (float)metadata.WordDisplayPreviewBottomWhitespaceRatio!.Value,
+                paragraphMarkFont.Size);
+            AssertNear(
+                expectedPosition,
+                objectResultFont.Position,
+                0.1f,
+                context + ": OLE bottom remained on the paragraph baseline, leaving the paragraph mark at the lower-right corner.");
+            AssertTrue(
+                expectedPosition < 0,
+                context + ": fixture did not exercise a visible display-baseline displacement.");
+            AssertNear(
+                0f,
+                paragraphMarkFont.Position,
+                0.1f,
+                context + ": paragraph mark itself has a manual vertical offset.");
+        }
+        finally
+        {
+            Release(prefix);
+            Release(tabStop);
+            Release(tabStops);
+            Release(paragraphFormat);
+            Release(paragraphMarkFont);
+            Release(paragraphMark);
+            Release(objectResultFont);
+            Release(objectResultRange);
+            Release(ownerRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(shapeRange);
         }
     }
 }
