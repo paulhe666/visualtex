@@ -1906,6 +1906,7 @@ internal sealed partial class WordFormulaService
         Bookmark? createdObjectBookmark = null;
         Range? createdObjectBookmarkRange = null;
         UndoRecord? undoRecord = null;
+        WordParagraphFormatting? inlineParagraphFormatting = null;
         var sourceParagraphCount = -1;
         var paragraphCountBeforeDisplayPreparation = -1;
         var insertionStart = -1;
@@ -1952,6 +1953,28 @@ internal sealed partial class WordFormulaService
                     preserveCapturedInsertion);
             insertion.Collapse(WdCollapseDirection.wdCollapseEnd);
             var insertionPosition = insertion.Start;
+            if (inline)
+            {
+                // The imported Flat OPC paragraph is only a transport envelope;
+                // the existing Word paragraph owns its style, spacing and vertical
+                // alignment. InsertXML and paragraph merging can otherwise promote
+                // the empty envelope's defaults onto the surrounding prose.
+                inlineParagraphFormatting = WordParagraphFormatting.Capture(insertion);
+                ParagraphFormat? sourceParagraphFormat = null;
+                try
+                {
+                    sourceParagraphFormat = insertion.ParagraphFormat;
+                    // MathPage's negative descent is a baseline-coordinate offset.
+                    // Explicit top/center/Far-East alignment already places the
+                    // picture box; applying descent again moves it off that axis.
+                    if (sourceParagraphFormat.BaseLineAlignment is
+                        WdBaselineAlignment.wdBaselineAlignCenter
+                        or WdBaselineAlignment.wdBaselineAlignTop
+                        or WdBaselineAlignment.wdBaselineAlignFarEast50)
+                        wordPosition = 0;
+                }
+                finally { Release(sourceParagraphFormat); }
+            }
             // Capture before Flat OPC/style materialization: neither an OLE run
             // nor MTDisplayEquation's defaults are the surrounding body font.
             var bodyFormatting = inline || mathTypeNativeStylesPrepared
@@ -2452,6 +2475,17 @@ internal sealed partial class WordFormulaService
 
             if (inline)
             {
+                Range? paragraphOwner = null;
+                try
+                {
+                    paragraphOwner = batchHostRange is not null
+                        ? batchHostRange.Duplicate
+                        : shape!.Range;
+                    inlineParagraphFormatting!.Apply(paragraphOwner);
+                }
+                finally { Release(paragraphOwner); }
+                // This also restores the generated left fragment before a deferred
+                // merge. Both fragments then carry the same source paragraph format.
                 stage = "apply-native-baseline";
                 using (WordOperationMetrics.Measure(
                            "MathType.Insert.SetInlineBaseline"))
@@ -2705,6 +2739,7 @@ internal sealed partial class WordFormulaService
         }
         finally
         {
+            inlineParagraphFormatting?.Dispose();
             nativePreview?.Dispose();
             TraceInsertPerf("finally-preview");
             try

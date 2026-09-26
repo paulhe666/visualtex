@@ -1528,7 +1528,10 @@ public sealed class OfficeSessionDocument
         };
     }
 
-    private static string SanitizeFormulaBoundaryArtifacts(string? latex)
+    // Render input and persisted metadata must use the same source. Expose the
+    // established Office-boundary cleanup so converter sessions cannot render
+    // stale zero-width Word anchors that ToMetadata would later remove.
+    public static string SanitizeFormulaBoundaryArtifacts(string? latex)
     {
         if (string.IsNullOrEmpty(latex)) return string.Empty;
         static bool IsBoundaryArtifact(char character) =>

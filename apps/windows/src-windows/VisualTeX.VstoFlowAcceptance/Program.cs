@@ -1110,6 +1110,14 @@ internal static partial class Program
             {
                 RunWordLatexRedrawOmmlTableAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-inline-paragraph-ownership", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeInlineParagraphOwnershipAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-latex-redraw-partial-failure", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordLatexRedrawPartialFailureAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "mathtype-window-inventory", StringComparison.OrdinalIgnoreCase))
             {
                 RunMathTypeWindowInventory();

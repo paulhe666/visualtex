@@ -17,30 +17,48 @@ public sealed partial class ThisAddIn
           <button id="VisualTeX.WordVsto.DisplayOmml" label="Display OMML" size="large" screentip="Insert a native Word equation" supertip="Insert a display OMML equation that remains editable with Word equation tools while retaining VisualTeX LaTeX metadata." tag="ommlDisplay" getImage="GetRibbonImage" onAction="OnInsertDisplayOmml" />
           <button id="VisualTeX.WordVsto.Edit" label="Edit Selected Formula" size="large" tag="editSelected" getImage="GetRibbonImage" onAction="OnEditSelected" />
           <box id="VisualTeX.WordVsto.FormatConversionBox" boxStyle="vertical">
-            <menu id="VisualTeX.WordVsto.VisualTeXToMathType" label="VisualTeX → MathType" screentip="Redraw as MathType OLE" supertip="Remove the original VisualTeX host and numbering, then redraw through the standard MathType insertion path.">
-              <button id="VisualTeX.WordVsto.VisualTeXToMathTypeSelection" label="Convert Selection" onAction="OnConvertVisualTeXToMathTypeSelection" />
-              <button id="VisualTeX.WordVsto.VisualTeXToMathTypeDocument" label="Convert Entire Document" onAction="OnConvertVisualTeXToMathTypeDocument" />
-            </menu>
-            <menu id="VisualTeX.WordVsto.MathTypeToVisualTeX" label="MathType → VisualTeX" screentip="Redraw as VisualTeX OLE" supertip="Remove the original MathType host and numbering, then redraw through the standard VisualTeX OLE insertion path.">
-              <button id="VisualTeX.WordVsto.MathTypeToVisualTeXSelection" label="Convert Selection" onAction="OnConvertMathTypeToVisualTeXSelection" />
-              <button id="VisualTeX.WordVsto.MathTypeToVisualTeXDocument" label="Convert Entire Document" onAction="OnConvertMathTypeToVisualTeXDocument" />
-            </menu>
-            <menu id="VisualTeX.WordVsto.OmmlToMathType" label="OMML → MathType" screentip="Convert native Word equations to MathType OLE" supertip="Read the real MathML from Word OMath/OMathPara, remove the original OMML host and numbering, then redraw as a self-contained MathType Equation.DSMT4 object.">
-              <button id="VisualTeX.WordVsto.OmmlToMathTypeSelection" label="Convert Selection" onAction="OnConvertOmmlToMathTypeSelection" />
-              <button id="VisualTeX.WordVsto.OmmlToMathTypeDocument" label="Convert Entire Document" onAction="OnConvertOmmlToMathTypeDocument" />
-            </menu>
-            <menu id="VisualTeX.WordVsto.MathTypeToOmml" label="MathType → OMML" screentip="Convert MathType OLE to native Word equations" supertip="Read MathML directly from Equation Native without launching MathType, then redraw in place through VisualTeX's Word OMML insertion and numbering path.">
-              <button id="VisualTeX.WordVsto.MathTypeToOmmlSelection" label="Convert Selection" onAction="OnConvertMathTypeToOmmlSelection" />
-              <button id="VisualTeX.WordVsto.MathTypeToOmmlDocument" label="Convert Entire Document" onAction="OnConvertMathTypeToOmmlDocument" />
-            </menu>
-            <menu id="VisualTeX.WordVsto.VisualTeXToOmml" label="VisualTeX → OMML" screentip="Convert VisualTeX OLE to Word OMML" supertip="Convert VisualTeX OLE equations in the selection or entire document to native Word OMML while preserving numbering and equation references.">
-              <button id="VisualTeX.WordVsto.VisualTeXToOmmlSelection" label="Convert Selection" onAction="OnConvertVisualTeXToOmmlSelection" />
-              <button id="VisualTeX.WordVsto.VisualTeXToOmmlDocument" label="Convert Entire Document" onAction="OnConvertVisualTeXToOmmlDocument" />
-            </menu>
-            <menu id="VisualTeX.WordVsto.OmmlToVisualTeX" label="OMML → VisualTeX" screentip="Convert Word OMML to VisualTeX OLE" supertip="Convert native Word OMML equations in the selection or entire document to VisualTeX OLE while preserving numbering and equation references.">
-              <button id="VisualTeX.WordVsto.OmmlToVisualTeXSelection" label="Convert Selection" onAction="OnConvertOmmlToVisualTeXSelection" />
-              <button id="VisualTeX.WordVsto.OmmlToVisualTeXDocument" label="Convert Entire Document" onAction="OnConvertOmmlToVisualTeXDocument" />
-            </menu>
+            <splitButton id="VisualTeX.WordVsto.VisualTeXToMathType" size="normal">
+              <button id="VisualTeX.WordVsto.VisualTeXToMathTypeDefault" label="VisualTeX → MathType" screentip="Redraw as MathType OLE" supertip="Convert using the current default scope. Use the arrow to switch the default between selection and entire document." tag="nativeOle|mathTypeOle" onAction="OnConvertFormulaFormatDefault" />
+              <menu id="VisualTeX.WordVsto.VisualTeXToMathTypeScopeMenu">
+                <toggleButton id="VisualTeX.WordVsto.VisualTeXToMathTypeScopeSelection" label="Default: Selection" tag="nativeOle|mathTypeOle|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+                <toggleButton id="VisualTeX.WordVsto.VisualTeXToMathTypeScopeDocument" label="Default: Entire Document" tag="nativeOle|mathTypeOle|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+              </menu>
+            </splitButton>
+            <splitButton id="VisualTeX.WordVsto.MathTypeToVisualTeX" size="normal">
+              <button id="VisualTeX.WordVsto.MathTypeToVisualTeXDefault" label="MathType → VisualTeX" screentip="Redraw as VisualTeX OLE" supertip="Convert using the current default scope. Use the arrow to switch the default between selection and entire document." tag="mathTypeOle|nativeOle" onAction="OnConvertFormulaFormatDefault" />
+              <menu id="VisualTeX.WordVsto.MathTypeToVisualTeXScopeMenu">
+                <toggleButton id="VisualTeX.WordVsto.MathTypeToVisualTeXScopeSelection" label="Default: Selection" tag="mathTypeOle|nativeOle|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+                <toggleButton id="VisualTeX.WordVsto.MathTypeToVisualTeXScopeDocument" label="Default: Entire Document" tag="mathTypeOle|nativeOle|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+              </menu>
+            </splitButton>
+            <splitButton id="VisualTeX.WordVsto.OmmlToMathType" size="normal">
+              <button id="VisualTeX.WordVsto.OmmlToMathTypeDefault" label="OMML → MathType" screentip="Convert native Word equations to MathType OLE" supertip="Convert using the current default scope. Use the arrow to switch the default between selection and entire document." tag="wordOmml|mathTypeOle" onAction="OnConvertFormulaFormatDefault" />
+              <menu id="VisualTeX.WordVsto.OmmlToMathTypeScopeMenu">
+                <toggleButton id="VisualTeX.WordVsto.OmmlToMathTypeScopeSelection" label="Default: Selection" tag="wordOmml|mathTypeOle|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+                <toggleButton id="VisualTeX.WordVsto.OmmlToMathTypeScopeDocument" label="Default: Entire Document" tag="wordOmml|mathTypeOle|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+              </menu>
+            </splitButton>
+            <splitButton id="VisualTeX.WordVsto.MathTypeToOmml" size="normal">
+              <button id="VisualTeX.WordVsto.MathTypeToOmmlDefault" label="MathType → OMML" screentip="Convert MathType OLE to native Word equations" supertip="Convert using the current default scope. Use the arrow to switch the default between selection and entire document." tag="mathTypeOle|wordOmml" onAction="OnConvertFormulaFormatDefault" />
+              <menu id="VisualTeX.WordVsto.MathTypeToOmmlScopeMenu">
+                <toggleButton id="VisualTeX.WordVsto.MathTypeToOmmlScopeSelection" label="Default: Selection" tag="mathTypeOle|wordOmml|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+                <toggleButton id="VisualTeX.WordVsto.MathTypeToOmmlScopeDocument" label="Default: Entire Document" tag="mathTypeOle|wordOmml|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+              </menu>
+            </splitButton>
+            <splitButton id="VisualTeX.WordVsto.VisualTeXToOmml" size="normal">
+              <button id="VisualTeX.WordVsto.VisualTeXToOmmlDefault" label="VisualTeX → OMML" screentip="Convert VisualTeX OLE to Word OMML" supertip="Convert using the current default scope. Use the arrow to switch the default between selection and entire document." tag="nativeOle|wordOmml" onAction="OnConvertFormulaFormatDefault" />
+              <menu id="VisualTeX.WordVsto.VisualTeXToOmmlScopeMenu">
+                <toggleButton id="VisualTeX.WordVsto.VisualTeXToOmmlScopeSelection" label="Default: Selection" tag="nativeOle|wordOmml|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+                <toggleButton id="VisualTeX.WordVsto.VisualTeXToOmmlScopeDocument" label="Default: Entire Document" tag="nativeOle|wordOmml|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+              </menu>
+            </splitButton>
+            <splitButton id="VisualTeX.WordVsto.OmmlToVisualTeX" size="normal">
+              <button id="VisualTeX.WordVsto.OmmlToVisualTeXDefault" label="OMML → VisualTeX" screentip="Convert Word OMML to VisualTeX OLE" supertip="Convert using the current default scope. Use the arrow to switch the default between selection and entire document." tag="wordOmml|nativeOle" onAction="OnConvertFormulaFormatDefault" />
+              <menu id="VisualTeX.WordVsto.OmmlToVisualTeXScopeMenu">
+                <toggleButton id="VisualTeX.WordVsto.OmmlToVisualTeXScopeSelection" label="Default: Selection" tag="wordOmml|nativeOle|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+                <toggleButton id="VisualTeX.WordVsto.OmmlToVisualTeXScopeDocument" label="Default: Entire Document" tag="wordOmml|nativeOle|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
+              </menu>
+            </splitButton>
           </box>
           <box id="VisualTeX.WordVsto.NumberingBox" boxStyle="vertical">
             <button id="VisualTeX.WordVsto.UpdateNumbers" label="Update Equation Numbers" screentip="Update VisualTeX and MathType equation numbers" supertip="Refresh VisualTeX numbering and native MathType MTChap/MTSec/MTEqn numbering and equation references in the current document." tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationNumbers" />

@@ -1162,6 +1162,14 @@ internal static partial class MathTypeMtefCodec
             && token.Length == 1
             && IsUpperGreek(token[0]))
             variant = "normal";
+        // Upright ordinary literals (punctuation, digits, mixed text) use MTEF's
+        // native Text face and read back as mtext. Preserve their exact text, not
+        // the exporter-specific mi tag. Actual mathematical symbols and styled
+        // identifiers remain distinct, so this cannot conceal symbol/style loss.
+        if (kind == "mi" && variant == "normal"
+            && token.Any(character => !char.IsLetter(character))
+            && token.All(character => !IsMathematicalSymbolScalar(character)))
+            return "text(" + token + ")";
         var explicitlyItalic = string.Equals(mathVariant?.Trim(), "italic", StringComparison.OrdinalIgnoreCase);
         if (kind == "mi" && variant.Length == 0 && !explicitlyItalic
             && token.Length > 1 && token.All(char.IsLetter))
@@ -2910,6 +2918,21 @@ internal static partial class MathTypeMtefCodec
             node is XElement
             || node is XText text && !string.IsNullOrWhiteSpace(text.Value));
 
+    private static void EmitScriptBase(XElement element, List<byte> output)
+    {
+        // A postfix TMPL consumes exactly one previous object. An empty MathML
+        // base is still a structural slot, not an instruction to reuse the last
+        // sibling. Represent it by a native null LINE, never an invisible CHAR.
+        // Composite bases remain one LINE; ordinary atomic bases stay unchanged.
+        var start = output.Count;
+        if (RequiresGroupedScriptBase(element))
+            EmitLine(element, output);
+        else
+            EmitNode(element, output);
+        if (output.Count == start)
+            output.AddRange(new byte[] { RecordLine, LineNull });
+    }
+
     private static bool RequiresGroupedScriptBase(XElement element)
     {
         var local = element.Name.LocalName;
@@ -3187,16 +3210,7 @@ internal static partial class MathTypeMtefCodec
                 output);
             return;
         }
-        // MathType's postfix script template binds to exactly one preceding MTEF
-        // object. Flattening a multi-object MathML mrow here makes a script on
-        // `(1+1/n)` bind only to the final ')' when Equation Native is read back.
-        // Preserve the whole composite base as one nested LINE object before
-        // appending the script template. Atomic bases keep the old path so common
-        // x^2 / a_i equations remain byte- and layout-compatible.
-        if (RequiresGroupedScriptBase(children[0]))
-            EmitLine(children[0], output);
-        else
-            EmitNode(children[0], output);
+        EmitScriptBase(children[0], output);
         output.AddRange(new byte[] { RecordTemplate, 0, selector, 0, 0 });
         output.Add(RecordSub);
         if (selector == TemplateSub)
@@ -3296,7 +3310,7 @@ internal static partial class MathTypeMtefCodec
                     output);
                 return;
         }
-        EmitNode(children[0], output);
+        EmitScriptBase(children[0], output);
         EmitTrailingScript(children[1], isSubscript: false, output);
     }
 
@@ -3357,7 +3371,7 @@ internal static partial class MathTypeMtefCodec
                 output);
             return;
         }
-        EmitNode(children[0], output);
+        EmitScriptBase(children[0], output);
         EmitTrailingScript(children[1], isSubscript: true, output);
     }
 
@@ -3397,7 +3411,7 @@ internal static partial class MathTypeMtefCodec
             EmitLimitTemplate(children[0], children[1], children[2], output);
             return;
         }
-        EmitNode(children[0], output);
+        EmitScriptBase(children[0], output);
         output.AddRange(new byte[] { RecordTemplate, 0, TemplateSubSup, 0, 0, RecordSub });
         EmitLine(children[1], output);
         EmitLine(children[2], output);
@@ -4106,8 +4120,7 @@ internal static partial class MathTypeMtefCodec
     {
         var children = element.Elements().ToArray();
         if (children.Length == 0) return;
-        if (RequiresGroupedScriptBase(children[0])) EmitLine(children[0], output);
-        else EmitNode(children[0], output);
+        EmitScriptBase(children[0], output);
         var index = 1;
         while (index < children.Length
             && children[index].Name.LocalName != "mprescripts")
@@ -5008,8 +5021,8 @@ internal static partial class MathTypeMtefCodec
             case 0x2021: // \\ddagger: genuine MathType uses Function typeface.
                 EmitScalar(0x2021, TypefaceFunction, output, includeEncoded8: false);
                 return true;
-            case 0x2218: // \\circ: MathType uses the degree glyph in Symbol.
-                EmitScalar(0x00B0, TypefaceSymbol, output, includeEncoded8: true, encoded8Override: 0xB0);
+            case 0x2218: // Circle MTCode and the legacy Symbol glyph slot are distinct.
+                EmitScalar(0x2218, TypefaceSymbol, output, includeEncoded8: true, encoded8Override: 0xB0);
                 return true;
             case 0x2022: // \\bullet: genuine MathType uses Function, no encoded8.
                 EmitScalar(0x2022, TypefaceFunction, output, includeEncoded8: false);

@@ -3666,7 +3666,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     $"redraw-complete formulas=0 unique=0 skipped={skippedTargets.Count} "
                     + "renderAverageMs=0 renderMaxMs=0 insertTotalMs=0 insertMaxMs=0");
                 SetStatus(
-                    $"LaTeX 重绘未转换任何公式：{skippedTargets.Count} 个公式无法解析，均已保留原代码。");
+                    $"LaTeX 重绘未转换任何公式：{skippedTargets.Count} 个公式无法重绘，均已保留原代码。");
+                await ShowLatexRedrawFailuresAsync(
+                        dispatcher,
+                        skippedTargets)
+                    .ConfigureAwait(false);
+                _ = CleanupConverterSessionsBestEffortAsync(
+                    client,
+                    converterSessionIds.ToArray(),
+                    lifetime.Token);
                 return;
             }
 
@@ -3684,6 +3692,22 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     .ConfigureAwait(false);
             }
             finally { EndFormulaFormatMutation(); }
+            foreach (var failure in result.Failures)
+            {
+                var failedTarget = plan.Targets.FirstOrDefault(
+                    target => string.Equals(
+                        target.Id,
+                        failure.TargetId,
+                        StringComparison.Ordinal));
+                if (failedTarget is not null)
+                    skippedTargets.Add((failedTarget, failure.Error));
+                WriteRedrawAcceptanceLog(
+                    $"apply-skipped targetId={failure.TargetId} "
+                    + $"latex={failure.Latex} error={failure.Error}");
+            }
+            foreach (var warning in result.Warnings)
+                WriteRedrawAcceptanceLog($"apply-warning {warning}");
+
             WriteRedrawAcceptanceLog(
                 $"redraw-phase wordApplyMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
                 + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds} "
@@ -3737,9 +3761,17 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 : $"渲染最大 {maxRenderMilliseconds} ms/公式（本机超过 250 ms 目标）";
             var skippedSuffix = skippedTargets.Count == 0
                 ? string.Empty
-                : $"；{skippedTargets.Count} 个无法解析的公式已保留原 LaTeX";
+                : $"；{skippedTargets.Count} 个无法重绘的公式已保留原 LaTeX";
+            var warningSuffix = result.Warnings.Count == 0
+                ? string.Empty
+                : $"；另有 {result.Warnings.Count} 个收尾警告";
             SetStatus(
-                $"LaTeX 重绘完成：{result.FormulaCount} 个公式已转换为 {modeLabel}{skippedSuffix}；{performanceSuffix}。");
+                $"LaTeX 重绘完成：{result.FormulaCount} 个公式已转换为 {modeLabel}{skippedSuffix}{warningSuffix}；{performanceSuffix}。");
+            await ShowLatexRedrawFailuresAsync(
+                    dispatcher,
+                    skippedTargets,
+                    result.Warnings)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException error)
         {
@@ -3794,6 +3826,100 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 TryDeleteFile(template.PngPath);
             }
             _operationGate.Release();
+        }
+    }
+
+    private async Task ShowLatexRedrawFailuresAsync(
+        OfficeUiDispatcher dispatcher,
+        IReadOnlyList<(WordLatexRedrawTarget Target, string Error)> failures,
+        IReadOnlyList<string>? warnings = null)
+    {
+        warnings ??= Array.Empty<string>();
+        if ((failures.Count == 0 && warnings.Count == 0)
+            || string.Equals(
+                Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
+                "1",
+                StringComparison.Ordinal))
+            return;
+
+        static string Clip(string value, int maximum)
+        {
+            var normalized = (value ?? string.Empty)
+                .Replace("\r", " ")
+                .Replace("\n", " ")
+                .Trim();
+            return normalized.Length <= maximum
+                ? normalized
+                : normalized.Substring(0, maximum) + "…";
+        }
+
+        const int maximumFailures = 12;
+        const int maximumWarnings = 6;
+        var failureLines = failures
+            .Take(maximumFailures)
+            .Select((failure, index) =>
+                $"{index + 1}. {Clip(failure.Target.Latex, 160)}\r\n"
+                + $"   {Clip(failure.Error, 320)}")
+            .ToArray();
+        var warningLines = warnings
+            .Take(maximumWarnings)
+            .Select((warning, index) =>
+                $"{index + 1}. {Clip(warning, 320)}")
+            .ToArray();
+
+        var chineseParts = new List<string>();
+        var englishParts = new List<string>();
+        if (failureLines.Length > 0)
+        {
+            chineseParts.Add(
+                $"以下 {failures.Count} 个公式无法重绘，原 LaTeX 已保留；其余公式已继续处理：\r\n\r\n"
+                + string.Join("\r\n\r\n", failureLines)
+                + (failures.Count > maximumFailures
+                    ? $"\r\n\r\n……另有 {failures.Count - maximumFailures} 个失败公式未展开。"
+                    : string.Empty));
+            englishParts.Add(
+                $"{failures.Count} formula(s) could not be redrawn. Their original LaTeX was preserved and the remaining formulas continued:\r\n\r\n"
+                + string.Join("\r\n\r\n", failureLines)
+                + (failures.Count > maximumFailures
+                    ? $"\r\n\r\n…plus {failures.Count - maximumFailures} additional failed formula(s)."
+                    : string.Empty));
+        }
+
+        if (warningLines.Length > 0)
+        {
+            chineseParts.Add(
+                $"收尾警告：\r\n\r\n"
+                + string.Join("\r\n", warningLines)
+                + (warnings.Count > maximumWarnings
+                    ? $"\r\n……另有 {warnings.Count - maximumWarnings} 条警告未展开。"
+                    : string.Empty));
+            englishParts.Add(
+                $"Finalization warning(s):\r\n\r\n"
+                + string.Join("\r\n", warningLines)
+                + (warnings.Count > maximumWarnings
+                    ? $"\r\n…plus {warnings.Count - maximumWarnings} additional warning(s)."
+                    : string.Empty));
+        }
+
+        var message = T(
+            string.Join("\r\n\r\n", chineseParts),
+            string.Join("\r\n\r\n", englishParts));
+        try
+        {
+            await dispatcher.InvokeAsync(() =>
+            {
+                System.Windows.Forms.MessageBox.Show(
+                    message,
+                    T("VisualTeX LaTeX 重绘", "VisualTeX LaTeX Redraw"),
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Warning);
+                return true;
+            }).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Redraw has already finished. A transient UI notification failure
+            // must not turn successful document mutations into an operation error.
         }
     }
 
@@ -4440,7 +4566,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var line = new FormulaLine
         {
             Id = Guid.NewGuid().ToString("D"),
-            Latex = run.Latex,
+            Latex = OfficeSessionDocument.SanitizeFormulaBoundaryArtifacts(run.Latex),
         };
         var originalMetadata = CreateBulkFormulaMetadata(
             formulaId,
@@ -4614,7 +4740,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var line = new FormulaLine
         {
             Id = Guid.NewGuid().ToString("D"),
-            Latex = run.Latex,
+            Latex = OfficeSessionDocument.SanitizeFormulaBoundaryArtifacts(run.Latex),
         };
         return new OfficeSessionDocument
         {

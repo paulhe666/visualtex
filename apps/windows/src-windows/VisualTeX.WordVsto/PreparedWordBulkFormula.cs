@@ -88,15 +88,18 @@ internal sealed class WordLatexRedrawResult
     internal long TotalSourceMutationMilliseconds { get; set; }
     internal long TotalInsertMilliseconds { get; set; }
     internal long MaxInsertMilliseconds { get; set; }
-    // Timings are kept in actual mutation order (the redraw writer works from
-    // the end of the document toward the beginning). The acceptance logger uses
-    // them to detect index-dependent growth without adding file I/O to the hot path.
+    // Timings are kept in actual document-order mutation order. The acceptance
+    // logger uses them to detect index-dependent growth without adding file I/O
+    // to the hot path.
     internal List<long> SourceMutationMilliseconds { get; } = new();
     internal List<long> InsertMilliseconds { get; } = new();
     internal List<string> InsertMetricDetails { get; } = new();
     internal Dictionary<string, long> BatchTimings { get; } =
         new(StringComparer.Ordinal);
     internal List<string> FormulaIds { get; set; } = new();
+    internal List<(string TargetId, string Latex, string Error)> Failures { get; } =
+        new();
+    internal List<string> Warnings { get; } = new();
 }
 
 internal sealed class WordFormulaToLatexResult
