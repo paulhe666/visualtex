@@ -271,12 +271,13 @@ internal sealed class BulkImportDialog : Form
         {
             _parsed = null;
             _summary.Text = T("无法解析当前内容。", "Unable to parse the current content.");
-            _warnings.Text = error.Message;
+            var userMessage = OfficePluginLanguage.SafeErrorMessage(error.Message);
+            _warnings.Text = userMessage;
             if (showError)
             {
                 MessageBox.Show(
                     this,
-                    error.Message,
+                    userMessage,
                     T("VisualTeX 批量导入", "VisualTeX Bulk Import"),
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);

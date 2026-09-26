@@ -264,7 +264,15 @@ internal static partial class Program
             shape.Select(MsoTriState.msoTrue);
             var nativeSelection = service.ReadSelection();
             AssertEqual("wordOmml", nativeSelection.ObjectMode, "Native PowerPoint equation was not recognized as OMML mode.");
-            AssertEqual(formulaId, nativeSelection.FormulaId, "Picture -> OMML changed FormulaId.");
+            AssertTrue(!string.IsNullOrWhiteSpace(nativeSelection.FormulaId),
+                "Native PowerPoint OMML did not expose transient edit metadata.");
+            AssertTrue(!string.Equals(
+                    formulaId,
+                    nativeSelection.FormulaId,
+                    StringComparison.OrdinalIgnoreCase),
+                "Picture -> OMML persisted the original VisualTeX FormulaId.");
+            AssertPowerPointNativeOmmlHasNoVisualTeXIdentity(shape, formulaId);
+            var firstNativeTransientId = nativeSelection.FormulaId!;
             AssertContains(nativeSelection.Metadata?.Latex, @"\frac", "Native OMML did not round-trip the fraction back to LaTeX.");
             AssertContains(nativeSelection.Metadata?.Latex, @"\sqrt", "Native OMML did not round-trip the radical back to LaTeX.");
 
@@ -281,7 +289,12 @@ internal static partial class Program
             copiedShape.Select(MsoTriState.msoTrue);
             var copiedOmmlSelection = service.ReadSelection();
             AssertTrue(!string.IsNullOrWhiteSpace(copiedOmmlSelection.FormulaId), "Copied OMML was not readable by VisualTeX.");
-            AssertTrue(!string.Equals(formulaId, copiedOmmlSelection.FormulaId, StringComparison.OrdinalIgnoreCase), "Copied OMML reused the source FormulaId.");
+            AssertTrue(!string.Equals(
+                    firstNativeTransientId,
+                    copiedOmmlSelection.FormulaId,
+                    StringComparison.OrdinalIgnoreCase),
+                "Copied pure OMML reused the source transient edit identity.");
+            AssertPowerPointNativeOmmlHasNoVisualTeXIdentity(copiedShape, formulaId);
             AssertTrue(IsPowerPointNativeEquation(copiedShape), "Copied OMML ceased to be native Office Math.");
             copiedShape.Delete();
             Release(copiedShape);
@@ -296,7 +309,7 @@ internal static partial class Program
             var ommlToOle = CreatePowerPointAcceptanceSession(
                 "edit",
                 "nativeOle",
-                formulaId,
+                sourceMetadata.FormulaId,
                 shape.Name,
                 sourceMetadata);
             var ommlOleResult = service.ReplaceOle(ommlToOle, pngPath, emfPath);
@@ -310,13 +323,16 @@ internal static partial class Program
             var oleToOmml = CreatePowerPointAcceptanceSession(
                 "edit",
                 "wordOmml",
-                formulaId,
+                sourceMetadata.FormulaId,
                 shape.Name,
                 sourceMetadata);
             var secondOmml = service.ReplaceOmml(oleToOmml);
             Release(shape);
             shape = slide1.Shapes[secondOmml.ObjectId];
             AssertTrue(IsPowerPointNativeEquation(shape), "OLE -> OMML conversion did not create native Office Math.");
+            AssertPowerPointNativeOmmlHasNoVisualTeXIdentity(
+                shape,
+                sourceMetadata.FormulaId);
 
             // OMML -> picture.
             shape.Select(MsoTriState.msoTrue);
@@ -325,14 +341,17 @@ internal static partial class Program
             var ommlToPicture = CreatePowerPointAcceptanceSession(
                 "edit",
                 "crossPlatformPicture",
-                formulaId,
+                sourceMetadata.FormulaId,
                 shape.Name,
                 sourceMetadata);
             var finalPicture = service.Replace(ommlToPicture, svgPath);
             Release(shape);
             shape = slide1.Shapes[finalPicture.ObjectId];
             AssertTrue(IsPowerPointEditablePictureShape(shape), "OMML -> picture conversion did not create an SVG picture.");
-            AssertEqual(formulaId, DecodePowerPointMetadata(shape)?.FormulaId, "Three-way conversion changed the original FormulaId.");
+            AssertEqual(
+                sourceMetadata.FormulaId,
+                DecodePowerPointMetadata(shape)?.FormulaId,
+                "OMML -> picture did not promote the transient edit identity to the new managed picture.");
 
             // Stress the direct PowerPoint MathML importer. This specifically
             // guards against the old transient Word automation path, which could
@@ -345,7 +364,7 @@ internal static partial class Program
                 var stressToOmml = CreatePowerPointAcceptanceSession(
                     "edit",
                     "wordOmml",
-                    formulaId,
+                    sourceMetadata.FormulaId,
                     shape.Name,
                     sourceMetadata);
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -355,6 +374,9 @@ internal static partial class Program
                 Release(shape);
                 shape = slide1.Shapes[stressOmmlResult.ObjectId];
                 AssertTrue(IsPowerPointNativeEquation(shape), $"Stress picture -> OMML failed at iteration {iteration}.");
+                AssertPowerPointNativeOmmlHasNoVisualTeXIdentity(
+                    shape,
+                    sourceMetadata.FormulaId);
                 shape.Select(MsoTriState.msoTrue);
                 var stressRead = service.ReadSelection();
                 AssertContains(stressRead.Metadata?.Latex, @"\frac", $"Stress OMML fraction readback failed at iteration {iteration}.");
@@ -365,7 +387,7 @@ internal static partial class Program
                 var stressToPicture = CreatePowerPointAcceptanceSession(
                     "edit",
                     "crossPlatformPicture",
-                    formulaId,
+                    sourceMetadata.FormulaId,
                     shape.Name,
                     sourceMetadata);
                 var stressPictureResult = service.Replace(stressToPicture, svgPath);
@@ -455,6 +477,7 @@ internal static partial class Program
             Release(shape);
             shape = slide1.Shapes[1];
             AssertTrue(IsPowerPointNativeEquation(shape), "Ribbon picture -> OMML did not create native Office Math.");
+            AssertPowerPointNativeOmmlHasNoVisualTeXIdentity(shape, formulaId);
 
             shape.Select(MsoTriState.msoTrue);
             existing = SnapshotSessionIds();
@@ -482,9 +505,11 @@ internal static partial class Program
                 TimeSpan.FromSeconds(45),
                 out var ribbonOleToOmmlElapsed);
             AssertEqual("completed", converted.Status, converted.Error ?? "PowerPoint Ribbon OLE-to-OMML conversion failed.");
+            var ribbonOleFormulaId = converted.FormulaId;
             Release(shape);
             shape = slide1.Shapes[1];
             AssertTrue(IsPowerPointNativeEquation(shape), "Ribbon OLE -> OMML did not create native Office Math.");
+            AssertPowerPointNativeOmmlHasNoVisualTeXIdentity(shape, ribbonOleFormulaId);
 
             shape.Select(MsoTriState.msoTrue);
             existing = SnapshotSessionIds();
@@ -500,7 +525,15 @@ internal static partial class Program
             Release(shape);
             shape = slide1.Shapes[1];
             AssertTrue(IsPowerPointEditablePictureShape(shape), "Ribbon OMML -> picture did not create an SVG picture.");
-            AssertEqual(formulaId, DecodePowerPointMetadata(shape)?.FormulaId, "Ribbon conversion chain changed the original FormulaId.");
+            AssertEqual(
+                converted.FormulaId,
+                DecodePowerPointMetadata(shape)?.FormulaId,
+                "Ribbon OMML -> picture did not promote its transient OMML edit identity.");
+            AssertTrue(!string.Equals(
+                    formulaId,
+                    converted.FormulaId,
+                    StringComparison.OrdinalIgnoreCase),
+                "Ribbon conversion chain incorrectly preserved the pre-OMML durable FormulaId through pure native OMML.");
 
             var ribbonRoundTripBaselineWidth = shape.Width;
             var ribbonRoundTripBaselineHeight = shape.Height;
@@ -646,7 +679,8 @@ internal static partial class Program
         string objectMode,
         string formulaId,
         string? sourceObjectId,
-        FormulaMetadata? originalMetadata)
+        FormulaMetadata? originalMetadata,
+        string displayMode = "block")
     {
         return new OfficeSessionDocument
         {
@@ -662,7 +696,7 @@ internal static partial class Program
                 new() { Id = Guid.NewGuid().ToString(), Latex = PowerPointAcceptanceLatex },
             },
             CodeFormat = "latex",
-            DisplayMode = "block",
+            DisplayMode = displayMode,
             ObjectMode = objectMode,
             Numbered = false,
             FontSizePt = 20,

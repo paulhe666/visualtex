@@ -9,6 +9,7 @@
   "windows": ["office-session-editor", "office-session-converter"],
   "permissions": [
     "core:default",
+    "core:window:allow-set-title",
     "allow-read-system-font-asset"
   ]
 }

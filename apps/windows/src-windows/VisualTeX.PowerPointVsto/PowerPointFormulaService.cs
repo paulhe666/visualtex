@@ -11,12 +11,13 @@ using VisualTeX.WindowsOffice.VstoShared;
 
 namespace VisualTeX.PowerPointVsto;
 
-public sealed class PowerPointFormulaService
+public sealed class PowerPointFormulaService : IDisposable
 {
     private const string FormulaIdTag = "VisualTeXFormulaId";
     private const string MetadataTag = "VisualTeXMetadata";
     private const string IdentityOwnerTag = "VisualTeXIdentityOwner";
     private const string SlideReferencePrefix = "visualtex-ppt-vsto-slide:";
+    private const string TextInsertionReferencePrefix = "visualtex-ppt-vsto-text:";
     private const uint WmSetRedraw = 0x000B;
     private const uint RdwInvalidate = 0x0001;
     private const uint RdwErase = 0x0004;
@@ -45,6 +46,9 @@ public sealed class PowerPointFormulaService
         _oleStageProbe = oleStageProbe;
         _windowRedrawProbe = windowRedrawProbe;
     }
+
+    public void Dispose() =>
+        PowerPointNativeOmmlKernel.Shutdown();
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern IntPtr SendMessage(
@@ -93,32 +97,30 @@ public sealed class PowerPointFormulaService
                 {
                     shape = range[1];
                     objectId = shape.Name;
-                    metadata = ReadMetadata(shape);
-                    if (metadata is not null)
+                    var storedMetadata = ReadMetadata(shape);
+                    if (storedMetadata is not null)
                     {
-                        metadata = EnsureUniqueFormulaIdentity(presentation, slide, shape, metadata);
-                        if (PowerPointOmmlBridge.IsNativeEquation(shape))
-                        {
-                            var currentLatex = PowerPointOmmlBridge.TryReadCurrentLatex(shape);
-                            if (!string.IsNullOrWhiteSpace(currentLatex))
-                            {
-                                metadata = CloneWithLatex(metadata, currentLatex!);
-                                Configure(shape, metadata);
-                            }
-                            metadata.FontSizePt = PowerPointOmmlBridge.ReadFontSize(shape)
-                                ?? FormulaFontSize.ResolveSemanticFontSize(metadata);
-                            objectMode = "wordOmml";
-                        }
-                        else
-                        {
-                            metadata.FontSizePt = InferPowerPointFormulaFontSize(
-                                shape.Width,
-                                shape.Height,
-                                metadata);
-                            objectMode = IsNativeOle(shape)
-                                ? "nativeOle"
-                                : "crossPlatformPicture";
-                        }
+                        metadata = EnsureUniqueFormulaIdentity(
+                            presentation,
+                            slide,
+                            shape,
+                            storedMetadata);
+                        metadata.FontSizePt = InferPowerPointFormulaFontSize(
+                            shape.Width,
+                            shape.Height,
+                            metadata);
+                        objectMode = IsNativeOle(shape)
+                            ? FormulaOleContract.NativeOleMode
+                            : FormulaOleContract.CrossPlatformPictureMode;
+                    }
+                    else if (selection.Type == PpSelectionType.ppSelectionText
+                             && IsCurrentSelectionNativeEquation())
+                    {
+                        // Native PowerPoint equations remain completely Office-
+                        // owned: no FormulaId, Tags, alternative text, or other
+                        // VisualTeX persistence. We only expose the transient
+                        // object mode while the user is explicitly editing one.
+                        objectMode = FormulaOleContract.WordOmmlMode;
                     }
                 }
             }
@@ -138,6 +140,85 @@ public sealed class PowerPointFormulaService
             Release(shape);
             Release(range);
             if (ownsSelection) Release(selection);
+            Release(slide);
+            Release(view);
+            Release(window);
+            Release(presentation);
+        }
+    }
+
+    public OfficeSelection CaptureTextInsertionTarget() =>
+        CaptureTextInsertionTargetCore(requireTextSelection: true)
+        ?? throw new InvalidOperationException(
+            "请先把文本光标或文本选区放到一个现有文本框中。");
+
+    public OfficeSelection? TryCaptureTextInsertionTarget() =>
+        CaptureTextInsertionTargetCore(requireTextSelection: false);
+
+    private OfficeSelection? CaptureTextInsertionTargetCore(
+        bool requireTextSelection)
+    {
+        Presentation? presentation = null;
+        DocumentWindow? window = null;
+        View? view = null;
+        Slide? slide = null;
+        Selection? selection = null;
+        ShapeRange? range = null;
+        Shape? shape = null;
+        object? textRange = null;
+        try
+        {
+            EnsureNotSlideShow();
+            presentation = _application.ActivePresentation
+                ?? throw new InvalidOperationException("No active PowerPoint presentation.");
+            EnsureWritable(presentation);
+            window = _application.ActiveWindow
+                ?? throw new InvalidOperationException("No active PowerPoint window.");
+            view = window.View;
+            slide = (Slide)view.Slide;
+            selection = window.Selection;
+            if (selection.Type != PpSelectionType.ppSelectionText)
+            {
+                if (!requireTextSelection) return null;
+                throw new InvalidOperationException(
+                    "请先把文本光标或文本选区放到一个现有文本框中。");
+            }
+
+            range = selection.ShapeRange;
+            if (range.Count != 1)
+                throw new InvalidOperationException("请只在一个文本框中插入 OMML 公式。");
+            shape = range[1];
+            if (shape.HasTextFrame != MsoTriState.msoTrue)
+                throw new InvalidOperationException("当前选择不是可编辑文本框。");
+
+            dynamic selected = selection;
+            textRange = selected.TextRange2;
+            var start = Convert.ToInt32(((dynamic)textRange).Start);
+            var length = Convert.ToInt32(((dynamic)textRange).Length);
+            if (start < 1 || length < 0)
+                throw new InvalidOperationException("PowerPoint 没有返回有效的文本插入位置。");
+
+            return new OfficeSelection
+            {
+                Host = "powerpoint",
+                DocumentId = DocumentIdentity(presentation),
+                ObjectId = TextInsertionReference(
+                    slide.SlideID,
+                    shape.Id,
+                    start,
+                    length),
+                ReadOnly = false,
+                FormulaId = null,
+                Metadata = null,
+                ObjectMode = FormulaOleContract.WordOmmlMode,
+            };
+        }
+        finally
+        {
+            Release(textRange);
+            Release(shape);
+            Release(range);
+            Release(selection);
             Release(slide);
             Release(view);
             Release(window);
@@ -167,32 +248,19 @@ public sealed class PowerPointFormulaService
             shape = hit as Shape;
             if (shape is null) return null;
 
+            // Native PowerPoint equations carry no VisualTeX metadata, so
+            // this hit-test naturally ignores them and preserves PowerPoint's
+            // own double-click editing behavior.
             var metadata = ReadMetadata(shape);
             if (metadata is null) return null;
             metadata = EnsureUniqueFormulaIdentity(presentation, slide, shape, metadata);
-            string objectMode;
-            if (PowerPointOmmlBridge.IsNativeEquation(shape))
-            {
-                var currentLatex = PowerPointOmmlBridge.TryReadCurrentLatex(shape);
-                if (!string.IsNullOrWhiteSpace(currentLatex))
-                {
-                    metadata = CloneWithLatex(metadata, currentLatex!);
-                    Configure(shape, metadata);
-                }
-                metadata.FontSizePt = PowerPointOmmlBridge.ReadFontSize(shape)
-                    ?? FormulaFontSize.ResolveSemanticFontSize(metadata);
-                objectMode = FormulaOleContract.WordOmmlMode;
-            }
-            else
-            {
-                metadata.FontSizePt = InferPowerPointFormulaFontSize(
-                    shape.Width,
-                    shape.Height,
-                    metadata);
-                objectMode = IsNativeOle(shape)
-                    ? FormulaOleContract.NativeOleMode
-                    : FormulaOleContract.CrossPlatformPictureMode;
-            }
+            metadata.FontSizePt = InferPowerPointFormulaFontSize(
+                shape.Width,
+                shape.Height,
+                metadata);
+            var objectMode = IsNativeOle(shape)
+                ? FormulaOleContract.NativeOleMode
+                : FormulaOleContract.CrossPlatformPictureMode;
 
             return new OfficeSelection
             {
@@ -317,13 +385,6 @@ public sealed class PowerPointFormulaService
                 throw new InvalidOperationException("The selected PowerPoint formula no longer exists.");
 
             var metadata = selected.Metadata;
-            if (PowerPointOmmlBridge.IsNativeEquation(shape))
-            {
-                PowerPointOmmlBridge.SetFontSize(shape, target);
-                metadata.FontSizePt = target;
-                Configure(shape, metadata);
-                return target;
-            }
             var currentFontSize = FormulaFontSize.ResolveSemanticFontSize(metadata);
             var fontScale = target / Math.Max(0.5f, currentFontSize);
             var size = ScaleCurrentShapeSize(
@@ -383,50 +444,60 @@ public sealed class PowerPointFormulaService
         }
     }
 
+    private bool IsCurrentSelectionNativeEquation()
+    {
+        DocumentWindow? window = null;
+        Selection? selection = null;
+        try
+        {
+            window = _application.ActiveWindow;
+            if (window is null) return false;
+            selection = window.Selection;
+            if (selection.Type != PpSelectionType.ppSelectionText)
+                return false;
+
+            return _application.CommandBars.GetEnabledMso(
+                       "EquationProfessional")
+                || _application.CommandBars.GetEnabledMso(
+                    "EquationLinearFormat");
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(selection);
+            Release(window);
+        }
+    }
+
     private bool TryGetSelectedMathRange(out object? mathRange)
     {
         mathRange = null;
         DocumentWindow? window = null;
         Selection? selection = null;
-        ShapeRange? shapes = null;
-        Shape? shape = null;
         object? textRange = null;
         try
         {
             window = _application.ActiveWindow;
             if (window is null) return false;
             selection = window.Selection;
-            if (selection.Type == PpSelectionType.ppSelectionText)
-            {
-                dynamic selected = selection;
-                textRange = selected.TextRange2;
-            }
-            else if (selection.Type == PpSelectionType.ppSelectionShapes)
-            {
-                shapes = selection.ShapeRange;
-                if (shapes.Count != 1) return false;
-                shape = shapes[1];
-                if (shape.HasTextFrame != MsoTriState.msoTrue) return false;
-                dynamic textFrame = shape.TextFrame2;
-                textRange = textFrame.TextRange;
-                Release(textFrame);
-            }
-            else
-            {
+            if (selection.Type != PpSelectionType.ppSelectionText)
                 return false;
-            }
 
-            dynamic range = textRange!;
-            object candidate;
-            try { candidate = range.MathZones(Type.Missing, Type.Missing); }
-            catch (COMException) { candidate = range.MathZones(); }
-            var length = Convert.ToInt32(((dynamic)candidate).Length);
-            if (length <= 0)
-            {
-                Release(candidate);
+            var isNativeEquation =
+                _application.CommandBars.GetEnabledMso(
+                    "EquationProfessional")
+                || _application.CommandBars.GetEnabledMso(
+                    "EquationLinearFormat");
+            if (!isNativeEquation)
                 return false;
-            }
-            mathRange = candidate;
+
+            dynamic selected = selection;
+            textRange = selected.TextRange2;
+            mathRange = textRange;
+            textRange = null;
             return true;
         }
         catch
@@ -438,8 +509,6 @@ public sealed class PowerPointFormulaService
         finally
         {
             Release(textRange);
-            Release(shape);
-            Release(shapes);
             Release(selection);
             Release(window);
         }
@@ -697,6 +766,7 @@ public sealed class PowerPointFormulaService
         View? view = null;
         Slide? slide = null;
         Shape? shape = null;
+        Shape? targetTextShape = null;
         try
         {
             EnsureNotSlideShow();
@@ -705,6 +775,24 @@ public sealed class PowerPointFormulaService
                 ?? throw new InvalidOperationException("No active PowerPoint presentation.");
             EnsureWritable(presentation);
             EnsureSourceDocument(presentation, session.SourceDocumentId);
+
+            if (TryParseTextInsertionReference(
+                    session.SourceObjectId,
+                    out var textTarget))
+            {
+                (slide, targetTextShape) = ResolveTextInsertionTarget(
+                    presentation,
+                    textTarget);
+                PowerPointNativeOmmlKernel.InsertIntoText(
+                    _application,
+                    targetTextShape,
+                    textTarget.Start,
+                    textTarget.Length,
+                    mathMl!,
+                    session.DisplayMode);
+                return Result(session, presentation, targetTextShape.Name);
+            }
+
             window = _application.ActiveWindow
                 ?? throw new InvalidOperationException("No active PowerPoint window.");
             view = window.View;
@@ -716,7 +804,7 @@ public sealed class PowerPointFormulaService
             height *= scale;
             var left = Math.Max(0f, (presentation.PageSetup.SlideWidth - width) / 2f);
             var top = Math.Max(0f, (presentation.PageSetup.SlideHeight - height) / 2f);
-            shape = PowerPointOmmlBridge.AddNativeEquation(
+            shape = PowerPointNativeOmmlKernel.CreateStandalone(
                 _application,
                 slide,
                 mathMl!,
@@ -725,7 +813,6 @@ public sealed class PowerPointFormulaService
                 top,
                 width,
                 height);
-            Configure(shape, metadata);
             return Result(session, presentation, shape.Name);
         }
         catch
@@ -736,6 +823,7 @@ public sealed class PowerPointFormulaService
         finally
         {
             StartNewUndoEntry();
+            Release(targetTextShape);
             Release(shape);
             Release(slide);
             Release(view);
@@ -777,7 +865,7 @@ public sealed class PowerPointFormulaService
             var rotation = oldShape.Rotation;
             var zOrder = oldShape.ZOrderPosition;
             var originalMetadata = ReadMetadata(oldShape) ?? session.OriginalMetadata;
-            var convertingToOmml = !PowerPointOmmlBridge.IsNativeEquation(oldShape);
+            var convertingToOmml = true;
             var editedSize = convertingToOmml
                 && FormulaContentEquivalent(originalMetadata, metadata)
                     ? (Width: oldWidth, Height: oldHeight)
@@ -795,7 +883,7 @@ public sealed class PowerPointFormulaService
             var newLeft = left + (oldWidth - editedSize.Width) / 2f;
             var newTop = top + (oldHeight - editedSize.Height) / 2f;
 
-            replacement = PowerPointOmmlBridge.AddNativeEquation(
+            replacement = PowerPointNativeOmmlKernel.CreateStandalone(
                 _application,
                 slide,
                 mathMl!,
@@ -805,7 +893,6 @@ public sealed class PowerPointFormulaService
                 editedSize.Width,
                 editedSize.Height);
             TryApplyRotation(replacement, rotation);
-            Configure(replacement, metadata);
             MoveToZOrder(replacement, zOrder + 1);
             oldShape.Delete();
             return Result(session, presentation, replacement.Name);
@@ -1123,6 +1210,10 @@ public sealed class PowerPointFormulaService
                     foreach (var name in new[] { preferredObjectId, expectedName })
                     {
                         if (string.IsNullOrWhiteSpace(name)) continue;
+                        var isPreferredLookup = string.Equals(
+                            name,
+                            preferredObjectId,
+                            StringComparison.Ordinal);
                         Shape? direct = null;
                         try
                         {
@@ -1272,24 +1363,6 @@ public sealed class PowerPointFormulaService
         var clone = FormulaMetadataCodec.Decode(FormulaMetadataCodec.Encode(metadata))
             ?? throw new InvalidDataException("VisualTeX PowerPoint metadata could not be cloned.");
         clone.FormulaId = formulaId;
-        clone.UpdatedAt = DateTimeOffset.UtcNow.ToString("O");
-        return clone;
-    }
-
-    private static FormulaMetadata CloneWithLatex(FormulaMetadata metadata, string latex)
-    {
-        var clone = FormulaMetadataCodec.Decode(FormulaMetadataCodec.Encode(metadata))
-            ?? throw new InvalidDataException("VisualTeX PowerPoint metadata could not be cloned.");
-        clone.Latex = latex;
-        clone.Lines = new List<FormulaLine>
-        {
-            new()
-            {
-                Id = clone.Lines.FirstOrDefault()?.Id ?? Guid.NewGuid().ToString(),
-                Latex = latex,
-            },
-        };
-        clone.CodeFormat = "latex";
         clone.UpdatedAt = DateTimeOffset.UtcNow.ToString("O");
         return clone;
     }
@@ -1818,6 +1891,105 @@ public sealed class PowerPointFormulaService
 
     private static string SlideReference(Slide slide) =>
         $"{SlideReferencePrefix}{slide.SlideID}:{slide.SlideIndex}";
+
+    private readonly struct TextInsertionTarget
+    {
+        internal TextInsertionTarget(int slideId, int shapeId, int start, int length)
+        {
+            SlideId = slideId;
+            ShapeId = shapeId;
+            Start = start;
+            Length = length;
+        }
+
+        internal int SlideId { get; }
+        internal int ShapeId { get; }
+        internal int Start { get; }
+        internal int Length { get; }
+    }
+
+    private static string TextInsertionReference(
+        int slideId,
+        int shapeId,
+        int start,
+        int length) =>
+        $"{TextInsertionReferencePrefix}{slideId}:{shapeId}:{start}:{length}";
+
+    internal static bool IsTextInsertionReference(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value!.StartsWith(TextInsertionReferencePrefix, StringComparison.Ordinal);
+
+    private static bool TryParseTextInsertionReference(
+        string? value,
+        out TextInsertionTarget target)
+    {
+        target = default;
+        if (!IsTextInsertionReference(value)) return false;
+        var payload = value!.Substring(TextInsertionReferencePrefix.Length);
+        var parts = payload.Split(':');
+        if (parts.Length != 4
+            || !int.TryParse(parts[0], out var slideId)
+            || !int.TryParse(parts[1], out var shapeId)
+            || !int.TryParse(parts[2], out var start)
+            || !int.TryParse(parts[3], out var length)
+            || slideId <= 0
+            || shapeId <= 0
+            || start < 1
+            || length < 0)
+            throw new InvalidDataException("The captured PowerPoint text insertion target is invalid.");
+        target = new TextInsertionTarget(slideId, shapeId, start, length);
+        return true;
+    }
+
+    private static (Slide Slide, Shape Shape) ResolveTextInsertionTarget(
+        Presentation presentation,
+        TextInsertionTarget target)
+    {
+        Slides? slides = null;
+        try
+        {
+            slides = presentation.Slides;
+            for (var slideIndex = 1; slideIndex <= slides.Count; slideIndex++)
+            {
+                Slide? slide = null;
+                Shapes? shapes = null;
+                try
+                {
+                    slide = slides[slideIndex];
+                    if (slide.SlideID != target.SlideId) continue;
+                    shapes = slide.Shapes;
+                    for (var shapeIndex = 1; shapeIndex <= shapes.Count; shapeIndex++)
+                    {
+                        Shape? shape = null;
+                        try
+                        {
+                            shape = shapes[shapeIndex];
+                            if (shape.Id != target.ShapeId) continue;
+                            if (shape.HasTextFrame != MsoTriState.msoTrue)
+                                throw new InvalidOperationException(
+                                    "The PowerPoint text box captured for OMML insertion no longer contains an editable text frame.");
+                            var foundSlide = slide;
+                            var foundShape = shape;
+                            slide = null;
+                            shape = null;
+                            return (foundSlide, foundShape);
+                        }
+                        finally { Release(shape); }
+                    }
+                    throw new InvalidOperationException(
+                        "The PowerPoint text box captured for OMML insertion no longer exists.");
+                }
+                finally
+                {
+                    Release(shapes);
+                    Release(slide);
+                }
+            }
+            throw new InvalidOperationException(
+                "The PowerPoint slide captured for OMML insertion no longer exists.");
+        }
+        finally { Release(slides); }
+    }
 
     private static Slide ResolveTargetSlide(
         Presentation presentation,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createUuid } from "../../runtime/browserCompatibility";
 import {
   AlertCircle,
@@ -504,6 +505,15 @@ export function OfficeDialogApp() {
   const historyState = useHistorySnapshot();
   const isEn = language === "en";
   const latex = joinFormulaLines(lines);
+
+  useEffect(() => {
+    const nativeTitle = isEn ? "Office Formula Editor" : "Office 公式编辑器";
+    document.title = nativeTitle;
+    if (!IS_VSTO_DESKTOP_RUNTIME) return;
+    void getCurrentWindow().setTitle(nativeTitle).catch(() => {
+      // The editor remains usable if Windows rejects a transient title update.
+    });
+  }, [isEn]);
 
   useEffect(() => {
     let disposed = false;

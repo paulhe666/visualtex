@@ -139,6 +139,11 @@ export const compatibilityRequiredArgumentCounts = new Map<string, number>([
       : [];
   }),
 ]);
+// \\braket supports both physics-style two arguments and braket.sty-style one
+// balanced argument containing one or more | separators. One outer argument is
+// therefore the minimum completeness requirement; the flexible normalizer
+// decides whether a second outer argument or internal separators are present.
+compatibilityRequiredArgumentCounts.set("braket", 1);
 
 export const compatibilityWrapperCommands = new Set(
   specs

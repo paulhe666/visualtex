@@ -8,6 +8,54 @@ const latestMacScript = (name) =>
 
 const checks = [
   {
+    label: "source-first wrapper registry coverage",
+    command: [
+      "--import",
+      "tsx",
+      "scripts/source_wrapper_registry_regression.mts",
+    ],
+  },
+  {
+    label: "core LaTeX compatibility commands",
+    command: [
+      "--import",
+      "tsx",
+      "scripts/core_latex_command_compatibility_regression.mts",
+    ],
+  },
+  {
+    label: "source-first wrapper registry",
+    command: [
+      "--import",
+      "tsx",
+      "scripts/source_wrapper_registry_regression.mts",
+    ],
+  },
+  {
+    label: "source-first wrapper browser matrix",
+    command: [
+      "--import",
+      "tsx",
+      "scripts/source_wrapper_browser_regression.mts",
+    ],
+  },
+  {
+    label: "physics kernel compatibility commands",
+    command: [
+      "--import",
+      "tsx",
+      "scripts/physics_kernel_compatibility_regression.mts",
+    ],
+  },
+  {
+    label: "built MathLive physics kernel",
+    command: ["scripts/physics_kernel_browser_regression.mjs"],
+  },
+  {
+    label: "Office editor persistence isolation",
+    command: ["scripts/editor_persistence_isolation_regression.mjs"],
+  },
+  {
     label: "custom tile placeholder previews",
     command: [
       upstreamRunner,

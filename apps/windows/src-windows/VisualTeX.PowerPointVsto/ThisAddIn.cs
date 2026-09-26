@@ -54,6 +54,21 @@ public interface IPowerPointRibbonCallbacks
 
     [DispId(14)]
     void OnConvertSelectedOmml(object control);
+
+    [DispId(15)]
+    void OnNewSvgFormula(object control);
+
+    [DispId(16)]
+    void OnNewOmmlFormula(object control);
+
+    [DispId(17)]
+    void OnNewOleFormula(object control);
+
+    [DispId(18)]
+    void OnInsertInlineOmml(object control);
+
+    [DispId(19)]
+    void OnInsertDisplayOmml(object control);
 }
 
 [ComVisible(true)]
@@ -83,7 +98,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     <tabs>
       <tab id="VisualTeX.PowerPointVsto.Tab" label="VisualTeX" insertAfterMso="TabHome">
         <group id="VisualTeX.PowerPointVsto.Group" label="VisualTeX">
-          <button id="VisualTeX.PowerPointVsto.New" label="新建公式" size="large" tag="insertFormula" getImage="GetRibbonImage" onAction="OnNewFormula" />
+          <button id="VisualTeX.PowerPointVsto.New" label="新建 SVG" size="large" tag="insertFormula" getImage="GetRibbonImage" onAction="OnNewSvgFormula" />
+          <button id="VisualTeX.PowerPointVsto.NewOle" label="新建 OLE" size="large" tag="convertToOle" getImage="GetRibbonImage" onAction="OnNewOleFormula" />
+          <button id="VisualTeX.PowerPointVsto.InsertInlineOmml" label="插入行内 OMML 公式" size="large" screentip="插入行内 PowerPoint 原生公式" supertip="在当前文本框的光标或文本选区处插入行内原生 Office Math。" imageMso="EquationInsertNew" onAction="OnInsertInlineOmml" />
+          <button id="VisualTeX.PowerPointVsto.InsertDisplayOmml" label="插入行间 OMML 公式" size="large" screentip="插入行间 PowerPoint 原生公式" supertip="若正在编辑文本框，则在当前光标或文本选区处插入独立公式段落；否则在当前幻灯片创建独立原生 Office Math。" imageMso="EquationInsertNew" onAction="OnInsertDisplayOmml" />
           <button id="VisualTeX.PowerPointVsto.Edit" label="编辑所选公式" size="large" tag="editSelected" getImage="GetRibbonImage" onAction="OnEditSelected" />
           <button id="VisualTeX.PowerPointVsto.ConvertOmml" label="转为 OMML" screentip="转为 PowerPoint 原生公式" supertip="转换为 PowerPoint 原生 Office Math（PPTX 内部以 OMML 保存），可继续使用 PowerPoint 公式工具编辑。" imageMso="EquationInsertNew" onAction="OnConvertSelectedOmml" />
           <button id="VisualTeX.PowerPointVsto.ConvertSelected" label="转为原生 OLE" screentip="转为可嵌入编辑的原生 OLE" supertip="转换后外观应保持不变，但对象会嵌入 PowerPoint 文件，并可通过 VisualTeX 双击重新编辑。" tag="convertToOle" getImage="GetRibbonImage" onAction="OnConvertSelected" />
@@ -145,6 +163,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private DateTimeOffset _lastDoubleClickAt;
     private string? _activeSessionId;
     private OfficeSelection? _lastFormulaSelection;
+    private OfficeSelection? _lastTextInsertionTarget;
     private int _formulaFontInvalidationPending;
     private object? _ribbonUi;
     private Office.COMAddIn? _comAddIn;
@@ -233,7 +252,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
-            ReportError(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+            ReportError(OfficePluginLanguage.FormatOperationError(
+                error,
+                "无法设置公式字号",
+                "Unable to set formula font size"));
         }
     }
     public void OnIncreaseFormulaFontSize(Office.IRibbonControl control)
@@ -246,10 +268,23 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
-            ReportError(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+            ReportError(OfficePluginLanguage.FormatOperationError(
+                error,
+                "无法设置公式字号",
+                "Unable to set formula font size"));
         }
     }
-    public void OnNewFormula(object control) => BeginSession("create", "crossPlatformPicture", null);
+    public void OnNewFormula(object control) => OnNewSvgFormula(control);
+    public void OnNewSvgFormula(object control) =>
+        BeginSession("create", "crossPlatformPicture", null);
+    public void OnNewOmmlFormula(object control) =>
+        BeginContextAwareOmmlSession();
+    public void OnNewOleFormula(object control) =>
+        BeginSession("create", "nativeOle", null);
+    public void OnInsertInlineOmml(object control) =>
+        BeginOmmlTextInsertion("inline");
+    public void OnInsertDisplayOmml(object control) =>
+        BeginOmmlTextInsertion("block");
     public void OnEditSelected(object control) => BeginSelectedSession(null);
     public void OnConvertSelectedOmml(object control) =>
         BeginSelectedSession("wordOmml", conversionOnly: true);
@@ -268,7 +303,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
-            SetStatus(T($"无法打开 VisualTeX：{error.Message}", $"Unable to open VisualTeX: {error.Message}"));
+            SetStatus(OfficePluginLanguage.FormatOperationError(
+                error,
+                "无法打开 VisualTeX",
+                "Unable to open VisualTeX"));
         }
     }
 
@@ -304,7 +342,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
-            ReportError(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+            ReportError(OfficePluginLanguage.FormatOperationError(
+                error,
+                "无法设置公式字号",
+                "Unable to set formula font size"));
         }
         finally { InvalidateFormulaFontControls(); }
     }
@@ -343,6 +384,20 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         if (service is null) return;
         try
         {
+            if (selection.Type == PpSelectionType.ppSelectionText)
+            {
+                var textTarget = service.TryCaptureTextInsertionTarget();
+                if (textTarget is not null)
+                    _lastTextInsertionTarget = textTarget;
+            }
+            else if (selection.Type != PpSelectionType.ppSelectionNone)
+            {
+                // Keep the text target only across the transient ppSelectionNone
+                // state that PowerPoint exposes while the user clicks the Ribbon.
+                // Any explicit non-text selection means the old caret is stale.
+                _lastTextInsertionTarget = null;
+            }
+
             var current = service.ReadSelection(selection);
             if (current.Metadata is not null)
             {
@@ -351,7 +406,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             }
             // Clicking the Ribbon can temporarily expose ppSelectionNone. Keep
             // the last formula only for that transient state; any explicit
-            // non-formula selection invalidates the cache.
+            // non-formula shape selection invalidates the cache.
             if (selection.Type == PpSelectionType.ppSelectionShapes)
                 _lastFormulaSelection = null;
         }
@@ -364,6 +419,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private void OnPresentationBeforeClose(Presentation presentation, ref bool cancel)
     {
         _lastFormulaSelection = null;
+        _lastTextInsertionTarget = null;
     }
 
     private void OnNativeDoubleClick(int screenX, int screenY)
@@ -385,6 +441,83 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _lastDoubleClickAt = now;
             BeginSession("edit", null, selected);
         });
+    }
+
+    private void BeginContextAwareOmmlSession()
+    {
+        DiagnosticLastError = string.Empty;
+        try
+        {
+            var service = _formulaService
+                ?? throw new InvalidOperationException(
+                    "PowerPoint formula service is unavailable.");
+            var target = ResolveOmmlTextInsertionTarget(service);
+            if (target is not null)
+            {
+                BeginSession(
+                    "create",
+                    "wordOmml",
+                    target,
+                    requestedDisplayMode: "inline");
+                return;
+            }
+
+            BeginSession(
+                "create",
+                "wordOmml",
+                null,
+                requestedDisplayMode: "block");
+        }
+        catch (Exception error)
+        {
+            ReportError(OfficePluginLanguage.FormatOperationError(
+                error,
+                "VisualTeX PowerPoint 写入失败",
+                "VisualTeX PowerPoint formula write failed"));
+        }
+    }
+
+    private void BeginOmmlTextInsertion(string displayMode)
+    {
+        DiagnosticLastError = string.Empty;
+        try
+        {
+            var service = _formulaService
+                ?? throw new InvalidOperationException("PowerPoint formula service is unavailable.");
+            var target = ResolveOmmlTextInsertionTarget(service);
+            if (target is null
+                && !string.Equals(
+                    displayMode,
+                    "block",
+                    StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    "插入行内 OMML 公式前，请先把文本光标或文本选区放到一个现有文本框中。");
+            BeginSession(
+                "create",
+                "wordOmml",
+                target,
+                requestedDisplayMode: displayMode);
+        }
+        catch (Exception error)
+        {
+            ReportError(OfficePluginLanguage.FormatOperationError(
+                error,
+                "VisualTeX PowerPoint 写入失败",
+                "VisualTeX PowerPoint formula write failed"));
+        }
+    }
+
+    private OfficeSelection? ResolveOmmlTextInsertionTarget(
+        PowerPointFormulaService service)
+    {
+        var liveTarget = service.TryCaptureTextInsertionTarget();
+        if (liveTarget is not null)
+        {
+            _lastTextInsertionTarget = liveTarget;
+            return liveTarget;
+        }
+
+        return _lastTextInsertionTarget;
     }
 
     private void BeginSelectedSession(
@@ -414,7 +547,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         string mode,
         string? requestedObjectMode,
         OfficeSelection? capturedSelection,
-        bool conversionOnly = false)
+        bool conversionOnly = false,
+        string? requestedDisplayMode = null)
     {
         var lifetime = _lifetime;
         if (lifetime is null || lifetime.IsCancellationRequested) return;
@@ -423,6 +557,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             requestedObjectMode,
             capturedSelection,
             conversionOnly,
+            requestedDisplayMode,
             lifetime.Token);
     }
 
@@ -431,6 +566,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         string? requestedObjectMode,
         OfficeSelection? capturedSelection,
         bool conversionOnly,
+        string? requestedDisplayMode,
         CancellationToken cancellationToken)
     {
         if (!await _operationGate.WaitAsync(
@@ -473,9 +609,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             await client.EnsureHealthyAsync(cancellationToken).ConfigureAwait(false);
             if (conversionOnly)
                 await client.PrewarmConverterAsync(cancellationToken).ConfigureAwait(false);
-            var selection = capturedSelection?.Metadata is not null
-                ? capturedSelection
-                : await dispatcher.InvokeAsync(
+            var selection = capturedSelection
+                ?? await dispatcher.InvokeAsync(
                     () => ResolveFormulaSelection(service)).ConfigureAwait(false);
             if (selection.ReadOnly)
                 throw new UnauthorizedAccessException("当前 PowerPoint 演示文稿为只读状态。");
@@ -494,6 +629,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     selection.ObjectMode,
                     targetObjectMode,
                     StringComparison.Ordinal);
+            var targetDisplayMode = requestedDisplayMode
+                ?? metadata?.DisplayMode
+                ?? "block";
             var lines = metadata?.Lines ?? new List<FormulaLine>
             {
                 new() { Id = Guid.NewGuid().ToString(), Latex = string.Empty },
@@ -507,12 +645,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 Host = "powerpoint",
                 FormulaId = metadata?.FormulaId,
                 SourceDocumentId = selection.DocumentId,
-                SourceObjectId = mode == "edit" ? selection.ObjectId : null,
+                SourceObjectId = mode == "edit"
+                    || PowerPointFormulaService.IsTextInsertionReference(selection.ObjectId)
+                        ? selection.ObjectId
+                        : null,
                 Title = metadata?.Title ?? "PowerPoint Formula",
                 Lines = lines,
                 ActiveLineId = lines.FirstOrDefault()?.Id,
                 CodeFormat = metadata?.CodeFormat ?? "latex",
-                DisplayMode = "block",
+                DisplayMode = targetDisplayMode,
                 ObjectMode = targetObjectMode,
                 Numbered = false,
                 FontSizePt = FormulaFontSize.Normalize(fontSizePt, 20f),
@@ -534,6 +675,23 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 await client.OpenEditorAsync(session.Id, cancellationToken)
                     .ConfigureAwait(false);
                 SetStatus("VisualTeX 编辑器已打开。");
+
+                if (string.Equals(
+                        targetObjectMode,
+                        FormulaOleContract.WordOmmlMode,
+                        StringComparison.Ordinal))
+                {
+                    // Hide the one-time Word/OMML cold start behind the time the
+                    // user spends editing the formula. This work is posted to
+                    // the Office UI thread so the private Word COM host is both
+                    // created and later consumed from the same STA.
+                    _ = dispatcher.InvokeAsync(() =>
+                    {
+                        try { PowerPointNativeOmmlKernel.Prewarm(); }
+                        catch { }
+                        return true;
+                    });
+                }
             }
             session = await client.WaitForCommitAsync(
                 session.Id,
@@ -605,16 +763,21 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     ? service.Replace(session, imagePath)
                     : service.Insert(session, imagePath);
             }).ConfigureAwait(false);
-            _lastFormulaSelection = new OfficeSelection
-            {
-                Host = "powerpoint",
-                DocumentId = writeResult.DocumentId,
-                ObjectId = writeResult.ObjectId,
-                ReadOnly = false,
-                FormulaId = session.FormulaId,
-                Metadata = session.ToMetadata(),
-                ObjectMode = session.ObjectMode,
-            };
+            _lastFormulaSelection = string.Equals(
+                    session.ObjectMode,
+                    FormulaOleContract.WordOmmlMode,
+                    StringComparison.Ordinal)
+                ? null
+                : new OfficeSelection
+                {
+                    Host = "powerpoint",
+                    DocumentId = writeResult.DocumentId,
+                    ObjectId = writeResult.ObjectId,
+                    ReadOnly = false,
+                    FormulaId = session.FormulaId,
+                    Metadata = session.ToMetadata(),
+                    ObjectMode = session.ObjectMode,
+                };
             await client.CompleteAsync(session.Id, cancellationToken).ConfigureAwait(false);
             SetStatus(requiresObjectModeChange && session.ObjectMode == "nativeOle"
                 ? "已转换为原生 OLE：外观保持不变，可双击编辑，并嵌入 PowerPoint 文件。"
@@ -622,7 +785,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     ? "已转换为 PowerPoint 原生 Office Math（OMML），可继续使用 PowerPoint 公式工具编辑。"
                     : requiresObjectModeChange && session.ObjectMode == "crossPlatformPicture"
                         ? "已转换为嵌入式 SVG 图片，可跨平台显示并保持矢量清晰度。"
-                        : session.Mode == "edit" ? "PowerPoint 公式已更新。" : "PowerPoint 公式已插入。");
+                        : session.Mode == "edit"
+                            ? "PowerPoint 公式已更新。"
+                            : session.ObjectMode == FormulaOleContract.WordOmmlMode
+                                ? "已插入 PowerPoint 原生 OMML；未写入 VisualTeX FormulaId 或元数据。"
+                                : "PowerPoint 公式已插入。");
         }
         catch (OperationCanceledException)
         {
@@ -681,7 +848,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
-            ReportError($"删除 PowerPoint 公式失败：{error.Message}");
+            ReportError(OfficePluginLanguage.FormatOperationError(
+                error,
+                "删除 PowerPoint 公式失败",
+                "Failed to delete the PowerPoint formula"));
         }
     }
 
@@ -767,6 +937,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         _doubleClickHook?.Dispose();
         _sessionClient?.Dispose();
+        try { _formulaService?.Dispose(); } catch { }
         _dispatcher?.Dispose();
         _lifetime?.Dispose();
         _doubleClickHook = null;

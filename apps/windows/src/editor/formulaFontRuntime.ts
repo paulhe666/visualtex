@@ -23,29 +23,51 @@ function currentFamilies() {
   return { letter, chinese };
 }
 
-function runtimeCss() {
-  const { letter, chinese } = currentFamilies();
+export function buildFormulaPreviewFontCss(
+  uprightFamily: string,
+  italicFamily: string,
+  chineseFamily: string,
+) {
   return `
+/* Font preferences may substitute a family, but they must never normalize
+   MathLive's mathematical variant. Keep the same variant contract as the
+   editable MathEditor: variables are italic, \\mathbf is bold upright and
+   \\mathbfit/bold Greek are bold italic. Dedicated script/fraktur/blackboard/
+   monospace/sans-serif classes are intentionally left to MathLive. */
 .math-preview .ML__mathit,
 .math-preview .ML__mathnormal,
-.math-preview .ML__mathbf,
-.math-preview .ML__mathbfit,
-.math-preview .ML__mathrm,
-.math-preview .ML__operator_name,
 .math-preview .ML__lcGreek,
 .math-preview .ML__ucGreek,
 .math-preview .ML__latin {
-  font-family: var(--visualtex-formula-italic-font-family, ${letter.italic});
+  font-family: var(--visualtex-formula-italic-font-family, ${italicFamily});
+  font-style: italic;
+}
+.math-preview .ML__mathbf:not(.lcGreek) {
+  font-family: var(--visualtex-formula-upright-font-family, ${uprightFamily});
+  font-style: normal;
+  font-weight: 700;
+}
+.math-preview .ML__mathbfit,
+.math-preview .lcGreek.ML__mathbf {
+  font-family: var(--visualtex-formula-italic-font-family, ${italicFamily});
+  font-style: italic;
+  font-weight: 700;
 }
 .math-preview .ML__mathrm,
 .math-preview .ML__operator_name {
-  font-family: var(--visualtex-formula-upright-font-family, ${letter.upright});
+  font-family: var(--visualtex-formula-upright-font-family, ${uprightFamily});
+  font-style: normal;
 }
 .math-preview .ML__text,
 .math-preview .ML__text span {
-  font-family: var(--visualtex-formula-chinese-font-family, ${chinese}), var(--visualtex-formula-upright-font-family, ${letter.upright});
+  font-family: var(--visualtex-formula-chinese-font-family, ${chineseFamily}), var(--visualtex-formula-upright-font-family, ${uprightFamily});
 }
 `;
+}
+
+function runtimeCss() {
+  const { letter, chinese } = currentFamilies();
+  return buildFormulaPreviewFontCss(letter.upright, letter.italic, chinese);
 }
 
 function shadowCss() {
@@ -53,16 +75,27 @@ function shadowCss() {
   return `
 .ML__mathit,
 .ML__mathnormal,
-.ML__mathbf,
-.ML__mathbfit,
 .ML__lcGreek,
 .ML__ucGreek,
 .ML__latin {
   font-family: ${letter.italic} !important;
+  font-style: italic !important;
+}
+.ML__mathbf:not(.lcGreek) {
+  font-family: ${letter.upright} !important;
+  font-style: normal !important;
+  font-weight: 700 !important;
+}
+.ML__mathbfit,
+.lcGreek.ML__mathbf {
+  font-family: ${letter.italic} !important;
+  font-style: italic !important;
+  font-weight: 700 !important;
 }
 .ML__mathrm,
 .ML__operator_name {
   font-family: ${letter.upright} !important;
+  font-style: normal !important;
 }
 .ML__text,
 .ML__text span,

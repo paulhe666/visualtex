@@ -249,5 +249,10 @@ Test-RibbonComDispatch `
         "OnConvertSelected",
         "OnExportSelectedAsPicture",
         "OnDeleteSelected",
-        "OnOpenDesktop"
+        "OnOpenDesktop",
+        "OnNewSvgFormula",
+        "OnNewOmmlFormula",
+        "OnNewOleFormula",
+        "OnInsertInlineOmml",
+        "OnInsertDisplayOmml"
     )

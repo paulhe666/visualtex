@@ -3975,7 +3975,12 @@ pub fn run() {
     let office_ocr_state = ocr_state.clone();
     let mut builder = tauri::Builder::default();
 
-    if run_mode != app_lifecycle::AppRunMode::OfficeBootstrap {
+    if run_mode != app_lifecycle::AppRunMode::OfficeBootstrap
+        && std::env::var("VISUALTEX_ACCEPTANCE_ALLOW_PARALLEL_INSTANCE")
+            .ok()
+            .as_deref()
+            != Some("1")
+    {
         builder = builder.plugin(tauri_plugin_single_instance::init(
             |app, arguments, cwd| {
                 app_lifecycle::append_lifecycle_log(format!(

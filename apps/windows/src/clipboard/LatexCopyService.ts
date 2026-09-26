@@ -1058,6 +1058,14 @@ function parseByFormatStrict(
     case "multline-star":
       return parseSingleMultilineEnvironmentStrict(source, "multline*");
     case "aligned": {
+      // Internally VisualTeX renders `aligned` as a bare math-mode environment,
+      // while the canonical clipboard/source format wraps it in \[...\]. Both
+      // spellings describe the same structured formula document. Requiring only
+      // the outer display wrapper here made a directly imported genuine aligned
+      // environment fall through to raw text, which later became
+      // \text{\begin{aligned}...} and failed MathJax in text mode.
+      const direct = parseSingleMultilineEnvironmentStrict(source, "aligned");
+      if (direct?.length) return direct;
       const outer = parseCoveredBlocksStrict(source, /\\\[([\s\S]*?)\\\]/g);
       if (!outer || outer.length !== 1) return null;
       return parseSingleMultilineEnvironmentStrict(outer[0], "aligned");

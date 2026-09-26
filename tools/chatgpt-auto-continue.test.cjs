@@ -123,6 +123,19 @@ const document = {
   },
 };
 
+const sessionValues = new Map();
+const sessionStorage = {
+  getItem(key) { return sessionValues.has(key) ? sessionValues.get(key) : null; },
+  setItem(key, value) { sessionValues.set(key, String(value)); },
+  removeItem(key) { sessionValues.delete(key); },
+};
+let reloadCalls = 0;
+const location = {
+  pathname: '/c/test',
+  search: '',
+  reload() { reloadCalls += 1; },
+};
+
 const context = vm.createContext({
   __CHATGPT_AUTO_CONTINUE_TEST_MODE__: true,
   console,
@@ -132,7 +145,8 @@ const context = vm.createContext({
   HTMLTextAreaElement: FakeInput,
   InputEvent: class InputEvent {},
   localStorage: { getItem() { return null; }, setItem() {} },
-  location: { pathname: '/c/test', search: '' },
+  sessionStorage,
+  location,
   getComputedStyle() {
     return { display: 'block', visibility: 'visible', opacity: '1' };
   },
@@ -308,8 +322,23 @@ assert.equal(api.isGenerating(), true, '停止回答 must mean generating');
     'an unconfirmed message attempt must stop with a precise result instead of entering a vague pending state');
   assert.equal(api.state.continueCount, 0, 'unconfirmed clicks must not count as successful continuations');
   assert.equal(api.state.enabled, false, 'requestContinue must not silently enable supervision');
-  assert.match(api.state.status, /“继续”没有出现在对话中/u,
-    'the failure status must state exactly what was not observed');
+  assert.match(api.state.status, /即将刷新当前页面后重试一次/u,
+    'an unconfirmed send must enter the one-time page refresh recovery');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(reloadCalls, 1,
+    'the full continuation flow should refresh once after an unconfirmed send');
+  assert.ok(api.readSendRecovery(), 'the failed continuation must survive the refresh');
+  const messagesBeforeReloadRecovery = userMessages.length;
+  submitButton.sendFailuresBeforeSuccess = 0;
+  await api.recoverSendAfterReload();
+  assert.equal(userMessages.length, messagesBeforeReloadRecovery + 1,
+    'after refresh the saved continuation must be sent through the recovered composer');
+  assert.equal(api.readSendRecovery(), null,
+    'successful post-refresh sending must consume the recovery marker');
+  assert.equal(reloadCalls, 1,
+    'a failed post-refresh attempt must not start a refresh loop');
+  await api.stopStalledGeneration();
+  reloadCalls = 0;
 
   disabledComposerSubmit = new FakeButton(composer);
   disabledComposerSubmit.disabled = true;
@@ -738,6 +767,24 @@ assert.equal(api.isGenerating(), true, '停止回答 must mean generating');
   await api.tick();
   assert.equal(api.state.enabled, false,
     'a newly produced completion marker still pauses supervision');
+
+  api.state.enabled = true;
+  api.state.continueCount = 3;
+  assert.equal(api.scheduleSendRecoveryReload({
+    expectedUserText: '继续。测试刷新恢复',
+    userSignatureBefore: '2:10:abc',
+    expectedMessageCountBefore: 1,
+  }), true, 'a stuck send should schedule one reload recovery');
+  const savedRecovery = api.readSendRecovery();
+  assert.equal(savedRecovery.supervisionEnabled, true,
+    'reload recovery must remember that supervision was running');
+  assert.equal(savedRecovery.continueCount, 3,
+    'reload recovery must preserve the continuation count');
+  assert.equal(savedRecovery.expectedUserText, '继续。测试刷新恢复');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(reloadCalls, 1, 'a stuck send should refresh the page exactly once');
+  api.clearSendRecovery();
+  assert.equal(api.readSendRecovery(), null, 'the reload marker must be cleared after recovery');
 
   console.log('chatgpt-auto-continue: all checks passed');
 })().catch((error) => {

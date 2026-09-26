@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Auto Continue Guard
 // @namespace    local.visualtex.tools
-// @version      2.1.0
+// @version      2.3.0
 // @description  Continue an open ChatGPT conversation after the current answer has stopped and stayed idle.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -13,13 +13,15 @@
   'use strict';
 
   const STORAGE_KEY = 'chatgpt-auto-continue-guard-settings-v2';
+  const SEND_RECOVERY_KEY = 'chatgpt-auto-continue-send-recovery-v1';
+  const SEND_RECOVERY_MAX_AGE_MS = 5 * 60 * 1000;
   const PANEL_ID = 'chatgpt-auto-continue-guard';
   const STOP_MISSING_GRACE_MS = 2500;
   const COMPOSER_INPUT_GRACE_MS = 3000;
   const SEND_BUTTON_WAIT_MS = globalThis.__CHATGPT_AUTO_CONTINUE_TEST_MODE__ ? 60 : 3000;
   const DEFAULTS = Object.freeze({
     idleSeconds: 60,
-    maxContinues: 12,
+    maxContinues: 24,
     sentinel: '[TASK_DONE]',
   });
   const RETRY_POLICY = Object.freeze({
@@ -80,7 +82,9 @@
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
       return {
         idleSeconds: clampInteger(saved.idleSeconds, 10, 3600, DEFAULTS.idleSeconds),
-        maxContinues: clampInteger(saved.maxContinues, 1, 100, DEFAULTS.maxContinues),
+        maxContinues: Number(saved.maxContinues) === 12
+          ? DEFAULTS.maxContinues
+          : clampInteger(saved.maxContinues, 1, 100, DEFAULTS.maxContinues),
         sentinel: normalizeSentinel(saved.sentinel),
       };
     } catch (_error) {
@@ -90,6 +94,46 @@
 
   function saveSettings() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  }
+
+  function readSendRecovery() {
+    try {
+      const recovery = JSON.parse(sessionStorage.getItem(SEND_RECOVERY_KEY) || 'null');
+      if (!recovery || recovery.conversationKey !== getConversationKey()
+        || Date.now() - recovery.createdAt > SEND_RECOVERY_MAX_AGE_MS) {
+        sessionStorage.removeItem(SEND_RECOVERY_KEY);
+        return null;
+      }
+      return recovery;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function clearSendRecovery() {
+    try { sessionStorage.removeItem(SEND_RECOVERY_KEY); } catch (_error) { /* Ignore storage failures. */ }
+  }
+
+  function scheduleSendRecoveryReload(result) {
+    const recovery = {
+      conversationKey: getConversationKey(),
+      createdAt: Date.now(),
+      supervisionEnabled: state.enabled,
+      continueCount: state.continueCount,
+      expectedUserText: result.expectedUserText || '',
+      userSignatureBefore: result.userSignatureBefore || '',
+      expectedMessageCountBefore: result.expectedMessageCountBefore || 0,
+    };
+    try {
+      sessionStorage.setItem(SEND_RECOVERY_KEY, JSON.stringify(recovery));
+    } catch (_error) {
+      return false;
+    }
+    state.enabled = false;
+    setStatus('发送未生效，已记录本次续写；即将刷新当前页面后重试一次');
+    window.setTimeout(() => location.reload(),
+      globalThis.__CHATGPT_AUTO_CONTINUE_TEST_MODE__ ? 1 : 800);
+    return true;
   }
 
   function getConversationKey() {
@@ -1039,7 +1083,10 @@
     setStatus(reason);
   }
 
-  async function requestContinue(triggerLabel, { stopIfGenerating = false } = {}) {
+  async function requestContinue(triggerLabel, {
+    stopIfGenerating = false,
+    reloadOnSendFailure = true,
+  } = {}) {
     if (state.busy) return;
     if (state.pendingSubmission) {
       setStatus('上次续写尚未确认，暂不重复发送');
@@ -1074,6 +1121,7 @@
       const result = await sendContinueMessage();
       const completedAt = Date.now();
       if (!result.confirmed && result.kind === 'message') {
+        if (reloadOnSendFailure && scheduleSendRecoveryReload(result)) return;
         pause(result.message);
         return;
       }
@@ -1098,6 +1146,14 @@
       setStatus(result.message);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (reloadOnSendFailure && /(找不到输入框|发送箭头不可用|找不到可提交的表单)/u.test(message)) {
+        const expectedUserText = makeContinueText();
+        if (scheduleSendRecoveryReload({
+          expectedUserText,
+          userSignatureBefore: getUserSignature(),
+          expectedMessageCountBefore: countSubmittedMessages(expectedUserText),
+        })) return;
+      }
       if (/(网页编辑器未接受|编辑器回滚|输入区有附件|无法设置 ChatGPT 输入框|停止回答.*仍未切换)/u.test(message)) {
         pause(message);
       } else {
@@ -1108,6 +1164,56 @@
       state.busy = false;
       render();
     }
+  }
+
+  async function recoverSendAfterReload() {
+    const recovery = readSendRecovery();
+    if (!recovery) return;
+    setStatus('页面已刷新，正在等待当前对话和输入框恢复');
+    const composer = await waitUntil(findComposer, 15000, 250);
+    if (!composer) {
+      clearSendRecovery();
+      pause('页面刷新后仍找不到输入框，本次续写已暂停');
+      return;
+    }
+
+    if (recovery.supervisionEnabled) {
+      start();
+      state.continueCount = recovery.continueCount || 0;
+    } else {
+      state.conversationKey = getConversationKey();
+    }
+
+    const alreadySubmitted = recovery.expectedUserText
+      && countSubmittedMessages(recovery.expectedUserText)
+        > (recovery.expectedMessageCountBefore || 0);
+    if (alreadySubmitted || isGenerating()) {
+      clearSendRecovery();
+      if (alreadySubmitted) state.continueCount += 1;
+      state.generationActive = isGenerating();
+      state.stopWasSeenInCurrentResponse = state.generationActive;
+      setStatus(alreadySubmitted
+        ? '刷新后已确认“继续”进入对话，无需重复发送'
+        : '刷新后页面已恢复回答，无需重复发送');
+      return;
+    }
+
+    if (recovery.expectedUserText
+      && normalizeText(getComposerText(composer)) === normalizeText(recovery.expectedUserText)) {
+      try {
+        setComposerText(composer, '');
+      } catch (error) {
+        clearSendRecovery();
+        pause(`刷新后无法清理未发送的“继续”：${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+    }
+
+    clearSendRecovery();
+    await requestContinue('页面刷新恢复', {
+      stopIfGenerating: false,
+      reloadOnSendFailure: false,
+    });
   }
 
   async function tick() {
@@ -1308,7 +1414,7 @@
         .note { margin-top: 5px; color: #a8a8a8; font-size: 11px; }
       </style>
       <section class="panel" aria-label="ChatGPT 自动继续监督器">
-        <div class="title">ChatGPT 自动继续 v2.1</div>
+        <div class="title">ChatGPT 自动继续 v2.3</div>
         <div class="grid">
           <label for="idle">无更新阈值</label><input id="idle" type="number" min="10" max="3600" step="1">
           <label for="max">最多续写</label><input id="max" type="number" min="1" max="100" step="1">
@@ -1319,7 +1425,7 @@
           <button id="test" class="secondary" type="button">测试续写一次</button>
         </div>
         <div id="status" class="status" role="status"></div>
-        <div class="note">只有“继续”消息进入对话才算发送成功；按钮未提交时最多补一次表单提交。</div>
+        <div class="note">只有“继续”消息进入对话才算成功；发送卡死时会刷新页面并重试一次。</div>
       </section>
     `;
     document.documentElement.appendChild(host);
@@ -1366,6 +1472,10 @@
       tick,
       state,
       requestContinue,
+      readSendRecovery,
+      clearSendRecovery,
+      scheduleSendRecoveryReload,
+      recoverSendAfterReload,
       sendContinueMessage,
       stopStalledGeneration,
     };
@@ -1374,4 +1484,5 @@
 
   createPanel();
   window.setInterval(() => { void tick(); }, 1000);
+  void recoverSendAfterReload();
 })();

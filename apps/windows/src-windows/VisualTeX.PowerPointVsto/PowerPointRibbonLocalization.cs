@@ -11,7 +11,10 @@ public sealed partial class ThisAddIn
     <tabs>
       <tab id="VisualTeX.PowerPointVsto.Tab" label="VisualTeX" insertAfterMso="TabHome">
         <group id="VisualTeX.PowerPointVsto.Group" label="VisualTeX">
-          <button id="VisualTeX.PowerPointVsto.New" label="New Formula" size="large" tag="insertFormula" getImage="GetRibbonImage" onAction="OnNewFormula" />
+          <button id="VisualTeX.PowerPointVsto.New" label="New SVG" size="large" tag="insertFormula" getImage="GetRibbonImage" onAction="OnNewSvgFormula" />
+          <button id="VisualTeX.PowerPointVsto.NewOle" label="New OLE" size="large" tag="convertToOle" getImage="GetRibbonImage" onAction="OnNewOleFormula" />
+          <button id="VisualTeX.PowerPointVsto.InsertInlineOmml" label="Insert Inline OMML" size="large" screentip="Insert an inline native PowerPoint equation" supertip="Insert native Office Math at the current text-box caret or text selection as inline math." imageMso="EquationInsertNew" onAction="OnInsertInlineOmml" />
+          <button id="VisualTeX.PowerPointVsto.InsertDisplayOmml" label="Insert Display OMML" size="large" screentip="Insert a display native PowerPoint equation" supertip="Insert a separate equation paragraph at the current text caret when editing a text box; otherwise create a standalone native Office Math equation on the current slide." imageMso="EquationInsertNew" onAction="OnInsertDisplayOmml" />
           <button id="VisualTeX.PowerPointVsto.Edit" label="Edit Selected Formula" size="large" tag="editSelected" getImage="GetRibbonImage" onAction="OnEditSelected" />
           <button id="VisualTeX.PowerPointVsto.ConvertOmml" label="Convert to OMML" screentip="Convert to a native PowerPoint equation" supertip="Convert to native Office Math stored as OMML inside the PPTX so it can be edited with PowerPoint equation tools." imageMso="EquationInsertNew" onAction="OnConvertSelectedOmml" />
           <button id="VisualTeX.PowerPointVsto.ConvertSelected" label="Convert to Native OLE" screentip="Convert to an embedded editable OLE object" supertip="Preserve the visual appearance while embedding the object in the PowerPoint file so it can be edited again with VisualTeX." tag="convertToOle" getImage="GetRibbonImage" onAction="OnConvertSelected" />
