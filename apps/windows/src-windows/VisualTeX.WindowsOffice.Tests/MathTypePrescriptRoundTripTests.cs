@@ -28,9 +28,21 @@ public sealed class MathTypePrescriptRoundTripTests
 
     [Theory]
     [InlineData("<mi>C</mi>")]
+    [InlineData("<mi>Co</mi>")]
     [InlineData("<mrow><mi>A</mi><mo>+</mo><mi>B</mi></mrow>")]
     [InlineData("<mfrac><mi>x</mi><mi>y</mi></mfrac>")]
     public void PreAndPostScriptsRetainTheEntireBase(string basis)=>AssertRoundTrip(Math(Multi(basis,"<mi>i</mi><mn>2</mn>","<mi>a</mi><mi>b</mi>")));
+
+    [Fact]
+    public void NativePrecedingScriptTemplateIsSerializedBeforeItsBase()
+    {
+        var created=MathTypeMtefCodec.CreateEquationNative(
+            Math(Multi("<mi>Co</mi>","","<mn>27</mn><mn>59</mn>")),
+            inline:true);
+        var structure=created.Mtef.Skip(created.StructureOffset).ToArray();
+        Assert.Equal(1,structure[0]); // root LINE
+        Assert.Equal(new byte[] { 3,0,29,1,0,11 },structure.Skip(2).Take(6));
+    }
 
     [Fact]
     public void MultipleLeftPairsKeepTheirOrder()=>AssertRoundTrip(Math(Multi("<mi>T</mi>","","<mi>a</mi><mi>b</mi><mi>c</mi><mi>d</mi>")));

@@ -48,10 +48,10 @@ internal static partial class MathTypeMtefCodec
     private const byte TypefaceVector = 7;
     private const byte TypefaceNumber = 8;
     private const byte TypefaceMtExtra = 11;
-    // MathType 7 uses built-in typeface 12 for a small set of native glyphs
-    // such as reverse membership (\\ni) and \\bigcirc. These are not Adobe
-    // Symbol positions and carry no encoded8 byte.
-    private const byte TypefaceMathTypeSpecial12 = 12;
+    // MTEF v5 built-in typeface 12 is fnTEXT_FE (Far-East Text). MathType also
+    // persists a few native glyphs such as reverse membership (\\ni) and
+    // \\bigcirc in this slot; those are distinguished by MTCode when reading.
+    private const byte TypefaceFarEastText = 12;
     private const byte TypefaceMarker = 23;
     // MathType 7 persists expanding fence characters ((), [], {}, |, ...)
     // with typeface 22 and MTCode, not Symbol style. Using Symbol here makes
@@ -212,6 +212,7 @@ internal static partial class MathTypeMtefCodec
         var math = document.Root?.DescendantsAndSelf()
             .FirstOrDefault(element => element.Name.LocalName == "math")
             ?? throw new InvalidDataException("MathML has no <math> root.");
+        NormalizeMathMlPrescripts(math);
         var generated = BuildRootStructure(math, seedMtef, out var prefixDefinitions);
         var mtef = AssembleRewrittenMtef(
             seedMtef,
@@ -282,6 +283,7 @@ internal static partial class MathTypeMtefCodec
         var math = document.Root?.DescendantsAndSelf()
             .FirstOrDefault(element => element.Name.LocalName == "math")
             ?? throw new InvalidDataException("MathML has no <math> root.");
+        NormalizeMathMlPrescripts(math);
 
         // Preserve MathType's equation-options byte exactly as stored in the
         // source MTEF. Word controls whether this OLE sits inline or as a display
@@ -322,8 +324,91 @@ internal static partial class MathTypeMtefCodec
             ?? document.Root
             ?? throw new InvalidDataException("MathML has no root element.");
         var normalized = new XElement(math);
+        NormalizeMathMlPrescripts(normalized);
         NormalizeMathTypeExportedTabPiles(normalized);
         return CanonicalizeMathMl(normalized, inheritedMathVariant: null);
+    }
+
+    internal static void NormalizeMathMlPrescripts(XElement root)
+    {
+        var scriptNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "msub", "msup", "msubsup",
+        };
+        // Only containers whose children form one visual expression may donate
+        // the following atom as a base. Fraction, root and script children are
+        // separate arguments, so crossing one of those boundaries is invalid.
+        var sequenceNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "math", "mrow", "mstyle", "mtd", "msqrt", "mphantom",
+            "mpadded", "menclose",
+        };
+        var baseNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "mi", "mn", "mrow", "mstyle", "mfrac", "msqrt", "mroot",
+            "msub", "msup", "msubsup", "mmultiscripts", "mover", "munder",
+            "munderover", "mfenced",
+        };
+
+        bool IsEmptyBase(XElement element)
+        {
+            if (element.Name.LocalName is not ("mrow" or "mi" or "mn" or "mtext"))
+                return false;
+            if (element.Nodes().OfType<XText>().Any(text =>
+                    !string.IsNullOrWhiteSpace(text.Value)))
+                return false;
+            var children = element.Elements().ToArray();
+            return children.Length == 0 || children.All(IsEmptyBase);
+        }
+
+        foreach (var script in root.DescendantsAndSelf()
+                     .Where(element => scriptNames.Contains(element.Name.LocalName))
+                     .Reverse()
+                     .ToArray())
+        {
+            if (script.Parent is not XElement parent
+                || !sequenceNames.Contains(parent.Name.LocalName))
+                continue;
+            var arguments = script.Elements().ToArray();
+            if (arguments.Length != (script.Name.LocalName == "msubsup" ? 3 : 2)
+                || !IsEmptyBase(arguments[0]))
+                continue;
+            var basis = script.ElementsAfterSelf().FirstOrDefault();
+            if (basis is null
+                || !baseNames.Contains(basis.Name.LocalName)
+                || string.IsNullOrWhiteSpace(basis.Value))
+                continue;
+
+            var ns = script.Name.Namespace;
+            var sub = script.Name.LocalName == "msup"
+                ? new XElement(ns + "none")
+                : new XElement(arguments[1]);
+            var sup = script.Name.LocalName == "msub"
+                ? new XElement(ns + "none")
+                : new XElement(arguments[script.Name.LocalName == "msubsup" ? 2 : 1]);
+            if (string.IsNullOrWhiteSpace(sub.Value)
+                && string.IsNullOrWhiteSpace(sup.Value))
+                continue;
+
+            // TeX writes a left script as an empty-base script followed by its
+            // visible atom (for example {}^{59}_{27}\mathrm{Co}). A null LINE
+            // prevents accidental binding to the previous sibling, but it still
+            // gives MathType an independent empty base whose vertical metrics can
+            // differ at the start of a formula. MTEF has a real preceding-script
+            // template; express the source as mmultiscripts so all occurrences
+            // attach to, and align against, their actual base atom.
+            var native = new XElement(
+                ns + "mmultiscripts",
+                script.Attributes()
+                    .Where(attribute => !attribute.IsNamespaceDeclaration)
+                    .Select(attribute => new XAttribute(attribute)),
+                new XElement(basis),
+                new XElement(ns + "mprescripts"),
+                sub,
+                sup);
+            script.ReplaceWith(native);
+            basis.Remove();
+        }
     }
 
     private static void NormalizeMathTypeExportedTabPiles(XElement root)
@@ -2937,15 +3022,19 @@ internal static partial class MathTypeMtefCodec
     {
         var local = element.Name.LocalName;
         if (local is not ("mrow" or "mstyle" or "semantics" or "mpadded" or "math"))
-            return false;
-        var objectCount = 0;
-        foreach (var child in SignificantChildren(element))
+            return !element.HasElements
+                && EnumerateBmpScalars(element.Value).Skip(1).Any();
+
+        var children = SignificantChildren(element)
+            .Where(child => child is not XElement childElement
+                || childElement.Name.LocalName is not ("annotation" or "annotation-xml"))
+            .ToArray();
+        if (children.Length > 1) return true;
+        if (children.Length == 1 && children[0] is XElement onlyChild)
+            return RequiresGroupedScriptBase(onlyChild);
+        if (children.Length == 1 && children[0] is XText onlyText)
         {
-            if (child is XElement childElement
-                && childElement.Name.LocalName is "annotation" or "annotation-xml")
-                continue;
-            objectCount++;
-            if (objectCount > 1) return true;
+            return EnumerateBmpScalars(onlyText.Value).Skip(1).Any();
         }
         return false;
     }
@@ -4120,13 +4209,36 @@ internal static partial class MathTypeMtefCodec
     {
         var children = element.Elements().ToArray();
         if (children.Length == 0) return;
+
+        var prescriptsIndex = Array.FindIndex(
+            children,
+            child => child.Name.LocalName == "mprescripts");
+        if (prescriptsIndex <= 0) prescriptsIndex = children.Length;
+
+        // MTEF v5 tvSU_PRECEDES=1 makes a script template consume the next
+        // object, rather than the preceding object. Emit prescript pairs from
+        // outermost to innermost so the pair nearest the base is immediately
+        // before it. MathML stores those pairs nearest-first.
+        var prescriptCount = children.Length - prescriptsIndex - 1;
+        var lastPrescriptPair = prescriptsIndex + 1
+            + Math.Max(0, (prescriptCount - 1) / 2) * 2;
+        for (var preIndex = lastPrescriptPair;
+             prescriptCount > 0 && preIndex > prescriptsIndex;
+             preIndex -= 2)
+        {
+            EmitScriptPair(
+                children[preIndex],
+                preIndex + 1 < children.Length ? children[preIndex + 1] : null,
+                precedes: true,
+                output);
+        }
+
         EmitScriptBase(children[0], output);
         var index = 1;
-        while (index < children.Length
-            && children[index].Name.LocalName != "mprescripts")
+        while (index < prescriptsIndex)
         {
             var sub = children[index];
-            var sup = index + 1 < children.Length ? children[index + 1] : null;
+            var sup = index + 1 < prescriptsIndex ? children[index + 1] : null;
             if (sub.Name.LocalName == "none" && (sup is null || sup.Name.LocalName == "none"))
             {
                 index += 2;
@@ -4146,32 +4258,34 @@ internal static partial class MathTypeMtefCodec
             }
             index += 2;
         }
-        // MTEF v5 tvSU_PRECEDES=1 positions the script to the left of its base.
-        // The record still follows its base in the object list; both script slots
-        // are serialized, with LINE_NULL for a genuinely absent half.
-        if (index < children.Length && children[index].Name.LocalName == "mprescripts")
+    }
+
+    private static void EmitScriptPair(
+        XElement? sub,
+        XElement? sup,
+        bool precedes,
+        List<byte> output)
+    {
+        var hasSub = sub is not null && sub.Name.LocalName != "none";
+        var hasSup = sup is not null && sup.Name.LocalName != "none";
+        if (!hasSub && !hasSup) return;
+
+        var selector = hasSub && hasSup ? TemplateSubSup : hasSub ? TemplateSub : TemplateSup;
+        output.AddRange(new byte[]
         {
-            index++;
-            while (index < children.Length)
-            {
-                var sub = children[index];
-                var sup = index + 1 < children.Length ? children[index + 1] : null;
-                var hasSub = sub.Name.LocalName != "none";
-                var hasSup = sup is not null && sup.Name.LocalName != "none";
-                if (hasSub || hasSup)
-                {
-                    var selector = hasSub && hasSup ? TemplateSubSup : hasSub ? TemplateSub : TemplateSup;
-                    output.AddRange(new byte[] { RecordTemplate, 0, selector, 1, 0, RecordSub });
-                    if (hasSub) EmitLine(sub, output);
-                    else output.AddRange(new byte[] { RecordLine, LineNull });
-                    if (hasSup) EmitLine(sup!, output);
-                    else output.AddRange(new byte[] { RecordLine, LineNull });
-                    output.Add(RecordEnd);
-                    output.Add(RecordFull);
-                }
-                index += 2;
-            }
-        }
+            RecordTemplate,
+            0,
+            selector,
+            precedes ? (byte)1 : (byte)0,
+            0,
+            RecordSub,
+        });
+        if (hasSub) EmitLine(sub!, output);
+        else output.AddRange(new byte[] { RecordLine, LineNull });
+        if (hasSup) EmitLine(sup!, output);
+        else output.AddRange(new byte[] { RecordLine, LineNull });
+        output.Add(RecordEnd);
+        output.Add(RecordFull);
     }
 
     private static void EmitFenced(XElement element, List<byte> output)
@@ -4688,11 +4802,13 @@ internal static partial class MathTypeMtefCodec
         // \text{∞}) and makes otherwise-valid MathType MTEF fail semantic
         // round-trip validation.  Preserve the MathML token class first; apply
         // mathvariant only inside identifier-like tokens.
-        if (tokenKind == "mtext") return TypefaceText;
+        if (tokenKind == "mtext")
+            return IsFarEastTextScalar(scalar) ? TypefaceFarEastText : TypefaceText;
         if (tokenKind == "mn") return TypefaceNumber;
         if (tokenKind == "mo")
             return functionHint == true ? TypefaceFunction : TypefaceSymbol;
         if (IsMathematicalSymbolScalar(scalar)) return TypefaceSymbol;
+        if (IsFarEastTextScalar(scalar)) return TypefaceFarEastText;
 
         if (variant.Contains("normal") || variant.Contains("upright"))
             return functionHint == true ? TypefaceFunction : TypefaceText;
@@ -4731,6 +4847,25 @@ internal static partial class MathTypeMtefCodec
             || category == System.Globalization.UnicodeCategory.ModifierSymbol
             || category == System.Globalization.UnicodeCategory.OtherSymbol;
     }
+
+    private static bool IsFarEastTextScalar(int scalar) =>
+        scalar is >= 0x1100 and <= 0x11FF   // Hangul Jamo
+            or >= 0x2E80 and <= 0x2FFF     // CJK radicals and description characters
+            or >= 0x3000 and <= 0x303F     // CJK symbols and punctuation
+            or >= 0x3040 and <= 0x30FF     // Hiragana and Katakana
+            or >= 0x3100 and <= 0x31BF     // Bopomofo and related extensions
+            or >= 0x31C0 and <= 0x31EF     // CJK strokes
+            or >= 0x31F0 and <= 0x31FF     // Katakana phonetic extensions
+            or >= 0x3200 and <= 0x33FF     // Enclosed/compatibility CJK
+            or >= 0x3400 and <= 0x4DBF     // CJK Unified Ideographs Extension A
+            or >= 0x4E00 and <= 0x9FFF     // CJK Unified Ideographs
+            or >= 0xA000 and <= 0xA4CF     // Yi syllables and radicals
+            or >= 0xA960 and <= 0xA97F     // Hangul Jamo Extended-A
+            or >= 0xAC00 and <= 0xD7AF     // Hangul syllables/Jamo Extended-B
+            or >= 0xF900 and <= 0xFAFF     // CJK Compatibility Ideographs
+            or >= 0xFE10 and <= 0xFE1F     // Vertical forms
+            or >= 0xFE30 and <= 0xFE6F     // CJK compatibility/small forms
+            or >= 0xFF00 and <= 0xFFEF;    // Halfwidth and fullwidth forms
 
     private static string NormalizeOperatorToken(string value) => value switch
     {
@@ -5039,7 +5174,7 @@ internal static partial class MathTypeMtefCodec
                 EmitScalar(0x22B3, TypefaceMtExtra, output, includeEncoded8: true, encoded8Override: 0x3E);
                 return true;
             case 0x2661: // \\heartsuit: built-in MathType typeface 12.
-                EmitScalar(0x2661, TypefaceMathTypeSpecial12, output, includeEncoded8: false);
+                EmitScalar(0x2661, TypefaceFarEastText, output, includeEncoded8: false);
                 return true;
             case 0x2662: // \\diamondsuit: MT Extra glyph position 0x6E.
                 EmitScalar(0xFFFD, TypefaceMtExtra, output, includeEncoded8: true, encoded8Override: 0x6E);
@@ -5048,7 +5183,7 @@ internal static partial class MathTypeMtefCodec
                 EmitScalar(0x2299, TypefaceMtExtra, output, includeEncoded8: true, encoded8Override: 0x65);
                 return true;
             case 0x25EF: // \\bigcirc: built-in typeface 12.
-                EmitScalar(0x25EF, TypefaceMathTypeSpecial12, output, includeEncoded8: false);
+                EmitScalar(0x25EF, TypefaceFarEastText, output, includeEncoded8: false);
                 return true;
             case 0x226A: // \\ll: MT Extra position 0x3D.
                 EmitScalar(0x226A, TypefaceMtExtra, output, includeEncoded8: true, encoded8Override: 0x3D);
@@ -5096,7 +5231,7 @@ internal static partial class MathTypeMtefCodec
                 EmitScalar(0x2210, TypefaceMtExtra, output, includeEncoded8: true, encoded8Override: 0x43);
                 return true;
             case 0x220B: // \\ni: built-in typeface 12, no encoded8.
-                EmitScalar(0x220B, TypefaceMathTypeSpecial12, output, includeEncoded8: false);
+                EmitScalar(0x220B, TypefaceFarEastText, output, includeEncoded8: false);
                 return true;
             case 0x22EF: // \\cdots
                 EmitScalar(0x22EF, TypefaceMtExtra, output, includeEncoded8: true, encoded8Override: 0x4C);
@@ -5161,7 +5296,10 @@ internal static partial class MathTypeMtefCodec
             // Do not pretend every Unicode operator lives in Adobe Symbol.
             // Times New Roman/MathType Text is Unicode-capable and is the safe
             // fallback for symbols not present in the legacy Symbol encoding.
-            EmitScalar(NormalizeMathTypeMtCode(scalar), TypefaceText, output);
+            EmitScalar(
+                NormalizeMathTypeMtCode(scalar),
+                IsFarEastTextScalar(scalar) ? TypefaceFarEastText : TypefaceText,
+                output);
         }
     }
 
@@ -5170,7 +5308,10 @@ internal static partial class MathTypeMtefCodec
         foreach (var scalar in EnumerateBmpScalars(value))
         {
             if (IsWhiteSpaceScalar(scalar)) EmitScalar(scalar, TypefaceSpace, output);
-            else EmitScalar(scalar, typeface, output);
+            else EmitScalar(
+                scalar,
+                IsFarEastTextScalar(scalar) ? TypefaceFarEastText : typeface,
+                output);
         }
     }
 
@@ -5549,18 +5690,37 @@ internal static partial class MathTypeMtefCodec
 
         private void ReadObjectList(XElement row)
         {
+            var pendingPrescripts = new List<ParsedTemplate>();
+
+            void AddObject(XNode node, bool mergeAdjacentCharacters = false)
+            {
+                if (pendingPrescripts.Count != 0)
+                {
+                    node = BuildPrecedingScriptNode(node, pendingPrescripts);
+                    pendingPrescripts.Clear();
+                    mergeAdjacentCharacters = false;
+                }
+                if (mergeAdjacentCharacters && node is XElement character)
+                    AppendNode(row, character);
+                else
+                    row.Add(node);
+            }
+
             while (true)
             {
                 SkipFormattingRecords();
                 var record = Peek();
                 if (record == RecordEnd)
                 {
+                    if (pendingPrescripts.Count != 0)
+                        throw new InvalidDataException(
+                            $"MathType preceding-script template at offset {_position} has no following base object.");
                     _position++;
                     return;
                 }
                 if (record == RecordChar)
                 {
-                    AppendNode(row, ReadCharacter());
+                    AddObject(ReadCharacter(), mergeAdjacentCharacters: true);
                     continue;
                 }
                 if (record == RecordTemplate)
@@ -5568,6 +5728,14 @@ internal static partial class MathTypeMtefCodec
                     var template = ReadTemplate();
                     if (template.ScriptKind != 0)
                     {
+                        if (template.ScriptPrecedes)
+                        {
+                            pendingPrescripts.Add(template);
+                            continue;
+                        }
+                        if (pendingPrescripts.Count != 0)
+                            throw new InvalidDataException(
+                                $"MathType trailing-script template at offset {_position} appears before the base of a preceding script.");
                         var baseNode = row.Nodes().LastOrDefault();
                         if (baseNode is null)
                             throw new InvalidDataException(
@@ -5577,23 +5745,23 @@ internal static partial class MathTypeMtefCodec
                     }
                     else if (template.Node is not null)
                     {
-                        row.Add(template.Node);
+                        AddObject(template.Node);
                     }
                     continue;
                 }
                 if (record == RecordLine)
                 {
-                    row.Add(ReadLine());
+                    AddObject(ReadLine());
                     continue;
                 }
                 if (record == RecordPile)
                 {
-                    row.Add(ReadPile());
+                    AddObject(ReadPile());
                     continue;
                 }
                 if (record == RecordMatrix)
                 {
-                    row.Add(ReadMatrix());
+                    AddObject(ReadMatrix());
                     continue;
                 }
                 if (record >= 100)
@@ -5715,12 +5883,14 @@ internal static partial class MathTypeMtefCodec
                 token = new XElement("mspace", new XAttribute("data-mtef-tab", "true"));
             else if (typeface == TypefaceMarker && scalar == MathTypeAlignmentMarkerMtCode)
                 token = new XElement("mspace", new XAttribute("data-mtef-align", "true"));
-            else if (typeface == TypefaceMathTypeSpecial12 && scalar == 0x220B)
+            else if (typeface == TypefaceFarEastText && scalar == 0x220B)
                 token = new XElement("mo", "∋");
-            else if (typeface == TypefaceMathTypeSpecial12 && scalar == 0x25EF)
+            else if (typeface == TypefaceFarEastText && scalar == 0x25EF)
                 token = new XElement("mo", "◯");
-            else if (typeface == TypefaceMathTypeSpecial12 && scalar == 0x2661)
+            else if (typeface == TypefaceFarEastText && scalar == 0x2661)
                 token = new XElement("mo", "♡");
+            else if (typeface == TypefaceFarEastText)
+                token = new XElement("mtext", text);
             else if (typeface == TypefaceMtExtra && scalar == 0xFFFD && encoded == 0x6E)
             {
                 // MathType 7 uses this MT Extra position for the diamondsuit glyph.
@@ -6351,11 +6521,42 @@ internal static partial class MathTypeMtefCodec
                 return new XElement("mmultiscripts", baseNode, new XElement("mprescripts"),
                     template.ScriptKind == TemplateSup ? new XElement("none") : sub,
                     template.ScriptKind == TemplateSub ? new XElement("none") : sup);
+            if (baseNode is XElement multiscripts
+                && multiscripts.Name.LocalName == "mmultiscripts"
+                && multiscripts.Elements().FirstOrDefault(element =>
+                    element.Name.LocalName == "mprescripts") is XElement marker)
+            {
+                marker.AddBeforeSelf(
+                    template.ScriptKind == TemplateSup ? new XElement("none") : sub,
+                    template.ScriptKind == TemplateSub ? new XElement("none") : sup);
+                return multiscripts;
+            }
             if (template.ScriptKind == TemplateSub)
                 return new XElement("msub", baseNode, sub);
             if (template.ScriptKind == TemplateSup)
                 return new XElement("msup", baseNode, sup);
             return new XElement("msubsup", baseNode, sub, sup);
+        }
+
+        private static XNode BuildPrecedingScriptNode(
+            XNode baseNode,
+            IReadOnlyList<ParsedTemplate> templates)
+        {
+            var multiscripts = new XElement("mmultiscripts", baseNode, new XElement("mprescripts"));
+            for (var index = templates.Count - 1; index >= 0; index--)
+            {
+                var template = templates[index];
+                var sub = template.Subscript is null
+                    ? new XElement("mrow")
+                    : CollapseRow(template.Subscript);
+                var sup = template.Superscript is null
+                    ? new XElement("mrow")
+                    : CollapseRow(template.Superscript);
+                multiscripts.Add(
+                    template.ScriptKind == TemplateSup ? new XElement("none") : sub,
+                    template.ScriptKind == TemplateSub ? new XElement("none") : sup);
+            }
+            return multiscripts;
         }
 
         private static XNode CollapseRow(XElement row)

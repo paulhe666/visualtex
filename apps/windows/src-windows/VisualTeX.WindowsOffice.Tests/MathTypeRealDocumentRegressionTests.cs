@@ -24,13 +24,26 @@ public sealed class MathTypeRealDocumentRegressionTests
             MathTypeMtefCodec.ReadEquationNativeMathMl(rewritten.EquationNative)));
     }
 
-    public static IEnumerable<object[]> EmptyBases()
+    public static IEnumerable<object[]> EmptyPrescriptBases()
     {
         foreach (var basis in new[] { "<mi/>", "<mrow/>", "<mrow><mi/></mrow>", "<mstyle><mrow/></mstyle>" })
-        foreach (var script in new[] { "msub", "msup", "msubsup", "munder", "mover", "munderover", "mmultiscripts" })
+        foreach (var script in new[] { "msub", "msup", "msubsup" })
         foreach (var prefix in new[] { "", "<mi>x</mi><mo>+</mo>" })
         {
-            var pair = script is "msubsup" or "munderover" or "mmultiscripts";
+            var pair = script == "msubsup";
+            yield return new object[] { "<math>" + prefix + "<" + script + ">" + basis
+                + "<mn>2</mn>" + (pair ? "<mn>4</mn>" : "")
+                + "</" + script + "><mi>H</mi><mi>e</mi></math>" };
+        }
+    }
+
+    public static IEnumerable<object[]> EmptyNonPrescriptBases()
+    {
+        foreach (var basis in new[] { "<mi/>", "<mrow/>", "<mrow><mi/></mrow>", "<mstyle><mrow/></mstyle>" })
+        foreach (var script in new[] { "munder", "mover", "munderover", "mmultiscripts" })
+        foreach (var prefix in new[] { "", "<mi>x</mi><mo>+</mo>" })
+        {
+            var pair = script is "munderover" or "mmultiscripts";
             yield return new object[] { "<math>" + prefix + "<" + script + ">" + basis
                 + "<mn>2</mn>" + (pair ? "<mn>4</mn>" : "")
                 + "</" + script + "><mi>H</mi><mi>e</mi></math>" };
@@ -38,13 +51,115 @@ public sealed class MathTypeRealDocumentRegressionTests
     }
 
     [Theory]
-    [MemberData(nameof(EmptyBases))]
-    public void EmptyScriptBaseIsAnObjectNotThePreviousSibling(string source)
+    [MemberData(nameof(EmptyPrescriptBases))]
+    public void EmptyScriptBaseFollowedByAtomUsesNativePrescript(string source)
     {
         AssertRoundTrip(source);
         var actual = XElement.Parse(RoundTrip(source));
-        var script = actual.Descendants().First(e => e.Name.LocalName is "msub" or "msup" or "msubsup");
+        var script = Assert.Single(actual.Descendants()
+            .Where(element => element.Name.LocalName == "mmultiscripts"));
+        Assert.Equal("H", script.Elements().First().Value);
+        Assert.Contains(script.Elements(), element => element.Name.LocalName == "mprescripts");
+        Assert.DoesNotContain(actual.Descendants(), element =>
+            element.Name.LocalName is "msub" or "msup" or "msubsup"
+            && string.IsNullOrWhiteSpace(element.Elements().FirstOrDefault()?.Value));
+    }
+
+    [Theory]
+    [MemberData(nameof(EmptyNonPrescriptBases))]
+    public void EmptyNonPrescriptBaseIsStillIndependentOfThePreviousSibling(string source)
+    {
+        AssertRoundTrip(source);
+        var actual = XElement.Parse(RoundTrip(source));
+        var script = actual.Descendants().First(element =>
+            element.Name.LocalName is "msub" or "msup" or "msubsup");
         Assert.Empty(script.Elements().First().Value);
+    }
+
+    [Fact]
+    public void EmptyScriptWithoutFollowingAtomRemainsIndependentOfPreviousSibling()
+    {
+        const string source = "<math><mi>x</mi><mo>+</mo><msubsup><mrow/><mn>2</mn><mn>4</mn></msubsup><mo>+</mo></math>";
+        AssertRoundTrip(source);
+        var actual = XElement.Parse(RoundTrip(source));
+        var script = Assert.Single(actual.Descendants()
+            .Where(element => element.Name.LocalName == "msubsup"));
+        Assert.Empty(script.Elements().First().Value);
+        Assert.Empty(actual.Descendants()
+            .Where(element => element.Name.LocalName == "mmultiscripts"));
+    }
+
+    [Fact]
+    public void NuclearReactionUsesNativePrescriptWithoutChangingExistingPostScripts()
+    {
+        const string source = "<math><msubsup><mi/><mrow><mn>27</mn></mrow><mrow><mn>59</mn></mrow></msubsup>"
+            + "<mi>C</mi><mi>o</mi><msubsup><mo>+</mo><mrow><mn>0</mn></mrow><mrow><mn>1</mn></mrow></msubsup>"
+            + "<mi>n</mi><msubsup><mo stretchy='false'>→</mo><mrow><mn>27</mn></mrow><mrow><mn>60</mn></mrow></msubsup>"
+            + "<mi>C</mi><mi>o</mi><mo>+</mo><mi>γ</mi></math>";
+        AssertRoundTrip(source);
+        var actual = XElement.Parse(RoundTrip(source));
+        var prescript = Assert.Single(actual.Descendants()
+            .Where(element => element.Name.LocalName == "mmultiscripts")
+            .ToArray());
+        Assert.Equal("C", prescript.Elements().First().Value);
+        Assert.Equal("27/59", string.Join("/", prescript.Elements().Skip(2).Select(slot => slot.Value)));
+
+        var postScripts = actual.Descendants()
+            .Where(element => element.Name.LocalName == "msubsup")
+            .ToArray();
+        Assert.Equal(new[] { "+", "→" },
+            postScripts.Select(script => script.Elements().First().Value));
+        Assert.Equal(new[] { "0/1", "27/60" },
+            postScripts.Select(script =>
+            {
+                var slots = script.Elements().Skip(1).ToArray();
+                return slots[0].Value + "/" + slots[1].Value;
+            }));
+    }
+
+    [Theory]
+    [InlineData("中文氢燃烧")]
+    [InlineData("かなカナ")]
+    [InlineData("한글")]
+    public void EastAsianTextUsesMathTypeFarEastTypefaceAndRoundTrips(string literal)
+    {
+        var source = "<math><mi>E</mi><mo>=</mo><mtext>" + literal
+            + "</mtext><mo>+</mo><mi>x</mi></math>";
+        AssertRoundTrip(source);
+
+        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+            source, inline: true, 12);
+        var structure = generated.Mtef.AsSpan(generated.StructureOffset);
+        foreach (var character in literal)
+        {
+            var farEastRecord = new byte[]
+            {
+                2, 0, 12 + 128,
+                (byte)(character & 0xFF),
+                (byte)(character >> 8),
+            };
+            var westernTextRecord = new byte[]
+            {
+                2, 0, 1 + 128,
+                (byte)(character & 0xFF),
+                (byte)(character >> 8),
+            };
+            Assert.True(structure.IndexOf(farEastRecord) >= 0,
+                $"U+{(int)character:X4} was not emitted with MTEF fnTEXT_FE.");
+            Assert.True(structure.IndexOf(westernTextRecord) < 0,
+                $"U+{(int)character:X4} was incorrectly emitted with the western Text typeface.");
+        }
+    }
+
+    [Fact]
+    public void WesternTextRemainsInTheWesternTextTypeface()
+    {
+        const string source = "<math><mtext>A</mtext></math>";
+        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+            source, inline: true, 12);
+        var structure = generated.Mtef.AsSpan(generated.StructureOffset);
+        Assert.True(structure.IndexOf(new byte[] { 2, 0, 1 + 128, (byte)'A', 0 }) >= 0);
+        Assert.True(structure.IndexOf(new byte[] { 2, 0, 12 + 128, (byte)'A', 0 }) < 0);
     }
 
     [Theory]
