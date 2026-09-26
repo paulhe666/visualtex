@@ -578,7 +578,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
-            SetStatus(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+            SetStatus(OfficePluginLanguage.FormatOperationError(
+                error,
+                "无法设置公式字号",
+                "Unable to set formula font size"));
         }
     }
     public void OnIncreaseFormulaFontSize(object control)
@@ -591,7 +594,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
-            SetStatus(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+            SetStatus(OfficePluginLanguage.FormatOperationError(
+                error,
+                "无法设置公式字号",
+                "Unable to set formula font size"));
         }
     }
     public void OnInsertInline(object control) =>
@@ -694,7 +700,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
-            SetStatus(T($"无法打开 VisualTeX：{error.Message}", $"Unable to open VisualTeX: {error.Message}"));
+            SetStatus(OfficePluginLanguage.FormatOperationError(
+                error,
+                "无法打开 VisualTeX",
+                "Unable to open VisualTeX"));
         }
     }
 
@@ -717,7 +726,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         catch (Exception error)
         {
             WordDoubleClickHook.TraceMessage($"ribbon-font-size-failed requested={value} error={error}");
-            SetStatus(T($"无法设置公式字号：{error.Message}", $"Unable to set formula font size: {error.Message}"));
+            SetStatus(OfficePluginLanguage.FormatOperationError(
+                error,
+                "无法设置公式字号",
+                "Unable to set formula font size"));
         }
         finally { InvalidateFormulaFontControls(); }
     }
@@ -3197,16 +3209,30 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var mathTypePreviews =
             new Dictionary<string, MathTypeNativePreviewRenderer.Result>(
                 StringComparer.Ordinal);
+        var mathTypeStandalone =
+            new Dictionary<string, (
+                MathTypeMtefCodec.RewriteResult Generated,
+                byte[] CompoundFile,
+                string SemanticSignature)>(StringComparer.Ordinal);
         var converterSessionIds = new List<string>();
         var renderFailures = new Dictionary<string, string>(StringComparer.Ordinal);
         var skippedTargets = new List<(WordLatexRedrawTarget Target, string Error)>();
         var maxRenderMilliseconds = 0L;
         var totalRenderMilliseconds = 0L;
+        var redrawPhaseWatch = Stopwatch.StartNew();
         try
         {
+            var phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
             var plan = await dispatcher.InvokeAsync(
                     () => service.CaptureLatexRedrawPlan(wholeDocument))
                 .ConfigureAwait(false);
+            WriteRedrawAcceptanceLog(
+                $"redraw-phase captureMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
+                + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds} "
+                + string.Join(
+                    " ",
+                    plan.CaptureTimings.Select(item =>
+                        $"capture.{item.Key}Ms={item.Value}")));
             var modeLabel = string.Equals(
                 objectMode,
                 FormulaOleContract.NativeOleMode,
@@ -3274,8 +3300,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 + $"mode={objectMode} formulas={plan.Targets.Count} "
                 + $"numberDisplayFormulas={plan.NumberDisplayFormulas}");
             SetStatus($"正在准备重绘 {plan.Targets.Count} 个 LaTeX 公式为 {modeLabel}…");
+            phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
             await client.EnsureHealthyAsync(lifetime.Token).ConfigureAwait(false);
             await client.PrewarmConverterAsync(lifetime.Token).ConfigureAwait(false);
+            WriteRedrawAcceptanceLog(
+                $"redraw-phase healthPrewarmMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
+                + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds}");
 
             // Redraw used to switch the single hidden converter WebView from one
             // Session to the next and wait after every switch. React could finish
@@ -3292,7 +3322,22 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 WordLatexRedrawTarget Target,
                 OfficeSessionDocument Session,
                 int Index)>();
+            var mathTypePreflightPrepared =
+                new System.Collections.Concurrent.ConcurrentDictionary<
+                    string,
+                    (MathTypeMtefCodec.RewriteResult Generated,
+                     byte[] CompoundFile,
+                     string SemanticSignature)>(StringComparer.Ordinal);
+            var mathTypePreflightFailures =
+                new System.Collections.Concurrent.ConcurrentDictionary<
+                    string,
+                    (string Latex, string Error)>(StringComparer.Ordinal);
+            var mathTypePreflightTasks = new List<Task>();
+            var mathTypePreflightGate =
+                new System.Threading.SemaphoreSlim(
+                    Math.Min(4, Math.Max(1, Environment.ProcessorCount)));
 
+            phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
             for (var index = 0; index < plan.Targets.Count; index++)
             {
                 lifetime.Token.ThrowIfCancellationRequested();
@@ -3346,9 +3391,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         + $"latex={target.Latex} error={detail}");
                 }
             }
+            WriteRedrawAcceptanceLog(
+                $"redraw-phase createSessionsMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
+                + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds} sessions={pendingTemplates.Count}");
 
             if (pendingTemplates.Count > 0)
             {
+                phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
                 WriteRedrawAcceptanceLog(
                     $"render-batch-start unique={pendingTemplates.Count} total={plan.Targets.Count}");
                 SetStatus($"正在批量渲染 {pendingTemplates.Count} 个独立公式…");
@@ -3379,6 +3428,51 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             maxRenderMilliseconds,
                             stopwatch.ElapsedMilliseconds);
                         rendered.Add(pending.Key, template);
+                        if (string.Equals(
+                                objectMode,
+                                FormulaOleContract.MathTypeOleMode,
+                                StringComparison.Ordinal))
+                        {
+                            var preflightKey = pending.Key;
+                            var preflightMathMl = template.MathMl
+                                ?? throw new InvalidDataException(
+                                    $"MathType 重绘模板 {pending.Key} 缺少 MathML。");
+                            var preflightInline = string.Equals(
+                                template.Session.DisplayMode,
+                                "inline",
+                                StringComparison.OrdinalIgnoreCase);
+                            var preflightFontSizePt = template.Session.FontSizePt;
+                            var preflightLatex = template.Session.ToMetadata().Latex;
+                            mathTypePreflightTasks.Add(Task.Run(
+                                async () =>
+                                {
+                                    await mathTypePreflightGate
+                                        .WaitAsync(lifetime.Token)
+                                        .ConfigureAwait(false);
+                                    try
+                                    {
+                                        mathTypePreflightPrepared[preflightKey] =
+                                            WordFormulaService.PrepareStandaloneMathTypeOleData(
+                                                preflightMathMl,
+                                                preflightInline,
+                                                preflightFontSizePt,
+                                                preflightLatex);
+                                    }
+                                    catch (Exception error)
+                                    {
+                                        var detail = string.IsNullOrWhiteSpace(error.Message)
+                                            ? error.GetType().Name
+                                            : error.Message.Trim();
+                                        mathTypePreflightFailures[preflightKey] =
+                                            (preflightLatex, detail);
+                                    }
+                                    finally
+                                    {
+                                        mathTypePreflightGate.Release();
+                                    }
+                                },
+                                lifetime.Token));
+                        }
                         WriteRedrawAcceptanceLog(
                             $"render index={pending.Index + 1} elapsedMs={stopwatch.ElapsedMilliseconds} "
                             + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
@@ -3401,6 +3495,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             + $"latex={pending.Target.Latex} error={detail}");
                     }
                 }
+                WriteRedrawAcceptanceLog(
+                    $"redraw-phase renderBatchMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
+                    + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds}");
             }
 
             if (string.Equals(
@@ -3409,6 +3506,36 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     StringComparison.Ordinal)
                 && rendered.Count > 0)
             {
+                // Each MathType preflight starts as soon as that formula's
+                // converter Session finishes. This overlaps pure MTEF/CFB codec
+                // work with the remaining frontend conversions while preserving
+                // the rule that every formula is fully validated before Word is
+                // mutated.
+                var preflightAwaitStart = redrawPhaseWatch.ElapsedMilliseconds;
+                await Task.WhenAll(mathTypePreflightTasks)
+                    .ConfigureAwait(false);
+                WriteRedrawAcceptanceLog(
+                    $"redraw-phase mathtypePreflightAwaitMs={redrawPhaseWatch.ElapsedMilliseconds - preflightAwaitStart} "
+                    + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds} tasks={mathTypePreflightTasks.Count}");
+
+                foreach (var item in rendered)
+                {
+                    if (mathTypePreflightPrepared.TryGetValue(
+                            item.Key,
+                            out var standalone))
+                    {
+                        mathTypeStandalone[item.Key] = standalone;
+                        continue;
+                    }
+                    if (!mathTypePreflightFailures.TryGetValue(
+                            item.Key,
+                            out var failure))
+                        continue;
+                    renderFailures[item.Key] = failure.Error;
+                    WriteRedrawAcceptanceLog(
+                        $"mathtype-preflight-skipped latex={failure.Latex} error={failure.Error}");
+                }
+
                 // Prefer MathType's native MathPage geometry when the optional
                 // renderer is available. Machines without MathType already have a
                 // vector EMF from the converter, so the whole batch falls back to
@@ -3422,25 +3549,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         $"mathtype-preview-fallback reason=native-unavailable templates={rendered.Count} "
                         + $"formulas={plan.Targets.Count}");
                 }
-                else
+                else if (mathTypeStandalone.Count > 0)
                 {
-                    SetStatus($"正在批量生成 {rendered.Count} 个 MathType 原生预览…");
+                    SetStatus($"正在批量生成 {mathTypeStandalone.Count} 个 MathType 原生预览…");
                     var nativePreviewInputs =
-                        new Dictionary<string, byte[]>(StringComparer.Ordinal);
-                    foreach (var item in rendered)
-                    {
-                        var standalone = WordFormulaService.PrepareStandaloneMathTypeOleData(
-                            item.Value.MathMl
-                                ?? throw new InvalidDataException(
-                                    $"MathType 重绘模板 {item.Key} 缺少 MathML。"),
-                            string.Equals(
-                                item.Value.Session.DisplayMode,
-                                "inline",
-                                StringComparison.OrdinalIgnoreCase),
-                            item.Value.Session.FontSizePt,
-                            item.Value.Session.ToMetadata().Latex);
-                        nativePreviewInputs[item.Key] = standalone.Generated.Mtef;
-                    }
+                        mathTypeStandalone.ToDictionary(
+                            item => item.Key,
+                            item => item.Value.Generated.Mtef,
+                            StringComparer.Ordinal);
 
                     var nativePreviewRoot = rendered.Values
                         .Select(template => string.IsNullOrWhiteSpace(template.EmfPath)
@@ -3454,7 +3570,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             nativePreviewInputs,
                             nativePreviewRoot,
                             out var nativePreviews);
-                    var missingPreviewKeys = rendered.Keys
+                    var missingPreviewKeys = mathTypeStandalone.Keys
                         .Where(key => !nativePreviews.ContainsKey(key))
                         .ToArray();
                     if (!renderedAllNativePreviews || missingPreviewKeys.Length > 0)
@@ -3465,7 +3581,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         SetStatus("MathType 原生预览未完整生成，正在整批使用 VisualTeX 矢量预览…");
                         WriteRedrawAcceptanceLog(
                             $"mathtype-preview-fallback reason=native-batch-incomplete "
-                            + $"native={nativePreviews.Count}/{rendered.Count} formulas={plan.Targets.Count} "
+                            + $"native={nativePreviews.Count}/{mathTypeStandalone.Count} formulas={plan.Targets.Count} "
                             + $"elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
                     }
                     else
@@ -3480,6 +3596,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
             }
 
+            phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
             for (var index = 0; index < plan.Targets.Count; index++)
             {
                 var target = plan.Targets[index];
@@ -3512,6 +3629,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 var mathTypePreview = mathTypePreviews.TryGetValue(key, out var preview)
                     ? preview
                     : null;
+                var hasMathTypeStandalone =
+                    mathTypeStandalone.TryGetValue(
+                        key,
+                        out var standalone);
                 prepared.Add(target.Id, new PreparedWordBulkFormula
                 {
                     Run = run,
@@ -3524,8 +3645,20 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         objectMode,
                         FormulaOleContract.MathTypeOleMode,
                         StringComparison.Ordinal),
+                    MathTypeStandaloneGenerated = hasMathTypeStandalone
+                        ? standalone.Generated
+                        : null,
+                    MathTypeStandaloneCompoundFile = hasMathTypeStandalone
+                        ? standalone.CompoundFile
+                        : null,
+                    MathTypeStandaloneSemanticSignature = hasMathTypeStandalone
+                        ? standalone.SemanticSignature
+                        : null,
                 });
             }
+            WriteRedrawAcceptanceLog(
+                $"redraw-phase prepareTargetsMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
+                + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds} prepared={prepared.Count}");
 
             if (prepared.Count == 0)
             {
@@ -3542,6 +3675,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 .ToList();
             SetStatus("公式渲染完成，正在原位写入 Word…");
             BeginFormulaFormatMutation();
+            phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
             WordLatexRedrawResult result;
             try
             {
@@ -3550,22 +3684,54 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     .ConfigureAwait(false);
             }
             finally { EndFormulaFormatMutation(); }
-            foreach (var sessionId in converterSessionIds)
+            WriteRedrawAcceptanceLog(
+                $"redraw-phase wordApplyMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
+                + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds} "
+                + $"sourceMutationTotalMs={result.TotalSourceMutationMilliseconds} "
+                + $"insertTotalMs={result.TotalInsertMilliseconds} "
+                + string.Join(
+                    " ",
+                    result.BatchTimings.Select(item =>
+                        $"apply.{item.Key}Ms={item.Value}")));
+            for (var timingIndex = 0;
+                 timingIndex < result.InsertMilliseconds.Count;
+                 timingIndex++)
             {
-                try
+                if (timingIndex < result.SourceMutationMilliseconds.Count)
                 {
-                    await client.CompleteAsync(sessionId, lifetime.Token)
-                        .ConfigureAwait(false);
+                    WriteRedrawAcceptanceLog(
+                        $"source-mutation-timing index={timingIndex + 1}/{result.InsertMilliseconds.Count} "
+                        + $"elapsedMs={result.SourceMutationMilliseconds[timingIndex]}");
                 }
-                catch { }
+                WriteRedrawAcceptanceLog(
+                    $"insert-timing index={timingIndex + 1}/{result.InsertMilliseconds.Count} "
+                    + $"elapsedMs={result.InsertMilliseconds[timingIndex]}");
+                if (timingIndex < result.InsertMetricDetails.Count
+                    && !string.IsNullOrWhiteSpace(
+                        result.InsertMetricDetails[timingIndex]))
+                {
+                    WriteRedrawAcceptanceLog(
+                        $"insert-metrics index={timingIndex + 1}/{result.InsertMilliseconds.Count} "
+                        + result.InsertMetricDetails[timingIndex]);
+                }
             }
+            // Converter sessions are temporary render workspaces. The Word
+            // transaction is already committed, so do not serialize one local
+            // completion request per formula on the user-visible redraw path.
+            // Format conversion uses the same batched best-effort cleanup model.
+            _ = CleanupConverterSessionsBestEffortAsync(
+                client,
+                converterSessionIds.ToArray(),
+                lifetime.Token);
             var uniqueRenderCount = Math.Max(1, rendered.Count);
             var averageRenderMilliseconds = totalRenderMilliseconds / uniqueRenderCount;
             WriteRedrawAcceptanceLog(
                 $"redraw-complete formulas={result.FormulaCount} unique={rendered.Count} "
                 + $"skipped={skippedTargets.Count} "
                 + $"renderAverageMs={averageRenderMilliseconds} renderMaxMs={maxRenderMilliseconds} "
-                + $"insertTotalMs={result.TotalInsertMilliseconds} insertMaxMs={result.MaxInsertMilliseconds}");
+                + $"insertTotalMs={result.TotalInsertMilliseconds} insertMaxMs={result.MaxInsertMilliseconds} "
+                + $"sourceMutationTotalMs={result.TotalSourceMutationMilliseconds} "
+                + $"sourceMutationMaxMs={(result.SourceMutationMilliseconds.Count == 0 ? 0 : result.SourceMutationMilliseconds.Max())}");
             var performanceSuffix = maxRenderMilliseconds <= 250
                 ? $"渲染最大 {maxRenderMilliseconds} ms/公式"
                 : $"渲染最大 {maxRenderMilliseconds} ms/公式（本机超过 250 ms 目标）";
@@ -3583,16 +3749,20 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         catch (Exception error)
         {
             WriteRedrawAcceptanceLog("redraw-failed " + error);
+            var failureMessage = OfficePluginLanguage.FormatOperationError(
+                error,
+                "VisualTeX LaTeX 重绘失败",
+                "VisualTeX LaTeX redraw failed");
             foreach (var sessionId in converterSessionIds)
             {
                 try
                 {
-                    await client.FailAsync(sessionId, error.Message, CancellationToken.None)
+                    await client.FailAsync(sessionId, failureMessage, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
                 catch { }
             }
-            SetStatus($"VisualTeX LaTeX 重绘失败：{error.Message}");
+            SetStatus(failureMessage);
             if (!string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                     "1",
@@ -3603,7 +3773,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            OfficePluginLanguage.SafeErrorMessage(error.Message),
+                            failureMessage,
                             T("VisualTeX LaTeX 重绘", "VisualTeX LaTeX Redraw"),
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);
@@ -3718,7 +3888,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         catch (Exception error)
         {
             WriteRedrawAcceptanceLog("formula-to-latex-failed " + error);
-            SetStatus($"VisualTeX 公式转为 LaTeX 失败：{error.Message}");
+            var failureMessage = OfficePluginLanguage.FormatOperationError(
+                error,
+                "VisualTeX 公式转为 LaTeX 失败",
+                "VisualTeX equation-to-LaTeX conversion failed");
+            SetStatus(failureMessage);
             if (!string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                     "1",
@@ -3729,7 +3903,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            OfficePluginLanguage.SafeErrorMessage(error.Message),
+                            failureMessage,
                             T("VisualTeX 公式转为 LaTeX", "VisualTeX Equation to LaTeX"),
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);
@@ -4853,6 +5027,18 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private async Task ShowWordOperationErrorAsync(OfficeUiDispatcher dispatcher, string operation, Exception error)
     {
         WordDoubleClickHook.TraceMessage($"word-operation-failed operation={operation} error={error}");
+        var englishOperation = operation switch
+        {
+            "更新公式编号" => "equation-number update",
+            "编号格式" => "equation-number format update",
+            "插入公式引用" => "equation-reference insertion",
+            _ when !OfficePluginLanguage.ContainsCjk(operation) => operation,
+            _ => "operation",
+        };
+        var userMessage = OfficePluginLanguage.FormatOperationError(
+            error,
+            $"VisualTeX {operation}失败",
+            $"VisualTeX Word {englishOperation} failed");
         try
         {
             await dispatcher.InvokeAsync(() =>
@@ -4863,7 +5049,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     window = _application?.ActiveWindow
                         ?? throw new InvalidOperationException("Word's error-reporting window is unavailable.");
                     System.Windows.Forms.MessageBox.Show(new NativeWindowOwner(new IntPtr(window.Hwnd)),
-                        OfficePluginLanguage.SafeErrorMessage(error.Message),
+                        userMessage,
                         OfficePluginLanguage.IsEnglish ? "VisualTeX Word" : "VisualTeX " + operation,
                         System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
                     return true;
@@ -4892,7 +5078,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         catch (Exception error)
         {
-            SetStatus($"删除 Word 公式失败：{error.Message}");
+            SetStatus(OfficePluginLanguage.FormatOperationError(
+                error,
+                "删除 Word 公式失败",
+                "Failed to delete the Word formula"));
         }
     }
 

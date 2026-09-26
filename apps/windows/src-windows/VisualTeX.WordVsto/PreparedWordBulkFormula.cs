@@ -16,6 +16,13 @@ internal sealed class PreparedWordBulkFormula
     internal string? EmfPath { get; set; }
     internal bool MathTypeNativePreviewAttempted { get; set; }
     internal MathTypeNativePreviewRenderer.Result? MathTypeNativePreview { get; set; }
+    // Batch MathType preparation may already have produced and semantically
+    // validated the exact standalone Equation Native/CFB payload while building
+    // the native preview. Reuse that immutable payload during Word insertion
+    // instead of running the same codec + storage round-trip a second time.
+    internal MathTypeMtefCodec.RewriteResult? MathTypeStandaloneGenerated { get; set; }
+    internal byte[]? MathTypeStandaloneCompoundFile { get; set; }
+    internal string? MathTypeStandaloneSemanticSignature { get; set; }
 }
 
 internal sealed class RenderedWordBulkFormulaTemplate
@@ -63,6 +70,8 @@ internal sealed class WordLatexRedrawPlan
     internal string SourceText { get; set; } = string.Empty;
     internal bool NumberDisplayFormulas { get; set; }
     internal List<WordLatexRedrawTarget> Targets { get; set; } = new();
+    internal Dictionary<string, long> CaptureTimings { get; } =
+        new(StringComparer.Ordinal);
     internal List<DeletedNumberedOmmlResidue> DeletedNumberedOmmlResidues { get; set; } = new();
 }
 
@@ -76,8 +85,17 @@ internal sealed class DeletedNumberedOmmlResidue
 internal sealed class WordLatexRedrawResult
 {
     internal int FormulaCount { get; set; }
+    internal long TotalSourceMutationMilliseconds { get; set; }
     internal long TotalInsertMilliseconds { get; set; }
     internal long MaxInsertMilliseconds { get; set; }
+    // Timings are kept in actual mutation order (the redraw writer works from
+    // the end of the document toward the beginning). The acceptance logger uses
+    // them to detect index-dependent growth without adding file I/O to the hot path.
+    internal List<long> SourceMutationMilliseconds { get; } = new();
+    internal List<long> InsertMilliseconds { get; } = new();
+    internal List<string> InsertMetricDetails { get; } = new();
+    internal Dictionary<string, long> BatchTimings { get; } =
+        new(StringComparer.Ordinal);
     internal List<string> FormulaIds { get; set; } = new();
 }
 

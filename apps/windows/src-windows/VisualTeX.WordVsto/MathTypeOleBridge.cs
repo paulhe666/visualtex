@@ -50,7 +50,11 @@ internal static class MathTypeOleBridge
             // Capture the original equation through the non-UI IDataObject path so
             // a failed native-editor commit can be rolled back through the exact
             // same MathType OLE editor without synthesizing MTEF ourselves.
-            var originalMathMl = MathTypeOleInterop.ReadMathMl(shape);
+            // Equation Native/MTEF is the presentation-authoritative source.
+            // MathType's IDataObject MathML omits explicit Style > Other font/
+            // character styling (for example ordinary Bold), so using it here
+            // makes rollback/edit verification silently normalize styled glyphs.
+            var originalMathMl = MathTypeOleStorage.ReadMathMl(shape);
             var originalLatex = MathMlToLatexConverter.Convert(originalMathMl).Trim();
             if (string.IsNullOrWhiteSpace(originalLatex))
                 throw new InvalidDataException(
@@ -60,7 +64,7 @@ internal static class MathTypeOleBridge
 
             try
             {
-                var actualMathMl = MathTypeOleInterop.ReadMathMl(shape);
+                var actualMathMl = MathTypeOleStorage.ReadMathMl(shape);
                 var expectedLatex = MathMlToLatexConverter.Convert(expectedMathMl).Trim();
                 var actualLatex = MathMlToLatexConverter.Convert(actualMathMl).Trim();
                 if (string.IsNullOrWhiteSpace(actualLatex))
@@ -81,7 +85,7 @@ internal static class MathTypeOleBridge
                 try
                 {
                     EditWordOwnedOle(application, shape, originalLatex, saveChanges: true);
-                    _ = MathTypeOleInterop.ReadMathMl(shape);
+                    _ = MathTypeOleStorage.ReadMathMl(shape);
                 }
                 catch
                 {

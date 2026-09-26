@@ -76,6 +76,86 @@ public sealed class OfficePluginLanguageTests
         Assert.DoesNotContain("VisualTeX Office operation failed. See", message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(
+        "当前 Word 文档中没有找到可转换的公式。",
+        "No convertible equations were found in the current Word document.")]
+    [InlineData(
+        "所选公式仍使用旧版编号宿主，必须先迁移为标准编号结构后再转为 LaTeX。",
+        "The selected equation still uses the legacy numbering host. Migrate it to the standard numbering structure before converting it to LaTeX.")]
+    [InlineData(
+        "PowerPoint 没有返回有效的文本插入位置。",
+        "PowerPoint did not return a valid text insertion position.")]
+    public void SafeErrorMessage_MapsConcreteOfficeErrorsToEnglish(
+        string localized,
+        string expected)
+    {
+        var message = InEnglish(() =>
+            OfficePluginLanguage.SafeErrorMessage(localized));
+
+        Assert.Equal(expected, message);
+        Assert.False(
+            OfficePluginLanguage.ContainsCjk(message),
+            $"Known Office error still contains CJK text: {message}");
+        Assert.DoesNotContain(
+            "See the application log",
+            message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void FormatOperationError_EquationToLatexKeepsConcreteReasonAndDiagnostics()
+    {
+        var error = new InvalidDataException(
+            "当前 Word 文档中没有找到可转换的公式。");
+        var message = InEnglish(() =>
+            OfficePluginLanguage.FormatOperationError(
+                error,
+                "VisualTeX 公式转为 LaTeX 失败",
+                "VisualTeX equation-to-LaTeX conversion failed"));
+
+        Assert.Contains(
+            "VisualTeX equation-to-LaTeX conversion failed:",
+            message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "No convertible equations were found in the current Word document.",
+            message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "[InvalidDataException, HRESULT=0x",
+            message,
+            StringComparison.Ordinal);
+        Assert.False(
+            OfficePluginLanguage.ContainsCjk(message),
+            $"Known equation-to-LaTeX error still contains CJK text: {message}");
+    }
+
+    [Fact]
+    public void FormatOperationError_UsesKnownComHResultWhenHostTextIsLocalized()
+    {
+        var error = new System.Runtime.InteropServices.COMException(
+            "对象已被删除。",
+            unchecked((int)0x800A16C1));
+        var message = InEnglish(() =>
+            OfficePluginLanguage.FormatOperationError(
+                error,
+                "VisualTeX 公式转为 LaTeX 失败",
+                "VisualTeX equation-to-LaTeX conversion failed"));
+
+        Assert.Contains(
+            "The Word object has been deleted or invalidated.",
+            message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "HRESULT=0x800A16C1",
+            message,
+            StringComparison.Ordinal);
+        Assert.False(
+            OfficePluginLanguage.ContainsCjk(message),
+            $"Known COM error still contains CJK text: {message}");
+    }
+
     [Fact]
     public void SafeStatusMessage_UsesSpecificTranslatedFailureInsteadOfGenericStatus()
     {

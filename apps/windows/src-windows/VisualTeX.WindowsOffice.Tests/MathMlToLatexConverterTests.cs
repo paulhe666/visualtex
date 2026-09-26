@@ -314,6 +314,18 @@ public sealed class MathMlToLatexConverterTests
         Assert.Contains(@"& & \text{Low word}", latex);
     }
 
+    [Theory]
+    [InlineData("mi")]
+    [InlineData("mo")]
+    public void PreservesBoldMathVariantOnOperatorSymbols(string elementName)
+    {
+        var mathMl =
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
+            + $"<{elementName} mathvariant=\"bold\">∞</{elementName}></math>";
+
+        Assert.Equal(@"\boldsymbol{\infty}", MathMlToLatexConverter.Convert(mathMl));
+    }
+
     [Fact]
     public void ConvertsMatricesAndGreekSymbols()
     {

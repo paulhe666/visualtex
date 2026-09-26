@@ -71,7 +71,7 @@ internal static partial class Program
             }
 
             Console.WriteLine(
-                "[LATEX REDRAW NUMBER ORDER PASS] Reverse-order redraw committed final 1/2/3 numbering for OMML, MathType and VisualTeX without a manual number refresh.");
+                "[LATEX REDRAW NUMBER ORDER PASS] Batch redraw committed final 1/2/3 numbering for OMML, MathType and VisualTeX without a manual number refresh.");
         }
         finally
         {

@@ -19,17 +19,22 @@ internal static class WordFormulaHostLayout
         float widthPoints,
         float heightPoints,
         float exportedHeightPixels,
-        float? exportedBaselinePixels)
+        float? exportedBaselinePixels,
+        bool deferDisplayPosition = false)
     {
         if (shape is null) throw new ArgumentNullException(nameof(shape));
         if (metadata is null) throw new ArgumentNullException(nameof(metadata));
 
         var width = Math.Max(1f, widthPoints);
         var height = Math.Max(1f, heightPoints);
-        shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoFalse;
-        shape.Width = width;
-        shape.Height = height;
-        shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue;
+        using (WordOperationMetrics.Measure(
+                   "FormatConversion.VisualTeXGeometry.SetSize"))
+        {
+            shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoFalse;
+            shape.Width = width;
+            shape.Height = height;
+            shape.LockAspectRatio = Microsoft.Office.Core.MsoTriState.msoTrue;
+        }
 
         var inline = string.Equals(
             metadata.DisplayMode,
@@ -40,26 +45,42 @@ internal static class WordFormulaHostLayout
             metadata.WordInlineOleWidthPt = null;
             metadata.WordInlineOleHeightPt = null;
             metadata.WordInlineOlePositionPt = null;
-            SetInlineOleWordPosition(shape, 0);
-            WordFormulaMetadataReader.CacheMetadata(shape, metadata);
+            if (!deferDisplayPosition)
+            {
+                using (WordOperationMetrics.Measure(
+                           "FormatConversion.VisualTeXGeometry.SetPosition"))
+                    SetInlineOleWordPosition(shape, 0);
+                using (WordOperationMetrics.Measure(
+                           "FormatConversion.VisualTeXGeometry.CacheMetadata"))
+                    WordFormulaMetadataReader.CacheMetadata(shape, metadata);
+            }
             return;
         }
 
         metadata.WordInlineOleWidthPt = shape.Width;
         metadata.WordInlineOleHeightPt = shape.Height;
         var semanticSize = FormulaFontSize.ResolveSemanticFontSize(metadata);
-        var position = CalculateVisualTeXInlinePosition(
-            shape,
-            shape.Height,
-            exportedHeightPixels,
-            exportedBaselinePixels,
-            semanticSize);
+        int position;
+        using (WordOperationMetrics.Measure(
+                   "FormatConversion.VisualTeXGeometry.CalculatePosition"))
+        {
+            position = CalculateVisualTeXInlinePosition(
+                shape,
+                shape.Height,
+                exportedHeightPixels,
+                exportedBaselinePixels,
+                semanticSize);
+        }
         metadata.WordInlineOlePositionPt = position;
         metadata.WordInlineSourceBottomWhitespacePt = null;
         metadata.Validate();
 
-        SetInlineOleWordPosition(shape, position);
-        WordFormulaMetadataReader.CacheMetadata(shape, metadata);
+        using (WordOperationMetrics.Measure(
+                   "FormatConversion.VisualTeXGeometry.SetPosition"))
+            SetInlineOleWordPosition(shape, position);
+        using (WordOperationMetrics.Measure(
+                   "FormatConversion.VisualTeXGeometry.CacheMetadata"))
+            WordFormulaMetadataReader.CacheMetadata(shape, metadata);
     }
 
     internal static void ConfigureDisplayParagraph(
@@ -98,13 +119,17 @@ internal static class WordFormulaHostLayout
         Document document,
         Range formulaRange,
         float formulaHeightPoints,
-        FormulaMetadata metadata)
+        FormulaMetadata metadata,
+        float? knownCenterTabPoints = null,
+        float? knownRightTabPoints = null)
     {
         WordEquationNumbering.ConfigureVisualTeXDisplayHostLayout(
             document,
             formulaRange,
             formulaHeightPoints,
-            metadata);
+            metadata,
+            knownCenterTabPoints,
+            knownRightTabPoints);
     }
 
     internal static void ApplyOmmlLocalTypography(
@@ -216,7 +241,6 @@ internal static class WordFormulaHostLayout
         try
         {
             shapeRange = shape.Range;
-            document = shapeRange.Document;
 
             // Keep the EMBED instruction on the prose baseline.
             font = shapeRange.Font;
@@ -225,6 +249,14 @@ internal static class WordFormulaHostLayout
             font = null;
 
             var clamped = Math.Max(-256, Math.Min(256, position));
+            // Normal Word OLE hosts expose one local wdFieldEmbed whose Result is
+            // the painted U+0001/U+FFFC object character. Resolve that exact local
+            // field first. The retired path created a COM Range for every character
+            // in the complete EMBED field, adding tens of COM calls per formula.
+            if (TrySetEmbeddedOleResultPosition(shapeRange, clamped))
+                return;
+
+            document = shapeRange.Document;
             for (var index = shapeRange.Start; index < shapeRange.End; index++)
             {
                 Release(probe);
@@ -242,6 +274,52 @@ internal static class WordFormulaHostLayout
             Release(probe);
             Release(document);
             Release(shapeRange);
+        }
+    }
+
+    private static bool TrySetEmbeddedOleResultPosition(
+        Range shapeRange,
+        int position)
+    {
+        Fields? fields = null;
+        Field? field = null;
+        Range? result = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            // shapeRange is the exact OLE host range returned by InlineShape.Range.
+            // Query that range directly; the broader GetLocalFields compatibility
+            // helper is only needed for arbitrary paragraph/cell ranges.
+            fields = shapeRange.Fields;
+            if (fields.Count != 1)
+                return false;
+            field = fields[1];
+            if (field.Type != WdFieldType.wdFieldEmbed)
+                return false;
+
+            result = field.Result.Duplicate;
+            var text = result.Text ?? string.Empty;
+            if (!string.Equals(text, "\u0001", StringComparison.Ordinal)
+                && !string.Equals(text, "\uFFFC", StringComparison.Ordinal))
+                return false;
+            if (result.Start < shapeRange.Start
+                || result.End > shapeRange.End)
+                return false;
+
+            font = result.Font;
+            font.Position = position;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(font);
+            Release(result);
+            Release(field);
+            Release(fields);
         }
     }
 

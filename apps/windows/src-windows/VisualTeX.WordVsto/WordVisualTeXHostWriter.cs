@@ -43,20 +43,33 @@ internal static class WordVisualTeXHostWriter
         try
         {
             insertion.Collapse(WdCollapseDirection.wdCollapseStart);
-            shape = AddOleObjectLocal(document, insertion);
-            InitializeOle(shape, metadata, request.EmfPath!, request.PngPath!);
+            using (WordOperationMetrics.Measure(
+                       "FormatConversion.VisualTeXHostWriter.AddOleObject"))
+            {
+                shape = AddOleObjectLocal(document, insertion);
+            }
+            using (WordOperationMetrics.Measure(
+                       "FormatConversion.VisualTeXHostWriter.InitializeOle"))
+            {
+                InitializeOle(shape, metadata, request.EmfPath!, request.PngPath!);
+            }
 
-            WordFormulaHostLayout.ApplyVisualTeXGeometry(
-                shape,
-                metadata,
-                request.WidthPoints > 0
-                    ? request.WidthPoints
-                    : 1f,
-                request.HeightPoints > 0
-                    ? request.HeightPoints
-                    : 1f,
-                request.ExportedHeightPixels,
-                request.ExportedBaselinePixels);
+            using (WordOperationMetrics.Measure(
+                       "FormatConversion.VisualTeXHostWriter.ApplyGeometry"))
+            {
+                WordFormulaHostLayout.ApplyVisualTeXGeometry(
+                    shape,
+                    metadata,
+                    request.WidthPoints > 0
+                        ? request.WidthPoints
+                        : 1f,
+                    request.HeightPoints > 0
+                        ? request.HeightPoints
+                        : 1f,
+                    request.ExportedHeightPixels,
+                    request.ExportedBaselinePixels,
+                    deferDisplayPosition: true);
+            }
 
             if (!string.Equals(
                     metadata.DisplayMode,
@@ -67,25 +80,54 @@ internal static class WordVisualTeXHostWriter
                 try
                 {
                     displayRange = shape.Range;
-                    WordFormulaHostLayout.ConfigureVisualTeXDisplayParagraph(
-                        document,
-                        displayRange,
-                        shape.Height,
-                        metadata);
+                    using (WordOperationMetrics.Measure(
+                               "FormatConversion.VisualTeXHostWriter.ConfigureDisplay"))
+                    {
+                        // ApplyVisualTeXGeometry immediately above already wrote
+                        // this exact final height. Reading InlineShape.Height back
+                        // here forces Word to resolve live layout for every display
+                        // host. Reuse the authoritative request geometry instead.
+                        var displayHeight = request.HeightPoints > 0
+                            ? request.HeightPoints
+                            : 1f;
+                        WordFormulaHostLayout.ConfigureVisualTeXDisplayParagraph(
+                            document,
+                            displayRange,
+                            displayHeight,
+                            metadata,
+                            request.DisplayCenterTabPoints,
+                            request.DisplayRightTabPoints);
+                    }
                     // Display baseline measurement can enrich Word-side preview
                     // metrics. Re-cache those values after the canonical layout is
                     // complete without reopening/re-writing the embedded OLE.
-                    WordFormulaMetadataReader.CacheMetadata(
-                        shape,
-                        metadata);
+                    using (WordOperationMetrics.Measure(
+                               "FormatConversion.VisualTeXHostWriter.CacheDisplayMetadata"))
+                    {
+                        WordFormulaMetadataReader.CacheMetadata(
+                            shape,
+                            metadata);
+                    }
                 }
                 finally { Release(displayRange); }
             }
 
-            WordFormulaIdentityStore.BindVisualTeX(shape, metadata.FormulaId);
-            ValidateInsertedHost(shape, metadata);
+            using (WordOperationMetrics.Measure(
+                       "FormatConversion.VisualTeXHostWriter.BindIdentity"))
+            {
+                WordFormulaIdentityStore.BindVisualTeX(shape, metadata.FormulaId);
+            }
+            using (WordOperationMetrics.Measure(
+                       "FormatConversion.VisualTeXHostWriter.ReadbackValidate"))
+            {
+                ValidateInsertedHost(shape, metadata);
+            }
 
-            shapeRange = shape.Range.Duplicate;
+            using (WordOperationMetrics.Measure(
+                       "FormatConversion.VisualTeXHostWriter.CaptureDescriptorRange"))
+            {
+                shapeRange = shape.Range.Duplicate;
+            }
             return new WordFormulaHostWriteResult
             {
                 Host = new WordFormulaHostDescriptor

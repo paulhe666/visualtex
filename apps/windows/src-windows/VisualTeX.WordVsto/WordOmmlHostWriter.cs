@@ -169,6 +169,83 @@ internal static class WordOmmlHostWriter
         }
     }
 
+    internal static WordFormulaHostWriteResult ReplaceExactUnnumberedOmmlHost(
+        Document document,
+        WordFormulaHostDescriptor source,
+        WordFormulaHostWriteRequest request)
+    {
+        using var operationMetric =
+            WordOperationMetrics.Measure(
+                "FormatConversion.OmmlHostWriter.ReplaceExactUnnumbered");
+        if (document is null)
+            throw new ArgumentNullException(nameof(document));
+        if (source is null)
+            throw new ArgumentNullException(nameof(source));
+        if (request is null)
+            throw new ArgumentNullException(nameof(request));
+        if (source.Kind != WordFormulaHostKind.Omml
+            || request.Kind != WordFormulaHostKind.Omml
+            || source.Numbering.Numbered
+            || request.Numbered)
+            throw new InvalidOperationException(
+                "Exact unnumbered OMML replacement requires an unnumbered OMML source and target.");
+        if (!string.Equals(
+                source.DisplayMode,
+                request.DisplayMode,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Exact unnumbered OMML replacement requires an unchanged display mode.");
+        if (string.IsNullOrWhiteSpace(request.MathMl)
+            || !request.MathMl!.TrimStart().StartsWith(
+                "<math",
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException(
+                "OMML replacement requires valid MathML.");
+
+        Range? exact = null;
+        Range? replacement = null;
+        try
+        {
+            exact = WordFormulaHostSemanticReader.CreateRange(
+                document,
+                source.Range);
+            var preparedOmml =
+                WordOmmlConverter.TransformMathMlToOmml(
+                    request.MathMl!);
+            preparedOmml =
+                ApplySemanticOmmlTypography(
+                    preparedOmml,
+                    request.FontSizePoints);
+
+            replacement =
+                WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+                    document,
+                    exact,
+                    preparedOmml,
+                    display: source.Display,
+                    mathFontName: document.OMathFontName);
+
+            WordFormulaHostLayout.ApplyOmmlLocalTypography(
+                replacement,
+                request.FontSizePoints);
+            if (source.Display)
+                WordFormulaHostLayout.ConfigureDisplayParagraph(
+                    replacement);
+
+            return new WordFormulaHostWriteResult
+            {
+                Host = DescribeInsertedOmml(
+                    replacement,
+                    requestedNumbered: false),
+            };
+        }
+        finally
+        {
+            Release(replacement);
+            Release(exact);
+        }
+    }
+
     private static string ApplySemanticOmmlTypography(
         string omml,
         double fontSizePoints)

@@ -7668,9 +7668,6 @@ internal static partial class WordEquationNumbering
         Microsoft.Office.Interop.Word.Font? rangeFont = null;
         Range? character = null;
         Microsoft.Office.Interop.Word.Font? characterFont = null;
-        InlineShapes? shapes = null;
-        InlineShape? shape = null;
-        Range? shapeRange = null;
         try
         {
             // VisualTeX OLE and MathType are different objects, but Word lays both
@@ -7689,39 +7686,11 @@ internal static partial class WordEquationNumbering
             float? exportedBaseline = metadata.Baseline.HasValue
                 ? (float)metadata.Baseline.Value
                 : null;
-            if (!metadata.Numbered
-                && (!metadata.WordDisplayPreviewInkHeightRatio.HasValue
-                    || !metadata.WordDisplayPreviewBottomWhitespaceRatio.HasValue))
-            {
-                // Keep the preview metrics in metadata for diagnostics/backward
-                // compatibility, but never use them to move only unnumbered OLEs.
-                // Numbering must not change the physical formula baseline.
-                try
-                {
-                    shapes = formulaRange.InlineShapes;
-                    if (shapes.Count == 1)
-                    {
-                        shape = shapes[1];
-                        shapeRange = shape.Range;
-                        var emfBytes = shapeRange.EnhMetaFileBits as byte[];
-                        var metrics = emfBytes is null
-                            ? null
-                            : OfficeOlePreview.TryMeasureVerticalInkMetrics(emfBytes);
-                        if (metrics.HasValue)
-                        {
-                            metadata.WordDisplayPreviewInkHeightRatio =
-                                metrics.Value.InkHeightRatio;
-                            metadata.WordDisplayPreviewBottomWhitespaceRatio =
-                                metrics.Value.BottomWhitespaceRatio;
-                        }
-                    }
-                }
-                catch
-                {
-                    // The display baseline itself is derived from exported
-                    // geometry below, so preview-metric readback is optional.
-                }
-            }
+            // Preview-ink readback used to run here for every unnumbered display
+            // OLE even though the resulting ratios are not used by the baseline
+            // calculation below. That diagnostic cache forces Word to materialize
+            // EnhMetaFileBits and parse the preview during every batch insertion.
+            // Keep insertion dependent only on the already-exported geometry.
 
             var position = WordInlineAlignment.CalculateFontPositionWithLegacyFallback(
                 actualHeightPoints,
@@ -7755,9 +7724,6 @@ internal static partial class WordEquationNumbering
         }
         finally
         {
-            Release(shapeRange);
-            Release(shape);
-            Release(shapes);
             Release(characterFont);
             Release(character);
             Release(rangeFont);
@@ -7774,30 +7740,23 @@ internal static partial class WordEquationNumbering
         Microsoft.Office.Interop.Word.Font? font = null;
         try
         {
-            fields = WordFormulaHost.GetLocalFields(formulaRange);
-            var matched = false;
-            for (var index = 1; index <= fields.Count; index++)
-            {
-                Release(result);
-                result = null;
-                Release(field);
-                field = fields[index];
-                if (field.Type != WdFieldType.wdFieldEmbed)
-                    continue;
-                if (matched)
-                    return false;
+            // formulaRange is the exact InlineShape.Range supplied by the host
+            // writer. Direct Fields access is bounded to this one OLE and avoids
+            // the arbitrary-range compatibility work used elsewhere.
+            fields = formulaRange.Fields;
+            if (fields.Count != 1)
+                return false;
+            field = fields[1];
+            if (field.Type != WdFieldType.wdFieldEmbed)
+                return false;
 
-                result = field.Result.Duplicate;
-                var text = result.Text ?? string.Empty;
-                if (!string.Equals(text, "\u0001", StringComparison.Ordinal)
-                    && !string.Equals(text, "\uFFFC", StringComparison.Ordinal))
-                    return false;
-                if (result.Start < formulaRange.Start
-                    || result.End > formulaRange.End)
-                    return false;
-                matched = true;
-            }
-            if (!matched || result is null)
+            result = field.Result.Duplicate;
+            var text = result.Text ?? string.Empty;
+            if (!string.Equals(text, "\u0001", StringComparison.Ordinal)
+                && !string.Equals(text, "\uFFFC", StringComparison.Ordinal))
+                return false;
+            if (result.Start < formulaRange.Start
+                || result.End > formulaRange.End)
                 return false;
 
             font = result.Font;
@@ -8009,7 +7968,9 @@ internal static partial class WordEquationNumbering
         Document document,
         Range formulaRange,
         float formulaHeightPoints,
-        FormulaMetadata metadata)
+        FormulaMetadata metadata,
+        float? knownCenterTabPoints = null,
+        float? knownRightTabPoints = null)
     {
         if (document is null)
             throw new ArgumentNullException(nameof(document));
@@ -8023,34 +7984,59 @@ internal static partial class WordEquationNumbering
                 StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException(
                 "VisualTeX display-host layout requires block metadata.");
-        if (ContainsNativeOmml(formulaRange))
-            throw new InvalidDataException(
-                "VisualTeX OLE display-host layout cannot be applied to native OMML.");
+        using (WordOperationMetrics.Measure(
+                   "FormatConversion.VisualTeXDisplay.ContainsNativeOmml"))
+        {
+            if (ContainsNativeOmml(formulaRange))
+                throw new InvalidDataException(
+                    "VisualTeX OLE display-host layout cannot be applied to native OMML.");
+        }
+
+        PrepareVisualTeXDisplayHostLayout(
+            document,
+            formulaRange,
+            knownCenterTabPoints,
+            knownRightTabPoints);
+        AlignVisualTeXDisplayHostBaseline(
+            document,
+            formulaRange,
+            formulaHeightPoints,
+            metadata);
+    }
+
+    internal static void PrepareVisualTeXDisplayHostLayout(
+        Document document,
+        Range formulaRange,
+        float? knownCenterTabPoints = null,
+        float? knownRightTabPoints = null)
+    {
+        if (document is null)
+            throw new ArgumentNullException(nameof(document));
+        if (formulaRange is null)
+            throw new ArgumentNullException(nameof(formulaRange));
 
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
         ParagraphFormat? format = null;
         try
         {
-            paragraphs = formulaRange.Paragraphs;
-            if (paragraphs.Count != 1)
-                throw new InvalidDataException(
-                    "A VisualTeX display host must belong to exactly one Word paragraph.");
-            paragraph = paragraphs[1];
-            format = paragraph.Format;
-
-            // Keep the existing paragraph's line-spacing/font contract intact.
-            // Only the display scaffold itself is canonicalized here: VisualTeX
-            // display OLEs, numbered or not, use the same justified paragraph
-            // with center/right tabs. The unnumbered form simply has no trailing
-            // number label.
-            format.Alignment =
-                WdParagraphAlignment.wdAlignParagraphJustify;
-            format.SpaceBefore = 0f;
-            format.SpaceAfter = 0f;
-            format.LeftIndent = 0f;
-            format.RightIndent = 0f;
-            format.FirstLineIndent = 0f;
+            using (WordOperationMetrics.Measure(
+                       "FormatConversion.VisualTeXDisplay.ParagraphFormat"))
+            {
+                paragraphs = formulaRange.Paragraphs;
+                if (paragraphs.Count != 1)
+                    throw new InvalidDataException(
+                        "A VisualTeX display host must belong to exactly one Word paragraph.");
+                paragraph = paragraphs[1];
+                format = paragraph.Format;
+                format.Alignment =
+                    WdParagraphAlignment.wdAlignParagraphJustify;
+                format.SpaceBefore = 0f;
+                format.SpaceAfter = 0f;
+                format.LeftIndent = 0f;
+                format.RightIndent = 0f;
+                format.FirstLineIndent = 0f;
+            }
         }
         finally
         {
@@ -8059,21 +8045,39 @@ internal static partial class WordEquationNumbering
             Release(paragraphs);
         }
 
-        // Reuse the exact tab geometry, leading-tab ownership and OLE baseline
-        // primitives used by VisualTeX equation numbering. This prevents fresh
-        // unnumbered insertion from drifting back to the retired centered-host
-        // model before any numbering operation has occurred.
-        ConfigureEquationParagraphTabStops(
-            formulaRange,
-            numbered: true);
-        EnsureLeadingEquationTab(
-            document,
-            formulaRange);
-        AlignDisplayOleObjectToParagraphBaseline(
-            document,
-            formulaRange,
-            formulaHeightPoints,
-            metadata);
+        using (WordOperationMetrics.Measure(
+                   "FormatConversion.VisualTeXDisplay.TabStops"))
+        {
+            ConfigureEquationParagraphTabStops(
+                formulaRange,
+                numbered: true,
+                knownCenterTabPoints,
+                knownRightTabPoints);
+        }
+        using (WordOperationMetrics.Measure(
+                   "FormatConversion.VisualTeXDisplay.LeadingTab"))
+        {
+            EnsureLeadingEquationTab(
+                document,
+                formulaRange);
+        }
+    }
+
+    internal static void AlignVisualTeXDisplayHostBaseline(
+        Document document,
+        Range formulaRange,
+        float formulaHeightPoints,
+        FormulaMetadata metadata)
+    {
+        using (WordOperationMetrics.Measure(
+                   "FormatConversion.VisualTeXDisplay.AlignBaseline"))
+        {
+            AlignDisplayOleObjectToParagraphBaseline(
+                document,
+                formulaRange,
+                formulaHeightPoints,
+                metadata);
+        }
     }
 
     private static void ConfigureEquationParagraph(
@@ -8210,7 +8214,9 @@ internal static partial class WordEquationNumbering
 
     private static void ConfigureEquationParagraphTabStops(
         Range formulaRange,
-        bool numbered)
+        bool numbered,
+        float? knownCenterTabPoints = null,
+        float? knownRightTabPoints = null)
     {
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
@@ -8232,41 +8238,54 @@ internal static partial class WordEquationNumbering
             tabStops = format.TabStops;
             tabStops.ClearAll();
 
-            var pageWidth = 612f;
-            var leftMargin = 72f;
-            var rightMargin = 72f;
-            var hasCellWidth = TryResolveOwningTableCellContentWidth(
-                formulaRange,
-                out var cellContentWidth);
-            if (!hasCellWidth)
+            (float Center, float Right) positions;
+            if (knownCenterTabPoints.HasValue
+                && knownRightTabPoints.HasValue
+                && knownCenterTabPoints.Value > 0f
+                && knownRightTabPoints.Value >= knownCenterTabPoints.Value)
             {
-                try
+                positions = (
+                    knownCenterTabPoints.Value,
+                    knownRightTabPoints.Value);
+            }
+            else
+            {
+                var pageWidth = 612f;
+                var leftMargin = 72f;
+                var rightMargin = 72f;
+                var hasCellWidth = TryResolveOwningTableCellContentWidth(
+                    formulaRange,
+                    out var cellContentWidth);
+                if (!hasCellWidth)
                 {
-                    sections = paragraphRange.Sections;
-                    if (sections.Count > 0)
+                    try
                     {
-                        section = sections[1];
-                        pageSetup = section.PageSetup;
-                        pageWidth = pageSetup.PageWidth;
-                        leftMargin = pageSetup.LeftMargin;
-                        rightMargin = pageSetup.RightMargin;
+                        sections = paragraphRange.Sections;
+                        if (sections.Count > 0)
+                        {
+                            section = sections[1];
+                            pageSetup = section.PageSetup;
+                            pageWidth = pageSetup.PageWidth;
+                            leftMargin = pageSetup.LeftMargin;
+                            rightMargin = pageSetup.RightMargin;
+                        }
+                    }
+                    catch
+                    {
+                        // Keep the same safe page fallback as the full paragraph
+                        // configurator for protected/custom stories.
                     }
                 }
-                catch
-                {
-                    // Keep the same safe page fallback as the full paragraph
-                    // configurator for protected/custom stories.
-                }
-            }
 
-            var positions = hasCellWidth
-                ? (Center: cellContentWidth / 2f, Right: cellContentWidth)
-                : CalculateEquationTabStops(
-                    pageWidth,
-                    leftMargin,
-                    rightMargin,
-                    0,
-                    0);
+                positions = hasCellWidth
+                    ? (Center: cellContentWidth / 2f, Right: cellContentWidth)
+                    : CalculateEquationTabStops(
+                        pageWidth,
+                        leftMargin,
+                        rightMargin,
+                        0,
+                        0);
+            }
             tabStops.Add(
                 positions.Center,
                 (WdTabAlignment)WdTabAlignmentCenter,

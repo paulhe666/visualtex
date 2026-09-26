@@ -92,12 +92,18 @@ internal sealed class WordFormulaHostWriteRequest
     internal float ExportedHeightPixels { get; set; }
     internal float? ExportedBaselinePixels { get; set; }
     internal double FontSizePoints { get; set; } = FormulaFontSize.DefaultPt;
+    // Optional batch-resolved display tab geometry. These values are local to the
+    // exact source section/cell captured by the caller and avoid re-reading the
+    // same PageSetup for every display formula in a batch.
+    internal float? DisplayCenterTabPoints { get; set; }
+    internal float? DisplayRightTabPoints { get; set; }
 
-    // Set only by the whole-document/selection format-conversion batch. The
-    // batch owns one outer transaction plus one final numbering pass, so writers
-    // and the mutation kernel may avoid post-write checks that would immediately
-    // be repeated by that same batch. Interactive create/edit leaves this false.
-    internal bool BatchFormatConversion { get; set; }
+    // Set only by a whole-document/selection batch mutation such as
+    // format conversion or LaTeX redraw. The batch owns one outer transaction
+    // plus one final numbering pass, so the mutation kernel may avoid post-write
+    // checks that would immediately be repeated by the same batch. Interactive
+    // create/edit leaves this false.
+    internal bool BatchMutation { get; set; }
 }
 
 internal sealed class WordFormulaHostWriteResult

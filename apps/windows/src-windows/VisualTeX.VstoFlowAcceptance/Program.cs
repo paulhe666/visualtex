@@ -1274,6 +1274,14 @@ internal static partial class Program
             {
                 RunWordInstalledMathTypeReeditRegressionAcceptance(client, artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-latex-corpus-preflight", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeLatexCorpusPreflightAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "mathtype-latex-corpus-preflight", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeLatexCorpusPreflightAcceptance(client, artifactRoot);
+            }
             else if (string.Equals(mode, "word-installed-mathtype-50-edit-stress", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordInstalledMathTypeFiftyEditStressAcceptance(client, artifactRoot);
@@ -1393,6 +1401,22 @@ internal static partial class Program
             else if (string.Equals(mode, "word-latex-redraw-source-context", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordLatexRedrawSourceContextStress();
+            }
+            else if (string.Equals(mode, "word-latex-redraw-50-performance", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordLatexRedrawFiftyPerformance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-latex-redraw-mathtype-50-current-stress", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordCurrentMathTypeFiftyRedrawStressAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-latex-redraw-100-performance", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordLatexRedrawHundredPerformance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-latex-redraw-100-reopen-verify", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordLatexRedrawHundredReopenVerify(artifactRoot);
             }
             else if (string.Equals(mode, "word-omml-boundary-digit-direct", StringComparison.OrdinalIgnoreCase))
             {

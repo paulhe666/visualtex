@@ -664,40 +664,66 @@ internal static class MathMlToLatexConverter
     {
         var token = element.Value.Trim();
         var variant = ((string?)element.Attribute("mathvariant") ?? string.Empty).Trim();
+        var nativeCharacterStyle = int.TryParse(
+            (string?)element.Attribute("data-mtef-character-style"),
+            out var parsedNativeCharacterStyle)
+            ? parsedNativeCharacterStyle
+            : 0;
         if (element.Name.LocalName is "mi" or "mo"
             && TryConvertNamedOperator(token, out var namedOperator))
+        {
+            // A genuine MathType explicit FONT_STYLE_DEF can style an operator
+            // even though its server-exported MathML omits that presentation.
+            // The direct MTEF reader carries the style as mathvariant; do not
+            // return the named command before applying it.
+            if (variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\boldsymbol{" + namedOperator.Trim() + "}";
+            if (variant.IndexOf("italic", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathit{" + namedOperator.Trim() + "}";
             return namedOperator;
+        }
         var explicitlyUpright =
             variant.IndexOf("normal", StringComparison.OrdinalIgnoreCase) >= 0
             || variant.IndexOf("upright", StringComparison.OrdinalIgnoreCase) >= 0;
         if (element.Name.LocalName == "mi"
             && TryConvertLetterlikeIdentifier(token, out var letterlikeLatex))
-            return letterlikeLatex;
+            return ApplyNativeMathTypeCharacterStyle(
+                letterlikeLatex,
+                nativeCharacterStyle,
+                variant,
+                greekIdentifier: false);
         if (element.Name.LocalName == "mi" && IsLatinIdentifier(token))
         {
             var escaped = EscapeMathIdentifier(token);
+            string? converted = null;
             if (variant.IndexOf("double-struck", StringComparison.OrdinalIgnoreCase) >= 0)
-                return @"\mathbb{" + escaped + "}";
-            if (variant.IndexOf("bold-fraktur", StringComparison.OrdinalIgnoreCase) >= 0)
-                return @"\boldsymbol{\mathfrak{" + escaped + "}}";
-            if (variant.IndexOf("fraktur", StringComparison.OrdinalIgnoreCase) >= 0)
-                return @"\mathfrak{" + escaped + "}";
-            if (variant.IndexOf("bold-script", StringComparison.OrdinalIgnoreCase) >= 0)
-                return @"\boldsymbol{\mathcal{" + escaped + "}}";
-            if (variant.IndexOf("script", StringComparison.OrdinalIgnoreCase) >= 0)
-                return @"\mathcal{" + escaped + "}";
-            if (variant.IndexOf("monospace", StringComparison.OrdinalIgnoreCase) >= 0)
-                return @"\mathtt{" + escaped + "}";
-            if (variant.IndexOf("bold-sans-serif", StringComparison.OrdinalIgnoreCase) >= 0)
-                return @"\boldsymbol{\mathsf{" + escaped + "}}";
-            if (variant.IndexOf("sans-serif", StringComparison.OrdinalIgnoreCase) >= 0)
-                return @"\mathsf{" + escaped + "}";
-            if (variant.IndexOf("bold-italic", StringComparison.OrdinalIgnoreCase) >= 0)
-                return @"\mathbfit{" + escaped + "}";
-            if (variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0)
-                return @"\mathbf{" + escaped + "}";
-            if (explicitlyUpright)
-                return @"\mathrm{" + escaped + "}";
+                converted = @"\mathbb{" + escaped + "}";
+            else if (variant.IndexOf("bold-fraktur", StringComparison.OrdinalIgnoreCase) >= 0)
+                converted = @"\boldsymbol{\mathfrak{" + escaped + "}}";
+            else if (variant.IndexOf("fraktur", StringComparison.OrdinalIgnoreCase) >= 0)
+                converted = @"\mathfrak{" + escaped + "}";
+            else if (variant.IndexOf("bold-script", StringComparison.OrdinalIgnoreCase) >= 0)
+                converted = @"\boldsymbol{\mathcal{" + escaped + "}}";
+            else if (variant.IndexOf("script", StringComparison.OrdinalIgnoreCase) >= 0)
+                converted = @"\mathcal{" + escaped + "}";
+            else if (variant.IndexOf("monospace", StringComparison.OrdinalIgnoreCase) >= 0)
+                converted = @"\mathtt{" + escaped + "}";
+            else if (variant.IndexOf("bold-sans-serif", StringComparison.OrdinalIgnoreCase) >= 0)
+                converted = @"\boldsymbol{\mathsf{" + escaped + "}}";
+            else if (variant.IndexOf("sans-serif", StringComparison.OrdinalIgnoreCase) >= 0)
+                converted = @"\mathsf{" + escaped + "}";
+            else if (variant.IndexOf("bold-italic", StringComparison.OrdinalIgnoreCase) >= 0)
+                converted = @"\mathbfit{" + escaped + "}";
+            else if (variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0)
+                converted = @"\mathbf{" + escaped + "}";
+            else if (explicitlyUpright)
+                converted = @"\mathrm{" + escaped + "}";
+            if (converted is not null)
+                return ApplyNativeMathTypeCharacterStyle(
+                    converted,
+                    nativeCharacterStyle,
+                    variant,
+                    greekIdentifier: false);
         }
         if (element.Name.LocalName == "mi"
             && IsGreekIdentifier(token)
@@ -710,7 +736,53 @@ internal static class MathMlToLatexConverter
             // already-canonical Greek command instead of dropping it.
             return @"\boldsymbol{" + ConvertToken(token).Trim() + "}";
         }
-        return ConvertToken(token);
+        var plain = ConvertToken(token);
+        if (element.Name.LocalName == "mi" && IsGreekIdentifier(token))
+        {
+            return ApplyNativeMathTypeCharacterStyle(
+                plain,
+                nativeCharacterStyle,
+                variant,
+                greekIdentifier: true);
+        }
+        if (element.Name.LocalName is "mi" or "mo")
+        {
+            if (variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\boldsymbol{" + plain.Trim() + "}";
+            if (variant.IndexOf("italic", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathit{" + plain.Trim() + "}";
+        }
+        return plain;
+    }
+
+    private static string ApplyNativeMathTypeCharacterStyle(
+        string latex,
+        int characterStyle,
+        string mathVariant,
+        bool greekIdentifier)
+    {
+        if (characterStyle is < 1 or > 3)
+            return latex;
+
+        var hasBold = mathVariant.IndexOf(
+            "bold",
+            StringComparison.OrdinalIgnoreCase) >= 0;
+        var hasItalic = mathVariant.IndexOf(
+            "italic",
+            StringComparison.OrdinalIgnoreCase) >= 0;
+
+        return characterStyle switch
+        {
+            1 when hasBold => latex,
+            1 when greekIdentifier => @"\boldsymbol{" + latex.Trim() + "}",
+            1 => @"\mathbf{" + latex + "}",
+            2 when hasItalic => latex,
+            2 => @"\mathit{" + latex + "}",
+            3 when hasBold && hasItalic => latex,
+            3 when greekIdentifier => @"\boldsymbol{" + latex.Trim() + "}",
+            3 => @"\mathbfit{" + latex + "}",
+            _ => latex,
+        };
     }
 
     private static bool TryConvertNamedOperator(string token, out string latex)

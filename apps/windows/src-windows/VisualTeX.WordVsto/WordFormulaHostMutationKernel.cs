@@ -133,27 +133,36 @@ internal static class WordFormulaHostMutationKernel
             document,
             insertion,
             target);
+
+        // Low-level writers already validate the physical host they just
+        // materialized. VisualTeX additionally reads its embedded OLE payload
+        // back and verifies FormulaId/LaTeX/display mode. For a batch mutation,
+        // repeating the generic resolver/semantic validation for every formula
+        // creates an O(N^2)-like Word COM/layout cost as the document fills with
+        // OLE hosts. Interactive create/edit keeps the independent validator.
         var validated =
-            WordFormulaMutationValidator.ValidateInsertedHost(
-                document,
-                target,
-                write.Host);
+            target.BatchMutation
+                ? write.Host
+                : WordFormulaMutationValidator.ValidateInsertedHost(
+                    document,
+                    target,
+                    write.Host);
 
         if (target.Kind == WordFormulaHostKind.Omml)
         {
             if (target.Numbered)
             {
-                // Pure OMML numbering is already materialized by the writer.
-                // AttachCanonical only refreshes Word fields and validates the
-                // final native #(SEQ) container.
+                // During a batch, create/retain the canonical
+                // native numbering host now but defer field finalization until
+                // the final document-order refresh.
                 return WordFormulaNumberingKernel.AttachCanonical(
                     document,
-                    validated);
+                    validated,
+                    deferFinalization:
+                        target.BatchMutation);
             }
 
             // The OMML writer owns the complete unnumbered physical host.
-            // Runtime correctness is structural only: Word's materialized
-            // mathematics is not compared against the requested source.
             return validated;
         }
 
@@ -161,7 +170,17 @@ internal static class WordFormulaHostMutationKernel
             validated =
                 WordFormulaNumberingKernel.AttachCanonical(
                     document,
-                    validated);
+                    validated,
+                    deferFinalization:
+                        target.BatchMutation);
+
+        if (target.BatchMutation)
+        {
+            // Numbered batch targets are finalized/validated once after every
+            // batch insert has reached its final document position.
+            // Unnumbered VisualTeX targets need no numbering-container walk.
+            return validated;
+        }
 
         WordFormulaNumberingKernel.ValidatePreservedContainer(
             document,
@@ -471,6 +490,29 @@ internal static class WordFormulaHostMutationKernel
             freshSource,
             target);
 
+        // Inline OMML -> inline OMML editing does not need to delete the native
+        // OMath and rebuild its entire containing paragraph. The captured exact
+        // host is already authoritative and inline OMaths cannot own an equation
+        // number, so replace that exact range directly. This keeps surrounding
+        // user text untouched and avoids the marker/paragraph-InsertXML path used
+        // when a host family or paragraph topology actually changes.
+        if (freshSource.Kind == WordFormulaHostKind.Omml
+            && !freshSource.Display
+            && target.Kind == WordFormulaHostKind.Omml
+            && string.Equals(
+                target.DisplayMode,
+                "inline",
+                StringComparison.OrdinalIgnoreCase)
+            && !target.Numbered)
+        {
+            return WordOmmlHostWriter
+                .ReplaceExactUnnumberedOmmlHost(
+                    document,
+                    freshSource,
+                    target)
+                .Host;
+        }
+
         // Word-native numbered OMML owns its number suffix inside the same
         // OMath host. Preserve that host when editing OMML -> OMML so existing
         // Word _Ref bookmarks continue to target the exact number range. The
@@ -611,7 +653,7 @@ internal static class WordFormulaHostMutationKernel
             // through WordFormulaMutationValidator is duplicate COM/OLE work.
             // Interactive create/edit keeps the independent validator.
             var validated =
-                target.BatchFormatConversion
+                target.BatchMutation
                     ? written.Host
                     : WordFormulaMutationValidator.ValidateInsertedHost(
                         document,
@@ -629,7 +671,7 @@ internal static class WordFormulaHostMutationKernel
                 // physical/payload verification. Removing the temporary plain-text
                 // boundary guard only adjusts the surrounding Word range; do not
                 // reopen and semantically revalidate the same OLE a second time.
-                if (!target.BatchFormatConversion)
+                if (!target.BatchMutation)
                 {
                     validated =
                         WordFormulaMutationValidator.ValidateInsertedHost(
@@ -654,7 +696,7 @@ internal static class WordFormulaHostMutationKernel
                 return validated;
             }
 
-            if (target.BatchFormatConversion
+            if (target.BatchMutation
                 && !target.Numbered
                 && target.Kind == WordFormulaHostKind.VisualTeX)
             {

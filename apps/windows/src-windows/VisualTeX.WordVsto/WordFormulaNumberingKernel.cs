@@ -758,7 +758,7 @@ internal static class WordFormulaNumberingKernel
         if (host.Kind == WordFormulaHostKind.Omml)
         {
             // A fresh OMML writer already materializes the complete native
-            // #(SEQ) structure. During a reverse-order batch, evaluating that
+            // #(SEQ) structure. During a batch, evaluating that
             // field per item is redundant because the final document-order pass
             // must evaluate it again after all earlier targets exist.
             if (deferFinalization

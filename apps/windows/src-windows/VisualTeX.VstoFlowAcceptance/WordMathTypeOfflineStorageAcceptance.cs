@@ -1073,7 +1073,7 @@ internal static partial class Program
                 }
                 else
                 {
-                    validationMathMl = MathTypeOleInterop.ReadMathMl(shape);
+                    validationMathMl = MathTypeOleInterop.ReadServerExportedMathMlForDiagnostics(shape);
                 }
                 if (!string.IsNullOrWhiteSpace(validationCaseFilter))
                 {

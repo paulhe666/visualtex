@@ -455,7 +455,8 @@ internal static class MathTypeWordOpenXml
         float heightPt,
         bool display = false,
         NumberTemplate? numberTemplate = null,
-        string mathTypeNumberPosition = "right")
+        string mathTypeNumberPosition = "right",
+        string? locatorBookmarkName = null)
     {
         if (!MathTypeOleStorage.LooksLikeMathTypeCompoundFile(compoundFile))
             throw new InvalidDataException(
@@ -465,6 +466,15 @@ internal static class MathTypeWordOpenXml
         if (!(widthPt > 0) || !(heightPt > 0))
             throw new InvalidDataException(
                 $"Invalid MathType preview size {widthPt}x{heightPt} pt.");
+        if (!string.IsNullOrWhiteSpace(locatorBookmarkName))
+        {
+            if (locatorBookmarkName!.Length > 40
+                || !char.IsLetter(locatorBookmarkName[0])
+                || locatorBookmarkName.Any(character =>
+                    !char.IsLetterOrDigit(character) && character != '_'))
+                throw new InvalidDataException(
+                    "MathType insertion locator bookmark has an invalid Word bookmark name.");
+        }
 
         // Word's on-screen OLE renderer can infer the logical coordinate system
         // from an Aldus-placeable WMF header, but the Word PDF/print pipeline
@@ -485,8 +495,20 @@ internal static class MathTypeWordOpenXml
 
         var imageRelationshipId = "rId1";
         var oleRelationshipId = "rId2";
-        var shapeId = "_x0000_i1025";
-        var objectId = "_" + unchecked((uint)Guid.NewGuid().GetHashCode()).ToString(
+        // Shape/bookmark instance ids become part of the destination Word story
+        // after InsertXML. Reusing MathType's sample `_x0000_i1025` / bookmark id
+        // `1` for every Flat OPC forces Word to remap the same identifiers on every
+        // insertion and eventually destabilizes large batches. Keep package-local
+        // relationship/type ids fixed, but give each imported OLE instance its own
+        // destination-facing ids.
+        var instanceId = Guid.NewGuid();
+        var instanceValue = BitConverter.ToUInt32(instanceId.ToByteArray(), 0);
+        var shapeNumericId = 1025u + (instanceValue % 2_000_000_000u);
+        var shapeId = "_x0000_i" + shapeNumericId.ToString(
+            System.Globalization.CultureInfo.InvariantCulture);
+        var bookmarkNumericId = (1u + (instanceValue % 2_000_000_000u)).ToString(
+            System.Globalization.CultureInfo.InvariantCulture);
+        var objectId = "_" + unchecked((uint)instanceId.GetHashCode()).ToString(
             System.Globalization.CultureInfo.InvariantCulture);
         var width = widthPt.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
         var height = heightPt.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
@@ -608,7 +630,20 @@ internal static class MathTypeWordOpenXml
                 new XElement(WordNamespace + "tab")));
         }
 
+        if (!string.IsNullOrWhiteSpace(locatorBookmarkName))
+        {
+            paragraph.Add(new XElement(
+                WordNamespace + "bookmarkStart",
+                new XAttribute(WordNamespace + "id", bookmarkNumericId),
+                new XAttribute(WordNamespace + "name", locatorBookmarkName!)));
+        }
         paragraph.Add(new XElement(WordNamespace + "r", wordObject));
+        if (!string.IsNullOrWhiteSpace(locatorBookmarkName))
+        {
+            paragraph.Add(new XElement(
+                WordNamespace + "bookmarkEnd",
+                new XAttribute(WordNamespace + "id", bookmarkNumericId)));
+        }
         if (numberTemplate is not null && !numberOnLeft)
         {
             paragraph.Add(new XElement(

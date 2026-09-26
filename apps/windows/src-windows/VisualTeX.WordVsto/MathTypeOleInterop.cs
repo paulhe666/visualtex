@@ -153,15 +153,64 @@ internal static class MathTypeOleInterop
         capabilities = new Capabilities();
         if (string.IsNullOrWhiteSpace(progId)) return false;
 
+        var key = progId!.Trim();
+        var now = DateTimeOffset.UtcNow;
+        lock (CapabilityCacheSync)
+        {
+            if (CapabilityCache.TryGetValue(key, out var cached)
+                && cached.ExpiresAtUtc > now)
+            {
+                capabilities = CloneCapabilities(cached.Value);
+                return cached.Success;
+            }
+        }
+
         // Do not assume every MathType release/registration uses an Equation.*
         // ProgID. Resolve any registered ProgID, then accept it only when the
         // resulting class name or executable is actually MathType. This remains
         // fail-closed for Microsoft Equation Editor and unrelated OLE servers.
-        if (CLSIDFromProgID(progId!, out var current) != 0
-            && !TryReadProgIdClsid(progId!, out current))
-            return false;
-        return TryResolveCapabilities(progId!, current, out capabilities);
+        var success = false;
+        var resolved = new Capabilities();
+        if ((CLSIDFromProgID(key, out var current) == 0
+                || TryReadProgIdClsid(key, out current))
+            && TryResolveCapabilities(key, current, out resolved))
+        {
+            success = true;
+        }
+
+        lock (CapabilityCacheSync)
+        {
+            if (CapabilityCache.Count >= MaximumCapabilityCacheEntries)
+            {
+                foreach (var staleKey in CapabilityCache
+                             .Where(item => item.Value.ExpiresAtUtc <= now)
+                             .Select(item => item.Key)
+                             .ToArray())
+                    CapabilityCache.Remove(staleKey);
+                if (CapabilityCache.Count >= MaximumCapabilityCacheEntries)
+                    CapabilityCache.Clear();
+            }
+            CapabilityCache[key] = new CapabilityCacheEntry
+            {
+                ExpiresAtUtc = now + CapabilityCacheLifetime,
+                Success = success,
+                Value = CloneCapabilities(resolved),
+            };
+        }
+
+        capabilities = CloneCapabilities(resolved);
+        return success;
     }
+
+    private static Capabilities CloneCapabilities(Capabilities value) => new()
+    {
+        ProgId = value.ProgId,
+        ResolvedClsid = value.ResolvedClsid,
+        ClassName = value.ClassName,
+        ServerPath = value.ServerPath,
+        RunForConversionVerb = value.RunForConversionVerb,
+        RegisteredMathMlGetSet = value.RegisteredMathMlGetSet,
+    };
 
     internal static bool TryResolveCapabilities(
         InlineShape? shape,
@@ -389,20 +438,17 @@ internal static class MathTypeOleInterop
         }
         catch (Exception directError)
         {
-            // Compatibility fallback only for an MTEF structure the direct parser
-            // does not support yet and only when a MathType server is actually
-            // installed. Never make MathType a requirement for supported formulas.
-            OLEFormat? fallbackFormat = null;
-            try
-            {
-                fallbackFormat = shape.OLEFormat;
-                if (!TryResolveCapabilities(fallbackFormat.ProgID, out _))
-                    throw new InvalidDataException(
-                        "VisualTeX could not parse this MathType OLE formula directly, and no MathType server is installed for compatibility fallback.",
-                        directError);
-            }
-            finally { Release(fallbackFormat); }
-            mathMl = ReadMathMl(shape);
+            // Do not fall back to MathType's IDataObject MathML here. Genuine
+            // MathType equations can carry explicit font/character styles in
+            // Equation Native (Style > Other... Bold/Italic/etc.) that MathType's
+            // exported MathML omits entirely. Treating that lossy export as an
+            // authoritative fallback made VisualTeX occasionally reopen a styled
+            // native formula as upright/unstyled. The direct MTEF reader is the
+            // only style-authoritative read path; unsupported native structures
+            // must be implemented there rather than silently normalized away.
+            throw new InvalidDataException(
+                "VisualTeX could not parse this MathType Equation Native structure without losing native formatting.",
+                directError);
         }
         var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
         if (string.IsNullOrWhiteSpace(latex))
@@ -452,7 +498,16 @@ internal static class MathTypeOleInterop
         return metadata;
     }
 
-    internal static string ReadMathMl(InlineShape shape, bool activateForConversion = true)
+    /// <summary>
+    /// Reads MathType's server-exported MathML for diagnostics and interop
+    /// acceptance only. This representation is not presentation-authoritative:
+    /// MathType omits some explicit Style &gt; Other character formatting from it.
+    /// Production MathType-to-VisualTeX reads must use Equation Native through
+    /// <see cref="MathTypeOleStorage.ReadMathMl(InlineShape)"/> instead.
+    /// </summary>
+    internal static string ReadServerExportedMathMlForDiagnostics(
+        InlineShape shape,
+        bool activateForConversion = true)
     {
         OLEFormat? format = null;
         object? runningObject = null;

@@ -252,7 +252,7 @@ internal sealed partial class WordFormulaService
                                 preparedFormula.MathMl,
                                 preparedFormula.PngPath,
                                 preparedFormula.EmfPath);
-                            request.BatchFormatConversion = true;
+                            request.BatchMutation = true;
                             replacedHost =
                                 WordFormulaHostMutationKernel
                                     .ReplaceInActiveTransaction(
@@ -356,7 +356,7 @@ internal sealed partial class WordFormulaService
                                                             StringComparison.OrdinalIgnoreCase),
                                                     preserveCapturedInsertion:
                                                         true,
-                                                    boundedFormatConversionBatch:
+                                                    boundedBatchMutation:
                                                         true);
                                             }
                                             finally

@@ -65,7 +65,12 @@ internal static class MathTypeWordCommandsBridge
         return candidates.FirstOrDefault(File.Exists);
     }
 
-    internal static string ReadMathMl(InlineShape shape)
+    /// <summary>
+    /// Reads MathType's own exported MathML for diagnostics only. It is lossy
+    /// for some explicit native character styles and must not be used as a
+    /// production MathType-to-VisualTeX source.
+    /// </summary>
+    internal static string ReadServerExportedMathMlForDiagnostics(InlineShape shape)
     {
         if (shape is null) throw new ArgumentNullException(nameof(shape));
 

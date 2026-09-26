@@ -31,7 +31,7 @@ export const VISUALTEX_PHYSICS_KERNEL_MACROS: readonly VisualTexPhysicsKernelMac
     entry("pqty", "\\left(#1\\right)", 1),
     entry("bqty", "\\left[#1\\right]", 1),
     entry("Bqty", "\\left\\{#1\\right\\}", 1),
-    entry("vqty", "\\left\\lvert#1\\right\\rvert", 1),
+    entry("vqty", "\\left\\lvert #1\\right\\rvert", 1),
     entry("pmqty", "\\begin{pmatrix}#1\\end{pmatrix}", 1),
     entry("Pmqty", "\\left\\lgroup\\begin{matrix}#1\\end{matrix}\\right\\rgroup", 1),
     entry("bmqty", "\\begin{bmatrix}#1\\end{bmatrix}", 1),
@@ -48,7 +48,7 @@ export const VISUALTEX_PHYSICS_KERNEL_MACROS: readonly VisualTexPhysicsKernelMac
     entry("smqty", "\\begin{smallmatrix}#1\\end{smallmatrix}", 1),
     entry("smallmatrixdeterminant", "\\left\\lvert\\begin{smallmatrix}#1\\end{smallmatrix}\\right\\rvert", 1),
     entry("smdet", "\\left\\lvert\\begin{smallmatrix}#1\\end{smallmatrix}\\right\\rvert", 1),
-    entry("absolutevalue", "\\left\\lvert#1\\right\\rvert", 1),
+    entry("absolutevalue", "\\left\\lvert #1\\right\\rvert", 1),
     entry("order", "\\mathcal{O}\\left(#1\\right)", 1),
     entry("evaluated", "\\left.#1\\right\\rvert", 1),
     entry("eval", "\\left.#1\\right\\rvert", 1),
@@ -56,6 +56,7 @@ export const VISUALTEX_PHYSICS_KERNEL_MACROS: readonly VisualTexPhysicsKernelMac
     entry("commutator", "\\left[#1,#2\\right]", 2),
     entry("anticommutator", "\\left\\{#1,#2\\right\\}", 2),
     entry("acommutator", "\\left\\{#1,#2\\right\\}", 2),
+    entry("anticomm", "\\left\\{#1,#2\\right\\}", 2),
 
     // Vector and differential operators. The existing \div retains ÷.
     entry("vectorbold", "\\mathbf{#1}", 1),
@@ -134,15 +135,18 @@ export const VISUALTEX_PHYSICS_KERNEL_MACROS: readonly VisualTexPhysicsKernelMac
     entry("fdv", "\\frac{\\delta #1}{\\delta #2}", 2),
 
     // Dirac notation variants not already supplied by VisualTeX.
-    entry("innerproduct", "\\left\\langle#1\\middle\\vert#2\\right\\rangle", 2),
-    entry("ip", "\\left\\langle#1\\middle\\vert#2\\right\\rangle", 2),
-    entry("outerproduct", "\\left\\lvert#1\\right\\rangle\\!\\left\\langle#2\\right\\rvert", 2),
-    entry("dyad", "\\left\\lvert#1\\right\\rangle\\!\\left\\langle#2\\right\\rvert", 2),
-    entry("op", "\\left\\lvert#1\\right\\rangle\\!\\left\\langle#2\\right\\rvert", 2),
-    entry("expectationvalue", "\\left\\langle#2\\middle\\vert#1\\middle\\vert#2\\right\\rangle", 2),
-    entry("ev", "\\left\\langle#1\\right\\rangle", 1),
-    entry("vev", "\\left\\langle0\\middle\\vert#1\\middle\\vert0\\right\\rangle", 1),
-    entry("matrixelement", "\\left\\langle#1\\middle\\vert#2\\middle\\vert#3\\right\\rangle", 3),
-    entry("matrixel", "\\left\\langle#1\\middle\\vert#2\\middle\\vert#3\\right\\rangle", 3),
-    entry("flatfrac", "\\left.#1\\middle\\slash#2\\right.", 2),
+    entry("innerproduct", "\\left\\langle #1\\middle\\vert #2\\right\\rangle", 2),
+    entry("ip", "\\left\\langle #1\\middle\\vert #2\\right\\rangle", 2),
+    entry("outerproduct", "\\left\\lvert #1\\right\\rangle\\!\\left\\langle #2\\right\\rvert", 2),
+    entry("dyad", "\\left\\lvert #1\\right\\rangle\\!\\left\\langle #2\\right\\rvert", 2),
+    entry("op", "\\left\\lvert #1\\right\\rangle\\!\\left\\langle #2\\right\\rvert", 2),
+    entry("expectationvalue", "\\left\\langle #2\\middle\\vert #1\\middle\\vert #2\\right\\rangle", 2),
+    entry("ev", "\\left\\langle #1\\right\\rangle", 1),
+    entry("vev", "\\left\\langle 0\\middle\\vert #1\\middle\\vert 0\\right\\rangle", 1),
+    entry("matrixelement", "\\left\\langle #1\\middle\\vert #2\\middle\\vert #3\\right\\rangle", 3),
+    entry("matrixel", "\\left\\langle #1\\middle\\vert #2\\middle\\vert #3\\right\\rangle", 3),
+    // TeX accepts \\slash as the delimiter token after \\middle, but MathJax's
+    // delimiter parser requires the actual slash delimiter. Keep the physics.sty
+    // geometry while using the portable MathJax spelling.
+    entry("flatfrac", "\\left.#1\\middle/#2\\right.", 2),
   ]);

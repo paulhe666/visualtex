@@ -12,6 +12,7 @@ import {
 import { isIncompleteLatexDraft } from "../src/math/latexCompatibility.ts";
 import { canonicalOfficeFingerprintLines } from "../src/office/shared/officeEditPersistence.ts";
 import { VISUALTEX_ALIGNMENT_MARKER_LATEX } from "../src/editor/alignmentMarkers.ts";
+import { latexToMathMl } from "../src/export/runtime.ts";
 
 function normalize(source: string, codeFormat: string = "raw") {
   return normalizeFormulaEditorDocument(
@@ -146,6 +147,23 @@ c &= d
     ],
   },
 ] as const;
+
+const compactAlignedSource = String.raw`\begin{aligned}f(x)&=x^2+1\\f'(x)&=2x\end{aligned}`;
+const compactAligned = normalize(compactAlignedSource);
+assert.equal(compactAligned.codeFormat, "aligned", "compact aligned format");
+assert.deepEqual(
+  compactAligned.lines.map((line) => line.latex),
+  [
+    `f(x)${VISUALTEX_ALIGNMENT_MARKER_LATEX}=x^2+1`,
+    `f'(x)${VISUALTEX_ALIGNMENT_MARKER_LATEX}=2x`,
+  ],
+  "compact aligned rows",
+);
+const compactAlignedRender = serializeFormulaEditorRenderDocument(compactAligned);
+assert.match(compactAlignedRender, /^\\begin\{aligned\}/u);
+assert.match(compactAlignedRender, /\\\\/u);
+const compactAlignedMathMl = await latexToMathMl(compactAlignedRender, true);
+assert.match(compactAlignedMathMl, /<mtable\b/u, "compact aligned MathML table");
 
 for (const testCase of multilineCases) {
   const normalized = normalize(testCase.source);

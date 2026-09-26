@@ -169,6 +169,308 @@ internal static partial class Program
             .Replace(@"\:", string.Empty)
             .Replace(@"\;", string.Empty);
 
+    private static void RunMathTypeLatexCorpusPreflightAcceptance(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var prepared = PrepareFiftyStressCorpus(client);
+        var nativeInputs = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        for (var index = 0; index < prepared.Count; index++)
+        {
+            var item = prepared[index];
+            if (string.IsNullOrWhiteSpace(item.Export.MathMl))
+                throw new InvalidDataException($"Base MathType corpus '{item.Formula.Name}' lost MathML.");
+            var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+                item.Export.MathMl!,
+                string.Equals(item.Formula.DisplayMode, "inline", StringComparison.Ordinal),
+                12d);
+            nativeInputs.Add($"base-{index + 1:D3}-{item.Formula.Name}", generated.Mtef);
+        }
+        var extras = new (string Name, string Latex, string DisplayMode)[]
+        {
+            ("aligned", @"\begin{aligned}f(x)&=x^2+1\\f'(x)&=2x\end{aligned}", "block"),
+            ("operatorname", @"\operatorname{rank}(A)+\operatorname{tr}(B)", "inline"),
+            ("overset-underset", @"\overset{!}{=}+\underset{n\to\infty}{\lim}", "block"),
+            ("physics-qty", @"\qty(\frac{a}{b})", "inline"),
+            ("physics-dv", @"\dv{f}{x}+\dv[2]{g}{t}", "inline"),
+            ("physics-pdv", @"\pdv{u}{x}+\pdv[2]{u}{y}", "inline"),
+            ("physics-vqty", @"\vqty{\frac{p^2}{2m}+V(x)}", "inline"),
+            ("physics-vev", @"\vev{\hat H}", "inline"),
+            ("physics-flatfrac", @"\flatfrac{a+b}{c+d}", "inline"),
+            ("physics-qq", @"x\qq{if}y>0", "inline"),
+            ("physics-ket-bra", @"\bra{\phi}\hat H\ket{\psi}", "inline"),
+            ("physics-braket", @"\braket{\phi|\psi}", "inline"),
+            ("physics-commutator", @"\comm{A}{B}+\anticomm{C}{D}", "inline"),
+            ("physics-mqty", @"\mqty(a&b\\c&d)", "block"),
+            ("siunitx", @"v=\SI{3.00}{\meter\per\second}", "inline"),
+            ("mathbbm", @"\mathbbm{1}_{A}(x)", "inline"),
+            ("middle-delimiter", @"\left\langle x\middle|A\middle|y\right\rangle", "inline"),
+            ("long-nested", @"\sum_{n=1}^{\infty}\frac{(-1)^{n+1}}{n^2}\left[\sqrt{1+\frac{x_n^2}{1+x_n^4}}+\int_0^1\frac{t^n}{1+t^2}\,\mathrm dt\right]", "block"),
+        };
+
+        var rows = new List<string>
+        {
+            "name,display,latex,mathml_length,mtef_length,compound_length"
+        };
+        var failures = new List<string>();
+        foreach (var item in extras)
+        {
+            try
+            {
+                var export = CreateInstalledMathTypeProductExport(
+                    client,
+                    item.Latex,
+                    FormulaOleContract.MathTypeOleMode,
+                    item.DisplayMode,
+                    numbered: false);
+                if (string.IsNullOrWhiteSpace(export.MathMl))
+                    throw new InvalidDataException(
+                        $"MathType LaTeX corpus '{item.Name}' produced no MathML. latex='{item.Latex}'.");
+
+                var expectedSignature = MathTypeMtefCodec.SemanticSignature(export.MathMl!);
+                var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+                    export.MathMl!,
+                    string.Equals(item.DisplayMode, "inline", StringComparison.Ordinal),
+                    12d);
+                var compound = MathTypeOleStorage.CreateStandaloneCompoundFile(generated);
+                var roundTripMathMl = MathTypeOleStorage.ReadMathMl(compound);
+                var actualSignature = MathTypeMtefCodec.SemanticSignature(roundTripMathMl);
+                if (!string.Equals(expectedSignature, actualSignature, StringComparison.Ordinal))
+                    throw new InvalidDataException(
+                        $"MathType LaTeX corpus '{item.Name}' changed semantics in Equation Native. latex='{item.Latex}' expected='{expectedSignature}' actual='{actualSignature}' mathml='{export.MathMl}' roundtrip='{roundTripMathMl}'.");
+
+                nativeInputs.Add($"extra-{item.Name}", generated.Mtef);
+                rows.Add(string.Join(",",
+                    Csv(item.Name),
+                    Csv(item.DisplayMode),
+                    Csv(item.Latex),
+                    export.MathMl!.Length.ToString(CultureInfo.InvariantCulture),
+                    generated.Mtef.Length.ToString(CultureInfo.InvariantCulture),
+                    compound.Length.ToString(CultureInfo.InvariantCulture)));
+                Console.WriteLine(
+                    $"[MathType corpus] {item.Name}: display={item.DisplayMode}, mathml={export.MathMl.Length}, mtef={generated.Mtef.Length}, compound={compound.Length}");
+            }
+            catch (Exception error)
+            {
+                var detail = error.GetBaseException().Message;
+                failures.Add($"{item.Name}: {detail}");
+                Console.WriteLine($"[MathType corpus FAIL] {item.Name}: {detail}");
+            }
+        }
+
+        if (MathTypeNativePreviewRenderer.IsAvailable)
+        {
+            var previewRoot = Path.Combine(artifactRoot, "native-preview");
+            Directory.CreateDirectory(previewRoot);
+            var renderedAll = MathTypeNativePreviewRenderer.TryRenderBatch(
+                nativeInputs,
+                previewRoot,
+                out var previews);
+            try
+            {
+                if (!renderedAll || previews.Count != nativeInputs.Count)
+                {
+                    var missing = nativeInputs.Keys
+                        .Where(key => !previews.ContainsKey(key))
+                        .ToArray();
+                    throw new InvalidDataException(
+                        "MathPage native preview failed for: " + string.Join(", ", missing));
+                }
+            }
+            finally
+            {
+                foreach (var preview in previews.Values)
+                    preview.Dispose();
+            }
+        }
+
+        File.WriteAllLines(
+            Path.Combine(artifactRoot, "mathtype-latex-corpus-preflight.csv"),
+            rows);
+        File.WriteAllLines(
+            Path.Combine(artifactRoot, "mathtype-latex-corpus-failures.txt"),
+            failures);
+        if (failures.Count != 0)
+            throw new InvalidDataException(
+                "MathType LaTeX corpus preflight failed:\n" + string.Join("\n", failures));
+        Console.WriteLine(
+            $"[MathType corpus PASS] base={prepared.Count}, extras={extras.Length}, total={prepared.Count + extras.Length}; converter + MathML + MTEF + compound-storage semantic round-trip + native preview passed.");
+    }
+
+    private static string Csv(string value) =>
+        "\"" + (value ?? string.Empty).Replace("\"", "\"\"") + "\"";
+
+    private static void RunWordCurrentMathTypeFiftyRedrawStressAcceptance(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        Directory.CreateDirectory(artifactRoot);
+        var prepared = PrepareFiftyStressCorpus(client);
+        var redrawLog = Path.Combine(artifactRoot, "mathtype-50-current-redraw.log");
+        TryDeleteAcceptanceFile(redrawLog);
+        var documentPath = Path.Combine(artifactRoot, "MathType-50-Current-Redraw.docx");
+        var previousRedrawLog = Environment.GetEnvironmentVariable(
+            "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG");
+        var previousNumbered = WordEquationNumbering.GetDefaultDisplayEquationNumbered();
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG",
+                redrawLog);
+            WordEquationNumbering.SetDefaultDisplayEquationNumbered(false);
+            client.PrewarmConverterAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Thread.Sleep(500);
+            System.Windows.Forms.Application.DoEvents();
+
+            using (var host = new WordPerformanceHost(documentPath: null))
+            {
+                var selection = host.Application.Selection;
+                selection.HomeKey(Word.WdUnits.wdStory);
+                selection.Font.Name = "宋体";
+                selection.Font.Size = 10.5f;
+                selection.Font.Position = 0;
+                for (var index = 0; index < prepared.Count; index++)
+                {
+                    var item = prepared[index];
+                    var ordinal = index + 1;
+                    if (string.Equals(
+                            item.Formula.DisplayMode,
+                            "inline",
+                            StringComparison.Ordinal))
+                    {
+                        selection.TypeText(
+                            $"MT50 {ordinal} inline before ${item.Formula.Latex}$ MT50 {ordinal} inline after");
+                        selection.TypeParagraph();
+                    }
+                    else
+                    {
+                        selection.TypeText($"MT50 {ordinal} display before");
+                        selection.TypeParagraph();
+                        selection.TypeText($"$${item.Formula.Latex}$$");
+                        selection.TypeParagraph();
+                        selection.TypeText($"MT50 {ordinal} display after");
+                        selection.TypeParagraph();
+                    }
+                }
+
+                var paragraphCountBefore = host.Document.Paragraphs.Count;
+                host.Document.Activate();
+                host.Application.Selection.HomeKey(Word.WdUnits.wdStory);
+                host.AddIn.OnRedrawDocumentToMathType(new object());
+                var log = WaitForLatexRedraw(redrawLog, TimeSpan.FromMinutes(10));
+                WaitForAddInIdle(host.AddIn, TimeSpan.FromSeconds(180));
+                if (log.IndexOf("redraw-failed", StringComparison.OrdinalIgnoreCase) >= 0)
+                    throw new InvalidDataException("Current MathType 50-formula redraw emitted redraw-failed.\n" + log);
+                AssertCurrentMathTypeFiftyRedrawInventory(
+                    host.Application,
+                    host.Document,
+                    prepared,
+                    "after current-DLL redraw");
+                var paragraphCountAfter = host.Document.Paragraphs.Count;
+                if (paragraphCountAfter != paragraphCountBefore)
+                    throw new InvalidDataException(
+                        $"Current MathType redraw changed paragraph count: before={paragraphCountBefore}, after={paragraphCountAfter}.");
+                host.Save(documentPath);
+            }
+
+            using (var reopened = new WordPerformanceHost(documentPath))
+            {
+                AssertCurrentMathTypeFiftyRedrawInventory(
+                    reopened.Application,
+                    reopened.Document,
+                    prepared,
+                    "after current-DLL save/reopen");
+            }
+
+            Console.WriteLine(
+                $"[MT50 CURRENT REDRAW PASS] formulas={prepared.Count}; all Equation Native semantic signatures, FormulaIds, prose, and save/reopen state remained valid; fixture={documentPath}");
+        }
+        finally
+        {
+            WordEquationNumbering.SetDefaultDisplayEquationNumbered(previousNumbered);
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG",
+                previousRedrawLog);
+        }
+    }
+
+    private static void AssertCurrentMathTypeFiftyRedrawInventory(
+        Word.Application application,
+        Word.Document document,
+        IReadOnlyList<PreparedStressFormula> prepared,
+        string stage)
+    {
+        Word.InlineShapes? shapes = null;
+        Word.InlineShape? shape = null;
+        Word.Range? content = null;
+        var formulaIds = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            shapes = document.InlineShapes;
+            AssertEqual(prepared.Count, shapes.Count,
+                $"{stage}: wrong MathType object count.");
+            for (var index = 0; index < prepared.Count; index++)
+            {
+                Release(shape);
+                shape = shapes[index + 1];
+                if (!MathTypeOleInterop.IsMathTypeOle(shape))
+                    throw new InvalidDataException(
+                        $"{stage}: object #{index + 1} is not Equation.DSMT4.");
+                var compound = MathTypeOleStorage.CaptureCompoundFile(shape);
+                var mathMl = MathTypeOleStorage.ReadMathMl(compound);
+                var actualSignature = MathTypeMtefCodec.SemanticSignature(mathMl);
+                AssertEqual(prepared[index].Signature, actualSignature,
+                    $"{stage}: formula #{index + 1} '{prepared[index].Formula.Name}' changed Equation Native semantics.");
+                var metadata = MathTypeOleInterop.ReadMetadata(
+                    application,
+                    shape,
+                    knownMathMl: mathMl,
+                    knownCompoundFile: compound);
+                if (string.IsNullOrWhiteSpace(metadata.FormulaId)
+                    || !formulaIds.Add(metadata.FormulaId))
+                    throw new InvalidDataException(
+                        $"{stage}: formula #{index + 1} has a missing/duplicate FormulaId '{metadata.FormulaId}'.");
+                AssertEqual(false, metadata.Numbered,
+                    $"{stage}: formula #{index + 1} unexpectedly became numbered.");
+            }
+
+            content = document.Content;
+            var text = content.Text ?? string.Empty;
+            if (text.IndexOf('$') >= 0)
+                throw new InvalidDataException(
+                    $"{stage}: dollar-delimited LaTeX source remained in the document.");
+            for (var index = 0; index < prepared.Count; index++)
+            {
+                var ordinal = index + 1;
+                var before = string.Equals(
+                        prepared[index].Formula.DisplayMode,
+                        "inline",
+                        StringComparison.Ordinal)
+                    ? $"MT50 {ordinal} inline before "
+                    : $"MT50 {ordinal} display before";
+                var after = string.Equals(
+                        prepared[index].Formula.DisplayMode,
+                        "inline",
+                        StringComparison.Ordinal)
+                    ? $" MT50 {ordinal} inline after"
+                    : $"MT50 {ordinal} display after";
+                if (text.IndexOf(before, StringComparison.Ordinal) < 0
+                    || text.IndexOf(after, StringComparison.Ordinal) < 0)
+                    throw new InvalidDataException(
+                        $"{stage}: surrounding prose for formula #{ordinal} was damaged.");
+            }
+        }
+        finally
+        {
+            Release(content);
+            Release(shape);
+            Release(shapes);
+        }
+    }
+
     private static void RunWordInstalledMathTypeFiftyEditStressAcceptance(
         VisualTeXSessionClient client,
         string artifactRoot)

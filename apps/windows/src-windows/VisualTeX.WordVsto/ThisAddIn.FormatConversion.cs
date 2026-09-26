@@ -692,7 +692,11 @@ public sealed partial class ThisAddIn
             var reported = await RecordSessionFailureAsync(client, converterSessionIds, error).ConfigureAwait(false);
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-failed sourceMode={sourceMode} targetMode={targetMode} error={reported}");
-            SetStatus($"公式格式转换失败：{reported.Message}");
+            var failureMessage = OfficePluginLanguage.FormatOperationError(
+                reported,
+                "公式格式转换失败",
+                "Equation format conversion failed");
+            SetStatus(failureMessage);
             if (!string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                     "1",
@@ -704,7 +708,7 @@ public sealed partial class ThisAddIn
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            OfficePluginLanguage.SafeErrorMessage(reported.Message),
+                            failureMessage,
                             T("VisualTeX 公式格式转换", "VisualTeX Equation Format Conversion"),
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);

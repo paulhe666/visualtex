@@ -1,5 +1,6 @@
 import type { MacroDictionary } from "mathlive";
 import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "./packageMacroCompatibility";
+import { normalizeFlexiblePackageLatexCommands } from "./latexCompatibility";
 
 const macro = (def: string): MacroDictionary[string] => ({
   def,
@@ -255,5 +256,9 @@ export function expandVisualTexMathLiveCompatibilityMacros(
   source: string,
   excludedCommands: ReadonlySet<string> = new Set(),
 ) {
-  return expandCompatibilityMacros(source, excludedCommands, 0);
+  return expandCompatibilityMacros(
+    normalizeFlexiblePackageLatexCommands(source, excludedCommands),
+    excludedCommands,
+    0,
+  );
 }

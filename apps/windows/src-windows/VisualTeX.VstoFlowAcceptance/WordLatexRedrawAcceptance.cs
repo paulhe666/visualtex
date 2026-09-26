@@ -173,6 +173,219 @@ internal static partial class Program
             verifyResizeBaseline: false);
     }
 
+    private static void RunWordLatexRedrawFiftyPerformance(
+        VisualTeXSessionClient client,
+        string artifactRoot)
+    {
+        var formulaCount =
+            int.TryParse(
+                Environment.GetEnvironmentVariable("VISUALTEX_REDRAW_PROFILE_COUNT"),
+                out var requestedFormulaCount)
+                ? Math.Max(1, Math.Min(500, requestedFormulaCount))
+                : 50;
+        const long maximumAverageInsertMilliseconds = 600;
+        const long maximumSingleInsertMilliseconds = 1500;
+        var profileTarget =
+            Environment.GetEnvironmentVariable("VISUALTEX_REDRAW_PROFILE_TARGET")
+            ?? "visualtex";
+        var profileMathType = string.Equals(
+            profileTarget,
+            "mathtype",
+            StringComparison.OrdinalIgnoreCase);
+        var suspendScreenUpdating = string.Equals(
+            Environment.GetEnvironmentVariable("VISUALTEX_REDRAW_PROFILE_SUSPEND_SCREEN_UPDATING"),
+            "1",
+            StringComparison.Ordinal);
+        var redrawLog = Path.Combine(
+            artifactRoot,
+            "word-latex-redraw-50-performance.log");
+        TryDeleteAcceptanceFile(redrawLog);
+
+        var previousRedrawLog =
+            Environment.GetEnvironmentVariable(
+                "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG");
+        Environment.SetEnvironmentVariable(
+            "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG",
+            redrawLog);
+        try
+        {
+            client.PrewarmConverterAsync(
+                    CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Thread.Sleep(700);
+            WinForms.Application.DoEvents();
+
+            using var host =
+                new WordPerformanceHost(
+                    documentPath: null);
+            var selection =
+                host.Application.Selection;
+            selection.HomeKey(
+                Word.WdUnits.wdStory);
+            selection.Font.Name = "宋体";
+            selection.Font.Size = 10.5f;
+            selection.Font.Position = 0;
+
+            for (var index = 1;
+                 index <= formulaCount;
+                 index++)
+            {
+                if ((index & 1) == 1)
+                {
+                    selection.TypeText(
+                        $"Inline {index} before $x_{{{index}}}+y_{{{index}}}={index}$ after");
+                    selection.TypeParagraph();
+                }
+                else
+                {
+                    selection.TypeText(
+                        $"Display {index} before");
+                    selection.TypeParagraph();
+                    selection.TypeText(
+                        $"$$E_{{{index}}}=mc^2+{index}$$");
+                    selection.TypeParagraph();
+                    selection.TypeText(
+                        $"Display {index} after");
+                    selection.TypeParagraph();
+                }
+            }
+
+            var paragraphCountBeforeRedraw = host.Document.Paragraphs.Count;
+
+            host.Document.Activate();
+            host.Application.Selection.HomeKey(
+                Word.WdUnits.wdStory);
+            var previousScreenUpdating = host.Application.ScreenUpdating;
+            var wall = Stopwatch.StartNew();
+            string log;
+            try
+            {
+                if (suspendScreenUpdating)
+                    host.Application.ScreenUpdating = false;
+                if (profileMathType)
+                    host.AddIn.OnRedrawDocumentToMathType(new object());
+                else
+                    host.AddIn.OnRedrawDocumentToOle(new object());
+                log = WaitForLatexRedraw(
+                    redrawLog,
+                    TimeSpan.FromMinutes(10));
+                WaitForAddInIdle(
+                    host.AddIn,
+                    TimeSpan.FromSeconds(180));
+            }
+            finally
+            {
+                wall.Stop();
+                if (suspendScreenUpdating)
+                {
+                    try { host.Application.ScreenUpdating = previousScreenUpdating; }
+                    catch { }
+                }
+            }
+
+            Word.InlineShapes? insertedShapes = null;
+            Word.Range? finalContent = null;
+            try
+            {
+                insertedShapes =
+                    host.Document.InlineShapes;
+                if (insertedShapes.Count
+                    != formulaCount)
+                    throw new InvalidDataException(
+                        $"Expected {formulaCount} VisualTeX OLE hosts after redraw; actual {insertedShapes.Count}.");
+
+                finalContent =
+                    host.Document.Content;
+                var finalText =
+                    finalContent.Text
+                    ?? string.Empty;
+                if (finalText.IndexOf(
+                        "$",
+                        StringComparison.Ordinal) >= 0)
+                    throw new InvalidDataException(
+                        "LaTeX redraw performance regression left dollar-delimited source formulas in the document.");
+
+                var paragraphCountAfterRedraw = host.Document.Paragraphs.Count;
+                if (paragraphCountAfterRedraw != paragraphCountBeforeRedraw)
+                    throw new InvalidDataException(
+                        $"LaTeX redraw changed document paragraph count: before={paragraphCountBeforeRedraw}, after={paragraphCountAfterRedraw}.");
+
+                for (var index = 1; index <= formulaCount; index++)
+                {
+                    var expectedBefore = (index & 1) == 1
+                        ? $"Inline {index} before "
+                        : $"Display {index} before";
+                    var expectedAfter = (index & 1) == 1
+                        ? " after"
+                        : $"Display {index} after";
+                    if (finalText.IndexOf(expectedBefore, StringComparison.Ordinal) < 0
+                        || finalText.IndexOf(expectedAfter, StringComparison.Ordinal) < 0)
+                        throw new InvalidDataException(
+                            $"LaTeX redraw damaged surrounding prose for formula {index}.");
+                }
+
+                AssertRedrawInlineTrailingProseBaseline(
+                    host.Document,
+                    formulaCount);
+            }
+            finally
+            {
+                Release(finalContent);
+                Release(insertedShapes);
+            }
+
+            var summary = Regex.Match(
+                log,
+                @"\bredraw-complete formulas=(?<formulas>\d+) unique=(?<unique>\d+) skipped=(?<skipped>\d+) "
+                + @"renderAverageMs=(?<renderAverage>\d+) renderMaxMs=(?<renderMax>\d+) "
+                + @"insertTotalMs=(?<insertTotal>\d+) insertMaxMs=(?<insertMax>\d+)");
+            if (!summary.Success)
+                throw new InvalidDataException(
+                    $"{formulaCount}-formula redraw performance regression did not emit a complete summary.\n" + log);
+
+            var formulas = int.Parse(
+                summary.Groups["formulas"].Value,
+                CultureInfo.InvariantCulture);
+            var skipped = int.Parse(
+                summary.Groups["skipped"].Value,
+                CultureInfo.InvariantCulture);
+            var insertTotal = long.Parse(
+                summary.Groups["insertTotal"].Value,
+                CultureInfo.InvariantCulture);
+            var insertMaximum = long.Parse(
+                summary.Groups["insertMax"].Value,
+                CultureInfo.InvariantCulture);
+            var insertAverage =
+                formulas > 0
+                    ? insertTotal / formulas
+                    : long.MaxValue;
+
+            if (formulas != formulaCount
+                || skipped != 0)
+                throw new InvalidDataException(
+                    $"{formulaCount}-formula redraw performance regression completed {formulas} formulas with {skipped} skipped.");
+            if (insertAverage
+                    > maximumAverageInsertMilliseconds
+                || insertMaximum
+                    > maximumSingleInsertMilliseconds)
+                throw new InvalidDataException(
+                    $"{formulaCount}-formula redraw insertion performance regressed: average={insertAverage} ms, max={insertMaximum} ms; "
+                    + $"limits={maximumAverageInsertMilliseconds}/{maximumSingleInsertMilliseconds} ms.\n{log}");
+
+            Console.WriteLine(
+                $"[Word LaTeX redraw performance] target={profileTarget}; screenUpdatingSuspended={suspendScreenUpdating}; "
+                + $"{formulaCount} formulas passed: wall={wall.ElapsedMilliseconds} ms, "
+                + $"insert average={insertAverage} ms, max={insertMaximum} ms.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                "VISUALTEX_VSTO_REDRAW_ACCEPTANCE_LOG",
+                previousRedrawLog);
+        }
+    }
+
     private static void RunWordLatexRedrawOmmlOnly(
         VisualTeXSessionClient client,
         string artifactRoot)
@@ -574,6 +787,83 @@ internal static partial class Program
             return count;
         }
         finally { Release(shapes); }
+    }
+
+    private static void AssertRedrawInlineTrailingProseBaseline(
+        Word.Document document,
+        int formulaCount)
+    {
+        for (var index = 1; index <= formulaCount; index += 2)
+        {
+            Word.Range? anchor = null;
+            Word.Find? anchorFind = null;
+            Word.Paragraphs? paragraphs = null;
+            Word.Paragraph? paragraph = null;
+            Word.Range? paragraphRange = null;
+            Word.Range? trailing = null;
+            Word.Find? trailingFind = null;
+            Word.Font? trailingFont = null;
+            Word.Range? paragraphMark = null;
+            Word.Font? paragraphMarkFont = null;
+            try
+            {
+                anchor = document.Content.Duplicate;
+                anchorFind = anchor.Find;
+                anchorFind.ClearFormatting();
+                anchorFind.Text = $"Inline {index} before ";
+                anchorFind.Forward = true;
+                anchorFind.Wrap = Word.WdFindWrap.wdFindStop;
+                if (!anchorFind.Execute())
+                    throw new InvalidDataException(
+                        $"LaTeX redraw lost the inline prose anchor for formula {index}.");
+
+                paragraphs = anchor.Paragraphs;
+                if (paragraphs.Count != 1)
+                    throw new InvalidDataException(
+                        $"Inline formula {index} no longer belongs to one prose paragraph.");
+                paragraph = paragraphs[1];
+                paragraphRange = paragraph.Range.Duplicate;
+
+                trailing = paragraphRange.Duplicate;
+                trailingFind = trailing.Find;
+                trailingFind.ClearFormatting();
+                trailingFind.Text = " after";
+                trailingFind.Forward = true;
+                trailingFind.Wrap = Word.WdFindWrap.wdFindStop;
+                if (!trailingFind.Execute())
+                    throw new InvalidDataException(
+                        $"LaTeX redraw lost trailing prose after inline formula {index}.");
+                trailingFont = trailing.Font;
+                if (trailingFont.Position != 0)
+                    throw new InvalidDataException(
+                        $"Trailing prose after inline formula {index} inherited a nonzero baseline position {trailingFont.Position}.");
+
+                if (paragraphRange.End <= paragraphRange.Start)
+                    throw new InvalidDataException(
+                        $"Inline formula {index} paragraph has no terminal mark.");
+                paragraphMark = paragraphRange.Duplicate;
+                paragraphMark.SetRange(
+                    paragraphRange.End - 1,
+                    paragraphRange.End);
+                paragraphMarkFont = paragraphMark.Font;
+                if (paragraphMarkFont.Position != 0)
+                    throw new InvalidDataException(
+                        $"Paragraph mark after inline formula {index} inherited a nonzero baseline position {paragraphMarkFont.Position}.");
+            }
+            finally
+            {
+                Release(paragraphMarkFont);
+                Release(paragraphMark);
+                Release(trailingFont);
+                Release(trailingFind);
+                Release(trailing);
+                Release(paragraphRange);
+                Release(paragraph);
+                Release(paragraphs);
+                Release(anchorFind);
+                Release(anchor);
+            }
+        }
     }
 
     private static string BuildExpectedMathTypeLatexSource(
@@ -1784,6 +2074,8 @@ internal static partial class Program
 
     private static void RunWordLatexRedrawSourceContextStress()
     {
+        RunWordLatexRedrawFieldCoordinateAcceptance();
+
         using var host = new WordSourceContextStressHost();
         var builder = new StringBuilder(120_000);
         var sourceFormats = new List<(int Start, int Length, float Size)>(1000);
@@ -1869,6 +2161,128 @@ internal static partial class Program
         Console.WriteLine(
             "[Word LaTeX redraw] 1000-formula source context scan passed: "
             + $"{stopwatch.ElapsedMilliseconds} ms, inline=500, display=500.");
+    }
+
+    private static void RunWordLatexRedrawFieldCoordinateAcceptance()
+    {
+        using var host = new WordSourceContextStressHost();
+        Word.Range? insertion = null;
+        Word.Range? sourceRange = null;
+        Word.Range? cellRange = null;
+        Word.Field? field = null;
+        Word.Table? table = null;
+        Word.Cell? cell = null;
+        try
+        {
+            insertion = host.Document.Range(0, 0);
+            insertion.Text = "FIELD_BEFORE ";
+            insertion.Collapse(
+                Word.WdCollapseDirection.wdCollapseEnd);
+
+            field = host.Document.Fields.Add(
+                insertion,
+                Word.WdFieldType.wdFieldEmpty,
+                "SEQ VTCoordProbe \\* ARABIC",
+                true);
+            field.Update();
+
+            Release(insertion);
+            insertion = null;
+            var documentEnd =
+                host.Document.Content.End - 1;
+            insertion =
+                host.Document.Range(
+                    documentEnd,
+                    documentEnd);
+            insertion.Text =
+                " FIELD_AFTER BODY $\\beta$ BEFORE_TABLE\r";
+
+            Release(insertion);
+            insertion = null;
+            documentEnd =
+                host.Document.Content.End - 1;
+            insertion =
+                host.Document.Range(
+                    documentEnd,
+                    documentEnd);
+            table = host.Document.Tables.Add(
+                insertion,
+                1,
+                1);
+            cell = table.Cell(1, 1);
+            cellRange = cell.Range.Duplicate;
+            cellRange.Collapse(
+                Word.WdCollapseDirection.wdCollapseStart);
+            cellRange.Text =
+                "CELL $\\alpha$ MID $\\alpha$ CELL_END";
+
+            host.Document.Activate();
+
+            var service =
+                new WordFormulaService(
+                    host.Application);
+            var plan =
+                service.CaptureLatexRedrawPlan(
+                    wholeDocument: true);
+            AssertEqual(
+                3,
+                plan.Targets.Count,
+                "Mixed Word-structure redraw capture did not find exactly three LaTeX formulas.");
+
+            var expectedSources =
+                new[]
+                {
+                    "$\\beta$",
+                    "$\\alpha$",
+                    "$\\alpha$",
+                };
+            var previousEnd = -1;
+            for (var index = 0;
+                 index < plan.Targets.Count;
+                 index++)
+            {
+                var target =
+                    plan.Targets[index];
+                Release(sourceRange);
+                sourceRange =
+                    host.Document.Range(
+                        target.AbsoluteStart,
+                        target.AbsoluteEnd);
+                AssertEqual(
+                    expectedSources[index],
+                    sourceRange.Text
+                        ?? string.Empty,
+                    $"Mixed Word-structure redraw capture mapped formula {index + 1} to the wrong Word range.");
+                AssertTrue(
+                    target.AbsoluteStart
+                    >= previousEnd,
+                    "Mixed Word-structure redraw capture did not preserve logical formula order.");
+                previousEnd =
+                    target.AbsoluteEnd;
+            }
+
+            AssertEqual(
+                1,
+                host.Document.Fields.Count,
+                "Mixed Word-structure fixture lost its Word field.");
+            AssertEqual(
+                1,
+                host.Document.Tables.Count,
+                "Mixed Word-structure fixture lost its table.");
+
+            Console.WriteLine(
+                "[Word LaTeX redraw] Logical-text coordinate regression passed across "
+                + "hidden Word Field + table structure + duplicate LaTeX sources.");
+        }
+        finally
+        {
+            Release(cellRange);
+            Release(cell);
+            Release(table);
+            Release(sourceRange);
+            Release(field);
+            Release(insertion);
+        }
     }
 
     private static void RunWordLatexRedrawDistinctFormulas(string artifactRoot)

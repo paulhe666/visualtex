@@ -1,4 +1,5 @@
 using Microsoft.Office.Interop.Word;
+using System.Xml.Linq;
 using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
 using Word = Microsoft.Office.Interop.Word;
@@ -15,6 +16,11 @@ internal static partial class Program
             $"VisualTeX-MathType7-NativeEditor-{Guid.NewGuid():N}.docx");
         var fallbackCandidates = new[]
         {
+            Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..", "..", "..", "..", "..", "..", "..", "..",
+                "docs", "remediation-3d207d7", "evidence", "mt-create-current-modern",
+                "VisualTeX-MathType-Create-Inline.docx")),
             Path.GetFullPath(Path.Combine(
                 AppContext.BaseDirectory,
                 "..", "..", "..", "..", "..", "..",
@@ -158,6 +164,20 @@ internal static partial class Program
                 (Name: "mathcal", Latex: @"\mathcal{F}"),
                 (Name: "mathfrak", Latex: @"\mathfrak{g}"),
                 (Name: "mathbf", Latex: @"\mathbf{v}"),
+                (Name: "native-vector-matrix", Latex: string.Empty),
+                (Name: "native-other-style-bold", Latex: string.Empty),
+                (Name: "native-other-style-upright-bold", Latex: string.Empty),
+                (Name: "native-mathcal-bold", Latex: @"\mathcal{F}"),
+                (Name: "native-mathfrak-bold", Latex: @"\mathfrak{g}"),
+                (Name: "native-mathtt-bold", Latex: @"\mathtt{A}"),
+                (Name: "native-mathbb-bold", Latex: @"\mathbb{R}"),
+                (Name: "native-greek-bold", Latex: @"\varepsilon"),
+                (Name: "native-greek-upright-bold", Latex: @"\varepsilon"),
+                (Name: "native-sans-serif", Latex: "v"),
+                (Name: "native-text-style", Latex: string.Empty),
+                (Name: "native-function-style", Latex: string.Empty),
+                (Name: "native-symbol-style", Latex: string.Empty),
+                (Name: "native-operator-bold", Latex: @"\infty"),
                 (Name: "underbrace", Latex: @"\underbrace{a+b}_{n}"),
                 (Name: "overbrace", Latex: @"\overbrace{a+b}^{n}"),
                 (Name: "bigcup", Latex: @"\bigcup_{i=1}^{n} A_i"),
@@ -244,6 +264,90 @@ internal static partial class Program
                             replacementLatex: null,
                             saveChanges: true,
                             replacementMathMl: symbolMatrixMathMl)
+                        : string.Equals(genuineCase.Name, "native-mathcal-bold", StringComparison.Ordinal)
+                            || string.Equals(genuineCase.Name, "native-mathfrak-bold", StringComparison.Ordinal)
+                            || string.Equals(genuineCase.Name, "native-mathtt-bold", StringComparison.Ordinal)
+                            || string.Equals(genuineCase.Name, "native-mathbb-bold", StringComparison.Ordinal)
+                            || string.Equals(genuineCase.Name, "native-greek-bold", StringComparison.Ordinal)
+                            ? InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: genuineCase.Latex,
+                                saveChanges: true,
+                                replacementMathMl: null,
+                                replacementKeySequence: "other-style-bold-after-tex")
+                        : string.Equals(genuineCase.Name, "native-greek-upright-bold", StringComparison.Ordinal)
+                            ? InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: genuineCase.Latex,
+                                saveChanges: true,
+                                replacementMathMl: null,
+                                replacementKeySequence: "other-style-upright-bold-after-tex")
+                        : string.Equals(genuineCase.Name, "native-sans-serif", StringComparison.Ordinal)
+                            ? InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: genuineCase.Latex,
+                                saveChanges: true,
+                                replacementMathMl: null,
+                                replacementKeySequence: "other-style-arial-upright-after-tex")
+                        : string.Equals(genuineCase.Name, "native-text-style", StringComparison.Ordinal)
+                            ? InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: null,
+                                saveChanges: true,
+                                replacementMathMl: null,
+                                replacementKeySequence: "text-style-v")
+                        : string.Equals(genuineCase.Name, "native-function-style", StringComparison.Ordinal)
+                            ? InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: null,
+                                saveChanges: true,
+                                replacementMathMl: null,
+                                replacementKeySequence: "function-style-sin")
+                        : string.Equals(genuineCase.Name, "native-symbol-style", StringComparison.Ordinal)
+                            ? InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: null,
+                                saveChanges: true,
+                                replacementMathMl: null,
+                                replacementKeySequence: "symbol-style-a")
+                        : string.Equals(genuineCase.Name, "native-operator-bold", StringComparison.Ordinal)
+                            ? InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: genuineCase.Latex,
+                                saveChanges: true,
+                                replacementMathMl: null,
+                                replacementKeySequence: "other-style-bold-after-tex")
+                        : string.Equals(genuineCase.Name, "native-other-style-upright-bold", StringComparison.Ordinal)
+                            ? InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: null,
+                                saveChanges: true,
+                                replacementMathMl: null,
+                                replacementKeySequence: "other-style-upright-bold-v")
+                        : string.Equals(genuineCase.Name, "native-other-style-bold", StringComparison.Ordinal)
+                            ? InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: null,
+                                saveChanges: true,
+                                replacementMathMl: null,
+                                replacementKeySequence: "other-style-bold-v")
+                        : string.Equals(genuineCase.Name, "native-vector-matrix", StringComparison.Ordinal)
+                            ? InvokeWordOwnedMathTypeEditor(
+                                application,
+                                format,
+                                replacementLatex: null,
+                                saveChanges: true,
+                                replacementMathMl: null,
+                                replacementKeySequence: "vector-matrix-v")
                         : string.Equals(genuineCase.Name, "aligned-tabs", StringComparison.Ordinal)
                             ? InvokeWordOwnedMathTypeEditor(
                                 application,
@@ -292,33 +396,66 @@ internal static partial class Program
                 Console.WriteLine(
                     $"  {genuineCase.Name}: genuine MathType root offset={MathTypeMtefCodec.FindRootStructureOffset(nativeMtef)}.");
                 var directMathMl = MathTypeMtefCodec.ReadEquationNativeMathMl(equationNative);
+                File.WriteAllText(
+                    Path.Combine(artifactRoot, $"genuine-{genuineCase.Name}-visualtex-direct.mathml"),
+                    directMathMl);
                 if (!string.Equals(genuineCase.Name, "symbol-matrix", StringComparison.Ordinal)
                     && !string.Equals(genuineCase.Name, "alignment-markers", StringComparison.Ordinal)
                     && !string.Equals(genuineCase.Name, "symbol-misc-dotless", StringComparison.Ordinal)
                     && !string.Equals(genuineCase.Name, "symbol-misc-letterlike", StringComparison.Ordinal)
                     && !string.Equals(genuineCase.Name, "symbol-binary-ams-b", StringComparison.Ordinal)
-                    && !string.Equals(genuineCase.Name, "symbol-suits", StringComparison.Ordinal))
+                    && !string.Equals(genuineCase.Name, "symbol-suits", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-other-style-bold", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-other-style-upright-bold", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-mathcal-bold", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-mathfrak-bold", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-mathtt-bold", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-mathbb-bold", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-greek-bold", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-greek-upright-bold", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-sans-serif", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-text-style", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-function-style", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-symbol-style", StringComparison.Ordinal)
+                    && !string.Equals(genuineCase.Name, "native-operator-bold", StringComparison.Ordinal))
                 {
                     AssertEqual(
                         MathTypeMtefCodec.SemanticSignature(mathTypeMathMl),
                         MathTypeMtefCodec.SemanticSignature(directMathMl),
                         $"VisualTeX direct MTEF parser disagreed with MathType 7 for genuine '{genuineCase.Name}' equation. MathType='{mathTypeMathMl}', direct='{directMathMl}'.");
                 }
+                var styleExactRoundTrip =
+                    string.Equals(genuineCase.Name, "native-vector-matrix", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-other-style-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-other-style-upright-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-mathcal-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-mathfrak-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-mathbb-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-greek-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-greek-upright-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-sans-serif", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-text-style", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-function-style", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-symbol-style", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-operator-bold", StringComparison.Ordinal);
                 if (string.Equals(genuineCase.Name, "mathbb", StringComparison.Ordinal)
                     || string.Equals(genuineCase.Name, "hbar", StringComparison.Ordinal)
-                    || string.Equals(genuineCase.Name, "aligned-tabs", StringComparison.Ordinal))
+                    || string.Equals(genuineCase.Name, "aligned-tabs", StringComparison.Ordinal)
+                    || styleExactRoundTrip)
                 {
                     // For the native tab-alignment fixture, MathType's exported
                     // MathML deliberately flattens fnMARKER tabs. Use VisualTeX's
                     // direct MTEF readback, which reconstructs those boundaries as
                     // an alternating right/left mtable, then require the writer to
                     // reproduce MathType's genuine Equation Native byte-for-byte.
-                    var rewriteMathMl = string.Equals(
+                    var rewriteMathMl =
+                        string.Equals(
                             genuineCase.Name,
                             "aligned-tabs",
                             StringComparison.Ordinal)
-                        ? directMathMl
-                        : mathTypeMathMl;
+                        || styleExactRoundTrip
+                            ? directMathMl
+                            : mathTypeMathMl;
                     var rewrittenNative = MathTypeMtefCodec.RewriteEquationNative(
                         equationNative,
                         rewriteMathMl,
@@ -342,6 +479,88 @@ internal static partial class Program
                 var directLatex = MathMlToLatexConverter.Convert(directMathMl);
                 Console.WriteLine(
                     $"  {genuineCase.Name}: direct VisualTeX MTEF source={directLatex}.");
+                if (string.Equals(genuineCase.Name, "native-greek-bold", StringComparison.Ordinal))
+                {
+                    var directDocument = XDocument.Parse(directMathMl);
+                    var directGreek = directDocument.Descendants()
+                        .FirstOrDefault(element => element.Name.LocalName == "mi");
+                    AssertTrue(
+                        directGreek is not null
+                        && string.Equals(directGreek.Value, "ε", StringComparison.Ordinal)
+                        && string.Equals(
+                            (string?)directGreek.Attribute("mathvariant"),
+                            "bold-italic",
+                            StringComparison.OrdinalIgnoreCase),
+                        $"Direct MathType MTEF readback changed genuine bold-italic Greek epsilon. MathML='{directMathMl}'.");
+                    AssertTrue(
+                        directLatex.IndexOf(@"\boldsymbol{\varepsilon}", StringComparison.Ordinal) >= 0,
+                        $"Direct MathType MTEF readback lost bold Greek epsilon: '{directLatex}'.");
+                }
+                if (string.Equals(genuineCase.Name, "native-greek-upright-bold", StringComparison.Ordinal))
+                {
+                    var directGreek = XDocument.Parse(directMathMl).Descendants()
+                        .FirstOrDefault(element => element.Name.LocalName == "mi");
+                    AssertTrue(
+                        directGreek is not null
+                        && string.Equals(directGreek.Value, "ε", StringComparison.Ordinal)
+                        && string.Equals(
+                            (string?)directGreek.Attribute("mathvariant"),
+                            "bold",
+                            StringComparison.OrdinalIgnoreCase),
+                        $"Direct MathType MTEF readback changed genuine upright-bold Greek epsilon. MathML='{directMathMl}'.");
+                }
+                if (string.Equals(genuineCase.Name, "native-sans-serif", StringComparison.Ordinal))
+                {
+                    AssertTrue(
+                        directLatex.IndexOf(@"\mathsf{v}", StringComparison.Ordinal) >= 0,
+                        $"Direct MathType MTEF readback lost the native sans-serif style: '{directLatex}'.");
+                }
+                if (string.Equals(genuineCase.Name, "native-text-style", StringComparison.Ordinal))
+                {
+                    AssertTrue(
+                        XDocument.Parse(directMathMl).Descendants()
+                            .Any(element => element.Name.LocalName == "mtext" && element.Value == "v")
+                        && directLatex.IndexOf(@"\mathrm{v}", StringComparison.Ordinal) >= 0,
+                        $"Direct MathType MTEF readback lost the native Text style: MathML='{directMathMl}', LaTeX='{directLatex}'.");
+                }
+                if (string.Equals(genuineCase.Name, "native-function-style", StringComparison.Ordinal))
+                {
+                    AssertTrue(
+                        directLatex.IndexOf(@"\sin", StringComparison.Ordinal) >= 0,
+                        $"Direct MathType MTEF readback lost the native Function/operator style: '{directLatex}'.");
+                }
+                if (string.Equals(genuineCase.Name, "native-symbol-style", StringComparison.Ordinal))
+                {
+                    AssertTrue(
+                        directLatex.IndexOf(@"\alpha", StringComparison.Ordinal) >= 0,
+                        $"Direct MathType MTEF readback lost the native Symbol-style alpha: '{directLatex}'.");
+                }
+                if (string.Equals(genuineCase.Name, "native-operator-bold", StringComparison.Ordinal))
+                {
+                    AssertTrue(
+                        directLatex.IndexOf(@"\boldsymbol{\infty}", StringComparison.Ordinal) >= 0,
+                        $"Direct MathType MTEF readback lost the native bold operator style: '{directLatex}'.");
+                }
+                if (string.Equals(genuineCase.Name, "native-vector-matrix", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-other-style-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-other-style-upright-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-mathcal-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-mathfrak-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-mathtt-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-mathbb-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-greek-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-greek-upright-bold", StringComparison.Ordinal)
+                    || string.Equals(genuineCase.Name, "native-operator-bold", StringComparison.Ordinal))
+                {
+                    var productionMetadata = MathTypeOleInterop.ReadMetadata(application, shape);
+                    Console.WriteLine(
+                        $"  {genuineCase.Name}: production metadata LaTeX={productionMetadata.Latex}.");
+                    AssertTrue(
+                        productionMetadata.Latex.IndexOf(@"\mathbf", StringComparison.Ordinal) >= 0
+                        || productionMetadata.Latex.IndexOf(@"\mathbfit", StringComparison.Ordinal) >= 0
+                        || productionMetadata.Latex.IndexOf(@"\boldsymbol", StringComparison.Ordinal) >= 0,
+                        $"Production MathType metadata lost native bold style for {genuineCase.Name}. latex='{productionMetadata.Latex}'.");
+                }
                 if (string.Equals(genuineCase.Name, "symbol-misc-dotless", StringComparison.Ordinal))
                 {
                     AssertTrue(
@@ -833,6 +1052,143 @@ internal static partial class Program
                             Thread.Sleep(120);
                             System.Windows.Forms.SendKeys.SendWait("+r");
                             Thread.Sleep(500);
+                        }
+                        else if (string.Equals(replacementKeySequence, "other-style-bold-after-tex", StringComparison.Ordinal))
+                        {
+                            if (string.IsNullOrWhiteSpace(replacementLatex))
+                                throw new InvalidOperationException("Native Other-style bold fixture requires TeX source.");
+                            PutTeXOnMathTypeClipboard(replacementLatex!);
+                            System.Windows.Forms.SendKeys.SendWait("^v");
+                            Thread.Sleep(350);
+                            System.Windows.Forms.SendKeys.SendWait("^a");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("%s");
+                            Thread.Sleep(120);
+                            System.Windows.Forms.SendKeys.SendWait("o");
+                            Thread.Sleep(250);
+                            System.Windows.Forms.SendKeys.SendWait("%b");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("{ENTER}");
+                            Thread.Sleep(450);
+                        }
+                        else if (string.Equals(replacementKeySequence, "other-style-upright-bold-v", StringComparison.Ordinal))
+                        {
+                            // Genuine explicit upright bold: first make the selected
+                            // character Text/upright, then use Style > Other... Bold.
+                            System.Windows.Forms.SendKeys.SendWait("v");
+                            Thread.Sleep(120);
+                            System.Windows.Forms.SendKeys.SendWait("^a");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("^+e");
+                            Thread.Sleep(180);
+                            System.Windows.Forms.SendKeys.SendWait("%s");
+                            Thread.Sleep(120);
+                            System.Windows.Forms.SendKeys.SendWait("o");
+                            Thread.Sleep(250);
+                            System.Windows.Forms.SendKeys.SendWait("%b");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("{ENTER}");
+                            Thread.Sleep(450);
+                        }
+                        else if (string.Equals(replacementKeySequence, "other-style-upright-bold-after-tex", StringComparison.Ordinal))
+                        {
+                            if (string.IsNullOrWhiteSpace(replacementLatex))
+                                throw new InvalidOperationException("Native upright-bold fixture requires TeX source.");
+                            PutTeXOnMathTypeClipboard(replacementLatex!);
+                            System.Windows.Forms.SendKeys.SendWait("^v");
+                            Thread.Sleep(350);
+                            System.Windows.Forms.SendKeys.SendWait("^a");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("^+e");
+                            Thread.Sleep(180);
+                            System.Windows.Forms.SendKeys.SendWait("%s");
+                            Thread.Sleep(120);
+                            System.Windows.Forms.SendKeys.SendWait("o");
+                            Thread.Sleep(250);
+                            System.Windows.Forms.SendKeys.SendWait("%b");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("{ENTER}");
+                            Thread.Sleep(450);
+                        }
+                        else if (string.Equals(replacementKeySequence, "other-style-arial-upright-after-tex", StringComparison.Ordinal))
+                        {
+                            if (string.IsNullOrWhiteSpace(replacementLatex))
+                                throw new InvalidOperationException("Native sans-serif fixture requires TeX source.");
+                            PutTeXOnMathTypeClipboard(replacementLatex!);
+                            System.Windows.Forms.SendKeys.SendWait("^v");
+                            Thread.Sleep(350);
+                            System.Windows.Forms.SendKeys.SendWait("^a");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("^+e");
+                            Thread.Sleep(180);
+                            System.Windows.Forms.SendKeys.SendWait("%s");
+                            Thread.Sleep(120);
+                            System.Windows.Forms.SendKeys.SendWait("o");
+                            Thread.Sleep(250);
+                            System.Windows.Forms.SendKeys.SendWait("%f");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("^a");
+                            System.Windows.Forms.SendKeys.SendWait("Arial");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("{ENTER}");
+                            Thread.Sleep(450);
+                        }
+                        else if (string.Equals(replacementKeySequence, "text-style-v", StringComparison.Ordinal))
+                        {
+                            System.Windows.Forms.SendKeys.SendWait("^+e");
+                            Thread.Sleep(120);
+                            System.Windows.Forms.SendKeys.SendWait("v");
+                            Thread.Sleep(350);
+                        }
+                        else if (string.Equals(replacementKeySequence, "function-style-sin", StringComparison.Ordinal))
+                        {
+                            System.Windows.Forms.SendKeys.SendWait("^+f");
+                            Thread.Sleep(120);
+                            System.Windows.Forms.SendKeys.SendWait("sin");
+                            Thread.Sleep(350);
+                        }
+                        else if (string.Equals(replacementKeySequence, "symbol-style-a", StringComparison.Ordinal))
+                        {
+                            // MathType's documented Greek-Symbol style shortcut.
+                            // Menu mnemonics vary by localized build; the shortcut
+                            // is stable and makes ASCII 'a' persist as native alpha.
+                            System.Windows.Forms.SendKeys.SendWait("^+g");
+                            Thread.Sleep(120);
+                            System.Windows.Forms.SendKeys.SendWait("a");
+                            Thread.Sleep(350);
+                        }
+                        else if (string.Equals(replacementKeySequence, "other-style-bold-v", StringComparison.Ordinal))
+                        {
+                            // Genuine MathType explicit font/character-style Bold:
+                            // type a normal variable, select it, then use Style > Other...
+                            // and toggle the dialog's Bold option. This is deliberately
+                            // NOT Vector-Matrix style (Ctrl+B / Ctrl+Shift+B).
+                            // Start from MathType's upright Text style so toggling
+                            // Bold in Other Style yields plain bold rather than
+                            // inheriting Variable italic and becoming bold-italic.
+                            System.Windows.Forms.SendKeys.SendWait("^+e");
+                            Thread.Sleep(120);
+                            System.Windows.Forms.SendKeys.SendWait("v");
+                            Thread.Sleep(120);
+                            System.Windows.Forms.SendKeys.SendWait("^a");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("%s");
+                            Thread.Sleep(120);
+                            System.Windows.Forms.SendKeys.SendWait("o");
+                            Thread.Sleep(250);
+                            System.Windows.Forms.SendKeys.SendWait("%b");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("{ENTER}");
+                            Thread.Sleep(450);
+                        }
+                        else if (string.Equals(replacementKeySequence, "vector-matrix-v", StringComparison.Ordinal))
+                        {
+                            // MathType's own one-shot Vector-Matrix command. This is
+                            // a genuine native bold style assignment, not TeX import.
+                            System.Windows.Forms.SendKeys.SendWait("^b");
+                            Thread.Sleep(100);
+                            System.Windows.Forms.SendKeys.SendWait("v");
+                            Thread.Sleep(400);
                         }
                         else if (string.Equals(replacementKeySequence, "alignment-markers", StringComparison.Ordinal))
                         {

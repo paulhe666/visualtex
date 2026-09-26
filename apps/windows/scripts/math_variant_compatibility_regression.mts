@@ -48,6 +48,7 @@ assert.equal(compatibilityRequiredArgumentCounts.get("symbfit"), 1);
 assert.equal(compatibilityRequiredArgumentCounts.get("abs"), 1);
 assert.equal(compatibilityRequiredArgumentCounts.get("dv"), 2);
 assert.equal(compatibilityRequiredArgumentCounts.get("mel"), 3);
+assert.equal(compatibilityRequiredArgumentCounts.get("braket"), 1);
 
 for (const source of [
   String.raw`\symbfit{J}`,
@@ -55,6 +56,8 @@ for (const source of [
   String.raw`\abs{x}`,
   String.raw`\dv{f}{x}`,
   String.raw`\braket{\phi}{\psi}`,
+  String.raw`\braket{\phi|\psi}`,
+  String.raw`\braket{\phi|A|\psi}`,
 ]) {
   const parsed = parseLatexSourceDraft(source, "raw");
   assert.equal(parsed.valid, true, `source editor rejected ${source}: ${parsed.error}`);
@@ -78,14 +81,68 @@ assert.match(normalizedExportSource, /\\boldsymbol/u);
 assert.match(normalizedExportSource, /\\left\|/u);
 assert.match(normalizedExportSource, /\\frac/u);
 
+for (const [source, pattern] of [
+  [String.raw`\braket{\phi}{\psi}`, /\\left\\langle\s*\\phi\\middle\\vert\s*\\psi\\right\\rangle/u],
+  [String.raw`\braket{\phi|\psi}`, /\\left\\langle\s*\\phi\\middle\\vert\s*\\psi\\right\\rangle/u],
+  [String.raw`\braket{\phi|A|\psi}`, /\\left\\langle\s*\\phi\\middle\\vert\s*A\\middle\\vert\s*\\psi\\right\\rangle/u],
+] as const) {
+  const normalized = normalizePackageLatexCommands(source);
+  assert.doesNotMatch(normalized, /\\braket(?![A-Za-z@])/u);
+  assert.match(normalized, pattern);
+}
+
 const physicsAndUnitSource = String.raw`\mqty{a&b\\c&d}+\qtyrange{1}{10}{\milli\second}+\ang{30}+\unit{\joule\per\mole}`;
+for (const [source, expected] of [
+  [String.raw`\braket{\phi|\psi}`, String.raw`\left\langle \phi\middle\vert \psi\right\rangle`],
+  [String.raw`\braket{\phi}{\psi}`, String.raw`\left\langle \phi\middle\vert \psi\right\rangle`],
+  [String.raw`\braket{a||b}`, String.raw`\left\langle a\middle\Vert b\right\rangle`],
+] as const) {
+  assert.equal(
+    normalizePackageLatexCommands(source),
+    expected,
+    `braket compatibility normalization failed for ${source}`,
+  );
+}
+
+const qqBoundarySource = String.raw`x\qq{if}y>0`;
+assert.equal(
+  normalizePackageLatexCommands(qqBoundarySource),
+  String.raw`x\quad\text{if}\quad{}y>0`,
+  "compatibility expansion must preserve TeX control-word boundaries",
+);
+
 const normalizedPhysicsAndUnit = normalizePackageLatexCommands(physicsAndUnitSource);
 assert.doesNotMatch(normalizedPhysicsAndUnit, /\\(?:mqty|qtyrange|ang|unit|milli|second|joule|per|mole)(?![A-Za-z@])/u);
 assert.match(normalizedPhysicsAndUnit, /\\begin\{matrix\}/u);
 assert.match(normalizedPhysicsAndUnit, /\\mathrm\{J\}/u);
 assert.match(normalizedPhysicsAndUnit, /\\mathrm\{mol\}/u);
+const normalizedAnticomm = normalizePackageLatexCommands(String.raw`\anticomm{A}{B}`);
+assert.doesNotMatch(normalizedAnticomm, /\\anticomm(?![A-Za-z@])/u);
+assert.match(normalizedAnticomm, /\\left\\\{A,B\\right\\\}/u);
 
-for (const command of ["bm", "abs", "bra", "ketbra", "dv", "pdv", "vb", "va", "vu"]) {
+for (const [source, expectedEnvironment] of [
+  [String.raw`\mqty(a&b\\c&d)`, "pmatrix"],
+  [String.raw`\mqty[a&b\\c&d]`, "bmatrix"],
+  [String.raw`\mqty|a&b\\c&d|`, "vmatrix"],
+  [String.raw`\mqty||a&b\\c&d||`, "Vmatrix"],
+] as const) {
+  const normalized = normalizePackageLatexCommands(source);
+  assert.equal(
+    normalized,
+    `\\begin{${expectedEnvironment}}a&b\\\\c&d\\end{${expectedEnvironment}}`,
+    `physics mqty delimiter normalization failed for ${source}`,
+  );
+}
+
+for (const [name, [definition]] of Object.entries(VISUALTEX_PACKAGE_COMPATIBILITY_MACROS)) {
+  assert.doesNotMatch(
+    definition,
+    /\\[A-Za-z@]+#\d/u,
+    `${name} compatibility macro concatenates a TeX control word with an argument placeholder`,
+  );
+}
+
+for (const command of ["bm", "abs", "bra", "ketbra", "dv", "pdv", "vb", "va", "vu", "anticomm"]) {
   assert.ok(command in VISUALTEX_PACKAGE_COMPATIBILITY_MACROS, `${command} is missing from renderer-independent package compatibility data`);
 }
 

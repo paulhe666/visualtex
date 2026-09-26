@@ -383,7 +383,7 @@ internal static partial class Program
             Console.WriteLine("  direct Word OLE formats: " + directFormats);
             if (!string.Equals(directFormats, "no-idataobject", StringComparison.Ordinal))
             {
-                var directMathMl = MathTypeOleInterop.ReadMathMl(
+                var directMathMl = MathTypeOleInterop.ReadServerExportedMathMlForDiagnostics(
                     shape,
                     activateForConversion: false);
                 var directLatex = MathMlToLatexConverter.Convert(directMathMl)
@@ -730,7 +730,7 @@ internal static partial class Program
             Release(format);
             format = null;
 
-            var before = MathTypeOleInterop.ReadMathMl(shape);
+            var before = MathTypeOleInterop.ReadServerExportedMathMlForDiagnostics(shape);
             var beforeLatex = MathMlToLatexConverter.Convert(before).Replace(" ", string.Empty);
             Console.WriteLine("  before=" + beforeLatex);
 
@@ -742,7 +742,7 @@ internal static partial class Program
             if (setProbe.IndexOf("S_OK", StringComparison.Ordinal) < 0)
                 throw new InvalidDataException(
                     "No MathType MathML SetData variant succeeded on the initialized real OLE. " + setProbe);
-            var after = MathTypeOleInterop.ReadMathMl(shape);
+            var after = MathTypeOleInterop.ReadServerExportedMathMlForDiagnostics(shape);
             var afterLatex = MathMlToLatexConverter.Convert(after).Replace(" ", string.Empty);
             Console.WriteLine("  after=" + afterLatex);
             AssertTrue(afterLatex.IndexOf("u+7", StringComparison.Ordinal) >= 0,
@@ -758,7 +758,7 @@ internal static partial class Program
             Release(document);
             document = application.Documents.Open(testPath, ReadOnly: false, Visible: false);
             shape = document.InlineShapes[1];
-            var reopened = MathTypeOleInterop.ReadMathMl(shape);
+            var reopened = MathTypeOleInterop.ReadServerExportedMathMlForDiagnostics(shape);
             var reopenedLatex = MathMlToLatexConverter.Convert(reopened).Replace(" ", string.Empty);
             Console.WriteLine("  reopened=" + reopenedLatex);
             AssertTrue(reopenedLatex.IndexOf("u+7", StringComparison.Ordinal) >= 0,
@@ -838,14 +838,14 @@ internal static partial class Program
             var seedFormats = MathTypeOleInterop.DescribeDataFormats(shape);
             Console.WriteLine("  describe-data-formats complete: " + seedFormats);
             Console.WriteLine("  initial-read-mathml begin");
-            var nativeInitialRead = MathTypeOleInterop.ReadMathMl(shape);
+            var nativeInitialRead = MathTypeOleInterop.ReadServerExportedMathMlForDiagnostics(shape);
             Console.WriteLine("  initial-read-mathml complete");
             var nativeInitialLatex = MathMlToLatexConverter.Convert(nativeInitialRead).Replace(" ", string.Empty);
             Console.WriteLine("  installed BlankEqn.doc seed LaTeX='" + nativeInitialLatex + "'.");
 
             Console.WriteLine("  Replacing the native equation through CF_TEXT/TeX SetData...");
             MathTypeOleInterop.WriteTextForExistingOle(shape, @"\frac{a+b}{c}");
-            var firstRead = MathTypeOleInterop.ReadMathMl(shape);
+            var firstRead = MathTypeOleInterop.ReadServerExportedMathMlForDiagnostics(shape);
             var firstLatex = MathMlToLatexConverter.Convert(firstRead).Replace(" ", string.Empty);
             AssertTrue(firstLatex.IndexOf("a+b", StringComparison.Ordinal) >= 0
                        && firstLatex.IndexOf("c", StringComparison.Ordinal) >= 0,
@@ -855,7 +855,7 @@ internal static partial class Program
             var widthBefore = shape.Width;
             var heightBefore = shape.Height;
             MathTypeOleInterop.WriteTextForExistingOle(shape, @"\frac{x+1}{y}");
-            var editedRead = MathTypeOleInterop.ReadMathMl(shape);
+            var editedRead = MathTypeOleInterop.ReadServerExportedMathMlForDiagnostics(shape);
             var editedLatex = MathMlToLatexConverter.Convert(editedRead).Replace(" ", string.Empty);
             AssertTrue(editedLatex.IndexOf("x+1", StringComparison.Ordinal) >= 0
                        && editedLatex.IndexOf("y", StringComparison.Ordinal) >= 0,
@@ -882,7 +882,7 @@ internal static partial class Program
                 "Save/reopen lost the MathType 7 OLE ProgID.");
             Release(format);
             format = null;
-            var reopenedRead = MathTypeOleInterop.ReadMathMl(shape);
+            var reopenedRead = MathTypeOleInterop.ReadServerExportedMathMlForDiagnostics(shape);
             var reopenedLatex = MathMlToLatexConverter.Convert(reopenedRead).Replace(" ", string.Empty);
             AssertTrue(reopenedLatex.IndexOf("x+1", StringComparison.Ordinal) >= 0
                        && reopenedLatex.IndexOf("y", StringComparison.Ordinal) >= 0,
@@ -901,7 +901,7 @@ internal static partial class Program
                 });
             Release(format);
             format = null;
-            var afterNativeOpen = MathTypeOleInterop.ReadMathMl(shape);
+            var afterNativeOpen = MathTypeOleInterop.ReadServerExportedMathMlForDiagnostics(shape);
             var afterNativeLatex = MathMlToLatexConverter.Convert(afterNativeOpen).Replace(" ", string.Empty);
             AssertTrue(afterNativeLatex.IndexOf("x+1", StringComparison.Ordinal) >= 0
                        && afterNativeLatex.IndexOf("y", StringComparison.Ordinal) >= 0

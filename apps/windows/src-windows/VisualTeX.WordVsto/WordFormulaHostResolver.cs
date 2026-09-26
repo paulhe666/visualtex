@@ -133,30 +133,80 @@ internal static class WordFormulaHostResolver
         OMath? math = null;
         Range? candidate = null;
         Range? probe = null;
+        var type = WdOMathType.wdOMathInline;
+        var typeKnown = false;
         try
         {
             try { maths = selectionRange.OMaths; } catch { maths = null; }
-            AddMatchingOmmlRanges(maths, selectionRange, candidates);
 
-            if (candidates.Count == 0)
+            // Edit Sessions capture the exact native OMath range when the editor
+            // opens. In that overwhelmingly common case, the first local OMaths
+            // collection already proves both the host boundary and its Type.
+            // Keep that OMath result instead of discarding it and immediately
+            // asking Word for candidate.OMaths a second time.
+            if (maths is not null && maths.Count == 1)
             {
-                Release(maths);
-                maths = null;
-                probe = selectionRange.Duplicate;
-                try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch { }
-                try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch { }
-                try { maths = probe.OMaths; } catch { maths = null; }
-                AddMatchingOmmlRanges(maths, selectionRange, candidates);
+                Range? direct = null;
+                try
+                {
+                    math = maths[1];
+                    direct = math.Range.Duplicate;
+                    if (TouchesSelection(
+                            selectionRange,
+                            direct))
+                    {
+                        var directType = math.Type;
+                        candidate = direct;
+                        direct = null;
+                        type = directType;
+                        typeKnown = true;
+                    }
+                }
+                catch (COMException)
+                {
+                    // Fall back to the existing bounded local resolution below.
+                    Release(candidate);
+                    candidate = null;
+                    typeKnown = false;
+                }
+                finally
+                {
+                    Release(direct);
+                    Release(math);
+                    math = null;
+                }
             }
 
-            DeduplicateRanges(candidates);
-            if (candidates.Count == 0) return null;
-            if (candidates.Count != 1)
-                throw new InvalidDataException(
-                    "The selected range resolves to more than one OMML equation.");
+            if (candidate is null)
+            {
+                AddMatchingOmmlRanges(
+                    maths,
+                    selectionRange,
+                    candidates);
 
-            candidate = candidates[0];
-            candidates.Clear(); // ownership transferred to candidate
+                if (candidates.Count == 0)
+                {
+                    Release(maths);
+                    maths = null;
+                    probe = selectionRange.Duplicate;
+                    try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch { }
+                    try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch { }
+                    try { maths = probe.OMaths; } catch { maths = null; }
+                    AddMatchingOmmlRanges(
+                        maths,
+                        selectionRange,
+                        candidates);
+                }
+
+                DeduplicateRanges(candidates);
+                if (candidates.Count == 0) return null;
+                if (candidates.Count != 1)
+                    throw new InvalidDataException(
+                        "The selected range resolves to more than one OMML equation.");
+
+                candidate = candidates[0];
+                candidates.Clear(); // ownership transferred to candidate
+            }
 
             // Word's native InsertCrossReference can cache an entire numbered
             // OMath inside the Result of a REF field. That OMath is rendering
@@ -166,33 +216,35 @@ internal static class WordFormulaHostResolver
             if (IsNativeReferenceResultOmml(candidate))
                 return null;
 
-            WdOMathType type;
-            Release(maths);
-            maths = null;
-            try
+            if (!typeKnown)
             {
-                maths = candidate.OMaths;
-                if (maths.Count != 1)
-                    throw new InvalidDataException(
-                        "The resolved OMML range no longer contains exactly one equation.");
-                math = maths[1];
-                var exact = math.Range;
+                Release(maths);
+                maths = null;
                 try
                 {
-                    if (exact.StoryType != candidate.StoryType
-                        || exact.Start != candidate.Start
-                        || exact.End != candidate.End)
+                    maths = candidate.OMaths;
+                    if (maths.Count != 1)
                         throw new InvalidDataException(
-                            "The resolved OMML range is not the exact OMath boundary.");
-                    type = math.Type;
+                            "The resolved OMML range no longer contains exactly one equation.");
+                    math = maths[1];
+                    var exact = math.Range;
+                    try
+                    {
+                        if (exact.StoryType != candidate.StoryType
+                            || exact.Start != candidate.Start
+                            || exact.End != candidate.End)
+                            throw new InvalidDataException(
+                                "The resolved OMML range is not the exact OMath boundary.");
+                        type = math.Type;
+                    }
+                    finally { Release(exact); }
                 }
-                finally { Release(exact); }
-            }
-            catch (COMException error)
-            {
-                throw new InvalidDataException(
-                    "Word could not resolve the selected OMML equation locally.",
-                    error);
+                catch (COMException error)
+                {
+                    throw new InvalidDataException(
+                        "Word could not resolve the selected OMML equation locally.",
+                        error);
+                }
             }
 
             // Native OMML has no durable VisualTeX identity. Any FormulaId

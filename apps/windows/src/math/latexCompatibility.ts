@@ -45,7 +45,7 @@ const STANDARD_COMPATIBILITY_MACROS = {
   pdv: ["\\frac{\\partial #1}{\\partial #2}", 2] as const,
   fdv: ["\\frac{\\delta #1}{\\delta #2}", 2] as const,
   abs: ["\\left|#1\\right|", 1] as const,
-  norm: ["\\left\\lVert#1\\right\\rVert", 1] as const,
+  norm: ["\\left\\lVert #1\\right\\rVert", 1] as const,
   eval: ["\\left.#1\\right|", 1] as const,
   comm: ["\\left[#1,#2\\right]", 2] as const,
   acomm: ["\\left\\{#1,#2\\right\\}", 2] as const,
@@ -219,6 +219,20 @@ function readPackageMacroArgument(source: string, start: number) {
     : null;
 }
 
+function preserveExpandedControlWordBoundary(
+  replacement: string,
+  followingCharacter: string | undefined,
+) {
+  if (!followingCharacter || !/[A-Za-z@]/.test(followingCharacter)) return replacement;
+  // TeX control words consume following ASCII letters. Compatibility macro
+  // expansion is a lexical substitution, so an expansion ending in e.g. \\quad
+  // must not turn the next source variable `y` into the unrelated command
+  // `\\quady`. An empty group is a zero-width, semantics-preserving boundary.
+  return /\\[A-Za-z@]+$/.test(replacement)
+    ? `${replacement}{}`
+    : replacement;
+}
+
 function expandFixedCompatibilityMacros(source: string) {
   let current = source;
   for (let pass = 0; pass < 12; pass += 1) {
@@ -247,7 +261,10 @@ function expandFixedCompatibilityMacros(source: string) {
         continue;
       }
       if (typeof definition === "string") {
-        output += definition;
+        output += preserveExpandedControlWordBoundary(
+          definition,
+          current[commandEnd],
+        );
         cursor = commandEnd;
         changed = true;
         continue;
@@ -255,6 +272,20 @@ function expandFixedCompatibilityMacros(source: string) {
       const [replacement, argumentCount] = definition;
       const argumentsFound: string[] = [];
       let position = commandEnd;
+      if (command === "mqty") {
+        const matrixQuantityStart = skipLatexWhitespace(current, commandEnd);
+        if (current[matrixQuantityStart] === "("
+            || current[matrixQuantityStart] === "["
+            || current[matrixQuantityStart] === "|") {
+          // A complete delimiter form is consumed by normalizeMatrixQuantityCommands().
+          // If one remains here it is incomplete; do not misread the opening
+          // delimiter as the fixed macro's single argument and strand matrix '&'
+          // tokens outside an environment.
+          output += match[0];
+          cursor = commandEnd;
+          continue;
+        }
+      }
       let complete = true;
       for (let argument = 0; argument < argumentCount; argument += 1) {
         const value = readPackageMacroArgument(current, position);
@@ -270,10 +301,14 @@ function expandFixedCompatibilityMacros(source: string) {
         cursor = commandEnd;
         continue;
       }
-      output += replacement.replace(/#([1-9])/g, (_token, rawIndex: string) => {
+      const expanded = replacement.replace(/#([1-9])/g, (_token, rawIndex: string) => {
         const index = Number(rawIndex) - 1;
         return argumentsFound[index] ?? "";
       });
+      output += preserveExpandedControlWordBoundary(
+        expanded,
+        current[position],
+      );
       cursor = position;
       changed = true;
     }
@@ -281,6 +316,99 @@ function expandFixedCompatibilityMacros(source: string) {
     current = output;
   }
   return current;
+}
+
+export function normalizeFlexiblePackageLatexCommands(
+  source: string,
+  excludedCommands: ReadonlySet<string> = new Set(),
+) {
+  if (excludedCommands.has("braket")) return source;
+  const commandPattern = /\\braket(?![A-Za-z@])/g;
+  let output = "";
+  let cursor = 0;
+  while (cursor < source.length) {
+    commandPattern.lastIndex = cursor;
+    const match = commandPattern.exec(source);
+    if (!match) {
+      output += source.slice(cursor);
+      break;
+    }
+    output += source.slice(cursor, match.index);
+    const first = readPackageMacroArgument(source, commandPattern.lastIndex);
+    if (!first) {
+      output += match[0];
+      cursor = commandPattern.lastIndex;
+      continue;
+    }
+
+    const secondStart = skipLatexWhitespace(source, first.end);
+    const second = source[secondStart] === "{"
+      ? readBalancedArgument(source, secondStart, "{", "}")
+      : null;
+    if (second) {
+      output += `\\left\\langle ${first.content}\\middle\\vert ${second.content}\\right\\rangle`;
+      cursor = second.end;
+      continue;
+    }
+
+    // braket.sty-style one-argument syntax: separators live inside the single
+    // balanced argument. Replace only top-level unescaped | / || so nested groups
+    // and explicit \\| remain untouched.
+    let depth = 0;
+    let body = "";
+    let sawSeparator = false;
+    for (let index = 0; index < first.content.length; index += 1) {
+      const character = first.content[index];
+      if (character === "\\") {
+        body += character;
+        if (index + 1 < first.content.length) body += first.content[++index];
+        continue;
+      }
+      if (character === "{") {
+        depth += 1;
+        body += character;
+        continue;
+      }
+      if (character === "}") {
+        depth = Math.max(0, depth - 1);
+        body += character;
+        continue;
+      }
+      if (character === "|" && depth === 0) {
+        sawSeparator = true;
+        if (first.content[index + 1] === "|") {
+          body += "\\middle\\Vert ";
+          index += 1;
+        } else {
+          body += "\\middle\\vert ";
+        }
+        continue;
+      }
+      body += character;
+    }
+    if (!sawSeparator) {
+      output += source.slice(match.index, first.end);
+      cursor = first.end;
+      continue;
+    }
+    output += `\\left\\langle ${body}\\right\\rangle`;
+    cursor = first.end;
+  }
+  return output;
+}
+
+function readDoubleBarArgument(source: string, start: number): BalancedArgument | null {
+  if (source.slice(start, start + 2) !== "||") return null;
+  for (let index = start + 2; index + 1 < source.length; index += 1) {
+    if (source[index] === "\\") {
+      index += 1;
+      continue;
+    }
+    if (source.slice(index, index + 2) === "||") {
+      return { content: source.slice(start + 2, index), end: index + 2 };
+    }
+  }
+  return null;
 }
 
 function normalizeMatrixQuantityCommands(source: string) {
@@ -307,15 +435,28 @@ function normalizeMatrixQuantityCommands(source: string) {
     if (source[position] === "*") {
       position = skipLatexWhitespace(source, position + 1);
     }
-    const body = source[position] === "{"
-      ? readBalancedArgument(source, position, "{", "}")
-      : null;
+    let environment = environments[match[1]];
+    let body: BalancedArgument | null = null;
+    if (source[position] === "{") {
+      body = readBalancedArgument(source, position, "{", "}");
+    } else if (match[1] === "mqty" && source[position] === "(") {
+      environment = "pmatrix";
+      body = readBalancedArgument(source, position, "(", ")");
+    } else if (match[1] === "mqty" && source[position] === "[") {
+      environment = "bmatrix";
+      body = readBalancedArgument(source, position, "[", "]");
+    } else if (match[1] === "mqty" && source.slice(position, position + 2) === "||") {
+      environment = "Vmatrix";
+      body = readDoubleBarArgument(source, position);
+    } else if (match[1] === "mqty" && source[position] === "|") {
+      environment = "vmatrix";
+      body = readBalancedArgument(source, position, "|", "|");
+    }
     if (!body) {
       output += match[0];
       cursor = commandPattern.lastIndex;
       continue;
     }
-    const environment = environments[match[1]];
     output += `\\begin{${environment}}${body.content}\\end{${environment}}`;
     cursor = body.end;
   }
@@ -520,7 +661,9 @@ export function normalizePackageLatexCommands(source: string) {
     normalizeDerivativeCommands(
       normalizeMatrixQuantityCommands(
         normalizeSiunitxConflictingUnitCommands(
-          normalizeQtyCommands(stripSiunitxOptions(source)),
+          normalizeQtyCommands(
+            normalizeFlexiblePackageLatexCommands(stripSiunitxOptions(source)),
+          ),
         ),
       ),
     ),
