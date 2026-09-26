@@ -89,7 +89,11 @@ inspectAddin("VisualTeX.ppam", "ppt/vbaProject.bin", [
   "App_WindowBeforeDoubleClick",
   "App_WindowSelectionChange",
   "VTPowerPointRibbonApplyFormulaFontSizePreset",
-  "powerpoint-office-performance-20260801-r4",
+  "powerpoint-native-omml-edit-20260926-r1",
+  "VTTryResolveNativeMathZone", "VisualTeX_CopyPowerPointNativeEditSource", "VisualTeX_EditNativeAtScreenPoint",
+  "VTPowerPointNativeMath", "VTPowerPointNativeTarget",
+  "VisualTeX_NewInlineNativeEquation", "VisualTeX_NewDisplayNativeEquation",
+  "VisualTeX_CopyNativeParagraphContext", "VTDispatchPowerPointNativeEquation",
 ]);
 
 process.stdout.write("VisualTeX compiled macOS Office add-ins: PASS\n");

@@ -58,13 +58,13 @@ Maximum encoded size: 256 KiB.
 Rules:
 
 - `sessionId` must equal the directory name and URL value.
-- `formulaId` is required for create. For edit it may be omitted only when `encodedMetadata` supplies a valid formula id.
+- Managed SVG formulas retain their existing `formulaId`/`encodedMetadata` identity rules. Pure native PowerPoint OMML requests use `nativeEquation: true` with `formulaId`, `encodedMetadata`, and `pendingMarker` all null, for both create and edit. The desktop session may allocate an internal temporary identifier, but none is written to the presentation.
 - `encodedMetadata` is inflated by VisualTeX and must validate against `visualtex-formula` schema version 1, including at least one line.
 - `numbered` is valid only for Word block formulas.
-- `nativeEquation` selects the Word result representation and is always `false` for PowerPoint.
+- `nativeEquation` selects native Office Math for Word or PowerPoint. PowerPoint native editing resolves the current `TextFrame2.TextRange.MathZones(index, 1)` at the caret/selection, not a named or tagged formula shape. Existing SVG requests continue to use `false`.
 - Word `fontSizePt` is a finite value from 1 to 512. New formulas inherit the Word selection size; edits and image/OMML conversions carry the source formula size.
 - Word top-level `referenceWidthPt` and `referenceHeightPt` are optional positive image dimensions at the stable 14 pt reference size.
-- `powerPoint` is required only for PowerPoint and is rejected for Word. Its optional `fontSizePt`, `referenceWidthPt`, and `referenceHeightPt` fields describe the selected SVG formula's point size and 14 pt reference bounds.
+- `powerPoint` is required only for PowerPoint and is rejected for Word. SVG requests retain optional `fontSizePt`, `referenceWidthPt`, and `referenceHeightPt` reference geometry. Native requests include `fontSizePt` and, for an existing text position, `nativeTextTarget: {rangeStart, rangeLength, leadingParagraph, trailingParagraph}`. A native edit requires a nonempty current mathematical range and both paragraph flags false. A standalone native create has zero shape references and no placeholder object.
 - A new PowerPoint formula inherits a selected text/formula size when available and otherwise uses 18 pt. Editing or rerendering preserves the point size while allowing the new SVG width and height to follow the formula's natural aspect ratio.
 - All strings reject NUL and control characters, and every numeric geometry value must be finite and bounded.
 

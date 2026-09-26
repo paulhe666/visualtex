@@ -750,7 +750,7 @@ async function main() {
 
   const result = {
     status: "PASS",
-    revision: "powerpoint-office-performance-20260801-r4",
+    revision: "powerpoint-native-omml-edit-20260926-r1",
     powerPointPid,
     presentationName,
     formulaId: created.request.formulaId,

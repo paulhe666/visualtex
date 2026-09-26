@@ -165,6 +165,8 @@ struct OfficeEditorMonitorGeometry {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MacOfflinePowerPointRequest {
+    #[serde(default)]
+    native_text_target: Option<MacOfflineNativeTextTarget>,
     presentation_identity: String,
     slide_index: u32,
     slide_id: u32,
@@ -183,6 +185,15 @@ struct MacOfflinePowerPointRequest {
     reference_width_pt: Option<f64>,
     #[serde(default)]
     reference_height_pt: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MacOfflineNativeTextTarget {
+    range_start: u32,
+    range_length: u32,
+    leading_paragraph: bool,
+    trailing_paragraph: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -1198,6 +1209,13 @@ fn cleanup_session_files_at(
         LATEX_REDRAW_PREFLIGHT_MANIFEST_FILE,
         LATEX_REDRAW_FONT_SIZES_FILE,
         EDITOR_OPEN_ERROR_FILE,
+        "native-math.bin",
+        "native-paragraph-context.bin",
+        "native-context-status.txt",
+        "native-context-paragraph.txt",
+        "native-result.txt",
+        "native-edit-copy-status.txt", "native-edit-current.bin",
+        "native-edit-current.mathml", "native-edit-original.omml",
         "formula.docx",
     ] {
         let path = directory.join(name);
@@ -1455,8 +1473,15 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
     if request.numbered && (request.host != "word" || request.display_mode != "block") {
         return Err("Only Word display formulas can be numbered".to_string());
     }
-    if request.native_equation && request.host != "word" {
-        return Err("Native equations are supported only by Word requests".to_string());
+    if request.native_equation && request.host == "powerpoint" {
+        if !matches!(request.mode.as_str(), "create" | "edit") || operation != "formula"
+            || request.pending_marker.is_some() || request.encoded_metadata.is_some()
+            || request.source_document_id.is_none()
+            || !request.source_object_id.as_deref().is_some_and(|id|
+                id.starts_with("visualtex-ppt-native-text:") || id.starts_with("visualtex-ppt-native-slide:"))
+        {
+            return Err("Native PowerPoint insertion requires an explicit, unmodified text or slide target".to_string());
+        }
     }
     if let Some(formula_id) = request.formula_id.as_deref() {
         validate_uuid(formula_id, "Formula id")?;
@@ -1520,16 +1545,32 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
                 MAX_IDENTITY_CHARS,
                 "PowerPoint presentation identity",
             )?;
-            validate_bounded_text(
-                &powerpoint.shape_name,
-                MAX_SHAPE_NAME_CHARS,
-                "PowerPoint shape name",
-            )?;
+            let standalone_native = request.native_equation
+                && request.source_object_id.as_deref().is_some_and(|id| id.starts_with("visualtex-ppt-native-slide:"));
+            if request.native_equation && request.mode == "edit" && standalone_native {
+                return Err("Native PowerPoint editing requires an existing mathematical text range".into());
+            }
+            match powerpoint.native_text_target.as_ref() {
+                Some(text) if request.native_equation && !standalone_native => {
+                    if request.mode == "edit" && (text.range_length == 0 || text.leading_paragraph || text.trailing_paragraph) {
+                        return Err("Native PowerPoint edits must replace exactly the selected equation without paragraph insertion".into());
+                    }
+                    if text.range_start == 0 || text.range_start.checked_add(text.range_length).is_none() {
+                        return Err("PowerPoint native text range is invalid".into());
+                    }
+                }
+                None if !request.native_equation || standalone_native => {}
+                _ => return Err("PowerPoint native text target does not match the requested insertion mode".into()),
+            }
+            if !standalone_native {
+                validate_bounded_text(&powerpoint.shape_name, MAX_SHAPE_NAME_CHARS, "PowerPoint shape name")?;
+            } else if powerpoint.shape_id != 0 || powerpoint.shape_index != 0 {
+                return Err("A standalone native equation must not name an existing shape".to_string());
+            }
             if powerpoint.slide_index == 0
                 || powerpoint.slide_id == 0
-                || powerpoint.shape_index == 0
-                || powerpoint.shape_id == 0
-                || powerpoint.z_order == 0
+                || (!standalone_native && (powerpoint.shape_index == 0
+                    || powerpoint.shape_id == 0 || powerpoint.z_order == 0))
             {
                 return Err(
                     "PowerPoint slide, shape-index, shape and z-order references must be positive".to_string(),
@@ -2145,7 +2186,7 @@ fn import_request(
             }
             (Some(request_id), _) => request_id,
             (None, Some(metadata_id)) => metadata_id,
-            (None, None) if request.mode == "create" => Uuid::new_v4().to_string(),
+            (None, None) if request.mode == "create" || (request.host == "powerpoint" && request.native_equation) => Uuid::new_v4().to_string(),
             (None, None) => return Err("Edit request does not contain a formulaId".to_string()),
         }
     };
@@ -2167,6 +2208,11 @@ fn import_request(
         "edit" => OfficeSessionMode::Edit,
         _ => return Err("Offline Office request mode is invalid".to_string()),
     };
+    let native_edit_source = if host == OfficeHost::Powerpoint && request.native_equation && mode == OfficeSessionMode::Edit {
+        let source = capture_powerpoint_native_edit_source(state.app.as_ref(), &request.session_id, false)?
+            .ok_or("The native equation edit session has already completed")?;
+        Some(super::powerpoint_omml::to_latex::from_omml(&source.omml)?)
+    } else { None };
     let lines = original_metadata
         .as_ref()
         .map(|metadata| {
@@ -2182,7 +2228,7 @@ fn import_request(
         .unwrap_or_else(|| {
             vec![FormulaLine {
                 id: Uuid::new_v4().to_string(),
-                latex: String::new(),
+                latex: native_edit_source.as_ref().map(|s|s.latex.clone()).unwrap_or_default(),
             }]
         });
     let source_document_id = match host {
@@ -2202,6 +2248,7 @@ fn import_request(
                 .clone()
                 .or_else(|| request.encoded_metadata.clone()),
         },
+        OfficeHost::Powerpoint if request.native_equation => request.source_object_id.clone(),
         OfficeHost::Powerpoint => request.power_point.as_ref().map(|powerpoint| {
             format!(
                 "visualtex-ppt-native-edit:{}:{}:{}",
@@ -2221,7 +2268,7 @@ fn import_request(
     let code_format = original_metadata
         .as_ref()
         .map(|metadata| metadata.code_format.clone())
-        .unwrap_or_else(|| "latex".to_string());
+        .unwrap_or_else(|| if native_edit_source.is_some() { "raw" } else { "latex" }.to_string());
     let font_size_pt = request
         .font_size_pt
         .or_else(|| {
@@ -2259,9 +2306,9 @@ fn import_request(
             display_mode: Some(request.display_mode),
             numbered: Some(request.numbered),
             font_size_pt,
-            formula_letter_font: original_metadata
+            formula_letter_font: native_edit_source.as_ref().map(|s|s.letter_font.clone()).or_else(|| original_metadata
                 .as_ref()
-                .and_then(|metadata| metadata.formula_letter_font.clone()),
+                .and_then(|metadata| metadata.formula_letter_font.clone())),
             formula_chinese_font: original_metadata
                 .as_ref()
                 .and_then(|metadata| metadata.formula_chinese_font.clone()),
@@ -3757,6 +3804,15 @@ fn run_vba_callback_on_main_thread(
     )
 }
 
+pub(crate) fn run_powerpoint_native_double_click_edit(x: f64, y: f64) -> Result<(), String> {
+    if !x.is_finite() || !y.is_finite() { return Err("Invalid native equation click coordinates".into()); }
+    let script=format!(r#"tell application "Microsoft PowerPoint"
+if not (exists active presentation) then return
+run VB macro macro name "VisualTeX_EditNativeAtScreenPoint" list of parameters {{"{x:.6}", "{y:.6}"}}
+end tell"#);
+    run_office_vba_script(&script,"PowerPoint native equation double-click")
+}
+
 pub(crate) fn run_double_click_edit_macro(host: OfficeHost) -> Result<(), String> {
     let script = match host {
         OfficeHost::Word => {
@@ -4356,7 +4412,7 @@ struct StoredZipEntry {
     offset: u32,
 }
 
-fn build_stored_zip<N, C>(entries: &[(N, C)]) -> Result<Vec<u8>, String>
+pub(super) fn build_stored_zip<N, C>(entries: &[(N, C)]) -> Result<Vec<u8>, String>
 where
     N: AsRef<str>,
     C: AsRef<[u8]>,
@@ -4902,6 +4958,215 @@ fn commit_word(
     Ok(())
 }
 
+struct PowerPointNativeEditSource { omml: String, clipboard: Vec<u8>, #[cfg(test)] math_ml: String }
+
+fn capture_powerpoint_native_edit_source(
+    app: Option<&AppHandle>, session_id: &str, recheck: bool,
+) -> Result<Option<PowerPointNativeEditSource>, String> {
+    let directory = session_directory(OfficeHost::Powerpoint, session_id)?;
+    let status_path = directory.join("native-edit-copy-status.txt");
+    let clipboard_path = directory.join("native-edit-current.bin");
+    let mathml_path = directory.join("native-edit-current.mathml");
+    atomic_write_runtime(&mathml_path,b"",0o600)?;
+    atomic_write_runtime(&status_path, b"pending", 0o600)?;
+    let quote = |path: &Path| serde_json::to_string(path.to_string_lossy().as_ref()).map_err(|e|e.to_string());
+    let script = r#"use framework "AppKit"
+use scripting additions
+set pb to current application's NSPasteboard's generalPasteboard()
+set savedItems to current application's NSMutableArray's array()
+repeat with sourceItem in (pb's pasteboardItems())
+    set savedItem to current application's NSPasteboardItem's alloc()'s init()
+    repeat with t in sourceItem's types()
+        savedItem's setData:(sourceItem's dataForType:t) forType:t
+    end repeat
+    savedItems's addObject:savedItem
+end repeat
+set initialCount to (pb's changeCount()) as integer
+set ownedCount to initialCount
+try
+    tell application "Microsoft PowerPoint" to run VB macro macro name "VisualTeX_CopyPowerPointNativeEditSource" list of parameters {}
+    set ownedCount to (pb's changeCount()) as integer
+    if ownedCount is not initialCount then
+        set nativeData to pb's dataForType:"com.microsoft.Art--Text-ClipFormat"
+        set mathData to pb's dataForType:"public.mathml"
+        if nativeData is missing value then error "PowerPoint did not export the selected native equation as Office Math"
+        if (nativeData's writeToFile:__NATIVE_PATH__ atomically:true) is false then error "Unable to preserve the original native equation"
+        if mathData is not missing value then
+            if (mathData's writeToFile:__MATHML_PATH__ atomically:true) is false then error "Unable to read the diagnostic MathML export"
+        end if
+    end if
+on error errorText number errorNumber
+    if ((pb's changeCount()) as integer) is ownedCount and ownedCount is not initialCount then
+        pb's clearContents()
+        pb's writeObjects:savedItems
+    end if
+    error errorText number errorNumber
+end try
+if ((pb's changeCount()) as integer) is ownedCount and ownedCount is not initialCount then
+    pb's clearContents()
+    pb's writeObjects:savedItems
+end if"#.replace("__NATIVE_PATH__",&quote(&clipboard_path)?).replace("__MATHML_PATH__",&quote(&mathml_path)?);
+    with_dispatch_pointer(OfficeHost::Powerpoint,session_id,|| match app {
+        Some(app) => run_office_vba_script_on_main_thread(app,&script,"Read native PowerPoint equation"),
+        None => run_office_vba_script(&script,"Read native PowerPoint equation"),
+    })?;
+    let status = fs::read_to_string(status_path).map_err(|e|e.to_string())?;
+    if status.trim() == "completed" { return Ok(None); }
+    if status.trim() != "ok" { return Err(format!("Cannot read the original PowerPoint equation: {}",status.trim())); }
+    let bytes=fs::read(clipboard_path).map_err(|e|e.to_string())?;
+    let omml=super::powerpoint_omml::native_equation_from_clipboard(&bytes)?;
+    let math_ml=fs::read_to_string(mathml_path).map_err(|e|e.to_string())?;
+    if math_ml.len()>MAX_OMML_BYTES { return Err("The native MathML source is too large".into()); }
+    let source_path=directory.join("native-edit-original.omml");
+    if recheck {
+        let original=fs::read_to_string(source_path).map_err(|e|format!("The original equation snapshot is unavailable: {e}"))?;
+        if omml!=original { return Err("The native equation changed while the editor was open. Reopen the current equation; no content was replaced.".into()); }
+    } else { atomic_write_runtime(&source_path,omml.as_bytes(),0o600)?; }
+    Ok(Some(PowerPointNativeEditSource{omml,clipboard:bytes,#[cfg(test)] math_ml}))
+}
+
+fn capture_powerpoint_native_paragraph(
+    app: Option<&AppHandle>, session_id: &str,
+) -> Result<Option<(Vec<u8>, usize)>, String> {
+    let directory = session_directory(OfficeHost::Powerpoint, session_id)?;
+    let context_path = directory.join("native-paragraph-context.bin");
+    let status_path = directory.join("native-context-status.txt");
+    atomic_write_runtime(&status_path, b"pending", 0o600)?;
+    let quoted_path = serde_json::to_string(context_path.to_string_lossy().as_ref()).map_err(|e|e.to_string())?;
+    let script = r#"use framework "AppKit"
+use scripting additions
+set pb to current application's NSPasteboard's generalPasteboard()
+set savedItems to current application's NSMutableArray's array()
+repeat with sourceItem in (pb's pasteboardItems())
+    set savedItem to current application's NSPasteboardItem's alloc()'s init()
+    repeat with t in sourceItem's types()
+        savedItem's setData:(sourceItem's dataForType:t) forType:t
+    end repeat
+    savedItems's addObject:savedItem
+end repeat
+set initialCount to (pb's changeCount()) as integer
+set ownedCount to initialCount
+try
+    tell application "Microsoft PowerPoint" to run VB macro macro name "VisualTeX_CopyNativeParagraphContext" list of parameters {}
+    set ownedCount to (pb's changeCount()) as integer
+    if ownedCount is not initialCount then
+        set payload to pb's dataForType:"com.microsoft.Art--GVML-ClipFormat"
+        if payload is missing value then error "PowerPoint did not provide its native shape text format"
+        set didWrite to payload's writeToFile:__CONTEXT_PATH__ atomically:true
+        if didWrite is false then error "The native paragraph format could not be preserved"
+    end if
+on error errorText number errorNumber
+    if ((pb's changeCount()) as integer) is ownedCount and ownedCount is not initialCount then
+        pb's clearContents()
+        pb's writeObjects:savedItems
+    end if
+    error errorText number errorNumber
+end try
+if ((pb's changeCount()) as integer) is ownedCount and ownedCount is not initialCount then
+    pb's clearContents()
+    pb's writeObjects:savedItems
+end if"#.replace("__CONTEXT_PATH__", &quoted_path);
+    with_dispatch_pointer(OfficeHost::Powerpoint,session_id,|| match app {
+        Some(app) => run_office_vba_script_on_main_thread(app,&script,"PowerPoint native paragraph preservation"),
+        None => run_office_vba_script(&script,"PowerPoint native paragraph preservation"),
+    })?;
+    let status = fs::read_to_string(&status_path).map_err(|e|e.to_string())?;
+    if status.trim() == "completed" { return Ok(None); }
+    if status.trim() != "ok" { return Err(format!("PowerPoint paragraph preservation failed: {}",status.trim())); }
+    let bytes = fs::read(context_path).map_err(|e|format!("Cannot read the native paragraph format: {e}"))?;
+    let index = fs::read_to_string(directory.join("native-context-paragraph.txt")).map_err(|e|e.to_string())?
+        .trim().parse::<usize>().map_err(|_|"PowerPoint returned an invalid paragraph index")?;
+    Ok(Some((bytes,index)))
+}
+
+fn commit_powerpoint_native(
+    app: Option<&AppHandle>, request: &MacOfflineSessionRequest, session: &OfficeFormulaSession,
+) -> Result<(), String> {
+    let edit_source = if request.mode == "edit" {
+        let Some(source)=capture_powerpoint_native_edit_source(app,&session.id,true)? else {return Ok(());};
+        Some(source)
+    }else{None};
+    let export = session.export_result.as_ref().ok_or("Native PowerPoint equation has no export")?;
+    let encoded = export.omml_base64.as_deref().ok_or("Native PowerPoint equation has no OMML export")?;
+    let bytes = URL_SAFE_NO_PAD.decode(encoded).map_err(|_| "Invalid OMML encoding")?;
+    if bytes.is_empty() || bytes.len() > MAX_OMML_BYTES { return Err("Invalid OMML payload size".into()); }
+    let omml = std::str::from_utf8(&bytes).map_err(|_| "OMML is not UTF-8")?;
+    let ppt = request.power_point.as_ref().ok_or("Missing PowerPoint target")?;
+    let in_text = request.source_object_id.as_deref().is_some_and(|id| id.starts_with("visualtex-ppt-native-text:"));
+    let font_size = if in_text { ppt.font_size_pt } else { session.font_size_pt.or(ppt.font_size_pt) }.unwrap_or(DEFAULT_POWERPOINT_FONT_SIZE_PT);
+    let display = session.display_mode == "block";
+    let leading = display && ppt.native_text_target.as_ref().is_some_and(|t| t.leading_paragraph);
+    let trailing = display && ppt.native_text_target.as_ref().is_some_and(|t| t.trailing_paragraph);
+    let generated = super::powerpoint_omml::clipboard_entries(omml, font_size, display && request.mode != "edit", leading, trailing)?;
+    let entries = if let Some(source)=edit_source {
+        super::powerpoint_omml::replace_native_edit_context(generated,&source.clipboard)?
+    } else if leading {
+        let Some((context,index)) = capture_powerpoint_native_paragraph(app,&session.id)? else { return Ok(()); };
+        super::powerpoint_omml::preserve_leading_paragraph(generated,&context,index)?
+    } else {
+        generated.into_iter().map(|(name,xml)|(name,xml.into_bytes())).collect()
+    };
+    let package = build_stored_zip(&entries)?;
+    let path = session_directory(OfficeHost::Powerpoint, &session.id)?.join("native-math.bin");
+    atomic_write_runtime(&path, &package, 0o600)?;
+    let dispatch = dispatch_text(&[
+        ("protocolVersion", OFFLINE_PROTOCOL_VERSION.to_string()), ("sessionId",session.id.clone()),
+        ("host","powerpoint".into()), ("action","commit".into()), ("mode","create".into()),
+        ("nativeEquation","1".into()),
+        ("leadingParagraph", if leading { "1" } else { "0" }.into()),
+        ("trailingParagraph", if trailing { "1" } else { "0" }.into()),
+        ("displayMode",session.display_mode.clone()), ("fontSizePt",font_size.to_string()),
+    ])?;
+    atomic_write_runtime(&dispatch_path(OfficeHost::Powerpoint,&session.id)?,dispatch.as_bytes(),0o600)?;
+    // Use the independently replayable native TEXT flavor. The payload has no
+    // process pointers and needs no hidden/visible intermediate Office document.
+    let result_path = session_directory(OfficeHost::Powerpoint, &session.id)?.join("native-result.txt");
+    atomic_write_runtime(&result_path, b"pending", 0o600)?;
+    let quoted_path = serde_json::to_string(path.to_string_lossy().as_ref()).map_err(|e| e.to_string())?;
+    let script = r#"use framework "AppKit"
+use scripting additions
+set payload to current application's NSData's dataWithContentsOfFile:__NATIVE_CLIPBOARD_PATH__
+if payload is missing value then error "The native math clipboard payload is missing"
+set pb to current application's NSPasteboard's generalPasteboard()
+set savedItems to current application's NSMutableArray's array()
+repeat with sourceItem in (pb's pasteboardItems())
+    set savedItem to current application's NSPasteboardItem's alloc()'s init()
+    repeat with t in sourceItem's types()
+        savedItem's setData:(sourceItem's dataForType:t) forType:t
+    end repeat
+    savedItems's addObject:savedItem
+end repeat
+pb's clearContents()
+set didSet to pb's setData:payload forType:"com.microsoft.Art--Text-ClipFormat"
+set ownedCount to (pb's changeCount()) as integer
+try
+    if didSet is false then error "macOS could not prepare the native math clipboard"
+    tell application "Microsoft PowerPoint" to run VB macro macro name "VisualTeX_ApplyPendingResult" list of parameters {}
+on error errorText number errorNumber
+    if ((pb's changeCount()) as integer) is ownedCount then
+        pb's clearContents()
+        pb's writeObjects:savedItems
+    end if
+    error errorText number errorNumber
+end try
+if ((pb's changeCount()) as integer) is ownedCount then
+    pb's clearContents()
+    pb's writeObjects:savedItems
+end if"#.replace("__NATIVE_CLIPBOARD_PATH__", &quoted_path);
+    with_dispatch_pointer(OfficeHost::Powerpoint,&session.id,|| {
+        match app {
+            Some(app) => run_office_vba_script_on_main_thread(app,&script,"PowerPoint native math insertion"),
+            None => run_office_vba_script(&script,"PowerPoint native math insertion"),
+        }
+    })?;
+    let result = fs::read_to_string(&result_path).map_err(|e| format!("Cannot read PowerPoint native insertion result: {e}"))?;
+    if result.trim() == "ok" { return Ok(()); }
+    if let Some(detail) = result.strip_prefix("error\n") {
+        return Err(format!("PowerPoint native equation insertion failed: {}", detail.trim()));
+    }
+    Err("PowerPoint did not confirm the native equation insertion; the active add-in may need to be updated".into())
+}
+
 fn commit_powerpoint(
     app: Option<&AppHandle>,
     request: &MacOfflineSessionRequest,
@@ -5007,6 +5272,7 @@ fn cancel_host(request: &MacOfflineSessionRequest) -> Result<(), String> {
         ("action", "cancel".to_string()),
         ("host", request.host.clone()),
         ("mode", request.mode.clone()),
+        ("nativeEquation", if request.native_equation { "1" } else { "0" }.into()),
         (
             "pendingMarker",
             request.pending_marker.clone().unwrap_or_default(),
@@ -5022,7 +5288,7 @@ fn cancel_host(request: &MacOfflineSessionRequest) -> Result<(), String> {
         dispatch.as_bytes(),
         0o600,
     )?;
-    if request.mode == "create" {
+    if request.mode == "create" || (request.host == "powerpoint" && request.native_equation) {
         with_dispatch_pointer(host, &request.session_id, || run_vba_callback(host))?;
     }
     Ok(())
@@ -6613,6 +6879,21 @@ fn fail_session(state: &OfficeCompanionState, session_id: &str, error: &str) {
         .patch(session_id, json!({ "status": "failed", "error": error }));
 }
 
+fn native_powerpoint_edit_source_changed(session: &OfficeFormulaSession) -> Result<bool, String> {
+    let original_path = session_directory(OfficeHost::Powerpoint, &session.id)?
+        .join("native-edit-original.omml");
+    let original_omml = fs::read_to_string(&original_path)
+        .map_err(|error| format!("The original native equation snapshot is unavailable: {error}"))?;
+    native_powerpoint_edit_latex_changed(&original_omml, &session.lines)
+}
+
+fn native_powerpoint_edit_latex_changed(original_omml: &str, lines: &[FormulaLine]) -> Result<bool, String> {
+    let original = super::powerpoint_omml::to_latex::from_omml(original_omml)?.latex;
+    let current = lines.iter().map(|line| line.latex.as_str())
+        .collect::<Vec<_>>().join("\n");
+    Ok(current != original)
+}
+
 fn commit_session_blocking(
     state: OfficeCompanionState,
     session_id: String,
@@ -6639,6 +6920,14 @@ fn commit_session_blocking(
         return Err("Offline Office Session is not ready to commit".to_string());
     }
     let request = read_request(&session_id)?;
+    // The native source is captured from Office at open time. Compare against
+    // that immutable snapshot even if a stale frontend dirty flag was cleared
+    // by autosave; otherwise an edited formula can be silently treated as a
+    // no-op and the UI closes without changing PowerPoint.
+    let native_powerpoint_source_changed = if session.host == OfficeHost::Powerpoint
+        && request.native_equation && session.mode == OfficeSessionMode::Edit {
+        native_powerpoint_edit_source_changed(&session)?
+    } else { false };
     let source_is_native_word_equation = session.host == OfficeHost::Word
         && request
             .source_object_id
@@ -6649,7 +6938,9 @@ fn commit_session_blocking(
     if session.mode == OfficeSessionMode::Edit
         && !session.dirty
         && !word_format_conversion_requested
+        && !native_powerpoint_source_changed
     {
+        if request.host == "powerpoint" && request.native_equation { cancel_host(&request)?; }
         let completed = complete_session(&state, &session_id)?;
         queue_editor_performance(
             session.host,
@@ -6680,6 +6971,9 @@ fn commit_session_blocking(
                 &metadata.latex,
                 geometry,
             )
+        }
+        OfficeHost::Powerpoint if request.native_equation => {
+            commit_powerpoint_native(state.app.as_ref(), &request, &session)
         }
         OfficeHost::Powerpoint => {
             let powerpoint = request
@@ -7108,6 +7402,15 @@ pub fn get_macos_offline_plugin_health() -> Result<Vec<MacOfflinePluginHealth>, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_powerpoint_edit_detects_changed_source_even_with_stale_dirty_flag() {
+        let original = "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"><m:r><m:t>x</m:t></m:r></m:oMath>";
+        let mut lines = vec![FormulaLine { id: "line".into(), latex: "x".into() }];
+        assert!(!native_powerpoint_edit_latex_changed(original, &lines).unwrap());
+        lines[0].latex = "y".into();
+        assert!(native_powerpoint_edit_latex_changed(original, &lines).unwrap());
+    }
 
     #[test]
     fn office_open_boundary_preserves_success_and_recoverable_errors() {
@@ -7749,6 +8052,8 @@ mod tests {
             DISPATCH_FILE,
             RESULT_PNG_FILE,
             RESULT_SVG_FILE,
+            "native-math.bin", "native-paragraph-context.bin",
+            "native-context-status.txt", "native-context-paragraph.txt", "native-result.txt",
         ] {
             fs::write(directory.join(name), b"temporary").expect("temporary file should exist");
         }
@@ -7760,6 +8065,8 @@ mod tests {
             DISPATCH_FILE,
             RESULT_PNG_FILE,
             RESULT_SVG_FILE,
+            "native-math.bin", "native-paragraph-context.bin",
+            "native-context-status.txt", "native-context-paragraph.txt", "native-result.txt",
         ] {
             assert!(!directory.join(name).exists());
         }
@@ -7910,6 +8217,113 @@ mod tests {
         assert!(parse_office_url(&format!("https://office/open?session={id}")).is_err());
         assert!(parse_office_url(&format!("visualtex://office/open?session={id}&x=1")).is_err());
         assert!(parse_office_url("visualtex://office/open?session=not-a-uuid").is_err());
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly prepared native PowerPoint edit in the owned acceptance presentation"]
+    fn live_powerpoint_native_edit_source() {
+        let id=std::env::var("VISUALTEX_NATIVE_EDIT_SESSION").expect("Native edit session id required");
+        let request=read_request(&id).unwrap();
+        assert!(request.native_equation && request.host=="powerpoint" && request.mode=="edit");
+        assert!(request.formula_id.is_none() && request.encoded_metadata.is_none());
+        assert!(request.source_document_id.as_deref().unwrap().ends_with("/NativeOmmlAcceptance.pptm"));
+        let recheck=std::env::var("VISUALTEX_NATIVE_EDIT_RECHECK").unwrap_or_default()=="1";
+        let result=capture_powerpoint_native_edit_source(None,&id,recheck);
+        let output=match result {
+            Ok(Some(source)) => {
+                if let Ok(path)=std::env::var("VISUALTEX_NATIVE_EDIT_REPLACEMENT_JSON") {
+                    let samples:Vec<Value>=serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+                    let sample=samples.iter().find(|s|s["name"]=="replacement").unwrap();
+                    let xml=String::from_utf8(URL_SAFE_NO_PAD.decode(sample["ommlBase64"].as_str().unwrap()).unwrap()).unwrap();
+                    let generated=super::super::powerpoint_omml::clipboard_entries(&xml,24.0,false,false,false).unwrap();
+                    let entries=super::super::powerpoint_omml::replace_native_edit_context(generated,&source.clipboard).unwrap();
+                    fs::write(session_directory(OfficeHost::Powerpoint,&id).unwrap().join("native-edit-replacement.bin"),build_stored_zip(&entries).unwrap()).unwrap();
+                }
+                match super::super::powerpoint_omml::to_latex::from_omml(&source.omml) {
+                    Ok(converted) => json!({"ok":true,"latex":converted.latex,"font":converted.letter_font,"omml":source.omml,"mathMl":source.math_ml,"displayMode":request.display_mode}),
+                    Err(error) => json!({"ok":false,"error":error,"omml":source.omml,"mathMl":source.math_ml}),
+                }
+            }
+            Ok(None) => json!({"completed":true}),
+            Err(error) => json!({"ok":false,"error":error}),
+        };
+        fs::write(session_directory(OfficeHost::Powerpoint,&id).unwrap().join("native-edit-test-result.json"),serde_json::to_vec_pretty(&output).unwrap()).unwrap();
+    }
+
+    fn native_powerpoint_request_fixture() -> MacOfflineSessionRequest {
+        serde_json::from_value(json!({
+            "protocolVersion": OFFLINE_PROTOCOL_VERSION,
+            "sessionId": "32345678-1234-4234-9234-123456789abc",
+            "host": "powerpoint", "mode": "create", "displayMode": "inline",
+            "numbered": false, "nativeEquation": true,
+            "sourceDocumentId": "/Users/测试/演示.pptx",
+            "sourceObjectId": "visualtex-ppt-native-text:256:3:4:0",
+            "powerPoint": {
+                "presentationIdentity": "/Users/测试/演示.pptx",
+                "slideIndex": 1, "slideId": 256, "shapeIndex": 1, "shapeId": 3,
+                "shapeName": "TextBox 3", "left": 0, "top": 0, "width": 360,
+                "height": 180, "rotation": 0, "zOrder": 1, "fontSizePt": 24,
+                "nativeTextTarget": { "rangeStart": 4, "rangeLength": 0,
+                    "leadingParagraph": true, "trailingParagraph": true }
+            }
+        })).unwrap()
+    }
+
+    #[test]
+    fn native_powerpoint_accepts_exact_text_targets_without_persistent_metadata() {
+        let mut request = native_powerpoint_request_fixture();
+        for mode in ["inline", "block"] {
+            request.display_mode = mode.into();
+            validate_request(&request, &request.session_id).unwrap();
+            let roundtrip: MacOfflineSessionRequest = serde_json::from_slice(&serde_json::to_vec(&request).unwrap()).unwrap();
+            validate_request(&roundtrip, &request.session_id).unwrap();
+            assert!(roundtrip.formula_id.is_none() && roundtrip.pending_marker.is_none() && roundtrip.encoded_metadata.is_none());
+            assert_eq!(roundtrip.power_point.unwrap().native_text_target.unwrap().range_start, 4);
+        }
+    }
+
+    #[test]
+    fn native_powerpoint_edit_uses_only_current_office_range_not_formula_identity() {
+        let mut request=native_powerpoint_request_fixture();
+        request.mode="edit".into();
+        let text=request.power_point.as_mut().unwrap().native_text_target.as_mut().unwrap();
+        text.range_length=8; text.leading_paragraph=false; text.trailing_paragraph=false;
+        request.source_object_id=Some("visualtex-ppt-native-text:256:3:4:8".into());
+        validate_request(&request,&request.session_id).unwrap();
+        assert!(request.formula_id.is_none() && request.encoded_metadata.is_none());
+        request.power_point.as_mut().unwrap().native_text_target.as_mut().unwrap().leading_paragraph=true;
+        assert!(validate_request(&request,&request.session_id).is_err());
+    }
+
+    #[test]
+    fn native_powerpoint_standalone_is_explicit_and_has_no_shape_placeholder() {
+        let mut request = native_powerpoint_request_fixture();
+        request.source_object_id = Some("visualtex-ppt-native-slide:256".into());
+        let geometry = request.power_point.as_mut().unwrap();
+        geometry.native_text_target = None;
+        geometry.shape_index = 0; geometry.shape_id = 0; geometry.z_order = 0;
+        geometry.shape_name.clear();
+        validate_request(&request, &request.session_id).unwrap();
+        request.power_point.as_mut().unwrap().shape_id = 3;
+        assert!(validate_request(&request, &request.session_id).is_err());
+    }
+
+    #[test]
+    fn native_powerpoint_rejects_ambiguous_or_unsupported_requests() {
+        for mutation in 0..7 {
+            let mut request = native_powerpoint_request_fixture();
+            match mutation {
+                0 => request.mode = "edit".into(),
+                1 => request.power_point.as_mut().unwrap().native_text_target = None,
+                2 => request.power_point.as_mut().unwrap().native_text_target.as_mut().unwrap().range_start = 0,
+                3 => request.native_equation = false,
+                4 => request.numbered = true,
+                5 => request.source_object_id = None,
+                6 => request.pending_marker = Some("unexpected-image-placeholder".into()),
+                _ => unreachable!(),
+            }
+            assert!(validate_request(&request, &request.session_id).is_err(), "mutation {mutation}");
+        }
     }
 
     #[test]
@@ -8387,6 +8801,7 @@ c &= e
         assert!((word_geometry.reference_height_pt - 16.5).abs() < 0.001);
 
         let request = MacOfflinePowerPointRequest {
+            native_text_target: None,
             presentation_identity: "Deck".to_string(),
             slide_index: 1,
             slide_id: 2,

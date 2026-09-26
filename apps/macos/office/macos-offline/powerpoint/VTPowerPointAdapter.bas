@@ -4,7 +4,7 @@ Option Explicit
 Private Const VT_POWERPOINT_HOST As String = "powerpoint"
 Private Const VT_POWERPOINT_STATUS_FILE As String = "/OfficePluginStatus/powerpoint.json"
 Private Const VT_POWERPOINT_SOURCE_REVISION As String = _
-    "powerpoint-office-performance-20260801-r4"
+    "powerpoint-native-omml-edit-20260926-r1"
 Private Const VT_SHAPE_PREFIX As String = "VisualTeX_"
 Private Const VT_DEFAULT_PLACEHOLDER_WIDTH As Single = 180!
 Private Const VT_DEFAULT_PLACEHOLDER_HEIGHT As Single = 42!
@@ -149,6 +149,7 @@ Public Sub VisualTeX_EditSelected()
     On Error GoTo Failed
 
     VTRequireWritablePowerPointPresentation
+    If VTEditSelectedNativeEquation() Then Exit Sub
     VTPowerPointEditShape VTSelectedSingleShape()
     Exit Sub
 
@@ -666,6 +667,13 @@ Public Sub VisualTeX_ApplyPendingResult()
     hostName = CStr(dispatch("host"))
     If hostName <> VT_POWERPOINT_HOST Then
         Err.Raise vbObjectError + 7502, "VisualTeX", "The active VisualTeX dispatch is not for PowerPoint."
+    End If
+
+    If VTCollectionHasKey(dispatch, "nativeEquation") Then
+        If CStr(dispatch("nativeEquation")) = "1" Then
+            VTDispatchPowerPointNativeEquation sessionId, dispatch
+            Exit Sub
+        End If
     End If
 
     Select Case actionName
@@ -1477,7 +1485,7 @@ Failed:
         Err.Number, Err.Description
 End Sub
 
-Private Function VTPowerPointGeometryJson( _
+Public Function VTPowerPointGeometryJson( _
     ByVal currentSlide As Slide, _
     ByVal target As Shape, _
     Optional ByVal fontSizePt As Double = 0#, _
@@ -1514,7 +1522,7 @@ Private Function VTPowerPointGeometryJson( _
         "}"
 End Function
 
-Private Function VTPresentationIdentityFor( _
+Public Function VTPresentationIdentityFor( _
     ByVal targetPresentation As Presentation) As String
 
     On Error Resume Next
@@ -1558,7 +1566,7 @@ Private Function VTFindPowerPointPresentation( _
     Set VTFindPowerPointPresentation = matchingPresentation
 End Function
 
-Private Sub VTRequireWritablePowerPointPresentationObject( _
+Public Sub VTRequireWritablePowerPointPresentationObject( _
     ByVal targetPresentation As Presentation)
 
     If targetPresentation Is Nothing Then
@@ -1575,7 +1583,7 @@ Private Sub VTRequireWritablePowerPointPresentationObject( _
     End If
 End Sub
 
-Private Sub VTRequireWritablePowerPointPresentation()
+Public Sub VTRequireWritablePowerPointPresentation()
     If Presentations.Count = 0 Then
         Err.Raise vbObjectError + 7510, "VisualTeX", "Open a PowerPoint presentation first."
     End If

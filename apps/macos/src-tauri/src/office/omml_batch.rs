@@ -250,11 +250,13 @@ fn parse_xml(value: &str) -> Result<XmlNode, String> {
                         .decode()
                         .map_err(|error| error.to_string())?
                         .into_owned();
-                    parent.text.push_str(
-                        &quick_xml::escape::unescape(&decoded)
-                            .map_err(|error| error.to_string())?
-                            .into_owned(),
-                    );
+                    parent.text.push_str(&decoded);
+                }
+            }
+            Ok(Event::GeneralRef(reference)) => {
+                if let Some(parent) = stack.last_mut() {
+                    let value = format!("&{};", reference.decode().map_err(|e|e.to_string())?);
+                    parent.text.push_str(&quick_xml::escape::unescape(&value).map_err(|e|e.to_string())?);
                 }
             }
             Ok(Event::CData(text)) => {
@@ -294,7 +296,9 @@ fn escape_latex(value: &str, text_mode: bool) -> String {
         match character {
             '\\' if text_mode => result.push_str("\\textbackslash{}"),
             '\\' => result.push_str("\\backslash "),
-            '{' | '}' | '#' | '%' | '&' | '_' => {
+            '^' if text_mode => result.push_str("\\textasciicircum{}"),
+            '~' if text_mode => result.push_str("\\textasciitilde{}"),
+            '$' | '{' | '}' | '#' | '%' | '&' | '_' => {
                 result.push('\\');
                 result.push(character);
             }
@@ -307,6 +311,7 @@ fn escape_latex(value: &str, text_mode: bool) -> String {
 fn token(value: &str) -> String {
     let value = value.trim();
     let mapped = match value {
+        "\u{2061}" | "\u{2062}" | "\u{2064}" => "", "\u{2063}" => ",",
         "−" => "-", "×" => "\\times ", "÷" => "\\div ", "±" => "\\pm ",
         "∓" => "\\mp ", "·" => "\\cdot ", "∗" => "\\ast ", "∘" => "\\circ ",
         "∞" => "\\infty ", "∂" => "\\partial ", "∇" => "\\nabla ",
@@ -341,13 +346,15 @@ fn token(value: &str) -> String {
     mapped.to_string()
 }
 
+pub(super) fn native_math_token(value: &str) -> String { token(value) }
+
 fn children(node: &XmlNode) -> String {
     node.children.iter().map(convert_node).collect::<String>()
 }
 
 fn group(value: String) -> String {
     let value = value.trim().to_string();
-    if value.chars().count() == 1 || value.starts_with('\\') {
+    if value.chars().count() == 1 || (value.starts_with('\\') && value[1..].chars().all(|c| c.is_ascii_alphabetic())) {
         value
     } else {
         format!("{{{value}}}")
@@ -369,10 +376,44 @@ fn child(node: &XmlNode, index: usize) -> String {
     node.children.get(index).map(convert_node).unwrap_or_default()
 }
 
+fn styled_latex(node: &XmlNode, body: String) -> String {
+    let variant=node.attribute("mathvariant").unwrap_or_default();
+    match variant {
+        "bold" => format!("\\mathbf{{{body}}}"),
+        "bold-italic" => format!("\\boldsymbol{{{body}}}"),
+        "double-struck" => format!("\\mathbb{{{body}}}"),
+        "script" => format!("\\mathcal{{{body}}}"),
+        "bold-script" => format!("\\boldsymbol{{\\mathcal{{{body}}}}}"),
+        "fraktur" => format!("\\mathfrak{{{body}}}"),
+        "bold-fraktur" => format!("\\boldsymbol{{\\mathfrak{{{body}}}}}"),
+        "sans-serif" => format!("\\mathsf{{{body}}}"),
+        "bold-sans-serif" => format!("\\boldsymbol{{\\mathsf{{{body}}}}}"),
+        "sans-serif-italic" => format!("\\mathsf{{\\mathit{{{body}}}}}"),
+        "sans-serif-bold-italic" => format!("\\boldsymbol{{\\mathsf{{\\mathit{{{body}}}}}}}"),
+        "monospace" => format!("\\mathtt{{{body}}}"),
+        "italic" if node.name == "mstyle" => format!("\\mathit{{{body}}}"),
+        "normal" if node.name == "mstyle" => format!("\\mathrm{{{body}}}"),
+        _ => body,
+    }
+}
+
+fn large_operator(node: &XmlNode) -> bool {
+    let symbol=node.children.first().map(XmlNode::all_text).unwrap_or_default();
+    matches!(symbol.trim(), "∑"|"∏"|"∐"|"∫"|"∬"|"∭"|"∮"|"⋃"|"⋂"|"⋁"|"⋀")
+}
+
 fn convert_node(node: &XmlNode) -> String {
+    let body=convert_node_unstyled(node);
+    if matches!(node.name.as_str(), "mi"|"mn"|"mo"|"mtext"|"mstyle") { styled_latex(node,body) } else { body }
+}
+fn convert_node_unstyled(node: &XmlNode) -> String {
     match node.name.as_str() {
         "math" | "mrow" | "mstyle" | "semantics" | "mtd" => children(node),
-        "annotation" | "annotation-xml" | "mspace" | "none" => String::new(),
+        "annotation" | "annotation-xml" | "none" | "mprescripts" => String::new(),
+        "mspace" => {
+            let width=node.attribute("width").unwrap_or("0em");
+            if width=="0em" || width=="0" { String::new() } else { format!("\\hspace{{{width}}}") }
+        },
         "mi" => {
             let value = node.all_text().trim().to_string();
             let variant = node.attribute("mathvariant").unwrap_or_default().to_ascii_lowercase();
@@ -394,15 +435,21 @@ fn convert_node(node: &XmlNode) -> String {
                 format!("\\text{{{}}}", escape_latex(&value, true))
             }
         }
+        "mfrac" if matches!(node.attribute("linethickness"), Some("0"|"0pt"|"0px")) => format!("{{{}\\atop {}}}",child(node,0),child(node,1)),
         "mfrac" => format!("\\frac{{{}}}{{{}}}", child(node, 0), child(node, 1)),
         "msqrt" => format!("\\sqrt{{{}}}", children(node)),
         "mroot" => format!("\\sqrt[{}]{{{}}}", child(node, 1), child(node, 0)),
-        "msub" | "munder" => format!("{}_{{{}}}", group(child(node, 0)), child(node, 1)),
+        "msub" => format!("{}_{{{}}}", group(child(node, 0)), child(node, 1)),
+        "munder" if large_operator(node) => format!("{}\\limits_{{{}}}",child(node,0),child(node,1)),
+        "munder" => convert_accent(node,true),
         "msup" => format!("{}^{{{}}}", group(child(node, 0)), child(node, 1)),
-        "msubsup" | "munderover" => format!(
+        "munderover" if large_operator(node) => format!("{}\\limits_{{{}}}^{{{}}}",child(node,0),child(node,1),child(node,2)),
+        "munderover" => format!("\\overset{{{}}}{{\\underset{{{}}}{{{}}}}}",child(node,2),child(node,1),child(node,0)),
+        "msubsup" => format!(
             "{}_{{{}}}^{{{}}}",
             group(child(node, 0)), child(node, 1), child(node, 2)
         ),
+        "mover" if large_operator(node) => format!("{}\\limits^{{{}}}",child(node,0),child(node,1)),
         "mover" => convert_accent(node, false),
         "mfenced" => {
             let open = node.attribute("open").unwrap_or("(");
@@ -446,28 +493,31 @@ fn convert_node(node: &XmlNode) -> String {
 
 fn convert_multiscripts(node: &XmlNode) -> String {
     let Some(base) = node.children.first() else { return String::new(); };
-    let mut result = group(convert_node(base));
-    let mut index = 1;
-    while index < node.children.len() && node.children[index].name != "mprescripts" {
-        let sub = convert_node(&node.children[index]);
-        let sup = node.children.get(index + 1).map(convert_node).unwrap_or_default();
-        if !sub.is_empty() { result.push_str(&format!("_{{{sub}}}")); }
-        if !sup.is_empty() { result.push_str(&format!("^{{{sup}}}")); }
-        index += 2;
-    }
+    let split=node.children.iter().position(|n| n.name=="mprescripts").unwrap_or(node.children.len());
+    let pairs=|values:&[XmlNode]| values.chunks(2).map(|pair| {
+        let sub=convert_node(&pair[0]);
+        let sup=pair.get(1).map(convert_node).unwrap_or_default();
+        format!("{}{}",if sub.is_empty(){String::new()}else{format!("_{{{sub}}}")},if sup.is_empty(){String::new()}else{format!("^{{{sup}}}")})
+    }).collect::<Vec<_>>();
+    let mut result=String::new();
+    if split<node.children.len() { for pair in pairs(&node.children[split+1..]) { result.push_str(&format!("{{}}{pair}")); } }
+    result.push_str(&group(convert_node(base)));
+    for (i,pair) in pairs(&node.children[1..split]).iter().enumerate() { if i>0 {result.push_str("{}");} result.push_str(pair); }
     result
 }
 
 fn convert_accent(node: &XmlNode, under: bool) -> String {
     let body = child(node, 0);
     let mark = node.children.get(1).map(XmlNode::all_text).unwrap_or_default();
+    let accent = node.attribute(if under {"accentunder"} else {"accent"}) != Some("false");
     let command = match mark.trim() {
-        "¯" | "̄" => "\\bar", "̂" => "\\hat", "˜" | "̃" => "\\tilde",
+        "¯" | "̄" | "_" if under && accent => "\\underline",
+        "¯" | "̄" if accent => "\\overline", "̂" => "\\hat", "˜" | "̃" => "\\tilde",
         "˙" | "̇" => "\\dot", "¨" | "̈" => "\\ddot", "→" | "⃗" => "\\vec",
         "⌢" => "\\widehat", "⏞" => "\\overbrace", "⏟" => "\\underbrace",
-        _ if under => "\\underaccent", _ => "\\overset",
+        _ if under => "\\underset", _ => "\\overset",
     };
-    if matches!(command, "\\underaccent" | "\\overset") {
+    if matches!(command, "\\underset" | "\\overset") {
         format!("{command}{{{}}}{{{body}}}", token(mark.trim()))
     } else {
         format!("{command}{{{body}}}")
@@ -491,6 +541,34 @@ fn collapse_repeated_spaces(value: &str) -> String {
     result
 }
 
+/// Native editing must not silently flatten unhandled MathML structures. The
+/// permissive batch converter remains available for the existing import path.
+pub fn mathml_to_latex_checked(value: &str) -> Result<String,String> {
+    let root=parse_xml(value)?;
+    if root.name!="math" { return Err("The native equation did not export a MathML root".into()); }
+    fn validate(node:&XmlNode)->Result<(),String> {
+        let arity=match node.name.as_str() {
+            "math"|"mrow"|"mstyle"|"semantics"|"mtd"|"mtr"|"mlabeledtr"|"mtable"|"msqrt"|"mfenced"|"menclose"|"mphantom"|"mmultiscripts" => None,
+            "mi"|"mn"|"mo"|"mtext"|"mspace"|"none"|"mprescripts"=>Some(0),
+            "msub"|"msup"|"munder"|"mover"|"mfrac"|"mroot"=>Some(2),
+            "msubsup"|"munderover"=>Some(3),
+            "annotation"|"annotation-xml"=>return Ok(()),
+            other=>return Err(format!("This native equation uses an unsupported MathML element ({other}); the original equation was not changed")),
+        };
+        if arity.is_some_and(|n|node.children.len()!=n) {return Err(format!("Invalid native MathML structure: {}",node.name));}
+        if node.attribute("bevelled")==Some("true") { return Err("Native skewed fractions require a supported lossless conversion before editing; the original was not changed".into()); }
+        if let Some(v)=node.attribute("mathvariant") {
+            if !matches!(v,"normal"|"upright"|"italic"|"bold"|"bold-italic"|"double-struck"|"script"|"bold-script"|"fraktur"|"bold-fraktur"|"sans-serif"|"bold-sans-serif"|"sans-serif-italic"|"sans-serif-bold-italic"|"monospace") {
+                return Err(format!("Unsupported native mathematical style: {v}"));
+            }
+        }
+        for child in &node.children {validate(child)?;} Ok(())
+    }
+    validate(&root)?;
+    let result=convert_node(&root).trim().to_string();
+    if result.is_empty() {Err("The native equation is empty".into())} else {Ok(result)}
+}
+
 pub fn mathml_to_latex(value: &str) -> Result<String, String> {
     let root = parse_xml(value)?;
     let result = collapse_repeated_spaces(&convert_node(&root))
@@ -507,6 +585,19 @@ pub fn mathml_to_latex(value: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn native_round_trip_preserves_styles_entities_and_grouping() {
+        let styled=r#"<math><mstyle mathvariant="bold"><mi>x</mi><mi>y</mi></mstyle><mi mathvariant="double-struck">R</mi><mtext>A &amp; B</mtext></math>"#;
+        assert_eq!(mathml_to_latex_checked(styled).unwrap(), r"\mathbf{xy}\mathbb{R}\text{A & B}".replace('&',r"\&"));
+        assert_eq!(mathml_to_latex_checked(r"<math><msup><mrow><mi>α</mi><mo>+</mo><mi>x</mi></mrow><mn>2</mn></msup></math>").unwrap(), r"{\alpha +x}^{2}");
+        assert!(mathml_to_latex_checked("<math><unknown><mi>x</mi></unknown></math>").is_err());
+    }
+    #[test]
+    fn native_round_trip_preserves_under_accents_and_prescripts() {
+        assert_eq!(mathml_to_latex_checked("<math><munder accentunder=\"true\"><mi>x</mi><mo>¯</mo></munder></math>").unwrap(),r"\underline{x}");
+        assert_eq!(mathml_to_latex_checked("<math><mmultiscripts><mi>X</mi><mi>i</mi><none/><mprescripts/><mi>j</mi><mn>2</mn></mmultiscripts></math>").unwrap(),r"{}_{j}^{2}X_{i}");
+        assert_eq!(mathml_to_latex_checked("<math><mover accent=\"false\"><mi>x</mi><mi>n</mi></mover></math>").unwrap(),r"\overset{n}{x}");
+    }
     #[test]
     fn converts_structured_mathml() {
         let value = r#"<math xmlns="http://www.w3.org/1998/Math/MathML"><mfrac><mi>a</mi><msup><mi>b</mi><mn>2</mn></msup></mfrac></math>"#;

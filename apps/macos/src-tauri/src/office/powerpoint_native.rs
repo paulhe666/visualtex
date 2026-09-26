@@ -1085,7 +1085,8 @@ pub fn start_double_click_monitor(
     bus: PowerPointInteractionBus,
 ) -> Result<(), String> {
     use block2::RcBlock;
-    use objc2_app_kit::{NSEvent, NSEventMask};
+    use objc2_app_kit::{NSEvent, NSEventMask, NSScreen};
+    use objc2::MainThreadMarker;
     use std::ptr::NonNull;
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -1103,12 +1104,25 @@ pub fn start_double_click_monitor(
         let mouse_location = NSEvent::mouseLocation();
         let click_x = mouse_location.x;
         let click_y = mouse_location.y;
+        // Office PointsToScreenPixels uses the top-left global screen system.
+        // AppKit's global origin is the bottom-left of the primary screen.
+        // Do not use mainScreen (which changes with the focused display).
+        let powerpoint_screen_y = MainThreadMarker::new().and_then(|main| {
+            NSScreen::screens(main).firstObject().map(|screen| screen.frame().size.height - click_y)
+        });
         let app = app.clone();
         let bus = bus.clone();
         if frontmost.as_deref() == Some(POWERPOINT_BUNDLE_ID) {
             crate::spawn_background_task("visualtex-powerpoint-double-click", move || {
                 if crate::office::macos_offline::focus_open_office_editor(&app) {
                     return;
+                }
+                // A native equation is text, not an identified formula shape.
+                // Resolve it in VBA using current MathZones and the actual click
+                // coordinates; ordinary text and stale selections stay untouched.
+                if let Some(y) = powerpoint_screen_y {
+                    let _ = crate::office::macos_offline::run_powerpoint_native_double_click_edit(click_x, y);
+                    if crate::office::macos_offline::focus_open_office_editor(&app) { return; }
                 }
                 let Some((selection, formula_id)) =
                     powerpoint_selection_after_double_click(selected_shape, std::thread::sleep)

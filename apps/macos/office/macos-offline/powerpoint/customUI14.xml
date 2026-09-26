@@ -6,6 +6,22 @@
       <tab id="VisualTeX.Mac.PowerPoint.Tab"
            label="VisualTeX"
            insertAfterMso="TabInsert">
+        <group id="VisualTeX.Mac.PowerPoint.NativeGroup" label="原生公式">
+          <button id="VisualTeX.Mac.PowerPoint.InlineOmml"
+                  label="行内 OMML"
+                  size="large"
+                  imageMso="EquationInsertNew"
+                  onAction="VTPowerPointRibbonInlineOmml"
+                  screentip="插入行内原生公式"
+                  supertip="在文本框当前光标或选区插入可由 PowerPoint 原生编辑的 OMML 公式，保留前后文字；没有文本光标时新建独立公式。"/>
+          <button id="VisualTeX.Mac.PowerPoint.DisplayOmml"
+                  label="行间 OMML"
+                  size="large"
+                  imageMso="EquationInsertNew"
+                  onAction="VTPowerPointRibbonDisplayOmml"
+                  screentip="插入行间原生公式"
+                  supertip="在当前文本框内插入独立居中的原生公式段落，不另建文本框；没有文本光标时新建独立公式。"/>
+        </group>
         <group id="VisualTeX.Mac.PowerPoint.Group" label="公式工具">
           <button id="VisualTeX.Mac.PowerPoint.New"
                   label="新建公式"

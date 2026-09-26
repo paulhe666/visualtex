@@ -1249,7 +1249,7 @@ expectIncludes(wordAdapter, "sourceDocumentId <> VTWordDocumentIdentity()", "Wor
 expectIncludes(wordAdapter, "Private Function VTWordBookmarkName", "Word pending Bookmarks must use one bounded name generator");
 expectIncludes(wordAdapter, "Len(VTWordBookmarkName) > 40", "Word Bookmark names must be guarded by the host length limit");
 expectIncludes(powerpointAdapter, "Public Sub Auto_Open()", "PowerPoint add-in must publish Auto_Open health");
-expectIncludes(powerpointAdapter, '"powerpoint-office-performance-20260801-r4"', "PowerPoint health must identify the optimized native Office build");
+expectIncludes(powerpointAdapter, '"powerpoint-native-omml-edit-20260926-r1"', "PowerPoint health must identify the current native OMML build");
 expectIncludes(powerpointAdapter, "Public Sub VTPowerPointRibbonOnLoad", "PowerPoint Ribbon load must retain its IRibbonUI handle and initialize events");
 expectIncludes(powerpointAdapter, "VisualTeX_DoubleClickEditSelected", "PowerPoint must expose a non-modal native double-click macro entry point");
 expectIncludes(powerpointAdapter, "VTInitializePowerPointEvents", "PowerPoint Auto_Open must initialize its persistent application event sink");
@@ -2132,7 +2132,7 @@ expect(!installer.includes("source_revision_matches"), "Runtime health must not 
 expectIncludes(packager, "word-office-performance-20260801-r93", "Packaging must reject a Word DOTM that lacks the current performance revision");
 expectIncludes(packager, "const resolvedWordShell = wordShell ? resolve(wordShell) : undefined;", "Word packaging must use the newly compiled DOTM as its default OOXML shell");
 expect(!packager.includes('const existingWordShell = join(resourcesRoot, "VisualTeX.dotm")'), "Word packaging must not silently inherit document.xml and template metadata from the previously packaged DOTM");
-expectIncludes(packager, "powerpoint-office-performance-20260801-r4", "Packaging must reject a PowerPoint PPAM that lacks the current performance revision");
+expectIncludes(packager, "powerpoint-native-omml-edit-20260926-r1", "Packaging must reject a PowerPoint PPAM that lacks the current native OMML revision");
 expectIncludes(installer, "POWERPOINT_VBA_SOURCE_REVISION", "Installer validation must reject a stale PowerPoint PPAM without SVG point-size support");
 expectIncludes(installer, "Library/Application Scripts/com.microsoft.Word", "Installer must use Word's AppleScriptTask directory");
 expectIncludes(installer, "Library/Application Scripts/com.microsoft.Powerpoint", "Installer must use PowerPoint's AppleScriptTask directory");

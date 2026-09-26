@@ -271,7 +271,7 @@ Public Function VTRequestJson( _
             "Word image font-size metadata cannot be negative."
     End If
     If hostName <> "word" And _
-       (nativeEquation Or fontSizePt > 0# Or referenceWidthPt > 0# Or _
+       (fontSizePt > 0# Or referenceWidthPt > 0# Or _
         referenceHeightPt > 0#) Then
         Err.Raise vbObjectError + 7211, "VisualTeX", _
             "PowerPoint requests cannot contain Word-only formula metadata."

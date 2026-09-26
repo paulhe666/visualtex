@@ -28,7 +28,7 @@ const LEGACY_POWERPOINT_MANIFEST_ID: &str = "a6d13cf2-54e8-4dfa-a20c-15de864ab3c
 const WORD_VBA_ENTRY: &str = "word/vbaProject.bin";
 const POWERPOINT_VBA_ENTRY: &str = "ppt/vbaProject.bin";
 const WORD_VBA_SOURCE_REVISION: &str = "word-office-performance-20260801-r93";
-const POWERPOINT_VBA_SOURCE_REVISION: &str = "powerpoint-office-performance-20260801-r4";
+const POWERPOINT_VBA_SOURCE_REVISION: &str = "powerpoint-native-omml-edit-20260926-r1";
 const CUSTOM_UI_ENTRY: &str = "customUI/customUI14.xml";
 const CONTENT_TYPES_ENTRY: &str = "[Content_Types].xml";
 const CONTENT_TYPES_ZIP_PATTERN: &str = "\\[Content_Types\\].xml";
@@ -1087,6 +1087,17 @@ fn validate_compiled_addin(
             "VTOfficePaths",
             "VTPowerPointAdapter",
             "VTPowerPointEvents",
+            "VTPowerPointNativeMath",
+            "VTPowerPointNativeTarget",
+            "VisualTeX_NewInlineNativeEquation",
+            "VisualTeX_NewDisplayNativeEquation",
+            "VisualTeX_CopyNativeParagraphContext",
+            "VTDispatchPowerPointNativeEquation",
+            "VTTryResolveNativeMathZone",
+            "VisualTeX_CopyPowerPointNativeEditSource",
+            "VisualTeX_EditNativeAtScreenPoint",
+            "VTPowerPointRibbonInlineOmml",
+            "VTPowerPointRibbonDisplayOmml",
             "Auto_Open",
             "App_WindowBeforeDoubleClick",
             "App_WindowSelectionChange",

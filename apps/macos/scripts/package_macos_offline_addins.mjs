@@ -126,6 +126,7 @@ function validateMacroContainer(path, kind, options = {}) {
     "VTRibbonCallbacks",
     kind === "Word" ? "VTWordAdapter" : "VTPowerPointAdapter",
     kind === "Word" ? "VTWordEvents" : "VTPowerPointEvents",
+    ...(kind === "PowerPoint" ? ["VTPowerPointNativeTarget", "VTPowerPointNativeMath"] : []),
   ];
   if (requireModules) {
     const missing = expectedModules.filter((moduleName) => !containsModuleName(vbaProject, moduleName));
@@ -158,7 +159,16 @@ function validateMacroContainer(path, kind, options = {}) {
             "VTPrewarmApplication",
           ]
         : [
-            "powerpoint-office-performance-20260801-r4",
+            "powerpoint-native-omml-edit-20260926-r1",
+            "VTTryResolveNativeMathZone",
+            "VisualTeX_CopyPowerPointNativeEditSource",
+            "VisualTeX_EditNativeAtScreenPoint",
+            "VisualTeX_NewInlineNativeEquation",
+            "VisualTeX_NewDisplayNativeEquation",
+            "VisualTeX_CopyNativeParagraphContext",
+            "VTDispatchPowerPointNativeEquation",
+            "VTPowerPointRibbonInlineOmml",
+            "VTPowerPointRibbonDisplayOmml",
             "App_WindowSelectionChange",
             "VTPowerPointRibbonApplyFormulaFontSizePreset",
           ]),

@@ -162,11 +162,14 @@ function detectFormulaEnvironment(source: string): DetectedFormulaEnvironment | 
         source: replaceEnvironment(normalized, environment, "align*"),
       };
     case "aligned":
-      return { codeFormat: "aligned", source: normalized };
+      // The strict source parser's aligned format includes display delimiters.
+      // Native OMML imports legitimately supply the bare environment. Without
+      // completing that wrapper it falls back to ordinary-text interpretation.
+      return { codeFormat: "aligned", source: `\\[\n${normalized}\n\\]` };
     case "alignedat":
       return {
         codeFormat: "aligned",
-        source: replaceEnvironment(normalized, "alignedat", "aligned"),
+        source: `\\[\n${replaceEnvironment(normalized, "alignedat", "aligned")}\n\\]`,
       };
     case "gather":
       return { codeFormat: "gather", source: normalized };

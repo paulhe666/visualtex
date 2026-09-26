@@ -339,6 +339,10 @@ export function OfficeDialogApp() {
   const tauriResidentEditor = isMacosOfflineTauriTransport();
   const editorRef = useRef<MathEditorHandle>(null);
   const loadedSessionIdRef = useRef("");
+  const nativeOriginalFingerprintRef = useRef<{
+    sessionKey: string;
+    fingerprint: string;
+  } | null>(null);
   const skipAutosaveForSessionRef = useRef("");
   const lastSavedFingerprintRef = useRef("");
   const readyMessageSentRef = useRef(false);
@@ -626,7 +630,7 @@ export function OfficeDialogApp() {
     return {
       formulaLetterFont: normalizeFormulaLetterFont(
         session?.originalMetadata?.formulaLetterFont ??
-          (tauriResidentEditor ? undefined : session?.formulaLetterFont) ??
+          (tauriResidentEditor && !(session?.host === "powerpoint" && session?.nativeEquation && session?.mode === "edit") ? undefined : session?.formulaLetterFont) ??
           globalLetterFont,
       ),
       formulaChineseFont: normalizeFormulaChineseFont(
@@ -639,6 +643,9 @@ export function OfficeDialogApp() {
     sessionKey,
     session?.formulaChineseFont,
     session?.formulaLetterFont,
+    session?.host,
+    session?.nativeEquation,
+    session?.mode,
     session?.originalMetadata?.formulaChineseFont,
     session?.originalMetadata?.formulaLetterFont,
     tauriResidentEditor,
@@ -664,6 +671,7 @@ export function OfficeDialogApp() {
     const fallbackFontSizePt = session.host === "word" ? 11 : 18;
     const originalFontSizePt =
       session.host === "powerpoint" &&
+      !(session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:")) &&
       session.mode === "create" &&
       session.status === "created" &&
       !session.dirty
@@ -672,7 +680,7 @@ export function OfficeDialogApp() {
             session.originalMetadata?.fontSizePt ?? session.fontSizePt,
             fallbackFontSizePt,
           );
-    return documentFingerprint(
+    const fingerprint = documentFingerprint(
       session.originalMetadata?.title ?? session.title,
       editableOriginalDocument.lines,
       editableOriginalDocument.codeFormat,
@@ -682,12 +690,23 @@ export function OfficeDialogApp() {
       resolvedSessionFormulaFonts.formulaLetterFont,
       resolvedSessionFormulaFonts.formulaChineseFont,
     );
+    // Native PowerPoint equations have no stored VisualTeX metadata. The
+    // Session's lines are autosaved drafts, so they cannot remain the baseline
+    // after the first keystroke. Keep the imported Office source for this
+    // editor activation instead of comparing the draft with itself.
+    if (session.host === "powerpoint" && session.nativeEquation &&
+        session.mode === "edit" && !session.originalMetadata &&
+        nativeOriginalFingerprintRef.current?.sessionKey === sessionKey) {
+      return nativeOriginalFingerprintRef.current.fingerprint;
+    }
+    return fingerprint;
   }, [
     editableOriginalDocument,
     powerPointDefaultFontSizePt,
     resolvedSessionFormulaFonts.formulaChineseFont,
     resolvedSessionFormulaFonts.formulaLetterFont,
     session,
+    sessionKey,
   ]);
 
   const currentFingerprint = useMemo(
@@ -772,6 +791,7 @@ export function OfficeDialogApp() {
     );
     const loadedFontSizePt =
       session.host === "powerpoint" &&
+      !(session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:")) &&
       session.mode === "create" &&
       session.status === "created" &&
       !session.dirty
@@ -791,6 +811,13 @@ export function OfficeDialogApp() {
       resolvedSessionFormulaFonts.formulaChineseFont,
     );
     lastSavedFingerprintRef.current = loadedFingerprint;
+    if (session.host === "powerpoint" && session.nativeEquation &&
+        session.mode === "edit" && !session.originalMetadata) {
+      nativeOriginalFingerprintRef.current = {
+        sessionKey,
+        fingerprint: loadedFingerprint,
+      };
+    }
     latestCompleteExportRef.current = session.exportResult?.pngBase64
       ? { fingerprint: loadedFingerprint, exportResult: session.exportResult }
       : null;
@@ -1108,7 +1135,7 @@ export function OfficeDialogApp() {
         displayMode,
         host: session?.host,
         fontSizePt: officeFontSizePt,
-        includeWordOmml: session?.host === "word",
+        includeWordOmml: session?.host === "word" || session?.nativeEquation === true,
         numbered:
           session?.host === "word" &&
           displayMode === "block" &&
@@ -1123,6 +1150,7 @@ export function OfficeDialogApp() {
     lines,
     latexCodeFormat,
     session?.host,
+    session?.nativeEquation,
     officeFontSizePt,
     session?.numbered,
     formulaLetterFont,
@@ -1137,7 +1165,7 @@ export function OfficeDialogApp() {
       displayMode,
       host: session?.host,
         fontSizePt: officeFontSizePt,
-      includeWordOmml: session?.host === "word",
+      includeWordOmml: session?.host === "word" || session?.nativeEquation === true,
       numbered:
         session?.host === "word" &&
         displayMode === "block" &&
@@ -1152,6 +1180,7 @@ export function OfficeDialogApp() {
     lines,
     latexCodeFormat,
     session?.host,
+    session?.nativeEquation,
     officeFontSizePt,
     session?.numbered,
     formulaLetterFont,
@@ -2026,11 +2055,11 @@ export function OfficeDialogApp() {
   const editorAvailable = Boolean(session && sessionHydrated);
   const officeHeaderLeadingControls = editorAvailable && session ? (
     <>
-      {session.host === "word" ? (
+      {session.host === "word" || session.nativeEquation ? (
         <div
           className="office-display-mode-setting"
           role="group"
-          aria-label={isEn ? "Word formula layout" : "Word 公式排版"}
+          aria-label={isEn ? "Native formula layout" : "原生公式排版"}
         >
           <button
             type="button"
@@ -2048,7 +2077,7 @@ export function OfficeDialogApp() {
             className={displayMode === "block" ? "is-active" : ""}
             onClick={() => {
               setDisplayMode("block");
-              if (session.mode === "create") {
+              if (session.host === "word" && session.mode === "create") {
                 setNumbered(
                   readOfficeWordCreateNumberedPreference(
                     Boolean(session.numbered),
@@ -2078,6 +2107,8 @@ export function OfficeDialogApp() {
         <select
           value={officeFontSizePt}
           data-office-font-size
+          disabled={Boolean(session.host === "powerpoint" && session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:"))}
+          title={session.host === "powerpoint" && session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:") ? (isEn ? "Inherited from the PowerPoint text insertion position" : "使用 PowerPoint 文本插入位置的字号") : undefined}
           aria-label={isEn ? "Formula font size" : "公式字号"}
           onChange={(event) => {
             const nextFontSizePt = normalizeOfficeFontSizePt(
