@@ -9120,12 +9120,45 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   gap: 7px;
 }
 
-.word-formula-shortcut-list {
+.office-formula-shortcut-hosts {
+  display: grid;
+  gap: 12px;
+}
+
+.office-formula-shortcut-host {
+  display: grid;
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-elevated) 62%, transparent);
+}
+
+.office-formula-shortcut-host-header {
+  display: grid;
+  gap: 2px;
+  padding: 0 2px;
+}
+
+.office-formula-shortcut-host-header strong,
+.office-formula-editor-hotkeys strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.office-formula-shortcut-host-header small,
+.office-formula-editor-hotkeys small {
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.office-formula-shortcut-list {
   display: grid;
   gap: 8px;
 }
 
-.word-formula-shortcut-row {
+.office-formula-shortcut-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 132px 66px 100px;
   align-items: center;
@@ -9137,26 +9170,26 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   background: var(--bg-elevated);
 }
 
-.word-formula-shortcut-copy {
+.office-formula-shortcut-copy {
   display: grid;
   gap: 3px;
   min-width: 0;
 }
 
-.word-formula-shortcut-copy strong {
+.office-formula-shortcut-copy strong {
   color: var(--text);
   font-size: 10px;
 }
 
-.word-formula-shortcut-copy small,
-.word-formula-shortcut-help,
-.word-formula-format-select span {
+.office-formula-shortcut-copy small,
+.office-formula-shortcut-help,
+.office-formula-format-select span {
   color: var(--text-faint);
   font-size: 8px;
 }
 
-.word-formula-shortcut-capture,
-.word-formula-shortcut-clear {
+.office-formula-shortcut-capture,
+.office-formula-shortcut-clear {
   min-width: 0;
   height: 32px;
   border: 1px solid var(--border-strong);
@@ -9166,20 +9199,20 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   cursor: pointer;
 }
 
-.word-formula-shortcut-capture kbd {
+.office-formula-shortcut-capture kbd {
   font: inherit;
   font-size: 9px;
   font-weight: 700;
   white-space: nowrap;
 }
 
-.word-formula-shortcut-capture.is-capturing {
+.office-formula-shortcut-capture.is-capturing {
   border-color: var(--accent);
   color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
-.word-formula-shortcut-clear {
+.office-formula-shortcut-clear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -9187,17 +9220,17 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   font-size: 9px;
 }
 
-.word-formula-shortcut-clear:disabled {
+.office-formula-shortcut-clear:disabled {
   opacity: 0.42;
   cursor: default;
 }
 
-.word-formula-format-select {
+.office-formula-format-select {
   display: grid;
   gap: 3px;
 }
 
-.word-formula-format-select select {
+.office-formula-format-select select {
   width: 100%;
   height: 32px;
   padding: 0 7px;
@@ -9210,19 +9243,38 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   font-size: 9px;
 }
 
-.word-formula-shortcut-help {
+.office-formula-shortcut-help {
   min-height: 13px;
   margin: 7px 2px 0;
   line-height: 1.5;
 }
 
+.office-formula-editor-hotkeys {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.office-formula-editor-hotkeys > div {
+  display: grid;
+  gap: 3px;
+}
+
 @media (max-width: 620px) {
-  .word-formula-shortcut-row {
+  .office-formula-shortcut-row {
     grid-template-columns: minmax(0, 1fr) 118px 62px;
   }
 
-  .word-formula-format-select {
+  .office-formula-format-select {
     grid-column: 2 / -1;
+  }
+
+  .office-formula-editor-hotkeys {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

@@ -23,6 +23,10 @@ const WORD_INLINE_FORMULA_SHORTCUT_VALUE: &str = "WordInlineFormulaShortcut";
 const WORD_INLINE_FORMULA_FORMAT_VALUE: &str = "WordInlineFormulaFormat";
 const WORD_DISPLAY_FORMULA_SHORTCUT_VALUE: &str = "WordDisplayFormulaShortcut";
 const WORD_DISPLAY_FORMULA_FORMAT_VALUE: &str = "WordDisplayFormulaFormat";
+const POWERPOINT_INLINE_FORMULA_SHORTCUT_VALUE: &str = "PowerPointInlineFormulaShortcut";
+const POWERPOINT_INLINE_FORMULA_FORMAT_VALUE: &str = "PowerPointInlineFormulaFormat";
+const POWERPOINT_DISPLAY_FORMULA_SHORTCUT_VALUE: &str = "PowerPointDisplayFormulaShortcut";
+const POWERPOINT_DISPLAY_FORMULA_FORMAT_VALUE: &str = "PowerPointDisplayFormulaFormat";
 const WORD_USER_PREFERENCES_KEY: &str = r"HKCU\Software\VisualTeX\Word";
 const WORD_DEFAULT_NUMBERED_VALUE: &str = "DefaultDisplayEquationNumbered";
 const WORD_DEFAULT_NUMBER_FORMAT_VALUE: &str = "DefaultEquationNumberFormat";
@@ -292,56 +296,77 @@ pub(crate) fn set_app_editor_language(language: &str) -> Result<(), String> {
     registry_set_string(OFFICE_MODE_KEY, APP_LANGUAGE_VALUE, normalized)
 }
 
-pub(crate) fn set_word_formula_shortcuts(
+pub(crate) fn set_office_formula_shortcuts(
+    host: &str,
     inline_shortcut: Option<&str>,
     inline_format: &str,
     display_shortcut: Option<&str>,
     display_format: &str,
 ) -> Result<(), String> {
-    let inline_shortcut = normalize_word_formula_shortcut(inline_shortcut)?;
-    let display_shortcut = normalize_word_formula_shortcut(display_shortcut)?;
+    let (host_label, inline_shortcut_value, inline_format_value, display_shortcut_value, display_format_value) =
+        match host {
+            "word" => (
+                "Word",
+                WORD_INLINE_FORMULA_SHORTCUT_VALUE,
+                WORD_INLINE_FORMULA_FORMAT_VALUE,
+                WORD_DISPLAY_FORMULA_SHORTCUT_VALUE,
+                WORD_DISPLAY_FORMULA_FORMAT_VALUE,
+            ),
+            "powerPoint" => (
+                "PowerPoint",
+                POWERPOINT_INLINE_FORMULA_SHORTCUT_VALUE,
+                POWERPOINT_INLINE_FORMULA_FORMAT_VALUE,
+                POWERPOINT_DISPLAY_FORMULA_SHORTCUT_VALUE,
+                POWERPOINT_DISPLAY_FORMULA_FORMAT_VALUE,
+            ),
+            _ => return Err(format!("Unsupported Office shortcut host: {host}")),
+        };
+    let inline_shortcut = normalize_office_formula_shortcut(inline_shortcut)?;
+    let display_shortcut = normalize_office_formula_shortcut(display_shortcut)?;
     if !inline_shortcut.is_empty() && inline_shortcut == display_shortcut {
-        return Err("The inline and display Word formula shortcuts must be different".to_string());
+        return Err(format!(
+            "The inline and display {host_label} formula shortcuts must be different"
+        ));
     }
-    let inline_format = normalize_word_formula_format(inline_format)?;
-    let display_format = normalize_word_formula_format(display_format)?;
+    let inline_format = normalize_office_formula_format(inline_format)?;
+    let display_format = normalize_office_formula_format(display_format)?;
     registry_set_string(
         OFFICE_MODE_KEY,
-        WORD_INLINE_FORMULA_SHORTCUT_VALUE,
+        inline_shortcut_value,
         &inline_shortcut,
     )?;
     registry_set_string(
         OFFICE_MODE_KEY,
-        WORD_INLINE_FORMULA_FORMAT_VALUE,
+        inline_format_value,
         inline_format,
     )?;
     registry_set_string(
         OFFICE_MODE_KEY,
-        WORD_DISPLAY_FORMULA_SHORTCUT_VALUE,
+        display_shortcut_value,
         &display_shortcut,
     )?;
     registry_set_string(
         OFFICE_MODE_KEY,
-        WORD_DISPLAY_FORMULA_FORMAT_VALUE,
+        display_format_value,
         display_format,
     )
 }
 
-fn normalize_word_formula_format(value: &str) -> Result<&'static str, String> {
+fn normalize_office_formula_format(value: &str) -> Result<&'static str, String> {
     match value.trim().to_ascii_lowercase().as_str() {
         "ole" => Ok("ole"),
         "omml" => Ok("omml"),
-        _ => Err(format!("Unsupported Word formula format: {value}")),
+        _ => Err(format!("Unsupported Office formula format: {value}")),
     }
 }
 
-fn normalize_word_formula_shortcut(value: Option<&str>) -> Result<String, String> {
+fn normalize_office_formula_shortcut(value: Option<&str>) -> Result<String, String> {
     let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(String::new());
     };
     let parts = value.split('+').collect::<Vec<_>>();
     let Some(key) = parts.last() else {
-        return Err("Word formula shortcut is empty".to_string());
+        return Err("Office formula shortcut is empty".to_string());
     };
     let mut ctrl = false;
     let mut alt = false;
@@ -351,11 +376,11 @@ fn normalize_word_formula_shortcut(value: Option<&str>) -> Result<String, String
             "ctrl" if !ctrl => ctrl = true,
             "alt" if !alt => alt = true,
             "shift" if !shift => shift = true,
-            _ => return Err(format!("Unsupported Word formula shortcut: {value}")),
+            _ => return Err(format!("Unsupported Office formula shortcut: {value}")),
         }
     }
     if !ctrl && !alt {
-        return Err("Word formula shortcuts must include Ctrl or Alt".to_string());
+        return Err("Office formula shortcuts must include Ctrl or Alt".to_string());
     }
     let key = key.trim().to_ascii_uppercase();
     let valid_key = (key.len() == 1
@@ -367,7 +392,7 @@ fn normalize_word_formula_shortcut(value: Option<&str>) -> Result<String, String
             .and_then(|number| number.parse::<u8>().ok())
             .is_some_and(|number| (1..=24).contains(&number));
     if !valid_key {
-        return Err(format!("Unsupported Word formula shortcut key: {key}"));
+        return Err(format!("Unsupported Office formula shortcut key: {key}"));
     }
     let normalized = [
         ctrl.then_some("Ctrl"),

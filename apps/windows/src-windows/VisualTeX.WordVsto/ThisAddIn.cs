@@ -334,7 +334,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private VisualTeXSessionClient? _sessionClient;
     private WordDoubleClickHook? _doubleClickHook;
     private WordCopyPasteHook? _copyPasteHook;
-    private WordKeyboardHook? _keyboardHook;
+    private OfficeFormulaShortcutKeyboardHook? _keyboardHook;
     private WordDeleteKeyHook? _deleteKeyHook;
     private readonly object _copyPasteGate = new();
     private WordFormulaService.WordFormulaCopySnapshot? _formulaCopySnapshot;
@@ -490,9 +490,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         try
         {
-            _keyboardHook = new WordKeyboardHook(
+            _keyboardHook = new OfficeFormulaShortcutKeyboardHook(
+                OfficeFormulaShortcutHost.Word,
+                OnWordFormulaShortcut,
                 OnWordPasteKeyGesture,
-                OnWordFormulaShortcut);
+                WordDoubleClickHook.TraceMessage);
             Window? ownerWindow = null;
             try
             {
@@ -610,17 +612,17 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         BeginSession("create", "inline", FormulaOleContract.WordOmmlMode);
     public void OnInsertDisplayOmml(object control) =>
         BeginSession("create", "block", FormulaOleContract.WordOmmlMode);
-    private void OnWordFormulaShortcut(WordFormulaShortcutCommand command)
+    private void OnWordFormulaShortcut(OfficeFormulaShortcutCommand command)
     {
-        if (command.Kind == WordFormulaShortcutKind.Inline)
+        if (command.Kind == OfficeFormulaShortcutKind.Inline)
         {
-            if (command.Format == WordFormulaShortcutFormat.Omml)
+            if (command.Format == OfficeFormulaShortcutFormat.Omml)
                 OnInsertInlineOmml(this);
             else
                 OnInsertInline(this);
             return;
         }
-        if (command.Format == WordFormulaShortcutFormat.Omml)
+        if (command.Format == OfficeFormulaShortcutFormat.Omml)
             OnInsertDisplayOmml(this);
         else
             OnInsertDisplay(this);

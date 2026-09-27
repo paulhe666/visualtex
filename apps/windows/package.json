@@ -30,7 +30,7 @@
     "test:editor-history": "npm run build && npm run test:editor-history:run",
     "test:input-behavior": "npm run build:desktop && node scripts/input_behavior_regression.mjs",
     "test:formula-hotkeys": "npm run build:desktop && node scripts/formula_hotkey_regression.mjs",
-    "test:word-formula-shortcuts": "tsx scripts/word_formula_shortcut_regression.mts",
+    "test:office-formula-shortcuts": "tsx scripts/office_formula_shortcut_regression.mts",
     "test:mathlive-contour-bm": "npm run build:desktop && node scripts/mathlive_contour_bm_regression.mjs",
     "test:mathlive-runtime-safety:run": "tsx scripts/mathlive_runtime_safety_patch_regression.mts && tsx scripts/mathlive_option_guard_regression.mts && tsx scripts/mathlive_source_safety_regression.mts && tsx scripts/editor_crash_recovery_regression.mts && node scripts/mathlive_runtime_safety_browser_regression.mjs",
     "test:mathlive-runtime-safety": "npm run build:desktop && npm run test:mathlive-runtime-safety:run",

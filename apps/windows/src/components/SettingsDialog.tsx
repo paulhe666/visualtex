@@ -13,7 +13,6 @@ import {
   ChevronRight,
   Download,
   Eye,
-  Keyboard,
   Languages,
   Presentation,
   RefreshCw,
@@ -43,7 +42,7 @@ import {
 } from "../stores/editorStore";
 import { MathPreview } from "./MathPreview";
 import { OfficeIntegrationSettings } from "./OfficeIntegrationSettings";
-import { WordFormulaShortcutSettingsSection } from "./WordFormulaShortcutSettings";
+import { OfficeFormulaShortcutSettingsSection } from "./OfficeFormulaShortcutSettings";
 import { pngExportBackgroundPickerValue } from "../export/pngBackground";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
@@ -574,24 +573,9 @@ export function SettingsDialog({
             </button>
           </div>
 
-          <WordFormulaShortcutSettingsSection />
-
-          <div className="settings-section">
-            <div className="settings-section-title">
-              <Keyboard size={18} />
-              <div>
-                <h3>{isEn ? "Formula hotkeys" : "公式快捷键"}</h3>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="secondary-button settings-hotkey-button"
-              onClick={onOpenFormulaHotkeys}
-            >
-              <Keyboard size={15} />
-              {isEn ? "Manage formula hotkeys" : "管理公式快捷键"}
-            </button>
-          </div>
+          <OfficeFormulaShortcutSettingsSection
+            onOpenFormulaHotkeys={onOpenFormulaHotkeys}
+          />
 
           <div className="settings-section">
             <div className="settings-section-title">

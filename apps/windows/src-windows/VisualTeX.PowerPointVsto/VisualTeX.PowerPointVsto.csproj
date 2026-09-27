@@ -17,6 +17,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficePluginLanguage.cs" Link="OfficePluginLanguage.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeFormulaShortcutKeyboardHook.cs" Link="OfficeFormulaShortcutKeyboardHook.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\VstoDependencyResolver.cs" Link="VstoDependencyResolver.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeOlePreview.cs" Link="OfficeOlePreview.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonIconData.cs" Link="RibbonIconData.cs" />

@@ -385,28 +385,47 @@ pub fn set_app_editor_preferences(
             )?;
         }
 
-        let shortcuts = preferences.pointer("/settings/wordFormulaShortcuts");
-        if let Some(shortcuts) = shortcuts.filter(|value| value.is_object()) {
-            if previous.pointer("/settings/wordFormulaShortcuts") != Some(shortcuts) {
+        for (host, pointer, host_label) in [
+            ("word", "/settings/wordFormulaShortcuts", "Word"),
+            (
+                "powerPoint",
+                "/settings/powerPointFormulaShortcuts",
+                "PowerPoint",
+            ),
+        ] {
+            let shortcuts = preferences.pointer(pointer);
+            if let Some(shortcuts) = shortcuts.filter(|value| value.is_object()) {
+                if previous.pointer(pointer) == Some(shortcuts) {
+                    continue;
+                }
                 let inline = shortcuts
                     .pointer("/inline")
-                    .ok_or_else(|| "Missing inline Word formula shortcut setting".to_string())?;
+                    .ok_or_else(|| {
+                        format!("Missing inline {host_label} formula shortcut setting")
+                    })?;
                 let display = shortcuts
                     .pointer("/display")
-                    .ok_or_else(|| "Missing display Word formula shortcut setting".to_string())?;
-                crate::office::windows_backend::set_word_formula_shortcuts(
+                    .ok_or_else(|| {
+                        format!("Missing display {host_label} formula shortcut setting")
+                    })?;
+                crate::office::windows_backend::set_office_formula_shortcuts(
+                    host,
                     inline.pointer("/shortcut").and_then(serde_json::Value::as_str),
                     inline
                         .pointer("/format")
                         .and_then(serde_json::Value::as_str)
-                        .ok_or_else(|| "Missing inline Word formula format".to_string())?,
+                        .ok_or_else(|| {
+                            format!("Missing inline {host_label} formula format")
+                        })?,
                     display
                         .pointer("/shortcut")
                         .and_then(serde_json::Value::as_str),
                     display
                         .pointer("/format")
                         .and_then(serde_json::Value::as_str)
-                        .ok_or_else(|| "Missing display Word formula format".to_string())?,
+                        .ok_or_else(|| {
+                            format!("Missing display {host_label} formula format")
+                        })?,
                 )?;
             }
         }

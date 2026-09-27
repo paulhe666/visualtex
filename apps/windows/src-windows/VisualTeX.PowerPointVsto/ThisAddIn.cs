@@ -157,6 +157,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private OfficeUiDispatcher? _dispatcher;
     private VisualTeXSessionClient? _sessionClient;
     private PowerPointDoubleClickHook? _doubleClickHook;
+    private OfficeFormulaShortcutKeyboardHook? _keyboardHook;
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private CancellationTokenSource? _lifetime;
     private string _lastDoubleClickFormulaId = string.Empty;
@@ -207,9 +208,26 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _doubleClickHook = null;
             doubleClickError = error.Message;
         }
-        SetStatus(doubleClickError is null
-            ? "VisualTeX PowerPoint VSTO 已就绪。"
-            : $"VisualTeX 已就绪，但双击监听不可用：{doubleClickError}");
+        string? keyboardError = null;
+        try
+        {
+            _keyboardHook = new OfficeFormulaShortcutKeyboardHook(
+                OfficeFormulaShortcutHost.PowerPoint,
+                OnPowerPointFormulaShortcut);
+            try { _keyboardHook.BindOwnerWindow(_application.HWND); } catch { }
+            _keyboardHook.Start();
+        }
+        catch (Exception error)
+        {
+            try { _keyboardHook?.Dispose(); } catch { }
+            _keyboardHook = null;
+            keyboardError = error.Message;
+        }
+        SetStatus(doubleClickError is not null
+            ? $"VisualTeX 已就绪，但双击监听不可用：{doubleClickError}"
+            : keyboardError is not null
+                ? $"VisualTeX 已就绪，但公式快捷键不可用：{keyboardError}"
+                : "VisualTeX PowerPoint VSTO 已就绪。");
     }
 
     public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom) => Dispose();
@@ -285,6 +303,25 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         BeginOmmlTextInsertion("inline");
     public void OnInsertDisplayOmml(object control) =>
         BeginOmmlTextInsertion("block");
+    private void OnPowerPointFormulaShortcut(OfficeFormulaShortcutCommand command)
+    {
+        var displayMode = command.Kind == OfficeFormulaShortcutKind.Inline
+            ? "inline"
+            : "block";
+        if (command.Format == OfficeFormulaShortcutFormat.Omml)
+        {
+            if (command.Kind == OfficeFormulaShortcutKind.Inline)
+                OnInsertInlineOmml(this);
+            else
+                OnInsertDisplayOmml(this);
+            return;
+        }
+        BeginSession(
+            "create",
+            "nativeOle",
+            null,
+            requestedDisplayMode: displayMode);
+    }
     public void OnEditSelected(object control) => BeginSelectedSession(null);
     public void OnConvertSelectedOmml(object control) =>
         BeginSelectedSession("wordOmml", conversionOnly: true);
@@ -936,11 +973,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             try { _application.PresentationBeforeClose -= OnPresentationBeforeClose; } catch { }
         }
         _doubleClickHook?.Dispose();
+        _keyboardHook?.Dispose();
         _sessionClient?.Dispose();
         try { _formulaService?.Dispose(); } catch { }
         _dispatcher?.Dispose();
         _lifetime?.Dispose();
         _doubleClickHook = null;
+        _keyboardHook = null;
         _sessionClient = null;
         _dispatcher = null;
         _formulaService = null;

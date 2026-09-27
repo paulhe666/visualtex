@@ -2,37 +2,43 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
-namespace VisualTeX.WordVsto;
+namespace VisualTeX.WindowsOffice.VstoShared;
 
-internal enum WordFormulaShortcutKind
+internal enum OfficeFormulaShortcutHost
+{
+    Word,
+    PowerPoint,
+}
+
+internal enum OfficeFormulaShortcutKind
 {
     Inline,
     Display,
 }
 
-internal enum WordFormulaShortcutFormat
+internal enum OfficeFormulaShortcutFormat
 {
     Ole,
     Omml,
 }
 
-internal readonly struct WordFormulaShortcutCommand
+internal readonly struct OfficeFormulaShortcutCommand
 {
-    internal WordFormulaShortcutCommand(
-        WordFormulaShortcutKind kind,
-        WordFormulaShortcutFormat format)
+    internal OfficeFormulaShortcutCommand(
+        OfficeFormulaShortcutKind kind,
+        OfficeFormulaShortcutFormat format)
     {
         Kind = kind;
         Format = format;
     }
 
-    internal WordFormulaShortcutKind Kind { get; }
-    internal WordFormulaShortcutFormat Format { get; }
+    internal OfficeFormulaShortcutKind Kind { get; }
+    internal OfficeFormulaShortcutFormat Format { get; }
 }
 
-internal readonly struct WordFormulaShortcut : IEquatable<WordFormulaShortcut>
+internal readonly struct OfficeFormulaShortcut : IEquatable<OfficeFormulaShortcut>
 {
-    internal WordFormulaShortcut(uint virtualKey, bool ctrl, bool alt, bool shift)
+    internal OfficeFormulaShortcut(uint virtualKey, bool ctrl, bool alt, bool shift)
     {
         VirtualKey = virtualKey;
         Ctrl = ctrl;
@@ -48,26 +54,26 @@ internal readonly struct WordFormulaShortcut : IEquatable<WordFormulaShortcut>
     internal bool Matches(uint virtualKey, bool ctrl, bool alt, bool shift) =>
         VirtualKey == virtualKey && Ctrl == ctrl && Alt == alt && Shift == shift;
 
-    public bool Equals(WordFormulaShortcut other) =>
+    public bool Equals(OfficeFormulaShortcut other) =>
         VirtualKey == other.VirtualKey
         && Ctrl == other.Ctrl
         && Alt == other.Alt
         && Shift == other.Shift;
 
     public override bool Equals(object? value) =>
-        value is WordFormulaShortcut other && Equals(other);
+        value is OfficeFormulaShortcut other && Equals(other);
 
     public override int GetHashCode() =>
         (((int)VirtualKey * 397 ^ Ctrl.GetHashCode()) * 397 ^ Alt.GetHashCode())
         * 397 ^ Shift.GetHashCode();
 
-    public static bool operator ==(WordFormulaShortcut left, WordFormulaShortcut right) =>
+    public static bool operator ==(OfficeFormulaShortcut left, OfficeFormulaShortcut right) =>
         left.Equals(right);
 
-    public static bool operator !=(WordFormulaShortcut left, WordFormulaShortcut right) =>
+    public static bool operator !=(OfficeFormulaShortcut left, OfficeFormulaShortcut right) =>
         !left.Equals(right);
 
-    internal static bool TryParse(string? value, out WordFormulaShortcut shortcut)
+    internal static bool TryParse(string? value, out OfficeFormulaShortcut shortcut)
     {
         shortcut = default;
         if (string.IsNullOrWhiteSpace(value)) return false;
@@ -90,7 +96,7 @@ internal readonly struct WordFormulaShortcut : IEquatable<WordFormulaShortcut>
         if (!TryParseVirtualKey(parts[parts.Length - 1].Trim(), out var virtualKey))
             return false;
         if (ctrl && alt && !shift && virtualKey == 0x4F) return false;
-        shortcut = new WordFormulaShortcut(virtualKey, ctrl, alt, shift);
+        shortcut = new OfficeFormulaShortcut(virtualKey, ctrl, alt, shift);
         return true;
     }
 
@@ -119,15 +125,15 @@ internal readonly struct WordFormulaShortcut : IEquatable<WordFormulaShortcut>
     }
 }
 
-internal sealed class WordFormulaShortcutConfiguration
+internal sealed class OfficeFormulaShortcutConfiguration
 {
     private const string RegistryPath = @"Software\VisualTeX\OfficeIntegration";
 
-    private WordFormulaShortcutConfiguration(
-        WordFormulaShortcut? inline,
-        WordFormulaShortcutFormat inlineFormat,
-        WordFormulaShortcut? display,
-        WordFormulaShortcutFormat displayFormat)
+    private OfficeFormulaShortcutConfiguration(
+        OfficeFormulaShortcut? inline,
+        OfficeFormulaShortcutFormat inlineFormat,
+        OfficeFormulaShortcut? display,
+        OfficeFormulaShortcutFormat displayFormat)
     {
         Inline = inline;
         InlineFormat = inlineFormat;
@@ -135,13 +141,17 @@ internal sealed class WordFormulaShortcutConfiguration
         DisplayFormat = displayFormat;
     }
 
-    internal WordFormulaShortcut? Inline { get; }
-    internal WordFormulaShortcutFormat InlineFormat { get; }
-    internal WordFormulaShortcut? Display { get; }
-    internal WordFormulaShortcutFormat DisplayFormat { get; }
+    internal OfficeFormulaShortcut? Inline { get; }
+    internal OfficeFormulaShortcutFormat InlineFormat { get; }
+    internal OfficeFormulaShortcut? Display { get; }
+    internal OfficeFormulaShortcutFormat DisplayFormat { get; }
 
-    internal static WordFormulaShortcutConfiguration Read()
+    internal static OfficeFormulaShortcutConfiguration Read(
+        OfficeFormulaShortcutHost host)
     {
+        var valuePrefix = host == OfficeFormulaShortcutHost.Word
+            ? "Word"
+            : "PowerPoint";
         var views = Environment.Is64BitOperatingSystem
             ? new[] { RegistryView.Registry64, RegistryView.Registry32 }
             : new[] { RegistryView.Default };
@@ -152,50 +162,50 @@ internal sealed class WordFormulaShortcutConfiguration
                 using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, view);
                 using var key = root.OpenSubKey(RegistryPath, writable: false);
                 if (key is null) continue;
-                var inlineValue = ReadString(key, "WordInlineFormulaShortcut");
-                var displayValue = ReadString(key, "WordDisplayFormulaShortcut");
+                var inlineValue = ReadString(key, valuePrefix + "InlineFormulaShortcut");
+                var displayValue = ReadString(key, valuePrefix + "DisplayFormulaShortcut");
                 if (inlineValue is null && displayValue is null) continue;
-                WordFormulaShortcut? inline =
-                    WordFormulaShortcut.TryParse(inlineValue, out var inlineShortcut)
+                OfficeFormulaShortcut? inline =
+                    OfficeFormulaShortcut.TryParse(inlineValue, out var inlineShortcut)
                         ? inlineShortcut
                         : null;
-                WordFormulaShortcut? display =
-                    WordFormulaShortcut.TryParse(displayValue, out var displayShortcut)
+                OfficeFormulaShortcut? display =
+                    OfficeFormulaShortcut.TryParse(displayValue, out var displayShortcut)
                         ? displayShortcut
                         : null;
                 if (inline.HasValue && display.HasValue && inline.Value == display.Value)
                     display = null;
-                return new WordFormulaShortcutConfiguration(
+                return new OfficeFormulaShortcutConfiguration(
                     inline,
-                    ReadFormat(ReadString(key, "WordInlineFormulaFormat")),
+                    ReadFormat(ReadString(key, valuePrefix + "InlineFormulaFormat")),
                     display,
-                    ReadFormat(ReadString(key, "WordDisplayFormulaFormat")));
+                    ReadFormat(ReadString(key, valuePrefix + "DisplayFormulaFormat")));
             }
             catch
             {
                 // Missing or inaccessible settings mean the shortcuts are disabled.
             }
         }
-        return new WordFormulaShortcutConfiguration(
+        return new OfficeFormulaShortcutConfiguration(
             null,
-            WordFormulaShortcutFormat.Ole,
+            OfficeFormulaShortcutFormat.Ole,
             null,
-            WordFormulaShortcutFormat.Ole);
+            OfficeFormulaShortcutFormat.Ole);
     }
 
-    internal WordFormulaShortcutCommand? Match(
+    internal OfficeFormulaShortcutCommand? Match(
         uint virtualKey,
         bool ctrl,
         bool alt,
         bool shift)
     {
         if (Inline?.Matches(virtualKey, ctrl, alt, shift) == true)
-            return new WordFormulaShortcutCommand(
-                WordFormulaShortcutKind.Inline,
+            return new OfficeFormulaShortcutCommand(
+                OfficeFormulaShortcutKind.Inline,
                 InlineFormat);
         if (Display?.Matches(virtualKey, ctrl, alt, shift) == true)
-            return new WordFormulaShortcutCommand(
-                WordFormulaShortcutKind.Display,
+            return new OfficeFormulaShortcutCommand(
+                OfficeFormulaShortcutKind.Display,
                 DisplayFormat);
         return null;
     }
@@ -203,18 +213,20 @@ internal sealed class WordFormulaShortcutConfiguration
     private static string? ReadString(RegistryKey key, string name) =>
         key.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
 
-    private static WordFormulaShortcutFormat ReadFormat(string? value) =>
+    private static OfficeFormulaShortcutFormat ReadFormat(string? value) =>
         string.Equals(value, "omml", StringComparison.OrdinalIgnoreCase)
-            ? WordFormulaShortcutFormat.Omml
-            : WordFormulaShortcutFormat.Ole;
+            ? OfficeFormulaShortcutFormat.Omml
+            : OfficeFormulaShortcutFormat.Ole;
 }
 
 /// <summary>
-/// Routes Word UI-thread keyboard gestures through one native hook. Configured
-/// formula shortcuts are consumed; native paste is only observed before Word
-/// handles it so VisualTeX can open the matching custom undo record.
+/// Routes configured formula gestures on one Office UI thread. Word can also
+/// observe paste through the same hook; PowerPoint leaves that optional callback
+/// unset. Each host reads only its own registry values, so identical gestures can
+/// safely be assigned across Word and PowerPoint while duplicates inside one host
+/// remain impossible.
 /// </summary>
-internal sealed class WordKeyboardHook : IDisposable
+internal sealed class OfficeFormulaShortcutKeyboardHook : IDisposable
 {
     private const int WhKeyboard = 2;
     private const uint VkV = 0x56;
@@ -225,19 +237,26 @@ internal sealed class WordKeyboardHook : IDisposable
     private const int VkLeftWindows = 0x5B;
     private const int VkRightWindows = 0x5C;
 
-    private readonly Action _pasteCallback;
-    private readonly Action<WordFormulaShortcutCommand> _formulaCallback;
+    private readonly OfficeFormulaShortcutHost _host;
+    private readonly Action<OfficeFormulaShortcutCommand> _formulaCallback;
+    private readonly Action? _pasteCallback;
+    private readonly Action<string>? _trace;
     private HookProc? _hookCallback;
     private IntPtr _hook;
     private uint _ownerThreadId;
     private int _ownerProcessId;
 
-    internal WordKeyboardHook(
-        Action pasteCallback,
-        Action<WordFormulaShortcutCommand> formulaCallback)
+    internal OfficeFormulaShortcutKeyboardHook(
+        OfficeFormulaShortcutHost host,
+        Action<OfficeFormulaShortcutCommand> formulaCallback,
+        Action? pasteCallback = null,
+        Action<string>? trace = null)
     {
-        _pasteCallback = pasteCallback ?? throw new ArgumentNullException(nameof(pasteCallback));
-        _formulaCallback = formulaCallback ?? throw new ArgumentNullException(nameof(formulaCallback));
+        _host = host;
+        _formulaCallback = formulaCallback
+            ?? throw new ArgumentNullException(nameof(formulaCallback));
+        _pasteCallback = pasteCallback;
+        _trace = trace;
     }
 
     internal void BindOwnerWindow(int windowHandle)
@@ -247,8 +266,7 @@ internal sealed class WordKeyboardHook : IDisposable
         if (threadId == 0 || processId == 0) return;
         if (_hook != IntPtr.Zero && _ownerThreadId != 0 && _ownerThreadId != threadId)
         {
-            WordDoubleClickHook.TraceMessage(
-                $"keyboard-hook-window-thread-changed old={_ownerThreadId} new={threadId}");
+            Trace($"keyboard-hook-window-thread-changed old={_ownerThreadId} new={threadId}");
             return;
         }
         _ownerThreadId = threadId;
@@ -262,10 +280,12 @@ internal sealed class WordKeyboardHook : IDisposable
         _hookCallback = HookCallback;
         _hook = SetWindowsHookEx(WhKeyboard, _hookCallback, IntPtr.Zero, _ownerThreadId);
         if (_hook == IntPtr.Zero)
-            throw new Win32Exception(Marshal.GetLastWin32Error(),
-                "Word keyboard observer could not be installed.");
-        WordDoubleClickHook.TraceMessage(
-            $"keyboard-hook-started handle=0x{_hook.ToInt64():X} thread={_ownerThreadId} process={_ownerProcessId}");
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error(),
+                $"{_host} keyboard observer could not be installed.");
+        Trace(
+            $"keyboard-hook-started host={_host} handle=0x{_hook.ToInt64():X} "
+            + $"thread={_ownerThreadId} process={_ownerProcessId}");
     }
 
     private IntPtr HookCallback(int code, IntPtr wParam, IntPtr lParam)
@@ -283,20 +303,22 @@ internal sealed class WordKeyboardHook : IDisposable
             && !IsKeyDown(VkLeftWindows)
             && !IsKeyDown(VkRightWindows))
         {
-            var command = WordFormulaShortcutConfiguration.Read()
+            var command = OfficeFormulaShortcutConfiguration.Read(_host)
                 .Match(key, ctrl, alt, shift);
             if (command.HasValue)
             {
                 try { _formulaCallback(command.Value); }
                 catch (Exception error)
                 {
-                    WordDoubleClickHook.TraceMessage(
+                    Trace(
                         $"formula-shortcut-callback-error {error.GetType().Name}:{error.Message}");
                 }
                 return new IntPtr(1);
             }
         }
 
+        if (_pasteCallback is null)
+            return CallNextHookEx(_hook, code, wParam, lParam);
         var ctrlPaste = key == VkV && ctrl;
         var shiftInsertPaste = key == VkInsert && shift;
         if (!ctrlPaste && !shiftInsertPaste)
@@ -304,10 +326,14 @@ internal sealed class WordKeyboardHook : IDisposable
         try { _pasteCallback(); }
         catch (Exception error)
         {
-            WordDoubleClickHook.TraceMessage(
-                $"paste-key-callback-error {error.GetType().Name}:{error.Message}");
+            Trace($"paste-key-callback-error {error.GetType().Name}:{error.Message}");
         }
         return CallNextHookEx(_hook, code, wParam, lParam);
+    }
+
+    private void Trace(string message)
+    {
+        try { _trace?.Invoke(message); } catch { }
     }
 
     private static bool IsKeyDown(int virtualKey) =>

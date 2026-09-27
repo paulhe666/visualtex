@@ -1,9 +1,9 @@
 import type {
-  WordFormulaInsertFormat,
-  WordFormulaShortcutSettings,
+  OfficeFormulaInsertFormat,
+  OfficeFormulaShortcutSettings,
 } from "../types/formula";
 
-export const DEFAULT_WORD_FORMULA_SHORTCUTS: WordFormulaShortcutSettings = {
+export const DEFAULT_OFFICE_FORMULA_SHORTCUTS: OfficeFormulaShortcutSettings = {
   inline: { shortcut: null, format: "ole" },
   display: { shortcut: null, format: "ole" },
 };
@@ -26,11 +26,11 @@ const supportedCodeKeys: Readonly<Record<string, string>> = {
 const canonicalShortcutPattern =
   /^(?:(Ctrl)\+)?(?:(Alt)\+)?(?:(Shift)\+)?([A-Z]|[0-9]|F(?:[1-9]|1[0-9]|2[0-4]))$/;
 
-export type WordFormulaShortcutCapture =
+export type OfficeFormulaShortcutCapture =
   | { shortcut: string }
   | { error: "modifier" | "unsupported" | "reserved" };
 
-export function normalizeWordFormulaShortcut(value: unknown): string | null {
+export function normalizeOfficeFormulaShortcut(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
   const match = canonicalShortcutPattern.exec(normalized);
@@ -39,24 +39,24 @@ export function normalizeWordFormulaShortcut(value: unknown): string | null {
   return parts.join("+");
 }
 
-function normalizeFormat(value: unknown): WordFormulaInsertFormat {
+function normalizeFormat(value: unknown): OfficeFormulaInsertFormat {
   return value === "omml" ? "omml" : "ole";
 }
 
-export function normalizeWordFormulaShortcutSettings(
+export function normalizeOfficeFormulaShortcutSettings(
   value: unknown,
-): WordFormulaShortcutSettings {
+): OfficeFormulaShortcutSettings {
   if (!value || typeof value !== "object") {
     return {
-      inline: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.inline },
-      display: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.display },
+      inline: { ...DEFAULT_OFFICE_FORMULA_SHORTCUTS.inline },
+      display: { ...DEFAULT_OFFICE_FORMULA_SHORTCUTS.display },
     };
   }
-  const candidate = value as Partial<WordFormulaShortcutSettings>;
-  const inlineShortcut = normalizeWordFormulaShortcut(
+  const candidate = value as Partial<OfficeFormulaShortcutSettings>;
+  const inlineShortcut = normalizeOfficeFormulaShortcut(
     candidate.inline?.shortcut,
   );
-  let displayShortcut = normalizeWordFormulaShortcut(
+  let displayShortcut = normalizeOfficeFormulaShortcut(
     candidate.display?.shortcut,
   );
   if (inlineShortcut && displayShortcut === inlineShortcut) {
@@ -74,12 +74,12 @@ export function normalizeWordFormulaShortcutSettings(
   };
 }
 
-export function wordFormulaShortcutFromEvent(
+export function officeFormulaShortcutFromEvent(
   event: Pick<
     KeyboardEvent,
     "code" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey"
   >,
-): WordFormulaShortcutCapture {
+): OfficeFormulaShortcutCapture {
   if (event.metaKey) return { error: "unsupported" };
   if (!event.ctrlKey && !event.altKey) return { error: "modifier" };
   const key = supportedCodeKeys[event.code];
