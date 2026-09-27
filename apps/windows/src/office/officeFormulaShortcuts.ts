@@ -1,11 +1,20 @@
 import type {
-  OfficeFormulaInsertFormat,
-  OfficeFormulaShortcutSettings,
+  PowerPointFormulaShortcutAction,
+  PowerPointFormulaShortcutSettings,
+  WordFormulaInsertFormat,
+  WordFormulaShortcutSettings,
 } from "../types/formula";
 
-export const DEFAULT_OFFICE_FORMULA_SHORTCUTS: OfficeFormulaShortcutSettings = {
+export const DEFAULT_WORD_FORMULA_SHORTCUTS: WordFormulaShortcutSettings = {
   inline: { shortcut: null, format: "ole" },
   display: { shortcut: null, format: "ole" },
+};
+
+export const DEFAULT_POWERPOINT_FORMULA_SHORTCUTS: PowerPointFormulaShortcutSettings = {
+  svg: null,
+  ole: null,
+  inlineOmml: null,
+  displayOmml: null,
 };
 
 const supportedCodeKeys: Readonly<Record<string, string>> = {
@@ -39,20 +48,20 @@ export function normalizeOfficeFormulaShortcut(value: unknown): string | null {
   return parts.join("+");
 }
 
-function normalizeFormat(value: unknown): OfficeFormulaInsertFormat {
+function normalizeWordFormat(value: unknown): WordFormulaInsertFormat {
   return value === "omml" ? "omml" : "ole";
 }
 
-export function normalizeOfficeFormulaShortcutSettings(
+export function normalizeWordFormulaShortcutSettings(
   value: unknown,
-): OfficeFormulaShortcutSettings {
+): WordFormulaShortcutSettings {
   if (!value || typeof value !== "object") {
     return {
-      inline: { ...DEFAULT_OFFICE_FORMULA_SHORTCUTS.inline },
-      display: { ...DEFAULT_OFFICE_FORMULA_SHORTCUTS.display },
+      inline: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.inline },
+      display: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.display },
     };
   }
-  const candidate = value as Partial<OfficeFormulaShortcutSettings>;
+  const candidate = value as Partial<WordFormulaShortcutSettings>;
   const inlineShortcut = normalizeOfficeFormulaShortcut(
     candidate.inline?.shortcut,
   );
@@ -65,13 +74,64 @@ export function normalizeOfficeFormulaShortcutSettings(
   return {
     inline: {
       shortcut: inlineShortcut,
-      format: normalizeFormat(candidate.inline?.format),
+      format: normalizeWordFormat(candidate.inline?.format),
     },
     display: {
       shortcut: displayShortcut,
-      format: normalizeFormat(candidate.display?.format),
+      format: normalizeWordFormat(candidate.display?.format),
     },
   };
+}
+
+const powerPointActionOrder: readonly PowerPointFormulaShortcutAction[] = [
+  "svg",
+  "ole",
+  "inlineOmml",
+  "displayOmml",
+];
+
+function distinctPowerPointShortcuts(
+  candidate: Partial<PowerPointFormulaShortcutSettings>,
+): PowerPointFormulaShortcutSettings {
+  const result = { ...DEFAULT_POWERPOINT_FORMULA_SHORTCUTS };
+  const used = new Set<string>();
+  for (const action of powerPointActionOrder) {
+    const shortcut = normalizeOfficeFormulaShortcut(candidate[action]);
+    if (!shortcut || used.has(shortcut)) continue;
+    result[action] = shortcut;
+    used.add(shortcut);
+  }
+  return result;
+}
+
+export function normalizePowerPointFormulaShortcutSettings(
+  value: unknown,
+): PowerPointFormulaShortcutSettings {
+  if (!value || typeof value !== "object") {
+    return { ...DEFAULT_POWERPOINT_FORMULA_SHORTCUTS };
+  }
+  const candidate = value as Record<string, unknown>;
+  if (powerPointActionOrder.some((action) => action in candidate)) {
+    return distinctPowerPointShortcuts(
+      candidate as Partial<PowerPointFormulaShortcutSettings>,
+    );
+  }
+
+  // One-time semantic migration from the old Word-shaped PowerPoint settings:
+  // OMML keeps its inline/display meaning; the two fake OLE modes collapse into
+  // the one real "new OLE object" Ribbon action.
+  const legacy = candidate as {
+    inline?: { shortcut?: unknown; format?: unknown };
+    display?: { shortcut?: unknown; format?: unknown };
+  };
+  const inlineShortcut = normalizeOfficeFormulaShortcut(legacy.inline?.shortcut);
+  const displayShortcut = normalizeOfficeFormulaShortcut(legacy.display?.shortcut);
+  const migrated: Partial<PowerPointFormulaShortcutSettings> = {};
+  if (legacy.inline?.format === "omml") migrated.inlineOmml = inlineShortcut;
+  else migrated.ole = inlineShortcut;
+  if (legacy.display?.format === "omml") migrated.displayOmml = displayShortcut;
+  else if (!migrated.ole) migrated.ole = displayShortcut;
+  return distinctPowerPointShortcuts(migrated);
 }
 
 export function officeFormulaShortcutFromEvent(

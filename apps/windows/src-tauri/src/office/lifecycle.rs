@@ -385,49 +385,50 @@ pub fn set_app_editor_preferences(
             )?;
         }
 
-        for (host, pointer, host_label) in [
-            ("word", "/settings/wordFormulaShortcuts", "Word"),
-            (
-                "powerPoint",
-                "/settings/powerPointFormulaShortcuts",
-                "PowerPoint",
-            ),
-        ] {
-            let shortcuts = preferences.pointer(pointer);
-            if let Some(shortcuts) = shortcuts.filter(|value| value.is_object()) {
-                if previous.pointer(pointer) == Some(shortcuts) {
-                    continue;
-                }
-                let inline = shortcuts
-                    .pointer("/inline")
-                    .ok_or_else(|| {
-                        format!("Missing inline {host_label} formula shortcut setting")
-                    })?;
-                let display = shortcuts
-                    .pointer("/display")
-                    .ok_or_else(|| {
-                        format!("Missing display {host_label} formula shortcut setting")
-                    })?;
-                crate::office::windows_backend::set_office_formula_shortcuts(
-                    host,
-                    inline.pointer("/shortcut").and_then(serde_json::Value::as_str),
-                    inline
-                        .pointer("/format")
-                        .and_then(serde_json::Value::as_str)
-                        .ok_or_else(|| {
-                            format!("Missing inline {host_label} formula format")
-                        })?,
-                    display
-                        .pointer("/shortcut")
-                        .and_then(serde_json::Value::as_str),
-                    display
-                        .pointer("/format")
-                        .and_then(serde_json::Value::as_str)
-                        .ok_or_else(|| {
-                            format!("Missing display {host_label} formula format")
-                        })?,
-                )?;
-            }
+        let word_pointer = "/settings/wordFormulaShortcuts";
+        if let Some(shortcuts) = preferences
+            .pointer(word_pointer)
+            .filter(|value| value.is_object())
+            .filter(|shortcuts| previous.pointer(word_pointer) != Some(*shortcuts))
+        {
+            let inline = shortcuts.pointer("/inline").ok_or_else(|| {
+                "Missing inline Word formula shortcut setting".to_string()
+            })?;
+            let display = shortcuts.pointer("/display").ok_or_else(|| {
+                "Missing display Word formula shortcut setting".to_string()
+            })?;
+            crate::office::windows_backend::set_word_formula_shortcuts(
+                inline.pointer("/shortcut").and_then(serde_json::Value::as_str),
+                inline
+                    .pointer("/format")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "Missing inline Word formula format".to_string())?,
+                display
+                    .pointer("/shortcut")
+                    .and_then(serde_json::Value::as_str),
+                display
+                    .pointer("/format")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| "Missing display Word formula format".to_string())?,
+            )?;
+        }
+
+        let powerpoint_pointer = "/settings/powerPointFormulaShortcuts";
+        if let Some(shortcuts) = preferences
+            .pointer(powerpoint_pointer)
+            .filter(|value| value.is_object())
+            .filter(|shortcuts| previous.pointer(powerpoint_pointer) != Some(*shortcuts))
+        {
+            crate::office::windows_backend::set_powerpoint_formula_shortcuts(
+                shortcuts.pointer("/svg").and_then(serde_json::Value::as_str),
+                shortcuts.pointer("/ole").and_then(serde_json::Value::as_str),
+                shortcuts
+                    .pointer("/inlineOmml")
+                    .and_then(serde_json::Value::as_str),
+                shortcuts
+                    .pointer("/displayOmml")
+                    .and_then(serde_json::Value::as_str),
+            )?;
         }
     }
     Ok(state.set_current_editor_preferences(preferences))

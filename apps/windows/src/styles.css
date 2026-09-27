@@ -9125,6 +9125,23 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   gap: 12px;
 }
 
+.shortcut-manager-scroll {
+  display: grid;
+  gap: 18px;
+  padding: 16px 20px 18px;
+  overflow-y: auto;
+}
+
+.shortcut-settings-group {
+  display: grid;
+  gap: 12px;
+}
+
+.shortcut-settings-group + .shortcut-settings-group {
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
 .office-formula-shortcut-host {
   display: grid;
   gap: 8px;
@@ -9168,6 +9185,10 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-elevated);
+}
+
+.office-formula-shortcut-row.is-format-fixed {
+  grid-template-columns: minmax(0, 1fr) 132px 66px;
 }
 
 .office-formula-shortcut-copy {
@@ -9272,9 +9293,8 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
     grid-column: 2 / -1;
   }
 
-  .office-formula-editor-hotkeys {
-    align-items: stretch;
-    flex-direction: column;
+  .office-formula-shortcut-row.is-format-fixed {
+    grid-template-columns: minmax(0, 1fr) 118px 62px;
   }
 }
 
@@ -9305,7 +9325,7 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
 }
 
 .formula-hotkey-manager-dialog {
-  width: min(760px, calc(100vw - 36px));
+  width: min(900px, calc(100vw - 36px));
   max-height: calc(100vh - 48px);
 }
 
@@ -9465,7 +9485,7 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
 }
 
 .formula-hotkey-manager-summary {
-  padding: 14px 20px 0;
+  padding: 0;
 }
 
 .formula-hotkey-manager-summary > div {
@@ -9495,9 +9515,8 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
 }
 
 .formula-hotkey-manager-content {
-  min-height: 210px;
-  padding: 14px 20px 18px;
-  overflow-y: auto;
+  min-height: 150px;
+  padding: 14px 0 0;
 }
 
 .formula-hotkey-empty-state {

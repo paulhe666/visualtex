@@ -6,20 +6,51 @@ import {
 } from "../office/officeFormulaShortcuts";
 import { useEditorStore } from "../stores/editorStore";
 import type {
-  OfficeFormulaHost,
-  OfficeFormulaShortcutSettings,
+  PowerPointFormulaShortcutAction,
+  WordFormulaShortcutSettings,
 } from "../types/formula";
 
-type ShortcutKind = keyof OfficeFormulaShortcutSettings;
+type WordShortcutAction = keyof WordFormulaShortcutSettings;
+type ShortcutTarget =
+  | { host: "word"; action: WordShortcutAction }
+  | { host: "powerPoint"; action: PowerPointFormulaShortcutAction };
 
-interface ShortcutTarget {
-  host: OfficeFormulaHost;
-  kind: ShortcutKind;
-}
-
-interface OfficeFormulaShortcutSettingsSectionProps {
-  onOpenFormulaHotkeys: () => void;
-}
+const powerPointActions: ReadonlyArray<{
+  action: PowerPointFormulaShortcutAction;
+  labelEn: string;
+  labelZh: string;
+  detailEn: string;
+  detailZh: string;
+}> = [
+  {
+    action: "svg",
+    labelEn: "New SVG formula",
+    labelZh: "新建 SVG 公式",
+    detailEn: "Calls PowerPoint's New SVG Ribbon action.",
+    detailZh: "调用 PowerPoint 的“新建 SVG”Ribbon 动作。",
+  },
+  {
+    action: "ole",
+    labelEn: "New OLE formula",
+    labelZh: "新建 OLE 公式",
+    detailEn: "Creates one editable formula object on the slide.",
+    detailZh: "在幻灯片中创建一个可编辑的公式对象。",
+  },
+  {
+    action: "inlineOmml",
+    labelEn: "Insert inline OMML formula",
+    labelZh: "插入行内 OMML 公式",
+    detailEn: "Inserts native Office Math at the current text caret.",
+    detailZh: "在当前文本光标处插入原生 Office Math。",
+  },
+  {
+    action: "displayOmml",
+    labelEn: "Insert display OMML formula",
+    labelZh: "插入行间 OMML 公式",
+    detailEn: "Inserts native Office Math as a separate formula paragraph.",
+    detailZh: "以独立公式段落插入原生 Office Math。",
+  },
+];
 
 function captureErrorText(
   result: Extract<OfficeFormulaShortcutCapture, { error: string }>,
@@ -42,21 +73,32 @@ function captureErrorText(
 }
 
 function sameTarget(left: ShortcutTarget | null, right: ShortcutTarget) {
-  return left?.host === right.host && left.kind === right.kind;
+  return left?.host === right.host && left.action === right.action;
 }
 
-export function OfficeFormulaShortcutSettingsSection({
-  onOpenFormulaHotkeys,
-}: OfficeFormulaShortcutSettingsSectionProps) {
+export function OfficeFormulaShortcutSettingsSection() {
   const language = useEditorStore((state) => state.language);
   const wordSettings = useEditorStore((state) => state.wordFormulaShortcuts);
   const powerPointSettings = useEditorStore(
     (state) => state.powerPointFormulaShortcuts,
   );
-  const setShortcut = useEditorStore((state) => state.setOfficeFormulaShortcut);
+  const setWordShortcut = useEditorStore(
+    (state) => state.setWordFormulaShortcut,
+  );
+  const setPowerPointShortcut = useEditorStore(
+    (state) => state.setPowerPointFormulaShortcut,
+  );
   const [capturing, setCapturing] = useState<ShortcutTarget | null>(null);
   const [message, setMessage] = useState("");
   const isEn = language === "en";
+
+  const assignShortcut = (target: ShortcutTarget, shortcut: string | null) => {
+    if (target.host === "word") {
+      setWordShortcut(target.action, { shortcut });
+    } else {
+      setPowerPointShortcut(target.action, shortcut);
+    }
+  };
 
   useEffect(() => {
     if (!capturing) return;
@@ -88,164 +130,185 @@ export function OfficeFormulaShortcutSettingsSection({
         setMessage(captureErrorText(result, isEn));
         return;
       }
-      const hostSettings =
-        capturing.host === "word" ? wordSettings : powerPointSettings;
-      const otherKind = capturing.kind === "inline" ? "display" : "inline";
-      const moved = hostSettings[otherKind].shortcut === result.shortcut;
-      setShortcut(capturing.host, capturing.kind, {
-        shortcut: result.shortcut,
-      });
+      const moved =
+        capturing.host === "word"
+          ? Object.entries(wordSettings).some(
+              ([action, setting]) =>
+                action !== capturing.action && setting.shortcut === result.shortcut,
+            )
+          : Object.entries(powerPointSettings).some(
+              ([action, shortcut]) =>
+                action !== capturing.action && shortcut === result.shortcut,
+            );
+      assignShortcut(capturing, result.shortcut);
       setCapturing(null);
       setMessage(
         moved
           ? isEn
-            ? `${result.shortcut} was moved from the other action in this app.`
+            ? `${result.shortcut} was moved from another action in this app.`
             : `${result.shortcut} 已从此应用的另一个动作移到这里。`
           : "",
       );
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [capturing, isEn, powerPointSettings, setShortcut, wordSettings]);
+  }, [capturing, isEn, powerPointSettings, wordSettings]);
 
-  const rows: ReadonlyArray<{
-    kind: ShortcutKind;
+  const shortcutControls = (
+    target: ShortcutTarget,
+    label: string,
+    shortcut: string | null,
+  ) => {
+    const isCapturing = sameTarget(capturing, target);
+    return (
+      <>
+        <button
+          type="button"
+          className={`office-formula-shortcut-capture${isCapturing ? " is-capturing" : ""}`}
+          aria-pressed={isCapturing}
+          onClick={() => {
+            setMessage("");
+            setCapturing(isCapturing ? null : target);
+          }}
+        >
+          <kbd>
+            {isCapturing
+              ? isEn
+                ? "Press keys…"
+                : "请按键…"
+              : shortcut ?? (isEn ? "None" : "无")}
+          </kbd>
+        </button>
+        <button
+          type="button"
+          className="office-formula-shortcut-clear"
+          disabled={!shortcut && !isCapturing}
+          onClick={() => {
+            assignShortcut(target, null);
+            if (isCapturing) setCapturing(null);
+            setMessage("");
+          }}
+          aria-label={isEn ? `Clear ${label}` : `清除${label}快捷键`}
+          title={isEn ? "Set to None" : "设为无"}
+        >
+          <X size={14} />
+          {isEn ? "None" : "无"}
+        </button>
+      </>
+    );
+  };
+
+  const wordRows: ReadonlyArray<{
+    action: WordShortcutAction;
     labelEn: string;
     labelZh: string;
   }> = [
-    { kind: "inline", labelEn: "Insert inline formula", labelZh: "插入行内公式" },
-    { kind: "display", labelEn: "Insert display formula", labelZh: "插入行间公式" },
-  ];
-  const hosts: ReadonlyArray<{
-    host: OfficeFormulaHost;
-    label: string;
-    descriptionEn: string;
-    descriptionZh: string;
-    settings: OfficeFormulaShortcutSettings;
-  }> = [
-    {
-      host: "word",
-      label: "Word",
-      descriptionEn: "Calls the matching VisualTeX Ribbon action in Word.",
-      descriptionZh: "调用 Word 中对应的 VisualTeX Ribbon 动作。",
-      settings: wordSettings,
-    },
-    {
-      host: "powerPoint",
-      label: "PowerPoint",
-      descriptionEn:
-        "OMML follows the text caret; OLE creates an editable slide object.",
-      descriptionZh: "OMML 跟随文本光标插入；OLE 创建可编辑的幻灯片对象。",
-      settings: powerPointSettings,
-    },
+    { action: "inline", labelEn: "Insert inline formula", labelZh: "插入行内公式" },
+    { action: "display", labelEn: "Insert display formula", labelZh: "插入行间公式" },
   ];
 
   return (
-    <div className="settings-section" data-office-formula-shortcuts>
+    <section className="shortcut-settings-group" data-office-formula-shortcuts>
       <div className="settings-section-title">
         <Keyboard size={18} />
         <div>
-          <h3>{isEn ? "Keyboard shortcuts" : "快捷键"}</h3>
+          <h3>{isEn ? "Office shortcuts" : "Office 快捷键"}</h3>
           <p>
             {isEn
-              ? "Configure Office insertion and editor formula shortcuts in one place."
-              : "在同一处配置 Office 插入快捷键和编辑器公式快捷键。"}
+              ? "Each shortcut calls one real Ribbon action in its Office host."
+              : "每个快捷键都对应所在 Office 应用中的一个真实 Ribbon 动作。"}
           </p>
         </div>
       </div>
 
       <div className="office-formula-shortcut-hosts">
-        {hosts.map(({ host, label, descriptionEn, descriptionZh, settings }) => (
-          <section
-            className="office-formula-shortcut-host"
-            data-office-formula-shortcut-host={host}
-            key={host}
-          >
-            <header className="office-formula-shortcut-host-header">
-              <strong>{label}</strong>
-              <small>{isEn ? descriptionEn : descriptionZh}</small>
-            </header>
-            <div className="office-formula-shortcut-list">
-              {rows.map(({ kind, labelEn, labelZh }) => {
-                const setting = settings[kind];
-                const target = { host, kind } satisfies ShortcutTarget;
-                const isCapturing = sameTarget(capturing, target);
+        <section
+          className="office-formula-shortcut-host"
+          data-office-formula-shortcut-host="word"
+        >
+          <header className="office-formula-shortcut-host-header">
+            <strong>Word</strong>
+            <small>
+              {isEn
+                ? "Inline and display are separate Word insertion modes; choose OLE or OMML for each."
+                : "行内与行间是 Word 的两种插入模式，可分别选择 OLE 或 OMML。"}
+            </small>
+          </header>
+          <div className="office-formula-shortcut-list">
+            {wordRows.map(({ action, labelEn, labelZh }) => {
+              const setting = wordSettings[action];
+              const target = { host: "word", action } as const;
+              const label = isEn ? labelEn : labelZh;
+              return (
+                <div
+                  className="office-formula-shortcut-row"
+                  data-office-formula-shortcut={action}
+                  key={action}
+                >
+                  <div className="office-formula-shortcut-copy">
+                    <strong>{label}</strong>
+                    <small>
+                      {isEn
+                        ? "Calls the matching VisualTeX Word Ribbon action."
+                        : "调用对应的 VisualTeX Word Ribbon 动作。"}
+                    </small>
+                  </div>
+                  {shortcutControls(target, `Word ${label}`, setting.shortcut)}
+                  <label className="office-formula-format-select">
+                    <span>{isEn ? "Format" : "格式"}</span>
+                    <select
+                      value={setting.format}
+                      onChange={(event) =>
+                        setWordShortcut(action, {
+                          format: event.target.value === "omml" ? "omml" : "ole",
+                        })
+                      }
+                      aria-label={isEn ? `Word ${label} format` : `Word ${label}格式`}
+                    >
+                      <option value="ole">OLE</option>
+                      <option value="omml">OMML</option>
+                    </select>
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section
+          className="office-formula-shortcut-host"
+          data-office-formula-shortcut-host="powerPoint"
+        >
+          <header className="office-formula-shortcut-host-header">
+            <strong>PowerPoint</strong>
+            <small>
+              {isEn
+                ? "SVG and OLE create slide objects. Only OMML has inline and display variants."
+                : "SVG 与 OLE 创建幻灯片对象；只有 OMML 区分行内与行间。"}
+            </small>
+          </header>
+          <div className="office-formula-shortcut-list">
+            {powerPointActions.map(
+              ({ action, labelEn, labelZh, detailEn, detailZh }) => {
+                const target = { host: "powerPoint", action } as const;
+                const label = isEn ? labelEn : labelZh;
                 return (
                   <div
-                    className="office-formula-shortcut-row"
-                    data-office-formula-shortcut={kind}
-                    key={kind}
+                    className="office-formula-shortcut-row is-format-fixed"
+                    data-office-formula-shortcut={action}
+                    key={action}
                   >
                     <div className="office-formula-shortcut-copy">
-                      <strong>{isEn ? labelEn : labelZh}</strong>
-                      <small>
-                        {isEn
-                          ? `Overrides the same shortcut only in ${label}.`
-                          : `仅覆盖 ${label} 中相同的快捷键。`}
-                      </small>
+                      <strong>{label}</strong>
+                      <small>{isEn ? detailEn : detailZh}</small>
                     </div>
-                    <button
-                      type="button"
-                      className={`office-formula-shortcut-capture${isCapturing ? " is-capturing" : ""}`}
-                      aria-pressed={isCapturing}
-                      onClick={() => {
-                        setMessage("");
-                        setCapturing(isCapturing ? null : target);
-                      }}
-                    >
-                      <kbd>
-                        {isCapturing
-                          ? isEn
-                            ? "Press keys…"
-                            : "请按键…"
-                          : setting.shortcut ?? (isEn ? "None" : "无")}
-                      </kbd>
-                    </button>
-                    <button
-                      type="button"
-                      className="office-formula-shortcut-clear"
-                      disabled={!setting.shortcut && !isCapturing}
-                      onClick={() => {
-                        setShortcut(host, kind, { shortcut: null });
-                        if (isCapturing) setCapturing(null);
-                        setMessage("");
-                      }}
-                      aria-label={
-                        isEn
-                          ? `Clear ${label} ${labelEn}`
-                          : `清除 ${label} ${labelZh}快捷键`
-                      }
-                      title={isEn ? "Set to None" : "设为无"}
-                    >
-                      <X size={14} />
-                      {isEn ? "None" : "无"}
-                    </button>
-                    <label className="office-formula-format-select">
-                      <span>{isEn ? "Format" : "格式"}</span>
-                      <select
-                        value={setting.format}
-                        onChange={(event) =>
-                          setShortcut(host, kind, {
-                            format:
-                              event.target.value === "omml" ? "omml" : "ole",
-                          })
-                        }
-                        aria-label={
-                          isEn
-                            ? `${label} ${labelEn} format`
-                            : `${label} ${labelZh}格式`
-                        }
-                      >
-                        <option value="ole">OLE</option>
-                        <option value="omml">OMML</option>
-                      </select>
-                    </label>
+                    {shortcutControls(target, `PowerPoint ${label}`, powerPointSettings[action])}
                   </div>
                 );
-              })}
-            </div>
-          </section>
-        ))}
+              },
+            )}
+          </div>
+        </section>
       </div>
 
       <p className="office-formula-shortcut-help">
@@ -255,28 +318,9 @@ export function OfficeFormulaShortcutSettingsSection({
               ? "Press the shortcut now, or Esc to cancel."
               : "现在按下快捷键，或按 Esc 取消。"
             : isEn
-              ? "Actions in one app cannot share a shortcut. Word and PowerPoint may reuse the same shortcut because they run in separate hosts."
-              : "同一应用内的两个动作不能重复；Word 与 PowerPoint 属于不同宿主，可以使用相同组合键。")}
+              ? "Actions in one app cannot share a shortcut. Word and PowerPoint may reuse the same shortcut."
+              : "同一应用内的动作不能重复；Word 与 PowerPoint 可以使用相同组合键。")}
       </p>
-
-      <div className="office-formula-editor-hotkeys">
-        <div>
-          <strong>{isEn ? "Editor formula hotkeys" : "编辑器公式快捷键"}</strong>
-          <small>
-            {isEn
-              ? "Manage shortcuts that insert saved formulas inside the VisualTeX editor."
-              : "管理仅在 VisualTeX 编辑器内插入常用公式的快捷键。"}
-          </small>
-        </div>
-        <button
-          type="button"
-          className="secondary-button settings-hotkey-button"
-          onClick={onOpenFormulaHotkeys}
-        >
-          <Keyboard size={15} />
-          {isEn ? "Manage formula hotkeys" : "管理公式快捷键"}
-        </button>
-      </div>
-    </div>
+    </section>
   );
 }

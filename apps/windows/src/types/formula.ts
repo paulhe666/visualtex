@@ -76,18 +76,29 @@ export interface FormulaBlock {
   updatedAt: number;
 }
 
-export type OfficeFormulaHost = "word" | "powerPoint";
+export type WordFormulaInsertFormat = "ole" | "omml";
 
-export type OfficeFormulaInsertFormat = "ole" | "omml";
-
-export interface OfficeFormulaShortcutSetting {
+export interface WordFormulaShortcutSetting {
   shortcut: string | null;
-  format: OfficeFormulaInsertFormat;
+  format: WordFormulaInsertFormat;
 }
 
-export interface OfficeFormulaShortcutSettings {
-  inline: OfficeFormulaShortcutSetting;
-  display: OfficeFormulaShortcutSetting;
+export interface WordFormulaShortcutSettings {
+  inline: WordFormulaShortcutSetting;
+  display: WordFormulaShortcutSetting;
+}
+
+export type PowerPointFormulaShortcutAction =
+  | "svg"
+  | "ole"
+  | "inlineOmml"
+  | "displayOmml";
+
+export interface PowerPointFormulaShortcutSettings {
+  svg: string | null;
+  ole: string | null;
+  inlineOmml: string | null;
+  displayOmml: string | null;
 }
 
 export interface FormulaDocument {
@@ -127,8 +138,8 @@ export interface FormulaDocument {
     suggestionCount?: number;
     checkUpdatesOnStartup?: boolean;
     powerPointDefaultFontSizePt?: number;
-    wordFormulaShortcuts?: OfficeFormulaShortcutSettings;
-    powerPointFormulaShortcuts?: OfficeFormulaShortcutSettings;
+    wordFormulaShortcuts?: WordFormulaShortcutSettings;
+    powerPointFormulaShortcuts?: PowerPointFormulaShortcutSettings;
     classicTileWidth?: number;
     classicDockHeight?: number;
     keypadMinimizeOnCopy?: boolean;

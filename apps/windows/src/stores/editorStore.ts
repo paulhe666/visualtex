@@ -12,10 +12,11 @@ import type {
   InputBehaviorSettings,
   LatexCodeFormat,
   LatexFormatProfile,
-  OfficeFormulaHost,
-  OfficeFormulaInsertFormat,
-  OfficeFormulaShortcutSettings,
+  PowerPointFormulaShortcutAction,
+  PowerPointFormulaShortcutSettings,
   Theme,
+  WordFormulaInsertFormat,
+  WordFormulaShortcutSettings,
 } from "../types/formula";
 import type { DocumentSnapshot } from "../history/historyTypes";
 import {
@@ -53,9 +54,11 @@ import {
   type FormulaLetterFont,
 } from "../editor/formulaFontPreferences";
 import {
-  DEFAULT_OFFICE_FORMULA_SHORTCUTS,
+  DEFAULT_POWERPOINT_FORMULA_SHORTCUTS,
+  DEFAULT_WORD_FORMULA_SHORTCUTS,
   normalizeOfficeFormulaShortcut,
-  normalizeOfficeFormulaShortcutSettings,
+  normalizePowerPointFormulaShortcutSettings,
+  normalizeWordFormulaShortcutSettings,
 } from "../office/officeFormulaShortcuts";
 
 export type Language = "cn" | "en";
@@ -390,8 +393,8 @@ interface EditorState {
   suggestionCount: number;
   checkUpdatesOnStartup: boolean;
   powerPointDefaultFontSizePt: number;
-  wordFormulaShortcuts: OfficeFormulaShortcutSettings;
-  powerPointFormulaShortcuts: OfficeFormulaShortcutSettings;
+  wordFormulaShortcuts: WordFormulaShortcutSettings;
+  powerPointFormulaShortcuts: PowerPointFormulaShortcutSettings;
   usage: Record<string, CommandUsage>;
   history: FormulaHistoryItem[];
   setTitle: (title: string) => void;
@@ -437,10 +440,13 @@ interface EditorState {
   setSuggestionCount: (count: number) => void;
   setCheckUpdatesOnStartup: (enabled: boolean) => void;
   setPowerPointDefaultFontSizePt: (fontSizePt: number) => void;
-  setOfficeFormulaShortcut: (
-    host: OfficeFormulaHost,
-    kind: keyof OfficeFormulaShortcutSettings,
-    update: { shortcut?: string | null; format?: OfficeFormulaInsertFormat },
+  setWordFormulaShortcut: (
+    kind: keyof WordFormulaShortcutSettings,
+    update: { shortcut?: string | null; format?: WordFormulaInsertFormat },
+  ) => void;
+  setPowerPointFormulaShortcut: (
+    action: PowerPointFormulaShortcutAction,
+    shortcut: string | null,
   ) => void;
   recordCommand: (commandId: string, prefix: string, source: CommandSource) => void;
   resetUsage: () => void;
@@ -498,13 +504,10 @@ export const useEditorStore = create<EditorState>()(
       checkUpdatesOnStartup: true,
       powerPointDefaultFontSizePt: 20,
       wordFormulaShortcuts: {
-        inline: { ...DEFAULT_OFFICE_FORMULA_SHORTCUTS.inline },
-        display: { ...DEFAULT_OFFICE_FORMULA_SHORTCUTS.display },
+        inline: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.inline },
+        display: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.display },
       },
-      powerPointFormulaShortcuts: {
-        inline: { ...DEFAULT_OFFICE_FORMULA_SHORTCUTS.inline },
-        display: { ...DEFAULT_OFFICE_FORMULA_SHORTCUTS.display },
-      },
+      powerPointFormulaShortcuts: { ...DEFAULT_POWERPOINT_FORMULA_SHORTCUTS },
       usage: {},
       history: [],
       setTitle: (title) => set({ title }),
@@ -668,13 +671,9 @@ export const useEditorStore = create<EditorState>()(
             Math.round(Math.min(200, Math.max(5, powerPointDefaultFontSizePt)) * 2) /
             2,
         }),
-      setOfficeFormulaShortcut: (host, kind, update) =>
+      setWordFormulaShortcut: (kind, update) =>
         set((state) => {
-          const settingsKey =
-            host === "word"
-              ? "wordFormulaShortcuts"
-              : "powerPointFormulaShortcuts";
-          const hostSettings = state[settingsKey];
+          const hostSettings = state.wordFormulaShortcuts;
           const otherKind = kind === "inline" ? "display" : "inline";
           const shortcut =
             update.shortcut === undefined
@@ -687,7 +686,7 @@ export const useEditorStore = create<EditorState>()(
                 ? "ole"
                 : hostSettings[kind].format;
           return {
-            [settingsKey]: {
+            wordFormulaShortcuts: {
               ...hostSettings,
               [kind]: { shortcut, format },
               [otherKind]:
@@ -700,6 +699,24 @@ export const useEditorStore = create<EditorState>()(
                   : hostSettings[otherKind],
             },
           };
+        }),
+      setPowerPointFormulaShortcut: (action, value) =>
+        set((state) => {
+          const shortcut = normalizeOfficeFormulaShortcut(value);
+          const next = { ...state.powerPointFormulaShortcuts, [action]: shortcut };
+          if (shortcut) {
+            for (const otherAction of [
+              "svg",
+              "ole",
+              "inlineOmml",
+              "displayOmml",
+            ] as const) {
+              if (otherAction !== action && next[otherAction] === shortcut) {
+                next[otherAction] = null;
+              }
+            }
+          }
+          return { powerPointFormulaShortcuts: next };
         }),
       recordCommand: (commandId, prefix, source) =>
         set((state) => {
@@ -888,13 +905,13 @@ export const useEditorStore = create<EditorState>()(
             wordFormulaShortcuts:
               settings.wordFormulaShortcuts === undefined
                 ? state.wordFormulaShortcuts
-                : normalizeOfficeFormulaShortcutSettings(
+                : normalizeWordFormulaShortcutSettings(
                     settings.wordFormulaShortcuts,
                   ),
             powerPointFormulaShortcuts:
               settings.powerPointFormulaShortcuts === undefined
                 ? state.powerPointFormulaShortcuts
-                : normalizeOfficeFormulaShortcutSettings(
+                : normalizePowerPointFormulaShortcutSettings(
                     settings.powerPointFormulaShortcuts,
                   ),
             classicTileWidth:
@@ -1101,10 +1118,10 @@ export const useEditorStore = create<EditorState>()(
                     2,
                 ) / 2
               : 20,
-          wordFormulaShortcuts: normalizeOfficeFormulaShortcutSettings(
+          wordFormulaShortcuts: normalizeWordFormulaShortcutSettings(
             persisted.wordFormulaShortcuts,
           ),
-          powerPointFormulaShortcuts: normalizeOfficeFormulaShortcutSettings(
+          powerPointFormulaShortcuts: normalizePowerPointFormulaShortcutSettings(
             persisted.powerPointFormulaShortcuts,
           ),
         };

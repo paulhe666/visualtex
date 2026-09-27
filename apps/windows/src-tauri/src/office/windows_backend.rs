@@ -23,10 +23,12 @@ const WORD_INLINE_FORMULA_SHORTCUT_VALUE: &str = "WordInlineFormulaShortcut";
 const WORD_INLINE_FORMULA_FORMAT_VALUE: &str = "WordInlineFormulaFormat";
 const WORD_DISPLAY_FORMULA_SHORTCUT_VALUE: &str = "WordDisplayFormulaShortcut";
 const WORD_DISPLAY_FORMULA_FORMAT_VALUE: &str = "WordDisplayFormulaFormat";
-const POWERPOINT_INLINE_FORMULA_SHORTCUT_VALUE: &str = "PowerPointInlineFormulaShortcut";
-const POWERPOINT_INLINE_FORMULA_FORMAT_VALUE: &str = "PowerPointInlineFormulaFormat";
-const POWERPOINT_DISPLAY_FORMULA_SHORTCUT_VALUE: &str = "PowerPointDisplayFormulaShortcut";
-const POWERPOINT_DISPLAY_FORMULA_FORMAT_VALUE: &str = "PowerPointDisplayFormulaFormat";
+const POWERPOINT_SVG_FORMULA_SHORTCUT_VALUE: &str = "PowerPointSvgFormulaShortcut";
+const POWERPOINT_OLE_FORMULA_SHORTCUT_VALUE: &str = "PowerPointOleFormulaShortcut";
+const POWERPOINT_INLINE_OMML_FORMULA_SHORTCUT_VALUE: &str =
+    "PowerPointInlineOmmlFormulaShortcut";
+const POWERPOINT_DISPLAY_OMML_FORMULA_SHORTCUT_VALUE: &str =
+    "PowerPointDisplayOmmlFormulaShortcut";
 const WORD_USER_PREFERENCES_KEY: &str = r"HKCU\Software\VisualTeX\Word";
 const WORD_DEFAULT_NUMBERED_VALUE: &str = "DefaultDisplayEquationNumbered";
 const WORD_DEFAULT_NUMBER_FORMAT_VALUE: &str = "DefaultEquationNumberFormat";
@@ -296,60 +298,74 @@ pub(crate) fn set_app_editor_language(language: &str) -> Result<(), String> {
     registry_set_string(OFFICE_MODE_KEY, APP_LANGUAGE_VALUE, normalized)
 }
 
-pub(crate) fn set_office_formula_shortcuts(
-    host: &str,
+pub(crate) fn set_word_formula_shortcuts(
     inline_shortcut: Option<&str>,
     inline_format: &str,
     display_shortcut: Option<&str>,
     display_format: &str,
 ) -> Result<(), String> {
-    let (host_label, inline_shortcut_value, inline_format_value, display_shortcut_value, display_format_value) =
-        match host {
-            "word" => (
-                "Word",
-                WORD_INLINE_FORMULA_SHORTCUT_VALUE,
-                WORD_INLINE_FORMULA_FORMAT_VALUE,
-                WORD_DISPLAY_FORMULA_SHORTCUT_VALUE,
-                WORD_DISPLAY_FORMULA_FORMAT_VALUE,
-            ),
-            "powerPoint" => (
-                "PowerPoint",
-                POWERPOINT_INLINE_FORMULA_SHORTCUT_VALUE,
-                POWERPOINT_INLINE_FORMULA_FORMAT_VALUE,
-                POWERPOINT_DISPLAY_FORMULA_SHORTCUT_VALUE,
-                POWERPOINT_DISPLAY_FORMULA_FORMAT_VALUE,
-            ),
-            _ => return Err(format!("Unsupported Office shortcut host: {host}")),
-        };
     let inline_shortcut = normalize_office_formula_shortcut(inline_shortcut)?;
     let display_shortcut = normalize_office_formula_shortcut(display_shortcut)?;
     if !inline_shortcut.is_empty() && inline_shortcut == display_shortcut {
-        return Err(format!(
-            "The inline and display {host_label} formula shortcuts must be different"
-        ));
+        return Err("The inline and display Word formula shortcuts must be different".to_string());
     }
     let inline_format = normalize_office_formula_format(inline_format)?;
     let display_format = normalize_office_formula_format(display_format)?;
     registry_set_string(
         OFFICE_MODE_KEY,
-        inline_shortcut_value,
+        WORD_INLINE_FORMULA_SHORTCUT_VALUE,
         &inline_shortcut,
     )?;
     registry_set_string(
         OFFICE_MODE_KEY,
-        inline_format_value,
+        WORD_INLINE_FORMULA_FORMAT_VALUE,
         inline_format,
     )?;
     registry_set_string(
         OFFICE_MODE_KEY,
-        display_shortcut_value,
+        WORD_DISPLAY_FORMULA_SHORTCUT_VALUE,
         &display_shortcut,
     )?;
     registry_set_string(
         OFFICE_MODE_KEY,
-        display_format_value,
+        WORD_DISPLAY_FORMULA_FORMAT_VALUE,
         display_format,
     )
+}
+
+pub(crate) fn set_powerpoint_formula_shortcuts(
+    svg_shortcut: Option<&str>,
+    ole_shortcut: Option<&str>,
+    inline_omml_shortcut: Option<&str>,
+    display_omml_shortcut: Option<&str>,
+) -> Result<(), String> {
+    let shortcuts = [
+        normalize_office_formula_shortcut(svg_shortcut)?,
+        normalize_office_formula_shortcut(ole_shortcut)?,
+        normalize_office_formula_shortcut(inline_omml_shortcut)?,
+        normalize_office_formula_shortcut(display_omml_shortcut)?,
+    ];
+    for left in 0..shortcuts.len() {
+        if shortcuts[left].is_empty() {
+            continue;
+        }
+        for right in (left + 1)..shortcuts.len() {
+            if shortcuts[left] == shortcuts[right] {
+                return Err(
+                    "PowerPoint formula actions must use different shortcuts".to_string(),
+                );
+            }
+        }
+    }
+    for (name, value) in [
+        (POWERPOINT_SVG_FORMULA_SHORTCUT_VALUE, &shortcuts[0]),
+        (POWERPOINT_OLE_FORMULA_SHORTCUT_VALUE, &shortcuts[1]),
+        (POWERPOINT_INLINE_OMML_FORMULA_SHORTCUT_VALUE, &shortcuts[2]),
+        (POWERPOINT_DISPLAY_OMML_FORMULA_SHORTCUT_VALUE, &shortcuts[3]),
+    ] {
+        registry_set_string(OFFICE_MODE_KEY, name, value)?;
+    }
+    Ok(())
 }
 
 fn normalize_office_formula_format(value: &str) -> Result<&'static str, String> {

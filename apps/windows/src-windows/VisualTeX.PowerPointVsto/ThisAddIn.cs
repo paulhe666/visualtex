@@ -305,22 +305,21 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         BeginOmmlTextInsertion("block");
     private void OnPowerPointFormulaShortcut(OfficeFormulaShortcutCommand command)
     {
-        var displayMode = command.Kind == OfficeFormulaShortcutKind.Inline
-            ? "inline"
-            : "block";
-        if (command.Format == OfficeFormulaShortcutFormat.Omml)
+        switch (command.Kind)
         {
-            if (command.Kind == OfficeFormulaShortcutKind.Inline)
+            case OfficeFormulaShortcutKind.PowerPointSvg:
+                OnNewSvgFormula(this);
+                break;
+            case OfficeFormulaShortcutKind.PowerPointOle:
+                OnNewOleFormula(this);
+                break;
+            case OfficeFormulaShortcutKind.PowerPointInlineOmml:
                 OnInsertInlineOmml(this);
-            else
+                break;
+            case OfficeFormulaShortcutKind.PowerPointDisplayOmml:
                 OnInsertDisplayOmml(this);
-            return;
+                break;
         }
-        BeginSession(
-            "create",
-            "nativeOle",
-            null,
-            requestedDisplayMode: displayMode);
     }
     public void OnEditSelected(object control) => BeginSelectedSession(null);
     public void OnConvertSelectedOmml(object control) =>

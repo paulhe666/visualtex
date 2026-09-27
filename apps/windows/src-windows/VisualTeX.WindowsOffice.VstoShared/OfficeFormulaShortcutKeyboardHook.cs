@@ -14,6 +14,10 @@ internal enum OfficeFormulaShortcutKind
 {
     Inline,
     Display,
+    PowerPointSvg,
+    PowerPointOle,
+    PowerPointInlineOmml,
+    PowerPointDisplayOmml,
 }
 
 internal enum OfficeFormulaShortcutFormat
@@ -26,7 +30,7 @@ internal readonly struct OfficeFormulaShortcutCommand
 {
     internal OfficeFormulaShortcutCommand(
         OfficeFormulaShortcutKind kind,
-        OfficeFormulaShortcutFormat format)
+        OfficeFormulaShortcutFormat format = OfficeFormulaShortcutFormat.Ole)
     {
         Kind = kind;
         Format = format;
@@ -129,22 +133,10 @@ internal sealed class OfficeFormulaShortcutConfiguration
 {
     private const string RegistryPath = @"Software\VisualTeX\OfficeIntegration";
 
-    private OfficeFormulaShortcutConfiguration(
-        OfficeFormulaShortcut? inline,
-        OfficeFormulaShortcutFormat inlineFormat,
-        OfficeFormulaShortcut? display,
-        OfficeFormulaShortcutFormat displayFormat)
-    {
-        Inline = inline;
-        InlineFormat = inlineFormat;
-        Display = display;
-        DisplayFormat = displayFormat;
-    }
+    private readonly OfficeFormulaShortcutBinding[] _bindings;
 
-    internal OfficeFormulaShortcut? Inline { get; }
-    internal OfficeFormulaShortcutFormat InlineFormat { get; }
-    internal OfficeFormulaShortcut? Display { get; }
-    internal OfficeFormulaShortcutFormat DisplayFormat { get; }
+    private OfficeFormulaShortcutConfiguration(
+        OfficeFormulaShortcutBinding[] bindings) => _bindings = bindings;
 
     internal static OfficeFormulaShortcutConfiguration Read(
         OfficeFormulaShortcutHost host)
@@ -162,24 +154,11 @@ internal sealed class OfficeFormulaShortcutConfiguration
                 using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, view);
                 using var key = root.OpenSubKey(RegistryPath, writable: false);
                 if (key is null) continue;
-                var inlineValue = ReadString(key, valuePrefix + "InlineFormulaShortcut");
-                var displayValue = ReadString(key, valuePrefix + "DisplayFormulaShortcut");
-                if (inlineValue is null && displayValue is null) continue;
-                OfficeFormulaShortcut? inline =
-                    OfficeFormulaShortcut.TryParse(inlineValue, out var inlineShortcut)
-                        ? inlineShortcut
-                        : null;
-                OfficeFormulaShortcut? display =
-                    OfficeFormulaShortcut.TryParse(displayValue, out var displayShortcut)
-                        ? displayShortcut
-                        : null;
-                if (inline.HasValue && display.HasValue && inline.Value == display.Value)
-                    display = null;
-                return new OfficeFormulaShortcutConfiguration(
-                    inline,
-                    ReadFormat(ReadString(key, valuePrefix + "InlineFormulaFormat")),
-                    display,
-                    ReadFormat(ReadString(key, valuePrefix + "DisplayFormulaFormat")));
+                var bindings = host == OfficeFormulaShortcutHost.Word
+                    ? ReadWordBindings(key, valuePrefix)
+                    : ReadPowerPointBindings(key, valuePrefix);
+                if (bindings is null) continue;
+                return new OfficeFormulaShortcutConfiguration(bindings);
             }
             catch
             {
@@ -187,10 +166,7 @@ internal sealed class OfficeFormulaShortcutConfiguration
             }
         }
         return new OfficeFormulaShortcutConfiguration(
-            null,
-            OfficeFormulaShortcutFormat.Ole,
-            null,
-            OfficeFormulaShortcutFormat.Ole);
+            Array.Empty<OfficeFormulaShortcutBinding>());
     }
 
     internal OfficeFormulaShortcutCommand? Match(
@@ -199,15 +175,61 @@ internal sealed class OfficeFormulaShortcutConfiguration
         bool alt,
         bool shift)
     {
-        if (Inline?.Matches(virtualKey, ctrl, alt, shift) == true)
-            return new OfficeFormulaShortcutCommand(
-                OfficeFormulaShortcutKind.Inline,
-                InlineFormat);
-        if (Display?.Matches(virtualKey, ctrl, alt, shift) == true)
-            return new OfficeFormulaShortcutCommand(
-                OfficeFormulaShortcutKind.Display,
-                DisplayFormat);
+        foreach (var binding in _bindings)
+        {
+            if (binding.Shortcut.Matches(virtualKey, ctrl, alt, shift))
+                return binding.Command;
+        }
         return null;
+    }
+
+    private static OfficeFormulaShortcutBinding[]? ReadWordBindings(
+        RegistryKey key,
+        string valuePrefix)
+    {
+        var inlineValue = ReadString(key, valuePrefix + "InlineFormulaShortcut");
+        var displayValue = ReadString(key, valuePrefix + "DisplayFormulaShortcut");
+        if (inlineValue is null && displayValue is null) return null;
+        return CreateDistinctBindings(
+            (inlineValue, new OfficeFormulaShortcutCommand(
+                OfficeFormulaShortcutKind.Inline,
+                ReadFormat(ReadString(key, valuePrefix + "InlineFormulaFormat")))),
+            (displayValue, new OfficeFormulaShortcutCommand(
+                OfficeFormulaShortcutKind.Display,
+                ReadFormat(ReadString(key, valuePrefix + "DisplayFormulaFormat")))));
+    }
+
+    private static OfficeFormulaShortcutBinding[]? ReadPowerPointBindings(
+        RegistryKey key,
+        string valuePrefix)
+    {
+        var svg = ReadString(key, valuePrefix + "SvgFormulaShortcut");
+        var ole = ReadString(key, valuePrefix + "OleFormulaShortcut");
+        var inlineOmml = ReadString(key, valuePrefix + "InlineOmmlFormulaShortcut");
+        var displayOmml = ReadString(key, valuePrefix + "DisplayOmmlFormulaShortcut");
+        if (svg is null && ole is null && inlineOmml is null && displayOmml is null)
+            return null;
+        return CreateDistinctBindings(
+            (svg, new OfficeFormulaShortcutCommand(OfficeFormulaShortcutKind.PowerPointSvg)),
+            (ole, new OfficeFormulaShortcutCommand(OfficeFormulaShortcutKind.PowerPointOle)),
+            (inlineOmml, new OfficeFormulaShortcutCommand(
+                OfficeFormulaShortcutKind.PowerPointInlineOmml)),
+            (displayOmml, new OfficeFormulaShortcutCommand(
+                OfficeFormulaShortcutKind.PowerPointDisplayOmml)));
+    }
+
+    private static OfficeFormulaShortcutBinding[] CreateDistinctBindings(
+        params (string? Value, OfficeFormulaShortcutCommand Command)[] candidates)
+    {
+        var bindings = new List<OfficeFormulaShortcutBinding>();
+        foreach (var candidate in candidates)
+        {
+            if (!OfficeFormulaShortcut.TryParse(candidate.Value, out var shortcut)
+                || bindings.Exists(binding => binding.Shortcut == shortcut))
+                continue;
+            bindings.Add(new OfficeFormulaShortcutBinding(shortcut, candidate.Command));
+        }
+        return bindings.ToArray();
     }
 
     private static string? ReadString(RegistryKey key, string name) =>
@@ -217,6 +239,20 @@ internal sealed class OfficeFormulaShortcutConfiguration
         string.Equals(value, "omml", StringComparison.OrdinalIgnoreCase)
             ? OfficeFormulaShortcutFormat.Omml
             : OfficeFormulaShortcutFormat.Ole;
+
+    private readonly struct OfficeFormulaShortcutBinding
+    {
+        internal OfficeFormulaShortcutBinding(
+            OfficeFormulaShortcut shortcut,
+            OfficeFormulaShortcutCommand command)
+        {
+            Shortcut = shortcut;
+            Command = command;
+        }
+
+        internal OfficeFormulaShortcut Shortcut { get; }
+        internal OfficeFormulaShortcutCommand Command { get; }
+    }
 }
 
 /// <summary>
