@@ -55,6 +55,7 @@ const requiredFiles = [
   "office-native-dialog.html",
   "src/office/native-dialog-main.tsx",
   "src/office/shared/tauriTransport.ts",
+  "src/office/omml/latexToOmml.ts",
   "src/office/documentImport/OfficeDocumentImportApp.tsx",
   "src/office/redraw/WordLatexRedrawApp.tsx",
   "src/office/redraw/wordLatexRedrawParser.ts",
@@ -127,6 +128,7 @@ const wordLatexRedrawGeometry = read("src/office/redraw/wordLatexRedrawGeometry.
 const wordLatexRedrawRenderer = read("src/office/redraw/wordLatexRedrawRenderer.ts");
 const mathMlToLatex = read("src/office/redraw/mathMlToLatex.ts");
 const tauriTransport = read("src/office/shared/tauriTransport.ts");
+const ommlConverter = read("src/office/omml/latexToOmml.ts");
 const capabilities = read("src-tauri/capabilities/default.json");
 const infoPlist = read("src-tauri/Info.macos.plist");
 const macSettings = read("src/components/MacOfficeIntegrationSettings.tsx");
@@ -248,7 +250,7 @@ expectIncludes(powerpointScript, "set markerLines to paragraphs of markerText", 
 
 expect(!wordAdapter.includes("Public Sub AutoExec()"), "Word Startup template must not expose AutoExec because Word for Mac can consume Finder's first document-open request before the document is created");
 expectIncludes(wordAdapter, "Public Sub VisualTeX_InitializeWordHost()", "Word must expose explicit host initialization for application health refreshes");
-expectIncludes(wordAdapter, '"word-office-performance-20260801-r93"', "Word health must identify the current native Office build");
+expectIncludes(wordAdapter, '"word-office-performance-20260801-r101"', "Word health must identify the current native Office build");
 const wordHostInitStart = wordAdapter.indexOf("Public Sub VisualTeX_InitializeWordHost()");
 const wordHostInitEnd = wordAdapter.indexOf("End Sub", wordHostInitStart);
 const wordHostInitSource = wordAdapter.slice(wordHostInitStart, wordHostInitEnd);
@@ -276,7 +278,10 @@ expect(!wordAdapter.includes("For index = 1 To VT_WORD_PAYLOAD_MAX_CHUNKS"), "Wo
 expectIncludes(wordAdapter, "VTPrepareWordImageFormulaState", "Word edit opening must resolve image scale state once on the common path");
 expectIncludes(wordAdapter, "Public Sub VisualTeX_EditImageField()", "Word must retain the legacy MacroButton edit entry point for old documents during migration");
 expectIncludes(wordAdapter, "Public Function VTEnsureVisualTeXImageMacroButton", "Every image commit must normalize legacy field wrappers to one plain InlineShape");
-expectIncludes(wordAdapter, 'VT_WORD_IMAGE_MACRO_SCHEMA_VERSION As String = "8"', "The image migration schema must normalize legacy tables/schema-6 direct SEQ, restore painted-centre metadata and reapply unnumbered display baselines when opening existing documents");
+expectIncludes(wordAdapter, 'VT_WORD_IMAGE_MACRO_SCHEMA_VERSION As String = "10"', "The image migration schema must rebuild Schema-9 PlaceRefs onto the private image sequence, normalize legacy tables/direct SEQ, restore painted-centre metadata and reapply unnumbered display baselines when opening existing documents");
+expectIncludes(wordAdapter, 'VT_WORD_IMAGE_SEQUENCE_NAME As String = "VisualTeXEquation"', "Image formulas must use a private sequence independent from native OMML Equation fields");
+expectIncludes(wordAdapter, "Set placeRef = documentObject.Fields.Add( _\n        Range:=insertion, Type:=wdFieldMacroButton", "Image numbering must construct the native MACROBUTTON instruction before inserting its visible label");
+expectIncludes(wordAdapter, 'If Len(completedCodeText) = 0 Or Right$(completedCodeText, 1) <> ")" Then', "Image PlaceRef construction must reject trailing whitespace after the closing parenthesis");
 expectIncludes(wordAdapter, "VTNormalizeUnnumberedDisplayParagraph formulaShape.Range", "The image migration must repair the centred baseline of existing unnumbered display formulas without requiring a click");
 expectIncludes(wordAdapter, 'VT_WORD_NUMBERED_IMAGE_STYLE_NAME As String = _', "Numbered image formulas must use a dedicated Word paragraph style rather than inheriting direct formula formatting on Return");
 expectIncludes(wordAdapter, "equationStyle.NextParagraphStyle = wdStyleNormal", "The numbered-image paragraph style must make Word create a Normal paragraph on Return without a SelectionChange repair");
@@ -374,7 +379,7 @@ expectIncludes(wordAdapter, "Public Sub VTWordRibbonCrossReferenceItem", "Each E
 expectIncludes(wordAdapter, "VTEquationNumberCrossReferenceItems(ActiveDocument)", "The Ribbon list must reuse the validated VisualTeX Equation inventory");
 expect(!wordScript.includes("OpenEquationCrossReferencePicker"), "The Equation-reference Ribbon list must not re-enter Word through AppleScriptTask");
 expectIncludes(wordAdapter, "Selection.Range.Duplicate", "The Equation-reference picker must freeze the insertion Range before the user chooses a formula");
-expectIncludes(wordAdapter, "Older VisualTeX image formulas used a", "The mixed Equation inventory must retain legacy numbered image formulas alongside OMML formulas");
+expectIncludes(wordAdapter, "Set targets = VTCurrentNumberTargets(documentObject, referenceKind)", "The typed pickers must enumerate same-paragraph image numbers and untagged native OMML numbers without merging their menus");
 expectIncludes(wordAdapter, "nativeEquation", "Word requests must preserve the direct native-equation intent");
 expectIncludes(wordAdapter, "VT_WORD_IMAGE_SCALE_VARIABLE_PREFIX", "Word must persist formula point size and reference image geometry per formula id");
 expectIncludes(wordAdapter, "VTPreferredWordFormulaFontSize(Selection.Range.Duplicate)", "New Word formulas must inherit the current selection point size");
@@ -452,7 +457,7 @@ expectIncludes(imageToNativeFastSource, "VTPrepareNumberedImageCarrierForNativeF
 const nativeToImageFastStart = wordAdapter.indexOf("Private Function VTWordConvertNativeBookmarkToImageFast(");
 const nativeToImageFastEnd = wordAdapter.indexOf("Public Sub VisualTeX_ConvertSelectedToImageFormula()", nativeToImageFastStart);
 const nativeToImageFastSource = wordAdapter.slice(nativeToImageFastStart, nativeToImageFastEnd);
-expectIncludes(nativeToImageFastSource, "VTRebuildNumberedImageLayoutFast", "Numbered OMML-to-image conversion must rebuild only its local visible REF around the existing external helper");
+expectIncludes(nativeToImageFastSource, "VTWriteSingleParagraphImageNumber", "Numbered OMML-to-image conversion must rebuild one private image-number sequence without reusing the native OMML sequence");
 expect(!nativeToImageFastSource.includes("VTInsertEquationNumber("), "Numbered OMML-to-image fast conversion must not enter the generic insertion/reconciliation workflow");
 expectIncludes(wordAdapter, 'VTWordEditInlineShape target, True, "imageToNative"', "The cached image-to-OMML fast path must preserve the silent hidden-renderer fallback for older formulas without a native DOCX");
 expectIncludes(wordAdapter, "Private Function VTRestoreCachedImageFormulasToLatex", "VisualTeX image formulas with durable LaTeX payloads must restore without launching the hidden renderer");
@@ -534,7 +539,11 @@ expectIncludes(wordAdapter, "Private Sub VTFinalizeParagraphEquationNumber", "Ev
 expectIncludes(wordAdapter, "Private Sub VTRefreshParagraphEquationBookmarks", "Single-paragraph numbering must restore VT_N_, VT_R_ and VT_C_ after field updates");
 expectIncludes(wordAdapter, "captionRange.Collapse wdCollapseEnd", "The compatibility VT_C_ Bookmark must be collapsed without creating text or another paragraph mark");
 expectIncludes(wordAdapter, "Set VTEnsureImageEquationNumber = VTInsertEquationNumber", "New numbered image formulas must use the single-paragraph numbering path");
-expectIncludes(wordAdapter, "VTEnsureNativeEquationArrayNumber(formulaRange, formulaId)", "New numbered OMML formulas must use the native single-paragraph Equation-array path");
+expectIncludes(wordAdapter, "Set VTEnsureNativeEquationNumber = VTWritePureNativeNumber(equationRange, formulaId)", "New numbered OMML formulas must use native math with direct Word number fields");
+expectIncludes(wordAdapter, "Set placeholder = VTNativeEquationArrayPlaceholderRange(exact)", "A numbered OMML cache shell must resolve its owned placeholder before number-field insertion");
+expectIncludes(wordAdapter, '"VTNUMBERCACHE0"', "The Word native cache must use an explicit owned placeholder instead of mistaking a user's #(0) for VisualTeX state");
+expectIncludes(ommlConverter, "VTNUMBERCACHE0", "The OMML producer and Word VBA consumer must share the owned native-number cache placeholder");
+expectIncludes(wordAdapter, 'report = "existing-number-cache-shell=PASS"', "The real Word native-format regression must exercise re-entry through an existing numbered OMML cache shell");
 expectIncludes(wordAdapter, "If formulaRange.Information(wdWithInTable) Then", "Existing three-cell formulas must retain an explicit legacy compatibility branch");
 expectIncludes(wordAdapter, "NumRows:=1, NumColumns:=3", "Legacy numbered-table documents must remain readable and repairable");
 expectIncludes(wordAdapter, "Private Function VTCalculateStaticImageEquationNumberPosition", "Numbered image Equations must route reconciliation through the reviewed painted-centre formula");
@@ -601,7 +610,7 @@ expectIncludes(wordAdapter, "expectedText = CStr(sequenceOrdinal)", "The native 
 expect(!wordAdapter.includes("insertionRange.InsertAfter expectedText & vbCr"), "Numbering must not create a second plain-text number paragraph");
 expect(!wordAdapter.includes("sequenceParagraph.InsertParagraphAfter"), "Numbering must not create a mirror paragraph beside the native SEQ");
 expect(!wordAdapter.includes("sequenceField.Result.Text = expectedText"), "Numbering must not overwrite a Word field result Range");
-expectIncludes(wordAdapter, "VTParenthesizedEquationReferenceFieldText( _\n            sequenceBookmarkName)", "Legacy visible REF and body references must target the native SEQ result Bookmark");
+expectIncludes(wordAdapter, "VTRestoreNativeNumberBookmarks equationRange, numberBookmarks", "Image conversion must preserve native body-reference targets before removing VisualTeX identities");
 expectIncludes(wordAdapter, "formulaIds = VTValidNumberedFormulaIds(documentObject)", "The Equation picker must enumerate only live VisualTeX numbered formulas");
 expectIncludes(wordAdapter, "Text:=VTParenthesizedEquationReferenceFieldText( _", "Body Equation references must target the live VT_N_ Bookmark with a native REF field");
 const crossReferenceCommandStart = wordAdapter.indexOf("Public Sub VisualTeX_OpenEquationCrossReference()");
@@ -616,7 +625,7 @@ expectIncludes(wordAdapter, "VTReconcileEquationNumbers documentObject", "The sh
 expectIncludes(wordAdapter, "Set sequenceField = VTEnsureNativeEquationSequenceHelper", "New image Equation numbers must retain a live external native SEQ helper field");
 expectIncludes(wordAdapter, "Type:=wdFieldRef", "Inserted body cross-references must remain dynamic REF fields");
 expectIncludes(wordAdapter, "VT_WORD_NUMBER_BOOKMARK_PREFIX", "Word must retain a formula-specific Bookmark around the complete visible (n) range");
-expect(!wordAdapter.includes("VisualTeXEquation"), "New Word numbering must not use the legacy VisualTeX-only sequence name");
+expectIncludes(wordAdapter, "instruction = \"SEQ \" & VT_WORD_IMAGE_SEQUENCE_NAME", "Image numbering must advance only the private VisualTeXEquation sequence");
 expectIncludes(wordAdapter, "Private Sub VTFormatVisibleEquationReference", "Visible Equation number formatting must be centralized and verified");
 expectIncludes(wordAdapter, "VTEquationNumberRaisePoints = 0!", "The temporary legacy image scaffold must remain neutral before static-number replacement");
 expectIncludes(wordAdapter, "numberPosition = VTCalculateStaticImageEquationNumberPosition", "Renumbering must reapply the SVG mathematical-baseline formula after every field refresh");
@@ -736,7 +745,7 @@ expectIncludes(wordAdapter, "If sequenceAnchors(previousIndex) <= anchorValue Th
 expect(!wordAdapter.includes("sequenceAnchors(sequenceCount) = nativeFormulaRange.Start"), "VisualTeX numbering must not move a managed helper ahead of an interleaved ordinary Word Caption in native SEQ order");
 expectIncludes(wordAdapter, "Private Function VTRepairMixedNumberHelperOrder", "Mixed image and OMML numbering must restore each native SEQ helper beside its visible formula before manual refresh");
 expectIncludes(wordAdapter, "helperParagraph.Start <> formulaParagraph.End", "A displaced Equation helper must be detected from the visible formula paragraph boundary");
-expectIncludes(wordAdapter, "movedHelpers = VTRepairMixedNumberHelperOrder", "Manual Equation refresh must repair mixed-format helper order before assigning ordinals");
+expectIncludes(wordAdapter, "VTUpgradeWordNumberFormats documentObject", "Manual Equation refresh must migrate legacy helper formats to same-paragraph native fields");
 expectIncludes(wordAdapter, "sequenceBookmarkNames(previousIndex + 1) =", "Equation anchor sorting must keep each VT_N_ identity paired with its field position");
 expectIncludes(wordAdapter, "referenceAnchors() As Long", "Legacy visible REF reconciliation must snapshot stable anchors before rebuilding fields");
 expectIncludes(wordAdapter, "VTNormalizePlainWordParagraph paragraphRange", "Orphan cleanup must restore an ordinary body-text paragraph and caret");
@@ -790,8 +799,8 @@ const insertReferenceSource = wordAdapter.slice(insertReferenceStart, insertRefe
 expect(!pickerItemsSource.includes("GetCrossReferenceItems"), "The VisualTeX picker inventory must not depend on Word's whole-paragraph caption list");
 expect(!insertReferenceSource.includes("InsertCrossReference"), "Single-paragraph VisualTeX references must not ask Word to reference the entire formula line");
 expectIncludes(insertReferenceSource, "Type:=wdFieldRef", "VisualTeX references must remain native dynamic Word REF fields");
-expectIncludes(insertReferenceSource, "sequenceBookmarkName", "VisualTeX references must target the exact live VT_N_ sequence Bookmark");
-expectIncludes(insertReferenceSource, 'insertedRange.Text = "()"', "VisualTeX references must expose only ordinary parentheses around the native REF result");
+expectIncludes(insertReferenceSource, 'bookmarkName = "_Ref"', "New references must create Word-native bookmarks only when requested");
+expectIncludes(insertReferenceSource, 'insertion.Text = "()"', "VisualTeX references must expose only ordinary parentheses around the native REF result");
 expectIncludes(wordAdapter, "Private Function VTNativeEquationReferenceItemForFormula", "VisualTeX formulas must map their durable formula id to the corresponding native Equation item without touching Word's private _Ref Bookmark");
 const sequenceCodeStart = wordAdapter.indexOf("Private Function VTEquationSequenceFieldCodeForOrdinal");
 const sequenceCodeEnd = wordAdapter.indexOf("Private Function VTNormalizeEquationFieldCode", sequenceCodeStart);
@@ -865,8 +874,8 @@ expectIncludes(wordAdapter, "Private Function VTIsDetachedVisualTeXNativeSequenc
 expectIncludes(wordAdapter, "Private Function VTFormulaIdForDetachedSequenceHelper", "Detached SEQ cleanup must recover formulaId from VT_C_ or the adjacent VT_R_ scaffold");
 expectIncludes(wordAdapter, "Private Function VTPruneDetachedVisualTeXNativeSequenceHelpers", "Numbering entry points must delete or repair detached VisualTeX native SEQ helpers");
 expectIncludes(wordAdapter, "Private Sub VTReconcileEquationNumbersPass", "Equation reconciliation must use a fresh-pass implementation that can be replayed after cleanup");
-expectIncludes(wordAdapter, "Resume RetryAttempt", "A strict Word SEQ mismatch must leave VBA's first error handler before retrying cleanup and replay");
-expectIncludes(wordAdapter, "VTReconcileEquationNumbersPass documentObject, -1, True", "The one-time SEQ recovery path must replay every managed helper from the beginning");
+expectIncludes(wordAdapter, "VTUpdateCurrentWordNumberFields documentObject", "Reconciliation must update native fields without reconstructing external SEQ helpers");
+expectIncludes(wordAdapter, "For Each paragraph In doc.Paragraphs", "Native field refresh must follow physical paragraph order");
 expectIncludes(wordAdapter, "detachedHelperFound = True", "Detached helpers must be excluded and cleaned before the sequence snapshot is numbered");
 expectIncludes(wordAdapter, "GoTo CaptureSequenceSnapshot", "A helper deletion must discard stale Field and Range snapshots before numbering continues");
 expectIncludes(reconcileSource, "sequenceAnchors(sequenceCount) = _\n                VTEquationFieldStart(candidate)", "Managed and ordinary Equation fields must be sorted by the same physical SEQ coordinate used by Word");
@@ -926,8 +935,8 @@ expectIncludes(wordScript, "on ReadVisualTeXNumberingPreference(ignoredValue)", 
 expectIncludes(wordAdapter, "VTTryReadEquationNumberingPreference", "Documents without their own numbering format must inherit the persistent Word-level default");
 expectIncludes(wordAdapter, "Private Sub VTMaterializeDocumentEquationNumberingFormat", "An inherited numbering preference must be materialized into document Variables before live SEQ/REF Range mutation begins");
 expectIncludes(wordAdapter, "VT_WORD_NUMBERING_PREFERENCE_CACHE_LOADED", "Word must cache the persistent numbering preference after the first AppleScriptTask read in one host session");
-expectIncludes(wordAdapter, "Opening the Equation picker is a read operation.", "Opening the Equation picker must not mutate numbering scaffolds just to build its item list");
-expectIncludes(wordAdapter, "Reference insertion is intentionally non-repairing.", "Inserting a body Equation REF must not prune or reconcile numbering as a side effect");
+expect(!pickerItemsSource.includes("VTUpgradeWordNumberFormats") && !pickerItemsSource.includes("VTReconcileEquationNumbers"), "Opening the Equation picker must not migrate or renumber the document");
+expect(!insertReferenceSource.includes("VTUpgradeWordNumberFormats") && !insertReferenceSource.includes("VTReconcileEquationNumbers"), "Reference insertion must not migrate or renumber the document");
 expectIncludes(crossReferenceCommandSource, "Set insertionRange = VTResolveEquationReferenceInsertionRange", "The modal Equation picker must normalize and freeze the user's insertion Range before showing its item list");
 expectIncludes(crossReferenceCommandSource, "insertionRange, itemIndex, True", "The modal Equation picker must insert into the frozen body-text Range instead of a post-refresh Selection");
 expect(!wordAdapter.includes("VisualTeX_DiagnoseNumberingPerformance"), "Temporary numbering performance probes must never ship in the production Word add-in");
@@ -2129,7 +2138,7 @@ expectIncludes(macFirstRun, "修复 VisualTeX Office 插件", "Missing files aft
 expectIncludes(installer, "powerpoint_script.clone()", "PowerPoint installed status must include its AppleScriptTask resource");
 expectIncludes(installer, 'health.plugin_version.as_deref() == Some(env!("CARGO_PKG_VERSION"))', "Installer must reject stale plug-in health versions");
 expect(!installer.includes("source_revision_matches"), "Runtime health must not reject a current-version add-in only because an optional sourceRevision field is absent");
-expectIncludes(packager, "word-office-performance-20260801-r93", "Packaging must reject a Word DOTM that lacks the current performance revision");
+expectIncludes(packager, "word-office-performance-20260801-r101", "Packaging must reject a Word DOTM that lacks the current performance revision");
 expectIncludes(packager, "const resolvedWordShell = wordShell ? resolve(wordShell) : undefined;", "Word packaging must use the newly compiled DOTM as its default OOXML shell");
 expect(!packager.includes('const existingWordShell = join(resourcesRoot, "VisualTeX.dotm")'), "Word packaging must not silently inherit document.xml and template metadata from the previously packaged DOTM");
 expectIncludes(packager, "powerpoint-native-omml-edit-20260926-r1", "Packaging must reject a PowerPoint PPAM that lacks the current native OMML revision");

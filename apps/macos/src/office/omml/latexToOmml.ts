@@ -1055,7 +1055,7 @@ export function wordNumberedNativeCacheOmml(omml: string) {
     formulaBody +
     '<m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>#</m:t></m:r>' +
     '<m:d><m:dPr/><m:e>' +
-    '<m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>0</m:t></m:r>' +
+    '<m:r><m:rPr><m:sty m:val="p"/></m:rPr><m:t>VTNUMBERCACHE0</m:t></m:r>' +
     "</m:e></m:d></m:e></m:eqArr>";
   return wrapOmml(numberShell);
 }

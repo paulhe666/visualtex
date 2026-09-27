@@ -41,6 +41,8 @@ import { HistoryPanel } from "./components/HistoryPanel";
 import { HelpManualDialog } from "./components/HelpManualDialog";
 import { OcrDialog } from "./components/OcrDialog";
 import { ExportDialog } from "./components/ExportDialog";
+import { MacOfficeFirstRunPrompt } from "./components/MacOfficeFirstRunPrompt";
+import { decodeMacOfflineOfficeStatus } from "./components/macOfficeStatusValidation";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
 import {
@@ -127,6 +129,8 @@ interface InlineOcrState {
 }
 
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
+const MAC_OFFICE_FIRST_RUN_STORAGE_KEY =
+  "visualtex.office.macos.native-first-run.v1.2.0.completed";
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);
@@ -150,6 +154,12 @@ function App() {
   const [updateError, setUpdateError] = useState("");
   const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
   const [automaticUpdatePrompt, setAutomaticUpdatePrompt] = useState(false);
+  const [macOfficeFirstRunOpen, setMacOfficeFirstRunOpen] = useState(false);
+  const [macOfficePromptMode, setMacOfficePromptMode] = useState<
+    "setup" | "update" | "repair"
+  >("setup");
+  const [powerpointRegistrationRequired, setPowerpointRegistrationRequired] =
+    useState(false);
   const [toast, setToast] = useState("");
   const [savedPulse, setSavedPulse] = useState(false);
   const [editorHistoryBusy, setEditorHistoryBusy] = useState(false);
@@ -181,6 +191,7 @@ function App() {
   const inlineOcrRunIdRef = useRef(0);
   const inlineOcrClearTimerRef = useRef<number | null>(null);
   const automaticUpdateCheckRef = useRef(false);
+  const macOfficeInstallStatusCheckedRef = useRef(false);
   const initialEditorFocusDoneRef = useRef(false);
   const pngClipboardBusyRef = useRef(false);
 
@@ -306,6 +317,67 @@ function App() {
       editorRef.current?.focus({ target: "last", moveToEnd: true });
     });
     return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    if (
+      !isTauriEnvironment() ||
+      macOfficeInstallStatusCheckedRef.current
+    ) {
+      return;
+    }
+    macOfficeInstallStatusCheckedRef.current = true;
+    let cancelled = false;
+
+    void invoke<unknown>("get_macos_offline_office_install_status")
+      .then(decodeMacOfflineOfficeStatus)
+      .then((status) => {
+        if (cancelled || !status.compiledArtifactsAvailable) return;
+
+        const wordNeedsCurrentAddin =
+          status.word.applicationInstalled && !status.word.filesInstalled;
+        const powerpointNeedsCurrentAddin =
+          status.powerpoint.applicationInstalled &&
+          !status.powerpoint.filesInstalled;
+        const needsCurrentAddins =
+          wordNeedsCurrentAddin || powerpointNeedsCurrentAddin;
+
+        setPowerpointRegistrationRequired(
+          status.powerpoint.applicationInstalled &&
+            !status.powerpoint.filesPresent,
+        );
+        if (!needsCurrentAddins) {
+          setMacOfficeFirstRunOpen(false);
+          return;
+        }
+
+        const staleInstalledAddins =
+          (wordNeedsCurrentAddin && status.word.filesPresent) ||
+          (powerpointNeedsCurrentAddin && status.powerpoint.filesPresent);
+        const previouslyConfigured =
+          readLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true" ||
+          status.word.filesPresent ||
+          status.powerpoint.filesPresent;
+
+        if (staleInstalledAddins) {
+          setMacOfficePromptMode("update");
+        } else if (previouslyConfigured) {
+          setMacOfficePromptMode("repair");
+        } else {
+          setMacOfficePromptMode("setup");
+        }
+        setMacOfficeFirstRunOpen(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPowerpointRegistrationRequired(false);
+        setMacOfficePromptMode("repair");
+        setMacOfficeFirstRunOpen(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -1066,6 +1138,24 @@ function App() {
     action();
   };
 
+  const finishMacOfficeFirstRun = useCallback((installed: boolean) => {
+    writeLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY, "true");
+    setMacOfficeFirstRunOpen(false);
+    setToast(
+      installed
+        ? macOfficePromptMode === "update"
+          ? isEn
+            ? "Office add-ins updated to this VisualTeX version"
+            : "Office 插件已更新到当前 VisualTeX 版本"
+          : isEn
+            ? "Office add-ins are ready"
+            : "Office 插件已就绪"
+        : isEn
+          ? "You can install the Office add-ins later in Settings"
+          : "之后可在设置中安装 Office 插件",
+    );
+  }, [isEn, macOfficePromptMode]);
+
   const runUpdateCheck = useCallback(async (manual = true) => {
     if (manual) {
       setAutomaticUpdatePrompt(false);
@@ -1102,6 +1192,7 @@ function App() {
   useEffect(() => {
     if (
       !checkUpdatesOnStartup ||
+      macOfficeFirstRunOpen ||
       automaticUpdateCheckRef.current
     ) {
       return;
@@ -1126,7 +1217,7 @@ function App() {
       window.clearTimeout(timer);
       window.removeEventListener("online", runWhenOnline);
     };
-  }, [checkUpdatesOnStartup, runUpdateCheck]);
+  }, [checkUpdatesOnStartup, macOfficeFirstRunOpen, runUpdateCheck]);
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -1142,6 +1233,7 @@ function App() {
         ocrOpen ||
         historyOpen ||
         exportOpen ||
+        macOfficeFirstRunOpen ||
         updateOpen
       ) {
         return;
@@ -1213,6 +1305,7 @@ function App() {
     ocrOpen,
     historyOpen,
     exportOpen,
+    macOfficeFirstRunOpen,
     updateOpen,
   ]);
 
@@ -1920,6 +2013,13 @@ function App() {
         onProviderConfigurationChange={(configuration) =>
           setActiveOcrProviderId(configuration.activeProvider)
         }
+      />
+      <MacOfficeFirstRunPrompt
+        open={macOfficeFirstRunOpen}
+        language={language}
+        mode={macOfficePromptMode}
+        powerpointRegistrationRequired={powerpointRegistrationRequired}
+        onComplete={finishMacOfficeFirstRun}
       />
       <UpdateDialog
         open={updateOpen}

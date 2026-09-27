@@ -195,15 +195,21 @@ expectResolution(
 );
 
 function formulaDisplayMap(formulas) {
-  const anchors = formulas.map((item) => item.anchor).sort((a, b) => a - b);
-  const resolved = resolveScopes(customOutlineHeadings, anchors, "chapter");
-  const sorted = [...formulas].sort((a, b) => a.anchor - b.anchor);
-  return new Map(
-    sorted.map((item, index) => [
-      item.id,
-      `${resolved.prefixes[index]}-${resolved.localOrdinals[index]}`,
-    ]),
-  );
+  const result = new Map();
+  for (const type of ["image", "omml"]) {
+    const sorted = formulas
+      .filter((item) => item.type === type)
+      .sort((a, b) => a.anchor - b.anchor);
+    const resolved = resolveScopes(
+      customOutlineHeadings,
+      sorted.map((item) => item.anchor),
+      "chapter",
+    );
+    sorted.forEach((item, index) => {
+      result.set(item.id, `${resolved.prefixes[index]}-${resolved.localOrdinals[index]}`);
+    });
+  }
+  return result;
 }
 
 let formulas = [
@@ -214,25 +220,25 @@ let formulas = [
 ];
 let display = formulaDisplayMap(formulas);
 expect(display.get("image-a") === "1-1", "mixed image/OMML: image-a must be 1-1");
-expect(display.get("omml-b") === "1-2", "mixed image/OMML: omml-b must be 1-2");
+expect(display.get("omml-b") === "1-1", "mixed image/OMML: omml-b must independently be 1-1");
 expect(display.get("image-c") === "2-1", "mixed image/OMML: image-c must be 2-1");
-expect(display.get("omml-d") === "2-2", "mixed image/OMML: omml-d must be 2-2");
+expect(display.get("omml-d") === "2-1", "mixed image/OMML: omml-d must independently be 2-1");
 const referenceTarget = "omml-d";
-expect(display.get(referenceTarget) === "2-2", "body REF target must initially resolve to 2-2");
+expect(display.get(referenceTarget) === "2-1", "body REF target must initially resolve to 2-1");
 
 formulas.push({ id: "image-inserted", type: "image", anchor: 130 });
 display = formulaDisplayMap(formulas);
 expect(display.get("image-c") === "2-1", "second-chapter insertion must keep the first formula at 2-1");
 expect(display.get("image-inserted") === "2-2", "second-chapter insertion must become 2-2");
-expect(display.get("omml-d") === "2-3", "second-chapter insertion must move the existing OMML formula to 2-3");
-expect(display.get(referenceTarget) === "2-3", "body REF identity must follow the same OMML formula after insertion");
+expect(display.get("omml-d") === "2-1", "image insertion must not advance the OMML sequence");
+expect(display.get(referenceTarget) === "2-1", "body REF identity must remain on the independent OMML sequence");
 
 formulas = formulas.filter((item) => item.id !== "image-a" && item.id !== "image-c");
 display = formulaDisplayMap(formulas);
 expect(display.get("omml-b") === "1-1", "first-chapter deletion/update must compact to 1-1");
 expect(display.get("image-inserted") === "2-1", "second-chapter deletion/update must compact to 2-1");
-expect(display.get("omml-d") === "2-2", "second-chapter deletion/update must compact the target to 2-2");
-expect(display.get(referenceTarget) === "2-2", "body REF identity must still point to the same OMML formula after deletion/update");
+expect(display.get("omml-d") === "2-1", "image deletion must not renumber the OMML target");
+expect(display.get(referenceTarget) === "2-1", "body REF identity must still point to the same OMML formula after deletion/update");
 
 // Source-level invariants: the production VBA must implement exactly the same
 // local-ordinal architecture rather than reverting to Word's Heading-style-only
@@ -241,7 +247,7 @@ expect(wordAdapter.includes("ByRef localOrdinals() As Long"), "production scan m
 expect(wordAdapter.includes('headingPrefixes(itemIndex) = "0"'), "chapter mode must use chapter 0 before the first Heading 1");
 expect(wordAdapter.includes('headingPrefixes(itemIndex) = currentPrefix & ".0"'), "section mode must use section 0 before the first Heading 2 of a chapter");
 expect(wordAdapter.includes('headingPrefixes(itemIndex) = "0.0"'), "section mode must use 0.0 before any chapter or section");
-expect(wordAdapter.includes("sequenceOrdinal = sequenceLocalOrdinals(itemIndex)"), "reconcile must consume the scan's local ordinal");
+expect(wordAdapter.includes("VTImageSequenceInstruction"), "image numbering must have a dedicated sequence-instruction builder");
 expect(wordAdapter.includes('VTEquationSequenceFieldCodeForOrdinal & " \\r 1"'), "first formula in a scope must use native SEQ \\r 1");
 expect(!wordAdapter.includes('" \\s " & CStr(restartLevel)'), "production numbering must not rely on native SEQ \\s heading detection");
 expect(wordAdapter.includes("VTEquationSequenceResultText(sequenceField) = CStr(sequenceOrdinal)"), "SEQ validation must compare the exact expected local ordinal");
@@ -256,6 +262,8 @@ const mixedRegressionSource = wordAdapter.slice(
 expect(mixedRegressionStart >= 0, "packaged VBA must retain the dedicated mixed image/OMML numbering regression");
 expect(mixedRegressionSource.includes("VTRegressionCreateNumberedNative"), "dedicated mixed regression must create native OMML formulas");
 expect(mixedRegressionSource.includes("VTRegressionCreateNumberedImage"), "dedicated mixed regression must create image formulas");
+expect(mixedRegressionSource.includes('"independentSequenceStreams=PASS"'), "dedicated mixed regression must verify independent image and OMML sequence streams");
+expect(wordAdapter.includes('VT_WORD_IMAGE_SEQUENCE_NAME As String = "VisualTeXEquation"'), "production image numbering must use its private VisualTeXEquation stream");
 expect(wordAdapter.includes('"standardHeading1=PASS"'), "real-host regression must cover built-in Heading 1");
 expect(wordAdapter.includes('"customOutlineLevel1=PASS"'), "real-host regression must cover custom outline-level headings");
 expect(wordAdapter.includes('"secondChapterInsertion=PASS"'), "real-host regression must cover insertion inside chapter 2");

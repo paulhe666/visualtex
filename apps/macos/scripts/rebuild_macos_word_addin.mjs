@@ -1274,6 +1274,7 @@ function verifyBuiltVba(path) {
     "VTInsertRegisteredEquationCaption",
     "VTWriteWordFailureTrace",
     "VisualTeX_RunWordNativeRegression",
+    "VisualTeX_RunNumberedNativeComplexStructureRegression",
     "VisualTeX_InitializeWordHost",
     "word-structured-document-import-20260730-r61",
     "VTWordRibbonDocumentImport",
@@ -1297,7 +1298,7 @@ function verifyBuiltVba(path) {
     "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
     "VTEnsureVisualTeXImageMacroButton",
     "VTNativeMathFastSignature",
-    "word-office-performance-20260801-r93",
+    "word-office-performance-20260801-r101",
     "1.2.8",
   ];
   for (const value of required) {

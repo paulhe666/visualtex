@@ -75,7 +75,7 @@
                   label="编号格式"
                   image="VisualTeXWordNumberingFormat"
                   screentip="选择公式编号格式"
-                  supertip="从下拉菜单直接选择完整编号格式。选择后立即应用于当前文档，并记为后续新文档的默认格式。">
+                  supertip="从下拉菜单直接选择完整编号格式。选择后立即重建当前文档中的 OMML 与图片公式编号结构，两套序列仍分别计数，并记为后续新文档的默认格式。">
               <button id="VisualTeX.Mac.Word.NumberingFormat.Sequence"
                       label="顺序编号 (1)"
                       onAction="VTWordRibbonNumberingFormatSequence"/>
@@ -98,7 +98,7 @@
                          getContent="VTWordRibbonCrossReferenceMenuContent"
                          invalidateContentOnDrop="true"
                          screentip="引用带编号公式"
-                         supertip="展开当前文档的 VisualTeX 编号公式列表；点击目标公式后插入可自动更新的 Word REF 字段。"/>
+                         supertip="分别展开当前文档中的 Word OMML 与图片公式编号列表；点击目标公式后插入可自动更新的 Word REF 字段。"/>
           </box>
           <button id="VisualTeX.Mac.Word.DocumentImport"
                   label="批量导入"

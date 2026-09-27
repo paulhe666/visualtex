@@ -36,6 +36,10 @@ const runtimeRoot = join(
   homedir(),
   "Library/Application Scripts/com.microsoft.Word/VisualTeXRuntime",
 );
+const persistedOfficeSessionsRoot = join(
+  homedir(),
+  "Library/Application Support/com.visualtex.studio/office/sessions",
+);
 const pdfExportRequestPath = join(
   runtimeRoot,
   "document-import-regression-pdf-path.txt",
@@ -130,6 +134,10 @@ const wordPerformanceTraceSentinelPath = join(
 const safeWordEditPerformanceStatusPath = join(
   officeScratchRoot,
   "word-safe-edit-performance.json",
+);
+const numberedNativeComplexStructureStatusPath = join(
+  runtimeRoot,
+  "Tests/numbered-native-complex-structures-result.txt",
 );
 const safeWordEditPerformanceOmmlOnly = process.argv.includes(
   "--safe-word-edit-performance-omml-only",
@@ -1909,7 +1917,7 @@ function runFormulaRegressionReport(testDocumentName, formulas) {
   );
   if (
     report.revision !==
-    "word-office-performance-20260801-r93"
+    "word-office-performance-20260801-r101"
   ) {
     throw new Error(`Word loaded the wrong VisualTeX source revision: ${report.revision}`);
   }
@@ -2434,6 +2442,36 @@ async function waitForFormulaEditSession(before, formulaId, timeoutMs = 12_000) 
     await sleep(100);
   }
   throw new Error(`Word did not create an edit Session for ${formulaId}`);
+}
+
+async function waitForWordNativeEditSession(
+  before,
+  sourceDocumentId,
+  timeoutMs = 12_000,
+) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    for (const sessionId of currentSessionIds()) {
+      if (before.has(sessionId)) continue;
+      const requestPath = join(sessionsRoot, sessionId, "request.json");
+      if (!existsSync(requestPath)) continue;
+      try {
+        const request = JSON.parse(readFileSync(requestPath, "utf8"));
+        if (
+          request.mode === "edit" &&
+          request.host === "word" &&
+          request.nativeEquation === true &&
+          request.sourceDocumentId === sourceDocumentId
+        ) {
+          return sessionId;
+        }
+      } catch {
+        // The request may still be in the middle of its atomic write.
+      }
+    }
+    await sleep(100);
+  }
+  throw new Error("Word did not create the expected native OMML edit Session");
 }
 
 function editorPerformanceRecords(sessionId) {
@@ -4246,7 +4284,7 @@ p(\mathbf{x},t)\,
       JSON.stringify(
         {
           status: "PASS",
-          revision: "word-office-performance-20260801-r93",
+          revision: "word-office-performance-20260801-r101",
           ...physicalDoubleClickResult,
         },
         null,
@@ -4293,6 +4331,28 @@ function readOfficeSessionRequest(sessionId) {
     throw new Error(`Office Session request is missing: ${requestPath}`);
   }
   return JSON.parse(readFileSync(requestPath, "utf8"));
+}
+
+function readPersistedOfficeSession(sessionId) {
+  const sessionPath = join(
+    persistedOfficeSessionsRoot,
+    sessionId,
+    "session.json",
+  );
+  if (!existsSync(sessionPath)) {
+    throw new Error(`Persisted Office Session is missing: ${sessionPath}`);
+  }
+  return JSON.parse(readFileSync(sessionPath, "utf8"));
+}
+
+function completedOfficeSessionLatex(sessionId) {
+  const session = readPersistedOfficeSession(sessionId);
+  if (session.status !== "completed" || session.error) {
+    throw new Error(
+      `Office Session did not complete cleanly: ${JSON.stringify({ sessionId, status: session.status, error: session.error })}`,
+    );
+  }
+  return session.lines?.[0]?.latex;
 }
 
 function snapshotOpenWordDocuments() {
@@ -4600,46 +4660,69 @@ function wordFormulaMetadata(documentName, formulaId) {
   return { encoded, metadata, normalized };
 }
 
-function inspectSafeWordFormula(documentName, formulaId, nativeEquation) {
+function inspectSafeWordFormula(
+  documentName,
+  formulaId,
+  nativeEquation,
+  expectedNativeCount = 1,
+) {
   const bookmarkName = nativeBookmark(formulaId);
   const raw = runAppleScript([
     'tell application "Microsoft Word"',
     `set documentObject to document ${JSON.stringify(documentName)}`,
     'set shapeCount to count of inline shapes of documentObject',
+    'set mathCount to count of math objects of documentObject',
     `set formulaBookmarkExists to exists bookmark ${JSON.stringify(bookmarkName)} of documentObject`,
     'set bookmarkStart to -1',
     'set bookmarkEnd to -1',
     'set bookmarkText to ""',
+    'set lastMathStart to -1',
+    'set lastMathEnd to -1',
+    'set lastMathText to ""',
     'if formulaBookmarkExists then',
     `set formulaRange to text object of bookmark ${JSON.stringify(bookmarkName)} of documentObject`,
     'set bookmarkStart to start of content of formulaRange',
     'set bookmarkEnd to end of content of formulaRange',
     'set bookmarkText to content of formulaRange as text',
     'end if',
-    'return (shapeCount as text) & (ASCII character 31) & (formulaBookmarkExists as text) & (ASCII character 31) & (bookmarkStart as text) & (ASCII character 31) & (bookmarkEnd as text) & (ASCII character 31) & bookmarkText',
+    'if mathCount is greater than 0 then',
+    'set lastMathRange to text range of math object mathCount of documentObject',
+    'set lastMathStart to start of content of lastMathRange',
+    'set lastMathEnd to end of content of lastMathRange',
+    'set lastMathText to content of lastMathRange as text',
+    'end if',
+    'return (shapeCount as text) & (ASCII character 31) & (mathCount as text) & (ASCII character 31) & (formulaBookmarkExists as text) & (ASCII character 31) & (bookmarkStart as text) & (ASCII character 31) & (bookmarkEnd as text) & (ASCII character 31) & (lastMathStart as text) & (ASCII character 31) & (lastMathEnd as text) & (ASCII character 31) & bookmarkText & (ASCII character 31) & lastMathText',
     'end tell',
   ], 30_000);
   const [
     shapeCountText,
+    mathCountText,
     formulaBookmarkExistsText,
     bookmarkStartText,
     bookmarkEndText,
-    ...bookmarkTextParts
+    lastMathStartText,
+    lastMathEndText,
+    bookmarkText,
+    ...lastMathTextParts
   ] = raw.split("\x1f");
   const state = {
     shapeCount: Number(shapeCountText),
+    mathCount: Number(mathCountText),
     formulaBookmarkExists: formulaBookmarkExistsText === "true",
     bookmarkStart: Number(bookmarkStartText),
     bookmarkEnd: Number(bookmarkEndText),
-    bookmarkText: bookmarkTextParts.join("\x1f"),
+    bookmarkText,
+    lastMathStart: Number(lastMathStartText),
+    lastMathEnd: Number(lastMathEndText),
+    lastMathText: lastMathTextParts.join("\x1f"),
   };
   if (nativeEquation) {
     if (
       state.shapeCount !== 0 ||
-      !state.formulaBookmarkExists ||
-      state.bookmarkStart < 0 ||
-      state.bookmarkEnd <= state.bookmarkStart ||
-      !state.bookmarkText.trim()
+      state.mathCount !== expectedNativeCount ||
+      state.lastMathStart < 0 ||
+      state.lastMathEnd <= state.lastMathStart ||
+      !state.lastMathText.trim()
     ) {
       throw new Error(`The native performance formula is structurally invalid: ${JSON.stringify(state)}`);
     }
@@ -4657,6 +4740,7 @@ async function runSafeWordEditPerformanceCase({
   numbered = false,
   createLatex,
   editLatex,
+  additionalCreateLatex = "",
   isolatedTemplateName = "",
   productionAddinWasInstalled = true,
 }) {
@@ -4740,21 +4824,88 @@ async function runSafeWordEditPerformanceCase({
       productionAddinWasInstalled,
     );
     await sleep(150);
-    const createdMetadata = wordFormulaMetadata(
-      documentName,
-      createRequest.formulaId,
-    );
-    if (createdMetadata.normalized.lines[0]?.latex !== createLatex) {
+    const createdLatex = nativeEquation
+      ? completedOfficeSessionLatex(createSessionId)
+      : wordFormulaMetadata(documentName, createRequest.formulaId)
+          .normalized.lines[0]?.latex;
+    if (createdLatex !== createLatex) {
       throw new Error(
-        `${label} create did not persist its LaTeX: ${JSON.stringify(createdMetadata.normalized)}`,
+        `${label} create did not persist its LaTeX: ${JSON.stringify(createdLatex)}`,
       );
     }
     const createdStructure = inspectSafeWordFormula(
       documentName,
       createRequest.formulaId,
       nativeEquation,
+      1,
     );
     const createVba = wordVbaPerformanceTrace(createSessionId);
+    let editFormulaId = createRequest.formulaId;
+    let additionalCreate = null;
+
+    if (additionalCreateLatex) {
+      const sessionsBeforeAdditionalCreate = currentSessionIds();
+      runAppleScript([
+        'tell application "Microsoft Word"',
+        `set testDocument to document ${JSON.stringify(documentName)}`,
+        'activate object testDocument',
+        'activate',
+        `run VB macro macro name ${JSON.stringify(createMacro)}`,
+        'end tell',
+      ], 60_000);
+      const additionalCreateSessionId = await waitForWordCreateSession(
+        sessionsBeforeAdditionalCreate,
+        30_000,
+        (request) =>
+          request.sourceDocumentId === documentPath &&
+          request.nativeEquation === nativeEquation &&
+          request.displayMode === displayMode,
+      );
+      const additionalCreateRequest = readOfficeSessionRequest(
+        additionalCreateSessionId,
+      );
+      await ensureWorkspaceOfficeSessionReceived(additionalCreateSessionId);
+      await waitForPhysicalEditorVisible(
+        additionalCreateSessionId,
+        additionalCreateRequest.formulaId,
+        30_000,
+      );
+      if (displayMode === "block" && additionalCreateRequest.numbered !== numbered) {
+        setActiveVisualTeXWordNumbered(numbered);
+      }
+      await replaceActiveVisualTeXFormula(additionalCreateLatex, 400);
+      await sleep(250);
+      const additionalCreateApply = await applyWithOptionalIsolatedWordTemplate(
+        additionalCreateSessionId,
+        15_000,
+        isolatedTemplateName,
+        productionAddinWasInstalled,
+      );
+      await sleep(150);
+      const additionalCreatedLatex = nativeEquation
+        ? completedOfficeSessionLatex(additionalCreateSessionId)
+        : wordFormulaMetadata(documentName, additionalCreateRequest.formulaId)
+            .normalized.lines[0]?.latex;
+      if (additionalCreatedLatex !== additionalCreateLatex) {
+        throw new Error(
+          `${label} additional create did not persist its LaTeX: ${JSON.stringify(additionalCreatedLatex)}`,
+        );
+      }
+      const additionalCreatedStructure = inspectSafeWordFormula(
+        documentName,
+        additionalCreateRequest.formulaId,
+        nativeEquation,
+        2,
+      );
+      additionalCreate = {
+        sessionId: additionalCreateSessionId,
+        formulaId: additionalCreateRequest.formulaId,
+        apply: additionalCreateApply,
+        structure: additionalCreatedStructure,
+        vba: wordVbaPerformanceTrace(additionalCreateSessionId),
+      };
+      editFormulaId = additionalCreateRequest.formulaId;
+    }
 
     const sessionsBeforeEdit = currentSessionIds();
     runAppleScript([
@@ -4764,7 +4915,7 @@ async function runSafeWordEditPerformanceCase({
       'activate',
       ...(nativeEquation
         ? [
-            `set formulaRange to text object of bookmark ${JSON.stringify(nativeBookmark(createRequest.formulaId))} of documentObject`,
+            'set formulaRange to text range of math object (count of math objects of documentObject) of documentObject',
             'select formulaRange',
           ]
         : [
@@ -4774,15 +4925,24 @@ async function runSafeWordEditPerformanceCase({
       'run VB macro macro name "VisualTeX_EditSelected"',
       'end tell',
     ], 60_000);
-    const editSessionId = await waitForFormulaEditSession(
-      sessionsBeforeEdit,
-      createRequest.formulaId,
-      30_000,
-    );
+    const editSessionId = nativeEquation
+      ? await waitForWordNativeEditSession(
+          sessionsBeforeEdit,
+          documentPath,
+          30_000,
+        )
+      : await waitForFormulaEditSession(
+          sessionsBeforeEdit,
+          editFormulaId,
+          30_000,
+        );
+    if (nativeEquation) {
+      editFormulaId = readOfficeSessionRequest(editSessionId).formulaId;
+    }
     await ensureWorkspaceOfficeSessionReceived(editSessionId);
     await waitForPhysicalEditorVisible(
       editSessionId,
-      createRequest.formulaId,
+      editFormulaId,
       30_000,
     );
     await replaceActiveVisualTeXFormula(editLatex, 400);
@@ -4794,19 +4954,20 @@ async function runSafeWordEditPerformanceCase({
       productionAddinWasInstalled,
     );
     await sleep(150);
-    const editedMetadata = wordFormulaMetadata(
-      documentName,
-      createRequest.formulaId,
-    );
-    if (editedMetadata.normalized.lines[0]?.latex !== editLatex) {
+    const editedLatex = nativeEquation
+      ? completedOfficeSessionLatex(editSessionId)
+      : wordFormulaMetadata(documentName, editFormulaId)
+          .normalized.lines[0]?.latex;
+    if (editedLatex !== editLatex) {
       throw new Error(
-        `${label} edit did not persist its LaTeX: ${JSON.stringify(editedMetadata.normalized)}`,
+        `${label} edit did not persist its LaTeX: ${JSON.stringify(editedLatex)}`,
       );
     }
     const editedStructure = inspectSafeWordFormula(
       documentName,
-      createRequest.formulaId,
+      editFormulaId,
       nativeEquation,
+      additionalCreate ? 2 : 1,
     );
     const vba = wordVbaPerformanceTrace(editSessionId);
     return {
@@ -4822,6 +4983,7 @@ async function runSafeWordEditPerformanceCase({
         structure: createdStructure,
         vba: createVba,
       },
+      additionalCreate,
       edit: {
         sessionId: editSessionId,
         apply: editApply,
@@ -4911,6 +5073,29 @@ async function runSafeWordEditPerformanceRegression() {
     }
     copyFileSync(activeTemplatePath, installedWordAddinPath);
     await waitForWordAutomationReady();
+    rmSync(numberedNativeComplexStructureStatusPath, { force: true });
+    runAppleScript([
+      'with timeout of 240 seconds',
+      'tell application "Microsoft Word"',
+      'activate',
+      'run VB macro macro name "VisualTeX_RunNumberedNativeComplexStructureRegression"',
+      'end tell',
+      'end timeout',
+    ], 250_000);
+    if (!existsSync(numberedNativeComplexStructureStatusPath)) {
+      throw new Error(
+        `Word did not write ${numberedNativeComplexStructureStatusPath}`,
+      );
+    }
+    const complexStructureResult = readFileSync(
+      numberedNativeComplexStructureStatusPath,
+      "utf8",
+    );
+    if (!complexStructureResult.includes("status=PASS")) {
+      throw new Error(
+        `Word complex numbered OMML regression failed:\n${complexStructureResult}`,
+      );
+    }
     const cases = [];
     if (
       !safeWordEditPerformanceOmmlOnly &&
@@ -5001,7 +5186,8 @@ async function runSafeWordEditPerformanceRegression() {
             displayMode: "block",
             numbered: true,
             createLatex: String.raw`F=ma`,
-            editLatex: String.raw`E=mc^2`,
+            additionalCreateLatex: String.raw`a^2+b^2=c^2(a+b)^{n}=\sum_{k=0}^{n}\binom{n}{k}a^{n-k}b^{k}`,
+            editLatex: String.raw`\left[\frac{\left(x+\sqrt{y}\right)}{\left\{z\right\}}\right]`,
             isolatedTemplateName,
             productionAddinWasInstalled,
           }),
@@ -6293,7 +6479,7 @@ try {
         JSON.stringify(
           {
             status: "PASS",
-            revision: "word-office-performance-20260801-r93",
+            revision: "word-office-performance-20260801-r101",
             sessionId: physicalEditSessionId,
             formulaId: physicalFormula.formulaId,
             editorReadiness,
@@ -6472,7 +6658,7 @@ try {
         JSON.stringify(
           {
             status: "FAIL",
-            revision: "word-office-performance-20260801-r93",
+            revision: "word-office-performance-20260801-r101",
             error: error instanceof Error ? error.message : String(error),
           },
           null,

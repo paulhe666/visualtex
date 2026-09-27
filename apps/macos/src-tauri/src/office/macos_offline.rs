@@ -1297,6 +1297,26 @@ fn validate_latex_redraw_source_size(byte_len: u64) -> Result<(), String> {
     }
 }
 
+// Untagged Word equations use an ephemeral edit anchor and a session-local
+// OMML snapshot, never a persistent formula metadata envelope.
+fn is_untagged_word_edit(request: &MacOfflineSessionRequest) -> bool {
+    request.host == "word" && request.mode == "edit"
+        && request.encoded_metadata.is_none()
+        && !request.fork_copied_formula
+        && request.source_object_id.as_deref() == Some(
+            format!("VT_E_{}", request.session_id.chars().take(24).filter(|c| *c != '-').collect::<String>()).as_str())
+        && ((request.operation.as_deref().unwrap_or("formula") == "formula" && request.native_equation)
+            || request.operation.as_deref() == Some("nativeToImage"))
+}
+
+fn word_native_edit_latex(xml: &str) -> Result<super::powerpoint_omml::to_latex::NativeLatex, String> {
+    let math_ml = word_omml_to_mathml(xml)?;
+    Ok(super::powerpoint_omml::to_latex::NativeLatex {
+        latex: super::omml_batch::mathml_to_latex_checked(&math_ml)?,
+        letter_font: "cambria".to_string(),
+    })
+}
+
 fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Result<(), String> {
     if request.protocol_version != OFFLINE_PROTOCOL_VERSION {
         return Err("Unsupported VisualTeX macOS offline protocol version".to_string());
@@ -1426,7 +1446,7 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
         && (request.formula_id.is_none()
             || request.source_document_id.is_none()
             || request.source_object_id.is_none()
-            || request.encoded_metadata.is_none()
+            || (request.encoded_metadata.is_none() && !is_untagged_word_edit(request))
             || request.pending_marker.is_some()
             || request.power_point.is_some())
     {
@@ -1437,7 +1457,7 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
             || !matches!(operation, "formula" | "nativeToImage" | "imageToNative")
             || request.formula_id.is_none()
             || request.source_object_id.is_none()
-            || request.encoded_metadata.is_none())
+            || (request.encoded_metadata.is_none() && !is_untagged_word_edit(request)))
     {
         return Err(
             "Copied-formula isolation requires an existing formula edit with an explicit target"
@@ -1458,7 +1478,7 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
         if request.formula_id.is_none()
             || request.source_document_id.is_none()
             || request.source_object_id.is_none()
-            || request.encoded_metadata.is_none()
+            || (request.encoded_metadata.is_none() && !is_untagged_word_edit(request))
             || request.pending_marker.is_some()
             || request.power_point.is_some()
         {
@@ -2212,6 +2232,12 @@ fn import_request(
         let source = capture_powerpoint_native_edit_source(state.app.as_ref(), &request.session_id, false)?
             .ok_or("The native equation edit session has already completed")?;
         Some(super::powerpoint_omml::to_latex::from_omml(&source.omml)?)
+    } else if is_untagged_word_edit(&request) {
+        let path = session_directory(OfficeHost::Word, &request.session_id)?.join("native-edit-original.omml");
+        let size = fs::metadata(&path).map_err(|e| format!("Native Word equation snapshot is missing: {e}"))?.len();
+        if size == 0 || size > MAX_OMML_BYTES as u64 { return Err("Native Word equation snapshot has invalid size".into()); }
+        let xml = fs::read_to_string(path).map_err(|e| e.to_string())?;
+        Some(word_native_edit_latex(&xml)?)
     } else { None };
     let lines = original_metadata
         .as_ref()
@@ -5569,70 +5595,130 @@ fn extract_omath_fragment(word_open_xml: &str) -> Result<String, String> {
     Ok(fragment)
 }
 
-fn find_xml_start_tag(value: &str, tag: &str, start: usize) -> Option<usize> {
-    let exact = format!("<{tag}>");
-    let attributed = format!("<{tag} ");
-    [exact.as_str(), attributed.as_str()]
-        .iter()
-        .filter_map(|marker| value[start..].find(marker).map(|offset| start + offset))
-        .min()
-}
-
 fn strip_visualtex_numbered_equation_array(fragment: &str) -> Option<String> {
-    // VisualTeX display numbering is represented as one OMML Equation Array:
-    //   <m:eqArr><m:e>FORMULA <m:r><m:t>#</m:t>...</m:r>
-    //                    <m:d>REF VT_N_...</m:d></m:e></m:eqArr>
-    // Word expands WordOpenXML requested from only the FORMULA Range back to
-    // that complete OMath container, so VBA cannot crop the XML by Range alone.
-    // Strip only this exact VisualTeX-owned signature before the standard Word
-    // OMML -> MathML transform. Ordinary Word Equation Arrays remain untouched.
-    let eq_array_start = find_xml_start_tag(fragment, "m:eqArr", 0)?;
-    let eq_array_end_offset = fragment[eq_array_start..].find("</m:eqArr>")?;
-    let eq_array_end = eq_array_start + eq_array_end_offset;
-    let eq_array = &fragment[eq_array_start..eq_array_end];
-    if !eq_array.contains("REF VT_N_") {
+    // Recognize Word's native one-row #() number host, including merged math
+    // runs and nested arrays in the formula body. Preserve the original XML
+    // rather than rebuilding the mathematics through a text conversion.
+    #[derive(Debug)]
+    struct Element {
+        name: Vec<u8>,
+        start: usize,
+        content: usize,
+        close: usize,
+        end: usize,
+        parent: Option<usize>,
+    }
+    use quick_xml::{events::Event, Reader};
+    let mut reader = Reader::from_str(fragment);
+    let mut elements: Vec<Element> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
+    loop {
+        let start = reader.buffer_position() as usize;
+        match reader.read_event().ok()? {
+            Event::Start(tag) => {
+                let index = elements.len();
+                elements.push(Element {
+                    name: tag.name().as_ref().to_vec(),
+                    start,
+                    content: reader.buffer_position() as usize,
+                    close: 0,
+                    end: 0,
+                    parent: stack.last().copied(),
+                });
+                stack.push(index);
+            }
+            Event::End(_) => {
+                let index = stack.pop()?;
+                elements[index].close = start;
+                elements[index].end = reader.buffer_position() as usize;
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if !stack.is_empty() {
         return None;
     }
-
-    let marker_relative = eq_array.rfind("<m:t>#</m:t>")?;
-    let marker = eq_array_start + marker_relative;
-    if !fragment[marker..eq_array_end].contains("REF VT_N_") {
-        return None;
-    }
-    let marker_run_start = ["<m:r>", "<m:r "]
+    let root = elements.iter().position(|e| e.name == b"m:oMath")?;
+    let arrays: Vec<_> = elements
         .iter()
-        .filter_map(|tag| fragment[..marker].rfind(tag))
-        .max()?;
-    if marker_run_start < eq_array_start {
+        .enumerate()
+        .filter(|(_, e)| e.parent == Some(root) && e.name == b"m:eqArr")
+        .map(|(i, _)| i)
+        .collect();
+    if arrays.len() != 1 {
         return None;
     }
-    let marker_run_end_offset = fragment[marker..eq_array_end].find("</m:r>")?;
-    let marker_run_end = marker + marker_run_end_offset + "</m:r>".len();
-    if marker_run_end >= eq_array_end {
+    let array = arrays[0];
+    let entries: Vec<_> = elements
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.parent == Some(array) && e.name == b"m:e")
+        .map(|(i, _)| i)
+        .collect();
+    if entries.len() != 1 {
         return None;
     }
-
-    let properties_end = fragment[eq_array_start..marker_run_start]
-        .find("</m:eqArrPr>")
-        .map(|offset| eq_array_start + offset + "</m:eqArrPr>".len())
-        .unwrap_or(eq_array_start);
-    let entry_start = find_xml_start_tag(fragment, "m:e", properties_end)?;
-    if entry_start >= marker_run_start {
+    let entry = entries[0];
+    let children: Vec<_> = elements
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.parent == Some(entry))
+        .map(|(i, _)| i)
+        .collect();
+    if children.len() < 2 {
         return None;
     }
-    let entry_tag_end = fragment[entry_start..marker_run_start].find('>')? + entry_start;
-    let body_start = entry_tag_end + 1;
-    if body_start >= marker_run_start {
+    let delimiter = &elements[*children.last()?];
+    let marker_index = children[children.len() - 2];
+    let marker = &elements[marker_index];
+    if delimiter.name != b"m:d" || marker.name != b"m:r" {
         return None;
     }
-    let body = fragment[body_start..marker_run_start].trim();
-    if body.is_empty() {
+    let text = elements
+        .iter()
+        .rev()
+        .find(|e| e.parent == Some(marker_index) && e.name == b"m:t")?;
+    let marker_text = &fragment[text.content..text.close];
+    if !marker_text.ends_with('#') {
         return None;
     }
-
-    let omath_tag_end = fragment.find('>')?;
-    let omath_start = &fragment[..=omath_tag_end];
-    Some(format!("{omath_start}{body}</m:oMath>"))
+    let tail = &fragment[delimiter.start..delimiter.end];
+    // Word for Mac stores field instructions as m:t inside math runs; Windows
+    // may use w:instrText. Joining text handles a localized identifier split
+    // into a separate run. Require an actual field, not a typed "SEQ" number.
+    let mut tail_reader = Reader::from_str(tail);
+    let mut field = false;
+    let mut instruction = String::new();
+    loop {
+        match tail_reader.read_event().ok()? {
+            Event::Start(e) | Event::Empty(e) if e.name().as_ref() == b"w:fldChar" => field = true,
+            Event::Text(e) => instruction.push_str(&e.decode().ok()?),
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    let instruction = instruction.to_ascii_uppercase();
+    if !field || !(instruction.contains("SEQ ") || instruction.contains("REF VT_N_")) {
+        return None;
+    }
+    if instruction.contains("REF ") && !instruction.contains("REF VT_N_") {
+        return None;
+    }
+    let mut body = fragment[elements[entry].content..marker.start].to_string();
+    if marker_text.len() > 1 {
+        body.push_str(&fragment[marker.start..text.close - 1]);
+        body.push_str(&fragment[text.close..marker.end]);
+    }
+    if body.trim().is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{}{}{}",
+        &fragment[..elements[array].start],
+        body,
+        &fragment[elements[array].end..]
+    ))
 }
 
 fn decode_xslt_output(bytes: &[u8]) -> Result<String, String> {
@@ -7459,7 +7545,7 @@ mod tests {
             "<m:eqArr><m:eqArrPr/><m:e>",
             "<m:r><m:t>x</m:t></m:r>",
             "<m:r><m:t>#</m:t></m:r>",
-            "<m:d><m:e><m:r><m:t> REF VT_N_12345678 </m:t></m:r></m:e></m:d>",
+            "<m:d><m:e><m:r><w:fldChar w:fldCharType=\"begin\"/><m:t> REF VT_N_12345678 </m:t><w:fldChar w:fldCharType=\"end\"/></m:r></m:e></m:d>",
             "</m:e></m:eqArr></m:oMath>"
         );
         let stripped = strip_visualtex_numbered_equation_array(numbered)
@@ -7486,6 +7572,40 @@ mod tests {
             "</m:e></m:eqArr></m:oMath>"
         );
         assert!(strip_visualtex_numbered_equation_array(unrelated_hash).is_none());
+    }
+
+    #[test]
+    fn strips_native_sequence_number_without_visualtex_identity() {
+        let xml = concat!(
+            "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" ",
+            "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+            "<m:eqArr><m:e><m:r><m:t>x</m:t></m:r>",
+            "<m:r><m:t>#</m:t></m:r><m:d><m:e>",
+            "<m:r><w:fldChar w:fldCharType=\"begin\"/></m:r>",
+            "<m:r><w:instrText> SEQ Equation \\* ARABIC </w:instrText></m:r>",
+            "<m:r><w:fldChar w:fldCharType=\"separate\"/></m:r>",
+            "<m:r><m:t>12</m:t></m:r>",
+            "<m:r><w:fldChar w:fldCharType=\"end\"/></m:r>",
+            "</m:e></m:d></m:e></m:eqArr></m:oMath>"
+        );
+        let body = strip_visualtex_numbered_equation_array(xml).unwrap();
+        assert!(body.contains("<m:t>x</m:t>"));
+        assert!(!body.contains("SEQ"));
+        assert!(!body.contains("12"));
+        assert!(!body.contains("eqArr"));
+    }
+
+    #[test]
+    fn native_number_stripping_preserves_merged_runs_and_nested_arrays() {
+        let xml = r#"<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><m:eqArr><m:e><m:eqArr><m:e><m:r><m:t>a</m:t></m:r></m:e><m:e><m:r><m:t>b</m:t></m:r></m:e></m:eqArr><m:r><m:t>=x#</m:t></m:r><m:d><m:e><m:r><w:fldChar w:fldCharType="begin"/><m:t xml:space="preserve"> SEQ </m:t></m:r><m:r><m:t>公式</m:t></m:r><m:r><m:t> \* ARABIC </m:t><w:fldChar w:fldCharType="separate"/><m:t>4</m:t><w:fldChar w:fldCharType="end"/></m:r></m:e></m:d></m:e></m:eqArr></m:oMath>"#;
+        let body = strip_visualtex_numbered_equation_array(xml).unwrap();
+        assert!(body.contains("<m:t>=x</m:t>"));
+        assert!(body.contains("<m:t>a</m:t>"));
+        assert!(body.contains("<m:t>b</m:t>"));
+        assert_eq!(body.matches("<m:eqArr>").count(), 1);
+        assert!(!body.contains("SEQ"));
+        let manual = xml.replace("w:fldChar", "w:other");
+        assert!(strip_visualtex_numbered_equation_array(&manual).is_none());
     }
 
     #[cfg(target_os = "macos")]
@@ -8248,6 +8368,32 @@ mod tests {
             Err(error) => json!({"ok":false,"error":error}),
         };
         fs::write(session_directory(OfficeHost::Powerpoint,&id).unwrap().join("native-edit-test-result.json"),serde_json::to_vec_pretty(&output).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn untagged_word_edit_requires_its_exact_session_anchor() {
+        let mut request: MacOfflineSessionRequest = serde_json::from_value(json!({
+            "protocolVersion": OFFLINE_PROTOCOL_VERSION,
+            "sessionId": "32345678-1234-4234-9234-123456789abc",
+            "host": "word", "mode": "edit", "displayMode": "block",
+            "formulaId": "42345678-1234-4234-9234-123456789abc",
+            "numbered": true, "nativeEquation": true,
+            "sourceDocumentId": "native-word-test",
+            "sourceObjectId": "VT_E_32345678123442349234"
+        })).unwrap();
+        assert!(is_untagged_word_edit(&request));
+        validate_request(&request, &request.session_id).unwrap();
+        request.source_object_id = Some("VT_E_another-session".into());
+        assert!(validate_request(&request, &request.session_id).is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn untagged_word_edit_reads_current_math_without_metadata() {
+        let xml = r#"<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e><m:r><m:t>x</m:t></m:r></m:e></m:rad></m:oMath>"#;
+        let source = word_native_edit_latex(xml).unwrap();
+        assert!(source.latex.contains(r"\sqrt{x}"), "{}", source.latex);
+        assert!(!source.latex.contains("VisualTeX"));
     }
 
     fn native_powerpoint_request_fixture() -> MacOfflineSessionRequest {

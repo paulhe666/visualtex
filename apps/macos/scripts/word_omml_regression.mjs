@@ -505,8 +505,17 @@ async function main() {
           String.raw\`\\sum_{i=1}^{n}\\left(\\binom{n}{i}\\right)\`,
         ], 'block');
         const numberedFastArtifacts = module.latexLinesToOmmlArtifacts([
-          String.raw\`x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}\`,
+          String.raw\`a^2+b^2=c^2(a+b)^{n}=\\sum_{k=0}^{n}\\binom{n}{k}a^{n-k}b^{k}\`,
         ], 'block', 'raw', {}, true);
+        const numberedComplexArtifacts = [
+          String.raw\`\\left[\\frac{\\left(x+\\sqrt{y}\\right)}{\\left\\{z\\right\\}}\\right]\`,
+          String.raw\`\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}\`,
+          String.raw\`f(x)=\\begin{cases}x^2,&x\\ge0\\\\-x,&x<0\\end{cases}\`,
+          String.raw\`\\begin{aligned}a&=\\frac{b}{c}\\\\d&=\\sum_{i=1}^{n}i\\end{aligned}\`,
+          String.raw\`\\int_0^1\\frac{\\sqrt{1-x^2}}{1+x^2}\\,\\mathrm{d}x+\\prod_{j=1}^{m}q_j\`,
+        ].map((latex) => module.latexLinesToOmmlArtifacts(
+          [latex], 'block', 'raw', {}, true,
+        ));
         const fontArtifacts = module.latexLinesToOmmlArtifacts([
           String.raw\`\\mathrm{x}+\\mathbf{A+1}+\\mathit{x}+\\boldsymbol{\\alpha}+\\mathbb{R}+\\mathcal{G}+\\mathscr{g}+\\mathfrak{g}+\\mathsf{x}+\\mathtt{x}\`,
         ], 'inline');
@@ -524,6 +533,9 @@ async function main() {
           complexNumberingOmmlBase64: complexNumberingArtifacts.ommlBase64,
           complexNumberingOmmlDocxBase64: complexNumberingArtifacts.ommlDocxBase64,
           numberedFastOmmlDocxBase64: numberedFastArtifacts.ommlDocxBase64,
+          numberedComplexOmmlDocxBase64: numberedComplexArtifacts.map(
+            (artifact) => artifact.ommlDocxBase64,
+          ),
           fontOmmlDocxBase64: fontArtifacts.ommlDocxBase64,
           preferredOmml: preferredArtifacts.omml,
           preferredOmmlDocxBase64: preferredArtifacts.ommlDocxBase64,
@@ -546,8 +558,10 @@ async function main() {
     const complexNumberingOmmlBase64 = artifacts?.complexNumberingOmmlBase64;
     const complexNumberingDocxBase64 = artifacts?.complexNumberingOmmlDocxBase64;
     const numberedFastDocxBase64 = artifacts?.numberedFastOmmlDocxBase64;
+    const numberedComplexDocxBase64 = artifacts?.numberedComplexOmmlDocxBase64;
     const fontDocxBase64 = artifacts?.fontOmmlDocxBase64;
     const preferredOmml = artifacts?.preferredOmml;
+
     const preferredOmmlDocxBase64 = artifacts?.preferredOmmlDocxBase64;
     expect(typeof docxBase64 === "string" && docxBase64.length > 100, "OMML DOCX export is missing.");
     expect(typeof ommlBase64 === "string" && ommlBase64.length > 100, "OMML Base64URL export is missing.");
@@ -556,6 +570,14 @@ async function main() {
     expect(typeof complexNumberingOmmlBase64 === "string" && complexNumberingOmmlBase64.length > 100, "Complex numbered OMML export is missing.");
     expect(typeof complexNumberingDocxBase64 === "string" && complexNumberingDocxBase64.length > 100, "Complex numbered OMML DOCX export is missing.");
     expect(typeof numberedFastDocxBase64 === "string" && numberedFastDocxBase64.length > 100, "Numbered fast-path OMML DOCX export is missing.");
+    expect(
+      Array.isArray(numberedComplexDocxBase64) &&
+        numberedComplexDocxBase64.length === 5 &&
+        numberedComplexDocxBase64.every(
+          (encoded) => typeof encoded === "string" && encoded.length > 100,
+        ),
+      "The numbered complex-structure OMML DOCX matrix is missing.",
+    );
     expect(typeof fontDocxBase64 === "string" && fontDocxBase64.length > 100, "Font-variant OMML DOCX export is missing.");
     expect(typeof preferredOmml === "string" && preferredOmml.length > 100, "Preferred-font OMML export is missing.");
     expect(typeof preferredOmmlDocxBase64 === "string" && preferredOmmlDocxBase64.length > 100, "Preferred-font OMML DOCX export is missing.");
@@ -621,8 +643,62 @@ async function main() {
     );
     expectIncludes(numberedFastDocumentXml, "<m:eqArr>", "Numbered Word cache must contain its prebuilt Equation array.");
     expectIncludes(numberedFastDocumentXml, "<m:t>#</m:t>", "Numbered Word cache must contain its Equation alignment marker.");
-    expectIncludes(numberedFastDocumentXml, "<m:t>0</m:t>", "Numbered Word cache must contain its local REF placeholder.");
+    expectIncludes(numberedFastDocumentXml, "<m:t>VTNUMBERCACHE0</m:t>", "Numbered Word cache must contain its owned number placeholder.");
     expectIncludes(numberedFastDocumentXml, "<m:f>", "Numbered Word cache must preserve the structural source formula.");
+    const numberedMarkerIndex = numberedFastDocumentXml.indexOf("<m:t>#</m:t>");
+    const formulaDelimiterIndex = numberedFastDocumentXml.indexOf("<m:d>");
+    const numberDelimiterIndex = numberedFastDocumentXml.lastIndexOf("<m:d>");
+    const numberPlaceholderIndex = numberedFastDocumentXml.indexOf(
+      "<m:t>VTNUMBERCACHE0</m:t>",
+    );
+    expect(
+      formulaDelimiterIndex >= 0 &&
+        formulaDelimiterIndex < numberedMarkerIndex &&
+        numberDelimiterIndex > numberedMarkerIndex &&
+        numberPlaceholderIndex > numberDelimiterIndex,
+      "The numbered native fixture must retain an inner formula delimiter before the owned number slot.",
+    );
+
+    const numberedComplexFixtureNames = [
+      "nested-delimiters",
+      "matrix",
+      "cases",
+      "aligned-array",
+      "nary-fraction-root",
+    ];
+    const numberedComplexFixtureIds = [
+      "23232323-2323-4323-8323-232323232323",
+      "24242424-2424-4424-8424-242424242424",
+      "25252525-2525-4525-8525-252525252525",
+      "26262626-2626-4626-8626-262626262626",
+      "27272727-2727-4727-8727-272727272727",
+    ];
+    for (let index = 0; index < numberedComplexDocxBase64.length; index += 1) {
+      const fixturePath = join(
+        docxDirectory,
+        `numbered-${numberedComplexFixtureNames[index]}.docx`,
+      );
+      await writeFile(
+        fixturePath,
+        Buffer.from(numberedComplexDocxBase64[index], "base64url"),
+      );
+      execFileSync("/usr/bin/unzip", ["-tqq", fixturePath]);
+      const fixtureXml = execFileSync(
+        "/usr/bin/unzip",
+        ["-p", fixturePath, "word/document.xml"],
+        { encoding: "utf8" },
+      );
+      expectIncludes(
+        fixtureXml,
+        "<m:t>#</m:t>",
+        `${numberedComplexFixtureNames[index]} must retain the number marker.`,
+      );
+      expectIncludes(
+        fixtureXml,
+        "<m:t>VTNUMBERCACHE0</m:t>",
+        `${numberedComplexFixtureNames[index]} must retain the owned number slot.`,
+      );
+    }
 
     const fontDocxPath = join(docxDirectory, "font-variants.docx");
     await writeFile(fontDocxPath, Buffer.from(fontDocxBase64, "base64url"));
@@ -714,6 +790,13 @@ async function main() {
         Buffer.from(numberedFastDocxBase64, "base64url"),
         { mode: 0o600 },
       );
+      for (let index = 0; index < numberedComplexDocxBase64.length; index += 1) {
+        await writeFile(
+          join(nativeDocuments, `${numberedComplexFixtureIds[index]}.docx`),
+          Buffer.from(numberedComplexDocxBase64[index], "base64url"),
+          { mode: 0o600 },
+        );
+      }
       await writeFile(
         join(tests, "word-native-regression-complex-numbering-omml.txt"),
         complexNumberingOmmlBase64,

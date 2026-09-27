@@ -107,7 +107,12 @@ fn serialize(node: &Node, size: i64) -> Result<String, String> {
     let mut xml = format!("<{}", node.name);
     for (k,v) in &node.attrs {
         if k == "xmlns:w" { continue; }
-        xml.push_str(&format!(" {k}=\"{}\"", escape(v)));
+        // PowerPoint's native clipboard importer drops numeric OMML on/off
+        // values for degree visibility. Match its own canonical on/off output.
+        let value = if node.name == "m:degHide" && k == "m:val" {
+            match v.as_str() { "1" | "true" => "on", "0" | "false" => "off", _ => v.as_str() }
+        } else { v.as_str() };
+        xml.push_str(&format!(" {k}=\"{}\"", escape(value)));
     }
     xml.push('>');
     let mut inserted = node.children.iter().any(|n| n.name == "w:rPr");
@@ -328,6 +333,15 @@ pub(super) fn replace_native_edit_context(
 mod tests {
     use super::*;
     fn sample() -> String { format!("<m:oMath xmlns:m=\"{M}\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:f><m:fPr/><m:num><m:r><m:t>x+1</m:t></m:r></m:num><m:den><m:r><m:t>2</m:t></m:r></m:den></m:f></m:oMath>") }
+    #[test] fn radicals_use_powerpoint_native_degree_visibility() {
+        for (input, expected) in [("1", "on"), ("true", "on"), ("0", "off"), ("false", "off")] {
+            let xml = format!("<m:oMath xmlns:m=\"{M}\"><m:rad><m:radPr><m:degHide m:val=\"{input}\"/></m:radPr><m:deg><m:r><m:t>3</m:t></m:r></m:deg><m:e><m:r><m:t>x</m:t></m:r></m:e></m:rad></m:oMath>");
+            let entries = clipboard_entries(&xml, 24.0, false, false, false).unwrap();
+            let drawing = &entries.iter().find(|(name, _)| name == "clipboard/drawings/drawing1.xml").unwrap().1;
+            assert!(drawing.contains(&format!("<m:degHide m:val=\"{expected}\">")));
+            assert!(drawing.contains("<m:t>3</m:t>"));
+        }
+    }
     #[test] fn native_text_not_a_presentation_or_picture() {
         let e=clipboard_entries(&sample(),24.0,false,false,false).unwrap();
         assert_eq!(e.len(),5);
