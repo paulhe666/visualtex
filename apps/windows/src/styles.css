@@ -9120,6 +9120,112 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   gap: 7px;
 }
 
+.word-formula-shortcut-list {
+  display: grid;
+  gap: 8px;
+}
+
+.word-formula-shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px 66px 100px;
+  align-items: center;
+  gap: 8px;
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.word-formula-shortcut-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.word-formula-shortcut-copy strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.word-formula-shortcut-copy small,
+.word-formula-shortcut-help,
+.word-formula-format-select span {
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.word-formula-shortcut-capture,
+.word-formula-shortcut-clear {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.word-formula-shortcut-capture kbd {
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.word-formula-shortcut-capture.is-capturing {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.word-formula-shortcut-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 9px;
+}
+
+.word-formula-shortcut-clear:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.word-formula-format-select {
+  display: grid;
+  gap: 3px;
+}
+
+.word-formula-format-select select {
+  width: 100%;
+  height: 32px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 9px;
+}
+
+.word-formula-shortcut-help {
+  min-height: 13px;
+  margin: 7px 2px 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 620px) {
+  .word-formula-shortcut-row {
+    grid-template-columns: minmax(0, 1fr) 118px 62px;
+  }
+
+  .word-formula-format-select {
+    grid-column: 2 / -1;
+  }
+}
+
 .formula-hotkey-modal-backdrop {
   z-index: 2100;
 }

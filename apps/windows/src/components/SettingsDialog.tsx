@@ -40,6 +40,7 @@ import {
 } from "../stores/editorStore";
 import { MathPreview } from "./MathPreview";
 import { OfficeIntegrationSettings } from "./OfficeIntegrationSettings";
+import { WordFormulaShortcutSettingsSection } from "./WordFormulaShortcutSettings";
 import { pngExportBackgroundPickerValue } from "../export/pngBackground";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
@@ -563,6 +564,8 @@ export function SettingsDialog({
               {isEn ? "Reset recommendation history" : "重置推荐记录"}
             </button>
           </div>
+
+          <WordFormulaShortcutSettingsSection />
 
           <div className="settings-section">
             <div className="settings-section-title">

@@ -13,6 +13,8 @@ import type {
   LatexCodeFormat,
   LatexFormatProfile,
   Theme,
+  WordFormulaInsertFormat,
+  WordFormulaShortcutSettings,
 } from "../types/formula";
 import type { DocumentSnapshot } from "../history/historyTypes";
 import {
@@ -49,6 +51,11 @@ import {
   type FormulaChineseFont,
   type FormulaLetterFont,
 } from "../editor/formulaFontPreferences";
+import {
+  DEFAULT_WORD_FORMULA_SHORTCUTS,
+  normalizeWordFormulaShortcut,
+  normalizeWordFormulaShortcutSettings,
+} from "../office/wordFormulaShortcuts";
 
 export type Language = "cn" | "en";
 export type EditorLayout = "standard" | "classic";
@@ -367,6 +374,7 @@ interface EditorState {
   suggestionCount: number;
   checkUpdatesOnStartup: boolean;
   powerPointDefaultFontSizePt: number;
+  wordFormulaShortcuts: WordFormulaShortcutSettings;
   usage: Record<string, CommandUsage>;
   history: FormulaHistoryItem[];
   setTitle: (title: string) => void;
@@ -411,6 +419,10 @@ interface EditorState {
   setSuggestionCount: (count: number) => void;
   setCheckUpdatesOnStartup: (enabled: boolean) => void;
   setPowerPointDefaultFontSizePt: (fontSizePt: number) => void;
+  setWordFormulaShortcut: (
+    kind: keyof WordFormulaShortcutSettings,
+    update: { shortcut?: string | null; format?: WordFormulaInsertFormat },
+  ) => void;
   recordCommand: (commandId: string, prefix: string, source: CommandSource) => void;
   resetUsage: () => void;
   addHistory: (latex?: string) => void;
@@ -465,6 +477,10 @@ export const useEditorStore = create<EditorState>()(
       suggestionCount: 6,
       checkUpdatesOnStartup: true,
       powerPointDefaultFontSizePt: 20,
+      wordFormulaShortcuts: {
+        inline: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.inline },
+        display: { ...DEFAULT_WORD_FORMULA_SHORTCUTS.display },
+      },
       usage: {},
       history: [],
       setTitle: (title) => set({ title }),
@@ -621,6 +637,34 @@ export const useEditorStore = create<EditorState>()(
           powerPointDefaultFontSizePt:
             Math.round(Math.min(200, Math.max(5, powerPointDefaultFontSizePt)) * 2) /
             2,
+        }),
+      setWordFormulaShortcut: (kind, update) =>
+        set((state) => {
+          const otherKind = kind === "inline" ? "display" : "inline";
+          const shortcut =
+            update.shortcut === undefined
+              ? state.wordFormulaShortcuts[kind].shortcut
+              : normalizeWordFormulaShortcut(update.shortcut);
+          const format =
+            update.format === "omml"
+              ? "omml"
+              : update.format === "ole"
+                ? "ole"
+                : state.wordFormulaShortcuts[kind].format;
+          return {
+            wordFormulaShortcuts: {
+              ...state.wordFormulaShortcuts,
+              [kind]: { shortcut, format },
+              [otherKind]:
+                shortcut &&
+                state.wordFormulaShortcuts[otherKind].shortcut === shortcut
+                  ? {
+                      ...state.wordFormulaShortcuts[otherKind],
+                      shortcut: null,
+                    }
+                  : state.wordFormulaShortcuts[otherKind],
+            },
+          };
         }),
       recordCommand: (commandId, prefix, source) =>
         set((state) => {
@@ -802,6 +846,12 @@ export const useEditorStore = create<EditorState>()(
                     ) * 2,
                   ) / 2
                 : state.powerPointDefaultFontSizePt,
+            wordFormulaShortcuts:
+              settings.wordFormulaShortcuts === undefined
+                ? state.wordFormulaShortcuts
+                : normalizeWordFormulaShortcutSettings(
+                    settings.wordFormulaShortcuts,
+                  ),
             classicTileWidth:
               settings.classicTileWidth === undefined
                 ? state.classicTileWidth
@@ -858,6 +908,7 @@ export const useEditorStore = create<EditorState>()(
             suggestionCount: state.suggestionCount,
             checkUpdatesOnStartup: state.checkUpdatesOnStartup,
             powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
+            wordFormulaShortcuts: state.wordFormulaShortcuts,
             classicTileWidth: state.classicTileWidth,
             classicDockHeight: state.classicDockHeight,
             keypadMinimizeOnCopy: state.keypadMinimizeOnCopy,
@@ -899,6 +950,7 @@ export const useEditorStore = create<EditorState>()(
         suggestionCount: state.suggestionCount,
         checkUpdatesOnStartup: state.checkUpdatesOnStartup,
         powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
+        wordFormulaShortcuts: state.wordFormulaShortcuts,
         usage: state.usage,
         history: state.history,
       }),
@@ -997,6 +1049,9 @@ export const useEditorStore = create<EditorState>()(
                     2,
                 ) / 2
               : 20,
+          wordFormulaShortcuts: normalizeWordFormulaShortcutSettings(
+            persisted.wordFormulaShortcuts,
+          ),
         };
       },
     },

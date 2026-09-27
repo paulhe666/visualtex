@@ -119,6 +119,7 @@ const editorSettingKeys = [
   "suggestionCount",
   "checkUpdatesOnStartup",
   "powerPointDefaultFontSizePt",
+  "wordFormulaShortcuts",
   "classicTileWidth",
   "classicDockHeight",
   "keypadMinimizeOnCopy",

@@ -76,6 +76,18 @@ export interface FormulaBlock {
   updatedAt: number;
 }
 
+export type WordFormulaInsertFormat = "ole" | "omml";
+
+export interface WordFormulaShortcutSetting {
+  shortcut: string | null;
+  format: WordFormulaInsertFormat;
+}
+
+export interface WordFormulaShortcutSettings {
+  inline: WordFormulaShortcutSetting;
+  display: WordFormulaShortcutSetting;
+}
+
 export interface FormulaDocument {
   version: number;
   title: string;
@@ -112,6 +124,7 @@ export interface FormulaDocument {
     suggestionCount?: number;
     checkUpdatesOnStartup?: boolean;
     powerPointDefaultFontSizePt?: number;
+    wordFormulaShortcuts?: WordFormulaShortcutSettings;
     classicTileWidth?: number;
     classicDockHeight?: number;
     keypadMinimizeOnCopy?: boolean;

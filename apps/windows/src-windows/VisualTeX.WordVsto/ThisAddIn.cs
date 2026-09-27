@@ -334,7 +334,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private VisualTeXSessionClient? _sessionClient;
     private WordDoubleClickHook? _doubleClickHook;
     private WordCopyPasteHook? _copyPasteHook;
-    private WordPasteKeyHook? _pasteKeyHook;
+    private WordKeyboardHook? _keyboardHook;
     private WordDeleteKeyHook? _deleteKeyHook;
     private readonly object _copyPasteGate = new();
     private WordFormulaService.WordFormulaCopySnapshot? _formulaCopySnapshot;
@@ -490,21 +490,23 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         try
         {
-            _pasteKeyHook = new WordPasteKeyHook(OnWordPasteKeyGesture);
+            _keyboardHook = new WordKeyboardHook(
+                OnWordPasteKeyGesture,
+                OnWordFormulaShortcut);
             Window? ownerWindow = null;
             try
             {
                 ownerWindow = _application.ActiveWindow;
-                if (ownerWindow is not null) _pasteKeyHook.BindOwnerWindow(ownerWindow.Hwnd);
+                if (ownerWindow is not null) _keyboardHook.BindOwnerWindow(ownerWindow.Hwnd);
             }
             catch { }
             finally { ReleaseComObject(ownerWindow); }
-            _pasteKeyHook.Start();
+            _keyboardHook.Start();
         }
         catch (Exception error)
         {
-            try { _pasteKeyHook?.Dispose(); } catch { }
-            _pasteKeyHook = null;
+            try { _keyboardHook?.Dispose(); } catch { }
+            _keyboardHook = null;
             WordDoubleClickHook.TraceMessage(
                 $"paste-key-hook-start-failed {error.GetType().Name}: {error.Message}");
         }
@@ -608,6 +610,21 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         BeginSession("create", "inline", FormulaOleContract.WordOmmlMode);
     public void OnInsertDisplayOmml(object control) =>
         BeginSession("create", "block", FormulaOleContract.WordOmmlMode);
+    private void OnWordFormulaShortcut(WordFormulaShortcutCommand command)
+    {
+        if (command.Kind == WordFormulaShortcutKind.Inline)
+        {
+            if (command.Format == WordFormulaShortcutFormat.Omml)
+                OnInsertInlineOmml(this);
+            else
+                OnInsertInline(this);
+            return;
+        }
+        if (command.Format == WordFormulaShortcutFormat.Omml)
+            OnInsertDisplayOmml(this);
+        else
+            OnInsertDisplay(this);
+    }
     public void OnEditSelected(object control) => BeginSession("edit", null, null);
     public void OnConvertSelected(object control) =>
         BeginSession(
@@ -1684,7 +1701,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         try { _doubleClickHook?.BindOwnerWindow(window.Hwnd); } catch { }
         try { _copyPasteHook?.BindOwnerWindow(window.Hwnd); } catch { }
-        try { _pasteKeyHook?.BindOwnerWindow(window.Hwnd); } catch { }
+        try { _keyboardHook?.BindOwnerWindow(window.Hwnd); } catch { }
         try { _deleteKeyHook?.BindOwnerWindow(window.Hwnd); } catch { }
         WordFormulaService.WordFormulaCopySnapshot? copySnapshot = null;
         uint copySequence = 0;
@@ -5269,8 +5286,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _doubleClickHook = null;
         try { _copyPasteHook?.Dispose(); } catch { }
         _copyPasteHook = null;
-        try { _pasteKeyHook?.Dispose(); } catch { }
-        _pasteKeyHook = null;
+        try { _keyboardHook?.Dispose(); } catch { }
+        _keyboardHook = null;
         EndActivePasteUndoRecord(null, "addin-dispose");
         try { _deleteKeyHook?.Dispose(); } catch { }
         _deleteKeyHook = null;

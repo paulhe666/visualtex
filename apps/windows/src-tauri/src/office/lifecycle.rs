@@ -371,11 +371,45 @@ pub fn set_app_editor_preferences(
     state: tauri::State<'_, OfficeCompanionState>,
 ) -> Result<serde_json::Value, String> {
     #[cfg(target_os = "windows")]
-    if let Some(language) = preferences
-        .pointer("/settings/language")
-        .and_then(serde_json::Value::as_str)
     {
-        crate::office::windows_backend::set_app_editor_language(language)?;
+        let previous = state.current_editor_preferences();
+        let language = preferences
+            .pointer("/settings/language")
+            .and_then(serde_json::Value::as_str);
+        if language.is_some()
+            && previous.pointer("/settings/language")
+                != preferences.pointer("/settings/language")
+        {
+            crate::office::windows_backend::set_app_editor_language(
+                language.expect("language checked above"),
+            )?;
+        }
+
+        let shortcuts = preferences.pointer("/settings/wordFormulaShortcuts");
+        if let Some(shortcuts) = shortcuts.filter(|value| value.is_object()) {
+            if previous.pointer("/settings/wordFormulaShortcuts") != Some(shortcuts) {
+                let inline = shortcuts
+                    .pointer("/inline")
+                    .ok_or_else(|| "Missing inline Word formula shortcut setting".to_string())?;
+                let display = shortcuts
+                    .pointer("/display")
+                    .ok_or_else(|| "Missing display Word formula shortcut setting".to_string())?;
+                crate::office::windows_backend::set_word_formula_shortcuts(
+                    inline.pointer("/shortcut").and_then(serde_json::Value::as_str),
+                    inline
+                        .pointer("/format")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or_else(|| "Missing inline Word formula format".to_string())?,
+                    display
+                        .pointer("/shortcut")
+                        .and_then(serde_json::Value::as_str),
+                    display
+                        .pointer("/format")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or_else(|| "Missing display Word formula format".to_string())?,
+                )?;
+            }
+        }
     }
     Ok(state.set_current_editor_preferences(preferences))
 }
