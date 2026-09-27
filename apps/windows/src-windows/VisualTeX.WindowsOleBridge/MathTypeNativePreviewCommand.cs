@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32;
@@ -115,8 +116,6 @@ internal static class MathTypeNativePreviewCommand
         var initialized = false;
         var privateDllDirectoryApplied = false;
         PrivateRuntimeScope? privateRuntimeScope = null;
-        IntPtr overriddenLocalMachine = IntPtr.Zero;
-        var localMachineOverridden = false;
         try
         {
             var mathPage = ResolveMathPagePath(request.MathTypeServerPath);
@@ -131,20 +130,6 @@ internal static class MathTypeNativePreviewCommand
                 var runtimeDirectory = Path.GetDirectoryName(mathPage);
                 if (!string.IsNullOrWhiteSpace(runtimeDirectory))
                     privateDllDirectoryApplied = SetDllDirectoryW(runtimeDirectory);
-            }
-
-            module = LoadLibraryW(mathPage);
-            if (module == IntPtr.Zero)
-            {
-                response.Error = "MathType MathPage.wll could not be loaded.";
-                return WriteResponse(request.ResultPath, response, 3);
-            }
-
-            var virtualLocalMachineRoot = Environment.GetEnvironmentVariable(
-                "VISUALTEX_MATHTYPE_VIRTUAL_HKLM_ROOT");
-            if (string.IsNullOrWhiteSpace(virtualLocalMachineRoot)
-                && IsPrivateMathPagePath(mathPage))
-            {
                 if (!PrivateRuntimeScope.TryCreate(
                         mathPage,
                         out privateRuntimeScope,
@@ -154,26 +139,12 @@ internal static class MathTypeNativePreviewCommand
                     return WriteResponse(request.ResultPath, response, 3);
                 }
             }
-            else if (!string.IsNullOrWhiteSpace(virtualLocalMachineRoot))
+
+            module = LoadLibraryW(mathPage);
+            if (module == IntPtr.Zero)
             {
-                var openStatus = RegOpenKeyExW(
-                    HkeyCurrentUser,
-                    virtualLocalMachineRoot.Trim().Trim('\\'),
-                    0,
-                    KeyRead,
-                    out overriddenLocalMachine);
-                if (openStatus != 0 || overriddenLocalMachine == IntPtr.Zero)
-                {
-                    response.Error = $"Private MathType virtual HKLM root could not be opened; status {openStatus}.";
-                    return WriteResponse(request.ResultPath, response, 3);
-                }
-                var overrideStatus = RegOverridePredefKey(HkeyLocalMachine, overriddenLocalMachine);
-                if (overrideStatus != 0)
-                {
-                    response.Error = $"Private MathType virtual HKLM override failed; status {overrideStatus}.";
-                    return WriteResponse(request.ResultPath, response, 3);
-                }
-                localMachineOverridden = true;
+                response.Error = "MathType MathPage.wll could not be loaded.";
+                return WriteResponse(request.ResultPath, response, 3);
             }
 
             var init = GetDelegate<MtInitApiDelegate>(module, "MTInitAPI");
@@ -285,11 +256,6 @@ internal static class MathTypeNativePreviewCommand
                 try { term(); } catch { }
             }
             if (module != IntPtr.Zero) FreeLibrary(module);
-            if (localMachineOverridden)
-            {
-                try { RegOverridePredefKey(HkeyLocalMachine, IntPtr.Zero); } catch { }
-            }
-            if (overriddenLocalMachine != IntPtr.Zero) RegCloseKey(overriddenLocalMachine);
             privateRuntimeScope?.Dispose();
             if (privateDllDirectoryApplied) SetDllDirectoryW(null);
         }
@@ -302,154 +268,36 @@ internal static class MathTypeNativePreviewCommand
     private const string PrivateRuntimeRootEnvironment =
         "VISUALTEX_MATHTYPE_RUNTIME_ROOT";
 
-    private sealed class PrivateLocalServerSnapshot
-    {
-        private readonly bool _parentExisted;
-        private readonly bool _keyExisted;
-        private readonly bool _valueExisted;
-        private readonly object? _value;
-        private readonly RegistryValueKind _valueKind;
-        private readonly string _temporaryValue;
-
-        private static string ParentPath =>
-            $@"Software\Classes\CLSID\{PrivateMathTypeClsid}";
-        private static string KeyPath => ParentPath + @"\LocalServer32";
-
-        private PrivateLocalServerSnapshot(
-            bool parentExisted,
-            bool keyExisted,
-            bool valueExisted,
-            object? value,
-            RegistryValueKind valueKind,
-            string temporaryValue)
-        {
-            _parentExisted = parentExisted;
-            _keyExisted = keyExisted;
-            _valueExisted = valueExisted;
-            _value = value;
-            _valueKind = valueKind;
-            _temporaryValue = temporaryValue;
-        }
-
-        internal static PrivateLocalServerSnapshot CaptureAndInstall(
-            string serverPath)
-        {
-            using var baseKey = RegistryKey.OpenBaseKey(
-                RegistryHive.CurrentUser,
-                RegistryView.Registry32);
-            using var parent = baseKey.OpenSubKey(ParentPath, writable: false);
-            var parentExisted = parent is not null;
-            using var existing = baseKey.OpenSubKey(KeyPath, writable: false);
-            var keyExisted = existing is not null;
-            var valueExisted = existing?.GetValueNames().Any(name => name.Length == 0)
-                == true;
-            var value = valueExisted
-                ? existing!.GetValue(
-                    string.Empty,
-                    null,
-                    RegistryValueOptions.DoNotExpandEnvironmentNames)
-                : null;
-            var valueKind = valueExisted
-                ? existing!.GetValueKind(string.Empty)
-                : RegistryValueKind.String;
-
-            using var key = baseKey.CreateSubKey(KeyPath, writable: true)
-                ?? throw new InvalidOperationException(
-                    "VisualTeX could not create the temporary MathType LocalServer32 registration.");
-            key.SetValue(string.Empty, serverPath, RegistryValueKind.String);
-            return new PrivateLocalServerSnapshot(
-                parentExisted,
-                keyExisted,
-                valueExisted,
-                value,
-                valueKind,
-                serverPath);
-        }
-
-        internal void Restore()
-        {
-            try
-            {
-                using var baseKey = RegistryKey.OpenBaseKey(
-                    RegistryHive.CurrentUser,
-                    RegistryView.Registry32);
-                using (var key = baseKey.OpenSubKey(KeyPath, writable: true))
-                {
-                    if (key is null) return;
-                    var current = key.GetValue(
-                        string.Empty,
-                        null,
-                        RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
-                    if (!string.Equals(
-                            current,
-                            _temporaryValue,
-                            StringComparison.OrdinalIgnoreCase))
-                        return;
-
-                    if (_valueExisted)
-                        key.SetValue(string.Empty, _value!, _valueKind);
-                    else
-                        key.DeleteValue(string.Empty, throwOnMissingValue: false);
-                }
-
-                if (!_keyExisted)
-                {
-                    using var key = baseKey.OpenSubKey(KeyPath, writable: false);
-                    if (key is not null
-                        && key.GetSubKeyNames().Length == 0
-                        && key.GetValueNames().Length == 0)
-                    {
-                        key.Dispose();
-                        try { baseKey.DeleteSubKey(KeyPath, throwOnMissingSubKey: false); }
-                        catch { }
-                    }
-                }
-
-                if (!_parentExisted)
-                {
-                    using var parent = baseKey.OpenSubKey(ParentPath, writable: false);
-                    if (parent is not null
-                        && parent.GetSubKeyNames().Length == 0
-                        && parent.GetValueNames().Length == 0)
-                    {
-                        parent.Dispose();
-                        try { baseKey.DeleteSubKey(ParentPath, throwOnMissingSubKey: false); }
-                        catch { }
-                    }
-                }
-            }
-            catch
-            {
-                // Restoration is fail-closed. Never overwrite a value that changed
-                // while the short bootstrap window was active.
-            }
-        }
-    }
-
     private sealed class PrivateRuntimeScope : IDisposable
     {
         private readonly Mutex _mutex;
-        private readonly string _virtualRootPath;
-        private readonly PrivateLocalServerSnapshot _localServer;
-        private IntPtr _virtualRootHandle;
+        private readonly string _virtualSessionPath;
+        private readonly Process? _bootstrapProcess;
+        private IntPtr _virtualLocalMachineHandle;
+        private IntPtr _virtualClassesRootHandle;
         private bool _ownsMutex;
         private bool _localMachineOverridden;
+        private bool _classesRootOverridden;
         private bool _disposed;
 
         private PrivateRuntimeScope(
             Mutex mutex,
             bool ownsMutex,
-            string virtualRootPath,
-            PrivateLocalServerSnapshot localServer,
-            IntPtr virtualRootHandle,
-            bool localMachineOverridden)
+            string virtualSessionPath,
+            Process? bootstrapProcess,
+            IntPtr virtualLocalMachineHandle,
+            IntPtr virtualClassesRootHandle,
+            bool localMachineOverridden,
+            bool classesRootOverridden)
         {
             _mutex = mutex;
             _ownsMutex = ownsMutex;
-            _virtualRootPath = virtualRootPath;
-            _localServer = localServer;
-            _virtualRootHandle = virtualRootHandle;
+            _virtualSessionPath = virtualSessionPath;
+            _bootstrapProcess = bootstrapProcess;
+            _virtualLocalMachineHandle = virtualLocalMachineHandle;
+            _virtualClassesRootHandle = virtualClassesRootHandle;
             _localMachineOverridden = localMachineOverridden;
+            _classesRootOverridden = classesRootOverridden;
         }
 
         internal static bool TryCreate(
@@ -466,10 +314,12 @@ internal static class MathTypeNativePreviewCommand
                 return false;
 
             Mutex? mutex = null;
-            PrivateLocalServerSnapshot? localServer = null;
-            string? virtualRootPath = null;
-            IntPtr virtualRootHandle = IntPtr.Zero;
+            Process? bootstrapProcess = null;
+            string? virtualSessionPath = null;
+            IntPtr virtualLocalMachineHandle = IntPtr.Zero;
+            IntPtr virtualClassesRootHandle = IntPtr.Zero;
             var localMachineOverridden = false;
+            var classesRootOverridden = false;
             var ownsMutex = false;
             try
             {
@@ -490,48 +340,95 @@ internal static class MathTypeNativePreviewCommand
                 }
 
                 var serverPath = Path.Combine(runtimeRoot, "MathType.exe");
-                localServer = PrivateLocalServerSnapshot.CaptureAndInstall(serverPath);
-                virtualRootPath = CreatePrivateVirtualHklm(runtimeRoot);
+                DeleteAbandonedPrivateVirtualRegistry();
+                virtualSessionPath = CreatePrivateVirtualRegistry(
+                    runtimeRoot,
+                    serverPath,
+                    out var virtualLocalMachinePath,
+                    out var virtualClassesRootPath);
                 var openStatus = RegOpenKeyExW(
                     HkeyCurrentUser,
-                    virtualRootPath,
+                    virtualLocalMachinePath,
                     0,
                     KeyRead,
-                    out virtualRootHandle);
-                if (openStatus != 0 || virtualRootHandle == IntPtr.Zero)
+                    out virtualLocalMachineHandle);
+                if (openStatus != 0 || virtualLocalMachineHandle == IntPtr.Zero)
                     throw new InvalidOperationException(
                         $"VisualTeX private MathType virtual HKLM root could not be opened; status {openStatus}.");
 
                 var overrideStatus = RegOverridePredefKey(
                     HkeyLocalMachine,
-                    virtualRootHandle);
+                    virtualLocalMachineHandle);
                 if (overrideStatus != 0)
                     throw new InvalidOperationException(
                         $"VisualTeX private MathType virtual HKLM override failed; status {overrideStatus}.");
                 localMachineOverridden = true;
 
+                openStatus = RegOpenKeyExW(
+                    HkeyCurrentUser,
+                    virtualClassesRootPath,
+                    0,
+                    KeyRead,
+                    out virtualClassesRootHandle);
+                if (openStatus != 0 || virtualClassesRootHandle == IntPtr.Zero)
+                    throw new InvalidOperationException(
+                        $"VisualTeX private MathType virtual HKCR root could not be opened; status {openStatus}.");
+
+                overrideStatus = RegOverridePredefKey(
+                    HkeyClassesRoot,
+                    virtualClassesRootHandle);
+                if (overrideStatus != 0)
+                    throw new InvalidOperationException(
+                        $"VisualTeX private MathType virtual HKCR override failed; status {overrideStatus}.");
+                classesRootOverridden = true;
+
+                // MathPage normally discovers and launches MathType through the
+                // machine-wide class registration. Launch the private RPC server
+                // explicitly instead: it registers its class factory with COM,
+                // while the process-local HKCR view is a fallback for the short
+                // startup race. Neither mechanism changes the user's registry.
+                bootstrapProcess = Process.Start(new ProcessStartInfo
+                {
+                    FileName = serverPath,
+                    Arguments = "-mtrpc",
+                    WorkingDirectory = runtimeRoot,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                }) ?? throw new InvalidOperationException(
+                    "VisualTeX could not start its private MathType RPC renderer.");
+
                 scope = new PrivateRuntimeScope(
                     mutex,
                     ownsMutex,
-                    virtualRootPath,
-                    localServer,
-                    virtualRootHandle,
-                    localMachineOverridden);
+                    virtualSessionPath,
+                    bootstrapProcess,
+                    virtualLocalMachineHandle,
+                    virtualClassesRootHandle,
+                    localMachineOverridden,
+                    classesRootOverridden);
                 return true;
             }
             catch (Exception exception)
             {
                 error = exception.Message;
+                if (classesRootOverridden)
+                {
+                    try { RegOverridePredefKey(HkeyClassesRoot, IntPtr.Zero); }
+                    catch { }
+                }
                 if (localMachineOverridden)
                 {
                     try { RegOverridePredefKey(HkeyLocalMachine, IntPtr.Zero); }
                     catch { }
                 }
-                if (virtualRootHandle != IntPtr.Zero)
-                    RegCloseKey(virtualRootHandle);
-                if (!string.IsNullOrWhiteSpace(virtualRootPath))
-                    DeletePrivateVirtualHklm(virtualRootPath!);
-                localServer?.Restore();
+                if (virtualClassesRootHandle != IntPtr.Zero)
+                    RegCloseKey(virtualClassesRootHandle);
+                if (virtualLocalMachineHandle != IntPtr.Zero)
+                    RegCloseKey(virtualLocalMachineHandle);
+                bootstrapProcess?.Dispose();
+                if (!string.IsNullOrWhiteSpace(virtualSessionPath))
+                    DeletePrivateVirtualRegistry(virtualSessionPath!);
                 if (ownsMutex && mutex is not null)
                 {
                     try { mutex.ReleaseMutex(); } catch { }
@@ -545,19 +442,30 @@ internal static class MathTypeNativePreviewCommand
         {
             if (_disposed) return;
             _disposed = true;
+            if (_classesRootOverridden)
+            {
+                try { RegOverridePredefKey(HkeyClassesRoot, IntPtr.Zero); }
+                catch { }
+                _classesRootOverridden = false;
+            }
             if (_localMachineOverridden)
             {
                 try { RegOverridePredefKey(HkeyLocalMachine, IntPtr.Zero); }
                 catch { }
                 _localMachineOverridden = false;
             }
-            if (_virtualRootHandle != IntPtr.Zero)
+            if (_virtualClassesRootHandle != IntPtr.Zero)
             {
-                RegCloseKey(_virtualRootHandle);
-                _virtualRootHandle = IntPtr.Zero;
+                RegCloseKey(_virtualClassesRootHandle);
+                _virtualClassesRootHandle = IntPtr.Zero;
             }
-            DeletePrivateVirtualHklm(_virtualRootPath);
-            _localServer.Restore();
+            if (_virtualLocalMachineHandle != IntPtr.Zero)
+            {
+                RegCloseKey(_virtualLocalMachineHandle);
+                _virtualLocalMachineHandle = IntPtr.Zero;
+            }
+            _bootstrapProcess?.Dispose();
+            DeletePrivateVirtualRegistry(_virtualSessionPath);
             if (_ownsMutex)
             {
                 try { _mutex.ReleaseMutex(); } catch { }
@@ -692,14 +600,20 @@ internal static class MathTypeNativePreviewCommand
         return true;
     }
 
-    private static string CreatePrivateVirtualHklm(string runtimeRoot)
+    private static string CreatePrivateVirtualRegistry(
+        string runtimeRoot,
+        string serverPath,
+        out string virtualLocalMachinePath,
+        out string virtualClassesRootPath)
     {
-        var rootPath = $@"Software\VisualTeX\PrivateMathTypeRuntime\VirtualHKLM\{Environment.ProcessId}-{Guid.NewGuid():N}";
+        var sessionPath = $@"Software\VisualTeX\PrivateMathTypeRuntime\Sessions\{Environment.ProcessId}-{Guid.NewGuid():N}";
+        virtualLocalMachinePath = sessionPath + @"\HKLM";
+        virtualClassesRootPath = sessionPath + @"\HKCR";
         using var baseKey = RegistryKey.OpenBaseKey(
             RegistryHive.CurrentUser,
             RegistryView.Registry64);
         using (var directories = baseKey.CreateSubKey(
-                   rootPath + @"\SOFTWARE\Design Science\DSMT7\Directories",
+                   virtualLocalMachinePath + @"\SOFTWARE\Design Science\DSMT7\Directories",
                    writable: true)
                ?? throw new InvalidOperationException(
                    "VisualTeX could not create the private MathType directory registry view."))
@@ -736,7 +650,7 @@ internal static class MathTypeNativePreviewCommand
         }
 
         using (var currentVersion = baseKey.CreateSubKey(
-                   rootPath + @"\SOFTWARE\Microsoft\Windows\CurrentVersion",
+                   virtualLocalMachinePath + @"\SOFTWARE\Microsoft\Windows\CurrentVersion",
                    writable: true)
                ?? throw new InvalidOperationException(
                    "VisualTeX could not create the private MathType Windows directory registry view."))
@@ -758,7 +672,32 @@ internal static class MathTypeNativePreviewCommand
                 "CommonFilesDir (x86)",
                 Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFilesX86));
         }
-        return rootPath;
+
+        using (var classKey = baseKey.CreateSubKey(
+                   virtualClassesRootPath + $@"\CLSID\{PrivateMathTypeClsid}",
+                   writable: true)
+               ?? throw new InvalidOperationException(
+                   "VisualTeX could not create the private MathType class view."))
+        {
+            classKey.SetValue(string.Empty, "MathType 7 Equation", RegistryValueKind.String);
+        }
+        using (var localServer = baseKey.CreateSubKey(
+                   virtualClassesRootPath + $@"\CLSID\{PrivateMathTypeClsid}\LocalServer32",
+                   writable: true)
+               ?? throw new InvalidOperationException(
+                   "VisualTeX could not create the private MathType server view."))
+        {
+            localServer.SetValue(string.Empty, serverPath, RegistryValueKind.String);
+        }
+        foreach (var progId in new[] { "Equation.DSMT4", "DSEquations" })
+        {
+            using var clsid = baseKey.CreateSubKey(
+                virtualClassesRootPath + $@"\{progId}\CLSID",
+                writable: true);
+            clsid?.SetValue(string.Empty, PrivateMathTypeClsid, RegistryValueKind.String);
+        }
+
+        return sessionPath;
     }
 
     private static void SetRegistryStringIfPresent(
@@ -770,18 +709,40 @@ internal static class MathTypeNativePreviewCommand
             key.SetValue(name, value, RegistryValueKind.String);
     }
 
-    private static void DeletePrivateVirtualHklm(string rootPath)
+    private static void DeleteAbandonedPrivateVirtualRegistry()
     {
-        if (string.IsNullOrWhiteSpace(rootPath)) return;
         try
         {
             using var baseKey = RegistryKey.OpenBaseKey(
                 RegistryHive.CurrentUser,
                 RegistryView.Registry64);
-            baseKey.DeleteSubKeyTree(rootPath, throwOnMissingSubKey: false);
+            baseKey.DeleteSubKeyTree(
+                @"Software\VisualTeX\PrivateMathTypeRuntime\Sessions",
+                throwOnMissingSubKey: false);
+            // Releases before this fix used a separate VirtualHKLM tree. It was
+            // never part of MathType's public registration and is safe to prune.
+            baseKey.DeleteSubKeyTree(
+                @"Software\VisualTeX\PrivateMathTypeRuntime\VirtualHKLM",
+                throwOnMissingSubKey: false);
             DeleteRegistryKeyIfEmpty(
                 baseKey,
-                @"Software\VisualTeX\PrivateMathTypeRuntime\VirtualHKLM");
+                @"Software\VisualTeX\PrivateMathTypeRuntime");
+        }
+        catch { }
+    }
+
+    private static void DeletePrivateVirtualRegistry(string sessionPath)
+    {
+        if (string.IsNullOrWhiteSpace(sessionPath)) return;
+        try
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(
+                RegistryHive.CurrentUser,
+                RegistryView.Registry64);
+            baseKey.DeleteSubKeyTree(sessionPath, throwOnMissingSubKey: false);
+            DeleteRegistryKeyIfEmpty(
+                baseKey,
+                @"Software\VisualTeX\PrivateMathTypeRuntime\Sessions");
             DeleteRegistryKeyIfEmpty(
                 baseKey,
                 @"Software\VisualTeX\PrivateMathTypeRuntime");
@@ -847,17 +808,17 @@ internal static class MathTypeNativePreviewCommand
 
     private static bool IsPrivateMathPagePath(string mathPagePath)
     {
-        var overridePath = Environment.GetEnvironmentVariable(
-            "VISUALTEX_MATHTYPE_MATHPAGE_PATH");
-        if (!string.IsNullOrWhiteSpace(overridePath))
+        var overrideRoot = Environment.GetEnvironmentVariable(
+            PrivateRuntimeRootEnvironment);
+        if (!string.IsNullOrWhiteSpace(overrideRoot))
         {
-            var expanded = Environment.ExpandEnvironmentVariables(
-                overridePath.Trim().Trim('"'));
-            if (string.Equals(
-                    Path.GetFullPath(expanded),
-                    Path.GetFullPath(mathPagePath),
-                    StringComparison.OrdinalIgnoreCase))
-                return true;
+            try
+            {
+                var expandedRoot = Environment.ExpandEnvironmentVariables(
+                    overrideRoot.Trim().Trim('"'));
+                if (IsPathWithinRoot(mathPagePath, expandedRoot)) return true;
+            }
+            catch { }
         }
 
         var bundledRuntimeRoot = Path.Combine(
@@ -885,28 +846,6 @@ internal static class MathTypeNativePreviewCommand
         // renderer while rejecting a wrong-bitness override before LoadLibrary.
         var architecture = Environment.Is64BitProcess ? "64" : "32";
         var candidates = new List<string>();
-        // VisualTeX can carry a private MathPage runtime next to the packaged
-        // preview sidecar. Keep it out of Word's STARTUP path: the WLL is loaded
-        // only inside this isolated helper process and never registered as a
-        // Word add-in. It is the fallback when no compatible MathType 7 is installed.
-        var bundledRuntimeRoot = Path.Combine(
-            AppContext.BaseDirectory,
-            "mathtype-runtime");
-        foreach (var bundledMathPage in new[]
-                 {
-                     Path.Combine(
-                         bundledRuntimeRoot,
-                         "MathPage",
-                         architecture,
-                         "MathPage.wll"),
-                     Path.Combine(bundledRuntimeRoot, "MathPage", "MathPage.wll"),
-                     Path.Combine(bundledRuntimeRoot, "MathPage.wll"),
-                 })
-        {
-            if (File.Exists(bundledMathPage)
-                && IsNativeLibraryCompatibleWithCurrentProcess(bundledMathPage))
-                return bundledMathPage;
-        }
         if (!string.IsNullOrWhiteSpace(mathTypeServerPath))
         {
             var expandedServer = Environment.ExpandEnvironmentVariables(
@@ -931,11 +870,36 @@ internal static class MathTypeNativePreviewCommand
                 Path.Combine(root, "WIRIS", "MathType"),
                 architecture);
         }
-        return candidates
+        var installedMathPage = candidates
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault(path =>
                 File.Exists(path)
                 && IsNativeLibraryCompatibleWithCurrentProcess(path));
+        if (!string.IsNullOrWhiteSpace(installedMathPage))
+            return installedMathPage;
+
+        // VisualTeX's reduced runtime is an offline fallback only. It must never
+        // replace a complete MathType installation, because it intentionally has
+        // no UI languages, preferences or translators.
+        var bundledRuntimeRoot = Path.Combine(
+            AppContext.BaseDirectory,
+            "mathtype-runtime");
+        foreach (var bundledMathPage in new[]
+                 {
+                     Path.Combine(
+                         bundledRuntimeRoot,
+                         "MathPage",
+                         architecture,
+                         "MathPage.wll"),
+                     Path.Combine(bundledRuntimeRoot, "MathPage", "MathPage.wll"),
+                     Path.Combine(bundledRuntimeRoot, "MathPage.wll"),
+                 })
+        {
+            if (File.Exists(bundledMathPage)
+                && IsNativeLibraryCompatibleWithCurrentProcess(bundledMathPage))
+                return bundledMathPage;
+        }
+        return null;
     }
 
     private static void AddMathPageCandidates(
@@ -1011,6 +975,7 @@ internal static class MathTypeNativePreviewCommand
         return Marshal.GetDelegateForFunctionPointer(address, typeof(T)) as T;
     }
 
+    private static readonly IntPtr HkeyClassesRoot = new(unchecked((int)0x80000000));
     private static readonly IntPtr HkeyCurrentUser = new(unchecked((int)0x80000001));
     private static readonly IntPtr HkeyLocalMachine = new(unchecked((int)0x80000002));
     private const int KeyRead = 0x20019;

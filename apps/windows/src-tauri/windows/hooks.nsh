@@ -282,6 +282,16 @@ FunctionEnd
     StrCpy $INSTDIR "$LOCALAPPDATA\VisualTeX"
   ${EndIf}
 
+  ; Builds before 1.2.7 could leave MathType's canonical per-user COM class
+  ; pointing at VisualTeX's reduced renderer after a native sidecar crash. That
+  ; HKCU value shadows a later machine-wide MathType installation. Remove only
+  ; registrations whose executable is inside a recognized VisualTeX runtime.
+  !insertmacro VisualTeXRunPrivateRuntimeGuard RepairRegistration
+  ${If} $0 != "0"
+    SetDetailsView show
+    Abort "Unable to repair a legacy VisualTeX-owned MathType registration. ExitCode=$0 Output=$1"
+  ${EndIf}
+
   ; Recheck after the destination page as well: custom paths and helpers that
   ; restarted since the early maintenance page still require explicit consent.
   ; Do not remove the runtime tree before successful payload extraction.
@@ -506,6 +516,13 @@ visualtex_postinstall_cleanup_done:
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  ; Restore the public MathType COM namespace before removing the private files,
+  ; including installations upgraded from the legacy temporary registration.
+  !insertmacro VisualTeXRunPrivateRuntimeGuard RepairRegistration
+  ${If} $0 != "0"
+    SetDetailsView show
+    Abort "Unable to repair a legacy VisualTeX-owned MathType registration. ExitCode=$0 Output=$1"
+  ${EndIf}
   ; Release VisualTeX's private MathType/MathPage runtime before the uninstaller
   ; removes the application tree. The path-scoped guard cannot touch a separate
   ; MathType installation.

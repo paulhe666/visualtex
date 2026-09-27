@@ -2061,12 +2061,15 @@ internal static class MathTypeOleInterop
         {
             if (TryResolveCapabilities(progId, out var capabilities)
                 && !string.IsNullOrWhiteSpace(capabilities.ServerPath)
-                && File.Exists(capabilities.ServerPath))
+                && File.Exists(capabilities.ServerPath)
+                && !IsBundledMathTypeRuntimePath(capabilities.ServerPath))
                 return capabilities.ServerPath;
         }
 
         var appPath = ReadRegisteredApplicationPath("MathType.exe");
-        if (!string.IsNullOrWhiteSpace(appPath) && File.Exists(appPath))
+        if (!string.IsNullOrWhiteSpace(appPath)
+            && File.Exists(appPath)
+            && !IsBundledMathTypeRuntimePath(appPath))
             return appPath;
 
         foreach (var root in new[]
@@ -2090,7 +2093,7 @@ internal static class MathTypeOleInterop
     }
 
     internal static string? ResolveMathPagePath() =>
-        ResolveMathPagePathForArchitecture(RuntimeInformation.ProcessArchitecture);
+        ResolveInstalledMathPagePathForArchitecture(RuntimeInformation.ProcessArchitecture);
 
     internal static string? ResolveMathPagePathForArchitecture(Architecture processArchitecture)
     {
@@ -2105,6 +2108,17 @@ internal static class MathTypeOleInterop
                 return expanded;
         }
 
+        return ResolveInstalledMathPagePathForArchitecture(processArchitecture)
+            ?? ResolveBundledMathPagePath(processArchitecture);
+    }
+
+    // This resolver is used by code that runs inside Word and operates on the
+    // user's real MathType OLE objects. A VisualTeX-private MathPage build must
+    // never enter the Office process or bind to a separately installed server.
+    internal static string? ResolveInstalledMathPagePathForArchitecture(
+        Architecture processArchitecture)
+    {
+
         var architectureFolder = processArchitecture switch
         {
             Architecture.X64 or Architecture.Arm64 => "64",
@@ -2112,10 +2126,6 @@ internal static class MathTypeOleInterop
             _ => Environment.Is64BitProcess ? "64" : "32",
         };
         var serverPath = ResolveInstalledServerPath();
-        var bundledMathPage = ResolveBundledMathPagePath(processArchitecture);
-        if (!string.IsNullOrWhiteSpace(bundledMathPage))
-            return bundledMathPage;
-
         var candidates = new List<string>();
         if (!string.IsNullOrWhiteSpace(serverPath))
         {
@@ -2148,7 +2158,48 @@ internal static class MathTypeOleInterop
                 && IsMathPageBinaryCompatible(path, processArchitecture));
     }
 
+    internal static bool IsBundledMathTypeRuntimePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        foreach (var runtimeRoot in ResolveBundledMathTypeRuntimeRoots())
+        {
+            if (IsPathWithinRoot(path!, runtimeRoot)) return true;
+        }
+        return false;
+    }
+
     private static string? ResolveBundledMathPagePath(Architecture processArchitecture)
+    {
+        var runtimeRoots = ResolveBundledMathTypeRuntimeRoots();
+        var architectureFolder = processArchitecture switch
+        {
+            Architecture.X64 or Architecture.Arm64 => "64",
+            Architecture.X86 or Architecture.Arm => "32",
+            _ => Environment.Is64BitProcess ? "64" : "32",
+        };
+        foreach (var runtimeRoot in runtimeRoots)
+        {
+            if (!IsBundledMathTypeRuntimeComplete(runtimeRoot)) continue;
+            foreach (var path in new[]
+                     {
+                         Path.Combine(
+                             runtimeRoot,
+                             "MathPage",
+                             architectureFolder,
+                             "MathPage.wll"),
+                         Path.Combine(runtimeRoot, "MathPage", "MathPage.wll"),
+                         Path.Combine(runtimeRoot, "MathPage.wll"),
+                     })
+            {
+                if (File.Exists(path)
+                    && IsMathPageBinaryCompatible(path, processArchitecture))
+                    return path;
+            }
+        }
+        return null;
+    }
+
+    private static IReadOnlyList<string> ResolveBundledMathTypeRuntimeRoots()
     {
         var runtimeRoots = new List<string>();
         try
@@ -2174,34 +2225,10 @@ internal static class MathTypeOleInterop
                 localAppData,
                 "VisualTeX",
                 "mathtype-runtime"));
-
-        var architectureFolder = processArchitecture switch
-        {
-            Architecture.X64 or Architecture.Arm64 => "64",
-            Architecture.X86 or Architecture.Arm => "32",
-            _ => Environment.Is64BitProcess ? "64" : "32",
-        };
-        foreach (var runtimeRoot in runtimeRoots
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            if (!IsBundledMathTypeRuntimeComplete(runtimeRoot)) continue;
-            foreach (var path in new[]
-                     {
-                         Path.Combine(
-                             runtimeRoot,
-                             "MathPage",
-                             architectureFolder,
-                             "MathPage.wll"),
-                         Path.Combine(runtimeRoot, "MathPage", "MathPage.wll"),
-                         Path.Combine(runtimeRoot, "MathPage.wll"),
-                     })
-            {
-                if (File.Exists(path)
-                    && IsMathPageBinaryCompatible(path, processArchitecture))
-                    return path;
-            }
-        }
-        return null;
+        return runtimeRoots
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static bool IsBundledMathTypeRuntimeComplete(string runtimeRoot)
@@ -2393,6 +2420,22 @@ internal static class MathTypeOleInterop
                 : source.Split(new[] { ' ', '\t' }, 2)[0];
         }
         return candidate.Trim().Trim('"');
+    }
+
+    private static bool IsPathWithinRoot(string path, string root)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            var fullRoot = Path.GetFullPath(root)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            return fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string? ReadDefaultString(RegistryKey parent, string subKeyName)

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$InstallRoot,
-    [ValidateSet('Check', 'Stop')][string]$Mode = 'Check'
+    [ValidateSet('Check', 'Stop', 'RepairRegistration')][string]$Mode = 'Check'
 )
 
 # Invoked from the installer's temporary plugin directory, not from the old
@@ -29,12 +29,109 @@ function Get-PrivateRuntimeProcesses {
     return $result
 }
 
+function Get-NormalizedLocalServerPath([object]$value) {
+    if ($null -eq $value -or [string]::IsNullOrWhiteSpace([string]$value)) { return $null }
+    $source = [Environment]::ExpandEnvironmentVariables(([string]$value).Trim())
+    if ($source.StartsWith('"')) {
+        $closingQuote = $source.IndexOf('"', 1)
+        if ($closingQuote -gt 1) { return $source.Substring(1, $closingQuote - 1) }
+        return $source.Trim('"')
+    }
+    $exeEnd = $source.IndexOf('.exe', [StringComparison]::OrdinalIgnoreCase)
+    if ($exeEnd -ge 0) { return $source.Substring(0, $exeEnd + 4).Trim('"') }
+    return ($source -split '\s+', 2)[0].Trim('"')
+}
+
+function Repair-LegacyPrivateMathTypeRegistration {
+    $ownedPrefixes = @($script:runtimePrefix)
+    foreach ($legacyRoot in @(
+        (Join-Path $env:LOCALAPPDATA 'VisualTeX\mathtype-runtime'),
+        (Join-Path $env:APPDATA 'VisualTeX\mathtype-runtime'),
+        (Join-Path $env:USERPROFILE 'AppData\VisualTeX\mathtype-runtime')
+    )) {
+        if ([string]::IsNullOrWhiteSpace($legacyRoot)) { continue }
+        $ownedPrefixes += [IO.Path]::GetFullPath($legacyRoot).TrimEnd('\', '/') + '\'
+    }
+    $ownedPrefixes = @($ownedPrefixes | Select-Object -Unique)
+    $keyPath = 'Software\Classes\CLSID\{0002CE03-0000-0000-C000-000000000046}\LocalServer32'
+    $parentPath = 'Software\Classes\CLSID\{0002CE03-0000-0000-C000-000000000046}'
+    $repaired = 0
+    $views = if ([Environment]::Is64BitOperatingSystem) {
+        @([Microsoft.Win32.RegistryView]::Registry64, [Microsoft.Win32.RegistryView]::Registry32)
+    } else {
+        @([Microsoft.Win32.RegistryView]::Registry32)
+    }
+    foreach ($view in $views) {
+        $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+            [Microsoft.Win32.RegistryHive]::CurrentUser,
+            $view)
+        try {
+            $key = $baseKey.OpenSubKey($keyPath, $true)
+            if ($null -eq $key) { continue }
+            try {
+                $registeredValue = $key.GetValue(
+                    '',
+                    $null,
+                    [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                $serverPath = Get-NormalizedLocalServerPath $registeredValue
+                if ([string]::IsNullOrWhiteSpace($serverPath)) { continue }
+                try { $fullServerPath = [IO.Path]::GetFullPath($serverPath) }
+                catch { continue }
+                $isOwned = $false
+                foreach ($prefix in $ownedPrefixes) {
+                    if ($fullServerPath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                        $isOwned = $true
+                        break
+                    }
+                }
+                if (-not $isOwned) { continue }
+                $key.DeleteValue('', $false)
+                $repaired++
+            } finally {
+                $key.Dispose()
+            }
+
+            $emptyKey = $baseKey.OpenSubKey($keyPath, $false)
+            if ($null -ne $emptyKey) {
+                try {
+                    if ($emptyKey.SubKeyCount -eq 0 -and $emptyKey.ValueCount -eq 0) {
+                        $emptyKey.Dispose()
+                        $emptyKey = $null
+                        $baseKey.DeleteSubKey($keyPath, $false)
+                    }
+                } finally {
+                    if ($null -ne $emptyKey) { $emptyKey.Dispose() }
+                }
+            }
+            $emptyParent = $baseKey.OpenSubKey($parentPath, $false)
+            if ($null -ne $emptyParent) {
+                try {
+                    if ($emptyParent.SubKeyCount -eq 0 -and $emptyParent.ValueCount -eq 0) {
+                        $emptyParent.Dispose()
+                        $emptyParent = $null
+                        $baseKey.DeleteSubKey($parentPath, $false)
+                    }
+                } finally {
+                    if ($null -ne $emptyParent) { $emptyParent.Dispose() }
+                }
+            }
+        } finally {
+            $baseKey.Dispose()
+        }
+    }
+    Write-Output ('PRIVATE_RUNTIME_REGISTRATION_REPAIRED count=' + $repaired)
+}
+
 try {
     if ([string]::IsNullOrWhiteSpace($InstallRoot) -or -not [IO.Path]::IsPathRooted($InstallRoot)) {
         throw 'An absolute VisualTeX installation directory is required.'
     }
     $installation = [IO.Path]::GetFullPath($InstallRoot.TrimEnd(' ', '\', '/'))
     $script:runtimePrefix = [IO.Path]::GetFullPath((Join-Path $installation 'mathtype-runtime')).TrimEnd('\', '/') + '\'
+    if ($Mode -eq 'RepairRegistration') {
+        Repair-LegacyPrivateMathTypeRegistration
+        exit 0
+    }
     $targets = @(Get-PrivateRuntimeProcesses)
     if ($targets.Count -eq 0) {
         Write-Output 'PRIVATE_RUNTIME_CLEAR'
