@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { EditorState } from "@codemirror/state";
 import {
   foldGutter,
@@ -121,6 +121,9 @@ export function LatexSourceEditor({
   const [hasLivePreview, setHasLivePreview] = useState(true);
   const hasLivePreviewRef = useRef(true);
   const language = useEditorStore((state) => state.language);
+  const latexSourceFontSize = useEditorStore(
+    (state) => state.latexSourceFontSize,
+  );
   const isEn = language === "en";
   onLiveChangeRef.current = onLiveChange;
   onFocusChangeRef.current = onFocusChange;
@@ -152,7 +155,7 @@ export function LatexSourceEditor({
       ".cm-content": {
         caretColor: "var(--accent)",
         fontFamily: "'SFMono-Regular', Menlo, Consolas, monospace",
-        fontSize: "12px",
+        fontSize: "var(--visualtex-latex-source-font-size, 12px)",
         lineHeight: "1.62",
         padding: "10px 0 18px",
       },
@@ -444,6 +447,11 @@ export function LatexSourceEditor({
 
   return (
     <section
+      style={
+        {
+          "--visualtex-latex-source-font-size": `${latexSourceFontSize}px`,
+        } as CSSProperties
+      }
       className={
         "source-panel" +
         (compact ? " is-compact" : "") +

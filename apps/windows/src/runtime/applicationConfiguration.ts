@@ -111,6 +111,7 @@ const editorSettingKeys = [
   "formulaToolButtonSize",
   "formulaToolButtonPadding",
   "formulaRowVerticalInset",
+  "latexSourceFontSize",
   "pngExportBackground",
   "formulaLetterFont",
   "formulaChineseFont",

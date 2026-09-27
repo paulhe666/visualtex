@@ -296,6 +296,9 @@ function applyOfficeEditorPreferences(
   if (typeof settings.formulaRowVerticalInset === "number") {
     editor.setFormulaRowVerticalInset(settings.formulaRowVerticalInset);
   }
+  if (typeof settings.latexSourceFontSize === "number") {
+    editor.setLatexSourceFontSize(settings.latexSourceFontSize);
+  }
   if (settings.pngExportBackground !== undefined) {
     editor.setPngExportBackground(settings.pngExportBackground);
   }

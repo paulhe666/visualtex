@@ -110,6 +110,7 @@ export interface FormulaDocument {
     formulaToolButtonSize?: number;
     formulaToolButtonPadding?: number;
     formulaRowVerticalInset?: number;
+    latexSourceFontSize?: number;
     pngExportBackground?: "transparent" | `#${string}`;
     formulaLetterFont?:
       | "katex"

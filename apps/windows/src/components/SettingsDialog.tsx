@@ -27,15 +27,18 @@ import {
   DEFAULT_FORMULA_ROW_VERTICAL_INSET,
   DEFAULT_FORMULA_TOOL_BUTTON_PADDING,
   DEFAULT_FORMULA_TOOL_BUTTON_SIZE,
+  DEFAULT_LATEX_SOURCE_FONT_SIZE,
   EDITOR_ZOOM_STEP,
   MAX_FORMULA_INSET,
   MAX_FORMULA_ROW_VERTICAL_INSET,
   MAX_FORMULA_TOOL_BUTTON_PADDING,
   MAX_FORMULA_TOOL_BUTTON_SIZE,
+  MAX_LATEX_SOURCE_FONT_SIZE,
   MIN_FORMULA_INSET,
   MIN_FORMULA_ROW_VERTICAL_INSET,
   MIN_FORMULA_TOOL_BUTTON_PADDING,
   MIN_FORMULA_TOOL_BUTTON_SIZE,
+  MIN_LATEX_SOURCE_FONT_SIZE,
   useEditorStore,
 } from "../stores/editorStore";
 import { MathPreview } from "./MathPreview";
@@ -199,6 +202,9 @@ export function SettingsDialog({
   const formulaRowVerticalInset = useEditorStore(
     (state) => state.formulaRowVerticalInset,
   );
+  const latexSourceFontSize = useEditorStore(
+    (state) => state.latexSourceFontSize,
+  );
   const pngExportBackground = useEditorStore(
     (state) => state.pngExportBackground,
   );
@@ -230,6 +236,9 @@ export function SettingsDialog({
   );
   const setFormulaRowVerticalInset = useEditorStore(
     (state) => state.setFormulaRowVerticalInset,
+  );
+  const setLatexSourceFontSize = useEditorStore(
+    (state) => state.setLatexSourceFontSize,
   );
   const setPngExportBackground = useEditorStore(
     (state) => state.setPngExportBackground,
@@ -1244,6 +1253,49 @@ export function SettingsDialog({
                           setFormulaToolButtonPadding(
                             Number(event.target.value),
                           )
+                        }
+                      />
+                    </label>
+                  </div>
+                </section>
+
+                <section
+                  className="formula-toolbar-customization"
+                  aria-labelledby="latex-source-font-customization-title"
+                >
+                  <header className="formula-inset-customization-header">
+                    <div>
+                      <strong id="latex-source-font-customization-title">
+                        {isEn ? "LaTeX source" : "LaTeX 源码"}
+                      </strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary-button formula-inset-reset"
+                      data-latex-source-font-size-reset
+                      onClick={() =>
+                        setLatexSourceFontSize(DEFAULT_LATEX_SOURCE_FONT_SIZE)
+                      }
+                    >
+                      {isEn ? "Reset" : "恢复默认"}
+                    </button>
+                  </header>
+
+                  <div className="formula-inset-range-grid">
+                    <label className="range-setting formula-inset-range">
+                      <span>
+                        <strong>{isEn ? "Source font size" : "源码字体大小"}</strong>
+                        <small>{latexSourceFontSize}px</small>
+                      </span>
+                      <input
+                        type="range"
+                        min={MIN_LATEX_SOURCE_FONT_SIZE}
+                        max={MAX_LATEX_SOURCE_FONT_SIZE}
+                        step="1"
+                        value={latexSourceFontSize}
+                        data-latex-source-font-size-setting
+                        onChange={(event) =>
+                          setLatexSourceFontSize(Number(event.target.value))
                         }
                       />
                     </label>

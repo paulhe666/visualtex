@@ -76,6 +76,9 @@ export const MAX_FORMULA_TOOL_BUTTON_PADDING = 12;
 export const DEFAULT_FORMULA_ROW_VERTICAL_INSET = 5;
 export const MIN_FORMULA_ROW_VERTICAL_INSET = 0;
 export const MAX_FORMULA_ROW_VERTICAL_INSET = 24;
+export const DEFAULT_LATEX_SOURCE_FONT_SIZE = 12;
+export const MIN_LATEX_SOURCE_FONT_SIZE = 8;
+export const MAX_LATEX_SOURCE_FONT_SIZE = 32;
 export const DEFAULT_CLASSIC_TILE_WIDTH = 300;
 export const MIN_CLASSIC_TILE_WIDTH = 220;
 export const MAX_CLASSIC_TILE_WIDTH = 2000;
@@ -194,6 +197,17 @@ function normalizeFormulaRowVerticalInset(value: unknown) {
   return Math.min(
     MAX_FORMULA_ROW_VERTICAL_INSET,
     Math.max(MIN_FORMULA_ROW_VERTICAL_INSET, inset),
+  );
+}
+
+export function normalizeLatexSourceFontSize(value: unknown) {
+  const size =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value)
+      : DEFAULT_LATEX_SOURCE_FONT_SIZE;
+  return Math.min(
+    MAX_LATEX_SOURCE_FONT_SIZE,
+    Math.max(MIN_LATEX_SOURCE_FONT_SIZE, size),
   );
 }
 
@@ -363,6 +377,7 @@ interface EditorState {
   formulaToolButtonSize: number;
   formulaToolButtonPadding: number;
   formulaRowVerticalInset: number;
+  latexSourceFontSize: number;
   pngExportBackground: PngExportBackground;
   formulaLetterFont: FormulaLetterFont;
   formulaChineseFont: FormulaChineseFont;
@@ -405,6 +420,7 @@ interface EditorState {
   setFormulaToolButtonSize: (size: number) => void;
   setFormulaToolButtonPadding: (padding: number) => void;
   setFormulaRowVerticalInset: (inset: number) => void;
+  setLatexSourceFontSize: (size: number) => void;
   setPngExportBackground: (background: PngExportBackground) => void;
   setFormulaLetterFont: (font: FormulaLetterFont) => void;
   setFormulaChineseFont: (font: FormulaChineseFont) => void;
@@ -456,6 +472,7 @@ export const useEditorStore = create<EditorState>()(
       formulaToolButtonSize: DEFAULT_FORMULA_TOOL_BUTTON_SIZE,
       formulaToolButtonPadding: DEFAULT_FORMULA_TOOL_BUTTON_PADDING,
       formulaRowVerticalInset: DEFAULT_FORMULA_ROW_VERTICAL_INSET,
+      latexSourceFontSize: DEFAULT_LATEX_SOURCE_FONT_SIZE,
       pngExportBackground: DEFAULT_PNG_EXPORT_BACKGROUND,
       formulaLetterFont: DEFAULT_FORMULA_LETTER_FONT,
       formulaChineseFont: DEFAULT_FORMULA_CHINESE_FONT,
@@ -590,6 +607,12 @@ export const useEditorStore = create<EditorState>()(
         set({
           formulaRowVerticalInset: normalizeFormulaRowVerticalInset(
             formulaRowVerticalInset,
+          ),
+        }),
+      setLatexSourceFontSize: (latexSourceFontSize) =>
+        set({
+          latexSourceFontSize: normalizeLatexSourceFontSize(
+            latexSourceFontSize,
           ),
         }),
       setPngExportBackground: (pngExportBackground) =>
@@ -813,6 +836,10 @@ export const useEditorStore = create<EditorState>()(
                 : normalizeFormulaRowVerticalInset(
                     settings.formulaRowVerticalInset,
                   ),
+            latexSourceFontSize:
+              settings.latexSourceFontSize === undefined
+                ? state.latexSourceFontSize
+                : normalizeLatexSourceFontSize(settings.latexSourceFontSize),
             pngExportBackground:
               settings.pngExportBackground === undefined
                 ? state.pngExportBackground
@@ -900,6 +927,7 @@ export const useEditorStore = create<EditorState>()(
             formulaToolButtonSize: state.formulaToolButtonSize,
             formulaToolButtonPadding: state.formulaToolButtonPadding,
             formulaRowVerticalInset: state.formulaRowVerticalInset,
+            latexSourceFontSize: state.latexSourceFontSize,
             pngExportBackground: state.pngExportBackground,
             formulaLetterFont: state.formulaLetterFont,
             formulaChineseFont: state.formulaChineseFont,
@@ -939,6 +967,7 @@ export const useEditorStore = create<EditorState>()(
         formulaToolButtonSize: state.formulaToolButtonSize,
         formulaToolButtonPadding: state.formulaToolButtonPadding,
         formulaRowVerticalInset: state.formulaRowVerticalInset,
+        latexSourceFontSize: state.latexSourceFontSize,
         pngExportBackground: state.pngExportBackground,
         formulaLetterFont: state.formulaLetterFont,
         formulaChineseFont: state.formulaChineseFont,
@@ -1006,6 +1035,9 @@ export const useEditorStore = create<EditorState>()(
           ),
           formulaRowVerticalInset: normalizeFormulaRowVerticalInset(
             persisted.formulaRowVerticalInset,
+          ),
+          latexSourceFontSize: normalizeLatexSourceFontSize(
+            persisted.latexSourceFontSize,
           ),
           pngExportBackground: normalizePngExportBackground(
             persisted.pngExportBackground,
