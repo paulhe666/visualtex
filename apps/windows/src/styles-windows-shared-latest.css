@@ -2060,11 +2060,11 @@
 }
 
 .multi-line-editor[data-formula-alignment="center"] .mathfield-host {
-  justify-content: center;
+  justify-content: safe center;
 }
 
 .multi-line-editor[data-formula-alignment="right"] .mathfield-host {
-  justify-content: flex-end;
+  justify-content: safe flex-end;
 }
 
 .multi-line-editor .mathfield-host.has-explicit-align-marker {

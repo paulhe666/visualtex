@@ -18,6 +18,7 @@ const POWERPOINT_VSTO_KEY: &str =
 const OLE_LOCAL_SERVER_KEY: &str =
     r"HKLM\Software\Classes\CLSID\{8FF7F5AA-0D60-48D5-ADBD-65A64B4C827B}\LocalServer32";
 const OFFICE_MODE_KEY: &str = r"HKCU\Software\VisualTeX\OfficeIntegration";
+const APP_LANGUAGE_VALUE: &str = "Language";
 const WORD_USER_PREFERENCES_KEY: &str = r"HKCU\Software\VisualTeX\Word";
 const WORD_DEFAULT_NUMBERED_VALUE: &str = "DefaultDisplayEquationNumbered";
 const WORD_DEFAULT_NUMBER_FORMAT_VALUE: &str = "DefaultEquationNumberFormat";
@@ -276,6 +277,15 @@ pub fn write_shared_configuration(
     )?;
     registry_set_dword(OFFICE_MODE_KEY, "CompanionPort", u32::from(companion_port))?;
     registry_set_dword(OFFICE_MODE_KEY, "ProtocolVersion", protocol_version)
+}
+
+pub(crate) fn set_app_editor_language(language: &str) -> Result<(), String> {
+    let normalized = match language.trim().to_ascii_lowercase().as_str() {
+        "cn" => "cn",
+        "en" => "en",
+        _ => return Err(format!("Unsupported VisualTeX language: {language}")),
+    };
+    registry_set_string(OFFICE_MODE_KEY, APP_LANGUAGE_VALUE, normalized)
 }
 
 pub fn background_start_enabled() -> bool {

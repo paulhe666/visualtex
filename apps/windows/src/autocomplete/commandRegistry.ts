@@ -2,6 +2,7 @@ import type { LatexCommand } from "../types/command";
 import { additionalCommands } from "./additionalCommands.ts";
 import { compatibilityCommands } from "./compatibilityCommands.ts";
 import { latestSharedCommands } from "./latestSharedCommands.ts";
+import { physicsToolbarCommands } from "./physicsToolbarCommands.ts";
 
 const accentSemanticCommands: LatexCommand[] = [
   { id: "acute", command: "\\acute", insertTemplate: "\\acute{\\placeholder{}}", previewLatex: "\\acute{x}", labelZh: "锐音符", labelEn: "Acute accent", aliases: ["acute"], keywords: ["重音", "accent"], category: "structure", defaultPriority: 74, supportedInMathMode: true },
@@ -129,6 +130,7 @@ export const commandRegistry: LatexCommand[] = [
   ...baseCommandRegistry,
   ...compatibilityCommands,
   ...additionalCommands,
+  ...physicsToolbarCommands,
   ...latestSharedCommands,
 ];
 

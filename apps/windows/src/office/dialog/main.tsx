@@ -52,6 +52,7 @@ function mount() {
         title="VisualTeX Office 编辑器加载失败"
         description="Office 编辑器在加载界面时遇到了异常。重新打开后若仍出现此页面，请把下面的错误信息发送给开发者。"
         logContext="VisualTeX Office dialog crashed"
+        enableSafeRestart={false}
       >
         {runtime === "vsto-bulk-import" ? (
           <DocumentImportApp />

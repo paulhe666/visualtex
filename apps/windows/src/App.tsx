@@ -487,9 +487,12 @@ function App() {
         setToast(
           error instanceof Error
             ? error.message
-            : isEn
-              ? "Unable to enable silent OCR"
-              : "无法启用静默 OCR",
+            : String(
+                error ||
+                  (isEn
+                    ? "Unable to enable silent OCR"
+                    : "无法启用静默 OCR"),
+              ),
         );
       });
     return () => {
@@ -922,11 +925,13 @@ function App() {
           : `已复制 · ${latexProfileSummary}`,
       );
       return true;
-    } catch {
+    } catch (reason) {
       setToast(
-        isEn
-          ? "Copy failed. Check clipboard permission."
-          : "复制失败，请检查系统剪贴板权限",
+        reason instanceof Error
+          ? reason.message
+          : isEn
+            ? "Could not copy formula source."
+            : "无法复制公式源码。",
       );
       return false;
     }
@@ -1177,7 +1182,10 @@ function App() {
       }
 
       if (!primaryModifier) return;
-      if (key === "n") {
+      if (key === "k" && event.shiftKey) {
+        event.preventDefault();
+        void handleKeypadModeToggle();
+      } else if (key === "n") {
         event.preventDefault();
         newFormula();
       } else if (key === "o") {
@@ -1470,15 +1478,16 @@ function App() {
       type="button"
       className={`keypad-mode-toggle${keypadMode ? " is-active" : ""}`}
       aria-pressed={keypadMode}
+      aria-keyshortcuts="Meta+Shift+K Control+Shift+K"
       data-keypad-mode-toggle
       title={
         keypadMode
           ? isEn
-            ? "Exit keypad mode"
-            : "退出小键盘模式"
+            ? "Exit keypad mode · Cmd/Ctrl+Shift+K"
+            : "退出小键盘模式 · ⌘/Ctrl+Shift+K"
           : isEn
-            ? "Enter keypad mode"
-            : "进入小键盘模式"
+            ? "Enter keypad mode · Cmd/Ctrl+Shift+K"
+            : "进入小键盘模式 · ⌘/Ctrl+Shift+K"
       }
       onClick={() => void handleKeypadModeToggle()}
     >

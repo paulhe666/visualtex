@@ -1,4 +1,5 @@
 import {
+  Component,
   useEffect,
   useLayoutEffect,
   useImperativeHandle,
@@ -6,6 +7,7 @@ import {
   useState,
   forwardRef,
   type CSSProperties,
+  type ErrorInfo,
   type ReactNode,
 } from "react";
 import {
@@ -14,6 +16,7 @@ import {
 } from "mathlive";
 import { flushSync } from "react-dom";
 import { ClipboardCopy } from "lucide-react";
+import { formatLatexLines } from "../clipboard/LatexCopyService";
 import type {
   CommandSource,
   LatexCommand,
@@ -71,6 +74,10 @@ import {
   convertVisualTexLatexToMarkup,
   installMathLiveContourIntegralShadowStyle,
 } from "./mathLiveIntegralCompatibility";
+import {
+  inspectMathLiveSourceSafety,
+  mathLiveSourceSafetyMessage,
+} from "./mathLiveSourceSafety";
 import { composeCustomSymbolMacrosForMathfield } from "../math/customSymbolRegistry";
 import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
 import {
@@ -134,9 +141,114 @@ export interface MathEditorFocusOptions {
   moveToEnd?: boolean;
 }
 
+interface FormulaFieldErrorBoundaryProps {
+  recoveryKey: string;
+  language: "cn" | "en";
+  children: ReactNode;
+}
+
+interface FormulaFieldErrorBoundaryState {
+  error: unknown | null;
+  recoveryKey: string;
+}
+
+function FormulaFieldRenderFallback({
+  message,
+}: {
+  message: string;
+}) {
+  return (
+    <div
+      role="status"
+      className="formula-field-render-fallback"
+      style={{
+        minHeight: 42,
+        boxSizing: "border-box",
+        display: "flex",
+        alignItems: "center",
+        padding: "8px 12px",
+        border: "1px solid rgba(190, 18, 60, 0.28)",
+        borderRadius: 6,
+        color: "#9f1239",
+        background: "rgba(255, 241, 242, 0.72)",
+        fontSize: 12,
+      }}
+    >
+      {message}
+    </div>
+  );
+}
+
+class FormulaFieldErrorBoundary extends Component<
+  FormulaFieldErrorBoundaryProps,
+  FormulaFieldErrorBoundaryState
+> {
+  state: FormulaFieldErrorBoundaryState = {
+    error: null,
+    recoveryKey: this.props.recoveryKey,
+  };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
+  }
+
+  static getDerivedStateFromProps(
+    props: FormulaFieldErrorBoundaryProps,
+    state: FormulaFieldErrorBoundaryState,
+  ) {
+    if (props.recoveryKey === state.recoveryKey) return null;
+    return { error: null, recoveryKey: props.recoveryKey };
+  }
+
+  componentDidCatch(error: unknown, info: ErrorInfo) {
+    console.error("VisualTeX isolated a formula renderer failure", error, info);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <FormulaFieldRenderFallback
+        message={
+          this.props.language === "en"
+            ? "This formula row failed to render. Its LaTeX source is preserved; edit or remove it in the source panel."
+            : "该行公式渲染失败，LaTeX 源码仍完整保留，可在源码区修改或删除。"
+        }
+      />
+    );
+  }
+}
+
 const EDITOR_LAYOUT_REFRESH_EVENT = "visualtex-editor-layout-refresh";
 const VISUALTEX_MULTILINE_LATEX_CLIPBOARD_TYPE =
   "application/x-visualtex-multiline-latex";
+
+function safeConvertVisualTexLatexToMarkup(
+  ...args: Parameters<typeof convertVisualTexLatexToMarkup>
+) {
+  const source = args[0];
+  if (typeof source === "string") {
+    const issue = inspectMathLiveSourceSafety(source);
+    if (issue) {
+      console.warn(
+        "VisualTeX skipped a structurally unsafe auxiliary MathLive render.",
+        { sourceLength: source.length, issue },
+      );
+      return "";
+    }
+  }
+  try {
+    return convertVisualTexLatexToMarkup(...args);
+  } catch (error) {
+    console.warn(
+      "VisualTeX skipped a non-essential MathLive markup render after an exception.",
+      {
+        sourceLength: typeof source === "string" ? source.length : 0,
+        error,
+      },
+    );
+    return "";
+  }
+}
 
 export interface MathEditorHandle {
   insertCommand: (command: LatexCommand, source?: "toolbar" | "history" | "shortcut") => void;
@@ -1192,25 +1304,28 @@ function predictedFormulaRowHeight(
   let renderedHeight = latex.trim() ? 0 : metrics.fontSize * 1.2;
 
   if (measurementHost && latex.trim()) {
-    const probe = document.createElement("span");
-    probe.setAttribute("aria-hidden", "true");
-    probe.style.position = "absolute";
-    probe.style.left = "-100000px";
-    probe.style.top = "0";
-    probe.style.display = "inline-block";
-    probe.style.width = "max-content";
-    probe.style.maxWidth = "none";
-    probe.style.whiteSpace = "nowrap";
-    probe.style.visibility = "hidden";
-    probe.style.pointerEvents = "none";
-    probe.style.fontSize = metrics.fontSize + "px";
-    probe.style.lineHeight = "normal";
-    probe.innerHTML = convertVisualTexLatexToMarkup(latex, {
+    const markup = safeConvertVisualTexLatexToMarkup(latex, {
       defaultMode: "math",
     });
-    measurementHost.append(probe);
-    renderedHeight = probe.getBoundingClientRect().height;
-    probe.remove();
+    if (markup) {
+      const probe = document.createElement("span");
+      probe.setAttribute("aria-hidden", "true");
+      probe.style.position = "absolute";
+      probe.style.left = "-100000px";
+      probe.style.top = "0";
+      probe.style.display = "inline-block";
+      probe.style.width = "max-content";
+      probe.style.maxWidth = "none";
+      probe.style.whiteSpace = "nowrap";
+      probe.style.visibility = "hidden";
+      probe.style.pointerEvents = "none";
+      probe.style.fontSize = metrics.fontSize + "px";
+      probe.style.lineHeight = "normal";
+      probe.innerHTML = markup;
+      measurementHost.append(probe);
+      renderedHeight = probe.getBoundingClientRect().height;
+      probe.remove();
+    }
   }
 
   return Math.ceil(
@@ -1359,7 +1474,7 @@ function decorateNativeSuggestionPanel(panel: HTMLElement | null) {
     }
 
     if (preview.dataset.visualtexPreview) {
-      preview.innerHTML = convertVisualTexLatexToMarkup(command, {
+      preview.innerHTML = safeConvertVisualTexLatexToMarkup(command, {
         defaultMode: "math",
       });
       delete preview.dataset.visualtexPreview;
@@ -1374,11 +1489,11 @@ function decorateNativeSuggestionPanel(panel: HTMLElement | null) {
     let previewLatex = resolved.latex;
     let previewKind = resolved.kind;
 
-    preview.innerHTML = convertVisualTexLatexToMarkup(previewLatex, {
+    preview.innerHTML = safeConvertVisualTexLatexToMarkup(previewLatex, {
       defaultMode: "math",
     });
     if (!nativeSuggestionPreviewHasVisibleInk(preview)) {
-      preview.innerHTML = convertVisualTexLatexToMarkup("\\boxed{?}", {
+      preview.innerHTML = safeConvertVisualTexLatexToMarkup("\\boxed{?}", {
         defaultMode: "math",
       });
       previewLatex = "\\boxed{?}";
@@ -3898,6 +4013,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       lines,
       activeLineId,
       formulaAlignment,
+      latexCodeFormat,
       zoom,
       persistentTypingStyle = {
         bold: false,
@@ -3990,7 +4106,9 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     previewOnlyRef.current = previewOnly;
 
     useEffect(() => {
-      installCustomSymbolGlobalStyle();
+      // Avoid materializing every persisted custom-symbol SVG mask at startup.
+      // Runtime symbol edits still refresh all already-mounted previews.
+      installCustomSymbolGlobalStyle(undefined, customSymbolRevision > 0);
       fieldRefs.current.forEach((field) => refreshCustomSymbolMathfield(field));
     }, [customSymbolRevision]);
 
@@ -6611,6 +6729,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       if (interactionReadOnly || !target?.selections.length) return false;
       if (
         (style.kind === "color" || style.kind === "backgroundColor") &&
+        !(style.kind === "backgroundColor" && style.value === "none") &&
         !isSafeFormulaStyleColor(style.value)
       ) {
         return false;
@@ -7294,7 +7413,10 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           JSON.stringify({ version: 1, lines: selectedLines }),
         );
         event.clipboardData.setData("application/x-latex", latex);
-        event.clipboardData.setData("text/plain", latex);
+        event.clipboardData.setData(
+          "text/plain",
+          formatLatexLines(selectedLines, latexCodeFormat),
+        );
         event.preventDefault();
         event.stopImmediatePropagation();
         if (event.type === "cut") deleteMultiLineSelection();
@@ -7418,6 +7540,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               : line.mode === "inline"
                 ? "inline"
                 : "display";
+            const safetyIssue = inspectMathLiveSourceSafety(line.latex);
             return (
               <div
                 className={
@@ -7481,49 +7604,77 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                     </span>
                   </button>
                 ) : null}
-                <FormulaField
-                  key={`formula-field-${reuseLineSlots ? index : lineId}-${fieldRenderEpoch}`}
-                  lineId={lineId}
-                  index={index}
-                  latex={line.latex}
-                  zoom={zoom}
-                  formulaRowVerticalInset={formulaRowVerticalInset}
-                  language={language}
-                  formulaLetterFont={formulaLetterFont}
-                  formulaChineseFont={formulaChineseFont}
-                  autoPairDelimiters={autoPairDelimiters}
-                  inputBehavior={inputBehavior}
-                  persistentTypingStyle={persistentTypingStyle}
-                  readOnly={interactionReadOnly}
-                  freshExternalSync={previewOnly}
-                  register={registerField}
-                  onEdit={handleFieldEdit}
-                  onInputActivity={(field) =>
-                    refreshSuggestionQuery(
+                {safetyIssue ? (
+                  <FormulaFieldRenderFallback
+                    message={`${mathLiveSourceSafetyMessage(safetyIssue, language)} ${
+                      language === "en"
+                        ? "The LaTeX source is preserved; edit or remove this row in the source panel."
+                        : "LaTeX 源码仍完整保留，可在源码区修改或删除这一行。"
+                    }`}
+                  />
+                ) : (
+                  <FormulaFieldErrorBoundary
+                    language={language}
+                    recoveryKey={[
                       lineId,
-                      field,
-                      normalizeChineseLatex(field.value),
-                    )
-                  }
-                  onSelectionChange={rememberSelectionTarget}
-                  onCommitPending={commitPendingVisualTransaction}
-                  onFocus={(_lineIndex, field) => {
-                    setActiveLine(lineId);
-                    const normalizedValue = normalizeChineseLatex(field.value);
-                    suppressedSuggestionRef.current = {
-                      lineId,
-                      value: normalizedValue,
-                    };
-                    queryRef.current = "";
-                    setQuery("");
-                  }}
-                  onKeyDown={(lineIndex, event, field) =>
-                    handleKeyDown(lineIndex, lineId, event, field)
-                  }
-                  onPasteImage={onPasteImage}
-                  onContextMenu={openContextMenu}
-                  onPasteLatexLines={pasteLatexLines}
-                />
+                      line.latex,
+                      zoom,
+                      formulaRowVerticalInset,
+                      formulaLetterFont,
+                      formulaChineseFont,
+                      autoPairDelimiters,
+                      interactionReadOnly,
+                      previewOnly,
+                      fieldRenderEpoch,
+                    ].join("\u0000")}
+                  >
+                    <FormulaField
+                      key={`formula-field-${reuseLineSlots ? index : lineId}-${fieldRenderEpoch}`}
+                      lineId={lineId}
+                      index={index}
+                      latex={line.latex}
+                      zoom={zoom}
+                      formulaRowVerticalInset={formulaRowVerticalInset}
+                      language={language}
+                      formulaLetterFont={formulaLetterFont}
+                      formulaChineseFont={formulaChineseFont}
+                      autoPairDelimiters={autoPairDelimiters}
+                      inputBehavior={inputBehavior}
+                      persistentTypingStyle={persistentTypingStyle}
+                      readOnly={interactionReadOnly}
+                      freshExternalSync={previewOnly}
+                      register={registerField}
+                      onEdit={handleFieldEdit}
+                      onInputActivity={(field) =>
+                        refreshSuggestionQuery(
+                          lineId,
+                          field,
+                          normalizeChineseLatex(field.value),
+                        )
+                      }
+                      onSelectionChange={rememberSelectionTarget}
+                      onCommitPending={commitPendingVisualTransaction}
+                      onFocus={(_lineIndex, field) => {
+                        setActiveLine(lineId);
+                        const normalizedValue = normalizeChineseLatex(
+                          field.value,
+                        );
+                        suppressedSuggestionRef.current = {
+                          lineId,
+                          value: normalizedValue,
+                        };
+                        queryRef.current = "";
+                        setQuery("");
+                      }}
+                      onKeyDown={(lineIndex, event, field) =>
+                        handleKeyDown(lineIndex, lineId, event, field)
+                      }
+                      onPasteImage={onPasteImage}
+                      onContextMenu={openContextMenu}
+                      onPasteLatexLines={pasteLatexLines}
+                    />
+                  </FormulaFieldErrorBoundary>
+                )}
               </div>
             );
           })}

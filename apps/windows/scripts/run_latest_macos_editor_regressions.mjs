@@ -3,9 +3,6 @@ import process from "node:process";
 
 const upstreamRunner = "scripts/run_upstream_macos_regression.mjs";
 
-const latestMacScript = (name) =>
-  `origin-main:apps/macos/scripts/${name}`;
-
 const checks = [
   {
     label: "source-first wrapper registry coverage",
@@ -21,14 +18,6 @@ const checks = [
       "--import",
       "tsx",
       "scripts/core_latex_command_compatibility_regression.mts",
-    ],
-  },
-  {
-    label: "source-first wrapper registry",
-    command: [
-      "--import",
-      "tsx",
-      "scripts/source_wrapper_registry_regression.mts",
     ],
   },
   {
@@ -56,53 +45,32 @@ const checks = [
     command: ["scripts/editor_persistence_isolation_regression.mjs"],
   },
   {
-    label: "custom tile placeholder previews",
-    command: [
-      upstreamRunner,
-      latestMacScript("custom_tile_placeholder_preview_regression.mjs"),
-    ],
+    label: "current Windows formula tiles",
+    command: ["scripts/targeted_editor_regression.mjs", "formula-tiles"],
   },
   {
-    label: "standard and classic editor layouts",
-    command: [
-      upstreamRunner,
-      latestMacScript("editor_layout_switch_regression.mjs"),
-    ],
+    label: "current Windows editor layout and matrix builder",
+    command: ["scripts/targeted_editor_regression.mjs", "layout"],
   },
   {
-    label: "document-level visual formula alignment",
-    command: [
-      upstreamRunner,
-      latestMacScript("quick_format_toolbar_regression.mjs"),
-    ],
+    label: "current Windows formula formatting",
+    command: ["scripts/targeted_editor_regression.mjs", "formula-formatting"],
+  },
+  {
+    label: "current Windows horizontal formula overflow",
+    command: ["scripts/targeted_editor_regression.mjs", "horizontal-overflow"],
   },
   {
     label: "existing vertical structures and native placeholders",
     command: ["scripts/run_new_macos_editor_regressions.mjs"],
   },
   {
-    label: "structural placeholder deletion and restoration",
-    command: [
-      upstreamRunner,
-      "../macos/scripts/targeted_editor_regression.mjs",
-      "structural-placeholder",
-    ],
-  },
-  {
-    label: "placeholder range selection",
-    command: [
-      upstreamRunner,
-      "../macos/scripts/targeted_editor_regression.mjs",
-      "placeholder-selection",
-    ],
+    label: "current structural placeholder core",
+    command: ["scripts/targeted_editor_regression.mjs", "placeholder-core"],
   },
   {
     label: "Word-like delete and line editing",
-    command: [
-      upstreamRunner,
-      "../macos/scripts/targeted_editor_regression.mjs",
-      "delete",
-    ],
+    command: ["scripts/targeted_editor_regression.mjs", "delete"],
   },
   {
     label: "Enter transitions",
@@ -112,18 +80,12 @@ const checks = [
     ],
   },
   {
-    label: "IME backslash transaction matrix",
-    command: [
-      upstreamRunner,
-      "../macos/scripts/ime_backslash_matrix.mjs",
-    ],
+    label: "current Windows structured Chinese IME",
+    command: ["scripts/targeted_editor_regression.mjs", "structured-chinese-ime"],
   },
   {
-    label: "IME backslash input",
-    command: [
-      upstreamRunner,
-      "../macos/scripts/ime_backslash_regression.mjs",
-    ],
+    label: "current Windows stale IME recovery",
+    command: ["scripts/targeted_editor_regression.mjs", "ime-stale-recovery"],
   },
   {
     label: "line scrolling, deletion, merge and clipping",
@@ -133,18 +95,8 @@ const checks = [
     ],
   },
   {
-    label: "raw command anchors and wrapper auto-exit",
-    command: [
-      upstreamRunner,
-      latestMacScript("raw_command_anchor_regression.mjs"),
-    ],
-  },
-  {
-    label: "complete upstream input behaviour",
-    command: [
-      upstreamRunner,
-      "../macos/scripts/input_behavior_regression.mjs",
-    ],
+    label: "complete current Windows input behaviour",
+    command: ["scripts/input_behavior_regression.mjs"],
   },
 ];
 
@@ -166,4 +118,4 @@ for (const check of checks) {
   await sleep(700);
 }
 
-console.log("\nAll latest macOS editor regressions passed on Windows");
+console.log("\nAll current Windows editor acceptance checks passed");

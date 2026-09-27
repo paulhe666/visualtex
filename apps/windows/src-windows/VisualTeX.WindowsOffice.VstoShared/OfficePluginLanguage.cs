@@ -1,22 +1,73 @@
 using System;
 using System.Globalization;
+using Microsoft.Win32;
 
 namespace VisualTeX.WindowsOffice.VstoShared;
 
 internal static class OfficePluginLanguage
 {
+    private const string SharedSettingsRegistryPath = @"Software\VisualTeX\OfficeIntegration";
+    private const string SharedLanguageValue = "Language";
+
     internal static bool IsEnglish
     {
         get
         {
             var forced = Environment.GetEnvironmentVariable("VISUALTEX_OFFICE_LANGUAGE");
-            if (string.Equals(forced, "en", StringComparison.OrdinalIgnoreCase)) return true;
-            if (string.Equals(forced, "cn", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(forced, "zh", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(forced, "zh-cn", StringComparison.OrdinalIgnoreCase)) return false;
-            var name = CultureInfo.CurrentUICulture.Name;
-            return !name.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+            return ResolveIsEnglish(
+                forced,
+                ReadSharedApplicationLanguage(),
+                CultureInfo.CurrentUICulture.Name);
         }
+    }
+
+    internal static bool ResolveIsEnglish(
+        string? forcedLanguage,
+        string? applicationLanguage,
+        string? currentUiCultureName)
+    {
+        var forced = ParseEnglishPreference(forcedLanguage);
+        if (forced.HasValue) return forced.Value;
+
+        var application = ParseEnglishPreference(applicationLanguage);
+        if (application.HasValue) return application.Value;
+
+        return !(currentUiCultureName ?? string.Empty)
+            .StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool? ParseEnglishPreference(string? value)
+    {
+        if (string.Equals(value, "en", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(value, "cn", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "zh", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "zh-cn", StringComparison.OrdinalIgnoreCase)) return false;
+        return null;
+    }
+
+    private static string? ReadSharedApplicationLanguage()
+    {
+        var views = Environment.Is64BitOperatingSystem
+            ? new[] { RegistryView.Registry64, RegistryView.Registry32 }
+            : new[] { RegistryView.Default };
+        foreach (var view in views)
+        {
+            try
+            {
+                using var root = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, view);
+                using var key = root.OpenSubKey(SharedSettingsRegistryPath, writable: false);
+                var value = key?.GetValue(
+                    SharedLanguageValue,
+                    null,
+                    RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
+                if (ParseEnglishPreference(value).HasValue) return value;
+            }
+            catch
+            {
+                // A missing or inaccessible shared setting falls back to Office UI culture.
+            }
+        }
+        return null;
     }
 
     internal static string Text(string chinese, string english) =>

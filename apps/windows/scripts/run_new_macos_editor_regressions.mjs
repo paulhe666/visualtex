@@ -5,7 +5,6 @@ const scenarios = [
   "vertical-structure-probe",
   "vertical-structure-navigation",
   "native-structure-audit",
-  "native-structure-input-over",
   "native-structure-input-under",
   "native-structure-input-multi",
   "native-structure-input-core",

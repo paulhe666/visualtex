@@ -5,6 +5,8 @@ import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../src/math/coreLatexAliases.ts"
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../src/math/mathLiveCompatibilityMacros.ts";
 import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "../src/math/packageMacroCompatibility.ts";
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../src/math/physicsKernelMacros.ts";
+import { physicsToolbarCommands } from "../src/autocomplete/physicsToolbarCommands.ts";
+import { commandRegistry } from "../src/autocomplete/commandRegistry.ts";
 import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
 import { patchVisualTexMathLiveCoreCompatibility } from "../vite.mathliveCoreCompatibility.ts";
 
@@ -13,6 +15,45 @@ const forbidden = new Set([
   "log", "ln", "det", "Pr", "arccsc", "arcsec",
 ]);
 const seen = new Set<string>();
+const physicsToolbarIds = new Set<string>();
+const physicsToolbarPlaceholderOverrides = new Map([
+  ["pmqty", 4],
+  ["bmqty", 4],
+  ["vmqty", 4],
+  ["spmqty", 2],
+  ["sbmqty", 2],
+  ["eval", 2],
+]);
+
+for (const command of physicsToolbarCommands) {
+  assert.equal(
+    physicsToolbarIds.has(command.id),
+    false,
+    `Duplicate physics toolbar id ${command.id}`,
+  );
+  physicsToolbarIds.add(command.id);
+  const macroName = command.command.replace(/^\\/, "");
+  const macro = VISUALTEX_PHYSICS_KERNEL_MACROS.find(
+    (candidate) => candidate.name === macroName,
+  );
+  assert.ok(macro, `${command.command} is not backed by a kernel macro`);
+  assert.equal(
+    commandRegistry.filter((candidate) => candidate.id === command.id).length,
+    1,
+    `${command.id} is not registered exactly once`,
+  );
+  assert.equal(
+    (command.insertTemplate.match(/\\placeholder\{\}/g) ?? []).length,
+    physicsToolbarPlaceholderOverrides.get(macroName) ?? macro.args,
+    `${command.command} has an unexpected placeholder contract`,
+  );
+}
+
+assert.equal(
+  physicsToolbarCommands.length,
+  26,
+  "The migrated physics toolbar command surface changed unexpectedly",
+);
 
 for (const macro of VISUALTEX_PHYSICS_KERNEL_MACROS) {
   assert.equal(seen.has(macro.name), false, `Duplicate physics command \\${macro.name}`);

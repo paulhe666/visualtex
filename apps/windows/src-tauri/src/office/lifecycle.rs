@@ -369,8 +369,15 @@ pub fn set_app_editor_layout(
 pub fn set_app_editor_preferences(
     preferences: serde_json::Value,
     state: tauri::State<'_, OfficeCompanionState>,
-) -> serde_json::Value {
-    state.set_current_editor_preferences(preferences)
+) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    if let Some(language) = preferences
+        .pointer("/settings/language")
+        .and_then(serde_json::Value::as_str)
+    {
+        crate::office::windows_backend::set_app_editor_language(language)?;
+    }
+    Ok(state.set_current_editor_preferences(preferences))
 }
 
 #[tauri::command]

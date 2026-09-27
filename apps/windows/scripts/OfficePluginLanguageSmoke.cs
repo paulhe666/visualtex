@@ -10,6 +10,16 @@ internal static class OfficePluginLanguageSmoke
 
     public static int Main()
     {
+        Require(
+            OfficePluginLanguage.ResolveIsEnglish(null, "en", "zh-CN"),
+            "VisualTeX English mode did not override Chinese Office UI culture.");
+        Require(
+            !OfficePluginLanguage.ResolveIsEnglish(null, "cn", "en-US"),
+            "VisualTeX Chinese mode did not override English Office UI culture.");
+        Require(
+            OfficePluginLanguage.ResolveIsEnglish("en", "cn", "zh-CN"),
+            "The explicit Office language test override lost precedence.");
+
         var previous = Environment.GetEnvironmentVariable("VISUALTEX_OFFICE_LANGUAGE");
         try
         {
@@ -27,7 +37,7 @@ internal static class OfficePluginLanguageSmoke
                 localized.StartsWith("The VisualTeX Office operation failed. Localized host detail:", StringComparison.Ordinal),
                 "Unknown localized Office error lost the English diagnostic prefix: " + localized);
             Require(localized.Contains("HRESULT=0x800A16DC"), "HRESULT detail was lost: " + localized);
-            Require(localized.Contains("参数无效"), "Original localized COM detail was lost: " + localized);
+            Require(localized.Contains("调用 Word COM 接口失败"), "Original localized COM detail was lost: " + localized);
             Require(
                 OfficePluginLanguage.SafeStatusMessage(localized) == localized,
                 "Already-formatted localized diagnostics must not be wrapped again: " + localized);

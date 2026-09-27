@@ -1,5 +1,7 @@
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
+import { inspectMathLiveSourceSafety } from "../editor/mathLiveSourceSafety";
+import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
 
 interface MathPreviewProps {
@@ -33,7 +35,25 @@ function cachedPreviewMarkup(latex: string, customSymbolRevision: number) {
   const cacheKey = `${customSymbolRevision}\u0000${latex}`;
   const cached = mathPreviewMarkupCache.get(cacheKey);
   if (cached !== undefined) return cached;
-  const markup = convertVisualTexLatexToMarkup(latex, { defaultMode: "math" });
+  let markup = "";
+  const safetyIssue = inspectMathLiveSourceSafety(latex);
+  if (safetyIssue) {
+    console.warn("VisualTeX skipped an unsafe MathPreview source.", {
+      sourceLength: latex.length,
+      safetyIssue,
+    });
+  } else {
+    try {
+      markup = convertVisualTexLatexToMarkup(latex, { defaultMode: "math" });
+    } catch (error) {
+      // Persisted custom tiles and auxiliary previews must not be able to crash
+      // the whole application during startup.
+      console.warn(
+        "VisualTeX skipped a MathPreview render after an exception.",
+        { sourceLength: latex.length, error },
+      );
+    }
+  }
   if (mathPreviewMarkupCache.size >= mathPreviewMarkupCacheLimit) {
     const oldestKey = mathPreviewMarkupCache.keys().next().value;
     if (typeof oldestKey === "string") mathPreviewMarkupCache.delete(oldestKey);
@@ -129,6 +149,8 @@ function MathPreviewComponent({
     const host = hostRef.current;
     const content = contentRef.current;
     if (!host || !content) return;
+
+    markVisualTexFormulaFontGlyphs(content);
 
     if (staticLayout) {
       host.style.removeProperty("--math-preview-fluid-height");

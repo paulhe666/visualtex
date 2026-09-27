@@ -1,5 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { windowsPowerShellPath } from "./windows_powershell.mjs";
+import {
+  windowsPowerShellEnvironment,
+  windowsPowerShellPath,
+} from "./windows_powershell.mjs";
 
 const [script, ...args] = process.argv.slice(2);
 if (!script) {
@@ -9,7 +12,11 @@ if (!script) {
 const result = spawnSync(
   windowsPowerShellPath(),
   ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, ...args],
-  { stdio: "inherit", shell: false },
+  {
+    stdio: "inherit",
+    shell: false,
+    env: windowsPowerShellEnvironment(),
+  },
 );
 if (result.error) throw result.error;
 process.exit(result.status ?? 1);

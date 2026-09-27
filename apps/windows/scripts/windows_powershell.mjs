@@ -13,3 +13,11 @@ export function windowsPowerShellPath(env = process.env) {
     "powershell.exe",
   );
 }
+
+export function windowsPowerShellEnvironment(env = process.env) {
+  const result = { ...env };
+  for (const key of Object.keys(result)) {
+    if (key.toLowerCase() === "psmodulepath") delete result[key];
+  }
+  return result;
+}

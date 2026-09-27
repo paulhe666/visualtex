@@ -200,7 +200,7 @@ assert.ok(officeDialog.includes("if (!initialSynchronizedZoomAppliedRef.current)
 assert.ok(sharedStyles.includes("--z-workspace-header: 80;"));
 assert.ok(sharedStyles.includes("--z-popover: 190;"));
 assert.ok(sharedStyles.includes("--z-modal: 300;"));
-assert.ok(sharedStyles.includes("z-index: var(--suggestion-zindex, var(--z-popover, 190));"));
+assert.ok(sharedStyles.includes("z-index: var(--suggestion-zindex, 190);"));
 assert.ok(officeStyles.includes("z-index: var(--z-workspace-header, 80);"));
 assert.ok(officeStyles.includes("z-index: var(--z-workspace-footer, 50);"));
 assert.ok(officeStyles.includes("z-index: var(--z-workspace-floating, 60);"));
@@ -213,6 +213,10 @@ assert.ok(officeDialog.includes("settings.formulaChineseFont"));
 // Current macOS editor features that must exist on Windows too.
 assert.ok(app.includes("data-keypad-mode-toggle"));
 assert.ok(app.includes("handleKeypadCopy"));
+assert.ok(app.includes('key === "k" && event.shiftKey'));
+assert.ok(
+  app.includes('aria-keyshortcuts="Meta+Shift+K Control+Shift+K"'),
+);
 assert.ok(editorStore.includes("keypadMinimizeOnCopy: true"));
 assert.ok(mathEditor.includes("VISUALTEX_ALIGNMENT_MARKER_LATEX"));
 assert.ok(mathEditor.includes('activeMathLiveEnvironmentName(field) === "cases"'));

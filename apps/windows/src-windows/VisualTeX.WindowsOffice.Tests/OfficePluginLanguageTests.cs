@@ -23,6 +23,27 @@ public sealed class OfficePluginLanguageTests
         }
     }
 
+    [Theory]
+    [InlineData(null, "en", "zh-CN", true)]
+    [InlineData(null, "cn", "en-US", false)]
+    [InlineData("en", "cn", "zh-CN", true)]
+    [InlineData("cn", "en", "en-US", false)]
+    [InlineData(null, null, "zh-TW", false)]
+    [InlineData(null, null, "en-US", true)]
+    public void ResolveIsEnglish_PrefersVisualTeXLanguageBeforeOfficeCulture(
+        string? forcedLanguage,
+        string? applicationLanguage,
+        string currentUiCultureName,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            OfficePluginLanguage.ResolveIsEnglish(
+                forcedLanguage,
+                applicationLanguage,
+                currentUiCultureName));
+    }
+
     [Fact]
     public void SafeErrorMessage_TranslatesKnownOfficeWriteErrorWithoutDroppingDetail()
     {
@@ -51,7 +72,7 @@ public sealed class OfficePluginLanguageTests
             message,
             StringComparison.Ordinal);
         Assert.Contains("HRESULT=0x800A16DC", message, StringComparison.Ordinal);
-        Assert.Contains("参数无效", message, StringComparison.Ordinal);
+        Assert.Contains("调用 Word COM 接口失败", message, StringComparison.Ordinal);
     }
 
     [Fact]

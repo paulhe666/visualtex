@@ -3,7 +3,10 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import process from "node:process";
-import { windowsPowerShellPath } from "./windows_powershell.mjs";
+import {
+  windowsPowerShellEnvironment,
+  windowsPowerShellPath,
+} from "./windows_powershell.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -324,6 +327,10 @@ const flavorEnvironment = noOcrBundle
       CARGO_TARGET_DIR: noOcrTargetRoot,
     }
   : process.env;
+const powershellEnvironment =
+  process.platform === "win32"
+    ? windowsPowerShellEnvironment(flavorEnvironment)
+    : flavorEnvironment;
 const flavorConfigArguments = noOcrBundle
   ? ["--config", "src-tauri/tauri.no-ocr.conf.json"]
   : ["--config", "src-tauri/tauri.ocr-bundle.conf.json"];
@@ -434,7 +441,7 @@ if (noOcrBundle) {
     "Bypass",
     "-File",
     "scripts/verify_windows_release_artifacts.ps1",
-  ]);
+  ], powershellEnvironment);
   if (process.env.VISUALTEX_SKIP_INSTALL_SMOKE !== "1") {
     run(powershell, [
       "-NoProfile",
@@ -442,6 +449,6 @@ if (noOcrBundle) {
       "Bypass",
       "-File",
       "scripts/test_windows_installed_release.ps1",
-    ]);
+    ], powershellEnvironment);
   }
 }

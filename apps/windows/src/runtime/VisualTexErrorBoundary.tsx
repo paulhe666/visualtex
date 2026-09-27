@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { prepareEditorCrashSafeRestart } from "./editorCrashRecovery";
 
 interface Props {
   children: ReactNode;
@@ -6,6 +7,7 @@ interface Props {
   description?: ReactNode;
   reloadLabel?: ReactNode;
   logContext?: string;
+  enableSafeRestart?: boolean;
 }
 
 interface State {
@@ -73,22 +75,53 @@ export class VisualTexErrorBoundary extends Component<Props, State> {
         >
           {error.stack || error.message || String(error)}
         </pre>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          style={{
-            justifySelf: "start",
-            padding: "8px 14px",
-            border: "1px solid #be123c",
-            borderRadius: 7,
-            background: "#be123c",
-            color: "white",
-            font: "600 13px -apple-system, BlinkMacSystemFont, sans-serif",
-            cursor: "pointer",
-          }}
-        >
-          {this.props.reloadLabel ?? "重新加载"}
-        </button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{
+              padding: "8px 14px",
+              border: "1px solid #be123c",
+              borderRadius: 7,
+              background: "#be123c",
+              color: "white",
+              font: "600 13px -apple-system, BlinkMacSystemFont, sans-serif",
+              cursor: "pointer",
+            }}
+          >
+            {this.props.reloadLabel ?? "重新加载"}
+          </button>
+          {this.props.enableSafeRestart !== false ? (
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  prepareEditorCrashSafeRestart();
+                  window.location.reload();
+                } catch (reason) {
+                  console.error(
+                    "VisualTeX safe restart preparation failed",
+                    reason,
+                  );
+                  window.alert(
+                    "无法准备安全启动，原有数据未被清除。请把错误信息发送给开发者。",
+                  );
+                }
+              }}
+              style={{
+                padding: "8px 14px",
+                border: "1px solid #9f1239",
+                borderRadius: 7,
+                background: "white",
+                color: "#9f1239",
+                font: "600 13px -apple-system, BlinkMacSystemFont, sans-serif",
+                cursor: "pointer",
+              }}
+            >
+              安全启动（保留设置）
+            </button>
+          ) : null}
+        </div>
       </main>
     );
   }

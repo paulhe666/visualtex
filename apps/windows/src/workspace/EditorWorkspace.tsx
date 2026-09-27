@@ -653,7 +653,7 @@ export function EditorWorkspace({
     if (kind === "color") {
       setFormulaTextColor(value);
       setFormulaTextColorPickerValue(value);
-    } else {
+    } else if (value !== "none") {
       setFormulaBackgroundColor(value);
       setFormulaBackgroundColorPickerValue(value);
     }
@@ -1262,6 +1262,28 @@ export function EditorWorkspace({
                               <span className="formula-color-section-label">
                                 {isEn ? "Preset" : "固定颜色"}
                               </span>
+                              {formulaColorMenu === "backgroundColor" ? (
+                                <button
+                                  type="button"
+                                  className="formula-color-none-action"
+                                  aria-label={isEn ? "No background" : "无背景颜色"}
+                                  title={isEn ? "No background" : "取消背景颜色"}
+                                  data-formula-background-none
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() =>
+                                    applySelectedFormulaColor(
+                                      "backgroundColor",
+                                      "none",
+                                    )
+                                  }
+                                >
+                                  <span
+                                    className="formula-color-none-icon"
+                                    aria-hidden="true"
+                                  />
+                                  <span>{isEn ? "None" : "无背景"}</span>
+                                </button>
+                              ) : null}
                               <div className="formula-color-swatches" role="group">
                                 {(formulaColorMenu === "color"
                                   ? formulaTextColorPresets
