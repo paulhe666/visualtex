@@ -584,7 +584,15 @@ fn office_session_export_is_committable(session: &OfficeFormulaSession) -> bool 
     };
     let has_svg = !export.svg.trim().is_empty() || !export.svg_base64.trim().is_empty();
     if session.host == OfficeHost::Powerpoint {
-        return has_svg;
+        return match session.object_mode.as_str() {
+            "wordOmml" | "mathTypeOle" => export
+                .math_ml
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|math_ml| math_ml.starts_with("<math")),
+            "nativeOle" | "crossPlatformPicture" => has_svg,
+            _ => false,
+        };
     }
     match session.object_mode.as_str() {
         "wordOmml" | "mathTypeOle" => export
@@ -3263,6 +3271,18 @@ mod tests {
                 .and_then(|patch| patch.get("status").cloned()),
             Some(serde_json::json!("committing")),
         );
+    }
+
+    #[test]
+    fn powerpoint_mathtype_close_requires_mathml_not_an_image() {
+        let mut session = close_policy_session("mathTypeOle", true, None, None);
+        session.host = OfficeHost::Powerpoint;
+        assert!(!office_session_export_is_committable(&session));
+        session.export_result.as_mut().unwrap().math_ml = Some("<math><mi>x</mi></math>".into());
+        assert!(office_session_export_is_committable(&session));
+        session.export_result.as_mut().unwrap().svg.clear();
+        session.export_result.as_mut().unwrap().svg_base64.clear();
+        assert!(office_session_export_is_committable(&session));
     }
 
     #[test]

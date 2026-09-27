@@ -4,7 +4,9 @@ $root = Split-Path -Parent $PSScriptRoot
 $productionFiles = @(
     'src-windows/VisualTeX.WordVsto/MathTypeOleInterop.cs',
     'src-windows/VisualTeX.WordVsto/MathTypeOleStorage.cs',
-    'src-windows/VisualTeX.WordVsto/MathTypeOleClipboardProxy.cs',
+    'src-windows/VisualTeX.WindowsOffice.VstoShared/MathTypeOleInterop.cs',
+    'src-windows/VisualTeX.WindowsOffice.VstoShared/MathTypeOleStorage.cs',
+    'src-windows/VisualTeX.WindowsOffice.VstoShared/MathTypeOleClipboardProxy.cs',
     'src-windows/VisualTeX.WordVsto/MathTypeWordCommandsBridge.cs',
     'src-windows/VisualTeX.WindowsOleBridge/MathTypeNativePreviewCommand.cs',
     'src-windows/VisualTeX.WindowsOffice.VstoShared/WordOmmlConverter.cs',
@@ -34,8 +36,8 @@ foreach ($pattern in $forbiddenAbsolutePatterns) {
     }
 }
 
-$interop = $contents['src-windows/VisualTeX.WordVsto/MathTypeOleInterop.cs']
-$storage = $contents['src-windows/VisualTeX.WordVsto/MathTypeOleStorage.cs']
+$interop = $contents['src-windows/VisualTeX.WordVsto/MathTypeOleInterop.cs'] + $contents['src-windows/VisualTeX.WindowsOffice.VstoShared/MathTypeOleInterop.cs']
+$storage = $contents['src-windows/VisualTeX.WordVsto/MathTypeOleStorage.cs'] + $contents['src-windows/VisualTeX.WindowsOffice.VstoShared/MathTypeOleStorage.cs']
 $preview = $contents['src-windows/VisualTeX.WindowsOleBridge/MathTypeNativePreviewCommand.cs']
 $omml = $contents['src-windows/VisualTeX.WindowsOffice.VstoShared/WordOmmlConverter.cs']
 $powerPoint = $contents['src-windows/VisualTeX.PowerPointVsto/PowerPointFormulaService.cs']

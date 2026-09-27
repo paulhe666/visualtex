@@ -2172,6 +2172,19 @@ export function OfficeDialogApp() {
 
   const officeHeaderLeadingControls = (
     <>
+      {session.host === "powerpoint" && (
+        <label className="office-font-size-setting office-object-mode-setting">
+          <span>{isEn ? "Save as" : "保存为"}</span>
+          <select value={objectMode} data-office-object-mode
+            aria-label={isEn ? "Formula object format" : "公式对象格式"}
+            onChange={(event) => setObjectMode(event.target.value as OfficeObjectMode)}>
+            <option value="crossPlatformPicture">SVG</option>
+            <option value="nativeOle">VisualTeX OLE</option>
+            <option value="mathTypeOle">MathType OLE</option>
+            <option value="wordOmml">OMML</option>
+          </select>
+        </label>
+      )}
       {session.host === "word" &&
       ((session.mode === "create" && session.objectMode !== "wordOmml") ||
         (session.mode === "edit" &&

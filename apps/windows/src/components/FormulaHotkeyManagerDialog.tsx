@@ -90,11 +90,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
                 <Keyboard size={18} />
                 <div>
                   <h3>{isEn ? "Editor formula hotkeys" : "编辑器公式快捷键"}</h3>
-                  <p>
-                    {isEn
-                      ? "Insert saved formulas inside the VisualTeX editor."
-                      : "在 VisualTeX 编辑器内插入已保存的常用公式。"}
-                  </p>
                 </div>
               </div>
 
@@ -105,11 +100,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
                     <strong>
                       {sortedBindings.length} {isEn ? "assigned" : "项已设置"}
                     </strong>
-                    <small>
-                      {isEn
-                        ? "Right-click a formula tool or tile to add another hotkey."
-                        : "右键公式工具或磁贴，可以继续添加快捷键。"}
-                    </small>
                   </span>
                 </div>
               </div>
@@ -121,11 +111,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
                     <strong>
                       {isEn ? "No formula hotkeys yet" : "还没有设置公式快捷键"}
                     </strong>
-                    <span>
-                      {isEn
-                        ? "Close this window, then right-click any formula tool, common tile or custom tile."
-                        : "关闭此窗口后，右键任意公式工具、常用磁贴或自定义磁贴即可设置。"}
-                    </span>
                   </div>
                 ) : (
                   <div className="formula-hotkey-binding-list">
@@ -182,11 +167,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
           </div>
 
           <footer className="dialog-footer">
-            <span>
-              {isEn
-                ? "Editor, Word and PowerPoint shortcuts use independent application scopes."
-                : "编辑器、Word 与 PowerPoint 的快捷键分别在各自应用范围内生效。"}
-            </span>
             <button type="button" className="primary-button" onClick={onClose}>
               {isEn ? "Done" : "完成"}
             </button>

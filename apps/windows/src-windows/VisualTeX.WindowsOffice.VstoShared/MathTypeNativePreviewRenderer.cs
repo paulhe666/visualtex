@@ -130,11 +130,11 @@ internal static class MathTypeNativePreviewRenderer
                 _ = TryRenderBatch(input, outputRoot, out var previews);
                 foreach (var preview in previews.Values)
                     preview.Dispose();
-                WordDoubleClickHook.TraceMessage("mathtype-native-preview-shared-prewarm-complete");
+                Trace.WriteLine("mathtype-native-preview-shared-prewarm-complete");
             }
             catch (Exception error)
             {
-                WordDoubleClickHook.TraceMessage(
+                Trace.WriteLine(
                     $"mathtype-native-preview-shared-prewarm-failed error={error.GetType().Name}:{error.Message}");
             }
             finally
@@ -384,7 +384,7 @@ internal static class MathTypeNativePreviewRenderer
                     || !File.Exists(item.WmfPath)
                     || new FileInfo(item.WmfPath).Length <= 22)
                 {
-                    WordDoubleClickHook.TraceMessage(
+                    Trace.WriteLine(
                         $"mathtype-native-preview-item-failed id={item.Id} error={item.Error} "
                         + $"success={item.Success} width={item.WidthPt} height={item.HeightPt}");
                     continue;

@@ -69,6 +69,9 @@ public interface IPowerPointRibbonCallbacks
 
     [DispId(19)]
     void OnInsertDisplayOmml(object control);
+
+    [DispId(20)]
+    void OnNewMathTypeFormula(object control);
 }
 
 [ComVisible(true)]
@@ -100,6 +103,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         <group id="VisualTeX.PowerPointVsto.Group" label="VisualTeX">
           <button id="VisualTeX.PowerPointVsto.New" label="新建 SVG" size="large" tag="insertFormula" getImage="GetRibbonImage" onAction="OnNewSvgFormula" />
           <button id="VisualTeX.PowerPointVsto.NewOle" label="新建 OLE" size="large" tag="convertToOle" getImage="GetRibbonImage" onAction="OnNewOleFormula" />
+          <button id="VisualTeX.PowerPointVsto.NewMathType" label="新建 MathType" size="large" tag="convertToOle" getImage="GetRibbonImage" onAction="OnNewMathTypeFormula" />
           <button id="VisualTeX.PowerPointVsto.InsertInlineOmml" label="插入行内 OMML 公式" size="large" screentip="插入行内 PowerPoint 原生公式" supertip="在当前文本框的光标或文本选区处插入行内原生 Office Math。" imageMso="EquationInsertNew" onAction="OnInsertInlineOmml" />
           <button id="VisualTeX.PowerPointVsto.InsertDisplayOmml" label="插入行间 OMML 公式" size="large" screentip="插入行间 PowerPoint 原生公式" supertip="若正在编辑文本框，则在当前光标或文本选区处插入独立公式段落；否则在当前幻灯片创建独立原生 Office Math。" imageMso="EquationInsertNew" onAction="OnInsertDisplayOmml" />
           <button id="VisualTeX.PowerPointVsto.Edit" label="编辑所选公式" size="large" tag="editSelected" getImage="GetRibbonImage" onAction="OnEditSelected" />
@@ -299,6 +303,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         BeginContextAwareOmmlSession();
     public void OnNewOleFormula(object control) =>
         BeginSession("create", "nativeOle", null);
+    public void OnNewMathTypeFormula(object control) =>
+        BeginSession("create", FormulaOleContract.MathTypeOleMode, null);
     public void OnInsertInlineOmml(object control) =>
         BeginOmmlTextInsertion("inline");
     public void OnInsertDisplayOmml(object control) =>
@@ -435,7 +441,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             }
 
             var current = service.ReadSelection(selection);
-            if (current.Metadata is not null)
+            if (current.Metadata is not null || current.ObjectMode == FormulaOleContract.MathTypeOleMode)
             {
                 _lastFormulaSelection = current;
                 return;
@@ -567,7 +573,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 ?? throw new InvalidOperationException("PowerPoint formula service is unavailable.");
             var selection = ResolveFormulaSelection(service);
             if (selection.Metadata is null)
-                throw new InvalidOperationException("请先选择一个 VisualTeX 公式。");
+                throw new InvalidOperationException("请先选择一个 VisualTeX 或 MathType 公式。");
             BeginSession("edit", requestedObjectMode, selection, conversionOnly);
         }
         catch (Exception error)
@@ -636,6 +642,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         string? imagePath = null;
         string? svgPath = null;
         string? emfPath = null;
+        PowerPointFormulaService.PreparedMathType? preparedMathType = null;
         try
         {
             var dispatcher = _dispatcher ?? throw new InvalidOperationException("PowerPoint dispatcher is unavailable.");
@@ -647,11 +654,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 await client.PrewarmConverterAsync(cancellationToken).ConfigureAwait(false);
             var selection = capturedSelection
                 ?? await dispatcher.InvokeAsync(
-                    () => ResolveFormulaSelection(service)).ConfigureAwait(false);
+                    () => mode == "create" ? service.CaptureSlideInsertionTarget() : ResolveFormulaSelection(service)).ConfigureAwait(false);
             if (selection.ReadOnly)
                 throw new UnauthorizedAccessException("当前 PowerPoint 演示文稿为只读状态。");
             if (mode == "edit" && selection.Metadata is null)
-                throw new InvalidOperationException("请先选择一个 VisualTeX 公式。");
+                throw new InvalidOperationException("请先选择一个 VisualTeX 或 MathType 公式。");
 
             // PowerPoint commonly leaves the just-inserted formula selected.
             // Do not treat that selection as initial content for New Formula;
@@ -681,10 +688,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 Host = "powerpoint",
                 FormulaId = metadata?.FormulaId,
                 SourceDocumentId = selection.DocumentId,
-                SourceObjectId = mode == "edit"
-                    || PowerPointFormulaService.IsTextInsertionReference(selection.ObjectId)
-                        ? selection.ObjectId
-                        : null,
+                SourceObjectId = selection.ObjectId,
                 Title = metadata?.Title ?? "PowerPoint Formula",
                 Lines = lines,
                 ActiveLineId = lines.FirstOrDefault()?.Id,
@@ -751,7 +755,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 return;
             }
 
-            if (session.ObjectMode == "nativeOle")
+            if (session.ObjectMode == FormulaOleContract.MathTypeOleMode)
+            {
+                preparedMathType = await Task.Run(() => service.PrepareMathType(session), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else if (session.ObjectMode == "nativeOle")
             {
                 imagePath = client.MaterializePng(session);
                 var export = session.ExportResult
@@ -787,6 +796,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         ? service.ReplaceOle(session, imagePath, emfPath)
                         : service.InsertOle(session, imagePath, emfPath);
                 }
+                if (session.ObjectMode == FormulaOleContract.MathTypeOleMode)
+                    return service.ApplyMathType(session, preparedMathType
+                        ?? throw new InvalidOperationException("The MathType equation was not prepared."));
                 if (session.ObjectMode == "wordOmml")
                 {
                     return session.Mode == "edit"
@@ -850,6 +862,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         finally
         {
+            preparedMathType?.Dispose();
             if (emfPath is not null)
             {
                 try { File.Delete(emfPath); } catch { }
@@ -906,12 +919,21 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private OfficeSelection ResolveFormulaSelection(PowerPointFormulaService service)
     {
         var current = service.ReadSelection();
+        if (current.ObjectMode == FormulaOleContract.MathTypeOleMode)
+        {
+            current = service.LoadMathTypeSelection(current);
+            _lastFormulaSelection = current;
+            return current;
+        }
         if (current.Metadata is not null)
         {
             _lastFormulaSelection = current;
             return current;
         }
         var cached = _lastFormulaSelection;
+        if (cached?.ObjectMode == FormulaOleContract.MathTypeOleMode
+            && string.Equals(cached.DocumentId, current.DocumentId, StringComparison.OrdinalIgnoreCase))
+            return service.LoadMathTypeSelection(cached);
         if (cached?.Metadata is null
             || !string.Equals(
                 cached.DocumentId,

@@ -11,7 +11,7 @@ using VisualTeX.WindowsOffice.VstoShared;
 
 namespace VisualTeX.PowerPointVsto;
 
-public sealed class PowerPointFormulaService : IDisposable
+public sealed partial class PowerPointFormulaService : IDisposable
 {
     private const string FormulaIdTag = "VisualTeXFormulaId";
     private const string MetadataTag = "VisualTeXMetadata";
@@ -67,6 +67,26 @@ public sealed class PowerPointFormulaService : IDisposable
 
     public OfficeSelection ReadSelection() => ReadSelection(null);
 
+    public OfficeSelection CaptureSlideInsertionTarget()
+    {
+        var selection = ReadSelection();
+        DocumentWindow? window = null;
+        View? view = null;
+        Slide? slide = null;
+        try
+        {
+            window = _application.ActiveWindow;
+            view = window.View;
+            slide = (Slide)view.Slide;
+            selection.ObjectId = SlideReference(slide);
+            selection.Metadata = null;
+            selection.FormulaId = null;
+            selection.ObjectMode = null;
+            return selection;
+        }
+        finally { Release(slide); Release(view); Release(window); }
+    }
+
     public OfficeSelection ReadSelection(Selection? providedSelection)
     {
         Presentation? presentation = null;
@@ -97,7 +117,13 @@ public sealed class PowerPointFormulaService : IDisposable
                 {
                     shape = range[1];
                     objectId = shape.Name;
-                    var storedMetadata = ReadMetadata(shape);
+                    var isMathType = IsMathTypeShape(shape);
+                    if (isMathType)
+                    {
+                        objectMode = FormulaOleContract.MathTypeOleMode;
+                        objectId = MathTypeReference(slide, shape);
+                    }
+                    var storedMetadata = isMathType ? null : ReadMetadata(shape);
                     if (storedMetadata is not null)
                     {
                         metadata = EnsureUniqueFormulaIdentity(
@@ -246,7 +272,7 @@ public sealed class PowerPointFormulaService : IDisposable
             try { hit = window.RangeFromPoint(screenX, screenY); }
             catch { return null; }
             shape = hit as Shape;
-            if (shape is null) return null;
+            if (shape is null || IsMathTypeShape(shape)) return null;
 
             // Native PowerPoint equations carry no VisualTeX metadata, so
             // this hit-test naturally ignores them and preserves PowerPoint's
@@ -857,6 +883,7 @@ public sealed class PowerPointFormulaService : IDisposable
                 session.SourceObjectId);
             if (slide is null || oldShape is null)
                 throw new InvalidOperationException("The target PowerPoint formula no longer exists.");
+            EnsureMathTypeSourceUnchanged(session, presentation, slide, oldShape);
 
             var left = oldShape.Left;
             var top = oldShape.Top;
@@ -894,7 +921,7 @@ public sealed class PowerPointFormulaService : IDisposable
                 editedSize.Height);
             TryApplyRotation(replacement, rotation);
             MoveToZOrder(replacement, zOrder + 1);
-            oldShape.Delete();
+            DeleteReplacedShape(slide, oldShape, replacement);
             return Result(session, presentation, replacement.Name);
         }
         catch
@@ -939,6 +966,7 @@ public sealed class PowerPointFormulaService : IDisposable
                 session.SourceObjectId);
             if (slide is null || oldShape is null)
                 throw new InvalidOperationException("The target PowerPoint formula no longer exists.");
+            EnsureMathTypeSourceUnchanged(session, presentation, slide, oldShape);
 
             var left = oldShape.Left;
             var top = oldShape.Top;
@@ -990,7 +1018,6 @@ public sealed class PowerPointFormulaService : IDisposable
             TryApplyRotation(replacement, rotation);
             Configure(replacement, metadata);
             MoveToZOrder(replacement, zOrder + 1);
-            oldShape.Delete();
             // The window is still redraw-suspended here, so deleting the source
             // does not expose a blank frame. Finalize the OLE completely before
             // the deferred redraw is allowed to paint the slide again.
@@ -998,6 +1025,7 @@ public sealed class PowerPointFormulaService : IDisposable
             RestoreOlePosition(replacement, newLeft, newTop);
             replacement.Visible = MsoTriState.msoTrue;
             ProbeOleStage("finalized", replacement);
+            DeleteReplacedShape(slide, oldShape, replacement);
             try { replacement.Select(MsoTriState.msoTrue); } catch { }
             ScheduleOleGeometryRestore(
                 DocumentIdentity(presentation),
@@ -1048,6 +1076,7 @@ public sealed class PowerPointFormulaService : IDisposable
                 session.SourceObjectId);
             if (slide is null || oldShape is null)
                 throw new InvalidOperationException("The target PowerPoint formula no longer exists.");
+            EnsureMathTypeSourceUnchanged(session, presentation, slide, oldShape);
 
             var left = oldShape.Left;
             var top = oldShape.Top;
@@ -1084,7 +1113,7 @@ public sealed class PowerPointFormulaService : IDisposable
             TryApplyRotation(replacement, rotation);
             Configure(replacement, metadata);
             MoveToZOrder(replacement, zOrder + 1);
-            oldShape.Delete();
+            DeleteReplacedShape(slide, oldShape, replacement);
             return Result(session, presentation, replacement.Name);
         }
         catch
@@ -1187,6 +1216,8 @@ public sealed class PowerPointFormulaService : IDisposable
         string formulaId,
         string? preferredObjectId)
     {
+        if (TryParseMathTypeReference(preferredObjectId, out var mathTypeSlide, out var mathTypeShape))
+            return FindMathType(presentation, mathTypeSlide, mathTypeShape);
         Slides? slides = null;
         try
         {
@@ -1996,7 +2027,13 @@ public sealed class PowerPointFormulaService : IDisposable
         string? sourceObjectId,
         View view)
     {
-        if (TryParseSlideReference(sourceObjectId, out var slideId))
+        var hasSlide = TryParseSlideReference(sourceObjectId, out var slideId);
+        if (!hasSlide && TryParseTextInsertionReference(sourceObjectId, out var textTarget))
+        {
+            slideId = textTarget.SlideId;
+            hasSlide = true;
+        }
+        if (hasSlide)
         {
             Slides? slides = null;
             try

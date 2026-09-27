@@ -121,7 +121,7 @@ internal static partial class MathTypeMtefCodec
         return ReadMtefMathMl(mtef);
     }
 
-    private static byte[] ExtractNativeMtef(byte[] equationNative)
+    internal static byte[] ExtractNativeMtef(byte[] equationNative)
     {
         if (equationNative is null || equationNative.Length < 40)
             throw new InvalidDataException("MathType Equation Native stream is too short.");
@@ -1341,7 +1341,7 @@ internal static partial class MathTypeMtefCodec
                     if (record is RecordLine or RecordPile or RecordMatrix)
                     {
                         if (!sawInitialSize)
-                            WordDoubleClickHook.TraceMessage(
+                            System.Diagnostics.Trace.WriteLine(
                                 $"mathtype-mtef-root-without-initial-size offset={position} record={record}");
                         return new MtefPrefixLayout(position, preferencesOffset, colorDefinitions, records);
                     }
@@ -1373,7 +1373,7 @@ internal static partial class MathTypeMtefCodec
                     // other zero remains a hard parse failure.
                     if (record == RecordEnd && position == mtef.Length - 1)
                     {
-                        WordDoubleClickHook.TraceMessage(
+                        System.Diagnostics.Trace.WriteLine(
                             $"mathtype-mtef-empty-equation endOffset={position}");
                         return new MtefPrefixLayout(position, preferencesOffset, colorDefinitions, records);
                     }

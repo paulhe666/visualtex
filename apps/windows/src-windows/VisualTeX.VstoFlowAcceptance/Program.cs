@@ -456,6 +456,21 @@ internal static partial class Program
         Console.SetError(new TeeTextWriter(originalError, log));
         Console.WriteLine($"Acceptance mode: {mode}");
 
+        if (string.Equals(mode, "powerpoint-mathtype", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var messageFilter = OfficeComMessageFilter.Register();
+                RunPowerPointMathTypeAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                return 1;
+            }
+        }
+
         if (string.Equals(
                 mode,
                 "word-active-omml-roundtrip-audit",

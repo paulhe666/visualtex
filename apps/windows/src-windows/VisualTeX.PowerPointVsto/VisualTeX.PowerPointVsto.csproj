@@ -27,6 +27,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlToLatexConverter.cs" Link="MathMlToLatexConverter.cs" />
     <ProjectReference Include="..\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj" />
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.IO.Compression" />
     <COMReference Include="Extensibility">
       <Guid>{AC0714F2-3D04-11D1-AE7D-00A0C90F26F4}</Guid>
       <VersionMajor>1</VersionMajor>
@@ -49,4 +50,5 @@
     <PackageReference Include="Microsoft.Office.Interop.Word" Version="15.0.4797.1004" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
+  <Import Project="..\VisualTeX.WindowsOffice.VstoShared\MathTypeCore.projitems" />
 </Project>

@@ -583,11 +583,6 @@ export function SettingsDialog({
               <Keyboard size={18} />
               <span>
                 <strong>{isEn ? "Keyboard shortcuts" : "快捷键"}</strong>
-                <small>
-                  {isEn
-                    ? "Editor formulas, Word and PowerPoint"
-                    : "编辑器公式、Word 与 PowerPoint"}
-                </small>
               </span>
               <ChevronRight size={18} aria-hidden="true" />
             </button>

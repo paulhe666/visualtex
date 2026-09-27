@@ -19,36 +19,26 @@ const powerPointActions: ReadonlyArray<{
   action: PowerPointFormulaShortcutAction;
   labelEn: string;
   labelZh: string;
-  detailEn: string;
-  detailZh: string;
 }> = [
   {
     action: "svg",
     labelEn: "New SVG formula",
     labelZh: "新建 SVG 公式",
-    detailEn: "Calls PowerPoint's New SVG Ribbon action.",
-    detailZh: "调用 PowerPoint 的“新建 SVG”Ribbon 动作。",
   },
   {
     action: "ole",
     labelEn: "New OLE formula",
     labelZh: "新建 OLE 公式",
-    detailEn: "Creates one editable formula object on the slide.",
-    detailZh: "在幻灯片中创建一个可编辑的公式对象。",
   },
   {
     action: "inlineOmml",
     labelEn: "Insert inline OMML formula",
     labelZh: "插入行内 OMML 公式",
-    detailEn: "Inserts native Office Math at the current text caret.",
-    detailZh: "在当前文本光标处插入原生 Office Math。",
   },
   {
     action: "displayOmml",
     labelEn: "Insert display OMML formula",
     labelZh: "插入行间 OMML 公式",
-    detailEn: "Inserts native Office Math as a separate formula paragraph.",
-    detailZh: "以独立公式段落插入原生 Office Math。",
   },
 ];
 
@@ -213,11 +203,6 @@ export function OfficeFormulaShortcutSettingsSection() {
         <Keyboard size={18} />
         <div>
           <h3>{isEn ? "Office shortcuts" : "Office 快捷键"}</h3>
-          <p>
-            {isEn
-              ? "Each shortcut calls one real Ribbon action in its Office host."
-              : "每个快捷键都对应所在 Office 应用中的一个真实 Ribbon 动作。"}
-          </p>
         </div>
       </div>
 
@@ -228,11 +213,6 @@ export function OfficeFormulaShortcutSettingsSection() {
         >
           <header className="office-formula-shortcut-host-header">
             <strong>Word</strong>
-            <small>
-              {isEn
-                ? "Inline and display are separate Word insertion modes; choose OLE or OMML for each."
-                : "行内与行间是 Word 的两种插入模式，可分别选择 OLE 或 OMML。"}
-            </small>
           </header>
           <div className="office-formula-shortcut-list">
             {wordRows.map(({ action, labelEn, labelZh }) => {
@@ -247,11 +227,6 @@ export function OfficeFormulaShortcutSettingsSection() {
                 >
                   <div className="office-formula-shortcut-copy">
                     <strong>{label}</strong>
-                    <small>
-                      {isEn
-                        ? "Calls the matching VisualTeX Word Ribbon action."
-                        : "调用对应的 VisualTeX Word Ribbon 动作。"}
-                    </small>
                   </div>
                   {shortcutControls(target, `Word ${label}`, setting.shortcut)}
                   <label className="office-formula-format-select">
@@ -281,15 +256,10 @@ export function OfficeFormulaShortcutSettingsSection() {
         >
           <header className="office-formula-shortcut-host-header">
             <strong>PowerPoint</strong>
-            <small>
-              {isEn
-                ? "SVG and OLE create slide objects. Only OMML has inline and display variants."
-                : "SVG 与 OLE 创建幻灯片对象；只有 OMML 区分行内与行间。"}
-            </small>
           </header>
           <div className="office-formula-shortcut-list">
             {powerPointActions.map(
-              ({ action, labelEn, labelZh, detailEn, detailZh }) => {
+              ({ action, labelEn, labelZh }) => {
                 const target = { host: "powerPoint", action } as const;
                 const label = isEn ? labelEn : labelZh;
                 return (
@@ -300,7 +270,6 @@ export function OfficeFormulaShortcutSettingsSection() {
                   >
                     <div className="office-formula-shortcut-copy">
                       <strong>{label}</strong>
-                      <small>{isEn ? detailEn : detailZh}</small>
                     </div>
                     {shortcutControls(target, `PowerPoint ${label}`, powerPointSettings[action])}
                   </div>
@@ -311,16 +280,7 @@ export function OfficeFormulaShortcutSettingsSection() {
         </section>
       </div>
 
-      <p className="office-formula-shortcut-help">
-        {message ||
-          (capturing
-            ? isEn
-              ? "Press the shortcut now, or Esc to cancel."
-              : "现在按下快捷键，或按 Esc 取消。"
-            : isEn
-              ? "Actions in one app cannot share a shortcut. Word and PowerPoint may reuse the same shortcut."
-              : "同一应用内的动作不能重复；Word 与 PowerPoint 可以使用相同组合键。")}
-      </p>
+      {message && <p className="office-formula-shortcut-help" role="status">{message}</p>}
     </section>
   );
 }

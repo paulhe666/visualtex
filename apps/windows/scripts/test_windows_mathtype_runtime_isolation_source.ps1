@@ -6,7 +6,7 @@ Set-StrictMode -Version Latest
 
 $windowsRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $bridgePath = Join-Path $windowsRoot 'src-windows\VisualTeX.WindowsOleBridge\MathTypeNativePreviewCommand.cs'
-$interopPath = Join-Path $windowsRoot 'src-windows\VisualTeX.WordVsto\MathTypeOleInterop.cs'
+$interopPath = Join-Path $windowsRoot 'src-windows\VisualTeX.WindowsOffice.VstoShared\MathTypeOleInterop.cs'
 $guardPath = Join-Path $windowsRoot 'scripts\manage_private_mathtype_runtime.ps1'
 $hooksPath = Join-Path $windowsRoot 'src-tauri\windows\hooks.nsh'
 

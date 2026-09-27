@@ -13,6 +13,7 @@ public sealed partial class ThisAddIn
         <group id="VisualTeX.PowerPointVsto.Group" label="VisualTeX">
           <button id="VisualTeX.PowerPointVsto.New" label="New SVG" size="large" tag="insertFormula" getImage="GetRibbonImage" onAction="OnNewSvgFormula" />
           <button id="VisualTeX.PowerPointVsto.NewOle" label="New OLE" size="large" tag="convertToOle" getImage="GetRibbonImage" onAction="OnNewOleFormula" />
+          <button id="VisualTeX.PowerPointVsto.NewMathType" label="New MathType" size="large" tag="convertToOle" getImage="GetRibbonImage" onAction="OnNewMathTypeFormula" />
           <button id="VisualTeX.PowerPointVsto.InsertInlineOmml" label="Insert Inline OMML" size="large" screentip="Insert an inline native PowerPoint equation" supertip="Insert native Office Math at the current text-box caret or text selection as inline math." imageMso="EquationInsertNew" onAction="OnInsertInlineOmml" />
           <button id="VisualTeX.PowerPointVsto.InsertDisplayOmml" label="Insert Display OMML" size="large" screentip="Insert a display native PowerPoint equation" supertip="Insert a separate equation paragraph at the current text caret when editing a text box; otherwise create a standalone native Office Math equation on the current slide." imageMso="EquationInsertNew" onAction="OnInsertDisplayOmml" />
           <button id="VisualTeX.PowerPointVsto.Edit" label="Edit Selected Formula" size="large" tag="editSelected" getImage="GetRibbonImage" onAction="OnEditSelected" />

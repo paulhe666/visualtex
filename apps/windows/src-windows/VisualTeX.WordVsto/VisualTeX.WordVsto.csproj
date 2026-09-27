@@ -74,6 +74,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <Import Project="..\VisualTeX.WindowsOffice.VstoShared\MathTypeCore.projitems" />
   <Target Name="EnsureOfficeMathFontPrepared" BeforeTargets="PrepareForBuild">
     <Exec
       Condition="!Exists('$(OfficeMathFontRoot)\latinmodern-math.otf') Or !Exists('$(OfficeMathFontRoot)\GUST-FONT-LICENSE.txt')"

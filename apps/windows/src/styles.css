@@ -9329,6 +9329,10 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   max-height: calc(100vh - 48px);
 }
 
+.formula-hotkey-manager-dialog .dialog-footer {
+  justify-content: flex-end;
+}
+
 .formula-hotkey-recorder-content {
   display: grid;
   gap: 13px;
