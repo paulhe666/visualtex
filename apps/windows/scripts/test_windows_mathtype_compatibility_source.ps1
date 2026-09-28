@@ -8,7 +8,7 @@ $productionFiles = @(
     'src-windows/VisualTeX.WindowsOffice.VstoShared/MathTypeOleStorage.cs',
     'src-windows/VisualTeX.WindowsOffice.VstoShared/MathTypeOleClipboardProxy.cs',
     'src-windows/VisualTeX.WordVsto/MathTypeWordCommandsBridge.cs',
-    'src-windows/VisualTeX.WindowsOleBridge/MathTypeNativePreviewCommand.cs',
+    'src-windows/VisualTeX.NativeRenderWorker/MathTypeNativePreviewCommand.cs',
     'src-windows/VisualTeX.WindowsOffice.VstoShared/WordOmmlConverter.cs',
     'src-windows/VisualTeX.WordVsto/WordFormulaService.cs',
     'src-windows/VisualTeX.PowerPointVsto/PowerPointFormulaService.cs'
@@ -38,7 +38,7 @@ foreach ($pattern in $forbiddenAbsolutePatterns) {
 
 $interop = $contents['src-windows/VisualTeX.WordVsto/MathTypeOleInterop.cs'] + $contents['src-windows/VisualTeX.WindowsOffice.VstoShared/MathTypeOleInterop.cs']
 $storage = $contents['src-windows/VisualTeX.WordVsto/MathTypeOleStorage.cs'] + $contents['src-windows/VisualTeX.WindowsOffice.VstoShared/MathTypeOleStorage.cs']
-$preview = $contents['src-windows/VisualTeX.WindowsOleBridge/MathTypeNativePreviewCommand.cs']
+$preview = $contents['src-windows/VisualTeX.NativeRenderWorker/MathTypeNativePreviewCommand.cs']
 $omml = $contents['src-windows/VisualTeX.WindowsOffice.VstoShared/WordOmmlConverter.cs']
 $powerPoint = $contents['src-windows/VisualTeX.PowerPointVsto/PowerPointFormulaService.cs']
 
@@ -86,8 +86,8 @@ if (-not $powerPoint.Contains('CompleteGeneration')) {
 if (-not $preview.Contains('MathType')) {
     throw 'MathType native preview bridge source is unexpectedly empty or disconnected.'
 }
-if (-not $preview.Contains('AppContext.BaseDirectory') -or -not $preview.Contains('mathtype-runtime')) {
-    throw 'MathType native preview bridge does not probe VisualTeX private MathPage runtime first.'
+if ($preview.Contains('ResolveMathPagePath(') -or -not $preview.Contains('requiredPrivateRuntimeRoot')) {
+    throw 'Native rendering must require its private tree without installed-MathType discovery.'
 }
 if ($omml -match 'Office16\\OMML2MML\.XSL' -and -not $omml.Contains('RegistryView')) {
     throw 'OMML converter appears tied to one Office installation path without registry-view probing.'

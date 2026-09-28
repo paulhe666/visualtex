@@ -1,5 +1,4 @@
-using System.Diagnostics;
-using System.Text.Json;
+using VisualTeX.WindowsOffice.Contracts;
 using System.Xml.Linq;
 using VisualTeX.WordVsto;
 
@@ -154,155 +153,46 @@ public sealed class MathTypeMathVariantRoundTripTests
     }
 
     [Fact]
-    public void PrivateMathPageAcceptsGeneratedExplicitFontVariantsWhenEnabled()
+    public async Task PrivateServiceAcceptsGeneratedExplicitFontVariantsWhenEnabled()
     {
-        if (!string.Equals(
-                Environment.GetEnvironmentVariable("VISUALTEX_RUN_PRIVATE_MATHTYPE_ACCEPTANCE"),
-                "1",
-                StringComparison.Ordinal))
+        if (Environment.GetEnvironmentVariable("VISUALTEX_RUN_PRIVATE_MATHTYPE_ACCEPTANCE") != "1")
             return;
 
-        var windowsRoot = FindWindowsRoot();
-        var bridge = Path.Combine(
-            windowsRoot,
-            "src-tauri",
-            "target",
-            "release",
-            "visualtex-windows-office-bridge.exe");
-        var mathPage = Path.Combine(
-            windowsRoot,
-            "src-tauri",
-            "target",
-            "release",
-            "mathtype-runtime",
-            "MathPage",
-            "64",
-            "MathPage.wll");
-        Assert.True(File.Exists(bridge), $"Missing native preview bridge: {bridge}");
-        Assert.True(File.Exists(mathPage), $"Missing private MathPage runtime: {mathPage}");
-
-        var root = Path.Combine(
-            Path.GetTempPath(),
-            "VisualTeX",
-            "mathtype-variant-acceptance",
-            Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        try
+        Assert.True(NativeRenderClient.IsAvailable, "The private render service must be installed for this live test.");
+        var expectedWmfFonts = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            var resultPath = Path.Combine(root, "result.json");
-            var items = new List<object>();
-            foreach (var variant in new[]
-                     {
-                         "sans-serif",
-                         "monospace",
-                         "double-struck",
-                         "script",
-                         "fraktur",
-                         "bold-italic",
-                         "bold-script",
-                         "bold-fraktur",
-                         "bold-sans-serif",
-                         "sans-serif-italic",
-                         "sans-serif-bold-italic",
-                     })
-            {
-                var source = $"<math><mi mathvariant='{variant}'>A</mi></math>";
-                var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
-                    source,
-                    inline: false,
-                    10.5);
-                var mtefPath = Path.Combine(root, $"{variant}.mtef");
-                var wmfPath = Path.Combine(root, $"{variant}.wmf");
-                File.WriteAllBytes(mtefPath, generated.Mtef);
-                items.Add(new { Id = variant, MtefPath = mtefPath, WmfPath = wmfPath });
-            }
-            {
-                const string id = "bold-italic-greek";
-                const string source = "<math><mi mathvariant='bold-italic'>&#x3B1;</mi></math>";
-                var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
-                    source,
-                    inline: false,
-                    10.5);
-                var mtefPath = Path.Combine(root, $"{id}.mtef");
-                var wmfPath = Path.Combine(root, $"{id}.wmf");
-                File.WriteAllBytes(mtefPath, generated.Mtef);
-                items.Add(new { Id = id, MtefPath = mtefPath, WmfPath = wmfPath });
-            }
-
-            var manifestPath = Path.Combine(root, "request.json");
-            File.WriteAllText(
-                manifestPath,
-                JsonSerializer.Serialize(new
-                {
-                    ResultPath = resultPath,
-                    MathTypeServerPath = string.Empty,
-                    Items = items,
-                }));
-
-            using var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = bridge,
-                Arguments = $"--mathtype-preview-manifest \"{manifestPath}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
-            Assert.NotNull(process);
-            Assert.True(process!.WaitForExit(30_000), "Private MathPage native preview timed out.");
-            Assert.Equal(0, process.ExitCode);
-            Assert.True(File.Exists(resultPath), "Private MathPage did not write its result manifest.");
-
-            using var response = JsonDocument.Parse(File.ReadAllText(resultPath));
-            Assert.Equal(string.Empty, response.RootElement.GetProperty("Error").GetString());
-            var results = response.RootElement.GetProperty("Items").EnumerateArray().ToArray();
-            Assert.Equal(items.Count, results.Length);
-            var expectedWmfFonts = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["sans-serif"] = "Arial",
-                ["monospace"] = "Courier New",
-                ["double-struck"] = "Euclid Math Two",
-                ["script"] = "Euclid Math One",
-                ["fraktur"] = "Euclid Fraktur",
-                ["bold-italic"] = "Times New Roman",
-                ["bold-script"] = "Euclid Math One",
-                ["bold-fraktur"] = "Euclid Fraktur",
-                ["bold-sans-serif"] = "Arial",
-                ["sans-serif-italic"] = "Arial",
-                ["sans-serif-bold-italic"] = "Arial",
-                ["bold-italic-greek"] = "Times New Roman",
-            };
-            foreach (var result in results)
-            {
-                var id = result.GetProperty("Id").GetString();
-                Assert.True(
-                    result.GetProperty("Success").GetBoolean(),
-                    id + ": " + result.GetProperty("Error").GetString());
-                var wmfPath = result.GetProperty("WmfPath").GetString();
-                Assert.False(string.IsNullOrWhiteSpace(wmfPath));
-                Assert.True(new FileInfo(wmfPath!).Length > 22);
-                Assert.True(result.GetProperty("WidthPt").GetSingle() > 0);
-                Assert.True(result.GetProperty("HeightPt").GetSingle() > 0);
-                Assert.NotNull(id);
-                Assert.True(expectedWmfFonts.TryGetValue(id!, out var expectedFont));
-                var wmfStrings = System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(wmfPath!));
-                Assert.Contains(expectedFont, wmfStrings, StringComparison.OrdinalIgnoreCase);
-            }
-        }
-        finally
+            ["sans-serif"] = "Arial",
+            ["monospace"] = "Courier New",
+            ["double-struck"] = "Euclid Math Two",
+            ["script"] = "Euclid Math One",
+            ["fraktur"] = "Euclid Fraktur",
+            ["bold-italic"] = "Times New Roman",
+            ["bold-script"] = "Euclid Math One",
+            ["bold-fraktur"] = "Euclid Fraktur",
+            ["bold-sans-serif"] = "Arial",
+            ["sans-serif-italic"] = "Arial",
+            ["sans-serif-bold-italic"] = "Arial",
+            ["bold-italic-greek"] = "Times New Roman",
+        };
+        var request = new NativeRenderRequest();
+        foreach (var id in expectedWmfFonts.Keys)
         {
-            try { Directory.Delete(root, recursive: true); } catch { }
+            var variant = id == "bold-italic-greek" ? "bold-italic" : id;
+            var character = id == "bold-italic-greek" ? "&#x3B1;" : "A";
+            var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
+                $"<math><mi mathvariant='{variant}'>{character}</mi></math>", inline: false, 10.5);
+            request.Items.Add(new NativeRenderInput { Id = id, Mtef = generated.Mtef });
         }
-    }
-
-    private static string FindWindowsRoot()
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
-             directory is not null;
-             directory = directory.Parent)
+        var response = await NativeRenderClient.RenderAsync(request, CancellationToken.None);
+        Assert.Equal(string.Empty, response.Error);
+        Assert.Equal(request.Items.Count, response.Items.Count);
+        foreach (var result in response.Items)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "package.json"))
-                && Directory.Exists(Path.Combine(directory.FullName, "src-tauri")))
-                return directory.FullName;
+            Assert.True(result.WidthPt > 0 && result.HeightPt > 0);
+            Assert.True(result.Wmf.Length > 22);
+            Assert.True(expectedWmfFonts.TryGetValue(result.Id, out var expectedFont));
+            Assert.Contains(expectedFont, System.Text.Encoding.Latin1.GetString(result.Wmf),
+                StringComparison.OrdinalIgnoreCase);
         }
-        throw new DirectoryNotFoundException("Could not locate the VisualTeX Windows workspace root.");
     }
 }

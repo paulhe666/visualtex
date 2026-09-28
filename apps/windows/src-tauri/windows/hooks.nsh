@@ -361,6 +361,9 @@ FunctionEnd
     IfFileExists "$INSTDIR\${MAINBINARYNAME}.exe" 0 visualtex_main_binary_missing
     IfFileExists "$INSTDIR\scripts\ensure_windows_office_certificate.ps1" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\scripts\install_windows_vsto.ps1" 0 visualtex_office_missing
+    IfFileExists "$INSTDIR\scripts\manage_windows_native_render.ps1" 0 visualtex_office_missing
+    IfFileExists "$INSTDIR\windows-office\VisualTeX-NativeRender-x64.msi" 0 visualtex_office_missing
+    IfFileExists "$INSTDIR\windows-office\VisualTeX-NativeRender-x64.sha256.json" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\scripts\install_windows_vsto_runtime.ps1" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\scripts\test_windows_office_runtime.ps1" 0 visualtex_office_missing
     IfFileExists "$INSTDIR\windows-office\VisualTeX-WindowsOffice-VSTO-x64.msi" 0 visualtex_office_missing
@@ -438,7 +441,7 @@ visualtex_office_static_installed:
     WriteRegDWORD HKCU "Software\VisualTeX\OfficeIntegration" "RuntimeVerificationPending" 1
     DetailPrint "Companion and Word/PowerPoint connection verification are deferred until VisualTeX is launched from Finish or by the user."
     IfSilent visualtex_office_done 0
-    MessageBox MB_ICONINFORMATION "Office 集成的文件、注册信息、证书、COM 类和 OLE 服务已安装并完成静态验证。安装阶段不会启动常驻后台进程，也不会创建任何 WebView。$\r$\n$\r$\n点击“完成”启动 VisualTeX 后，本地 companion 才会按正常运行模式启动；也可以稍后在“设置 → Office 集成”中验证 Word 和 PowerPoint 连接。"
+    MessageBox MB_ICONINFORMATION "Office 集成及独立公式渲染服务已安装。$\r$\n$\r$\n请重新打开 Word 或 PowerPoint。"
     Goto visualtex_office_done
 
 visualtex_office_failed:

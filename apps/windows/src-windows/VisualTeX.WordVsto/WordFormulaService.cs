@@ -777,6 +777,7 @@ internal sealed partial class WordFormulaService
         None,
         VisualTeX,
         MathType,
+        Unresolved,
     }
 
     public bool IsSelectedNativeOle() =>
@@ -784,6 +785,13 @@ internal sealed partial class WordFormulaService
 
     public bool IsSelectedMathTypeOle() =>
         ReadSelectedOleKind() == SelectedOleKind.MathType;
+
+    // Enabling an explicit command grants permission to inspect a selected OLE,
+    // not proof that it is a formula and not ownership of its native gestures.
+    // The command validates CFB/MTEF before any mutation. Missing registration
+    // must not make that data-based inspection unreachable from the Ribbon.
+    internal bool IsSelectedOleFormulaCommandCandidate() =>
+        ReadSelectedOleKind() != SelectedOleKind.None;
 
     public bool OpenMathTypeNativeEditorAtRange(
         int targetStart,
@@ -851,7 +859,6 @@ internal sealed partial class WordFormulaService
         Range? range = null;
         InlineShapes? shapes = null;
         InlineShape? shape = null;
-        OLEFormat? format = null;
         try
         {
             selection = _application.Selection;
@@ -859,18 +866,7 @@ internal sealed partial class WordFormulaService
             shapes = range.InlineShapes;
             if (shapes.Count != 1) return SelectedOleKind.None;
             shape = shapes[1];
-            if (shape.Type is not WdInlineShapeType.wdInlineShapeEmbeddedOLEObject
-                and not WdInlineShapeType.wdInlineShapeLinkedOLEObject)
-                return SelectedOleKind.None;
-            format = shape.OLEFormat;
-            if (string.Equals(
-                    format.ProgID,
-                    FormulaOleContract.ProgId,
-                    StringComparison.OrdinalIgnoreCase))
-                return SelectedOleKind.VisualTeX;
-            return MathTypeOleInterop.TryResolveCapabilities(format.ProgID, out _)
-                ? SelectedOleKind.MathType
-                : SelectedOleKind.None;
+            return ReadOleHostKindWithoutContent(shape);
         }
         catch
         {
@@ -878,12 +874,35 @@ internal sealed partial class WordFormulaService
         }
         finally
         {
-            Release(format);
             Release(shape);
             Release(shapes);
             Release(range);
             Release(selection);
         }
+    }
+
+    private static SelectedOleKind ReadOleHostKindWithoutContent(InlineShape shape)
+    {
+        // Observation may read a stored host identity, but must not fall back to
+        // WordOpenXML/CFB or activate an OLE object when registration is missing.
+        // First prove that this is an OLE host. An unavailable ProgID thereafter
+        // means unresolved identity, not the absence of an inspectable object.
+        if (shape.Type is not WdInlineShapeType.wdInlineShapeEmbeddedOLEObject
+            and not WdInlineShapeType.wdInlineShapeLinkedOLEObject)
+            return SelectedOleKind.None;
+        OLEFormat? format = null;
+        try
+        {
+            format = shape.OLEFormat;
+            var progId = format.ProgID;
+            if (string.Equals(progId, FormulaOleContract.ProgId, StringComparison.OrdinalIgnoreCase))
+                return SelectedOleKind.VisualTeX;
+            return MathTypeOleInterop.TryResolveCapabilities(progId, out _)
+                ? SelectedOleKind.MathType
+                : SelectedOleKind.Unresolved;
+        }
+        catch { return SelectedOleKind.Unresolved; }
+        finally { Release(format); }
     }
 
     public void NormalizeTypingCaretAfterInlineFormula(Selection selection)
@@ -947,19 +966,12 @@ internal sealed partial class WordFormulaService
                 catch (InvalidDataException) { }
             }
 
-            if (host is null)
-            {
-                try
-                {
-                    host =
-                        WordMathTypeHostAdapter.ResolveLocal(
-                            _application,
-                            document,
-                            caret);
-                }
-                catch (InvalidDataException) { }
-            }
-
+            // MathType owns its OLE insertion/edit lifecycle. A passive Word
+            // selection notification is not permission to import its payload or
+            // change its caret. ResolveLocal(MathType) serializes WordOpenXML;
+            // doing that inside native insertion re-enters Word's unfinished OLE
+            // save and crashes wwlib. VisualTeX's explicit MathType insert/edit/
+            // conversion paths already restore typing format when they complete.
             if (host is null
                 || !string.Equals(
                     host.DisplayMode,
@@ -1137,13 +1149,20 @@ internal sealed partial class WordFormulaService
         }
     }
 
-    public float? GetSelectedFormulaFontSize()
+    // Passive Ribbon/selection queries must not serialize or activate third-party OLE.
+    // A third-party MathType semantic size is unknown until an explicit command
+    // reads its MTEF; Word's surrounding text font is not a substitute for it.
+    public float? GetSelectedFormulaFontSize() =>
+        ReadSelectedFormulaFontSize(allowMathTypeContent: false);
+
+    internal float? ReadSelectedFormulaFontSizeForCommand() =>
+        ReadSelectedFormulaFontSize(allowMathTypeContent: true);
+
+    private float? ReadSelectedFormulaFontSize(bool allowMathTypeContent)
     {
-        // Ribbon getText/getEnabled callbacks run immediately after a Word
-        // SelectionChange. They must be strictly read-only: calling ReadSelection()
-        // here can adopt an unowned native OMath by adding a bookmark/CustomXML
-        // part, which mutates the document while Word is entering its native
-        // equation editor and can suppress the normal equation editing frame.
+        // The command and observation entry points deliberately have different
+        // authority. A nominally read-only WordOpenXML property saves OLE data
+        // and is unsafe when native MathType is still constructing the object.
         Document? document = null;
         Selection? selection = null;
         Range? range = null;
@@ -1161,6 +1180,23 @@ internal sealed partial class WordFormulaService
             if (shapes.Count == 1)
             {
                 shape = shapes[1];
+                if ((shape.Type is WdInlineShapeType.wdInlineShapeEmbeddedOLEObject
+                        or WdInlineShapeType.wdInlineShapeLinkedOLEObject)
+                    && ReadOleHostKindWithoutContent(shape) != SelectedOleKind.VisualTeX)
+                {
+                    // Even IsMathTypeOle can export WordOpenXML when ProgID is
+                    // unavailable. That semantic fallback belongs to commands,
+                    // never to passive observation of another owner's OLE.
+                    if (!allowMathTypeContent || !MathTypeOleInterop.IsMathTypeOle(shape))
+                        return null;
+                    if (!MathTypeOleStorage.TryCaptureCompoundFileFromWordOpenXml(
+                            shape,
+                            out var mathTypeCompound))
+                        return null;
+                    var equationNative = MathTypeOleStorage.ReadEquationNative(mathTypeCompound);
+                    return FormulaFontSize.Normalize(
+                        MathTypeMtefCodec.ReadEquationNativeFullFontSize(equationNative));
+                }
                 var metadata = WordFormulaMetadataReader.TryRead(shape);
                 if (metadata is not null)
                 {
@@ -1168,15 +1204,6 @@ internal sealed partial class WordFormulaService
                         ? WordInlineObjectGeometry.ReadStableVisualTeXSize(shape, metadata)
                         : (Width: shape.Width, Height: shape.Height);
                     return FormulaFontSize.InferOleFontSize(stableSize.Width, stableSize.Height, metadata);
-                }
-                if (MathTypeOleInterop.IsMathTypeOle(shape)
-                    && MathTypeOleStorage.TryCaptureCompoundFileFromWordOpenXml(
-                        shape,
-                        out var mathTypeCompound))
-                {
-                    var equationNative = MathTypeOleStorage.ReadEquationNative(mathTypeCompound);
-                    return FormulaFontSize.Normalize(
-                        MathTypeMtefCodec.ReadEquationNativeFullFontSize(equationNative));
                 }
             }
 
@@ -1800,12 +1827,6 @@ internal sealed partial class WordFormulaService
             && File.Exists(isolatedNativePreviewWmfPath)
             && isolatedNativePreviewWidthPt > 0
             && isolatedNativePreviewHeightPt > 0;
-        if (!hasIsolatedNativePreview
-            && (string.IsNullOrWhiteSpace(emfPath) || !File.Exists(emfPath)))
-            throw new FileNotFoundException(
-                "VisualTeX did not provide a valid MathType native or vector preview for OLE insertion.",
-                emfPath);
-
         var metadata = session.ToMetadata();
         metadata.Validate();
         if (string.IsNullOrWhiteSpace(metadata.Latex))
@@ -1838,9 +1859,8 @@ internal sealed partial class WordFormulaService
         // Using the frontend/MathJax EMF here made otherwise-valid Equation Native
         // objects look subtly different from equations inserted by MathType itself
         // (notably relation/operator spacing) and could size the OLE host a few
-        // pixels too narrowly, clipping the right-most italic glyph. Prefer the
-        // MathPage native renderer whenever it is installed; keep the frontend EMF
-        // only as a compatibility fallback for machines without MathPage.
+        // pixels too narrowly, clipping the right-most italic glyph. The private
+        // renderer is required; installed MathType is not a rendering dependency.
         MathTypeNativePreviewRenderer.Result? nativePreview = null;
         byte[] previewWmf;
         float widthPt;
@@ -1870,23 +1890,7 @@ internal sealed partial class WordFormulaService
         }
         else
         {
-            widthPt = (float)Math.Max(1d, (session.ExportResult?.Width ?? 200d) * 0.75d);
-            heightPt = (float)Math.Max(1d, (session.ExportResult?.Height ?? 60d) * 0.75d);
-            var alignToWordTextBaseline = inline || session.Numbered;
-            wordPosition = alignToWordTextBaseline
-                ? CalculateMathTypeOleWordPosition(
-                    heightPt,
-                    session.ExportResult?.Height ?? 0f,
-                    session.ExportResult?.Baseline)
-                : 0;
-            if (string.IsNullOrWhiteSpace(emfPath) || !File.Exists(emfPath))
-                throw new FileNotFoundException(
-                    "MathType native preview was unavailable and no fallback EMF exists.",
-                    emfPath);
-            previewWmf = MathTypeWordOpenXml.ConvertEnhancedMetafileToPlaceableWmf(
-                emfPath!,
-                widthPt,
-                heightPt);
+            throw new InvalidOperationException(MathTypeNativePreviewRenderer.IncompleteMessage);
         }
 
         // Keep genuine MathType storage free of OlePres. Word owns the external
@@ -6945,9 +6949,8 @@ internal sealed partial class WordFormulaService
             byte[] previewWmf;
 
             // Preserve the original Equation.DSMT4 CFB, replace only its MTEF
-            // structure, and seed a fresh OLE presentation cache from VisualTeX's
-            // current EMF. The source and result are serialized data; no MathType
-            // COM server is needed for the semantic or visual update.
+            // structure, and obtain its native presentation through the private
+            // data-only service. Word never activates a MathType COM server here.
             WordDoubleClickHook.TraceMessage(
                 $"mathtype-replace-stage stage=rewrite-cfb formulaId={session.FormulaId}");
             var rewritten = MathTypeOleStorage.RewriteMathTypeCompoundFile(
@@ -7044,41 +7047,13 @@ internal sealed partial class WordFormulaService
             }
             else
             {
-                // Older MathType installations may provide only a 32-bit MathPage
-                // library, and machines without MathPage have no native renderer at
-                // all. Editing must still remain functional: use the already-rendered
-                // VisualTeX EMF as a Word-owned presentation while preserving the
-                // genuine MathType CFB/MTEF semantics. This is the same safe fallback
-                // used by direct insertion and never activates the MathType server.
-                if (string.IsNullOrWhiteSpace(emfPath) || !File.Exists(emfPath))
-                    throw new InvalidOperationException(
-                        "MathType native preview is unavailable, so VisualTeX cannot resize this MathType equation without a fallback vector preview.");
-                previewWmf = MathTypeWordOpenXml.ConvertEnhancedMetafileToPlaceableWmf(
-                    emfPath!,
-                    targetWidthPt,
-                    targetHeightPt);
-                targetWordPosition = alignInline
-                    // Without a native source/target preview pair there is no
-                    // evidence for changing an already-correct Word baseline.
-                    // Preserve the native source position rather than introducing
-                    // a new VisualTeX/MathJax-derived offset on edit.
-                    ? originalWordPosition
-                    : alignToWordTextBaseline
-                        ? CalculateMathTypeOleWordPosition(
-                            targetHeightPt,
-                            session.ExportResult?.Height ?? 0f,
-                            session.ExportResult?.Baseline)
-                        : 0;
-                WordDoubleClickHook.TraceMessage(
-                    $"mathtype-replace-preview-fallback formulaId={session.FormulaId} "
-                    + $"sourceNative={sourceNativePreview is not null} rewrittenNative={nativePreview is not null} "
-                    + $"target={targetWidthPt:0.###}x{targetHeightPt:0.###}@{targetWordPosition}");
+                throw new InvalidOperationException(MathTypeNativePreviewRenderer.IncompleteMessage);
             }
 
 
             // Rewrite the existing Equation.DSMT4 CFB and its external Word WMF
             // presentation in one offline Flat OPC transaction using the native
-            // MathType geometry whenever MathPage is available.
+            // MathType geometry returned by the private renderer.
             WordDoubleClickHook.TraceMessage(
                 $"mathtype-replace-stage stage=rewrite-flat-opc formulaId={session.FormulaId}");
             var replacementWordOpenXml = MathTypeWordOpenXml.RewriteWithPlaceableWmf(

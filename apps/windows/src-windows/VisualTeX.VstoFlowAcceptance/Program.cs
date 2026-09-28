@@ -456,6 +456,36 @@ internal static partial class Program
         Console.SetError(new TeeTextWriter(originalError, log));
         Console.WriteLine($"Acceptance mode: {mode}");
 
+        if (string.Equals(mode, "word-mathtype-manual-coexistence", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                RunWordMathTypeManualCoexistenceAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                return 1;
+            }
+        }
+
+        if (string.Equals(mode, "mathtype-native-preview-private-boundary", StringComparison.OrdinalIgnoreCase))
+        {
+            // This data-only boundary test must not start the companion or
+            // modify Office add-in registration just to contact the service.
+            try
+            {
+                RunMathTypeNativePreviewPrivateBoundaryAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                return 1;
+            }
+        }
+
         if (string.Equals(mode, "powerpoint-mathtype", StringComparison.OrdinalIgnoreCase))
         {
             try
@@ -1101,6 +1131,10 @@ internal static partial class Program
             {
                 RunWordMathTypeDirectPasteSymbolsAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-headless", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeHeadlessAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "mathtype-native-preview-complex", StringComparison.OrdinalIgnoreCase))
             {
                 RunMathTypeNativePreviewComplexAcceptance(artifactRoot);
@@ -1108,10 +1142,6 @@ internal static partial class Program
             else if (string.Equals(mode, "mathtype-native-preview-single-performance", StringComparison.OrdinalIgnoreCase))
             {
                 RunMathTypeNativePreviewSinglePerformanceAcceptance(artifactRoot);
-            }
-            else if (string.Equals(mode, "mathtype-native-preview-shared-lifecycle", StringComparison.OrdinalIgnoreCase))
-            {
-                RunMathTypeNativePreviewSharedLifecycleAcceptance();
             }
             else if (string.Equals(mode, "word-mathtype-openxml-clone", StringComparison.OrdinalIgnoreCase))
             {

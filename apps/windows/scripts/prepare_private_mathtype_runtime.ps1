@@ -41,6 +41,7 @@ if ([string]::IsNullOrWhiteSpace($InstallerPath) -and [string]::IsNullOrWhiteSpa
             }
             foreach ($relative in @(
                 'MathType.exe','MT7.dsc','System\MathTypeLib.exe','System\MT6.dll','System\64\MT6.dll',
+                'Language\MT7chs.dll',
                 'MathPage\64\MathPage.wll','System\rt\lib\rt.jar','System\rt\lib\charsets.jar',
                 'System\rt\lib\jce.jar','System\rt\lib\jsse.jar','System\rt\lib\security\java.security'
             )) {
@@ -92,7 +93,7 @@ if (![string]::IsNullOrWhiteSpace($PayloadDir)) {
 
 $setupInf = Join-Path $payload 'setup.inf'
 $setupLibInf = Join-Path $payload 'setup.lib.inf'
-foreach ($required in @('mathtype.ex_','mt7.dsc','MathTypeLib.exe','mt6x86.dll','mt6x64.dll','mathpagex64.wll','setup.inf','setup.lib.inf')) {
+foreach ($required in @('mathtype.ex_','mt7.dsc','mt7chs.dll','MathTypeLib.exe','mt6x86.dll','mt6x64.dll','mathpagex64.wll','setup.inf','setup.lib.inf')) {
     if (!(Test-Path -LiteralPath (Join-Path $payload $required) -PathType Leaf)) {
         throw "MathType payload is missing $required"
     }
@@ -122,6 +123,16 @@ Copy-Exact 'MathTypeLib.exe' 'System\MathTypeLib.exe'
 Copy-Exact 'mt6x86.dll' 'System\MT6.dll'
 Copy-Exact 'mt6x64.dll' 'System\64\MT6.dll'
 Copy-Exact 'mathpagex64.wll' 'MathPage\64\MathPage.wll'
+
+# The native child still reads the user's MathType locale. If its matching
+# application language DLL is missing, MathType falls back to English and writes
+# that fallback into the standalone application's HKCU AppLang. These are runtime
+# dependencies even for headless rendering, not optional installer/Office UI files.
+# Preserve the original payload's application language packs without modifying
+# their contents or repairing the user's settings after every conversion.
+foreach ($language in Get-ChildItem -LiteralPath $payload -File | Where-Object { $_.Name -match '^MT7[a-z]{3}\.dll$' }) {
+    Copy-Exact $language.Name ('Language\' + $language.Name)
+}
 
 # setup.lib.inf is the authoritative mapping for MathTypeLib's private Java
 # runtime. Keep the validated runtime closure, but omit groups proven unnecessary
@@ -161,6 +172,7 @@ foreach ($line in Get-Content -LiteralPath $setupLibInf -Encoding Default) {
 
 $mustExist = @(
     'MathType.exe','MT7.dsc','System\MathTypeLib.exe','System\MT6.dll','System\64\MT6.dll',
+    'Language\MT7chs.dll',
     'MathPage\64\MathPage.wll','System\rt\lib\rt.jar','System\rt\lib\charsets.jar',
     'System\rt\lib\jce.jar','System\rt\lib\jsse.jar','System\rt\lib\security\java.security'
 )
@@ -177,7 +189,7 @@ foreach ($relative in @('System\rt\bin','System\rt\lib\ext','System\rt\lib\secur
 
 $files = @(Get-ChildItem -LiteralPath $output -Recurse -File)
 $manifest = [ordered]@{
-    schema = 1
+    schema = 2
     product = 'MathType'
     validatedVersion = '7.9.1'
     purpose = 'VisualTeX isolated native MTEF-to-WMF preview runtime'
@@ -185,7 +197,9 @@ $manifest = [ordered]@{
     bytes = ($files | Measure-Object Length -Sum).Sum
     core = @{}
 }
-foreach ($relative in @('MathType.exe','MT7.dsc','System\MathTypeLib.exe','System\MT6.dll','System\64\MT6.dll','MathPage\64\MathPage.wll')) {
+foreach ($relative in @('MathType.exe','MT7.dsc','System\MathTypeLib.exe','System\MT6.dll','System\64\MT6.dll','MathPage\64\MathPage.wll') + @(
+    Get-ChildItem -LiteralPath (Join-Path $output 'Language') -File | ForEach-Object { 'Language\' + $_.Name }
+)) {
     $path = Join-Path $output $relative
     $manifest.core[$relative] = @{
         bytes = (Get-Item -LiteralPath $path).Length

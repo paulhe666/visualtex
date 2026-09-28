@@ -1,0 +1,15 @@
+<Project Sdk="WixToolset.Sdk/4.0.5">
+  <PropertyGroup>
+    <Platform>x64</Platform>
+    <OutputType>Package</OutputType>
+    <OutputName>VisualTeX-NativeRender-x64</OutputName>
+    <DefineConstants>PayloadRoot=$(PayloadRoot)</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(PayloadFragment)" />
+  </ItemGroup>
+  <Target Name="RequirePrivatePayload" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(PayloadRoot)\VisualTeX.NativeRenderService.exe')" Text="Build the verified private native-render payload first." />
+    <Error Condition="!Exists('$(PayloadFragment)')" Text="Native-render payload fragment is missing." />
+  </Target>
+</Project>

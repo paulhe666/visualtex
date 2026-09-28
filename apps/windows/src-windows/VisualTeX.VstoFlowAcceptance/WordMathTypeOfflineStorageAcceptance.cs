@@ -1539,8 +1539,7 @@ internal static partial class Program
             WaitForInstalledOmmlMathTypeConversion(
                 tracePath,
                 "source=VisualTeX target=MathType",
-                mathTypeBaseline,
-                allowTransientMathTypeProcess: true);
+                mathTypeBaseline);
             WaitForAddInIdle(addIn, TimeSpan.FromSeconds(20));
             AssertEqual(2, CountMathTypeOleShapes(document),
                 "VisualTeX→MathType adjacent conversion did not create exactly two MathType OLE formulas.");

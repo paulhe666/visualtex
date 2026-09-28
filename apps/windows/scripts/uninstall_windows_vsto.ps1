@@ -216,6 +216,8 @@ try {
         }
     }
 
+    & (Join-Path $PSScriptRoot 'manage_windows_native_render.ps1') -Action Uninstall
+
     foreach ($key in @(
         "HKLM:\Software\Microsoft\Office\Word\Addins\VisualTeX.WordVsto",
         "HKLM:\Software\Microsoft\Office\PowerPoint\Addins\VisualTeX.PowerPointVsto",

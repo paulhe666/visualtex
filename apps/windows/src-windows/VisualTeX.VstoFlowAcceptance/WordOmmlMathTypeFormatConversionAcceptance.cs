@@ -224,8 +224,7 @@ internal static partial class Program
     private static int WaitForInstalledOmmlMathTypeConversion(
         string tracePath,
         string directionMarker,
-        IReadOnlyCollection<int> mathTypeBaseline,
-        bool allowTransientMathTypeProcess = false)
+        IReadOnlyCollection<int> mathTypeBaseline)
     {
         var deadline = DateTime.UtcNow.AddSeconds(120);
         var completionMarker = "format-conversion-complete " + directionMarker;
@@ -236,26 +235,16 @@ internal static partial class Program
         {
             System.Windows.Forms.Application.DoEvents();
             Thread.Sleep(200);
-            var startedMathType = SnapshotMathTypeProcessIds()
+            var startedMathType = SnapshotInteractiveMathTypeProcessIds()
                 .Except(mathTypeBaseline)
                 .ToArray();
             peakAdditionalMathTypeProcesses = Math.Max(
                 peakAdditionalMathTypeProcesses,
                 startedMathType.Length);
-            var controlledRpcHelpers = startedMathType
-                .Where(MathTypeNativePreviewRenderer.IsControlledMathTypeRpcHelperProcess)
-                .ToArray();
-            if (controlledRpcHelpers.Length > 1)
+            if (startedMathType.Length > 0)
                 throw new InvalidOperationException(
-                    "Installed OMML↔MathType conversion started more than one controlled -mtrpc helper: "
-                    + string.Join(", ", controlledRpcHelpers));
-            var unexpectedMathType = startedMathType
-                .Except(controlledRpcHelpers)
-                .ToArray();
-            if (!allowTransientMathTypeProcess && unexpectedMathType.Length > 0)
-                throw new InvalidOperationException(
-                    "Installed OMML↔MathType conversion started unexpected MathType.exe: "
-                    + string.Join(", ", unexpectedMathType));
+                    "Installed OMML↔MathType conversion started an interactive MathType process: "
+                    + string.Join(", ", startedMathType));
             if (!File.Exists(tracePath)) continue;
             string trace;
             try { trace = File.ReadAllText(tracePath); }
@@ -272,37 +261,7 @@ internal static partial class Program
                     + trace.Substring(failedIndex).Trim());
             if (trace.IndexOf(completionMarker, StringComparison.Ordinal) < 0)
                 continue;
-            for (var settle = 0; settle < 50; settle++)
-            {
-                System.Windows.Forms.Application.DoEvents();
-                Thread.Sleep(100);
-                var remainingMathType = SnapshotMathTypeProcessIds()
-                    .Except(mathTypeBaseline)
-                    .ToArray();
-                peakAdditionalMathTypeProcesses = Math.Max(
-                    peakAdditionalMathTypeProcesses,
-                    remainingMathType.Length);
-                if (remainingMathType.Length == 0)
-                    return peakAdditionalMathTypeProcesses;
-                var remainingControlledRpcHelpers = remainingMathType
-                    .Where(MathTypeNativePreviewRenderer.IsControlledMathTypeRpcHelperProcess)
-                    .ToArray();
-                if (remainingControlledRpcHelpers.Length > 1)
-                    throw new InvalidOperationException(
-                        "Installed OMML↔MathType conversion retained more than one controlled -mtrpc helper: "
-                        + string.Join(", ", remainingControlledRpcHelpers));
-                var remainingUnexpected = remainingMathType
-                    .Except(remainingControlledRpcHelpers)
-                    .ToArray();
-                if (remainingUnexpected.Length == 0)
-                    return peakAdditionalMathTypeProcesses;
-                if (!allowTransientMathTypeProcess)
-                    throw new InvalidOperationException(
-                        "Installed OMML↔MathType conversion left unexpected MathType.exe running: "
-                        + string.Join(", ", remainingUnexpected));
-            }
-            throw new InvalidOperationException(
-                "Installed Ribbon conversion completed but its transient MathType native-preview helper did not exit.");
+            return peakAdditionalMathTypeProcesses;
         }
         throw new TimeoutException(
             $"Installed Ribbon conversion did not report '{completionMarker}' within the acceptance deadline.");
@@ -485,14 +444,7 @@ internal static partial class Program
                 tracePath);
 
             using var host = new WordPerformanceHost(documentPath: null);
-            var prewarmWatch = System.Diagnostics.Stopwatch.StartNew();
-            AssertTrue(
-                MathTypeNativePreviewRenderer.WaitForSharedSessionPrewarm(
-                    TimeSpan.FromSeconds(12)),
-                "MathType shared native-preview prewarm did not finish in time.");
-            prewarmWatch.Stop();
-            Console.WriteLine(
-                $"[SINGLE OMML→MT PREWARM] elapsedMs={prewarmWatch.ElapsedMilliseconds}");
+            AssertTrue(MathTypeNativePreviewRenderer.IsAvailable, "The private render service is not running.");
             const string token = "VT_SINGLE_OMML_TO_MT_PERF";
             Word.Range? nativeRange = null;
             try

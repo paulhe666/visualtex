@@ -557,9 +557,7 @@ public sealed partial class ThisAddIn
                 var nativePreviewAvailable = MathTypeNativePreviewRenderer.IsAvailable;
                 if (!nativePreviewAvailable)
                 {
-                    SetStatus("未检测到 MathType 原生预览器，正在使用 VisualTeX 矢量预览完成 MathType 转换…");
-                    WordDoubleClickHook.TraceMessage(
-                        $"format-conversion-preview-fallback reason=native-unavailable formulas={plan.Targets.Count}");
+                    throw new InvalidOperationException(MathTypeNativePreviewRenderer.UnavailableMessage);
                 }
                 else
                 {
@@ -605,10 +603,7 @@ public sealed partial class ThisAddIn
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
-                        SetStatus("MathType 原生预览未完整生成，正在整批使用 VisualTeX 矢量预览…");
-                        WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-preview-fallback reason=native-batch-incomplete "
-                            + $"native={nativePreviews.Count}/{plan.Targets.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.IncompleteMessage);
                     }
                     else
                     {

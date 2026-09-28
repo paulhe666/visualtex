@@ -981,6 +981,11 @@ try {
     }
     Add-DiagnosticCheck "MSI SHA-256" $true "$packageFileName $actualPackageHash" "package"
 
+    # Office consumes the data-only renderer. Install and verify its own
+    # machine-wide service before replacing a working Office integration.
+    & (Join-Path $PSScriptRoot 'manage_windows_native_render.ps1') -Action Install -PackageDirectory (Split-Path -Parent $MsiPath)
+    Add-DiagnosticCheck "Private native renderer" $true "Dedicated service identity and installed payload verified." "prerequisite"
+
     if ([string]::IsNullOrWhiteSpace($LogPath)) {
         $LogPath = Join-Path $logRoot "vsto-install-$stamp.log"
     }

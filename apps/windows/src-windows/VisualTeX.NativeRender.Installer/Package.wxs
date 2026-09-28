@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="VisualTeX Native Rendering" Manufacturer="VisualTeX" Version="1.2.8"
+           UpgradeCode="D51CF2F8-0CF2-4A79-BA25-80E7A77FD548" Scope="perMachine" InstallerVersion="500">
+    <MajorUpgrade AllowSameVersionUpgrades="yes" Schedule="afterInstallInitialize"
+                  DowngradeErrorMessage="A newer VisualTeX native renderer is installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="VisualTeXFolder" Name="VisualTeX">
+        <Directory Id="NATIVERENDERFOLDER" Name="NativeRender">
+          <Directory Id="NativeRenderData" Name="data">
+            <Directory Id="NativeRenderJobs" Name="jobs" />
+          </Directory>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <Feature Id="NativeRender" Title="Isolated native renderer" Level="1">
+      <ComponentRef Id="NativeRenderService" />
+      <ComponentRef Id="NativeRenderPrivateData" />
+      <ComponentGroupRef Id="NativeRenderPayload" />
+    </Feature>
+    <Component Id="NativeRenderService" Directory="NATIVERENDERFOLDER"
+               Guid="B4C55B96-6833-4563-9DB7-94D6354349D0" Bitness="always64">
+      <File Id="NativeRenderServiceExe" Source="$(var.PayloadRoot)\VisualTeX.NativeRenderService.exe" KeyPath="yes" />
+      <!-- The virtual identity, private HKCU and Session 0 are the tested boundary.
+           Never substitute LocalSystem, LocalService, or the interactive user. -->
+      <ServiceInstall Id="InstallNativeRenderer" Name="VisualTeX.NativeRender"
+                      DisplayName="VisualTeX Native Rendering" Type="ownProcess" Start="auto"
+                      Account="NT SERVICE\VisualTeX.NativeRender" ErrorControl="normal" Vital="yes"
+                      Description="Private native equation rendering for VisualTeX; does not share the interactive MathType process." />
+      <ServiceControl Id="ControlNativeRenderer" Name="VisualTeX.NativeRender"
+                      Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+      <RegistryValue Root="HKLM" Key="Software\VisualTeX\NativeRender" Name="InstallPath" Value="[NATIVERENDERFOLDER]" Type="string" />
+      <RegistryValue Root="HKLM" Key="Software\VisualTeX\NativeRender" Name="ProductCode" Value="[ProductCode]" Type="string" />
+    </Component>
+    <Component Id="NativeRenderPrivateData" Directory="NativeRenderData"
+               Guid="349B1993-26FD-4E46-B588-923780AB8A22" Bitness="always64">
+      <!-- A service SID is deterministic for its service name on every machine.
+           Formula scratch data is not readable or writable by interactive users. -->
+      <CreateFolder>
+        <PermissionEx Sddl="D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;S-1-5-80-3568014781-357338252-412558032-1798669891-843860098)" />
+      </CreateFolder>
+      <CreateFolder Directory="NativeRenderJobs">
+        <PermissionEx Sddl="D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;S-1-5-80-3568014781-357338252-412558032-1798669891-843860098)" />
+      </CreateFolder>
+      <RemoveFile Id="RemoveRenderLog" Name="service.log" On="uninstall" />
+      <RemoveFolder Id="RemoveRenderJobs" Directory="NativeRenderJobs" On="uninstall" />
+      <RemoveFolder Id="RemoveRenderData" On="uninstall" />
+      <RegistryValue Root="HKLM" Key="Software\VisualTeX\NativeRender" Name="PrivateDataVersion" Value="1" Type="integer" KeyPath="yes" />
+    </Component>
+  </Package>
+</Wix>

@@ -2543,8 +2543,7 @@ internal static partial class Program
                 WaitForInstalledOmmlMathTypeConversion(
                     tracePath,
                     "source=VisualTeX target=MathType",
-                    mathTypeBaseline,
-                    allowTransientMathTypeProcess: true);
+                    mathTypeBaseline);
             System.Windows.Forms.Application.DoEvents();
             Thread.Sleep(500);
             conversionWatch.Stop();

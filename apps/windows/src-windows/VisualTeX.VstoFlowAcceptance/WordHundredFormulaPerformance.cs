@@ -22,6 +22,7 @@ internal static partial class Program
         private Array _custom = Array.Empty<object>();
         private COMAddIns? _installedAddIns;
         private COMAddIn? _installedAddIn;
+        private bool _restoreInstalledAddInConnection;
         private bool _disposed;
 
         internal WordPerformanceHost(string? documentPath)
@@ -32,7 +33,8 @@ internal static partial class Program
             {
                 object addInIndex = "VisualTeX.WordVsto";
                 _installedAddIn = _installedAddIns.Item(ref addInIndex);
-                if (_installedAddIn.Connect) _installedAddIn.Connect = false;
+                _restoreInstalledAddInConnection = _installedAddIn.Connect;
+                if (_restoreInstalledAddInConnection) _installedAddIn.Connect = false;
             }
             catch
             {
@@ -79,7 +81,7 @@ internal static partial class Program
             _disposed = true;
             try { AddIn.OnDisconnection(ext_DisconnectMode.ext_dm_UserClosed, ref _custom); }
             catch { }
-            if (_installedAddIn is not null)
+            if (_installedAddIn is not null && _restoreInstalledAddInConnection)
             {
                 try { _installedAddIn.Connect = true; } catch { }
             }

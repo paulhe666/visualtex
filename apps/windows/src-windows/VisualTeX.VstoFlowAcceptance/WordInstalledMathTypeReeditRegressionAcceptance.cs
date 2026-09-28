@@ -431,8 +431,7 @@ internal static partial class Program
             WaitForInstalledOmmlMathTypeConversion(
                 tracePath,
                 "source=VisualTeX target=MathType",
-                mathTypeBaseline,
-                allowTransientMathTypeProcess: true);
+                mathTypeBaseline);
             AssertEqual(0, CountInstalledVisualTeXOleShapes(document),
                 "Document1 VisualTeX→MathType left the source VisualTeX object behind.");
             AssertEqual(1, CountMathTypeOleShapes(document),
@@ -480,8 +479,7 @@ internal static partial class Program
             WaitForInstalledOmmlMathTypeConversion(
                 tracePath,
                 "source=VisualTeX target=MathType",
-                mathTypeBaseline,
-                allowTransientMathTypeProcess: true);
+                mathTypeBaseline);
             AssertEqual(0, CountInstalledVisualTeXOleShapes(document),
                 "Document1 second VisualTeX→MathType left the VisualTeX source object behind.");
             AssertEqual(1, CountMathTypeOleShapes(document),

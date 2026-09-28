@@ -1,16 +1,13 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32;
 
-namespace VisualTeX.WindowsOleBridge;
+namespace VisualTeX.NativeRenderWorker;
 
 /// <summary>
-/// Isolated MathType MathPage renderer used by the Word VSTO add-in. MathPage.wll
-/// is legacy native code and can terminate a host process with AccessViolation for
-/// malformed/unsupported input. Running it in this already-shipped sidecar keeps
-/// WINWORD.EXE outside that failure boundary while still producing MathType's own
-/// WMF presentation, dimensions and baseline.
+/// Native rendering implementation hosted only by the dedicated service worker.
+/// The worker's session, identity and owned job isolate legacy MathPage failures
+/// from Office and the interactive MathType application.
 /// </summary>
 internal static class MathTypeNativePreviewCommand
 {
@@ -63,7 +60,6 @@ internal static class MathTypeNativePreviewCommand
     private sealed class Request
     {
         public string ResultPath { get; set; } = string.Empty;
-        public string MathTypeServerPath { get; set; } = string.Empty;
         public List<RequestItem> Items { get; set; } = new();
     }
 
@@ -91,7 +87,7 @@ internal static class MathTypeNativePreviewCommand
         public int WordPosition { get; set; }
     }
 
-    internal static int Run(string manifestPath)
+    internal static int Run(string manifestPath, string requiredPrivateRuntimeRoot)
     {
         if (string.IsNullOrWhiteSpace(manifestPath) || !File.Exists(manifestPath))
             return 2;
@@ -118,19 +114,21 @@ internal static class MathTypeNativePreviewCommand
         PrivateRuntimeScope? privateRuntimeScope = null;
         try
         {
-            var mathPage = ResolveMathPagePath(request.MathTypeServerPath);
-            if (mathPage is null)
+            var mathPage = Path.Combine(Path.GetFullPath(requiredPrivateRuntimeRoot), "MathPage", "64", "MathPage.wll");
+            if (mathPage is null || !File.Exists(mathPage)
+                || !IsNativeLibraryCompatibleWithCurrentProcess(mathPage))
             {
                 response.Error = "MathType MathPage.wll is not installed.";
                 return WriteResponse(request.ResultPath, response, 3);
             }
 
-            if (IsPrivateMathPagePath(mathPage))
+            // Discovery is confined to this exact bundled dependency tree.
             {
                 var runtimeDirectory = Path.GetDirectoryName(mathPage);
                 if (!string.IsNullOrWhiteSpace(runtimeDirectory))
                     privateDllDirectoryApplied = SetDllDirectoryW(runtimeDirectory);
                 if (!PrivateRuntimeScope.TryCreate(
+                        requiredPrivateRuntimeRoot,
                         mathPage,
                         out privateRuntimeScope,
                         out var privateRuntimeError))
@@ -265,14 +263,11 @@ internal static class MathTypeNativePreviewCommand
         "{0002CE03-0000-0000-C000-000000000046}";
     private const string PrivateRuntimeMutexName =
         @"Local\VisualTeX.PrivateMathTypeRuntimeBootstrap.v1";
-    private const string PrivateRuntimeRootEnvironment =
-        "VISUALTEX_MATHTYPE_RUNTIME_ROOT";
 
     private sealed class PrivateRuntimeScope : IDisposable
     {
         private readonly Mutex _mutex;
         private readonly string _virtualSessionPath;
-        private readonly Process? _bootstrapProcess;
         private IntPtr _virtualLocalMachineHandle;
         private IntPtr _virtualClassesRootHandle;
         private bool _ownsMutex;
@@ -284,7 +279,6 @@ internal static class MathTypeNativePreviewCommand
             Mutex mutex,
             bool ownsMutex,
             string virtualSessionPath,
-            Process? bootstrapProcess,
             IntPtr virtualLocalMachineHandle,
             IntPtr virtualClassesRootHandle,
             bool localMachineOverridden,
@@ -293,7 +287,6 @@ internal static class MathTypeNativePreviewCommand
             _mutex = mutex;
             _ownsMutex = ownsMutex;
             _virtualSessionPath = virtualSessionPath;
-            _bootstrapProcess = bootstrapProcess;
             _virtualLocalMachineHandle = virtualLocalMachineHandle;
             _virtualClassesRootHandle = virtualClassesRootHandle;
             _localMachineOverridden = localMachineOverridden;
@@ -301,20 +294,17 @@ internal static class MathTypeNativePreviewCommand
         }
 
         internal static bool TryCreate(
+            string runtimeRoot,
             string mathPagePath,
             out PrivateRuntimeScope? scope,
             out string error)
         {
             scope = null;
             error = string.Empty;
-            if (!TryResolvePrivateRuntimeRoot(
-                    mathPagePath,
-                    out var runtimeRoot,
-                    out error))
+            if (!ValidatePrivateRuntime(runtimeRoot, mathPagePath, out error))
                 return false;
 
             Mutex? mutex = null;
-            Process? bootstrapProcess = null;
             string? virtualSessionPath = null;
             IntPtr virtualLocalMachineHandle = IntPtr.Zero;
             IntPtr virtualClassesRootHandle = IntPtr.Zero;
@@ -382,27 +372,16 @@ internal static class MathTypeNativePreviewCommand
                         $"VisualTeX private MathType virtual HKCR override failed; status {overrideStatus}.");
                 classesRootOverridden = true;
 
-                // MathPage normally discovers and launches MathType through the
-                // machine-wide class registration. Launch the private RPC server
-                // explicitly instead: it registers its class factory with COM,
-                // while the process-local HKCR view is a fallback for the short
-                // startup race. Neither mechanism changes the user's registry.
-                bootstrapProcess = Process.Start(new ProcessStartInfo
-                {
-                    FileName = serverPath,
-                    Arguments = "-mtrpc",
-                    WorkingDirectory = runtimeRoot,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                }) ?? throw new InvalidOperationException(
-                    "VisualTeX could not start its private MathType RPC renderer.");
+                // MTInitAPI owns launch-as-needed. Starting MathType explicitly
+                // for every sidecar also launches it when its RPC server already
+                // exists; MathType forwards that second launch to its editor and
+                // opens an Untitled window. Keep discovery process-local, and
+                // let MathPage connect to or start the renderer exactly once.
 
                 scope = new PrivateRuntimeScope(
                     mutex,
                     ownsMutex,
                     virtualSessionPath,
-                    bootstrapProcess,
                     virtualLocalMachineHandle,
                     virtualClassesRootHandle,
                     localMachineOverridden,
@@ -426,7 +405,6 @@ internal static class MathTypeNativePreviewCommand
                     RegCloseKey(virtualClassesRootHandle);
                 if (virtualLocalMachineHandle != IntPtr.Zero)
                     RegCloseKey(virtualLocalMachineHandle);
-                bootstrapProcess?.Dispose();
                 if (!string.IsNullOrWhiteSpace(virtualSessionPath))
                     DeletePrivateVirtualRegistry(virtualSessionPath!);
                 if (ownsMutex && mutex is not null)
@@ -464,7 +442,6 @@ internal static class MathTypeNativePreviewCommand
                 RegCloseKey(_virtualLocalMachineHandle);
                 _virtualLocalMachineHandle = IntPtr.Zero;
             }
-            _bootstrapProcess?.Dispose();
             DeletePrivateVirtualRegistry(_virtualSessionPath);
             if (_ownsMutex)
             {
@@ -473,74 +450,6 @@ internal static class MathTypeNativePreviewCommand
             }
             _mutex.Dispose();
         }
-    }
-
-    private static bool TryResolvePrivateRuntimeRoot(
-        string mathPagePath,
-        out string runtimeRoot,
-        out string error)
-    {
-        runtimeRoot = string.Empty;
-        error = string.Empty;
-        var candidates = new List<string>();
-        var overrideRoot = Environment.GetEnvironmentVariable(
-            PrivateRuntimeRootEnvironment);
-        if (!string.IsNullOrWhiteSpace(overrideRoot))
-        {
-            try
-            {
-                candidates.Add(Path.GetFullPath(
-                    Environment.ExpandEnvironmentVariables(
-                        overrideRoot.Trim().Trim('"'))));
-            }
-            catch { }
-        }
-
-        try
-        {
-            var directory = new DirectoryInfo(
-                Path.GetDirectoryName(Path.GetFullPath(mathPagePath))!);
-            if ((string.Equals(directory.Name, "64", StringComparison.OrdinalIgnoreCase)
-                 || string.Equals(directory.Name, "32", StringComparison.OrdinalIgnoreCase))
-                && directory.Parent is not null
-                && string.Equals(
-                    directory.Parent.Name,
-                    "MathPage",
-                    StringComparison.OrdinalIgnoreCase)
-                && directory.Parent.Parent is not null)
-            {
-                candidates.Add(directory.Parent.Parent.FullName);
-            }
-            else if (string.Equals(
-                         directory.Name,
-                         "mathtype-runtime",
-                         StringComparison.OrdinalIgnoreCase))
-            {
-                candidates.Add(directory.FullName);
-            }
-        }
-        catch { }
-
-        var bundledRuntimeRoot = Path.Combine(
-            AppContext.BaseDirectory,
-            "mathtype-runtime");
-        if (IsPathWithinRoot(mathPagePath, bundledRuntimeRoot))
-            candidates.Insert(0, bundledRuntimeRoot);
-
-        foreach (var candidate in candidates
-                     .Where(value => !string.IsNullOrWhiteSpace(value))
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            if (ValidatePrivateRuntime(candidate, mathPagePath, out var validationError))
-            {
-                runtimeRoot = Path.GetFullPath(candidate);
-                return true;
-            }
-            error = validationError;
-        }
-        if (string.IsNullOrWhiteSpace(error))
-            error = "VisualTeX private MathType runtime root could not be resolved.";
-        return false;
     }
 
     private static bool ValidatePrivateRuntime(
@@ -561,6 +470,7 @@ internal static class MathTypeNativePreviewCommand
         {
             "MathType.exe",
             "MT7.dsc",
+            Path.Combine("Language", "MT7chs.dll"),
             Path.Combine("System", "MathTypeLib.exe"),
             Path.Combine("System", "MT6.dll"),
             Path.Combine("System", "64", "MT6.dll"),
@@ -596,6 +506,30 @@ internal static class MathTypeNativePreviewCommand
         {
             error = "MathPage.wll is outside the resolved VisualTeX private MathType runtime.";
             return false;
+        }
+        // RegOverridePredefKey is process-local; the native MathType child does
+        // not inherit it. Do not start a reduced child that would fall back to
+        // English and overwrite the standalone application's saved locale.
+        using var user = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry32);
+        using var configuration = user.OpenSubKey(@"Software\Design Science\DSMT7\Config");
+        var appLanguage = configuration?.GetValue("AppLang") as string;
+        if (!string.IsNullOrWhiteSpace(appLanguage))
+        {
+            var parts = appLanguage.Split(',');
+            var language = parts.Length == 2 ? parts[1].Trim() : string.Empty;
+            if (language.Length != 3 || !language.All(character =>
+                    character is >= 'A' and <= 'Z' or >= 'a' and <= 'z'))
+            {
+                error = "MathType's saved language is invalid; the private renderer will not change it.";
+                return false;
+            }
+            if (!string.Equals(language, "ENU", StringComparison.OrdinalIgnoreCase)
+                && !File.Exists(Path.Combine(root, "Language", $"MT7{language}.dll")))
+            {
+                error = $"The private MathType renderer does not include the saved {language} language. "
+                    + "Use a complete MathType installation; the saved language was not changed.";
+                return false;
+            }
         }
         return true;
     }
@@ -804,136 +738,6 @@ internal static class MathTypeNativePreviewCommand
             return exitCode == 0 ? 5 : exitCode;
         }
         return exitCode;
-    }
-
-    private static bool IsPrivateMathPagePath(string mathPagePath)
-    {
-        var overrideRoot = Environment.GetEnvironmentVariable(
-            PrivateRuntimeRootEnvironment);
-        if (!string.IsNullOrWhiteSpace(overrideRoot))
-        {
-            try
-            {
-                var expandedRoot = Environment.ExpandEnvironmentVariables(
-                    overrideRoot.Trim().Trim('"'));
-                if (IsPathWithinRoot(mathPagePath, expandedRoot)) return true;
-            }
-            catch { }
-        }
-
-        var bundledRuntimeRoot = Path.Combine(
-            AppContext.BaseDirectory,
-            "mathtype-runtime");
-        return IsPathWithinRoot(mathPagePath, bundledRuntimeRoot);
-    }
-
-    private static string? ResolveMathPagePath(string? mathTypeServerPath)
-    {
-        var overridePath = Environment.GetEnvironmentVariable(
-            "VISUALTEX_MATHTYPE_MATHPAGE_PATH");
-        if (!string.IsNullOrWhiteSpace(overridePath))
-        {
-            var expanded = Environment.ExpandEnvironmentVariables(
-                overridePath.Trim().Trim('"'));
-            if (File.Exists(expanded)
-                && IsNativeLibraryCompatibleWithCurrentProcess(expanded))
-                return expanded;
-        }
-
-        // The preview command runs in the packaged x64 sidecar, independently of
-        // Word's bitness. Resolve MathPage for this process rather than assuming the
-        // Office/VSTO architecture. This keeps x86 Word compatible with an x64
-        // renderer while rejecting a wrong-bitness override before LoadLibrary.
-        var architecture = Environment.Is64BitProcess ? "64" : "32";
-        var candidates = new List<string>();
-        if (!string.IsNullOrWhiteSpace(mathTypeServerPath))
-        {
-            var expandedServer = Environment.ExpandEnvironmentVariables(
-                mathTypeServerPath.Trim().Trim('"'));
-            var installRoot = Path.GetDirectoryName(expandedServer);
-            if (!string.IsNullOrWhiteSpace(installRoot))
-                AddMathPageCandidates(candidates, installRoot!, architecture);
-        }
-        foreach (var root in new[]
-                 {
-                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                 })
-        {
-            if (string.IsNullOrWhiteSpace(root)) continue;
-            AddMathPageCandidates(
-                candidates,
-                Path.Combine(root, "MathType"),
-                architecture);
-            AddMathPageCandidates(
-                candidates,
-                Path.Combine(root, "WIRIS", "MathType"),
-                architecture);
-        }
-        var installedMathPage = candidates
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault(path =>
-                File.Exists(path)
-                && IsNativeLibraryCompatibleWithCurrentProcess(path));
-        if (!string.IsNullOrWhiteSpace(installedMathPage))
-            return installedMathPage;
-
-        // VisualTeX's reduced runtime is an offline fallback only. It must never
-        // replace a complete MathType installation, because it intentionally has
-        // no UI languages, preferences or translators.
-        var bundledRuntimeRoot = Path.Combine(
-            AppContext.BaseDirectory,
-            "mathtype-runtime");
-        foreach (var bundledMathPage in new[]
-                 {
-                     Path.Combine(
-                         bundledRuntimeRoot,
-                         "MathPage",
-                         architecture,
-                         "MathPage.wll"),
-                     Path.Combine(bundledRuntimeRoot, "MathPage", "MathPage.wll"),
-                     Path.Combine(bundledRuntimeRoot, "MathPage.wll"),
-                 })
-        {
-            if (File.Exists(bundledMathPage)
-                && IsNativeLibraryCompatibleWithCurrentProcess(bundledMathPage))
-                return bundledMathPage;
-        }
-        return null;
-    }
-
-    private static void AddMathPageCandidates(
-        ICollection<string> candidates,
-        string installRoot,
-        string architecture)
-    {
-        if (string.IsNullOrWhiteSpace(installRoot)) return;
-        candidates.Add(Path.Combine(
-            installRoot,
-            "MathPage",
-            architecture,
-            "MathPage.wll"));
-        candidates.Add(Path.Combine(installRoot, "MathPage", "MathPage.wll"));
-        candidates.Add(Path.Combine(installRoot, "Office Support", "MathPage.wll"));
-        candidates.Add(Path.Combine(installRoot, "MathPage.wll"));
-
-        // MathType point releases have used more than one MathPage subdirectory.
-        // Search only the bounded MathPage subtree, never an entire Program Files
-        // hierarchy, and validate PE architecture before loading a candidate.
-        var mathPageRoot = Path.Combine(installRoot, "MathPage");
-        try
-        {
-            if (!Directory.Exists(mathPageRoot)) return;
-            foreach (var path in Directory.GetFiles(
-                         mathPageRoot,
-                         "MathPage.wll",
-                         SearchOption.AllDirectories))
-                candidates.Add(path);
-        }
-        catch
-        {
-            // Explicit candidates above remain usable when enumeration is denied.
-        }
     }
 
     private static bool IsNativeLibraryCompatibleWithCurrentProcess(string path)

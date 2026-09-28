@@ -70,8 +70,7 @@ internal static partial class Program
             var peakMathTypeProcessCount = WaitForInstalledOmmlMathTypeConversion(
                 tracePath,
                 "source=OMML target=MathType",
-                mathTypeBaseline,
-                allowTransientMathTypeProcess: true);
+                mathTypeBaseline);
             watch.Stop();
 
             ValidateUserOmmlMathTypeResult(document, expected, "live document");

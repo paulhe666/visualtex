@@ -46,21 +46,7 @@ internal static partial class Program
                 "1",
                 StringComparison.Ordinal);
 
-            mathTypeBaseline = SnapshotMathTypeProcessIds();
-            if (firstLeftOnly)
-            {
-                foreach (var processId in mathTypeBaseline)
-                {
-                    if (!MathTypeNativePreviewRenderer.IsControlledMathTypeRpcHelperProcess(processId))
-                        throw new InvalidOperationException(
-                            $"Blank-document first-left acceptance found a non-RPC MathType process before Word starts: pid={processId}.");
-                }
-            }
-            else if (mathTypeBaseline.Count != 0)
-            {
-                throw new InvalidOperationException(
-                    "Installed MathType regression acceptance requires MathType.exe process count to be zero before Word starts.");
-            }
+            mathTypeBaseline = SnapshotInteractiveMathTypeProcessIds();
             // The reverse-only gate validates the installed VSTO/Word conversion
             // path and does not need screenshot/UI interaction. Keep Word hidden so
             // the low-level double-click hook cannot compete with the COM driver.
@@ -1622,17 +1608,11 @@ internal static partial class Program
         IReadOnlyCollection<int> baseline,
         string stage)
     {
-        var started = SnapshotMathTypeProcessIds()
+        var started = SnapshotInteractiveMathTypeProcessIds()
             .Except(baseline)
             .ToArray();
-        AssertTrue(started.Length <= 1,
-            $"More than one MathType.exe process started during {stage}: {string.Join(", ", started)}.");
-        foreach (var processId in started)
-        {
-            AssertTrue(
-                MathTypeNativePreviewRenderer.IsControlledMathTypeRpcHelperProcess(processId),
-                $"Unexpected MathType.exe process started during {stage}: pid={processId}. Only one windowless -mtrpc preview helper is allowed.");
-        }
+        AssertEqual(0, started.Length,
+            $"VisualTeX started an interactive MathType process during {stage}: {string.Join(", ", started)}.");
     }
 
     private static void AssertInstalledMathTypeRpcHelpersEventuallyCleaned(
@@ -1643,7 +1623,7 @@ internal static partial class Program
         int[] started;
         do
         {
-            started = SnapshotMathTypeProcessIds()
+            started = SnapshotInteractiveMathTypeProcessIds()
                 .Except(baseline)
                 .ToArray();
             if (started.Length == 0) return;

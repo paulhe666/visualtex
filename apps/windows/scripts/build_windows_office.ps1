@@ -103,6 +103,7 @@ if (-not $SkipTests) {
 }
 
 & (Join-Path $PSScriptRoot "build_windows_ole_bridge.ps1") -Configuration $Configuration
+& (Join-Path $PSScriptRoot "build_windows_native_render.ps1") -Configuration $Configuration
 
 $msbuild = Get-Command msbuild.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
 if (-not $msbuild) {

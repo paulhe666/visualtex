@@ -43,40 +43,42 @@ internal static partial class Program
             "[MathType native single] timingsMs=" + string.Join(",", timings));
     }
 
-    private static void RunMathTypeNativePreviewSharedLifecycleAcceptance()
+    private static void RunMathTypeNativePreviewPrivateBoundaryAcceptance(string artifactRoot)
     {
-        AssertTrue(
-            MathTypeNativePreviewRenderer.IsMathTypeRpcCommandLine(
-                "\"C:\\Program Files (x86)\\MathType\\MathType.exe\" -mtrpc"),
-            "MathType helper classifier did not recognize the native -mtrpc command line.");
-        AssertTrue(
-            !MathTypeNativePreviewRenderer.IsMathTypeRpcCommandLine(
-                "\"C:\\Program Files (x86)\\MathType\\MathType.exe\""),
-            "MathType helper classifier would treat a normal user launch as an owned RPC helper.");
-        AssertTrue(
-            !MathTypeNativePreviewRenderer.IsMathTypeRpcCommandLine(
-                "\"C:\\Program Files (x86)\\MathType\\MathType.exe\" -Embedding"),
-            "MathType helper classifier would treat an OLE -Embedding server as the preview RPC helper.");
-
-        var baseline = SnapshotMathTypeProcessIds();
-        AssertEqual(0, baseline.Count,
-            "Shared MathType preview lifecycle acceptance requires no MathType process at start.");
-
-        MathTypeNativePreviewRenderer.AcquireSharedSession();
-        MathTypeNativePreviewRenderer.ReleaseSharedSession();
-
-        // The cold MathPage startup continues off-thread after Word has already
-        // disconnected. Give that intentionally non-blocking prewarm enough time
-        // to finish, then require its completion-side cleanup to remove every
-        // helper that was not present in the original baseline.
-        Thread.Sleep(7_000);
-        var remaining = SnapshotMathTypeProcessIds().Except(baseline).ToArray();
-        AssertEqual(0, remaining.Length,
-            "Closing Word during MathType preview prewarm left a windowless MathType helper behind: "
-            + string.Join(",", remaining));
-        Console.WriteLine(
-            "[MathType shared lifecycle] Immediate session release during cold prewarm left no MathType process behind.");
+        var baseline = SnapshotInteractiveMathTypeIdentities();
+        AssertTrue(MathTypeNativePreviewRenderer.IsAvailable, "The private render service is not running.");
+        // An already-open native editor is valid. Rendering must not start or
+        // terminate an engine in the interactive session.
+        RunMathTypeNativePreviewSinglePerformanceAcceptance(artifactRoot);
+        var after = SnapshotInteractiveMathTypeIdentities();
+        AssertTrue(baseline.Count == after.Count && baseline.All(pair =>
+                after.TryGetValue(pair.Key, out var created) && created == pair.Value),
+            "Private rendering changed the interactive MathType process identities.");
+        Console.WriteLine("[MathType private boundary] Native rendering preserved interactive process identities.");
     }
+
+    private static Dictionary<int, long> SnapshotInteractiveMathTypeIdentities()
+    {
+        using var current = System.Diagnostics.Process.GetCurrentProcess();
+        var result = new Dictionary<int, long>();
+        foreach (var name in new[] { "MathType", "MathTypeLib" })
+        foreach (var process in System.Diagnostics.Process.GetProcessesByName(name))
+        {
+            using (process)
+            {
+                try
+                {
+                    if (process.SessionId == current.SessionId)
+                        result.Add(process.Id, process.StartTime.ToUniversalTime().Ticks);
+                }
+                catch (InvalidOperationException) { }
+            }
+        }
+        return result;
+    }
+
+    private static HashSet<int> SnapshotInteractiveMathTypeProcessIds() =>
+        SnapshotInteractiveMathTypeIdentities().Keys.ToHashSet();
 
     private static void RunMathTypeNativePreviewComplexAcceptance(string artifactRoot)
     {

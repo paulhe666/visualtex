@@ -89,4 +89,8 @@ if (process.platform === "win32") {
       "-SkipTests",
     ], powershellEnvironment);
   }
+  run(powershell, [
+    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+    "scripts/verify_windows_native_render_package.ps1",
+  ], powershellEnvironment);
 }

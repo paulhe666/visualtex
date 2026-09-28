@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
+& (Join-Path $PSScriptRoot 'verify_windows_native_render_package.ps1')
 $resolvedTargetRoot = if ([string]::IsNullOrWhiteSpace($TargetRoot)) {
     Join-Path $root "src-tauri\target"
 } else {

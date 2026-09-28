@@ -392,7 +392,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private int _acceptanceEquationFormatReadCount;
     private object? _ribbonUi;
     private Office.COMAddIn? _comAddIn;
-    private bool _mathTypePreviewSessionAcquired;
 
     public string GetCustomUI(string ribbonId) =>
         OfficePluginLanguage.IsEnglish ? RibbonXmlEnglish : RibbonXml;
@@ -439,8 +438,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _sessionClient = new VisualTeXSessionClient();
         _lifetime = new CancellationTokenSource();
         _ = PrewarmCompanionAsync(_sessionClient, _lifetime.Token);
-        MathTypeNativePreviewRenderer.AcquireSharedSession();
-        _mathTypePreviewSessionAcquired = true;
         _application.WindowBeforeDoubleClick += OnWindowBeforeDoubleClick;
         _application.WindowSelectionChange += OnWindowSelectionChange;
         _application.WindowActivate += OnWindowActivate;
@@ -567,7 +564,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     }
     public bool GetFormulaFontSizeEnabled(Office.IRibbonControl control)
     {
-        try { return GetCachedSelectedFormulaFontSize().HasValue; }
+        if (Volatile.Read(ref _formulaFormatMutationDepth) > 0) return false;
+        try
+        {
+            // A selected OLE is an inspection candidate even when its host
+            // identity is unavailable. Only the explicit command may read and
+            // validate its MTEF; enabling this control does not claim the OLE.
+            return GetCachedSelectedFormulaFontSize().HasValue
+                || _formulaService?.IsSelectedOleFormulaCommandCandidate() == true;
+        }
         catch { return false; }
     }
     public void OnFormulaFontSizeChanged(Office.IRibbonControl control, string value) =>
@@ -576,7 +581,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         try
         {
-            var current = _formulaService?.GetSelectedFormulaFontSize()
+            var current = _formulaService?.ReadSelectedFormulaFontSizeForCommand()
                 ?? throw new InvalidOperationException(T("请先选择一个 VisualTeX 公式。", "Select a VisualTeX formula first."));
             ApplyFormulaFontSize(FormulaFontSize.PreviousPreset(current));
         }
@@ -592,7 +597,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     {
         try
         {
-            var current = _formulaService?.GetSelectedFormulaFontSize()
+            var current = _formulaService?.ReadSelectedFormulaFontSizeForCommand()
                 ?? throw new InvalidOperationException(T("请先选择一个 VisualTeX 公式。", "Select a VisualTeX formula first."));
             ApplyFormulaFontSize(FormulaFontSize.NextPreset(current));
         }
@@ -774,7 +779,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         return size;
     }
 
-    private void ScheduleFormulaFontControlsInvalidation(Selection selection)
+    private void ScheduleFormulaFontControlsInvalidation(
+        Selection selection,
+        bool contextChanged = false)
     {
         var dispatcher = _dispatcher;
         if (dispatcher is null || Volatile.Read(ref _formulaFormatMutationDepth) > 0) return;
@@ -782,18 +789,23 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
         if (!TryResolveFormulaRibbonOwnerBounds(selection, out var ownerStart, out var ownerEnd))
         {
+            var hadOwner = _lastFormulaRibbonOwnerStart != int.MinValue;
             _lastFormulaRibbonOwnerStart = int.MinValue;
             _lastFormulaRibbonOwnerEnd = int.MinValue;
-            // Ordinary prose-to-prose caret movement cannot change formula controls.
-            // If the controls are already disabled, do absolutely no Word/OMML work.
-            if (double.IsNaN(Volatile.Read(ref _cachedSelectedFormulaFontSize)))
+            // Unknown semantic size is not disabled state: an OLE command can
+            // remain enabled without a payload read. Invalidate when its target
+            // is left or the window/document context changes, but keep ordinary
+            // prose-to-prose movement free of redundant Ribbon refreshes.
+            if (!contextChanged && !hadOwner
+                && double.IsNaN(Volatile.Read(ref _cachedSelectedFormulaFontSize)))
                 return;
             Volatile.Write(ref _cachedSelectedFormulaFontSize, double.NaN);
             InvalidateFormulaFontControls();
             return;
         }
 
-        if (ownerStart == _lastFormulaRibbonOwnerStart
+        if (!contextChanged
+            && ownerStart == _lastFormulaRibbonOwnerStart
             && ownerEnd == _lastFormulaRibbonOwnerEnd
             && !double.IsNaN(Volatile.Read(ref _cachedSelectedFormulaFontSize)))
             return;
@@ -1754,7 +1766,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             selection = _application?.Selection;
             if (selection is not null)
-                ScheduleFormulaFontControlsInvalidation(selection);
+                ScheduleFormulaFontControlsInvalidation(selection, contextChanged: true);
         }
         catch { }
         finally { ReleaseComObject(selection); }
@@ -3555,18 +3567,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         $"mathtype-preflight-skipped latex={failure.Latex} error={failure.Error}");
                 }
 
-                // Prefer MathType's native MathPage geometry when the optional
-                // renderer is available. Machines without MathType already have a
-                // vector EMF from the converter, so the whole batch falls back to
-                // that existing presentation instead of failing or launching one
-                // native renderer attempt per formula during Word insertion.
+                // Complete native layout before mutating Word. A missing private
+                // service must not silently change the equation's layout engine.
                 var nativePreviewAvailable = MathTypeNativePreviewRenderer.IsAvailable;
                 if (!nativePreviewAvailable)
                 {
-                    SetStatus("未检测到 MathType 原生预览器，正在使用 VisualTeX 矢量预览写入 MathType 公式…");
-                    WriteRedrawAcceptanceLog(
-                        $"mathtype-preview-fallback reason=native-unavailable templates={rendered.Count} "
-                        + $"formulas={plan.Targets.Count}");
+                    throw new InvalidOperationException(MathTypeNativePreviewRenderer.UnavailableMessage);
                 }
                 else if (mathTypeStandalone.Count > 0)
                 {
@@ -3597,11 +3603,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
-                        SetStatus("MathType 原生预览未完整生成，正在整批使用 VisualTeX 矢量预览…");
-                        WriteRedrawAcceptanceLog(
-                            $"mathtype-preview-fallback reason=native-batch-incomplete "
-                            + $"native={nativePreviews.Count}/{mathTypeStandalone.Count} formulas={plan.Targets.Count} "
-                            + $"elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.IncompleteMessage);
                     }
                     else
                     {
@@ -4232,10 +4234,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 var nativePreviewAvailable = MathTypeNativePreviewRenderer.IsAvailable;
                 if (!nativePreviewAvailable)
                 {
-                    SetStatus("未检测到 MathType 原生预览器，正在使用 VisualTeX 矢量预览导入 MathType 公式…");
-                    WriteBulkAcceptanceLog(
-                        $"mathtype-preview-fallback reason=native-unavailable templates={rendered.Count} "
-                        + $"formulas={formulaRuns.Count}");
+                    throw new InvalidOperationException(MathTypeNativePreviewRenderer.UnavailableMessage);
                 }
                 else
                 {
@@ -4274,11 +4273,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
-                        SetStatus("MathType 原生预览未完整生成，正在整批使用 VisualTeX 矢量预览…");
-                        WriteBulkAcceptanceLog(
-                            $"mathtype-preview-fallback reason=native-batch-incomplete "
-                            + $"native={nativePreviews.Count}/{rendered.Count} formulas={formulaRuns.Count} "
-                            + $"elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
+                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.IncompleteMessage);
                     }
                     else
                     {
@@ -5301,11 +5296,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         Interlocked.Increment(ref _copyPasteWatchGeneration);
         Interlocked.Increment(ref _copyPasteRepairGeneration);
         ClearNativeOleTarget();
-        if (_mathTypePreviewSessionAcquired)
-        {
-            _mathTypePreviewSessionAcquired = false;
-            MathTypeNativePreviewRenderer.ReleaseSharedSession();
-        }
         _sessionClient?.Dispose();
         _dispatcher?.Dispose();
         _lifetime?.Dispose();
