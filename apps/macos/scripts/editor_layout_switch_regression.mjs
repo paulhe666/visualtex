@@ -450,6 +450,7 @@ async function main() {
       toolbarButtonSize: Boolean(document.querySelector('[data-formula-tool-button-size-setting]')),
       toolbarButtonPadding: Boolean(document.querySelector('[data-formula-tool-button-padding-setting]')),
       formulaRowVerticalInset: Boolean(document.querySelector('[data-formula-row-vertical-inset-setting]')),
+      sourceFontSize: Boolean(document.querySelector('[data-source-editor-font-size-setting]')),
       preview: Boolean(document.querySelector('[data-formula-inset-preview]')),
     })`);
     assert.deepEqual(
@@ -463,6 +464,7 @@ async function main() {
         toolbarButtonSize: false,
         toolbarButtonPadding: false,
         formulaRowVerticalInset: false,
+        sourceFontSize: false,
         preview: false,
       },
       JSON.stringify(nestedOptionsBeforeOpen),
@@ -476,6 +478,7 @@ async function main() {
     await waitForSelector('[data-formula-tool-button-size-setting]');
     await waitForSelector('[data-formula-tool-button-padding-setting]');
     await waitForSelector('[data-formula-row-vertical-inset-setting]');
+    await waitForSelector('[data-source-editor-font-size-setting]');
     await waitForSelector('[data-formula-inset-preview]');
 
     const defaultFormulaInsets = await evaluate(`(() => {
@@ -597,6 +600,20 @@ async function main() {
       JSON.stringify(defaultFormulaToolButtons),
     );
 
+    const defaultSourceFontSize = await evaluate(`(() => {
+      const input = document.querySelector('[data-source-editor-font-size-setting]');
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        value: Number(input?.value ?? -1),
+        persisted: persisted.sourceEditorFontSize ?? null,
+      };
+    })()`);
+    assert.equal(defaultSourceFontSize.value, 12, JSON.stringify(defaultSourceFontSize));
+    assert.ok(
+      defaultSourceFontSize.persisted === null || defaultSourceFontSize.persisted === 12,
+      JSON.stringify(defaultSourceFontSize),
+    );
+
     await evaluate(`(() => {
       const setRange = (selector, value) => {
         const input = document.querySelector(selector);
@@ -610,6 +627,7 @@ async function main() {
       setRange('[data-formula-row-vertical-inset-setting]', 11);
       setRange('[data-formula-tool-button-size-setting]', 64);
       setRange('[data-formula-tool-button-padding-setting]', 8);
+      setRange('[data-source-editor-font-size-setting]', 19);
     })()`);
     await sleep(100);
     const adjustedFormulaInsets = await evaluate(`(() => {
@@ -697,9 +715,23 @@ async function main() {
       },
       JSON.stringify(adjustedFormulaInsets),
     );
+    const adjustedSourceFontSize = await evaluate(`(() => {
+      const input = document.querySelector('[data-source-editor-font-size-setting]');
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        value: Number(input?.value ?? -1),
+        persisted: persisted.sourceEditorFontSize ?? null,
+      };
+    })()`);
+    assert.deepEqual(
+      adjustedSourceFontSize,
+      { value: 19, persisted: 19 },
+      JSON.stringify(adjustedSourceFontSize),
+    );
     const resetDispatch = await evaluate(`(() => {
       const insetReset = document.querySelector('[data-formula-inset-reset]');
       const toolbarReset = document.querySelector('[data-formula-tool-button-reset]');
+      const sourceFontReset = document.querySelector('[data-source-editor-font-size-reset]');
       insetReset?.dispatchEvent(new MouseEvent('click', {
         bubbles: true,
         cancelable: true,
@@ -710,14 +742,20 @@ async function main() {
         cancelable: true,
         composed: true,
       }));
+      sourceFontReset?.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }));
       return {
         insetReset: Boolean(insetReset),
         toolbarReset: Boolean(toolbarReset),
+        sourceFontReset: Boolean(sourceFontReset),
       };
     })()`);
     assert.deepEqual(
       resetDispatch,
-      { insetReset: true, toolbarReset: true },
+      { insetReset: true, toolbarReset: true, sourceFontReset: true },
       JSON.stringify(resetDispatch),
     );
     await sleep(100);
@@ -725,6 +763,7 @@ async function main() {
       const size = document.querySelector('[data-formula-tool-button-size-setting]');
       const padding = document.querySelector('[data-formula-tool-button-padding-setting]');
       const rowVertical = document.querySelector('[data-formula-row-vertical-inset-setting]');
+      const sourceFontSize = document.querySelector('[data-source-editor-font-size-setting]');
       const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
       return {
         insetLeft: persisted.formulaInsetLeft ?? null,
@@ -735,6 +774,8 @@ async function main() {
         persistedSize: persisted.formulaToolButtonSize ?? null,
         persistedPadding: persisted.formulaToolButtonPadding ?? null,
         persistedRowVerticalInset: persisted.formulaRowVerticalInset ?? null,
+        sourceFontSize: Number(sourceFontSize?.value ?? -1),
+        persistedSourceFontSize: persisted.sourceEditorFontSize ?? null,
       };
     })()`);
     assert.deepEqual(
@@ -748,6 +789,8 @@ async function main() {
         persistedSize: 52,
         persistedPadding: 2,
         persistedRowVerticalInset: 5,
+        sourceFontSize: 12,
+        persistedSourceFontSize: 12,
       },
       JSON.stringify(resetCustomizationState),
     );
@@ -868,6 +911,7 @@ async function main() {
       toolbarButtonSize: Boolean(document.querySelector('[data-formula-tool-button-size-setting]')),
       toolbarButtonPadding: Boolean(document.querySelector('[data-formula-tool-button-padding-setting]')),
       formulaRowVerticalInset: Boolean(document.querySelector('[data-formula-row-vertical-inset-setting]')),
+      sourceFontSize: Boolean(document.querySelector('[data-source-editor-font-size-setting]')),
       preview: Boolean(document.querySelector('[data-formula-inset-preview]')),
     })`);
     assert.deepEqual(
@@ -882,6 +926,7 @@ async function main() {
         toolbarButtonSize: false,
         toolbarButtonPadding: false,
         formulaRowVerticalInset: false,
+        sourceFontSize: false,
         preview: false,
       },
       JSON.stringify(nestedOptionsAfterClose),
@@ -1698,6 +1743,34 @@ async function main() {
       new Set(standardTileStability.map(standardStabilitySignature)).size,
       1,
       JSON.stringify(standardTileStability),
+    );
+
+    await evaluate(`(() => {
+      const saved = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
+      saved.state = {
+        ...(saved.state ?? {}),
+        sourceOpen: true,
+        sourceEditorFontSize: 19,
+      };
+      localStorage.setItem('visualtex-editor', JSON.stringify(saved));
+      localStorage.setItem('visualtex-desktop-editor-source-open', 'true');
+    })()`);
+    await client.send("Page.reload", { ignoreCache: true });
+    await waitForSelector('.source-panel .cm-content');
+    const appliedSourceFontSize = await evaluate(`(() => {
+      const panel = document.querySelector('.source-panel');
+      const content = panel?.querySelector('.cm-content');
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        panelValue: Number(panel?.getAttribute('data-source-editor-font-size') ?? -1),
+        computed: content ? parseFloat(getComputedStyle(content).fontSize) : -1,
+        persisted: persisted.sourceEditorFontSize ?? null,
+      };
+    })()`);
+    assert.deepEqual(
+      appliedSourceFontSize,
+      { panelValue: 19, computed: 19, persisted: 19 },
+      JSON.stringify(appliedSourceFontSize),
     );
 
     console.log("Editor layout switch regression passed");

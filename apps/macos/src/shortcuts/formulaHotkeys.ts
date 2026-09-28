@@ -371,6 +371,7 @@ export function protectedFormulaHotkeyAction(
         save: "Save",
         greekMode: "Greek letter mode",
         settings: "Settings",
+        keypadMode: "Toggle keypad mode",
         resetZoom: "Reset zoom",
         zoomIn: "Zoom in",
         zoomOut: "Zoom out",
@@ -386,6 +387,7 @@ export function protectedFormulaHotkeyAction(
         save: "保存",
         greekMode: "希腊字母输入",
         settings: "设置",
+        keypadMode: "切换小键盘模式",
         resetZoom: "恢复缩放",
         zoomIn: "放大",
         zoomOut: "缩小",
@@ -408,6 +410,7 @@ export function protectedFormulaHotkeyAction(
     return labels.greekMode;
   }
   if (key === ",") return labels.settings;
+  if (key === "k" && chord.shiftKey) return labels.keypadMode;
   if (key === "0") return labels.resetZoom;
   if (key === "=" || key === "+") return labels.zoomIn;
   if (key === "-") return labels.zoomOut;

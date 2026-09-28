@@ -38,6 +38,7 @@ const supportedScenarios = [
   "geometry",
   "selection-geometry",
   "source-layout",
+  "source-font-size",
   "source-editor-ux",
   "source-preview-only",
   "source-auto-close-completion",
@@ -561,6 +562,106 @@ async function main() {
 
       console.log(JSON.stringify({ sState, sDialogState, lState }, null, 2));
       console.log("Targeted OCR model selection persistence regression passed");
+      return;
+    }
+
+    if (scenario === "source-font-size") {
+      const readSourceFontState = () => evaluate(`(() => {
+        const panel = document.querySelector(".source-panel");
+        const content = panel?.querySelector(".cm-content");
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}").state ?? {};
+        const slider = document.querySelector("[data-source-editor-font-size-setting]");
+        return {
+          computed: content ? parseFloat(getComputedStyle(content).fontSize) : -1,
+          panelValue: Number(panel?.getAttribute("data-source-editor-font-size") ?? -1),
+          persisted: persisted.sourceEditorFontSize ?? null,
+          sliderValue: slider ? Number(slider.value) : null,
+        };
+      })()`);
+
+      await evaluate(`(
+        document.querySelector('[data-classic-bottom-view="source"]') ||
+        document.querySelector(".source-toggle")
+      )?.click()`);
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector(".source-panel .cm-content")),
+      }))()`, "source editor before font customization");
+      await evaluate(`document.querySelector(".settings-toggle")?.click()`);
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector("[data-interface-customization-trigger]")),
+      }))()`, "settings for source font size");
+      await evaluate(`document.querySelector("[data-interface-customization-trigger]")?.click()`);
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector("[data-source-editor-font-size-setting]")),
+      }))()`, "source font-size slider");
+      await evaluate(`(() => {
+        const input = document.querySelector("[data-source-editor-font-size-setting]");
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+        setter?.call(input, "19");
+        input?.dispatchEvent(new Event("input", { bubbles: true }));
+        input?.dispatchEvent(new Event("change", { bubbles: true }));
+      })()`);
+      await sleep(100);
+      const configured = await readSourceFontState();
+      assert.deepEqual(
+        configured,
+        { computed: 19, panelValue: 19, persisted: 19, sliderValue: 19 },
+        JSON.stringify(configured),
+      );
+
+      await client.send("Page.reload", { ignoreCache: true });
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector("math-field")),
+      }))()`, "source font-size persistence reload");
+      await evaluate(`(
+        document.querySelector('[data-classic-bottom-view="source"]') ||
+        document.querySelector(".source-toggle")
+      )?.click()`);
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector(".source-panel .cm-content")),
+      }))()`, "persisted source editor font");
+      const reloaded = await readSourceFontState();
+      assert.deepEqual(
+        reloaded,
+        { computed: 19, panelValue: 19, persisted: 19, sliderValue: null },
+        JSON.stringify(reloaded),
+      );
+
+      await evaluate(`document.querySelector(".settings-toggle")?.click()`);
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector("[data-interface-customization-trigger]")),
+      }))()`, "settings for source font size");
+      await evaluate(`document.querySelector("[data-interface-customization-trigger]")?.click()`);
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector("[data-source-editor-font-size-setting]")),
+      }))()`, "source font-size slider");
+      const opened = await readSourceFontState();
+      assert.equal(opened.sliderValue, 19, JSON.stringify(opened));
+
+      await evaluate(`(() => {
+        const input = document.querySelector("[data-source-editor-font-size-setting]");
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+        setter?.call(input, "24");
+        input?.dispatchEvent(new Event("input", { bubbles: true }));
+        input?.dispatchEvent(new Event("change", { bubbles: true }));
+      })()`);
+      await sleep(100);
+      const adjusted = await readSourceFontState();
+      assert.deepEqual(
+        adjusted,
+        { computed: 24, panelValue: 24, persisted: 24, sliderValue: 24 },
+        JSON.stringify(adjusted),
+      );
+
+      await evaluate(`document.querySelector("[data-source-editor-font-size-reset]")?.click()`);
+      await sleep(100);
+      const reset = await readSourceFontState();
+      assert.deepEqual(
+        reset,
+        { computed: 12, panelValue: 12, persisted: 12, sliderValue: 12 },
+        JSON.stringify(reset),
+      );
+      console.log("Source editor custom font-size regression passed");
       return;
     }
 

@@ -1,5 +1,5 @@
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   AlertCircle,
   BookOpenText,
@@ -105,6 +105,8 @@ import {
   type UpdateCheckResult,
 } from "./update/updateService";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
+import { configureOfficeHotkeys } from "./runtime/officeHotkeys";
+import { useOfficeHotkeyStore } from "./stores/officeHotkeyStore";
 import {
   captureQuickOcrScreenshot,
   configureSilentOcr,
@@ -161,6 +163,9 @@ function App() {
   const [powerpointRegistrationRequired, setPowerpointRegistrationRequired] =
     useState(false);
   const [toast, setToast] = useState("");
+  const officeHotkeyBindings = useOfficeHotkeyStore(
+    (state) => state.bindings,
+  );
   const [savedPulse, setSavedPulse] = useState(false);
   const [editorHistoryBusy, setEditorHistoryBusy] = useState(false);
   const [desktopTopToolsMount, setDesktopTopToolsMount] =
@@ -505,6 +510,27 @@ function App() {
     const timeout = window.setTimeout(() => setToast(""), 1800);
     return () => window.clearTimeout(timeout);
   }, [toast]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    void configureOfficeHotkeys(officeHotkeyBindings).catch((error) => {
+      if (cancelled) return;
+      setToast(
+        error instanceof Error
+          ? error.message
+          : String(
+              error ||
+                (isEn
+                  ? "Unable to register Office hotkeys"
+                  : "无法注册 Office 快捷键"),
+            ),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [officeHotkeyBindings, isEn]);
 
   useEffect(() => {
     if (!isTauriEnvironment()) {

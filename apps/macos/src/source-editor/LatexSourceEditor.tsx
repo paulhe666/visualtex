@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { EditorState } from "@codemirror/state";
 import {
   foldGutter,
@@ -121,6 +121,9 @@ export function LatexSourceEditor({
   const [hasLivePreview, setHasLivePreview] = useState(true);
   const hasLivePreviewRef = useRef(true);
   const language = useEditorStore((state) => state.language);
+  const sourceEditorFontSize = useEditorStore(
+    (state) => state.sourceEditorFontSize,
+  );
   const isEn = language === "en";
   onLiveChangeRef.current = onLiveChange;
   onFocusChangeRef.current = onFocusChange;
@@ -152,7 +155,7 @@ export function LatexSourceEditor({
       ".cm-content": {
         caretColor: "var(--accent)",
         fontFamily: "'SFMono-Regular', Menlo, Consolas, monospace",
-        fontSize: "12px",
+        fontSize: "var(--source-editor-font-size, 12px)",
         lineHeight: "1.62",
         padding: "10px 0 18px",
       },
@@ -450,6 +453,12 @@ export function LatexSourceEditor({
         (compact && (dirty || syncError) ? " has-dirty-actions" : "") +
         (syncError ? " has-source-error" : "")
       }
+      style={
+        {
+          "--source-editor-font-size": `${sourceEditorFontSize}px`,
+        } as CSSProperties
+      }
+      data-source-editor-font-size={sourceEditorFontSize}
     >
       {showHeader && (
         <div className="source-panel-header">

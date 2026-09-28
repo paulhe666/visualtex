@@ -57,6 +57,9 @@ export const DEFAULT_THEME: Theme = "light";
 export const MIN_EDITOR_ZOOM = 0.2;
 export const MAX_EDITOR_ZOOM = 1.6;
 export const EDITOR_ZOOM_STEP = 0.05;
+export const DEFAULT_SOURCE_EDITOR_FONT_SIZE = 12;
+export const MIN_SOURCE_EDITOR_FONT_SIZE = 9;
+export const MAX_SOURCE_EDITOR_FONT_SIZE = 28;
 export const DEFAULT_FORMULA_INSET = 34;
 export const MIN_FORMULA_INSET = 0;
 export const MAX_FORMULA_INSET = 96;
@@ -147,6 +150,17 @@ function normalizeEditorZoom(value: unknown) {
       Math.round(zoom / EDITOR_ZOOM_STEP) * EDITOR_ZOOM_STEP * 100,
     ) / 100;
   return Math.min(MAX_EDITOR_ZOOM, Math.max(MIN_EDITOR_ZOOM, steppedZoom));
+}
+
+function normalizeSourceEditorFontSize(value: unknown) {
+  const size =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value)
+      : DEFAULT_SOURCE_EDITOR_FONT_SIZE;
+  return Math.min(
+    MAX_SOURCE_EDITOR_FONT_SIZE,
+    Math.max(MIN_SOURCE_EDITOR_FONT_SIZE, size),
+  );
 }
 
 function normalizeFormulaInset(value: unknown) {
@@ -346,6 +360,7 @@ interface EditorState {
   language: Language;
   zoom: number;
   sourceOpen: boolean;
+  sourceEditorFontSize: number;
   latexCodeFormat: LatexCodeFormat;
   latexFormatProfile: LatexFormatProfile;
   autoPairDelimiters: boolean;
@@ -383,6 +398,7 @@ interface EditorState {
   setLanguage: (language: Language) => void;
   setZoom: (zoom: number) => void;
   setSourceOpen: (open: boolean) => void;
+  setSourceEditorFontSize: (size: number) => void;
   setLatexCodeFormat: (format: LatexCodeFormat) => void;
   setLatexFormatProfile: (
     update:
@@ -434,6 +450,7 @@ export const useEditorStore = create<EditorState>()(
       language: "cn",
       zoom: 0.6,
       sourceOpen: false,
+      sourceEditorFontSize: DEFAULT_SOURCE_EDITOR_FONT_SIZE,
       latexCodeFormat: "mixed-inline-display",
       latexFormatProfile: { ...DEFAULT_LATEX_FORMAT_PROFILE },
       autoPairDelimiters: true,
@@ -530,6 +547,12 @@ export const useEditorStore = create<EditorState>()(
       setLanguage: (language) => set({ language }),
       setZoom: (zoom) => set({ zoom: normalizeEditorZoom(zoom) }),
       setSourceOpen: (sourceOpen) => set({ sourceOpen }),
+      setSourceEditorFontSize: (sourceEditorFontSize) =>
+        set({
+          sourceEditorFontSize: normalizeSourceEditorFontSize(
+            sourceEditorFontSize,
+          ),
+        }),
       setLatexCodeFormat: (latexCodeFormat) =>
         set({
           latexCodeFormat: isLatexCodeFormat(latexCodeFormat)
@@ -728,6 +751,12 @@ export const useEditorStore = create<EditorState>()(
             // Keep the user's current workspace choice when opening old files
             // that still carry the legacy settings.sourceOpen field.
             sourceOpen: state.sourceOpen,
+            sourceEditorFontSize:
+              settings.sourceEditorFontSize === undefined
+                ? state.sourceEditorFontSize
+                : normalizeSourceEditorFontSize(
+                    settings.sourceEditorFontSize,
+                  ),
             latexCodeFormat: "mixed-inline-display",
             latexFormatProfile:
               settings.latexFormatProfile === undefined
@@ -842,6 +871,7 @@ export const useEditorStore = create<EditorState>()(
             editorLayout: state.editorLayout,
             language: state.language,
             sourceOpen: state.sourceOpen,
+            sourceEditorFontSize: state.sourceEditorFontSize,
             autoPairDelimiters: state.autoPairDelimiters,
             showLineNumbers: state.showLineNumbers,
             highlightActiveLine: state.highlightActiveLine,
@@ -878,6 +908,7 @@ export const useEditorStore = create<EditorState>()(
         language: state.language,
         zoom: state.zoom,
         sourceOpen: state.sourceOpen,
+        sourceEditorFontSize: state.sourceEditorFontSize,
         latexCodeFormat: "mixed-inline-display",
         latexFormatProfile: state.latexFormatProfile,
         autoPairDelimiters: state.autoPairDelimiters,
@@ -923,6 +954,9 @@ export const useEditorStore = create<EditorState>()(
           editorLayout: normalizeEditorLayout(persisted.editorLayout),
           theme: normalizeTheme(persisted.theme),
           zoom: normalizeEditorZoom(persisted.zoom),
+          sourceEditorFontSize: normalizeSourceEditorFontSize(
+            persisted.sourceEditorFontSize,
+          ),
           latexCodeFormat: "mixed-inline-display",
           latexFormatProfile:
             persisted.latexFormatProfile === undefined

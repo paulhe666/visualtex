@@ -1,6 +1,7 @@
 pub mod background;
 pub mod certificate;
 pub mod formula_cache;
+pub mod hotkeys;
 pub mod lifecycle;
 pub mod macos_offline;
 pub mod macos_offline_installer;

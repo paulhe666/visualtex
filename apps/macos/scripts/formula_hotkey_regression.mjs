@@ -428,6 +428,8 @@ async function main() {
           const keycapRect = keycap?.getBoundingClientRect();
           resolve({
             rows: document.querySelectorAll(".formula-hotkey-binding-row").length,
+            officeActions: [...document.querySelectorAll("[data-office-hotkey-action]")]
+              .map((item) => item.getAttribute("data-office-hotkey-action")),
             hotkey: keycap?.textContent ?? "",
             keycapCenterDelta: rowRect && keycapRect
               ? Math.abs(
@@ -440,8 +442,71 @@ async function main() {
       }, 80);
     })`);
     assert.equal(managerState.rows, 10);
+    assert.deepEqual(managerState.officeActions, [
+      "word-image-inline",
+      "word-image-display",
+      "word-omml-inline",
+      "word-omml-display",
+      "powerpoint-svg-new",
+      "powerpoint-omml-inline",
+      "powerpoint-omml-display",
+    ]);
     assert.ok(managerState.hotkey);
     assert.ok(managerState.keycapCenterDelta <= 1, JSON.stringify(managerState));
+
+    const officeBindingState = await evaluate(`new Promise((resolve) => {
+      document.querySelector(
+        '[data-office-hotkey-action="word-omml-inline"] .formula-hotkey-binding-actions button',
+      )?.click();
+      setTimeout(() => {
+        document.dispatchEvent(new KeyboardEvent("keydown", {
+          code: "KeyU",
+          key: "u",
+          ctrlKey: true,
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        }));
+        setTimeout(() => {
+          const save = document.querySelector(
+            ".office-hotkey-recorder-dialog .formula-hotkey-recorder-footer .primary-button",
+          );
+          if (!save || save.disabled) {
+            resolve({
+              recorderClosed: false,
+              keycap: document.querySelector(".office-hotkey-recorder-dialog .formula-hotkey-capture-box kbd")?.textContent ?? "",
+              bindings: [],
+              formulaRows: document.querySelectorAll(".formula-hotkey-binding-row").length,
+              saveFound: Boolean(save),
+              saveDisabled: save?.disabled ?? null,
+              recorderText: document.querySelector(".office-hotkey-recorder-dialog")?.textContent ?? "",
+            });
+            return;
+          }
+          save.click();
+          setTimeout(() => {
+            const row = document.querySelector(
+              '[data-office-hotkey-action="word-omml-inline"]',
+            );
+            const stored = JSON.parse(
+              localStorage.getItem("visualtex-office-hotkeys-v1") || "{}",
+            );
+            resolve({
+              recorderClosed: !document.querySelector(".office-hotkey-recorder-dialog"),
+              keycap: row?.querySelector(":scope > kbd")?.textContent ?? "",
+              bindings: stored.state?.bindings ?? [],
+              formulaRows: document.querySelectorAll(".formula-hotkey-binding-row").length,
+            });
+          }, 100);
+        }, 50);
+      }, 50);
+    })`);
+    assert.equal(officeBindingState.recorderClosed, true, JSON.stringify(officeBindingState));
+    assert.match(officeBindingState.keycap, /U/);
+    assert.equal(officeBindingState.bindings.length, 1, JSON.stringify(officeBindingState));
+    assert.equal(officeBindingState.bindings[0].actionId, "word-omml-inline");
+    assert.equal(officeBindingState.bindings[0].chord.code, "KeyU");
+    assert.equal(officeBindingState.formulaRows, 10);
     await evaluate(`document.querySelector(".formula-hotkey-manager-dialog .dialog-header .icon-button")?.click()`);
 
     if (defaultsOnly) {

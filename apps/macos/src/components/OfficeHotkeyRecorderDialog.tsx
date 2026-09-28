@@ -1,58 +1,64 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import { AlertTriangle, Check, Keyboard, X } from "lucide-react";
-import { MathPreview } from "./MathPreview";
+import {
+  AlertTriangle,
+  Check,
+  FileText,
+  Keyboard,
+  Presentation,
+  X,
+} from "lucide-react";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyChordFromEvent,
   formulaHotkeyChordId,
   formulaHotkeyHasModifier,
-  formulaHotkeyTargetKindLabel,
   formulaHotkeyTargetLabel,
   protectedFormulaHotkeyAction,
   type FormulaHotkeyChord,
-  type FormulaHotkeyTarget,
 } from "../shortcuts/formulaHotkeys";
-import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
-import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
-import { useEditorStore } from "../stores/editorStore";
 import {
-  officeHotkeyAction,
   officeHotkeyActionLabel,
+  officeHotkeyAction,
+  officeHotkeySupportsCode,
+  type OfficeHotkeyActionDefinition,
 } from "../shortcuts/officeHotkeys";
 import { configureOfficeHotkeys } from "../runtime/officeHotkeys";
+import { useEditorStore } from "../stores/editorStore";
+import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
 
 interface Props {
-  target: FormulaHotkeyTarget | null;
+  action: OfficeHotkeyActionDefinition | null;
   onClose: () => void;
 }
 
-export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
+export function OfficeHotkeyRecorderDialog({ action, onClose }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
-  const bindings = useFormulaHotkeyStore((state) => state.bindings);
-  const setBinding = useFormulaHotkeyStore((state) => state.setBinding);
+  const language = useEditorStore((state) => state.language);
   const officeBindings = useOfficeHotkeyStore((state) => state.bindings);
-  const removeOfficeBinding = useOfficeHotkeyStore(
+  const setOfficeBinding = useOfficeHotkeyStore((state) => state.setBinding);
+  const formulaBindings = useFormulaHotkeyStore((state) => state.bindings);
+  const removeFormulaBinding = useFormulaHotkeyStore(
     (state) => state.removeBinding,
   );
-  const language = useEditorStore((state) => state.language);
-  const isEn = language === "en";
-  const existingBinding = target
-    ? bindings.find((binding) => binding.target.id === target.id) ?? null
-    : null;
   const [capturedChord, setCapturedChord] = useState<FormulaHotkeyChord | null>(
     null,
   );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const isEn = language === "en";
+  const existingBinding = action
+    ? officeBindings.find((binding) => binding.actionId === action.id) ?? null
+    : null;
 
   useEffect(() => {
     setCapturedChord(existingBinding?.chord ?? null);
     setSaveError("");
-  }, [target?.id, existingBinding?.id]);
+  }, [action?.id, existingBinding?.updatedAt]);
 
   useEffect(() => {
-    if (!target) return;
+    if (!action) return;
     const frame = window.requestAnimationFrame(() => dialogRef.current?.focus());
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
@@ -72,34 +78,36 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
       if (event.repeat || event.isComposing || event.key === "Process") return;
       if (event.getModifierState("AltGraph")) return;
       const chord = formulaHotkeyChordFromEvent(event);
-      if (chord) setCapturedChord(chord);
+      if (chord) {
+        setCapturedChord(chord);
+        setSaveError("");
+      }
     };
-
     document.addEventListener("keydown", handleKeyDown, true);
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [target, onClose]);
+  }, [action, onClose]);
 
   const conflicts = useMemo(() => {
-    if (!target || !capturedChord) return { formula: null, office: null };
+    if (!action || !capturedChord) return { office: null, formula: null };
     const chordId = formulaHotkeyChordId(capturedChord);
     return {
-      formula:
-        bindings.find(
-        (binding) =>
-          binding.target.id !== target.id &&
-          formulaHotkeyChordId(binding.chord) === chordId,
-        ) ?? null,
       office:
         officeBindings.find(
+          (binding) =>
+            binding.actionId !== action.id &&
+            formulaHotkeyChordId(binding.chord) === chordId,
+        ) ?? null,
+      formula:
+        formulaBindings.find(
           (binding) => formulaHotkeyChordId(binding.chord) === chordId,
         ) ?? null,
     };
-  }, [bindings, capturedChord, officeBindings, target]);
+  }, [action, capturedChord, formulaBindings, officeBindings]);
 
-  if (!target) return null;
+  if (!action) return null;
 
   const protectedAction = capturedChord
     ? protectedFormulaHotkeyAction(capturedChord, language)
@@ -107,33 +115,37 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   const hasModifier = capturedChord
     ? formulaHotkeyHasModifier(capturedChord)
     : false;
+  const supportedCode = capturedChord
+    ? officeHotkeySupportsCode(capturedChord.code)
+    : false;
   const canSave = Boolean(
-    capturedChord && hasModifier && !protectedAction && !saving,
+    capturedChord && hasModifier && supportedCode && !protectedAction && !saving,
   );
-  const targetLabel = formulaHotkeyTargetLabel(target, language);
-  const conflictLabel = conflicts.formula
-    ? formulaHotkeyTargetLabel(conflicts.formula.target, language)
-    : conflicts.office
-      ? officeHotkeyActionLabel(
-          officeHotkeyAction(conflicts.office.actionId),
-          language,
-        )
-      : null;
+  const actionLabel = officeHotkeyActionLabel(action, language);
+  const officeConflictLabel = conflicts.office
+    ? officeHotkeyActionLabel(
+        officeHotkeyAction(conflicts.office.actionId),
+        language,
+      )
+    : null;
 
   const saveBinding = async () => {
     if (!capturedChord || !canSave) return;
     setSaving(true);
     setSaveError("");
+    const chordId = formulaHotkeyChordId(capturedChord);
+    const nextBindings = [
+      { actionId: action.id, chord: capturedChord, updatedAt: Date.now() },
+      ...officeBindings.filter(
+        (binding) =>
+          binding.actionId !== action.id &&
+          formulaHotkeyChordId(binding.chord) !== chordId,
+      ),
+    ];
     try {
-      if (conflicts.office && isTauri()) {
-        await configureOfficeHotkeys(
-          officeBindings.filter(
-            (binding) => binding.actionId !== conflicts.office?.actionId,
-          ),
-        );
-      }
-      if (conflicts.office) removeOfficeBinding(conflicts.office.actionId);
-      setBinding(target, capturedChord);
+      if (isTauri()) await configureOfficeHotkeys(nextBindings);
+      if (conflicts.formula) removeFormulaBinding(conflicts.formula.id);
+      setOfficeBinding(action.id, capturedChord);
       onClose();
     } catch (error) {
       setSaveError(
@@ -142,8 +154,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
           : String(
               error ||
                 (isEn
-                  ? "Unable to replace the Office global hotkey."
-                  : "无法替换 Office 全局快捷键。"),
+                  ? "Unable to register this global hotkey."
+                  : "无法注册这个全局快捷键。"),
             ),
       );
     } finally {
@@ -151,22 +163,31 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
     }
   };
 
+  const conflictLabel = officeConflictLabel ??
+    (conflicts.formula
+      ? formulaHotkeyTargetLabel(conflicts.formula.target, language)
+      : null);
+
   return (
-    <div className="modal-backdrop formula-hotkey-modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div
+      className="modal-backdrop formula-hotkey-modal-backdrop"
+      role="presentation"
+      onMouseDown={onClose}
+    >
       <section
         ref={dialogRef}
-        className="formula-hotkey-recorder-dialog"
+        className="formula-hotkey-recorder-dialog office-hotkey-recorder-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="formula-hotkey-recorder-title"
+        aria-labelledby="office-hotkey-recorder-title"
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-header">
           <div>
-            <span className="eyebrow">HOT KEY</span>
-            <h2 id="formula-hotkey-recorder-title">
-              {isEn ? "Set formula hotkey" : "设置公式快捷键"}
+            <span className="eyebrow">OFFICE HOT KEY</span>
+            <h2 id="office-hotkey-recorder-title">
+              {isEn ? "Set Office hotkey" : "设置 Office 快捷键"}
             </h2>
           </div>
           <button
@@ -180,14 +201,21 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
         </header>
 
         <div className="formula-hotkey-recorder-content">
-          <div className="formula-hotkey-target-card">
+          <div className="formula-hotkey-target-card office-hotkey-target-card">
             <div className="formula-hotkey-target-preview">
-              <MathPreview latex={target.command.previewLatex} fit />
+              {action.host === "word" ? (
+                <FileText size={28} />
+              ) : (
+                <Presentation size={28} />
+              )}
             </div>
             <div>
-              <strong>{targetLabel}</strong>
-              <span>{formulaHotkeyTargetKindLabel(target, language)}</span>
-              <code>{target.command.command}</code>
+              <strong>{actionLabel}</strong>
+              <span>{action.host === "word" ? "Microsoft Word" : "Microsoft PowerPoint"}</span>
+              <code>
+                {isEn ? "Ribbon button: " : "Ribbon 按钮："}
+                {isEn ? action.ribbonLabelEn : action.ribbonLabelZh}
+              </code>
             </div>
           </div>
 
@@ -202,8 +230,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
             )}
             <span>
               {isEn
-                ? "Include Ctrl, Option/Alt or Command. Press Esc to cancel."
-                : "请加入 Ctrl、Option/Alt 或 Command；按 Esc 取消。"}
+                ? "This is a global shortcut and only runs when the matching Office app is frontmost."
+                : "这是全局快捷键，仅在对应 Office 应用位于前台时执行。"}
             </span>
           </div>
 
@@ -212,24 +240,32 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? "This would interfere with normal formula input. Add Ctrl, Option/Alt or Command; Shift can be used in addition."
-                  : "该组合会影响正常公式输入，请加入 Ctrl、Option/Alt 或 Command；Shift 可作为附加修饰键。"}
+                  ? "Add Ctrl, Option/Alt or Command; Shift can be used in addition."
+                  : "请加入 Ctrl、Option/Alt 或 Command；Shift 可作为附加修饰键。"}
               </span>
             </div>
           )}
-
+          {capturedChord && hasModifier && !supportedCode && (
+            <div className="formula-hotkey-message is-danger" role="alert">
+              <AlertTriangle size={16} />
+              <span>
+                {isEn
+                  ? "This key cannot be registered as a macOS global shortcut."
+                  : "这个按键无法注册为 macOS 全局快捷键。"}
+              </span>
+            </div>
+          )}
           {protectedAction && (
             <div className="formula-hotkey-message is-danger" role="alert">
               <AlertTriangle size={16} />
               <span>
                 {isEn
                   ? `This shortcut is reserved for ${protectedAction} and cannot be overridden.`
-                  : `该快捷键已保留用于“${protectedAction}”，不能被公式快捷键覆盖。`}
+                  : `该快捷键已保留用于“${protectedAction}”，不能覆盖。`}
               </span>
             </div>
           )}
-
-          {conflictLabel && !protectedAction && hasModifier && (
+          {conflictLabel && !protectedAction && hasModifier && supportedCode && (
             <div className="formula-hotkey-message is-warning" role="alert">
               <AlertTriangle size={16} />
               <span>
@@ -239,14 +275,13 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               </span>
             </div>
           )}
-
           {capturedChord && canSave && !conflictLabel && (
             <div className="formula-hotkey-message is-success">
               <Check size={16} />
               <span>
                 {isEn
-                  ? "Available in the visual formula editor."
-                  : "该快捷键可在可视化公式编辑区使用。"}
+                  ? "Available as a macOS global Office hotkey."
+                  : "可注册为 macOS 全局 Office 快捷键。"}
               </span>
             </div>
           )}
@@ -283,12 +318,12 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
                   ? "Registering…"
                   : "正在注册…"
                 : conflictLabel
-                ? isEn
-                  ? "Replace and assign"
-                  : "替换并绑定"
-                : isEn
-                  ? "Assign hotkey"
-                  : "绑定快捷键"}
+                  ? isEn
+                    ? "Replace and assign"
+                    : "替换并绑定"
+                  : isEn
+                    ? "Assign hotkey"
+                    : "绑定快捷键"}
             </button>
           </div>
         </footer>

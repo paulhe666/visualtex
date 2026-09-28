@@ -10556,6 +10556,7 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 
 .formula-hotkey-capture-box kbd,
 .formula-hotkey-binding-row > kbd,
+.office-hotkey-action-row > kbd,
 .formula-hotkey-context-heading span {
   display: inline-flex;
   align-items: center;
@@ -10669,8 +10670,88 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 
 .formula-hotkey-manager-content {
   min-height: 210px;
+  display: grid;
+  gap: 14px;
   padding: 14px 20px 18px;
   overflow-y: auto;
+}
+
+.office-hotkey-group,
+.formula-editor-hotkey-group {
+  display: grid;
+  gap: 8px;
+}
+
+.formula-hotkey-section-heading {
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent);
+}
+
+.formula-hotkey-section-heading strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.formula-hotkey-section-heading span {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.office-hotkey-action-list {
+  display: grid;
+  gap: 6px;
+}
+
+.office-hotkey-action-row {
+  min-height: 56px;
+  display: grid;
+  grid-template-columns: 42px minmax(170px, 1fr) auto 68px;
+  align-items: center;
+  gap: 11px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+}
+
+.office-hotkey-action-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.office-hotkey-action-row > kbd {
+  min-width: 54px;
+  min-height: 26px;
+  justify-self: center;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.office-hotkey-unassigned {
+  min-width: 54px;
+  justify-self: center;
+  color: var(--text-faint);
+  font-size: 9px;
+  text-align: center;
+}
+
+.office-hotkey-action-row .formula-hotkey-binding-actions {
+  min-width: 63px;
+  justify-content: flex-end;
+}
+
+.office-hotkey-target-card .formula-hotkey-target-preview {
+  color: var(--accent);
 }
 
 .formula-hotkey-empty-state {
@@ -11231,6 +11312,14 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
 @media (max-width: 680px) {
   .formula-hotkey-binding-row {
     grid-template-columns: 58px minmax(0, 1fr) auto;
+  }
+
+  .office-hotkey-action-row {
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+  }
+
+  .office-hotkey-action-row .formula-hotkey-binding-actions {
+    grid-column: 2 / -1;
   }
 
   .formula-hotkey-binding-actions {

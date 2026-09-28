@@ -3857,6 +3857,50 @@ end tell"#
     run_office_vba_script(script, "Office double-click edit macro")
 }
 
+pub(crate) fn run_office_hotkey_macro(
+    host: OfficeHost,
+    macro_name: &'static str,
+) -> Result<(), String> {
+    let allowed = matches!(
+        (host, macro_name),
+        (OfficeHost::Word, "VisualTeX_CreateInline")
+            | (OfficeHost::Word, "VisualTeX_CreateDisplay")
+            | (OfficeHost::Word, "VisualTeX_CreateNativeInline")
+            | (OfficeHost::Word, "VisualTeX_CreateNativeDisplay")
+            | (OfficeHost::Powerpoint, "VisualTeX_NewFormula")
+            | (
+                OfficeHost::Powerpoint,
+                "VisualTeX_NewInlineNativeEquation"
+            )
+            | (
+                OfficeHost::Powerpoint,
+                "VisualTeX_NewDisplayNativeEquation"
+            )
+    );
+    if !allowed {
+        return Err("Unsupported Office hotkey action".to_string());
+    }
+    let script = match host {
+        OfficeHost::Word => format!(
+            r#"with timeout of 1800 seconds
+tell application "Microsoft Word"
+if not (exists active document) then error "Microsoft Word has no active document"
+run VB macro macro name "{macro_name}"
+end tell
+end timeout"#,
+        ),
+        OfficeHost::Powerpoint => format!(
+            r#"with timeout of 1800 seconds
+tell application "Microsoft PowerPoint"
+if not (exists active presentation) then error "Microsoft PowerPoint has no active presentation"
+run VB macro macro name "{macro_name}" list of parameters {{}}
+end tell
+end timeout"#,
+        ),
+    };
+    run_office_vba_script(&script, "Office creation hotkey")
+}
+
 pub(crate) fn run_word_image_double_click_edit_macro() -> Result<(), String> {
     run_office_vba_script(
         r#"tell application "Microsoft Word"

@@ -2045,6 +2045,9 @@ pub fn run() {
                     if let Err(error) = quick_ocr::initialize(app.handle()) {
                         eprintln!("VisualTeX quick OCR initialization warning: {error}");
                     }
+                    if let Err(error) = office::hotkeys::initialize(app.handle()) {
+                        eprintln!("VisualTeX Office hotkey initialization warning: {error}");
+                    }
                     let office_state = office::initialize(app.handle(), office_ocr_state.clone())
                         .map_err(std::io::Error::other)?;
                     if let Err(error) = office::powerpoint_native::start_double_click_monitor(
@@ -2104,6 +2107,7 @@ pub fn run() {
             quick_ocr::capture_quick_ocr_screenshot,
             quick_ocr::wait_for_quick_ocr_system_screenshot,
             quick_ocr::configure_silent_ocr,
+            office::hotkeys::configure_office_hotkeys,
             set_app_theme,
             get_app_window_configuration,
             apply_app_window_configuration,

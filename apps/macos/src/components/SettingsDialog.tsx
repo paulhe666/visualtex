@@ -26,15 +26,18 @@ import {
   DEFAULT_FORMULA_ROW_VERTICAL_INSET,
   DEFAULT_FORMULA_TOOL_BUTTON_PADDING,
   DEFAULT_FORMULA_TOOL_BUTTON_SIZE,
+  DEFAULT_SOURCE_EDITOR_FONT_SIZE,
   EDITOR_ZOOM_STEP,
   MAX_FORMULA_INSET,
   MAX_FORMULA_ROW_VERTICAL_INSET,
   MAX_FORMULA_TOOL_BUTTON_PADDING,
   MAX_FORMULA_TOOL_BUTTON_SIZE,
+  MAX_SOURCE_EDITOR_FONT_SIZE,
   MIN_FORMULA_INSET,
   MIN_FORMULA_ROW_VERTICAL_INSET,
   MIN_FORMULA_TOOL_BUTTON_PADDING,
   MIN_FORMULA_TOOL_BUTTON_SIZE,
+  MIN_SOURCE_EDITOR_FONT_SIZE,
   useEditorStore,
 } from "../stores/editorStore";
 import { MathPreview } from "./MathPreview";
@@ -182,6 +185,9 @@ export function SettingsDialog({
   const highlightActiveLine = useEditorStore(
     (state) => state.highlightActiveLine,
   );
+  const sourceEditorFontSize = useEditorStore(
+    (state) => state.sourceEditorFontSize,
+  );
   const keypadMinimizeOnCopy = useEditorStore(
     (state) => state.keypadMinimizeOnCopy,
   );
@@ -209,6 +215,9 @@ export function SettingsDialog({
   );
   const setHighlightActiveLine = useEditorStore(
     (state) => state.setHighlightActiveLine,
+  );
+  const setSourceEditorFontSize = useEditorStore(
+    (state) => state.setSourceEditorFontSize,
   );
   const setKeypadMinimizeOnCopy = useEditorStore(
     (state) => state.setKeypadMinimizeOnCopy,
@@ -1103,6 +1112,56 @@ export function SettingsDialog({
                       </div>
                     </div>
                   </div>
+                </section>
+
+                <section
+                  className="formula-inset-customization source-editor-customization"
+                  aria-labelledby="source-editor-customization-title"
+                >
+                  <header className="formula-inset-customization-header">
+                    <div>
+                      <strong id="source-editor-customization-title">
+                        {isEn ? "Source editor" : "源码编辑器"}
+                      </strong>
+                      <small>
+                        {isEn
+                          ? "Adjust the LaTeX source text without changing formula size."
+                          : "仅调整 LaTeX 源码文字，不影响公式字号。"}
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary-button formula-inset-reset"
+                      data-source-editor-font-size-reset
+                      onClick={() =>
+                        setSourceEditorFontSize(
+                          DEFAULT_SOURCE_EDITOR_FONT_SIZE,
+                        )
+                      }
+                    >
+                      {isEn ? "Reset" : "恢复默认"}
+                    </button>
+                  </header>
+                  <label className="range-setting formula-inset-range">
+                    <span>
+                      <strong>{isEn ? "Text size" : "文字大小"}</strong>
+                      <small>{sourceEditorFontSize}px</small>
+                    </span>
+                    <input
+                      type="range"
+                      min={MIN_SOURCE_EDITOR_FONT_SIZE}
+                      max={MAX_SOURCE_EDITOR_FONT_SIZE}
+                      step="1"
+                      value={sourceEditorFontSize}
+                      data-source-editor-font-size-setting
+                      aria-label={
+                        isEn ? "Source editor text size" : "源码编辑器文字大小"
+                      }
+                      onChange={(event) =>
+                        setSourceEditorFontSize(Number(event.target.value))
+                      }
+                    />
+                  </label>
                 </section>
 
                 <label className="switch-row">

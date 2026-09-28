@@ -90,6 +90,7 @@ export interface FormulaDocument {
     editorLayout?: "standard" | "classic";
     language?: "cn" | "en";
     sourceOpen?: boolean;
+    sourceEditorFontSize?: number;
     autoPairDelimiters?: boolean;
     showLineNumbers?: boolean;
     highlightActiveLine?: boolean;
