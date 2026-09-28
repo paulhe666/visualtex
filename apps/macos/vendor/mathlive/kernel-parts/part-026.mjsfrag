@@ -1224,6 +1224,7 @@ If you are using Vue, this may be because you are using the runtime-only build o
   onSelectionDidChange() {
     var _a3, _b3;
     const model = this.model;
+    visualTexFinalizeSourceWrapperOnCaretExit(this);
     if (model.mathfield.hasFocus()) {
       this.keyboardDelegate.setValue(
         model.getValue(model.selection, "latex-expanded")

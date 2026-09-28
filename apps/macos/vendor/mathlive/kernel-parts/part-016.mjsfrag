@@ -1354,12 +1354,11 @@ var LatexModeEditor = class extends ModeEditor {
     else if (options.insertionMode === "insertAfter")
       model.collapseSelection("forward");
     const visualTexSourceWrapper = model.mathfield.visualTexSourceWrapper;
-    const visualTexSourceCaret = model.at(model.position);
-    const visualTexPreserveSourceCharacters = Boolean(
-      visualTexSourceWrapper?.group?.parent &&
-      (visualTexSourceCaret === visualTexSourceWrapper.group ||
-        visualTexSourceCaret?.parent === visualTexSourceWrapper.group)
-    );
+    const visualTexPreserveSourceCharacters =
+      visualTexSourceWrapperCaretIsInside(
+        model.mathfield,
+        visualTexSourceWrapper
+      );
     const newAtoms = [];
     for (const c of text)
       if (COMMAND_MODE_CHARACTERS.test(c) || visualTexPreserveSourceCharacters)

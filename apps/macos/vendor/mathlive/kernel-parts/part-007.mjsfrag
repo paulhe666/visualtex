@@ -1188,6 +1188,18 @@ var defaultExportHook = (_from, latex, _range) => {
     latex = `${CLIPBOARD_LATEX_BEGIN} ${latex} ${CLIPBOARD_LATEX_END}`;
   return latex;
 };
+function visualTexClipboardPlainText(mathfield, latex, exportRange) {
+  const formatter = mathfield.host == null ? void 0 : mathfield.host.visualTexClipboardFormatter;
+  if (typeof formatter !== "function") return null;
+  const wholeLine =
+    exportRange[0] <= 0 && exportRange[1] >= mathfield.model.lastOffset;
+  try {
+    const value = formatter({ latex, wholeLine });
+    return typeof value === "string" ? value : null;
+  } catch (e) {
+    return null;
+  }
+}
 var _ModeEditor = class _ModeEditor {
   constructor(name) {
     _ModeEditor._modes[name] = this;
@@ -1219,7 +1231,11 @@ var _ModeEditor = class _ModeEditor {
     const model = mathfield.model;
     const exportRange = model.selectionIsCollapsed ? [0, model.lastOffset] : range(model.selection);
     const latex = model.getValue(exportRange, format);
-    navigator.clipboard.writeText(latex).then(
+    const visualTexText =
+      format === "latex"
+        ? visualTexClipboardPlainText(mathfield, latex, exportRange)
+        : null;
+    navigator.clipboard.writeText(visualTexText != null ? visualTexText : latex).then(
       () => {
       },
       () => mathfield.model.announce("plonk")
@@ -1236,12 +1252,29 @@ var _ModeEditor = class _ModeEditor {
     const model = mathfield.model;
     const exportRange = model.selectionIsCollapsed ? [0, model.lastOffset] : range(model.selection);
     let atoms = model.getAtoms(exportRange);
-    if (atoms.every((x) => x.mode === "text" || !x.mode)) {
+    const allText = atoms.every((x) => x.mode === "text" || !x.mode);
+    const allLatex = atoms.every((x) => x.mode === "latex");
+    let latex = null;
+    let visualTexText = null;
+    if (!allLatex) {
+      if (atoms.length === 1 && atoms[0].verbatimLatex !== void 0)
+        latex = atoms[0].verbatimLatex;
+      else latex = model.getValue(exportRange, "latex-expanded");
+      visualTexText = visualTexClipboardPlainText(
+        mathfield,
+        latex,
+        exportRange
+      );
+    }
+    if (visualTexText != null && latex != null) {
+      ev.clipboardData.setData("application/x-latex", latex);
+      ev.clipboardData.setData("text/plain", visualTexText);
+    } else if (allText) {
       ev.clipboardData.setData(
         "text/plain",
         atoms.filter((x) => x instanceof TextAtom).map((x) => x.value).join("")
       );
-    } else if (atoms.every((x) => x.mode === "latex")) {
+    } else if (allLatex) {
       ev.clipboardData.setData(
         "text/plain",
         model.getAtoms(exportRange, { includeChildren: true }).map((x) => {
@@ -1249,11 +1282,7 @@ var _ModeEditor = class _ModeEditor {
           return (_a4 = x.value) != null ? _a4 : "";
         }).join("")
       );
-    } else {
-      let latex;
-      if (atoms.length === 1 && atoms[0].verbatimLatex !== void 0)
-        latex = atoms[0].verbatimLatex;
-      else latex = model.getValue(exportRange, "latex-expanded");
+    } else if (latex != null) {
       ev.clipboardData.setData("application/x-latex", latex);
       try {
         ev.clipboardData.setData(
@@ -1262,6 +1291,8 @@ var _ModeEditor = class _ModeEditor {
         );
       } catch (e) {
       }
+    }
+    if (visualTexText != null || !allText && !allLatex) {
       if (atoms.length === 1) {
         const atom = atoms[0];
         if (atom.type === "root" || atom.type === "group")

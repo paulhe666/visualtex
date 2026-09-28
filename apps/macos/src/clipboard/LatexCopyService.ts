@@ -722,6 +722,45 @@ export function formatFormulaLinesUniversal(
   return blocks.join("\n\n");
 }
 
+export function formatFormulaSelectionUniversal(
+  line: FormulaLine,
+  selectedLatex: string,
+  profile: LatexFormatProfile,
+  wholeLine: boolean,
+): string {
+  if (wholeLine) {
+    return formatFormulaLinesUniversal([line], profile);
+  }
+
+  const normalizedSelection = normalizeCanonicalUprightCommands(
+    String(selectedLatex ?? "").replace(/\r\n?/g, "\n"),
+  ).trim();
+  if (!normalizedSelection) return "";
+
+  const originalMultiline = rootInternalMultiline(
+    normalizeCanonicalUprightCommands(
+      String(line.latex ?? "").replace(/\r\n?/g, "\n"),
+    ).trim(),
+  );
+  if (originalMultiline) {
+    const rows = splitTopLevelRows(normalizedSelection);
+    const environment =
+      profile.multilineEnvironment + (profile.numbered ? "" : "*");
+    return wrapEnvironment(
+      environment,
+      formatRows(
+        rows.length ? rows : [normalizedSelection],
+        profile.multilineEnvironment === "align",
+      ),
+    );
+  }
+
+  return formatFormulaLinesUniversal(
+    [{ ...line, latex: normalizedSelection }],
+    profile,
+  );
+}
+
 export function formatLatexLines(
   logicalLines: readonly string[],
   format: LatexCodeFormat,

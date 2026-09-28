@@ -236,6 +236,10 @@ async function main() {
           modelDepth: field.getElementInfo(field.position)?.depth ?? null,
           pendingNativeSuggestion: field.dataset.pendingNativeSuggestion || "",
           sourceWrapperActive: Boolean(field._mathfield?.visualTexSourceWrapper?.group?.parent),
+          taggedSourceWrapperGroupCount:
+            field._mathfield?.model?.atoms?.filter(
+              (atom) => atom?.visualTexSourceWrapper,
+            ).length ?? 0,
           compositionSourceWrapperActive: Boolean(
             field._mathfield?.visualTexCompositionSourceWrapper?.group?.parent,
           ),
@@ -383,6 +387,182 @@ async function main() {
       `Chinese source content did not survive wrapper commit: ${JSON.stringify(accentWithChineseCommitted)}`,
     );
     assert.equal(accentWithChineseCommitted.mode, "math");
+
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.setValue("", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.dataset.visualtexAutoExitAccent = "false";
+      field.dataset.visualtexWrapperCancelInputCount = "0";
+      field.focus();
+      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+    })()`);
+    await typeRawCommand("vec");
+    await typeCharacter(" ", "Space", 32, 180);
+    const emptySourceBeforeExit = await state();
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.dataset.visualtexWrapperCancelInputCount = "0";
+      field.addEventListener("input", () => {
+        field.dataset.visualtexWrapperCancelInputCount = String(
+          Number(field.dataset.visualtexWrapperCancelInputCount || "0") + 1,
+        );
+      }, { once: true });
+      const mathfield = field._mathfield;
+      const group = mathfield.visualTexSourceWrapper?.group;
+      if (!group?.parent) throw new Error("Empty source wrapper missing before exit");
+      field.position = mathfield.model.offsetOf(group);
+    })()`);
+    await sleep(150);
+    const emptySourceAfterExit = await state();
+    const emptySourceCancelInputCount = await evaluate(
+      `Number(document.querySelector("math-field").dataset.visualtexWrapperCancelInputCount || "0")`,
+    );
+    assert.equal(emptySourceAfterExit.value, "");
+    assert.equal(emptySourceAfterExit.sourceWrapperActive, false);
+    assert.equal(emptySourceAfterExit.taggedSourceWrapperGroupCount, 0);
+    assert.equal(
+      emptySourceCancelInputCount,
+      1,
+      `Cancelling an empty source wrapper did not publish its content change: ${JSON.stringify({
+        emptySourceBeforeExit,
+        emptySourceAfterExit,
+        emptySourceCancelInputCount,
+      })}`,
+    );
+
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.setValue("a+", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.dataset.visualtexAutoExitAccent = "false";
+      field.focus();
+      field.position = field.lastOffset;
+      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+    })()`);
+    await typeRawCommand("hat");
+    await typeCharacter(" ", "Space", 32, 180);
+    await typeCharacter("x", "KeyX", 88, 100);
+    await typeCharacter("y", "KeyY", 89, 100);
+    const persistentAccentBeforeCaretExit = await state();
+    assert.equal(persistentAccentBeforeCaretExit.sourceWrapperActive, true);
+    assert.equal(persistentAccentBeforeCaretExit.taggedSourceWrapperGroupCount, 1);
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.position = 0;
+    })()`);
+    await sleep(150);
+    const persistentAccentAfterCaretExit = await state();
+    assert.equal(
+      persistentAccentAfterCaretExit.value,
+      "a+\\hat{xy}",
+      `Leaving a source wrapper changed its value: ${JSON.stringify({
+        persistentAccentBeforeCaretExit,
+        persistentAccentAfterCaretExit,
+      })}`,
+    );
+    assert.equal(
+      persistentAccentAfterCaretExit.position,
+      0,
+      `Finalizing a source wrapper stole the caret from its new location: ${JSON.stringify(
+        persistentAccentAfterCaretExit,
+      )}`,
+    );
+    assert.equal(persistentAccentAfterCaretExit.sourceWrapperActive, false);
+    assert.equal(persistentAccentAfterCaretExit.taggedSourceWrapperGroupCount, 0);
+    assert.equal(persistentAccentAfterCaretExit.rawInput, "");
+
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.setValue("", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.dataset.visualtexAutoExitAccent = "false";
+      field.focus();
+      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+    })()`);
+    await typeRawCommand("hat");
+    await typeCharacter(" ", "Space", 32, 180);
+    await typeCharacter("u", "KeyU", 85, 100);
+    await typeCharacter("v", "KeyV", 86, 100);
+    const sourceBeforeGroupBoundary = await state();
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      const mathfield = field._mathfield;
+      const group = mathfield.visualTexSourceWrapper?.group;
+      if (!group?.parent) throw new Error("Active source wrapper missing before boundary exit");
+      field.position = mathfield.model.offsetOf(group);
+    })()`);
+    await sleep(150);
+    const sourceAfterGroupBoundary = await state();
+    assert.equal(sourceAfterGroupBoundary.value, "\\hat{uv}");
+    assert.equal(sourceAfterGroupBoundary.sourceWrapperActive, false);
+    assert.equal(sourceAfterGroupBoundary.taggedSourceWrapperGroupCount, 0);
+    assert.equal(sourceAfterGroupBoundary.rawInput, "");
+
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.setValue("", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.dataset.visualtexAutoExitAccent = "false";
+      field.focus();
+      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+    })()`);
+    await typeRawCommand("vec");
+    await typeCharacter(" ", "Space", 32, 180);
+    await typeCharacter("z", "KeyZ", 90, 100);
+    const sourceBeforeBlur = await state();
+    assert.equal(sourceBeforeBlur.sourceWrapperActive, true);
+    await evaluate(`document.querySelector("math-field").blur()`);
+    await sleep(150);
+    const sourceAfterBlur = await state();
+    assert.equal(sourceAfterBlur.value, "\\vec{z}");
+    assert.equal(sourceAfterBlur.sourceWrapperActive, false);
+    assert.equal(sourceAfterBlur.taggedSourceWrapperGroupCount, 0);
+    assert.equal(sourceAfterBlur.rawInput, "");
+
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.focus();
+      field.position = field.lastOffset;
+      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+    })()`);
+    await typeRawCommand("hat");
+    await typeCharacter(" ", "Space", 32, 180);
+    await typeCharacter("q", "KeyQ", 81, 100);
+    const secondSourceWrapper = await state();
+    assert.equal(secondSourceWrapper.sourceWrapperActive, true);
+    assert.equal(
+      secondSourceWrapper.taggedSourceWrapperGroupCount,
+      1,
+      `Starting a second source wrapper left an orphaned first wrapper: ${JSON.stringify(
+        secondSourceWrapper,
+      )}`,
+    );
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.dataset.visualtexAutoExitAccent = "true";
+    })()`);
+
     if (sourceWrapperCommandsOnly) {
       console.log(
         JSON.stringify(
@@ -395,6 +575,16 @@ async function main() {
             accentAfterChineseCommit,
             accentWithChineseSource,
             accentWithChineseCommitted,
+            emptySourceBeforeExit,
+            emptySourceAfterExit,
+            emptySourceCancelInputCount,
+            persistentAccentBeforeCaretExit,
+            persistentAccentAfterCaretExit,
+            sourceBeforeGroupBoundary,
+            sourceAfterGroupBoundary,
+            sourceBeforeBlur,
+            sourceAfterBlur,
+            secondSourceWrapper,
           },
           null,
           2,

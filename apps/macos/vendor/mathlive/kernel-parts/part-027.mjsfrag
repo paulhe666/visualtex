@@ -10,6 +10,8 @@
     if (this.focusBlurInProgress || this.blurred) return;
     this.focusBlurInProgress = true;
     this.stopCoalescingUndo();
+    if (!this.visualTexCompositionSourceWrapper)
+      visualTexFinalizeSourceWrapper(this, { notify: false });
     this.blurred = true;
     if (__Mathfield._globallyFocusedMathfield === this)
       __Mathfield._globallyFocusedMathfield = void 0;
@@ -80,15 +82,12 @@
     this.visualTexCompositionStartedInsideText =
       this.model.mode === "text" && visualTexCaretIsInsideTextRun(this.model);
     const visualTexSourceWrapper = this.visualTexSourceWrapper;
-    const visualTexSourceCaret = this.model.at(this.model.position);
     this.visualTexCompositionSourceWrapper =
-      visualTexSourceWrapper?.group?.parent &&
-      (visualTexSourceCaret === visualTexSourceWrapper.group ||
-        visualTexSourceCaret?.parent === visualTexSourceWrapper.group)
+      visualTexSourceWrapperCaretIsInside(this, visualTexSourceWrapper)
         ? visualTexSourceWrapper
         : null;
     this.visualTexCompositionSourceAfter = this.visualTexCompositionSourceWrapper
-      ? visualTexSourceCaret
+      ? this.model.at(this.model.position)
       : null;
     this.visualTexCompositionState = this.model.getState();
     const visualTexCompositionPlaceholder = this.model.selectionIsPlaceholder
@@ -133,11 +132,12 @@
             : composition;
         const visualTexSourceWrapper = this.visualTexCompositionSourceWrapper;
         const visualTexSourceAfter = this.visualTexCompositionSourceAfter;
-        const visualTexCompositionInsideSourceWrapper = Boolean(
-          visualTexSourceWrapper?.group?.parent &&
+        const visualTexCompositionInsideSourceWrapper =
           this.visualTexSourceWrapper === visualTexSourceWrapper &&
-          visualTexSourceAfter?.parent === visualTexSourceWrapper.group
-        );
+          visualTexSourceWrapperOwnsAtom(
+            visualTexSourceWrapper,
+            visualTexSourceAfter
+          );
         if (visualTexCompositionInsideSourceWrapper) {
           const visualTexSourceComposition = visualTexChineseComposition
             ? "\\text{" + visualTexCommittedComposition + "}"
@@ -205,6 +205,8 @@
     this.visualTexCompositionSourceWrapper = null;
     this.visualTexCompositionSourceAfter = null;
     this.visualTexCompositionStartedInsideText = false;
+    if (this.blurred)
+      visualTexFinalizeSourceWrapper(this, { notify: false });
   }
   onCut(ev) {
     if (!this.isSelectionEditable) {

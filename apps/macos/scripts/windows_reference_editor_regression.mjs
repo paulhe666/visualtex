@@ -7,9 +7,9 @@ import {
 } from "./browser_test_runtime.mjs";
 
 const scenario = process.argv[2];
-if (!new Set(["startup", "history-core", "multiline-input", "accent-finalization", "bounded-operator-model", "fences", "variant-core", "variant-core-extended", "command-surface-audit", "native-input-popover", "usage-ranking", "native-space-selection", "candidate-query-reset", "raw-placeholder-visual", "placeholder-selection", "placeholder-core", "placeholder-visual-audit", "nested-input-core", "structural-placeholder", "structured-chinese-ime", "ime-stale-recovery", "direct-shortcut-placeholder", "toolbar-placeholder-overflow", "horizontal-overflow", "accent-placeholder", "atomic-structure", "caret-probe", "scripts", "upright", "context-style", "suggestions", "navigation", "geometry", "source-layout", "toolbar-compact", "toolbar-postfix", "classic-panel-resize", "ocr-storage-ui", "formula-tiles", "latex-profile-ui", "persistent-formatting", "formula-formatting", "cursor-placement", "settings", "layout", "multi-line-selection", "delete", "export"]).has(scenario)) {
+if (!new Set(["startup", "history-core", "multiline-input", "accent-finalization", "bounded-operator-model", "fences", "variant-core", "variant-core-extended", "command-surface-audit", "native-input-popover", "usage-ranking", "native-space-selection", "candidate-query-reset", "raw-placeholder-visual", "placeholder-selection", "placeholder-core", "placeholder-visual-audit", "nested-input-core", "structural-placeholder", "structured-chinese-ime", "ime-stale-recovery", "direct-shortcut-placeholder", "toolbar-placeholder-overflow", "horizontal-overflow", "accent-placeholder", "atomic-structure", "caret-probe", "scripts", "clipboard-source-shell", "upright", "context-style", "suggestions", "navigation", "geometry", "source-layout", "toolbar-compact", "toolbar-postfix", "classic-panel-resize", "ocr-storage-ui", "formula-tiles", "latex-profile-ui", "persistent-formatting", "formula-formatting", "cursor-placement", "settings", "layout", "multi-line-selection", "delete", "export"]).has(scenario)) {
   throw new Error(
-    "Usage: node scripts/targeted_editor_regression.mjs <startup|history-core|multiline-input|accent-finalization|bounded-operator-model|fences|variant-core|variant-core-extended|command-surface-audit|native-input-popover|usage-ranking|native-space-selection|candidate-query-reset|raw-placeholder-visual|placeholder-selection|placeholder-core|nested-input-core|structural-placeholder|structured-chinese-ime|ime-stale-recovery|direct-shortcut-placeholder|toolbar-placeholder-overflow|horizontal-overflow|accent-placeholder|atomic-structure|caret-probe|scripts|upright|context-style|suggestions|navigation|geometry|source-layout|toolbar-compact|toolbar-postfix|classic-panel-resize|ocr-storage-ui|formula-tiles|latex-profile-ui|persistent-formatting|formula-formatting|cursor-placement|settings|layout|multi-line-selection|delete|export>",
+    "Usage: node scripts/targeted_editor_regression.mjs <startup|history-core|multiline-input|accent-finalization|bounded-operator-model|fences|variant-core|variant-core-extended|command-surface-audit|native-input-popover|usage-ranking|native-space-selection|candidate-query-reset|raw-placeholder-visual|placeholder-selection|placeholder-core|nested-input-core|structural-placeholder|structured-chinese-ime|ime-stale-recovery|direct-shortcut-placeholder|toolbar-placeholder-overflow|horizontal-overflow|accent-placeholder|atomic-structure|caret-probe|scripts|clipboard-source-shell|upright|context-style|suggestions|navigation|geometry|source-layout|toolbar-compact|toolbar-postfix|classic-panel-resize|ocr-storage-ui|formula-tiles|latex-profile-ui|persistent-formatting|formula-formatting|cursor-placement|settings|layout|multi-line-selection|delete|export>",
   );
 }
 
@@ -11708,6 +11708,8 @@ async function main() {
               ...(persisted.state?.inputBehavior || {}),
               autoExitSuperscript: ${autoExitSuperscript},
               autoExitSubscript: ${autoExitSubscript},
+              autoExitAccent: true,
+              autoExitWrapperCommand: true,
             },
           };
           localStorage.setItem(storageKey, JSON.stringify(persisted));
@@ -11718,6 +11720,13 @@ async function main() {
           `(() => ({ ready: Boolean(document.querySelector("math-field")) }))()`,
           "formula field after script-setting reload",
         );
+        await evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          field.dataset.visualtexAutoExitSuperscript = String(${autoExitSuperscript});
+          field.dataset.visualtexAutoExitSubscript = String(${autoExitSubscript});
+          field.dataset.visualtexAutoExitAccent = "true";
+          field.dataset.visualtexAutoExitWrapperCommand = "true";
+        })()`);
         await focusField();
         await clearField();
       };
@@ -11824,8 +11833,325 @@ async function main() {
         expected: "x_{a}b",
       }));
 
-      console.log(JSON.stringify({ cases }, null, 2));
+      const runCommandCase = async ({
+        name,
+        autoExitSuperscript,
+        autoExitSubscript,
+        scriptCharacter,
+        scriptCode,
+        scriptVirtualKeyCode,
+        expected,
+      }) => {
+        await setInputBehavior(autoExitSuperscript, autoExitSubscript);
+        await key("x", "KeyX", 88);
+        await scriptKey(scriptCharacter, scriptCode, scriptVirtualKeyCode);
+        await typeText("\\alpha");
+        await key(" ", "Space", 32);
+        await key("b", "KeyB", 66);
+        return await waitForEvaluation(`(() => {
+          const field = document.querySelector("math-field");
+          return {
+            ready: field?.value === ${JSON.stringify(expected)},
+            name: ${JSON.stringify(name)},
+            value: field?.value ?? "",
+            position: field?.position ?? -1,
+            lastOffset: field?.lastOffset ?? -1,
+            mode: field?.mode ?? "",
+          };
+        })()`, `script command auto-exit: ${name}`, 3500);
+      };
+
+      const commandCases = [];
+      commandCases.push(await runCommandCase({
+        name: "superscript command auto-exit",
+        autoExitSuperscript: true,
+        autoExitSubscript: false,
+        scriptCharacter: "^",
+        scriptCode: "Digit6",
+        scriptVirtualKeyCode: 54,
+        expected: "x^{\\alpha}b",
+      }));
+      commandCases.push(await runCommandCase({
+        name: "subscript command auto-exit",
+        autoExitSuperscript: false,
+        autoExitSubscript: true,
+        scriptCharacter: "_",
+        scriptCode: "Minus",
+        scriptVirtualKeyCode: 189,
+        expected: "x_{\\alpha}b",
+      }));
+      commandCases.push(await runCommandCase({
+        name: "superscript command stays when disabled",
+        autoExitSuperscript: false,
+        autoExitSubscript: true,
+        scriptCharacter: "^",
+        scriptCode: "Digit6",
+        scriptVirtualKeyCode: 54,
+        expected: "x^{\\alpha b}",
+      }));
+      commandCases.push(await runCommandCase({
+        name: "subscript command stays when disabled",
+        autoExitSuperscript: true,
+        autoExitSubscript: false,
+        scriptCharacter: "_",
+        scriptCode: "Minus",
+        scriptVirtualKeyCode: 189,
+        expected: "x_{\\alpha b}",
+      }));
+
+      const runSourceWrapperCommandCase = async ({
+        name,
+        command,
+        argument,
+        expected,
+      }) => {
+        await setInputBehavior(true, true);
+        await key("x", "KeyX", 88);
+        await scriptKey("^", "Digit6", 54);
+        await typeText("\\\\" + command);
+        await key(" ", "Space", 32);
+        await key(
+          argument,
+          `Key${argument.toUpperCase()}`,
+          argument.toUpperCase().charCodeAt(0),
+        );
+        await key("b", "KeyB", 66);
+        return await waitForEvaluation(`(() => {
+          const field = document.querySelector("math-field");
+          return {
+            ready: field?.value === ${JSON.stringify(expected)},
+            name: ${JSON.stringify(name)},
+            value: field?.value ?? "",
+            position: field?.position ?? -1,
+            mode: field?.mode ?? "",
+            sourceCommand: field?.dataset.visualtexSourceWrapperCommand ?? "",
+          };
+        })()`, `source-wrapper script auto-exit: ${name}`, 3500);
+      };
+
+      await setInputBehavior(true, true);
+      await key("x", "KeyX", 88);
+      await scriptKey("^", "Digit6", 54);
+      await typeText("\\sqrt");
+      await key(" ", "Space", 32);
+      await key("a", "KeyA", 65);
+      await key("b", "KeyB", 66);
+      const expectedStructuredCommandInScript = String.raw`x^{\sqrt{ab}}`;
+      const structuredCommandInScript = await waitForEvaluation(`(() => {
+        const field = document.querySelector("math-field");
+        return {
+          ready: field?.value === ${JSON.stringify(expectedStructuredCommandInScript)},
+          value: field?.value ?? "",
+          position: field?.position ?? -1,
+          mode: field?.mode ?? "",
+        };
+      })()`, "structured command remains in script until its argument is filled", 3500);
+
+      const sourceWrapperCommandCases = [];
+      sourceWrapperCommandCases.push(await runSourceWrapperCommandCase({
+        name: "accent source wrapper auto-exit",
+        command: "vec",
+        argument: "a",
+        expected: "x^{\\vec{a}}b",
+      }));
+      sourceWrapperCommandCases.push(await runSourceWrapperCommandCase({
+        name: "variant source wrapper auto-exit",
+        command: "mathbb",
+        argument: "A",
+        expected: "x^{\\mathbb{A}}b",
+      }));
+
+      console.log(JSON.stringify({ cases, commandCases, structuredCommandInScript, sourceWrapperCommandCases }, null, 2));
       console.log("Targeted independent script auto-exit regression passed");
+      return;
+    }
+
+    if (scenario === "clipboard-source-shell") {
+      const loadCopyCase = async ({
+        latex,
+        mode = "display",
+        displayStyle = "default",
+        profile,
+      }) => {
+        await evaluate(`(() => {
+          const key = "visualtex-editor";
+          const persisted = JSON.parse(localStorage.getItem(key) || "{}");
+          const line = {
+            id: "clipboard-source-shell-line",
+            latex: ${JSON.stringify(latex)},
+            mode: ${JSON.stringify(mode)},
+            displayStyle: ${JSON.stringify(displayStyle)},
+          };
+          persisted.state = {
+            ...(persisted.state || {}),
+            lines: [line],
+            activeLineId: line.id,
+            sourceOpen: false,
+            latexFormatProfile: ${JSON.stringify(profile)},
+          };
+          localStorage.setItem(key, JSON.stringify(persisted));
+        })()`);
+        await client.send("Page.reload", { ignoreCache: true });
+        await sleep(650);
+        await waitForEvaluation(
+          `(() => {
+            const field = document.querySelector("math-field");
+            return {
+              ready:
+                Boolean(field) &&
+                field.value.replace(/\\\\s+/g, "") ===
+                  ${JSON.stringify(latex.replace(/\s+/g, ""))},
+            };
+          })()`,
+          "clipboard source-shell formula",
+        );
+        await focusField();
+      };
+
+      const copySelection = async ({ wholeLine = false, needle = "" } = {}) =>
+        evaluate(`(() => {
+          const field = document.querySelector("math-field");
+          const compact = (value) => String(value || "").replace(/\\\\s+/g, "");
+          let range = [0, field.lastOffset];
+          if (!${wholeLine}) {
+            range = null;
+            const needle = ${JSON.stringify(needle)};
+            outer:
+            for (let start = 0; start <= field.lastOffset; start += 1) {
+              for (let end = start + 1; end <= field.lastOffset; end += 1) {
+                if (
+                  compact(field.getValue(start, end, "latex-expanded")) ===
+                  compact(needle)
+                ) {
+                  range = [start, end];
+                  break outer;
+                }
+              }
+            }
+            if (!range) throw new Error("Unable to resolve clipboard selection");
+          }
+          field.selection = { ranges: [range], direction: "none" };
+          field.focus();
+          const sink = field.shadowRoot?.querySelector('[part="keyboard-sink"]');
+          sink?.focus({ preventScroll: true });
+          const clipboardData = new DataTransfer();
+          const event = new ClipboardEvent("copy", {
+            clipboardData,
+            bubbles: true,
+            composed: true,
+            cancelable: true,
+          });
+          sink?.dispatchEvent(event);
+          return {
+            range,
+            value: field.value,
+            plain: clipboardData.getData("text/plain"),
+            latex: clipboardData.getData("application/x-latex"),
+            prevented: event.defaultPrevented,
+          };
+        })()`);
+
+      const profile = {
+        inlineWrapper: "paren",
+        inlineTextPolicy: "text-command",
+        displayWrapper: "bracket",
+        numbered: false,
+        multilineEnvironment: "align",
+      };
+
+      const simpleLatex = String.raw`a+\alpha+b`;
+      const alphaLatex = String.raw`\alpha`;
+      await loadCopyCase({
+        latex: simpleLatex,
+        mode: "inline",
+        profile,
+      });
+      const inlinePartial = await copySelection({ needle: alphaLatex });
+      if (
+        inlinePartial.plain !== String.raw`\(\alpha\)` ||
+        inlinePartial.latex !== alphaLatex ||
+        !inlinePartial.prevented
+      ) {
+        throw new Error(
+          `Inline partial copy mismatch: ${JSON.stringify(inlinePartial)}`,
+        );
+      }
+      const inlineWhole = await copySelection({ wholeLine: true });
+      if (inlineWhole.plain !== String.raw`\(a+\alpha+b\)`) {
+        throw new Error(
+          `Inline whole-line copy mismatch: ${JSON.stringify(inlineWhole)}`,
+        );
+      }
+
+      await loadCopyCase({
+        latex: simpleLatex,
+        mode: "display",
+        profile,
+      });
+      const displayPartial = await copySelection({ needle: alphaLatex });
+      if (
+        displayPartial.plain !== [String.raw`\[`, "  " + alphaLatex, String.raw`\]`].join("\n") ||
+        displayPartial.latex !== alphaLatex
+      ) {
+        throw new Error(
+          `Display partial copy mismatch: ${JSON.stringify(displayPartial)}`,
+        );
+      }
+
+      await loadCopyCase({
+        latex: simpleLatex,
+        mode: "display",
+        displayStyle: "equation-star",
+        profile,
+      });
+      const equationPartial = await copySelection({ needle: alphaLatex });
+      if (
+        equationPartial.plain !==
+        [String.raw`\begin{equation*}`, "  " + alphaLatex, String.raw`\end{equation*}`].join("\n")
+      ) {
+        throw new Error(
+          `Equation partial copy mismatch: ${JSON.stringify(equationPartial)}`,
+        );
+      }
+
+      await loadCopyCase({
+        latex: String.raw`\begin{gathered}a\\b\end{gathered}`,
+        mode: "display",
+        profile,
+      });
+      const multilineWhole = await copySelection({ wholeLine: true });
+      const expectedMultilineWhole = [
+        String.raw`\begin{align*}`,
+        String.raw`  a \\`,
+        "  b",
+        String.raw`\end{align*}`,
+      ].join("\n");
+      if (multilineWhole.plain !== expectedMultilineWhole) {
+        throw new Error(
+          `Multiline whole-line copy mismatch: ${JSON.stringify(multilineWhole)}`,
+        );
+      }
+      const multilinePartial = await copySelection({ needle: "a" });
+      const expectedMultilinePartial = [
+        String.raw`\begin{align*}`,
+        "  a",
+        String.raw`\end{align*}`,
+      ].join("\n");
+      if (multilinePartial.plain !== expectedMultilinePartial) {
+        throw new Error(
+          `Multiline partial copy mismatch: ${JSON.stringify(multilinePartial)}`,
+        );
+      }
+
+      console.log(JSON.stringify({
+        inlinePartial,
+        inlineWhole,
+        displayPartial,
+        equationPartial,
+        multilineWhole,
+        multilinePartial,
+      }, null, 2));
+      console.log("Targeted VisualTeX source-shell clipboard regression passed");
       return;
     }
 

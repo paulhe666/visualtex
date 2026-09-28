@@ -1422,9 +1422,16 @@ async function main() {
         };
       })()`);
       const expectedCopy = copyState.selectedLatex.join("\n");
+      const expectedPlainCopy = copyState.selectedLatex
+        .map((latex) => `$$\n  ${latex}\n$$`)
+        .join("\n\n");
       assert.ok(copyState.selectedLatex.length > 1, JSON.stringify(copyState));
       assert.equal(copyState.latex, expectedCopy, JSON.stringify(copyState));
-      assert.equal(copyState.plain, expectedCopy, JSON.stringify(copyState));
+      assert.equal(
+        copyState.plain,
+        expectedPlainCopy,
+        JSON.stringify(copyState),
+      );
       assert.deepEqual(
         JSON.parse(copyState.visualTex),
         { version: 1, lines: copyState.selectedLatex },

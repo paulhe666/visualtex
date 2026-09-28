@@ -1,4 +1,7 @@
-import { formatLatexLines } from "../clipboard/LatexCopyService";
+import {
+  formatFormulaLinesUniversal,
+  formatFormulaSelectionUniversal,
+} from "../clipboard/LatexCopyService";
 import {
   useEffect,
   useLayoutEffect,
@@ -23,9 +26,12 @@ import type {
 } from "../types/command";
 import type {
   FormulaAlignment,
+  FormulaDisplayStyle,
   FormulaLine,
+  FormulaLineMode,
   InputBehaviorSettingKey,
   LatexCodeFormat,
+  LatexFormatProfile,
   InputBehaviorSettings,
 } from "../types/formula";
 import type {
@@ -53,6 +59,7 @@ import {
   createFormulaLine,
   useEditorStore,
 } from "../stores/editorStore";
+import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import {
   matchFormulaHotkey,
@@ -294,6 +301,9 @@ interface FormulaFieldProps {
   lineId: string;
   index: number;
   latex: string;
+  mode?: FormulaLineMode;
+  displayStyle?: FormulaDisplayStyle;
+  latexFormatProfile: LatexFormatProfile;
   zoom: number;
   formulaRowVerticalInset: number;
   language: "cn" | "en";
@@ -327,6 +337,17 @@ interface FormulaFieldProps {
     lines: string[],
   ) => void;
 }
+
+interface VisualTexClipboardSelectionRequest {
+  latex: string;
+  wholeLine: boolean;
+}
+
+type VisualTexClipboardMathfield = MathfieldElement & {
+  visualTexClipboardFormatter?: (
+    request: VisualTexClipboardSelectionRequest,
+  ) => string;
+};
 
 interface MultiLineSelectionPoint {
   lineId: string;
@@ -2379,6 +2400,25 @@ function FormulaField(props: FormulaFieldProps) {
     MathfieldElement.locale = propsRef.current.language === "en" ? "en" : "zh-cn";
     field.value = propsRef.current.latex;
     field.className = "visual-mathfield";
+    const visualTexClipboardField = field as VisualTexClipboardMathfield;
+    visualTexClipboardField.visualTexClipboardFormatter = ({
+      latex,
+      wholeLine,
+    }) => {
+      const current = propsRef.current;
+      const source = formatFormulaSelectionUniversal(
+        {
+          id: current.lineId,
+          latex: current.latex,
+          mode: current.mode,
+          displayStyle: current.displayStyle,
+        },
+        latex,
+        current.latexFormatProfile,
+        wholeLine,
+      );
+      return formatLatexSourceForEditor(source);
+    };
     field.smartMode = false;
     field.smartFence = propsRef.current.autoPairDelimiters;
     field.readOnly = propsRef.current.readOnly;
@@ -3202,6 +3242,7 @@ function FormulaField(props: FormulaFieldProps) {
       host.closest<HTMLElement>(".formula-line")?.style.removeProperty(
         "--formula-row-height",
       );
+      delete (field as VisualTexClipboardMathfield).visualTexClipboardFormatter;
       propsRef.current.register(registeredLineIdRef.current, null, field);
       fieldRef.current = null;
       defaultInlineShortcutsRef.current = null;
@@ -3393,7 +3434,6 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       lines,
       activeLineId,
       formulaAlignment,
-      latexCodeFormat,
       zoom,
       persistentTypingStyle = {
         bold: false,
@@ -6786,7 +6826,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       const handleMultiLineCopy = (event: ClipboardEvent) => {
         const selection = multiLineSelectionRef.current;
         if (!selection || !event.clipboardData) return;
-        const selectedLines = linesRef.current.flatMap((line) => {
+        const selectedFormulaLines = linesRef.current.flatMap((line) => {
           if (!multiLineSelectedIdsRef.current.has(line.id)) return [];
           const field = fieldRefs.current.get(line.id);
           if (!field?.isConnected) return [];
@@ -6800,17 +6840,31 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               ),
             )
             .join("");
-          return [normalizeChineseLatex(latex)];
+          return [
+            {
+              ...line,
+              latex: normalizeChineseLatex(latex),
+            },
+          ];
         });
-        if (selectedLines.length <= 1) return;
+        if (selectedFormulaLines.length <= 1) return;
 
+        const selectedLines = selectedFormulaLines.map((line) => line.latex);
         const latex = selectedLines.join("\n");
         event.clipboardData.setData(
           VISUALTEX_MULTILINE_LATEX_CLIPBOARD_TYPE,
           JSON.stringify({ version: 1, lines: selectedLines }),
         );
         event.clipboardData.setData("application/x-latex", latex);
-        event.clipboardData.setData("text/plain", formatLatexLines(selectedLines, latexCodeFormat));
+        event.clipboardData.setData(
+          "text/plain",
+          formatLatexSourceForEditor(
+            formatFormulaLinesUniversal(
+              selectedFormulaLines,
+              latexFormatProfile,
+            ),
+          ),
+        );
         event.preventDefault();
         event.stopImmediatePropagation();
         if (event.type === "cut") deleteMultiLineSelection();
@@ -7026,6 +7080,9 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                   lineId={lineId}
                   index={index}
                   latex={line.latex}
+                  mode={line.mode}
+                  displayStyle={line.displayStyle}
+                  latexFormatProfile={latexFormatProfile}
                   zoom={zoom}
                   formulaRowVerticalInset={formulaRowVerticalInset}
                   language={language}
