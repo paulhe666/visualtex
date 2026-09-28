@@ -1,32 +1,162 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$InstallRoot,
-    [ValidateSet('Check', 'Stop', 'RepairRegistration')][string]$Mode = 'Check'
+    [ValidateSet('Check', 'Stop', 'RepairRegistration')][string]$Mode = 'Check',
+    [switch]$Elevated
 )
 
-# Invoked from the installer's temporary plugin directory, not from the old
-# installation. Check never changes processes, files or registry values.
-# Exit codes: 0 = clear; 10 = private runtime present; 11 = stop incomplete;
-# 20 = inspection failed. Never treat a failed inspection as a running runtime.
+# Current VisualTeX native rendering is owned by one SCM service. Installation
+# maintenance therefore manages that exact service identity instead of scanning
+# MathType.exe/MathTypeLib.exe processes. Legacy registration repair remains
+# path-scoped to known VisualTeX roots and never inspects or terminates a process.
+#
+# Exit codes:
+#   0  = clear/stopped/repaired
+#   10 = owned renderer service is running (Check only)
+#   11 = owned renderer service did not stop
+#   20 = ownership/inspection/elevation failed
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 
-function Get-PrivateRuntimeProcesses {
-    $result = @()
-    # CIM exposes both x86 and x64 executable paths even from NSIS's x86
-    # PowerShell. Get-Process.Path alone cannot reliably do this cross-bitness.
-    $processes = @(Get-CimInstance -ClassName Win32_Process -Filter "Name='MathType.exe' OR Name='MathTypeLib.exe'" -OperationTimeoutSec 5 -ErrorAction Stop)
-    foreach ($process in $processes) {
-        if ([string]::IsNullOrWhiteSpace([string]$process.ExecutablePath)) {
-            throw "Cannot inspect executable path for $($process.Name), PID $($process.ProcessId); no process was selected by name alone."
+$serviceName = 'VisualTeX.NativeRender'
+$expectedAccount = 'NT SERVICE\VisualTeX.NativeRender'
+$programFiles64 = [Environment]::GetEnvironmentVariable('ProgramW6432')
+if ([string]::IsNullOrWhiteSpace($programFiles64)) {
+    $programFiles64 = [Environment]::GetFolderPath('ProgramFiles')
+}
+$expectedServicePath = [IO.Path]::GetFullPath(
+    (Join-Path $programFiles64 'VisualTeX\NativeRender\VisualTeX.NativeRenderService.exe'))
+
+function Test-IsAdministrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Quote-ProcessArgument([string]$Value) {
+    return '"' + $Value.Replace('"', '\"') + '"'
+}
+
+function Invoke-ElevatedSelf {
+    $arguments = New-Object System.Collections.Generic.List[string]
+    foreach ($value in @(
+        '-NoProfile',
+        '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        (Quote-ProcessArgument $PSCommandPath),
+        '-InstallRoot',
+        (Quote-ProcessArgument $InstallRoot),
+        '-Mode',
+        'Stop',
+        '-Elevated'
+    )) {
+        [void]$arguments.Add($value)
+    }
+
+    $powershell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $process = Start-Process -FilePath $powershell -ArgumentList ($arguments -join ' ') -Verb RunAs -PassThru -WindowStyle Hidden
+    try {
+        $process.WaitForExit()
+        exit $process.ExitCode
+    } finally {
+        $process.Dispose()
+    }
+}
+
+function Get-NormalizedExecutablePath([object]$Value) {
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) { return $null }
+    $source = [Environment]::ExpandEnvironmentVariables(([string]$Value).Trim())
+    if ($source.StartsWith('"')) {
+        $closingQuote = $source.IndexOf('"', 1)
+        if ($closingQuote -le 1) { return $null }
+        return [IO.Path]::GetFullPath($source.Substring(1, $closingQuote - 1))
+    }
+    $exeEnd = $source.IndexOf('.exe', [StringComparison]::OrdinalIgnoreCase)
+    if ($exeEnd -lt 0) { return $null }
+    return [IO.Path]::GetFullPath($source.Substring(0, $exeEnd + 4).Trim('"'))
+}
+
+function Get-OwnedNativeRenderService {
+    $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+        [Microsoft.Win32.RegistryHive]::LocalMachine,
+        [Microsoft.Win32.RegistryView]::Registry64)
+    try {
+        $key = $baseKey.OpenSubKey('SYSTEM\CurrentControlSet\Services\VisualTeX.NativeRender', $false)
+        if ($null -eq $key) { return $null }
+        try {
+            $imagePath = Get-NormalizedExecutablePath $key.GetValue(
+                'ImagePath',
+                $null,
+                [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            $account = [string]$key.GetValue('ObjectName', '')
+            $expectedPath = [string]::Equals(
+                $imagePath,
+                $expectedServicePath,
+                [StringComparison]::OrdinalIgnoreCase)
+            $expectedIdentity = [string]::Equals(
+                $account,
+                $expectedAccount,
+                [StringComparison]::OrdinalIgnoreCase)
+            if ([string]::IsNullOrWhiteSpace($imagePath) -or -not $expectedPath -or -not $expectedIdentity) {
+                throw "A different service occupies '$serviceName'; refusing to control it."
+            }
+        } finally {
+            $key.Dispose()
         }
-        $path = [IO.Path]::GetFullPath([string]$process.ExecutablePath)
-        if ($path.StartsWith($script:runtimePrefix, [StringComparison]::OrdinalIgnoreCase)) {
-            $result += $process
+    } finally {
+        $baseKey.Dispose()
+    }
+
+    $service = Get-Service -Name $serviceName -ErrorAction Stop
+    return $service
+}
+
+function Stop-OwnedNativeRenderService {
+    $service = Get-OwnedNativeRenderService
+    if ($null -eq $service) {
+        Write-Output 'NATIVE_RENDER_SERVICE_CLEAR'
+        return 0
+    }
+    try {
+        if ($service.Status -eq [ServiceProcess.ServiceControllerStatus]::Stopped) {
+            Write-Output 'NATIVE_RENDER_SERVICE_STOPPED already=true'
+            return 0
+        }
+
+        if (-not (Test-IsAdministrator)) {
+            if ($Elevated) {
+                throw 'VisualTeX native-render service maintenance requires administrator privileges.'
+            }
+            Invoke-ElevatedSelf
+        }
+
+        Stop-Service -Name $serviceName -Force -ErrorAction Stop
+        $service.Dispose()
+        $service = Get-Service -Name $serviceName -ErrorAction Stop
+        try {
+            $service.WaitForStatus(
+                [ServiceProcess.ServiceControllerStatus]::Stopped,
+                [TimeSpan]::FromSeconds(15))
+            $service.Refresh()
+            if ($service.Status -ne [ServiceProcess.ServiceControllerStatus]::Stopped) {
+                Write-Output 'NATIVE_RENDER_SERVICE_REMAINS_RUNNING'
+                return 11
+            }
+        } finally {
+            $service.Dispose()
+        }
+        Write-Output 'NATIVE_RENDER_SERVICE_STOPPED'
+        return 0
+    } finally {
+        if ($null -ne $service) {
+            try { $service.Dispose() } catch { }
         }
     }
-    return $result
 }
 
 function Get-NormalizedLocalServerPath([object]$value) {
@@ -127,52 +257,33 @@ try {
         throw 'An absolute VisualTeX installation directory is required.'
     }
     $installation = [IO.Path]::GetFullPath($InstallRoot.TrimEnd(' ', '\', '/'))
-    $script:runtimePrefix = [IO.Path]::GetFullPath((Join-Path $installation 'mathtype-runtime')).TrimEnd('\', '/') + '\'
+    $script:runtimePrefix = [IO.Path]::GetFullPath(
+        (Join-Path $installation 'mathtype-runtime')).TrimEnd('\', '/') + '\'
+
     if ($Mode -eq 'RepairRegistration') {
         Repair-LegacyPrivateMathTypeRegistration
         exit 0
     }
-    $targets = @(Get-PrivateRuntimeProcesses)
-    if ($targets.Count -eq 0) {
-        Write-Output 'PRIVATE_RUNTIME_CLEAR'
-        exit 0
-    }
-    if ($Mode -eq 'Check') {
-        Write-Output ('PRIVATE_RUNTIME_PRESENT PIDs=' + (($targets | ForEach-Object { $_.ProcessId }) -join ','))
-        exit 10
+
+    if ($Mode -eq 'Stop') {
+        exit (Stop-OwnedNativeRenderService)
     }
 
-    # This branch is reached only after the installer's explicit consent prompt.
-    # Never terminate a user's separately installed MathType. Re-resolve each PID
-    # and path immediately before stopping it, and never use taskkill /IM /T.
-    foreach ($target in $targets) {
-        $current = Get-CimInstance -ClassName Win32_Process -Filter ('ProcessId=' + $target.ProcessId) -OperationTimeoutSec 5 -ErrorAction Stop
-        if ($null -eq $current) { continue }
-        if ($current.CreationDate -ne $target.CreationDate) { continue }
-        if ([string]::IsNullOrWhiteSpace([string]$current.ExecutablePath)) {
-            throw "Cannot revalidate runtime PID $($target.ProcessId)."
-        }
-        $path = [IO.Path]::GetFullPath([string]$current.ExecutablePath)
-        if (-not $path.StartsWith($script:runtimePrefix, [StringComparison]::OrdinalIgnoreCase)) { continue }
-        try {
-            $owned = Get-Process -Id ([int]$target.ProcessId) -ErrorAction Stop
-            try {
-                Stop-Process -InputObject $owned -Force -ErrorAction Stop
-                [void]$owned.WaitForExit(2000)
-            } finally { $owned.Dispose() }
-        } catch {
-            if (Get-Process -Id ([int]$target.ProcessId) -ErrorAction SilentlyContinue) { throw }
-        }
+    $service = Get-OwnedNativeRenderService
+    if ($null -eq $service) {
+        Write-Output 'NATIVE_RENDER_SERVICE_CLEAR'
+        exit 0
     }
-    # A fresh enumeration also catches an immediately relaunched helper.
-    Start-Sleep -Milliseconds 250
-    $remaining = @(Get-PrivateRuntimeProcesses)
-    if ($remaining.Count -ne 0) {
-        Write-Output ('PRIVATE_RUNTIME_REMAINS PIDs=' + (($remaining | ForEach-Object { $_.ProcessId }) -join ','))
-        exit 11
+    try {
+        if ($service.Status -eq [ServiceProcess.ServiceControllerStatus]::Stopped) {
+            Write-Output 'NATIVE_RENDER_SERVICE_CLEAR'
+            exit 0
+        }
+        Write-Output ('NATIVE_RENDER_SERVICE_PRESENT status=' + $service.Status)
+        exit 10
+    } finally {
+        $service.Dispose()
     }
-    Write-Output ('PRIVATE_RUNTIME_STOPPED count=' + $targets.Count)
-    exit 0
 } catch {
     Write-Output ('PRIVATE_RUNTIME_CHECK_FAILED: ' + $_.Exception.Message)
     exit 20

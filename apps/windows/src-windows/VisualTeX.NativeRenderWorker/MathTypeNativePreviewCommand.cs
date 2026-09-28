@@ -89,6 +89,27 @@ internal static class MathTypeNativePreviewCommand
 
     internal static int Run(string manifestPath, string requiredPrivateRuntimeRoot)
     {
+        using var session = new NativeSession(requiredPrivateRuntimeRoot);
+        return session.Render(manifestPath);
+    }
+
+    // One STA session belongs to one service-owned worker. Keeping only the job
+    // alive is insufficient: MTTermAPI releases MathPage's last native lease.
+    internal sealed class NativeSession : IDisposable
+    {
+        private readonly string requiredPrivateRuntimeRoot;
+        private IntPtr module = IntPtr.Zero;
+        private MtTermApiDelegate? term;
+        private MtXFormEqnDelegate? transform;
+        private MtGetLastDimensionDelegate? getDimension;
+        private bool initialized;
+        private bool privateDllDirectoryApplied;
+        private PrivateRuntimeScope? privateRuntimeScope;
+
+        internal NativeSession(string runtimeRoot) => requiredPrivateRuntimeRoot = runtimeRoot;
+
+        internal int Render(string manifestPath)
+        {
         if (string.IsNullOrWhiteSpace(manifestPath) || !File.Exists(manifestPath))
             return 2;
 
@@ -107,13 +128,10 @@ internal static class MathTypeNativePreviewCommand
         }
 
         var response = new Response();
-        IntPtr module = IntPtr.Zero;
-        MtTermApiDelegate? term = null;
-        var initialized = false;
-        var privateDllDirectoryApplied = false;
-        PrivateRuntimeScope? privateRuntimeScope = null;
         try
         {
+            if (!initialized)
+            {
             var mathPage = Path.Combine(Path.GetFullPath(requiredPrivateRuntimeRoot), "MathPage", "64", "MathPage.wll");
             if (mathPage is null || !File.Exists(mathPage)
                 || !IsNativeLibraryCompatibleWithCurrentProcess(mathPage))
@@ -147,8 +165,8 @@ internal static class MathTypeNativePreviewCommand
 
             var init = GetDelegate<MtInitApiDelegate>(module, "MTInitAPI");
             term = GetDelegate<MtTermApiDelegate>(module, "MTTermAPI");
-            var transform = GetDelegate<MtXFormEqnDelegate>(module, "MTXFormEqn");
-            var getDimension = GetDelegate<MtGetLastDimensionDelegate>(module, "MTGetLastDimension");
+            transform = GetDelegate<MtXFormEqnDelegate>(module, "MTXFormEqn");
+            getDimension = GetDelegate<MtGetLastDimensionDelegate>(module, "MTGetLastDimension");
             if (init is null || term is null || transform is null || getDimension is null)
             {
                 response.Error = "MathType MathPage API exports are incomplete.";
@@ -161,6 +179,7 @@ internal static class MathTypeNativePreviewCommand
             {
                 response.Error = $"MathType MathPage API initialization failed with status {initStatus}.";
                 return WriteResponse(request.ResultPath, response, 3);
+            }
             }
 
             foreach (var item in request.Items)
@@ -193,7 +212,7 @@ internal static class MathTypeNativePreviewCommand
                     try { File.Delete(item.WmfPath); } catch { }
 
                     var dims = new DimsNative();
-                    var status = transform(
+                    var status = transform!(
                         MtXfmLocal,
                         MtXfmMtef,
                         mtef,
@@ -212,7 +231,7 @@ internal static class MathTypeNativePreviewCommand
                         continue;
                     }
 
-                    var width32 = getDimension(1);
+                    var width32 = getDimension!(1);
                     var height32 = getDimension(2);
                     var baseline32 = getDimension(3);
                     if (width32 <= 0 || height32 <= 0 || baseline32 < 0
@@ -247,15 +266,19 @@ internal static class MathTypeNativePreviewCommand
             response.Error = error.Message;
             return WriteResponse(request.ResultPath, response, 4);
         }
-        finally
+        }
+
+        public void Dispose()
         {
             if (initialized && term is not null)
             {
                 try { term(); } catch { }
+                initialized = false;
             }
-            if (module != IntPtr.Zero) FreeLibrary(module);
+            if (module != IntPtr.Zero) { FreeLibrary(module); module = IntPtr.Zero; }
             privateRuntimeScope?.Dispose();
-            if (privateDllDirectoryApplied) SetDllDirectoryW(null);
+            privateRuntimeScope = null;
+            if (privateDllDirectoryApplied) { SetDllDirectoryW(null); privateDllDirectoryApplied = false; }
         }
     }
 

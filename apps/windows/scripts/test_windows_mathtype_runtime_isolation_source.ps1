@@ -8,12 +8,14 @@ $windowsRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $bridgePath = Join-Path $windowsRoot 'src-windows\VisualTeX.NativeRenderWorker\MathTypeNativePreviewCommand.cs'
 $interopPath = Join-Path $windowsRoot 'src-windows\VisualTeX.WindowsOffice.VstoShared\MathTypeOleInterop.cs'
 $guardPath = Join-Path $windowsRoot 'scripts\manage_private_mathtype_runtime.ps1'
+$nativeManagerPath = Join-Path $windowsRoot 'scripts\manage_windows_native_render.ps1'
 $hooksPath = Join-Path $windowsRoot 'src-tauri\windows\hooks.nsh'
 $stagingPath = Join-Path $windowsRoot 'scripts\prepare_private_mathtype_runtime.ps1'
 
 $bridge = Get-Content -LiteralPath $bridgePath -Raw -Encoding UTF8
 $interop = Get-Content -LiteralPath $interopPath -Raw -Encoding UTF8
 $guard = Get-Content -LiteralPath $guardPath -Raw -Encoding UTF8
+$nativeManager = Get-Content -LiteralPath $nativeManagerPath -Raw -Encoding UTF8
 $hooks = Get-Content -LiteralPath $hooksPath -Raw -Encoding UTF8
 $staging = Get-Content -LiteralPath $stagingPath -Raw -Encoding UTF8
 $adapter = Get-Content -LiteralPath (Join-Path $windowsRoot 'src-windows\VisualTeX.WindowsOffice.VstoShared\MathTypeNativePreviewRenderer.cs') -Raw -Encoding UTF8
@@ -69,8 +71,31 @@ foreach ($forbidden in @('Process.Start', 'GetProcessesByName', 'ManagementObjec
 Assert-Source ($interop.Contains('!IsBundledMathTypeRuntimePath(capabilities.ServerPath)')) `
     'A stale VisualTeX private COM path can still masquerade as installed MathType.'
 
-# Upgrades and uninstalls must repair only legacy values that point inside a
-# recognized VisualTeX runtime root.
+# Current maintenance owns exactly the dedicated SCM service. It must never
+# enumerate MathType.exe/MathTypeLib.exe and then infer ownership from a PID,
+# because Session 0 service descendants can intentionally hide ExecutablePath.
+Assert-Source ($guard.Contains('SYSTEM\CurrentControlSet\Services\VisualTeX.NativeRender')) `
+    'The maintenance guard does not prove the exact SCM service identity.'
+Assert-Source ($guard.Contains("NT SERVICE\VisualTeX.NativeRender")) `
+    'The maintenance guard does not verify the dedicated virtual account.'
+Assert-Source ($guard.Contains('Stop-Service -Name $serviceName')) `
+    'The maintenance guard does not stop the owned service through SCM.'
+Assert-Source (-not $guard.Contains('Get-CimInstance -ClassName Win32_Process')) `
+    'The maintenance guard still enumerates MathType processes.'
+Assert-Source (-not $guard.Contains('GetProcessesByName')) `
+    'The maintenance guard still owns processes by executable name.'
+Assert-Source ($nativeManager.Contains('Start-Service -Name $serviceName')) `
+    'Same-version renderer maintenance can leave the explicitly stopped owned service offline.'
+Assert-Source ($nativeManager.Contains('The native-render MSI completed without an owned service registration.')) `
+    'Renderer restart is not gated by a fresh ownership proof after MSI maintenance.'
+Assert-Source ($hooks.Contains('Function VisualTeXEnsureNativeRendererStopped')) `
+    'Installer maintenance does not expose the exact-service stop boundary.'
+Assert-Source (-not $hooks.Contains('VisualTeXPromptPrivateMathTypeRuntimeClosure')) `
+    'Installer still uses the obsolete process-based private MathType prompt.'
+
+# Upgrades and uninstalls must still repair only legacy values that point inside
+# recognized VisualTeX roots. This is static registry cleanup, not process
+# ownership and therefore remains independent of the current renderer service.
 Assert-Source ($guard.Contains("RepairRegistration")) `
     'The runtime guard has no legacy registration repair mode.'
 Assert-Source ($guard.Contains('$fullServerPath.StartsWith($prefix')) `

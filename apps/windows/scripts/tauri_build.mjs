@@ -150,6 +150,28 @@ function preparePatchedNsisTemplate({ noOcrBundle = false, targetRoot = null } =
   }
   template = template.replace(oldSameVersionLeave, newSameVersionLeave);
 
+  const oldReinstallUninstallAnchor = [
+    "  reinst_uninstall:",
+    "    HideWindow",
+    "    ClearErrors",
+  ].join("\n");
+  const newReinstallUninstallAnchor = [
+    "  reinst_uninstall:",
+    "    ; Stop only the owned VisualTeX native-render service before invoking",
+    "    ; the previous uninstaller. Older uninstallers may still contain the",
+    "    ; legacy MathType process-path guard; removing the service-owned Session 0",
+    "    ; tree prevents that old guard from encountering inaccessible private PIDs.",
+    "    Call VisualTeXEnsureNativeRendererStopped",
+    "    HideWindow",
+    "    ClearErrors",
+  ].join("\n");
+  if (!template.includes(oldReinstallUninstallAnchor)) {
+    throw new Error(
+      "The Tauri NSIS reinstall-uninstall anchor changed unexpectedly; refusing an update that cannot stop the owned native-render service before the previous uninstaller",
+    );
+  }
+  template = template.replace(oldReinstallUninstallAnchor, newReinstallUninstallAnchor);
+
   const oldUninstallOrdering = [
     "Section Uninstall",
     "",

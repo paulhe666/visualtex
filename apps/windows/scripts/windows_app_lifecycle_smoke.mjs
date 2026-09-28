@@ -89,31 +89,26 @@ assert(!certificateScript.includes('ArgumentList "--office-background"'));
 assert(!installerHooks.includes("-CompanionOnly"));
 assert(installerHooks.includes("without leaving a resident VisualTeX process"));
 assert(installerHooks.includes("RuntimeVerificationPending"));
-assert(installerHooks.includes("Function VisualTeXStopPrivateMathTypeRuntime"));
-assert(installerHooks.includes("Function un.VisualTeXStopPrivateMathTypeRuntime"));
-assert(installerHooks.includes("Function VisualTeXPromptPrivateMathTypeRuntimeClosure"));
-assert(installerHooks.includes("$INSTDIR\\mathtype-runtime"));
+assert(installerHooks.includes("Function VisualTeXEnsureNativeRendererStopped"));
+assert(installerHooks.includes("Function un.VisualTeXEnsureNativeRendererStopped"));
+assert(installerHooks.includes("Call VisualTeXEnsureNativeRendererStopped"));
+assert(installerHooks.includes("Call un.VisualTeXEnsureNativeRendererStopped"));
+assert(!installerHooks.includes("VisualTeXPromptPrivateMathTypeRuntimeClosure"));
 const runtimeGuard = await read("scripts/manage_private_mathtype_runtime.ps1");
-assert(runtimeGuard.includes("Get-CimInstance -ClassName Win32_Process"));
-assert(runtimeGuard.includes("$path.StartsWith($script:runtimePrefix"));
-assert(runtimeGuard.includes("$current.CreationDate -ne $target.CreationDate"));
+assert(runtimeGuard.includes("SYSTEM\\CurrentControlSet\\Services\\VisualTeX.NativeRender"));
+assert(runtimeGuard.includes("NT SERVICE\\VisualTeX.NativeRender"));
+assert(runtimeGuard.includes("Stop-Service -Name $serviceName"));
+assert(runtimeGuard.includes("Repair-LegacyPrivateMathTypeRegistration"));
 assert(runtimeGuard.includes("PRIVATE_RUNTIME_CHECK_FAILED"));
+assert(!runtimeGuard.includes("Get-CimInstance -ClassName Win32_Process"));
+assert(!runtimeGuard.includes("GetProcessesByName"));
 assert(installerHooks.includes('visualtex-runtime-maintenance.ps1'));
 assert(installerHooks.includes('-InstallRoot "$INSTDIR" -Mode ${MODE}'));
-assert(installerHooks.includes("Never terminate a user's separately installed"));
-assert(installerHooks.includes("是否关闭 VisualTeX 私有 MathType Runtime 并继续安装"));
-assert(installerHooks.includes("IDYES visualtex_close_private_mathtype_now IDNO visualtex_keep_private_mathtype"));
-assert.equal(
-  (installerHooks.match(/^\s*Call VisualTeXPromptPrivateMathTypeRuntimeClosure\s*$/gm) ?? []).length,
-  2,
-);
-assert(installerHooks.includes('Call ${PREFIX}VisualTeXStopPrivateMathTypeRuntime'));
-assert.equal(
-  (installerHooks.match(/^\s*Call un\.VisualTeXPromptPrivateMathTypeRuntimeClosure\s*$/gm) ?? []).length,
-  1,
-);
-assert(installerHooks.includes('${If} $0 != "10"'));
+assert(installerHooks.includes("no MathType.exe process enumeration"));
+assert(!installerHooks.includes("是否关闭 VisualTeX 私有 MathType Runtime并继续安装"));
 assert(!installerHooks.includes('RMDir /r "$INSTDIR\\mathtype-runtime"'));
+assert(tauriBuild.includes("Call VisualTeXEnsureNativeRendererStopped"));
+assert(tauriBuild.includes("legacy MathType process-path guard"));
 assert(!installerHooks.includes('$$targets='));
 
 assert(tauriBuild.includes("clean_windows_release_outputs.mjs"));
@@ -122,7 +117,7 @@ assert(tauriBuild.includes('["build", "--no-bundle"'));
 assert(tauriBuild.includes("verify_embedded_frontend_assets.mjs"));
 assert(tauriBuild.includes("preparePatchedNsisTemplate"));
 assert(tauriBuild.includes("visualtex-installer.nsi"));
-assert(tauriBuild.includes('run(tauri, ["bundle", "--bundles", "nsis"'));
+assert(/run\(\s*tauri,\s*\[\s*"bundle",\s*"--bundles",\s*"nsis"/s.test(tauriBuild));
 assert(!platformBundle.includes('run(npm, ["run", "build:desktop"])'));
 assert(frontendVerifier.includes("dist/index.html references a missing asset"));
 assert(embeddedVerifier.includes("current dist/index.html references"));

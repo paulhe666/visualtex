@@ -440,16 +440,15 @@ foreach ($requiredHookMarker in @(
     '!macro VisualTeXCreateBundledResourceDirectory DESTINATION',
     '!macro VisualTeXInstallBundledResource DESTINATION SOURCE',
     'no ocr*, wheel or private-Python resources will be written',
-    'Function VisualTeXStopPrivateMathTypeRuntime',
-    'Function un.VisualTeXStopPrivateMathTypeRuntime',
-    'Function VisualTeXPromptPrivateMathTypeRuntimeClosure',
-    'Close the VisualTeX-owned runtime and continue?',
-    'IDYES visualtex_close_private_mathtype_now IDNO visualtex_keep_private_mathtype',
+    'Function VisualTeXEnsureNativeRendererStopped',
+    'Function un.VisualTeXEnsureNativeRendererStopped',
+    'VisualTeX.NativeRender service',
+    'no MathType.exe process enumeration',
     'visualtex-runtime-maintenance.ps1',
-    'Call ${PREFIX}VisualTeXStopPrivateMathTypeRuntime',
-    'Call un.VisualTeXPromptPrivateMathTypeRuntimeClosure',
+    'Call VisualTeXEnsureNativeRendererStopped',
+    'Call un.VisualTeXEnsureNativeRendererStopped',
     '-InstallRoot "$INSTDIR" -Mode ${MODE}',
-    'Never terminate a user''s separately installed'
+    'Standalone MathType is never enumerated or terminated'
 )) {
     if (-not $nsisHooksSource.Contains($requiredHookMarker)) {
         throw "NSIS hooks are missing a verified executable or persistent-data marker: $requiredHookMarker"

@@ -142,7 +142,6 @@ Function VisualTeXOfficePageLeave
   ${EndIf}
   StrCpy $VisualTeXOfficeChoice "none"
 visualtex_office_choice_done:
-  Call VisualTeXPromptPrivateMathTypeRuntimeClosure
 FunctionEnd
 
 Function VisualTeXOcrPageCreate
@@ -209,68 +208,45 @@ FunctionEnd
   ${EndIf}
 !macroend
 
-; Keep the process inspection in a bundled script: short -File invocations avoid
-; command-line truncation, nested escaping and quoting custom install paths.
-; This same script is embedded into both installer and uninstaller; an old or
-; partially removed installation therefore cannot supply a stale guard script.
+; Keep service ownership and legacy-registration maintenance in a bundled
+; script: short -File invocations avoid command-line truncation and ensure an
+; old or partially removed installation cannot supply stale maintenance logic.
+; Current runtime maintenance never enumerates MathType.exe processes.
 !macro VisualTeXRunPrivateRuntimeGuard MODE
   InitPluginsDir
   File "/oname=$PLUGINSDIR\visualtex-runtime-maintenance.ps1" "${VISUALTEX_RUNTIME_GUARD_SOURCE}"
-  nsExec::ExecToStack /TIMEOUT=15000 `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\visualtex-runtime-maintenance.ps1" -InstallRoot "$INSTDIR" -Mode ${MODE}`
+  ; Stop may require one UAC elevation. Allow time for the user to approve it;
+  ; the script itself has a bounded 15-second SCM stop wait after elevation.
+  nsExec::ExecToStack /TIMEOUT=120000 `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\visualtex-runtime-maintenance.ps1" -InstallRoot "$INSTDIR" -Mode ${MODE}`
   Pop $0
   Pop $1
-  DetailPrint "Private MathType runtime ${MODE}: ExitCode=$0 Output=$1"
+  DetailPrint "VisualTeX native runtime ${MODE}: ExitCode=$0 Output=$1"
 !macroend
 
-!macro VisualTeXStopPrivateMathTypeRuntimeBody
-  ; Never terminate a user's separately installed MathType. The guard verifies
-  ; both executable name and canonical path, and rechecks process identity.
+!macro VisualTeXEnsureNativeRendererStoppedBody PREFIX
+visualtex_native_renderer_stop_retry:
+  ; The renderer is an SCM-owned VisualTeX service with a fixed account and
+  ; executable path. Stop only that exact identity. Its Job Object owns every
+  ; Session 0 MathType descendant, so no MathType.exe process enumeration or
+  ; name-based termination is needed or permitted here.
   !insertmacro VisualTeXRunPrivateRuntimeGuard Stop
-!macroend
-
-Function VisualTeXStopPrivateMathTypeRuntime
-  !insertmacro VisualTeXStopPrivateMathTypeRuntimeBody
-FunctionEnd
-
-Function un.VisualTeXStopPrivateMathTypeRuntime
-  !insertmacro VisualTeXStopPrivateMathTypeRuntimeBody
-FunctionEnd
-
-!macro VisualTeXPromptPrivateMathTypeRuntimeBody PREFIX
-visualtex_runtime_check:
-  !insertmacro VisualTeXRunPrivateRuntimeGuard Check
   ${If} $0 == "0"
     Return
   ${EndIf}
-  ${If} $0 != "10"
-    Goto visualtex_runtime_check_failed
-  ${EndIf}
-  ; Unattended maintenance must not kill a helper without interactive consent.
-  IfSilent visualtex_runtime_abort 0
-  MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "检测到 VisualTeX 自带的私有 MathType Runtime 正在运行。$\r$\n$\r$\n是否关闭 VisualTeX 私有 MathType Runtime 并继续安装/卸载？$\r$\n仅处理此目录下的 MathType.exe 和 MathTypeLib.exe：$\r$\n$INSTDIR\mathtype-runtime$\r$\n$\r$\n请先结束 VisualTeX 的公式转换。不会关闭独立安装的 MathType，也不会关闭 Word。选择“否”取消本次操作。$\r$\n$\r$\nClose the VisualTeX-owned runtime and continue? A separately installed MathType and Word will not be closed." IDYES visualtex_close_private_mathtype_now IDNO visualtex_keep_private_mathtype
-visualtex_close_private_mathtype_now:
-  Call ${PREFIX}VisualTeXStopPrivateMathTypeRuntime
-  ${If} $0 == "0"
-    Return
-  ${EndIf}
-visualtex_runtime_check_failed:
   SetDetailsView show
-  IfSilent visualtex_runtime_abort 0
-  MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "无法完成 VisualTeX 私有 runtime 的检查或关闭，尚未继续覆盖文件。$\r$\n返回值：$0$\r$\n$1$\r$\n$\r$\n可重试，或取消本次操作。独立安装的 MathType 不会被关闭。$\r$\n$\r$\nRuntime inspection/closure failed. Retry or cancel without replacing files." IDRETRY visualtex_runtime_check IDCANCEL visualtex_keep_private_mathtype
-visualtex_runtime_abort:
-  SetErrorLevel 1
-  Quit
-visualtex_keep_private_mathtype:
+  IfSilent visualtex_native_renderer_stop_abort 0
+  MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "无法停止 VisualTeX 私有公式渲染服务，尚未继续覆盖文件。$\r$\n返回值：$0$\r$\n$1$\r$\n$\r$\n该操作只管理 VisualTeX.NativeRender 服务，不会枚举、关闭或修改独立安装的 MathType。$\r$\n$\r$\nUnable to stop the VisualTeX native-render service. Retry or cancel without replacing files. Standalone MathType is never enumerated or terminated." IDRETRY visualtex_native_renderer_stop_retry IDCANCEL visualtex_native_renderer_stop_abort
+visualtex_native_renderer_stop_abort:
   SetErrorLevel 1
   Abort
 !macroend
 
-Function VisualTeXPromptPrivateMathTypeRuntimeClosure
-  !insertmacro VisualTeXPromptPrivateMathTypeRuntimeBody ""
+Function VisualTeXEnsureNativeRendererStopped
+  !insertmacro VisualTeXEnsureNativeRendererStoppedBody ""
 FunctionEnd
 
-Function un.VisualTeXPromptPrivateMathTypeRuntimeClosure
-  !insertmacro VisualTeXPromptPrivateMathTypeRuntimeBody "un."
+Function un.VisualTeXEnsureNativeRendererStopped
+  !insertmacro VisualTeXEnsureNativeRendererStoppedBody "un."
 FunctionEnd
 
 !macro NSIS_HOOK_PREINSTALL
@@ -292,10 +268,10 @@ FunctionEnd
     Abort "Unable to repair a legacy VisualTeX-owned MathType registration. ExitCode=$0 Output=$1"
   ${EndIf}
 
-  ; Recheck after the destination page as well: custom paths and helpers that
-  ; restarted since the early maintenance page still require explicit consent.
-  ; Do not remove the runtime tree before successful payload extraction.
-  Call VisualTeXPromptPrivateMathTypeRuntimeClosure
+  ; Stop only the explicitly owned native-render service immediately before
+  ; payload replacement. Its Job Object releases the private Session 0 MathType
+  ; tree; standalone MathType is outside this ownership boundary.
+  Call VisualTeXEnsureNativeRendererStopped
 
   ; Custom pages are skipped by NSIS /S. A release acceptance install may use
   ; /VISUALTEXOFFICE=skip to leave the machine's existing Office integration
@@ -519,6 +495,10 @@ visualtex_postinstall_cleanup_done:
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  ; Stop only the explicitly owned renderer service before removing its MSI.
+  ; Service shutdown closes the owned Job Object and all private descendants.
+  Call un.VisualTeXEnsureNativeRendererStopped
+
   ; Restore the public MathType COM namespace before removing the private files,
   ; including installations upgraded from the legacy temporary registration.
   !insertmacro VisualTeXRunPrivateRuntimeGuard RepairRegistration
@@ -526,10 +506,6 @@ visualtex_postinstall_cleanup_done:
     SetDetailsView show
     Abort "Unable to repair a legacy VisualTeX-owned MathType registration. ExitCode=$0 Output=$1"
   ${EndIf}
-  ; Release VisualTeX's private MathType/MathPage runtime before the uninstaller
-  ; removes the application tree. The path-scoped guard cannot touch a separate
-  ; MathType installation.
-  Call un.VisualTeXPromptPrivateMathTypeRuntimeClosure
   IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 visualtex_preuninstall_done
   nsExec::ExecToStack `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
   Pop $0

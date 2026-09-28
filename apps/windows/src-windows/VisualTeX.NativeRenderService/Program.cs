@@ -41,7 +41,7 @@ internal sealed class RenderService : ServiceBase
 
     private async Task ListenAsync(NamedPipeServerStream endpoint, CancellationToken token)
     {
-        var backend = new NativeWorkerBackend(data);
+        using var backend = new NativeWorkerBackend(data);
         while (!token.IsCancellationRequested)
         {
             try

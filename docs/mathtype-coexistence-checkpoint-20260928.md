@@ -1,5 +1,84 @@
 # VisualTeX / native MathType coexistence — continuation checkpoints
 
+## CP17 — 2026-09-28 15:46 +08:00 — installer runtime ownership root fix; real same-version update PASS
+
+Root cause of the update dialog is proven. PID 22008 from the failure was MathType.exe in Session 0, parented by VisualTeX.NativeRenderWorker.exe, while CIM ExecutablePath was blank under the private service identity. Interactive MathType remained PID 38260 and MathTypeLib PID 22688 in Session 1. The old installer guard enumerated every MathType.exe/MathTypeLib.exe and failed whenever any path was unreadable, so it rejected VisualTeX's own isolated child.
+
+Root fix: manage_private_mathtype_runtime.ps1 no longer enumerates MathType processes. Current Check/Stop proves the exact SCM service name VisualTeX.NativeRender, fixed Program Files service executable and account NT SERVICE\VisualTeX.NativeRender; Stop self-elevates, stops that exact service and relies on its Job Object to release only its Session 0 descendants. Legacy RepairRegistration remains static/path-scoped HKCU cleanup. hooks.nsh removes the old private-MathType process prompt. tauri_build.mjs now stops the exact service before invoking a previous same-version uninstaller, so old uninstallers never see the hidden private PIDs. manage_windows_native_render.ps1 also explicitly restarts the freshly re-proven service after same-version MSI maintenance when MSI leaves it stopped.
+
+Targeted isolation and lifecycle source tests pass. Direct bridge proof: with private Session 0 descendants running, the new guard Stop returned 0; all private descendants disappeared, interactive PID 38260/22688 remained, and the preserved old guard then returned PRIVATE_RUNTIME_CLEAR.
+
+Final R2 package: artifacts/mathtype-install-20260927/coexistence-20260928/native-session-runtime-guard-r2-release/VisualTeX_1.2.8_x64_MathType-Perf-RuntimeGuard-R2_NoOCR_20260928.exe. Bytes 148932097; SHA256 84CF8F74778D882FB1DAB994E79D0E9E2157E17FA6CA8EDD48334391A08661A9. Embedded maintenance scripts match current source. Accepted Office payload and Word R3 DLL are unchanged.
+
+Final real same-version update was run from the original failure condition: private Session 0 MathType alive with unreadable path, interactive MathType alive, Word/VisualTeX closed as permitted. R2 installer /S /VISUALTEXOFFICE=native /VISUALTEXOCR=none returned 0. Post-update VisualTeX.NativeRender is Running; installed manage_windows_native_render.ps1 SHA256 is 463F56CAC6D9074A59B3BB76E0A5335C3AF68C09D91E945A971976ECBE3917CF; Word add-in LoadBehavior remains 3; Word DLL remains 0FF0A17EEE048C58E21AC2B19826621B4C25453A5DBC4BF2E67752C8FC4BE59C.
+
+Interactive MathType identity was preserved: PID 38260 and MathTypeLib PID 22688 and their executable paths are unchanged. native-identity-after-update-r2.json records sub-millisecond start-time differences only because the before JSON snapshot stores millisecond precision; AllIdentityPreserved=true. Baseline coexistence commit remains 4b5d8107831987799be249669d4a5f50573c760b. Performance and installer fixes after it remain uncommitted; no push. Held unrelated OMML R4 remains untouched.
+
+## CP16 — 2026-09-28 13:13 +08:00 — Apply latency fixed, installed UI/idle/lifecycle verified; new NSIS ready
+
+Baseline coexistence commit is `4b5d8107831987799be249669d4a5f50573c760b`; no push. The performance changes made after that commit remain uncommitted for separate acceptance. Held R4 OMML code/tests and unrelated working files are preserved, not included in the MathType-only package.
+
+### Final implementation and timing
+
+The final fix is the persistent private STA worker/API lease described in CP15, NOT the incomplete job-only prototype. Five production files changed: NativeRenderService/NativeWorkerBackend.cs, OwnedProcessJob.cs, Program.cs and NativeRenderWorker/MathTypeNativePreviewCommand.cs, Program.cs. Word add-in source/binary, passive OLE observation boundary, native engine, dedicated account and public IPC contract were not changed by this performance fix. Successful requests reuse the service-owned private API session; service stop or failed worker resets only its Job. No keepalive timer, background dummy rendering, interactive MathType fallback or global process-name cleanup.
+
+Actual installed Word Ribbon/UI evidence: `artifacts/mathtype-install-20260927/coexistence-20260928/mathtype-apply-latency-fixed-20260928-124408/` (abbreviated UI below). `UI/apply-latency-summary.json` compares each physical Apply click with the installed add-in's completed-session trace, excluding test-runner sleeps:
+- Three edits: 355.2103 / 335.6060 / 339.2418 ms end-to-end; document edit itself 214.2131 / 200.0251 / 203.4972 ms. MTEF rewrite plus native preview: 63.5995 / 59.6213 / 58.4970 ms.
+- Three insertions: 280.7025 / 306.7332 / 282.3062 ms end-to-end.
+- These include idle intervals longer than one minute, not just consecutive requests.
+
+Original pure-service one-item requests were 1544–1704 ms. Final warm one-item requests are approximately 20 ms, source+target pairs 28–33 ms. The first actual render after service start or deliberate failure reset still incurs one native cold start (~1.4–2.1 s); do NOT claim the first-ever Apply is subsecond. Idle time alone no longer releases the native lease.
+
+### Focused verification completed
+
+Eleven focused automated checks pass: seven protocol cases, two private-library/no-public-fallback cases, repeated five-sample layout/concurrent-client comparison, and a 25-second idle test that verifies the exact same private worker/MathType PIDs and fast subsequent rendering. Evidence: `coexistence-20260928/native-session-layout-final/`. Every defined WMF byte and 1,280,000 rasterized pixels are compared; only the documented undefined font-tail/alignment bytes are excluded by the NEW test. Existing product behavior/tests were not changed to match a fabricated malformed-MTEF expectation.
+
+Real installed coexistence UI: four VisualTeX-created MathType OLEs followed by eleven native Display/Right/Left insert-return operations, including nine continuous alternating cycles. Chapter/section dialog accepted only for the owned test document with global-default option left unchecked. Native Open then edited the first VisualTeX-created formula from x=4 to x=40 and returned via Ctrl+F4. `UI/saved-after-native-edit.json` confirms fifteen decodable Equation.DSMT4 OLEs, only that target's MTEF changed, and its 10.5 pt size was preserved. Native numbering remains visible. This run contains no OMML.
+
+Saved and closed the owned test document, then opened it in a new actual installed Word (`mathtype-apply-reopen-20260928-131137/state.json`, PID 13276), saved again via UI, and inspected its screenshot. `UI/saved-after-reopen.json` confirms fifteen OLEs and zero MTEF changes relative to the saved native-edit result. The test file is `UI/MathType-Apply-Fixed.docx`. At the last event-log check there were zero matching WINWORD/wwlib Application events 1000/1001 since the first owned test started at 12:44:08.
+
+`coexistence-20260928/native-session-public-state-unchanged.json` confirms 1,382 public settings, 506 native installation files, 24 font registrations and all six recorded process identities unchanged during the isolated VisualTeX-only interval. `UI/vt-window-interval.json`, read back after stop, records no native top-level SHOW/HIDE events during 12:52:36–12:54:27. Interactive MathType PID 38260 and MathTypeLib PID 22688 keep their original 00:48:22 identities.
+
+Two independent OS lifecycle checks also pass (not counted among the eleven automated cases):
+- `native-session-shutdown-test-r2/report.json`: stop/start only VisualTeX.NativeRender; all three exact private descendants terminate, none leak; no worker starts until the next request; interactive native processes unchanged. A first diagnostic preflight loop mishandled an empty PowerShell property array and was stopped by exact owned test PID/command line before any service change. Its retained evidence is not a product failure or a pass.
+- `native-session-failure-test/report.json`: deliberately terminate only the verified service child worker, observe a failed request (`Native worker disconnected.`), zero surviving old private descendants, and successful recovery on the next independent request (cold 1430 ms). No user MathType process was stopped or restarted.
+
+### Delivery and current installed state
+
+New package exists and its embedded payload has been extracted and verified:
+`artifacts/mathtype-install-20260927/coexistence-20260928/native-session-release/VisualTeX_1.2.8_x64_MathType-Apply-Fix_NoOCR_20260928.exe`
+Bytes `148942842`; SHA256 `E327D9A6C0BBB6630EA72B97CFE52B7F5CB4139E492BC6AA5D89A2498EBE5F56`.
+`native-session-release/build-state.json` reports BuiltAndEmbeddedPayloadVerified, completed 13:10:09. Both Office MSIs and the desktop executable/frontend remain byte-identical to accepted R3; only the private-renderer package was rebuilt. New native-render MSI SHA256 `04CC5BE6DD6D4E700CB9D68464400437F713F371CFC66BCA56789794ECF27089`. Existing raw service-account/private-ACL verification passed. WiX decompiler permission-table warnings are retained and are not substituted for the raw MSI checks.
+
+Extracted service/worker hashes exactly match the actual installed and UI-tested files:
+- Service `49579582781C8B00B4FAB5460B583E253190853B3ADADD3A1DFB40BA57956771`.
+- Worker `C4FD4E31E0AFA90865C30D9E950964F2ADA8BFC122E9A7C86ACD0D0F428387CF`.
+- Installed Word remains accepted R3 `0FF0A17EEE048C58E21AC2B19826621B4C25453A5DBC4BF2E67752C8FC4BE59C`.
+
+The updated service/worker are already active on this machine, and their actual installed UI behavior was tested. The complete new NSIS installation wizard was NOT rerun after packaging; do not mislabel exact-payload verification as a new end-to-end installation. User Word 41624 was preserved; saved owned reopened fixture in Word 13276 may remain available for acceptance. No new font-clean/install-order or unrelated OMML acceptance is claimed in this performance task.
+
+## CP15 — 2026-09-28 12:49 +08:00 — persistent private API session candidate, not just retained Job
+
+The first lifetime candidate improved back-to-back IPC calls to 128–144 ms, but ACTUAL Ribbon insertion after idle still took ~2 seconds. OS inspection then showed the private native engine had exited. Keeping the Job/TEMP lifetime while allowing each broker to call MTTermAPI was incomplete: the last MathPage lease was still released after each request. This candidate is NOT the final fix; `native-render-latency-after-idle-20260928.json` records the renewed 1671 ms cold request.
+
+The correction now keeps one STA worker and its MathPage API session for the private service runtime lifetime. The service creates an ACL-protected, random-name private worker pipe restricted to its dedicated SID and SYSTEM, starts the worker suspended and assigns the same Job before resume, then sends only service-generated request manifests serially. The public Office protocol remains the original authenticated pure-data pipe. No timer/keepalive/Office prewarm, public MathType discovery, configuration mutation or interactive process handling was added. Successful requests retain the API lease; worker error/disconnect/timeout and service shutdown discard only that exact Job. Per-request files are removed after completion; engine TEMP/extraction survives until Job termination.
+
+Installed at 12:48:51: service `49579582781C8B00B4FAB5460B583E253190853B3ADADD3A1DFB40BA57956771`, worker `C4FD4E31E0AFA90865C30D9E950964F2ADA8BFC122E9A7C86ACD0D0F428387CF`. Word DLL remains R3 `0FF0A17EEE048C58E21AC2B19826621B4C25453A5DBC4BF2E67752C8FC4BE59C`, native engine files/account/registration/public pipe unchanged. Backups and installed hashes in `native-session-candidate-deployment/`.
+
+`native-render-latency-persistent-session-20260928.json`: service's first cold request 2123 ms; warm one-item requests 19.6/20.5 ms, source+target pairs 28.2–33.4 ms, 20 items 177–202 ms. Idle and real UI proof still being completed; do not replace it with these consecutive-call results.
+
+Ten targeted checks pass, including the new 5-sample/20-single-request/two-concurrent-batch layout test and the existing protocol/private-runtime boundaries. Raw WMF bytes have undefined font-face tails and WORD padding (font/text/escape records); the new test first failed on those bytes. Direct record inspection plus 1,280,000-pixel comparison proved zero visual differences. The corrected NEW test compares every defined WMF byte and every pixel, ignoring only specification-defined trailing/padding bytes; product WMF output and existing tests were not altered. Evidence `native-session-layout-final/`. A one-byte invalid-MTEF assumption was rejected by actual MathPage behavior (it produced output); that attempted failure-injection test is not counted as passed. Deterministic shutdown/recovery validation remains pending.
+
+## CP14 — 2026-09-28 — apply-latency baseline measured, before lifecycle correction
+
+Accepted coexistence work is locally committed as `4b5d8107831987799be249669d4a5f50573c760b` (56 source/test/document files). Held R4 and unrelated/generated working files remain outside that commit. No push.
+
+`coexistence-20260928/native-render-latency-before-20260928.json` calls the actual installed service with pure generated MTEF, no Word object model. Three rounds: 1 item 1704/1555/1544 ms; 2 items 1529/1582/1652 ms; 20 items 1722/1726/1784 ms. Layout was identical (38x14 pt, position -3). Two failed diagnostic-host attempts only lacked assembly binding redirection; the benchmark now resolves the installed dependencies on CLR worker threads. Neither failed attempt reached the service.
+
+Source review: NativeWorkerBackend creates/disposes OwnedProcessJob INSIDE EVERY Render; Dispose kills the entire private MathType tree. The short-lived broker also extracts its .NET native runtime into a new request TEMP directory each time. Thus a live service does not keep a live private rendering engine. Insert/Replace synchronously await that cold batch on Word's STA; redraw/conversion prepare batches before document application. Replace already batches source+target, so do NOT claim it launches two sequential workers. Measured fixed cost is initialization/execution/teardown combined; exact internal MathPage timings are not yet known.
+
+Candidate correction: let the existing private service own one lazily created Job/runtime TEMP lifetime across serialized successful requests, while brokers and request files remain disposable. Preserve Session 0, dedicated account, authenticated data pipe, suspended-start-before-job-assignment, request serialization and public MathType noninterference. Discard only this owned lifetime on native failure/cancellation or service shutdown; do not scan/kill user processes or reintroduce Office prewarming. Separate the engine/TEMP lifetime from per-request input/output lifetime. Compare real timings and native output before making any performance-completion claim.
+
 ## CP13 — 2026-09-28 12:28 +08:00 — user accepts installed coexistence build; commit before apply-latency work
 
 User confirms the new version does not crash and authorizes a local commit of the completed coexistence work, followed by root-cause investigation of the 1–2 second pause on VisualTeX MathType insert/edit Apply ONLY. Redraw/conversion are reported unaffected. Preserve the private service/account/process boundary and passive OLE observation policy. User explicitly permits closing unsaved documents; nevertheless use an owned test Word whenever practical.

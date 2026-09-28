@@ -77,6 +77,25 @@ if ($Action -eq 'Install') {
     Invoke-OwnedMsi @('/i',('"'+[IO.Path]::GetFullPath($msi)+'"'),'/qn','/norestart','REBOOT=ReallySuppress','/L*v',('"'+$LogPath+'"'))
     $product=Get-OwnedProduct
     $service=Get-OwnedService
+    if (!$product -or !$service) {
+        throw 'The native-render MSI completed without an owned service registration.'
+    }
+    if ($service.State -ne 'Running') {
+        # A same-version MSI maintenance install does not necessarily rerun the
+        # ServiceControl Start=install action after the installer deliberately
+        # stopped the old service. Ownership has already been re-proved above,
+        # so start exactly this service through SCM and wait for it to settle.
+        Start-Service -Name $serviceName -ErrorAction Stop
+        $controller=Get-Service -Name $serviceName -ErrorAction Stop
+        try {
+            $controller.WaitForStatus(
+                [ServiceProcess.ServiceControllerStatus]::Running,
+                [TimeSpan]::FromSeconds(15))
+        } finally {
+            $controller.Dispose()
+        }
+        $service=Get-OwnedService
+    }
 }
 if ($Action -in @('Install','Verify')) {
     if (!$product -or !$service -or $service.State -ne 'Running') { throw 'The private native-render service is not installed and running.' }

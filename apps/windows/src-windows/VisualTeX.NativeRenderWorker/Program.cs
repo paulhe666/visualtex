@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.IO.Pipes;
+using System.Text;
 using System.Security.Principal;
 
 namespace VisualTeX.NativeRenderWorker;
@@ -17,6 +19,23 @@ internal static class Program
         var runtime = Path.Combine(AppContext.BaseDirectory, "runtime");
         var mathPage = Path.Combine(runtime, "MathPage", "64", "MathPage.wll");
         if (!File.Exists(mathPage)) return 11;
-        return MathTypeNativePreviewCommand.Run(args[0], runtime);
+        // This pipe is created with an ACL for the dedicated service SID only.
+        // The public Office endpoint remains data-only; request paths here are
+        // service-generated files within its private job directory.
+        using var pipe = new NamedPipeClientStream(".", args[0], PipeDirection.InOut);
+        pipe.Connect(5000);
+        using var reader = new BinaryReader(pipe, Encoding.UTF8, leaveOpen: true);
+        using var writer = new BinaryWriter(pipe, Encoding.UTF8, leaveOpen: true);
+        using var session = new MathTypeNativePreviewCommand.NativeSession(runtime);
+        while (true)
+        {
+            string manifest;
+            try { manifest = reader.ReadString(); }
+            catch (EndOfStreamException) { return 0; }
+            int status = session.Render(manifest);
+            writer.Write(status);
+            writer.Flush();
+            if (status != 0) return status;
+        }
     }
 }

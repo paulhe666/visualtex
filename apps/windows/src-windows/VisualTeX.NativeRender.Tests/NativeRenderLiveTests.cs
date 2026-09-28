@@ -13,7 +13,7 @@ public sealed class NativeRenderLiveFactAttribute : FactAttribute
     }
 }
 
-public sealed class NativeRenderLiveTests
+public sealed partial class NativeRenderLiveTests
 {
     [NativeRenderLiveFact]
     public async Task IndependentClientsRenderFiveNativeSamples()
