@@ -79,6 +79,17 @@
     visualTexNormalizeTextBoundaryMode(this);
     this.visualTexCompositionStartedInsideText =
       this.model.mode === "text" && visualTexCaretIsInsideTextRun(this.model);
+    const visualTexSourceWrapper = this.visualTexSourceWrapper;
+    const visualTexSourceCaret = this.model.at(this.model.position);
+    this.visualTexCompositionSourceWrapper =
+      visualTexSourceWrapper?.group?.parent &&
+      (visualTexSourceCaret === visualTexSourceWrapper.group ||
+        visualTexSourceCaret?.parent === visualTexSourceWrapper.group)
+        ? visualTexSourceWrapper
+        : null;
+    this.visualTexCompositionSourceAfter = this.visualTexCompositionSourceWrapper
+      ? visualTexSourceCaret
+      : null;
     this.visualTexCompositionState = this.model.getState();
     const visualTexCompositionPlaceholder = this.model.selectionIsPlaceholder
       ? this.model.at(Math.max(this.model.position, this.model.anchor))
@@ -120,7 +131,28 @@
           visualTexChineseComposition && /[^\s]/.test(composition)
             ? composition.replace(/\s+$/u, "")
             : composition;
-        if (visualTexChineseComposition) {
+        const visualTexSourceWrapper = this.visualTexCompositionSourceWrapper;
+        const visualTexSourceAfter = this.visualTexCompositionSourceAfter;
+        const visualTexCompositionInsideSourceWrapper = Boolean(
+          visualTexSourceWrapper?.group?.parent &&
+          this.visualTexSourceWrapper === visualTexSourceWrapper &&
+          visualTexSourceAfter?.parent === visualTexSourceWrapper.group
+        );
+        if (visualTexCompositionInsideSourceWrapper) {
+          const visualTexSourceComposition = visualTexChineseComposition
+            ? "\\text{" + visualTexCommittedComposition + "}"
+            : visualTexCommittedComposition;
+          this.model.position = this.model.offsetOf(visualTexSourceAfter);
+          ModeEditor.insert(this.model, visualTexSourceComposition, {
+            mode: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "after"
+          });
+          this.model.mode = "latex";
+          visualTexSyncSourceWrapper(this);
+          this.snapshot("insert-composition");
+          requestUpdate(this);
+        } else if (visualTexChineseComposition) {
           if (this.visualTexCompositionStructuralSlot)
             this.visualTexPendingStructuralCommandSlot =
               this.visualTexCompositionStructuralSlot;
@@ -170,6 +202,8 @@
     }
     this.visualTexCompositionState = null;
     this.visualTexCompositionStructuralSlot = null;
+    this.visualTexCompositionSourceWrapper = null;
+    this.visualTexCompositionSourceAfter = null;
     this.visualTexCompositionStartedInsideText = false;
   }
   onCut(ev) {

@@ -10,6 +10,9 @@ const baseUrl = `http://127.0.0.1:${previewPort}`;
 const chromeProfile = `/tmp/visualtex-nested-delimiter-space-${process.pid}`;
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sourceWrapperCommandsOnly = process.argv.includes(
+  "--source-wrapper-commands-only",
+);
 
 async function waitFor(url, timeoutMs = 15000) {
   const started = Date.now();
@@ -222,11 +225,23 @@ async function main() {
         }
         return {
           value: field.value,
+          mode: field.mode,
+          rawInput: Array.from(field.shadowRoot?.querySelectorAll('.ML__raw-latex') ?? [])
+            .filter((node) => !node.classList.contains('ML__suggestion'))
+            .map((node) => node.textContent || '')
+            .join(''),
           position: field.position,
           selection: field.selection,
           delimiterDepth,
           modelDepth: field.getElementInfo(field.position)?.depth ?? null,
           pendingNativeSuggestion: field.dataset.pendingNativeSuggestion || "",
+          sourceWrapperActive: Boolean(field._mathfield?.visualTexSourceWrapper?.group?.parent),
+          compositionSourceWrapperActive: Boolean(
+            field._mathfield?.visualTexCompositionSourceWrapper?.group?.parent,
+          ),
+          sourceWrapperIdentityPreserved:
+            field._mathfield?.visualTexCompositionSourceWrapper ===
+            field._mathfield?.visualTexSourceWrapper,
           visibleCandidateLabels: Array.from(
             document.querySelectorAll('#visualtex-native-input-suggestion-popover li[data-command] .ML__popover__latex')
           ).map((node) => (node.textContent || '').trim()).filter(Boolean),
@@ -285,6 +300,120 @@ async function main() {
       const field = document.querySelector("math-field");
       field.focus();
       field.position = field.lastOffset;
+      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+    })()`);
+    await typeRawCommand("vec");
+    await typeCharacter(" ", "Space", 32, 180);
+    const emptyAccent = await state();
+    await typeCharacter("\\", "Backslash", 220, 180);
+    const accentAfterBackslash = await state();
+    for (const character of "alpha") {
+      const upper = character.toUpperCase();
+      await typeCharacter(character, `Key${upper}`, upper.charCodeAt(0), 80);
+    }
+    const accentCommandPending = await state();
+    await typeCharacter(" ", "Space", 32, 180);
+    const accentWithCommand = await state();
+    assert.match(
+      accentWithCommand.value,
+      /^\\vec\{\\alpha\}$/,
+      `A raw LaTeX command could not be entered inside an accent placeholder: ${JSON.stringify({
+        emptyAccent,
+        accentAfterBackslash,
+        accentCommandPending,
+        accentWithCommand,
+      })}`,
+    );
+
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.setValue("", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.focus();
+      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+    })()`);
+    await typeRawCommand("vec");
+    await typeCharacter(" ", "Space", 32, 180);
+    await client.send("Input.imeSetComposition", {
+      text: "中文",
+      selectionStart: 2,
+      selectionEnd: 2,
+    });
+    await sleep(80);
+    const accentDuringChineseComposition = await state();
+    await client.send("Input.insertText", { text: "中文" });
+    await sleep(100);
+    const accentAfterChineseCommit = await state();
+    await client.send("Input.imeSetComposition", {
+      text: "",
+      selectionStart: 0,
+      selectionEnd: 0,
+    });
+    await sleep(180);
+    const accentWithChineseSource = await state();
+    assert.equal(
+      accentWithChineseSource.value,
+      "\\vec{\\text{中文}}",
+      `Chinese IME text disappeared inside a source-preserving accent: ${JSON.stringify({ accentDuringChineseComposition, accentAfterChineseCommit, accentWithChineseSource })}`,
+    );
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+    });
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+    });
+    await sleep(150);
+    const accentWithChineseCommitted = await state();
+    assert.equal(
+      accentWithChineseCommitted.value,
+      "\\vec{\\text{中文}}",
+      `Chinese source content did not survive wrapper commit: ${JSON.stringify(accentWithChineseCommitted)}`,
+    );
+    assert.equal(accentWithChineseCommitted.mode, "math");
+    if (sourceWrapperCommandsOnly) {
+      console.log(
+        JSON.stringify(
+          {
+            emptyAccent,
+            accentAfterBackslash,
+            accentCommandPending,
+            accentWithCommand,
+            accentDuringChineseComposition,
+            accentAfterChineseCommit,
+            accentWithChineseSource,
+            accentWithChineseCommitted,
+          },
+          null,
+          2,
+        ),
+      );
+      console.log("Nested command input inside a source-preserving accent passed");
+      return;
+    }
+
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.setValue("", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.focus();
       field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
     })()`);
     await typeRawCommand("vec");

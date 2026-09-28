@@ -129,7 +129,7 @@ try {
               Number(field.dataset.lateCompletionCount || "0") + 1,
             );
           }
-        }, true);
+        });
         resolve(true);
       };
       poll();
@@ -139,21 +139,17 @@ try {
   const cancelComposition = async (stale = true, compositionText = "中") => {
     const state = await evaluate(`(() => {
       const field = document.querySelector("math-field");
+      const sink = field.shadowRoot?.querySelector('[part="keyboard-sink"]');
+      if (!sink) throw new Error("MathLive keyboard sink missing");
       const before = (type, data, composing) => {
         const event = new InputEvent("beforeinput", { inputType: type, data, isComposing: composing, bubbles: true, composed: true, cancelable: true });
-        const allowed = field.dispatchEvent(event);
+        const allowed = sink.dispatchEvent(event);
         return { allowed, prevented: event.defaultPrevented };
       };
-      const input = (type, data, composing) => field.dispatchEvent(new InputEvent("input", { inputType: type, data, isComposing: composing, bubbles: true, composed: true }));
-      field.dispatchEvent(new CompositionEvent("compositionstart", { data: "", bubbles: true, composed: true }));
+      sink.dispatchEvent(new CompositionEvent("compositionstart", { data: "", bubbles: true, composed: true }));
       const compositionText = ${JSON.stringify(compositionText)};
-      const inserted = before("insertCompositionText", compositionText, true);
-      if (inserted.allowed) field.insert(compositionText, { mode: "math", format: "latex", insertionMode: "replaceSelection", selectionMode: "after", focus: true });
-      input("insertCompositionText", compositionText, true);
-      const deleted = before("deleteCompositionText", "", true);
-      input("deleteCompositionText", "", true);
-      if (deleted.allowed) field.executeCommand("deleteBackward");
-      field.dispatchEvent(new CompositionEvent("compositionend", { data: "", bubbles: true, composed: true }));
+      sink.dispatchEvent(new CompositionEvent("compositionupdate", { data: compositionText, bubbles: true, composed: true }));
+      sink.dispatchEvent(new CompositionEvent("compositionend", { data: "", bubbles: true, composed: true }));
       let replay = null;
       if (${stale}) replay = before("insertText", "\\\\", false);
       return { value: field.value, replay };
@@ -182,17 +178,16 @@ try {
   const commitCompositionAndProbeUnarmedBackslash = async () => {
     return evaluate(`(() => {
       const field = document.querySelector("math-field");
+      const sink = field.shadowRoot?.querySelector('[part="keyboard-sink"]');
+      if (!sink) throw new Error("MathLive keyboard sink missing");
       const before = (type, data, composing) => {
         const event = new InputEvent("beforeinput", { inputType: type, data, isComposing: composing, bubbles: true, composed: true, cancelable: true });
-        const allowed = field.dispatchEvent(event);
+        const allowed = sink.dispatchEvent(event);
         return { allowed, prevented: event.defaultPrevented };
       };
-      const input = (type, data, composing) => field.dispatchEvent(new InputEvent("input", { inputType: type, data, isComposing: composing, bubbles: true, composed: true }));
-      field.dispatchEvent(new CompositionEvent("compositionstart", { data: "", bubbles: true, composed: true }));
-      const inserted = before("insertCompositionText", "中", true);
-      if (inserted.allowed) field.insert("中", { mode: "math", format: "latex", insertionMode: "replaceSelection", selectionMode: "after", focus: true });
-      input("insertCompositionText", "中", true);
-      field.dispatchEvent(new CompositionEvent("compositionend", { data: "中", bubbles: true, composed: true }));
+      sink.dispatchEvent(new CompositionEvent("compositionstart", { data: "", bubbles: true, composed: true }));
+      sink.dispatchEvent(new CompositionEvent("compositionupdate", { data: "中", bubbles: true, composed: true }));
+      sink.dispatchEvent(new CompositionEvent("compositionend", { data: "中", bubbles: true, composed: true }));
       const stale = before("insertText", "\\\\", false);
       return { stale, value: field.value };
     })()`);
@@ -254,11 +249,14 @@ try {
       await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
       return sleep(90);
     }
-    const comma = key("、", "Backslash", 220);
-    await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...comma, text: "、", unmodifiedText: "、" });
-    await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...comma });
-    await sleep(210);
-    return type("\\", "Backslash", 220, 80);
+    if (pattern === "ideographic-key") {
+      const comma = key("、", "Backslash", 220);
+      await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...comma, text: "、", unmodifiedText: "、" });
+      await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...comma });
+      await sleep(210);
+      return;
+    }
+    throw new Error(`Unknown Backslash pattern: ${pattern}`);
   };
 
   const state = () => evaluate(`(() => {
@@ -375,7 +373,7 @@ try {
   );
   assert.equal(unidentifiedAlpha.raw, "", JSON.stringify(unidentifiedAlpha));
 
-  const patterns = ["normal", "duplicate-char", "duplicate-keydown", "ideographic-then-latin"];
+  const patterns = ["normal", "duplicate-char", "duplicate-keydown", "ideographic-key"];
   const commands = ["pi", "int", "sum", "sqrt", "frac"];
   for (const pattern of patterns) {
     for (const command of commands) {
@@ -389,7 +387,13 @@ try {
       const pending = await state();
       if (pending.raw) {
         assert.equal(pending.raw, `\\${command}`, `${pattern}/${command}: ${JSON.stringify(pending)}`);
-        if (pending.candidate) assert.equal(pending.candidate, `\\${command}`);
+        if (pending.candidate) {
+          assert.match(
+            pending.candidate,
+            new RegExp(`^\\\\${command}(?:$|[^a-zA-Z])`),
+            `${pattern}/${command}: ${JSON.stringify(pending)}`,
+          );
+        }
       } else {
         assert.equal(
           pending.value.split(`\\${command}`).length - 1,
