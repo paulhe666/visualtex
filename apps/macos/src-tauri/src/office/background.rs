@@ -3,7 +3,9 @@ use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
@@ -198,12 +200,41 @@ fn launchctl_target() -> String {
 }
 
 #[cfg(target_os = "macos")]
+fn bounded_command_output(mut command: Command, label: &str) -> Result<Output, String> {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("{label}: {error}"))?;
+    let deadline = Instant::now() + Duration::from_millis(1500);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                return child
+                    .wait_with_output()
+                    .map_err(|error| format!("{label}: {error}"));
+            }
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("{label}: timed out"));
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn set_launch_agent_enabled(enabled: bool) -> Result<(), String> {
     let action = if enabled { "enable" } else { "disable" };
-    let output = Command::new("/bin/launchctl")
-        .args([action, &launchctl_target()])
-        .output()
-        .map_err(|error| format!("Unable to {action} VisualTeX LaunchAgent: {error}"))?;
+    let mut command = Command::new("/bin/launchctl");
+    command.args([action, &launchctl_target()]);
+    let output = bounded_command_output(
+        command,
+        &format!("Unable to {action} VisualTeX LaunchAgent"),
+    )?;
     if output.status.success() {
         return Ok(());
     }
@@ -216,10 +247,9 @@ fn set_launch_agent_enabled(enabled: bool) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn launch_agent_loaded() -> Result<bool, String> {
-    let output = Command::new("/bin/launchctl")
-        .args(["print", &launchctl_target()])
-        .output()
-        .map_err(|error| format!("Unable to inspect VisualTeX LaunchAgent: {error}"))?;
+    let mut command = Command::new("/bin/launchctl");
+    command.args(["print", &launchctl_target()]);
+    let output = bounded_command_output(command, "Unable to inspect VisualTeX LaunchAgent")?;
     if output.status.success() {
         return Ok(true);
     }
@@ -241,10 +271,9 @@ fn launch_agent_loaded() -> Result<bool, String> {
 
 #[cfg(target_os = "macos")]
 fn launch_agent_pid() -> Result<Option<u32>, String> {
-    let output = Command::new("/bin/launchctl")
-        .args(["print", &launchctl_target()])
-        .output()
-        .map_err(|error| format!("Unable to inspect VisualTeX LaunchAgent: {error}"))?;
+    let mut command = Command::new("/bin/launchctl");
+    command.args(["print", &launchctl_target()]);
+    let output = bounded_command_output(command, "Unable to inspect VisualTeX LaunchAgent")?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if stderr.contains("Could not find service") || stderr.contains("service not found") {
@@ -266,12 +295,12 @@ fn launch_agent_pid() -> Result<Option<u32>, String> {
 
 #[cfg(target_os = "macos")]
 fn bootstrap_launch_agent(plist: &Path) -> Result<(), String> {
-    let output = Command::new("/bin/launchctl")
+    let mut command = Command::new("/bin/launchctl");
+    command
         .arg("bootstrap")
         .arg(launchctl_domain())
-        .arg(plist)
-        .output()
-        .map_err(|error| format!("Unable to load VisualTeX LaunchAgent: {error}"))?;
+        .arg(plist);
+    let output = bounded_command_output(command, "Unable to load VisualTeX LaunchAgent")?;
     if output.status.success() {
         return Ok(());
     }
@@ -288,10 +317,9 @@ fn bootstrap_launch_agent(plist: &Path) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn bootout_launch_agent() -> Result<(), String> {
-    let output = Command::new("/bin/launchctl")
-        .args(["bootout", &launchctl_target()])
-        .output()
-        .map_err(|error| format!("Unable to unload VisualTeX LaunchAgent: {error}"))?;
+    let mut command = Command::new("/bin/launchctl");
+    command.args(["bootout", &launchctl_target()]);
+    let output = bounded_command_output(command, "Unable to unload VisualTeX LaunchAgent")?;
     if output.status.success() {
         return Ok(());
     }

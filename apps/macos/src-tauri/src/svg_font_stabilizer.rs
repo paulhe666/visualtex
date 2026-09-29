@@ -4,6 +4,11 @@ use std::collections::HashMap;
 const LETTER_MARKER: &str = "data-visualtex-output-letter-font";
 const TEXT_MARKER: &str = "data-visualtex-output-text-font";
 const MAX_STABILIZED_SVG_BYTES: usize = 16 * 1024 * 1024;
+// CoreText outlines are geometrically accurate, but once text is frozen into
+// SVG paths Word/WPS no longer applies the font's small-size hinting. A very
+// small outline stroke restores the apparent weight at normal document zoom
+// without changing glyph advance, formula bounds, or baseline geometry.
+const STABLE_OUTLINE_EMBOLDEN_UNITS: f64 = 4.0;
 
 fn xml_unescape(value: &str) -> String {
     let mut output = value
@@ -260,12 +265,25 @@ fn replacement_for_text(
             resolved_families.push(outline.resolved_family.clone());
         }
         if !outline.path.is_empty() {
+            let stroke_width = if bold {
+                STABLE_OUTLINE_EMBOLDEN_UNITS * 0.5
+            } else {
+                STABLE_OUTLINE_EMBOLDEN_UNITS
+            };
+            let paint = format!(
+                " fill=\"#000000\" stroke=\"#000000\" stroke-width=\"{}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"",
+                format_number(stroke_width)
+            );
             if cursor.abs() < 0.000_000_5 {
-                paths.push_str(&format!("<path d=\"{}\"></path>", outline.path));
+                paths.push_str(&format!(
+                    "<path d=\"{}\"{}></path>",
+                    outline.path, paint
+                ));
             } else {
                 paths.push_str(&format!(
-                    "<path d=\"{}\" transform=\"translate({},0)\"></path>",
+                    "<path d=\"{}\"{} transform=\"translate({},0)\"></path>",
                     outline.path,
+                    paint,
                     format_number(cursor)
                 ));
             }

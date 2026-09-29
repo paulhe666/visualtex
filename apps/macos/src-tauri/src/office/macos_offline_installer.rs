@@ -140,7 +140,7 @@ fn application_installed(app_name: &str) -> bool {
         .map(|home| {
             application_paths(&home, app_name)
                 .into_iter()
-                .any(|path| path.is_dir())
+                .any(|path| bounded_path_test(&path, "-d"))
         })
         .unwrap_or(false);
     if standard_location_found {
@@ -151,19 +151,42 @@ fn application_installed(app_name: &str) -> bool {
         return false;
     };
     let query = format!("kMDItemCFBundleIdentifier == '{bundle_identifier}'");
-    Command::new("/usr/bin/mdfind")
+    let mut child = match Command::new("/usr/bin/mdfind")
         .arg(query)
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .is_some_and(|output| {
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(Path::new)
-                .any(Path::is_dir)
-        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return false,
+    };
+    let deadline = Instant::now() + Duration::from_millis(1500);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                let Ok(output) = child.wait_with_output() else {
+                    return false;
+                };
+                if !output.status.success() {
+                    return false;
+                }
+                return String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(Path::new)
+                    .any(|path| bounded_path_test(path, "-d"));
+            }
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -179,11 +202,29 @@ fn application_installed(app_name: &str) -> bool {
 
 #[cfg(target_os = "macos")]
 fn application_running(process_name: &str) -> bool {
-    Command::new("/usr/bin/pgrep")
+    let mut child = match Command::new("/usr/bin/pgrep")
         .args(["-x", process_name])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return false,
+    };
+    let deadline = Instant::now() + Duration::from_millis(500);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -326,25 +367,17 @@ fn collect_legacy_visualtex_wef_files(
     depth: usize,
     output: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
-    if depth > 4 || !directory.is_dir() {
+    if depth > 4 {
         return Ok(());
     }
-    for entry in fs::read_dir(directory)
-        .map_err(|error| format!("Unable to inspect {}: {error}", directory.display()))?
-    {
-        let entry = entry.map_err(|error| {
-            format!("Unable to inspect a legacy Office add-in cache entry: {error}")
-        })?;
-        let file_type = entry
-            .file_type()
-            .map_err(|error| format!("Unable to inspect {}: {error}", entry.path().display()))?;
-        if file_type.is_symlink() {
-            continue;
-        }
-        let path = entry.path();
-        if file_type.is_dir() {
+    // Never call fs::read_dir directly inside an Office sandbox. A few macOS
+    // builds can leave these container directories coordinated indefinitely.
+    // bounded_directory_entries delegates enumeration to a killable child and
+    // treats an inaccessible sandbox as "not discoverable" rather than hanging.
+    for path in bounded_directory_entries(directory, "")? {
+        if bounded_path_test(&path, "-d") {
             collect_legacy_visualtex_wef_files(&path, depth + 1, output)?;
-        } else if file_type.is_file() && is_legacy_visualtex_wef_file(&path) {
+        } else if bounded_path_test(&path, "-f") && is_legacy_visualtex_wef_file(&path) {
             output.push(path);
         }
     }
@@ -369,19 +402,45 @@ fn discover_legacy_visualtex_wef_files() -> Result<Vec<PathBuf>, String> {
     Ok(files)
 }
 
-fn directory_name_matches(value: &Path, expected: &str) -> bool {
-    value
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(|name| {
-            name.trim_end_matches(".localized")
-                .eq_ignore_ascii_case(expected)
-        })
-        .unwrap_or(false)
+#[cfg(target_os = "macos")]
+fn bounded_path_test(path: &Path, flag: &str) -> bool {
+    let mut child = match Command::new("/bin/test")
+        .arg(flag)
+        .arg(path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return false,
+    };
+    let deadline = Instant::now() + Duration::from_millis(300);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn bounded_path_test(path: &Path, flag: &str) -> bool {
+    match flag {
+        "-d" => path.is_dir(),
+        "-f" => path.is_file(),
+        _ => false,
+    }
 }
 
 fn push_existing_directory(paths: &mut Vec<PathBuf>, path: PathBuf) {
-    if path.is_dir() {
+    if bounded_path_test(&path, "-d") {
         paths.push(path);
     }
 }
@@ -413,74 +472,14 @@ fn known_word_startup_paths(home: &Path) -> Vec<PathBuf> {
     paths
 }
 
-fn read_directory_with_interrupted_retry(directory: &Path) -> Result<fs::ReadDir, String> {
-    let mut interrupted_attempts = 0;
-    loop {
-        match fs::read_dir(directory) {
-            Ok(entries) => return Ok(entries),
-            Err(error)
-                if error.kind() == std::io::ErrorKind::Interrupted
-                    && interrupted_attempts < 3 =>
-            {
-                interrupted_attempts += 1;
-            }
-            Err(error) => {
-                return Err(format!(
-                    "Unable to inspect {}: {error}",
-                    directory.display()
-                ))
-            }
-        }
-    }
-}
-
-fn collect_word_startup_paths(
-    directory: &Path,
-    depth: usize,
-    output: &mut Vec<PathBuf>,
-) -> Result<(), String> {
-    if depth > 8 || !directory.is_dir() {
-        return Ok(());
-    }
-    let entries = read_directory_with_interrupted_retry(directory)?;
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(error) => {
-                return Err(format!(
-                    "Unable to inspect an Office startup directory entry: {error}"
-                ))
-            }
-        };
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let parent_is_startup = path
-            .parent()
-            .map(|parent| directory_name_matches(parent, "Startup"))
-            .unwrap_or(false);
-        if parent_is_startup && directory_name_matches(&path, "Word") {
-            output.push(path);
-            continue;
-        }
-        collect_word_startup_paths(&path, depth + 1, output)?;
-    }
-    Ok(())
-}
-
 pub(crate) fn discover_word_startup_paths() -> Result<Vec<PathBuf>, String> {
     let home = user_home()?;
-    let root = home.join(OFFICE_GROUP_CONTAINER);
     let mut paths = known_word_startup_paths(&home);
-    // Standard Office 2021/2024 installations already expose a stable Startup
-    // location. Only recurse through the group container as a compatibility
-    // fallback; scanning unrelated SolutionPackages can fail transiently on
-    // macOS and must never suppress detection of a stale VisualTeX add-in.
-    if paths.is_empty() && root.is_dir() {
-        collect_word_startup_paths(&root, 0, &mut paths)?;
-    }
+    // Never recursively walk the Office group container from the settings/status
+    // path. On some Macs FileProvider/TCC coordination can block a synchronous
+    // read_dir indefinitely. The stable Office startup locations above cover the
+    // supported installations; word_startup_install_paths supplies the canonical
+    // location when Office has not created it yet.
     paths.sort();
     paths.dedup();
     Ok(paths)
@@ -524,21 +523,20 @@ fn is_visualtex_word_startup_artifact(path: &Path) -> bool {
 #[cfg(target_os = "macos")]
 fn bounded_directory_entries(
     directory: &Path,
-    canonical_name: &str,
+    _canonical_name: &str,
 ) -> Result<Vec<PathBuf>, String> {
     // Office can leave its group-container directories coordinated for tens of
-    // seconds after a document or host closes. A direct fs::read_dir then blocks
-    // the settings status worker indefinitely, so enumerate in a killable child
-    // and fall back to the canonical install path when macOS does not release the
-    // directory promptly. The healthy path still discovers stale VisualTeX copies.
+    // seconds after a document or host closes. Enumerate in a killable child.
+    // Permission-denied, missing, or timed-out containers are a soft "unknown"
+    // status; status/repair UI must remain responsive.
     let mut child = Command::new("/bin/ls")
         .args(["-1A"])
         .arg(directory)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|error| format!("Unable to inspect {}: {error}", directory.display()))?;
-    let deadline = Instant::now() + Duration::from_millis(1500);
+    let deadline = Instant::now() + Duration::from_millis(900);
     loop {
         match child.try_wait() {
             Ok(Some(_)) => {
@@ -546,7 +544,7 @@ fn bounded_directory_entries(
                     format!("Unable to inspect {}: {error}", directory.display())
                 })?;
                 if !output.status.success() {
-                    return Err(format!("Unable to inspect {}", directory.display()));
+                    return Ok(Vec::new());
                 }
                 return Ok(String::from_utf8_lossy(&output.stdout)
                     .lines()
@@ -556,23 +554,10 @@ fn bounded_directory_entries(
             Ok(None) if Instant::now() < deadline => {
                 thread::sleep(Duration::from_millis(20));
             }
-            Ok(None) => {
+            Ok(None) | Err(_) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                let canonical = directory.join(canonical_name);
-                return Ok(if canonical.is_file() {
-                    vec![canonical]
-                } else {
-                    Vec::new()
-                });
-            }
-            Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!(
-                    "Unable to inspect {}: {error}",
-                    directory.display()
-                ));
+                return Ok(Vec::new());
             }
         }
     }
@@ -583,7 +568,8 @@ fn bounded_directory_entries(
     directory: &Path,
     _canonical_name: &str,
 ) -> Result<Vec<PathBuf>, String> {
-    read_directory_with_interrupted_retry(directory)?
+    fs::read_dir(directory)
+        .map_err(|error| format!("Unable to inspect {}: {error}", directory.display()))?
         .map(|entry| {
             entry
                 .map(|entry| entry.path())
@@ -595,11 +581,8 @@ fn bounded_directory_entries(
 fn discover_word_startup_artifacts() -> Result<Vec<PathBuf>, String> {
     let mut artifacts = Vec::new();
     for startup in discover_word_startup_paths()? {
-        if !startup.is_dir() {
-            continue;
-        }
         for path in bounded_directory_entries(&startup, WORD_ADDIN_NAME)? {
-            if path.is_file() && is_visualtex_word_startup_artifact(&path) {
+            if bounded_path_test(&path, "-f") && is_visualtex_word_startup_artifact(&path) {
                 artifacts.push(path);
             }
         }
@@ -639,7 +622,7 @@ fn discover_powerpoint_addin_artifacts() -> Result<Vec<PathBuf>, String> {
     let mut artifacts = Vec::new();
     for directory in known_powerpoint_addin_directories()? {
         for path in bounded_directory_entries(&directory, POWERPOINT_ADDIN_NAME)? {
-            if path.is_file() && is_visualtex_addin_artifact(&path, ".ppam") {
+            if bounded_path_test(&path, "-f") && is_visualtex_addin_artifact(&path, ".ppam") {
                 artifacts.push(path);
             }
         }
@@ -649,17 +632,58 @@ fn discover_powerpoint_addin_artifacts() -> Result<Vec<PathBuf>, String> {
     Ok(artifacts)
 }
 
-fn remove_dir_if_exists(path: &Path) -> Result<(), String> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(format!("Unable to inspect {}: {error}", path.display())),
-    };
-    if metadata.file_type().is_symlink() || metadata.is_file() {
-        return remove_if_exists(path);
+#[cfg(target_os = "macos")]
+fn bounded_remove(path: &Path, recursive: bool) -> Result<(), String> {
+    let mut command = Command::new("/bin/rm");
+    command.arg(if recursive { "-rf" } else { "-f" }).arg(path);
+    let mut child = command
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("Unable to remove {}: {error}", path.display()))?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return if status.success() {
+                    Ok(())
+                } else {
+                    Err(format!("Unable to remove {}", path.display()))
+                };
+            }
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "Timed out removing VisualTeX Office path {}",
+                    path.display()
+                ));
+            }
+        }
     }
-    fs::remove_dir_all(path)
-        .map_err(|error| format!("Unable to remove {}: {error}", path.display()))
+}
+
+fn remove_dir_if_exists(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return bounded_remove(path, true);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(format!("Unable to inspect {}: {error}", path.display())),
+        };
+        if metadata.file_type().is_symlink() || metadata.is_file() {
+            return remove_if_exists(path);
+        }
+        fs::remove_dir_all(path)
+            .map_err(|error| format!("Unable to remove {}: {error}", path.display()))
+    }
 }
 
 fn backup_compiled_artifacts_to_scratch(word: &Path, powerpoint: &Path) -> Result<(), String> {
@@ -677,12 +701,60 @@ fn backup_compiled_artifacts_to_scratch(word: &Path, powerpoint: &Path) -> Resul
 fn clean_visualtex_owned_office_state() -> Result<(), String> {
     crate::office::background::uninstall_launch_agent()?;
 
-    for artifact in discover_word_startup_artifacts()? {
+    let home = user_home()?;
+    let office_group = home.join(OFFICE_GROUP_CONTAINER);
+    let mut word_artifacts = discover_word_startup_artifacts()?;
+    for user_content in ["User Content.localized", "User Content"] {
+        for startup in ["Startup.localized", "Startup"] {
+            word_artifacts.push(
+                office_group
+                    .join(user_content)
+                    .join(startup)
+                    .join("Word")
+                    .join(WORD_ADDIN_NAME),
+            );
+        }
+    }
+    word_artifacts.extend([
+        home.join("Library/Application Support/Microsoft/Office/Startup/Word")
+            .join(WORD_ADDIN_NAME),
+        home.join(
+            "Library/Containers/com.microsoft.Word/Data/Library/Application Support/Microsoft/Office/Startup/Word",
+        )
+        .join(WORD_ADDIN_NAME),
+    ]);
+    word_artifacts.sort();
+    word_artifacts.dedup();
+    for artifact in word_artifacts {
         remove_if_exists(&artifact)?;
     }
-    for artifact in discover_powerpoint_addin_artifacts()? {
+
+    let mut powerpoint_artifacts = discover_powerpoint_addin_artifacts()?;
+    powerpoint_artifacts.push(powerpoint_addin_path()?);
+    for user_content in ["User Content.localized", "User Content"] {
+        for addins in ["Add-Ins.localized", "Add-Ins", "Addins"] {
+            powerpoint_artifacts.push(
+                office_group
+                    .join(user_content)
+                    .join(addins)
+                    .join(POWERPOINT_ADDIN_NAME),
+            );
+        }
+    }
+    powerpoint_artifacts.extend([
+        home.join("Library/Application Support/Microsoft/Office/PowerPoint Add-Ins")
+            .join(POWERPOINT_ADDIN_NAME),
+        home.join(
+            "Library/Containers/com.microsoft.Powerpoint/Data/Library/Application Support/Microsoft/Office/PowerPoint Add-Ins",
+        )
+        .join(POWERPOINT_ADDIN_NAME),
+    ]);
+    powerpoint_artifacts.sort();
+    powerpoint_artifacts.dedup();
+    for artifact in powerpoint_artifacts {
         remove_if_exists(&artifact)?;
     }
+
     for file in [
         word_script_path()?,
         powerpoint_script_path()?,
@@ -705,7 +777,7 @@ fn clean_visualtex_owned_office_state() -> Result<(), String> {
     for directory in ["OfficeSessions", "OfficePluginStatus", "NativeDocuments"] {
         remove_dir_if_exists(&root.join(directory))?;
     }
-    remove_dir_if_exists(&user_home()?.join("Library/Logs/VisualTeX"))?;
+    remove_dir_if_exists(&home.join("Library/Logs/VisualTeX"))?;
     Ok(())
 }
 
@@ -767,7 +839,7 @@ fn verify_copy(source: &Path, destination: &Path) -> Result<(), String> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(|error| format!("Unable to verify {}: {error}", destination.display()))?;
-    let deadline = Instant::now() + Duration::from_millis(1500);
+    let deadline = Instant::now() + Duration::from_millis(900);
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -786,26 +858,13 @@ fn verify_copy(source: &Path, destination: &Path) -> Result<(), String> {
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                // Office file coordination can temporarily block content reads even
-                // though the canonical installed file remains healthy. Metadata is
-                // still available in that state. Host self-tests provide the final
-                // loaded-code check once Word or PowerPoint is running.
-                let source_size = fs::metadata(source)
-                    .map_err(|error| format!("Unable to verify {}: {error}", source.display()))?
-                    .len();
-                let destination_size = fs::metadata(destination)
-                    .map_err(|error| {
-                        format!("Unable to verify {}: {error}", destination.display())
-                    })?
-                    .len();
-                return if source_size == destination_size {
-                    Ok(())
-                } else {
-                    Err(format!(
-                        "Installed file {} does not match its VisualTeX source",
-                        destination.display()
-                    ))
-                };
+                // Never fall back to synchronous metadata on a coordinated Office
+                // container: the metadata call itself can hang. A timed-out compare
+                // is an unknown/mismatched state; the UI can retry without blocking.
+                return Err(format!(
+                    "Timed out verifying installed VisualTeX file {}",
+                    destination.display()
+                ));
             }
             Err(error) => {
                 let _ = child.kill();
@@ -1199,18 +1258,50 @@ fn parse_health(bytes: &[u8]) -> Option<PluginHealthFile> {
     serde_json::from_slice(bytes).ok()
 }
 
+#[cfg(target_os = "macos")]
+fn bounded_read_small_file(path: &Path, maximum_bytes: usize) -> Option<Vec<u8>> {
+    let mut child = Command::new("/bin/cat")
+        .arg(path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = Instant::now() + Duration::from_millis(1000);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                let output = child.wait_with_output().ok()?;
+                if !output.status.success() || output.stdout.len() > maximum_bytes {
+                    return None;
+                }
+                return Some(output.stdout);
+            }
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn bounded_read_small_file(path: &Path, maximum_bytes: usize) -> Option<Vec<u8>> {
+    let bytes = fs::read(path).ok()?;
+    (bytes.len() <= maximum_bytes).then_some(bytes)
+}
+
 fn read_health(host: &str) -> Result<PluginHealthStatus, String> {
     let path = health_path(host)?;
-    let bytes = match fs::read(&path) {
-        Ok(value) => value,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(PluginHealthStatus {
-                reported: false,
-                loaded: false,
-                plugin_version: None,
-            })
-        }
-        Err(error) => return Err(format!("Unable to read {}: {error}", path.display())),
+    let Some(bytes) = bounded_read_small_file(&path, 64 * 1024) else {
+        return Ok(PluginHealthStatus {
+            reported: false,
+            loaded: false,
+            plugin_version: None,
+        });
     };
     let Some(health) = parse_health(&bytes) else {
         return Ok(PluginHealthStatus {
@@ -1311,9 +1402,13 @@ pub fn status(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> 
     let powerpoint_support_paths = vec![powerpoint_script.clone()];
     let word_files_present = !discovered_word_artifacts.is_empty();
     let powerpoint_files_present = !discovered_powerpoint_artifacts.is_empty();
-    let word_files_installed = word_support_paths.iter().all(|path| path.is_file())
+    let word_files_installed = word_support_paths
+        .iter()
+        .all(|path| bounded_path_test(path, "-f"))
         && addin_installation_matches(&word_source, &word_destinations, &discovered_word_artifacts);
-    let powerpoint_files_installed = powerpoint_support_paths.iter().all(|path| path.is_file())
+    let powerpoint_files_installed = powerpoint_support_paths
+        .iter()
+        .all(|path| bounded_path_test(path, "-f"))
         && addin_installation_matches(
             &powerpoint_source,
             &powerpoint_destinations,
@@ -1490,26 +1585,35 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
     status(app)
 }
 
-pub fn uninstall(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> {
+pub fn uninstall(_app: &AppHandle) -> Result<(), String> {
     if !cfg!(target_os = "macos") {
         return Err("The native offline Office add-ins are available only on macOS".to_string());
     }
     ensure_office_hosts_stopped()?;
-    clean_visualtex_owned_office_state()?;
-    status(app)
+    // Uninstall success must not depend on a second status probe. On machines
+    // with a wedged Office container, cleanup can succeed even though probing
+    // that container is temporarily unavailable.
+    clean_visualtex_owned_office_state()
 }
 
 fn remove_if_exists(path: &Path) -> Result<(), String> {
-    match fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("Unable to remove {}: {error}", path.display())),
+    #[cfg(target_os = "macos")]
+    {
+        return bounded_remove(path, false);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("Unable to remove {}: {error}", path.display())),
+        }
     }
 }
 
 pub fn reveal_powerpoint_addin() -> Result<(), String> {
     let path = powerpoint_addin_path()?;
-    if !path.is_file() {
+    if !bounded_path_test(&path, "-f") {
         return Err(
             "VisualTeX.ppam is not installed. Install or repair the offline add-in first."
                 .to_string(),
@@ -1547,9 +1651,15 @@ pub fn open_powerpoint_tutorial(app: &AppHandle) -> Result<(), String> {
 pub async fn get_macos_offline_office_install_status(
     app: AppHandle,
 ) -> Result<MacOfflineOfficeInstallStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || status(&app))
-        .await
-        .map_err(|error| format!("Office installation status worker failed: {error}"))?
+    let worker = tauri::async_runtime::spawn_blocking(move || status(&app));
+    match tokio::time::timeout(Duration::from_secs(5), worker).await {
+        Ok(result) => result
+            .map_err(|error| format!("Office installation status worker failed: {error}"))?,
+        Err(_) => Err(
+            "Timed out reading native Office add-in status. Quit Word and PowerPoint, then retry."
+                .to_string(),
+        ),
+    }
 }
 
 #[tauri::command]
@@ -1567,9 +1677,7 @@ pub fn repair_macos_offline_office_addins(
 }
 
 #[tauri::command]
-pub fn uninstall_macos_offline_office_addins(
-    app: AppHandle,
-) -> Result<MacOfflineOfficeInstallStatus, String> {
+pub fn uninstall_macos_offline_office_addins(app: AppHandle) -> Result<(), String> {
     uninstall(&app)
 }
 
@@ -1678,16 +1786,6 @@ mod tests {
         assert_eq!(fs::read(&existing).unwrap(), b"old");
         assert!(!newly_created.exists());
         let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn localized_startup_names_are_matched_without_locale_assumptions() {
-        assert!(directory_name_matches(
-            Path::new("Startup.localized"),
-            "Startup"
-        ));
-        assert!(directory_name_matches(Path::new("Word"), "Word"));
-        assert!(!directory_name_matches(Path::new("PowerPoint"), "Word"));
     }
 
     #[test]

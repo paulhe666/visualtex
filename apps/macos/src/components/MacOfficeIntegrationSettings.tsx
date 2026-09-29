@@ -25,7 +25,28 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+async function invokeWithTimeout<T>(command: string, timeoutMs = 6_000): Promise<T> {
+  let timeoutId: number | undefined;
+  try {
+    return await Promise.race([
+      invoke<T>(command),
+      new Promise<T>((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error("Office status request timed out"));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
+}
+
 function officeErrorSummary(raw: string, isEn: boolean) {
+  if (/timed out|timeout/i.test(raw)) {
+    return isEn
+      ? "Office status checking timed out. You can still uninstall the add-ins, or quit Office and refresh."
+      : "Office 状态读取超时。仍可直接卸载插件，或退出 Office 后重新刷新。";
+  }
   if (/OfficePluginStatus|health file|invalid JSON|sourceRevision/i.test(raw)) {
     return isEn
       ? "An old add-in status record was ignored. Refresh the page; repair only if the Office buttons do not work."
@@ -75,18 +96,23 @@ export function MacOfficeIntegrationSettings() {
     setBusy((value) => value ?? "refresh");
     try {
       const next = decodeMacOfflineOfficeStatus(
-        await invoke<unknown>("get_macos_offline_office_install_status"),
+        await invokeWithTimeout<unknown>("get_macos_offline_office_install_status"),
       );
       setStatus(next);
       setMessage("");
     } catch (error) {
+      const raw = errorMessage(
+        error,
+        isEn
+          ? "Unable to read the native Office add-in status."
+          : "无法读取原生 Office 加载项状态。",
+      );
       setMessage(
-        errorMessage(
-          error,
-          isEn
-            ? "Unable to read the native Office add-in status."
-            : "无法读取原生 Office 加载项状态。",
-        ),
+        raw === "Office status request timed out"
+          ? isEn
+            ? "Office status request timed out."
+            : "Office 状态读取超时。"
+          : raw,
       );
     } finally {
       setBusy((value) => (value === "refresh" ? null : value));
@@ -103,7 +129,15 @@ export function MacOfficeIntegrationSettings() {
       setMessage("");
       try {
         await invoke(command);
-        if (command !== "open_word" && command !== "open_powerpoint" && command !== "reveal_macos_powerpoint_addin") {
+        if (command === "uninstall_macos_offline_office_addins") {
+          // Cleanup success must not wait for a potentially unhealthy Office
+          // container status probe. Refresh in the background instead.
+          void refresh();
+        } else if (
+          command !== "open_word" &&
+          command !== "open_powerpoint" &&
+          command !== "reveal_macos_powerpoint_addin"
+        ) {
           await refresh();
         }
       } catch (error) {
@@ -147,8 +181,20 @@ export function MacOfficeIntegrationSettings() {
 
       {!status ? (
         <div className="office-settings-loading">
-          <RefreshCw size={16} className="is-spinning" />
-          <span>{isEn ? "Reading native add-in status…" : "正在读取原生加载项状态…"}</span>
+          {busy === "refresh" ? (
+            <RefreshCw size={16} className="is-spinning" />
+          ) : (
+            <ShieldAlert size={16} className="office-state-warning" />
+          )}
+          <span>
+            {busy === "refresh"
+              ? isEn
+                ? "Reading native add-in status…"
+                : "正在读取原生加载项状态…"
+              : isEn
+                ? "The Office status check did not finish. You can retry or uninstall the add-ins directly."
+                : "Office 插件状态读取未完成。可以重试，或直接卸载插件。"}
+          </span>
         </div>
       ) : (
         <div className="office-status-grid native-office-status-grid">

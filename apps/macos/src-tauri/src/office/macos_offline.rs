@@ -128,7 +128,9 @@ const MAX_POWERPOINT_FONT_SIZE_PT: f64 = 512.0;
 static WORD_DISPATCH_LOCK: Mutex<()> = Mutex::new(());
 static POWERPOINT_DISPATCH_LOCK: Mutex<()> = Mutex::new(());
 static OFFICE_EDITOR_SIZE_WRITE_GENERATION: AtomicU64 = AtomicU64::new(0);
+static FAST_OPEN_ACCESS_BACKOFF_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
 static FAST_OPEN_WATCHER_STARTED: OnceLock<()> = OnceLock::new();
+const FAST_OPEN_ACCESS_BACKOFF_MS: u64 = 2_000;
 
 #[derive(Debug, Clone, Copy)]
 struct OfficeEditorWindowSize {
@@ -547,6 +549,17 @@ fn epoch_ms() -> u64 {
         .unwrap_or_default()
 }
 
+fn mark_fast_open_access_unavailable() {
+    FAST_OPEN_ACCESS_BACKOFF_UNTIL_MS.store(
+        epoch_ms().saturating_add(FAST_OPEN_ACCESS_BACKOFF_MS),
+        Ordering::Relaxed,
+    );
+}
+
+fn fast_open_access_is_backed_off() -> bool {
+    epoch_ms() < FAST_OPEN_ACCESS_BACKOFF_UNTIL_MS.load(Ordering::Relaxed)
+}
+
 fn performance_logger() -> Option<&'static mpsc::Sender<OfficeEditorPerformanceRecord>> {
     static LOGGER: OnceLock<Option<mpsc::Sender<OfficeEditorPerformanceRecord>>> = OnceLock::new();
     LOGGER
@@ -754,6 +767,9 @@ fn persist_fast_open_claim(
 }
 
 pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String> {
+    if fast_open_access_is_backed_off() {
+        return Ok(false);
+    }
     let now = SystemTime::now();
     let mut candidates = Vec::new();
     'host_roots: for (host, root) in fast_open_inbox_roots()? {
@@ -762,6 +778,10 @@ pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String>
                 Ok(metadata) => break metadata,
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue 'host_roots,
+                Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                    mark_fast_open_access_unavailable();
+                    continue 'host_roots;
+                }
                 Err(error) => {
                     return Err(format!(
                         "Unable to inspect Office fast-open inbox {}: {error}",
@@ -780,6 +800,10 @@ pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String>
             match fs::read_dir(&root) {
                 Ok(entries) => break entries,
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                    mark_fast_open_access_unavailable();
+                    continue 'host_roots;
+                }
                 Err(error) => {
                     return Err(format!(
                         "Unable to enumerate Office fast-open inbox {}: {error}",
@@ -792,6 +816,10 @@ pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String>
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                    mark_fast_open_access_unavailable();
+                    continue 'host_roots;
+                }
                 Err(error) => {
                     return Err(format!(
                         "Unable to enumerate Office fast-open inbox {}: {error}",
@@ -808,6 +836,10 @@ pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String>
                     Ok(metadata) => break metadata,
                     Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue 'entries,
+                    Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                        mark_fast_open_access_unavailable();
+                        continue 'host_roots;
+                    }
                     Err(error) => {
                         return Err(format!(
                             "Unable to inspect Office fast-open request {}: {error}",
@@ -823,12 +855,19 @@ pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String>
             {
                 continue;
             }
-            let modified = metadata.modified().map_err(|error| {
-                format!(
-                    "Unable to read Office fast-open request timestamp {}: {error}",
-                    path.display()
-                )
-            })?;
+            let modified = match metadata.modified() {
+                Ok(modified) => modified,
+                Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                    mark_fast_open_access_unavailable();
+                    continue 'host_roots;
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "Unable to read Office fast-open request timestamp {}: {error}",
+                        path.display()
+                    ))
+                }
+            };
             if !fast_open_modified_is_recent(modified, now) {
                 continue;
             }
@@ -848,6 +887,10 @@ pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String>
         match fs::rename(&path, &claim_path) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                mark_fast_open_access_unavailable();
+                continue;
+            }
             Err(error) => {
                 return Err(format!(
                     "Unable to claim Office fast-open request {}: {error}",
@@ -893,16 +936,32 @@ fn fast_open_ready_heartbeat() -> Result<String, String> {
 }
 
 fn refresh_fast_open_ready_markers() -> Result<(), String> {
+    if fast_open_access_is_backed_off() {
+        return Ok(());
+    }
     let heartbeat = fast_open_ready_heartbeat()?;
     for (_host, root) in fast_open_inbox_roots()? {
-        fs::create_dir_all(&root).map_err(|error| {
-            format!(
-                "Unable to create Office fast-open inbox {}: {error}",
-                root.display()
-            )
-        })?;
-        set_mode(&root, 0o700)?;
-        atomic_write_runtime(&root.join(FAST_OPEN_READY_FILE), heartbeat.as_bytes(), 0o600)?;
+        // FastOpen is an optimization only. If macOS denies direct access to an
+        // Office sandbox, do not surface an error or keep hammering that path;
+        // VBA will fall back to the AppleScriptTask/session URL transport.
+        if fs::create_dir_all(&root).is_err() {
+            mark_fast_open_access_unavailable();
+            continue;
+        }
+        if set_mode(&root, 0o700).is_err() {
+            mark_fast_open_access_unavailable();
+            continue;
+        }
+        if atomic_write_runtime(
+            &root.join(FAST_OPEN_READY_FILE),
+            heartbeat.as_bytes(),
+            0o600,
+        )
+        .is_err()
+        {
+            mark_fast_open_access_unavailable();
+            continue;
+        }
     }
     Ok(())
 }
@@ -7450,11 +7509,30 @@ pub(crate) fn refresh_health_signal(host: &str) -> bool {
     if !running {
         return false;
     }
-    Command::new("/usr/bin/osascript")
+    let mut child = match Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
-        .output()
-        .is_ok_and(|output| output.status.success())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return false,
+    };
+    let deadline = Instant::now() + Duration::from_millis(1000);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
