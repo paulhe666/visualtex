@@ -1949,6 +1949,9 @@ fn report_office_open_failure(app: &AppHandle, error: &str) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Some(status) = office::word_image_alignment::run_cli_if_requested() {
+        std::process::exit(status);
+    }
     if let Some(status) = office::omml_batch::run_cli_if_requested() {
         std::process::exit(status);
     }

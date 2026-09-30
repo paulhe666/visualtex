@@ -4,7 +4,7 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-office-performance-20260801-r101"
+    "word-office-performance-20260801-r105"
 Private Const VT_WORD_LATEX_REDRAW_REVISION As String = _
     "word-latex-redraw-20260802-r1"
 Private Const VT_WORD_DOCUMENT_IMPORT_REVISION As String = _
@@ -30,6 +30,7 @@ Private Const VT_WORD_OMML_VARIABLE_PREFIX As String = "VT_OMML_"
 Private Const VT_WORD_METADATA_VARIABLE_PREFIX As String = "VT_Metadata_"
 Private Const VT_WORD_FORMAT_VARIABLE_PREFIX As String = "VT_Format_"
 Private Const VT_WORD_IMAGE_SCALE_VARIABLE_PREFIX As String = "VT_ImageScale_"
+Private Const VT_WORD_IMAGE_CANVAS_VARIABLE_PREFIX As String = "VT_ImageCanvas_"
 Private Const VT_WORD_IMAGE_INK_CENTER_VARIABLE_PREFIX As String = _
     "VT_ImageInkCenter_"
 Private Const VT_WORD_NATIVE_SIGNATURE_VARIABLE_PREFIX As String = _
@@ -114,7 +115,12 @@ Private VT_WORD_PERFORMANCE_OPERATION As String
 Private VT_WORD_IMAGE_MACRO_MIGRATION_SCHEDULED As Boolean
 Private VT_WORD_IMAGE_MACRO_MIGRATION_RUNNING As Boolean
 Private VT_WORD_IMAGE_SIZE_WATCH_SCHEDULED As Boolean
+Private VT_WORD_IDLE_TASKS_RUNNING As Boolean
 Private VT_WORD_IMAGE_SIZE_WATCH_RUNNING As Boolean
+Private VT_WORD_ALIGNMENT_METRICS_CACHE As Collection
+Private VT_WORD_TYPOGRAPHY_FINGERPRINT As String
+Private VT_WORD_DOCUMENT_TYPOGRAPHY_FINGERPRINT As String
+Private VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING As Boolean
 Private VT_WORD_ORPHAN_WATCH_SCHEDULED As Boolean
 Private VT_WORD_ORPHAN_WATCH_RUNNING As Boolean
 Private VT_WORD_NUMBERING_PREFERENCE_CACHE_LOADED As Boolean
@@ -199,6 +205,9 @@ Public Sub VisualTeX_InitializeWordHost()
     VTEnsureApplicationPrewarmScheduled
     VisualTeX_MigrateImageMacroButtons
     VTEnsureOrphanWatchScheduled
+    If Documents.Count > 0 Then _
+        VTSynchronizeWordImageTypography ActiveDocument.Content
+    VTEnsureImageSizeWatchScheduled
     VTWriteWordHealth
     On Error GoTo 0
 End Sub
@@ -214,7 +223,7 @@ Public Sub VTEnsureApplicationPrewarmScheduled()
     VT_WORD_APPLICATION_PREWARM_SCHEDULED = True
     Application.OnTime _
         When:=Now + TimeSerial(0, 0, 1), _
-        name:="VisualTeX_PrewarmWordApplication"
+        name:="VisualTeX_RunWordIdleTasks"
     Exit Sub
 
 ScheduleFailed:
@@ -238,7 +247,9 @@ End Sub
 Public Sub AutoOpen()
     If VTWordVbeBuildTemplateActive() Then Exit Sub
     On Error Resume Next
-    VisualTeX_MigrateImageMacroButtons
+    ' AutoOpen runs after the first document exists. Unlike AutoExec, it cannot
+    ' consume Finder's initial document-open request before Word creates it.
+    VisualTeX_InitializeWordHost
     On Error GoTo 0
 End Sub
 
@@ -334,6 +345,72 @@ Public Sub VisualTeX_DumpActiveDocumentOpenXmlForRegression()
     outputPath = VTApplicationSupportRoot() & _
         "/Tests/document-import-openxml.xml"
     VTWriteTextAtomic outputPath, ActiveDocument.Content.WordOpenXML
+End Sub
+
+Public Sub VisualTeX_DumpWordImageTypographyForRegression()
+    Dim shape As InlineShape
+    Dim result As String
+    Dim textSize As Double
+    Dim textFont As String
+    Dim textSample As String
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim fontSize As Double
+    Dim referenceWidth As Double
+    Dim referenceHeight As Double
+    Dim referenceBaseline As Double
+    Dim observedSize As Double
+    Dim metrics As String
+    Dim request As String
+    Dim identified As Boolean
+    Dim expectedPosition As Long
+    Dim calculationError As String
+    Dim fingerprint As String
+    Dim inkTop As Double
+    Dim inkBottom As Double
+    Dim anchorRatio As Double
+    Dim ascent As Double
+    Dim descent As Double
+    Dim asianText As Boolean
+    Dim primaryLetter As Boolean
+    If Documents.Count = 0 Then Exit Sub
+    On Error Resume Next
+    fingerprint = VTImageTypographyFingerprint(ActiveDocument.Content)
+    result = "HOST" & vbTab & VT_WORD_SOURCE_REVISION & vbTab & _
+        CStr(VTWordInternalMutationActive()) & vbTab & CStr(ActiveDocument.ReadOnly) & vbTab & _
+        CStr(ActiveDocument.ProtectionType) & vbTab & CStr(Err.Number) & ":" & Err.Description & vbLf
+    Err.Clear
+    On Error GoTo 0
+    For Each shape In ActiveDocument.InlineShapes
+        VTWordInlineTextContext shape, textSize, textFont, textSample
+        identified = VTTryParseFormulaReference(shape.Title, formulaId, displayMode, numbered)
+        metrics = ""
+        If identified And VTTryReadWordImageScaleState(ActiveDocument, formulaId, _
+           fontSize, referenceWidth, referenceHeight, referenceBaseline, observedSize) Then
+            request = "{""bodyFont"":" & VTJsonString(textFont) & _
+                ",""bodySample"":" & VTJsonString(textSample) & _
+                ",""metadata"":" & VTJsonString(shape.AlternativeText) & "}"
+            metrics = VTFileBridgeCall("ReadVisualTeXWordAlignmentMetrics", request)
+        End If
+        On Error Resume Next
+        Err.Clear
+        expectedPosition = VTExpectedWordInlineImageBaseline(shape, referenceHeight, referenceBaseline)
+        calculationError = CStr(Err.Number) & ":" & Err.Description
+        Err.Clear
+        VTWordInlineAlignmentMetrics shape, referenceHeight, textSize, inkTop, inkBottom, _
+            anchorRatio, ascent, descent, asianText, primaryLetter
+        On Error GoTo 0
+        result = result & shape.Title & vbTab & CStr(identified) & vbTab & _
+            CStr(shape.Range.ParagraphFormat.BaseLineAlignment) & vbTab & _
+            CStr(textSize) & vbTab & textFont & vbTab & textSample & vbTab & _
+            CStr(shape.Range.Font.Position) & vbTab & CStr(shape.Width) & vbTab & _
+            CStr(shape.Height) & vbTab & metrics & vbTab & CStr(expectedPosition) & vbTab & _
+            calculationError & vbTab & CStr(inkTop) & "|" & CStr(inkBottom) & "|" & _
+            CStr(anchorRatio) & vbLf
+    Next shape
+    VTWriteTextAtomic VTApplicationSupportRoot() & _
+        "/Tests/word-image-typography-probe.tsv", result
 End Sub
 
 Public Sub VisualTeX_ExportActiveDocumentPdfForRegression()
@@ -12280,6 +12357,7 @@ End Function
 
 Public Sub VTInitializeWordEvents()
     On Error GoTo InitializationFailed
+    If Not VT_WORD_EVENT_SINK Is Nothing Then Exit Sub
     VTTraceWordDoubleClick "events-initialize-enter", Nothing, ""
     Set VT_WORD_EVENT_SINK = New VTWordEvents
     Set VT_WORD_EVENT_SINK.App = Word.Application
@@ -14062,6 +14140,7 @@ Private Sub VTDeleteEquationNumberScaffold( _
         documentObject, VTWordFormatVariableName(formulaId)
     VTDeleteDocumentVariable _
         documentObject, VTWordImageScaleVariableName(formulaId)
+    VTDeleteDocumentVariable documentObject, VTWordImageCanvasVariableName(formulaId)
     VTDeleteDocumentVariable _
         documentObject, VTWordImageInkCenterVariableName(formulaId)
     VTDeleteDocumentVariable _
@@ -14661,7 +14740,7 @@ Private Sub VTEnsureOrphanWatchScheduled()
     VT_WORD_ORPHAN_WATCH_SCHEDULED = True
     Application.OnTime _
         When:=Now + TimeSerial(0, 0, 1), _
-        name:="VisualTeX_WatchOrphanedNumberedDisplay"
+        name:="VisualTeX_RunWordIdleTasks"
     Exit Sub
 
 ScheduleFailed:
@@ -18669,7 +18748,7 @@ Public Sub VTEnsureImageMacroMigrationScheduled()
     VT_WORD_IMAGE_MACRO_MIGRATION_SCHEDULED = True
     Application.OnTime _
         When:=Now + TimeSerial(0, 0, 1), _
-        name:="VisualTeX_MigrateImageMacroButtons"
+        name:="VisualTeX_RunWordIdleTasks"
     Exit Sub
 
 ScheduleFailed:
@@ -20121,7 +20200,7 @@ Private Sub VTReadWordImageConversionState( _
     observedWordFontSizePt = fontSizePt
     referenceWidthPt = formulaShape.Width * _
         VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
-    referenceHeightPt = formulaShape.Height * _
+    referenceHeightPt = VTWordImageGlyphHeight(formulaShape) * _
         VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
     referenceBaselinePt = VTInlineShapeFontPosition(formulaShape) * _
         VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
@@ -20852,7 +20931,7 @@ Private Function VTWordConvertNativeBookmarkToImageFast( _
         candidate.Range.Font.Position = 0
     End If
     If Abs(candidate.Width - widthPoints) > 0.1 Or _
-       Abs(candidate.Height - heightPoints) > 0.1 Or _
+       Abs(VTWordImageGlyphHeight(candidate) - heightPoints) > 0.1 Or _
        candidate.AlternativeText <> encodedMetadata Or _
        candidate.Title <> formulaReference Then
         Err.Raise vbObjectError + 7422, "VisualTeX", _
@@ -21797,6 +21876,7 @@ Private Sub VTDeleteDocumentImportedFormulaState( _
     VTDeleteWordMetadataPayload documentObject, formulaId
     VTDeleteDocumentVariable documentObject, VTWordFormatVariableName(formulaId)
     VTDeleteDocumentVariable documentObject, VTWordImageScaleVariableName(formulaId)
+    VTDeleteDocumentVariable documentObject, VTWordImageCanvasVariableName(formulaId)
     VTDeleteDocumentVariable _
         documentObject, VTWordImageInkCenterVariableName(formulaId)
     VTDeleteDocumentVariable _
@@ -23980,6 +24060,7 @@ Private Function VTPrepareWordCreateInsertionRange( _
     Dim beforeOccupied As Boolean
     Dim afterOccupied As Boolean
     Dim characterValue As String
+    Dim typographyAlignment As Long
 
     If requestedRange Is Nothing Then
         Err.Raise vbObjectError + 7551, "VisualTeX", _
@@ -23990,6 +24071,7 @@ Private Function VTPrepareWordCreateInsertionRange( _
             "The VisualTeX Word display mode is invalid."
     End If
 
+    typographyAlignment = requestedRange.Paragraphs(1).Range.ParagraphFormat.BaseLineAlignment
     Set documentObject = requestedRange.Document
     Set insertionRange = requestedRange.Duplicate
     insertionRange.Collapse wdCollapseStart
@@ -24079,6 +24161,7 @@ Private Function VTPrepareWordCreateInsertionRange( _
     Else
         VTNormalizePlainWordParagraph targetParagraph
     End If
+    insertionRange.Paragraphs(1).Range.ParagraphFormat.BaseLineAlignment = typographyAlignment
     Set VTPrepareWordCreateInsertionRange = insertionRange
 End Function
 
@@ -25060,6 +25143,9 @@ Private Sub VTCommitWordDispatch( _
     Dim hadPreviousMetadataPayload As Boolean
     Dim hadPreviousFormat As Boolean
     Dim hadPreviousImageScale As Boolean
+    Dim previousImageCanvas As String
+    Dim hadPreviousImageCanvas As Boolean
+    Dim imageCanvasCaptured As Boolean
     Dim hadPreviousInkCenter As Boolean
     Dim formulaStateStored As Boolean
     Dim pendingPlaceholderRemoved As Boolean
@@ -25365,6 +25451,9 @@ Private Sub VTCommitWordDispatch( _
         targetDocument, formulaId, previousFontSizePt, _
         previousReferenceWidthPt, previousReferenceHeightPt, _
         previousReferenceBaselinePt, previousObservedWordFontSizePt)
+    hadPreviousImageCanvas = VTTryGetDocumentVariable( _
+        targetDocument, VTWordImageCanvasVariableName(formulaId), previousImageCanvas)
+    imageCanvasCaptured = True
     hadPreviousInkCenter = VTTryReadWordImageInkCenterYRatio( _
         targetDocument, formulaId, previousInkCenterYRatio)
     VTWordPerformanceMark "previous-state-read"
@@ -25680,7 +25769,7 @@ Private Sub VTCommitWordDispatch( _
         End If
     End If
 
-    If Abs(candidate.Width - widthPoints) > 0.1 Or Abs(candidate.Height - heightPoints) > 0.1 Or _
+    If Abs(candidate.Width - widthPoints) > 0.1 Or Abs(VTWordImageGlyphHeight(candidate) - heightPoints) > 0.1 Or _
        candidate.AlternativeText <> metadata Or candidate.Title <> formulaReference Then
         Err.Raise vbObjectError + 7422, "VisualTeX", "Word did not persist the VisualTeX formula properties."
     End If
@@ -25932,6 +26021,15 @@ RollbackCandidate:
     End If
 
 RestorePreviousState:
+    ' Canvas writes precede the general state commit and can fail during
+    ' staging validation. Restore them even when formulaStateStored is False.
+    If imageCanvasCaptured Then
+        If hadPreviousImageCanvas Then
+            VTSetDocumentVariable targetDocument, VTWordImageCanvasVariableName(formulaId), previousImageCanvas
+        Else
+            VTDeleteDocumentVariable targetDocument, VTWordImageCanvasVariableName(formulaId)
+        End If
+    End If
     If formulaStateStored Then
         If hadPreviousLatexPayload Then
             VTSetWordLatexPayload targetDocument, formulaId, previousLatexBase64
@@ -29367,29 +29465,10 @@ Private Function VTExpectedImageFormulaPosition( _
     End If
 
     inkCenterYRatio = VTNumberedImageInkCenterYRatio(formulaShape)
-    ' An inline picture's bottom edge sits on Word's text baseline before
-    ' Font.Position is applied. The PNG alpha bounds therefore place the painted
-    ' formula centre formulaHeight * (1 - inkCenterYRatio) points above that
-    ' baseline. Ordinary paragraph text (including the numbered layout and its
-    ' paragraph mark) stays at Position 0; the font-size-scaled glyph-centre
-    ' constant below lets the picture share that visual centre. Equating those
-    ' two centres gives the one permitted picture-only Position correction.
-    formulaInkCenterAboveBaseline = _
-        formulaHeight * (1# - inkCenterYRatio)
-    baselineTextInkCenterAboveBaseline = _
-        baselineTextSize * _
-        VT_WORD_EQUATION_NUMBER_INK_CENTER_ABOVE_BASELINE_RATIO
-    rawPosition = _
-        baselineTextInkCenterAboveBaseline - formulaInkCenterAboveBaseline
-    If rawPosition < -256# Then rawPosition = -256#
-    If rawPosition > 256# Then rawPosition = 256#
-    If rawPosition >= 0# Then
-        VTExpectedImageFormulaPosition = _
-            CLng(Int(rawPosition + 0.5#))
-    Else
-        VTExpectedImageFormulaPosition = _
-            -CLng(Int((-rawPosition) + 0.5#))
-    End If
+    formulaInkCenterAboveBaseline = formulaHeight * (1# - inkCenterYRatio)
+    VTExpectedImageFormulaPosition = VTWordPicturePosition( _
+        formulaShape, formulaInkCenterAboveBaseline, baselineTextSize, _
+        0.70556640625#, -0.220703125#, 0.9501953125#, 0.22216796875#, False)
 End Function
 
 Private Sub VTApplyUnnumberedImageFormulaVerticalAlignment( _
@@ -29412,11 +29491,7 @@ Private Sub VTApplyUnnumberedImageFormulaVerticalAlignment( _
     formulaPosition = VTExpectedImageFormulaPosition( _
         formulaShape, baselineTextSize, _
         "The unnumbered image Equation paragraph-mark alignment")
-    With formulaShape.Range.Font
-        .Superscript = False
-        .Subscript = False
-        .Position = formulaPosition
-    End With
+    VTApplyWordImagePosition formulaShape, formulaPosition
 
     ' Keep Return/typing on Word's ordinary paragraph baseline. Moving only the
     ' picture gives an unnumbered display the same visual-centre relationship as
@@ -29467,6 +29542,16 @@ Private Function VTTryCalculateCurrentNumberedImagePaintedCenterDeltaPoints( _
     numberInkCenterAboveBaseline = _
         numberSize * _
         VT_WORD_EQUATION_NUMBER_INK_CENTER_ABOVE_BASELINE_RATIO
+    Select Case formulaShape.Range.ParagraphFormat.BaseLineAlignment
+        Case wdBaselineAlignTop
+            numberInkCenterAboveBaseline = formulaHeight - numberSize * _
+                (0.463134765625# + 0.9501953125# - 0.70556640625#)
+        Case wdBaselineAlignCenter
+            numberInkCenterAboveBaseline = formulaHeight / 2# + numberSize * _
+                (0.242431640625# - (0.9501953125# - 0.22216796875#) / 2#)
+        Case wdBaselineAlignFarEast50
+            numberInkCenterAboveBaseline = numberSize * (0.9501953125# - 0.22216796875#) / 2#
+    End Select
     ' Positive means the picture's painted centre is lower on the page than the
     ' number's painted centre. Whole-point Font.Position quantisation guarantees
     ' that a correctly rounded result stays within half a point.
@@ -29491,11 +29576,7 @@ Private Function VTApplyNumberedImageFormulaVerticalAlignment( _
     VTApplyStaticImageEquationNumberFormatting numberRange, numberSize
     formulaPosition = VTExpectedNumberedImageFormulaPosition( _
         formulaShape, numberRange, valueLabel)
-    With formulaShape.Range.Font
-        .Superscript = False
-        .Subscript = False
-        .Position = formulaPosition
-    End With
+    VTApplyWordImagePosition formulaShape, formulaPosition
 
     VTApplyNumberedImageFormulaVerticalAlignment = Abs(formulaPosition)
 End Function
@@ -30938,7 +31019,9 @@ Private Sub VTConfigureNumberedEquationParagraph( _
 
     Dim textWidth As Single
     Dim imageEquationStyle As Style
+    Dim typographyAlignment As Long
 
+    typographyAlignment = paragraphRange.ParagraphFormat.BaseLineAlignment
     textWidth = VTEquationLayoutWidth(paragraphRange)
     If paragraphRange.InlineShapes.Count = 1 And _
        paragraphRange.OMaths.Count = 0 Then
@@ -30954,6 +31037,7 @@ Private Sub VTConfigureNumberedEquationParagraph( _
         paragraphRange.Style = wdStyleNormal
     End If
     With paragraphRange.ParagraphFormat
+        .BaseLineAlignment = typographyAlignment
         .Alignment = wdAlignParagraphJustify
         .LeftIndent = 0!
         .RightIndent = 0!
@@ -35693,11 +35777,14 @@ Private Sub VTNormalizeUnnumberedDisplayParagraph( _
     ByVal formulaRange As Range)
 
     Dim paragraphRange As Range
+    Dim typographyAlignment As Long
 
     If formulaRange Is Nothing Then Exit Sub
     Set paragraphRange = formulaRange.Paragraphs(1).Range.Duplicate
+    typographyAlignment = paragraphRange.ParagraphFormat.BaseLineAlignment
     paragraphRange.Style = wdStyleNormal
     With paragraphRange.ParagraphFormat
+        .BaseLineAlignment = typographyAlignment
         .Alignment = wdAlignParagraphCenter
         .LeftIndent = 0!
         .RightIndent = 0!
@@ -35719,6 +35806,94 @@ Private Sub VTNormalizeImageDisplayParagraph(ByVal formulaRange As Range)
         .SpaceBefore = 0!
         .SpaceAfter = 0!
     End With
+End Sub
+
+Public Sub VisualTeX_RunWordChineseImageAlignmentRegression()
+    Dim testDocument As Document
+    Dim shape As InlineShape
+    Dim paragraphRange As Range
+    Dim originalMode As Long
+    Dim modes As Variant
+    Dim mode As Variant
+    Dim imageIndex As Long
+    Dim originalHeight As Double
+    Dim originalWidth As Double
+    Dim report As String
+    Dim resultPath As String
+    Dim failureNumber As Long
+    Dim failureDescription As String
+    resultPath = VTApplicationSupportRoot() & "/Tests/word-chinese-image-alignment-result.txt"
+    On Error GoTo RegressionFailed
+    Set testDocument = ActiveDocument
+    If testDocument.Name <> "word-chinese-image-alignment-fixture.docx" Or _
+       testDocument.InlineShapes.Count <> 45 Then _
+        Err.Raise 5, "VisualTeX regression", "Open the 45-image reference fixture."
+    modes = Array(wdBaselineAlignBaseline, wdBaselineAlignTop, _
+        wdBaselineAlignCenter, wdBaselineAlignFarEast50, wdBaselineAlignAuto)
+    VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING = True
+    report = "PASS" & vbLf
+    For imageIndex = 1 To testDocument.InlineShapes.Count
+        Set shape = testDocument.InlineShapes(imageIndex)
+        Set paragraphRange = shape.Range.Paragraphs(1).Range.Duplicate
+        originalMode = paragraphRange.ParagraphFormat.BaseLineAlignment
+        originalHeight = VTWordImageGlyphHeight(shape)
+        originalWidth = shape.Width
+        ' The caret stays in ordinary paragraph text, not on the picture.
+        ' Exercise the real selection/OnTime repair for every typography mode.
+        testDocument.Range(paragraphRange.Start, paragraphRange.Start).Select
+        For Each mode In modes
+            paragraphRange.ParagraphFormat.BaseLineAlignment = CLng(mode)
+            VisualTeX_WatchSelectedImageFormulaSize
+            If paragraphRange.ParagraphFormat.BaseLineAlignment <> CLng(mode) Then _
+                Err.Raise 5, "VisualTeX regression", "Paragraph typography was overwritten."
+        Next mode
+        paragraphRange.ParagraphFormat.BaseLineAlignment = originalMode
+        VisualTeX_WatchSelectedImageFormulaSize
+        If imageIndex <= 35 Then
+            VTApplyWordImageFormulaFontSize shape, 24#
+            VTApplyWordImageFormulaFontSize shape, 18#
+        Else
+            VTApplyWordImagePosition shape, VTExpectedImageFormulaPosition( _
+                shape, VTVisibleEquationNumberFontSize(testDocument), "Chinese typography")
+        End If
+        If Abs(VTWordImageGlyphHeight(shape) - originalHeight) > 0.1 Or _
+           Abs(shape.Width - originalWidth) > 0.1 Then _
+            Err.Raise 5, "VisualTeX regression", "Resize round trip changed image geometry" & _
+                " [before=" & CStr(originalWidth) & "x" & CStr(originalHeight) & _
+                "; after=" & CStr(shape.Width) & "x" & CStr(shape.Height) & "]."
+        If paragraphRange.ParagraphFormat.BaseLineAlignment <> originalMode Then Err.Raise 5
+        report = report & "image=" & CStr(imageIndex) & "; alignment=" & _
+            CStr(originalMode) & "; position=" & CStr(shape.Range.Font.Position) & vbLf
+    Next imageIndex
+    ' A mode/style change outside the caret paragraph must also be observed.
+    Set shape = testDocument.InlineShapes(1)
+    Set paragraphRange = shape.Range.Paragraphs(1).Range.Duplicate
+    testDocument.Range(0, 0).Select
+    paragraphRange.ParagraphFormat.BaseLineAlignment = wdBaselineAlignTop
+    VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING = False
+    VisualTeX_WatchSelectedImageFormulaSize
+    If shape.Range.Font.Position <> 18 Then _
+        Err.Raise 5, "VisualTeX regression", "Document mode observer did not repair the remote paragraph."
+    paragraphRange.ParagraphFormat.BaseLineAlignment = wdBaselineAlignBaseline
+    VisualTeX_WatchSelectedImageFormulaSize
+    VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING = True
+    ' A whole-document selection must repair all images across paragraphs.
+    testDocument.Content.Select
+    VisualTeX_WatchSelectedImageFormulaSize
+    testDocument.Repaginate
+    testDocument.Save
+    VTWriteTextAtomic resultPath, report
+    testDocument.Range(0, 0).Select
+    VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING = False
+    VTEnsureImageSizeWatchScheduled
+    Exit Sub
+RegressionFailed:
+    failureNumber = Err.Number
+    failureDescription = Err.Description
+    On Error Resume Next
+    VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING = False
+    VTWriteTextAtomic resultPath, "FAIL" & vbLf & "image=" & CStr(imageIndex) & _
+        vbLf & CStr(failureNumber) & ":" & failureDescription
 End Sub
 
 Public Sub VisualTeX_RunWordUnnumberedImageParagraphMarkRegression()
@@ -37809,7 +37984,7 @@ Private Function VTWordConvertInlineShapeToNativeFast( _
     VTReadWordImageConversionState _
         target, formulaId, sourceFontSizePt, referenceWidthPt, _
         referenceHeightPt, referenceBaselinePt, observedWordFontSizePt
-    sourceHeightPoints = target.Height
+    sourceHeightPoints = VTWordImageGlyphHeight(target)
     captionText = "VisualTeX formula"
     If numbered Then
         If VTTryReadWordLatexPayload( _
@@ -38120,7 +38295,7 @@ Private Sub VTWordConvertInlineShapeToNativeEquation( _
     Else
         captionText = "VisualTeX formula"
     End If
-    sourceHeightPoints = target.Height
+    sourceHeightPoints = VTWordImageGlyphHeight(target)
     nativeDisplayMode = displayMode
     If numbered Or displayMode = "block" Then nativeDisplayMode = "inline"
     Set sourceContainerRange = VTVisualTeXImageContainerRange(target)
@@ -40245,6 +40420,63 @@ Private Function VTWordImageScaleVariableName( _
         VT_WORD_IMAGE_SCALE_VARIABLE_PREFIX & Replace$(formulaId, "-", "_")
 End Function
 
+Private Function VTWordImageCanvasVariableName(ByVal formulaId As String) As String
+    If Not VTIsCanonicalUuid(formulaId) Then Err.Raise 5, "VisualTeX", "Invalid image canvas identity."
+    VTWordImageCanvasVariableName = VT_WORD_IMAGE_CANVAS_VARIABLE_PREFIX & Replace$(formulaId, "-", "_")
+End Function
+
+Private Function VTWordImageGlyphHeight(ByVal formulaShape As InlineShape) As Double
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim savedValue As String
+    Dim dimensions() As String
+    VTWordImageGlyphHeight = formulaShape.Height
+    If formulaShape.PictureFormat.CropTop >= 0# Then Exit Function
+    If Not VTTryParseFormulaReference(formulaShape.Title, formulaId, displayMode, numbered) Then Exit Function
+    If Not VTTryGetDocumentVariable(formulaShape.Range.Document, _
+        VTWordImageCanvasVariableName(formulaId), savedValue) Then Exit Function
+    dimensions = Split(savedValue, "|")
+    If UBound(dimensions) < 1 Or UBound(dimensions) > 2 Then Exit Function
+    If Val(dimensions(0)) <= 0# Or Val(dimensions(1)) <= 0# Then Exit Function
+    ' Negative CropTop adds transparent canvas; it does not resize painted SVG
+    ' glyphs. Track frame height independently of width for native resizing.
+    If UBound(dimensions) = 2 Then
+        If Val(dimensions(2)) > 0# Then _
+            VTWordImageGlyphHeight = Val(dimensions(1)) * formulaShape.Height / Val(dimensions(2))
+    Else
+        VTWordImageGlyphHeight = Val(dimensions(1)) * formulaShape.Width / Val(dimensions(0))
+    End If
+End Function
+
+Private Sub VTResetWordImageAlignmentCanvas(ByVal formulaShape As InlineShape)
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim savedValue As String
+    Dim glyphHeight As Double
+    Dim glyphWidth As Double
+    Dim oldAspectLock As Long
+    If formulaShape.PictureFormat.CropTop >= 0# Then Exit Sub
+    If Not VTTryParseFormulaReference(formulaShape.Title, formulaId, displayMode, numbered) Then Exit Sub
+    If Not VTTryGetDocumentVariable(formulaShape.Range.Document, _
+        VTWordImageCanvasVariableName(formulaId), savedValue) Then Exit Sub
+    ' Only reset the transparent canvas owned by this solver. Word rounds
+    ' uncropping separately; restore the recorded glyph dimensions to prevent
+    ' accumulating a quarter-point of shrinkage on repeated mode changes.
+    If formulaShape.PictureFormat.CropTop < 0# Then
+        glyphHeight = VTWordImageGlyphHeight(formulaShape)
+        glyphWidth = formulaShape.Width
+        oldAspectLock = formulaShape.LockAspectRatio
+        formulaShape.LockAspectRatio = msoFalse
+        formulaShape.PictureFormat.CropTop = 0!
+        formulaShape.Width = CSng(glyphWidth)
+        formulaShape.Height = CSng(glyphHeight)
+        formulaShape.LockAspectRatio = oldAspectLock
+    End If
+    VTDeleteDocumentVariable formulaShape.Range.Document, VTWordImageCanvasVariableName(formulaId)
+End Sub
+
 Private Function VTWordImageInkCenterVariableName( _
     ByVal formulaId As String) As String
 
@@ -40493,7 +40725,7 @@ Private Sub VTEnsureWordImageScaleState( _
         expectedHeight = referenceHeightPt * _
             fontSizePt / VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
         If Abs(formulaShape.Width - expectedWidth) > 0.5 Or _
-           Abs(formulaShape.Height - expectedHeight) > 0.5 Then
+           Abs(VTWordImageGlyphHeight(formulaShape) - expectedHeight) > 0.5 Then
             adoptGeometry = True
             ' Some Word builds report the surrounding paragraph's Font.Size
             ' while an InlineShape is selected. Treat a changed Font.Size as a
@@ -40508,7 +40740,7 @@ Private Sub VTEnsureWordImageScaleState( _
                 reportedHeight = referenceHeightPt * _
                     actualWordFontSize / VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
                 If Abs(formulaShape.Width - reportedWidth) <= 0.5 And _
-                   Abs(formulaShape.Height - reportedHeight) <= 0.5 Then
+                   Abs(VTWordImageGlyphHeight(formulaShape) - reportedHeight) <= 0.5 Then
                     adoptGeometry = False
                 End If
             End If
@@ -40522,7 +40754,7 @@ Private Sub VTEnsureWordImageScaleState( _
                 End If
                 referenceWidthPt = formulaShape.Width * _
                     VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
-                referenceHeightPt = formulaShape.Height * _
+                referenceHeightPt = VTWordImageGlyphHeight(formulaShape) * _
                     VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
                 If baselineRatio < 0# Then
                     ' Preserve the SVG mathematical-baseline ratio for both
@@ -40557,7 +40789,7 @@ Private Sub VTEnsureWordImageScaleState( _
     observedWordFontSizePt = actualWordFontSize
     referenceWidthPt = formulaShape.Width * _
         VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
-    referenceHeightPt = formulaShape.Height * _
+    referenceHeightPt = VTWordImageGlyphHeight(formulaShape) * _
         VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
     referenceBaselinePt = currentBaseline * _
         VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
@@ -40573,53 +40805,320 @@ Private Sub VTEnsureWordImageScaleState( _
     End If
 End Sub
 
+Private Function VTWordPicturePosition( _
+    ByVal formulaShape As InlineShape, _
+    ByVal anchorAboveBottomPt As Double, _
+    ByVal textSizePt As Double, _
+    ByVal inkTopEm As Double, _
+    ByVal inkBottomEm As Double, _
+    Optional ByVal fontTopEm As Double = -1#, _
+    Optional ByVal fontDescentEm As Double = 0#, _
+    Optional ByVal asianText As Boolean = True, _
+    Optional ByVal inlineOpticalCorrectionPt As Double = 0#, _
+    Optional ByVal primaryLetter As Boolean = False) As Long
+
+    Dim rawPosition As Double
+    Dim textHalfInk As Double
+    Dim asymmetricLeadingPt As Double
+    ' CoreText reports separate font and painted bounds. A CJK font with more
+    ' blank space below than above (e.g. Word's DengXian theme face) moves
+    ' Word's Top/Center line boxes away from the painted text midline. Keep
+    ' this correction relative to actual glyph metrics; balanced faces need
+    ' none. Native Word pixel checks cover both theme and explicit faces.
+    If asianText And inlineOpticalCorrectionPt > 0# And fontTopEm > 0# Then
+        asymmetricLeadingPt = ((fontDescentEm + inkBottomEm) - _
+            (fontTopEm - inkTopEm)) * textSizePt
+        If asymmetricLeadingPt < 0# Then asymmetricLeadingPt = 0#
+    End If
+    textHalfInk = (inkTopEm - inkBottomEm) * textSizePt / 2#
+    Select Case formulaShape.Range.ParagraphFormat.BaseLineAlignment
+        Case wdBaselineAlignTop
+            rawPosition = formulaShape.Height - anchorAboveBottomPt - textHalfInk
+            ' Word aligns font tops; CJK painted tops exclude the font's
+            ' ascender whitespace. Keep that measured leading out of the image.
+            If fontTopEm >= inkTopEm Then _
+                rawPosition = rawPosition - (fontTopEm - inkTopEm) * textSizePt
+            ' Word's screen and PDF renderers round Asian leading differently.
+            ' A small size-relative optical lift keeps both near the measured
+            ' body midline; do not apply it to whole-ink block/number centring.
+            rawPosition = rawPosition + inlineOpticalCorrectionPt - _
+                1.5# * asymmetricLeadingPt
+        Case wdBaselineAlignCenter
+            rawPosition = formulaShape.Height / 2# - anchorAboveBottomPt
+            If fontTopEm > 0# Then rawPosition = rawPosition + _
+                (inkTopEm + inkBottomEm - fontTopEm + fontDescentEm) * textSizePt / 2#
+            rawPosition = rawPosition - asymmetricLeadingPt
+        Case wdBaselineAlignFarEast50
+            rawPosition = textHalfInk - anchorAboveBottomPt
+            ' Word's Asian-baseline mode uses the font centre for Latin runs.
+            If Not asianText And fontTopEm > 0# Then rawPosition = _
+                (fontTopEm - fontDescentEm) * textSizePt / 2# - anchorAboveBottomPt
+            If primaryLetter Then rawPosition = rawPosition + inlineOpticalCorrectionPt
+        Case Else
+            rawPosition = (inkTopEm + inkBottomEm) * textSizePt / 2# - anchorAboveBottomPt
+    End Select
+    If rawPosition < -256# Then rawPosition = -256#
+    If rawPosition > 256# Then rawPosition = 256#
+    ' Word quantizes picture height separately from Position. A 0.01 pt
+    ' tie tolerance keeps adjacent scripted atoms on the same baseline when
+    ' their independently rounded heights straddle a mathematical half point.
+    If rawPosition >= 0# Then
+        VTWordPicturePosition = CLng(Int(rawPosition + 0.51#))
+    Else
+        VTWordPicturePosition = -CLng(Int(-rawPosition + 0.49#))
+    End If
+End Function
+
+Private Function VTWordResolvedTextFont(ByVal textRange As Range) As String
+    Dim fontName As String
+    fontName = textRange.Font.NameFarEast
+    ' Word theme names (+中文正文, +mn-ea) are references, not installed
+    ' font families. Font.Name on a single painted CJK character resolves the
+    ' effective face; passing the theme token to CoreText measures a fallback.
+    If Len(fontName) = 0 Or Left$(fontName, 1) = "+" Then _
+        fontName = textRange.Font.Name
+    VTWordResolvedTextFont = fontName
+End Function
+
+Private Function VTTryWordImageTypographyReference( _
+    ByVal formulaShape As InlineShape, ByRef formulaId As String, _
+    ByRef displayMode As String, ByRef numbered As Boolean) As Boolean
+    Dim encodedMetadata As String
+    Dim metadataNeedsWrite As Boolean
+    Dim formatNeedsWrite As Boolean
+    ' Reuse the normal image identity/recovery contract. SVG round-trips can
+    ' remove or swap the compact title while retaining metadata and Variables.
+    VTTryWordImageTypographyReference = VTTryResolveVisualTeXInlineShapeReference( _
+        formulaShape, formulaId, displayMode, numbered, encodedMetadata, _
+        metadataNeedsWrite, formatNeedsWrite)
+End Function
+
+Private Sub VTWordInlineTextContext( _
+    ByVal formulaShape As InlineShape, _
+    ByRef textSizePt As Double, _
+    ByRef fontName As String, _
+    ByRef textSample As String, _
+    Optional ByVal sampleLimit As Long = 16)
+
+    Dim characterRange As Range
+    Dim paragraphRange As Range
+    Dim paragraphText As String
+    Dim characterText As String
+    Dim codePoint As Long
+    Dim visited As Long
+    Dim firstText As Range
+    textSample = ""
+    Set paragraphRange = formulaShape.Range.Paragraphs(1).Range.Duplicate
+    paragraphText = Left$(paragraphRange.Text, 256)
+    ' Inspect the string locally; enumerating every Word Character/Font through
+    ' the object model on each idle tick can otherwise starve native UI input.
+    For visited = 1 To Len(paragraphText)
+        characterText = Mid$(paragraphText, visited, 1)
+        If Len(characterText) = 1 Then
+            codePoint = AscW(characterText)
+            If codePoint < 0 Then codePoint = codePoint + 65536
+            If codePoint >= &H2E80 And codePoint < &HA000& Then
+                Set characterRange = paragraphRange.Document.Range( _
+                    paragraphRange.Start + visited - 1, paragraphRange.Start + visited)
+                If Len(textSample) = 0 Then
+                    fontName = VTWordResolvedTextFont(characterRange)
+                    textSizePt = characterRange.Font.Size
+                End If
+                If VTWordResolvedTextFont(characterRange) = fontName And _
+                   characterRange.Font.Size = textSizePt Then _
+                    textSample = textSample & characterText
+                If Len(textSample) >= sampleLimit Then Exit For
+            ElseIf firstText Is Nothing And _
+                   ((codePoint >= 65 And codePoint <= 90) Or _
+                    (codePoint >= 97 And codePoint <= 122)) Then
+                Set firstText = paragraphRange.Document.Range( _
+                    paragraphRange.Start + visited - 1, paragraphRange.Start + visited)
+            End If
+        End If
+    Next visited
+    If Len(textSample) = 0 Then
+        textSample = "x"
+        If Not firstText Is Nothing Then
+            fontName = firstText.Font.Name
+            textSizePt = firstText.Font.Size
+        Else
+            fontName = formulaShape.Range.Paragraphs(1).Range.Font.Name
+        End If
+    End If
+    If Len(fontName) = 0 Then fontName = "Times New Roman"
+    If Not VTValidWordFormulaFontSize(textSizePt) Then _
+        textSizePt = VTPreferredWordFormulaFontSize(formulaShape.Range)
+End Sub
+
+Private Sub VTWordInlineAlignmentMetrics( _
+    ByVal formulaShape As InlineShape, _
+    ByVal referenceHeightPt As Double, _
+    ByRef textSizePt As Double, _
+    ByRef inkTopEm As Double, _
+    ByRef inkBottomEm As Double, _
+    ByRef anchorHeightRatio As Double, _
+    ByRef fontTopEm As Double, _
+    ByRef fontDescentEm As Double, _
+    ByRef asianText As Boolean, _
+    ByRef primaryLetter As Boolean)
+
+    Dim fontName As String
+    Dim textSample As String
+    Dim request As String
+    Dim response As String
+    Dim values() As String
+    VTWordInlineTextContext formulaShape, textSizePt, fontName, textSample
+    ' A conservative fallback for old images without canonical metadata. New
+    ' and saved managed formulas use measured CoreText glyph-path bounds.
+    inkTopEm = 0.827
+    inkBottomEm = -0.108
+    fontTopEm = 0.86
+    fontDescentEm = 0.14
+    asianText = (textSample <> "x")
+    If textSample = "x" Then
+        inkTopEm = 0.5
+        inkBottomEm = 0#
+        fontTopEm = 0.9
+        fontDescentEm = 0.21
+    End If
+    anchorHeightRatio = 3.5# / referenceHeightPt
+    primaryLetter = False
+    If Len(formulaShape.AlternativeText) = 0 Then Exit Sub
+    request = "{""bodyFont"":" & VTJsonString(fontName) & _
+        ",""bodySample"":" & VTJsonString(textSample) & _
+        ",""metadata"":" & VTJsonString(formulaShape.AlternativeText) & "}"
+    If VT_WORD_ALIGNMENT_METRICS_CACHE Is Nothing Then _
+        Set VT_WORD_ALIGNMENT_METRICS_CACHE = New Collection
+    On Error Resume Next
+    response = VT_WORD_ALIGNMENT_METRICS_CACHE(request)
+    On Error GoTo MetricsUnavailable
+    If Len(response) = 0 Then
+        response = VTFileBridgeCall("ReadVisualTeXWordAlignmentMetrics", request)
+        If Len(response) = 0 Then response = "unavailable"
+        If VT_WORD_ALIGNMENT_METRICS_CACHE.Count >= 256 Then _
+            Set VT_WORD_ALIGNMENT_METRICS_CACHE = New Collection
+        On Error Resume Next
+        VT_WORD_ALIGNMENT_METRICS_CACHE.Remove request
+        On Error GoTo MetricsUnavailable
+        VT_WORD_ALIGNMENT_METRICS_CACHE.Add response, request
+    End If
+    values = Split(response, "|")
+    If UBound(values) <> 5 Then Exit Sub
+    If Not IsNumeric(values(0)) Or Not IsNumeric(values(1)) Or _
+       Not IsNumeric(values(2)) Then Exit Sub
+    If Val(values(0)) <= Val(values(1)) Then Exit Sub
+    inkTopEm = Val(values(0))
+    inkBottomEm = Val(values(1))
+    anchorHeightRatio = Val(values(2))
+    fontTopEm = Val(values(3))
+    fontDescentEm = Val(values(4))
+    primaryLetter = (values(5) = "1")
+    Exit Sub
+MetricsUnavailable:
+    Err.Clear
+End Sub
+
 Private Function VTExpectedWordInlineImageBaseline( _
     ByVal formulaShape As InlineShape, _
     ByVal referenceHeightPt As Double, _
     ByVal referenceBaselinePt As Double) As Long
 
     Dim actualHeightPt As Double
-    Dim rawPosition As Double
-
-    If formulaShape Is Nothing Or referenceHeightPt <= 0# Or _
-       referenceBaselinePt < -256# Or referenceBaselinePt > 0# Then
-        Err.Raise vbObjectError + 7494, "VisualTeX", _
-            "The VisualTeX inline formula baseline reference is invalid."
-    End If
-    actualHeightPt = CDbl(formulaShape.Height)
-    If actualHeightPt <= 0# Or actualHeightPt > 10000# Then
-        Err.Raise vbObjectError + 7494, "VisualTeX", _
-            "The VisualTeX inline formula height is invalid."
-    End If
-
-    ' The image height reported by Word is authoritative at the moment the
-    ' baseline is applied. Word builds can round an imported SVG's dimensions
-    ' slightly differently, so scaling a pre-rounded Position value can leave
-    ' two machines one point apart even when they render the same SVG. Scale
-    ' the fractional 14 pt reference descent to the actual image height and
-    ' convert it to Word's integral Font.Position exactly once. SVG and
-    ' imported picture dimensions are quantized independently, so a mathematical
-    ' half point can arrive just below the boundary (the real Times fixture is
-    ' -1.491 pt rather than -1.5 pt). A 0.01 pt negative rounding tolerance fixes
-    ' only those boundary cases. It is not a fixed Word/OMath offset: fraction,
-    ' integral, sum and root formulas retain their distinct baseline values.
-    rawPosition = referenceBaselinePt * actualHeightPt / referenceHeightPt
-    If rawPosition < -256# Then rawPosition = -256#
-    If rawPosition > 0# Then rawPosition = 0#
-    If rawPosition < 0# Then
-        VTExpectedWordInlineImageBaseline = _
-            -CLng(Int((-rawPosition) + 0.51#))
-    Else
-        VTExpectedWordInlineImageBaseline = 0
-    End If
+    Dim textSizePt As Double
+    Dim inkTopEm As Double
+    Dim inkBottomEm As Double
+    Dim anchorHeightRatio As Double
+    Dim anchorAboveBottomPt As Double
+    Dim fontTopEm As Double
+    Dim fontDescentEm As Double
+    Dim asianText As Boolean
+    Dim primaryLetter As Boolean
+    If formulaShape Is Nothing Or referenceHeightPt <= 0# Then _
+        Err.Raise vbObjectError + 7494, "VisualTeX", "Invalid formula alignment geometry."
+    actualHeightPt = VTWordImageGlyphHeight(formulaShape)
+    VTWordInlineAlignmentMetrics formulaShape, referenceHeightPt, _
+        textSizePt, inkTopEm, inkBottomEm, anchorHeightRatio, fontTopEm, fontDescentEm, asianText, primaryLetter
+    anchorAboveBottomPt = -referenceBaselinePt * actualHeightPt / _
+        referenceHeightPt + anchorHeightRatio * actualHeightPt
+    VTExpectedWordInlineImageBaseline = VTWordPicturePosition( _
+        formulaShape, anchorAboveBottomPt, textSizePt, inkTopEm, inkBottomEm, _
+        fontTopEm, fontDescentEm, asianText, textSizePt / 18#, _
+        primaryLetter)
 End Function
 
 Private Sub VTApplyWordInlineImageBaseline( _
     ByVal formulaShape As InlineShape, _
     ByVal referenceHeightPt As Double, _
     ByVal referenceBaselinePt As Double)
-
     Dim requestedPosition As Long
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim glyphWidth As Double
+    Dim glyphHeight As Double
+    Dim paddingPt As Double
+    Dim cropScale As Double
+    Dim textSize As Double
+    Dim textFont As String
+    Dim textSample As String
+    Dim containingField As Field
+    Dim restoreFieldLock As Boolean
+    Dim applyErrorNumber As Long
+    Dim applyErrorDescription As String
+    On Error GoTo AlignmentFailed
+    VTBeginWordInternalMutation
+    Set containingField = VTVisualTeXImageMacroButtonFieldForShape(formulaShape)
+    If Not containingField Is Nothing Then
+        restoreFieldLock = containingField.Locked
+        If restoreFieldLock Then containingField.Locked = False
+    End If
+    VTResetWordImageAlignmentCanvas formulaShape
+    requestedPosition = VTExpectedWordInlineImageBaseline( _
+        formulaShape, referenceHeightPt, referenceBaselinePt)
+    If formulaShape.Range.ParagraphFormat.BaseLineAlignment = wdBaselineAlignTop And _
+       requestedPosition <= 0 And formulaShape.PictureFormat.CropTop = 0# Then
+        ' Word for Mac cancels negative Position for short pictures in Top
+        ' typography. Add transparent space above the SVG and raise its frame
+        ' by the same amount: positive Position is rendered consistently. The
+        ' mathematical anchor remains tied to the original painted glyph size.
+        If VTTryParseFormulaReference(formulaShape.Title, formulaId, displayMode, numbered) Then
+            VTWordInlineTextContext formulaShape, textSize, textFont, textSample
+            paddingPt = textSize / 4#
+            If paddingPt < 2# - requestedPosition Then paddingPt = 2# - requestedPosition
+            paddingPt = -Int(-paddingPt)
+            glyphWidth = formulaShape.Width
+            glyphHeight = formulaShape.Height
+            cropScale = formulaShape.ScaleHeight / 100#
+            If cropScale <= 0# Then Err.Raise 5, "VisualTeX", "Invalid Word image canvas scale."
+            VTSetDocumentVariable formulaShape.Range.Document, _
+                VTWordImageCanvasVariableName(formulaId), _
+                VTJsonNumber(glyphWidth) & "|" & VTJsonNumber(glyphHeight)
+            formulaShape.PictureFormat.CropTop = CSng(-paddingPt / cropScale)
+            VTSetDocumentVariable formulaShape.Range.Document, _
+                VTWordImageCanvasVariableName(formulaId), _
+                VTJsonNumber(glyphWidth) & "|" & VTJsonNumber(glyphHeight) & "|" & VTJsonNumber(formulaShape.Height)
+            requestedPosition = VTExpectedWordInlineImageBaseline( _
+                formulaShape, referenceHeightPt, referenceBaselinePt)
+        End If
+    End If
+    VTApplyWordImagePosition formulaShape, requestedPosition
+    If Not containingField Is Nothing And restoreFieldLock Then containingField.Locked = True
+    VTEndWordInternalMutation
+    Exit Sub
+AlignmentFailed:
+    applyErrorNumber = Err.Number
+    applyErrorDescription = Err.Description
+    On Error Resume Next
+    If Not containingField Is Nothing And restoreFieldLock Then containingField.Locked = True
+    VTEndWordInternalMutation
+    On Error GoTo 0
+    Err.Raise applyErrorNumber, "VisualTeX picture alignment", applyErrorDescription
+End Sub
+
+Private Sub VTApplyWordImagePosition( _
+    ByVal formulaShape As InlineShape, _
+    ByVal requestedPosition As Long)
+
     Dim appliedPosition As Long
     Dim attemptIndex As Long
     Dim writeErrorNumber As Long
@@ -40627,9 +41126,9 @@ Private Sub VTApplyWordInlineImageBaseline( _
     Dim applyErrorDescription As String
     Dim containingField As Field
     Dim restoreFieldLock As Boolean
-
-    requestedPosition = VTExpectedWordInlineImageBaseline( _
-        formulaShape, referenceHeightPt, referenceBaselinePt)
+    If formulaShape.Range.Font.Position = requestedPosition And _
+       Not formulaShape.Range.Font.Superscript And _
+       Not formulaShape.Range.Font.Subscript Then Exit Sub
 
     ' A committed image may live inside the locked MACROBUTTON result used for
     ' double-click editing. Word for Mac accepts the initial Position before the
@@ -40740,6 +41239,7 @@ Private Sub VTApplyWordImageFormulaFontSize( _
     On Error GoTo ApplyFailed
     VTBeginWordInternalMutation
     internalMutationStarted = True
+    VTResetWordImageAlignmentCanvas formulaShape
     On Error Resume Next
     formulaShape.Range.Font.Size = CSng(requestedFontSizePt)
     Err.Clear
@@ -40817,7 +41317,7 @@ Private Sub VTPrepareWordImageFormulaState( _
         expectedHeightPt = referenceHeightPt * _
             storedFontSizePt / VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
         If Abs(formulaShape.Width - expectedWidthPt) <= 0.5 And _
-           Abs(formulaShape.Height - expectedHeightPt) <= 0.5 Then Exit Sub
+           Abs(VTWordImageGlyphHeight(formulaShape) - expectedHeightPt) <= 0.5 Then Exit Sub
         VTApplyWordImageFormulaFontSize formulaShape, currentWordFontSizePt
         VTEnsureWordImageScaleState _
             formulaShape, formulaId, displayMode, numbered, storedFontSizePt, _
@@ -40847,8 +41347,8 @@ Private Sub VTSynchronizeWordImageFormulaShape( _
     ' or takes a compatibility branch, the old implementation never reached its
     ' final baseline correction and left a resized inline formula at its stale
     ' Position. Repair from the already-persisted mathematical reference first.
-    If VTTryParseFormulaReference( _
-       formulaShape.Title, formulaId, displayMode, numbered) Then
+    If VTTryWordImageTypographyReference( _
+       formulaShape, formulaId, displayMode, numbered) Then
         If displayMode = "inline" Then
             baselineStateReadable = VTTryReadWordImageScaleState( _
                 formulaShape.Range.Document, formulaId, storedFontSizePt, _
@@ -40879,6 +41379,72 @@ Private Sub VTSynchronizeWordImageFormulaShape( _
     End If
 End Sub
 
+Private Function VTImageTypographyFingerprint(ByVal contextRange As Range) As String
+    Dim paragraph As Paragraph
+    Dim shape As InlineShape
+    Dim result As String
+    Dim textSize As Double
+    Dim textFont As String
+    Dim textSample As String
+    result = contextRange.Document.FullName
+    For Each paragraph In contextRange.Paragraphs
+        If paragraph.Range.InlineShapes.Count > 0 Then
+            result = result & "|" & CStr(paragraph.Range.Start) & ":" & _
+                CStr(paragraph.Range.ParagraphFormat.BaseLineAlignment) & ":" & _
+                CStr(paragraph.Range.Font.Size) & ":" & paragraph.Range.Font.Name & ":" & _
+                paragraph.Range.Font.NameFarEast
+            For Each shape In paragraph.Range.InlineShapes
+                VTWordInlineTextContext shape, textSize, textFont, textSample
+                result = result & ":" & shape.Title & ":" & _
+                    CStr(shape.Height) & ":" & CStr(shape.Width) & ":" & _
+                    CStr(shape.Range.Font.Position) & ":" & CStr(textSize) & ":" & _
+                    textFont & ":" & textSample
+            Next shape
+        End If
+    Next paragraph
+    VTImageTypographyFingerprint = result
+End Function
+
+Public Sub VTSynchronizeWordImageTypography(ByVal contextRange As Range)
+    Dim paragraph As Paragraph
+    Dim shape As InlineShape
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim fontSize As Double
+    Dim referenceWidth As Double
+    Dim referenceHeight As Double
+    Dim referenceBaseline As Double
+    Dim observedSize As Double
+    Dim fingerprint As String
+    Dim mutationStarted As Boolean
+    On Error GoTo Finished
+    If contextRange Is Nothing Or VTWordInternalMutationActive() Then Exit Sub
+    If contextRange.Document.ReadOnly Or _
+       contextRange.Document.ProtectionType <> wdNoProtection Then Exit Sub
+    fingerprint = VTImageTypographyFingerprint(contextRange)
+    If fingerprint = VT_WORD_TYPOGRAPHY_FINGERPRINT Then Exit Sub
+    VTBeginWordInternalMutation
+    mutationStarted = True
+    For Each paragraph In contextRange.Paragraphs
+        For Each shape In paragraph.Range.InlineShapes
+            If VTTryWordImageTypographyReference(shape, formulaId, displayMode, numbered) Then
+                If displayMode = "inline" Then
+                    If VTTryReadWordImageScaleState(contextRange.Document, formulaId, _
+                       fontSize, referenceWidth, referenceHeight, referenceBaseline, observedSize) Then _
+                        VTApplyWordInlineImageBaseline shape, referenceHeight, referenceBaseline
+                Else
+                    VTApplyWordImagePosition shape, VTExpectedImageFormulaPosition( _
+                        shape, VTVisibleEquationNumberFontSize(contextRange.Document), "Word typography")
+                End If
+            End If
+        Next shape
+    Next paragraph
+    VT_WORD_TYPOGRAPHY_FINGERPRINT = VTImageTypographyFingerprint(contextRange)
+Finished:
+    If mutationStarted Then VTEndWordInternalMutation
+End Sub
+
 Public Sub VisualTeX_SynchronizeSelectedImageFormulaSize( _
     ByVal selected As Selection)
 
@@ -40888,7 +41454,7 @@ Public Sub VisualTeX_SynchronizeSelectedImageFormulaSize( _
     On Error GoTo SynchronizeFinished
     If selected Is Nothing Or VTWordInternalMutationActive() Then Exit Sub
     Set formulaShape = VTVisualTeXInlineShapeAtSelection(selected)
-    If formulaShape Is Nothing Then Exit Sub
+    If formulaShape Is Nothing Then GoTo RepairParagraphTypography
     If Not formulaShape.Range.Document.ReadOnly And _
        formulaShape.Range.Document.ProtectionType = wdNoProtection Then
         VTBeginWordInternalMutation
@@ -40900,10 +41466,45 @@ Public Sub VisualTeX_SynchronizeSelectedImageFormulaSize( _
     End If
     VTSynchronizeWordImageFormulaShape formulaShape
 
+RepairParagraphTypography:
+    VTSynchronizeWordImageTypography selected.Range
 SynchronizeFinished:
     If internalMutationStarted Then VTEndWordInternalMutation
     VTEnsureImageSizeWatchScheduled
 End Sub
+
+Private Function VTDocumentImageTypographyFingerprint(ByVal documentObject As Document) As String
+    Dim shape As InlineShape
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim result As String
+    Dim textSize As Double
+    Dim textFont As String
+    Dim textSample As String
+    Dim paragraphStart As Long
+    Dim previousParagraphStart As Long
+    Dim paragraphText As String
+    previousParagraphStart = -1
+    For Each shape In documentObject.InlineShapes
+        If VTTryWordImageTypographyReference(shape, formulaId, displayMode, numbered) Then
+            paragraphStart = shape.Range.Paragraphs(1).Range.Start
+            If paragraphStart <> previousParagraphStart Then
+                VTWordInlineTextContext shape, textSize, textFont, textSample, 1
+                paragraphText = Left$(shape.Range.Paragraphs(1).Range.Text, 256)
+                previousParagraphStart = paragraphStart
+            End If
+            result = result & "|" & shape.Title & ":" & _
+                CStr(shape.Range.ParagraphFormat.BaseLineAlignment) & ":" & _
+                CStr(shape.Range.Font.Size) & ":" & CStr(shape.Height) & ":" & _
+                CStr(shape.Range.Font.Position) & ":" & CStr(textSize) & ":" & _
+                textFont & ":" & paragraphText
+        End If
+    Next shape
+    If Len(result) > 0 Then VTDocumentImageTypographyFingerprint = _
+        documentObject.FullName & ":" & CStr(documentObject.Styles(wdStyleNormal).Font.Size) & _
+        ":" & documentObject.Styles(wdStyleNormal).Font.NameFarEast & result
+End Function
 
 Private Sub VTEnsureImageSizeWatchScheduled()
     Dim formulaShape As InlineShape
@@ -40911,21 +41512,41 @@ Private Sub VTEnsureImageSizeWatchScheduled()
     On Error GoTo ScheduleFailed
     If VT_WORD_IMAGE_SIZE_WATCH_SCHEDULED Or _
        VT_WORD_IMAGE_SIZE_WATCH_RUNNING Or _
+       VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING Or _
        Documents.Count = 0 Or VTWordInternalMutationActive() Then Exit Sub
-    Set formulaShape = VTVisualTeXInlineShapeAtSelection(Selection)
-    If formulaShape Is Nothing Then Exit Sub
+    If Len(VTDocumentImageTypographyFingerprint(ActiveDocument)) = 0 Then Exit Sub
 
     VT_WORD_IMAGE_SIZE_WATCH_SCHEDULED = True
     Application.OnTime _
         When:=Now + TimeSerial(0, 0, 1), _
-        name:="VisualTeX_WatchSelectedImageFormulaSize"
+        name:="VisualTeX_RunWordIdleTasks"
     Exit Sub
 
 ScheduleFailed:
     VT_WORD_IMAGE_SIZE_WATCH_SCHEDULED = False
 End Sub
 
+Public Sub VisualTeX_RunWordIdleTasks()
+    ' Word has one pending OnTime slot. Every requester therefore uses this
+    ' callback; the last schedule still drains all outstanding work. Individual
+    ' tasks retain their guards and reschedule through this same dispatcher.
+    If VT_WORD_IDLE_TASKS_RUNNING Then Exit Sub
+    VT_WORD_IDLE_TASKS_RUNNING = True
+    On Error Resume Next
+    If VT_WORD_APPLICATION_PREWARM_SCHEDULED Then _
+        VisualTeX_PrewarmWordApplication
+    If VT_WORD_IMAGE_MACRO_MIGRATION_SCHEDULED Then _
+        VisualTeX_MigrateImageMacroButtons
+    If VT_WORD_ORPHAN_WATCH_SCHEDULED Then _
+        VisualTeX_WatchOrphanedNumberedDisplay
+    If VT_WORD_IMAGE_SIZE_WATCH_SCHEDULED Then _
+        VisualTeX_WatchSelectedImageFormulaSize
+    On Error GoTo 0
+    VT_WORD_IDLE_TASKS_RUNNING = False
+End Sub
+
 Public Sub VisualTeX_WatchSelectedImageFormulaSize()
+    Dim fingerprint As String
     VT_WORD_IMAGE_SIZE_WATCH_SCHEDULED = False
     If VT_WORD_IMAGE_SIZE_WATCH_RUNNING Then Exit Sub
 
@@ -40933,6 +41554,15 @@ Public Sub VisualTeX_WatchSelectedImageFormulaSize()
     On Error Resume Next
     If Documents.Count > 0 And Not VTWordInternalMutationActive() Then
         VisualTeX_SynchronizeSelectedImageFormulaSize Selection
+        If Not VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING Then
+            fingerprint = VTDocumentImageTypographyFingerprint(ActiveDocument)
+            If fingerprint <> VT_WORD_DOCUMENT_TYPOGRAPHY_FINGERPRINT Then
+                VT_WORD_TYPOGRAPHY_FINGERPRINT = ""
+                VTSynchronizeWordImageTypography ActiveDocument.Content
+                VT_WORD_DOCUMENT_TYPOGRAPHY_FINGERPRINT = _
+                    VTDocumentImageTypographyFingerprint(ActiveDocument)
+            End If
+        End If
     End If
     On Error GoTo 0
     VT_WORD_IMAGE_SIZE_WATCH_RUNNING = False
@@ -42667,6 +43297,7 @@ Private Sub VTFinishPureNativeEquation(ByVal exact As Range, ByVal formulaId As 
         VTDeleteWordMetadataPayload doc, formulaId
         VTDeleteDocumentVariable doc, VTWordFormatVariableName(formulaId)
         VTDeleteDocumentVariable doc, VTWordImageScaleVariableName(formulaId)
+        VTDeleteDocumentVariable doc, VTWordImageCanvasVariableName(formulaId)
         VTDeleteDocumentVariable doc, VTWordImageInkCenterVariableName(formulaId)
         VTDeleteDocumentVariable doc, VTWordNativeSignatureVariableName(formulaId)
     End If

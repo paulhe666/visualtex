@@ -1771,7 +1771,7 @@ fn read_request(session_id: &str) -> Result<MacOfflineSessionRequest, String> {
     Ok(request)
 }
 
-fn decode_metadata(encoded: &str) -> Result<VisualTeXFormulaMetadata, String> {
+pub(super) fn decode_metadata(encoded: &str) -> Result<VisualTeXFormulaMetadata, String> {
     let payload = encoded
         .strip_prefix(METADATA_PREFIX)
         .ok_or_else(|| "VisualTeX formula metadata prefix is invalid".to_string())?;

@@ -139,7 +139,7 @@ function validateMacroContainer(path, kind, options = {}) {
       packageVersion,
       ...(kind === "Word"
         ? [
-            "word-office-performance-20260801-r101",
+            "word-office-performance-20260801-r105",
             "word-structured-document-import-20260730-r61",
             "VTWordRibbonDocumentImport",
             "word-latex-redraw-20260802-r1",

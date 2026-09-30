@@ -12,5 +12,6 @@ pub mod server;
 pub mod sessions;
 pub mod state;
 pub mod word_native;
+pub mod word_image_alignment;
 
 pub use lifecycle::initialize;

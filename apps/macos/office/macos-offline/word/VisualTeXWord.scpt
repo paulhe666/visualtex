@@ -222,6 +222,20 @@ on ReadVisualTeXImageInkCenter(formulaId)
     end try
 end ReadVisualTeXImageInkCenter
 
+on ReadVisualTeXWordAlignmentMetrics(argumentText)
+    try
+        set executablePath to "/Applications/VisualTeX.app/Contents/MacOS/visualtex"
+        set fileManager to current application's NSFileManager's defaultManager()
+        if not ((fileManager's isExecutableFileAtPath:executablePath) as boolean) then
+            set executablePath to my runningVisualTeXExecutable()
+        end if
+        set metricsText to do shell script quoted form of executablePath & " --word-image-alignment-metrics " & quoted form of (argumentText as text)
+        return "ok|" & metricsText
+    on error errorMessage number errorNumber
+        return my errorResponse(errorNumber, errorMessage)
+    end try
+end ReadVisualTeXWordAlignmentMetrics
+
 on AppendVisualTeXFile(argumentText)
     try
         set {relativePath, encodedData} to my splitPair(argumentText as text)

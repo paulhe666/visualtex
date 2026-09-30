@@ -250,7 +250,7 @@ expectIncludes(powerpointScript, "set markerLines to paragraphs of markerText", 
 
 expect(!wordAdapter.includes("Public Sub AutoExec()"), "Word Startup template must not expose AutoExec because Word for Mac can consume Finder's first document-open request before the document is created");
 expectIncludes(wordAdapter, "Public Sub VisualTeX_InitializeWordHost()", "Word must expose explicit host initialization for application health refreshes");
-expectIncludes(wordAdapter, '"word-office-performance-20260801-r101"', "Word health must identify the current native Office build");
+expectIncludes(wordAdapter, '"word-office-performance-20260801-r105"', "Word health must identify the current native Office build");
 const wordHostInitStart = wordAdapter.indexOf("Public Sub VisualTeX_InitializeWordHost()");
 const wordHostInitEnd = wordAdapter.indexOf("End Sub", wordHostInitStart);
 const wordHostInitSource = wordAdapter.slice(wordHostInitStart, wordHostInitEnd);
@@ -259,7 +259,9 @@ expectIncludes(wordHostInitSource, "VTEnsureApplicationPrewarmScheduled", "Expli
 expect(!wordHostInitSource.includes("VTPrewarmApplication VT_WORD_HOST"), "Explicit Word host initialization must not synchronously wait for VisualTeX");
 expectIncludes(wordAdapter, "Public Sub AutoOpen()", "Word template must retain document-open migration scheduling");
 expectIncludes(wordAdapter, "Public Sub VisualTeX_PrewarmWordApplication()", "Word must retain the validated resident prewarm on its deferred path");
-expectIncludes(wordAdapter, 'name:="VisualTeX_PrewarmWordApplication"', "Deferred Word resident prewarming must run through Word's idle-time scheduler");
+expectIncludes(wordAdapter, 'name:="VisualTeX_RunWordIdleTasks"', "Deferred Word tasks must share Word's single idle-time scheduler slot");
+expectIncludes(wordAdapter, "If VT_WORD_APPLICATION_PREWARM_SCHEDULED Then", "Shared Word idle callback must drain pending resident prewarming");
+expectIncludes(wordAdapter, "If VT_WORD_IMAGE_SIZE_WATCH_SCHEDULED Then", "Shared Word idle callback must drain pending image typography repair");
 expectIncludes(wordEvents, "App_DocumentOpen", "Word must observe document-open lifecycle events");
 expectIncludes(wordEvents, "App_NewDocument", "Word must observe new-document lifecycle events");
 expectIncludes(wordEvents, "VTMigrateOpenedDocumentImageMacroButtons Doc", "Word must synchronously migrate an opened document instead of relying on a lossy shared OnTime slot");
@@ -387,7 +389,7 @@ expectIncludes(wordEvents, "VisualTeX_SynchronizeSelectedImageFormulaSize Sel", 
 expect(!wordAdapter.includes("currentWordFontSizePt - normalFontSizePt"), "Word image selection must not depend on the document Normal style when detecting a transient selected-InlineShape font value");
 expectIncludes(wordAdapter, "Geometry is", "Word image selection must treat persisted image geometry as the authoritative point-size signal");
 expectIncludes(wordAdapter, "Abs(formulaShape.Width - expectedWidthPt) <= 0.5", "Word must ignore a transient selected-InlineShape font value while the stored image geometry is unchanged");
-expectIncludes(wordAdapter, 'name:="VisualTeX_WatchSelectedImageFormulaSize"', "Word must run a lightweight selected-image point-size watcher when events are insufficient");
+expectIncludes(wordAdapter, "Public Sub VisualTeX_WatchSelectedImageFormulaSize()", "Word must run a lightweight selected-image point-size watcher when events are insufficient");
 expectIncludes(wordAdapter, "formulaShape.Range.Font.Size = CSng(requestedFontSizePt)", "The shared scaling path must attempt the native Word Range.Font.Size property");
 expectIncludes(wordAdapter, "formulaShape.Width = CSng(targetWidth)", "Image formula point sizes must map to proportional width");
 expectIncludes(wordAdapter, "formulaShape.Height = CSng(targetHeight)", "Image formula point sizes must map to proportional height");
@@ -556,7 +558,7 @@ expect(!wordAdapter.includes("sequenceField.Locked = True"), "Image Equation num
 expectIncludes(wordAdapter, "VT_WORD_EQUATION_NUMBER_INK_CENTER_ABOVE_BASELINE_RATIO", "Image-number alignment must use the measured Cambria Math glyph-path centre");
 expectIncludes(wordAdapter, "formulaHeight * (1# - inkCenterYRatio)", "Image-number alignment must derive the picture painted centre from cached PNG alpha bounds");
 expectIncludes(wordAdapter, "numberSize * _\n        VT_WORD_EQUATION_NUMBER_INK_CENTER_ABOVE_BASELINE_RATIO", "Image-number alignment must scale the number glyph centre by its actual font size");
-expectIncludes(wordAdapter, "-CLng(Int((-rawPosition) + 0.5#))", "The shared image-number helper must round negative picture Position away from zero");
+expectIncludes(wordAdapter, "-CLng(Int(-rawPosition + 0.49#))", "Picture positions must resolve Word height/Position half-point ties consistently");
 expect(!wordAdapter.includes("VTTryMeasureNumberedImageFormulaPosition"), "Production image-number alignment must not mistake Word GetPoint row boxes for painted bounds");
 expect(!wordAdapter.includes("VTTryMeasureCurrentNumberedImagePaintedCenterDelta"), "Regression acceptance must not reuse the invalid GetPoint painted-centre probe");
 expectIncludes(wordAdapter, "VT_WORD_EQUATION_NUMBER_FONT_NAME As String = \"Cambria Math\"", "Static image Equation numbers must use the same Western math font family as native OMML");
@@ -571,7 +573,12 @@ expectIncludes(wordAdapter, "referenceBaselinePt = _\n                        re
 expectIncludes(wordAdapter, "If Abs(formulaShape.Width - expectedWidth) > 0.5 Or _", "Direct image geometry changes must be detected independently of Mac Word's unreliable InlineShape.Range.Font.Size report");
 expectIncludes(wordAdapter, "reportedWidth = referenceWidthPt * _", "A changed native Word font-size report must be accepted only when the image geometry independently matches that reported size");
 expectIncludes(wordAdapter, "VTApplyWordInlineImageBaseline _\n                    formulaShape, referenceHeightPt, referenceBaselinePt", "Inline image synchronization must repair the persisted mathematical baseline before fragile Word font-size reconciliation");
-expectIncludes(wordAdapter, "rawPosition = referenceBaselinePt * actualHeightPt / referenceHeightPt", "Inline image baseline mapping must scale the fractional SVG descent against the final Word image height");
+expectIncludes(wordAdapter, "-referenceBaselinePt * actualHeightPt /", "Inline alignment must scale the fractional TeX descent against Word's final image height");
+expectIncludes(wordAdapter, "anchorHeightRatio * actualHeightPt", "Inline alignment must retain the independently measured mathematical or primary-letter anchor");
+expectIncludes(wordAdapter, "ReadVisualTeXWordAlignmentMetrics", "Word must measure the actual CJK font and formula primary letter instead of centering complete scripted bounds");
+expectIncludes(wordAdapter, "Case wdBaselineAlignTop", "Top typography must have its own font-top compensation");
+expectIncludes(wordAdapter, "Case wdBaselineAlignCenter", "Center typography must have its own font-centre compensation");
+expect(!wordAdapter.includes("VTNormalizeImageDisplayBaselineAlignment"), "Managed pictures must never force paragraph typography to baseline");
 expect(!wordAdapter.includes("VT_WORD_INLINE_IMAGE_MATH_AXIS_OFFSET_PT"), "Inline image alignment must not reintroduce a fixed Word/OMML math-axis offset that shifts already-aligned formulas");
 expectIncludes(wordAdapter, 'If displayMode = "inline" Then\n        VTApplyWordInlineImageBaseline _', "Inline image baseline calibration must remain separate from block/display paragraph alignment");
 expectIncludes(wordAdapter, 'Else\n        formulaShape.Range.Font.Position = 0', "Block image formulas must keep zero Font.Position instead of reusing the inline baseline correction");
@@ -1065,7 +1072,7 @@ expect(
 expectIncludes(numberingFormatSource, "VTUnicodeText(", "The numbering-format compatibility callbacks must construct their Chinese labels at runtime as Unicode");
 expect(!numberingFormatSource.includes("InputBox("), "The numbering-format drop-down must never ask the user to type a numeric option");
 expectIncludes(wordAdapter, "numberFontSizePt = VTVisibleEquationNumberFontSize", "Image Equation numbers must use the same document-level number size as native OMath numbers");
-expectIncludes(wordAdapter, "sourceHeightPoints = target.Height", "Image-to-OMML conversion must preserve the source formula height for number alignment");
+expectIncludes(wordAdapter, "sourceHeightPoints = VTWordImageGlyphHeight(target)", "Image-to-OMML conversion must preserve the painted formula height for number alignment");
 expectIncludes(wordAdapter, "VTEnsureNativeEquationNumber", "Image-to-OMML conversion must rebuild the shared numbered table around the native formula");
 expectIncludes(wordAdapter, "target.Delete", "Word replacement must delete the old object only after candidate setup");
 expectIncludes(wordAdapter, "Public Sub VisualTeX_ConvertSelectedToNativeEquation()", "Word must expose a selected-formula native equation conversion command");
@@ -2138,7 +2145,7 @@ expectIncludes(macFirstRun, "修复 VisualTeX Office 插件", "Missing files aft
 expectIncludes(installer, "powerpoint_script.clone()", "PowerPoint installed status must include its AppleScriptTask resource");
 expectIncludes(installer, 'health.plugin_version.as_deref() == Some(env!("CARGO_PKG_VERSION"))', "Installer must reject stale plug-in health versions");
 expect(!installer.includes("source_revision_matches"), "Runtime health must not reject a current-version add-in only because an optional sourceRevision field is absent");
-expectIncludes(packager, "word-office-performance-20260801-r101", "Packaging must reject a Word DOTM that lacks the current performance revision");
+expectIncludes(packager, "word-office-performance-20260801-r105", "Packaging must reject a Word DOTM that lacks the current performance revision");
 expectIncludes(packager, "const resolvedWordShell = wordShell ? resolve(wordShell) : undefined;", "Word packaging must use the newly compiled DOTM as its default OOXML shell");
 expect(!packager.includes('const existingWordShell = join(resourcesRoot, "VisualTeX.dotm")'), "Word packaging must not silently inherit document.xml and template metadata from the previously packaged DOTM");
 expectIncludes(packager, "powerpoint-native-omml-edit-20260926-r1", "Packaging must reject a PowerPoint PPAM that lacks the current native OMML revision");

@@ -1121,6 +1121,10 @@ function runIsolatedVbaCompileProbe() {
 }
 
 function replaceAndCompileAdapter() {
+  // With Startup files retained, unload their duplicate VBA project before
+  // selecting modules in the isolated build document. Otherwise Project
+  // Explorer can select the production read-only module with the same name.
+  if (keepStartupFiles) setWordVisualTeXAddinInstalled(false);
   for (const [moduleName, modulePath] of selectedWordModuleSources) {
     if (preserveWord && incrementalBuild) {
       replaceVbaModuleSourceText(moduleName, modulePath);
@@ -1298,7 +1302,7 @@ function verifyBuiltVba(path) {
     "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
     "VTEnsureVisualTeXImageMacroButton",
     "VTNativeMathFastSignature",
-    "word-office-performance-20260801-r101",
+    "word-office-performance-20260801-r105",
     "1.2.8",
   ];
   for (const value of required) {
@@ -1354,7 +1358,7 @@ try {
     copyFileSync(basePath, outputPath);
     osascript([
       'tell application "Microsoft Word"',
-      `open file name ${JSON.stringify(outputPath)}`,
+      `open file name ${JSON.stringify(outputPath)} read only false`,
       "activate",
       "end tell",
     ], 120_000);
