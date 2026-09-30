@@ -6,6 +6,7 @@ import {
   calculusCommandIds,
   commandRegistry,
 } from "../src/autocomplete/commandRegistry.ts";
+import { searchCommands } from "../src/autocomplete/CommandSearchEngine.ts";
 
 const byId = new Map(commandRegistry.map((command) => [command.id, command]));
 
@@ -31,6 +32,69 @@ for (const [id, expectedTemplate] of structureTemplates) {
 
 for (const id of ["power", "scripts", "subscript"]) {
   assert.ok(byId.has(id), `existing right-side script template disappeared: ${id}`);
+}
+
+for (const id of [
+  "double-vertical-bar",
+  "vert-double",
+  "left-vert-double",
+  "right-vert-double",
+]) {
+  const command = byId.get(id);
+  assert.ok(command, `missing double-vertical-bar completion command: ${id}`);
+  assert.deepEqual(
+    validateLatex(command.previewLatex),
+    [],
+    `${id} preview is not valid MathLive LaTeX: ${command.previewLatex}`,
+  );
+}
+assert.equal(
+  searchCommands(String.raw`\|`, {}, false, 6)[0]?.id,
+  "double-vertical-bar",
+  String.raw`\| must participate in VisualTeX command completion`,
+);
+assert.ok(
+  searchCommands(String.raw`\lV`, {}, false, 6).some(
+    (command) => command.command === String.raw`\lVert`,
+  ),
+  String.raw`\lVert must be reachable by prefix completion`,
+);
+assert.ok(
+  searchCommands(String.raw`\rV`, {}, false, 6).some(
+    (command) => command.command === String.raw`\rVert`,
+  ),
+  String.raw`\rVert must be reachable by prefix completion`,
+);
+
+for (const [id, category] of [
+  ["vector", "structure"],
+  ["plusminus", "relation"],
+  ["minusplus", "relation"],
+  ["circ", "relation"],
+  ["bullet", "relation"],
+  ["star", "relation"],
+  ["diamond", "relation"],
+  ["angle", "relation"],
+  ["measuredangle", "relation"],
+  ["sphericalangle", "relation"],
+  ["triangle", "relation"],
+  ["therefore", "relation"],
+  ["because", "relation"],
+  ["ni", "set"],
+  ["varnothing", "set"],
+  ["subsetneq", "set"],
+  ["supsetneq", "set"],
+  ["top", "set"],
+  ["bot", "set"],
+] as const) {
+  const command = byId.get(id);
+  assert.ok(command, `missing common toolbar symbol: ${id}`);
+  assert.equal(command.category, category, `${id} is in the wrong toolbar category`);
+  assert.deepEqual(
+    validateLatex(command.previewLatex),
+    [],
+    `${id} preview is not valid MathLive LaTeX: ${command.previewLatex}`,
+  );
 }
 
 const bareIntegralIds = [

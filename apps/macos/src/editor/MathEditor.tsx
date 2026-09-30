@@ -369,7 +369,7 @@ interface PointerSelectionSession {
   active: boolean;
 }
 
-const trailingCommand = /\\([\p{L}]*)$/u;
+const trailingCommand = /\\([\p{L}]+|[|])$/u;
 
 function hasRawLatexInput(field: MathfieldElement) {
   return Boolean(field.shadowRoot?.querySelector(".ML__raw-latex"));

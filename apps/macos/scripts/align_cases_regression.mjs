@@ -161,6 +161,120 @@ async function main() {
       done();
     })`);
 
+    const runShiftEnterBackspaceDowngrade = async (multilineEnvironment) => {
+      await evaluate(`(() => {
+        const key = "visualtex-editor";
+        const persisted = JSON.parse(localStorage.getItem(key) || "{}");
+        persisted.state = {
+          ...(persisted.state || {}),
+          lines: [{ id: "shift-enter-backspace", latex: "x", mode: "display" }],
+          activeLineId: "shift-enter-backspace",
+          sourceOpen: false,
+          latexFormatProfile: {
+            ...(persisted.state?.latexFormatProfile || {}),
+            multilineEnvironment: ${JSON.stringify(multilineEnvironment)},
+          },
+        };
+        localStorage.setItem(key, JSON.stringify(persisted));
+      })()`);
+      await client.send("Page.reload", { ignoreCache: true });
+      await sleep(500);
+      await evaluate(`new Promise((resolve) => {
+        const done = () => document.querySelector("math-field") ? resolve(true) : setTimeout(done, 30);
+        done();
+      })`);
+      const prepared = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field) return { ready: false };
+        field.focus();
+        field.position = field.lastOffset;
+        field.selection = {
+          ranges: [[field.lastOffset, field.lastOffset]],
+          direction: "none",
+        };
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus();
+        return { ready: true, value: field.value };
+      })()`);
+      assert.equal(prepared.ready, true, `${multilineEnvironment}: formula field missing`);
+
+      await typeKey("Enter", "Enter", "\r", 8);
+      await sleep(100);
+      const upgraded = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const array = model?.root?.body?.find((atom) => atom.type === "array");
+        return {
+          value: field?.value ?? "",
+          rowCount: array?.rowCount ?? 0,
+          environment: array?.environmentName ?? null,
+          formulaLineCount: document.querySelectorAll(".formula-line").length,
+        };
+      })()`);
+      const expectedEnvironment =
+        multilineEnvironment === "align" ? "aligned" : "gathered";
+      assert.equal(
+        upgraded.environment,
+        expectedEnvironment,
+        `${multilineEnvironment}: Shift+Enter did not upgrade the formula: ${JSON.stringify(upgraded)}`,
+      );
+      assert.equal(
+        upgraded.rowCount,
+        2,
+        `${multilineEnvironment}: Shift+Enter did not create an empty second row: ${JSON.stringify(upgraded)}`,
+      );
+      assert.equal(upgraded.formulaLineCount, 1);
+
+      await typeKey("Backspace", "Backspace", "");
+      await sleep(120);
+      const downgraded = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const array = model?.root?.body?.find((atom) => atom.type === "array");
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        return {
+          value: field?.value ?? "",
+          environment: array?.environmentName ?? null,
+          formulaLineCount: document.querySelectorAll(".formula-line").length,
+          storedLatex: persisted.state?.lines?.[0]?.latex ?? null,
+        };
+      })()`);
+      assert.equal(
+        downgraded.environment,
+        null,
+        `${multilineEnvironment}: Backspace left a one-row multiline wrapper: ${JSON.stringify(downgraded)}`,
+      );
+      assert.equal(
+        downgraded.formulaLineCount,
+        1,
+        `${multilineEnvironment}: Backspace removed the outer VisualTeX formula line`,
+      );
+      assert.match(
+        downgraded.value,
+        /x/,
+        `${multilineEnvironment}: Backspace damaged the remaining formula: ${JSON.stringify(downgraded)}`,
+      );
+      assert.doesNotMatch(
+        downgraded.value,
+        /\\begin\{(?:aligned|gathered)\}/,
+        `${multilineEnvironment}: formula did not downgrade to an ordinary display formula`,
+      );
+      assert.doesNotMatch(
+        downgraded.storedLatex ?? "",
+        /\\begin\{(?:aligned|gathered)\}/,
+        `${multilineEnvironment}: persisted formula kept the multiline wrapper`,
+      );
+      return { upgraded, downgraded };
+    };
+
+    const shiftEnterBackspaceResults = [
+      await runShiftEnterBackspaceDowngrade("gather"),
+      await runShiftEnterBackspaceDowngrade("align"),
+    ];
+    console.log(
+      "Shift+Enter multiline Backspace downgrade regression passed (gather + align).",
+      JSON.stringify(shiftEnterBackspaceResults),
+    );
+
     const casesLatex = String.raw`\begin{cases}x & x>0 \\ 0 & x\le 0\end{cases}`;
     const casesProbe = await evaluate(`(() => {
       const field = document.querySelector("math-field");

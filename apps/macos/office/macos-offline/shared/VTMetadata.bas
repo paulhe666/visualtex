@@ -243,7 +243,9 @@ Public Function VTRequestJson( _
     Optional ByVal referenceWidthPt As Double = 0#, _
     Optional ByVal referenceHeightPt As Double = 0#, _
     Optional ByVal operationName As String = "formula", _
-    Optional ByVal forkCopiedFormula As Boolean = False) As String
+    Optional ByVal forkCopiedFormula As Boolean = False, _
+    Optional ByVal formulaLetterFont As String = "", _
+    Optional ByVal wordMathFontName As String = "") As String
 
     If Not VTIsCanonicalUuid(sessionId) Then
         Err.Raise vbObjectError + 7203, "VisualTeX", "Invalid VisualTeX Session id."
@@ -292,6 +294,27 @@ Public Function VTRequestJson( _
         Err.Raise vbObjectError + 7212, "VisualTeX", _
             "Image-to-native conversion requires a Word native-output edit request."
     End If
+    If Len(formulaLetterFont) > 0 Then
+        If hostName <> "word" Or mode <> "edit" Then
+            Err.Raise vbObjectError + 7213, "VisualTeX", _
+                "Live Word formula font metadata is valid only for edit requests."
+        End If
+        Select Case formulaLetterFont
+            Case "katex", "times", "cambria", "stix", "palatino", "helvetica"
+            Case Else
+                Err.Raise vbObjectError + 7213, "VisualTeX", _
+                    "Live Word formula font metadata is invalid."
+        End Select
+    End If
+    If Len(wordMathFontName) > 0 Then
+        If hostName <> "word" Or mode <> "edit" Or _
+           Len(wordMathFontName) > 128 Or _
+           InStr(wordMathFontName, vbCr) > 0 Or _
+           InStr(wordMathFontName, vbLf) > 0 Then
+            Err.Raise vbObjectError + 7214, "VisualTeX", _
+                "Live Word math font name is invalid."
+        End If
+    End If
 
     VTRequestJson = "{" & _
         """protocolVersion"":" & CStr(VT_PROTOCOL_VERSION) & "," & _
@@ -311,6 +334,8 @@ Public Function VTRequestJson( _
         """fontSizePt"":" & IIf(fontSizePt > 0#, VTJsonNumber(fontSizePt), "null") & "," & _
         """referenceWidthPt"":" & IIf(referenceWidthPt > 0#, VTJsonNumber(referenceWidthPt), "null") & "," & _
         """referenceHeightPt"":" & IIf(referenceHeightPt > 0#, VTJsonNumber(referenceHeightPt), "null") & "," & _
+        """formulaLetterFont"":" & VTJsonNullableString(formulaLetterFont) & "," & _
+        """wordMathFontName"":" & VTJsonNullableString(wordMathFontName) & "," & _
         """powerPoint"":" & IIf(Len(powerPointJson) = 0, "null", powerPointJson) & _
         "}"
 End Function

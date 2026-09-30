@@ -15,6 +15,14 @@ fn default_display_mode() -> String {
     "inline".to_string()
 }
 
+fn default_inline_image_math_style() -> String {
+    "text".to_string()
+}
+
+fn valid_inline_image_math_style(value: &str) -> bool {
+    matches!(value, "text" | "display")
+}
+
 fn default_formula_letter_font() -> String {
     "katex".to_string()
 }
@@ -126,6 +134,8 @@ pub struct VisualTeXFormulaMetadata {
     pub lines: Vec<MetadataLine>,
     pub code_format: String,
     pub display_mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inline_image_math_style: Option<String>,
     #[serde(default)]
     pub numbered: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -171,6 +181,8 @@ pub struct OfficeFormulaSession {
     pub code_format: String,
     #[serde(default = "default_display_mode")]
     pub display_mode: String,
+    #[serde(default = "default_inline_image_math_style")]
+    pub inline_image_math_style: String,
     #[serde(default)]
     pub numbered: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -210,6 +222,7 @@ pub struct CreateOfficeSessionInput {
     pub active_line_id: Option<String>,
     pub code_format: Option<String>,
     pub display_mode: Option<String>,
+    pub inline_image_math_style: Option<String>,
     pub numbered: Option<bool>,
     pub font_size_pt: Option<f64>,
     pub formula_letter_font: Option<String>,
@@ -503,6 +516,20 @@ impl SessionStore {
                 "Office Session displayMode must be inline or block".to_string(),
             ));
         }
+        let inline_image_math_style = input
+            .inline_image_math_style
+            .or_else(|| {
+                input
+                    .original_metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.inline_image_math_style.clone())
+            })
+            .unwrap_or_else(default_inline_image_math_style);
+        if !valid_inline_image_math_style(&inline_image_math_style) {
+            return Err(SessionError::Invalid(
+                "Office Session inlineImageMathStyle must be text or display".to_string(),
+            ));
+        }
         let numbered = input.numbered.unwrap_or(false);
         if numbered && (input.host != OfficeHost::Word || display_mode != "block") {
             return Err(SessionError::Invalid(
@@ -562,6 +589,7 @@ impl SessionStore {
             active_line_id,
             code_format: input.code_format.unwrap_or_else(|| "raw".to_string()),
             display_mode,
+            inline_image_math_style,
             numbered,
             font_size_pt,
             formula_letter_font,
@@ -608,6 +636,7 @@ impl SessionStore {
             "activeLineId",
             "codeFormat",
             "displayMode",
+            "inlineImageMathStyle",
             "numbered",
             "fontSizePt",
             "formulaLetterFont",
@@ -667,6 +696,11 @@ impl SessionStore {
         if !matches!(next.display_mode.as_str(), "inline" | "block") {
             return Err(SessionError::Invalid(
                 "Office Session displayMode must be inline or block".to_string(),
+            ));
+        }
+        if !valid_inline_image_math_style(&next.inline_image_math_style) {
+            return Err(SessionError::Invalid(
+                "Office Session inlineImageMathStyle must be text or display".to_string(),
             ));
         }
         if next.numbered && (next.host != OfficeHost::Word || next.display_mode != "block") {
@@ -854,6 +888,7 @@ mod tests {
             active_line_id: None,
             code_format: None,
             display_mode: None,
+            inline_image_math_style: None,
             numbered: None,
             font_size_pt: None,
             formula_letter_font: None,
@@ -943,6 +978,30 @@ mod tests {
     }
 
     #[test]
+    fn inline_image_math_style_defaults_to_text_and_validates_updates() {
+        let temp = TempDir::new().unwrap();
+        let store = SessionStore::new(&paths(&temp)).unwrap();
+        let session = store.create(create_input()).unwrap();
+        assert_eq!(session.inline_image_math_style, "text");
+
+        let updated = store
+            .patch(
+                &session.id,
+                serde_json::json!({ "inlineImageMathStyle": "display" }),
+            )
+            .unwrap();
+        assert_eq!(updated.inline_image_math_style, "display");
+
+        let error = store
+            .patch(
+                &session.id,
+                serde_json::json!({ "inlineImageMathStyle": "script" }),
+            )
+            .unwrap_err();
+        assert!(matches!(error, SessionError::Invalid(_)));
+    }
+
+    #[test]
     fn equation_numbering_requires_a_word_display_formula() {
         let temp = TempDir::new().unwrap();
         let store = SessionStore::new(&paths(&temp)).unwrap();
@@ -992,6 +1051,7 @@ mod tests {
             lines: vec![],
             code_format: "raw".to_string(),
             display_mode: "block".to_string(),
+            inline_image_math_style: Some("text".to_string()),
             numbered: false,
             render_width_px: None,
             render_height_px: None,

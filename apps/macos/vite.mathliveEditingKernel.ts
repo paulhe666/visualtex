@@ -320,7 +320,7 @@ function visualTexEmptyEnvironmentRowInfo(model) {
 }
 function visualTexCanDeleteEmptyEnvironmentRow(array, row) {
   if (!(array instanceof ArrayAtom) ||
-      !["cases", "dcases", "rcases"].includes(array.environmentName) ||
+      !["cases", "dcases", "rcases", "aligned", "gathered"].includes(array.environmentName) ||
       array.rowCount <= 1 ||
       row < 0 ||
       row >= array.rowCount) return false;
@@ -329,9 +329,57 @@ function visualTexCanDeleteEmptyEnvironmentRow(array, row) {
   }
   return true;
 }
+function visualTexCollapseSingleVisualTexMultilineRow(model, array) {
+  if (!(array instanceof ArrayAtom) ||
+      !["aligned", "gathered"].includes(array.environmentName) ||
+      array.rowCount !== 1) return false;
+
+  const parent = array.parent;
+  const parentBranch = array.parentBranch;
+  if (!parent || parentBranch == null) return false;
+
+  const flattened = [];
+  const columnCount = array.colCount;
+  for (let column = 0; column < columnCount; column += 1) {
+    const cell = array.getCell(0, column);
+    if (!cell) continue;
+    flattened.push(...cell.filter(atom => atom.type !== "first"));
+  }
+
+  if (Array.isArray(parentBranch)) {
+    if (!(parent instanceof ArrayAtom)) return false;
+    parent.setCell(parentBranch[0], parentBranch[1], flattened);
+  } else {
+    const siblings = parent.branch(parentBranch);
+    if (!siblings) return false;
+    const arrayIndex = siblings.indexOf(array);
+    if (arrayIndex < 0) return false;
+    const replacement = [
+      ...siblings.slice(0, arrayIndex),
+      ...flattened,
+      ...siblings.slice(arrayIndex + 1),
+    ];
+    parent.setChildren(replacement, parentBranch);
+  }
+
+  array.parent = undefined;
+  array.parentBranch = undefined;
+  if (flattened.length > 0) {
+    model.position = model.offsetOf(flattened[flattened.length - 1]);
+  } else {
+    model.position = Math.max(0, Math.min(model.position, model.lastOffset));
+  }
+  return true;
+}
 function visualTexDeleteEmptyEnvironmentRowAt(model, array, row, column, direction) {
   if (!visualTexCanDeleteEmptyEnvironmentRow(array, row)) return false;
+  const shouldCollapse =
+    ["aligned", "gathered"].includes(array.environmentName) &&
+    array.rowCount === 2;
   array.removeRow(row);
+  if (shouldCollapse && visualTexCollapseSingleVisualTexMultilineRow(model, array)) {
+    return true;
+  }
   const targetRow = direction === "backward"
     ? Math.max(0, row - 1)
     : Math.min(row, array.rowCount - 1);

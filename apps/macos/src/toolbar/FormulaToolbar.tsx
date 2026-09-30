@@ -1176,6 +1176,19 @@ export function FormulaToolbar({
 
     const resolveCategory = () => {
       const viewportWidth = Math.max(1, strip.clientWidth);
+      const maxScrollLeft = Math.max(0, strip.scrollWidth - viewportWidth);
+      // The first/last category cannot always be aligned with the viewport
+      // marker because the browser clamps scrollLeft at the strip edges. In
+      // particular, after Physics became wider, clicking the final Sets tab
+      // could land at maxScrollLeft while the 38% marker still sat inside the
+      // Physics section, immediately switching the active tab back to Physics.
+      // Treat the physical scroll edges as authoritative category boundaries.
+      if (strip.scrollLeft <= 1) {
+        return geometry[0]?.category ?? "common";
+      }
+      if (maxScrollLeft - strip.scrollLeft <= 1) {
+        return geometry[geometry.length - 1]?.category ?? "common";
+      }
       const marker = strip.scrollLeft + viewportWidth * 0.38;
       let resolved: ToolbarCategory = geometry[0]?.category ?? "common";
       let nearestDistance = Number.POSITIVE_INFINITY;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { additionalCommands } from "../src/autocomplete/additionalCommands.ts";
 import { latexToSvg } from "../src/export/runtime.ts";
+import { renderOfficeFormulaArtifacts } from "../src/office/shared/formulaRenderArtifacts.ts";
 
 const REPORTED_TIMES_FORMULA = String.raw`\theta=\arccos\left(\frac{(A-B)\cdot(C-B)}{\left|A-B\right|\left|C-B\right|}\right)`;
 const CUSTOM_LETTER_FONTS = ["times", "cambria", "stix", "palatino", "helvetica"];
@@ -73,6 +74,34 @@ function collapsedCustomTextGroups(svg) {
   }
   return collapsed;
 }
+
+const inlineTextStyle = renderOfficeFormulaArtifacts({
+  lines: [{ id: "inline-style-test", latex: String.raw`\sum_{i=1}^{n}\frac{x_i}{y_i}` }],
+  codeFormat: "raw",
+  displayMode: "inline",
+  inlineImageMathStyle: "text",
+  host: "word",
+  includeWordOmml: false,
+  fontSizePt: 14,
+});
+const inlineDisplayStyle = renderOfficeFormulaArtifacts({
+  lines: [{ id: "inline-style-test", latex: String.raw`\sum_{i=1}^{n}\frac{x_i}{y_i}` }],
+  codeFormat: "raw",
+  displayMode: "inline",
+  inlineImageMathStyle: "display",
+  host: "word",
+  includeWordOmml: false,
+  fontSizePt: 14,
+});
+assert.notEqual(
+  inlineDisplayStyle.svg.svg,
+  inlineTextStyle.svg.svg,
+  "Word inline image display style must produce different SVG layout from text style",
+);
+assert.ok(
+  inlineDisplayStyle.svg.height > inlineTextStyle.svg.height,
+  "Word inline image display style should expand large operators/fractions vertically",
+);
 
 const commandIds = new Set(additionalCommands.map((command) => command.id));
 assert.ok(commandIds.has("arcsin"), "arcsin command candidate is missing");

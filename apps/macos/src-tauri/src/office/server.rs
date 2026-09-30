@@ -540,6 +540,7 @@ pub(crate) fn metadata_from_session(session: &OfficeFormulaSession) -> VisualTeX
             .collect(),
         code_format: session.code_format.clone(),
         display_mode: session.display_mode.clone(),
+        inline_image_math_style: Some(session.inline_image_math_style.clone()),
         numbered: session.numbered,
         render_width_px: session
             .export_result

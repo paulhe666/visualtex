@@ -237,6 +237,10 @@ struct MacOfflineSessionRequest {
     reference_width_pt: Option<f64>,
     #[serde(default)]
     reference_height_pt: Option<f64>,
+    #[serde(default)]
+    formula_letter_font: Option<String>,
+    #[serde(default)]
+    word_math_font_name: Option<String>,
     power_point: Option<MacOfflinePowerPointRequest>,
     #[serde(default)]
     document_import: Option<MacOfflineDocumentImportRequest>,
@@ -1611,6 +1615,28 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
     {
         return Err("PowerPoint requests must not contain Word font-size metadata".to_string());
     }
+    if let Some(font) = request.formula_letter_font.as_deref() {
+        if request.host != "word" || request.mode != "edit" {
+            return Err(
+                "Live Word formula font metadata is valid only for Word edit requests"
+                    .to_string(),
+            );
+        }
+        if !matches!(
+            font,
+            "katex" | "times" | "cambria" | "stix" | "palatino" | "helvetica"
+        ) {
+            return Err("Live Word formula font metadata is invalid".to_string());
+        }
+    }
+    if let Some(font_name) = request.word_math_font_name.as_deref() {
+        if request.host != "word" || request.mode != "edit" {
+            return Err(
+                "Live Word math font name is valid only for Word edit requests".to_string(),
+            );
+        }
+        validate_bounded_text(font_name, 128, "wordMathFontName")?;
+    }
 
     match (request.host.as_str(), request.power_point.as_ref()) {
         ("word", None) => {}
@@ -2243,6 +2269,16 @@ fn import_request(
         .as_deref()
         .map(decode_metadata)
         .transpose()?;
+    if let (Some(metadata), Some(live_font)) = (
+        original_metadata.as_mut(),
+        request.formula_letter_font.as_ref(),
+    ) {
+        // A user may change a native Word equation's font after VisualTeX
+        // created it. The live Word Range is authoritative for the next edit;
+        // refresh the metadata baseline now so Apply does not restore the stale
+        // font stored by an earlier VisualTeX session.
+        metadata.formula_letter_font = Some(live_font.clone());
+    }
     let metadata_formula_id = original_metadata
         .as_ref()
         .map(|value| value.formula_id.clone());
@@ -2389,11 +2425,18 @@ fn import_request(
             active_line_id: None,
             code_format: Some(code_format),
             display_mode: Some(request.display_mode),
+            inline_image_math_style: None,
             numbered: Some(request.numbered),
             font_size_pt,
-            formula_letter_font: native_edit_source.as_ref().map(|s|s.letter_font.clone()).or_else(|| original_metadata
-                .as_ref()
-                .and_then(|metadata| metadata.formula_letter_font.clone())),
+            formula_letter_font: request
+                .formula_letter_font
+                .clone()
+                .or_else(|| native_edit_source.as_ref().map(|s| s.letter_font.clone()))
+                .or_else(|| {
+                    original_metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.formula_letter_font.clone())
+                }),
             formula_chinese_font: original_metadata
                 .as_ref()
                 .and_then(|metadata| metadata.formula_chinese_font.clone()),
@@ -4888,6 +4931,32 @@ fn materialize_powerpoint_svg(session: &OfficeFormulaSession) -> Result<PathBuf,
     materialize_result_svg(session)
 }
 
+fn word_math_font_name_for_formula_letter_font(value: &str) -> &'static str {
+    match value {
+        "times" => "Times New Roman",
+        "cambria" => "Cambria Math",
+        "stix" => "STIX Two Math",
+        "palatino" => "Palatino",
+        "helvetica" => "Helvetica Neue",
+        // KaTeX is a web font family and cannot be assigned to a native Word
+        // OMath range. Keep Word's native default for that VisualTeX choice.
+        _ => "Cambria Math",
+    }
+}
+
+fn resolved_word_math_font_name(
+    captured_word_font: Option<&str>,
+    initial_formula_font: &str,
+    final_formula_font: &str,
+) -> String {
+    if final_formula_font == initial_formula_font {
+        if let Some(font) = captured_word_font.map(str::trim).filter(|font| !font.is_empty()) {
+            return font.to_string();
+        }
+    }
+    word_math_font_name_for_formula_letter_font(final_formula_font).to_string()
+}
+
 fn commit_word(
     app: Option<&AppHandle>,
     request: &MacOfflineSessionRequest,
@@ -4968,6 +5037,21 @@ fn commit_word(
         return Err("Word native-equation conversion requires non-empty LaTeX".to_string());
     }
     let latex_base64 = URL_SAFE_NO_PAD.encode(latex.as_bytes());
+    let initial_formula_letter_font = request
+        .formula_letter_font
+        .as_deref()
+        .or_else(|| {
+            session
+                .original_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.formula_letter_font.as_deref())
+        })
+        .unwrap_or("cambria");
+    let final_word_math_font_name = resolved_word_math_font_name(
+        request.word_math_font_name.as_deref(),
+        initial_formula_letter_font,
+        session.formula_letter_font.as_str(),
+    );
     let dispatch = dispatch_text(&[
         ("protocolVersion", OFFLINE_PROTOCOL_VERSION.to_string()),
         ("sessionId", session.id.clone()),
@@ -5049,6 +5133,7 @@ fn commit_word(
             "referenceBaselinePt",
             format!("{:.6}", geometry.reference_baseline_pt),
         ),
+        ("wordMathFontName", final_word_math_font_name),
         (
             "inkCenterYRatio",
             session
@@ -8165,6 +8250,8 @@ mod tests {
             font_size_pt: None,
             reference_width_pt: None,
             reference_height_pt: None,
+            formula_letter_font: None,
+            word_math_font_name: None,
             power_point: None,
             document_import: Some(MacOfflineDocumentImportRequest {
                 bookmark_name: "VT_D_323456781234423492341234".to_string(),
@@ -8618,6 +8705,8 @@ mod tests {
             font_size_pt: Some(10.5),
             reference_width_pt: Some(60.0),
             reference_height_pt: Some(15.0),
+            formula_letter_font: None,
+            word_math_font_name: None,
             power_point: None,
             document_import: None,
         };
@@ -8629,6 +8718,82 @@ mod tests {
             decoded.source_document_id.as_deref(),
             Some("/Users/测试/公式😀.docx")
         );
+    }
+
+    #[test]
+    fn word_native_commit_uses_the_visualtex_font_after_an_explicit_font_change() {
+        assert_eq!(
+            resolved_word_math_font_name(
+                Some("Cambria Math"),
+                "cambria",
+                "times",
+            ),
+            "Times New Roman",
+        );
+        assert_eq!(
+            resolved_word_math_font_name(
+                Some("Times New Roman"),
+                "times",
+                "stix",
+            ),
+            "STIX Two Math",
+        );
+        assert_eq!(
+            resolved_word_math_font_name(
+                Some("Latin Modern Math"),
+                "cambria",
+                "cambria",
+            ),
+            "Latin Modern Math",
+        );
+        assert_eq!(
+            resolved_word_math_font_name(None, "cambria", "palatino"),
+            "Palatino",
+        );
+        assert_eq!(
+            resolved_word_math_font_name(None, "cambria", "katex"),
+            "Cambria Math",
+        );
+    }
+
+    #[test]
+    fn word_edit_accepts_live_math_font_metadata_only_for_word_edits() {
+        let session_id = "31345678-1234-4234-9234-123456789abc".to_string();
+        let mut request: MacOfflineSessionRequest = serde_json::from_value(json!({
+            "protocolVersion": OFFLINE_PROTOCOL_VERSION,
+            "sessionId": session_id,
+            "host": "word",
+            "mode": "edit",
+            "operation": "formula",
+            "formulaId": "41345678-1234-4234-9234-123456789abc",
+            "displayMode": "block",
+            "numbered": false,
+            "nativeEquation": true,
+            "sourceDocumentId": "Document1",
+            "sourceObjectId": "VT_F_41345678-1234-4234-9234-123456789abc",
+            "encodedMetadata": format!("{METADATA_PREFIX}fixture"),
+            "formulaLetterFont": "times",
+            "wordMathFontName": "Latin Modern Math"
+        }))
+        .unwrap();
+
+        validate_request(&request, &request.session_id)
+            .expect("Word native edits should accept a live VisualTeX font and raw Word math font");
+
+        request.mode = "create".to_string();
+        assert!(validate_request(&request, &request.session_id)
+            .unwrap_err()
+            .contains("Word edit requests"));
+
+        request.mode = "edit".to_string();
+        request.formula_letter_font = Some("unsupported".to_string());
+        assert!(validate_request(&request, &request.session_id)
+            .unwrap_err()
+            .contains("formula font metadata"));
+
+        request.formula_letter_font = Some("times".to_string());
+        request.word_math_font_name = Some("x".repeat(129));
+        assert!(validate_request(&request, &request.session_id).is_err());
     }
 
     #[test]
@@ -8645,6 +8810,7 @@ mod tests {
             }],
             code_format: "latex".to_string(),
             display_mode: "inline".to_string(),
+            inline_image_math_style: Some("text".to_string()),
             numbered: false,
             render_width_px: Some(50.0),
             render_height_px: Some(20.0),
@@ -8664,6 +8830,7 @@ mod tests {
         let decoded = decode_metadata(&encoded).expect("metadata should decode");
         assert_eq!(decoded.formula_id, metadata.formula_id);
         assert_eq!(decoded.lines[0].latex, "x^2");
+        assert_eq!(decoded.inline_image_math_style.as_deref(), Some("text"));
         assert_eq!(decoded.font_size_pt, Some(10.5));
         assert_eq!(decoded.reference_width_pt, Some(37.5));
         assert_eq!(decoded.reference_height_pt, Some(15.0));
@@ -8693,6 +8860,7 @@ mod tests {
                 .collect(),
             code_format: code_format.to_string(),
             display_mode: display_mode.to_string(),
+            inline_image_math_style: Some("text".to_string()),
             numbered,
             render_width_px: None,
             render_height_px: None,
@@ -8760,6 +8928,8 @@ mod tests {
             font_size_pt: Some(11.0),
             reference_width_pt: Some(72.0),
             reference_height_pt: Some(18.0),
+            formula_letter_font: None,
+            word_math_font_name: None,
             power_point: None,
             document_import: None,
         };
@@ -8803,6 +8973,8 @@ mod tests {
             font_size_pt: Some(14.0),
             reference_width_pt: Some(42.0),
             reference_height_pt: Some(18.0),
+            formula_letter_font: None,
+            word_math_font_name: None,
             power_point: None,
             document_import: None,
         };
@@ -9100,6 +9272,7 @@ c &= e
             active_line_id: None,
             code_format: "latex".to_string(),
             display_mode: "block".to_string(),
+            inline_image_math_style: "text".to_string(),
             numbered: false,
             font_size_pt: None,
             formula_letter_font: "katex".to_string(),
@@ -9128,6 +9301,7 @@ c &= e
                 lines: vec![],
                 code_format: "latex".to_string(),
                 display_mode: "block".to_string(),
+                inline_image_math_style: Some("text".to_string()),
                 numbered: false,
                 render_width_px: Some(120.0),
                 render_height_px: Some(40.0),
@@ -9213,6 +9387,8 @@ c &= e
             font_size_pt: Some(10.5),
             reference_width_pt: Some(60.0),
             reference_height_pt: Some(15.0),
+            formula_letter_font: None,
+            word_math_font_name: None,
             power_point: None,
             document_import: None,
         };

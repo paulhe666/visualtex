@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
@@ -22,6 +22,7 @@ const WORD_ADDIN_NAME: &str = "VisualTeX.dotm";
 const POWERPOINT_ADDIN_NAME: &str = "VisualTeX.ppam";
 const WORD_SCRIPT_NAME: &str = "VisualTeXWord.scpt";
 const POWERPOINT_SCRIPT_NAME: &str = "VisualTeXPowerPoint.scpt";
+const OFFICE_MAINTENANCE_LOG_NAME: &str = "office-addin-maintenance.log";
 const ADDIN_MANIFEST_NAME: &str = "addins.json";
 const LEGACY_WORD_MANIFEST_ID: &str = "d6fcb260-4c37-4f73-a173-cf24674f81f2";
 const LEGACY_POWERPOINT_MANIFEST_ID: &str = "a6d13cf2-54e8-4dfa-a20c-15de864ab3c5";
@@ -113,6 +114,110 @@ fn user_home() -> Result<PathBuf, String> {
         .map(PathBuf::from)
         .filter(|value| value.is_absolute())
         .ok_or_else(|| "Unable to resolve the current user's home directory".to_string())
+}
+
+fn office_maintenance_log_path() -> Result<PathBuf, String> {
+    Ok(user_home()?
+        .join("Library/Logs/VisualTeX")
+        .join(OFFICE_MAINTENANCE_LOG_NAME))
+}
+
+fn append_office_maintenance_log(
+    operation: &str,
+    phase: &str,
+    outcome: &str,
+    detail: &str,
+) {
+    let Ok(path) = office_maintenance_log_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if fs::create_dir_all(parent).is_err() {
+        return;
+    }
+
+    // Keep the diagnostic file useful without allowing it to grow forever.
+    if fs::metadata(&path)
+        .map(|metadata| metadata.len() > 2 * 1024 * 1024)
+        .unwrap_or(false)
+    {
+        let rotated = path.with_extension("log.1");
+        let _ = fs::remove_file(&rotated);
+        let _ = fs::rename(&path, rotated);
+    }
+
+    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) else {
+        return;
+    };
+    let unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default();
+    let process_snapshot = phase == "operation" || outcome == "error";
+    let word_running = process_snapshot
+        .then(|| application_running(WORD_PROCESS_NAME))
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "not-probed".to_string());
+    let powerpoint_running = process_snapshot
+        .then(|| application_running(POWERPOINT_PROCESS_NAME))
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "not-probed".to_string());
+    let _ = writeln!(
+        file,
+        "\n===== VisualTeX Office add-in maintenance =====\nunix_ms={unix_ms}\nversion={}\noperation={operation}\nphase={phase}\noutcome={outcome}\nword_running={word_running}\npowerpoint_running={powerpoint_running}\ndetail:\n{detail}\n",
+        env!("CARGO_PKG_VERSION"),
+    );
+}
+
+fn maintenance_step<T>(
+    operation: &str,
+    phase: &str,
+    action: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    append_office_maintenance_log(operation, phase, "begin", "");
+    match action() {
+        Ok(value) => {
+            append_office_maintenance_log(operation, phase, "ok", "");
+            Ok(value)
+        }
+        Err(error) => {
+            append_office_maintenance_log(operation, phase, "error", &error);
+            Err(error)
+        }
+    }
+}
+
+fn run_maintenance_operation<T>(
+    operation: &str,
+    action: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let started = Instant::now();
+    append_office_maintenance_log(operation, "operation", "begin", "");
+    match action() {
+        Ok(value) => {
+            append_office_maintenance_log(
+                operation,
+                "operation",
+                "ok",
+                &format!("elapsed_ms={}", started.elapsed().as_millis()),
+            );
+            Ok(value)
+        }
+        Err(error) => {
+            append_office_maintenance_log(
+                operation,
+                "operation",
+                "error",
+                &format!(
+                    "elapsed_ms={}\nerror={error}",
+                    started.elapsed().as_millis()
+                ),
+            );
+            Err(error)
+        }
+    }
 }
 
 fn offline_root() -> Result<PathBuf, String> {
@@ -247,7 +352,7 @@ fn ensure_office_hosts_stopped() -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "Fully quit {} with Command-Q before installing or repairing VisualTeX. Office keeps already-loaded VBA code in memory, so replacing files while it is running cannot validate the new add-in.",
+            "Fully quit {} with Command-Q before installing, repairing, or uninstalling VisualTeX add-ins. Office keeps already-loaded VBA code in memory, so changing files while it is running cannot safely validate the add-in state.",
             running.join(" and ")
         ))
     }
@@ -1450,14 +1555,23 @@ pub fn status(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> 
     })
 }
 
-pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> {
+fn install_impl(
+    app: &AppHandle,
+    operation: &str,
+) -> Result<MacOfflineOfficeInstallStatus, String> {
     if !cfg!(target_os = "macos") {
         return Err("The native offline Office add-ins are available only on macOS".to_string());
     }
-    let root = resource_root(app)?;
-    let (word_source, powerpoint_source) = validate_compiled_artifacts(&root)?;
-    ensure_office_hosts_stopped()?;
-    backup_compiled_artifacts_to_scratch(&word_source, &powerpoint_source)?;
+    let root = maintenance_step(operation, "resolve-resources", || resource_root(app))?;
+    let (word_source, powerpoint_source) = maintenance_step(
+        operation,
+        "validate-packaged-addins",
+        || validate_compiled_artifacts(&root),
+    )?;
+    maintenance_step(operation, "office-process-check", ensure_office_hosts_stopped)?;
+    maintenance_step(operation, "backup-packaged-addins", || {
+        backup_compiled_artifacts_to_scratch(&word_source, &powerpoint_source)
+    })?;
 
     let word_startup_paths = word_startup_install_paths()?;
     let word_destinations = word_startup_paths
@@ -1498,14 +1612,20 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
         .collect::<Result<Vec<_>, _>>()?;
 
     let install_result = (|| -> Result<(), String> {
-        clean_visualtex_owned_office_state()?;
+        maintenance_step(operation, "cleanup-existing-addins", || {
+            clean_visualtex_owned_office_state()
+        })?;
 
+        append_office_maintenance_log(operation, "copy-word-addin", "begin", "");
         for (startup, destination) in word_startup_paths.iter().zip(&word_destinations) {
             fs::create_dir_all(startup)
                 .map_err(|error| format!("Unable to create {}: {error}", startup.display()))?;
             copy_atomic(&word_source, destination, 0o600)?;
             verify_copy(&word_source, destination)?;
         }
+        append_office_maintenance_log(operation, "copy-word-addin", "ok", "");
+
+        append_office_maintenance_log(operation, "copy-powerpoint-addin", "begin", "");
         copy_atomic(&powerpoint_source, &powerpoint_destination, 0o600)?;
         verify_copy(&powerpoint_source, &powerpoint_destination)?;
         verify_addin_installation(
@@ -1520,6 +1640,7 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
             &discover_powerpoint_addin_artifacts()?,
             "PowerPoint",
         )?;
+        append_office_maintenance_log(operation, "copy-powerpoint-addin", "ok", "");
 
         let placeholder = BASE64_STANDARD
             .decode(PLACEHOLDER_PNG_BASE64)
@@ -1540,6 +1661,7 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
             }
         }
 
+        append_office_maintenance_log(operation, "compile-applescript", "begin", "");
         compile_applescript(
             &root.join("word/VisualTeXWord.scpt"),
             &word_script_destination,
@@ -1548,6 +1670,7 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
             &root.join("powerpoint/VisualTeXPowerPoint.scpt"),
             &powerpoint_script_destination,
         )?;
+        append_office_maintenance_log(operation, "compile-applescript", "ok", "");
         if fs::metadata(&word_script_destination)
             .map(|value| value.len() == 0)
             .unwrap_or(true)
@@ -1582,18 +1705,28 @@ pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String>
             )),
         };
     }
-    status(app)
+    maintenance_step(operation, "post-install-status", || status(app))
 }
 
-pub fn uninstall(_app: &AppHandle) -> Result<(), String> {
+pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> {
+    run_maintenance_operation("install", || install_impl(app, "install"))
+}
+
+fn uninstall_impl(_app: &AppHandle) -> Result<(), String> {
     if !cfg!(target_os = "macos") {
         return Err("The native offline Office add-ins are available only on macOS".to_string());
     }
-    ensure_office_hosts_stopped()?;
+    maintenance_step("uninstall", "office-process-check", ensure_office_hosts_stopped)?;
     // Uninstall success must not depend on a second status probe. On machines
     // with a wedged Office container, cleanup can succeed even though probing
     // that container is temporarily unavailable.
-    clean_visualtex_owned_office_state()
+    maintenance_step("uninstall", "cleanup-installed-addins", || {
+        clean_visualtex_owned_office_state()
+    })
+}
+
+pub fn uninstall(app: &AppHandle) -> Result<(), String> {
+    run_maintenance_operation("uninstall", || uninstall_impl(app))
 }
 
 fn remove_if_exists(path: &Path) -> Result<(), String> {
@@ -1607,6 +1740,53 @@ fn remove_if_exists(path: &Path) -> Result<(), String> {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(format!("Unable to remove {}: {error}", path.display())),
+        }
+    }
+}
+
+pub fn open_office_maintenance_log() -> Result<(), String> {
+    let path = office_maintenance_log_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Unable to create Office log directory: {error}"))?;
+    }
+    if !path.exists() {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|error| format!("Unable to create Office maintenance log: {error}"))?;
+        writeln!(
+            file,
+            "VisualTeX Office add-in maintenance log\nversion={}\n",
+            env!("CARGO_PKG_VERSION")
+        )
+        .map_err(|error| format!("Unable to initialize Office maintenance log: {error}"))?;
+    }
+
+    let mut child = Command::new("/usr/bin/open")
+        .arg(&path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("Unable to open Office maintenance log: {error}"))?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return Ok(()),
+            Ok(Some(status)) => {
+                return Err(format!(
+                    "macOS could not open the Office maintenance log (status {status})"
+                ))
+            }
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("Timed out opening the Office maintenance log".to_string());
+            }
         }
     }
 }
@@ -1673,7 +1853,7 @@ pub fn install_macos_offline_office_addins(
 pub fn repair_macos_offline_office_addins(
     app: AppHandle,
 ) -> Result<MacOfflineOfficeInstallStatus, String> {
-    install(&app)
+    run_maintenance_operation("repair", || install_impl(&app, "repair"))
 }
 
 #[tauri::command]
@@ -1684,6 +1864,11 @@ pub fn uninstall_macos_offline_office_addins(app: AppHandle) -> Result<(), Strin
 #[tauri::command]
 pub fn request_quit_macos_office_hosts_for_addin_update() -> Result<(), String> {
     request_office_hosts_quit_for_update()
+}
+
+#[tauri::command]
+pub fn open_macos_office_addin_maintenance_log() -> Result<(), String> {
+    open_office_maintenance_log()
 }
 
 #[tauri::command]

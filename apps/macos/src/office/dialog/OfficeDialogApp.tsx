@@ -55,6 +55,7 @@ import {
   onCurrentTauriWindowCloseRequested,
 } from "../shared/tauriTransport";
 import { normalizeFormulaEditorDocument } from "../shared/formulaEditorDocument";
+import type { InlineImageMathStyle } from "../shared/formulaMetadata";
 import {
   readWorkspacePanelOpen,
   writeWorkspacePanelOpen,
@@ -111,6 +112,8 @@ const EDITOR_PERSISTENCE_STORAGE_KEY = "visualtex-editor";
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 const OFFICE_WORD_CREATE_NUMBERED_STORAGE_KEY =
   "visualtex.office.word.create.numbered";
+const OFFICE_WORD_INLINE_IMAGE_MATH_STYLE_STORAGE_KEY =
+  "visualtex.office.word.inline-image-math-style";
 const USE_NATIVE_POWERPOINT_COMMIT =
   document
     .querySelector<HTMLMetaElement>(
@@ -132,6 +135,19 @@ function writeOfficeWordCreateNumberedPreference(numbered: boolean) {
     OFFICE_WORD_CREATE_NUMBERED_STORAGE_KEY,
     numbered ? "true" : "false",
   );
+}
+
+function readOfficeWordInlineImageMathStylePreference(
+  fallback: InlineImageMathStyle,
+): InlineImageMathStyle {
+  const stored = readLocalStorage(OFFICE_WORD_INLINE_IMAGE_MATH_STYLE_STORAGE_KEY);
+  return stored === "text" || stored === "display" ? stored : fallback;
+}
+
+function writeOfficeWordInlineImageMathStylePreference(
+  style: InlineImageMathStyle,
+) {
+  writeLocalStorage(OFFICE_WORD_INLINE_IMAGE_MATH_STYLE_STORAGE_KEY, style);
 }
 
 function syncOfficeEditorSystemSettings(raw?: string | null) {
@@ -318,6 +334,7 @@ function documentFingerprint(
   lines: Array<{ id: string; latex: string }>,
   codeFormat: string,
   displayMode: "inline" | "block",
+  inlineImageMathStyle: InlineImageMathStyle,
   numbered: boolean,
   fontSizePt: number,
   formulaLetterFont: string,
@@ -328,6 +345,7 @@ function documentFingerprint(
     lines: lines.map((line) => line.latex),
     codeFormat,
     displayMode,
+    inlineImageMathStyle,
     numbered,
     fontSizePt: normalizeOfficeFontSizePt(fontSizePt, fontSizePt),
     formulaLetterFont,
@@ -373,6 +391,8 @@ export function OfficeDialogApp() {
   const [historyBusy, setHistoryBusy] = useState(false);
   const [autoCommitOnClose, setAutoCommitOnClose] = useState(true);
   const [displayMode, setDisplayMode] = useState<"inline" | "block">("inline");
+  const [inlineImageMathStyle, setInlineImageMathStyle] =
+    useState<InlineImageMathStyle>("text");
   const [numbered, setNumbered] = useState(false);
   const [officeFontSizePt, setOfficeFontSizePt] = useState(14);
   const [toast, setToast] = useState("");
@@ -541,6 +561,7 @@ export function OfficeDialogApp() {
     useEditorStore.getState().setLatexCodeFormat("raw");
     setAutoCommitOnClose(true);
     setDisplayMode("inline");
+    setInlineImageMathStyle("text");
     setNumbered(false);
     setOfficeFontSizePt(14);
   }, [sessionKey]);
@@ -630,7 +651,10 @@ export function OfficeDialogApp() {
     return {
       formulaLetterFont: normalizeFormulaLetterFont(
         session?.originalMetadata?.formulaLetterFont ??
-          (tauriResidentEditor && !(session?.host === "powerpoint" && session?.nativeEquation && session?.mode === "edit") ? undefined : session?.formulaLetterFont) ??
+          (tauriResidentEditor &&
+          !(session?.nativeEquation && session?.mode === "edit")
+            ? undefined
+            : session?.formulaLetterFont) ??
           globalLetterFont,
       ),
       formulaChineseFont: normalizeFormulaChineseFont(
@@ -685,6 +709,9 @@ export function OfficeDialogApp() {
       editableOriginalDocument.lines,
       editableOriginalDocument.codeFormat,
       session.originalMetadata?.displayMode ?? session.displayMode,
+      session.originalMetadata?.inlineImageMathStyle ??
+        session.inlineImageMathStyle ??
+        "text",
       session.originalMetadata?.numbered ?? session.numbered ?? false,
       originalFontSizePt,
       resolvedSessionFormulaFonts.formulaLetterFont,
@@ -716,6 +743,7 @@ export function OfficeDialogApp() {
         lines,
         latexCodeFormat,
         displayMode,
+        inlineImageMathStyle,
         numbered,
         officeFontSizePt,
         formulaLetterFont,
@@ -726,6 +754,7 @@ export function OfficeDialogApp() {
       lines,
       latexCodeFormat,
       displayMode,
+      inlineImageMathStyle,
       numbered,
       officeFontSizePt,
       formulaLetterFont,
@@ -769,6 +798,20 @@ export function OfficeDialogApp() {
     }
     setAutoCommitOnClose(session.autoCommitOnClose);
     setDisplayMode(session.displayMode);
+    const sessionInlineImageMathStyle =
+      session.originalMetadata?.inlineImageMathStyle ??
+      session.inlineImageMathStyle ??
+      "text";
+    const loadedInlineImageMathStyle =
+      session.host === "word" &&
+      !session.nativeEquation &&
+      session.mode === "create" &&
+      !session.originalMetadata
+        ? readOfficeWordInlineImageMathStylePreference(
+            sessionInlineImageMathStyle,
+          )
+        : sessionInlineImageMathStyle;
+    setInlineImageMathStyle(loadedInlineImageMathStyle);
     const sessionNumbered =
       session.displayMode === "block" && Boolean(session.numbered);
     const loadedNumbered =
@@ -805,6 +848,7 @@ export function OfficeDialogApp() {
       nextLines,
       editableSessionDocument.codeFormat,
       session.displayMode,
+      session.inlineImageMathStyle ?? "text",
       session.displayMode === "block" && Boolean(session.numbered),
       loadedFontSizePt,
       resolvedSessionFormulaFonts.formulaLetterFont,
@@ -1133,6 +1177,10 @@ export function OfficeDialogApp() {
         lines,
         codeFormat: latexCodeFormat,
         displayMode,
+        inlineImageMathStyle:
+          session?.host === "word" && !session?.nativeEquation
+            ? inlineImageMathStyle
+            : "text",
         host: session?.host,
         fontSizePt: officeFontSizePt,
         includeWordOmml: session?.host === "word" || session?.nativeEquation === true,
@@ -1147,6 +1195,7 @@ export function OfficeDialogApp() {
   }, [
     latex,
     displayMode,
+    inlineImageMathStyle,
     lines,
     latexCodeFormat,
     session?.host,
@@ -1163,6 +1212,10 @@ export function OfficeDialogApp() {
       lines,
       codeFormat: latexCodeFormat,
       displayMode,
+      inlineImageMathStyle:
+        session?.host === "word" && !session?.nativeEquation
+          ? inlineImageMathStyle
+          : "text",
       host: session?.host,
         fontSizePt: officeFontSizePt,
       includeWordOmml: session?.host === "word" || session?.nativeEquation === true,
@@ -1177,6 +1230,7 @@ export function OfficeDialogApp() {
   }, [
     latex,
     displayMode,
+    inlineImageMathStyle,
     lines,
     latexCodeFormat,
     session?.host,
@@ -1287,6 +1341,7 @@ export function OfficeDialogApp() {
       activeLineId,
       codeFormat: latexCodeFormat,
       displayMode,
+      inlineImageMathStyle,
       numbered: displayMode === "block" && numbered,
       fontSizePt: officeFontSizePt,
       formulaLetterFont,
@@ -1358,6 +1413,7 @@ export function OfficeDialogApp() {
     activeLineId,
     latexCodeFormat,
     displayMode,
+    inlineImageMathStyle,
     numbered,
     officeFontSizePt,
     formulaLetterFont,
@@ -1386,6 +1442,7 @@ export function OfficeDialogApp() {
         activeLineId,
         codeFormat: latexCodeFormat,
         displayMode,
+        inlineImageMathStyle,
         numbered: displayMode === "block" && numbered,
         fontSizePt: officeFontSizePt,
         formulaLetterFont,
@@ -1460,6 +1517,7 @@ export function OfficeDialogApp() {
     activeLineId,
     latexCodeFormat,
     displayMode,
+    inlineImageMathStyle,
     numbered,
     officeFontSizePt,
     formulaLetterFont,
@@ -1738,6 +1796,7 @@ export function OfficeDialogApp() {
         activeLineId,
         codeFormat: latexCodeFormat,
         displayMode,
+        inlineImageMathStyle,
         numbered: displayMode === "block" && numbered,
         fontSizePt: officeFontSizePt,
         formulaLetterFont,
@@ -1758,6 +1817,7 @@ export function OfficeDialogApp() {
       activeLineId,
       latexCodeFormat,
       displayMode,
+      inlineImageMathStyle,
       numbered,
       officeFontSizePt,
       formulaLetterFont,
@@ -2090,6 +2150,38 @@ export function OfficeDialogApp() {
             {isEn ? "Display" : "行间"}
           </button>
         </div>
+      ) : null}
+      {session.host === "word" &&
+      !session.nativeEquation &&
+      displayMode === "inline" ? (
+        <label
+          className="office-font-size-setting"
+          title={
+            isEn
+              ? "Choose compact text-style or expanded display-style rendering while keeping the formula inline"
+              : "公式仍保持行内图片，仅切换紧凑 Text style 或展开 Display style 排版"
+          }
+        >
+          <span>{isEn ? "Inline style" : "行内样式"}</span>
+          <select
+            value={inlineImageMathStyle}
+            aria-label={isEn ? "Inline image math style" : "行内图片公式排版样式"}
+            onChange={(event) => {
+              const nextStyle = event.target.value as InlineImageMathStyle;
+              setInlineImageMathStyle(nextStyle);
+              if (session.mode === "create") {
+                writeOfficeWordInlineImageMathStylePreference(nextStyle);
+              }
+            }}
+          >
+            <option value="text">
+              {isEn ? "Text style" : "Text style（紧凑）"}
+            </option>
+            <option value="display">
+              {isEn ? "Display style" : "Display style（展开）"}
+            </option>
+          </select>
+        </label>
       ) : null}
       <label
         className="office-font-size-setting"

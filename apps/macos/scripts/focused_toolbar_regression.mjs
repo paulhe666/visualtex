@@ -1274,6 +1274,37 @@ async function main() {
         assert.equal(details.measuredCount, 0);
       }
 
+      await evaluate(`document.querySelector(
+        '.toolbar-tab[data-category="set"]',
+      )?.click()`);
+      await sleep(260);
+      const finalCategoryState = await waitForEvaluation(`(() => {
+        const strip = document.querySelector(
+          '.template-strip.is-continuous-categories',
+        );
+        const activeTab = document.querySelector('.toolbar-tab.is-active');
+        const maxScrollLeft = strip
+          ? Math.max(0, strip.scrollWidth - strip.clientWidth)
+          : -1;
+        return {
+          ready:
+            Boolean(strip) &&
+            activeTab?.getAttribute('data-category') === 'set' &&
+            strip?.dataset.activeCategory === 'set' &&
+            Math.abs((strip?.scrollLeft ?? -10) - maxScrollLeft) <= 2,
+          activeTab: activeTab?.getAttribute('data-category') ?? '',
+          activeCategory: strip?.dataset.activeCategory ?? '',
+          scrollLeft: strip?.scrollLeft ?? -1,
+          maxScrollLeft,
+        };
+      })()`, "last toolbar category stays active at the right edge");
+      assert.equal(finalCategoryState.activeTab, 'set');
+      assert.equal(finalCategoryState.activeCategory, 'set');
+      assert.ok(
+        Math.abs(finalCategoryState.scrollLeft - finalCategoryState.maxScrollLeft) <= 2,
+        JSON.stringify(finalCategoryState),
+      );
+
       await evaluate(`(() => {
         const strip = document.querySelector(
           '.template-strip.is-continuous-categories',

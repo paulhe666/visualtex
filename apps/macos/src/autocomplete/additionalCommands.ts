@@ -47,6 +47,7 @@ const complexCommands: LatexCommand[] = [
   makeCommand("overline", "\\overline", "\\overline{\\placeholder{}}", "\\overline{x}", "上划线", "Overline", "structure", 75, ["bar", "overline"], ["平均值", "上划线"]),
   makeCommand("hat", "\\hat", "\\hat{\\placeholder{}}", "\\hat{x}", "帽子重音", "Hat accent", "structure", 84, ["hat"], ["帽子", "重音"]),
   makeCommand("widehat", "\\widehat", "\\widehat{\\placeholder{}}", "\\widehat{ABC}", "宽帽子重音", "Wide hat", "structure", 78, ["wide hat"], ["宽帽子", "重音"]),
+  makeCommand("vector", "\\vec", "\\vec{\\placeholder{}}", "\\vec{x}", "向量箭头", "Vector accent", "structure", 84, ["vector", "vec"], ["矢量", "向量", "箭头重音"]),
   makeCommand("tilde", "\\tilde", "\\tilde{\\placeholder{}}", "\\tilde{x}", "波浪重音", "Tilde accent", "structure", 83, ["tilde"], ["波浪号", "重音"]),
   makeCommand("widetilde", "\\widetilde", "\\widetilde{\\placeholder{}}", "\\widetilde{ABC}", "宽波浪重音", "Wide tilde", "structure", 77, ["wide tilde"], ["宽波浪号", "重音"]),
   makeCommand("dotaccent", "\\dot", "\\dot{\\placeholder{}}", "\\dot{x}", "点重音", "Dot accent", "structure", 80, ["dot"], ["点重音"]),
@@ -129,6 +130,10 @@ const complexCommands: LatexCommand[] = [
   makeCommand("trace", "\\operatorname{tr}", "\\operatorname{tr}\\left(\\placeholder{}\\right)", "\\operatorname{tr}(A)", "迹", "Trace", "matrix", 78, ["trace", "tr"], ["矩阵的迹"]),
   makeCommand("rank", "\\operatorname{rank}", "\\operatorname{rank}\\left(\\placeholder{}\\right)", "\\operatorname{rank}(A)", "秩", "Rank", "matrix", 78, ["rank"], ["矩阵的秩"]),
   makeCommand("norm", "\\lVert", "\\left\\lVert\\placeholder{}\\right\\rVert", "\\lVert\\mathbf{x}\\rVert", "范数", "Norm", "matrix", 81, ["norm"], ["范数"]),
+  makeCommand("double-vertical-bar", "\\|", "\\|", "\\Vert", "双竖线", "Double vertical bar", "structure", 82, ["double bar"], ["双竖线", "范数竖线"]),
+  makeCommand("vert-double", "\\Vert", "\\Vert", "\\Vert", "双竖线", "Double vertical bar", "structure", 81, ["double bar", "norm delimiter"], ["双竖线", "范数界定符"]),
+  makeCommand("left-vert-double", "\\lVert", "\\lVert", "\\lVert", "左双竖线", "Left double vertical bar", "structure", 80, ["left double bar"], ["左双竖线"]),
+  makeCommand("right-vert-double", "\\rVert", "\\rVert", "\\rVert", "右双竖线", "Right double vertical bar", "structure", 80, ["right double bar"], ["右双竖线"]),
   makeCommand("unitvector", "\\hat", "\\hat{\\mathbf{\\placeholder{}}}", "\\hat{\\mathbf{e}}", "单位矢量", "Unit vector", "matrix", 84, ["unit vector"], ["单位矢量"]),
 
   // 物理常用结构

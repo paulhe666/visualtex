@@ -707,6 +707,10 @@ const officeDialogSource = readFileSync(
   new URL("../src/office/dialog/OfficeDialogApp.tsx", import.meta.url),
   "utf8",
 );
+const editorWorkspaceSource = readFileSync(
+  new URL("../src/workspace/EditorWorkspace.tsx", import.meta.url),
+  "utf8",
+);
 // The preference moved to a shared module and now separates image / OMML.
 // Exercise the real storage behavior rather than requiring its key literal
 // and old helper name to remain inside OfficeDialogApp.tsx.
@@ -748,6 +752,31 @@ assert.match(
   officeDialogSource,
   /if \(session\.host === "word" && session\.mode === "create"\) \{\s*writeWordFormulaFontSize\(session\.nativeEquation \? "omml" : "image", nextFontSizePt\)/,
   "Only explicit size changes in Word create mode should update the matching preference",
+);
+assert.match(
+  officeDialogSource,
+  /session\?\.nativeEquation && session\?\.mode === "edit"/,
+  "Native Office edits must be allowed to hydrate the live formula font from the Session",
+);
+assert.match(
+  editorWorkspaceSource,
+  /event\.code !== "Backslash"/,
+  "The editor must reserve Command+Backslash for formula/source focus switching",
+);
+assert.match(
+  editorWorkspaceSource,
+  /sourceFocusedRef\.current[\s\S]*editorRef\.current\?\.focus\(\)/,
+  "Command+Backslash must return focus from LaTeX source to the visual formula editor",
+);
+assert.match(
+  editorWorkspaceSource,
+  /setSourceOpen\(true\)[\s\S]*\.source-panel \.cm-content/,
+  "Command+Backslash must open and focus the LaTeX source editor from the formula editor",
+);
+assert.match(
+  editorWorkspaceSource,
+  /aria-keyshortcuts="Meta\+Backslash"/,
+  "The LaTeX source control must expose the formula/source focus shortcut",
 );
 
 console.log("Office formula editor regression passed");

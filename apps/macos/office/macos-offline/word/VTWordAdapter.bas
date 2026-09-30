@@ -19979,6 +19979,85 @@ Private Function VTImageEditDispatchDebounced( _
          elapsedSeconds <= VT_WORD_IMAGE_EDIT_DEBOUNCE_SECONDS)
 End Function
 
+Private Function VTVisualTeXLetterFontFromWordFontName( _
+    ByVal fontName As String) As String
+
+    Select Case LCase$(Trim$(fontName))
+        Case "katex_math", "katex math", "katex_main", "katex main"
+            VTVisualTeXLetterFontFromWordFontName = "katex"
+        Case "times new roman", "times"
+            VTVisualTeXLetterFontFromWordFontName = "times"
+        Case "cambria math", "cambria"
+            VTVisualTeXLetterFontFromWordFontName = "cambria"
+        Case "stix two math", "stix two text", "stixgeneral", "stix"
+            VTVisualTeXLetterFontFromWordFontName = "stix"
+        Case "palatino", "palatino linotype", "book antiqua"
+            VTVisualTeXLetterFontFromWordFontName = "palatino"
+        Case "helvetica neue", "helvetica", "arial"
+            VTVisualTeXLetterFontFromWordFontName = "helvetica"
+    End Select
+End Function
+
+Private Function VTWordMathFontNameFromRange( _
+    ByVal sourceRange As Range) As String
+
+    Dim candidate As String
+
+    If sourceRange Is Nothing Then Exit Function
+    On Error Resume Next
+    candidate = Trim$(CStr(sourceRange.Font.NameAscii))
+    If Len(candidate) = 0 Or candidate = "9999999" Then
+        candidate = Trim$(CStr(sourceRange.Font.Name))
+    End If
+    If Len(candidate) = 0 Or candidate = "9999999" Then
+        candidate = Trim$(CStr(sourceRange.Font.NameOther))
+    End If
+    Err.Clear
+    On Error GoTo 0
+
+    If Len(candidate) = 0 Or Len(candidate) > 128 Or _
+       candidate = "9999999" Or InStr(candidate, vbCr) > 0 Or _
+       InStr(candidate, vbLf) > 0 Then Exit Function
+    VTWordMathFontNameFromRange = candidate
+End Function
+
+Private Function VTVisualTeXLetterFontFromWordRange( _
+    ByVal sourceRange As Range) As String
+
+    VTVisualTeXLetterFontFromWordRange = _
+        VTVisualTeXLetterFontFromWordFontName( _
+            VTWordMathFontNameFromRange(sourceRange))
+End Function
+
+Private Sub VTApplyWordNativeMathFontName( _
+    ByVal equationRange As Range, _
+    ByVal fontName As String)
+
+    Dim trimmedName As String
+    Dim errorNumber As Long
+    Dim errorDescription As String
+
+    trimmedName = Trim$(fontName)
+    If Len(trimmedName) = 0 Then Exit Sub
+    If equationRange Is Nothing Or Len(trimmedName) > 128 Or _
+       InStr(trimmedName, vbCr) > 0 Or InStr(trimmedName, vbLf) > 0 Then
+        Err.Raise vbObjectError + 7534, "VisualTeX", _
+            "The preserved Word math font is invalid."
+    End If
+
+    On Error GoTo ApplyFailed
+    equationRange.Font.Name = trimmedName
+    equationRange.Font.NameAscii = trimmedName
+    equationRange.Font.NameOther = trimmedName
+    Exit Sub
+
+ApplyFailed:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    If errorNumber = 0 Then errorNumber = vbObjectError + 7534
+    Err.Raise errorNumber, "VisualTeX Word math font", errorDescription
+End Sub
+
 Private Function VTNativeEditDispatchDebounced( _
     ByVal formulaId As String) As Boolean
 
@@ -20305,6 +20384,8 @@ Private Function VTWordOpenCopiedNativeSession( _
     Dim sourceKey As String
     Dim errorNumber As Long
     Dim errorDescription As String
+    Dim formulaLetterFont As String
+    Dim wordMathFontName As String
     If selectedRange Is Nothing Then Exit Function
     If Not VTTryResolveSingleNativeMath(selectedRange, nativeMath) Then Exit Function
     VTRequireWritableWordDocument
@@ -20322,6 +20403,9 @@ Private Function VTWordOpenCopiedNativeSession( _
     displayMode = "inline"
     If nativeMath.Type = wdOMathDisplay Or numbered Then displayMode = "block"
     fontSizePt = VTPreferredWordFormulaFontSize(nativeMath.Range)
+    wordMathFontName = VTWordMathFontNameFromRange(nativeMath.Range)
+    formulaLetterFont = _
+        VTVisualTeXLetterFontFromWordFontName(wordMathFontName)
     VTEnsureDirectory VTSessionDirectory(sessionId)
     ' The actual native tree is authoritative. Session-only anchors are removed
     ' on apply/cancel; no persistent formula identity or LaTeX cache is needed.
@@ -20331,7 +20415,8 @@ Private Function VTWordOpenCopiedNativeSession( _
     requestJson = VTRequestJson(sessionId, VT_WORD_HOST, "edit", formulaId, _
         displayMode, numbered, VTWordDocumentIdentityForDocument(targetDocument), _
         VTWordEditBookmarkName(sessionId), "", "", "", keepNativeEquation, _
-        fontSizePt, 0#, 0#, operationName)
+        fontSizePt, 0#, 0#, operationName, False, _
+        formulaLetterFont, wordMathFontName)
     VTPrepareNativeRollbackDocument targetDocument
     VTWriteAndLaunchSession VT_WORD_HOST, sessionId, requestJson
     If operationName = "formula" Then
@@ -20375,6 +20460,8 @@ Private Sub VTWordOpenNativeSession( _
     Dim debounceArmed As Boolean
     Dim openErrorNumber As Long
     Dim openErrorDescription As String
+    Dim formulaLetterFont As String
+    Dim wordMathFontName As String
 
     bookmarkTrace = "nothing"
     If Not nativeBookmark Is Nothing Then bookmarkTrace = nativeBookmark.Name
@@ -20440,6 +20527,9 @@ Private Sub VTWordOpenNativeSession( _
     If Not VTValidWordFormulaFontSize(fontSizePt) Then
         fontSizePt = VTPreferredWordFormulaFontSize(nativeBookmark.Range)
     End If
+    wordMathFontName = VTWordMathFontNameFromRange(nativeMath.Range)
+    formulaLetterFont = _
+        VTVisualTeXLetterFontFromWordFontName(wordMathFontName)
 
     sessionId = VTNewUuidV4()
     requestJson = VTRequestJson( _
@@ -20458,7 +20548,10 @@ Private Sub VTWordOpenNativeSession( _
         fontSizePt, _
         referenceWidthPt, _
         referenceHeightPt, _
-        operationName)
+        operationName, _
+        False, _
+        formulaLetterFont, _
+        wordMathFontName)
     ' Creating Word's hidden rollback document costs roughly 0.15 s on macOS.
     ' Prepare only its empty container while the editor opens; Apply still
     ' captures and validates the current OMath immediately before replacement.
@@ -24899,6 +24992,7 @@ Private Sub VTCommitWordDispatch( _
     Dim pendingMarker As String
     Dim sourceMarker As String
     Dim sourceDocumentId As String
+    Dim wordMathFontName As String
     Dim targetDocument As Document
     Dim targetImage As InlineShape
     Dim pendingBookmark As Bookmark
@@ -25020,6 +25114,7 @@ Private Sub VTCommitWordDispatch( _
     pendingMarker = VTDispatchOptional(dispatch, "pendingMarker")
     sourceMarker = VTDispatchOptional(dispatch, "sourceMarker")
     sourceDocumentId = VTDispatchOptional(dispatch, "sourceDocumentId")
+    wordMathFontName = VTDispatchOptional(dispatch, "wordMathFontName")
     forkCopiedFormula = _
         (VTDispatchOptional(dispatch, "forkCopiedFormula") = "1")
 
@@ -25408,6 +25503,12 @@ Private Sub VTCommitWordDispatch( _
         VTWordPerformanceMark "native-font-complete"
         Set nativeEquationRange = VTResolveNativeEquationRange( _
             targetDocument, nativeEquationRange.Start, 16)
+        If Len(wordMathFontName) > 0 Then
+            transactionStage = "restore-native-math-font"
+            VTApplyWordNativeMathFontName nativeEquationRange, wordMathFontName
+            Set nativeEquationRange = VTResolveNativeEquationRange( _
+                targetDocument, nativeEquationRange.Start, 16)
+        End If
         VTWordPerformanceMark "native-final-resolve-complete"
 
         transactionStage = "bookmark-native-equation"

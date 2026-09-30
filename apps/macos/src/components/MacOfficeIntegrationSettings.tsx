@@ -22,6 +22,19 @@ import {
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const candidate = error as Record<string, unknown>;
+    for (const key of ["message", "error", "details"]) {
+      const value = candidate[key];
+      if (typeof value === "string" && value.trim()) return value;
+    }
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== "{}") return serialized;
+    } catch {
+      // Fall through to the localized fallback.
+    }
+  }
   return fallback;
 }
 
@@ -54,12 +67,22 @@ function officeErrorSummary(raw: string, isEn: boolean) {
   }
   if (/Fully quit|Command-Q/i.test(raw)) {
     return isEn
-      ? "Quit Word and PowerPoint with Command-Q before installing or repairing."
-      : "安装或修复前，请先使用 ⌘Q 完全退出 Word 和 PowerPoint。";
+      ? "Quit Word and PowerPoint completely with Command-Q before installing, repairing, or uninstalling the add-ins."
+      : "安装、修复或卸载插件前，请先使用 ⌘Q 完全退出 Word 和 PowerPoint。";
+  }
+  if (/Operation not permitted|Permission denied|EPERM|permission/i.test(raw)) {
+    return isEn
+      ? "macOS denied access to an Office add-in location. Check VisualTeX permissions, then retry."
+      : "macOS 拒绝访问 Office 插件目录。请检查 VisualTeX 的系统权限后重试。";
+  }
+  if (/still running|taking longer|operation is still/i.test(raw)) {
+    return isEn
+      ? "The Office add-in operation is taking unusually long. It may be blocked by Office, macOS permissions, or a coordinated Office folder."
+      : "Office 插件操作耗时异常，可能被 Office 进程、macOS 权限或 Office 目录协调状态阻塞。";
   }
   return isEn
-    ? "The Office add-in operation failed. Refresh the status, then repair if needed."
-    : "Office 插件操作失败。请先刷新状态，仍有问题时再点击修复。";
+    ? "The Office add-in operation failed. See the error details below and retry after resolving it."
+    : "Office 插件操作失败。请查看下方错误详情，处理后再重试。";
 }
 
 function StatusLine({
@@ -90,6 +113,7 @@ export function MacOfficeIntegrationSettings() {
   const isEn = language === "en";
   const [status, setStatus] = useState<MacOfflineOfficeStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [openingLog, setOpeningLog] = useState(false);
   const [message, setMessage] = useState("");
 
   const refresh = useCallback(async () => {
@@ -125,10 +149,29 @@ export function MacOfficeIntegrationSettings() {
 
   const run = useCallback(
     async (name: string, command: string) => {
+      const mutatesAddins =
+        command === "install_macos_offline_office_addins" ||
+        command === "repair_macos_offline_office_addins" ||
+        command === "uninstall_macos_offline_office_addins";
+
       setBusy(name);
       setMessage("");
+      let slowOperationTimer: number | undefined;
+      if (mutatesAddins) {
+        slowOperationTimer = window.setTimeout(() => {
+          setMessage(
+            isEn
+              ? "The Office add-in operation is still running after 5 seconds. It may be blocked by Office, macOS permissions, or an Office folder."
+              : "Office 插件操作超过 5 秒仍未完成，可能被 Office 进程、macOS 权限或 Office 目录阻塞。",
+          );
+        }, 5_000);
+      }
       try {
         await invoke(command);
+        if (slowOperationTimer !== undefined) {
+          window.clearTimeout(slowOperationTimer);
+          slowOperationTimer = undefined;
+        }
         if (command === "uninstall_macos_offline_office_addins") {
           // Cleanup success must not wait for a potentially unhealthy Office
           // container status probe. Refresh in the background instead.
@@ -141,6 +184,9 @@ export function MacOfficeIntegrationSettings() {
           await refresh();
         }
       } catch (error) {
+        if (slowOperationTimer !== undefined) {
+          window.clearTimeout(slowOperationTimer);
+        }
         setMessage(
           errorMessage(
             error,
@@ -153,6 +199,24 @@ export function MacOfficeIntegrationSettings() {
     },
     [isEn, refresh],
   );
+
+  const openMaintenanceLog = useCallback(async () => {
+    setOpeningLog(true);
+    try {
+      await invoke("open_macos_office_addin_maintenance_log");
+    } catch (error) {
+      setMessage(
+        errorMessage(
+          error,
+          isEn
+            ? "Unable to open the Office add-in maintenance log."
+            : "无法打开 Office 插件维护日志。",
+        ),
+      );
+    } finally {
+      setOpeningLog(false);
+    }
+  }, [isEn]);
 
   const powerpointNeedsVerification = Boolean(
     status?.powerpoint.applicationRunning &&
@@ -274,6 +338,34 @@ export function MacOfficeIntegrationSettings() {
         </div>
       )}
 
+      {detailedError && (
+        <div className="office-settings-warning" role="alert" aria-live="assertive">
+          <ShieldAlert size={15} />
+          <span>
+            <strong>{officeErrorSummary(detailedError, isEn)}</strong>
+            <details open>
+              <summary>{isEn ? "Error details" : "错误详情"}</summary>
+              <code>{detailedError}</code>
+            </details>
+            <button
+              type="button"
+              className="secondary-button compact"
+              disabled={openingLog}
+              onClick={() => void openMaintenanceLog()}
+            >
+              <ExternalLink size={13} />
+              {openingLog
+                ? isEn
+                  ? "Opening log…"
+                  : "正在打开日志…"
+                : isEn
+                  ? "View diagnostic log"
+                  : "查看诊断日志"}
+            </button>
+          </span>
+        </div>
+      )}
+
       <div className="office-settings-actions">
         <button
           type="button"
@@ -353,18 +445,6 @@ export function MacOfficeIntegrationSettings() {
         </div>
       )}
 
-      {detailedError && (
-        <div className="office-settings-warning" role="alert">
-          <ShieldAlert size={15} />
-          <span>
-            <strong>{officeErrorSummary(detailedError, isEn)}</strong>
-            <details>
-              <summary>{isEn ? "Technical details" : "技术详情"}</summary>
-              <code>{detailedError}</code>
-            </details>
-          </span>
-        </div>
-      )}
     </section>
   );
 }

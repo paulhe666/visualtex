@@ -1,7 +1,6 @@
 import { validateLatex } from "mathlive/ssr";
 import { commandRegistry } from "../autocomplete/commandRegistry.ts";
 import { normalizeMathModeSource } from "../math/mathModeSource";
-import { latexToMathMl } from "../export/runtime";
 import {
   normalizeCanonicalUprightCommands,
   normalizeMathLiveCanonicalUprightCommands,
@@ -1436,14 +1435,18 @@ function validateFormulaDraft(latex: string, requireExport = true): string | nul
   );
   if (errors.length) return errors[0]?.code ?? "invalid-latex";
   if (!requireExport) return null;
-  // MathLive intentionally renders incomplete/forgiving previews. A completed
-  // source draft must also compile with the engine used by export and Word.
-  try {
-    latexToMathMl(normalizeMathModeSource(latex).replace(/\r?\n/g, " "));
-    return null;
-  } catch (reason) {
-    return `render-source: ${reason instanceof Error ? reason.message : String(reason)}`;
-  }
+
+  // The source editor is an authoring surface, not an export gate. At this
+  // point the draft is structurally complete, uses known commands, and passes
+  // MathLive's own validator. Do not reject otherwise editable source merely
+  // because the separate MathJax/Word export pipeline has a narrower grammar
+  // (for example nested text-style commands that MathLive edits correctly).
+  //
+  // Export paths perform their own conversion validation when the user
+  // actually exports/inserts the formula. Keeping that validation out of the
+  // live source loop also means adding/removing formula rows cannot leave the
+  // editor stuck in a false "source validation failed" state.
+  return null;
 }
 
 interface DraftPreviewEnvironment {

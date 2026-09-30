@@ -9,6 +9,7 @@ import { isVisualTeXFormulaMetadata } from "./formulaMetadata";
 const SESSION_MODES = ["create", "edit"] as const;
 const OFFICE_HOSTS = ["word", "powerpoint"] as const;
 const DISPLAY_MODES = ["inline", "block"] as const;
+const INLINE_IMAGE_MATH_STYLES = ["text", "display"] as const;
 const OPERATIONS = ["nativeToImage", "imageToNative"] as const;
 const SESSION_STATUSES = [
   "created",
@@ -169,6 +170,17 @@ export function decodeOfficeFormulaSession(
   nullableString(session.activeLineId, "session.activeLineId");
   stringValue(session.codeFormat, "session.codeFormat");
   enumValue(session.displayMode, "session.displayMode", DISPLAY_MODES);
+  if (session.inlineImageMathStyle === undefined) {
+    // Sessions persisted by pre-style builds are text-style inline formulas.
+    // Normalize them here so the typed client always receives an explicit value.
+    session.inlineImageMathStyle = "text";
+  } else {
+    enumValue(
+      session.inlineImageMathStyle,
+      "session.inlineImageMathStyle",
+      INLINE_IMAGE_MATH_STYLES,
+    );
+  }
   booleanValue(session.numbered, "session.numbered");
   if (session.fontSizePt !== undefined && session.fontSizePt !== null) {
     const fontSizePt = finiteNumber(session.fontSizePt, "session.fontSizePt");
