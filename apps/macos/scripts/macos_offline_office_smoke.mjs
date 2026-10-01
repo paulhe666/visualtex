@@ -250,7 +250,7 @@ expectIncludes(powerpointScript, "set markerLines to paragraphs of markerText", 
 
 expect(!wordAdapter.includes("Public Sub AutoExec()"), "Word Startup template must not expose AutoExec because Word for Mac can consume Finder's first document-open request before the document is created");
 expectIncludes(wordAdapter, "Public Sub VisualTeX_InitializeWordHost()", "Word must expose explicit host initialization for application health refreshes");
-expectIncludes(wordAdapter, '"word-office-performance-20260801-r105"', "Word health must identify the current native Office build");
+expectIncludes(wordAdapter, '"word-office-performance-20260801-r109"', "Word health must identify the current native Office build");
 const wordHostInitStart = wordAdapter.indexOf("Public Sub VisualTeX_InitializeWordHost()");
 const wordHostInitEnd = wordAdapter.indexOf("End Sub", wordHostInitStart);
 const wordHostInitSource = wordAdapter.slice(wordHostInitStart, wordHostInitEnd);
@@ -314,7 +314,7 @@ expectIncludes(wordAdapter, "VTTryFindNativeFormulaBookmarkLocally", "The shared
 expectIncludes(wordAdapter, "VTTryVisualTeXMetadataShapeAtDoubleClick", "The shared Word double-click handler must validate the clicked image against its actual InlineShape range");
 expectIncludes(wordAdapter, "Public Sub VisualTeX_WriteSelectedDoubleClickScreenBounds()", "The Word compatibility fallback must expose the selected image's real screen bounds for physical hit testing");
 expectIncludes(wordAdapter, "Public Sub VisualTeX_WriteSelectedDoubleClickTargetScreenBounds()", "The Word compatibility fallback must expose the settled image-or-native target bounds before invoking the generic edit macro");
-expectIncludes(wordAdapter, '"handler-native-not-found"', "A Word double-click without a VisualTeX target must be logged and remain a strict no-op");
+expectIncludes(wordAdapter, "VTWordOpenCopiedNativeSession(selected.Range)", "Native Word formulas must use the same live-OMML edit path as inserted formulas");
 expectIncludes(wordAdapter, "VisualTeX_CreateNativeInline", "Word must expose direct inline OMML insertion");
 expectIncludes(wordAdapter, "VisualTeX_CreateNativeDisplay", "Word must expose direct display OMML insertion");
 expectIncludes(wordAdapter, "Public Sub VTWordRibbonOnLoad", "The Word Ribbon onLoad callback must initialize the application event sink in an attached isolation template");
@@ -531,7 +531,7 @@ expectIncludes(wordAdapter, "beforeRange.Fields.Count > 0", "Display paragraph i
 expectIncludes(wordAdapter, "VTCreateDedicatedPlainParagraphAt", "A visually empty but structurally occupied caret position must receive a dedicated plain display paragraph");
 expect(!wordAdapter.includes("VTSeqHelper_"), "Numbered formulas must never expose an internal helper marker in the Word document");
 expectIncludes(wordAdapter, "Private Sub VTConfigureNumberedEquationParagraph", "New numbered formulas must use one ordinary Word paragraph with explicit center and right tab stops");
-expectIncludes(wordAdapter, "If paragraphRange.Style <> wdStyleCaption Then", "Caption style must be applied only once so later renumbering cannot reset direct formula/number formatting");
+expect(!wordAdapter.slice(wordAdapter.indexOf("Private Sub VTConfigureNativeEquationArrayParagraph"), wordAdapter.indexOf("End Sub", wordAdapter.indexOf("Private Sub VTConfigureNativeEquationArrayParagraph"))).includes("wdStyleCaption"), "Native numbering must preserve source typography rather than impose Caption");
 expectIncludes(wordAdapter, "Equation number is not vertically stable", "The real-host geometry assertion must report vertical correction mismatches explicitly");
 expectIncludes(wordAdapter, "Position:=textWidth / 2!", "The formula tab stop must remain at the exact text-column center");
 expectIncludes(wordAdapter, "Alignment:=wdAlignTabCenter", "The formula must remain center-aligned within the single paragraph");
@@ -1131,8 +1131,8 @@ expectIncludes(wordAdapter, "If pendingPlaceholderRemoved Then", "Failed deferre
 expectIncludes(wordAdapter, "VTFinalizeInlineNativeEquation", "Inline OMML must be forced back to wdOMathInline after deleting an adjacent source object");
 expectIncludes(wordAdapter, "Start:=exactEquationRange.End, End:=exactEquationRange.End", "Inline OMML caret placement must begin at the exact OMath boundary");
 expectIncludes(wordAdapter, "Selection.MoveRight Unit:=wdCharacter, Count:=1, Extend:=wdMove", "Word for Mac inline OMML caret placement must explicitly leave the math zone");
-expectIncludes(wordAdapter, "Selection.TypeText Text:=ChrW(8288)", "Inline OMML must create a replaceable ordinary-text anchor after leaving OMath");
-expectIncludes(wordAdapter, "anchorRange.OMaths.Count <> 0", "The inline OMML text anchor must be verified outside the math zone");
+expect(!wordAdapter.slice(wordAdapter.indexOf("Private Sub VTPlaceCaretAfterInlineNativeEquation"), wordAdapter.indexOf("End Sub", wordAdapter.indexOf("Private Sub VTPlaceCaretAfterInlineNativeEquation"))).includes("Selection.TypeText"), "Finished native formulas must leave no invisible caret character");
+expectIncludes(wordAdapter, "VTJoinNativeMathAtBoundary", "Adjacent expressions must follow Word native merging instead of requiring a new OMath identity");
 expectIncludes(wordAdapter, 'regressionStage = "inline-existing-assert"', "The real-host regression must compare empty-paragraph and existing-text inline OMML paths");
 expectIncludes(wordAdapter, "nativeEquation.Type = wdOMathInline", "Word must undo its automatic empty-paragraph display promotion before normalizing inline alignment");
 expectIncludes(wordAdapter, "VTNormalizeInlineNativeParagraphAlignment", "Inline OMML must normalize an otherwise empty paragraph away from inherited display centering");
@@ -1259,7 +1259,7 @@ expectIncludes(wordAdapter, "transactionErrorNumber = Err.Number", "Word rollbac
 expectIncludes(wordAdapter, "VTWriteWordFailureTrace", "Word transaction failures must record their exact stage without enabling expensive full tracing");
 expectIncludes(wordAdapter, "errorNumber = Err.Number", "Word creation cleanup must preserve the original error number");
 expectIncludes(wordAdapter, "VTShowError \"Word formula creation\", errorNumber, errorDescription", "Word creation errors must survive placeholder cleanup");
-expectIncludes(wordAdapter, "If Not insertedNumber Is Nothing Then insertedNumber.Delete", "Word rollback must remove a partially inserted equation number");
+expectIncludes(wordAdapter, "If Not nativeEquation And Not insertedNumber Is Nothing Then insertedNumber.Delete", "Native rollback restores the complete source math instead of deleting its embedded number range");
 expectIncludes(wordAdapter, "VTFindCommittedInlineShape", "Word retries must recognize an already committed Session result");
 expectIncludes(wordAdapter, "sourceDocumentId <> VTWordDocumentIdentity()", "Word callback must reject document switching");
 expectIncludes(wordAdapter, "Private Function VTWordBookmarkName", "Word pending Bookmarks must use one bounded name generator");
@@ -2145,7 +2145,7 @@ expectIncludes(macFirstRun, "修复 VisualTeX Office 插件", "Missing files aft
 expectIncludes(installer, "powerpoint_script.clone()", "PowerPoint installed status must include its AppleScriptTask resource");
 expectIncludes(installer, 'health.plugin_version.as_deref() == Some(env!("CARGO_PKG_VERSION"))', "Installer must reject stale plug-in health versions");
 expect(!installer.includes("source_revision_matches"), "Runtime health must not reject a current-version add-in only because an optional sourceRevision field is absent");
-expectIncludes(packager, "word-office-performance-20260801-r105", "Packaging must reject a Word DOTM that lacks the current performance revision");
+expectIncludes(packager, "word-office-performance-20260801-r109", "Packaging must reject a Word DOTM that lacks the current performance revision");
 expectIncludes(packager, "const resolvedWordShell = wordShell ? resolve(wordShell) : undefined;", "Word packaging must use the newly compiled DOTM as its default OOXML shell");
 expect(!packager.includes('const existingWordShell = join(resourcesRoot, "VisualTeX.dotm")'), "Word packaging must not silently inherit document.xml and template metadata from the previously packaged DOTM");
 expectIncludes(packager, "powerpoint-native-omml-edit-20260926-r1", "Packaging must reject a PowerPoint PPAM that lacks the current native OMML revision");

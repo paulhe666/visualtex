@@ -1231,7 +1231,7 @@ async function main() {
     })()`);
     assert.deepEqual(
       editUnnumberedIgnoresPreference,
-      { checked: false, disabled: true, stored: "true" },
+      { checked: false, disabled: false, stored: "true" },
       JSON.stringify(editUnnumberedIgnoresPreference),
     );
 
@@ -1248,7 +1248,7 @@ async function main() {
     })()`);
     assert.deepEqual(
       editNumberedIgnoresPreference,
-      { checked: true, disabled: true, stored: "false" },
+      { checked: true, disabled: false, stored: "false" },
       JSON.stringify(editNumberedIgnoresPreference),
     );
 

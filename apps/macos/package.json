@@ -55,6 +55,8 @@
     "verify:ocr-offline:full": "python3 scripts/verify_offline_ocr_bundle.py --full",
     "verify:ocr-model-packs": "python3 scripts/verify_offline_ocr_bundle.py --model-packs dist-ocr/model-packs/macos-arm64",
     "test:ime-enter": "tsx scripts/ime_enter_regression.mjs",
+    "test:office-numbering-edit": "npm run build:desktop && node scripts/office_numbering_edit_regression.mjs && cargo test --manifest-path src-tauri/Cargo.toml --lib word_numbering_only_fast_path",
+    "test:word-numbering-edit": "tsx scripts/word_numbering_edit_regression.mts && tsx scripts/word_numbering_edit_regression.mts --run",
     "test:office-formula-editor": "tsx scripts/office_formula_editor_regression.mjs",
     "test:office-session-safety": "tsx scripts/office_session_payload_safety_regression.mts",
     "test:quick-ocr-hud-safety": "tsx scripts/quick_ocr_hud_payload_safety_regression.mts",

@@ -227,6 +227,8 @@ struct MacOfflineSessionRequest {
     numbered: bool,
     #[serde(default)]
     native_equation: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    native_edit_xml: Option<String>,
     source_document_id: Option<String>,
     source_object_id: Option<String>,
     encoded_metadata: Option<String>,
@@ -1380,6 +1382,20 @@ fn word_native_edit_latex(xml: &str) -> Result<super::powerpoint_omml::to_latex:
     })
 }
 
+fn word_native_edit_source(request: &MacOfflineSessionRequest) -> Result<super::powerpoint_omml::to_latex::NativeLatex, String> {
+    // Small live OMath snapshots travel in the same atomic inbox request as
+    // the edit target. Older templates and oversized snapshots retain the
+    // session-file transport, with the same parser and no metadata cache.
+    if let Some(xml) = request.native_edit_xml.as_deref() {
+        return word_native_edit_latex(xml);
+    }
+    let path = session_directory(OfficeHost::Word, &request.session_id)?.join("native-edit-original.omml");
+    let size = fs::metadata(&path).map_err(|e| format!("Native Word equation snapshot is missing: {e}"))?.len();
+    if size == 0 || size > MAX_OMML_BYTES as u64 { return Err("Native Word equation snapshot has invalid size".into()); }
+    let xml = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    word_native_edit_latex(&xml)
+}
+
 fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Result<(), String> {
     if request.protocol_version != OFFLINE_PROTOCOL_VERSION {
         return Err("Unsupported VisualTeX macOS offline protocol version".to_string());
@@ -1393,6 +1409,11 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
     }
     if !matches!(request.mode.as_str(), "create" | "edit") {
         return Err("Offline Office request mode must be create or edit".to_string());
+    }
+    if let Some(xml) = request.native_edit_xml.as_deref() {
+        if !is_untagged_word_edit(request) || xml.is_empty() || xml.len() > MAX_OMML_BYTES {
+            return Err("An inline native Word snapshot requires an explicit native edit target and valid size".into());
+        }
     }
     let operation = request.operation.as_deref().unwrap_or("formula");
     if matches!(operation, "documentImport" | "latexRedraw" | "formulaRestore") {
@@ -2328,11 +2349,7 @@ fn import_request(
             .ok_or("The native equation edit session has already completed")?;
         Some(super::powerpoint_omml::to_latex::from_omml(&source.omml)?)
     } else if is_untagged_word_edit(&request) {
-        let path = session_directory(OfficeHost::Word, &request.session_id)?.join("native-edit-original.omml");
-        let size = fs::metadata(&path).map_err(|e| format!("Native Word equation snapshot is missing: {e}"))?.len();
-        if size == 0 || size > MAX_OMML_BYTES as u64 { return Err("Native Word equation snapshot has invalid size".into()); }
-        let xml = fs::read_to_string(path).map_err(|e| e.to_string())?;
-        Some(word_native_edit_latex(&xml)?)
+        Some(word_native_edit_source(&request)?)
     } else { None };
     let lines = original_metadata
         .as_ref()
@@ -4957,6 +4974,29 @@ fn resolved_word_math_font_name(
     word_math_font_name_for_formula_letter_font(final_formula_font).to_string()
 }
 
+fn word_image_numbering_only_edit(
+    request: &MacOfflineSessionRequest,
+    original: Option<&VisualTeXFormulaMetadata>,
+    current: &VisualTeXFormulaMetadata,
+) -> bool {
+    let Some(original) = original else {
+        return false;
+    };
+    request.mode == "edit"
+        && !request.native_equation
+        && !request.fork_copied_formula
+        && request.operation.as_deref().unwrap_or("formula") == "formula"
+        && original.formula_id == current.formula_id
+        && original.display_mode == "block"
+        && current.display_mode == "block"
+        && original.numbered != current.numbered
+        && original.latex == current.latex
+        && original.code_format == current.code_format
+        && original.font_size_pt == current.font_size_pt
+        && original.formula_letter_font == current.formula_letter_font
+        && original.formula_chinese_font == current.formula_chinese_font
+}
+
 fn commit_word(
     app: Option<&AppHandle>,
     request: &MacOfflineSessionRequest,
@@ -4966,6 +5006,11 @@ fn commit_word(
     geometry: WordGeometry,
 ) -> Result<(), String> {
     let commit_started = Instant::now();
+    let numbering_only = word_image_numbering_only_edit(
+        request,
+        session.original_metadata.as_ref(),
+        &decode_metadata(metadata)?,
+    );
     let export = session
         .export_result
         .as_ref()
@@ -5071,6 +5116,10 @@ fn commit_word(
         ("mode", request.mode.clone()),
         ("formulaId", session.formula_id.clone()),
         ("displayMode", session.display_mode.clone()),
+        (
+            "numberingOnly",
+            if numbering_only { "1" } else { "0" }.to_string(),
+        ),
         (
             "numbered",
             if session.numbered { "1" } else { "0" }.to_string(),
@@ -8243,6 +8292,7 @@ mod tests {
             display_mode: "inline".to_string(),
             numbered: false,
             native_equation: false,
+            native_edit_xml: None,
             source_document_id: Some("Document".to_string()),
             source_object_id: None,
             encoded_metadata: None,
@@ -8605,6 +8655,37 @@ mod tests {
         assert!(!source.latex.contains("VisualTeX"));
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn untagged_word_edit_reads_atomic_request_without_a_snapshot_file() {
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><w:body><w:p><m:oMath><m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e><m:r><m:t>x</m:t></m:r></m:e></m:rad></m:oMath></w:p></w:body></w:document>"#;
+        let request: MacOfflineSessionRequest = serde_json::from_value(json!({
+            "protocolVersion": OFFLINE_PROTOCOL_VERSION,
+            "sessionId": "62345678-1234-4234-9234-123456789abc",
+            "host": "word", "mode": "edit", "displayMode": "inline",
+            "formulaId": "42345678-1234-4234-9234-123456789abc",
+            "numbered": false, "nativeEquation": true,
+            "sourceDocumentId": "native-word-test",
+            "sourceObjectId": "VT_E_62345678123442349234",
+            "nativeEditXml": xml
+        })).unwrap();
+        validate_request(&request, &request.session_id).unwrap();
+        let source = word_native_edit_source(&request).unwrap();
+        assert_eq!(source.latex, word_native_edit_latex(xml).unwrap().latex);
+        assert!(source.latex.contains(r"\sqrt{x}"));
+        let round_trip: MacOfflineSessionRequest = serde_json::from_slice(&serde_json::to_vec(&request).unwrap()).unwrap();
+        assert_eq!(round_trip.native_edit_xml.as_deref(), Some(xml));
+        let mut invalid = request.clone();
+        invalid.mode = "create".into();
+        assert!(validate_request(&invalid, &invalid.session_id).is_err());
+        invalid = request.clone();
+        invalid.native_edit_xml = Some(String::new());
+        assert!(validate_request(&invalid, &invalid.session_id).is_err());
+        invalid = request;
+        invalid.native_edit_xml = Some("<m:oMath>".into());
+        assert!(word_native_edit_source(&invalid).is_err());
+    }
+
     fn native_powerpoint_request_fixture() -> MacOfflineSessionRequest {
         serde_json::from_value(json!({
             "protocolVersion": OFFLINE_PROTOCOL_VERSION,
@@ -8695,6 +8776,7 @@ mod tests {
             display_mode: "inline".to_string(),
             numbered: false,
             native_equation: false,
+            native_edit_xml: None,
             source_document_id: Some("/Users/测试/公式😀.docx".to_string()),
             source_object_id: Some("书签-公式".to_string()),
             encoded_metadata: None,
@@ -8879,6 +8961,59 @@ mod tests {
     }
 
     #[test]
+    fn word_numbering_only_fast_path_requires_unchanged_source_and_appearance() {
+        let mut request = native_powerpoint_request_fixture();
+        request.host = "word".to_string();
+        request.mode = "edit".to_string();
+        request.native_equation = false;
+        request.operation = None;
+        let original = document_formula_metadata("raw", &["x^2"], "x^2", "block", true);
+        let mut current = original.clone();
+        current.numbered = false;
+        assert!(word_image_numbering_only_edit(
+            &request,
+            Some(&original),
+            &current
+        ));
+        for field in ["latex", "font", "size", "identity", "format", "mode"] {
+            let mut changed = current.clone();
+            match field {
+                "latex" => changed.latex = "y^2".to_string(),
+                "font" => changed.formula_letter_font = Some("times".to_string()),
+                "size" => changed.font_size_pt = Some(18.0),
+                "identity" => changed.formula_id = Uuid::new_v4().to_string(),
+                "format" => changed.code_format = "align".to_string(),
+                _ => changed.display_mode = "inline".to_string(),
+            }
+            assert!(
+                !word_image_numbering_only_edit(&request, Some(&original), &changed),
+                "{field}"
+            );
+        }
+        current.numbered = true;
+        assert!(!word_image_numbering_only_edit(
+            &request,
+            Some(&original),
+            &current
+        ));
+        current.numbered = false;
+        assert!(!word_image_numbering_only_edit(&request, None, &current));
+        request.native_equation = true;
+        assert!(!word_image_numbering_only_edit(
+            &request,
+            Some(&original),
+            &current
+        ));
+        request.native_equation = false;
+        request.operation = Some("nativeToImage".to_string());
+        assert!(!word_image_numbering_only_edit(
+            &request,
+            Some(&original),
+            &current
+        ));
+    }
+
+    #[test]
     fn copied_formula_metadata_gets_independent_formula_and_line_ids() {
         let mut metadata = document_formula_metadata(
             "align",
@@ -8921,6 +9056,7 @@ mod tests {
             display_mode: "block".to_string(),
             numbered: true,
             native_equation: false,
+            native_edit_xml: None,
             source_document_id: Some("Document1".to_string()),
             source_object_id: None,
             encoded_metadata: Some(format!("{METADATA_PREFIX}fixture")),
@@ -8966,6 +9102,7 @@ mod tests {
             display_mode: "inline".to_string(),
             numbered: false,
             native_equation: true,
+            native_edit_xml: None,
             source_document_id: Some("Document1".to_string()),
             source_object_id: Some("VT_E_32345678123442349234".to_string()),
             encoded_metadata: Some(encoded_metadata),
@@ -9380,6 +9517,7 @@ c &= e
             display_mode: "inline".to_string(),
             numbered: false,
             native_equation: false,
+            native_edit_xml: None,
             source_document_id: Some("Document".to_string()),
             source_object_id: Some("VT_F_12345678-1234-4234-9234-123456789abc".to_string()),
             encoded_metadata: None,

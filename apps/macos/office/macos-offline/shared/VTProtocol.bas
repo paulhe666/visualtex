@@ -356,23 +356,34 @@ Private Function VTBase64UrlEncodeBytes(ByRef bytes() As Byte) As String
     Dim firstByte As Long
     Dim secondByte As Long
     Dim thirdByte As Long
+    Dim lastIndex As Long
+    Dim byteCount As Long
+    Dim outputIndex As Long
 
     alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
     index = LBound(bytes)
-    Do While index <= UBound(bytes)
-        remaining = UBound(bytes) - index + 1
+    lastIndex = UBound(bytes)
+    byteCount = lastIndex - index + 1
+    ' Flat OPC snapshots include styles and can be hundreds of kilobytes.
+    ' Appending each character repeatedly copies the entire growing BSTR.
+    ' Allocate the exact unpadded output once and write into it in place.
+    result = Space$((byteCount \ 3) * 4 + ((byteCount Mod 3) * 4 + 2) \ 3)
+    outputIndex = 1
+    Do While index <= lastIndex
+        remaining = lastIndex - index + 1
         firstByte = CLng(bytes(index))
         If remaining >= 2 Then secondByte = CLng(bytes(index + 1)) Else secondByte = 0
         If remaining >= 3 Then thirdByte = CLng(bytes(index + 2)) Else thirdByte = 0
 
-        result = result & Mid$(alphabet, firstByte \ 4 + 1, 1)
-        result = result & Mid$(alphabet, (firstByte And 3) * 16 + secondByte \ 16 + 1, 1)
+        Mid$(result, outputIndex, 1) = Mid$(alphabet, firstByte \ 4 + 1, 1)
+        Mid$(result, outputIndex + 1, 1) = Mid$(alphabet, (firstByte And 3) * 16 + secondByte \ 16 + 1, 1)
         If remaining >= 2 Then
-            result = result & Mid$(alphabet, (secondByte And 15) * 4 + thirdByte \ 64 + 1, 1)
+            Mid$(result, outputIndex + 2, 1) = Mid$(alphabet, (secondByte And 15) * 4 + thirdByte \ 64 + 1, 1)
         End If
         If remaining >= 3 Then
-            result = result & Mid$(alphabet, (thirdByte And 63) + 1, 1)
+            Mid$(result, outputIndex + 3, 1) = Mid$(alphabet, (thirdByte And 63) + 1, 1)
         End If
+        outputIndex = outputIndex + 4
         index = index + 3
     Loop
     VTBase64UrlEncodeBytes = result
@@ -408,9 +419,12 @@ Public Function VTUtf8Decode(ByRef bytes() As Byte) As String
     Dim fourthByte As Long
     Dim codePoint As Long
     Dim result As String
+    Dim outputIndex As Long
 
     index = LBound(bytes)
     lastIndex = UBound(bytes)
+    result = Space$(lastIndex - index + 1)
+    outputIndex = 1
     Do While index <= lastIndex
         firstByte = CLng(bytes(index))
         If firstByte <= 127 Then
@@ -456,15 +470,17 @@ Public Function VTUtf8Decode(ByRef bytes() As Byte) As String
         End If
 
         If codePoint <= 65535 Then
-            result = result & VTUnicodeCodeUnit(codePoint)
+            Mid$(result, outputIndex, 1) = VTUnicodeCodeUnit(codePoint)
+            outputIndex = outputIndex + 1
         Else
             codePoint = codePoint - 65536
-            result = result & VTUnicodeCodeUnit(55296 + (codePoint \ 1024)) & _
-                              VTUnicodeCodeUnit(56320 + (codePoint And 1023))
+            Mid$(result, outputIndex, 1) = VTUnicodeCodeUnit(55296 + (codePoint \ 1024))
+            Mid$(result, outputIndex + 1, 1) = VTUnicodeCodeUnit(56320 + (codePoint And 1023))
+            outputIndex = outputIndex + 2
         End If
         index = index + 1
     Loop
-    VTUtf8Decode = result
+    VTUtf8Decode = Left$(result, outputIndex - 1)
     Exit Function
 
 InvalidUtf8:
@@ -801,6 +817,7 @@ Public Function VTProtocolSelfTest() As Boolean
     Dim testPath As String
     Dim sample As String
     Dim parsedNumber As Double
+    Dim encodedSample As String
 
     For index = 1 To 1000
         identifier = VTNewUuidV4()
@@ -812,6 +829,16 @@ Public Function VTProtocolSelfTest() As Boolean
 
     sample = "VisualTeX " & VTUnicodeCodeUnit(20013) & VTUnicodeCodeUnit(25991) & _
              " " & VTUnicodeCodeUnit(960) & " " & VTUnicodeCodeUnit(55357) & VTUnicodeCodeUnit(56832)
+    If VTBase64UrlEncodeUtf8("f") <> "Zg" Or _
+       VTBase64UrlEncodeUtf8("fo") <> "Zm8" Or _
+       VTBase64UrlEncodeUtf8("foo") <> "Zm9v" Or _
+       VTBase64UrlEncodeUtf8(Chr$(0) & "?") <> "AD8" Then
+        Err.Raise vbObjectError + 7122, "VisualTeX", "VisualTeX base64url known-vector self-test failed."
+    End If
+    encodedSample = VTBase64UrlEncodeUtf8(sample)
+    If VTBase64UrlDecodeUtf8(encodedSample) <> sample Then
+        Err.Raise vbObjectError + 7122, "VisualTeX", "VisualTeX Unicode payload self-test failed."
+    End If
     VTEnsureDirectory VTSessionRoot()
     testPath = VTSessionRoot() & "/protocol-self-test.txt"
     VTWriteTextAtomic testPath, sample

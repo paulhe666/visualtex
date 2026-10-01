@@ -1302,7 +1302,7 @@ function verifyBuiltVba(path) {
     "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
     "VTEnsureVisualTeXImageMacroButton",
     "VTNativeMathFastSignature",
-    "word-office-performance-20260801-r105",
+    "word-office-performance-20260801-r109",
     "1.2.8",
   ];
   for (const value of required) {

@@ -40,7 +40,7 @@ async function waitForWordExit() {
 if (process.argv.includes("--run")) {
   const cases = JSON.parse(readFileSync(casesPath, "utf8"));
   const metrics = run("/Applications/VisualTeX.app/Contents/MacOS/visualtex", ["--word-image-alignment-metrics", JSON.stringify({ bodyFont: "Heiti SC", bodySample: "中文", metadata: cases[0].metadata })]);
-  assert.equal(metrics.split("|").length, 6, "Install the matching r105 client before running Word pixel acceptance.");
+  assert.equal(metrics.split("|").length, 6, "Install the matching r108 client before running Word pixel acceptance.");
   run("/usr/bin/osascript", ["-e", 'if application "Microsoft Word" is running then',
     "-e", 'tell application "Microsoft Word" to quit saving no', "-e", "end if"]);
   await waitForWordExit();

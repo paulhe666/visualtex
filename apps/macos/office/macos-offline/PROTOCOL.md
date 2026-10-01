@@ -177,3 +177,74 @@ The installer treats a copied file as only `filesInstalled`. `loaded=true` with 
 - `completed`: Office callback succeeded, metadata cache updated, and the Session is immutable.
 - `cancelled`: create placeholder removed; existing edit target untouched.
 - `failed`: old object retained; Session records a diagnostic; retry remains explicit.
+
+## Editing Word equation numbering
+
+The number checkbox is editable for existing block equations, for both SVG images
+and native OMML. Draft saves persist the last checkbox state. Apply, or closing
+with automatic apply enabled, waits for queued drafts and the current exports;
+closing with automatic apply disabled cancels the edit. Exported numbered OMML
+uses the current checkbox, including its numbered staging DOCX shell.
+
+A Word commit reconciles the affected representation's following SEQ fields and
+chapter/section restart before acknowledging completion. Image and native chains
+remain independent. `numberingOnly=1` is a backend-derived image optimization:
+it requires unchanged source, code format, font family and font size. VBA also
+checks the prior LaTeX/OMML payload before retaining the existing image. Numbering
+changes retain image edit metadata; native OMML is read from the live Word tree.
+A failed transaction restores the original number, paragraph and content.
+
+Run `npm run test:office-numbering-edit` for delayed-draft/rapid-toggle/apply/close
+regressions. With the matching compiled Word add-in installed, run
+`npm run test:word-numbering-edit` for real Word SEQ, chapter restart, rollback,
+save/reopen and dense-document timing acceptance.
+
+## Native Word equation ownership
+
+Native equations use ordinary `m:oMath` and Word SEQ/REF fields. Completed native
+transactions remove formula-specific VT bookmarks, document-variable payloads,
+signatures and caret characters. Existing cross-references are preserved using
+ordinary Word `_Ref` bookmarks. Editing uses the actual selected OMath tree and a
+short-lived edit-session anchor removed on apply/cancel; original Word equations
+and equations inserted by VisualTeX share the same selection and double-click path.
+
+Word joins directly adjacent expressions into one native math zone. Inline
+insertion therefore combines the exact old subtree and new subtree in a staged
+Word package, backs up the old math, and replaces the complete zone atomically.
+The source Document is captured before hidden staging is opened and passed
+explicitly through the transaction. It must never be inferred from the active
+hidden document. Existing runs retain their own font and colour.
+
+Mac Word may clip `Range.OMaths(1).Range` even when its nesting level is zero.
+Equation-level operations resolve `ParentOMath` to the complete root before
+reading, replacing or positioning it; argument ranges remain scoped. Proven
+legacy caret characters are retired with their old ownership. When such a
+character separates two existing math zones, an ordinary space preserves that
+separation.
+
+Native numbering retains the source paragraph style instead of imposing Caption.
+The owned number argument is resolved through OMath EqArray/Delim structure, so
+bold mathematical Unicode characters do not break number-slot lookup. Old managed
+numbered equations with the plugin-imposed Caption style are migrated during edit.
+Number placeholders are verified by concatenating their XML text runs. Format
+migration snapshots the complete native tree and restores it if staging or field
+replacement fails, so a split placeholder never leaks into the document.
+
+Native Word edit snapshots contain the live `w:document` part, including its
+namespace declarations and complete OMath/SEQ tree. Flat OPC styles, themes and
+font tables are excluded from this edit-source transport. Small snapshots use the
+optional `nativeEditXml` field in the same atomic sandbox-inbox request as the
+edit target (at most 64 KiB including JSON framing). This field is accepted only
+for an explicit native Word edit session. Larger snapshots and older templates
+use `native-edit-original.omml`; that file write creates the session directory.
+Opening an equation does not issue a separate directory bridge call or create
+a rollback document before Apply. Shared UTF-8 decoding
+and Base64 encoding fill preallocated buffers instead of growing strings.
+
+Numbered image paragraphs use independently positioned formula objects. Their
+tabs, line/paragraph marks and visible number share normal font positioning.
+Historical `VisualTeX Numbered Equation` style lowering is repaired in place;
+neither the paragraph style assignment nor its base/next style is rewritten.
+This preserves Mac Word's direct center/right tab stops and the user's Chinese
+text alignment. Typography synchronization repairs the same scaffold as insertion
+and numbering changes.

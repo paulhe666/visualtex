@@ -418,6 +418,7 @@ export function OfficeDialogApp() {
     loading,
     error,
     save,
+    flushSaves,
     activationPerformanceMs,
     sessionLoadedPerformanceMs,
   } = useOfficeSession();
@@ -717,12 +718,10 @@ export function OfficeDialogApp() {
       resolvedSessionFormulaFonts.formulaLetterFont,
       resolvedSessionFormulaFonts.formulaChineseFont,
     );
-    // Native PowerPoint equations have no stored VisualTeX metadata. The
-    // Session's lines are autosaved drafts, so they cannot remain the baseline
-    // after the first keystroke. Keep the imported Office source for this
-    // editor activation instead of comparing the draft with itself.
-    if (session.host === "powerpoint" && session.nativeEquation &&
-        session.mode === "edit" && !session.originalMetadata &&
+    // Office equations without stored metadata autosave their source and
+    // numbering into the Session. Preserve the imported baseline for this
+    // activation so a settled draft cannot turn a real edit into a no-op.
+    if (session.mode === "edit" && !session.originalMetadata &&
         nativeOriginalFingerprintRef.current?.sessionKey === sessionKey) {
       return nativeOriginalFingerprintRef.current.fingerprint;
     }
@@ -855,8 +854,7 @@ export function OfficeDialogApp() {
       resolvedSessionFormulaFonts.formulaChineseFont,
     );
     lastSavedFingerprintRef.current = loadedFingerprint;
-    if (session.host === "powerpoint" && session.nativeEquation &&
-        session.mode === "edit" && !session.originalMetadata) {
+    if (session.mode === "edit" && !session.originalMetadata) {
       nativeOriginalFingerprintRef.current = {
         sessionKey,
         fingerprint: loadedFingerprint,
@@ -1187,7 +1185,7 @@ export function OfficeDialogApp() {
         numbered:
           session?.host === "word" &&
           displayMode === "block" &&
-          Boolean(session?.numbered),
+          numbered,
         formulaLetterFont,
         formulaChineseFont,
       }),
@@ -1201,7 +1199,7 @@ export function OfficeDialogApp() {
     session?.host,
     session?.nativeEquation,
     officeFontSizePt,
-    session?.numbered,
+    numbered,
     formulaLetterFont,
     formulaChineseFont,
   ]);
@@ -1222,7 +1220,7 @@ export function OfficeDialogApp() {
       numbered:
         session?.host === "word" &&
         displayMode === "block" &&
-        Boolean(session?.numbered),
+        numbered,
       formulaLetterFont,
       formulaChineseFont,
     });
@@ -1236,7 +1234,7 @@ export function OfficeDialogApp() {
     session?.host,
     session?.nativeEquation,
     officeFontSizePt,
-    session?.numbered,
+    numbered,
     formulaLetterFont,
     formulaChineseFont,
   ]);
@@ -1247,6 +1245,19 @@ export function OfficeDialogApp() {
     const base =
       preparedBase === undefined ? generateSvgExportResult() : preparedBase;
     if (!base) return null;
+    // Numbering changes the native DOCX shell, not the formula picture.
+    // Reuse an identical raster while retaining the freshly exported OMML.
+    const cached = latestCompleteExportRef.current?.exportResult;
+    if (cached?.pngBase64 && cached.svgBase64 === base.svgBase64 &&
+        cached.width === base.width && cached.height === base.height) {
+      return {
+        ...base,
+        pngBase64: cached.pngBase64,
+        inkTopRatio: cached.inkTopRatio,
+        inkBottomRatio: cached.inkBottomRatio,
+        inkCenterYRatio: cached.inkCenterYRatio,
+      };
+    }
     let pngBase64: string | undefined;
     let inkTopRatio: number | undefined;
     let inkBottomRatio: number | undefined;
@@ -1872,10 +1883,17 @@ export function OfficeDialogApp() {
     }
     const targetSessionKey = sessionKey;
     finalizingRef.current = true;
+    // Invalidate unfinished draft rasterization before waiting for queued saves.
+    // An old editing PATCH must never land after the final commit.
+    ++exportRunIdRef.current;
     try {
       if (isMacosOfflineTauriTransport()) {
         if (!session) throw new Error("Office Session 尚未加载。");
-        const update = await buildCurrentSessionUpdate("committing");
+        const [update] = await Promise.all([
+          buildCurrentSessionUpdate("committing"),
+          flushSaves(),
+        ]);
+        if (activeSessionKeyRef.current !== targetSessionKey) return false;
         await commitMacosOfflineOfficeSession(
           session.id,
           update,
@@ -1925,6 +1943,7 @@ export function OfficeDialogApp() {
     buildCurrentSessionUpdate,
     closeOfficeEditorWindow,
     currentFingerprint,
+    flushSaves,
     isEn,
     latex,
     saveCurrentSession,
@@ -2243,7 +2262,7 @@ export function OfficeDialogApp() {
                 writeOfficeWordCreateNumberedPreference(nextNumbered);
               }
             }}
-            disabled={session.mode === "edit"}
+            data-office-numbered
           />
           <span>{isEn ? "Add equation number" : "添加公式编号"}</span>
         </label>
