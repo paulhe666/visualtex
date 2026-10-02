@@ -64,7 +64,7 @@ public sealed class MathMlToLatexConverterTests
     {
         const string mathMl =
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
-            + "<mi>ℵ</mi><mi>℘</mi><mi>ℜ</mi><mi>ℑ</mi><mi>ℓ</mi></math>";
+            + "<mi>ℵ</mi><mi mathvariant=\"normal\">℘</mi><mi>ℜ</mi><mi>ℑ</mi><mi>ℓ</mi></math>";
 
         Assert.Equal(
             @"\aleph \wp \Re \Im \ell",
@@ -122,7 +122,7 @@ public sealed class MathMlToLatexConverterTests
         string expected)
     {
         var script = operatorName.StartsWith("lim", StringComparison.Ordinal)
-            ? "<mrow><mi>n</mi><mo>→</mo><mi>∞</mi></mrow>"
+            ? "<mrow><mi>n</mi><mo>→</mo><mi mathvariant=\"normal\">∞</mi></mrow>"
             : "<mrow><mi>x</mi><mo>∈</mo><mi>A</mi></mrow>";
         if (operatorName == "lim")
             script = "<mrow><mi>x</mi><mo>→</mo><mn>0</mn></mrow>";
@@ -323,7 +323,7 @@ public sealed class MathMlToLatexConverterTests
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
             + $"<{elementName} mathvariant=\"bold\">∞</{elementName}></math>";
 
-        Assert.Equal(@"\boldsymbol{\infty}", MathMlToLatexConverter.Convert(mathMl));
+        Assert.Equal(@"\mathbf{\infty}", MathMlToLatexConverter.Convert(mathMl));
     }
 
     [Fact]

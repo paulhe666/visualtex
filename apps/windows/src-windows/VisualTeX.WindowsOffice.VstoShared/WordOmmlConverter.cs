@@ -1835,10 +1835,8 @@ internal static partial class WordOmmlConverter
             if (paragraphs.Count != 2)
                 return false;
 
-            firstParagraph =
-                paragraphs[1];
-            secondParagraph =
-                paragraphs[2];
+            firstParagraph = paragraphs[1];
+            secondParagraph = paragraphs[2];
             firstRange =
                 firstParagraph.Range.Duplicate;
             secondRange =
@@ -1858,8 +1856,10 @@ internal static partial class WordOmmlConverter
                 secondRange.InlineShapes;
             secondMaths =
                 secondRange.OMaths;
-            secondFields =
-                secondRange.Fields;
+            // Including the final cell atom makes Word.Range.Fields expose
+            // the whole cell's fields, even when this tail paragraph is empty.
+            // Use the established content-only local range, not that aggregate.
+            secondFields = WordFormulaHost.GetLocalFields(secondRange);
             secondFrames =
                 secondRange.Frames;
             // Range.Tables includes the owning user table for any range
@@ -2092,85 +2092,16 @@ internal static partial class WordOmmlConverter
 
             if (ordinaryMarkerNodes.Length == 1)
             {
-                var markerNode =
-                    ordinaryMarkerNodes[0];
-                var sourceRun =
-                    markerNode.Parent;
-                if (sourceRun is null
-                    || sourceRun.Name !=
-                        word + "r")
-                    throw new InvalidDataException(
-                        "The OMML insertion marker is not inside one ordinary Word run.");
-                if (sourceRun.Parent is null
-                    || sourceRun.Parent.Name !=
-                        word + "p")
-                    throw new InvalidDataException(
-                        "The OMML insertion marker is not a direct child run of its Word paragraph.");
-
-                var markerIndex =
-                    markerNode.Value.IndexOf(
-                        markerText,
-                        StringComparison.Ordinal);
-                var prefix =
-                    markerNode.Value.Substring(
-                        0,
-                        markerIndex);
-                var suffix =
-                    markerNode.Value.Substring(
-                        markerIndex + markerText.Length);
-
-                XElement CreateSiblingRun(
-                    string text)
-                {
-                    var run =
-                        new XElement(
-                            word + "r",
-                            sourceRun.Attributes()
-                                .Select(attribute =>
-                                    new XAttribute(
-                                        attribute)));
-                    var runProperties =
-                        sourceRun.Element(
-                            word + "rPr");
-                    if (runProperties is not null)
-                        run.Add(
-                            new XElement(
-                                runProperties));
-                    var textElement =
-                        new XElement(
-                            word + "t",
-                            text);
-                    if (text.Length > 0
-                        && (char.IsWhiteSpace(
-                                text[0])
-                            || char.IsWhiteSpace(
-                                text[text.Length - 1])))
-                    {
-                        textElement.SetAttributeValue(
-                            XNamespace.Xml + "space",
-                            "preserve");
-                    }
-                    run.Add(
-                        textElement);
-                    return run;
-                }
-
-                var replacements =
-                    new List<object>();
-                if (!string.IsNullOrEmpty(
-                        prefix))
-                    replacements.Add(
-                        CreateSiblingRun(
-                            prefix));
-                replacements.Add(
-                    equation);
-                if (!string.IsNullOrEmpty(
-                        suffix))
-                    replacements.Add(
-                        CreateSiblingRun(
-                            suffix));
-                sourceRun.ReplaceWith(
-                    replacements.ToArray());
+                // Word owns any run-level wrapper around the insertion site.
+                // With Track Changes enabled the marker is normally emitted as
+                // w:p/w:ins/w:r/w:t, not as a direct paragraph child. Replace the
+                // marker run in place so revision/content-control/hyperlink
+                // provenance remains exactly where Word put it.
+                WordOmmlInsertionXml.ReplaceOrdinaryMarkerRun(
+                    ordinaryMarkerNodes[0],
+                    markerText,
+                    equation,
+                    targetParagraphXml);
             }
             else
             {
@@ -2510,6 +2441,7 @@ internal static partial class WordOmmlConverter
         Paragraph? nextParagraph = null;
         Range? nextRange = null;
         Range? guard = null;
+        Find? guardFind = null;
         try
         {
             mathRange = insertedMath.Range.Duplicate;
@@ -2548,19 +2480,30 @@ internal static partial class WordOmmlConverter
                 throw new InvalidDataException(
                     "Word moved or changed the temporary OMML paragraph-boundary guard while replacing the equation paragraph.");
 
-            guard = document.Range(
-                nextRange.Start,
-                nextRange.Start + expectedText.Length);
-            if (!string.Equals(
+            // Track Changes inserts a non-text revision boundary at the start of
+            // the paragraph. Paragraph.Text still begins with the guard, while a
+            // freshly reconstructed document.Range(start,start+length) begins one
+            // story position too early and truncates the final character. Search
+            // only inside the already-proven following paragraph and let Word map
+            // its own revision boundary to the visible token.
+            guard = nextRange.Duplicate;
+            guardFind = guard.Find;
+            guardFind.ClearFormatting();
+            guardFind.Text = expectedText;
+            guardFind.Forward = true;
+            guardFind.Wrap = WdFindWrap.wdFindStop;
+            if (!guardFind.Execute()
+                || !string.Equals(
                     guard.Text,
                     expectedText,
                     StringComparison.Ordinal))
                 throw new InvalidDataException(
-                    "The OMML paragraph-boundary guard cannot be resolved at the preserved paragraph start.");
+                    "The OMML paragraph-boundary guard cannot be resolved inside the preserved paragraph.");
             guard.Text = string.Empty;
         }
         finally
         {
+            Release(guardFind);
             Release(guard);
             Release(nextRange);
             Release(nextParagraph);
@@ -2578,7 +2521,8 @@ internal static partial class WordOmmlConverter
         Range targetRange,
         string omml,
         bool display,
-        string? mathFontName = null)
+        string? mathFontName = null,
+        bool allowWordNativeInlinePromotion = false)
     {
         if (targetDocument is null)
             throw new ArgumentNullException(nameof(targetDocument));
@@ -2648,8 +2592,10 @@ internal static partial class WordOmmlConverter
             var targetType = display
                 ? WdOMathType.wdOMathDisplay
                 : WdOMathType.wdOMathInline;
-            if (insertedMath.Type != targetType)
+            if (insertedMath.Type != targetType && (display || !allowWordNativeInlinePromotion))
                 insertedMath.Type = targetType;
+            if (allowWordNativeInlinePromotion)
+                insertedMath.BuildUp();
 
             result = insertedMath.Range.Duplicate;
 
@@ -6124,7 +6070,9 @@ internal static partial class WordOmmlConverter
         string? numberBookmarkName,
         int restartHeadingLevel,
         string headingSeparator,
-        string initialSequenceResult = "1")
+        string initialSequenceResult = "1",
+        string? literalHeadingPrefix = null,
+        int? restartSequenceValue = null)
     {
         if (string.IsNullOrWhiteSpace(semanticOmml))
             throw new ArgumentException(
@@ -6144,7 +6092,7 @@ internal static partial class WordOmmlConverter
                 nameof(sequenceName));
         var sequenceToken =
             sequenceName.Any(char.IsWhiteSpace)
-                ? """ + sequenceName + """
+                ? '"' + sequenceName + '"'
                 : sequenceName;
         if (restartHeadingLevel < 0 || restartHeadingLevel > 9)
             throw new ArgumentOutOfRangeException(
@@ -6170,6 +6118,11 @@ internal static partial class WordOmmlConverter
             throw new ArgumentException(
                 "The heading separator contains an invalid Word field-control character.",
                 nameof(headingSeparator));
+        if (literalHeadingPrefix is not null
+            && (restartHeadingLevel == 0 || string.IsNullOrWhiteSpace(literalHeadingPrefix)
+                || literalHeadingPrefix.Length > 80 || literalHeadingPrefix.Any(char.IsControl)))
+            throw new ArgumentException("A literal chapter prefix requires a valid heading scope and plain text.",
+                nameof(literalHeadingPrefix));
 
         XNamespace math = MathNamespace;
         XNamespace word = WordNamespace;
@@ -6273,23 +6226,39 @@ internal static partial class WordOmmlConverter
 
         if (restartHeadingLevel > 0)
         {
-            // Keep the chapter/section component native as well. STYLEREF reads
-            // the nearest numbered Heading level; SEQ \s resets the equation
-            // counter at that same level. VisualTeX does not cache either value.
-            numberNodes.AddRange(
-                NativeField(
-                    $" STYLEREF {restartHeadingLevel} \\s \\* MERGEFORMAT ",
-                    "1"));
+            // STYLEREF reads an automatic paragraph number, not a number typed
+            // into heading text. Preserve a literal heading as native text;
+            // never manufacture a false STYLEREF result or change user lists.
+            if (literalHeadingPrefix is null)
+                numberNodes.AddRange(NativeField(
+                    $" STYLEREF {restartHeadingLevel} \\w \\* MERGEFORMAT ", "1"));
+            else
+            {
+                var prefixRun = TextRun(literalHeadingPrefix);
+                prefixRun.AddFirst(new XElement(math + "rPr", new XElement(math + "nor")));
+                numberNodes.Add(prefixRun);
+            }
             if (!string.IsNullOrEmpty(headingSeparator))
-                numberNodes.Add(TextRun(headingSeparator));
+            {
+                // A numbering delimiter is literal text, not a mathematical
+                // operator. BuildUp must not replace a requested hyphen with
+                // U+2212 or reclassify a letter-based chapter label as variables.
+                var separatorRun = TextRun(headingSeparator);
+                separatorRun.AddFirst(new XElement(math + "rPr", new XElement(math + "nor")));
+                numberNodes.Add(separatorRun);
+            }
         }
 
-        var sequenceSwitch = restartHeadingLevel > 0
+        if (restartSequenceValue.HasValue && restartSequenceValue.Value < 1)
+            throw new ArgumentOutOfRangeException(nameof(restartSequenceValue));
+        var sequenceSwitch = (restartSequenceValue.HasValue
+            ? $" \\r {restartSequenceValue.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            : string.Empty) + (restartHeadingLevel > 0
             ? $" \\s {restartHeadingLevel}"
-            : string.Empty;
+            : string.Empty);
         numberNodes.AddRange(
             NativeField(
-                $" SEQ {sequenceName}{sequenceSwitch} \\* ARABIC \\* MERGEFORMAT ",
+                $" SEQ {sequenceToken}{sequenceSwitch} \\* ARABIC \\* MERGEFORMAT ",
                 initialSequenceResult));
         if (!string.IsNullOrWhiteSpace(numberBookmarkName))
         {
@@ -6443,6 +6412,46 @@ internal static partial class WordOmmlConverter
             out _);
     }
 
+    internal static string ReadWordNativeEquationNumberText(string wordOpenXml)
+    {
+        var equation = XElement.Parse(ExtractSingleOMath(wordOpenXml), LoadOptions.PreserveWhitespace);
+        if (!TryResolveWordNativeEquationNumberHost(equation, out _, out _, out var delimiter)
+            || delimiter is null) return string.Empty;
+        XNamespace math = MathNamespace;
+        XNamespace word = WordNamespace;
+        // Field-code retrieval/view flags must not redefine the numbering label.
+        // Only current text and cached field RESULTS participate, never instrText,
+        // deleted old numerals or move-from provenance.
+        var text = new StringBuilder();
+        var fieldResults = new List<bool>();
+        foreach (var node in delimiter.Descendants().Where(IsCurrentOmmlContent))
+        {
+            if (node.Name == word + "fldChar")
+            {
+                var kind = (string?)node.Attribute(word + "fldCharType");
+                if (kind == "begin") fieldResults.Add(false);
+                else if (kind == "separate")
+                {
+                    if (fieldResults.Count == 0) throw new InvalidDataException("A native number field separator has no owner.");
+                    fieldResults[fieldResults.Count - 1] = true;
+                }
+                else if (kind == "end")
+                {
+                    if (fieldResults.Count == 0) throw new InvalidDataException("A native number field end has no owner.");
+                    fieldResults.RemoveAt(fieldResults.Count - 1);
+                }
+                continue;
+            }
+            // Word may export field instructions as m:t, not w:instrText.
+            // Field-state semantics therefore outrank the XML text-node name.
+            // Nested results in an outer instruction remain instruction data.
+            if ((node.Name == math + "t" || node.Name == word + "t")
+                && fieldResults.All(isResult => isResult)) text.Append(node.Value);
+        }
+        if (fieldResults.Count != 0) throw new InvalidDataException("A native number field is unclosed.");
+        return text.ToString();
+    }
+
     /// <summary>
     /// Returns only the mathematical body of a Word-native numbered OMath.
     /// This is a semantic projection: it never claims ownership of the number
@@ -6566,9 +6575,8 @@ internal static partial class WordOmmlConverter
             allowUnboundDirectSequence: true);
 
     // Compatibility name used by the managed-numbering repair and its XML
-    // regression tests. Both entry points deliberately require the caller to have
-    // already proven VisualTeX ownership through metadata/FormulaId before an
-    // otherwise unbound direct SEQ wrapper is stripped.
+    // regression tests. Direct SEQ numbering is recognized by Word's native
+    // host topology, including equations without VisualTeX aliases.
     internal static string StripManagedVisualTeXNativeEquationNumber(
         string wordOpenXml) =>
         StripVisualTeXNativeEquationNumberForManagedRepair(wordOpenXml);
@@ -6602,6 +6610,36 @@ internal static partial class WordOmmlConverter
         return equation.ToString(SaveOptions.DisableFormatting);
     }
 
+    // Word's current mathematical text is not necessarily a direct child of
+    // m:r. With tracked edits, Word emits m:r/w:ins/m:t (and moveTo); deleted
+    // content and historical property snapshots are not the current equation.
+    // All native-number readers share this view. It only selects source nodes:
+    // it never accepts revisions or rewrites the serialized history.
+    private static bool IsCurrentOmmlContent(XElement element)
+    {
+        XNamespace word = WordNamespace;
+        return !element.AncestorsAndSelf().Any(ancestor =>
+            ancestor.Name == word + "del"
+            || ancestor.Name == word + "moveFrom"
+            || (ancestor.Name.Namespace == word
+                && ancestor.Name.LocalName.EndsWith("PrChange", StringComparison.Ordinal)));
+    }
+
+    private static IEnumerable<XElement> CurrentOmmlTextElements(
+        XElement container,
+        XName name) =>
+        container.Descendants(name).Where(IsCurrentOmmlContent);
+
+    private static IEnumerable<XElement> CurrentMathRunTextElements(XElement run)
+    {
+        XNamespace math = MathNamespace;
+        return CurrentOmmlTextElements(run, math + "t").Where(text =>
+            ReferenceEquals(text.Ancestors(math + "r").FirstOrDefault(), run));
+    }
+
+    private static string CurrentMathRunText(XElement run) =>
+        string.Concat(CurrentMathRunTextElements(run).Select(text => text.Value));
+
     private static XElement StripEquationNumberWrapperBody(
         XElement body,
         int separatorIndex,
@@ -6618,13 +6656,12 @@ internal static partial class WordOmmlConverter
             .Select(element => new XElement(element))
             .ToList();
         var separator = bodyElements[separatorIndex];
-        var separatorText = string.Concat(
-            separator.Elements(math + "t").Select(text => text.Value));
+        var separatorText = CurrentMathRunText(separator);
         if (separatorText.Length > 1
             && separatorText.EndsWith("#", StringComparison.Ordinal))
         {
             var mergedTail = new XElement(separator);
-            var tailTexts = mergedTail.Elements(math + "t").ToArray();
+            var tailTexts = CurrentMathRunTextElements(mergedTail).ToArray();
             if (tailTexts.Length > 0)
             {
                 var lastText = tailTexts[tailTexts.Length - 1];
@@ -6648,8 +6685,7 @@ internal static partial class WordOmmlConverter
         XElement separator)
     {
         XNamespace math = MathNamespace;
-        var separatorText = string.Concat(
-            separator.Elements(math + "t").Select(text => text.Value));
+        var separatorText = CurrentMathRunText(separator);
         if (string.Equals(
                 separatorText,
                 "#",
@@ -6666,13 +6702,13 @@ internal static partial class WordOmmlConverter
 
         // Word can merge the final formula text and '#' into one math run.
         // During an edit, only the '#' belongs to the numbering host. Keep the
-        // original run properties but discard the formula-text prefix because
-        // the replacement body already supplies the updated mathematics.
-        var normalized = new XElement(math + "r");
-        var runProperties = separator.Element(math + "rPr");
-        if (runProperties is not null)
-            normalized.Add(new XElement(runProperties));
-        normalized.Add(new XElement(math + "t", "#"));
+        // original run properties and revision wrappers. Change only the
+        // current formula-text prefix; historical/deleted text is untouched.
+        // Rebuilding a bare m:r here loses Word rPr and the separator's author.
+        var normalized = new XElement(separator);
+        var texts = CurrentMathRunTextElements(normalized).ToArray();
+        for (var index = 0; index < texts.Length; index++)
+            texts[index].Value = index == texts.Length - 1 ? "#" : string.Empty;
         return normalized;
     }
 
@@ -6711,8 +6747,7 @@ internal static partial class WordOmmlConverter
             var separator = children[index];
             if (separator.Name != math + "r")
                 continue;
-            var separatorText = string.Concat(
-                separator.Elements(math + "t").Select(text => text.Value));
+            var separatorText = CurrentMathRunText(separator);
             if (!separatorText.EndsWith("#", StringComparison.Ordinal))
                 continue;
 
@@ -6798,8 +6833,7 @@ internal static partial class WordOmmlConverter
         {
             var candidateSeparator = children[index];
             if (candidateSeparator.Name != math + "r") continue;
-            var separatorText = string.Concat(
-                candidateSeparator.Elements(math + "t").Select(text => text.Value));
+            var separatorText = CurrentMathRunText(candidateSeparator);
             if (!separatorText.EndsWith("#", StringComparison.Ordinal)) continue;
             var candidateNumber = children[index + 1];
             if (candidateNumber.Name != math + "d") continue;
@@ -6819,8 +6853,18 @@ internal static partial class WordOmmlConverter
                 || fieldCode.IndexOf(
                     "REF " + VisualTeXNativeNumberBookmarkPrefix,
                     StringComparison.OrdinalIgnoreCase) >= 0;
+            // Arbitrary user SEQ names are valid native numbering only inside
+            // Word's complete terminal '#(...)' host. A matching field alone
+            // must not make us discard following math or other root siblings.
             var generatedDirectSequence =
-                IsVisualTeXDirectSequenceDelimiter(
+                TryResolveWordNativeEquationNumberHost(
+                    equation,
+                    out _,
+                    out var nativeSeparatorIndex,
+                    out var nativeNumber)
+                && nativeSeparatorIndex == index
+                && ReferenceEquals(nativeNumber, candidateNumber)
+                && IsVisualTeXDirectSequenceDelimiter(
                     candidateNumber,
                     formulaId: null);
             if (!generatedPlaceholder && !generatedReference && !generatedDirectSequence)
@@ -6837,25 +6881,13 @@ internal static partial class WordOmmlConverter
         XElement equation,
         string? formulaId)
     {
-        XNamespace math = MathNamespace;
-        var equationArray = equation.Elements(math + "eqArr").SingleOrDefault();
-        if (equationArray is null) return false;
-        var entries = equationArray.Elements(math + "e").ToArray();
-        if (entries.Length != 1) return false;
-        var children = entries[0].Elements().ToArray();
-        for (var index = 0; index + 1 < children.Length; index++)
-        {
-            var separator = children[index];
-            if (separator.Name != math + "r") continue;
-            var separatorText = string.Concat(
-                separator.Elements(math + "t").Select(text => text.Value));
-            if (!separatorText.EndsWith("#", StringComparison.Ordinal)) continue;
-            var delimiter = children[index + 1];
-            if (delimiter.Name != math + "d") continue;
-            if (IsVisualTeXDirectSequenceDelimiter(delimiter, formulaId))
-                return true;
-        }
-        return false;
+        return TryResolveWordNativeEquationNumberHost(
+                equation,
+                out _,
+                out _,
+                out var delimiter)
+            && delimiter is not null
+            && IsVisualTeXDirectSequenceDelimiter(delimiter, formulaId);
     }
 
     private static bool IsVisualTeXDirectSequenceDelimiter(
@@ -6869,9 +6901,9 @@ internal static partial class WordOmmlConverter
         // m:r/m:t while COM still exposes the same live Field.Code.Text. Recognize
         // both spellings; never rewrite either representation in place.
         var fieldCode = string.Concat(
-            delimiter.Descendants(word + "instrText").Select(text => text.Value))
+            CurrentOmmlTextElements(delimiter, word + "instrText").Select(text => text.Value))
             + string.Concat(
-                delimiter.Descendants(math + "t").Select(text => text.Value));
+                CurrentOmmlTextElements(delimiter, math + "t").Select(text => text.Value));
         if (!Regex.IsMatch(
                 fieldCode,
                 @"\bSEQ\s+(?:""[^""]+""|[^\s\\]+)",
@@ -7051,9 +7083,48 @@ internal static partial class WordOmmlConverter
         lock (TransformLock)
         {
             if (_ommlToMathMl is not null) return _ommlToMathMl;
-            _ommlToMathMl = LoadTransform(ResolveReverseTransformPath());
+            _ommlToMathMl = LoadReverseTransform(ResolveReverseTransformPath());
             return _ommlToMathMl;
         }
+    }
+
+    private static XslCompiledTransform LoadReverseTransform(string path)
+    {
+        // Office's legacy MathML projection deliberately discards styled
+        // operators and numbers even when OMML carries their exact m:sty.
+        // Correct that projection before compilation, retaining the original
+        // token/structure transform and leaving the Office installation intact.
+        XNamespace xsl = "http://www.w3.org/1999/XSL/Transform";
+        var stylesheet = XDocument.Load(path);
+        var attributes = stylesheet.Descendants(xsl + "template")
+            .Single(element => (string?)element.Attribute("name") == "CreateTokenAttributes");
+        var operatorStyle = attributes.Descendants(xsl + "when")
+            .Single(element => (string?)element.Attribute("test") == "$sTokenType='mo' and $mathvariant!='normal'");
+        operatorStyle.ReplaceWith(new XElement(xsl + "when",
+            new XAttribute("test", "$sTokenType='mo' or $sTokenType='mn'"),
+            new XElement(xsl + "if", new XAttribute("test", "$mathvariant!=''"),
+                new XElement(xsl + "attribute", new XAttribute("name", "mathvariant"),
+                    new XElement(xsl + "value-of", new XAttribute("select", "$mathvariant"))))));
+        foreach (var call in stylesheet.Descendants(xsl + "call-template")
+                     .Where(element => (string?)element.Attribute("name") == "CreateTokenAttributes"))
+        {
+            var token = call.Elements(xsl + "with-param")
+                .FirstOrDefault(element => (string?)element.Attribute("name") == "sTokenType");
+            if ((string?)token?.Attribute("select") is not ("\'mo\'" or "\'mn\'")) continue;
+            foreach (var name in new[] { "scr", "sty" })
+                call.Elements(xsl + "with-param")
+                    .Single(element => (string?)element.Attribute("name") == name)
+                    .SetAttributeValue("select", "$" + name);
+        }
+        attributes.Descendants(xsl + "variable")
+            .Single(element => (string?)element.Attribute("name") == "mathvariant")
+            .Descendants(xsl + "when")
+            .Single(element => (string?)element.Attribute("test") == "$sTokenType='mn'")
+            .SetAttributeValue("test", "$sTokenType='mn' and ($sty='p' or $sty='')");
+        var transform = new XslCompiledTransform(enableDebug: false);
+        using var reader = stylesheet.CreateReader();
+        transform.Load(reader, new XsltSettings(enableDocumentFunction: false, enableScript: false), null);
+        return transform;
     }
 
     private static XslCompiledTransform LoadTransform(string path)

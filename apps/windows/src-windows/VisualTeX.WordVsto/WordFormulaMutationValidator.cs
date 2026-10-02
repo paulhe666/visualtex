@@ -22,6 +22,17 @@ internal static class WordFormulaMutationValidator
             inserted.Range);
         try
         {
+            if (request.Kind == WordFormulaHostKind.Omml)
+            {
+                // The native writer already supplies the exact physical owner.
+                // XML-backed semantic discovery is not validation of an OMath;
+                // in Word it can also terminate the active Custom UndoRecord.
+                // Preserve the same one-nonempty-OMath/exact-address postcondition
+                // without reserializing the user's paragraph inside the mutation.
+                ValidateOmml(localRange);
+                return inserted;
+            }
+
             var resolved = WordFormulaHostResolver.ResolveLocal(
                     document,
                     localRange,
@@ -34,16 +45,6 @@ internal static class WordFormulaMutationValidator
                 || resolved.Range.End != inserted.Range.End)
                 throw new InvalidDataException(
                     "The newly inserted formula host moved before validation.");
-
-            if (request.Kind == WordFormulaHostKind.Omml)
-            {
-                // Pure OMML trusts Word's final native shape. Do not compare
-                // inline/display mode, semantics, fingerprints or numbering
-                // containers against the request. The only postcondition is that
-                // one non-empty physical OMath still owns this exact range.
-                ValidateOmml(localRange);
-                return resolved;
-            }
 
             if (!string.Equals(
                     resolved.DisplayMode,

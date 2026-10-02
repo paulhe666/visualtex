@@ -64,10 +64,32 @@ internal static class WordLocalEditSnapshot
         // Native Undo can allocate new VML/Object IDs and relationship numbers.
         // Bind the shape ID by document order and its references by exact payload
         // hashes above; keep geometry, object type, metadata and embedded bytes.
-        var shapeIds = body.Descendants(v + "shape").Select((shape, index) => (shape, index))
-            .ToDictionary(item => (string)item.shape.Attribute("id")!, item => "shape:" + item.index);
-        foreach (var shape in body.Descendants(v + "shape"))
-            shape.SetAttributeValue("id", shapeIds[(string)shape.Attribute("id")!]);
+        var shapes = body.Descendants(v + "shape").ToArray();
+        var shapeIds = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var index = 0; index < shapes.Length; index++)
+        {
+            var shape = shapes[index];
+            var id = (string?)shape.Attribute("id")
+                ?? throw new InvalidDataException("A recovery shape has no physical ID.");
+            var canonical = "shape:" + index;
+            // Word can reallocate o:spid independently of v:shape/@id during
+            // native Undo. Both names identify this SAME physical shape. Bind
+            // their complete alias graph before normalizing either declaration
+            // or an OLE reference; never erase a real owner/payload mismatch.
+            foreach (var alias in new[] { id, (string?)shape.Attribute(o + "spid") })
+            {
+                if (string.IsNullOrEmpty(alias)) continue;
+                if (shapeIds.TryGetValue(alias!, out var previous) && previous != canonical)
+                    throw new InvalidDataException("A recovery shape alias has multiple physical owners.");
+                shapeIds[alias!] = canonical;
+            }
+        }
+        for (var index = 0; index < shapes.Length; index++)
+        {
+            shapes[index].SetAttributeValue("id", "shape:" + index);
+            if (shapes[index].Attribute(o + "spid") is not null)
+                shapes[index].SetAttributeValue(o + "spid", "shape:" + index);
+        }
         foreach (var ole in body.Descendants(o + "OLEObject"))
         {
             var oldShape = (string?)ole.Attribute("ShapeID");

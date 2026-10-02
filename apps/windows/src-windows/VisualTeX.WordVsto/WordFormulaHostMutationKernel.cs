@@ -20,22 +20,151 @@ internal static class WordFormulaHostMutationKernel
         WordApplication application,
         Document document,
         WordFormulaHostDescriptor source,
-        WordFormulaHostWriteRequest target)
+        WordFormulaHostWriteRequest target,
+        Action<WordFormulaHostDescriptor>? finalize = null)
     {
         ValidateTargetRequest(target);
 
-        return WordFormulaMutationTransaction.Execute(
-            application,
-            document,
-            "VisualTeX Replace Formula Host",
-            () => ReplaceInsideTransaction(
+        WordNativeNumberingAdoptionPlan? nativeNumberInsertion = null;
+        try
+        {
+            // Number attachment is an insertion into Word's native SEQ system,
+            // even when the mathematical body already existed as unnumbered
+            // OMML. Resolve the complete numbering context BEFORE deleting or
+            // rewriting the source host. Otherwise an edit-toggle follows a
+            // different path from direct creation: field-free predecessors do
+            // not participate in SEQ and a post-delete heading lookup can see a
+            // different boundary. One adoption plan now owns both operations.
+            var sourceAlreadyOwnsNativeNumber =
+                source.Kind == WordFormulaHostKind.Omml
+                && source.Display
+                && (source.Numbering.Numbered
+                    || WordOmmlHostWriter.HasFieldFreeWordNativeNumberHost(
+                        document,
+                        source));
+            if (target.Kind == WordFormulaHostKind.Omml
+                && target.Numbered
+                && string.Equals(
+                    target.DisplayMode,
+                    "block",
+                    StringComparison.OrdinalIgnoreCase)
+                && target.PreparedOmml is null
+                && !sourceAlreadyOwnsNativeNumber)
+            {
+                var semanticOmml =
+                    WordOmmlConverter.TransformMathMlToOmml(
+                        target.MathMl!);
+                nativeNumberInsertion =
+                    WordNativeNumberingAdoptionPlan.Prepare(
+                        document,
+                        source.Range.Start,
+                        WordEquationNumberFormatAuthority.Resolve(
+                            document));
+                target.PreparedOmml =
+                    nativeNumberInsertion.PrepareInsertionOmml(
+                        semanticOmml);
+            }
+
+            // Existing native edits need the same read-before-write contract as
+            // native creation. Their numbered-host XML cannot be exported after
+            // opening Undo, even though the source range was already resolved.
+            // A number toggle uses the same exact-native replacement transport;
+            // only its complete number topology is supplied by the adoption plan
+            // above instead of preserving the source topology.
+            using var nativeEdit =
+                nativeNumberInsertion is not null
+                && source.Kind == WordFormulaHostKind.Omml
+                    ? WordNativeOmmlEdit.PrepareNumberAttachment(
+                        document,
+                        source,
+                        target,
+                        target.PreparedOmml!)
+                    : WordNativeOmmlEdit.Supports(source, target)
+                        ? WordNativeOmmlEdit.Prepare(document, source, target)
+                        : null;
+
+            Action? verifyRollback =
+                nativeEdit is null
+                && nativeNumberInsertion is null
+                    ? null
+                    : () =>
+                    {
+                        nativeEdit?.VerifyRollback();
+                        nativeNumberInsertion?.VerifyRollback();
+                    };
+
+            return WordFormulaMutationTransaction.Execute(
                 application,
                 document,
-                source,
-                target,
-                sourceAlreadyResolved: true,
-                allowDirectCanonicalOmmlRemoval: false,
-                deferTargetNumberFinalization: false));
+                "VisualTeX Replace Formula Host",
+                () =>
+                {
+                    var result = nativeEdit is not null
+                        ? nativeEdit.Apply()
+                        : ReplaceInsideTransaction(
+                            application,
+                            document,
+                            source,
+                            target,
+                            sourceAlreadyResolved: true,
+                            allowDirectCanonicalOmmlRemoval: false,
+                            deferTargetNumberFinalization:
+                                nativeNumberInsertion is not null);
+
+                    if (nativeNumberInsertion is not null)
+                    {
+                        Range? exact = null;
+                        OMaths? maths = null;
+                        OMath? native = null;
+                        try
+                        {
+                            // Field adoption can change the serialized width of
+                            // every earlier/current number. Keep the inserted
+                            // native OMath as the physical identity, not the
+                            // pre-refresh numeric Range endpoints.
+                            exact =
+                                WordFormulaHostSemanticReader.CreateRange(
+                                    document,
+                                    result.Range);
+                            maths = exact.OMaths;
+                            if (maths.Count != 1)
+                                throw new InvalidDataException(
+                                    "The edited numbered OMML lost its exact native owner before field adoption.");
+                            native = maths[1];
+
+                            nativeNumberInsertion.Apply(result);
+
+                            Release(exact);
+                            exact = native.Range.Duplicate;
+                            result.Range =
+                                new WordFormulaRangeAddress
+                                {
+                                    StoryType = exact.StoryType,
+                                    Start = exact.Start,
+                                    End = exact.End,
+                                };
+                            result =
+                                WordNativeOmmlNumbering.RefreshCanonicalNativeFields(
+                                    document,
+                                    result);
+                        }
+                        finally
+                        {
+                            Release(native);
+                            Release(maths);
+                            Release(exact);
+                        }
+                    }
+
+                    finalize?.Invoke(result);
+                    return result;
+                },
+                verifyRollback: verifyRollback);
+        }
+        finally
+        {
+            nativeNumberInsertion?.Dispose();
+        }
     }
 
     internal static WordFormulaHostDescriptor ReplaceInActiveTransaction(
@@ -45,7 +174,8 @@ internal static class WordFormulaHostMutationKernel
         WordFormulaHostWriteRequest target,
         bool sourceAlreadyResolved = false,
         bool allowDirectCanonicalOmmlRemoval = false,
-        bool deferTargetNumberFinalization = false)
+        bool deferTargetNumberFinalization = false,
+        WordNativeConversionSource? preparedSource = null)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -62,7 +192,8 @@ internal static class WordFormulaHostMutationKernel
             target,
             sourceAlreadyResolved,
             allowDirectCanonicalOmmlRemoval,
-            deferTargetNumberFinalization);
+            deferTargetNumberFinalization,
+            preparedSource);
     }
 
     internal static WordFormulaHostDescriptor AdoptUnownedOmmlForMutation(
@@ -85,6 +216,92 @@ internal static class WordFormulaHostMutationKernel
                 document,
                 host);
         return host;
+    }
+
+    internal static WordFormulaHostDescriptor CreateNativeOmml(
+        WordApplication application, Document document, string? sourceObjectId,
+        WordFormulaHostWriteRequest request, Action<WordFormulaHostDescriptor>? finalize = null)
+    {
+        ValidateTargetRequest(request);
+        if (request.Kind != WordFormulaHostKind.Omml)
+            throw new ArgumentException("The native create operation only owns OMML.");
+        using var location = WordFormulaOperationLocator.PrepareCreateInsertion(
+            document, sourceObjectId, request.DisplayMode);
+        Range? evidence = null;
+        Range? preparedTarget = null;
+        MathTypeLocalEditScope? recovery = null;
+        WordNativeNumberingAdoptionPlan? numbers = null;
+        try
+        {
+            evidence = location.EvidenceRange;
+            recovery = MathTypeLocalEditScope.Capture(document, evidence);
+            location.CaptureBoundaryBookmarks(document, recovery.ParagraphXml);
+            var omml = WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
+            if (string.Equals(request.DisplayMode, "inline", StringComparison.OrdinalIgnoreCase))
+            {
+                // Word can absorb a caret at an existing native math boundary.
+                // Prepare the complete neighbouring mathematical bodies BEFORE
+                // Undo, then replace that proven span instead of risking loss of
+                // the old final character during a collapsed InsertXML.
+                var merged = WordOmmlHostWriter.PrepareAdjacentInlineNativeMerge(document, evidence, omml);
+                preparedTarget = merged.Target;
+                omml = merged.Omml;
+            }
+            if (request.Numbered)
+            {
+                var numberFormatId =
+                    WordEquationNumberFormatAuthority.Resolve(
+                        document);
+                numbers =
+                    WordNativeNumberingAdoptionPlan.Prepare(
+                        document,
+                        location.Position,
+                        numberFormatId);
+                omml = numbers.PrepareInsertionOmml(omml);
+            }
+            // Everything above is read-only preflight, including the strict
+            // recovery evidence. A display paragraph, equation and field updates
+            // below are one owned record; no WordOpenXML getter runs in it.
+            return WordFormulaMutationTransaction.Execute(application, document,
+                "VisualTeX Insert Formula Host", () =>
+                {
+                    Range? insertion = null;
+                    Range? exact = null;
+                    OMaths? maths = null;
+                    OMath? native = null;
+                    try
+                    {
+                        // Detach the original seam before either the paragraph
+                        // split or equation import can expand that empty bookmark.
+                        location.BindBoundaryBookmarks(document, evidence, detach: true);
+                        insertion = preparedTarget?.Duplicate ?? location.Materialize();
+                        var written = WordOmmlHostWriter.InsertPreparedNative(document, insertion, request, omml).Host;
+                        written = WordFormulaMutationValidator.ValidateInsertedHost(document, request, written);
+                        exact = WordFormulaHostSemanticReader.CreateRange(document, written.Range);
+                        location.BindBoundaryBookmarks(document, exact, detach: false);
+                        if (numbers is null)
+                        {
+                            finalize?.Invoke(written);
+                            return written;
+                        }
+                        maths = exact.OMaths;
+                        native = maths[1];
+                        numbers.Apply(written);
+                        Release(exact); exact = native.Range;
+                        written.Range = new WordFormulaRangeAddress
+                        { StoryType = exact.StoryType, Start = exact.Start, End = exact.End };
+                        written = WordNativeOmmlNumbering.RefreshCanonicalNativeFields(document, written);
+                        finalize?.Invoke(written);
+                        return written;
+                    }
+                    finally { Release(native); Release(maths); Release(exact); Release(insertion); }
+                }, verifyRollback: () =>
+                {
+                    recovery.VerifyRollback();
+                    numbers?.VerifyRollback();
+                });
+        }
+        finally { numbers?.Dispose(); recovery?.Dispose(); Release(preparedTarget); Release(evidence); }
     }
 
     internal static WordFormulaHostDescriptor Insert(
@@ -171,8 +388,8 @@ internal static class WordFormulaHostMutationKernel
                 WordFormulaNumberingKernel.AttachCanonical(
                     document,
                     validated,
-                    deferFinalization:
-                        target.BatchMutation);
+                    deferFinalization: target.BatchMutation,
+                    preparedNumberPlan: target.PreparedVisualTeXNumbering);
 
         if (target.BatchMutation)
         {
@@ -201,7 +418,8 @@ internal static class WordFormulaHostMutationKernel
         WordFormulaHostDescriptor source,
         Func<Range, T> externalWriter,
         bool sourceAlreadyResolved = false,
-        bool allowDirectCanonicalOmmlRemoval = false)
+        bool allowDirectCanonicalOmmlRemoval = false,
+        WordNativeConversionSource? preparedSource = null)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -247,7 +465,8 @@ internal static class WordFormulaHostMutationKernel
                     document,
                     fresh,
                     numbering,
-                    sourceWillBeRemovedImmediately: true);
+                    sourceWillBeRemovedImmediately: true,
+                    preparedBody: preparedSource?.VisualTeXBodyNumbering);
             numbering =
                 fresh.Numbering;
             if (numbering.Numbered)
@@ -281,10 +500,12 @@ internal static class WordFormulaHostMutationKernel
                     : normalizeDisplayVisualTeXBoundary
                         ? WordVisualTeXHostWriter.DeleteExactToExternalDisplayBoundary(
                             document,
-                            fresh)
+                            fresh,
+                            preparedSource)
                         : DeleteHostExact(
                             document,
-                            fresh);
+                            fresh,
+                            preparedSource);
 
             if (!normalizeDisplayOmmlBoundary)
             {
@@ -440,7 +661,8 @@ internal static class WordFormulaHostMutationKernel
         WordFormulaHostWriteRequest target,
         bool sourceAlreadyResolved,
         bool allowDirectCanonicalOmmlRemoval = false,
-        bool deferTargetNumberFinalization = false)
+        bool deferTargetNumberFinalization = false,
+        WordNativeConversionSource? preparedSource = null)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -594,7 +816,8 @@ internal static class WordFormulaHostMutationKernel
                     freshSource,
                     sourceNumbering,
                     sourceWillBeRemovedImmediately:
-                        target.Kind != freshSource.Kind);
+                        target.Kind != freshSource.Kind,
+                    preparedBody: preparedSource?.VisualTeXBodyNumbering);
             sourceNumbering =
                 freshSource.Numbering;
             if (sourceNumbering.Numbered)
@@ -635,17 +858,25 @@ internal static class WordFormulaHostMutationKernel
                           && target.Kind == WordFormulaHostKind.Omml
                             ? WordVisualTeXHostWriter.DeleteExactToExternalDisplayBoundary(
                                 document,
-                                freshSource)
+                                freshSource,
+                                preparedSource)
                             : DeleteHostExact(
                                 document,
-                                freshSource);
+                                freshSource,
+                                preparedSource);
             }
 
-            var written = InsertHost(
-                application,
-                document,
-                insertion,
-                target);
+            // A prepared native target at the normalized plain boundary needs
+            // only the native insertion writer. The generic marker/paragraph
+            // route exports live WordOpenXML and closes the active Undo record.
+            var written = target.Kind == WordFormulaHostKind.Omml
+                && target.PreparedOmml is not null
+                && target.PreparedOleReplacement is null
+                    ? WordOmmlHostWriter.InsertPreparedNative(
+                        document, insertion, target, target.PreparedOmml)
+                    : InsertHost(application, document, insertion, target,
+                        removeOmmlBoundaryGuard: freshSource.Kind == WordFormulaHostKind.Omml
+                            && target.Kind == WordFormulaHostKind.VisualTeX);
             // The low-level writers already prove the exact physical host they
             // just materialized. VisualTeX additionally reads its embedded OLE
             // payload back and validates FormulaId/LaTeX/display mode. During a
@@ -659,27 +890,6 @@ internal static class WordFormulaHostMutationKernel
                         document,
                         target,
                         written.Host);
-
-            if (freshSource.Kind == WordFormulaHostKind.Omml
-                && target.Kind != WordFormulaHostKind.Omml)
-            {
-                validated =
-                    WordOmmlHostWriter.RemovePlainTextBoundaryGuard(
-                        document,
-                        validated);
-                // Batch conversion already trusts the low-level writer's local
-                // physical/payload verification. Removing the temporary plain-text
-                // boundary guard only adjusts the surrounding Word range; do not
-                // reopen and semantically revalidate the same OLE a second time.
-                if (!target.BatchMutation)
-                {
-                    validated =
-                        WordFormulaMutationValidator.ValidateInsertedHost(
-                            document,
-                            target,
-                            validated);
-                }
-            }
 
             if (target.Kind == WordFormulaHostKind.Omml)
             {
@@ -747,7 +957,8 @@ internal static class WordFormulaHostMutationKernel
                     WordFormulaNumberingKernel.AttachCanonical(
                         document,
                         validated,
-                        deferTargetNumberFinalization);
+                        deferTargetNumberFinalization,
+                        target.PreparedVisualTeXNumbering);
             }
 
             if (deferTargetNumberFinalization
@@ -801,7 +1012,7 @@ internal static class WordFormulaHostMutationKernel
                         application,
                         document,
                         sourceRange)
-                    : WordFormulaHostResolver.ResolveLocal(
+                    : WordFormulaHostLookup.ResolveLocal(
                         document,
                         sourceRange,
                         source.Kind);
@@ -895,11 +1106,12 @@ internal static class WordFormulaHostMutationKernel
             return !source.Display;
         }
 
-        // MathType owns a separate numbering implementation. For numbered
-        // MathType, keep its established detach/delete path so its native fields
-        // are removed before Word-native OMML numbering is attached.
+        // A prepared MathType plan owns its exact sibling number scaffold as
+        // well as the OLE atom. Keep one physical substitution instead of
+        // clearing the whole historical paragraph. Unprepared legacy callers
+        // still require their established numbering detach path.
         return source.Kind == WordFormulaHostKind.MathType
-            && !sourceNumbering.Numbered;
+            && (!sourceNumbering.Numbered || target.PreparedOleReplacement is not null);
     }
 
     private static void RemoveExternalHostIdentityForOmmlReplacement(
@@ -928,7 +1140,8 @@ internal static class WordFormulaHostMutationKernel
         WordApplication application,
         Document document,
         Range insertion,
-        WordFormulaHostWriteRequest target) =>
+        WordFormulaHostWriteRequest target,
+        bool removeOmmlBoundaryGuard = false) =>
         target.Kind switch
         {
             WordFormulaHostKind.Omml =>
@@ -941,14 +1154,16 @@ internal static class WordFormulaHostMutationKernel
                 WordVisualTeXHostWriter.Insert(
                     document,
                     insertion,
-                    target),
+                    target,
+                    removeOmmlBoundaryGuard),
             _ => throw new NotSupportedException(
                 $"The rebuilt OMML/VisualTeX core cannot write {target.Kind}."),
         };
 
     private static Range DeleteHostExact(
         Document document,
-        WordFormulaHostDescriptor source) =>
+        WordFormulaHostDescriptor source,
+        WordNativeConversionSource? preparedSource = null) =>
         source.Kind switch
         {
             WordFormulaHostKind.Omml =>
@@ -958,11 +1173,13 @@ internal static class WordFormulaHostMutationKernel
             WordFormulaHostKind.VisualTeX =>
                 WordVisualTeXHostWriter.DeleteExact(
                     document,
-                    source),
+                    source,
+                    preparedSource),
             WordFormulaHostKind.MathType =>
                 WordMathTypeHostAdapter.DeleteExact(
                     document,
-                    source),
+                    source,
+                    preparedSource?.MathTypeShape),
             _ => throw new NotSupportedException(
                 $"The rebuilt OMML/VisualTeX core cannot delete {source.Kind}."),
         };

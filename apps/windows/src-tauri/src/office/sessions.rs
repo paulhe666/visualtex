@@ -436,10 +436,16 @@ impl SessionStore {
         &self,
         input: CreateOfficeSessionInput,
     ) -> Result<OfficeFormulaSession, SessionError> {
-        let _guard = self
-            .lock
-            .lock()
+        let _guard = self.lock.lock()
             .map_err(|_| SessionError::Io("Session store lock is unavailable".to_string()))?;
+        let session = Self::build_render_session(input)?;
+        self.write_locked(&session)?;
+        Ok(session)
+    }
+
+    pub(crate) fn build_render_session(
+        input: CreateOfficeSessionInput,
+    ) -> Result<OfficeFormulaSession, SessionError> {
         let created_at = now_ms();
         let id = Uuid::new_v4().to_string();
         let formula_id = match input.formula_id {
@@ -537,7 +543,6 @@ impl SessionStore {
             updated_at: created_at,
             expires_at: created_at.saturating_add(SESSION_TTL_MS),
         };
-        self.write_locked(&session)?;
         Ok(session)
     }
 

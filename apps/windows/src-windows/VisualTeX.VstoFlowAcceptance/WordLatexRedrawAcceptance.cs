@@ -192,6 +192,7 @@ internal static partial class Program
             profileTarget,
             "mathtype",
             StringComparison.OrdinalIgnoreCase);
+        var profileOmml = string.Equals(profileTarget, "omml", StringComparison.OrdinalIgnoreCase);
         var suspendScreenUpdating = string.Equals(
             Environment.GetEnvironmentVariable("VISUALTEX_REDRAW_PROFILE_SUSPEND_SCREEN_UPDATING"),
             "1",
@@ -265,6 +266,8 @@ internal static partial class Program
                     host.Application.ScreenUpdating = false;
                 if (profileMathType)
                     host.AddIn.OnRedrawDocumentToMathType(new object());
+                else if (profileOmml)
+                    host.AddIn.OnRedrawDocumentToOmml(new object());
                 else
                     host.AddIn.OnRedrawDocumentToOle(new object());
                 log = WaitForLatexRedraw(
@@ -290,10 +293,11 @@ internal static partial class Program
             {
                 insertedShapes =
                     host.Document.InlineShapes;
-                if (insertedShapes.Count
+                var actualFormulaCount = profileOmml ? host.Document.OMaths.Count : insertedShapes.Count;
+                if (actualFormulaCount
                     != formulaCount)
                     throw new InvalidDataException(
-                        $"Expected {formulaCount} VisualTeX OLE hosts after redraw; actual {insertedShapes.Count}.");
+                        $"Expected {formulaCount} {profileTarget} hosts after redraw; actual {actualFormulaCount}.");
 
                 finalContent =
                     host.Document.Content;

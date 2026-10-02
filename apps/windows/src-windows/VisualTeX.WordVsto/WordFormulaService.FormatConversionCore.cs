@@ -47,6 +47,7 @@ internal sealed partial class WordFormulaService
             var sourceKind = ObjectModeToHostKind(sourceMode);
             var targetKind = ObjectModeToHostKind(targetMode);
             IReadOnlyList<WordFormulaHostDescriptor> hosts;
+            Dictionary<WordFormulaHostDescriptor, WordMathTypeHostAdapter.Semantic>? mathTypeSemantics = null;
 
             if (!wholeDocument
                 && scope.Start == scope.End)
@@ -57,7 +58,7 @@ internal sealed partial class WordFormulaService
                             _application,
                             document,
                             scope)
-                        : WordFormulaHostResolver.ResolveLocal(
+                        : WordFormulaHostLookup.ResolveLocal(
                             document,
                             scope,
                             sourceKind);
@@ -67,10 +68,12 @@ internal sealed partial class WordFormulaService
             }
             else if (sourceKind == WordFormulaHostKind.MathType)
             {
+                mathTypeSemantics = new Dictionary<WordFormulaHostDescriptor, WordMathTypeHostAdapter.Semantic>();
                 hosts = WordMathTypeHostAdapter.CaptureScopeIndex(
                     _application,
                     document,
-                    scope);
+                    scope,
+                    mathTypeSemantics);
             }
             else
             {
@@ -98,7 +101,7 @@ internal sealed partial class WordFormulaService
                 TargetMode = targetMode,
                 WholeDocument = wholeDocument,
                 NumberFormatId =
-                    WordEquationNumbering.GetEquationNumberFormatId(
+                    WordEquationNumberFormatAuthority.Resolve(
                         document),
             };
 
@@ -110,7 +113,8 @@ internal sealed partial class WordFormulaService
                     host,
                     sourceKind,
                     targetKind,
-                    targetMathTypeNumberPosition);
+                    targetMathTypeNumberPosition,
+                    mathTypeSemantics is null ? null : mathTypeSemantics[host]);
                 plan.Targets.Add(target);
             }
 
@@ -137,6 +141,11 @@ internal sealed partial class WordFormulaService
             plan.SourceMode,
             plan.TargetMode);
 
+        var preparedWrites = new Dictionary<string, WordFormulaHostWriteRequest>(StringComparer.Ordinal);
+        var resolvedSources = new Dictionary<string, WordFormulaHostDescriptor>(StringComparer.Ordinal);
+        var nativeSources = new Dictionary<string, WordNativeConversionSource>(StringComparer.Ordinal);
+        WordNativeOmmlFieldRefresh? nativeNumberRefresh = null;
+        WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? visualTeXNumbers = null;
         Document? document = null;
         try
         {
@@ -163,6 +172,8 @@ internal sealed partial class WordFormulaService
                 ObjectModeToHostKind(plan.SourceMode);
             var targetKind =
                 ObjectModeToHostKind(plan.TargetMode);
+            var forwardOrder = sourceKind == WordFormulaHostKind.Omml
+                || (sourceKind == WordFormulaHostKind.MathType && targetKind == WordFormulaHostKind.VisualTeX);
 
             // VisualTeX's numbered OLE uses a private VTEqNum_<FormulaId>
             // bookmark only while that host family exists. Pure OMML must remove
@@ -211,6 +222,128 @@ internal sealed partial class WordFormulaService
                         ownedBookmarkNames);
             }
 
+            if (targetKind == WordFormulaHostKind.VisualTeX && plan.Targets.Any(item => item.Numbered))
+                visualTeXNumbers = WordFormulaNumberingKernel.VisualTeXConversionNumberPlan.Capture(
+                    document, plan.Targets.Where(item => item.Numbered).Select(item => (item.Id, item.SourceStart)), plan.NumberFormatId);
+
+            var displaySectionTabs = targetKind == WordFormulaHostKind.VisualTeX
+                ? CaptureConversionSectionTabStops(document)
+                : Array.Empty<(int Start, int End, float Center, float Right)>();
+
+            // Native source reads (including WordOpenXML) are preflight, not
+            // target mutation. In Word, exporting that XML can close an active
+            // Custom UndoRecord. Resolve and prepare all selected sources in this
+            // same synchronous UI turn before starting the one batch record.
+            foreach (var target in plan.Targets.OrderByDescending(item => item.SourceStart))
+            {
+                using var preparationMetric = WordOperationMetrics.Measure("FormatConversion.PrepareBoundSource." + sourceKind + "To" + targetKind);
+                WordFormulaHostDescriptor source;
+                if (sourceKind == WordFormulaHostKind.MathType)
+                {
+                    Range? captured = null;
+                    try
+                    {
+                        captured = WordFormulaOperationLocator.ResolveCapturedRange(document, target.SourceObjectId);
+                        var binding = WordMathTypeHostAdapter.BindCapturedHost(_application, document, captured);
+                        nativeSources.Add(target.Id, binding);
+                        source = binding.Host;
+                        var semanticFont = FormulaFontSize.ResolveSemanticFontSize(source.Metadata!);
+                        var currentFont = source.Display
+                            ? semanticFont
+                            : ReadMathTypeInlinePresentationFontSize(binding.MathTypeShape!) ?? semanticFont;
+                        // One fresh read proves the input that produced the
+                        // prepared render; it also supplies the physical owner
+                        // consumed below. No second resolver/decoder is needed.
+                        if (!string.Equals(binding.MathMl, target.SourceMathMl, StringComparison.Ordinal)
+                            || !string.Equals(source.DisplayMode, target.DisplayMode, StringComparison.Ordinal)
+                            || source.Numbering.Numbered != target.Numbered
+                            || semanticFont != FormulaFontSize.ResolveSemanticFontSize(target.Metadata)
+                            || currentFont != target.FontSizePt)
+                            throw new InvalidOperationException("The MathType source changed while its conversion was being prepared.");
+                    }
+                    finally { Release(captured); }
+                }
+                else if (sourceKind == WordFormulaHostKind.VisualTeX)
+                {
+                    Range? captured = null;
+                    try
+                    {
+                        captured = WordFormulaOperationLocator.ResolveCapturedRange(document, target.SourceObjectId);
+                        var binding = WordNativeConversionSource.BindVisualTeX(document, captured);
+                        nativeSources.Add(target.Id, binding);
+                        source = binding.Host;
+                        var metadata = source.Metadata!;
+                        var numbered = source.Display && (metadata.Numbered || source.Numbering.Numbered);
+                        if (!string.Equals(metadata.FormulaId, target.SourceFormulaId, StringComparison.OrdinalIgnoreCase)
+                            || !string.Equals(metadata.Latex, target.Latex, StringComparison.Ordinal)
+                            || !string.Equals(source.DisplayMode, target.DisplayMode, StringComparison.Ordinal)
+                            || numbered != target.Numbered
+                            || FormulaFontSize.ResolveSemanticFontSize(metadata) != target.FontSizePt
+                            || !string.Equals(metadata.FormulaLetterFont, target.Metadata.FormulaLetterFont, StringComparison.Ordinal)
+                            || !string.Equals(metadata.FormulaChineseFont, target.Metadata.FormulaChineseFont, StringComparison.Ordinal))
+                            throw new InvalidOperationException("The VisualTeX source changed while its conversion was being prepared.");
+                    }
+                    finally { Release(captured); }
+                }
+                else
+                {
+                    source = WordFormulaOperationLocator.ResolveCapturedHost(
+                        _application, document, target.SourceObjectId, sourceKind, target.SourceFormulaId);
+                    if (forwardOrder)
+                        nativeSources.Add(target.Id, new WordNativeConversionSource(document, source));
+                }
+                resolvedSources.Add(target.Id, source);
+                if (targetKind is not (WordFormulaHostKind.Omml or WordFormulaHostKind.VisualTeX))
+                    continue;
+                var preparedFormula = prepared[target.Id];
+                PrepareCoreTargetSession(preparedFormula.Session, plan, target);
+                var request = BuildHostWriteRequest(preparedFormula.Session,
+                    preparedFormula.MathMl, preparedFormula.PngPath, preparedFormula.EmfPath);
+                request.BatchMutation = true;
+                if (targetKind == WordFormulaHostKind.VisualTeX && target.Numbered)
+                    request.PreparedVisualTeXNumbering = visualTeXNumbers!.For(target.Id);
+                if (targetKind == WordFormulaHostKind.VisualTeX && source.Display && !source.WithinTable)
+                {
+                    var section = displaySectionTabs.First(item => item.Start <= source.Range.Start && item.End > source.Range.Start);
+                    request.DisplayCenterTabPoints = section.Center;
+                    request.DisplayRightTabPoints = section.Right;
+                }
+                preparedWrites.Add(target.Id, request);
+                if (targetKind == WordFormulaHostKind.Omml)
+                {
+                    var display = string.Equals(request.DisplayMode, "block", StringComparison.OrdinalIgnoreCase);
+                    request.PreparedOmml = WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
+                    if (display && request.Numbered)
+                        request.PreparedOmml = WordNativeOmmlNumbering.PrepareNumberedOmml(
+                            document, source.Range.Start, request.PreparedOmml);
+                    if (sourceKind == WordFormulaHostKind.MathType
+                        || (sourceKind == WordFormulaHostKind.VisualTeX && !source.Display))
+                    {
+                        Range? exact = null;
+                        try
+                        {
+                            exact = WordFormulaHostSemanticReader.CreateRange(document, source.Range);
+                            request.PreparedOleReplacement = WordOleToOmmlReplacement.Prepare(
+                                document, exact, request.PreparedOmml, display,
+                                retiredIdentityBookmark: !Guid.TryParse(source.FormulaId, out _) ? null
+                                    : sourceKind == WordFormulaHostKind.MathType
+                                        ? WordFormulaIdentityStore.MathTypeBookmarkName(source.FormulaId!)
+                                        : WordFormulaMetadataReader.IdentityBookmarkName(source.FormulaId!),
+                                replaceMathTypeNumber: sourceKind == WordFormulaHostKind.MathType && source.Numbering.Numbered)
+                                ?? throw new InvalidDataException("The conversion preflight does not own an exact external OLE.");
+                        }
+                        finally { Release(exact); }
+                    }
+                }
+            }
+
+            if (targetKind == WordFormulaHostKind.Omml && plan.Targets.Any(item => item.Numbered))
+            {
+                using var numberingMetric = WordOperationMetrics.Measure("FormatConversion.OmmlNumbering.Prepare");
+                nativeNumberRefresh = WordNativeOmmlFieldRefresh.Prepare(document,
+                    plan.Targets.Where(item => item.Numbered).Min(item => item.SourceStart));
+            }
+
             return WordFormulaMutationTransaction.Execute(
                 _application,
                 document,
@@ -223,19 +356,17 @@ internal sealed partial class WordFormulaService
                         new Dictionary<string, string>(
                             StringComparer.OrdinalIgnoreCase);
 
-                    foreach (var target in plan.Targets
-                                 .OrderByDescending(
-                                     item => item.SourceStart))
+                    var mutationOrder = forwardOrder
+                        ? plan.Targets.OrderBy(item => item.SourceStart)
+                        : plan.Targets.OrderByDescending(item => item.SourceStart);
+                    foreach (var target in mutationOrder)
                     {
                         var preparedFormula =
                             prepared[target.Id];
-                        var source =
-                            WordFormulaOperationLocator.ResolveCapturedHost(
-                                _application,
-                                document,
-                                target.SourceObjectId,
-                                sourceKind,
-                                target.SourceFormulaId);
+                        var source = resolvedSources[target.Id];
+                        nativeSources.TryGetValue(target.Id, out var sourceOwner);
+                        sourceOwner?.RefreshAddresses();
+                        WordFormulaMutationTransaction.TraceBoundary(_application, "conversion-preflight-source");
 
                         WordFormulaHostDescriptor? replacedHost =
                             null;
@@ -243,16 +374,7 @@ internal sealed partial class WordFormulaService
                             WordFormulaHostKind.Omml
                             or WordFormulaHostKind.VisualTeX)
                         {
-                            PrepareCoreTargetSession(
-                                preparedFormula.Session,
-                                plan,
-                                target);
-                            var request = BuildHostWriteRequest(
-                                preparedFormula.Session,
-                                preparedFormula.MathMl,
-                                preparedFormula.PngPath,
-                                preparedFormula.EmfPath);
-                            request.BatchMutation = true;
+                            var request = preparedWrites[target.Id];
                             replacedHost =
                                 WordFormulaHostMutationKernel
                                     .ReplaceInActiveTransaction(
@@ -264,8 +386,10 @@ internal sealed partial class WordFormulaService
                                         allowDirectCanonicalOmmlRemoval:
                                             sourceKind ==
                                             WordFormulaHostKind.Omml,
-                                        deferTargetNumberFinalization:
-                                            true);
+                                        deferTargetNumberFinalization: true,
+                                        preparedSource: sourceOwner);
+                            if (targetKind == WordFormulaHostKind.Omml && target.Numbered)
+                                nativeNumberRefresh!.AddInserted(replacedHost);
 
                             if (sourceKind ==
                                     WordFormulaHostKind.VisualTeX
@@ -357,7 +481,13 @@ internal sealed partial class WordFormulaService
                                                     preserveCapturedInsertion:
                                                         true,
                                                     boundedBatchMutation:
-                                                        true);
+                                                        true,
+                                                    preparedStandaloneGenerated:
+                                                        preparedFormula.MathTypeStandaloneGenerated,
+                                                    preparedStandaloneCompoundFile:
+                                                        preparedFormula.MathTypeStandaloneCompoundFile,
+                                                    preparedStandaloneSemanticSignature:
+                                                        preparedFormula.MathTypeStandaloneSemanticSignature);
                                             }
                                             finally
                                             {
@@ -368,7 +498,8 @@ internal sealed partial class WordFormulaService
                                         sourceAlreadyResolved: true,
                                         allowDirectCanonicalOmmlRemoval:
                                             sourceKind ==
-                                            WordFormulaHostKind.Omml);
+                                            WordFormulaHostKind.Omml,
+                                        preparedSource: sourceOwner);
                         }
                         else
                         {
@@ -376,12 +507,16 @@ internal sealed partial class WordFormulaService
                                 $"Unsupported conversion target {targetKind}.");
                         }
 
+                        // A source binding is consumed by this replacement;
+                        // retaining deleted OLE owners until batch finalization
+                        // unnecessarily extends their COM/storage lifetime.
+                        sourceOwner?.Dispose();
                         result.FormulaCount++;
                     }
 
-                    // Format conversion is intentionally applied from the end of
-                    // the document toward the start so captured source ranges stay
-                    // stable. Numbered OMML/VisualTeX targets therefore cannot
+                    // OMML sources and MathType-to-VisualTeX follow live Word
+                    // owners forward; other paths retain reverse order. Each edit
+                    // not relayout the growing converted tail. Targets still cannot
                     // finalize their visible ordinals one host at a time: formulas
                     // that belong earlier in the document may not exist in the
                     // target family yet. Recompute the canonical Word order once,
@@ -391,23 +526,22 @@ internal sealed partial class WordFormulaService
                     if (plan.Targets.Any(target =>
                             target.Numbered))
                     {
-                        if (targetKind is
-                            WordFormulaHostKind.Omml
-                            or WordFormulaHostKind.VisualTeX)
+                        if (targetKind == WordFormulaHostKind.Omml)
                         {
-                            _ =
-                                WordFormulaNumberingKernel
-                                    .RefreshCanonicalNumbers(
-                                        document,
-                                        kindFilter:
-                                            targetKind,
-                                        minimumExpectedNumbered:
-                                            targetKind == WordFormulaHostKind.VisualTeX
-                                                ? plan.Targets.Count(target =>
-                                                    target.Numbered
-                                                    && !target.SourceWithinTable)
-                                                : plan.Targets.Count(target =>
-                                                    target.Numbered));
+                            // No post-mutation host/XML/heading rediscovery. The
+                            // preflight suffix plan contains affected existing
+                            // native equations plus the newly materialized hosts.
+                            using var numberingMetric = WordOperationMetrics.Measure("FormatConversion.OmmlNumbering.Apply");
+                            nativeNumberRefresh!.Apply(plan.Targets.Count(target => target.Numbered));
+                        }
+                        else if (targetKind == WordFormulaHostKind.VisualTeX)
+                        {
+                            visualTeXNumbers!.ApplyExistingTables(document);
+                            _ = WordFormulaNumberingKernel.RefreshCanonicalNumbers(
+                                document, kindFilter: targetKind,
+                                minimumExpectedNumbered: plan.Targets.Count(target =>
+                                    target.Numbered && !target.SourceWithinTable),
+                                preparedVisualTeX: visualTeXNumbers);
                         }
                         else if (targetKind ==
                                  WordFormulaHostKind.MathType)
@@ -436,12 +570,51 @@ internal sealed partial class WordFormulaService
 
                     return result;
                 },
-                rollbackSnapshot);
+                rollbackSnapshot,
+                verifyRollback: () =>
+                {
+                    foreach (var write in preparedWrites.Values)
+                        write.PreparedOleReplacement?.VerifyRollback();
+                });
         }
         finally
         {
+            foreach (var nativeSource in nativeSources.Values) nativeSource.Dispose();
+            visualTeXNumbers?.Dispose();
+            nativeNumberRefresh?.Dispose();
+            foreach (var write in preparedWrites.Values)
+                write.PreparedOleReplacement?.Dispose();
             Release(document);
         }
+    }
+
+    private static (int Start, int End, float Center, float Right)[] CaptureConversionSectionTabStops(Document document)
+    {
+        using var metric = WordOperationMetrics.Measure("FormatConversion.CaptureSectionTabGeometry");
+        var result = new List<(int Start, int End, float Center, float Right)>();
+        Sections? sections = null;
+        try
+        {
+            sections = document.Sections;
+            for (var index = 1; index <= sections.Count; index++)
+            {
+                Section? section = null;
+                Range? range = null;
+                PageSetup? setup = null;
+                try
+                {
+                    section = sections[index];
+                    range = section.Range;
+                    setup = section.PageSetup;
+                    var tabs = WordEquationNumbering.CalculateEquationTabStops(
+                        setup.PageWidth, setup.LeftMargin, setup.RightMargin, 0, 0);
+                    result.Add((range.Start, range.End, tabs.Center, tabs.Right));
+                }
+                finally { Release(setup); Release(range); Release(section); }
+            }
+        }
+        finally { Release(sections); }
+        return result.ToArray();
     }
 
     private WordFormulaFormatConversionTarget CaptureCoreConversionTarget(
@@ -449,7 +622,8 @@ internal sealed partial class WordFormulaService
         WordFormulaHostDescriptor host,
         WordFormulaHostKind sourceKind,
         WordFormulaHostKind targetKind,
-        string targetMathTypeNumberPosition)
+        string targetMathTypeNumberPosition,
+        WordMathTypeHostAdapter.Semantic? capturedMathTypeSemantic = null)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -460,15 +634,16 @@ internal sealed partial class WordFormulaService
         FormulaMetadata metadata;
         string latex;
         string? mathMl = null;
-        WordFormulaNumberingDescriptor numbering;
+        bool numberedIntent;
 
         if (sourceKind == WordFormulaHostKind.Omml)
         {
-            numbering =
+            var numbering =
                 WordFormulaNumberingResolver.ResolveLocal(
                     document,
                     host);
             host.Numbering = numbering;
+            numberedIntent = numbering.Numbered;
             var payload =
                 WordFormulaHostSemanticReader.Read(
                     document,
@@ -484,11 +659,6 @@ internal sealed partial class WordFormulaService
         else if (sourceKind ==
                  WordFormulaHostKind.VisualTeX)
         {
-            numbering =
-                WordFormulaNumberingResolver.ResolveLocal(
-                    document,
-                    host);
-            host.Numbering = numbering;
             var payload =
                 WordFormulaHostSemanticReader.Read(
                     document,
@@ -508,18 +678,22 @@ internal sealed partial class WordFormulaService
             // display formula is numbered. Apply will reconcile a metadata-only
             // numbered source inside the same conversion transaction before
             // detaching/replacing it.
-            metadata.Numbered =
-                numbering.Numbered
-                || (host.Display
-                    && metadata.Numbered);
-            metadata.Validate();
+            // Rendering needs intent, not another physical scaffold proof.
+            // Explicit numbered metadata already decides the existing OR rule;
+            // inspect structure only when metadata does not decide it. Exact
+            // numbering ownership is resolved once in write preflight.
+            numberedIntent = host.Display && (metadata.Numbered
+                || WordFormulaNumberingResolver.ResolveLocal(document, host).Numbered);
             latex = metadata.Latex;
         }
         else if (sourceKind ==
                  WordFormulaHostKind.MathType)
         {
-            var semantic =
-                WordMathTypeHostAdapter.ReadSemantic(
+            // Scope capture already read this exact native payload synchronously.
+            // Collapsed local selection still performs the existing exact reader;
+            // Apply re-resolves sources after rendering, independently of this data.
+            var semantic = capturedMathTypeSemantic
+                ?? WordMathTypeHostAdapter.ReadSemantic(
                     _application,
                     document,
                     host);
@@ -528,7 +702,7 @@ internal sealed partial class WordFormulaService
                     semantic.Metadata);
             latex = metadata.Latex;
             mathMl = semantic.MathMl;
-            numbering = host.Numbering;
+            numberedIntent = host.Numbering.Numbered;
         }
         else
         {
@@ -549,12 +723,7 @@ internal sealed partial class WordFormulaService
         metadata.FormulaId = formulaId;
         metadata.DisplayMode =
             host.DisplayMode;
-        metadata.Numbered =
-            numbering.Numbered
-            || (sourceKind ==
-                    WordFormulaHostKind.VisualTeX
-                && host.Display
-                && metadata.Numbered);
+        metadata.Numbered = numberedIntent;
         metadata.Validate();
 
         var semanticFontSize =
@@ -618,16 +787,10 @@ internal sealed partial class WordFormulaService
                 && !string.IsNullOrWhiteSpace(host.FormulaId),
             SourceWithinTable = host.WithinTable,
             DisplayMode = host.DisplayMode,
-            Numbered =
-                numbering.Numbered
-                || (sourceKind == WordFormulaHostKind.VisualTeX
-                    && host.Display
-                    && metadata.Numbered),
-            MathTypeNumberPosition =
-                sourceKind == WordFormulaHostKind.MathType
-                    ? GetMathTypeNumberPositionForRange(
-                        RangeReferenceFromAddress(host.Range))
-                    : targetMathTypeNumberPosition,
+            Numbered = numberedIntent,
+            // Placement is consumed only by a MathType destination. A source
+            // MathType equation cannot also be that destination in this matrix.
+            MathTypeNumberPosition = targetMathTypeNumberPosition,
             FontSizePt = fontSize,
             Metadata = metadata,
         };
@@ -636,49 +799,37 @@ internal sealed partial class WordFormulaService
     private static float? ReadMathTypeInlinePresentationFontSize(
         InlineShape shape)
     {
+        using var metric = WordOperationMetrics.Measure("FormatConversion.MathTypeInline.ReadPresentationFont");
         Range? shapeRange = null;
-        Range? probe = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? result = null;
         Microsoft.Office.Interop.Word.Font? font = null;
-        Document? document = null;
         try
         {
             shapeRange = shape.Range;
-            document = shapeRange.Document;
-            for (var position = shapeRange.Start;
-                 position < shapeRange.End;
-                 position++)
+            fields = shapeRange.Fields;
+            // The object character belongs to the EMBED field's result, not
+            // its instruction. Reading the whole field's font is ambiguous when
+            // those runs differ; scanning every instruction character is wasteful.
+            if (fields.Count == 0)
+                result = shapeRange.Duplicate;
+            else
             {
-                Release(font);
-                font = null;
-                Release(probe);
-                probe = document.Range(
-                    position,
-                    position + 1);
-                if (!string.Equals(
-                        probe.Text,
-                        "\u0001",
-                        StringComparison.Ordinal))
-                    continue;
-
-                font = probe.Font;
-                return TryNormalizeDefinedWordFontSize(
-                        font.Size,
-                        out var size)
-                    ? size
-                    : null;
+                field = fields[1];
+                result = field.Result;
             }
-
-            return null;
-        }
-        catch
-        {
-            return null;
+            var text = result.Text;
+            if (text != "\u0001" && text != "\uFFFC") return null;
+            font = result.Font;
+            return TryNormalizeDefinedWordFontSize(font.Size, out var size) ? size : null;
         }
         finally
         {
             Release(font);
-            Release(probe);
-            Release(document);
+            Release(result);
+            Release(field);
+            Release(fields);
             Release(shapeRange);
         }
     }

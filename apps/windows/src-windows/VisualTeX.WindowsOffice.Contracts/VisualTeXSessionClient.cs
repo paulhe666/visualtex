@@ -120,7 +120,15 @@ internal sealed class CompanionConfiguration
     public string CertificateThumbprint { get; set; } = string.Empty;
     public int CompanionPort { get; set; }
     public int ProtocolVersion { get; set; }
-    public string InstallJsonPath => Path.Combine(AppDataRoot, "office", "install.json");
+    // Acceptance runs can read the existing identity while keeping all runtime
+    // data under a distinct artifact root. Production configuration never sets
+    // these fields and retains its original install.json location/port checks.
+    public string IdentityRoot { get; set; } = string.Empty;
+    public int? IdentityPort { get; set; }
+    public string InstallJsonPath => Path.Combine(
+        string.IsNullOrWhiteSpace(IdentityRoot) ? AppDataRoot : IdentityRoot,
+        "office", "install.json");
+    public int InstallJsonPort => IdentityPort ?? CompanionPort;
 }
 
 public sealed class VisualTeXSessionClient : IDisposable
@@ -146,6 +154,7 @@ public sealed class VisualTeXSessionClient : IDisposable
     private readonly CompanionConfiguration _configuration;
     private readonly VisualTeXCompanionException? _configurationException;
     private readonly HttpClient _http;
+    private readonly HttpClient _renderBatchHttp;
     private readonly SemaphoreSlim _editorPrewarmGate = new(1, 1);
     private readonly SemaphoreSlim _converterPrewarmGate = new(1, 1);
     private string? _installToken;
@@ -208,6 +217,15 @@ public sealed class VisualTeXSessionClient : IDisposable
             Timeout = TimeSpan.FromSeconds(5),
         };
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        // Only the batch result wait may outlive the existing five-second API
+        // timeout. Share the exact TLS/proxy handler without taking ownership.
+        // RenderBatchAsync supplies a caller-owned timeout and cancellation token.
+        _renderBatchHttp = new HttpClient(handler, disposeHandler: false)
+        {
+            BaseAddress = _http.BaseAddress,
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        _renderBatchHttp.DefaultRequestHeaders.Accept.ParseAdd("application/json");
         AppendClientLog("client-created", null, null);
     }
 
@@ -440,6 +458,157 @@ public sealed class VisualTeXSessionClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Submits one ephemeral render operation and awaits its complete inline result.
+    /// No durable sessions are created and no per-item polling is performed.
+    /// The server job is released before this method returns; the returned managed
+    /// export data remains available for subsequent local materialization.
+    /// </summary>
+    public Task<RenderBatchResult> RenderBatchAsync(
+        IReadOnlyList<RenderBatchItemRequest> items,
+        TimeSpan timeout,
+        CancellationToken cancellationToken) =>
+        SendRenderBatchAsync(
+            items,
+            timeout,
+            cancellationToken,
+            (request, isResultWait, token) =>
+            {
+                EnsureAuthorizationHeader();
+                return SendTrackedAsync(() =>
+                    (isResultWait ? _renderBatchHttp : _http).SendAsync(request, token));
+            });
+
+    // The injected sender keeps wire/lifetime tests independent of registry, TLS,
+    // companion startup, Word, and the native renderer.
+    internal static async Task<RenderBatchResult> SendRenderBatchAsync(
+        IReadOnlyList<RenderBatchItemRequest> items,
+        TimeSpan timeout,
+        CancellationToken cancellationToken,
+        Func<HttpRequestMessage, bool, CancellationToken, Task<HttpResponseMessage>> send)
+    {
+        if (items is null) throw new ArgumentNullException(nameof(items));
+        if (send is null) throw new ArgumentNullException(nameof(send));
+        if (items.Count == 0)
+            throw new ArgumentException("A render batch requires at least one item.", nameof(items));
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "A render batch timeout must be positive.");
+
+        // Snapshot the identifiers before the first await so later caller edits
+        // cannot change the correlation used to validate the response.
+        var submitted = new RenderBatchItemRequest[items.Count];
+        var requestedIds = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < items.Count; index++)
+        {
+            var item = items[index];
+            if (item is null || string.IsNullOrWhiteSpace(item.Id) || item.Request is null)
+                throw new ArgumentException("Every render item requires an id and request.", nameof(items));
+            if (!requestedIds.Add(item.Id))
+                throw new ArgumentException($"Duplicate render item id '{item.Id}'.", nameof(items));
+            submitted[index] = new RenderBatchItemRequest { Id = item.Id, Request = item.Request };
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        // The caller owns the id before submission, so even a lost POST response
+        // can be followed by an idempotent DELETE of the accepted server job.
+        var batchId = Guid.NewGuid().ToString("D");
+        var json = JsonSerializer.Serialize(new { id = batchId, items = submitted }, JsonOptions.Default);
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        operation.CancelAfter(timeout);
+        Exception? primaryFailure = null;
+        RenderBatchResult? result = null;
+        try
+        {
+            using (var request = new HttpRequestMessage(
+                       HttpMethod.Post, "/api/v1/app/converter/render-batches")
+                   {
+                       Content = new StringContent(json, Encoding.UTF8, "application/json"),
+                   })
+            using (var response = await send(request, false, operation.Token).ConfigureAwait(false))
+            {
+                await EnsureSuccessAsync(response).ConfigureAwait(false);
+                var created = await DeserializeAsync<CreateRenderBatchResponse>(response).ConfigureAwait(false);
+                if (!string.Equals(created.Id, batchId, StringComparison.Ordinal))
+                    throw new InvalidDataException("VisualTeX render batch submission did not echo the requested job id.");
+            }
+
+            using (var request = new HttpRequestMessage(
+                       HttpMethod.Get,
+                       $"/api/v1/app/converter/render-batches/{Uri.EscapeDataString(batchId)}/result"))
+            using (var response = await send(request, true, operation.Token).ConfigureAwait(false))
+            {
+                await EnsureSuccessAsync(response).ConfigureAwait(false);
+                result = await DeserializeAsync<RenderBatchResult>(response).ConfigureAwait(false);
+            }
+            operation.Token.ThrowIfCancellationRequested();
+            if (!string.Equals(result.Id, batchId, StringComparison.Ordinal))
+                throw new InvalidDataException("VisualTeX render batch response id did not match the submitted job.");
+            if (!string.IsNullOrWhiteSpace(result.Error))
+            {
+                var error = new InvalidOperationException($"VisualTeX render batch failed: {result.Error}");
+                error.Data["RenderBatchResult"] = result;
+                throw error;
+            }
+
+            // Validate the complete one-to-one mapping before handing any formula
+            // to Word. A server may return items in a different completion order.
+            var returned = new Dictionary<string, RenderBatchItemResult>(StringComparer.Ordinal);
+            foreach (var item in result.Items
+                         ?? throw new InvalidDataException("VisualTeX render batch response had no items."))
+            {
+                if (item is null || string.IsNullOrWhiteSpace(item.Id) || item.Session is null)
+                    throw new InvalidDataException("VisualTeX render batch returned an incomplete item.");
+                if (!requestedIds.Contains(item.Id))
+                    throw new InvalidDataException($"VisualTeX render batch returned unexpected item '{item.Id}'.");
+                if (returned.ContainsKey(item.Id))
+                    throw new InvalidDataException($"VisualTeX render batch returned duplicate item '{item.Id}'.");
+                returned.Add(item.Id, item);
+            }
+            var ordered = new RenderBatchItemResult[submitted.Length];
+            for (var index = 0; index < submitted.Length; index++)
+            {
+                if (!returned.TryGetValue(submitted[index].Id, out var item))
+                    throw new InvalidDataException($"VisualTeX render batch omitted item '{submitted[index].Id}'.");
+                ordered[index] = item;
+            }
+            result.Items = ordered;
+            return result;
+        }
+        catch (OperationCanceledException error)
+            when (!cancellationToken.IsCancellationRequested && operation.IsCancellationRequested)
+        {
+            primaryFailure = new TimeoutException("VisualTeX render batch timed out.", error);
+            throw primaryFailure;
+        }
+        catch (Exception error)
+        {
+            primaryFailure = error;
+            throw;
+        }
+        finally
+        {
+            // One idempotent DELETE uses the ordinary transport timeout and is
+            // independent of caller cancellation. Inline exports are already in
+            // managed memory and do not depend on the released server job.
+            try
+            {
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Delete,
+                    $"/api/v1/app/converter/render-batches/{Uri.EscapeDataString(batchId)}");
+                using var response = await send(request, false, CancellationToken.None).ConfigureAwait(false);
+                if (response.StatusCode != HttpStatusCode.NotFound)
+                    await EnsureSuccessAsync(response).ConfigureAwait(false);
+            }
+            catch (Exception cleanupFailure)
+            {
+                if (primaryFailure != null)
+                    throw new AggregateException(
+                        $"VisualTeX render batch '{batchId}' failed and could not be released.",
+                        primaryFailure, cleanupFailure);
+                throw;
+            }
+        }
+    }
+
     public async Task OpenBulkImportAsync(
         string sessionId,
         CancellationToken cancellationToken)
@@ -631,11 +800,29 @@ public sealed class VisualTeXSessionClient : IDisposable
         "office",
         "temp");
 
-    private static string CompanionLogRoot() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "VisualTeX",
-        "office",
-        "logs");
+    private static string CompanionLogRoot() => ResolveCompanionLogRoot(
+        Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_OFFICE_COMPANION_PORT"),
+        Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_OFFICE_APP_DATA_ROOT"));
+
+    internal static string ResolveCompanionLogRoot(
+        string? acceptancePortText,
+        string? acceptanceAppDataRoot)
+    {
+        // Use the same explicit acceptance-mode selector as LoadConfiguration.
+        // A configured test runtime must never write its diagnostics to production.
+        if (int.TryParse(acceptancePortText, NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out var acceptancePort)
+            && acceptancePort is > 0 and <= 65535)
+        {
+            var root = (acceptanceAppDataRoot ?? string.Empty).Trim().Trim('"');
+            if (string.IsNullOrWhiteSpace(root))
+                throw new InvalidDataException("Acceptance diagnostic logging requires APP_DATA_ROOT.");
+            return Path.Combine(root, "office", "logs");
+        }
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VisualTeX", "office", "logs");
+    }
 
     private static string VstoClientLogPath() =>
         Path.Combine(CompanionLogRoot(), "vsto-client.log");
@@ -658,7 +845,9 @@ public sealed class VisualTeXSessionClient : IDisposable
                 NumberStyles.Integer,
                 CultureInfo.InvariantCulture,
                 out var acceptanceProtocol);
-            return new CompanionConfiguration
+            var acceptanceIdentityPortText = Environment.GetEnvironmentVariable(
+                "VISUALTEX_ACCEPTANCE_OFFICE_IDENTITY_PORT");
+            var acceptanceConfiguration = new CompanionConfiguration
             {
                 ExecutablePath = (
                     Environment.GetEnvironmentVariable(
@@ -680,7 +869,19 @@ public sealed class VisualTeXSessionClient : IDisposable
                 ProtocolVersion = acceptanceProtocol > 0
                     ? acceptanceProtocol
                     : 1,
+                IdentityRoot = (
+                    Environment.GetEnvironmentVariable(
+                        "VISUALTEX_ACCEPTANCE_OFFICE_IDENTITY_ROOT")
+                    ?? string.Empty).Trim().Trim('"'),
+                IdentityPort = string.IsNullOrWhiteSpace(acceptanceIdentityPortText)
+                    ? (int?)null
+                    : int.TryParse(acceptanceIdentityPortText, NumberStyles.Integer,
+                        CultureInfo.InvariantCulture, out var identityPort)
+                        ? identityPort
+                        : 0,
             };
+            ValidateAcceptanceIdentityConfiguration(acceptanceConfiguration);
+            return acceptanceConfiguration;
         }
 
         const string registryPath = @"HKCU\Software\VisualTeX\OfficeIntegration";
@@ -726,6 +927,51 @@ public sealed class VisualTeXSessionClient : IDisposable
             throw new VisualTeXCompanionException(diagnostic);
         }
         return configuration;
+    }
+
+    internal static void ValidateAcceptanceIdentityConfiguration(CompanionConfiguration configuration)
+    {
+        if (string.IsNullOrWhiteSpace(configuration.IdentityRoot) && !configuration.IdentityPort.HasValue)
+            return;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(configuration.IdentityRoot)
+                || !configuration.IdentityPort.HasValue
+                || configuration.IdentityPort.Value <= 0
+                || configuration.IdentityPort.Value > 65535
+                || configuration.IdentityPort.Value == configuration.CompanionPort)
+                throw new InvalidDataException(
+                    "Acceptance identity root and a valid source identity port must be supplied together; the runtime port must be distinct.");
+            static bool IsAbsolutePath(string path) => Path.IsPathRooted(path)
+                && Uri.TryCreate(path, UriKind.Absolute, out var uri) && uri.IsFile;
+            if (!IsAbsolutePath(configuration.IdentityRoot)
+                || !IsAbsolutePath(configuration.AppDataRoot))
+                throw new InvalidDataException("Acceptance identity and runtime data roots must be absolute paths.");
+            var identityRoot = Path.GetFullPath(configuration.IdentityRoot)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            var dataRoot = Path.GetFullPath(configuration.AppDataRoot)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            if (identityRoot.StartsWith(dataRoot, StringComparison.OrdinalIgnoreCase)
+                || dataRoot.StartsWith(identityRoot, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Acceptance identity and runtime data roots must not overlap.");
+        }
+        catch (Exception error)
+        {
+            throw new VisualTeXCompanionException(new CompanionHealthDiagnostic
+            {
+                Stage = "configuration",
+                FailureType = "AcceptanceIdentityInvalid",
+                Message = error.Message,
+                ExecutablePath = configuration.ExecutablePath,
+                AppDataRoot = configuration.AppDataRoot,
+                CertificatePath = configuration.CertificatePath,
+                ExpectedCertificateThumbprint = configuration.CertificateThumbprint,
+                CompanionPort = configuration.CompanionPort,
+                ExpectedProtocolVersion = configuration.ProtocolVersion,
+            }, error);
+        }
     }
 
     private static Dictionary<string, string> QueryIntegrationRegistry(
@@ -884,9 +1130,9 @@ public sealed class VisualTeXSessionClient : IDisposable
                 throw new InvalidDataException("installToken is missing or is not a 64-character token.");
             if (!root.TryGetProperty("port", out var port)
                 || !port.TryGetInt32(out var actualPort)
-                || actualPort != _configuration.CompanionPort)
+                || actualPort != _configuration.InstallJsonPort)
                 throw new InvalidDataException(
-                    $"install.json port does not match registry CompanionPort={_configuration.CompanionPort}.");
+                    $"install.json port does not match the configured source identity port={_configuration.InstallJsonPort}.");
             if (!root.TryGetProperty("protocolVersion", out var protocol)
                 || !protocol.TryGetInt32(out var actualProtocol)
                 || actualProtocol != _configuration.ProtocolVersion)
@@ -1146,6 +1392,8 @@ public sealed class VisualTeXSessionClient : IDisposable
         if (string.Equals(_installToken, token, StringComparison.Ordinal)) return;
         _http.DefaultRequestHeaders.Remove("X-VisualTeX-Install-Token");
         _http.DefaultRequestHeaders.Add("X-VisualTeX-Install-Token", token);
+        _renderBatchHttp.DefaultRequestHeaders.Remove("X-VisualTeX-Install-Token");
+        _renderBatchHttp.DefaultRequestHeaders.Add("X-VisualTeX-Install-Token", token);
         _installToken = token;
     }
 
@@ -1369,6 +1617,7 @@ public sealed class VisualTeXSessionClient : IDisposable
         _disposed = true;
         _editorPrewarmGate.Dispose();
         _converterPrewarmGate.Dispose();
+        _renderBatchHttp.Dispose();
         _http.Dispose();
     }
 }

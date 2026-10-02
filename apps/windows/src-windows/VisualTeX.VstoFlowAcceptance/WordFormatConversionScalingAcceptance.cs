@@ -258,7 +258,9 @@ internal static partial class Program
         string sourceMode,
         int count,
         string pngPath,
-        string emfPath)
+        string emfPath,
+        bool numbered = true,
+        bool mixedDisplay = false)
     {
         Word.Application? application = null;
         Word.Document? document = null;
@@ -292,14 +294,22 @@ internal static partial class Program
             {
                 SelectDocumentEnd(
                     document);
+                var displayMode = mixedDisplay && index % 2 == 1 ? "inline" : "block";
+                if (displayMode == "inline")
+                {
+                    var prefix = "INLINE[" + index + "] ";
+                    var inlineStart = application.Selection.Start;
+                    application.Selection.TypeText(prefix + " [END-INLINE]");
+                    application.Selection.SetRange(inlineStart + prefix.Length, inlineStart + prefix.Length);
+                }
                 var mathMl =
                     FormatScalingMathMl(
                         index);
                 var session =
                     CreateOmmlMathTypeAcceptanceSession(
                         mathMl,
-                        "block",
-                        numbered: true,
+                        displayMode,
+                        numbered: numbered && displayMode == "block",
                         sourceMode);
                 session.ExportResult =
                     new OfficeExportDocument

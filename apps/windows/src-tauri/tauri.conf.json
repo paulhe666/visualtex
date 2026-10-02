@@ -12,6 +12,7 @@
   "app": {
     "windows": [],
     "security": {
+      "capabilities": ["default", "silent-ocr-hud"],
       "csp": null
     }
   },

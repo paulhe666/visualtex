@@ -62,6 +62,9 @@ import {
   getOfficeTheme,
   saveOfficeSessionKeepalive,
   takeOfficeConverterBatch,
+  takeOfficeRenderBatch,
+  getOfficeRenderBatch,
+  completeOfficeRenderBatch,
   updateOfficeSession,
   type OfficeExportResult,
   type OfficeFormulaSession,
@@ -1090,6 +1093,8 @@ export function OfficeDialogApp() {
     if (!base?.mathMl) {
       throw new Error("Unable to generate MathML for Office conversion.");
     }
+    // MathType consumes MathML and the vector preview; its writer never reads PNG.
+    if (sourceSession.objectMode === "mathTypeOle") return base;
     const complete = await rasterizeSvgExportResult(base);
     if (!complete?.mathMl || !complete.pngBase64) {
       throw new Error("Unable to generate a complete Office formula preview.");
@@ -1189,6 +1194,59 @@ export function OfficeDialogApp() {
       }
     })();
   }, [session?.id, sessionId, isEn, save, generateSessionExportResult]);
+
+
+  useEffect(() => {
+    if (!IS_VSTO_CONVERT_RUNTIME) return;
+    let disposed = false;
+    let requestInFlight = false;
+    const renderBatch = async (id: string) => {
+      const batch = await getOfficeRenderBatch(id);
+      const outputs: import("../shared/renderBatchContract").OfficeRenderBatchOutput[] = [];
+      for (const item of batch.items) {
+        try {
+          outputs.push({ id: item.id, export: await generateSessionExportResult(item.session) });
+        } catch (reason) {
+          outputs.push({
+            id: item.id,
+            error: readErrorMessage(reason, "Formula format conversion failed"),
+          });
+        }
+      }
+      await completeOfficeRenderBatch(batch.id, outputs);
+    };
+    const drain = async () => {
+      if (disposed || requestInFlight) return;
+      requestInFlight = true;
+      try {
+        while (!disposed) {
+          const next = await takeOfficeRenderBatch();
+          if (!next.id) break;
+          const id = next.id;
+          const run = () => renderBatch(id);
+          // Both converter protocols share one serial MathJax execution queue.
+          batchConversionQueueRef.current = batchConversionQueueRef.current
+            .then(run, run)
+            .catch((reason) => {
+              console.error("Office render batch transport failed", id, reason);
+            });
+        }
+      } catch (reason) {
+        console.error("Office render batch discovery failed", reason);
+      } finally {
+        requestInFlight = false;
+      }
+    };
+    const wake = () => { void drain(); };
+    window.addEventListener("visualtex-office-render-batch", wake);
+    void drain();
+    const timer = window.setInterval(wake, 100);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      window.removeEventListener("visualtex-office-render-batch", wake);
+    };
+  }, [generateSessionExportResult]);
 
   useEffect(() => {
     if (!IS_VSTO_CONVERT_RUNTIME) return;

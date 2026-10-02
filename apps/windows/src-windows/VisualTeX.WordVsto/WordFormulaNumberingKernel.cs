@@ -19,16 +19,19 @@ namespace VisualTeX.WordVsto;
 /// VTEqNum_<FormulaId> remains the stable reference target. A 1x3 table is
 /// compatibility input only, never the body producer for a new VisualTeX host.
 /// </summary>
-internal static class WordFormulaNumberingKernel
+internal static partial class WordFormulaNumberingKernel
 {
     private const string SequenceName = "VisualTeXEquation";
     private const string NumberBookmarkPrefix = "VTEqNum_";
     private const float SideColumnWidthPoints = 60f;
 
-    private sealed class NumberPlan
+    internal sealed class NumberPlan
     {
         internal int Ordinal { get; set; }
         internal string Prefix { get; set; } = string.Empty;
+        internal WordVisualTeXParagraphNumbering.ResolvedNumberPlan? BodyNumbering { get; set; }
+        internal WordVisualTeXParagraphNumbering.WrittenBodyLayout? WrittenBodyLayout { get; set; }
+        internal WordVisualTeXParagraphNumbering.CreatedBodyFields? CreatedBodyFields { get; set; }
     }
 
     internal static WordFormulaHostDescriptor RekeyPastedNumbering(
@@ -121,7 +124,8 @@ internal static class WordFormulaNumberingKernel
         Document document,
         string? requestedFormatId = null,
         WordFormulaHostKind? kindFilter = null,
-        int minimumExpectedNumbered = 0)
+        int minimumExpectedNumbered = 0,
+        VisualTeXConversionNumberPlan? preparedVisualTeX = null)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -133,7 +137,7 @@ internal static class WordFormulaNumberingKernel
             !string.IsNullOrWhiteSpace(requestedFormatId);
         var formatId = EquationNumberFormat.Resolve(
             requestedFormatId
-            ?? WordEquationNumbering.GetEquationNumberFormatId(document)).Id;
+            ?? WordEquationNumberFormatAuthority.Resolve(document)).Id;
         var format = EquationNumberFormat.Resolve(formatId);
 
         if (kindFilter ==
@@ -153,7 +157,8 @@ internal static class WordFormulaNumberingKernel
             return WordVisualTeXParagraphNumbering
                 .RefreshBatchFields(
                     document,
-                    minimumExpectedNumbered);
+                    minimumExpectedNumbered,
+                    preparedVisualTeX: preparedVisualTeX);
         }
 
         WordFormulaHostDescriptor[] hosts;
@@ -321,11 +326,15 @@ internal static class WordFormulaNumberingKernel
                          document,
                          plan.Host))
             {
-                WordVisualTeXParagraphNumbering.Refresh(
-                    document,
-                    plan.Host,
-                    rebuildForCurrentFormat:
-                        changeNumberFormat);
+                // Rebuild changed scaffolds in reverse order so captured host
+                // coordinates remain valid. Continuous body fields need no
+                // reconstruction; evaluate them with the complete field stream
+                // after table labels have their final sequence instructions.
+                if (changeNumberFormat || format.UsesHeading)
+                    WordVisualTeXParagraphNumbering.Refresh(
+                        document,
+                        plan.Host,
+                        rebuildForCurrentFormat: changeNumberFormat);
             }
             else
             {
@@ -345,7 +354,16 @@ internal static class WordFormulaNumberingKernel
                     + formulaId.ToString("N"));
         }
 
-        if (targetBookmarks.Count > 0)
+        if (plans.Any(plan => plan.Host.Kind == WordFormulaHostKind.VisualTeX))
+        {
+            // A body SEQ following a table must see the table's rewritten \r
+            // instruction. Evaluating body fields during the reverse rewrite
+            // leaves their cached results based on the old table ordinals.
+            _ = WordVisualTeXParagraphNumbering.RefreshBatchFields(
+                document,
+                targetBookmarkNames: targetBookmarks);
+        }
+        else if (targetBookmarks.Count > 0)
         {
             _ = WordEquationReferenceFields.UpdateNavigableReferences(
                 document,
@@ -750,7 +768,8 @@ internal static class WordFormulaNumberingKernel
     internal static WordFormulaHostDescriptor AttachCanonical(
         Document document,
         WordFormulaHostDescriptor host,
-        bool deferFinalization = false)
+        bool deferFinalization = false,
+        NumberPlan? preparedNumberPlan = null)
     {
         if (!host.Display)
             throw new InvalidOperationException(
@@ -790,7 +809,8 @@ internal static class WordFormulaNumberingKernel
             return WordVisualTeXParagraphNumbering.Attach(
                 document,
                 host,
-                deferFinalization: true);
+                deferFinalization: true,
+                preparedNumberPlan: preparedNumberPlan);
         }
 
         var current = WordFormulaNumberingResolver.ResolveLocal(document, host);
@@ -809,18 +829,20 @@ internal static class WordFormulaNumberingKernel
                 "The formula uses a retired numbering topology and must be canonicalized before numbering is changed.");
 
         return host.WithinTable
-            ? AttachInsideUserTableCell(document, host)
+            ? AttachInsideUserTableCell(document, host, preparedNumberPlan)
             : WordVisualTeXParagraphNumbering.Attach(
                 document,
                 host,
-                deferFinalization);
+                deferFinalization,
+                preparedNumberPlan);
     }
 
     internal static WordFormulaHostDescriptor DetachCanonical(
         Document document,
         WordFormulaHostDescriptor host,
         WordFormulaNumberingDescriptor? alreadyResolvedNumbering = null,
-        bool sourceWillBeRemovedImmediately = false)
+        bool sourceWillBeRemovedImmediately = false,
+        WordVisualTeXParagraphNumbering.BoundBodyNumber? preparedBody = null)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -852,7 +874,8 @@ internal static class WordFormulaNumberingKernel
                     ? WordVisualTeXParagraphNumbering.Detach(
                         document,
                         host,
-                        sourceWillBeRemovedImmediately)
+                        sourceWillBeRemovedImmediately,
+                        preparedBody)
                     : DetachBodyTabParagraph(
                         document,
                         host),
@@ -1318,7 +1341,8 @@ internal static class WordFormulaNumberingKernel
 
     private static WordFormulaHostDescriptor AttachInsideUserTableCell(
         Document document,
-        WordFormulaHostDescriptor host)
+        WordFormulaHostDescriptor host,
+        NumberPlan? preparedNumberPlan = null)
     {
         Range? hostRange = null;
         Cells? cells = null;
@@ -1365,7 +1389,7 @@ internal static class WordFormulaNumberingKernel
                 throw new InvalidDataException(
                     "A numbered table-cell formula cannot consume user prose.");
 
-            var plan = ResolveNumberPlan(
+            var plan = preparedNumberPlan ?? ResolveNumberPlan(
                 document,
                 hostRange.Start,
                 host.FormulaId!);
@@ -1999,7 +2023,7 @@ internal static class WordFormulaNumberingKernel
                     document,
                     host.Range);
             var refreshedHost =
-                WordFormulaHostResolver.ResolveLocal(
+                WordFormulaHostLookup.ResolveLocal(
                     document,
                     hostRange,
                     host.Kind)
@@ -2311,7 +2335,7 @@ internal static class WordFormulaNumberingKernel
         string formulaId)
     {
         var formatId =
-            WordEquationNumbering.GetEquationNumberFormatId(document);
+            WordEquationNumberFormatAuthority.Resolve(document);
         var format = EquationNumberFormat.Resolve(formatId);
         var scopeStart = int.MinValue;
         var prefix = string.Empty;
@@ -2407,7 +2431,7 @@ internal static class WordFormulaNumberingKernel
         WordFormulaHostKind kind,
         string? expectedFormulaId)
     {
-        var resolved = WordFormulaHostResolver.ResolveLocal(
+        var resolved = WordFormulaHostLookup.ResolveLocal(
                 document,
                 scope,
                 kind)

@@ -148,7 +148,7 @@ internal sealed partial class WordFormulaService
                             target);
 
                         var resolved =
-                            WordFormulaHostResolver.ResolveLocal(
+                            WordFormulaHostLookup.ResolveLocal(
                                 document,
                                 hostRange,
                                 WordFormulaHostKind.Omml)
@@ -343,6 +343,7 @@ internal sealed partial class WordFormulaService
         Document? document = null;
         Range? insertion = null;
         Range? finalRange = null;
+        var nativeCaretFinalized = false;
         try
         {
             document = _application.ActiveDocument
@@ -365,17 +366,31 @@ internal sealed partial class WordFormulaService
                     "create",
                     StringComparison.OrdinalIgnoreCase))
             {
-                insertion =
-                    WordFormulaOperationLocator.ResolveCreateInsertion(
-                        document,
-                        session.SourceObjectId,
-                        session.DisplayMode);
-                resultHost =
-                    WordFormulaHostMutationKernel.Insert(
-                        _application,
-                        document,
-                        insertion,
-                        request);
+                if (request.Kind == WordFormulaHostKind.Omml)
+                {
+                    resultHost = WordFormulaHostMutationKernel.CreateNativeOmml(
+                        _application, document, session.SourceObjectId, request, host =>
+                        {
+                            Range? current = null;
+                            try
+                            {
+                                current = WordFormulaHostSemanticReader.CreateRange(document, host.Range);
+                                // Restoring typing font can alter Word's paragraph
+                                // mark. It is part of this operation, not a later
+                                // independent undo item after formula creation.
+                                RestoreCaretAfterCoreMutation(document, host, current);
+                            }
+                            finally { Release(current); }
+                        });
+                    nativeCaretFinalized = true;
+                }
+                else
+                {
+                    insertion = WordFormulaOperationLocator.ResolveCreateInsertion(
+                        document, session.SourceObjectId, session.DisplayMode);
+                    resultHost = WordFormulaHostMutationKernel.Insert(
+                        _application, document, insertion, request);
+                }
             }
             else
             {
@@ -390,12 +405,23 @@ internal sealed partial class WordFormulaService
                         session.OriginalMetadata?.FormulaId
                             ?? session.FormulaId);
 
-                resultHost =
-                    WordFormulaHostMutationKernel.Replace(
-                        _application,
-                        document,
-                        source,
-                        request);
+                Action<WordFormulaHostDescriptor>? finalizeNativeEdit = null;
+                if (WordNativeOmmlEdit.Supports(source, request))
+                {
+                    finalizeNativeEdit = host =>
+                    {
+                        Range? current = null;
+                        try
+                        {
+                            current = WordFormulaHostSemanticReader.CreateRange(document, host.Range);
+                            RestoreCaretAfterCoreMutation(document, host, current);
+                        }
+                        finally { Release(current); }
+                    };
+                }
+                resultHost = WordFormulaHostMutationKernel.Replace(
+                    _application, document, source, request, finalizeNativeEdit);
+                nativeCaretFinalized = finalizeNativeEdit is not null;
             }
 
             if (!string.IsNullOrWhiteSpace(resultHost.FormulaId))
@@ -412,10 +438,8 @@ internal sealed partial class WordFormulaService
                 WordFormulaHostSemanticReader.CreateRange(
                     document,
                     resultHost.Range);
-            RestoreCaretAfterCoreMutation(
-                document,
-                resultHost,
-                finalRange);
+            if (!nativeCaretFinalized)
+                RestoreCaretAfterCoreMutation(document, resultHost, finalRange);
 
             return Result(
                 session,
@@ -557,7 +581,7 @@ internal sealed partial class WordFormulaService
 
             try
             {
-                if (WordFormulaHostResolver.ResolveLocal(
+                if (WordFormulaHostLookup.ResolveLocal(
                         document,
                         captured,
                         WordFormulaHostKind.Omml)

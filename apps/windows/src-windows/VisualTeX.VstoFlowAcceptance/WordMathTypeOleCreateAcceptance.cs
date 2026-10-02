@@ -1189,9 +1189,10 @@ internal static partial class Program
             catch (InvalidOperationException error)
             {
                 failed = true;
+                Console.WriteLine("[MathType rollback diagnostic] " + error);
                 AssertTrue(
                     error.Message.IndexOf("insert-flat-opc", StringComparison.Ordinal) >= 0
-                    && error.Message.IndexOf("8007000E", StringComparison.OrdinalIgnoreCase) >= 0,
+                    && error.InnerException?.HResult == unchecked((int)0x8007000E),
                     "Injected MathType insertion failure did not preserve stage/HRESULT diagnostics.");
             }
             finally
@@ -1235,9 +1236,10 @@ internal static partial class Program
             catch (InvalidOperationException error)
             {
                 failed = true;
+                Console.WriteLine("[MathType left rollback diagnostic] " + error);
                 AssertTrue(
                     error.Message.IndexOf("relocate-left-mathtype-field-scaffold", StringComparison.Ordinal) >= 0
-                    && error.Message.IndexOf("800A1710", StringComparison.OrdinalIgnoreCase) >= 0,
+                    && error.InnerException?.HResult == unchecked((int)0x800A1710),
                     "Injected left MathType relocation failure did not preserve stage/HRESULT diagnostics.");
             }
             finally

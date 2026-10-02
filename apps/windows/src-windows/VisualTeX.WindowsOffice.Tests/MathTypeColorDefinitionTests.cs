@@ -14,7 +14,6 @@ public sealed class MathTypeColorDefinitionTests
     [Theory]
     [InlineData(Cases)]
     [InlineData("<math><mtable><mtr><mtd><msqrt><mi>x</mi></msqrt></mtd></mtr></mtable></math>")]
-    [InlineData("<math><mroot><mi>x</mi><mn>3</mn></mroot></math>")]
     public void StandalonePaletteIsDefinedAndSurvivesRepeatedNativeEdits(string source)
     {
         var created = MathTypeMtefCodec.CreateEquationNative(source, inline: false);
@@ -24,6 +23,19 @@ public sealed class MathTypeColorDefinitionTests
         Assert.Equal(created.Mtef, edited.Mtef);
         Assert.Equal(MathTypeMtefCodec.SemanticSignature(source),
             MathTypeMtefCodec.SemanticSignature(MathTypeMtefCodec.ReadEquationNativeMathMl(edited.EquationNative)));
+    }
+
+    [Fact]
+    public void RootWithoutColorReferencesDoesNotInventAPalette()
+    {
+        // tmROOT has no COLOR record. The blanket palette assertion predates
+        // the native-prefix fidelity fix and incorrectly demanded unused data.
+        const string source="<math><mroot><mi>x</mi><mn>3</mn></mroot></math>";
+        var native=MathTypeMtefCodec.CreateEquationNative(source,false);
+        Assert.True(native.Mtef.AsSpan(0,native.StructureOffset).IndexOf(Black)<0);
+        var rewritten=MathTypeMtefCodec.RewriteEquationNative(native.EquationNative,source,false);
+        Assert.Equal(native.Mtef,rewritten.Mtef);
+        Assert.Equal(MathTypeMtefCodec.SemanticSignature(source),MathTypeMtefCodec.SemanticSignature(MathTypeMtefCodec.ReadEquationNativeMathMl(rewritten.EquationNative)));
     }
 
     [Fact]

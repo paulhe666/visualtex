@@ -10,6 +10,7 @@ pub mod manifest;
 pub mod platform;
 #[path = "platform/non_macos_powerpoint_native.rs"]
 pub mod powerpoint_native;
+pub mod render_batches;
 pub mod server;
 pub mod sessions;
 pub mod state;

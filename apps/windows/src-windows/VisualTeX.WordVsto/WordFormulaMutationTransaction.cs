@@ -24,7 +24,8 @@ internal static class WordFormulaMutationTransaction
         Document document,
         string name,
         Func<T> mutationAndValidation,
-        WordDocumentEditSnapshot? rollbackSnapshot = null)
+        WordDocumentEditSnapshot? rollbackSnapshot = null,
+        Action? verifyRollback = null)
     {
         if (application is null) throw new ArgumentNullException(nameof(application));
         if (document is null) throw new ArgumentNullException(nameof(document));
@@ -44,10 +45,12 @@ internal static class WordFormulaMutationTransaction
             undo.StartCustomRecord(name);
             started = true;
             _activeDepth++;
+            TraceBoundary(application, "transaction-start");
 
             try
             {
                 var result = mutationAndValidation();
+                TraceBoundary(application, "transaction-before-end");
                 undo.EndCustomRecord();
                 ended = true;
                 return result;
@@ -94,6 +97,16 @@ internal static class WordFormulaMutationTransaction
                                 "Word returned false while undoing the failed formula mutation."));
                 }
 
+                if (verifyRollback is not null)
+                {
+                    try { verifyRollback(); }
+                    catch (Exception verificationError)
+                    {
+                        throw new AggregateException(
+                            "The failed formula mutation did not restore its exact local source evidence.",
+                            primary, verificationError);
+                    }
+                }
                 throw;
             }
         }
@@ -108,6 +121,25 @@ internal static class WordFormulaMutationTransaction
             }
             Release(undo);
         }
+    }
+
+    // Opt-in diagnostics only. Prove whether a Word-native operation ended the
+    // application-wide custom record; never restart or nest it to conceal a split.
+    internal static void TraceBoundary(WordApplication application, string stage)
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("VISUALTEX_VSTO_TRACE_FORMAT_PERF"),
+                "1", StringComparison.Ordinal)) return;
+        UndoRecord? record = null;
+        try
+        {
+            record = application.UndoRecord;
+            WordDoubleClickHook.TraceMessage($"host-undo-boundary stage={stage} recording={record.IsRecordingCustomRecord} level={record.CustomRecordLevel}");
+        }
+        catch (Exception error)
+        {
+            WordDoubleClickHook.TraceMessage($"host-undo-boundary-unavailable stage={stage} error={error.Message}");
+        }
+        finally { Release(record); }
     }
 
     private static bool TryUndoExactlyOne(

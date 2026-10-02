@@ -39,6 +39,8 @@ internal static class MathTypeWordOpenXml
         internal byte[] PreviewWmf { get; set; } = Array.Empty<byte>();
         internal float WidthPt { get; set; }
         internal float HeightPt { get; set; }
+        internal float OriginalWidthPt { get; set; }
+        internal float OriginalHeightPt { get; set; }
     }
 
     internal sealed class OleSnapshot
@@ -152,6 +154,7 @@ internal static class MathTypeWordOpenXml
             .Where(paragraph => string.Concat(
                     paragraph
                         .Descendants(WordNamespace + "instrText")
+                        .Where(IsCurrentNumberFieldElement)
                         .Select(node => node.Value))
                 .IndexOf(
                     "MACROBUTTON MTPlaceRef",
@@ -167,7 +170,14 @@ internal static class MathTypeWordOpenXml
             throw new InvalidDataException(
                 "MathType MTPlaceRef field package unexpectedly includes an OLE object or tab outside the field boundary.");
 
-        var directChildren = owner.Elements().ToList();
+        // This package is read-only preflight evidence for one CURRENT field,
+        // not the outgoing field's revision history. Word can wrap its runs and
+        // bookmarks in ins/moveTo and retain deleted predecessors alongside it.
+        // Validate the current atom stream in original order; the live exact
+        // field replacement below is still performed by Word with its tracking
+        // policy. Never copy historical field markers into the new template or
+        // accept/reject revisions in the user's document.
+        var directChildren = CurrentNumberFieldAtoms(owner.Elements()).ToList();
         var unsupportedNodes = directChildren
             .Where(node => node.Name != WordNamespace + "pPr"
                 && node.Name != WordNamespace + "r"
@@ -250,6 +260,25 @@ internal static class MathTypeWordOpenXml
         owner.Add(paragraphProperties);
         owner.Add(rebuiltField);
         return package.ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static bool IsCurrentNumberFieldElement(XElement element) =>
+        !element.AncestorsAndSelf().Any(node =>
+            node.Name == WordNamespace + "del" || node.Name == WordNamespace + "moveFrom"
+            || node.Name.Namespace == WordNamespace
+                && node.Name.LocalName.EndsWith("PrChange", StringComparison.Ordinal));
+
+    private static IEnumerable<XElement> CurrentNumberFieldAtoms(IEnumerable<XElement> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            if (!IsCurrentNumberFieldElement(node)) continue;
+            if (node.Name == WordNamespace + "ins" || node.Name == WordNamespace + "moveTo")
+            {
+                foreach (var atom in CurrentNumberFieldAtoms(node.Elements())) yield return atom;
+            }
+            else yield return node;
+        }
     }
 
     internal static bool IsVisualTeXNumberAlias(string name) =>
@@ -414,6 +443,10 @@ internal static class MathTypeWordOpenXml
             throw new InvalidDataException("The MathType Flat OPC preview image is empty.");
 
         var (widthPt, heightPt) = ReadShapeSize(document);
+        var (originalWidthPt, originalHeightPt) = ReadOriginalSize(
+            document,
+            widthPt,
+            heightPt);
         return new Fragment
         {
             WordOpenXml = wordOpenXml,
@@ -422,6 +455,8 @@ internal static class MathTypeWordOpenXml
             PreviewWmf = preview,
             WidthPt = widthPt,
             HeightPt = heightPt,
+            OriginalWidthPt = originalWidthPt,
+            OriginalHeightPt = originalHeightPt,
         };
     }
 
@@ -1290,6 +1325,36 @@ internal static class MathTypeWordOpenXml
         return (
             ReadStylePoints(style, "width"),
             ReadStylePoints(style, "height"));
+    }
+
+    private static (float WidthPt, float HeightPt) ReadOriginalSize(
+        XDocument document,
+        float fallbackWidthPt,
+        float fallbackHeightPt)
+    {
+        var wordObject = document.Descendants(WordNamespace + "object").SingleOrDefault();
+        if (wordObject is null)
+            return (fallbackWidthPt, fallbackHeightPt);
+        return (
+            ReadOriginalPoints(
+                wordObject.Attribute(WordNamespace + "dxaOrig"),
+                fallbackWidthPt),
+            ReadOriginalPoints(
+                wordObject.Attribute(WordNamespace + "dyaOrig"),
+                fallbackHeightPt));
+    }
+
+    private static float ReadOriginalPoints(XAttribute? attribute, float fallbackPt)
+    {
+        if (attribute is not null
+            && int.TryParse(
+                attribute.Value,
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var twips)
+            && twips > 0)
+            return twips / 20f;
+        return fallbackPt;
     }
 
     private static float ReadStylePoints(string style, string property)

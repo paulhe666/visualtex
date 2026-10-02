@@ -210,7 +210,7 @@ internal sealed partial class WordFormulaService
             && scope.Start == scope.End)
         {
             var local =
-                WordFormulaHostResolver.ResolveLocal(
+                WordFormulaHostLookup.ResolveLocal(
                     document,
                     scope,
                     sourceKind);

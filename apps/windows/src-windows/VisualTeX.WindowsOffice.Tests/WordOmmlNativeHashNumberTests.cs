@@ -33,17 +33,30 @@ public sealed class WordOmmlNativeHashNumberTests
     }
 
     [Fact]
-    public void DoesNotTreatUnmanagedEquationArrayAsVisualTeXNumbering()
+    public void NativeUserSequenceIsRecognizedWithoutVisualTeXAliases()
     {
         var userEquationArray = BuildNumberedOmml(
             sequenceCode: @" SEQ UserSequence \* ARABIC ",
             includeVisualTeXBookmarks: false);
 
-        Assert.False(
+        Assert.True(
             WordOmmlConverter.HasVisualTeXNativeEquationNumber(userEquationArray));
-        Assert.Equal(
-            WordOmmlConverter.ExtractSingleOMath(userEquationArray),
+        Assert.True(
+            WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(userEquationArray));
+        var semantic = XElement.Parse(
             WordOmmlConverter.StripVisualTeXNativeEquationNumber(userEquationArray));
+        XNamespace math = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+        XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        Assert.Equal("x", string.Concat(semantic.Descendants(math + "t").Select(node => node.Value)));
+        Assert.Empty(semantic.Descendants(math + "eqArr"));
+        Assert.Empty(semantic.Descendants(word + "fldChar"));
+        Assert.Empty(semantic.Descendants(word + "bookmarkStart"));
+
+        // Semantic extraction leaves the captured numbered source intact.
+        var source = XElement.Parse(userEquationArray);
+        Assert.Single(source.Descendants(math + "eqArr"));
+        Assert.Contains(source.Descendants(math + "t"),
+            node => node.Value.Contains("SEQ UserSequence", StringComparison.Ordinal));
     }
 
     [Fact]

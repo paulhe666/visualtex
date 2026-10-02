@@ -97,11 +97,16 @@ public sealed class WordOmmlFingerprintVersionTests
     }
 
     [Fact]
-    public void AChangedEquationCannotUpgradeALegacyIdentity()
+    public void CapturedOwnerRefreshesLegacyFingerprintWithoutClaimingContentEquality()
     {
         var legacy = WordOmmlConverter.ComputeLegacyOmmlFingerprint(Equation("x"));
+        // A stale hash still detects different content. Identity resolution is
+        // separately governed by the captured physical owner, whose current
+        // content is used when refreshing the persisted fingerprint.
         Assert.False(WordOmmlConverter.MatchesStoredOmmlFingerprint(Equation("y"), legacy));
-        Assert.Throws<InvalidDataException>(() => WordOmmlConverter.UpgradeVerifiedOmmlFingerprint(Equation("y"), legacy));
+        var refreshed = WordOmmlConverter.UpgradeVerifiedOmmlFingerprint(Equation("y"), legacy);
+        Assert.Equal(WordOmmlConverter.ComputeOmmlFingerprint(Equation("y")), refreshed);
+        Assert.NotEqual(WordOmmlConverter.ComputeOmmlFingerprint(Equation("x")), refreshed);
         Assert.False(WordOmmlConverter.MatchesStoredOmmlFingerprint(Equation("x"), null));
     }
 
@@ -154,12 +159,14 @@ public sealed class WordOmmlFingerprintVersionTests
     }
 
     [Fact]
-    public void MixedVersionDriftCannotUseAnUnrelatedMatchingEquation()
+    public void MixedVersionOwnerIsNotReboundToAnUnrelatedMatchingEquation()
     {
         var body = new XElement(W + "body", Paragraph(First, "1", Equation("y")), Paragraph(Second, "2", Equation("x")));
-        Assert.Throws<InvalidDataException>(() => WordOmmlNativeSource.IndexConversionEquationIdentities(body,
+        var result = WordOmmlNativeSource.IndexConversionEquationIdentities(body,
             new Dictionary<string, string> { [First] = WordOmmlConverter.ComputeLegacyOmmlFingerprint(Equation("x")) },
-            exactAnchorOwners: new Dictionary<string, int> { [First] = 0 }));
+            exactAnchorOwners: new Dictionary<string, int> { [First] = 0 });
+
+        Assert.Equal((0, true), result[First]);
     }
 
     [Fact]

@@ -17,6 +17,10 @@ internal sealed partial class WordFormulaService
             EnsureWritable(document);
             EnsureEquationFieldResultsVisible(document);
 
+            // Native host discovery, literal-heading resolution and bookmark
+            // evidence are read-only preflight. WordOpenXML must not split the
+            // number-refresh UndoRecord after any fields have been changed.
+            using var nativeNumbers = WordNativeNumberingAdoptionPlan.Prepare(document);
             return ExecuteFieldRefreshEdit(
                 document,
                 "VisualTeX Update Equation Numbers",
@@ -27,11 +31,15 @@ internal sealed partial class WordFormulaService
                     var count =
                         MathTypeEquationNumbering.UpdateEquationNumbers(
                             document);
-                    count +=
-                        WordFormulaNumberingKernel.RefreshCanonicalNumbers(
-                            document);
+                    nativeNumbers.Apply();
+                    count += nativeNumbers.Count;
+                    // Retain the established VisualTeX field-stream updater,
+                    // including standalone canonical sequences and REF refresh.
+                    // It need not rediscover/serialize native OMaths again.
+                    count += WordFormulaNumberingKernel.RefreshCanonicalNumbers(
+                        document, kindFilter: WordFormulaHostKind.VisualTeX);
                     return count;
-                });
+                }, verifyRollback: nativeNumbers.VerifyRollback);
         }
         finally
         {
@@ -62,11 +70,22 @@ internal sealed partial class WordFormulaService
             var resolvedFormat =
                 EquationNumberFormat.Resolve(
                     formatId).Id;
-            var mathTypePlan =
+            using var mathTypePlan =
                 MathTypeEquationNumbering
                     .PrepareEquationNumberFormat(
                         document,
                         resolvedFormat);
+            // The same prepared native section paragraph can be retargeted to
+            // each resolved chapter/section by the existing field writer. Build
+            // it before Undo; creating/editing another Word document mid-record
+            // silently ends the target record even when no XML is read there.
+            using var mathTypeSection = mathTypePlan.Count > 0
+                && EquationNumberFormat.Resolve(resolvedFormat).UsesHeading
+                ? new MathTypeSectionStaging(document, CreateMathTypeSectionFlatOpc(0, 0))
+                : null;
+            using var nativeNumbers = WordNativeNumberingAdoptionPlan.Prepare(
+                document, numberFormat: resolvedFormat);
+            var hasVisualTeXNumbers = WordNumberingFieldCollection.HasVisualTeXNumbering(document);
 
             selection = _application.Selection;
             originalSelection =
@@ -94,7 +113,8 @@ internal sealed partial class WordFormulaService
                                             EnsureExistingMathTypeHeadingScopes(
                                                 document,
                                                 resolvedFormat,
-                                                currentParagraphStarts));
+                                                currentParagraphStarts,
+                                                mathTypeSection?.Paragraph));
                         }
 
                         // Track the user's Selection only after MathType has
@@ -105,11 +125,17 @@ internal sealed partial class WordFormulaService
                             trackingName,
                             originalSelection);
 
-                        count +=
-                            WordFormulaNumberingKernel
-                                .SetCanonicalNumberFormat(
-                                    document,
-                                    resolvedFormat);
+                        WordEquationNumbering.RestoreEquationNumberFormatForConversion(document, resolvedFormat);
+                        nativeNumbers.Apply();
+                        count += nativeNumbers.Count;
+                        // Native number ownership/serialization was prepared
+                        // outside Undo. Do not build an unrelated all-OMath/OLE
+                        // document index merely to discover that there are no VT
+                        // numbered objects. Existing VT layouts keep their own
+                        // family-specific writer and validation when present.
+                        if (hasVisualTeXNumbers)
+                            count += WordFormulaNumberingKernel.RefreshCanonicalNumbers(
+                                document, resolvedFormat, kindFilter: WordFormulaHostKind.VisualTeX);
 
                         Release(tracking);
                         tracking = null;
@@ -132,8 +158,10 @@ internal sealed partial class WordFormulaService
                         WordEquationNumbering
                             .RestoreEquationNumberFormatVariable(
                                 document,
-                                formatVariable));
+                                formatVariable),
+                    verifyRollback: nativeNumbers.VerifyRollback);
 
+            WordEquationNumbering.SetDefaultEquationNumberFormatPreference(resolvedFormat);
             return result;
         }
         finally
@@ -229,7 +257,7 @@ internal sealed partial class WordFormulaService
                             current.Position,
                             current.EndPosition);
                         var currentHost =
-                            WordFormulaHostResolver.ResolveLocal(
+                            WordFormulaHostLookup.ResolveLocal(
                                 document,
                                 currentRange,
                                 WordFormulaHostKind.Omml)

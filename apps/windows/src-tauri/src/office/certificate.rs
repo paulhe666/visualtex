@@ -246,6 +246,23 @@ pub fn certificate_sha1_thumbprint(paths: &OfficePaths) -> Result<String, String
 }
 
 pub fn ensure_office_install(paths: &OfficePaths) -> Result<String, String> {
+    if crate::office::state::isolated_acceptance_runtime() {
+        // Reuse the installed TLS identity and bearer token in place. Never call
+        // ensure_certificate/config, change permissions or write into its root.
+        if !paths.certificate.is_file() || !paths.private_key.is_file()
+            || !paths.certificate_metadata.is_file()
+            || !certificate_metadata_matches_platform(paths)
+        {
+            return Err("Existing Office TLS identity is missing or incompatible; isolated acceptance will not create or repair it".to_string());
+        }
+        let config = read_install_config(&paths.install)
+            .ok_or("Existing Office identity configuration is missing or invalid")?;
+        for path in [&paths.root, &paths.sessions, &paths.recovery] {
+            fs::create_dir_all(path)
+                .map_err(|error| format!("Unable to create acceptance data directory: {error}"))?;
+        }
+        return Ok(config.install_token);
+    }
     fs::create_dir_all(&paths.root)
         .map_err(|error| format!("Unable to create Office data directory: {error}"))?;
     set_mode(&paths.root, 0o700)?;
@@ -261,6 +278,9 @@ pub fn ensure_office_install(paths: &OfficePaths) -> Result<String, String> {
 }
 
 pub fn regenerate_certificate(paths: &OfficePaths) -> Result<(), String> {
+    if crate::office::state::isolated_acceptance_runtime() {
+        return Err("Certificate changes are unavailable in isolated Office acceptance".to_string());
+    }
     for path in [
         &paths.certificate,
         &paths.private_key,

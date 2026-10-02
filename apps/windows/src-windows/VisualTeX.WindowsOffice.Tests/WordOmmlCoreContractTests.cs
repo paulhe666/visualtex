@@ -263,14 +263,77 @@ public sealed class WordOmmlCoreContractTests
     }
 
     [Theory]
+    [InlineData("<msup><mrow/><mn>2</mn></msup><mo>+</mo><mi>x</mi>", "{}^{2}+x", "operator")]
+    [InlineData("<mfrac><msup><mrow/><mn>2</mn></msup><mi>x</mi></mfrac>", @"\frac{{}^{2}}{x}", "fraction")]
+    [InlineData("<mtable><mtr><mtd><msup><mrow/><mn>2</mn></msup></mtd><mtd><mi>x</mi></mtd></mtr></mtable>",
+        @"\begin{matrix}{}^{2} & x\end{matrix}", "matrix")]
+    public void PrescriptConversionNeverStealsAnOperatorOrCrossesArgumentBoundary(
+        string source, string expectedLatex, string context)
+    {
+        // Transformation preserves an intentionally empty base. Only an adjacent
+        // atom in the SAME sequence can become a prescript base. These assertions
+        // prove structure and source recovery, not Word placeholder appearance.
+        var xml = WordOmmlConverter.TransformMathMlToOmml(Mml(source));
+        var tree = XDocument.Parse(xml);
+        XNamespace m = M;
+        XNamespace p = P;
+        var script = Assert.Single(tree.Descendants(m + "sSup"));
+        var basis = Assert.Single(script.Elements(m + "e"));
+        Assert.Empty(basis.Elements());
+        Assert.Equal("", basis.Value);
+        Assert.Equal("2", script.Element(m + "sup")?.Value);
+        Assert.Empty(tree.Descendants(m + "sPre"));
+        Assert.DoesNotContain(tree.Descendants(m + "t"), text =>
+            text.Value.Any(character => character is '\u200B' or '\u200C' or '\u2060' or '\uFEFF'));
+
+        if (context == "operator")
+        {
+            Assert.Same(tree.Root, script.Parent);
+            Assert.Equal("+x", string.Concat(script.ElementsAfterSelf().Select(element => element.Value)));
+        }
+        else if (context == "fraction")
+        {
+            var fraction = Assert.Single(tree.Descendants(m + "f"));
+            Assert.Same(fraction.Element(m + "num"), script.Parent);
+            Assert.Equal("x", fraction.Element(m + "den")?.Value);
+            Assert.Empty(fraction.Element(m + "den")!.Descendants(m + "sSup"));
+        }
+        else
+        {
+            var matrix = Assert.Single(tree.Descendants(m + "m"));
+            var row = Assert.Single(matrix.Elements(m + "mr"));
+            var cells = row.Elements(m + "e").ToArray();
+            Assert.Equal(2, cells.Length);
+            Assert.Same(cells[0], script.Parent);
+            Assert.Equal("x", cells[1].Value);
+            Assert.Empty(cells[1].Descendants(m + "sSup"));
+        }
+
+        var recovered = WordOmmlConverter.TransformOmmlToMathMl(xml, display: true);
+        var recoveredTree = XDocument.Parse(recovered);
+        var recoveredScript = Assert.Single(recoveredTree.Descendants(p + "msup"));
+        var arguments = recoveredScript.Elements().ToArray();
+        Assert.Equal(2, arguments.Length);
+        Assert.Equal(p + "mrow", arguments[0].Name);
+        Assert.Empty(arguments[0].Elements());
+        Assert.Equal("", arguments[0].Value);
+        Assert.Equal("2", arguments[1].Value);
+        Assert.Empty(recoveredTree.Descendants(p + "mprescripts"));
+        Assert.Equal(expectedLatex, MathMlToLatexConverter.Convert(recovered));
+    }
+
+    [Theory]
     [InlineData("<msup><mrow/><mn>2</mn></msup><mo>+</mo><mi>x</mi>")]
     [InlineData("<mfrac><msup><mrow/><mn>2</mn></msup><mi>x</mi></mfrac>")]
     [InlineData("<mtable><mtr><mtd><msup><mrow/><mn>2</mn></msup></mtd><mtd><mi>x</mi></mtd></mtr></mtable>")]
-    public void PrescriptConversionNeverStealsAnOperatorOrCrossesArgumentBoundary(string source)
+    public void BareEmptyScriptBaseRemainsFlaggedByPlaceholderValidator(string source)
     {
-        // An incomplete empty-base script is still rejected. A following operator,
-        // fraction denominator or neighbouring table cell cannot become its base.
-        Assert.Throws<InvalidDataException>(() => WordOmmlConverter.TransformMathMlToOmml(Mml(source)));
+        // Keep the unresolved presentation diagnostic explicit. XML round-trip
+        // equality does not prove that Word will hide this bare editor slot.
+        var xml = WordOmmlConverter.TransformMathMlToOmml(Mml(source));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            WordOmmlConverter.ValidateNoVisibleEmptyOmmlSlots(XDocument.Parse(xml)));
+        Assert.Equal("Office OMML contains a visible empty e slot inside sSup.", error.Message);
     }
 
     [Theory]

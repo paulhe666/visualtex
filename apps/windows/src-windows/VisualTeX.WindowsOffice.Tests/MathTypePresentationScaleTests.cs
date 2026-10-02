@@ -4,6 +4,45 @@ namespace VisualTeX.WindowsOffice.Tests;
 
 public sealed class MathTypePresentationScaleTests
 {
+    [Theory]
+    [InlineData(121.5f, 95f, 97f)]
+    [InlineData(24.3f, 27f, 27f)]
+    [InlineData(188.75f, 160f, 160f)]
+    [InlineData(60.6f, 73f, 73f)]
+    [InlineData(51.95f, 52f, 64f)]
+    public void ExistingMathTypeEditPreservesIntrinsicToDisplayedExtentRatio(
+        float sourceOriginalExtent,
+        float sourceDisplayedExtent,
+        float targetDisplayedExtent)
+    {
+        var actual = WordFormulaService.CalculateMathTypePreservedOriginalExtent(
+            sourceOriginalExtent,
+            sourceDisplayedExtent,
+            targetDisplayedExtent);
+
+        Assert.Equal(
+            targetDisplayedExtent * sourceOriginalExtent / sourceDisplayedExtent,
+            actual,
+            4);
+    }
+
+    [Theory]
+    [InlineData(0f, 95f, 97f)]
+    [InlineData(121.5f, 0f, 97f)]
+    [InlineData(121.5f, 95f, 0f)]
+    public void InvalidOriginalExtentRelationshipFallsBackToTargetDisplayExtent(
+        float sourceOriginalExtent,
+        float sourceDisplayedExtent,
+        float targetDisplayedExtent)
+    {
+        Assert.Equal(
+            targetDisplayedExtent,
+            WordFormulaService.CalculateMathTypePreservedOriginalExtent(
+                sourceOriginalExtent,
+                sourceDisplayedExtent,
+                targetDisplayedExtent));
+    }
+
     [Fact]
     public void PreservesLegacyInlineMathTypeHorizontalAndVerticalScale()
     {
@@ -17,26 +56,42 @@ public sealed class MathTypePresentationScaleTests
     }
 
     [Fact]
-    public void KeepsWordOriginalExtentAlignedWithScaledInlinePresentation()
+    public void KeepsWordOriginalExtentRelationshipWhileNativePresentationRescales()
     {
         const float nativeWidth = 79f;
         const float nativeHeight = 16f;
-        var widthScale = WordFormulaService.CalculateMathTypeNativePresentationScale(28.95f, 33f);
-        var heightScale = WordFormulaService.CalculateMathTypeNativePresentationScale(12.4f, 14f);
+        const float sourceDisplayedWidth = 28.95f;
+        const float sourceDisplayedHeight = 12.4f;
+        const float sourceOriginalWidth = 36f;
+        const float sourceOriginalHeight = 11.25f;
+        var widthScale = WordFormulaService.CalculateMathTypeNativePresentationScale(
+            sourceDisplayedWidth,
+            33f);
+        var heightScale = WordFormulaService.CalculateMathTypeNativePresentationScale(
+            sourceDisplayedHeight,
+            14f);
 
         var displayedWidth = nativeWidth * widthScale;
         var displayedHeight = nativeHeight * heightScale;
+        var originalWidth = WordFormulaService.CalculateMathTypePreservedOriginalExtent(
+            sourceOriginalWidth,
+            sourceDisplayedWidth,
+            displayedWidth);
+        var originalHeight = WordFormulaService.CalculateMathTypePreservedOriginalExtent(
+            sourceOriginalHeight,
+            sourceDisplayedHeight,
+            displayedHeight);
         var geometry = WordFormulaService.CalculateMathTypeWordPresentationGeometry(
             "width:28.95pt;height:12.4pt",
             displayedWidth,
             displayedHeight,
-            displayedWidth,
-            displayedHeight);
+            originalWidth,
+            originalHeight);
 
         Assert.Equal(69.30f, displayedWidth, 2);
         Assert.Equal(14.17f, displayedHeight, 2);
-        Assert.Equal(1386, geometry.OriginalWidthTwips);
-        Assert.Equal(283, geometry.OriginalHeightTwips);
+        Assert.Equal((int)Math.Round(originalWidth * 20f), geometry.OriginalWidthTwips);
+        Assert.Equal((int)Math.Round(originalHeight * 20f), geometry.OriginalHeightTwips);
     }
 
     [Fact]

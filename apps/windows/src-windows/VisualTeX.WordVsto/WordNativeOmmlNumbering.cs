@@ -73,10 +73,11 @@ internal static class WordNativeOmmlNumbering
                 || exact.End != hostRange.End)
                 return false;
 
-            var xml = exact.WordOpenXML ?? string.Empty;
-            if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
-                    xml,
-                    formulaId: null))
+            // Numbering is a live OMath/Field topology, not an XML export result.
+            // Word can omit an exact OMath at a serialization boundary; that
+            // must never turn an ordinary edit into a number-attachment edit.
+            numberRange = TryResolveNumberContentRange(exact);
+            if (numberRange is null)
                 return false;
 
             fields = exact.Fields;
@@ -84,6 +85,8 @@ internal static class WordNativeOmmlNumbering
             {
                 Release(code); code = null;
                 Release(field); field = fields[index];
+                if (!WordNumberingFieldCollection.IsCurrentField(field))
+                    continue;
                 code = field.Code.Duplicate;
                 var instruction = code.Text ?? string.Empty;
 
@@ -115,15 +118,9 @@ internal static class WordNativeOmmlNumbering
             if (styleRef is not null)
                 styleResult = styleRef.Result.Duplicate;
 
-            var start = styleResult is null
-                ? sequenceResult.Start
-                : Math.Min(styleResult.Start, sequenceResult.Start);
-            var end = sequenceResult.End;
-            numberRange = CreateStoryRange(
-                document,
-                exact.StoryType,
-                start,
-                end);
+            if (sequenceResult.Start < numberRange.Start || sequenceResult.End > numberRange.End
+                || (styleResult is not null && (styleResult.Start < numberRange.Start || styleResult.End > numberRange.End)))
+                return false;
 
             descriptor = new WordFormulaNumberingDescriptor
             {
@@ -136,10 +133,6 @@ internal static class WordNativeOmmlNumbering
                 NumberRange = Address(numberRange),
             };
             return true;
-        }
-        catch
-        {
-            return false;
         }
         finally
         {
@@ -316,25 +309,14 @@ internal static class WordNativeOmmlNumbering
 
         var format =
             EquationNumberFormat.Resolve(
-                WordEquationNumbering
-                    .GetEquationNumberFormatId(document));
-        var nativeHeadingLevel = 0;
+                WordEquationNumberFormatAuthority.Resolve(
+                    document));
+        var nativeHeadingLevel = format.UsesHeading ? format.HeadingLevel : 0;
+        string? literalHeadingPrefix = null;
         if (format.UsesHeading)
         {
-            var scopes =
-                WordEquationNumbering
-                    .CaptureHeadingScopesAtPositions(
-                        document,
-                        format.Id,
-                        new[] { position });
-            if (scopes.TryGetValue(
-                    position,
-                    out var scope)
-                && scope.ScopeStart != int.MinValue)
-            {
-                nativeHeadingLevel =
-                    format.HeadingLevel;
-            }
+            var scope = WordEquationNumbering.ResolveHeadingScopeAtPosition(document, position, format.Id);
+            literalHeadingPrefix = ResolveLiteralHeadingPrefix(document, scope);
         }
 
         return WordOmmlConverter.BuildWordNativeNumberedOmml(
@@ -344,7 +326,25 @@ internal static class WordNativeOmmlNumbering
             nativeHeadingLevel,
             nativeHeadingLevel > 0
                 ? format.Separator
-                : string.Empty);
+                : string.Empty,
+            literalHeadingPrefix: literalHeadingPrefix);
+    }
+
+    internal static string? ResolveLiteralHeadingPrefix(
+        Document document, (int ScopeStart, int ScopeEnd, string NumberText) scope)
+    {
+        // The document numbering authority supplies 0 / 0.0 before the first
+        // heading. Only a real automatic list heading is readable by STYLEREF.
+        if (scope.ScopeStart == int.MinValue) return scope.NumberText;
+        Range? heading = null;
+        ListFormat? list = null;
+        try
+        {
+            heading = document.Range(scope.ScopeStart, scope.ScopeEnd);
+            list = heading.ListFormat;
+            return list.ListType == WdListType.wdListNoNumbering ? scope.NumberText : null;
+        }
+        finally { Release(list); Release(heading); }
     }
 
     internal static void UpdateNativeFields(
@@ -374,6 +374,8 @@ internal static class WordNativeOmmlNumbering
                 {
                     Release(code); code = null;
                     Release(field); field = fields[index];
+                    if (!WordNumberingFieldCollection.IsCurrentField(field))
+                        continue;
                     code = field.Code.Duplicate;
                     var instruction = code.Text ?? string.Empty;
                     var isStyleRef =
@@ -399,7 +401,7 @@ internal static class WordNativeOmmlNumbering
         }
     }
 
-    private static WordFormulaHostDescriptor RefreshCanonicalNativeFields(
+    internal static WordFormulaHostDescriptor RefreshCanonicalNativeFields(
         Document document,
         WordFormulaHostDescriptor host)
     {
@@ -447,6 +449,8 @@ internal static class WordNativeOmmlNumbering
                 code = null;
                 Release(field);
                 field = fields[index];
+                if (!WordNumberingFieldCollection.IsCurrentField(field))
+                    continue;
                 code = field.Code.Duplicate;
                 var instruction =
                     code.Text
@@ -498,18 +502,10 @@ internal static class WordNativeOmmlNumbering
             exact =
                 math.Range.Duplicate;
 
-            var numberStart =
-                styleResult is null
-                    ? sequenceResult.Start
-                    : Math.Min(
-                        styleResult.Start,
-                        sequenceResult.Start);
-            numberRange =
-                CreateStoryRange(
-                    document,
-                    exact.StoryType,
-                    numberStart,
-                    sequenceResult.End);
+            numberRange = ResolveNumberContentRange(exact);
+            if (sequenceResult.Start < numberRange.Start || sequenceResult.End > numberRange.End
+                || (styleResult is not null && (styleResult.Start < numberRange.Start || styleResult.End > numberRange.End)))
+                throw new InvalidDataException("The native number fields escaped their exact delimiter argument.");
 
             var refreshed =
                 new WordFormulaHostDescriptor
@@ -554,6 +550,77 @@ internal static class WordNativeOmmlNumbering
             Release(math);
             Release(maths);
             Release(liveRange);
+        }
+    }
+
+    // Resolve Word's native number ARGUMENT, not an arithmetic span starting at
+    // the first field result. A literal chapter prefix is valid current content
+    // before SEQ and must be part of native REF bookmarks as well. Using OMath's
+    // structural COM model avoids XML serialization inside the undo transaction.
+    internal static Range ResolveNumberContentRange(Range equation) =>
+        TryResolveNumberContentRange(equation)
+        ?? throw new InvalidDataException("The equation has no native #(number) host.");
+
+    internal static Range? TryResolveNumberContentRange(Range equation)
+    {
+        OMaths? maths = null;
+        OMath? math = null;
+        OMathFunctions? roots = null;
+        OMathFunction? arrayFunction = null;
+        OMathEqArray? array = null;
+        OMathArgs? entries = null;
+        OMath? body = null;
+        OMathFunctions? functions = null;
+        OMathFunction? delimiterFunction = null;
+        OMathDelim? delimiter = null;
+        OMathArgs? arguments = null;
+        OMath? number = null;
+        Range? range = null;
+        Range? arrayRange = null;
+        Range? bodyRange = null;
+        Range? delimiterRange = null;
+        Range? separator = null;
+        try
+        {
+            maths = equation.OMaths;
+            if (maths.Count != 1) return null;
+            math = maths[1];
+            roots = math.Functions;
+            if (roots.Count != 1) return null;
+            arrayFunction = roots[1];
+            if (arrayFunction.Type != WdOMathFunctionType.wdOMathFunctionEqArray)
+                return null;
+            arrayRange = arrayFunction.Range;
+            if (arrayRange.Start != equation.Start || arrayRange.End != equation.End) return null;
+            array = arrayFunction.EqArray;
+            entries = array.E;
+            if (entries.Count != 1) return null;
+            body = entries.Item(1);
+            bodyRange = body.Range;
+            functions = body.Functions;
+            if (functions.Count < 1) return null;
+            delimiterFunction = functions[functions.Count];
+            if (delimiterFunction.Type != WdOMathFunctionType.wdOMathFunctionDelim)
+                return null;
+            delimiterRange = delimiterFunction.Range;
+            if (delimiterRange.End != bodyRange.End || delimiterRange.Start <= bodyRange.Start) return null;
+            separator = bodyRange.Duplicate;
+            separator.SetRange(delimiterRange.Start - 1, delimiterRange.Start);
+            if (separator.Text != "#") return null;
+            delimiter = delimiterFunction.Delim;
+            if (delimiter.BegChar != '(' || delimiter.EndChar != ')') return null;
+            arguments = delimiter.E;
+            if (arguments.Count != 1) return null;
+            number = arguments.Item(1);
+            range = number.Range;
+            return range.Duplicate;
+        }
+        finally
+        {
+            Release(separator); Release(delimiterRange); Release(bodyRange); Release(arrayRange);
+            Release(range); Release(number); Release(arguments); Release(delimiter);
+            Release(delimiterFunction); Release(functions); Release(body); Release(entries);
+            Release(array); Release(arrayFunction); Release(roots); Release(math); Release(maths);
         }
     }
 
@@ -647,7 +714,7 @@ internal static class WordNativeOmmlNumbering
                 replacement);
 
             var refreshed =
-                WordFormulaHostResolver.ResolveLocal(
+                WordFormulaHostLookup.ResolveLocal(
                     document,
                     replacement,
                     WordFormulaHostKind.Omml)

@@ -27,11 +27,21 @@ public sealed class MathTypeFenceRoundTripTests
     }
 
     [Fact]
-    public void UnmarkedEmptyOperatorIsNotSilentlyDiscarded()
+    public void EmptyTokenAddsNoGlyphButCannotInventOrEraseARealClosingFence()
     {
+        // MathML 3 section3.2.1 permits zero-character tokens: their glyph
+        // content is empty, not an unspecified missing operator. This older
+        // assertion incorrectly required an empty token to carry mathematics.
+        // Preserve the real invariant: a nonempty closing fence is distinct.
         const string source = "<math><mrow><mo>{</mo><mi>x</mi><mo/></mrow></math>";
-        const string missingOperator = "<math><mrow><mo>{</mo><mi>x</mi></mrow></math>";
-        Assert.NotEqual(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(missingOperator));
+        const string withoutEmpty = "<math><mrow><mo>{</mo><mi>x</mi></mrow></math>";
+        const string withClosing = "<math><mrow><mo>{</mo><mi>x</mi><mo>}</mo></mrow></math>";
+        Assert.Equal(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(withoutEmpty));
+        Assert.NotEqual(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(withClosing));
+        var native=MathTypeMtefCodec.CreateEquationNative(source,false);
+        var actual=MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
+        Assert.Equal(MathTypeMtefCodec.SemanticSignature(source),MathTypeMtefCodec.SemanticSignature(actual));
+        Assert.DoesNotContain("}",XElement.Parse(actual).Value);
     }
 
     [Fact]

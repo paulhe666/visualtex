@@ -663,7 +663,16 @@ internal static class MathMlToLatexConverter
     private static string ConvertTokenElement(XElement element)
     {
         var token = element.Value.Trim();
-        var variant = ((string?)element.Attribute("mathvariant") ?? string.Empty).Trim();
+        var variant = element.AncestorsAndSelf()
+            .Select(node => ((string?)node.Attribute("mathvariant"))?.Trim())
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+        // A single-scalar mi is italic by MathML default, including symbols
+        // whose TeX command has an intrinsically upright default (angle/nabla).
+        // Ordinary Latin and Greek retain their existing identifier paths.
+        if (variant.Length == 0 && element.Name.LocalName == "mi"
+            && (token.Length == 1 || token.Length == 2 && char.IsSurrogatePair(token, 0))
+            && char.GetUnicodeCategory(token, 0) == System.Globalization.UnicodeCategory.MathSymbol)
+            variant = "italic";
         var nativeCharacterStyle = int.TryParse(
             (string?)element.Attribute("data-mtef-character-style"),
             out var parsedNativeCharacterStyle)
@@ -676,6 +685,8 @@ internal static class MathMlToLatexConverter
             // even though its server-exported MathML omits that presentation.
             // The direct MTEF reader carries the style as mathvariant; do not
             // return the named command before applying it.
+            if (variant.IndexOf("bold-italic", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathbfit{" + namedOperator.Trim() + "}";
             if (variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\boldsymbol{" + namedOperator.Trim() + "}";
             if (variant.IndexOf("italic", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -692,7 +703,8 @@ internal static class MathMlToLatexConverter
                 nativeCharacterStyle,
                 variant,
                 greekIdentifier: false);
-        if (element.Name.LocalName == "mi" && IsLatinIdentifier(token))
+        if (element.Name.LocalName == "mi" && IsLatinIdentifier(token)
+            || element.Name.LocalName == "mn")
         {
             var escaped = EscapeMathIdentifier(token);
             string? converted = null;
@@ -716,6 +728,9 @@ internal static class MathMlToLatexConverter
                 converted = @"\mathbfit{" + escaped + "}";
             else if (variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0)
                 converted = @"\mathbf{" + escaped + "}";
+            else if (element.Name.LocalName == "mn"
+                && string.Equals(variant, "italic", StringComparison.OrdinalIgnoreCase))
+                converted = @"\mathit{" + escaped + "}";
             else if (explicitlyUpright)
                 converted = @"\mathrm{" + escaped + "}";
             if (converted is not null)
@@ -725,34 +740,53 @@ internal static class MathMlToLatexConverter
                     variant,
                     greekIdentifier: false);
         }
-        if (element.Name.LocalName == "mi"
-            && IsGreekIdentifier(token)
-            && (variant.IndexOf("bold-italic", StringComparison.OrdinalIgnoreCase) >= 0
-                || variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0))
-        {
-            // MathJax represents \boldsymbol/\bm lower Greek as bold-italic
-            // and upper Greek as bold. These identifiers are deliberately not
-            // part of IsLatinIdentifier(), so preserve the variant around the
-            // already-canonical Greek command instead of dropping it.
-            return @"\boldsymbol{" + ConvertToken(token).Trim() + "}";
-        }
-        var plain = ConvertToken(token);
         if (element.Name.LocalName == "mi" && IsGreekIdentifier(token))
-        {
-            return ApplyNativeMathTypeCharacterStyle(
-                plain,
-                nativeCharacterStyle,
-                variant,
-                greekIdentifier: true);
-        }
+            return ConvertGreekIdentifier(element, token, nativeCharacterStyle);
+        var plain = ConvertToken(token);
         if (element.Name.LocalName is "mi" or "mo")
         {
+            if (variant.IndexOf("bold-italic", StringComparison.OrdinalIgnoreCase) >= 0)
+                return @"\mathbfit{" + plain.Trim() + "}";
             if (variant.IndexOf("bold", StringComparison.OrdinalIgnoreCase) >= 0)
-                return @"\boldsymbol{" + plain.Trim() + "}";
+                return @"\mathbf{" + plain.Trim() + "}";
             if (variant.IndexOf("italic", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathit{" + plain.Trim() + "}";
         }
         return plain;
+    }
+
+    private static string ConvertGreekIdentifier(
+        XElement element, string token, int nativeCharacterStyle)
+    {
+        // Greek control sequences carry TeX's own font defaults: for example
+        // \mathrm{\alpha} remains italic in the production frontend. A styled
+        // Unicode identifier participates in the requested mathematical alphabet
+        // instead. Preserve the requested style before choosing source spelling.
+        var variant = element.AncestorsAndSelf()
+            .Select(node => ((string?)node.Attribute("mathvariant"))?.Trim())
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
+            ?.ToLowerInvariant() ?? string.Empty;
+        variant = nativeCharacterStyle switch
+        {
+            1 => "bold",
+            2 => "italic",
+            3 => "bold-italic",
+            _ => variant,
+        };
+        if (variant is "normal" or "upright")
+            return @"\mathrm{" + token + "}";
+        if (variant == "italic")
+            return @"\mathit{" + token + "}";
+        if (variant == "bold")
+            return token.All(char.IsUpper) && TokenMap.TryGetValue(token, out var upperCommand)
+                ? @"\boldsymbol{" + upperCommand.Trim() + "}"
+                : @"\mathbf{" + token + "}";
+        if (variant == "bold-italic")
+            return token.All(char.IsLower)
+                ? @"\boldsymbol{" + ConvertToken(token).Trim() + "}"
+                : @"\boldsymbol{\mathit{" + token + "}}";
+        return ApplyNativeMathTypeCharacterStyle(
+            ConvertToken(token), nativeCharacterStyle, variant, greekIdentifier: true);
     }
 
     private static string ApplyNativeMathTypeCharacterStyle(
@@ -884,16 +918,13 @@ internal static class MathMlToLatexConverter
         var token = value.Trim();
         if (TokenMap.TryGetValue(token, out var mapped)) return mapped;
         if (token.Length == 0) return string.Empty;
-        return token switch
-        {
-            "{" => @"\{",
-            "}" => @"\}",
-            "#" => @"\#",
-            "%" => @"\%",
-            "&" => @"\&",
-            "_" => @"\_",
-            _ => token,
-        };
+        // MathML token text is literal data, not a TeX fragment. MTEF can
+        // legitimately group a percent with digits (one <mn>100%</mn>).
+        // Escaping only when the entire token equalled "%" turned its suffix
+        // into a TeX comment on the next edit. Serialize every literal character
+        // before combining tokens; structural commands/alignments are emitted
+        // by their own nodes and TokenMap above, never escaped a second time.
+        return EscapeMathIdentifier(token);
     }
 
     private static string Delimiter(string value, bool left)

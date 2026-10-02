@@ -341,7 +341,6 @@ public sealed partial class ThisAddIn
 
         var rendered = new Dictionary<string, RenderedWordBulkFormulaTemplate>(StringComparer.Ordinal);
         var prepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal);
-        var converterSessionIds = new List<string>();
         WordFormulaService.WordViewState? originalViewState = null;
         try
         {
@@ -431,7 +430,7 @@ public sealed partial class ThisAddIn
                 string Key,
                 WordBulkRun Run,
                 WordFormulaFormatConversionTarget Target,
-                OfficeSessionDocument Session)>();
+                CreateVstoSessionRequest Request)>();
 
             foreach (var target in plan.Targets)
             {
@@ -454,40 +453,31 @@ public sealed partial class ThisAddIn
                     continue;
                 if (!pendingKeys.Add(key)) continue;
 
-                var conversionSession = await CreateBulkFormulaConversionSessionAsync(
-                        client,
-                        run,
-                        targetMode,
-                        plan.DocumentId,
-                        target.FontSizePt,
-                        lifetime.Token)
-                    .ConfigureAwait(false);
-                pending.Add((key, run, target, conversionSession));
-                converterSessionIds.Add(conversionSession.Id);
+                var request = CreateBulkFormulaConversionRequest(
+                    run, targetMode, plan.DocumentId, target.FontSizePt);
+                pending.Add((key, run, target, request));
             }
 
             if (pending.Count > 0)
             {
                 WordDoubleClickHook.TraceMessage(
-                    $"format-conversion-render-start sourceMode={sourceMode} targetMode={targetMode} sessions={pending.Count}");
-                await client.OpenConverterBatchAsync(
-                        pending.Select(item => item.Session.Id).ToList(),
-                        lifetime.Token)
-                    .ConfigureAwait(false);
-                foreach (var item in pending)
+                    $"format-conversion-render-start sourceMode={sourceMode} targetMode={targetMode} formulas={pending.Count}");
+                var batch = await client.RenderBatchAsync(
+                    pending.Select(item => new RenderBatchItemRequest
+                    { Id = item.Run.Id, Request = item.Request }).ToList(),
+                    TimeSpan.FromMinutes(3), lifetime.Token).ConfigureAwait(false);
+                for (var index = 0; index < pending.Count; index++)
                 {
-                    var completed = await client.WaitForCommitAsync(
-                            item.Session.Id,
-                            TimeSpan.FromMinutes(3),
-                            lifetime.Token)
-                        .ConfigureAwait(false);
+                    var item = pending[index];
+                    var completed = batch.Items[index].Session;
                     rendered[item.Key] = MaterializeBulkFormulaTemplate(
                         client,
                         item.Run,
                         targetMode,
-                        completed);
+                        completed,
+                        materializePreview: targetMode == FormulaOleContract.NativeOleMode);
                     WordDoubleClickHook.TraceMessage(
-                        $"format-conversion-rendered sourceMode={sourceMode} targetMode={targetMode} sessionId={item.Session.Id} status={completed.Status}");
+                        $"format-conversion-rendered sourceMode={sourceMode} targetMode={targetMode} itemId={item.Run.Id} status={completed.Status}");
                 }
             }
 
@@ -574,11 +564,12 @@ public sealed partial class ThisAddIn
                             target.DisplayMode,
                             "inline",
                             StringComparison.OrdinalIgnoreCase);
-                        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
-                            mathMl,
-                            inline,
-                            formula.Session.FontSizePt);
-                        nativePreviewInputs[target.Id] = generated.Mtef;
+                        var standalone = WordFormulaService.PrepareStandaloneMathTypeOleData(
+                            mathMl, inline, formula.Session.FontSizePt, target.Latex);
+                        formula.MathTypeStandaloneGenerated = standalone.Generated;
+                        formula.MathTypeStandaloneCompoundFile = standalone.CompoundFile;
+                        formula.MathTypeStandaloneSemanticSignature = standalone.SemanticSignature;
+                        nativePreviewInputs[target.Id] = standalone.Generated.Mtef;
                     }
 
                     var nativePreviewRoot = prepared.Values
@@ -635,14 +626,6 @@ public sealed partial class ThisAddIn
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-word-apply-finished sourceMode={sourceMode} targetMode={targetMode} converted={result.FormulaCount} failed={result.FailedFormulaCount}");
 
-            // Converter sessions are disposable render workspaces. Word has already
-            // committed the document result, so SessionStore cleanup must not keep
-            // the Ribbon operation/gate blocked if the Companion mutex is busy.
-            _ = CleanupConverterSessionsBestEffortAsync(
-                client,
-                converterSessionIds.ToArray(),
-                lifetime.Token);
-
             if (result.FailedFormulaCount == 0)
             {
                 WordDoubleClickHook.TraceMessage(
@@ -678,13 +661,13 @@ public sealed partial class ThisAddIn
         }
         catch (OperationCanceledException error)
         {
-            var reported = await RecordSessionFailureAsync(client, converterSessionIds, error).ConfigureAwait(false);
+            var reported = error;
             WordDoubleClickHook.TraceMessage($"format-conversion-cancelled error={reported}");
             SetStatus(ReferenceEquals(reported, error) ? "公式格式转换已取消。" : reported.Message);
         }
         catch (Exception error)
         {
-            var reported = await RecordSessionFailureAsync(client, converterSessionIds, error).ConfigureAwait(false);
+            var reported = error;
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-failed sourceMode={sourceMode} targetMode={targetMode} error={reported}");
             var failureMessage = OfficePluginLanguage.FormatOperationError(

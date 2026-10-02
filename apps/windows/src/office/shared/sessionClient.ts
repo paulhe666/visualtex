@@ -14,6 +14,8 @@ import {
   decodePreparedPowerPointCommit,
 } from "./sessionPayloadValidation";
 
+import { decodeNextOfficeRenderBatch, decodeOfficeRenderBatch, type OfficeRenderBatchOutput } from "./renderBatchContract";
+
 export type OfficeSessionMode = "create" | "edit";
 export type OfficeHost = "word" | "powerpoint";
 export type MathTypeNumberPosition = "left" | "right";
@@ -232,6 +234,19 @@ export function getOfficePreferences() {
     "/api/v1/preferences",
     {},
     decodeOfficePreferences,
+  );
+}
+
+export function takeOfficeRenderBatch() {
+  return requestJson("/api/v1/app/converter/next-render-batch", {}, decodeNextOfficeRenderBatch);
+}
+export function getOfficeRenderBatch(id: string) {
+  return requestJson(`/api/v1/app/converter/render-batches/${encodeURIComponent(id)}`, {}, decodeOfficeRenderBatch);
+}
+export function completeOfficeRenderBatch(id: string, items: OfficeRenderBatchOutput[]) {
+  return requestJson<void>(
+    `/api/v1/app/converter/render-batches/${encodeURIComponent(id)}/complete`,
+    { method: "POST", body: JSON.stringify({ items }) },
   );
 }
 

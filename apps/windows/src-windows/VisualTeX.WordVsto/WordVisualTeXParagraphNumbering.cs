@@ -19,19 +19,91 @@ namespace VisualTeX.WordVsto;
 /// is required.  A VTEqNum_* bookmark is created lazily only when the user inserts
 /// a body reference to this equation.
 /// </summary>
-internal static class WordVisualTeXParagraphNumbering
+internal static partial class WordVisualTeXParagraphNumbering
 {
     private const string PlaceRefInstruction = "VisualTeXPlaceRef";
-    private const string PlaceRefMarker = "MACROBUTTON VisualTeXPlaceRef";
-    private const string SequenceName = "VisualTeXEquation";
-    private const string ChapterSequenceName = "VisualTeXChapter";
-    private const string SectionSequenceName = "VisualTeXSection";
     private const string NumberBookmarkPrefix = "VTEqNum_";
+
+    // Created only by the writer after it has configured this new body host.
+    // Live ranges survive removal of the temporary OMML boundary guard before
+    // attachment; their ownership transfers once to Attach.
+    internal sealed class WrittenBodyLayout : IDisposable
+    {
+        private Range? _host;
+        private Range? _paragraph;
+
+        internal WrittenBodyLayout(Range host)
+        {
+            Paragraphs? paragraphs = null;
+            Paragraph? paragraph = null;
+            try
+            {
+                _host = host.Duplicate;
+                paragraphs = host.Paragraphs;
+                paragraph = paragraphs[1];
+                _paragraph = paragraph.Range.Duplicate;
+            }
+            catch { Dispose(); throw; }
+            finally { Release(paragraph); Release(paragraphs); }
+        }
+
+        internal (Range Host, Range Paragraph) Take()
+        {
+            var result = (_host!, _paragraph!);
+            _host = null;
+            _paragraph = null;
+            return result;
+        }
+
+        public void Dispose()
+        {
+            Release(_paragraph); _paragraph = null;
+            Release(_host); _host = null;
+        }
+    }
+
+    // Physical fields produced by one new body scaffold. Their roles and order
+    // come from the prepared segments, not a later COM collection/code reread.
+    internal sealed class CreatedBodyFields : IDisposable
+    {
+        private Field? _outer;
+        private readonly List<(int Order, string Instruction, Field Field)> _nested = new();
+        internal Field Outer => _outer!;
+
+        internal void Add(int order, string instruction, Field field) =>
+            _nested.Add((order, instruction.TrimStart(), field));
+
+        internal void TakeOuter(Field outer)
+        {
+            _outer = outer;
+            _nested.Sort((left, right) => left.Order.CompareTo(right.Order));
+        }
+
+        internal void Update()
+        {
+            using var metric = WordOperationMetrics.Measure("FormatConversion.VisualTeXNumbering.UpdateCreatedBodyFields");
+            foreach (var item in _nested)
+                if (item.Instruction.StartsWith("STYLEREF ", StringComparison.OrdinalIgnoreCase))
+                    item.Field.Update();
+            foreach (var item in _nested)
+                if (item.Instruction.StartsWith("SEQ ", StringComparison.OrdinalIgnoreCase))
+                    item.Field.Update();
+            try { _outer!.ShowCodes = false; } catch { }
+        }
+
+        public void Dispose()
+        {
+            foreach (var item in _nested) Release(item.Field);
+            _nested.Clear();
+            Release(_outer); _outer = null;
+        }
+    }
 
     internal static WordFormulaHostDescriptor Attach(
         Document document,
         WordFormulaHostDescriptor host,
-        bool deferFinalization = false)
+        bool deferFinalization = false,
+        WordFormulaNumberingKernel.NumberPlan? preparedNumberPlan = null)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -58,27 +130,26 @@ internal static class WordVisualTeXParagraphNumbering
         Field? placeRef = null;
         try
         {
-            hostRange =
-                WordFormulaHostSemanticReader.CreateRange(
-                    document,
-                    host.Range);
-            paragraphs = hostRange.Paragraphs;
-            if (paragraphs.Count != 1)
-                throw new InvalidDataException(
-                    "A VisualTeX numbered display host must occupy one Word paragraph.");
-            paragraph = paragraphs[1];
-            paragraphRange = paragraph.Range.Duplicate;
-            if (Convert.ToBoolean(
-                    paragraphRange.get_Information(
-                        WdInformation.wdWithInTable)))
-                throw new InvalidDataException(
-                    "Body paragraph numbering cannot be attached inside a user table.");
-
-            ValidateDisplayParagraphGeometry(
-                document,
-                hostRange,
-                paragraph,
-                paragraphRange);
+            var writtenLayout = preparedNumberPlan?.WrittenBodyLayout;
+            if (writtenLayout is not null)
+            {
+                (hostRange, paragraphRange) = writtenLayout.Take();
+                preparedNumberPlan!.WrittenBodyLayout = null;
+            }
+            else
+            {
+                hostRange = WordFormulaHostSemanticReader.CreateRange(document, host.Range);
+                paragraphs = hostRange.Paragraphs;
+                if (paragraphs.Count != 1)
+                    throw new InvalidDataException(
+                        "A VisualTeX numbered display host must occupy one Word paragraph.");
+                paragraph = paragraphs[1];
+                paragraphRange = paragraph.Range.Duplicate;
+                if (Convert.ToBoolean(paragraphRange.get_Information(WdInformation.wdWithInTable)))
+                    throw new InvalidDataException(
+                        "Body paragraph numbering cannot be attached inside a user table.");
+                ValidateDisplayParagraphGeometry(document, hostRange, paragraph, paragraphRange);
+            }
 
             var editableEnd =
                 Math.Max(
@@ -104,26 +175,31 @@ internal static class WordVisualTeXParagraphNumbering
                     hostRange.End);
             tabInsertion.Text = "\t";
 
-            var numberPlan =
-                ResolveNumberPlan(
-                    document,
-                    hostRange.Start);
-            RebuildHeadingStateFields(
-                document,
-                hostRange,
-                numberPlan);
+            var numberPlan = preparedNumberPlan?.BodyNumbering
+                ?? ResolveNumberPlan(document, hostRange.Start);
+            if (writtenLayout is not null)
+                InsertHeadingStateFields(document, hostRange, numberPlan, deferFinalization);
+            else
+                RebuildHeadingStateFields(document, hostRange, numberPlan);
 
-            placeRef =
-                CreatePlaceRef(
-                    document,
-                    hostRange.End + 1,
-                    numberPlan);
+            CreatedBodyFields? createdFields = null;
+            if (deferFinalization && preparedNumberPlan is not null)
+            {
+                createdFields = new CreatedBodyFields();
+                preparedNumberPlan.CreatedBodyFields = createdFields;
+            }
+            placeRef = CreatePlaceRef(document, hostRange.End + 1, numberPlan, createdFields);
+            if (createdFields is not null)
+            {
+                createdFields.TakeOuter(placeRef);
+                placeRef = null;
+            }
             if (!deferFinalization)
             {
                 UpdateHeadingStateFields(
                     document,
                     hostRange);
-                UpdatePlaceRefFields(placeRef);
+                UpdatePlaceRefFields(placeRef!);
 
                 return ResolveRequired(
                     document,
@@ -131,14 +207,14 @@ internal static class WordVisualTeXParagraphNumbering
                     host.FormulaId!);
             }
 
-            // Whole-document format conversion runs from the end of the story
-            // toward the beginning. Any SEQ result calculated here is therefore
-            // provisional and will be invalidated as earlier equations are
-            // inserted. Keep the fully materialized field topology, but defer
+            // Batch conversion materializes the complete target stream before
+            // evaluating it. Keep the fully materialized field topology, but defer
             // field evaluation and the expensive resolver round-trip until the
             // single batch finalization pass. If any scaffold is malformed, that
             // final pass throws inside the same mutation transaction and Word
             // rolls the complete batch back.
+            if (writtenLayout is not null)
+                host.Range = Address(hostRange);
             host.Numbering =
                 new WordFormulaNumberingDescriptor
                 {
@@ -169,7 +245,8 @@ internal static class WordVisualTeXParagraphNumbering
     internal static WordFormulaHostDescriptor Detach(
         Document document,
         WordFormulaHostDescriptor host,
-        bool sourceWillBeRemovedImmediately = false)
+        bool sourceWillBeRemovedImmediately = false,
+        BoundBodyNumber? preparedBody = null)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -190,6 +267,22 @@ internal static class WordVisualTeXParagraphNumbering
         Range? separator = null;
         try
         {
+            if (preparedBody is not null)
+            {
+                hostRange = preparedBody.Remove();
+                if (!sourceWillBeRemovedImmediately)
+                    return ResolveUnnumbered(document, hostRange, host);
+                host.Range = Address(hostRange);
+                host.Numbering = new WordFormulaNumberingDescriptor
+                {
+                    Numbered = false,
+                    FormulaId = host.FormulaId,
+                    Position = "right",
+                    ContainerKind = WordFormulaNumberingContainerKind.None,
+                };
+                return host;
+            }
+
             hostRange =
                 WordFormulaHostSemanticReader.CreateRange(
                     document,
@@ -293,8 +386,27 @@ internal static class WordVisualTeXParagraphNumbering
         Document document,
         Range hostRange,
         string? expectedFormulaId,
-        out WordFormulaNumberingDescriptor descriptor)
+        out WordFormulaNumberingDescriptor descriptor) =>
+        TryResolveCore(document, hostRange, expectedFormulaId, false, out descriptor, out _);
+
+    internal static bool TryResolve(
+        Document document,
+        Range hostRange,
+        string? expectedFormulaId,
+        out WordFormulaNumberingDescriptor descriptor,
+        out BoundBodyNumber? body) =>
+        TryResolveCore(document, hostRange, expectedFormulaId, true, out descriptor, out body);
+
+    private static bool TryResolveCore(
+        Document document,
+        Range hostRange,
+        string? expectedFormulaId,
+        bool retainBody,
+        out WordFormulaNumberingDescriptor descriptor,
+        out BoundBodyNumber? body)
     {
+        body = null;
+        BoundBodyNumber? capturedBody = null;
         descriptor = null!;
         if (document is null
             || hostRange is null
@@ -359,10 +471,12 @@ internal static class WordVisualTeXParagraphNumbering
             if (!hasCenter || !hasRight)
                 return false;
 
+            if (retainBody) capturedBody = new BoundBodyNumber(hostRange);
             if (!TryFindPlaceRef(
                     document,
                     hostRange,
-                    out placeRef)
+                    out placeRef,
+                    capturedBody)
                 || placeRef is null)
                 return false;
 
@@ -370,7 +484,8 @@ internal static class WordVisualTeXParagraphNumbering
                     document,
                     placeRef,
                     includeParentheses: false,
-                    out visibleNumber)
+                    out visibleNumber,
+                    capturedBody?.Code)
                 || visibleNumber is null)
                 return false;
 
@@ -390,15 +505,22 @@ internal static class WordVisualTeXParagraphNumbering
                     NumberRange =
                         Address(visibleNumber),
                 };
+            body = capturedBody;
+            capturedBody = null;
             return true;
         }
         catch
         {
+            // A requested owning binding must not turn COM acquisition failure
+            // into a legacy/no-number fallback. General recognition keeps its
+            // existing observational false-on-failure contract.
+            if (retainBody) throw;
             descriptor = null!;
             return false;
         }
         finally
         {
+            capturedBody?.Dispose();
             Release(visibleNumber);
             Release(placeRef);
             Release(leading);
@@ -447,9 +569,8 @@ internal static class WordVisualTeXParagraphNumbering
 
             var currentFormat =
                 EquationNumberFormat.Resolve(
-                    WordEquationNumbering
-                        .GetEquationNumberFormatId(
-                            document));
+                    WordEquationNumberFormatAuthority.Resolve(
+                        document));
             var mustRebuild =
                 rebuildForCurrentFormat
                 || currentFormat.UsesHeading;
@@ -584,90 +705,6 @@ internal static class WordVisualTeXParagraphNumbering
         }
     }
 
-    internal static Range? FindVisibleLabelRange(
-        Document document,
-        string formulaId)
-    {
-        Range? hostRange = null;
-        Field? placeRef = null;
-        Range? visible = null;
-        try
-        {
-            hostRange =
-                ResolveVisualTeXHostRangeByFormulaId(
-                    document,
-                    formulaId);
-            if (hostRange is null
-                || !TryFindPlaceRef(
-                    document,
-                    hostRange,
-                    out placeRef)
-                || placeRef is null
-                || !TryGetVisibleNumberRange(
-                    document,
-                    placeRef,
-                    includeParentheses: true,
-                    out visible)
-                || visible is null)
-                return null;
-
-            var result =
-                visible.Duplicate;
-            return result;
-        }
-        finally
-        {
-            Release(visible);
-            Release(placeRef);
-            Release(hostRange);
-        }
-    }
-
-    internal static Range? FindOwnerParagraphRange(
-        Document document,
-        string formulaId)
-    {
-        Range? hostRange = null;
-        Field? placeRef = null;
-        Paragraphs? paragraphs = null;
-        Paragraph? paragraph = null;
-        Range? owner = null;
-        try
-        {
-            hostRange =
-                ResolveVisualTeXHostRangeByFormulaId(
-                    document,
-                    formulaId);
-            if (hostRange is null
-                || !TryFindPlaceRef(
-                    document,
-                    hostRange,
-                    out placeRef)
-                || placeRef is null)
-                return null;
-
-            paragraphs =
-                hostRange.Paragraphs;
-            if (paragraphs.Count != 1)
-                return null;
-            paragraph =
-                paragraphs[1];
-            owner =
-                paragraph.Range.Duplicate;
-            var result = owner;
-            owner = null;
-            return result;
-        }
-        finally
-        {
-            Release(owner);
-            Release(paragraph);
-            Release(paragraphs);
-            Release(placeRef);
-            Release(hostRange);
-        }
-    }
-
     internal static bool IsSelfContainedHost(
         Document document,
         WordFormulaHostDescriptor host)
@@ -731,17 +768,11 @@ internal static class WordVisualTeXParagraphNumbering
         }
     }
 
-    internal static bool IsPlaceRefCode(
-        string? code) =>
-        !string.IsNullOrWhiteSpace(code)
-        && code!.IndexOf(
-            PlaceRefMarker,
-            StringComparison.OrdinalIgnoreCase) >= 0;
-
     private static Field CreatePlaceRef(
         Document document,
         int position,
-        ResolvedNumberPlan plan)
+        ResolvedNumberPlan plan,
+        CreatedBodyFields? createdFields = null)
     {
         Range? insertion = null;
         Range? outerCode = null;
@@ -793,9 +824,7 @@ internal static class WordVisualTeXParagraphNumbering
                 throw new InvalidOperationException(
                     "Word did not retain VisualTeXPlaceRef closing punctuation inside the outer field.");
 
-            var segments =
-                BuildSegments(
-                    plan);
+            var segments = plan.Segments ?? BuildSegments(plan);
             for (var index =
                      segments.Count - 1;
                  index >= 0;
@@ -835,6 +864,11 @@ internal static class WordVisualTeXParagraphNumbering
                     nested.ShowCodes = false;
                 }
                 catch { }
+                if (createdFields is not null)
+                {
+                    createdFields.Add(index, segment.Value, nested);
+                    nested = null;
+                }
             }
 
             Release(outerCode);
@@ -870,13 +904,14 @@ internal static class WordVisualTeXParagraphNumbering
         }
     }
 
-    private sealed class ResolvedNumberPlan
+    internal sealed class ResolvedNumberPlan
     {
         internal EquationNumberFormat Format { get; set; } =
             EquationNumberFormat.Resolve(
                 EquationNumberFormat.ContinuousId);
         internal int Chapter { get; set; }
         internal int Section { get; set; }
+        internal IReadOnlyList<NumberSegment>? Segments { get; set; }
     }
 
     private static ResolvedNumberPlan ResolveNumberPlan(
@@ -885,9 +920,8 @@ internal static class WordVisualTeXParagraphNumbering
     {
         var format =
             EquationNumberFormat.Resolve(
-                WordEquationNumbering
-                    .GetEquationNumberFormatId(
-                        document));
+                WordEquationNumberFormatAuthority.Resolve(
+                    document));
         var plan =
             new ResolvedNumberPlan
             {
@@ -908,6 +942,13 @@ internal static class WordVisualTeXParagraphNumbering
                     out var scope)
                 ? scope.NumberText
                 : string.Empty;
+        return PrepareNumberPlan(format, numberText);
+    }
+
+    internal static ResolvedNumberPlan PrepareNumberPlan(
+        EquationNumberFormat format, string? numberText)
+    {
+        var plan = new ResolvedNumberPlan { Format = format };
         var parts =
             (numberText ?? string.Empty)
                 .Split(
@@ -945,6 +986,7 @@ internal static class WordVisualTeXParagraphNumbering
                     1);
         }
 
+        plan.Segments = BuildSegments(plan);
         return plan;
     }
 
@@ -953,9 +995,14 @@ internal static class WordVisualTeXParagraphNumbering
         Range hostRange,
         ResolvedNumberPlan plan)
     {
-        RemoveHeadingStateFields(
-            document,
-            hostRange);
+        RemoveHeadingStateFields(document, hostRange);
+        InsertHeadingStateFields(document, hostRange, plan);
+    }
+
+    private static void InsertHeadingStateFields(
+        Document document, Range hostRange, ResolvedNumberPlan plan,
+        bool deferEvaluation = false)
+    {
         if (plan.Format.HeadingLevel <= 0)
             return;
 
@@ -986,7 +1033,7 @@ internal static class WordVisualTeXParagraphNumbering
                     field.ShowCodes = false;
                 }
                 catch { }
-                field.Update();
+                if (!deferEvaluation) field.Update();
             }
             finally
             {
@@ -1118,36 +1165,7 @@ internal static class WordVisualTeXParagraphNumbering
         }
     }
 
-    private static bool IsHeadingStateRestartCode(
-        string? instruction)
-    {
-        if (string.IsNullOrWhiteSpace(
-                instruction))
-            return false;
-        var normalized =
-            instruction!
-                .TrimStart();
-        var isOwnedSequence =
-            normalized.StartsWith(
-                "SEQ "
-                + ChapterSequenceName
-                + " ",
-                StringComparison.OrdinalIgnoreCase)
-            || normalized.StartsWith(
-                "SEQ "
-                + SectionSequenceName
-                + " ",
-                StringComparison.OrdinalIgnoreCase);
-        return isOwnedSequence
-            && normalized.IndexOf(
-                   "\\r",
-                   StringComparison.OrdinalIgnoreCase) >= 0
-            && normalized.IndexOf(
-                   "\\h",
-                   StringComparison.OrdinalIgnoreCase) >= 0;
-    }
-
-    private sealed class NumberSegment
+    internal sealed class NumberSegment
     {
         internal bool IsField { get; set; }
         internal string Value { get; set; } =
@@ -1234,7 +1252,9 @@ internal static class WordVisualTeXParagraphNumbering
 
     internal static int RefreshBatchFields(
         Document document,
-        int minimumExpectedNumbered = 0)
+        int minimumExpectedNumbered = 0,
+        ISet<string>? targetBookmarkNames = null,
+        WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? preparedVisualTeX = null)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -1242,38 +1262,32 @@ internal static class WordVisualTeXParagraphNumbering
         if (document is null)
             throw new ArgumentNullException(nameof(document));
 
-        Fields? fields = null;
-        Field? field = null;
-        Range? code = null;
+        WordNumberingFieldCollection? fields = null;
+        WordNumberingFieldCollection.Entry? entry = null;
         var placeRefCount = 0;
         var hasUserReferenceFields = false;
+        var createdFields = preparedVisualTeX?.CreateBodyFieldCursor();
         try
         {
-            // Word enumerates top-level fields in story order. Update the private
-            // chapter/section restart state and each VisualTeXPlaceRef exactly in
-            // that order so the nested VisualTeXEquation SEQ stream advances once
-            // through the final document topology. This replaces the old
-            // host-index -> numbering-resolver -> IsSelfContainedHost -> Refresh
-            // chain, which repeatedly reopened the same OLE paragraph.
-            fields = document.Fields;
+            // Capture only physically bounded numbering/reference fields. Global
+            // document.Fields[index] can enter a long WWLIB enumeration over
+            // unrelated historical EMBED fields (CP110). The operation-local
+            // snapshot preserves story order and all existing validation below.
+            fields = WordNumberingFieldCollection.Capture(document);
             for (var index = 1;
                  index <= fields.Count;
                  index++)
             {
-                Release(code);
-                code = null;
-                Release(field);
-                field = fields[index];
+                entry?.Dispose();
+                entry = null;
+                entry = fields.TakeEntry(index);
+                var field = entry.Field;
+                var code = entry.Code;
 
-                if (field.Type is
-                    WdFieldType.wdFieldRef
-                    or WdFieldType.wdFieldGoToButton)
+                if (entry.Type is WdFieldType.wdFieldRef or WdFieldType.wdFieldGoToButton)
                     hasUserReferenceFields = true;
 
-                code = field.Code.Duplicate;
-                var instruction =
-                    code.Text
-                    ?? string.Empty;
+                var instruction = entry.Instruction;
 
                 if (IsHeadingStateRestartCode(
                         instruction))
@@ -1282,13 +1296,13 @@ internal static class WordVisualTeXParagraphNumbering
                     continue;
                 }
 
-                if (field.Type ==
+                if (entry.Type ==
                         WdFieldType.wdFieldMacroButton
                     && IsPlaceRefCode(
                         instruction))
                 {
-                    UpdatePlaceRefFields(
-                        field);
+                    if (createdFields?.TryUpdate(code) != true)
+                        UpdatePlaceRefFields(field);
                     placeRefCount++;
                     continue;
                 }
@@ -1305,11 +1319,11 @@ internal static class WordVisualTeXParagraphNumbering
         }
         finally
         {
-            Release(code);
-            Release(field);
-            Release(fields);
+            try { entry?.Dispose(); }
+            finally { fields?.Dispose(); }
         }
 
+        createdFields?.EnsureComplete();
         if (placeRefCount <
             minimumExpectedNumbered)
             throw new InvalidDataException(
@@ -1321,7 +1335,8 @@ internal static class WordVisualTeXParagraphNumbering
             _ =
                 WordEquationReferenceFields
                     .UpdateReferences(
-                        document);
+                        document,
+                        targetBookmarkNames);
 
         return placeRefCount;
     }
@@ -1347,75 +1362,45 @@ internal static class WordVisualTeXParagraphNumbering
                    StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void UpdatePlaceRefFields(
-        Field placeRef)
+    private static void UpdatePlaceRefFields(Field placeRef)
     {
         Range? code = null;
         Fields? nested = null;
         Field? field = null;
         Range? fieldCode = null;
+        var headingFields = new List<Field>();
+        var sequenceFields = new List<Field>();
         try
         {
-            code =
-                placeRef.Code.Duplicate;
-            nested =
-                code.Fields;
-
-            // Heading state is read before current-value SEQ. The hidden increment
-            // itself can update first because its \s switch derives from Word's
-            // heading outline state rather than the STYLEREF result.
-            for (var index = 1;
-                 index <= nested.Count;
-                 index++)
+            code = placeRef.Code;
+            nested = code.Fields;
+            var count = nested.Count;
+            // Classify each physical field once. Keep owned COM references while
+            // evaluating the same heading-before-sequence dependency order;
+            // reading the collection again cannot add information to this tree.
+            for (var index = 1; index <= count; index++)
             {
-                Release(fieldCode);
-                fieldCode = null;
-                Release(field);
-                field =
-                    nested[index];
-                fieldCode =
-                    field.Code.Duplicate;
-                var instruction =
-                    (fieldCode.Text
-                        ?? string.Empty)
-                    .TrimStart();
-                if (instruction.StartsWith(
-                        "STYLEREF ",
-                        StringComparison.OrdinalIgnoreCase))
-                    field.Update();
+                field = nested[index];
+                fieldCode = field.Code;
+                var instruction = (fieldCode.Text ?? string.Empty).TrimStart();
+                Release(fieldCode); fieldCode = null;
+                if (instruction.StartsWith("STYLEREF ", StringComparison.OrdinalIgnoreCase))
+                    headingFields.Add(field);
+                else if (instruction.StartsWith("SEQ ", StringComparison.OrdinalIgnoreCase))
+                    sequenceFields.Add(field);
+                else Release(field);
+                field = null;
             }
-
-            for (var index = 1;
-                 index <= nested.Count;
-                 index++)
-            {
-                Release(fieldCode);
-                fieldCode = null;
-                Release(field);
-                field =
-                    nested[index];
-                fieldCode =
-                    field.Code.Duplicate;
-                var instruction =
-                    (fieldCode.Text
-                        ?? string.Empty)
-                    .TrimStart();
-                if (instruction.StartsWith(
-                        "SEQ ",
-                        StringComparison.OrdinalIgnoreCase))
-                    field.Update();
-            }
-
-            try
-            {
-                placeRef.ShowCodes = false;
-            }
-            catch { }
+            foreach (var heading in headingFields) heading.Update();
+            foreach (var sequence in sequenceFields) sequence.Update();
+            try { placeRef.ShowCodes = false; } catch { }
         }
         finally
         {
             Release(fieldCode);
             Release(field);
+            foreach (var heading in headingFields) Release(heading);
+            foreach (var sequence in sequenceFields) Release(sequence);
             Release(nested);
             Release(code);
         }
@@ -1545,199 +1530,6 @@ internal static class WordVisualTeXParagraphNumbering
         }
     }
 
-    private static bool TryFindPlaceRef(
-        Document document,
-        Range hostRange,
-        out Field? placeRef)
-    {
-        placeRef = null;
-        Paragraphs? paragraphs = null;
-        Paragraph? paragraph = null;
-        Range? paragraphRange = null;
-        Fields? fields = null;
-        Field? field = null;
-        Range? code = null;
-        Range? result = null;
-        Range? separator = null;
-        try
-        {
-            paragraphs =
-                hostRange.Paragraphs;
-            if (paragraphs.Count != 1)
-                return false;
-            paragraph =
-                paragraphs[1];
-            paragraphRange =
-                paragraph.Range.Duplicate;
-            fields =
-                paragraphRange.Fields;
-
-            for (var index = 1;
-                 index <= fields.Count;
-                 index++)
-            {
-                Release(result);
-                result = null;
-                Release(code);
-                code = null;
-                Release(field);
-                field =
-                    fields[index];
-                if (field.Type !=
-                    WdFieldType.wdFieldMacroButton)
-                    continue;
-                code =
-                    field.Code.Duplicate;
-                if (!IsPlaceRefCode(
-                        code.Text))
-                    continue;
-
-                var fieldStart =
-                    code.Start - 1;
-                if (fieldStart < hostRange.End)
-                    return false;
-                separator =
-                    document.Range(
-                        hostRange.End,
-                        fieldStart);
-                if (!string.Equals(
-                        separator.Text,
-                        "\t",
-                        StringComparison.Ordinal))
-                    return false;
-
-                result =
-                    field.Result.Duplicate;
-                var fieldEnd =
-                    ResolveOuterFieldEndExclusive(
-                        document,
-                        code,
-                        result);
-                var editableEnd =
-                    Math.Max(
-                        paragraphRange.Start,
-                        paragraphRange.End - 1);
-                if (fieldEnd > editableEnd)
-                    return false;
-
-                Range? suffix = null;
-                try
-                {
-                    suffix =
-                        document.Range(
-                            fieldEnd,
-                            editableEnd);
-                    if (!ContainsOnlyScaffoldWhitespace(
-                            suffix.Text))
-                        return false;
-                }
-                finally
-                {
-                    Release(suffix);
-                }
-
-                var found = field;
-                field = null;
-                placeRef = found;
-                return true;
-            }
-
-            return false;
-        }
-        finally
-        {
-            Release(separator);
-            Release(result);
-            Release(code);
-            Release(field);
-            Release(fields);
-            Release(paragraphRange);
-            Release(paragraph);
-            Release(paragraphs);
-        }
-    }
-
-    private static bool TryGetVisibleNumberRange(
-        Document document,
-        Field placeRef,
-        bool includeParentheses,
-        out Range? numberRange)
-    {
-        numberRange = null;
-        Range? outerCode = null;
-        Fields? nested = null;
-        Field? field = null;
-        Range? fieldCode = null;
-        Range? hiddenResult = null;
-        try
-        {
-            outerCode =
-                placeRef.Code.Duplicate;
-            if (!IsPlaceRefCode(
-                    outerCode.Text))
-                return false;
-            nested =
-                outerCode.Fields;
-            for (var index = 1;
-                 index <= nested.Count;
-                 index++)
-            {
-                Release(fieldCode);
-                fieldCode = null;
-                Release(field);
-                field =
-                    nested[index];
-                fieldCode =
-                    field.Code.Duplicate;
-                if (!IsHiddenIncrement(
-                        document,
-                        fieldCode.Text))
-                    continue;
-
-                hiddenResult =
-                    field.Result.Duplicate;
-                var start =
-                    hiddenResult.End;
-                var end =
-                    outerCode.End;
-
-                var outerText =
-                    outerCode.Text
-                    ?? string.Empty;
-                var trimmedLength =
-                    outerText
-                        .TrimEnd()
-                        .Length;
-                end -=
-                    outerText.Length
-                    - trimmedLength;
-                if (!includeParentheses)
-                {
-                    start++;
-                    end--;
-                }
-                if (end <= start)
-                    return false;
-
-                numberRange =
-                    document.Range(
-                        start,
-                        end);
-                return true;
-            }
-
-            return false;
-        }
-        finally
-        {
-            Release(hiddenResult);
-            Release(fieldCode);
-            Release(field);
-            Release(nested);
-            Release(outerCode);
-        }
-    }
-
     private static string ReadVisibleNumberText(
         Document document,
         Field placeRef)
@@ -1863,82 +1655,6 @@ internal static class WordVisualTeXParagraphNumbering
         }
     }
 
-    private static bool IsHiddenIncrement(
-        Document document,
-        string? instruction)
-    {
-        if (string.IsNullOrWhiteSpace(
-                instruction))
-            return false;
-        var normalized =
-            " "
-            + instruction!
-                .Replace('\t', ' ')
-                .Replace('\r', ' ')
-                .Replace('\n', ' ')
-            + " ";
-        return normalized.IndexOf(
-                   " SEQ "
-                   + SequenceName
-                   + " ",
-                   StringComparison.OrdinalIgnoreCase) >= 0
-            && normalized.IndexOf(
-                   "\\h",
-                   StringComparison.OrdinalIgnoreCase) >= 0;
-    }
-
-    private static int ResolveOuterFieldEndExclusive(
-        Document document,
-        Range code,
-        Range result)
-    {
-        var codeBoundary =
-            ReadCharacter(
-                document,
-                code.End);
-        if (codeBoundary ==
-            '\u0015')
-            return code.End + 1;
-        if (codeBoundary ==
-                '\u0014'
-            && ReadCharacter(
-                    document,
-                    result.End)
-                == '\u0015')
-            return result.End + 1;
-        throw new InvalidDataException(
-            $"VisualTeXPlaceRef has an invalid outer field boundary at code={code.End}, result={result.End}.");
-    }
-
-    private static char ReadCharacter(
-        Document document,
-        int position)
-    {
-        Range? probe = null;
-        try
-        {
-            if (position <
-                    document.Content.Start
-                || position >=
-                    document.Content.End)
-                return '\0';
-            probe =
-                document.Range(
-                    position,
-                    position + 1);
-            var text =
-                probe.Text
-                ?? string.Empty;
-            return text.Length == 1
-                ? text[0]
-                : '\0';
-        }
-        finally
-        {
-            Release(probe);
-        }
-    }
-
     private static void ValidateDisplayParagraphGeometry(
         Document document,
         Range hostRange,
@@ -2000,96 +1716,6 @@ internal static class WordVisualTeXParagraphNumbering
             Release(tabs);
             Release(format);
             Release(leading);
-        }
-    }
-
-    private static bool ContainsOnlyScaffoldWhitespace(
-        string? text)
-    {
-        if (string.IsNullOrEmpty(
-                text))
-            return true;
-        foreach (var character in text!)
-        {
-            if (character is
-                    '\t'
-                    or '\r'
-                    or '\n'
-                    or '\v'
-                    or '\u0013'
-                    or '\u0014'
-                    or '\u0015'
-                || char.IsWhiteSpace(
-                    character))
-                continue;
-            return false;
-        }
-        return true;
-    }
-
-    private static Range? ResolveVisualTeXHostRangeByFormulaId(
-        Document document,
-        string formulaId)
-    {
-        if (!Guid.TryParse(
-                formulaId,
-                out var parsed))
-            return null;
-
-        Bookmarks? bookmarks = null;
-        Bookmark? bookmark = null;
-        Range? owner = null;
-        InlineShapes? shapes = null;
-        InlineShape? shape = null;
-        Range? shapeRange = null;
-        try
-        {
-            bookmarks =
-                document.Bookmarks;
-            var identityName =
-                WordFormulaMetadataReader
-                    .IdentityBookmarkName(
-                        parsed.ToString("D"));
-            if (!bookmarks.Exists(
-                    identityName))
-                return null;
-
-            bookmark =
-                bookmarks[identityName];
-            owner =
-                bookmark.Range.Duplicate;
-            shapes =
-                owner.InlineShapes;
-            if (shapes.Count != 1)
-                return null;
-            shape =
-                shapes[1];
-            if (!WordFormulaMetadataReader.IsNativeOle(
-                    shape))
-                return null;
-            shapeRange =
-                shape.Range.Duplicate;
-            if (shapeRange.StoryType !=
-                    owner.StoryType
-                || shapeRange.Start !=
-                    owner.Start
-                || shapeRange.End !=
-                    owner.End)
-                return null;
-
-            var result =
-                shapeRange;
-            shapeRange = null;
-            return result;
-        }
-        finally
-        {
-            Release(shapeRange);
-            Release(shape);
-            Release(shapes);
-            Release(owner);
-            Release(bookmark);
-            Release(bookmarks);
         }
     }
 
@@ -2161,18 +1787,4 @@ internal static class WordVisualTeXParagraphNumbering
             End = range.End,
         };
 
-    private static void Release(
-        object? value)
-    {
-        if (value is null
-            || !Marshal.IsComObject(
-                value))
-            return;
-        try
-        {
-            Marshal.ReleaseComObject(
-                value);
-        }
-        catch { }
-    }
 }

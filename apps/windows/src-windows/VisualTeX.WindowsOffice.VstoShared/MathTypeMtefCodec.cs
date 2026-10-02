@@ -326,6 +326,7 @@ internal static partial class MathTypeMtefCodec
         var normalized = new XElement(math);
         NormalizeMathMlPrescripts(normalized);
         NormalizeMathTypeExportedTabPiles(normalized);
+        MaterializeLooseFenceGroups(normalized);
         return CanonicalizeMathMl(normalized, inheritedMathVariant: null);
     }
 
@@ -350,17 +351,6 @@ internal static partial class MathTypeMtefCodec
             "munderover", "mfenced",
         };
 
-        bool IsEmptyBase(XElement element)
-        {
-            if (element.Name.LocalName is not ("mrow" or "mi" or "mn" or "mtext"))
-                return false;
-            if (element.Nodes().OfType<XText>().Any(text =>
-                    !string.IsNullOrWhiteSpace(text.Value)))
-                return false;
-            var children = element.Elements().ToArray();
-            return children.Length == 0 || children.All(IsEmptyBase);
-        }
-
         foreach (var script in root.DescendantsAndSelf()
                      .Where(element => scriptNames.Contains(element.Name.LocalName))
                      .Reverse()
@@ -371,7 +361,7 @@ internal static partial class MathTypeMtefCodec
                 continue;
             var arguments = script.Elements().ToArray();
             if (arguments.Length != (script.Name.LocalName == "msubsup" ? 3 : 2)
-                || !IsEmptyBase(arguments[0]))
+                || !IsEmptyScriptBase(arguments[0]))
                 continue;
             var basis = script.ElementsAfterSelf().FirstOrDefault();
             if (basis is null
@@ -779,11 +769,19 @@ internal static partial class MathTypeMtefCodec
                 // Keep mtext distinct so an actual Symbol -> Text regression is
                 // still rejected by the round-trip validator.
                 if (IsMathematicalSymbolToken(value))
-                    return "o(" + NormalizeOperatorToken(value) + ")";
+                    return CanonicalStyledOperator(value, variant);
                 return CanonicalToken("mi", value, variant);
             }
             case "mn":
-                return "n(" + element.Value.Trim() + ")";
+            {
+                // Numbers default to upright, not to identifier italic. Their
+                // explicit variant is part of the contract too: ignoring it
+                // makes a bold/monospace digit loss invisible to validation.
+                var numberVariant = (variant ?? string.Empty).Trim().ToLowerInvariant();
+                return numberVariant.Length == 0 || numberVariant is "normal" or "upright"
+                    ? "n(" + element.Value.Trim() + ")"
+                    : "n[" + numberVariant + "](" + element.Value.Trim() + ")";
+            }
             case "mo":
             {
                 var value = element.Value.Trim();
@@ -819,7 +817,7 @@ internal static partial class MathTypeMtefCodec
                     return string.Concat(value.Select(character =>
                         "o(" + NormalizeOperatorToken(character.ToString()) + ")"));
                 }
-                return "o(" + NormalizeOperatorToken(value) + ")";
+                return CanonicalStyledOperator(value, variant);
             }
             case "mtext":
             {
@@ -1036,15 +1034,15 @@ internal static partial class MathTypeMtefCodec
     private static bool IsReplacementGlyphOnly(string value) =>
         value.Length > 0 && value.All(character => character == '\uFFFD');
 
+    private static string CanonicalStyledOperator(string value, string? variant)
+    {
+        var style=(variant ?? string.Empty).Trim().ToLowerInvariant();
+        return "o" + (style.Length==0 || style is "normal" or "upright" ? string.Empty : "["+style+"]")
+            + "("+NormalizeOperatorToken(value)+")";
+    }
+
     private static bool IsMathematicalSymbolToken(string value) =>
-        value.Length > 0 && value.All(character =>
-        {
-            var category = char.GetUnicodeCategory(character);
-            return category == System.Globalization.UnicodeCategory.MathSymbol
-                || category == System.Globalization.UnicodeCategory.CurrencySymbol
-                || category == System.Globalization.UnicodeCategory.ModifierSymbol
-                || category == System.Globalization.UnicodeCategory.OtherSymbol;
-        });
+        value.Length > 0 && value.All(character => IsMathematicalSymbolScalar(character));
 
     private static bool IsHorizontalBraceMarker(string value, bool top) =>
         value == (top ? "⏞" : "⏟")
@@ -1571,7 +1569,43 @@ internal static partial class MathTypeMtefCodec
         var preparedMath = new XElement(math);
         MaterializeInheritedMathVariants(preparedMath, inheritedMathVariant: null);
         NormalizeMathJaxFenceRows(preparedMath);
+        MaterializeLooseFenceGroups(preparedMath);
         return preparedMath;
+    }
+
+    // MTEF logical sizes are stream state, not properties local to a TMPL.
+    // Carry that state with this one emission buffer so nested templates can
+    // restore their parent size without global/thread-local mutable state.
+    private sealed class MtefWriter : List<byte>
+    {
+        internal byte ContentSize { get; private set; } = RecordFull;
+        internal byte SymbolSize => ContentSize == RecordFull ? RecordSym : RecordSubSym;
+
+        internal IDisposable EnterScriptSize()
+        {
+            var parent = ContentSize;
+            ContentSize = parent == RecordFull ? RecordSub : RecordSub2;
+            Add(ContentSize);
+            return new SizeScope(this, parent);
+        }
+
+        internal void RestoreContentSize() => Add(ContentSize);
+
+        private sealed class SizeScope : IDisposable
+        {
+            private MtefWriter? _writer;
+            private readonly byte _parent;
+            internal SizeScope(MtefWriter writer, byte parent)
+            { _writer = writer; _parent = parent; }
+            public void Dispose()
+            {
+                var writer = _writer;
+                if (writer is null) return;
+                _writer = null;
+                writer.ContentSize = _parent;
+                writer.Add(_parent);
+            }
+        }
     }
 
     private static byte[] BuildRootStructure(
@@ -1618,7 +1652,7 @@ internal static partial class MathTypeMtefCodec
                 alignedTable,
                 sourceMtef,
                 alignedPrefixDefinitions);
-            var alignedRoot = new List<byte>();
+            var alignedRoot = new MtefWriter();
             if (TryEmitAlignedPile(alignedTable, sourceMtef, alignedRoot))
             {
                 prefixDefinitions = alignedPrefixDefinitions.ToArray();
@@ -1643,7 +1677,7 @@ internal static partial class MathTypeMtefCodec
         }
         prefixDefinitions = requiredDefinitions.ToArray();
 
-        var output = new List<byte> { RecordLine, 0 };
+        var output = new MtefWriter { RecordLine, 0 };
         // Preserve MathType's root-level formatting state (notably COLOR_DEF /
         // COLOR) from the source equation. MathType 7 writes these records even
         // when the visible formula is plain black; dropping them produced OLEs
@@ -1861,6 +1895,64 @@ internal static partial class MathTypeMtefCodec
                 new XAttribute("close", NormalizeFence(close)),
                 children.Select(child => new XElement(child)));
             row.ReplaceNodes(fenced);
+        }
+    }
+
+    private static void MaterializeLooseFenceGroups(XElement root)
+    {
+        // OMML's reverse projection can express a native group as sibling
+        // fences, with a trailing script attached to the closing fence. The
+        // semantic reader already recognizes that group. Encode the same group
+        // as one native fence OBJECT before the trailing-script writer binds it.
+        // Explicitly fixed fence CHARs are excluded by the shared predicates.
+        foreach (var container in root.DescendantsAndSelf()
+                     .Where(element => element.Name.LocalName is "math" or "mrow" or "mstyle")
+                     .Reverse().ToArray())
+        {
+            var children = container.Elements().ToArray();
+            for (var index = 0; index < children.Length; index++)
+            {
+                if (!TryGetLooseOpeningFenceToken(children[index], out var open))
+                    continue;
+                var stack = new List<string> { open };
+                for (var cursor = index + 1; cursor < children.Length; cursor++)
+                {
+                    var candidate = children[cursor];
+                    var scriptChildren = candidate.Elements().ToArray();
+                    var isScript = candidate.Name.LocalName is "msub" or "msup" or "msubsup";
+                    var requiredSlots = candidate.Name.LocalName == "msubsup" ? 3 : 2;
+                    var closingCandidate = isScript && scriptChildren.Length == requiredSlots
+                        ? scriptChildren[0] : candidate;
+                    if (TryGetLooseClosingFenceToken(closingCandidate, out var close))
+                    {
+                        if (!AreMatchingFences(stack[stack.Count - 1], close))
+                            break;
+                        stack.RemoveAt(stack.Count - 1);
+                        if (stack.Count > 0) continue;
+                        var inner = new XElement(container.Name.Namespace + "mrow",
+                            children.Skip(index + 1).Take(cursor - index - 1)
+                                .Select(element => new XElement(element)));
+                        MaterializeLooseFenceGroups(inner);
+                        var fenced = new XElement(container.Name.Namespace + "mfenced",
+                            new XAttribute("open", NormalizeFence(open)),
+                            new XAttribute("close", NormalizeFence(close)),
+                            new XAttribute("separators", string.Empty), inner);
+                        XElement replacement = fenced;
+                        if (isScript)
+                        {
+                            replacement = new XElement(candidate);
+                            replacement.Elements().First().ReplaceWith(fenced);
+                        }
+                        children[index].ReplaceWith(replacement);
+                        foreach (var removed in children.Skip(index + 1).Take(cursor - index))
+                            removed.Remove();
+                        children = container.Elements().ToArray();
+                        break;
+                    }
+                    if (TryGetLooseOpeningFenceToken(candidate, out var nestedOpen))
+                        stack.Add(nestedOpen);
+                }
+            }
         }
     }
 
@@ -2523,6 +2615,14 @@ internal static partial class MathTypeMtefCodec
         IsFalseMathMlBoolean((string?)token.Attribute("fence"))
         || IsFalseMathMlBoolean((string?)token.Attribute("stretchy"));
 
+    // The source's attachment semantics decide decoration versus an upper
+    // limit before a big-operator shortcut is selected. Overline and horizontal
+    // braces have native decoration templates even with accent=false.
+    private static bool IsOverDecoration(XElement mover, XElement overscript) =>
+        ResolveOverAccent(mover, overscript)
+        || NormalizeAccentMark(overscript.Value.Trim()) == "¯"
+        || IsHorizontalBraceMarker(overscript.Value.Trim(), top: true);
+
     private static bool ResolveOverAccent(XElement mover, XElement overscript)
     {
         var own = (string?)mover.Attribute("accent");
@@ -2683,8 +2783,18 @@ internal static partial class MathTypeMtefCodec
         byte[] sourceMtef,
         List<byte> output)
     {
+        var definitionsStart = output.Count;
+        // A mathematical glyph has the same native character mapping whether
+        // a frontend calls it mi or mo. Keep explicit styles on that mapping.
+        foreach (var token in math.DescendantsAndSelf().Where(e => e.Name.LocalName == "mi"
+                     && IsMathematicalSymbolToken(e.Value.Trim())
+                     && ((string?)e.Attribute("mathvariant") ?? string.Empty) is "bold" or "italic" or "bold-italic"))
+            token.Name = token.Name.Namespace + "mo";
         var specs = new[]
         {
+            (Variant: "normal", Encoding: "WindowsANSI", Font: "Times New Roman", CharacterStyle: (byte)0),
+            (Variant: "bold", Encoding: "WindowsANSI", Font: "Times New Roman", CharacterStyle: (byte)1),
+            (Variant: "italic", Encoding: "WindowsANSI", Font: "Times New Roman", CharacterStyle: (byte)2),
             (Variant: "script", Encoding: "EuclidMath1", Font: "Euclid Math One", CharacterStyle: (byte)0),
             (Variant: "bold-script", Encoding: "EuclidMath1", Font: "Euclid Math One", CharacterStyle: (byte)1),
             (Variant: "double-struck", Encoding: "EuclidMath2", Font: "Euclid Math Two", CharacterStyle: (byte)0),
@@ -2716,9 +2826,10 @@ internal static partial class MathTypeMtefCodec
             if (existingStyleIndex is not null)
             {
                 foreach (var token in tokens)
-                    token.SetAttributeValue(
-                        "data-mtef-explicit-typeface",
-                        -existingStyleIndex.Value);
+                {
+                    token.SetAttributeValue("data-mtef-explicit-typeface", -existingStyleIndex.Value);
+                    token.SetAttributeValue("data-mtef-explicit-font", spec.Font);
+                }
                 continue;
             }
 
@@ -2737,7 +2848,112 @@ internal static partial class MathTypeMtefCodec
             output.Add(spec.CharacterStyle);
 
             foreach (var token in tokens)
+            {
                 token.SetAttributeValue("data-mtef-explicit-typeface", -fontStyleIndex);
+                token.SetAttributeValue("data-mtef-explicit-font", spec.Font);
+            }
+        }
+        MaterializeOperatorCharacterStyles(math, sourceMtef, output, definitionsStart);
+    }
+
+    // Resolve font/style through the native glyph's actual encoding. A bold
+    // symbol is NOT an identifier in the Vector face, nor a Unicode scalar in
+    // an arbitrary Times font. Retain the canonical CHAR's MTCode/font-position
+    // and bind a FONT_STYLE_DEF to the SAME FONT_DEF with the requested bits.
+    // This applies to Symbol, MT Extra, Euclid and text fallback characters.
+    private static void MaterializeOperatorCharacterStyles(
+        XElement math, byte[] sourceMtef, List<byte> output, int definitionsStart)
+    {
+        var tokens = math.DescendantsAndSelf().Where(e => e.Name.LocalName == "mo"
+            && e.Value.Length == 1
+            && ((string?)e.Attribute("mathvariant") ?? string.Empty) is "bold" or "italic" or "bold-italic").ToArray();
+        if (tokens.Length == 0) return;
+        var fonts = new List<string>();
+        var styles = new List<(int Font, byte Bits)>();
+        var builtin = new Dictionary<int,int>();
+        void Definition(byte[] data, ref int position)
+        {
+            var record = data[position++];
+            if (record == RecordEncodingDef) position = SkipNullTerminated(data, position);
+            else if (record == RecordFontDef)
+            {
+                _ = ReadUnsigned(data, ref position);
+                fonts.Add(ReadPrefixNullTerminatedString(data, ref position));
+            }
+            else if (record == RecordFontStyleDef)
+            {
+                var index = ReadUnsigned(data, ref position);
+                Require(data,position,1); styles.Add((index,data[position++]));
+            }
+            else throw new InvalidDataException("Unexpected record in native character font definitions.");
+        }
+        foreach(var record in ReadPrefixLayout(sourceMtef).Records.Concat(ReadRootLeadingFormattingRecords(sourceMtef)))
+        {
+            var cursor=record.Start;
+            if(record.Type is RecordEncodingDef or RecordFontDef or RecordFontStyleDef)
+                Definition(sourceMtef,ref cursor);
+            else if(record.Type==RecordEqnPrefs)
+            {
+                cursor+=2; cursor=SkipDimensionArray(sourceMtef,cursor); cursor=SkipDimensionArray(sourceMtef,cursor);
+                Require(sourceMtef,cursor,1); var count=sourceMtef[cursor++];
+                for(var index=1;index<=count;index++)
+                {
+                    var font=ReadUnsigned(sourceMtef,ref cursor);
+                    if(font!=0) { Require(sourceMtef,cursor,1); cursor++; builtin[index]=font; }
+                }
+            }
+        }
+        var added=output.Skip(definitionsStart).ToArray();
+        for(var cursor=0;cursor<added.Length;) Definition(added,ref cursor);
+        int StyledTypeface(int typeface, byte bits)
+        {
+            var font=0;
+            if(typeface<0 && -typeface<=styles.Count) font=styles[-typeface-1].Font;
+            else builtin.TryGetValue(typeface,out font);
+            if(font==0)
+            {
+                var family=typeface is TypefaceSymbol or TypefaceLowerGreek or TypefaceUpperGreek ? "Symbol"
+                    : typeface==TypefaceMtExtra ? "MT Extra" : "Times New Roman";
+                font=fonts.FindIndex(name=>string.Equals(name,family,StringComparison.OrdinalIgnoreCase))+1;
+            }
+            if(font<1 || font>fonts.Count) throw new InvalidDataException("No declared font owns the styled native operator.");
+            var style=styles.FindIndex(s=>s.Font==font && s.Bits==bits)+1;
+            if(style==0)
+            {
+                output.Add(RecordFontStyleDef); WriteUnsigned(output,font); output.Add(bits);
+                styles.Add((font,bits)); style=styles.Count;
+            }
+            return -style;
+        }
+        foreach(var token in tokens)
+        {
+            var character=new List<byte>();
+            EmitOperator(token,character);
+            if(character.Count<5 || character[0]!=RecordChar || (character[1] & 0x29)!=0)
+                throw new InvalidDataException("Styled native operator must resolve to one undecorated CHAR.");
+            var cursor=2;
+            var lead=character[cursor++];
+            var typeface=lead==255 ? (character[cursor++] | character[cursor++]<<8)-32768 : lead-128;
+            var scalar=character[cursor++] | character[cursor++]<<8;
+            byte? encoded=(character[1]&CharEncoded8)!=0 ? character[cursor++] : null;
+            if(cursor!=character.Count) throw new InvalidDataException("Styled operator CHAR has unsupported trailing data.");
+            var variant=(string)token.Attribute("mathvariant")!;
+            var bits=(byte)(variant=="bold" ? 1 : variant=="italic" ? 2 : 3);
+            var styled=StyledTypeface(typeface,bits);
+            token.SetAttributeValue("data-mtef-explicit-typeface",styled);
+            token.SetAttributeValue("data-mtef-mtcode",scalar);
+            token.SetAttributeValue("data-mtef-encoded8",encoded);
+            token.SetAttributeValue("data-mtef-explicit-font",fonts[styles[-styled-1].Font-1]);
+            // A large-operator template can use a different encoded glyph than
+            // its fixed CHAR form. Bind the template glyph to its own native
+            // font instead of reusing the ordinary character's font position.
+            if(TryResolveNativeBigOperator(token,out var big,allowAmbiguousUnionIntersection:true))
+                token.SetAttributeValue("data-mtef-template-typeface",StyledTypeface(big.Typeface,bits));
+            if(TryResolveNativeIntegral(token,out _))
+            {
+                token.SetAttributeValue("data-mtef-template-typeface",StyledTypeface(TypefaceSymbol,bits));
+                token.SetAttributeValue("data-mtef-adornment-typeface",StyledTypeface(TypefaceMtExtra,bits));
+            }
         }
     }
 
@@ -2765,6 +2981,24 @@ internal static partial class MathTypeMtefCodec
         var scalars = EnumerateBmpScalars(element.Value).ToArray();
         if (scalars.Length == 0) return false;
 
+        if (variant == "normal")
+        {
+            // The native Lower/Upper Greek faces inherit equation preferences;
+            // selecting their glyph position does not encode an explicit upright
+            // request. Bind Greek identifiers to the same Unicode text-font
+            // contract used for explicit bold-italic Greek, with style bits zero.
+            // Do not replace ordinary/default Greek or symbol/operator faces.
+            return local == "mi"
+                && string.Equals(((string?)element.Attribute("mathvariant"))?.Trim(),
+                    "normal", StringComparison.OrdinalIgnoreCase)
+                && scalars.All(scalar => IsLowerGreek(scalar) || IsUpperGreek(scalar)
+                    || TryEuclidMathOneGreekVariantEncoded8(scalar, out _));
+        }
+        if (local == "mn")
+            return string.Equals(((string?)element.Attribute("mathvariant"))?.Trim(), variant, StringComparison.OrdinalIgnoreCase);
+        // Ordinary identifier bold/italic retain the built-in native styles;
+        // numbers require explicit styles because Number is otherwise upright.
+        if (variant is "bold" or "italic") return false;
         if (local == "mi")
         {
             if (string.Equals(
@@ -2780,6 +3014,8 @@ internal static partial class MathTypeMtefCodec
             }
 
             if (string.Equals(variant, "script", StringComparison.OrdinalIgnoreCase)
+                && (string.IsNullOrWhiteSpace((string?)element.Attribute("mathvariant"))
+                    || string.Equals((string?)element.Attribute("mathvariant"), "italic", StringComparison.OrdinalIgnoreCase))
                 && (scalars.All(scalar => TryEuclidMathOneGreekVariantEncoded8(scalar, out _))
                     || scalars.All(scalar => TryEuclidMathOneDotlessJ(scalar, out _, out _))))
             {
@@ -2881,7 +3117,7 @@ internal static partial class MathTypeMtefCodec
         output.Add((byte)((value >> 8) & 0xFF));
     }
 
-    private static void EmitNode(XNode node, List<byte> output)
+    private static void EmitNode(XNode node, MtefWriter output)
     {
         if (node is XText text)
         {
@@ -2909,7 +3145,9 @@ internal static partial class MathTypeMtefCodec
                 EmitIdentifier(element, output);
                 break;
             case "mn":
-                EmitText(element.Value, TypefaceNumber, output);
+                if (element.Attribute("data-mtef-explicit-typeface") is not null)
+                    EmitIdentifier(element, output);
+                else EmitText(element.Value, TypefaceNumber, output);
                 break;
             case "mo":
             {
@@ -3003,45 +3241,39 @@ internal static partial class MathTypeMtefCodec
             node is XElement
             || node is XText text && !string.IsNullOrWhiteSpace(text.Value));
 
-    private static void EmitScriptBase(XElement element, List<byte> output)
+    private static bool IsEmptyScriptBase(XElement element)
     {
-        // A postfix TMPL consumes exactly one previous object. An empty MathML
-        // base is still a structural slot, not an instruction to reuse the last
-        // sibling. Represent it by a native null LINE, never an invisible CHAR.
-        // Composite bases remain one LINE; ordinary atomic bases stay unchanged.
-        var start = output.Count;
-        if (RequiresGroupedScriptBase(element))
-            EmitLine(element, output);
-        else
-            EmitNode(element, output);
-        if (output.Count == start)
-            output.AddRange(new byte[] { RecordLine, LineNull });
+        // Presentation-only wrappers cannot turn a zero-content base into an
+        // atom. The same predicate governs explicit TeX prescript adoption and
+        // native trailing-script isolation, so mstyle/mpadded/semantics nesting
+        // never changes which neighboring object owns the script.
+        if (element.Name.LocalName is not ("mrow" or "mi" or "mn" or "mtext"
+            or "mstyle" or "mpadded" or "semantics" or "math"))
+            return false;
+        if (element.Nodes().OfType<XText>().Any(text => !string.IsNullOrWhiteSpace(text.Value)))
+            return false;
+        return element.Elements().Where(child => child.Name.LocalName is not ("annotation" or "annotation-xml"))
+            .All(IsEmptyScriptBase);
     }
 
-    private static bool RequiresGroupedScriptBase(XElement element)
+    private static void EmitScriptBase(XElement element, MtefWriter output)
     {
-        var local = element.Name.LocalName;
-        if (local is not ("mrow" or "mstyle" or "semantics" or "mpadded" or "math"))
-            return !element.HasElements
-                && EnumerateBmpScalars(element.Value).Skip(1).Any();
-
-        var children = SignificantChildren(element)
-            .Where(child => child is not XElement childElement
-                || childElement.Name.LocalName is not ("annotation" or "annotation-xml"))
-            .ToArray();
-        if (children.Length > 1) return true;
-        if (children.Length == 1 && children[0] is XElement onlyChild)
-            return RequiresGroupedScriptBase(onlyChild);
-        if (children.Length == 1 && children[0] is XText onlyText)
-        {
-            return EnumerateBmpScalars(onlyText.Value).Skip(1).Any();
-        }
-        return false;
+        // MTEF trailing-script templates consume the preceding OBJECT, not a
+        // MathML token. Adjacent CHAR records of the same native run can be
+        // coalesced by MathType (for example mtext "%" followed by an upright
+        // identifier "e" becomes one Text object "%e"). If the base is emitted
+        // as a bare CHAR, the following script then binds to that merged object
+        // and silently captures the preceding sibling. A LINE is MTEF's native
+        // grouping object, so every explicit MathML script base is materialized
+        // as one LINE. This preserves the token/object boundary independent of
+        // typeface, styling, or the preceding sibling instead of special-casing
+        // percent, text, numbers, or any particular formula.
+        EmitLine(element, output);
     }
 
     private static void EmitContainerChildren(
         XElement element,
-        List<byte> output,
+        MtefWriter output,
         string? inheritedMathVariant)
     {
         var children = new List<XNode>();
@@ -3120,6 +3352,8 @@ internal static partial class MathTypeMtefCodec
         if (local is "msub" or "msup" or "msubsup" or "munder" or "mover" or "munderover")
         {
             if (children.Length < 2) return false;
+            if (local == "mover" && IsOverDecoration(element, children[1]))
+                return false;
             baseElement = children[0];
             if (local is "msub" or "munder") lower = children[1];
             else if (local is "msup" or "mover") upper = children[1];
@@ -3154,7 +3388,7 @@ internal static partial class MathTypeMtefCodec
     private static void EmitResolvedBigOperator(
         ResolvedBigOperatorHead resolved,
         XElement main,
-        List<byte> output)
+        MtefWriter output)
     {
         if (resolved.IsIntegral)
             EmitIntegralTemplate(
@@ -3206,7 +3440,7 @@ internal static partial class MathTypeMtefCodec
         }
     }
 
-    private static void EmitFraction(XElement element, List<byte> output)
+    private static void EmitFraction(XElement element, MtefWriter output)
     {
         var children = element.Elements().ToArray();
         if (children.Length < 2)
@@ -3235,33 +3469,31 @@ internal static partial class MathTypeMtefCodec
         EmitLine(children[0], output);
         EmitLine(children[1], output);
         output.Add(RecordEnd);
-        output.Add(RecordFull);
+        output.RestoreContentSize();
     }
 
-    private static void EmitSquareRoot(XElement element, List<byte> output)
+    private static void EmitSquareRoot(XElement element, MtefWriter output)
     {
         output.AddRange(new byte[] { RecordTemplate, 0, TemplateRoot, 0, 0 });
         EmitLineContents(SignificantChildren(element), output);
-        output.Add(RecordSub);
+        using var scriptSize = output.EnterScriptSize();
         output.AddRange(new byte[] { RecordLine, LineNull });
         output.Add(RecordEnd);
-        output.Add(RecordFull);
     }
 
-    private static void EmitNthRoot(XElement element, List<byte> output)
+    private static void EmitNthRoot(XElement element, MtefWriter output)
     {
         var children = element.Elements().ToArray();
         if (children.Length < 2)
             throw new InvalidDataException("MathML mroot requires radicand and index.");
         output.AddRange(new byte[] { RecordTemplate, 0, TemplateRoot, 1, 0 });
         EmitLine(children[0], output);
-        output.Add(RecordSub);
+        using var scriptSize = output.EnterScriptSize();
         EmitLine(children[1], output);
         output.Add(RecordEnd);
-        output.Add(RecordFull);
     }
 
-    private static void EmitScript(XElement element, byte selector, List<byte> output)
+    private static void EmitScript(XElement element, byte selector, MtefWriter output)
     {
         var children = element.Elements().ToArray();
         var required = selector == TemplateSubSup ? 3 : 2;
@@ -3299,52 +3531,42 @@ internal static partial class MathTypeMtefCodec
                 output);
             return;
         }
-        EmitScriptBase(children[0], output);
+        // A native leading trailing-script has no base object. Give it its own
+        // LINE so it cannot consume a preceding sibling. The TMPL is first in
+        // that LINE, just as in genuine MathType storage; a preceding empty LINE
+        // would supply a different baseline, and LINE_NULL is not a base at all.
+        var emptyBase = IsEmptyScriptBase(children[0]);
+        if (emptyBase) output.AddRange(new byte[] { RecordLine, 0 });
+        else EmitScriptBase(children[0], output);
         output.AddRange(new byte[] { RecordTemplate, 0, selector, 0, 0 });
-        output.Add(RecordSub);
-        if (selector == TemplateSub)
+        using (output.EnterScriptSize())
         {
-            EmitLine(children[1], output);
-            output.AddRange(new byte[] { RecordLine, LineNull });
+            if (selector == TemplateSub)
+            {
+                EmitLine(children[1], output);
+                output.AddRange(new byte[] { RecordLine, LineNull });
+            }
+            else if (selector == TemplateSup)
+            {
+                output.AddRange(new byte[] { RecordLine, LineNull });
+                EmitLine(children[1], output);
+            }
+            else
+            {
+                EmitLine(children[1], output);
+                EmitLine(children[2], output);
+            }
+            output.Add(RecordEnd);
         }
-        else if (selector == TemplateSup)
-        {
-            output.AddRange(new byte[] { RecordLine, LineNull });
-            EmitLine(children[1], output);
-        }
-        else
-        {
-            EmitLine(children[1], output);
-            EmitLine(children[2], output);
-        }
-        output.Add(RecordEnd);
-        output.Add(RecordFull);
+        if (emptyBase) output.Add(RecordEnd);
     }
 
-    private static void EmitOver(XElement element, List<byte> output)
+    private static void EmitOver(XElement element, MtefWriter output)
     {
         var children = element.Elements().ToArray();
         if (children.Length < 2)
         {
             EmitContainerChildren(element, output, inheritedMathVariant: null);
-            return;
-        }
-        if (TryResolveNativeIntegral(children[0], out var integral))
-        {
-            EmitIntegralTemplate(integral, main: null, lower: null, upper: children[1], output);
-            return;
-        }
-        if (TryResolveNativeBigOperator(
-                children[0],
-                out var bigOperator,
-                allowAmbiguousUnionIntersection: true))
-        {
-            EmitBigOperatorTemplate(
-                bigOperator,
-                main: null,
-                lower: null,
-                upper: children[1],
-                output);
             return;
         }
         if (TryGetAnnotatedHorizontalBraceBody(children[0], top: true, out var annotatedBraceBody))
@@ -3355,6 +3577,14 @@ internal static partial class MathTypeMtefCodec
                 annotatedBraceBody,
                 children[1],
                 output);
+            return;
+        }
+        if (!IsOverDecoration(element, children[1]))
+        {
+            // An upper argument is not an accent, even if its glyph resembles
+            // one. The common script writer owns both ordinary superscripts
+            // and big-operator limits (and their native size/object scopes).
+            EmitScript(element, TemplateSup, output);
             return;
         }
         var over = NormalizeAccentMark(children[1].Value.Trim());
@@ -3380,15 +3610,15 @@ internal static partial class MathTypeMtefCodec
                 return;
             case "^":
             case "ˆ":
-                EmitSingleSlotTemplate(TemplateHat, 0, children[0], output);
+                EmitGlyphAccentTemplate(TemplateHat, children[0], children[1], output);
                 return;
             case "~":
             case "˜":
-                EmitSingleSlotTemplate(TemplateTilde, 0, children[0], output);
+                EmitGlyphAccentTemplate(TemplateTilde, children[0], children[1], output);
                 return;
             case "⌢":
             case "⏜":
-                EmitSingleSlotTemplate(TemplateArc, 0, children[0], output);
+                EmitGlyphAccentTemplate(TemplateArc, children[0], children[1], output);
                 return;
             case "⏞":
                 EmitHorizontalFenceTemplate(
@@ -3399,11 +3629,21 @@ internal static partial class MathTypeMtefCodec
                     output);
                 return;
         }
+        // A centered accent on a group is a HatBox with a selected glyph, not
+        // a trailing superscript. This includes dots, checks, breves and rings,
+        // and works for a compound native atom (for example a contour integral)
+        // without replacing that atom with a font-dependent fixed CHAR.
+        if (ResolveOverAccent(element, children[1])
+            && EnumerateBmpScalars(children[1].Value.Trim()).Count() == 1)
+        {
+            EmitGlyphAccentTemplate(TemplateHat, children[0], children[1], output);
+            return;
+        }
         EmitScriptBase(children[0], output);
         EmitTrailingScript(children[1], isSubscript: false, output);
     }
 
-    private static void EmitUnder(XElement element, List<byte> output)
+    private static void EmitUnder(XElement element, MtefWriter output)
     {
         var children = element.Elements().ToArray();
         if (children.Length < 2)
@@ -3460,11 +3700,14 @@ internal static partial class MathTypeMtefCodec
                 output);
             return;
         }
-        EmitScriptBase(children[0], output);
-        EmitTrailingScript(children[1], isSubscript: true, output);
+        // Use the same object-boundary writer as msub. In particular, a null
+        // basis must keep its entire trailing script inside one isolated LINE;
+        // otherwise a subsequent read/rewrite can reinterpret it as a left
+        // script on the following sibling.
+        EmitScript(element, TemplateSub, output);
     }
 
-    private static void EmitUnderOver(XElement element, List<byte> output)
+    private static void EmitUnderOver(XElement element, MtefWriter output)
     {
         var children = element.Elements().ToArray();
         if (children.Length < 3)
@@ -3500,24 +3743,24 @@ internal static partial class MathTypeMtefCodec
             EmitLimitTemplate(children[0], children[1], children[2], output);
             return;
         }
-        EmitScriptBase(children[0], output);
-        output.AddRange(new byte[] { RecordTemplate, 0, TemplateSubSup, 0, 0, RecordSub });
-        EmitLine(children[1], output);
-        EmitLine(children[2], output);
-        output.Add(RecordEnd);
-        output.Add(RecordFull);
+        EmitScript(element, TemplateSubSup, output);
     }
 
     private readonly struct NativeIntegral
     {
-        public NativeIntegral(int variationKind, int integralCount)
+        public NativeIntegral(int variationKind, int integralCount,
+            int symbolTypeface = TypefaceSymbol, int adornmentTypeface = TypefaceMtExtra)
         {
             VariationKind = variationKind;
             IntegralCount = integralCount;
+            SymbolTypeface = symbolTypeface;
+            AdornmentTypeface = adornmentTypeface;
         }
 
         public int VariationKind { get; }
         public int IntegralCount { get; }
+        public int SymbolTypeface { get; }
+        public int AdornmentTypeface { get; }
     }
 
     private static bool TryResolveNativeIntegral(
@@ -3536,6 +3779,11 @@ internal static partial class MathTypeMtefCodec
             "∳" => new NativeIntegral(0x0C, 1),
             _ => default,
         };
+        if (integral.VariationKind != 0
+            && int.TryParse((string?)element.Attribute("data-mtef-template-typeface"), out var styled))
+            integral = new NativeIntegral(integral.VariationKind, integral.IntegralCount, styled,
+                int.TryParse((string?)element.Attribute("data-mtef-adornment-typeface"), out var adornment)
+                    ? adornment : TypefaceMtExtra);
         return integral.VariationKind != 0;
     }
 
@@ -3544,7 +3792,7 @@ internal static partial class MathTypeMtefCodec
         XElement? main,
         XElement? lower,
         XElement? upper,
-        List<byte> output)
+        MtefWriter output)
     {
         // MathType 7 uses selector 15 for the integral family. Genuine native
         // equations encode lower/upper presence in 0x10/0x20 and the integral
@@ -3558,23 +3806,22 @@ internal static partial class MathTypeMtefCodec
         EmitTemplateHeader(TemplateIntegral, variation, output);
         if (main is null) output.AddRange(new byte[] { RecordLine, LineNull });
         else EmitLine(main, output);
-        // MathType stores integral limits in SUB size. SIZE records are stateful;
-        // omitting this transition makes the lower/upper slots inherit FULL and
-        // renders limits visibly too large even though the MTEF remains readable.
-        if (lower is not null || upper is not null)
-            output.Add(RecordSub);
+        // Limits step down from the enclosing size; a nested integral uses
+        // SUB2 limits and SUBSYM, and returns to its parent's content size.
+        var symbolSize = output.SymbolSize;
+        using var limitsSize = output.EnterScriptSize();
         if (lower is null) output.AddRange(new byte[] { RecordLine, LineNull });
         else EmitLine(lower, output);
         if (upper is null) output.AddRange(new byte[] { RecordLine, LineNull });
         else EmitLine(upper, output);
-        output.Add(RecordSym);
+        output.Add(symbolSize);
         if (integral.VariationKind == 0x05)
         {
             // Exact bytes emitted by genuine MathType 7 for the closed-loop
             // adornment: fnMTEXTRA, MTCode U+EE11, legacy position 0xD1.
             EmitScalar(
                 0xEE11,
-                TypefaceMtExtra,
+                integral.AdornmentTypeface,
                 output,
                 includeEncoded8: true,
                 encoded8Override: 0xD1);
@@ -3583,19 +3830,14 @@ internal static partial class MathTypeMtefCodec
         {
             EmitScalar(
                 0x222B,
-                TypefaceSymbol,
+                integral.SymbolTypeface,
                 output,
                 includeEncoded8: true,
                 encoded8Override: 0xF2);
         }
         output.Add(RecordEnd);
-        // SYM is a persistent MTEF typesize state. Genuine MathType BigOp
-        // equations normally place the complete integrand in the template's
-        // main slot, so there is no ordinary sibling text after the symbol.
-        // VisualTeX can encounter presentation MathML where the integrand is a
-        // following sibling; always restore FULL after the template so that
-        // subsequent ordinary characters cannot inherit symbol size.
-        output.Add(RecordFull);
+        // Disposing limitsSize restores the enclosing size after the template,
+        // not necessarily FULL (this integral itself may be in a script).
     }
 
     private readonly struct NativeBigOperator
@@ -3647,6 +3889,9 @@ internal static partial class MathTypeMtefCodec
                 => new NativeBigOperator(TemplateIntersection, 0x2229, TypefaceMtExtra, 0x49),
             _ => default,
         };
+        if (bigOperator.Selector != 0
+            && int.TryParse((string?)element.Attribute("data-mtef-template-typeface"), out var styled))
+            bigOperator = new NativeBigOperator(bigOperator.Selector, bigOperator.MtCode, styled, bigOperator.Encoded8);
         return bigOperator.Selector != 0;
     }
 
@@ -3655,22 +3900,20 @@ internal static partial class MathTypeMtefCodec
         XElement? main,
         XElement? lower,
         XElement? upper,
-        List<byte> output)
+        MtefWriter output)
     {
         // MathType 7 native BigOp storage observed from genuine Equation.DSMT4:
         // variation 0x70 and line slots main/lower/upper followed by SYM + CHAR.
         EmitTemplateHeader(bigOperator.Selector, 0x70, output);
         if (main is null) output.AddRange(new byte[] { RecordLine, LineNull });
         else EmitLine(main, output);
-        // Sum/product/union/intersection limits use the same script-size state as
-        // native MathType. Without SUB, both limits are interpreted at FULL size.
-        if (lower is not null || upper is not null)
-            output.Add(RecordSub);
+        var symbolSize = output.SymbolSize;
+        using var limitsSize = output.EnterScriptSize();
         if (lower is null) output.AddRange(new byte[] { RecordLine, LineNull });
         else EmitLine(lower, output);
         if (upper is null) output.AddRange(new byte[] { RecordLine, LineNull });
         else EmitLine(upper, output);
-        output.Add(RecordSym);
+        output.Add(symbolSize);
         EmitScalar(
             bigOperator.MtCode,
             bigOperator.Typeface,
@@ -3678,9 +3921,7 @@ internal static partial class MathTypeMtefCodec
             includeEncoded8: true,
             encoded8Override: bigOperator.Encoded8);
         output.Add(RecordEnd);
-        // Do not leak the SYM typesize used by the large operator glyph into
-        // following siblings. MathType treats FULL/SUB/SYM as size state.
-        output.Add(RecordFull);
+        // limitsSize restores the parent content size, including nested SUB.
     }
 
     private static bool IsNamedLimitOperator(XElement element)
@@ -3704,7 +3945,7 @@ internal static partial class MathTypeMtefCodec
         XElement operatorElement,
         XElement? lower,
         XElement? upper,
-        List<byte> output)
+        MtefWriter output)
     {
         // Genuine MathType 7 stores named operators such as max/min/lim/sup/inf
         // as function-style CHAR records followed by the ordinary sub/sup
@@ -3726,8 +3967,8 @@ internal static partial class MathTypeMtefCodec
             selector,
             0,
             0,
-            RecordSub,
         });
+        using var scriptSize = output.EnterScriptSize();
         if (lower is null)
             output.AddRange(new byte[] { RecordLine, LineNull });
         else
@@ -3737,7 +3978,6 @@ internal static partial class MathTypeMtefCodec
         else
             EmitLine(upper, output);
         output.Add(RecordEnd);
-        output.Add(RecordFull);
     }
 
     private static void EmitFunctionRun(string name, List<byte> output)
@@ -3756,7 +3996,7 @@ internal static partial class MathTypeMtefCodec
     private static void EmitTrailingScript(
         XElement script,
         bool isSubscript,
-        List<byte> output)
+        MtefWriter output)
     {
         output.AddRange(new byte[]
         {
@@ -3765,8 +4005,8 @@ internal static partial class MathTypeMtefCodec
             isSubscript ? TemplateSub : TemplateSup,
             0,
             0,
-            RecordSub,
         });
+        using var scriptSize = output.EnterScriptSize();
         if (isSubscript)
         {
             EmitLine(script, output);
@@ -3778,26 +4018,45 @@ internal static partial class MathTypeMtefCodec
             EmitLine(script, output);
         }
         output.Add(RecordEnd);
-        output.Add(RecordFull);
     }
 
     private static void EmitSingleSlotTemplate(
         byte selector,
         int variation,
         XElement body,
-        List<byte> output)
+        MtefWriter output)
     {
         EmitTemplateHeader(selector, variation, output);
         EmitLine(body, output);
         output.Add(RecordEnd);
-        output.Add(RecordFull);
+        output.RestoreContentSize();
+    }
+
+    private static void EmitGlyphAccentTemplate(
+        byte selector, XElement body, XElement sourceMark, MtefWriter output)
+    {
+        // HatBoxClass owns a main LINE and a trailing glyph CHAR. A one-slot
+        // template is incomplete native data even when our reader can infer a
+        // plausible mark from its selector. The selected CHAR is authoritative:
+        // tmHAT can carry a fixed dot/check/etc. as well as a stretching hat.
+        EmitTemplateHeader(selector, 0, output);
+        EmitLine(body, output);
+        var mark = NormalizeAccentMark(sourceMark.Value.Trim());
+        var expanding = !IsFalseMathMlBoolean((string?)sourceMark.Attribute("stretchy"));
+        var combining = mark switch { "^" => 0x0302, "~" => 0x0303, "⌢" or "⏜" => 0x2322, _ => 0 };
+        if (expanding && combining != 0)
+            EmitScalar(combining, TypefaceFence, output);
+        else
+            EmitOperator(sourceMark, output);
+        output.Add(RecordEnd);
+        output.RestoreContentSize();
     }
 
     private static void EmitVectorTemplate(
         int variation,
         int combiningArrow,
         XElement body,
-        List<byte> output)
+        MtefWriter output)
     {
         // Genuine MathType 7 tmVEC HatBox records are not a generic one-slot
         // template. After the body line MathType persists the selected combining
@@ -3814,7 +4073,7 @@ internal static partial class MathTypeMtefCodec
             output,
             includeEncoded8: false);
         output.Add(RecordEnd);
-        output.Add(RecordFull);
+        output.RestoreContentSize();
     }
 
     private static bool TryGetAnnotatedHorizontalBraceBody(
@@ -3845,7 +4104,7 @@ internal static partial class MathTypeMtefCodec
         bool top,
         XElement body,
         XElement? annotation,
-        List<byte> output)
+        MtefWriter output)
     {
         EmitTemplateHeader(selector, top ? 1 : 0, output);
 
@@ -3857,13 +4116,14 @@ internal static partial class MathTypeMtefCodec
         // parse itself but that MathType may reject while activating the OLE.
         EmitColor(0, output);
         EmitMathTypeColoredLine(body, output, resetColorAfter: false);
-        output.Add(RecordSub);
-        EmitColor(0, output);
-        if (annotation is null)
-            output.AddRange(new byte[] { RecordLine, LineNull });
-        else
-            EmitMathTypeColoredLine(annotation, output, resetColorAfter: false);
-        output.Add(RecordFull);
+        using (output.EnterScriptSize())
+        {
+            EmitColor(0, output);
+            if (annotation is null)
+                output.AddRange(new byte[] { RecordLine, LineNull });
+            else
+                EmitMathTypeColoredLine(annotation, output, resetColorAfter: false);
+        }
         EmitScalar(
             top ? 0xFE37 : 0xFE38,
             TypefaceFence,
@@ -3940,13 +4200,32 @@ internal static partial class MathTypeMtefCodec
             return false;
         var scalars = EnumerateBmpScalars(body.Value).ToArray();
         if (scalars.Length != 1) return false;
-        var typeface = ResolveTokenTypeface(body, scalars[0]);
-        EmitScalar(
-            scalars[0],
-            typeface,
-            output,
-            includeEncoded8: body.Name.LocalName == "mo" && scalars[0] <= 0xFF,
-            embellishments: new[] { code });
+
+        // Decoration changes only the CHAR's EMBELL list. First emit the bare
+        // token through its canonical character path, including every explicit
+        // font, native MTCode, encoded8 position and function-start option.
+        // Re-resolving just a typeface here loses special operator glyphs as well
+        // as styled identifiers; keeping their bytes makes the invariant apply
+        // to all existing and future character mappings, not an accent whitelist.
+        var character = new MtefWriter();
+        // Use the actual ordinary-object writer, not the fixed-glyph shortcut.
+        // A large/composite operator owns a template, possibly multiple styled
+        // glyphs. It must receive a group accent around that same native object.
+        EmitNode(body, character);
+        if (character.Count < 5 || character[0] != RecordChar)
+            return false;
+        var options = character[1];
+        // Token emitters produce one unnudged CHAR. Do not decorate a template,
+        // a run, or a pre-decorated object by guessing where its bytes end.
+        if ((options & (0x08 | CharHasEmbellishment)) != 0) return false;
+        var end = 2 + (character[2] == 0xFF ? 3 : 1);
+        if ((options & 0x20) == 0) end += 2;
+        if ((options & CharEncoded8) != 0) end++;
+        if ((options & 0x10) != 0) end += 2;
+        if (end != character.Count) return false;
+        character[1] |= CharHasEmbellishment;
+        output.AddRange(character);
+        output.AddRange(new byte[] { RecordEmbellishment, 0, code, RecordEnd });
         return true;
     }
 
@@ -4005,7 +4284,7 @@ internal static partial class MathTypeMtefCodec
     private static bool TryEmitAlignedPile(
         XElement element,
         byte[] sourceMtef,
-        List<byte> output)
+        MtefWriter output)
     {
         var rows = element.Elements()
             .Where(row => row.Name.LocalName is "mtr" or "mlabeledtr")
@@ -4128,7 +4407,7 @@ internal static partial class MathTypeMtefCodec
         return true;
     }
 
-    private static void EmitMatrix(XElement element, List<byte> output)
+    private static void EmitMatrix(XElement element, MtefWriter output)
     {
         var rows = element.Elements()
             .Where(row => row.Name.LocalName is "mtr" or "mlabeledtr")
@@ -4136,7 +4415,8 @@ internal static partial class MathTypeMtefCodec
         if (rows.Length == 0)
         {
             output.AddRange(new byte[] { RecordMatrix, 0, 1, 2, 1, 1, 1, 0, 0 });
-            output.AddRange(new byte[] { RecordLine, LineNull, RecordEnd, RecordFull });
+            output.AddRange(new byte[] { RecordLine, LineNull, RecordEnd });
+            output.RestoreContentSize();
             return;
         }
         var cells = rows.Select(row => row.Elements()
@@ -4175,7 +4455,7 @@ internal static partial class MathTypeMtefCodec
     private static int PartitionByteCount(int partitionCount) =>
         Math.Max(1, (partitionCount + 3) / 4);
 
-    private static void EmitEnclose(XElement element, List<byte> output)
+    private static void EmitEnclose(XElement element, MtefWriter output)
     {
         var notation = ((string?)element.Attribute("notation") ?? string.Empty)
             .ToLowerInvariant();
@@ -4205,11 +4485,13 @@ internal static partial class MathTypeMtefCodec
         EmitNode(body, output);
     }
 
-    private static void EmitMultiScripts(XElement element, List<byte> output)
+    private static void EmitMultiScripts(XElement element, MtefWriter output)
     {
         var children = element.Elements().ToArray();
         if (children.Length == 0) return;
 
+        var isolateEmpty = IsEmptyScriptBase(children[0]);
+        if (isolateEmpty) output.AddRange(new byte[] { RecordLine, 0 });
         var prescriptsIndex = Array.FindIndex(
             children,
             child => child.Name.LocalName == "mprescripts");
@@ -4250,21 +4532,24 @@ internal static partial class MathTypeMtefCodec
                 EmitTrailingScript(sub, isSubscript: true, output);
             else
             {
-                output.AddRange(new byte[] { RecordTemplate, 0, TemplateSubSup, 0, 0, RecordSub });
-                EmitLine(sub, output);
-                EmitLine(sup, output);
-                output.Add(RecordEnd);
-                output.Add(RecordFull);
+                output.AddRange(new byte[] { RecordTemplate, 0, TemplateSubSup, 0, 0 });
+                using (output.EnterScriptSize())
+                {
+                    EmitLine(sub, output);
+                    EmitLine(sup, output);
+                    output.Add(RecordEnd);
+                }
             }
             index += 2;
         }
+        if (isolateEmpty) output.Add(RecordEnd);
     }
 
     private static void EmitScriptPair(
         XElement? sub,
         XElement? sup,
         bool precedes,
-        List<byte> output)
+        MtefWriter output)
     {
         var hasSub = sub is not null && sub.Name.LocalName != "none";
         var hasSup = sup is not null && sup.Name.LocalName != "none";
@@ -4278,17 +4563,16 @@ internal static partial class MathTypeMtefCodec
             selector,
             precedes ? (byte)1 : (byte)0,
             0,
-            RecordSub,
         });
+        using var scriptSize = output.EnterScriptSize();
         if (hasSub) EmitLine(sub!, output);
         else output.AddRange(new byte[] { RecordLine, LineNull });
         if (hasSup) EmitLine(sup!, output);
         else output.AddRange(new byte[] { RecordLine, LineNull });
         output.Add(RecordEnd);
-        output.Add(RecordFull);
     }
 
-    private static void EmitFenced(XElement element, List<byte> output)
+    private static void EmitFenced(XElement element, MtefWriter output)
     {
         var open = NormalizeFence((string?)element.Attribute("open") ?? "(");
         var close = NormalizeFence((string?)element.Attribute("close") ?? ")");
@@ -4318,7 +4602,7 @@ internal static partial class MathTypeMtefCodec
 
     private static void EmitMathTypeColoredLine(
         XElement element,
-        List<byte> output,
+        MtefWriter output,
         bool resetColorAfter)
     {
         output.AddRange(new byte[] { RecordLine, 0 });
@@ -4401,21 +4685,24 @@ internal static partial class MathTypeMtefCodec
         return null;
     }
 
-    private static void EmitLine(XElement element, List<byte> output)
+    private static void EmitLine(XElement element, MtefWriter output)
     {
         output.AddRange(new byte[] { RecordLine, 0 });
         EmitNode(element, output);
         output.Add(RecordEnd);
     }
 
-    private static void EmitLineContents(IEnumerable<XNode> nodes, List<byte> output)
+    private static void EmitLineContents(IEnumerable<XNode> nodes, MtefWriter output)
     {
         output.AddRange(new byte[] { RecordLine, 0 });
         foreach (var node in nodes) EmitNode(node, output);
         output.Add(RecordEnd);
     }
 
-    private static void EmitIdentifier(XElement element, List<byte> output)
+    private static void EmitIdentifier(
+        XElement element,
+        List<byte> output,
+        IReadOnlyList<byte>? embellishments = null)
     {
         var value = element.Value;
         if (string.IsNullOrEmpty(value)) return;
@@ -4473,11 +4760,12 @@ internal static partial class MathTypeMtefCodec
                     explicitTypeface.Value,
                     output,
                     includeEncoded8: preservedEncoded8.HasValue,
+                    embellishments: embellishments,
                     encoded8Override: preservedEncoded8);
                 continue;
             }
 
-            if (scalar == 0x210F)
+            if (scalar == 0x210F && explicitTypeface is null)
             {
                 // Genuine MathType 7 persists \hbar / U+210F as an MT Extra
                 // character, with the legacy 8-bit position 'h'. Writing the
@@ -4491,6 +4779,7 @@ internal static partial class MathTypeMtefCodec
                     TypefaceMtExtra,
                     output,
                     includeEncoded8: true,
+                    embellishments: embellishments,
                     encoded8Override: 0x68);
                 continue;
             }
@@ -4506,6 +4795,7 @@ internal static partial class MathTypeMtefCodec
                     TypefaceMtExtra,
                     output,
                     includeEncoded8: true,
+                    embellishments: embellishments,
                     encoded8Override: mtExtraPosition);
                 continue;
             }
@@ -4515,6 +4805,10 @@ internal static partial class MathTypeMtefCodec
                 && !effectiveVariant.Contains("double-struck")
                 && !effectiveVariant.Contains("script")
                 && !effectiveVariant.Contains("fraktur")
+                // An ASCII punctuation glyph in a literal/upright identifier
+                // is not a Symbol operator just because that font contains it.
+                // Keep token semantics separate from the font encoding table.
+                && (scalar > 0x7F || IsMathematicalSymbolScalar(scalar))
                 && TryResolveLegacyMathTypeGlyph(
                     scalar,
                     out var nativeMtCode,
@@ -4526,6 +4820,7 @@ internal static partial class MathTypeMtefCodec
                     nativeTypeface,
                     output,
                     includeEncoded8: true,
+                    embellishments: embellishments,
                     encoded8Override: nativeEncoded8);
                 continue;
             }
@@ -4541,7 +4836,8 @@ internal static partial class MathTypeMtefCodec
                 EmitScalar(
                     NormalizeMathTypeMtCode(scalar),
                     TypefaceText,
-                    output);
+                    output,
+                    embellishments: embellishments);
                 continue;
             }
 
@@ -4549,7 +4845,13 @@ internal static partial class MathTypeMtefCodec
                 ?? ResolveTokenTypeface(element, scalar, effectiveVariant, isFunction);
             var dotlessJMtCode = 0;
             byte dotlessJEncoded8 = 0;
-            var hasDotlessJ = explicitTypeface is < 0
+            // A font position is meaningful only in its declared font. PUA and
+            // encoded8 aliases from Euclid Math One must not be copied into an
+            // explicitly requested Times/Arial/Courier character record.
+            var usesEuclidMathOne = string.Equals(
+                (string?)element.Attribute("data-mtef-explicit-font"),
+                "Euclid Math One", StringComparison.OrdinalIgnoreCase);
+            var hasDotlessJ = explicitTypeface is < 0 && usesEuclidMathOne
                 && TryEuclidMathOneDotlessJ(
                     scalar,
                     out dotlessJMtCode,
@@ -4564,7 +4866,7 @@ internal static partial class MathTypeMtefCodec
                             : scalar;
             var explicitEncoded8 = hasDotlessJ
                 ? (byte?)dotlessJEncoded8
-                : explicitTypeface is < 0
+                : explicitTypeface is < 0 && usesEuclidMathOne
                     && TryEuclidMathOneGreekVariantEncoded8(scalar, out var greekVariantEncoded8)
                         ? (byte?)greekVariantEncoded8
                         : explicitTypeface is < 0 && scalar <= 0xFF
@@ -4575,6 +4877,7 @@ internal static partial class MathTypeMtefCodec
                 typeface,
                 output,
                 includeEncoded8: explicitEncoded8 is not null,
+                embellishments: embellishments,
                 encoded8Override: explicitEncoded8,
                 functionStart:
                     isFunction
@@ -4969,6 +5272,13 @@ internal static partial class MathTypeMtefCodec
         // standalone MTEF generation independent of MathType/MathPage at runtime.
         switch (scalar)
         {
+            // These ASCII punctuation glyphs retain their encoded positions in
+            // Adobe Symbol. Letters, quotes, dollar, caret, backslash and the
+            // Latin-1 range do NOT generally have identity mappings.
+            case '!' or '#' or '%' or '&' or '(' or ')' or '*' or '+' or ','
+                or '-' or '.' or '/' or ':' or ';' or '<' or '=' or '>' or '?'
+                or '[' or ']' or '_' or '{' or '|' or '}':
+                encoded8 = (byte)scalar; return true;
             case 0x00AC: encoded8 = 0xD8; return true;
             case 0x00B0: encoded8 = 0xB0; return true;
             case 0x00B1: encoded8 = 0xB1; return true;
@@ -5117,6 +5427,16 @@ internal static partial class MathTypeMtefCodec
             return;
         }
 
+        if (element.Value.Length == 1
+            && int.TryParse((string?)element.Attribute("data-mtef-mtcode"), NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out var preservedCode))
+        {
+            byte? encoded = byte.TryParse((string?)element.Attribute("data-mtef-encoded8"), out var position)
+                ? position : null;
+            EmitScalar(preservedCode, explicitTypeface.Value, output,
+                includeEncoded8: encoded.HasValue, encoded8Override: encoded);
+            return;
+        }
         foreach (var scalar in EnumerateBmpScalars(element.Value))
         {
             if (TryEuclidMathOneOperatorEncoded8(scalar, out var encoded8)
@@ -5252,6 +5572,14 @@ internal static partial class MathTypeMtefCodec
         if (value == "⁡") return;
         foreach (var scalar in EnumerateBmpScalars(value))
         {
+            // Genuine legacy MathType stores a literal prime as ASCII apostrophe
+            // in Function (Times), not byte 0x27 in Symbol (the contains glyph).
+            // Keep that representation; U+2032 still follows its Symbol mapping.
+            if (scalar == '\'')
+            {
+                EmitScalar(scalar, TypefaceFunction, output, includeEncoded8: false);
+                continue;
+            }
             if (scalar is 0x223C or '~')
             {
                 // Genuine MathType 7 represents TeX \sim as ASCII '~' in the
@@ -5282,17 +5610,9 @@ internal static partial class MathTypeMtefCodec
                 continue;
             }
 
-            if (scalar <= 0xFF)
-            {
-                EmitScalar(
-                    scalar,
-                    TypefaceSymbol,
-                    output,
-                    includeEncoded8: true,
-                    encoded8Override: (byte)scalar);
-                continue;
-            }
-
+            // Code-point identity is not an Adobe Symbol font-position map.
+            // In particular Latin-1 diaeresis at 0xA8 would display a diamond.
+            // Only the verified encoding table above may choose Symbol.
             // Do not pretend every Unicode operator lives in Adobe Symbol.
             // Times New Roman/MathType Text is Unicode-capable and is the safe
             // fallback for symbols not present in the legacy Symbol encoding.
@@ -5736,12 +6056,13 @@ internal static partial class MathTypeMtefCodec
                         if (pendingPrescripts.Count != 0)
                             throw new InvalidDataException(
                                 $"MathType trailing-script template at offset {_position} appears before the base of a preceding script.");
+                        // MTEF script templates store only their sub/sup slots;
+                        // a native LINE may begin with one (including inside
+                        // another script). Its missing base is an empty group,
+                        // not a malformed stream or the following object.
                         var baseNode = row.Nodes().LastOrDefault();
-                        if (baseNode is null)
-                            throw new InvalidDataException(
-                                $"MathType script template at offset {_position} has no preceding base object.");
-                        baseNode.Remove();
-                        row.Add(BuildScriptNode(baseNode, template));
+                        baseNode?.Remove();
+                        row.Add(BuildScriptNode(baseNode ?? new XElement("mrow"), template));
                     }
                     else if (template.Node is not null)
                     {
@@ -5827,9 +6148,8 @@ internal static partial class MathTypeMtefCodec
                     {
                         0xE938 => "⪯",
                         0xE939 => "⪰",
-                        _ => ((char)scalar).ToString(),
-                    };
-                    explicitMathVariant = null;
+                        _ => text,
+                    }; // Font-position decoding and explicit style both survive.
                 }
                 else if (scalar == 0xED02 && encoded == 0xF8)
                 {
@@ -5850,10 +6170,21 @@ internal static partial class MathTypeMtefCodec
                     // Euclid Math One/Two styles. They remain mathematical
                     // operators even though their MTEF typeface is negative.
                     token = new XElement("mo", text);
+                    if (!string.IsNullOrWhiteSpace(explicitMathVariant))
+                        token.SetAttributeValue("mathvariant", explicitMathVariant);
+                    token.SetAttributeValue("data-mtef-explicit-typeface", typeface);
+                    token.SetAttributeValue("data-mtef-mtcode", scalar);
+                    if (encoded >= 0) token.SetAttributeValue("data-mtef-encoded8", encoded);
+                    if (explicitCharacterStyle != 0)
+                        token.SetAttributeValue("data-mtef-character-style", explicitCharacterStyle);
                 }
                 else
                 {
-                    token = new XElement("mi", text);
+                    // Native explicit font styles do not have a Number face;
+                    // a numeric CHAR keeps its digit identity while the font
+                    // definition supplies typography. Adjacent equal-style
+                    // numeric CHARs are rejoined by AppendNode as usual.
+                    token = new XElement(text.All(char.IsDigit) ? "mn" : "mi", text);
                     if (!string.IsNullOrWhiteSpace(explicitMathVariant))
                         token.SetAttributeValue("mathvariant", explicitMathVariant);
                     token.SetAttributeValue("data-mtef-explicit-typeface", typeface);
@@ -5866,6 +6197,8 @@ internal static partial class MathTypeMtefCodec
                             explicitCharacterStyle);
                 }
             }
+            else if (typeface == TypefaceVector)
+                token = new XElement(text.All(char.IsDigit) ? "mn" : "mi", new XAttribute("mathvariant", "bold"), text);
             else if (typeface != TypefaceSymbol
                 && TryNormalizeLetterlikeScalar(
                          scalar,
@@ -5940,8 +6273,6 @@ internal static partial class MathTypeMtefCodec
                 else
                     token = new XElement("mo", text);
             }
-            else if (typeface == TypefaceVector)
-                token = new XElement("mi", new XAttribute("mathvariant", "bold"), text);
             else
                 token = new XElement("mi", text);
 
@@ -6023,8 +6354,21 @@ internal static partial class MathTypeMtefCodec
                 && TryEuclidMathOneOperatorEncoded8(scalar, out _)
                 || font.IndexOf("Euclid Math Two", StringComparison.OrdinalIgnoreCase) >= 0
                 && TryEuclidMathTwoOperatorEncoded8(scalar, out _);
-            if (string.Equals(font, "Symbol", StringComparison.OrdinalIgnoreCase)
-                && (IsLowerGreek(scalar) || IsUpperGreek(scalar)))
+            var characterVariant=characterStyle switch
+            { 1=>"bold", 2=>"italic", 3=>"bold-italic", _=>(string?)null };
+            if (euclidOperator)
+            {
+                text=scalar switch { 0xE938=>"⪯", 0xE939=>"⪰", _=>((char)scalar).ToString() };
+                return characterVariant;
+            }
+            if (string.Equals(font, "MT Extra", StringComparison.OrdinalIgnoreCase))
+            {
+                text=scalar==0xFFFD && encoded==0x6E ? "♢"
+                    : scalar==0x2210 && encoded==0x43 ? "⨿" : ((char)scalar).ToString();
+                euclidOperator=IsMathematicalSymbolToken(text) || !text.All(char.IsLetter);
+                return characterVariant;
+            }
+            if (string.Equals(font, "Symbol", StringComparison.OrdinalIgnoreCase))
             {
                 // In an explicit Symbol FONT_STYLE_DEF, encoded8 is the legacy
                 // Symbol-font position (for example epsilon is byte 0x65, 'e'),
@@ -6033,6 +6377,8 @@ internal static partial class MathTypeMtefCodec
                 // a bold Latin e. Keep the scalar; CharacterStyle below still
                 // determines bold/italic presentation.
                 text = ((char)scalar).ToString();
+                euclidOperator=IsMathematicalSymbolToken(text) || !text.All(char.IsLetter);
+                return characterVariant;
             }
             if (font.IndexOf("Euclid Math One", StringComparison.OrdinalIgnoreCase) >= 0
                 && TryEuclidMathOneGreekVariantEncoded8(scalar, out var expectedGreekEncoded8)
@@ -6061,7 +6407,10 @@ internal static partial class MathTypeMtefCodec
                     _ => "sans-serif",
                 };
 
-            if (TryNormalizeLetterlikeScalar(scalar, out var letterlikeText, out var letterlikeVariant))
+            // A lexical letterlike alias is not permission to discard explicit
+            // character style. Nonzero FONT_STYLE_DEF bits remain authoritative.
+            if (characterStyle == 0
+                && TryNormalizeLetterlikeScalar(scalar, out var letterlikeText, out var letterlikeVariant))
             {
                 text = letterlikeText;
                 return letterlikeVariant;
@@ -6298,6 +6647,12 @@ internal static partial class MathTypeMtefCodec
                 case TemplateBox:
                 {
                     var main = ReadNextLineSlot();
+                    XElement? selectedAccent = null;
+                    if (selector is TemplateHat or TemplateTilde or TemplateArc)
+                    {
+                        SkipFormattingRecords();
+                        if (Peek() == RecordChar) selectedAccent = ReadCharacter();
+                    }
                     ConsumeRemainingTemplateObjects();
                     var body = CollapseRow(main);
                     XElement node;
@@ -6315,12 +6670,19 @@ internal static partial class MathTypeMtefCodec
                         };
                         node = new XElement("mover", body, new XElement("mo", arrow));
                     }
-                    else if (selector == TemplateTilde)
-                        node = new XElement("mover", body, new XElement("mo", "~"));
-                    else if (selector == TemplateHat)
-                        node = new XElement("mover", body, new XElement("mo", "^"));
-                    else if (selector == TemplateArc)
-                        node = new XElement("mover", body, new XElement("mo", "⌢"));
+                    else if (selector is TemplateTilde or TemplateHat or TemplateArc)
+                    {
+                        // Preserve the real selected HatBox glyph; the selector
+                        // names the layout class, not necessarily '^'/'~'. Keep
+                        // reading old one-slot exports, but never generate them.
+                        var mark = selectedAccent is null
+                            ? selector == TemplateTilde ? "~" : selector == TemplateArc ? "⌢" : "^"
+                            : NormalizeAccentMark(selectedAccent.Value);
+                        var accent = new XElement("mo", mark);
+                        var variant = (string?)selectedAccent?.Attribute("mathvariant");
+                        if (!string.IsNullOrWhiteSpace(variant)) accent.SetAttributeValue("mathvariant", variant);
+                        node = new XElement("mover", new XAttribute("accent", "true"), body, accent);
+                    }
                     else if (selector == TemplateBox)
                         node = new XElement("menclose", new XAttribute("notation", "box"), body);
                     else
@@ -6405,6 +6767,12 @@ internal static partial class MathTypeMtefCodec
                 : selector is >= TemplateSum and <= TemplateIntersection
                     ? new XElement("mo", DefaultBigOperatorCharacter(selector))
                     : serializedOperator ?? new XElement("mo", DefaultBigOperatorCharacter(selector));
+            // The selector supplies semantic operator identity; its serialized
+            // glyph still supplies typography. Do not discard FONT_STYLE_DEF
+            // merely because a dedicated selector already names the operator.
+            var operatorVariant=(string?)serializedOperator?.Attribute("mathvariant");
+            if(!string.IsNullOrWhiteSpace(operatorVariant))
+                operatorNode.SetAttributeValue("mathvariant",operatorVariant);
             XNode decorated = DecorateWithLimits(operatorNode, lower, upper);
             var row = new XElement("mrow", decorated);
             foreach (var node in main.Nodes().ToArray())

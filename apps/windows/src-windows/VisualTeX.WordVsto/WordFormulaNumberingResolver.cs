@@ -23,8 +23,22 @@ internal static class WordFormulaNumberingResolver
 
     internal static WordFormulaNumberingDescriptor ResolveLocal(
         Document document,
-        WordFormulaHostDescriptor host)
+        WordFormulaHostDescriptor host) =>
+        ResolveLocalCore(document, host, false, out _);
+
+    internal static WordFormulaNumberingDescriptor ResolveLocal(
+        Document document,
+        WordFormulaHostDescriptor host,
+        out WordVisualTeXParagraphNumbering.BoundBodyNumber? body) =>
+        ResolveLocalCore(document, host, true, out body);
+
+    private static WordFormulaNumberingDescriptor ResolveLocalCore(
+        Document document,
+        WordFormulaHostDescriptor host,
+        bool retainBody,
+        out WordVisualTeXParagraphNumbering.BoundBodyNumber? body)
     {
+        body = null;
         using var operationMetric =
             VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure(
                 "FormatConversion.NumberingResolver." + host?.Kind);
@@ -97,7 +111,9 @@ internal static class WordFormulaNumberingResolver
                     document,
                     hostRange,
                     host.FormulaId,
-                    out var bodyTab))
+                    retainBody,
+                    out var bodyTab,
+                    out body))
                 return bodyTab;
 
             return HasLocalLegacyNumberingEvidence(
@@ -381,19 +397,22 @@ internal static class WordFormulaNumberingResolver
         Document document,
         Range hostRange,
         string? expectedFormulaId,
-        out WordFormulaNumberingDescriptor descriptor)
+        bool retainBody,
+        out WordFormulaNumberingDescriptor descriptor,
+        out WordVisualTeXParagraphNumbering.BoundBodyNumber? body)
     {
+        body = null;
         descriptor = null!;
 
         // New canonical VisualTeX numbering is a MathType-style self-contained
         // field tree in the formula paragraph. Keep the legacy REF-to-hidden-
         // caption recognizer below only as migration input for older documents.
-        if (WordVisualTeXParagraphNumbering.TryResolve(
-                document,
-                hostRange,
-                expectedFormulaId,
-                out descriptor))
-            return true;
+        var resolved = retainBody
+            ? WordVisualTeXParagraphNumbering.TryResolve(
+                document, hostRange, expectedFormulaId, out descriptor, out body)
+            : WordVisualTeXParagraphNumbering.TryResolve(
+                document, hostRange, expectedFormulaId, out descriptor);
+        if (resolved) return true;
 
         bool Reject(string reason)
         {
@@ -564,15 +583,8 @@ internal static class WordFormulaNumberingResolver
         }
     }
 
-    private static bool IsWithinTable(Range range)
-    {
-        try
-        {
-            return Convert.ToBoolean(
-                range.get_Information(WdInformation.wdWithInTable));
-        }
-        catch { return false; }
-    }
+    private static bool IsWithinTable(Range range) =>
+        WordFormulaHostLookup.IsWhollyInsideTable(range);
 
     private static bool HasLocalLegacyNumberingEvidence(
         Range hostRange,

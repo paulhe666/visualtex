@@ -94,6 +94,19 @@ public sealed class MathTypeEmbellishmentTests
     }
 
     [Fact]
+    public void BoldItalicGreekKeepsItsStyleThroughNativeDoubleDotEmbellishment()
+    {
+        const string source = "<math><mover accent=\"true\"><mi mathvariant=\"bold-italic\">η</mi><mo>¨</mo></mover></math>";
+        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(source, inline: false, 12);
+        var readback = MathTypeMtefCodec.ReadEquationNativeMathMl(generated.EquationNative);
+
+        Assert.Equal(
+            MathTypeMtefCodec.SemanticSignature(source),
+            MathTypeMtefCodec.SemanticSignature(readback));
+        Assert.Equal(@"\ddot{\boldsymbol{\eta}}", MathMlToLatexConverter.Convert(readback));
+    }
+
+    [Fact]
     public void UnknownEmbellishmentMustNotSilentlyLoseContent()
         => Assert.Throws<InvalidDataException>(() => Read(Character('x', 99)));
 }

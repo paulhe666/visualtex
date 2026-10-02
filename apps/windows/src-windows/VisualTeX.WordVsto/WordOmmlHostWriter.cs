@@ -18,6 +18,7 @@ internal static class WordOmmlHostWriter
         Document document,
         WordFormulaHostDescriptor source)
     {
+        using var metric = WordOperationMetrics.Measure("FormatConversion.OmmlNumbering.ProbeFieldFree");
         if (document is null || source is null)
             return false;
         if (source.Kind != WordFormulaHostKind.Omml
@@ -25,25 +26,23 @@ internal static class WordOmmlHostWriter
             return false;
 
         Range? exact = null;
+        Range? number = null;
         Fields? fields = null;
         try
         {
             exact = WordFormulaHostSemanticReader.CreateRange(
                 document,
                 source.Range);
-            if (!WordOmmlConverter.HasWordNativeEquationNumberHost(
-                    exact.WordOpenXML ?? string.Empty))
+            number = WordNativeOmmlNumbering.TryResolveNumberContentRange(exact);
+            if (number is null)
                 return false;
 
             fields = exact.Fields;
             return fields.Count == 0;
         }
-        catch
-        {
-            return false;
-        }
         finally
         {
+            Release(number);
             Release(fields);
             Release(exact);
         }
@@ -246,7 +245,7 @@ internal static class WordOmmlHostWriter
         }
     }
 
-    private static string ApplySemanticOmmlTypography(
+    internal static string ApplySemanticOmmlTypography(
         string omml,
         double fontSizePoints)
     {
@@ -334,6 +333,95 @@ internal static class WordOmmlHostWriter
             "0");
     }
 
+    // A new native equation is imported as one prepared atom at a captured
+    // caret. It does not replace a text marker or serialize/reimport the owning
+    // paragraph. Location preparation and any heading reads belong to preflight.
+    internal static WordFormulaHostWriteResult InsertPreparedNative(
+        Document document, Range insertion, WordFormulaHostWriteRequest request,
+        string preparedOmml, bool preserveNumberFormatting = false)
+    {
+        if (request.Kind != WordFormulaHostKind.Omml)
+            throw new InvalidOperationException("Native OMML creation requires a prepared native target.");
+        Range? inserted = null;
+        Tables? tables = null;
+        Cells? cells = null;
+        Cell? cell = null;
+        Range? cellRange = null;
+        Range? tail = null;
+        Paragraphs? cellParagraphs = null;
+        OMaths? maths = null;
+        OMath? native = null;
+        var originalCellParagraphs = 0;
+        var originalCellSuffix = string.Empty;
+        try
+        {
+            // Capture the right-hand cell content using native range bounds,
+            // not string-length arithmetic. A cell terminator occupies one Word
+            // position but emits two characters; whole-story substring probes
+            // therefore cannot prove a cell-local transport paragraph.
+            tables = insertion.Tables;
+            if (tables.Count > 0)
+            {
+                cells = insertion.Cells;
+                if (cells.Count != 1) throw new InvalidDataException("Native creation crosses cell owners.");
+                cell = cells[1]; cellRange = cell.Range;
+                tail = insertion.Duplicate; tail.SetRange(insertion.End, cellRange.End);
+                originalCellSuffix = tail.Text ?? string.Empty;
+                cellParagraphs = cellRange.Paragraphs;
+                originalCellParagraphs = cellParagraphs.Count;
+            }
+            WordFormulaMutationTransaction.TraceBoundary(document.Application, "native-create-before-import");
+            inserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+                document, insertion, preparedOmml,
+                display: string.Equals(request.DisplayMode, "block", StringComparison.OrdinalIgnoreCase),
+                mathFontName: document.OMathFontName, allowWordNativeInlinePromotion: true);
+            WordFormulaMutationTransaction.TraceBoundary(document.Application, "native-create-after-import");
+            if (originalCellParagraphs > 0)
+            {
+                maths = inserted.OMaths;
+                if (maths.Count != 1) throw new InvalidDataException("Native cell import lost its exact equation.");
+                native = maths[1];
+                Release(cellRange); cellRange = cell.Range;
+                Release(cellParagraphs); cellParagraphs = cellRange.Paragraphs;
+                tail.SetRange(inserted.End, cellRange.End);
+                if (cellParagraphs.Count == originalCellParagraphs + 1
+                    && string.Equals(tail.Text, "\r" + originalCellSuffix, StringComparison.Ordinal))
+                {
+                    Range? transport = null;
+                    try
+                    {
+                        transport = inserted.Duplicate;
+                        transport.SetRange(inserted.End, inserted.End + 1);
+                        if (transport.Text != "\r")
+                            throw new InvalidDataException("Native cell transport separator is not one paragraph mark.");
+                        transport.Delete();
+                    }
+                    finally { Release(transport); }
+                    Release(inserted); inserted = native.Range.Duplicate;
+                    Release(cellRange); cellRange = cell.Range;
+                    Release(cellParagraphs); cellParagraphs = cellRange.Paragraphs;
+                    tail.SetRange(inserted.End, cellRange.End);
+                }
+                if (cellParagraphs.Count != originalCellParagraphs
+                    || !string.Equals(tail.Text ?? string.Empty, originalCellSuffix, StringComparison.Ordinal))
+                    throw new InvalidDataException("Native import changed content outside its exact cell insertion boundary.");
+            }
+            // Existing native-number edits prepare only their mathematical body
+            // typography before composing the retained number host. Range.Font
+            // here would rewrite the number's preserved formatting as well.
+            if (!preserveNumberFormatting)
+                WordFormulaHostLayout.ApplyOmmlLocalTypography(inserted, request.FontSizePoints);
+            var described = DescribeInsertedOmml(inserted, request.Numbered);
+            if (described.Display) WordFormulaHostLayout.ConfigureDisplayParagraph(inserted);
+            return new WordFormulaHostWriteResult { Host = described };
+        }
+        finally
+        {
+            Release(native); Release(maths); Release(cellParagraphs); Release(tail);
+            Release(cellRange); Release(cell); Release(cells); Release(tables); Release(inserted);
+        }
+    }
+
     internal static WordFormulaHostWriteResult Insert(
         WordApplication application,
         Document document,
@@ -364,13 +452,15 @@ internal static class WordOmmlHostWriter
         Range? target = null;
         try
         {
-            var preparedOmml =
-                WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
+            WordFormulaMutationTransaction.TraceBoundary(application, "omml-writer-enter");
+            var preparedOmml = request.PreparedOmml
+                ?? WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
+            WordFormulaMutationTransaction.TraceBoundary(application, "omml-writer-transformed");
 
             // Numbered OMML is one native Word host, not an unnumbered OMath
             // followed by a second rebuild. Materialize the final #(SEQ) form
             // once at the target position.
-            if (display && request.Numbered)
+            if (display && request.Numbered && request.PreparedOmml is null)
             {
                 preparedOmml =
                     WordNativeOmmlNumbering.PrepareNumberedOmml(
@@ -379,49 +469,56 @@ internal static class WordOmmlHostWriter
                         preparedOmml);
             }
 
-            if (!display)
+            // A selected external OLE is a physical replacement, not a text
+            // marker insertion. Do not serialize/reimport the containing live
+            // paragraph: it can include deleted predecessor objects. The exact
+            // source envelope also leaves neighbouring native OMaths Word-owned.
+            if (!WordOleToOmmlReplacement.TryReplace(
+                    document, insertion, preparedOmml, display, out inserted, request.PreparedOleReplacement))
             {
-                var preparedInline =
-                    PrepareAdjacentInlineNativeMerge(
-                        document,
-                        insertion,
-                        preparedOmml);
-                preparedOmml =
-                    preparedInline.Omml;
-                target =
-                    preparedInline.Target;
-            }
-            else
-            {
-                target =
-                    insertion.Duplicate;
+                if (!display)
+                {
+                    var preparedInline =
+                        PrepareAdjacentInlineNativeMerge(
+                            document,
+                            insertion,
+                            preparedOmml);
+                    preparedOmml = preparedInline.Omml;
+                    target = preparedInline.Target;
+                }
+                else
+                {
+                    target = insertion.Duplicate;
+                }
+
+                // New OMML is materialized in the actual target paragraph. No
+                // durable VisualTeX identity, scratch document or layout table
+                // participates in the final Word structure.
+                inserted = WordOmmlConverter.ReplaceWithPreparedOmmlInParagraph(
+                    document,
+                    target,
+                    preparedOmml,
+                    display,
+                    mathFontName: document.OMathFontName,
+                    allowWordNativeInlinePromotion: !display);
             }
 
-            // OMML is materialized only in the actual target paragraph. No
-            // VisualTeX bookmark, scratch document, layout table or hidden
-            // separator participates in the final Word structure.
-            inserted = WordOmmlConverter.ReplaceWithPreparedOmmlInParagraph(
-                document,
-                target,
-                preparedOmml,
-                display,
-                mathFontName:
-                    document.OMathFontName,
-                allowWordNativeInlinePromotion:
-                    !display);
-
+            WordFormulaMutationTransaction.TraceBoundary(application, "omml-writer-before-typography");
             WordFormulaHostLayout.ApplyOmmlLocalTypography(
                 inserted,
                 request.FontSizePoints);
+            WordFormulaMutationTransaction.TraceBoundary(application, "omml-writer-after-typography");
             // OMML has no VisualTeX-owned durable identity. FormulaId is
             // operation/session state only and is never serialized into Word.
 
             var described = DescribeInsertedOmml(
                 inserted,
                 request.Numbered);
+            WordFormulaMutationTransaction.TraceBoundary(application, "omml-writer-after-describe");
             if (described.Display)
                 WordFormulaHostLayout.ConfigureDisplayParagraph(
                     inserted);
+            WordFormulaMutationTransaction.TraceBoundary(application, "omml-writer-complete");
             return new WordFormulaHostWriteResult
             {
                 Host = described,
@@ -442,7 +539,7 @@ internal static class WordOmmlHostWriter
         }
     }
 
-    private static (Range Target, string Omml)
+    internal static (Range Target, string Omml)
         PrepareAdjacentInlineNativeMerge(
             Document document,
             Range insertion,
@@ -574,6 +671,7 @@ internal static class WordOmmlHostWriter
         Document document,
         WordFormulaHostDescriptor host)
     {
+        using var metric = WordOperationMetrics.Measure("FormatConversion.OmmlDelete.PreparePlainBoundary");
         if (host.Kind != WordFormulaHostKind.Omml)
             throw new ArgumentException(
                 "OMML plain-boundary delete received another host kind.");
@@ -853,8 +951,10 @@ internal static class WordOmmlHostWriter
 
     internal static WordFormulaHostDescriptor RemovePlainTextBoundaryGuard(
         Document document,
-        WordFormulaHostDescriptor host)
+        WordFormulaHostDescriptor host,
+        InlineShape? physicalOwner = null)
     {
+        using var metric = WordOperationMetrics.Measure("FormatConversion.OmmlDelete.RemovePlainGuard");
         if (host.Kind == WordFormulaHostKind.Omml)
             throw new ArgumentException(
                 "The plain-text boundary guard is only used after OMML was replaced by a non-OMML host.");
@@ -915,16 +1015,23 @@ internal static class WordOmmlHostWriter
                 host.Range.Start - 1;
             var expectedEnd =
                 host.Range.End - 1;
-            probe = document.Range(
-                expectedStart,
-                expectedEnd);
-            var refreshed =
-                WordFormulaHostResolver.ResolveLocal(
-                    document,
-                    probe,
-                    host.Kind)
-                ?? throw new InvalidDataException(
-                    "The replacement host disappeared while removing its temporary plain-text boundary.");
+            probe = physicalOwner is null
+                ? document.Range(expectedStart, expectedEnd)
+                : physicalOwner.Range;
+            var refreshed = physicalOwner is null
+                ? WordFormulaHostLookup.ResolveLocal(document, probe, host.Kind)
+                    ?? throw new InvalidDataException(
+                        "The replacement host disappeared while removing its temporary plain-text boundary.")
+                : host;
+            if (physicalOwner is not null)
+            {
+                refreshed.Range = new WordFormulaRangeAddress
+                {
+                    StoryType = probe.StoryType,
+                    Start = probe.Start,
+                    End = probe.End,
+                };
+            }
             if (refreshed.Range.StoryType != host.Range.StoryType
                 || refreshed.Range.Start != expectedStart
                 || refreshed.Range.End != expectedEnd)
@@ -951,6 +1058,7 @@ internal static class WordOmmlHostWriter
         Document document,
         WordFormulaHostDescriptor host)
     {
+        using var metric = WordOperationMetrics.Measure("FormatConversion.OmmlDelete.ExactOwnerAndBoundary");
         if (host.Kind != WordFormulaHostKind.Omml)
             throw new ArgumentException("OMML delete received another host kind.");
 
@@ -983,7 +1091,8 @@ internal static class WordOmmlHostWriter
             // first whitespace character immediately following the equation.
             // Clearing the exact OMath text removes the same local host without
             // asking Word to collapse the neighboring character boundary.
-            exact.Text = string.Empty;
+            using (WordOperationMetrics.Measure("FormatConversion.OmmlDelete.ClearExactText"))
+                exact.Text = string.Empty;
 
             Range? verify = null;
             OMaths? verifyMaths = null;
@@ -1086,15 +1195,8 @@ internal static class WordOmmlHostWriter
         }
     }
 
-    private static bool IsWithinTable(Range range)
-    {
-        try
-        {
-            return Convert.ToBoolean(
-                range.get_Information(WdInformation.wdWithInTable));
-        }
-        catch { return false; }
-    }
+    private static bool IsWithinTable(Range range) =>
+        WordFormulaHostLookup.IsWhollyInsideTable(range);
 
     private static void Release(object? value)
     {

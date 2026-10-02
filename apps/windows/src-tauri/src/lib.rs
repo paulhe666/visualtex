@@ -3938,6 +3938,11 @@ fn shutdown_runtime(app: &AppHandle, started: &AtomicBool, reason: &str) {
                 "Unable to stop Office companion server during shutdown: {error}"
             ));
         }
+        if office::state::isolated_acceptance_runtime() {
+            // No global Office sidecar or OCR runtime was started by this mode.
+            app_lifecycle::append_lifecycle_log("isolated Office acceptance shutdown completed");
+            return;
+        }
         if let Err(error) = state.platform_backend.shutdown() {
             app_lifecycle::append_lifecycle_log(format!(
                 "Unable to stop VisualTeX Office platform backend: {error}"
@@ -3965,6 +3970,24 @@ fn shutdown_runtime(app: &AppHandle, started: &AtomicBool, reason: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let run_mode = app_lifecycle::AppRunMode::current();
+    let isolated = match office::state::acceptance_runtime() {
+        Ok(Some(runtime)) => {
+            if !cfg!(target_os = "windows")
+                || run_mode != app_lifecycle::AppRunMode::OfficeBackground
+            {
+                eprintln!("Isolated Office acceptance requires Windows --office-background");
+                return;
+            }
+            // WebView2 must not reuse the installed application's profile.
+            std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", runtime.app_data_root.join("webview2"));
+            true
+        }
+        Ok(None) => false,
+        Err(error) => {
+            eprintln!("Invalid isolated Office acceptance configuration: {error}");
+            return;
+        }
+    };
     app_lifecycle::append_lifecycle_log(format!(
         "process startup mode={} args={:?}",
         run_mode.label(),
@@ -3975,7 +3998,7 @@ pub fn run() {
     let office_ocr_state = ocr_state.clone();
     let mut builder = tauri::Builder::default();
 
-    if run_mode != app_lifecycle::AppRunMode::OfficeBootstrap
+    if !isolated && run_mode != app_lifecycle::AppRunMode::OfficeBootstrap
         && std::env::var("VISUALTEX_ACCEPTANCE_ALLOW_PARALLEL_INSTANCE")
             .ok()
             .as_deref()
@@ -4007,6 +4030,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(ocr_state)
         .setup(move |app| {
+            // The template is excluded from static ACL loading. Register the
+            // same bounded commands/windows for this process's one exact port.
+            app.add_capability(office::state::office_capability_for_port(
+                office::state::office_port()
+            )?)?;
             if run_mode == app_lifecycle::AppRunMode::OfficeBootstrap {
                 app_lifecycle::append_lifecycle_log(
                     "office-bootstrap setup skipped all windows, companion startup and warmup tasks",
@@ -4021,25 +4049,27 @@ pub fn run() {
                     ));
                     std::io::Error::other(error)
                 })?;
-            if let Err(error) = office::powerpoint_native::start_double_click_monitor(
-                office_state.powerpoint_interactions.clone(),
-            ) {
-                app_lifecycle::append_lifecycle_log(format!(
-                    "Unable to start PowerPoint double-click monitor: {error}"
-                ));
+            if !isolated {
+                if let Err(error) = office::powerpoint_native::start_double_click_monitor(
+                    office_state.powerpoint_interactions.clone(),
+                ) {
+                    app_lifecycle::append_lifecycle_log(format!(
+                        "Unable to start PowerPoint double-click monitor: {error}"
+                    ));
+                }
             }
             app.manage(office_state.clone());
             office::start(office_state);
 
             #[cfg(windows)]
-            windows_silent_ocr_hotkey::initialize(app.handle()).map_err(|error| {
+            if !isolated { windows_silent_ocr_hotkey::initialize(app.handle()).map_err(|error| {
                 app_lifecycle::append_lifecycle_log(format!(
                     "Silent OCR hotkey initialization failed: {error}"
                 ));
                 std::io::Error::other(error)
-            })?;
+            })?; }
 
-            if run_mode.schedules_ocr_warmup() {
+            if !isolated && run_mode.schedules_ocr_warmup() {
                 // Preserve OCR model prewarming. It is independent from the main
                 // embedded index.html and from the removed Office editor WebView prewarm.
                 office_ocr_state.schedule_startup_warmup(app.handle().clone());

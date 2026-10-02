@@ -328,6 +328,9 @@ pub fn arguments_request_desktop(arguments: &[String]) -> bool {
 }
 
 fn lifecycle_log_path() -> PathBuf {
+    if let Ok(Some(runtime)) = crate::office::state::acceptance_runtime() {
+        return runtime.app_data_root.join("logs").join("app-lifecycle.log");
+    }
     #[cfg(target_os = "windows")]
     let root = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)

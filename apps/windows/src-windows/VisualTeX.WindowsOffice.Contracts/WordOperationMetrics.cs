@@ -15,14 +15,19 @@ public sealed class WordOperationMetrics : IDisposable
     {
         public long Calls { get; internal set; }
         public double Milliseconds { get; internal set; }
+        public List<double> SamplesMilliseconds { get; } = new List<double>();
     }
     private sealed class Timing : IDisposable
     {
         private readonly Entry _entry;
         private readonly long _start = Stopwatch.GetTimestamp();
         internal Timing(Entry entry) { _entry = entry; entry.Calls++; }
-        public void Dispose() => _entry.Milliseconds +=
-            (Stopwatch.GetTimestamp() - _start) * 1000.0 / Stopwatch.Frequency;
+        public void Dispose()
+        {
+            var elapsed = (Stopwatch.GetTimestamp() - _start) * 1000.0 / Stopwatch.Frequency;
+            _entry.Milliseconds += elapsed;
+            _entry.SamplesMilliseconds.Add(elapsed);
+        }
     }
     public WordOperationMetrics() { _previous = _current; _current = this; }
     public IReadOnlyDictionary<string, Entry> Entries => _entries;

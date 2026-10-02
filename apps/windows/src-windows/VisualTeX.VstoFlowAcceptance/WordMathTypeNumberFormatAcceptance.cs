@@ -38,11 +38,26 @@ internal static partial class Program
         try
         {
             application = CreateWordApplication(visible: false);
+            var capturedDocument =
+                Environment.GetEnvironmentVariable(
+                    "VISUALTEX_CAPTURED_MIXED_NUMBERING_FLATOPC");
+            if (!string.IsNullOrWhiteSpace(capturedDocument))
+            {
+                AssertCapturedMixedNumberingDocumentFormatRewrite(
+                    application,
+                    Path.GetFullPath(capturedDocument));
+                Console.WriteLine(
+                    "[MathType number formats] captured mixed-numbering document transaction complete.");
+            }
             AssertVisualTeXNumberedHostDoesNotCorruptFirstMathTypeInsert(
                 application,
                 mixedPngPath,
                 mixedEmfPath);
             Console.WriteLine("[MathType number formats] VisualTeX-numbered mixed-host direct insertion complete.");
+            AssertMathTypeAndNativeOmmlShareOneFormatTransaction(
+                application,
+                emfPath);
+            Console.WriteLine("[MathType number formats] MathType/native-OMML mixed-format transaction complete.");
             AssertMalformedMathTypeTemplateIsNotInherited(application, emfPath);
             Console.WriteLine("[MathType number formats] malformed-nearest-template rejection complete.");
             AssertFreshNoHeadingMathTypeZeroPrefix(application, emfPath);
@@ -182,6 +197,211 @@ internal static partial class Program
             Release(application);
             ForceComCleanup();
             try { Directory.Delete(mixedOleRoot, recursive: true); } catch { }
+        }
+    }
+
+    private static void AssertCapturedMixedNumberingDocumentFormatRewrite(
+        Word.Application application,
+        string flatOpcPath)
+    {
+        if (!File.Exists(flatOpcPath))
+            throw new FileNotFoundException(
+                "Captured mixed-numbering Flat OPC is missing.",
+                flatOpcPath);
+
+        Word.Document? document = null;
+        Word.Range? range = null;
+        try
+        {
+            document =
+                application.Documents.Add();
+            document.Activate();
+            range =
+                document.Content;
+            range.InsertXML(
+                File.ReadAllText(
+                    flatOpcPath));
+
+            AssertEqual(
+                2,
+                document.OMaths.Count,
+                "Captured mixed-numbering clone lost an OMath.");
+            AssertEqual(
+                2,
+                CountMathTypeOleShapes(document),
+                "Captured mixed-numbering clone lost a MathType OLE.");
+            AssertEqual(
+                12,
+                document.Fields.Count,
+                "Captured mixed-numbering clone changed field topology.");
+
+            var service =
+                new WordFormulaService(
+                    application);
+            var changed =
+                service.SetEquationNumberFormat(
+                    EquationNumberFormat.Heading2DotId);
+            AssertEqual(
+                4,
+                changed,
+                "Captured mixed-numbering clone did not rewrite two MathType and two native OMML numbers.");
+
+            AssertMathTypeNumberTexts(
+                document,
+                "(0.0.1)",
+                "(0.0.2)");
+            var maths =
+                document.OMaths;
+            try
+            {
+                AssertEqual(
+                    "0.0.1",
+                    ReadAdoptionLabel(
+                        maths[1]),
+                    "Captured first OMML did not retain heading2-dot.");
+                AssertEqual(
+                    "0.0.2",
+                    ReadAdoptionLabel(
+                        maths[2]),
+                    "Captured second OMML did not join heading2-dot.");
+            }
+            finally
+            {
+                Release(maths);
+            }
+        }
+        finally
+        {
+            Release(range);
+            if (document is not null)
+            {
+                try
+                {
+                    document.Close(
+                        Word.WdSaveOptions.wdDoNotSaveChanges);
+                }
+                catch { }
+            }
+            Release(document);
+            ForceComCleanup();
+        }
+    }
+
+    private static void AssertMathTypeAndNativeOmmlShareOneFormatTransaction(
+        Word.Application application,
+        string emfPath)
+    {
+        Word.Document? document = null;
+        Word.Range? insertion = null;
+        Word.OMath? native = null;
+        try
+        {
+            document = application.Documents.Add();
+            document.Activate();
+            var service = new WordFormulaService(application);
+            AssertEqual(
+                0,
+                service.SetEquationNumberFormat(
+                    EquationNumberFormat.ContinuousId),
+                "Fresh mixed MathType/native-OMML fixture should start empty.");
+
+            insertion = document.Range(
+                document.Content.End - 1,
+                document.Content.End - 1);
+            insertion.Select();
+            service.InsertMathTypeOle(
+                CreateMathTypeCreateSession(
+                    displayMode: "block",
+                    numbered: true,
+                    latex: @"a+b",
+                    mathTypeNumberPosition: "right"),
+                FirstNumberedMathMl,
+                emfPath);
+            Release(insertion);
+            insertion = null;
+            AssertMathTypeNumberTexts(
+                document,
+                "(1)");
+
+            insertion = document.Range(
+                document.Content.End - 1,
+                document.Content.End - 1);
+            insertion.InsertParagraphAfter();
+            insertion.SetRange(
+                document.Content.End - 1,
+                document.Content.End - 1);
+            const string mn =
+                "http://schemas.openxmlformats.org/officeDocument/2006/math";
+            var prepared =
+                WordOmmlConverter.BuildWordNativeNumberedOmml(
+                    "<m:oMath xmlns:m=\"" + mn
+                    + "\"><m:r><m:t>x+1</m:t></m:r></m:oMath>",
+                    "Equation",
+                    numberBookmarkName: null,
+                    restartHeadingLevel: 0,
+                    headingSeparator: string.Empty,
+                    initialSequenceResult: "1");
+            var inserted =
+                WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+                    document,
+                    insertion,
+                    prepared,
+                    display: true);
+            Release(inserted);
+            Release(insertion);
+            insertion = null;
+
+            var maths =
+                document.OMaths;
+            try
+            {
+                AssertEqual(
+                    1,
+                    maths.Count,
+                    "Mixed MathType/native-OMML fixture lost its native equation.");
+                native = maths[1];
+            }
+            finally
+            {
+                Release(maths);
+            }
+            AssertEqual(
+                "1",
+                ReadAdoptionLabel(native),
+                "Mixed native equation did not start continuous.");
+
+            var changed =
+                service.SetEquationNumberFormat(
+                    EquationNumberFormat.Heading1DashId);
+            AssertEqual(
+                2,
+                changed,
+                "One MathType plus one native OMML number were not rewritten together.");
+            AssertMathTypeNumberTexts(
+                document,
+                "(0-1)");
+            Release(native);
+            native = document.OMaths[1];
+            AssertEqual(
+                "0-1",
+                ReadAdoptionLabel(native),
+                "Native OMML did not follow the same document format as MathType.");
+        }
+        finally
+        {
+            Release(native);
+            Release(insertion);
+            if (document is not null)
+            {
+                try
+                {
+                    document.Close(
+                        Word.WdSaveOptions.wdDoNotSaveChanges);
+                }
+                catch { }
+            }
+            Release(document);
+            ForceComCleanup();
         }
     }
 

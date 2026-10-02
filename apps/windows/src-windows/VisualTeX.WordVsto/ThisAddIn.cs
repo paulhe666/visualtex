@@ -4094,6 +4094,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var mathTypePreviews =
             new Dictionary<string, MathTypeNativePreviewRenderer.Result>(
                 StringComparer.Ordinal);
+        var mathTypeStandalone =
+            new Dictionary<string, (
+                MathTypeMtefCodec.RewriteResult Generated,
+                byte[] CompoundFile,
+                string SemanticSignature)>(
+                StringComparer.Ordinal);
         var ownedSessionIds = new List<string>();
         var operationStopwatch = Stopwatch.StartNew();
         var operationGateHeld = true;
@@ -4243,14 +4249,17 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         new Dictionary<string, byte[]>(StringComparer.Ordinal);
                     foreach (var item in rendered)
                     {
-                        var generated = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
-                            item.Value.MathMl,
-                            string.Equals(
-                                item.Value.Session.DisplayMode,
-                                "inline",
-                                StringComparison.OrdinalIgnoreCase),
-                            item.Value.Session.FontSizePt);
-                        nativePreviewInputs[item.Key] = generated.Mtef;
+                        var standalone =
+                            WordFormulaService.PrepareStandaloneMathTypeOleData(
+                                item.Value.MathMl,
+                                string.Equals(
+                                    item.Value.Session.DisplayMode,
+                                    "inline",
+                                    StringComparison.OrdinalIgnoreCase),
+                                item.Value.Session.FontSizePt,
+                                item.Value.Session.ToMetadata().Latex);
+                        mathTypeStandalone[item.Key] = standalone;
+                        nativePreviewInputs[item.Key] = standalone.Generated.Mtef;
                     }
 
                     var nativePreviewRoot = rendered.Values
@@ -4301,6 +4310,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 var mathTypePreview = mathTypePreviews.TryGetValue(key, out var preview)
                     ? preview
                     : null;
+                var hasMathTypeStandalone =
+                    mathTypeStandalone.TryGetValue(
+                        key,
+                        out var standalone);
                 prepared.Add(run.Id, new PreparedWordBulkFormula
                 {
                     Run = run,
@@ -4313,6 +4326,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         objectMode,
                         FormulaOleContract.MathTypeOleMode,
                         StringComparison.Ordinal),
+                    MathTypeStandaloneGenerated = hasMathTypeStandalone
+                        ? standalone.Generated
+                        : null,
+                    MathTypeStandaloneCompoundFile = hasMathTypeStandalone
+                        ? standalone.CompoundFile
+                        : null,
+                    MathTypeStandaloneSemanticSignature = hasMathTypeStandalone
+                        ? standalone.SemanticSignature
+                        : null,
                 });
             }
 
@@ -4567,14 +4589,21 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     }
 
     private static async Task<OfficeSessionDocument> CreateBulkFormulaConversionSessionAsync(
-        VisualTeXSessionClient client,
-        WordBulkRun run,
-        string objectMode,
-        string? sourceDocumentId,
-        double fontSizePt,
-        CancellationToken cancellationToken,
-        string? formulaLetterFont = null,
-        string? formulaChineseFont = null)
+        VisualTeXSessionClient client, WordBulkRun run, string objectMode,
+        string? sourceDocumentId, double fontSizePt, CancellationToken cancellationToken,
+        string? formulaLetterFont = null, string? formulaChineseFont = null)
+    {
+        var request = CreateBulkFormulaConversionRequest(run, objectMode, sourceDocumentId,
+            fontSizePt, formulaLetterFont, formulaChineseFont);
+        WriteBulkAcceptanceLog($"converter-create display={run.DisplayMode} mode={objectMode} latex={run.Latex}");
+        var session = await client.CreateSessionAsync(request, cancellationToken).ConfigureAwait(false);
+        WriteBulkAcceptanceLog($"converter-created sessionId={session.Id}");
+        return session;
+    }
+
+    private static CreateVstoSessionRequest CreateBulkFormulaConversionRequest(
+        WordBulkRun run, string objectMode, string? sourceDocumentId, double fontSizePt,
+        string? formulaLetterFont = null, string? formulaChineseFont = null)
     {
         var formulaId = Guid.NewGuid().ToString("D");
         var line = new FormulaLine
@@ -4589,10 +4618,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             fontSizePt);
         originalMetadata.FormulaLetterFont = formulaLetterFont;
         originalMetadata.FormulaChineseFont = formulaChineseFont;
-        WriteBulkAcceptanceLog(
-            $"converter-create display={run.DisplayMode} mode={objectMode} latex={run.Latex}");
-        var session = await client.CreateSessionAsync(
-            new CreateVstoSessionRequest
+        return new CreateVstoSessionRequest
             {
                 Mode = "create",
                 Host = "word",
@@ -4608,17 +4634,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 FontSizePt = fontSizePt,
                 OriginalMetadata = originalMetadata,
                 AutoCommitOnClose = false,
-            },
-            cancellationToken).ConfigureAwait(false);
-        WriteBulkAcceptanceLog($"converter-created sessionId={session.Id}");
-        return session;
+            };
     }
 
     private static RenderedWordBulkFormulaTemplate MaterializeBulkFormulaTemplate(
         VisualTeXSessionClient client,
         WordBulkRun run,
         string objectMode,
-        OfficeSessionDocument session)
+        OfficeSessionDocument session,
+        bool materializePreview = true)
     {
         if (session.Status == "failed")
         {
@@ -4649,14 +4673,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             RawRenderHeightPx = export.Height,
             RawBaselinePx = export.Baseline,
         };
-        var needsVectorPreview = string.Equals(
+        var needsVectorPreview = materializePreview && (string.Equals(
                 objectMode,
                 FormulaOleContract.NativeOleMode,
                 StringComparison.Ordinal)
             || string.Equals(
                 objectMode,
                 FormulaOleContract.MathTypeOleMode,
-                StringComparison.Ordinal);
+                StringComparison.Ordinal));
         if (needsVectorPreview)
         {
             template.SvgPath = client.MaterializeSvg(session);

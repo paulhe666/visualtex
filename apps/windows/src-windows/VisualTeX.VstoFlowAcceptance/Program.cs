@@ -25,6 +25,8 @@ internal static partial class Program
     private const uint MouseLeftUp = 0x0004;
     private const double WordPerformanceLimitMilliseconds = 500.0;
     private const double WordPerformanceOutlierLimitMilliseconds = 550.0;
+    private static long _officeComRetryCount;
+    private static long _officeComRetryRequestedMilliseconds;
 
     [ComImport]
     [Guid("00000016-0000-0000-C000-000000000046")]
@@ -84,7 +86,11 @@ internal static partial class Program
             const int ServerCallRetryLater = 2;
             if ((rejectType == ServerCallRejected || rejectType == ServerCallRetryLater)
                 && tickCount < 30_000)
+            {
+                System.Threading.Interlocked.Increment(ref _officeComRetryCount);
+                System.Threading.Interlocked.Add(ref _officeComRetryRequestedMilliseconds, 100);
                 return 100;
+            }
             return -1;
         }
 
@@ -486,6 +492,35 @@ internal static partial class Program
             }
         }
 
+        if (string.Equals(mode, "mathtype-native-character-oracle", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var filter = OfficeComMessageFilter.Register();
+                RunMathTypeNativeCharacterOracle(artifactRoot);
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                return 1;
+            }
+        }
+
+        if (string.Equals(mode, "mathtype-standalone-root-regression", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                RunMathTypeStandaloneRootRegressionAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                return 1;
+            }
+        }
+
         if (string.Equals(mode, "powerpoint-mathtype", StringComparison.OrdinalIgnoreCase))
         {
             try
@@ -598,6 +633,23 @@ internal static partial class Program
                     + error.Message);
                 Console.Error.WriteLine(
                     $"Acceptance artifacts retained: {artifactRoot}");
+                return 1;
+            }
+        }
+
+        if (string.Equals(mode, "word-native-create-edit", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-native-number-structure", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var nativeCreateEditFilter = OfficeComMessageFilter.Register();
+                if (mode == "word-native-number-structure") RunNativeNumberStructureAcceptance(artifactRoot);
+                else RunNativeCreateEditAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error.ToString());
                 return 1;
             }
         }
@@ -820,6 +872,10 @@ internal static partial class Program
             || string.Equals(
                 mode,
                 "word-omml-semantic-corpus",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                mode,
+                "word-exact-large-number-format-regression",
                 StringComparison.OrdinalIgnoreCase))
         {
             try
@@ -851,6 +907,12 @@ internal static partial class Program
                              "word-omml-semantic-corpus",
                              StringComparison.OrdinalIgnoreCase))
                     RunWordNativeSemanticCorpusAcceptance();
+                else if (string.Equals(
+                             mode,
+                             "word-exact-large-number-format-regression",
+                             StringComparison.OrdinalIgnoreCase))
+                    RunWordExactLargeNumberFormatRegressionAcceptance(
+                        artifactRoot);
                 else if (string.Equals(
                              mode,
                              "word-deep-format-rollback",
@@ -1103,6 +1165,10 @@ internal static partial class Program
             {
                 RunWordMathTypeInsertScalingAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-mathtype-flatopc-pure-scaling", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordMathTypeFlatOpcPureScalingAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-mathtype-insertion-complexity", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeInsertionComplexityAcceptance(artifactRoot);
@@ -1279,6 +1345,42 @@ internal static partial class Program
             {
                 RunWordFormatConversionScalingAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-conversion-repeat-probe", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordConversionRepeatProbe(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-conversion-source-freshness", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordConversionSourceFreshnessAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-conversion-inline-baseline", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordConversionInlineBaselineAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-conversion-existing-targets", StringComparison.OrdinalIgnoreCase))
+            {
+                RunConversionExistingTargets(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-format-conversion-verify-saved", StringComparison.OrdinalIgnoreCase))
+            {
+                VerifySavedExternalConversion(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-format-conversion-render-matrix", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordFormatConversionRenderMatrix(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-large-redraw-layout", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordLargeRedrawLayout(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-redraw-numbering-profile", StringComparison.OrdinalIgnoreCase))
+            {
+                RunLargeRedrawNumberingProfile(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-visualtex-mixed-numbering", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordVisualTeXMixedNumbering(artifactRoot);
+            }
             else if (string.Equals(mode, "word-format-conversion-multibody-flatopc", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordFormatConversionMultiBodyFlatOpcAcceptance(artifactRoot);
@@ -1359,9 +1461,53 @@ internal static partial class Program
             {
                 RunWordMathTypeNativeNumberReferenceAcceptance(artifactRoot);
             }
+            else if (string.Equals(mode, "word-cross-document-undo-lifecycle", StringComparison.OrdinalIgnoreCase))
+            {
+                RunCrossDocumentUndoLifecycle(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-character-root", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeCharacterRootAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-numbering-discovery-density", StringComparison.OrdinalIgnoreCase))
+            {
+                RunNumberingDiscoveryDensity(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-native-literal-lifecycle", StringComparison.OrdinalIgnoreCase))
+            {
+                RunNativeLiteralLifecycle(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-native-literal-prefix-probe", StringComparison.OrdinalIgnoreCase))
+            {
+                RunNativeLiteralPrefixProbe(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-numbering-root-matrix", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordNumberingRootMatrix(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-mathtype-format-authority", StringComparison.OrdinalIgnoreCase))
+            {
+                RunMathTypeFormatAuthorityAcceptance(artifactRoot);
+            }
             else if (string.Equals(mode, "word-mathtype-number-format", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordMathTypeNumberFormatAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-native-number-adoption", StringComparison.OrdinalIgnoreCase))
+            {
+                RunNativeNumberAdoptionAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-native-mixed-number-format", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordNativeMixedNumberFormatAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-native-edit-add-number", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordNativeEditAddNumberAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-native-field-revision-probe", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordNativeFieldRevisionProbeAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-mathtype-native-format-parity", StringComparison.OrdinalIgnoreCase))
             {
@@ -1618,6 +1764,14 @@ internal static partial class Program
             else if (string.Equals(mode, "word-bulk-import-mathtype", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordBulkImportMathTypeAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-bulk-import-mathtype-skeleton", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordBulkImportMathTypeSkeletonAcceptance(client, artifactRoot);
+            }
+            else if (string.Equals(mode, "word-bulk-import-mathtype-100-performance", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordBulkImportMathTypeHundredPerformance(client, artifactRoot);
             }
             else if (string.Equals(mode, "word-active-doc17-numbered-mathtype-bulk", StringComparison.OrdinalIgnoreCase))
             {

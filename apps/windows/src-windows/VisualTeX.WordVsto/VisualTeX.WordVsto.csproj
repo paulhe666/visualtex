@@ -38,6 +38,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.TableDisplay.cs" Link="WordEquationNumbering.TableDisplay.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordFormulaMetadataReader.cs" Link="WordFormulaMetadataReader.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlConverter.cs" Link="WordOmmlConverter.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlInsertionXml.cs" Link="WordOmmlInsertionXml.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFormulaStore.cs" Link="WordOmmlFormulaStore.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlNativeSource.cs" Link="WordOmmlNativeSource.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDocumentXml.cs" Link="WordDocumentXml.cs" />

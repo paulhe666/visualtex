@@ -50,6 +50,14 @@ fn development_ui_root() -> PathBuf {
 }
 
 fn resolve_ui_root(app: &AppHandle) -> Result<PathBuf, String> {
+    if crate::office::state::isolated_acceptance_runtime() {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..").join("dist-office-windows-native");
+        if source.join("dialog").join("index.html").is_file() {
+            return Ok(source);
+        }
+        return Err("Build the source Office UI before starting isolated acceptance".to_string());
+    }
     if let Ok(resource) = app.path().resolve("office", BaseDirectory::Resource) {
         #[cfg(target_os = "windows")]
         if resource.join("dialog").join("index.html").is_file() {
@@ -109,15 +117,18 @@ fn prepare_office_configuration(
     app: &AppHandle,
     phase: &str,
 ) -> Result<PreparedOfficeConfiguration, String> {
-    let app_data = app.path().app_data_dir().map_err(|error| {
+    let acceptance = crate::office::state::acceptance_runtime()?;
+    let production_app_data = app.path().app_data_dir().map_err(|error| {
         format!("Unable to resolve VisualTeX application data directory: {error}")
     })?;
+    let app_data = acceptance.map_or(production_app_data, |runtime| runtime.app_data_root.clone());
     let root = app_data.join("office");
+    let identity = acceptance.map_or_else(|| root.clone(), |runtime| runtime.identity_root.join("office"));
     let mut paths = OfficePaths {
-        certificate: root.join("localhost-cert.pem"),
-        private_key: root.join("localhost-key.pem"),
-        certificate_metadata: root.join("certificate.json"),
-        install: root.join("install.json"),
+        certificate: identity.join("localhost-cert.pem"),
+        private_key: identity.join("localhost-key.pem"),
+        certificate_metadata: identity.join("certificate.json"),
+        install: identity.join("install.json"),
         sessions: root.join("sessions"),
         recovery: root.join("recovery"),
         formula_cache: root.join("formulas"),
@@ -175,7 +186,7 @@ fn prepare_office_configuration(
     })?;
 
     #[cfg(target_os = "windows")]
-    crate::office::windows_backend::write_shared_configuration(
+    if acceptance.is_none() { crate::office::windows_backend::write_shared_configuration(
         &executable,
         &app_data,
         &paths,
@@ -190,7 +201,7 @@ fn prepare_office_configuration(
             &format!("{phase} OfficeIntegration registry write failed: {error}"),
         );
         error
-    })?;
+    })?; }
 
     append_office_log(
         &paths,
@@ -200,7 +211,7 @@ fn prepare_office_configuration(
             paths.certificate.display(),
             paths.private_key.display(),
             certificate_thumbprint,
-            OFFICE_PORT,
+            crate::office::state::office_port(),
             OFFICE_PROTOCOL_VERSION,
             paths.install.display(),
             paths.ui_root.join("dialog").join("index.html").display()
@@ -509,7 +520,7 @@ async fn wait_for_port_release() -> Result<(), String> {
         }
         sleep(Duration::from_millis(100)).await;
     }
-    Err("VisualTeX Office companion did not release port 43127 in time".to_string())
+    Err(format!("VisualTeX Office companion did not release port {} in time", crate::office::state::office_port()))
 }
 
 async fn wait_for_trusted_health() -> Result<(), String> {

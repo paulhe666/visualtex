@@ -29,6 +29,26 @@ internal sealed partial class WordFormulaService
         return Math.Max(0.25f, Math.Min(4f, scale));
     }
 
+    internal static float CalculateMathTypePreservedOriginalExtent(
+        float sourceOriginalExtent,
+        float sourceDisplayedExtent,
+        float targetDisplayedExtent)
+    {
+        // Word stores the OLE object's intrinsic extent (dxaOrig/dyaOrig)
+        // independently from the VML extent it displays. Existing MathType
+        // documents legitimately use a non-1:1 relationship between them.
+        // Preserve that relationship across an edit instead of replacing it
+        // with frontend-export or raw MathPage dimensions.
+        if (!(sourceOriginalExtent > 0)
+            || !(sourceDisplayedExtent > 0)
+            || !(targetDisplayedExtent > 0))
+            return targetDisplayedExtent;
+        var result = targetDisplayedExtent * sourceOriginalExtent / sourceDisplayedExtent;
+        return result > 0 && !float.IsNaN(result) && !float.IsInfinity(result)
+            ? result
+            : targetDisplayedExtent;
+    }
+
     internal static MathTypeWordPresentationGeometry CalculateMathTypeWordPresentationGeometry(
         string shapeStyle,
         float widthPt,

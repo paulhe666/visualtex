@@ -18,21 +18,6 @@ internal static partial class WordOmmlConverter
         return ComputeOmmlFingerprint(materializedWordOpenXml);
     }
 
-    internal static string ComputeVerifiedMaterializedOmmlFingerprint(
-        string preparedWordOpenXml,
-        string materializedWordOpenXml)
-    {
-        var comparison =
-            WordNativeOmmlSemanticComparer.CompareOmml(
-                preparedWordOpenXml,
-                materializedWordOpenXml,
-                display: false);
-        if (!comparison.Equivalent)
-            throw new InvalidDataException(
-                "Test-only OMML materialization semantic comparison failed.");
-        return ComputeOmmlFingerprint(materializedWordOpenXml);
-    }
-
     internal static void ValidateOmmlResult(string omml, string mathMl)
     {
         XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";

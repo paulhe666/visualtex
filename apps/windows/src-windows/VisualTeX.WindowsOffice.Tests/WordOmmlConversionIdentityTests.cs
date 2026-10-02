@@ -79,11 +79,15 @@ public sealed class WordOmmlConversionIdentityTests
     }
 
     [Fact]
-    public void NumberedRowContentMismatchCannotRecoverFromAnotherRow()
+    public void NumberedRowOwnerIsNotReboundToAnotherRowsMatchingContent()
     {
         var body = new XElement(W + "body", new XElement(W + "tbl", Row(First, "b", "1"), Row(Second, "a", "2")));
-        Assert.Throws<InvalidDataException>(() => WordOmmlNativeSource.IndexConversionEquationIdentities(body,
-            new Dictionary<string, string> { [First] = Fingerprint("a") }));
+        var original = body.ToString(SaveOptions.DisableFormatting);
+        var result = WordOmmlNativeSource.IndexConversionEquationIdentities(body,
+            new Dictionary<string, string> { [First] = Fingerprint("a") });
+
+        Assert.Equal((0, false), result[First]);
+        Assert.Equal(original, body.ToString(SaveOptions.DisableFormatting));
     }
 
     [Fact]
@@ -116,13 +120,15 @@ public sealed class WordOmmlConversionIdentityTests
     }
 
     [Fact]
-    public void ExactAnchorContentMismatchCannotRecoverFromAnotherEquation()
+    public void ExactAnchorOwnerIsNotReboundToUnrelatedMatchingContent()
     {
         var body = new XElement(W + "body", Anchor(First, "1"),
             new XElement(W + "p", Math("b")), new XElement(W + "p", Math("a")));
-        Assert.Throws<InvalidDataException>(() => WordOmmlNativeSource.IndexConversionEquationIdentities(body,
+        var result = WordOmmlNativeSource.IndexConversionEquationIdentities(body,
             new Dictionary<string, string> { [First] = Fingerprint("a") },
-            exactAnchorOwners: new Dictionary<string, int> { [First] = 0 }));
+            exactAnchorOwners: new Dictionary<string, int> { [First] = 0 });
+
+        Assert.Equal((0, true), result[First]);
     }
 
     [Fact]
@@ -206,17 +212,19 @@ public sealed class WordOmmlConversionIdentityTests
     }
 
     [Fact]
-    public void RetainedFreshObjectStillRequiresItsPreparedContent()
+    public void RetainedFreshOwnerRemainsAuthoritativeWhenPreparedFingerprintIsStale()
     {
         var body = new XElement(W + "body", Anchor(First, "1"),
             new XElement(W + "p", Math("b")), new XElement(W + "p", Math("a")));
-        Assert.Throws<InvalidDataException>(() => WordOmmlNativeSource.IndexConversionEquationIdentities(body,
+        var result = WordOmmlNativeSource.IndexConversionEquationIdentities(body,
             new Dictionary<string, string> { [First] = Fingerprint("a") },
-            liveInsertedOwners: new Dictionary<string, int> { [First] = 0 }));
+            liveInsertedOwners: new Dictionary<string, int> { [First] = 0 });
+
+        Assert.Equal((0, false), result[First]);
     }
 
     [Fact]
-    public void FreshConversionMayRecoverWrongXmlOrdinalByUniquePreparedContent()
+    public void RetainedOwnerIsNotReboundByMatchingContentEvenWithRecoveryFlag()
     {
         var body = new XElement(W + "body",
             new XElement(W + "p", Math("b")),
@@ -226,21 +234,54 @@ public sealed class WordOmmlConversionIdentityTests
             new Dictionary<string, string> { [First] = Fingerprint("a") },
             liveInsertedOwners: new Dictionary<string, int> { [First] = 0 },
             allowFreshOwnerFingerprintRecovery: true);
-        Assert.Equal((1, false), result[First]);
+        Assert.Equal((0, false), result[First]);
     }
 
     [Fact]
-    public void FreshConversionRecoveryRejectsAmbiguousPreparedContent()
+    public void RetainedOwnerIgnoresUnrelatedDuplicatePreparedContent()
     {
         var body = new XElement(W + "body",
             new XElement(W + "p", Math("b")),
             new XElement(W + "p", Math("a")),
             new XElement(W + "p", Math("a")));
+        var result = WordOmmlNativeSource.IndexConversionEquationIdentities(
+            body,
+            new Dictionary<string, string> { [First] = Fingerprint("a") },
+            liveInsertedOwners: new Dictionary<string, int> { [First] = 0 },
+            allowFreshOwnerFingerprintRecovery: true);
+
+        Assert.Equal((0, false), result[First]);
+    }
+
+    [Fact]
+    public void MissingPhysicalOwnerStillRejectsAmbiguousPreparedContentWithRecoveryFlag()
+    {
+        var body = new XElement(W + "body",
+            new XElement(W + "p", Math("b")),
+            new XElement(W + "p", Math("a")),
+            new XElement(W + "p", Math("a")));
+
         Assert.Throws<InvalidDataException>(() =>
             WordOmmlNativeSource.IndexConversionEquationIdentities(
                 body,
                 new Dictionary<string, string> { [First] = Fingerprint("a") },
-                liveInsertedOwners: new Dictionary<string, int> { [First] = 0 },
+                allowFreshOwnerFingerprintRecovery: true));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(2)]
+    public void InvalidRetainedOwnerCannotFallBackToMatchingContent(int invalidOwner)
+    {
+        var body = new XElement(W + "body",
+            new XElement(W + "p", Math("b")),
+            new XElement(W + "p", Math("a")));
+
+        Assert.Throws<InvalidDataException>(() =>
+            WordOmmlNativeSource.IndexConversionEquationIdentities(
+                body,
+                new Dictionary<string, string> { [First] = Fingerprint("a") },
+                liveInsertedOwners: new Dictionary<string, int> { [First] = invalidOwner },
                 allowFreshOwnerFingerprintRecovery: true));
     }
 

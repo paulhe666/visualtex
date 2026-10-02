@@ -15,7 +15,8 @@ internal static class WordVisualTeXHostWriter
     internal static WordFormulaHostWriteResult Insert(
         Document document,
         Range insertion,
-        WordFormulaHostWriteRequest request)
+        WordFormulaHostWriteRequest request,
+        bool removeOmmlBoundaryGuard = false)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -40,6 +41,7 @@ internal static class WordVisualTeXHostWriter
 
         InlineShape? shape = null;
         Range? shapeRange = null;
+        IVisualTeXFormulaObject? initializedFormula = null;
         try
         {
             insertion.Collapse(WdCollapseDirection.wdCollapseStart);
@@ -51,7 +53,7 @@ internal static class WordVisualTeXHostWriter
             using (WordOperationMetrics.Measure(
                        "FormatConversion.VisualTeXHostWriter.InitializeOle"))
             {
-                InitializeOle(shape, metadata, request.EmfPath!, request.PngPath!);
+                initializedFormula = InitializeOle(shape, metadata, request.EmfPath!, request.PngPath!);
             }
 
             using (WordOperationMetrics.Measure(
@@ -120,7 +122,7 @@ internal static class WordVisualTeXHostWriter
             using (WordOperationMetrics.Measure(
                        "FormatConversion.VisualTeXHostWriter.ReadbackValidate"))
             {
-                ValidateInsertedHost(shape, metadata);
+                ValidateInsertedHost(initializedFormula, metadata);
             }
 
             using (WordOperationMetrics.Measure(
@@ -128,7 +130,15 @@ internal static class WordVisualTeXHostWriter
             {
                 shapeRange = shape.Range.Duplicate;
             }
-            return new WordFormulaHostWriteResult
+            var withinTable = IsWithinTable(shapeRange);
+            if (request.BatchMutation && metadata.Numbered
+                && string.Equals(metadata.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                && !withinTable && request.PreparedVisualTeXNumbering is not null)
+            {
+                request.PreparedVisualTeXNumbering.WrittenBodyLayout =
+                    new WordVisualTeXParagraphNumbering.WrittenBodyLayout(shapeRange);
+            }
+            var result = new WordFormulaHostWriteResult
             {
                 Host = new WordFormulaHostDescriptor
                 {
@@ -148,9 +158,14 @@ internal static class WordVisualTeXHostWriter
                         Numbered = metadata.Numbered,
                         FormulaId = metadata.FormulaId,
                     },
-                    WithinTable = IsWithinTable(shapeRange),
+                    WithinTable = withinTable,
                 },
             };
+            if (removeOmmlBoundaryGuard)
+                result.Host = WordOmmlHostWriter.RemovePlainTextBoundaryGuard(document, result.Host, shape);
+            using (WordOperationMetrics.Measure("FormatConversion.VisualTeXHostWriter.CloseOle"))
+                FormulaOleInterop.CloseAfterSave(initializedFormula);
+            return result;
         }
         catch
         {
@@ -161,6 +176,7 @@ internal static class WordVisualTeXHostWriter
         }
         finally
         {
+            Release(initializedFormula);
             Release(shapeRange);
             Release(shape);
         }
@@ -285,7 +301,8 @@ internal static class WordVisualTeXHostWriter
 
     internal static Range DeleteExactToExternalDisplayBoundary(
         Document document,
-        WordFormulaHostDescriptor host)
+        WordFormulaHostDescriptor host,
+        WordNativeConversionSource? preparedSource = null)
     {
         if (host.Kind != WordFormulaHostKind.VisualTeX
             || !host.Display)
@@ -309,7 +326,8 @@ internal static class WordVisualTeXHostWriter
             if (paragraphs.Count != 1)
                 return DeleteExact(
                     document,
-                    host);
+                    host,
+                    preparedSource);
             paragraph = paragraphs[1];
             paragraphRange = paragraph.Range.Duplicate;
 
@@ -326,7 +344,8 @@ internal static class WordVisualTeXHostWriter
             if (hostRange.Start != paragraphRange.Start + 1)
                 return DeleteExact(
                     document,
-                    host);
+                    host,
+                    preparedSource);
             leadingTab = document.Range(
                 paragraphRange.Start,
                 hostRange.Start);
@@ -336,7 +355,8 @@ internal static class WordVisualTeXHostWriter
                     StringComparison.Ordinal))
                 return DeleteExact(
                     document,
-                    host);
+                    host,
+                    preparedSource);
 
             var bodyEnd = Math.Max(
                 paragraphRange.Start,
@@ -355,7 +375,8 @@ internal static class WordVisualTeXHostWriter
             var insertionStart = paragraphRange.Start;
             deletedAnchor = DeleteExact(
                 document,
-                host);
+                host,
+                preparedSource);
 
             Release(leadingTab);
             leadingTab = document.Range(
@@ -387,7 +408,8 @@ internal static class WordVisualTeXHostWriter
 
     internal static Range DeleteExact(
         Document document,
-        WordFormulaHostDescriptor host)
+        WordFormulaHostDescriptor host,
+        WordNativeConversionSource? preparedSource = null)
     {
         if (host.Kind != WordFormulaHostKind.VisualTeX)
             throw new ArgumentException("VisualTeX delete received another host kind.");
@@ -399,6 +421,13 @@ internal static class WordVisualTeXHostWriter
         Range? anchor = null;
         try
         {
+            if (preparedSource is not null)
+            {
+                shape = preparedSource.VisualTeXShape;
+                shapeRange = shape!.Range;
+            }
+            else
+            {
             range = WordFormulaHostSemanticReader.CreateRange(document, host.Range);
             shapes = range.InlineShapes;
             for (var index = 1; index <= shapes.Count; index++)
@@ -430,11 +459,14 @@ internal static class WordVisualTeXHostWriter
                 }
             }
 
+            }
             if (shape is null || shapeRange is null)
                 throw new InvalidDataException(
                     "The VisualTeX source host moved before deletion.");
 
-            var embedded = WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape)
+            var embedded = (preparedSource is null
+                ? WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape)
+                : preparedSource.Host.Metadata)
                 ?? throw new InvalidDataException(
                     "The VisualTeX source host has no authoritative embedded metadata.");
             if (!string.IsNullOrWhiteSpace(host.FormulaId)
@@ -450,7 +482,11 @@ internal static class WordVisualTeXHostWriter
             WordFormulaIdentityStore.RemoveVisualTeX(
                 document,
                 embedded.FormulaId);
-            shape.Delete();
+            // InlineShape.Delete applies Word's word-boundary spacing cleanup.
+            // Exact range replacement removes only the OLE field, preserving the
+            // neighboring prose space as ordinary source content.
+            if (host.Display) shape.Delete();
+            else shapeRange.Text = string.Empty;
 
             var returned = anchor;
             anchor = null;
@@ -460,7 +496,7 @@ internal static class WordVisualTeXHostWriter
         {
             Release(anchor);
             Release(shapeRange);
-            Release(shape);
+            if (preparedSource is null) Release(shape);
             Release(shapes);
             Release(range);
         }
@@ -651,7 +687,7 @@ internal static class WordVisualTeXHostWriter
         }
     }
 
-    private static void InitializeOle(
+    private static IVisualTeXFormulaObject InitializeOle(
         InlineShape shape,
         FormulaMetadata metadata,
         string emfPath,
@@ -659,38 +695,31 @@ internal static class WordVisualTeXHostWriter
     {
         OLEFormat? format = null;
         object? oleObject = null;
-        IVisualTeXFormulaObject? formula = null;
-        var initialized = false;
         try
         {
             format = shape.OLEFormat;
             oleObject = WordOleObjectAccessor.GetRunningObject(format);
-            formula = oleObject as IVisualTeXFormulaObject
+            var formula = oleObject as IVisualTeXFormulaObject
                 ?? throw new InvalidOperationException(
                     "The inserted object does not expose the VisualTeX OLE interface.");
             FormulaOleInterop.Initialize(formula, metadata, emfPath, pngPath);
-            WordFormulaMetadataReader.CacheMetadata(shape, metadata);
-            initialized = true;
+            // The writer owns this same object through geometry, metadata
+            // readback and final save. Closing here forced immediate reactivation.
+            oleObject = null;
+            return formula;
         }
         finally
         {
-            if (formula is not null)
-            {
-                try { FormulaOleInterop.CloseAfterSave(formula); }
-                catch when (!initialized) { }
-            }
             Release(oleObject);
             Release(format);
         }
     }
 
     private static void ValidateInsertedHost(
-        InlineShape shape,
+        IVisualTeXFormulaObject formula,
         FormulaMetadata expected)
     {
-        var metadata = WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape)
-            ?? throw new InvalidDataException(
-                "The inserted VisualTeX OLE cannot be read back.");
+        var metadata = FormulaOleInterop.ReadMetadata(formula);
         if (!string.Equals(
                 metadata.FormulaId,
                 expected.FormulaId,

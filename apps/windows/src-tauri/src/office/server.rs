@@ -965,7 +965,7 @@ fn prewarm_desktop_editor_window(app: tauri::AppHandle) -> Result<(), String> {
 
     let url = tauri::Url::parse(&format!(
         "https://127.0.0.1:{}/dialog?runtime=vsto-desktop",
-        crate::office::state::OFFICE_PORT,
+        crate::office::state::office_port(),
     ))
     .map_err(|error| format!("Unable to construct the VisualTeX editor prewarm URL: {error}"))?;
     let (saved_editor_width, saved_editor_height) = load_office_editor_window_size(&app);
@@ -1073,7 +1073,7 @@ fn open_desktop_session_window(app: tauri::AppHandle, session_id: String) -> Res
     let label = OFFICE_EDITOR_WINDOW_LABEL.to_string();
     let url = tauri::Url::parse(&format!(
         "https://127.0.0.1:{}/dialog/{}?runtime=vsto-desktop&sessionId={}",
-        crate::office::state::OFFICE_PORT,
+        crate::office::state::office_port(),
         session_id,
         session_id
     ))
@@ -1220,7 +1220,7 @@ fn open_desktop_bulk_import_window(
     let label = format!("office-import-{}", session_id.replace('-', ""));
     let url = tauri::Url::parse(&format!(
         "https://127.0.0.1:{}/dialog/{}?runtime=vsto-bulk-import",
-        crate::office::state::OFFICE_PORT,
+        crate::office::state::office_port(),
         session_id
     ))
     .map_err(|error| format!("Unable to construct the VisualTeX import URL: {error}"))?;
@@ -1252,7 +1252,7 @@ fn ensure_desktop_conversion_window(app: &tauri::AppHandle) -> Result<WebviewWin
     }
     let url = tauri::Url::parse(&format!(
         "https://127.0.0.1:{}/dialog?runtime=vsto-convert",
-        crate::office::state::OFFICE_PORT,
+        crate::office::state::office_port(),
     ))
     .map_err(|error| format!("Unable to construct the VisualTeX conversion URL: {error}"))?;
     WebviewWindowBuilder::new(
@@ -1287,7 +1287,7 @@ fn open_desktop_conversion_window(
 
     let url = tauri::Url::parse(&format!(
         "https://127.0.0.1:{}/dialog?runtime=vsto-convert&sessionId={}",
-        crate::office::state::OFFICE_PORT,
+        crate::office::state::office_port(),
         session_id,
     ))
     .map_err(|error| format!("Unable to construct the VisualTeX conversion URL: {error}"))?;
@@ -1564,6 +1564,82 @@ async fn prewarm_desktop_conversion(State(context): State<ServerContext>) -> Res
             )
                 .into_response(),
         }
+    }
+}
+
+
+async fn create_render_batch(
+    State(context): State<ServerContext>,
+    Json(request): Json<crate::office::render_batches::RenderBatchRequest>,
+) -> Response {
+    #[cfg(not(target_os = "windows"))]
+    { let _ = (context, request); StatusCode::NOT_IMPLEMENTED.into_response() }
+    #[cfg(target_os = "windows")]
+    {
+        let Some(app) = context.companion.app.clone() else {
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        };
+        let id = match crate::office::render_batches::create(request) {
+            Ok(id) => id, Err(error) => return session_error_response(error),
+        };
+        let wake = tokio::task::spawn_blocking(move || {
+            let window = ensure_desktop_conversion_window(&app)?;
+            // The in-memory queue owns the work; the event is only a wake-up.
+            let _ = window.eval(
+                "window.dispatchEvent(new CustomEvent('visualtex-office-render-batch'));");
+            Ok::<(), String>(())
+        }).await;
+        match wake {
+            Ok(Ok(())) => (StatusCode::CREATED, Json(serde_json::json!({ "id": id }))).into_response(),
+            failure => {
+                let _ = crate::office::render_batches::release(&id);
+                (StatusCode::INTERNAL_SERVER_ERROR,
+                 Json(serde_json::json!({ "error": format!("Unable to start render batch: {failure:?}") }))).into_response()
+            }
+        }
+    }
+}
+async fn take_render_batch() -> Response {
+    match crate::office::render_batches::take_next() {
+        Ok(id) => Json(serde_json::json!({ "id": id })).into_response(),
+        Err(error) => session_error_response(error),
+    }
+}
+async fn get_render_batch(AxumPath(id): AxumPath<String>) -> Response {
+    match crate::office::render_batches::snapshot(&id) {
+        Ok(snapshot) => Json(snapshot).into_response(),
+        Err(error) => session_error_response(error),
+    }
+}
+async fn complete_render_batch(
+    AxumPath(id): AxumPath<String>,
+    Json(completion): Json<crate::office::render_batches::RenderBatchCompletion>,
+) -> Response {
+    match crate::office::render_batches::complete(&id, completion) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => session_error_response(error),
+    }
+}
+async fn wait_render_batch(AxumPath(id): AxumPath<String>) -> Response {
+    let mut receiver = match crate::office::render_batches::subscribe(&id) {
+        Ok(receiver) => receiver,
+        Err(error) => return session_error_response(error),
+    };
+    let wait = async {
+        loop {
+            if let Some(result) = receiver.borrow_and_update().clone() { return Ok(result); }
+            receiver.changed().await.map_err(|_| SessionError::NotFound)?;
+        }
+    };
+    match wait.await {
+        Ok(result) => Json(result).into_response(),
+        Err(error) => session_error_response(error),
+    }
+}
+async fn delete_render_batch(AxumPath(id): AxumPath<String>) -> Response {
+    match crate::office::render_batches::release(&id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => session_error_response(error),
     }
 }
 
@@ -2887,6 +2963,12 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
             "/app/sessions/{session_id}/close",
             post(close_desktop_session),
         )
+        .route("/app/converter/render-batches", post(create_render_batch))
+        .route("/app/converter/next-render-batch", get(take_render_batch))
+        .route("/app/converter/render-batches/{id}",
+            get(get_render_batch).delete(delete_render_batch))
+        .route("/app/converter/render-batches/{id}/complete", post(complete_render_batch))
+        .route("/app/converter/render-batches/{id}/result", get(wait_render_batch))
         .route("/sessions", post(create_session))
         .route("/sessions/batch-delete", post(delete_sessions_batch))
         .route(

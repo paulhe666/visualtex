@@ -97,6 +97,7 @@ internal sealed class WordFormulaHostWriteRequest
     // same PageSetup for every display formula in a batch.
     internal float? DisplayCenterTabPoints { get; set; }
     internal float? DisplayRightTabPoints { get; set; }
+    internal WordFormulaNumberingKernel.NumberPlan? PreparedVisualTeXNumbering { get; set; }
 
     // Set only by a whole-document/selection batch mutation such as
     // format conversion or LaTeX redraw. The batch owns one outer transaction
@@ -104,6 +105,11 @@ internal sealed class WordFormulaHostWriteRequest
     // checks that would immediately be repeated by the same batch. Interactive
     // create/edit leaves this false.
     internal bool BatchMutation { get; set; }
+
+    // Operation-local preflight only; never persisted or shared across UI turns.
+    // WordOpenXML preparation must finish before the enclosing native UndoRecord.
+    internal string? PreparedOmml { get; set; }
+    internal WordOleToOmmlReplacement.Prepared? PreparedOleReplacement { get; set; }
 }
 
 internal sealed class WordFormulaHostWriteResult

@@ -160,8 +160,8 @@ internal static partial class MathTypeOleInterop
         try
         {
             range = shape.Range;
-            displayMode = InferDisplayMode(range);
-            numbered = ContainsMathTypeDisplayNumberFieldAtRange(range);
+            using var layoutMetric = WordOperationMetrics.Measure("FormatConversion.MathTypeMetadata.CaptureLayout");
+            displayMode = InferDisplayMode(range, out numbered);
         }
         finally
         {
@@ -452,8 +452,9 @@ internal static partial class MathTypeOleInterop
         }
     }
 
-    private static string InferDisplayMode(Range range)
+    private static string InferDisplayMode(Range range, out bool numbered)
     {
+        numbered = false;
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
@@ -475,7 +476,8 @@ internal static partial class MathTypeOleInterop
             // and Word commonly exposes only the field-end control character
             // U+0015 in Paragraph.Range.Text.  If that field shares the paragraph
             // with the MathType OLE, this is unambiguously a display equation.
-            if (ContainsMathTypeDisplayNumberField(paragraphRange)) return "block";
+            numbered = ContainsMathTypeDisplayNumberField(paragraphRange);
+            if (numbered) return "block";
 
             // An unnumbered MathType display equation is a single equation object
             // occupying its paragraph. A paragraph containing multiple inline

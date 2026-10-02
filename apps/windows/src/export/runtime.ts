@@ -4,9 +4,12 @@ import { SVG } from "mathjax-full/js/output/svg.js";
 import { liteAdaptor } from "mathjax-full/js/adaptors/liteAdaptor.js";
 import { RegisterHTMLHandler } from "mathjax-full/js/handlers/html.js";
 import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
+import { EXPLICIT_MATH_FONT_PACKAGE } from "./explicit-math-font.ts";
+import { createExplicitMathFontSvgFactory } from "./explicit-math-font-svg.ts";
 import { STATE } from "mathjax-full/js/core/MathItem.js";
 import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
+import { materializeEffectiveOperatorVariants } from "./effectiveMathMlGlyphVariants.ts";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
 import { applyVisualTexIntegralSvgGlyphs } from "../math/integralSvgExportCompatibility.ts";
@@ -55,7 +58,7 @@ function createTexInput(macros: Record<string, VisualTexMathJaxMacro>) {
     // Export must fail at the parser boundary, never turn an unknown command
     // or syntax error into a successful colored/text rendering. This also lets
     // literal mtext/verb content pass without guessing from its characters.
-    packages: AllPackages.filter((name) => name !== "noundefined" && name !== "noerrors"),
+    packages: [...AllPackages.filter((name) => name !== "noundefined" && name !== "noerrors"), EXPLICIT_MATH_FONT_PACKAGE],
     macros,
     formatError: (_jax: unknown, error: unknown) => {
       const message = readErrorMessage(error, "MathJax 无法解析当前 LaTeX 公式。");
@@ -72,6 +75,7 @@ const mathMlOutput = new SVG({
   internalSpeechTitles: false,
 });
 const svgOutput = new SVG({
+  wrapperFactory: createExplicitMathFontSvgFactory(),
   fontCache: "local",
   internalSpeechTitles: false,
 });
@@ -412,6 +416,7 @@ export async function latexToMathMl(latex: string, displayMode = true) {
     display: displayMode,
     end: STATE.COMPILED,
   }) as unknown as MmlNode;
+  materializeEffectiveOperatorVariants(root, mathMlOutput.font);
   const mathMl = serializedMmlVisitor.visitTree(root).trim();
   if (!mathMl.startsWith("<math") || !mathMl.includes("MathML")) {
     throw new Error("MathJax did not produce valid Presentation MathML.");
@@ -488,19 +493,6 @@ export async function latexToSvg(
   };
 }
 
-function blobToBase64(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("Unable to read PNG blob."));
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      const comma = result.indexOf(",");
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.readAsDataURL(blob);
-  });
-}
-
 export async function svgToPng(
   svgResult: Pick<SvgExportResult, "base64" | "width" | "height">,
   options: PngExportOptions = {},
@@ -536,16 +528,17 @@ export async function svgToPng(
   }
   context.drawImage(image, 0, 0, width, height);
 
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (value) =>
-        value ? resolve(value) : reject(new Error("Unable to encode PNG output.")),
-      "image/png",
-    );
-  });
+  // The Office payload needs base64. Encode it directly: async canvas encoding
+  // waits for a one-second idle-task timeout in a hidden converter WebView.
+  const dataUrl = canvas.toDataURL("image/png");
+  const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+  const blob = new Blob(
+    [Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))],
+    { type: "image/png" },
+  );
   return {
     blob,
-    base64: await blobToBase64(blob),
+    base64,
     width,
     height,
   };

@@ -85,16 +85,57 @@ public sealed class WordOmmlNativeSequenceXmlTests
     }
 
     [Fact]
-    public void UnrelatedEquationArrayWithSequenceIsNotClaimedByVisualTeX()
+    public void DirectSequenceStructureDoesNotRequireVisualTeXAliases()
     {
         var omml = BuildDirectSequenceOmml(
             "00112233445566778899aabbccddeeff",
             includeVisualTeXAliases: false);
 
-        Assert.False(WordOmmlConverter.HasVisualTeXNativeEquationNumber(omml));
-        Assert.Equal(
-            WordOmmlConverter.ExtractSingleOMath(omml),
+        Assert.True(WordOmmlConverter.HasVisualTeXNativeEquationNumber(omml));
+        Assert.True(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(omml));
+        var semantic = XDocument.Parse(
             WordOmmlConverter.StripVisualTeXNativeEquationNumber(omml));
+        XNamespace math = MathNamespace;
+        XNamespace word = WordNamespace;
+        Assert.Empty(semantic.Descendants(math + "eqArr"));
+        Assert.Empty(semantic.Descendants(word + "fldChar"));
+        Assert.Empty(semantic.Descendants(word + "instrText"));
+        Assert.Equal("x+1",
+            string.Concat(semantic.Descendants(math + "t").Select(node => node.Value)));
+    }
+
+    [Theory]
+    [InlineData("trailing-math", false)]
+    [InlineData("trailing-math", true)]
+    [InlineData("root-sibling", false)]
+    [InlineData("root-sibling", true)]
+    [InlineData("non-parenthesis", false)]
+    [InlineData("non-parenthesis", true)]
+    public void DirectSequenceInsideMathematicsIsNeverStrippedAsANumber(
+        string invalidHost, bool includeAliases)
+    {
+        XNamespace math = MathNamespace;
+        var equation = XElement.Parse(BuildDirectSequenceOmml(
+            "00112233445566778899aabbccddeeff", includeAliases));
+        if (invalidHost == "trailing-math")
+            equation.Element(math + "eqArr")!.Element(math + "e")!
+                .Add(MathRun(math, "+"), MathRun(math, "y"));
+        else if (invalidHost == "root-sibling")
+            equation.Add(MathRun(math, "+"), MathRun(math, "y"));
+        else
+            equation.Descendants(math + "d").Single().AddFirst(
+                new XElement(math + "dPr",
+                    new XElement(math + "begChr", new XAttribute(math + "val", "[")),
+                    new XElement(math + "endChr", new XAttribute(math + "val", "]"))));
+        var source = equation.ToString(SaveOptions.DisableFormatting);
+        var unchanged = WordOmmlConverter.ExtractSingleOMath(source);
+
+        Assert.False(WordOmmlConverter.HasWordNativeEquationNumberHost(source));
+        Assert.False(WordOmmlConverter.HasVisualTeXNativeEquationNumber(source));
+        Assert.False(WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(source));
+        Assert.Equal(unchanged, WordOmmlConverter.StripWordNativeEquationNumberHost(source));
+        Assert.Equal(unchanged, WordOmmlConverter.StripVisualTeXNativeEquationNumber(source));
+        Assert.Equal(unchanged, WordOmmlConverter.StripManagedVisualTeXNativeEquationNumber(source));
     }
 
     [Fact]
@@ -181,22 +222,19 @@ public sealed class WordOmmlNativeSequenceXmlTests
     }
 
     [Fact]
-    public void ManagedStripCanRecoverDirectSequenceAfterAllAliasesAreLost()
+    public void BothSemanticStripPathsRecognizeDirectSequenceAfterAliasesAreLost()
     {
         var omml = BuildDirectSequenceOmml(
             "00112233445566778899aabbccddeeff",
             includeVisualTeXAliases: false);
 
-        // The public/strict path must leave an unowned equation array alone.
-        Assert.False(WordOmmlConverter.HasVisualTeXNativeEquationNumber(omml));
-        Assert.Equal(
-            WordOmmlConverter.ExtractSingleOMath(omml),
-            WordOmmlConverter.StripVisualTeXNativeEquationNumber(omml));
-
-        // A caller that already proved VTOMML ownership may recover the semantic
-        // body and atomically rebuild all three aliases.
+        // Alias loss does not change the current native host's topology.
+        Assert.True(WordOmmlConverter.HasVisualTeXNativeEquationNumber(omml));
         var semantic = WordOmmlConverter
             .StripManagedVisualTeXNativeEquationNumber(omml);
+        Assert.Equal(
+            WordOmmlConverter.StripVisualTeXNativeEquationNumber(omml),
+            semantic);
         var document = XDocument.Parse(semantic, LoadOptions.PreserveWhitespace);
         var math = (XNamespace)MathNamespace;
         Assert.Empty(document.Descendants(math + "eqArr"));

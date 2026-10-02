@@ -8028,7 +8028,11 @@ internal static partial class WordEquationNumbering
                     throw new InvalidDataException(
                         "A VisualTeX display host must belong to exactly one Word paragraph.");
                 paragraph = paragraphs[1];
-                format = paragraph.Format;
+                var current = paragraph.Format;
+                try { format = current.Duplicate; }
+                finally { Release(current); }
+                // Prepare the same six values on a detached format, then apply
+                // them once. Live setters individually invalidate Word layout.
                 format.Alignment =
                     WdParagraphAlignment.wdAlignParagraphJustify;
                 format.SpaceBefore = 0f;
@@ -8036,6 +8040,7 @@ internal static partial class WordEquationNumbering
                 format.LeftIndent = 0f;
                 format.RightIndent = 0f;
                 format.FirstLineIndent = 0f;
+                paragraph.Format = format;
             }
         }
         finally
@@ -14629,6 +14634,100 @@ internal static partial class WordEquationNumbering
         return result;
     }
 
+    // For one interactive formula, an explicit nearby heading is authoritative:
+    // once any explicit numbering exists, the full resolver ignores unnumbered
+    // headings. Resolve the last explicit heading at each relevant outline level
+    // with a backward native Find instead of rebuilding all future anchors.
+    // When none is explicit, keep the full resolver for its synthetic counters.
+    private static bool TryResolveExplicitHeadingScopeAtPosition(
+        Document document, int formulaPosition, int targetLevel,
+        out (int ScopeStart, int ScopeEnd, string NumberText) scope)
+    {
+        scope = (int.MinValue, int.MinValue, string.Empty);
+        Range? content = null;
+        Range? point = null;
+        try
+        {
+            content = document.Content;
+            point = content.Duplicate;
+            var position = Math.Max(content.Start, Math.Min(formulaPosition, content.End));
+            point.SetRange(position, position);
+            point.Expand(WdUnits.wdParagraph);
+            var searchEnd = Math.Min(content.End, point.End);
+            for (var level = 1; level <= targetLevel; level++)
+            {
+                var end = searchEnd;
+                while (end > content.Start)
+                {
+                    Range? search = null;
+                    Find? find = null;
+                    ParagraphFormat? format = null;
+                    Paragraphs? paragraphs = null;
+                    Paragraph? paragraph = null;
+                    Range? range = null;
+                    ListFormat? list = null;
+                    Frames? frames = null;
+                    try
+                    {
+                        search = content.Duplicate;
+                        search.SetRange(content.Start, end);
+                        find = search.Find;
+                        find.ClearFormatting();
+                        find.Text = "^p";
+                        find.MatchWildcards = false;
+                        find.MatchCase = false;
+                        find.MatchWholeWord = false;
+                        find.MatchSoundsLike = false;
+                        find.MatchAllWordForms = false;
+                        find.Forward = false;
+                        find.Wrap = WdFindWrap.wdFindStop;
+                        find.Format = true;
+                        format = find.ParagraphFormat;
+                        format.OutlineLevel = (WdOutlineLevel)level;
+                        if (!find.Execute()) break;
+                        paragraphs = search.Paragraphs;
+                        if (paragraphs.Count == 0) return false;
+                        paragraph = paragraphs[1];
+                        range = paragraph.Range;
+                        if (range.Start >= end || range.Start < content.Start) return false;
+                        end = range.Start;
+                        if (range.Start > position) continue;
+                        if (scope.ScopeStart != int.MinValue && range.Start <= scope.ScopeStart) break;
+                        // The candidate is one exact paragraph: structural table
+                        // ownership proves the same exclusion without forcing a
+                        // whole-document pagination after native Undo invalidates
+                        // Word's layout cache. Do not query wdWithInTable here.
+                        if (RangeIsWhollyWithinTable(range)) continue;
+                        try { frames = range.Frames; if (frames.Count > 0) continue; }
+                        catch (COMException) { }
+                        if (IsVisualTeXStructuralHeadingParagraph(range)) continue;
+                        var number = string.Empty;
+                        try
+                        {
+                            list = range.ListFormat;
+                            number = NormalizeHeadingNumberText(list.ListString, level);
+                        }
+                        catch (COMException) { }
+                        if (string.IsNullOrWhiteSpace(number)) number = ParseHeadingNumberFromText(range.Text, level);
+                        if (string.IsNullOrWhiteSpace(number)) continue;
+                        if (level < targetLevel)
+                            number += string.Concat(Enumerable.Repeat(".0", targetLevel - level));
+                        scope = (range.Start, range.End, number);
+                        break;
+                    }
+                    finally
+                    {
+                        Release(frames); Release(list); Release(range);
+                        Release(paragraph); Release(paragraphs); Release(format); Release(find); Release(search);
+                    }
+                }
+            }
+            return scope.ScopeStart != int.MinValue;
+        }
+        catch (COMException) { return false; }
+        finally { Release(point); Release(content); }
+    }
+
     internal static (int ScopeStart, int ScopeEnd, string NumberText) ResolveHeadingScopeAtPosition(
         Document document,
         int formulaPosition,
@@ -14637,6 +14736,9 @@ internal static partial class WordEquationNumbering
         var format = EquationNumberFormat.Resolve(formatId);
         if (!format.UsesHeading)
             return (int.MinValue, int.MinValue, string.Empty);
+
+        if (TryResolveExplicitHeadingScopeAtPosition(document, formulaPosition, format.HeadingLevel, out var explicitScope))
+            return explicitScope;
 
         var anchors = GetHeadingNumberAnchors(document, format.HeadingLevel);
         var scope = ResolveEquationNumberScope(formulaPosition, format, anchors);

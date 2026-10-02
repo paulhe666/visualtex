@@ -104,7 +104,7 @@ internal sealed partial class WordFormulaService
 
         try
         {
-            omml = WordFormulaHostResolver.ResolveLocal(
+            omml = WordFormulaHostLookup.ResolveLocal(
                 document,
                 selectionRange,
                 WordFormulaHostKind.Omml);
@@ -318,7 +318,7 @@ internal sealed partial class WordFormulaService
                 try
                 {
                     var mergeTarget =
-                        WordFormulaHostResolver.ResolveLocal(
+                        WordFormulaHostLookup.ResolveLocal(
                             document,
                             selected,
                             WordFormulaHostKind.Omml);
@@ -1529,7 +1529,7 @@ internal sealed partial class WordFormulaService
                     });
 
             var merged =
-                WordFormulaHostResolver.ResolveLocal(
+                WordFormulaHostLookup.ResolveLocal(
                     document,
                     probe,
                     WordFormulaHostKind.Omml);

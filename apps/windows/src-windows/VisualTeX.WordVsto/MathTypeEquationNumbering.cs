@@ -27,18 +27,90 @@ internal static class MathTypeEquationNumbering
         internal string[] BookmarkNames { get; set; } = Array.Empty<string>();
     }
 
-    internal sealed class PreparedNumberFormatRewrite
+    internal sealed class PreparedNumberFormatRewrite : IDisposable
     {
+        private Document? _staging;
+        private readonly List<Field?> _staged = new();
+
         internal PreparedNumberFormatRewrite(
+            Document document,
             string formatId,
             IReadOnlyList<PlaceRefRewritePlan> placeRefPlans)
         {
             FormatId = formatId;
             PlaceRefPlans = placeRefPlans;
-            ParagraphStarts = placeRefPlans
-                .Select(plan => plan.ParagraphStart)
-                .Distinct()
-                .ToArray();
+            ParagraphStarts = placeRefPlans.Select(plan => plan.ParagraphStart).Distinct().ToArray();
+            if (placeRefPlans.Count == 0) return;
+            if (WordFormulaMutationTransaction.IsActiveOnCurrentThread)
+                throw new InvalidOperationException("Native number fields must be prepared before the target undo record.");
+            try
+            {
+                _staging = document.Application.Documents.Add(Visible: false);
+                _staging.TrackRevisions = false;
+                Range? seed = null;
+                try
+                {
+                    seed = _staging.Content;
+                    seed.Text = string.Concat(Enumerable.Repeat("\uE101\r", placeRefPlans.Count));
+                }
+                finally { Release(seed); }
+                for (var index = 0; index < placeRefPlans.Count; index++) _staged.Add(null);
+                // Import owned one-character slots in reverse. Earlier offsets
+                // remain fixed; actual native Field owners survive later shifts.
+                // Creating OR writing another Word document during target Undo
+                // terminates that record, so all staging is preflight-only.
+                for (var index = placeRefPlans.Count - 1; index >= 0; index--)
+                {
+                    Range? insertion = null; Range? owner = null; Fields? fields = null;
+                    try
+                    {
+                        insertion = _staging.Range(index * 2, index * 2 + 1);
+                        if (insertion.Text != "\uE101") throw new InvalidDataException("Prepared native field slot lost its owned boundary.");
+                        insertion.InsertXML(placeRefPlans[index].RewrittenFlatOpc);
+                        owner = _staging.Range(index * 2, index * 2 + 1);
+                        owner.Expand(WdUnits.wdParagraph);
+                        fields = WordFormulaHost.GetLocalFields(owner);
+                        for (var n = 1; n <= fields.Count; n++)
+                        {
+                            Field? field = null; Range? code = null;
+                            try
+                            {
+                                field = fields[n]; code = field.Code;
+                                if (!MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text)) continue;
+                                if (_staged[index] is not null) throw new InvalidDataException("A prepared field slot contains multiple native number owners.");
+                                _staged[index] = field; field = null;
+                            }
+                            finally { Release(code); Release(field); }
+                        }
+                        if (_staged[index] is null) throw new InvalidDataException("A prepared field slot has no native number owner.");
+                    }
+                    finally { Release(fields); Release(owner); Release(insertion); }
+                }
+            }
+            catch { Dispose(); throw; }
+            finally { document.Activate(); }
+        }
+
+        internal Range ReadStagedFieldRange(int index)
+        {
+            if (_staging is null || index < 0 || index >= _staged.Count || _staged[index] is null)
+                throw new InvalidOperationException("The prepared native field is no longer available.");
+            Range? code = null; Range? result = null;
+            try
+            {
+                code = _staged[index]!.Code; result = _staged[index]!.Result;
+                return _staging.Range(code.Start - 1, ResolvePlaceRefFieldEndExclusive(_staging, code, result));
+            }
+            finally { Release(result); Release(code); }
+        }
+
+        public void Dispose()
+        {
+            foreach (var field in _staged) Release(field);
+            _staged.Clear();
+            if (_staging is null) return;
+            try { _staging.Close(WdSaveOptions.wdDoNotSaveChanges); }
+            finally { Release(_staging); _staging = null; }
         }
 
         internal string FormatId { get; }
@@ -88,7 +160,7 @@ internal static class MathTypeEquationNumbering
         // (orphan sequence fields are not touched) while removing the duplicate
         // global scan. Also skip reference refresh entirely when the document has
         // no REF/GOTOBUTTON field at all.
-        Fields? fields = null;
+        WordNumberingFieldCollection? fields = null;
         Field? field = null;
         Range? code = null;
         var sequenceFields =
@@ -97,7 +169,7 @@ internal static class MathTypeEquationNumbering
         hasPotentialEquationReferences = false;
         try
         {
-            fields = document.Fields;
+            fields = WordNumberingFieldCollection.Capture(document);
             for (var index = 1;
                  index <= fields.Count;
                  index++)
@@ -168,18 +240,22 @@ internal static class MathTypeEquationNumbering
         var plans = CreatePlaceRefRewritePlans(document, resolvedFormatId);
         if (plans.Count > 0)
             _ = CreateSectionCounterPlans(document, EquationNumberFormat.Resolve(resolvedFormatId));
-        return new PreparedNumberFormatRewrite(resolvedFormatId, plans);
+        return new PreparedNumberFormatRewrite(document, resolvedFormatId, plans);
     }
 
     internal static IReadOnlyList<int> ValidateEquationNumberFormat(
         Document document,
-        string? formatId) =>
-        PrepareEquationNumberFormat(document, formatId).ParagraphStarts;
+        string? formatId)
+    {
+        using var prepared = PrepareEquationNumberFormat(document, formatId);
+        return prepared.ParagraphStarts;
+    }
 
-    internal static int SetEquationNumberFormat(Document document, string? formatId) =>
-        SetEquationNumberFormat(
-            document,
-            PrepareEquationNumberFormat(document, formatId));
+    internal static int SetEquationNumberFormat(Document document, string? formatId)
+    {
+        using var prepared = PrepareEquationNumberFormat(document, formatId);
+        return SetEquationNumberFormat(document, prepared);
+    }
 
     internal static int SetEquationNumberFormat(
         Document document,
@@ -190,16 +266,19 @@ internal static class MathTypeEquationNumbering
         if (prepared is null) throw new ArgumentNullException(nameof(prepared));
         if (prepared.Count == 0) return 0;
         var inlineShapeCountBefore = ReadDocumentInlineShapeCount(document);
-        Document? stagingDocument = null;
-        try
+        // Every native field was materialized before this target transaction.
+        // Reverse target order preserves each earlier exact field boundary.
+        for (var index = 0; index < prepared.PlaceRefPlans.Count; index++)
         {
-            stagingDocument = document.Application.Documents.Add(Visible: false);
-            // Flat OPC for every MTPlaceRef was captured before the Word custom
-            // undo record opened. Applying from the end toward the start keeps all
-            // earlier field starts stable while avoiding WordOpenXML serialization
-            // of large MathType field trees inside CustomUndoRecord.
-            foreach (var plan in prepared.PlaceRefPlans)
-                ApplyPlaceRefRewritePlan(document, stagingDocument, plan);
+            Range? staged = null;
+            try
+            {
+                staged = prepared.ReadStagedFieldRange(index);
+                ApplyPlaceRefRewritePlan(document, staged, prepared.PlaceRefPlans[index]);
+            }
+            finally { Release(staged); }
+        }
+        {
 
             // A heading-aware switch may need MathType section state inserted after
             // the visible MTPlaceRef templates have been rewritten. Re-read only
@@ -232,19 +311,6 @@ internal static class MathTypeEquationNumbering
                 throw new InvalidDataException("MathType number-format rewrite changed the Equation.DSMT4 object count.");
             return prepared.Count;
         }
-        finally
-        {
-            try
-            {
-                if (stagingDocument is not null)
-                    stagingDocument.Close(WdSaveOptions.wdDoNotSaveChanges);
-            }
-            finally
-            {
-                Release(stagingDocument);
-                document.Activate();
-            }
-        }
     }
 
     private sealed class SectionCounterPlan
@@ -261,12 +327,12 @@ internal static class MathTypeEquationNumbering
     private static List<SectionCounterPlan> CreateSectionCounterPlans(Document document, EquationNumberFormat format)
     {
         var plans = new List<SectionCounterPlan>();
-        Fields? fields = null;
+        WordNumberingFieldCollection? fields = null;
         var previousChapter = 0;
         var previousSection = 0;
         try
         {
-            fields = document.Fields;
+            fields = WordNumberingFieldCollection.Capture(document);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Field? owner = null;
@@ -287,6 +353,8 @@ internal static class MathTypeEquationNumbering
                         try
                         {
                             child = nested[childIndex];
+                            if (!WordNumberingFieldCollection.IsCurrentField(child))
+                                continue;
                             childCode = child.Code;
                             var childText = childCode.Text ?? string.Empty;
                             var match = Regex.Match(childText,
@@ -384,16 +452,110 @@ internal static class MathTypeEquationNumbering
         }
     }
 
+    internal static bool TryInferDocumentFormat(
+        Document document,
+        out int start,
+        out string formatId)
+    {
+        if (document is null)
+            throw new ArgumentNullException(nameof(document));
+
+        start = int.MaxValue;
+        formatId = string.Empty;
+        WordNumberingFieldCollection? fields = null;
+        Field? field = null;
+        Range? code = null;
+        Range? result = null;
+        try
+        {
+            fields = WordNumberingFieldCollection.Capture(document);
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Release(result);
+                result = null;
+                Release(code);
+                code = null;
+                Release(field);
+                field = fields[index];
+                if (field.Type != WdFieldType.wdFieldMacroButton)
+                    continue;
+
+                code = field.Code;
+                if (!MathTypeEquationReferences.IsMathTypePlaceRefCode(
+                        code.Text))
+                    continue;
+
+                result = field.Result;
+                if (!TryInferFormatFromVisiblePlaceRef(
+                        result.Text,
+                        out formatId))
+                    continue;
+
+                start = Math.Min(
+                    code.Start,
+                    result.Start);
+                return true;
+            }
+            return false;
+        }
+        finally
+        {
+            Release(result);
+            Release(code);
+            Release(field);
+            Release(fields);
+        }
+    }
+
+    private static bool TryInferFormatFromVisiblePlaceRef(
+        string? text,
+        out string formatId)
+    {
+        formatId = string.Empty;
+        var match = Regex.Match(
+            text ?? string.Empty,
+            @"^\s*\(?\s*(?<a>[0-9]+)(?:(?<s1>[.\-])(?<b>[0-9]+))?(?:(?<s2>[.\-])(?<c>[0-9]+))?\s*\)?\s*$",
+            RegexOptions.CultureInvariant);
+        if (!match.Success)
+            return false;
+
+        if (!match.Groups["b"].Success)
+        {
+            formatId = EquationNumberFormat.ContinuousId;
+            return true;
+        }
+
+        if (!match.Groups["c"].Success)
+        {
+            formatId =
+                match.Groups["s1"].Value == "."
+                    ? EquationNumberFormat.Heading1DotId
+                    : EquationNumberFormat.Heading1DashId;
+            return true;
+        }
+
+        // MathType's two-level native template always uses chapter.section
+        // internally; the document preset controls only the final separator
+        // before MTEqn (1.1.1 versus 1.1-1).
+        if (match.Groups["s1"].Value != ".")
+            return false;
+        formatId =
+            match.Groups["s2"].Value == "."
+                ? EquationNumberFormat.Heading2DotId
+                : EquationNumberFormat.Heading2DashId;
+        return true;
+    }
+
     internal static int CountPlaceRefFields(Document document)
     {
         if (document is null) return 0;
-        Fields? fields = null;
+        WordNumberingFieldCollection? fields = null;
         Field? field = null;
         Range? code = null;
         var count = 0;
         try
         {
-            fields = document.Fields;
+            fields = WordNumberingFieldCollection.Capture(document);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(code);
@@ -417,7 +579,7 @@ internal static class MathTypeEquationNumbering
 
     private static IReadOnlyList<int> CollectPlaceRefParagraphStartsForValidation(Document document)
     {
-        Fields? fields = null;
+        WordNumberingFieldCollection? fields = null;
         Field? field = null;
         Range? code = null;
         Range? result = null;
@@ -428,7 +590,7 @@ internal static class MathTypeEquationNumbering
         var starts = new List<int>();
         try
         {
-            fields = document.Fields;
+            fields = WordNumberingFieldCollection.Capture(document);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(paragraphRange);
@@ -478,13 +640,13 @@ internal static class MathTypeEquationNumbering
 
     private static List<int> CollectPlaceRefCodeStarts(Document document)
     {
-        Fields? fields = null;
+        WordNumberingFieldCollection? fields = null;
         Field? field = null;
         Range? code = null;
         var starts = new List<int>();
         try
         {
-            fields = document.Fields;
+            fields = WordNumberingFieldCollection.Capture(document);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(code);
@@ -530,6 +692,8 @@ internal static class MathTypeEquationNumbering
                     code = null;
                     Release(field);
                     field = localFields[index];
+                    if (!WordNumberingFieldCollection.IsCurrentField(field))
+                        continue;
                     code = field.Code;
                     if (code.Start != codeStart
                         || !MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
@@ -557,10 +721,10 @@ internal static class MathTypeEquationNumbering
             probe = null;
         }
 
-        Fields? fields = null;
+        WordNumberingFieldCollection? fields = null;
         try
         {
-            fields = document.Fields;
+            fields = WordNumberingFieldCollection.Capture(document);
             for (var index = 1; index <= fields.Count; index++)
             {
                 Release(code);
@@ -790,7 +954,7 @@ internal static class MathTypeEquationNumbering
 
     private static void ApplyPlaceRefRewritePlan(
         Document document,
-        Document stagingDocument,
+        Range preparedField,
         PlaceRefRewritePlan plan)
     {
         Field? current = null;
@@ -813,10 +977,7 @@ internal static class MathTypeEquationNumbering
                 code,
                 result);
             fieldRange = document.Range(plan.FieldStart, fieldEnd);
-            ReplacePlaceRefRangeFromFlatOpc(
-                stagingDocument,
-                fieldRange,
-                plan.RewrittenFlatOpc);
+            fieldRange.FormattedText = preparedField;
 
             Release(fieldRange);
             fieldRange = null;
@@ -1169,6 +1330,8 @@ internal static class MathTypeEquationNumbering
     internal static bool IsMathTypeSectionBreakCode(string? code) =>
         !string.IsNullOrWhiteSpace(code)
         && code!.IndexOf(SectionBreakMarker, StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private static void Release(WordNumberingFieldCollection? value) => value?.Dispose();
 
     private static void Release(object? value)
     {

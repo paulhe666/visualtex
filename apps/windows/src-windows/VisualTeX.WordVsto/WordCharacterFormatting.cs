@@ -168,6 +168,28 @@ internal sealed class WordCharacterFormatting
         font.Hidden = 0;
     }
 
+    internal void ApplyToNativeMath(Range range)
+    {
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            font = range.Font;
+            // Native math scripts are structural OMath objects, not Word text
+            // Font.Subscript/Superscript flags. Word rejects those setters even
+            // for the value zero. Preserve character appearance without trying
+            // to overwrite the mathematical object's script topology.
+            foreach (var setter in setters)
+            {
+                if (setter.PropertyName == nameof(font.Subscript)
+                    || setter.PropertyName == nameof(font.Superscript)) continue;
+                setter.Apply(font);
+            }
+            if (Color.HasValue) font.Color = Color.Value;
+            font.Hidden = 0;
+        }
+        finally { if (font is not null) Marshal.ReleaseComObject(font); }
+    }
+
     internal void ApplyToParagraphStyle(Microsoft.Office.Interop.Word.Font font)
     {
         foreach (var setter in setters)
