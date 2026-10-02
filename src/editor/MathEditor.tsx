@@ -6022,7 +6022,8 @@ function FormulaField(props: FormulaFieldProps) {
         armPhysicalBackslashGuard("ideographic-comma", event.timeStamp);
         suppressBackslashKeyReplayUntil = event.timeStamp + 180;
         suppressUnarmedBackslashInputUntil = event.timeStamp + 180;
-        event.preventDefault();
+        // Keep MathLive from reading the physical key as "\", but let the
+        // browser commit "、" through the normal text input path.
         event.stopPropagation();
         return;
       }

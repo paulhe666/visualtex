@@ -25,6 +25,7 @@
     "test:formula-hotkeys": "npm run build && node scripts/formula_hotkey_regression.mjs",
     "test:editor-layout": "npm run build && node scripts/editor_layout_switch_regression.mjs",
     "test:enter-transition": "npm run build && node scripts/enter_transition_regression.mjs",
+    "test:ideographic-comma": "npm run build && node scripts/ideographic_comma_regression.mjs",
     "test:history": "node scripts/history_manager_smoke.mjs",
     "test:latex-format": "node --experimental-strip-types scripts/latex_format_smoke.mjs",
     "test:markdown-export": "node --experimental-strip-types scripts/markdown_export_smoke.mjs",
