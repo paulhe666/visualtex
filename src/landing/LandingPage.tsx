@@ -1,91 +1,41 @@
-import { useEffect, useRef } from "react";
-import type { LucideIcon } from "lucide-react";
-import {
-  ArrowRight,
-  ArrowUpRight,
-  Download,
-  Laptop,
-  Monitor,
-} from "lucide-react";
-import { VisualTeXLogo } from "../components/VisualTeXLogo";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { ART_DEFS, ART_FIELD, ART_HERO, ART_MARKS, ART_RULE, ART_TEXT, type InkKey } from "./art.generated";
+import { layoutFormulaField } from "./formulaField";
+import { applyLandingDocumentMeta, detectLandingLang, saveLandingLang, type LandingLang } from "./i18n";
 import { SupportCodes } from "./SupportCodes";
 
 const VERSION = "1.2.7";
 const DOWNLOAD_BASE = `https://download.visualtex.pauljianliao.com/visualtex-downloads/releases/v${VERSION}`;
 const OCR_MODEL_BASE = "https://download.visualtex.pauljianliao.com/ppformula-model";
 const RELEASES_URL = "https://github.com/paulhe666/visualtex/releases";
+const REPO_URL = "https://github.com/paulhe666/visualtex";
 
 type PlatformId = "mac" | "windows";
 
-type DownloadOption = {
-  id: PlatformId;
-  icon: LucideIcon;
-  title: string;
-  detail: string;
-  href: string;
-  action: string;
-  secondaryHref: string;
-  secondaryAction: string;
-};
-
-const downloads: readonly DownloadOption[] = [
+const downloads = [
   {
     id: "mac",
-    icon: Laptop,
-    title: "macOS",
-    detail: "Apple Silicon · macOS 11+",
+    name: "macName",
+    meta: "macMeta",
     href: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_aarch64.dmg`,
-    action: "下载完整版",
     secondaryHref: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_aarch64-no-ocr.dmg`,
-    secondaryAction: "下载轻量版",
   },
   {
     id: "windows",
-    icon: Monitor,
-    title: "Windows",
-    detail: "Windows 10/11 · x64",
+    name: "winName",
+    meta: "winMeta",
     href: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_x64-setup.exe`,
-    action: "下载完整版",
     secondaryHref: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_x64-no-ocr-setup.exe`,
-    secondaryAction: "下载轻量版",
   },
-];
+] as const satisfies readonly { id: PlatformId; name: InkKey; meta: InkKey; href: string; secondaryHref: string }[];
 
 const ocrModels = [
-  {
-    id: "ocr-s",
-    title: "OCR-S 模型",
-    detail: "轻量版 · Windows x64 · 200.05 MB",
-    href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-S_windows-x64.vtxocrmodel`,
-    action: "下载 OCR-S 模型",
-    recommended: false,
-  },
-  {
-    id: "ocr-m",
-    title: "OCR-M 模型",
-    detail: "均衡版 · Windows x64 · 425.83 MB",
-    href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-M_windows-x64.vtxocrmodel`,
-    action: "下载 OCR-M 模型",
-    recommended: true,
-  },
-  {
-    id: "ocr-l",
-    title: "OCR-L 模型",
-    detail: "高精度版 · Windows x64 · 670.29 MB",
-    href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-L_windows-x64.vtxocrmodel`,
-    action: "下载 OCR-L 模型",
-    recommended: false,
-  },
-] as const;
+  { label: "ocrS", href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-S_windows-x64.vtxocrmodel` },
+  { label: "ocrM", href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-M_windows-x64.vtxocrmodel` },
+  { label: "ocrL", href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-L_windows-x64.vtxocrmodel` },
+] as const satisfies readonly { label: InkKey; href: string }[];
 
-const features = [
-  { title: "可视化编辑", detail: "直接编辑分式、积分和矩阵，LaTeX 源码同步更新。", scope: "网页 / 桌面" },
-  { title: "原生 MathType 公式", detail: "无需安装 MathType，即可插入和编辑原生公式。", scope: "Windows" },
-  { title: "Word 与 PowerPoint", detail: "插入、修改公式，管理编号与交叉引用。", scope: "桌面" },
-  { title: "图片转公式", detail: "粘贴图片识别；桌面端还支持离线 OCR。", scope: "网页 / 桌面" },
-  { title: "LaTeX 源码", detail: "语法高亮、命令补全、多行编辑。", scope: "网页 / 桌面" },
-  { title: "复制与导出", detail: "导出 LaTeX、SVG 和 PNG。", scope: "网页 / 桌面" },
-] as const;
+const features = ["feature1", "feature2", "feature3", "feature4", "feature5"] as const satisfies readonly InkKey[];
 
 type PlatformDetection = {
   platform: PlatformId | "";
@@ -110,8 +60,37 @@ function detectPlatform(): PlatformDetection {
   return { platform: "", isMobileDevice: false };
 }
 
+/** A string drawn as brush lettering (pre-rendered SVG with its own aria-label). */
+function Ink({ k, lang }: { k: InkKey; lang: LandingLang }) {
+  return <span className="landing-ink" dangerouslySetInnerHTML={{ __html: ART_TEXT[k][lang] }} />;
+}
 
-function EditorPreview() {
+function Svg({ html, className }: { html: string; className?: string }) {
+  return <span className={className} aria-hidden="true" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+const arrow = (
+  <svg className="landing-arrow" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 12h15M13 6l6 6-6 6" />
+  </svg>
+);
+
+/** A white sheet styled like a LaTeX theorem environment: label, equation number, QED box. */
+function Card({ n, label, lang, children }: { n: number; label: InkKey; lang: LandingLang; children: ReactNode }) {
+  return (
+    <article className="landing-card" data-clear data-reveal>
+      <header className="landing-card-head">
+        <Ink k={label} lang={lang} />
+        <Svg className="landing-eqno" html={ART_MARKS.eq[n - 1]} />
+      </header>
+      <Svg className="landing-rule" html={ART_RULE} />
+      <div className="landing-card-body">{children}</div>
+      <svg className="landing-qed" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" /></svg>
+    </article>
+  );
+}
+
+function EditorPreview({ lang }: { lang: LandingLang }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
 
@@ -130,157 +109,154 @@ function EditorPreview() {
   }, []);
 
   return (
-    <figure className="landing-preview">
-      <div className="landing-preview-label">
-        <span>VisualTeX / 网页编辑器</span>
-        <a href="/editor">打开编辑器 <ArrowUpRight size={16} aria-hidden="true" /></a>
-      </div>
-      <div className="landing-preview-viewport" ref={viewportRef}>
+    <>
+      <div className="landing-frame" ref={viewportRef}>
         <iframe
           ref={frameRef}
-          className="landing-preview-frame"
           src="/editor?landing-preview=1"
-          title="VisualTeX 网页公式编辑器预览"
+          title={lang === "zh" ? "VisualTeX 网页编辑器预览" : "VisualTeX web editor preview"}
+          loading="lazy"
           tabIndex={-1}
           aria-hidden="true"
+          inert
         />
       </div>
-    </figure>
+      <div className="landing-actions">
+        <a className="landing-btn landing-btn-solid" href="/editor"><Ink k="openEditor" lang={lang} />{arrow}</a>
+      </div>
+    </>
   );
 }
 
 export function LandingPage() {
+  const [lang, setLang] = useState<LandingLang>(detectLandingLang);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
   const { platform: detectedPlatform, isMobileDevice } = detectPlatform();
   const orderedDownloads = [...downloads].sort(
     (left, right) => Number(right.id === detectedPlatform) - Number(left.id === detectedPlatform),
   );
 
+  useEffect(() => applyLandingDocumentMeta(lang), [lang]);
+
+  // The formula field is one continuous layer behind the whole page; re-pack it whenever the
+  // page width or the language (and so the size of the foreground) changes.
+  useLayoutEffect(() => {
+    const page = pageRef.current, field = fieldRef.current;
+    if (!page || !field) return;
+    let width = -1, timer = 0;
+    const build = () => { width = page.clientWidth; layoutFormulaField(page, field, ART_FIELD); };
+    build();
+    const observer = new ResizeObserver(() => {
+      if (page.clientWidth === width) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(build, 120);
+    });
+    observer.observe(page);
+    return () => { observer.disconnect(); window.clearTimeout(timer); };
+  }, [lang]);
+
+  // Cards rise into place as they enter the viewport.
+  useEffect(() => {
+    const page = pageRef.current;
+    if (!page) return;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-in");
+          observer.unobserve(entry.target);
+        }
+      }
+    }, { rootMargin: "0px 0px -12% 0px" });
+    page.querySelectorAll("[data-reveal]").forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+
+  const toggleLang = () => {
+    const next = lang === "zh" ? "en" : "zh";
+    saveLandingLang(next);
+    setLang(next);
+  };
+
   return (
-    <div className="landing-page">
-      <a className="landing-skip" href="#main">跳转到正文</a>
-      <header className="landing-header">
-        <div className="landing-container landing-header-inner">
-          <a className="landing-brand" href="/" aria-label="VisualTeX 首页">
-            <VisualTeXLogo />
-            <span>VisualTeX</span>
-          </a>
-          <nav className="landing-nav" aria-label="主要导航">
-            <a className="landing-nav-detail" href="#features">功能</a>
-            <a href="#download">下载</a>
-            <a className="landing-nav-detail" href={RELEASES_URL} target="_blank" rel="noreferrer">GitHub</a>
-            <a className="landing-button landing-button-small" href="/editor">在线编辑 <ArrowUpRight size={16} aria-hidden="true" /></a>
-          </nav>
-        </div>
-      </header>
+    <div className="landing-page" ref={pageRef} lang={lang === "zh" ? "zh-CN" : "en"}>
+      <svg className="landing-defs" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ART_DEFS }} />
+      <div className="landing-field" ref={fieldRef} aria-hidden="true" />
+      <a className="landing-skip" href="#main">{lang === "zh" ? "跳转到正文" : "Skip to content"}</a>
 
-      <main id="main">
-        <section className="landing-hero landing-container" aria-labelledby="landing-title">
-          <div className="landing-hero-copy">
-            <div>
-              <p className="landing-eyebrow">Visual LaTeX Editor</p>
-              <h1 id="landing-title">可视化编辑，<br /><mark className="landing-mark landing-mark-lilac">LaTeX</mark> 同步。</h1>
-            </div>
-            <div className="landing-hero-intro">
-              <p>在浏览器中编辑公式，<br />在 Word 与 PowerPoint 中继续使用。</p>
-              <div className="landing-actions">
-                <a className="landing-button" href="/editor">打开编辑器 <ArrowRight size={18} aria-hidden="true" /></a>
-                <a className="landing-button landing-button-outline" href="#download">下载桌面端 <Download size={17} aria-hidden="true" /></a>
-              </div>
-              <p className="landing-platforms">Web · Windows · macOS</p>
-            </div>
-          </div>
-          <EditorPreview />
-        </section>
+      <nav className="landing-nav" aria-label={lang === "zh" ? "主要导航" : "Main navigation"}>
+        <a href="/editor"><Ink k="navEditor" lang={lang} /></a>
+        <a href="#download"><Ink k="navDownload" lang={lang} /></a>
+        <button type="button" className="landing-lang" onClick={toggleLang}><Ink k="langSwitch" lang={lang} /></button>
+      </nav>
 
-        <section className="landing-features" id="features" aria-labelledby="features-title">
-          <div className="landing-container">
-          <div className="landing-section-heading">
-            <p className="landing-eyebrow">功能</p>
-            <h2 id="features-title">专注<mark className="landing-mark landing-mark-coral">公式</mark>，连接<mark className="landing-mark landing-mark-lilac">文档</mark>。</h2>
-          </div>
-          <div className="landing-feature-grid">
-            {features.map((feature, index) => (
-              <article className="landing-feature" data-feature={index} key={feature.title}>
-                <div className="landing-feature-meta">
-                  <span>0{index + 1}</span><span>{feature.scope}</span>
-                </div>
-                <h3>{feature.title}</h3>
-                <p>{feature.detail}</p>
-              </article>
-            ))}
-          </div>
-          </div>
-        </section>
+      <div className="landing-fg">
+        <header className="landing-hero">
+          <h1 className="landing-word" dangerouslySetInnerHTML={{ __html: ART_HERO }} />
+        </header>
 
-        <section className="landing-download" id="download" aria-labelledby="download-title">
-          <div className="landing-container">
-            <div className="landing-download-heading">
-              <div>
-                <p className="landing-eyebrow">Desktop</p>
-                <h2 id="download-title">下载 VisualTeX</h2>
-              </div>
-              <a className="landing-text-link" href={RELEASES_URL} target="_blank" rel="noreferrer">全部版本与安装说明 <ArrowUpRight size={16} aria-hidden="true" /></a>
-            </div>
-            {isMobileDevice && <p className="landing-device-note">桌面安装包请在电脑上下载。</p>}
-            <div className="landing-download-grid">
-              {orderedDownloads.map((download) => {
-                const Icon = download.icon;
-                const recommended = download.id === detectedPlatform;
-                return (
-                  <article className="landing-download-item" key={download.id} aria-label={recommended ? `${download.title}，当前设备` : download.title}>
-                    <div className="landing-download-title">
-                      <Icon size={24} strokeWidth={1.5} aria-hidden="true" />
-                      <h3>{download.title}</h3>
-                      {recommended && <span className="landing-device-label">当前设备</span>}
+        <main id="main">
+          <section className="landing-section"><p className="landing-say" data-clear><Ink k="say1" lang={lang} /></p></section>
+
+          <section className="landing-section">
+            <Card n={1} label="figLabel" lang={lang}><EditorPreview lang={lang} /></Card>
+          </section>
+
+          <section className="landing-section"><p className="landing-say" data-clear><Ink k="say2" lang={lang} /></p></section>
+
+          <section className="landing-section">
+            <Card n={2} label="propLabel" lang={lang}>
+              <ul className="landing-features">
+                {features.map((key, index) => (
+                  <li key={key}><Svg className="landing-num" html={ART_MARKS.roman[index]} /><Ink k={key} lang={lang} /></li>
+                ))}
+              </ul>
+            </Card>
+          </section>
+
+          <section className="landing-section"><p className="landing-say" data-clear><Ink k="say3" lang={lang} /></p></section>
+
+          <section className="landing-section" id="download">
+            <Card n={3} label="thmLabel" lang={lang}>
+              {isMobileDevice && <p className="landing-device-note"><Ink k="mobileNote" lang={lang} /></p>}
+              <div className="landing-platforms">
+                {orderedDownloads.map((download) => (
+                  <div className="landing-platform" key={download.id}>
+                    <div className="landing-platform-name">
+                      <Ink k={download.name} lang={lang} />
+                      {download.id === detectedPlatform && <span className="landing-device"><Ink k="thisDevice" lang={lang} /></span>}
                     </div>
-                    <p>{download.detail}</p>
-                    <div className="landing-download-options">
-                      <div>
-                        <a className="landing-button landing-download-action" href={download.href} aria-label={download.title + " " + download.action}><Download size={17} aria-hidden="true" />{download.action}</a>
-                        <p>包含本地 OCR 环境与基础模型。</p>
-                      </div>
-                      <div>
-                        <a className="landing-button landing-button-outline landing-download-action" href={download.secondaryHref} aria-label={download.title + " " + download.secondaryAction}><Download size={17} aria-hidden="true" />{download.secondaryAction}</a>
-                        <p>不含本地 OCR，支持 API 识别。</p>
-                      </div>
+                    <div className="landing-platform-meta"><Ink k={download.meta} lang={lang} /></div>
+                    <div className="landing-platform-actions">
+                      <a className="landing-btn landing-btn-solid" href={download.href}><Ink k="full" lang={lang} /></a>
+                      <a className="landing-btn landing-btn-ghost" href={download.secondaryHref}><Ink k="lite" lang={lang} /></a>
                     </div>
-                    <div className="landing-download-bottom">
-                      <span className="landing-version">v{VERSION}</span>
-                      <span className="landing-edition-note">两版均保留公式编辑与 Office 功能。</span>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-
-            <section className="landing-models" aria-labelledby="models-title">
-              <div className="landing-models-heading"><h3 id="models-title">Windows 离线 OCR 模型</h3><p>适用于完整版，下载后在桌面端导入。</p></div>
-              <div className="landing-ocr-model-grid">
-                {ocrModels.map((model) => (
-                  <article className="landing-model-row" key={model.id}>
-                    <h3>{model.title}</h3>
-                    <p>{model.detail}</p>
-                    <a className="landing-button landing-model-download" href={model.href} aria-label={model.action}>下载 <Download size={16} aria-hidden="true" /></a>
-                  </article>
+                  </div>
                 ))}
               </div>
-            </section>
-          </div>
-        </section>
-        <section className="landing-support landing-container" aria-labelledby="support-title">
-          <div className="landing-support-heading">
-            <h2 id="support-title">支持与交流</h2>
-            <p>打赏自愿，不影响任何功能的使用。<br />QQ 交流群：1045801770</p>
-          </div>
-          <SupportCodes />
-        </section>
-      </main>
+              <div className="landing-models">
+                <span className="landing-models-cap"><Ink k="ocrCaption" lang={lang} /></span>
+                {ocrModels.map((model) => (
+                  <a className="landing-chip" key={model.label} href={model.href}><Ink k={model.label} lang={lang} /></a>
+                ))}
+              </div>
+              <a className="landing-releases" href={RELEASES_URL} target="_blank" rel="noreferrer"><Ink k="allReleases" lang={lang} />{arrow}</a>
+            </Card>
+          </section>
 
-      <footer className="landing-footer landing-container">
-        <a className="landing-brand" href="/"><VisualTeXLogo /><span>VisualTeX</span></a>
-        <span>Visual LaTeX Editor</span>
-        <a className="landing-text-link" href="https://github.com/paulhe666/visualtex" target="_blank" rel="noreferrer">GitHub <ArrowUpRight size={16} aria-hidden="true" /></a>
-      </footer>
+          <section className="landing-section">
+            <Card n={4} label="remLabel" lang={lang}>
+              <SupportCodes lang={lang} />
+              <p className="landing-note"><Ink k="tips" lang={lang} /><Ink k="group" lang={lang} /></p>
+            </Card>
+          </section>
+        </main>
+
+        <footer className="landing-footer" data-clear>
+          <Ink k="footerName" lang={lang} />
+          <a href={REPO_URL} target="_blank" rel="noreferrer"><Ink k="footerGithub" lang={lang} /></a>
+        </footer>
+      </div>
     </div>
   );
 }

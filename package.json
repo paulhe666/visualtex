@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "deploy:web": "npx wrangler deploy",
     "test:landing": "node scripts/landing_page_smoke.mjs",
+    "build:landing-art": "node scripts/landing/build_landing_art.mjs",
     "test:web-editor:run": "node scripts/web_editor_migration_smoke.mjs",
     "test:web-ocr": "node scripts/web_ocr_worker_smoke.mjs",
     "test:web-editor": "npm run build && npm run test:web-ocr && npm run test:web-editor:run",
@@ -57,6 +58,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.1",
+    "opentype.js": "^2.0.0",
     "typescript": "~5.8.3",
     "vite": "^6.3.5"
   }
