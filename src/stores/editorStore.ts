@@ -349,8 +349,6 @@ interface EditorState {
   inputBehavior: InputBehaviorSettings;
   personalize: boolean;
   suggestionCount: number;
-  checkUpdatesOnStartup: boolean;
-  powerPointDefaultFontSizePt: number;
   usage: Record<string, CommandUsage>;
   history: FormulaHistoryItem[];
   setTitle: (title: string) => void;
@@ -386,8 +384,6 @@ interface EditorState {
   ) => void;
   setPersonalize: (enabled: boolean) => void;
   setSuggestionCount: (count: number) => void;
-  setCheckUpdatesOnStartup: (enabled: boolean) => void;
-  setPowerPointDefaultFontSizePt: (fontSizePt: number) => void;
   recordCommand: (commandId: string, prefix: string, source: CommandSource) => void;
   resetUsage: () => void;
   addHistory: (latex?: string) => void;
@@ -439,8 +435,6 @@ export const useEditorStore = create<EditorState>()(
       inputBehavior: { ...DEFAULT_INPUT_BEHAVIOR_SETTINGS },
       personalize: true,
       suggestionCount: 6,
-      checkUpdatesOnStartup: true,
-      powerPointDefaultFontSizePt: 20,
       usage: {},
       history: [],
       setTitle: (title) => set({ title }),
@@ -572,14 +566,6 @@ export const useEditorStore = create<EditorState>()(
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>
         set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
-      setCheckUpdatesOnStartup: (checkUpdatesOnStartup) =>
-        set({ checkUpdatesOnStartup }),
-      setPowerPointDefaultFontSizePt: (powerPointDefaultFontSizePt) =>
-        set({
-          powerPointDefaultFontSizePt:
-            Math.round(Math.min(200, Math.max(5, powerPointDefaultFontSizePt)) * 2) /
-            2,
-        }),
       recordCommand: (commandId, prefix, source) =>
         set((state) => {
           const now = Date.now();
@@ -743,20 +729,6 @@ export const useEditorStore = create<EditorState>()(
               Number.isFinite(settings.suggestionCount)
                 ? Math.min(10, Math.max(3, Math.round(settings.suggestionCount)))
                 : state.suggestionCount,
-            checkUpdatesOnStartup:
-              typeof settings.checkUpdatesOnStartup === "boolean"
-                ? settings.checkUpdatesOnStartup
-                : state.checkUpdatesOnStartup,
-            powerPointDefaultFontSizePt:
-              typeof settings.powerPointDefaultFontSizePt === "number" &&
-              Number.isFinite(settings.powerPointDefaultFontSizePt)
-                ? Math.round(
-                    Math.min(
-                      200,
-                      Math.max(5, settings.powerPointDefaultFontSizePt),
-                    ) * 2,
-                  ) / 2
-                : state.powerPointDefaultFontSizePt,
             classicTileWidth:
               settings.classicTileWidth === undefined
                 ? state.classicTileWidth
@@ -809,8 +781,6 @@ export const useEditorStore = create<EditorState>()(
             inputBehavior: { ...state.inputBehavior },
             personalize: state.personalize,
             suggestionCount: state.suggestionCount,
-            checkUpdatesOnStartup: state.checkUpdatesOnStartup,
-            powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
             classicTileWidth: state.classicTileWidth,
             classicDockHeight: state.classicDockHeight,
             keypadMinimizeOnCopy: state.keypadMinimizeOnCopy,
@@ -849,8 +819,6 @@ export const useEditorStore = create<EditorState>()(
         inputBehavior: state.inputBehavior,
         personalize: state.personalize,
         suggestionCount: state.suggestionCount,
-        checkUpdatesOnStartup: state.checkUpdatesOnStartup,
-        powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
         usage: state.usage,
         history: state.history,
       }),
@@ -935,14 +903,6 @@ export const useEditorStore = create<EditorState>()(
           inputBehavior: normalizeInputBehaviorSettings(
             persisted.inputBehavior,
           ),
-          powerPointDefaultFontSizePt:
-            typeof persisted.powerPointDefaultFontSizePt === "number" &&
-            Number.isFinite(persisted.powerPointDefaultFontSizePt)
-              ? Math.round(
-                  Math.min(200, Math.max(5, persisted.powerPointDefaultFontSizePt)) *
-                    2,
-                ) / 2
-              : 20,
         };
       },
     },

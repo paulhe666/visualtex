@@ -82,23 +82,6 @@ const LETTER_FONT_FAMILIES: Record<
   },
 };
 
-const LETTER_PRIMARY_FONT_NAMES: Record<FormulaLetterFont, string> = {
-  katex: "KaTeX_Math",
-  times: "Times New Roman",
-  cambria: "Cambria Math",
-  stix: "STIX Two Math",
-  palatino: "Palatino Linotype",
-  helvetica: "Arial",
-};
-
-const CHINESE_PRIMARY_FONT_NAMES: Record<FormulaChineseFont, string> = {
-  system: "Microsoft YaHei",
-  pingfang: "Microsoft YaHei",
-  songti: "SimSun",
-  kaiti: "KaiTi",
-  heiti: "SimHei",
-};
-
 const CHINESE_FONT_FAMILIES: Record<FormulaChineseFont, string> = {
   system:
     '"Microsoft YaHei", "Microsoft JhengHei", "Noto Sans CJK SC", "PingFang SC", sans-serif',
@@ -167,12 +150,4 @@ export function formulaLetterFontFamilies(value: FormulaLetterFont) {
 
 export function formulaChineseFontFamily(value: FormulaChineseFont) {
   return CHINESE_FONT_FAMILIES[normalizeFormulaChineseFont(value)];
-}
-
-export function formulaLetterPrimaryFontName(value: FormulaLetterFont) {
-  return LETTER_PRIMARY_FONT_NAMES[normalizeFormulaLetterFont(value)];
-}
-
-export function formulaChinesePrimaryFontName(value: FormulaChineseFont) {
-  return CHINESE_PRIMARY_FONT_NAMES[normalizeFormulaChineseFont(value)];
 }

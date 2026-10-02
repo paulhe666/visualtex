@@ -1379,13 +1379,6 @@ export function parseLatexSource(
   return [normalized];
 }
 
-export async function copyLatex(
-  latex: string,
-  format: LatexCodeFormat = DEFAULT_LATEX_CODE_FORMAT,
-) {
-  await navigator.clipboard.writeText(formatLatex(latex, format));
-}
-
 export async function copyFormulaLines(
   lines: readonly FormulaLine[],
   format: LatexCodeFormat = DEFAULT_LATEX_CODE_FORMAT,

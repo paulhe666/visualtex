@@ -3,13 +3,6 @@ dist/
 .vite/
 .DS_Store
 *.log
-__pycache__/
-*.py[cod]
-ocr/.venv/
-ocr/output/
-
-src-tauri/target/
-src-tauri/gen/
 
 # Local Codex workspace skills and metadata
 .agents/

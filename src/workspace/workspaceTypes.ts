@@ -5,32 +5,14 @@ import type {
 } from "../editor/MathEditor";
 import type { DocumentSnapshot, ReplaceDocumentEntry } from "../history/historyTypes";
 
-export type WorkspaceMode =
-  | "web"
-  | "office-create"
-  | "office-edit";
-
 export type WorkspaceExportFormat = "markdown" | "svg" | "png";
 
 export interface EditorWorkspaceProps {
-  mode: WorkspaceMode;
-
   showFileActions: boolean;
-  showUpdateActions: boolean;
-  showOfficeActions: boolean;
-
-  primaryActionLabel?: string;
-  officeHeaderLeadingControls?: ReactNode;
-  officeHeaderTrailingActions?: ReactNode;
   desktopHeaderControls?: ReactNode;
-
-  onPrimaryAction?: () => Promise<void>;
-  onCancel?: () => Promise<void>;
   onOpenExport?: () => void;
 
   editorRef: RefObject<MathEditorHandle | null>;
-  editorInstanceKey?: string;
-  reuseEditorLineSlots?: boolean;
   sidebarOpen: boolean;
   onSidebarOpenChange: (open: boolean) => void;
   onHistoryBusyChange: (busy: boolean) => void;

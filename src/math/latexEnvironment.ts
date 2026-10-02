@@ -35,28 +35,6 @@ function maskLatexComments(source: string): string {
   return masked;
 }
 
-export function unwrapSingleLatexDisplayMath(source: string): string | null {
-  const candidate = source.replace(/\r\n?/g, "\n").trim();
-  if (candidate.startsWith("\\[") && candidate.endsWith("\\]")) {
-    const inner = candidate.slice(2, -2).trim();
-    return inner || null;
-  }
-  if (!candidate.startsWith("$$") || !candidate.endsWith("$$")) return null;
-
-  const inner = candidate.slice(2, -2).trim();
-  if (!inner) return null;
-  for (let index = 0; index < inner.length - 1; index += 1) {
-    if (
-      inner[index] === "$" &&
-      inner[index + 1] === "$" &&
-      !isEscaped(inner, index)
-    ) {
-      return null;
-    }
-  }
-  return inner;
-}
-
 export function isSingleCompleteLatexEnvironment(source: string): boolean {
   const candidate = maskLatexComments(source).trim();
   if (!candidate.startsWith("\\begin")) return false;

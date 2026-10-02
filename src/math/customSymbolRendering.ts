@@ -160,29 +160,6 @@ function artworkMaskMarkup(
   );
 }
 
-export function customSymbolArtworkSvg(
-  symbol: CustomSymbolDefinition,
-  monochromeMask = true,
-) {
-  const width = Math.max(1, symbol.metrics.widthEm * 1000);
-  const height = Math.max(1, (symbol.metrics.ascentEm + symbol.metrics.descentEm) * 1000);
-  const paint = monochromeMask ? "black" : "inherit";
-  if (!artworkHasErase(symbol)) {
-    return (
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${number(height)}">` +
-      symbol.artwork.shapes.map((shape) => shapeMarkup(shape, paint)).join("") +
-      "</svg>"
-    );
-  }
-  const maskId = "visualtex-custom-symbol-erase";
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${number(height)}">` +
-    artworkMaskMarkup(symbol, maskId, width, height) +
-    `<rect x="0" y="0" width="${number(width)}" height="${number(height)}" fill="${paint}" mask="url(#${maskId})"></rect>` +
-    "</svg>"
-  );
-}
-
 function maskLayerSvg(
   symbol: CustomSymbolDefinition,
   operation: "paint" | "erase",

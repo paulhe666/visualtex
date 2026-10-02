@@ -69,13 +69,3 @@ export const VISUALTEX_MATHJAX_PACKAGE_MACROS = Object.freeze(
     ),
   ) as Record<string, VisualTexPackageMathJaxMacro>,
 );
-
-export const VISUALTEX_PACKAGE_MACRO_NAMES = Object.freeze(
-  Object.keys(VISUALTEX_MATHLIVE_PACKAGE_MACROS),
-);
-
-export const VISUALTEX_PACKAGE_MACRO_PATTERN = new RegExp(
-  `\\\\(?:${[...VISUALTEX_PACKAGE_MACRO_NAMES]
-    .sort((left, right) => right.length - left.length)
-    .join("|")})(?:\\s|\\{|$)`,
-);

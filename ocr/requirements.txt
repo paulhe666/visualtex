@@ -1,7 +1,0 @@
-paddlepaddle==3.3.1
-paddleocr==3.7.0
-tokenizers==0.19.1
-imagesize>=1.4
-ftfy>=6.3,<7
-Wand>=0.6,<1
-Pillow>=10.4,<12

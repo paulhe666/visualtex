@@ -3,7 +3,6 @@ import { createUuid } from "../runtime/browserCompatibility";
 import {
   cloneFormulaLines,
   createFormulaLine,
-  normalizeFormulaLines,
   useEditorStore,
 } from "../stores/editorStore";
 import type {

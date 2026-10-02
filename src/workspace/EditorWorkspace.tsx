@@ -5,16 +5,13 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import {
   AlignCenter,
   AlignLeft,
   AlignRight,
   Bold,
   Braces,
-  ChevronDown,
   Code2,
   Copy,
   FileDown,
@@ -90,23 +87,11 @@ const formulaBackgroundColorPresets = [
 type FormulaColorMenu = "color" | "backgroundColor";
 type ClassicResizeTarget = "tiles" | "dock";
 
-const compactOfficeTileBreakpoint = 760;
-const compactOfficeEditorReserve = 220;
 
 const customFormulaTextColorsStorageKey = "visualtex-custom-formula-text-colors";
 const customFormulaBackgroundColorsStorageKey =
   "visualtex-custom-formula-background-colors";
 const maximumCustomFormulaColors = 8;
-
-function PortalOrInline({
-  target,
-  children,
-}: {
-  target: HTMLElement | null;
-  children: ReactNode;
-}) {
-  return target ? createPortal(children, target) : children;
-}
 
 function clampPanelSize(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -133,16 +118,10 @@ function persistCustomFormulaColors(storageKey: string, colors: string[]) {
 }
 
 export function EditorWorkspace({
-  mode,
   showFileActions,
-  showOfficeActions,
-  officeHeaderLeadingControls,
-  officeHeaderTrailingActions,
   desktopHeaderControls,
   onOpenExport,
   editorRef,
-  editorInstanceKey,
-  reuseEditorLineSlots = false,
   sidebarOpen,
   onSidebarOpenChange,
   onHistoryBusyChange,
@@ -152,19 +131,17 @@ export function EditorWorkspace({
   onReplaceDocument,
 }: EditorWorkspaceProps) {
   const [classicDockOpen, setClassicDockOpenState] = useState(() =>
-    readWorkspacePanelOpen(mode, "toolbar"),
+    readWorkspacePanelOpen("toolbar"),
   );
   const setClassicDockOpen = (
     next: boolean | ((current: boolean) => boolean),
   ) => {
     setClassicDockOpenState((current) => {
       const resolved = typeof next === "function" ? next(current) : next;
-      writeWorkspacePanelOpen(mode, "toolbar", resolved);
+      writeWorkspacePanelOpen("toolbar", resolved);
       return resolved;
     });
   };
-  const [officeFormattingMount, setOfficeFormattingMount] =
-    useState<HTMLDivElement | null>(null);
   const [formulaColorMenu, setFormulaColorMenu] =
     useState<FormulaColorMenu | null>(null);
   const formulaColorMenuRef = useRef<HTMLDivElement>(null);
@@ -232,12 +209,11 @@ export function EditorWorkspace({
   const sourceOpen = useEditorStore((state) => state.sourceOpen);
   const setStoredSourceOpen = useEditorStore((state) => state.setSourceOpen);
   const setSourceOpen = (open: boolean) => {
-    writeWorkspacePanelOpen(mode, "source", open);
+    writeWorkspacePanelOpen("source", open);
     setStoredSourceOpen(open);
   };
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
   const isEn = language === "en";
-  const isOfficeWorkspace = mode !== "web";
   const latex = joinFormulaLines(lines);
   const sourceLatex = formatLatexSourceForEditor(
     formatFormulaLines(lines, latexCodeFormat),
@@ -265,10 +241,9 @@ export function EditorWorkspace({
   }, [sourceFocused]);
 
   useLayoutEffect(() => {
-    // The Web and Office workspaces keep independent panel preferences. New
-    // browser sessions start on formula tools instead of opening source view.
-    setStoredSourceOpen(readWorkspacePanelOpen(mode, "source", false));
-  }, [mode, setStoredSourceOpen]);
+    // New browser sessions start on formula tools instead of opening source view.
+    setStoredSourceOpen(readWorkspacePanelOpen("source", false));
+  }, [setStoredSourceOpen]);
 
   useEffect(() => {
     setClassicTileWidth(persistedClassicTileWidth);
@@ -326,11 +301,7 @@ export function EditorWorkspace({
   const classicTileWidthLimit = () => {
     const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width;
     if (!workspaceWidth) return MAX_CLASSIC_TILE_WIDTH;
-    const editorReserve =
-      isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
-        ? compactOfficeEditorReserve
-        : 360;
-    return Math.max(MIN_CLASSIC_TILE_WIDTH, workspaceWidth - editorReserve);
+    return Math.max(MIN_CLASSIC_TILE_WIDTH, workspaceWidth - 360);
   };
 
   const classicDockHeightLimit = () => {
@@ -467,14 +438,7 @@ export function EditorWorkspace({
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         const workspaceWidth = workspace.getBoundingClientRect().width;
-        const editorReserve =
-          isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
-            ? compactOfficeEditorReserve
-            : 360;
-        const tileMaximum = Math.max(
-          MIN_CLASSIC_TILE_WIDTH,
-          workspaceWidth - editorReserve,
-        );
+        const tileMaximum = Math.max(MIN_CLASSIC_TILE_WIDTH, workspaceWidth - 360);
         setClassicTileWidth((current) => {
           const next = clampPanelSize(
             current,
@@ -510,7 +474,7 @@ export function EditorWorkspace({
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [editorLayout, isOfficeWorkspace]);
+  }, [editorLayout]);
 
   const preserveFormulaFocus = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -750,11 +714,9 @@ export function EditorWorkspace({
       : visualLines[0]?.id ?? null;
     return (
       <MathEditor
-        key={editorInstanceKey}
         ref={editorRef}
         lines={visualLines}
         activeLineId={visualActiveLineId}
-        reuseLineSlots={reuseEditorLineSlots}
         formulaAlignment={formulaAlignment}
         latexCodeFormat={latexCodeFormat}
         zoom={zoom}
@@ -778,7 +740,6 @@ export function EditorWorkspace({
         className={
           `workspace ${editorLayout === "classic" ? "is-classic-layout" : "is-standard-layout"}` +
           (sidebarOpen ? " has-sidebar" : "") +
-          (isOfficeWorkspace ? " is-office-workspace" : "") +
           (highlightActiveLine ? " has-active-line-highlight" : "") +
           (sourceFocused ? " is-source-editor-focused" : "")
         }
@@ -788,7 +749,6 @@ export function EditorWorkspace({
           } as CSSProperties
         }
         data-editor-layout={editorLayout}
-        data-office-actions={showOfficeActions ? "true" : undefined}
       >
         {editorLayout === "standard" && sidebarOpen && (
           <FormulaToolbar
@@ -812,27 +772,9 @@ export function EditorWorkspace({
 
         <section className="formula-workspace editor-pane">
           <header
-            className={
-              "workspace-heading pane-header editor-pane-header" +
-              (isOfficeWorkspace ? " is-office-editor-header" : "")
-            }
+            className="workspace-heading pane-header editor-pane-header"
           >
             <div className="pane-title-group">
-              {isOfficeWorkspace && officeHeaderLeadingControls ? (
-                <div className="office-inline-options">
-                  {officeHeaderLeadingControls}
-                </div>
-              ) : null}
-              {isOfficeWorkspace && editorLayout !== "classic" ? (
-                <div
-                  className="office-formatting-mount"
-                  ref={setOfficeFormattingMount}
-                />
-              ) : null}
-              {!isOfficeWorkspace || officeFormattingMount ? (
-                <PortalOrInline
-                  target={isOfficeWorkspace ? officeFormattingMount : null}
-                >
                   <div
                     className="formula-alignment-controls"
                 role="toolbar"
@@ -1135,9 +1077,7 @@ export function EditorWorkspace({
                       )}
                     </div>
                   </div>
-                </PortalOrInline>
-              ) : null}
-              {!isOfficeWorkspace && desktopHeaderControls ? (
+              {desktopHeaderControls ? (
                 <div className="desktop-editor-header-controls">
                   {desktopHeaderControls}
                 </div>
@@ -1195,11 +1135,6 @@ export function EditorWorkspace({
                 </button>
               </div>
             </div>
-            {isOfficeWorkspace && officeHeaderTrailingActions ? (
-              <div className="office-inline-actions">
-                {officeHeaderTrailingActions}
-              </div>
-            ) : null}
           </header>
 
           {editorLayout === "classic" ? (
@@ -1280,19 +1215,7 @@ export function EditorWorkspace({
                   className="classic-bottom-tabs"
                   aria-label={isEn ? "Bottom editor panel" : "底部编辑面板"}
                 >
-                  {isOfficeWorkspace ? (
-                    <div
-                      ref={setOfficeFormattingMount}
-                      className="classic-bottom-formatting-slot"
-                      aria-label={
-                        isEn
-                          ? "Formula alignment and formatting"
-                          : "公式对齐与格式"
-                      }
-                    />
-                  ) : (
-                    <span className="classic-bottom-tab-spacer" aria-hidden="true" />
-                  )}
+                  <span className="classic-bottom-tab-spacer" aria-hidden="true" />
                   <div
                     className="classic-bottom-tab-group"
                     role="tablist"
@@ -1392,7 +1315,6 @@ export function EditorWorkspace({
                         view="tools"
                         layout="horizontal"
                         className="classic-bottom-toolbar"
-                        compactDensity={isOfficeWorkspace}
                         onInsert={(command) =>
                           editorRef.current?.insertCommand(command)
                         }

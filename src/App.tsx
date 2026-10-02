@@ -5,7 +5,6 @@ import "./runtime/editorVisualPreferencesRuntime";
 import { installFloatingLayerAutoAvoidance } from "./runtime/floatingLayerAutoAvoidance";
 import {
   BookOpenText,
-  Braces,
   Check,
   ChevronDown,
   CircleHelp,
@@ -15,20 +14,15 @@ import {
   History,
   Languages,
   Menu,
-  Minus,
-  PanelBottomClose,
-  PanelBottomOpen,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  Plus,
   Redo2,
   Save,
   ScanLine,
   Settings2,
   Undo2,
-  X,
 } from "lucide-react";
 import {
   type MathEditorHandle,
@@ -65,10 +59,8 @@ import type {
 } from "./history/historyTypes";
 import {
   copyFormulaLines,
-  formatFormulaLines,
   getLatexCodeFormatDefinition,
   latexCodeFormats,
-  parseLatexSource,
 } from "./clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
 import { buildMarkdownDocument } from "./export/markdownExport";
@@ -79,7 +71,7 @@ import {
 } from "./export/pngClipboard";
 import type { WorkspaceExportFormat } from "./workspace/workspaceTypes";
 import type { FormulaDocument, LatexCodeFormat } from "./types/formula";
-import { publishSynchronizedTheme } from "./themeSync";
+import { applyDocumentTheme } from "./themeSync";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
 import {
   loadWebOcrConfiguration,
@@ -157,7 +149,6 @@ function App() {
   const historyState = useHistorySnapshot();
   const isEn = language === "en";
   const latex = joinFormulaLines(lines);
-  const sourceLatex = formatFormulaLines(lines, latexCodeFormat);
   const currentCodeFormat = getLatexCodeFormatDefinition(latexCodeFormat);
   const codeFormatGroups = [
     {
@@ -376,7 +367,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    publishSynchronizedTheme(theme);
+    applyDocumentTheme(theme);
   }, [theme]);
 
   useEffect(() => {
@@ -1058,10 +1049,7 @@ function App() {
       )}
 
       <EditorWorkspace
-        mode="web"
         showFileActions
-        showUpdateActions={false}
-        showOfficeActions={false}
         desktopHeaderControls={
           <ExportMenu
             isEn={isEn}
@@ -1088,9 +1076,7 @@ function App() {
 
       <SettingsDialog
         open={settingsOpen}
-        showApplicationUpdates={false}
         onClose={() => setSettingsOpen(false)}
-        onCheckForUpdates={() => {}}
         onOpenFormulaHotkeys={() => {
           setSettingsOpen(false);
           setFormulaHotkeyManagerOpen(true);

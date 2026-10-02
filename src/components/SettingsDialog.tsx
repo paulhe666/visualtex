@@ -2,11 +2,9 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   BrainCircuit,
   Download,
-  Image,
   Keyboard,
   Languages,
   Palette,
-  RefreshCw,
   RotateCcw,
   Shapes,
   SlidersHorizontal,
@@ -44,9 +42,7 @@ import type {
 
 interface Props {
   open: boolean;
-  showApplicationUpdates?: boolean;
   onClose: () => void;
-  onCheckForUpdates: () => void;
   onOpenFormulaHotkeys: () => void;
 }
 
@@ -159,7 +155,6 @@ interface WebEditorConfiguration {
     inputBehavior: Record<string, boolean>;
     personalize: boolean;
     suggestionCount: number;
-    checkUpdatesOnStartup: boolean;
   };
   customTheme: CustomThemeState;
   customSymbols: ReturnType<typeof readCustomSymbolLibrary>;
@@ -255,9 +250,7 @@ function SelectRow({
 
 export function SettingsDialog({
   open,
-  showApplicationUpdates = true,
   onClose,
-  onCheckForUpdates,
   onOpenFormulaHotkeys,
 }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -367,7 +360,6 @@ export function SettingsDialog({
         inputBehavior: { ...current.inputBehavior },
         personalize: current.personalize,
         suggestionCount: current.suggestionCount,
-        checkUpdatesOnStartup: current.checkUpdatesOnStartup,
       },
       customTheme: readCustomTheme(),
       customSymbols: readCustomSymbolLibrary(),
@@ -466,9 +458,6 @@ export function SettingsDialog({
       }
       if (typeof editor.suggestionCount === "number") {
         current.setSuggestionCount(editor.suggestionCount);
-      }
-      if (typeof editor.checkUpdatesOnStartup === "boolean") {
-        current.setCheckUpdatesOnStartup(editor.checkUpdatesOnStartup);
       }
       if (editor.inputBehavior && typeof editor.inputBehavior === "object") {
         for (const row of inputBehaviorRows) {
@@ -1053,43 +1042,6 @@ export function SettingsDialog({
             ) : null}
           </div>
 
-          {showApplicationUpdates ? (
-            <div className="settings-section">
-              <div className="settings-section-title">
-                <RefreshCw size={18} />
-                <div>
-                  <h3>{isEn ? "Application updates" : "应用更新"}</h3>
-                  <p>
-                    {isEn
-                      ? "Automatically check GitHub Releases and show localized update details when a newer stable version is published."
-                      : "自动检查 GitHub Releases；发布新稳定版本时，按当前语言显示更新内容。"}
-                  </p>
-                </div>
-              </div>
-              <ToggleRow
-                title={
-                  isEn
-                    ? "Automatic update notifications"
-                    : "自动更新提醒"
-                }
-                description={
-                  isEn
-                    ? "Manual checks remain available when automatic checks are disabled."
-                    : "关闭自动检查后仍可手动检查更新。"
-                }
-                checked={state.checkUpdatesOnStartup}
-                onChange={state.setCheckUpdatesOnStartup}
-              />
-              <button
-                type="button"
-                className="secondary-button settings-update-button"
-                onClick={onCheckForUpdates}
-              >
-                <RefreshCw size={15} />
-                {isEn ? "Check now" : "立即检查"}
-              </button>
-            </div>
-          ) : null}
         </div>
 
         <footer className="dialog-footer">

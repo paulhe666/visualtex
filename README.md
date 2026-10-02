@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="src-tauri/app-icon.svg" width="128" alt="VisualTeX logo" />
+  <img src="public/favicon.svg" width="128" alt="VisualTeX logo" />
   <h1>VisualTeX</h1>
   <p><strong>可视化 LaTeX 公式编辑器 · Visual LaTeX Formula Editor</strong></p>
   <p>
@@ -147,16 +147,10 @@ sudo apt install ./VisualTeX_1.0.6_amd64.deb
 
 ## 本地开发
 
-需要 Node.js、Rust 和目标平台对应的 Tauri 系统依赖。
+需要 Node.js。
 
 ```bash
 npm install
-npm run tauri:dev
-```
-
-只运行前端：
-
-```bash
 npm run dev
 ```
 
@@ -164,16 +158,9 @@ npm run dev
 
 ```bash
 npm run build
-cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-构建桌面安装包：
-
-```bash
-npm run tauri:build
-```
-
-Windows 和 Linux 的自动构建说明见 [`docs/WINDOWS_LINUX_RELEASE.md`](docs/WINDOWS_LINUX_RELEASE.md)。
+部署说明见 [`docs/WEB_DEPLOYMENT.md`](docs/WEB_DEPLOYMENT.md)。
 
 ## 核心设计原则
 
@@ -315,33 +302,20 @@ Approximate model download sizes:
 
 ## Development
 
-Node.js, Rust, and the Tauri system dependencies for the target platform are required.
+Node.js is required.
 
 ```bash
 npm install
-npm run tauri:dev
-```
-
-Run the frontend only:
-
-```bash
 npm run dev
 ```
 
-Build checks:
+Build check:
 
 ```bash
 npm run build
-cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Build desktop packages:
-
-```bash
-npm run tauri:build
-```
-
-See [`docs/WINDOWS_LINUX_RELEASE.md`](docs/WINDOWS_LINUX_RELEASE.md) for the Windows and Linux GitHub Actions workflow.
+See [`docs/WEB_DEPLOYMENT.md`](docs/WEB_DEPLOYMENT.md) for deployment.
 
 ## Core design principle
 

@@ -54,20 +54,3 @@ export function readErrorMessage(error: unknown, fallback = "发生未知错误�
 
   return fallback;
 }
-
-export async function readResponseErrorMessage(
-  response: Response,
-  fallback = "VisualTeX 服务请求失败。",
-): Promise<string> {
-  const text = await response.text().catch(() => "");
-  if (text.trim()) {
-    try {
-      const parsed = JSON.parse(text) as unknown;
-      return readErrorMessage(parsed, text.trim());
-    } catch {
-      const message = usefulString(text);
-      if (message) return message;
-    }
-  }
-  return usefulString(response.statusText) || fallback;
-}

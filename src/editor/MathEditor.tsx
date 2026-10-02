@@ -787,35 +787,6 @@ function placeholderRangeForVisualNode(
     ?.range ?? null;
 }
 
-function findMatchingVerticalPlaceholderRange(
-  field: MathfieldElement,
-  target: VerticalPlaceholderAnchor,
-) {
-  const ranges = latexPlaceholderRanges(field);
-  const candidates = visiblePlaceholderNodes(field).flatMap((placeholder) => {
-    const description = describeVerticalPlaceholderNode(field, placeholder);
-    if (
-      !description ||
-      description.kind !== target.kind ||
-      description.region !== target.region
-    ) {
-      return [];
-    }
-    const range = placeholderRangeForVisualNode(field, placeholder, ranges);
-    if (!range) return [];
-    return [{
-      range,
-      score:
-        Math.abs(description.relativeY - target.relativeY) * 1200 +
-        Math.abs(description.relativeX - target.relativeX) * 300 +
-        Math.abs(description.centerY - target.centerY) * 4 +
-        Math.abs(description.centerX - target.centerX),
-    }];
-  });
-  return candidates.sort((first, second) => first.score - second.score)[0]
-    ?.range ?? null;
-}
-
 function rememberRawCommandAnchor(field: MathfieldElement) {
   if (rawCommandAnchors.has(field)) return;
   clearVisualTexPlaceholderRestoreState(field);
@@ -1427,27 +1398,6 @@ function exactWrapperCommand(rawQuery: string) {
   const normalizedQuery = rawQuery.trim();
   if (!wrapperCommandPreviews.has(normalizedQuery)) return null;
   return findRuntimeCommandByCommand(normalizedQuery);
-}
-
-function findAcceptedWrapperRange(
-  field: MathfieldElement,
-  command: string,
-  preferredPosition: number,
-) {
-  const candidates: Array<[number, number]> = [];
-  for (let end = 1; end <= field.lastOffset; end += 1) {
-    const latex = field.getValue(end - 1, end, "latex").trim();
-    if (latex.startsWith(`${command}{`)) {
-      candidates.push([end - 1, end]);
-    }
-  }
-  return (
-    candidates.sort(
-      (first, second) =>
-        Math.abs(first[0] - preferredPosition) -
-        Math.abs(second[0] - preferredPosition),
-    )[0] ?? null
-  );
 }
 
 function decorateNativeSuggestionPreviews() {
@@ -3621,79 +3571,6 @@ function moveNativeSuggestionSelection(
   nativeInputPopoverManualCommand = command;
   syncStableNativeInputPopoverSelection(command);
   return command;
-}
-
-function insertRawCommandIntoVerticalPlaceholder(
-  field: MathfieldElement,
-  anchor: RawCommandAnchor,
-  insertionTemplate: string,
-  selectedCommand: string,
-) {
-  const semanticAnchor = anchor.verticalPlaceholder;
-  if (!semanticAnchor) return false;
-
-  field.executeCommand(["complete", "reject"]);
-  field.mode = "math";
-  field.setValue(anchor.latex, {
-    mode: "math",
-    format: "latex",
-    insertionMode: "replaceAll",
-    selectionMode: "after",
-    silenceNotifications: true,
-  });
-
-  const restoredSelection = clampSelection(
-    anchor.selection,
-    field.lastOffset,
-  );
-  const restoredRange = restoredSelection.ranges.at(-1) ?? null;
-  let targetRange: [number, number] | null = null;
-  if (
-    restoredRange &&
-    field
-      .getValue(
-        Math.min(restoredRange[0], restoredRange[1]),
-        Math.max(restoredRange[0], restoredRange[1]),
-        "latex",
-      )
-      .trim() === "\\placeholder{}"
-  ) {
-    field.selection = restoredSelection;
-    const restoredSemantic = describeSelectedVerticalPlaceholder(field);
-    if (
-      !restoredSemantic ||
-      (restoredSemantic.kind === semanticAnchor.kind &&
-        restoredSemantic.region === semanticAnchor.region)
-    ) {
-      targetRange = [
-        Math.min(restoredRange[0], restoredRange[1]),
-        Math.max(restoredRange[0], restoredRange[1]),
-      ];
-    }
-  }
-  targetRange ??= findMatchingVerticalPlaceholderRange(
-    field,
-    semanticAnchor,
-  );
-  if (!targetRange) return false;
-
-  field.selection = { ranges: [targetRange], direction: "none" };
-  const inserted = field.insert(insertionTemplate, {
-    mode: "math",
-    format: "latex",
-    insertionMode: "replaceSelection",
-    selectionMode:
-      insertionTemplate.includes("\\placeholder{}") ||
-      nativePlaceholderSelectionCommands.has(selectedCommand)
-        ? "placeholder"
-        : "after",
-    focus: true,
-    scrollIntoView: false,
-  });
-  if (inserted) {
-    selectFirstLatexPlaceholder(field, selectedCommand, insertionTemplate);
-  }
-  return inserted;
 }
 
 function commitNativeSuggestion(
@@ -6819,7 +6696,6 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       (state) => state.bindings,
     );
     const customSymbolRevision = useCustomSymbolRevision();
-    const isEn = language === "en";
     const interactionReadOnly = readOnly || previewOnly;
     previewOnlyRef.current = previewOnly;
 
@@ -9341,9 +9217,6 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         .map((line) => normalizeChineseLatex(line.trim()))
         .filter(Boolean);
     };
-
-    const normalizeInsertedLatex = (latex: string) =>
-      normalizeInsertedFormulaLines(latex).join("\\quad ");
 
     const getSelectionMap = (): Record<string, MathSelectionSnapshot> =>
       Object.fromEntries(

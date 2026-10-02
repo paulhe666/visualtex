@@ -120,5 +120,3 @@ export function greekLetterHotkeyCommandFromEvent(
     : lowerGreekByCode[event.code];
   return definition ? toLatexCommand(definition) : null;
 }
-
-export const greekLetterHotkeyLowercaseCodes = Object.keys(lowerGreekByCode);

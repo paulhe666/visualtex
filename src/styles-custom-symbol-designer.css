@@ -587,12 +587,6 @@
   line-height: 1.45;
 }
 
-.custom-symbol-system-font-hint {
-  color: var(--text-faint);
-  font-size: 7px;
-  line-height: 1.45;
-}
-
 .custom-symbol-geometry-heading {
   margin-top: 2px;
   padding-top: 8px;
@@ -1037,20 +1031,6 @@
   fill: var(--bg-sunken);
 }
 
-.custom-symbol-designer-canvas-paper {
-  fill: color-mix(in srgb, var(--formula-surface) 78%, transparent);
-  stroke: none;
-}
-
-.custom-symbol-designer-output-outline {
-  fill: none;
-  stroke: var(--border-strong);
-  stroke-width: 1.6;
-  stroke-dasharray: 4 3;
-  vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 2px 8px color-mix(in srgb, var(--text) 8%, transparent));
-}
-
 .custom-symbol-designer-reference-alpha,
 .custom-symbol-designer-reference-glyph {
   color: var(--text-faint);
@@ -1213,41 +1193,6 @@
   color: var(--danger);
 }
 
-.custom-symbol-metric-presets {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
-}
-
-.custom-symbol-metric-presets button {
-  min-width: 0;
-  min-height: 28px;
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--text-secondary);
-  font-size: 7px;
-}
-
-.custom-symbol-metric-presets button.is-fit-content {
-  grid-column: 1 / -1;
-  font-weight: 720;
-}
-
-.custom-symbol-metric-presets button:hover,
-.custom-symbol-metric-presets button:focus-visible {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent-primary, var(--accent));
-}
-
-.custom-symbol-metric-hint {
-  color: var(--text-faint);
-  font-size: 7px;
-  line-height: 1.45;
-}
-
 .custom-symbol-layer-effects {
   display: grid;
   gap: 7px;
@@ -1274,12 +1219,6 @@
   width: 13px;
   height: 13px;
   margin: 0;
-}
-
-.custom-symbol-effect-hint {
-  color: var(--text-faint);
-  font-size: 7px;
-  line-height: 1.45;
 }
 
 .custom-symbol-geometry-properties {
@@ -1831,12 +1770,6 @@
   line-height: 1.3;
 }
 
-.custom-symbol-system-font-hint,
-.custom-symbol-metric-hint,
-.custom-symbol-effect-hint {
-  display: none;
-}
-
 .custom-symbol-geometry-heading {
   margin-top: 1px;
   padding-top: 11px;
@@ -2007,11 +1940,6 @@
 
 .custom-symbol-designer-workspace {
   fill: var(--csd-canvas-bg);
-}
-
-.custom-symbol-designer-canvas-paper,
-.custom-symbol-designer-output-outline {
-  display: none;
 }
 
 .custom-symbol-designer-grid-line {

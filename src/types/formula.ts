@@ -88,8 +88,6 @@ export interface FormulaDocument {
     inputBehavior?: InputBehaviorSettings;
     personalize?: boolean;
     suggestionCount?: number;
-    checkUpdatesOnStartup?: boolean;
-    powerPointDefaultFontSizePt?: number;
     classicTileWidth?: number;
     classicDockHeight?: number;
     keypadMinimizeOnCopy?: boolean;

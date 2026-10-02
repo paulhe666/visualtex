@@ -112,28 +112,6 @@ function internalOptionAccess(field: MathfieldElement) {
   return field as unknown as MathLiveInternalOptionAccess;
 }
 
-export function readMathLiveOptionBeforeMount<T>(
-  field: MathfieldElement,
-  key: string,
-): T | undefined {
-  const options = internalOptionAccess(field)._getOptions?.([key]);
-  return options?.[key] as T | undefined;
-}
-
-export function setMathLiveOptionsBeforeMount(
-  field: MathfieldElement,
-  options: Record<string, unknown>,
-) {
-  if (field.isConnected) {
-    throw new Error("MathLive deferred options must be configured before mount");
-  }
-  const setter = internalOptionAccess(field)._setOptions;
-  if (typeof setter !== "function") {
-    throw new Error("MathLive deferred option API is unavailable");
-  }
-  setter.call(field, options);
-}
-
 export function installMathLiveOptionMutationGuard(field: MathfieldElement) {
   if (guardedFields.has(field)) return;
   const access = internalOptionAccess(field);

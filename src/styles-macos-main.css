@@ -201,15 +201,6 @@
   color: var(--accent);
 }
 
-.pane-icon {
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
 .editor-surface {
   background: var(--formula-surface);
 }
@@ -224,11 +215,6 @@
 
 .multi-line-editor[data-formula-alignment="right"] .mathfield-host {
   justify-content: safe flex-end;
-}
-
-.visualtex-native-placeholder-preview,
-html body #visualtex-native-input-suggestion-popover .visualtex-native-placeholder-preview {
-  background: var(--formula-placeholder);
 }
 
 .matrix-builder {
@@ -1507,8 +1493,7 @@ body[data-workspace-resize="dock"] * {
   box-shadow: inset 2px 0 0 var(--accent-primary);
 }
 
-:root[data-theme="beige"] .formula-alignment-button.is-active,
-:root[data-theme="beige"] .formula-toolbar-actions .icon-button.is-active {
+:root[data-theme="beige"] .formula-alignment-button.is-active {
   background: var(--accent-soft-beige);
   color: var(--accent-primary);
 }
