@@ -18,10 +18,8 @@ import {
   CheckCircle2,
   Eye,
   FileText,
-  Image as ImageIcon,
   Upload,
   LoaderCircle,
-  Sigma,
   X,
 } from "lucide-react";
 import { MathPreview } from "../../components/MathPreview";
@@ -33,10 +31,7 @@ import {
 import {
   normalizeFormulaEditorDocument,
 } from "../shared/formulaEditorDocument";
-import {
-  OFFICE_FORMULA_REFERENCE_FONT_SIZE_PT,
-  renderOfficeFormulaArtifacts,
-} from "../shared/formulaRenderArtifacts";
+import { renderOfficeFormulaArtifacts } from "../shared/formulaRenderArtifacts";
 import { createUuid } from "../../runtime/browserCompatibility";
 import { useEditorStore } from "../../stores/editorStore";
 import { documentImportErrorMessage } from "./documentImportErrors";
@@ -63,8 +58,6 @@ import {
   type DocumentImportBlock,
   type DocumentImportSourceKind,
 } from "./documentImportParser";
-
-const REFERENCE_FONT_SIZE_PT = OFFICE_FORMULA_REFERENCE_FONT_SIZE_PT;
 
 type ImportedFileState = Pick<
   ImportedDocumentFile,

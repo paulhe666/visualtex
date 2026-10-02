@@ -164,6 +164,7 @@ function contentMarkup(mathfield, renderOptions) {
       atom.caret = void 0;
       atom.isSelected = false;
       atom.containsCaret = false;
+      atom.visualTexPlaceholderCaret = false;
     }
     if (model.selectionIsCollapsed) {
       const atom = model.at(model.position);
@@ -179,6 +180,11 @@ function contentMarkup(mathfield, renderOptions) {
         includeFirstAtoms: true
       });
       for (const atom of atoms) atom.isSelected = true;
+      if (model.selectionIsPlaceholder) {
+        const placeholder = model.at(Math.max(model.position, model.anchor));
+        if (placeholder?.type === "placeholder" || placeholder?.type === "prompt")
+          placeholder.visualTexPlaceholderCaret = true;
+      }
     }
     const box = makeBox(mathfield, renderOptions);
     return box.toMarkup();
@@ -219,6 +225,7 @@ function render(mathfield, renderOptions) {
     }
   }
   field.innerHTML = globalThis.MathfieldElement.createHTML(content);
+  mathfield.container?.classList.toggle("has-visualtex-raw-latex-command", mathfield.model.mode === "latex");
   renderSelection(mathfield, renderOptions.interactive);
   mathfield.updateToggleLayout();
   mathfield.dirty = false;
@@ -476,7 +483,7 @@ register2(
   { target: "mathfield" }
 );
 register2(
-  { nextSuggestion, previousSuggestion },
+  { nextSuggestion, previousSuggestion, visualTexDismissSuggestions: mf => { hideSuggestionPopover(mf); return false; } },
   {
     target: "mathfield",
     audioFeedback: "keypress",

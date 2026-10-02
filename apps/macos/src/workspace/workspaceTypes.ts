@@ -46,7 +46,6 @@ export interface EditorWorkspaceProps {
   reuseEditorLineSlots?: boolean;
   sidebarOpen: boolean;
   onSidebarOpenChange: (open: boolean) => void;
-  onHistoryBusyChange: (busy: boolean) => void;
   onPasteImage?: (
     file: File,
     target: MathEditorInsertionTarget,

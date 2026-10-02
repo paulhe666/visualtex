@@ -5,8 +5,9 @@ import {
   svgToBase64,
 } from "../src/export/runtime.ts";
 import {
-  CUSTOM_SYMBOL_PROTOTYPE_LATEX,
-} from "../src/math/customSymbolPrototype.ts";
+  CUSTOM_SYMBOL_PROTOTYPE_DEFINITION,
+} from "../src/math/customSymbolRegistry.ts";
+const CUSTOM_SYMBOL_PROTOTYPE_LATEX = `\\${CUSTOM_SYMBOL_PROTOTYPE_DEFINITION.command}`;
 
 const cases = [
   ["standalone", CUSTOM_SYMBOL_PROTOTYPE_LATEX],

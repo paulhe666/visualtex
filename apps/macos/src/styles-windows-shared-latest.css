@@ -1242,15 +1242,9 @@
   top: 0;
   left: 0;
   right: auto;
-  z-index: var(--z-app-header, 120);
-  box-sizing: border-box;
   width: calc(100% - var(--desktop-top-tools-width));
-  height: var(--panel-header-height, 52px);
   min-height: var(--panel-header-height, 52px);
   grid-template-columns: minmax(155px, 0.75fr) minmax(130px, 0.55fr) minmax(300px, 1.7fr);
-  gap: 6px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--border);
   box-shadow: none;
 }
 
@@ -1258,10 +1252,6 @@
 .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .icon-button {
   width: 28px;
   height: 28px;
-}
-
-.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-area {
-  gap: 5px;
 }
 
 .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-mark {
@@ -1282,10 +1272,6 @@
   height: 30px;
   min-height: 30px;
   padding-block: 0;
-}
-
-.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .header-actions {
-  gap: 4px;
 }
 
 .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .action-group {
@@ -1397,8 +1383,6 @@
   .classic-bottom-tabs {
   grid-template-columns: minmax(0, 1fr) auto minmax(30px, max-content);
   gap: 4px;
-  padding-inline: 6px;
-  overflow: visible;
 }
 
 /* Latest classic desktop layout: the editor header spans the full workspace,
@@ -1430,19 +1414,16 @@
   > .formula-workspace.editor-pane
   > .classic-editor-pane-body {
   grid-column: 1;
-  grid-row: 2;
 }
 
 .workspace.is-classic-layout:not(.is-office-workspace)
   > .classic-tile-resizer {
   grid-column: 2;
-  grid-row: 2;
 }
 
 .workspace.is-classic-layout:not(.is-office-workspace)
   > .classic-tile-toolbar {
   grid-column: 3;
-  grid-row: 2;
 }
 
 .workspace.is-classic-layout .formula-workspace.editor-pane {
@@ -1786,20 +1767,11 @@
 
 /* Latest compact matrix builder used by the horizontal/classic formula dock. */
 .formula-toolbar.is-horizontal .matrix-builder {
-  width: 100%;
-  min-width: 0;
   height: auto;
-  grid-column: span 7;
-  grid-row: 1 / span var(--toolbar-row-count, 3);
   grid-template-columns:
     minmax(0, 214px)
     minmax(40px, var(--matrix-picker-size, 98px));
-  grid-template-rows: minmax(0, 1fr);
-  align-items: stretch;
   justify-content: stretch;
-  gap: 4px;
-  padding: 5px;
-  overflow: hidden;
 }
 
 .formula-toolbar.is-horizontal .matrix-options-column {
@@ -1844,7 +1816,6 @@
   min-width: 0;
   height: 58px;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 3px;
   overflow: hidden;
 }
 
@@ -1852,8 +1823,6 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  min-height: 0;
-  height: 100%;
   padding: 2px;
   overflow: hidden;
 }
@@ -1864,8 +1833,6 @@
 }
 
 .formula-toolbar.is-horizontal .matrix-size-picker {
-  grid-column: 2;
-  grid-row: 1;
   width: var(--matrix-picker-size, 98px);
   height: var(--matrix-picker-size, 98px);
   max-width: 100%;
@@ -1881,8 +1848,6 @@
   box-sizing: border-box;
   grid-template-columns: repeat(10, minmax(0, 1fr));
   grid-template-rows: repeat(10, minmax(0, 1fr));
-  padding: 3px;
-  gap: 1px;
 }
 
 .formula-toolbar.is-horizontal .matrix-size-cell {
@@ -1893,21 +1858,15 @@
 .formula-toolbar.is-horizontal .matrix-insert-button {
   width: 100%;
   min-width: 0;
-  height: 28px;
-  min-height: 28px;
   padding: 0 14px;
   border-radius: 4px;
-  font-size: 10px;
   white-space: nowrap;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-builder {
-  grid-column: span 5;
   grid-template-columns:
     minmax(0, 190px)
     minmax(40px, var(--matrix-picker-size, 64px));
-  gap: 4px;
-  padding: 4px;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-options-column {
@@ -1932,19 +1891,15 @@
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options {
   height: 40px;
-  gap: 2px;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options button {
-  min-height: 0;
   padding: 1px;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options .math-preview {
   height: 16px;
   max-height: 16px;
-  min-height: 0;
-  font-size: 13px;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-size-picker {
@@ -1954,21 +1909,13 @@
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-size-grid {
   width: 100%;
   height: 100%;
-  padding: 2px;
-  gap: 1px;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-insert-button {
-  height: 23px;
-  min-height: 23px;
-  padding-inline: 7px;
   font-size: 9px;
 }
 
 @media (max-width: 900px) {
-  .workspace:not(.is-office-workspace) .editor-pane-header {
-    padding-inline: 10px;
-  }
 
   .workspace:not(.is-office-workspace)
     .editor-pane-header
@@ -2828,19 +2775,8 @@
   height: 28px;
 }
 
-.office-dialog-shell .classic-editor-pane-body,
-.office-dialog-shell .classic-bottom-dock,
 .office-dialog-shell .classic-bottom-tabs {
-  overflow: visible;
-}
-
-.office-dialog-shell .classic-bottom-tabs {
-  position: relative;
   z-index: 170;
-}
-
-.office-dialog-shell .classic-bottom-content {
-  overflow: hidden;
 }
 
 .classic-bottom-formatting .formula-color-popover {
@@ -3232,7 +3168,6 @@
   position: relative;
   z-index: var(--z-workspace-footer, 50);
   grid-template-columns: minmax(250px, 1fr) auto minmax(34px, 1fr);
-  overflow: visible;
 }
 
 .classic-bottom-formatting-slot {
@@ -3299,12 +3234,6 @@
 }
 
 .office-dialog-shell .classic-bottom-tabs {
-  min-height: 30px;
-  gap: 2px;
-  padding-inline: 6px;
-}
-
-.office-dialog-shell .classic-bottom-formatting-slot {
   min-height: 30px;
 }
 
@@ -3412,17 +3341,6 @@
 
   .office-dialog-shell .classic-bottom-tab-group {
     min-width: 72px;
-    gap: 0;
-  }
-
-  .office-dialog-shell .classic-bottom-tab-group button {
-    min-width: 36px;
-    padding-inline: 8px;
-    gap: 0;
-  }
-
-  .office-dialog-shell .classic-bottom-tab-label {
-    display: none;
   }
 
   .office-dialog-shell .classic-bottom-actions {

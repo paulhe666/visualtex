@@ -428,7 +428,7 @@ async function main() {
     await typeKey("b", "KeyB", "b");
     await sleep(120);
     const shortCasesSuggestion = await evaluate(`(() => {
-      const panel = document.querySelector('#visualtex-native-input-suggestion-popover');
+      const panel = document.querySelector('#mathlive-suggestion-popover');
       return {
         visible: panel?.classList.contains('is-visible') ?? false,
         commands: Array.from(panel?.querySelectorAll('li[data-command]') ?? [])
@@ -468,7 +468,7 @@ async function main() {
     await sleep(120);
     const casesSuggestion = await evaluate(`(() => {
       const field = document.querySelector("math-field");
-      const panel = document.querySelector('#visualtex-native-input-suggestion-popover');
+      const panel = document.querySelector('#mathlive-suggestion-popover');
       return {
         value: field.value,
         raw: Array.from(field.shadowRoot?.querySelectorAll('.ML__raw-latex') ?? [])

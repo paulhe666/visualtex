@@ -11,20 +11,6 @@ export interface NativeSystemMathFontProbe {
   available: boolean;
 }
 
-interface NativeSystemMathGlyphOutline {
-  character: string;
-  requestedFamily: string;
-  resolvedFamily: string;
-  fallbackUsed: boolean;
-  glyphId: number;
-  path: string;
-  metrics: {
-    widthEm: number;
-    ascentEm: number;
-    descentEm: number;
-  };
-}
-
 export interface NativeSystemMathGlyphAsset {
   asset: CustomSymbolGlyphAsset;
   requestedFamily: string;

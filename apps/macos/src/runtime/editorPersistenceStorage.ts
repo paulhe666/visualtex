@@ -1,3 +1,4 @@
+import type { PersistStorage, StorageValue } from "zustand/middleware";
 import { safeStorage } from "./safeStorage";
 
 interface EditorStorage {
@@ -6,20 +7,11 @@ interface EditorStorage {
   removeItem(key: string): void;
 }
 
-interface EditorEnvelope {
-  state: Record<string, unknown>;
-  [key: string]: unknown;
-}
-
+type EditorEnvelope = StorageValue<Record<string, unknown>>;
 const editorStorageKey = "visualtex-editor";
-const officeSessionKeys = [
-  "title",
-  "lines",
-  "activeLineId",
-  "formulaAlignment",
-  "latexCodeFormat",
-  "history",
-] as const;
+const officeSessionKeys = new Set([
+  "title", "lines", "activeLineId", "formulaAlignment", "latexCodeFormat", "history",
+]);
 
 export function isOfficeEditorPersistenceScope(
   location: Pick<Location, "pathname" | "search"> | null =
@@ -46,51 +38,49 @@ function parseEnvelope(raw: string | null): EditorEnvelope | null {
   }
 }
 
-/**
- * macOS resident Office WebViews share the main application's localStorage.
- * They may exchange preferences (including latexFormatProfile), but their
- * per-session document and undo/history state must never replace the main
- * document. Enforce this at the persistence boundary, for every store action.
- */
+// Operate on Zustand's values before JSON encoding. Office persists preferences
+// only; moving the caret in either host must not serialize a whole document.
 export function createEditorPersistenceStorage(
   storage: EditorStorage = safeStorage,
   officeScope: () => boolean = isOfficeEditorPersistenceScope,
-): EditorStorage {
+): PersistStorage<Record<string, unknown>> {
+  let previousInput: EditorEnvelope | null = null;
+  const persistentKeys = (state: EditorEnvelope["state"], office: boolean) =>
+    Object.keys(state).filter(name => office
+      ? !officeSessionKeys.has(name)
+      : name !== "activeLineId");
   return {
     getItem(key) {
-      const raw = storage.getItem(key);
-      if (key !== editorStorageKey || !officeScope()) return raw;
-      const envelope = parseEnvelope(raw);
-      if (!envelope) return null;
-      const state = { ...envelope.state };
-      for (const sessionKey of officeSessionKeys) delete state[sessionKey];
-      return JSON.stringify({ ...envelope, state });
+      const envelope = parseEnvelope(storage.getItem(key));
+      if (!envelope || key !== editorStorageKey || !officeScope()) return envelope;
+      const state = Object.fromEntries(Object.entries(envelope.state)
+        .filter(([name]) => !officeSessionKeys.has(name)));
+      return { ...envelope, state };
     },
-    setItem(key, value) {
-      if (key !== editorStorageKey || !officeScope()) {
-        storage.setItem(key, value);
-        return;
+    setItem(key, incoming) {
+      const office = key === editorStorageKey && officeScope();
+      const savedKeys = persistentKeys(incoming.state, office);
+      if (key === editorStorageKey && previousInput &&
+          incoming.version === previousInput.version &&
+          savedKeys.length === persistentKeys(previousInput.state, office).length &&
+          savedKeys.every(name => Object.is(incoming.state[name], previousInput!.state[name]))) return;
+
+      if (!office) {
+        storage.setItem(key, JSON.stringify(incoming));
+      } else {
+        const previousRaw = storage.getItem(key);
+        const previous = parseEnvelope(previousRaw);
+        // Keep corrupt main-window data available for recovery.
+        if (previousRaw !== null && !previous) return;
+        const preferences = Object.fromEntries(savedKeys.map(name => [name, incoming.state[name]]));
+        const merged = JSON.stringify({ ...previous, ...incoming, state: { ...previous?.state, ...preferences } });
+        if (merged !== previousRaw) storage.setItem(key, merged);
       }
-      const incoming = parseEnvelope(value);
-      if (!incoming) return;
-      const previousRaw = storage.getItem(key);
-      const previous = parseEnvelope(previousRaw);
-      // Do not overwrite unparseable existing user data with a session's
-      // default state. Recovery belongs to the main application, not Office.
-      if (previousRaw !== null && !previous) return;
-      const state = { ...previous?.state, ...incoming.state };
-      for (const sessionKey of officeSessionKeys) {
-        if (previous && Object.prototype.hasOwnProperty.call(previous.state, sessionKey)) {
-          state[sessionKey] = previous.state[sessionKey];
-        } else {
-          delete state[sessionKey];
-        }
-      }
-      const merged = JSON.stringify({ ...previous, ...incoming, state });
-      if (merged !== previousRaw) storage.setItem(key, merged);
+      if (key === editorStorageKey) previousInput = incoming;
     },
     removeItem(key) {
       if (key === editorStorageKey && officeScope()) return;
+      if (key === editorStorageKey) previousInput = null;
       storage.removeItem(key);
     },
   };

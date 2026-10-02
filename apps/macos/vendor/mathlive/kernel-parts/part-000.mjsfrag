@@ -1,3 +1,10 @@
+import {
+  macros as visualTexDefaultMacros,
+  completionCatalog as visualTexCompletionCatalog,
+  integralCharacters as visualTexIntegralCharacters,
+  integralGlyphs as VISUALTEX_RARE_INTEGRAL_GLYPHS,
+  integralUnitsPerEm as VISUALTEX_RARE_INTEGRAL_UNITS_PER_EM,
+} from "virtual:visualtex-mathlive-data";
 /** MathLive 0.109.2 */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -1153,9 +1160,10 @@ function getCodeForKey(k, layout) {
 function normalizeKeyboardEvent(evt) {
   if (evt.code) return evt;
   const mapping = Object.entries(getActiveKeyboardLayout().mapping);
-  let altKey = false;
-  let shiftKey = false;
-  let code = "";
+  let altKey = evt.altKey;
+  let shiftKey = evt.shiftKey;
+  const controls = ["Enter", "Tab", "Backspace", "Delete", "Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"];
+  let code = controls.includes(evt.key) ? evt.key : ({Return: "Enter", Esc: "Escape", Del: "Delete", Spacebar: "Space", " ": "Space"}[evt.key] || "");
   for (let index = 0; index < 4; index++) {
     for (const [key, value] of mapping) {
       if (value[index] === evt.key) {
@@ -1170,7 +1178,7 @@ function normalizeKeyboardEvent(evt) {
     }
     if (code) break;
   }
-  return new KeyboardEvent(evt.type, __spreadProps(__spreadValues({}, evt), { altKey, shiftKey, code }));
+  return new KeyboardEvent(evt.type, { key: evt.key, code, altKey, shiftKey, ctrlKey: evt.ctrlKey, metaKey: evt.metaKey, repeat: evt.repeat, isComposing: evt.isComposing, location: evt.location });
 }
 function validateKeyboardLayout(evt) {
   var _a3, _b3;

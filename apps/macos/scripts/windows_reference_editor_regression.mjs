@@ -6809,10 +6809,10 @@ async function main() {
         return {
           ready:
             sourceCurrent?.dataset.command === "\\\\theta" &&
-            !document.getElementById("visualtex-native-input-suggestion-popover"),
+            !document.getElementById("mathlive-suggestion-popover"),
           sourceSelected: sourceCurrent?.dataset.command ?? "",
           mirrorPanelPresent: Boolean(
-            document.getElementById("visualtex-native-input-suggestion-popover"),
+            document.getElementById("mathlive-suggestion-popover"),
           ),
         };
       })()`, "arrow key selects theta in the native input-selection list");
@@ -6838,13 +6838,13 @@ async function main() {
             normalized === "\\\\theta" &&
             (field?.shadowRoot?.querySelectorAll(".ML__raw-latex").length ?? -1) === 0 &&
             !source?.classList.contains("is-visible") &&
-            !document.getElementById("visualtex-native-input-suggestion-popover"),
+            !document.getElementById("mathlive-suggestion-popover"),
           value: field?.value ?? "",
           normalized,
           rawCount: field?.shadowRoot?.querySelectorAll(".ML__raw-latex").length ?? -1,
           sourceVisible: source?.classList.contains("is-visible") ?? false,
           mirrorPanelPresent: Boolean(
-            document.getElementById("visualtex-native-input-suggestion-popover"),
+            document.getElementById("mathlive-suggestion-popover"),
           ),
           elapsedMs: performance.now() - ${nativeSpaceStartedAt},
           handlerMs: window.__visualtexNativeSpaceTiming?.handlerMs ?? null,
@@ -10909,7 +10909,7 @@ async function main() {
       const nativeRankState = await waitForEvaluation(`(() => {
         const source = document.getElementById("mathlive-suggestion-popover");
         const stable = document.getElementById(
-          "visualtex-native-input-suggestion-popover",
+          "mathlive-suggestion-popover",
         );
         const sourceCommands = [...(source?.querySelectorAll(
           "li[data-command]",
@@ -11013,7 +11013,7 @@ async function main() {
       await sleep(140);
       await typeText("\\be");
       const initial = await waitForEvaluation(`(() => {
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const source = document.getElementById("mathlive-suggestion-popover");
         const field = document.querySelectorAll("math-field")[0];
         const bounds = stable?.getBoundingClientRect();
@@ -11067,7 +11067,7 @@ async function main() {
 
       await evaluate(`(() => {
         const source = document.getElementById("mathlive-suggestion-popover");
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const field = document.querySelectorAll("math-field")[0];
         const beforeSelected = stable?.querySelector("li.ML__popover__current")?.dataset.command ?? "";
         const sourceItems = [...(source?.querySelectorAll("li[data-command]") ?? [])];
@@ -11111,7 +11111,7 @@ async function main() {
         const lines = [...document.querySelectorAll(".formula-line")];
         const activeIndex = lines.findIndex((line) => line.classList.contains("is-active"));
         const source = document.getElementById("mathlive-suggestion-popover");
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         return {
           ready: Boolean(
             state?.selected &&
@@ -11129,7 +11129,7 @@ async function main() {
       })()`, "native suggestion priority while source visibility is transient");
 
       await evaluate(`(() => {
-        const node = document.getElementById("visualtex-native-input-suggestion-popover");
+        const node = document.getElementById("mathlive-suggestion-popover");
         const monitor = {
           node,
           removed: 0,
@@ -11175,7 +11175,7 @@ async function main() {
       await key("ArrowDown", "ArrowDown", 40);
       const arrowState = await waitForEvaluation(`(() => {
         const monitor = window.__visualtexNativeInputMonitor;
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const bounds = stable?.getBoundingClientRect();
         const selected = stable?.querySelector("li.ML__popover__current")?.dataset.command ?? "";
         const fields = [...document.querySelectorAll("math-field")];
@@ -11210,7 +11210,7 @@ async function main() {
       await typeText("t");
       const refinedState = await waitForEvaluation(`(() => {
         const monitor = window.__visualtexNativeInputMonitor;
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const commands = [...(stable?.querySelectorAll("li[data-command]") ?? [])]
           .map((item) => item.dataset.command ?? "");
         return {
@@ -11236,7 +11236,7 @@ async function main() {
       await key("Backspace", "Backspace", 8);
       const restoredState = await waitForEvaluation(`(() => {
         const monitor = window.__visualtexNativeInputMonitor;
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const commands = [...(stable?.querySelectorAll("li[data-command]") ?? [])]
           .map((item) => item.dataset.command ?? "");
         return {

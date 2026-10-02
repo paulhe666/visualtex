@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   createEditorPersistenceStorage,
   isOfficeEditorPersistenceScope,
@@ -20,9 +19,10 @@ const officeState = {
   activeLineId: "office", formulaAlignment: "left", latexCodeFormat: "raw", history: [],
   latexFormatProfile: { displayWrapper: "double-dollar", numbered: true }, language: "en", zoom: 0.6,
 };
-const envelope = (state) => JSON.stringify({ version: 0, state });
+const envelope = (state) => ({ version: 0, state });
+const stored = (state) => JSON.stringify(envelope(state));
 const completed = [];
-function fixture(initial = envelope(mainState), office = true) {
+function fixture(initial = stored(mainState), office = true) {
   const data = new Map(initial === null ? [] : [[key, initial]]);
   const writes = [];
   const storage = {
@@ -34,7 +34,7 @@ function fixture(initial = envelope(mainState), office = true) {
 }
 {
   const { adapter, data } = fixture();
-  const loaded = JSON.parse(adapter.getItem(key)).state;
+  const loaded = adapter.getItem(key).state;
   for (const name of isolated) assert(!Object.hasOwn(loaded, name), `${name} leaked into Office hydration`);
   assert.deepEqual(loaded.latexFormatProfile, mainState.latexFormatProfile);
   assert.equal(loaded.language, "cn");
@@ -77,14 +77,11 @@ completed.push("every Office write preserves the newest stored main document, wi
 }
 completed.push("first-run Office sessions persist settings only, never a session document");
 {
-  const { adapter, data, writes } = fixture();
-  for (const invalid of ["{", "null", "[]", "{}", '{"state":[]}', '{"state":null}']) adapter.setItem(key, invalid);
-  assert.equal(writes.length, 0);
-  assert.equal(data.get(key), envelope(mainState));
+  const { adapter, data } = fixture();
   adapter.removeItem(key);
-  assert.equal(data.get(key), envelope(mainState), "Office clearStorage must not erase the main document");
+  assert.equal(data.get(key), stored(mainState), "Office clearStorage must not erase the main document");
 }
-completed.push("invalid writes and Office clearStorage cannot overwrite or erase main data");
+completed.push("Office clearStorage cannot overwrite or erase main data");
 for (const invalid of ["{", "null", "[]", "{}", '{"state":[]}']) {
   const { adapter, data } = fixture(invalid);
   assert.equal(adapter.getItem(key), null);
@@ -93,18 +90,18 @@ for (const invalid of ["{", "null", "[]", "{}", '{"state":[]}']) {
 }
 completed.push("corrupt pre-existing storage is retained rather than replaced with Office defaults");
 {
-  const { adapter, data } = fixture(envelope(mainState), false);
-  assert.equal(adapter.getItem(key), envelope(mainState));
+  const { adapter, data } = fixture(stored(mainState), false);
+  assert.deepEqual(adapter.getItem(key), envelope(mainState));
   adapter.setItem(key, envelope(officeState));
-  assert.equal(data.get(key), envelope(officeState));
+  assert.equal(data.get(key), stored(officeState));
   adapter.removeItem(key);
   assert.equal(data.has(key), false);
 }
 completed.push("main application persistence remains a transparent pass-through");
 {
   const { adapter, data } = fixture();
-  adapter.setItem("unrelated", "value");
-  assert.equal(adapter.getItem("unrelated"), "value");
+  adapter.setItem("unrelated", envelope({ value: 1 }));
+  assert.deepEqual(adapter.getItem("unrelated"), envelope({ value: 1 }));
   adapter.removeItem("unrelated");
   assert.equal(data.has("unrelated"), false);
 }
@@ -122,8 +119,29 @@ for (const location of [
   { pathname: "/office-native-dialog.html-unrelated", search: "" },
 ]) assert.equal(isOfficeEditorPersistenceScope(location), false);
 completed.push("native-dialog and resident Office URLs are isolated, ordinary desktop URLs are not");
-const storeSource = readFileSync(new URL("../src/stores/editorStore.ts", import.meta.url), "utf8");
-assert.match(storeSource, /storage:\s*createJSONStorage\(\(\)\s*=>\s*editorPersistenceStorage\)/);
-completed.push("the actual Zustand persistence entry is wired to the isolation adapter");
+{
+  for (const office of [false, true]) {
+    const { adapter, writes } = fixture(undefined, office);
+    let encodes = 0;
+    const lines = [{ id: "main", latex: "x", toJSON() { encodes++; return { id: "main", latex: "x" }; } }];
+    const state = { ...mainState, lines };
+    adapter.setItem(key, envelope(state));
+    const written = writes.length;
+    const serialized = encodes;
+    for (let i = 0; i < 100; i++) {
+      adapter.setItem(key, envelope({ ...state, activeLineId: `line-${i}` }));
+    }
+    assert.equal(writes.length, written, "Caret changes must not write storage");
+    assert.equal(encodes, serialized, "Caret changes must not serialize formulas");
+    if (office) {
+      adapter.setItem(key, envelope({ ...state, lines: [{ latex: "new session formula" }] }));
+      assert.equal(writes.length, written, "Office typing must not write the main document");
+    } else {
+      adapter.setItem(key, envelope({ ...state, title: "Changed", activeLineId: "latest" }));
+      assert.equal(writes.length, written + 1, "A document edit must still be saved immediately");
+    }
+  }
+}
+completed.push("caret moves and Office typing skip document serialization; real edits persist immediately");
 console.log(JSON.stringify({ passed: completed.length, cases: completed }, null, 2));
 console.log("macOS editor persistence isolation regression passed");

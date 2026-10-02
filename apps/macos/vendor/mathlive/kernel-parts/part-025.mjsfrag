@@ -1049,10 +1049,21 @@ var _Model = class {
     const selection = { ranges: [...this._selection.ranges] };
     if (this.selection.direction && this.selection.direction !== "none")
       selection.direction = this.selection.direction;
+    const visualTexSourceWrapper = this.mathfield.visualTexSourceWrapper;
+    const visualTexSourceWrapperGroup = visualTexSourceWrapper?.group;
+    const visualTexSourceWrapperOffset = visualTexSourceWrapperGroup?.parent
+      ? this.offsetOf(visualTexSourceWrapperGroup)
+      : -1;
     return {
       content: this.root.toJson(),
       selection,
-      mode: this.mode
+      mode: this.mode,
+      visualTexSourceWrapper: visualTexSourceWrapperOffset >= 0 ? {
+        command: visualTexSourceWrapper.command,
+        kind: visualTexSourceWrapper.kind,
+        groupOffset: visualTexSourceWrapperOffset,
+        hadStructuralSlot: Boolean(visualTexSourceWrapper.structuralSlot),
+      } : null,
     };
   }
   setState(state, options) {
@@ -1066,7 +1077,33 @@ var _Model = class {
       const didSuppress = this.silenceNotifications;
       this.silenceNotifications = true;
       this.mode = state.mode;
+      if (this.mathfield.visualTexSourceWrapper)
+        visualTexClearSourceWrapper(this.mathfield);
       this.root = fromJson(state.content);
+      const visualTexSourceWrapperState = state.visualTexSourceWrapper;
+      if (visualTexSourceWrapperState) {
+        const visualTexSourceWrapperGroup = this.at(visualTexSourceWrapperState.groupOffset);
+        if (visualTexSourceWrapperGroup?.type === "latexgroup") {
+          const visualTexStructuralSlot = visualTexSourceWrapperState.hadStructuralSlot && visualTexSourceWrapperGroup.parent
+            ? {
+                parent: visualTexSourceWrapperGroup.parent,
+                branch: visualTexSourceWrapperGroup.parentBranch,
+                after: visualTexSourceWrapperGroup.leftSibling,
+              }
+            : null;
+          const visualTexRestoredSourceWrapper = {
+            command: visualTexSourceWrapperState.command,
+            kind: visualTexSourceWrapperState.kind,
+            group: visualTexSourceWrapperGroup,
+            structuralSlot: visualTexStructuralSlot,
+          };
+          visualTexSourceWrapperGroup.visualTexSourceWrapper = visualTexRestoredSourceWrapper;
+          if (visualTexStructuralSlot)
+            visualTexSourceWrapperGroup.visualTexStructuralSlot = visualTexStructuralSlot;
+          this.mathfield.visualTexSourceWrapper = visualTexRestoredSourceWrapper;
+          visualTexSyncSourceWrapper(this.mathfield);
+        }
+      }
       this.selection = state.selection;
       this.silenceNotifications = didSuppress;
       this.contentDidChange(changeOption);
@@ -1087,7 +1124,7 @@ var _Model = class {
     if (!this.mathfield.contentEditable && this.mathfield.userSelect === "none")
       return false;
     return this.deferNotifications({ selection: true, content: true }, () => {
-      var _a3, _b3, _c2, _d2;
+      var _a3, _b3, _c2;
       const value = this.normalizeSelection(arg1, arg2);
       if (value === void 0) throw new TypeError("Invalid selection");
       if (value.ranges.length === 1 && value.ranges[0][0] === value.ranges[0][1]) {
@@ -1120,16 +1157,7 @@ var _Model = class {
       if (value.direction === "backward")
         [this._position, this._anchor] = selRange;
       else [this._anchor, this._position] = selRange;
-      let firstIndex = selRange[0] + 1;
-      while (firstIndex <= this.lastOffset && ((_d2 = this.at(firstIndex)) == null ? void 0 : _d2.type) === "first" && firstIndex < selRange[1])
-        firstIndex += 1;
-      const first = firstIndex <= this.lastOffset ? this.at(firstIndex) : this.at(selRange[1]);
-      const last = this.at(selRange[1]);
-      const commonAncestor = Atom.commonAncestor(first, last);
-      if ((commonAncestor == null ? void 0 : commonAncestor.type) === "array" && first.parent === commonAncestor && last.parent === commonAncestor) {
-        this._selection = { ranges: [selRange], direction: value.direction };
-      } else
-        this._selection = { ranges: [selRange], direction: value.direction };
+      this._selection = { ranges: [selRange], direction: value.direction };
       console.assert(this._position >= 0 && this._position <= this.lastOffset);
       return;
     });
@@ -1407,17 +1435,19 @@ var _Model = class {
    *
    * For example:
    * - when all the children of an atom are selected, the atom become selected.
-   * - this method will *not* change the anchor, but may result in a selection
-   *   whose boundary is outside the anchor
+   * - endpoints describe the expanded range; pointer tracking retains the raw
+   *   mouse anchor separately so shrinking a drag can enter a branch again.
    */
   extendSelectionTo(anchor, position) {
     if (!this.mathfield.contentEditable && this.mathfield.userSelect === "none")
       return false;
     return this.deferNotifications({ selection: true }, () => {
       const range2 = this.normalizeRange([anchor, position]);
-      let [start, end] = range2;
+      let [start, end] = visualTexPointerRange(this, range2);
       const expandableTypes = /* @__PURE__ */ new Set([
         "genfrac",
+        "surd",
+        "leftright",
         "subsup",
         "accent",
         "box",
@@ -1444,10 +1474,11 @@ var _Model = class {
           parent = parent.parent;
         }
       }
-      this._position = this.normalizeOffset(position);
+      this._anchor = anchor <= position ? start : end;
+      this._position = anchor <= position ? end : start;
       this._selection = {
         ranges: [[start, end]],
-        direction: "none"
+        direction: anchor === position ? "none" : anchor < position ? "forward" : "backward"
       };
     });
   }

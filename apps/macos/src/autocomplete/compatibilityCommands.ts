@@ -136,21 +136,3 @@ export const compatibilityRequiredArgumentCounts = new Map<string, number>([
       : [];
   }),
 ]);
-
-export const compatibilityWrapperPreviews = new Map<string, string>(
-  specs
-    .filter((spec) => spec.wrapper)
-    .map((spec) => [spec.command, spec.previewLatex]),
-);
-
-export const compatibilityWrapperCanonicalTargets = new Map<string, string>(
-  specs
-    .filter((spec) => spec.wrapper && spec.canonicalWrapperCommand)
-    .map((spec) => [spec.command, spec.canonicalWrapperCommand!]),
-);
-
-export const compatibilityRawPlaceholderTemplates = new Map<string, string>(
-  specs
-    .filter((spec) => spec.rawPlaceholderTemplate)
-    .map((spec) => [spec.command, spec.rawPlaceholderTemplate!]),
-);

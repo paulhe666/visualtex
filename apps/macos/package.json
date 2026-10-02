@@ -46,7 +46,7 @@
     "test:svg-export": "tsx scripts/svg_export_smoke.mjs",
     "test:rare-integral-glyphs": "node --experimental-strip-types scripts/rare_integral_glyph_registry_regression.mjs",
     "test:mathlive-integrals": "npm run build:desktop && node scripts/mathlive_integral_regression.mjs",
-    "test:mathlive-runtime-safety:run": "tsx scripts/mathlive_runtime_safety_patch_regression.mts && tsx scripts/mathlive_option_guard_regression.mts && tsx scripts/mathlive_source_safety_regression.mts && tsx scripts/editor_crash_recovery_regression.mts && node scripts/mathlive_runtime_safety_browser_regression.mjs",
+    "test:mathlive-runtime-safety:run": "tsx scripts/mathlive_source_safety_regression.mts && tsx scripts/editor_crash_recovery_regression.mts && node scripts/mathlive_runtime_safety_browser_regression.mjs",
     "test:mathlive-runtime-safety": "npm run build:desktop && npm run test:mathlive-runtime-safety:run",
     "test:native-suggestion-previews": "npm run build:desktop && node scripts/native_suggestion_preview_regression.mjs --audit",
     "test:word-omml": "node scripts/word_omml_regression.mjs",
@@ -55,6 +55,9 @@
     "verify:ocr-offline:full": "python3 scripts/verify_offline_ocr_bundle.py --full",
     "verify:ocr-model-packs": "python3 scripts/verify_offline_ocr_bundle.py --model-packs dist-ocr/model-packs/macos-arm64",
     "test:ime-enter": "tsx scripts/ime_enter_regression.mjs",
+    "test:selection": "node scripts/selection_regression.mjs",
+    "test:editor-lifecycle": "node scripts/editor_lifecycle_regression.mjs",
+    "test:editor-cleanup": "tsx scripts/command_registry_contract_regression.mts && node scripts/editor_cleanup_regression.mjs",
     "test:office-numbering-edit": "npm run build:desktop && node scripts/office_numbering_edit_regression.mjs && cargo test --manifest-path src-tauri/Cargo.toml --lib word_numbering_only_fast_path",
     "test:word-numbering-edit": "tsx scripts/word_numbering_edit_regression.mts && tsx scripts/word_numbering_edit_regression.mts --run",
     "test:office-formula-editor": "tsx scripts/office_formula_editor_regression.mjs",
@@ -65,7 +68,7 @@
     "test:document-import-payload-safety": "tsx scripts/document_import_payload_safety_regression.mts",
     "test:native-ui-payload-safety": "tsx scripts/native_ui_payload_safety_regression.mts",
     "test:office-silent-conversion": "npm run build:desktop && node scripts/office_silent_conversion_regression.mjs",
-    "test:macos-offline-office": "npm run test:ime-enter && npm run test:office-formula-editor && npm run test:word-image-fonts && npm run test:word-latex-redraw && node scripts/macos_offline_office_smoke.mjs",
+    "test:macos-offline-office": "npm run test:ime-enter && npm run test:office-formula-editor && npm run test:word-image-fonts && npm run test:word-latex-redraw && npm run test:office-session-safety && npm run test:macos-office-status-safety && python3 scripts/macos_offline_office_smoke.py",
     "test:macos-offline-office:full": "node scripts/run_macos_offline_acceptance.mjs",
     "verify:office-performance-budget": "node scripts/verify_office_performance_budget.mjs",
     "package:macos-offline-office": "node scripts/package_macos_offline_addins.mjs",
@@ -73,7 +76,8 @@
     "test:startup-compatibility": "tsx scripts/startup_compatibility_smoke.mjs",
     "test:startup-browser": "node scripts/startup_browser_regression.mjs",
     "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh",
-    "verify:mac-dmg:no-ocr": "bash scripts/verify_macos_api_only_dmg.sh"
+    "verify:mac-dmg:no-ocr": "bash scripts/verify_macos_api_only_dmg.sh",
+    "test:editor-refactor": "node scripts/history_manager_smoke.mjs && tsx scripts/editor_persistence_isolation_regression.mjs && node scripts/editor_session_regression.mjs && node scripts/editor_lifecycle_regression.mjs && node scripts/editor_cleanup_regression.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",

@@ -15,7 +15,6 @@ import {
   Bold,
   Braces,
   Camera,
-  ChevronDown,
   Code2,
   Copy,
   EyeOff,
@@ -59,7 +58,7 @@ import {
 } from "../clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { reconcileFormulaLines } from "../history/documentHistory";
-import { useHistorySnapshot } from "../history/HistoryManager";
+import { useHistorySnapshot } from "../history/EditorSession";
 import type { FormulaAlignment, FormulaLine } from "../types/formula";
 import { normalizeCustomFormulaColor } from "./formulaColor";
 import type { EditorWorkspaceProps } from "./workspaceTypes";
@@ -154,7 +153,6 @@ export function EditorWorkspace({
   reuseEditorLineSlots = false,
   sidebarOpen,
   onSidebarOpenChange,
-  onHistoryBusyChange,
   onPasteImage,
   onCopyPng,
   onCopy,
@@ -255,7 +253,6 @@ export function EditorWorkspace({
   const activeLineId = useEditorStore((state) => state.activeLineId);
   const historyReplayActive = useHistorySnapshot().isReplaying;
   const language = useEditorStore((state) => state.language);
-  const theme = useEditorStore((state) => state.theme);
   const zoom = useEditorStore((state) => state.zoom);
   const setZoom = useEditorStore((state) => state.setZoom);
   const formulaAlignment = useEditorStore((state) => state.formulaAlignment);
@@ -847,7 +844,6 @@ export function EditorWorkspace({
     <LatexSourceEditor
       key={`${editorInstanceKey ?? ""}:${sourceDocumentRevision}`}
       latex={sourceLatex}
-      theme={theme}
       format={latexCodeFormat}
       onCollapse={() => setSourceOpen(false)}
       showCollapseAction={showCollapseAction}
@@ -926,7 +922,6 @@ export function EditorWorkspace({
           previewLines ? undefined : showOcrActions ? onPasteImage : undefined
         }
         onCopyPng={previewLines ? undefined : onCopyPng}
-        onHistoryBusyChange={onHistoryBusyChange}
         overlay={previewLines ? undefined : ocrOverlay}
       />
     );

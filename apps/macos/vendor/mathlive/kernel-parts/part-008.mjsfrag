@@ -134,7 +134,7 @@ function branchId(atom) {
   var _a3;
   if (!atom.parent) return "root";
   let result = (_a3 = atom.parent.id) != null ? _a3 : "";
-  result += typeof atom.parentBranch === "string" ? "-" + atom.parentBranch : `-${atom.parentBranch[0]}/${atom.parentBranch[0]}`;
+  result += typeof atom.parentBranch === "string" ? "-" + atom.parentBranch : `-${atom.parentBranch[0]}/${atom.parentBranch[1]}`;
   return result;
 }
 function adjustForScrolling(mathfield, rect, scaleFactor) {
@@ -182,14 +182,16 @@ function getNodeBounds(node) {
   };
   if (node.children.length === 0 || node.tagName.toUpperCase() === "SVG")
     return result;
-  for (const child of node.children) {
-    if (child.nodeType === 1 && "atomId" in child.dataset && !child.classList.contains("ML__pstrut")) {
-      const r = getNodeBounds(child);
-      result.left = Math.min(result.left, r.left);
-      result.right = Math.max(result.right, r.right);
-      result.top = Math.min(result.top, r.top);
-      result.bottom = Math.max(result.bottom, r.bottom);
-    }
+  // Decorations can protrude through unbound layout wrappers. Measure their
+  // visible SVG viewports and frames, never layout struts or clipped SVG paths.
+  for (const child of node.querySelectorAll(
+    ":scope > [data-atom-id]:not(.ML__pstrut), svg, .ML__box"
+  )) {
+    const r = getNodeBounds(child);
+    result.left = Math.min(result.left, r.left);
+    result.right = Math.max(result.right, r.right);
+    result.top = Math.min(result.top, r.top);
+    result.bottom = Math.max(result.bottom, r.bottom);
   }
   return result;
 }
@@ -239,7 +241,7 @@ function getRangeBoundingRect(mf, range2) {
   for (let i = start; i <= end; i++) {
     const bounds = getAtomBounds(mf, mf.model.at(i));
     if (bounds) {
-      if (!result) result = bounds;
+      if (!result) result = { ...bounds };
       else {
         result.top = Math.min(result.top, bounds.top);
         result.bottom = Math.max(result.bottom, bounds.bottom);
@@ -257,9 +259,12 @@ function getRangeBounds(mathfield, range2, options) {
   const actualWidth = Math.floor(field.getBoundingClientRect().width);
   let scaleFactor = actualWidth / offsetWidth;
   scaleFactor = isNaN(scaleFactor) ? 1 : scaleFactor;
-  for (const atom of mathfield.model.getAtoms(range2, {
-    includeChildren: true
-  })) {
+  const selectedAtoms = mathfield.model.getAtoms(range2, { includeChildren: true });
+  const selectedSet = new Set(selectedAtoms);
+  for (const atom of selectedAtoms) {
+    // Sentinels have the surrounding font's ascent, not visible ink. Including
+    // them creates tall phantom highlights in scripts and matrix cells.
+    if (atom.type === "first") continue;
     if ((options == null ? void 0 : options.excludeAtomsWithBackground) && atom.style.backgroundColor)
       continue;
     const bounds = adjustForScrolling(
@@ -268,7 +273,11 @@ function getRangeBounds(mathfield, range2, options) {
       scaleFactor
     );
     if (bounds) {
-      const id = branchId(atom);
+      // Draw a fully selected structure once, including all protruding scripts.
+      // Partial branches/cells keep separate rectangles and cannot tint siblings.
+      let owner = atom;
+      while (owner.parent && selectedSet.has(owner.parent)) owner = owner.parent;
+      const id = branchId(owner);
       if (rects.has(id)) {
         const r = rects.get(id);
         rects.set(id, {

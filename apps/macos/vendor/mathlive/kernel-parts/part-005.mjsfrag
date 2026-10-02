@@ -753,7 +753,22 @@ c4.7,-4.7,7,-9.3,7,-14c0,-9.3,-3.7,-15.3,-11,-18c-92.7,-56.7,-159,-133.7,-199,
 c-2,2.7,-1,9.7,3,21c15.3,42,36.7,81.8,64,119.5c27.3,37.7,58,69.2,92,94.5z
 M500 241 v40 H399408 v-40z M500 435 v40 H400000 v-40z`
 };
+function visualTexRareIntegralSvgBodyToMarkup(svgBodyName) {
+  if (!svgBodyName.startsWith("visualtex-integral:")) return null;
+  const parts = svgBodyName.split(":");
+  const definition = VISUALTEX_RARE_INTEGRAL_GLYPHS[parts[1]];
+  const glyph = definition == null ? void 0 : definition[parts[2] === "large" ? "large" : "small"];
+  if (!glyph) return null;
+  const units = VISUALTEX_RARE_INTEGRAL_UNITS_PER_EM;
+  const width = glyph.advanceWidth / units;
+  const height = glyph.height / units;
+  const depth = glyph.depth / units;
+  const totalHeight = height + depth;
+  return `<span class="visualtex-integral-svg-body" style="display:inline-block;width:${width}em;height:${totalHeight}em;vertical-align:${-depth}em"><svg aria-hidden="true" focusable="false" width="${width}em" height="${totalHeight}em" viewBox="0 ${-glyph.height} ${glyph.advanceWidth} ${glyph.height + glyph.depth}" preserveAspectRatio="xMinYMin meet" style="display:block;overflow:visible"><path fill="currentColor" transform="scale(1,-1)" d="${glyph.path}"></path></svg></span>`;
+}
 function svgBodyToMarkup(svgBodyName) {
+  const visualTexIntegralMarkup = visualTexRareIntegralSvgBodyToMarkup(svgBodyName);
+  if (visualTexIntegralMarkup) return visualTexIntegralMarkup;
   if (SVG_ACCENTS[svgBodyName]) {
     const [vbWidth, vbHeight, height2] = SVG_ACCENTS[svgBodyName];
     const result = `<span class="ML__stretchy" style="height:${height2}em"><svg width="100%" height="${height2}em" viewBox="0 0 ${vbWidth} ${vbHeight}" preserveAspectRatio="none" ><path fill="currentcolor" d="${PATHS[svgBodyName]}"></path></svg></span>`;
@@ -1434,7 +1449,7 @@ var Box = class _Box {
    */
   toMarkup() {
     var _a3, _b3, _c2, _d2;
-    let body = (_a3 = this.value) != null ? _a3 : "";
+    let body = this.value ? visualTexEscapeMathLiveText(this.value) : "";
     if (this.children) for (const box of this.children) body += box.toMarkup();
     let svgMarkup = "";
     if (this.svgBody) svgMarkup = svgBodyToMarkup(this.svgBody);

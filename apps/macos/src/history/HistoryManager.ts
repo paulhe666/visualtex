@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { cloneSelection, cloneDocumentSnapshot, documentSnapshotsEquivalent } from "./documentSnapshot";
 import { loadRecentCheckpoints, persistCheckpoint } from "./checkpointStore";
 import { createUuid } from "../runtime/browserCompatibility";
 import type {
@@ -25,15 +25,6 @@ const HISTORY_TRIM_COUNT = 50;
 
 type Listener = () => void;
 
-function cloneSelection(
-  selection: MathSelectionSnapshot,
-): MathSelectionSnapshot {
-  return {
-    ranges: selection.ranges.map(([start, end]) => [start, end]),
-    direction: selection.direction,
-  };
-}
-
 export function clampSelection(
   selection: MathSelectionSnapshot,
   lastOffset: number,
@@ -45,25 +36,6 @@ export function clampSelection(
     ]),
     direction: selection.direction,
   };
-}
-
-function documentSnapshotsMatch(
-  left: ReplaceDocumentEntry["after"],
-  right: ReplaceDocumentEntry["before"],
-): boolean {
-  return (
-    left.title === right.title &&
-    left.activeLineId === right.activeLineId &&
-    left.formulaAlignment === right.formulaAlignment &&
-    left.lines.length === right.lines.length &&
-    left.lines.every(
-      (line, index) =>
-        line.id === right.lines[index]?.id &&
-        line.latex === right.lines[index]?.latex &&
-        (line.mode ?? "display") ===
-          (right.lines[index]?.mode ?? "display"),
-    )
-  );
 }
 
 function cloneHistoryEntry(entry: HistoryEntry): HistoryEntry {
@@ -89,24 +61,8 @@ function cloneHistoryEntry(entry: HistoryEntry): HistoryEntry {
     case "replace-document":
       return {
         ...entry,
-        before: {
-          ...entry.before,
-          lines: entry.before.lines.map((line) => ({ ...line })),
-          selectionByLineId: Object.fromEntries(
-            Object.entries(entry.before.selectionByLineId).map(
-              ([lineId, selection]) => [lineId, cloneSelection(selection)],
-            ),
-          ),
-        },
-        after: {
-          ...entry.after,
-          lines: entry.after.lines.map((line) => ({ ...line })),
-          selectionByLineId: Object.fromEntries(
-            Object.entries(entry.after.selectionByLineId).map(
-              ([lineId, selection]) => [lineId, cloneSelection(selection)],
-            ),
-          ),
-        },
+        before: cloneDocumentSnapshot(entry.before),
+        after: cloneDocumentSnapshot(entry.after),
       };
     case "change-title":
       return { ...entry };
@@ -206,6 +162,7 @@ export class HistoryManager {
   private redoStack: HistoryEntry[] = [];
   private pendingTransaction: PendingEditTransaction | null = null;
   private isReplaying = false;
+  private generation = 0;
   private operationIndex = 0;
   private checkpoints: DocumentCheckpoint[] = [];
   private adapter: HistoryAdapter | null = null;
@@ -348,7 +305,7 @@ export class HistoryManager {
         this.pushInternal(entry, true);
         return;
       }
-    } else if (!documentSnapshotsMatch(pending.before, pending.after)) {
+    } else if (!documentSnapshotsEquivalent(pending.before, pending.after)) {
       const entry: ReplaceDocumentEntry = {
         type: "replace-document",
         before: pending.before,
@@ -379,9 +336,9 @@ export class HistoryManager {
     if (
       pending?.kind === "source-document" &&
       timestamp - pending.updatedAt <= SOURCE_EDIT_GROUP_TIMEOUT_MS &&
-      documentSnapshotsMatch(pending.after, normalized.before)
+      documentSnapshotsEquivalent(pending.after, normalized.before)
     ) {
-      if (documentSnapshotsMatch(pending.before, normalized.after)) {
+      if (documentSnapshotsEquivalent(pending.before, normalized.after)) {
         this.pendingTransaction = null;
         this.clearCommitTimer();
       } else {
@@ -418,18 +375,23 @@ export class HistoryManager {
       return false;
     }
 
+    const generation = this.generation;
     this.isReplaying = true;
     this.emit();
     try {
       await this.adapter.applyEntry(entry, "undo");
+      if (generation !== this.generation) return false;
       this.redoStack.push(entry);
       return true;
     } catch (error) {
+      if (generation !== this.generation) return false;
       this.undoStack.push(entry);
       throw error;
     } finally {
-      this.isReplaying = false;
-      this.emit();
+      if (generation === this.generation) {
+        this.isReplaying = false;
+        this.emit();
+      }
     }
   }
 
@@ -443,18 +405,23 @@ export class HistoryManager {
       return false;
     }
 
+    const generation = this.generation;
     this.isReplaying = true;
     this.emit();
     try {
       await this.adapter.applyEntry(entry, "redo");
+      if (generation !== this.generation) return false;
       this.undoStack.push(entry);
       return true;
     } catch (error) {
+      if (generation !== this.generation) return false;
       this.redoStack.push(entry);
       throw error;
     } finally {
-      this.isReplaying = false;
-      this.emit();
+      if (generation === this.generation) {
+        this.isReplaying = false;
+        this.emit();
+      }
     }
   }
 
@@ -471,6 +438,7 @@ export class HistoryManager {
   }
 
   clear() {
+    this.generation += 1;
     this.clearCommitTimer();
     this.undoStack = [];
     this.redoStack = [];
@@ -577,14 +545,4 @@ export class HistoryManager {
     this.snapshot = this.createStateSnapshot();
     this.listeners.forEach((listener) => listener());
   }
-}
-
-export const historyManager = new HistoryManager();
-
-export function useHistorySnapshot(): HistoryStateSnapshot {
-  return useSyncExternalStore(
-    historyManager.subscribe,
-    historyManager.getSnapshot,
-    historyManager.getSnapshot,
-  );
 }

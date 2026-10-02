@@ -278,7 +278,7 @@ async function main() {
         state = await evaluate(`(() => {
           const expected = ${JSON.stringify(expectedCommands)};
           const stablePanel = document.getElementById(
-            "visualtex-native-input-suggestion-popover",
+            "mathlive-suggestion-popover",
           );
           const sourcePanel = document.getElementById("mathlive-suggestion-popover");
           const panel = stablePanel?.querySelector("li[data-command]")
@@ -334,7 +334,7 @@ async function main() {
         await evaluate(`(() => {
           const expected = ${JSON.stringify(expectedCommands)};
           const stablePanel = document.getElementById(
-            "visualtex-native-input-suggestion-popover",
+            "mathlive-suggestion-popover",
           );
           const sourcePanel = document.getElementById("mathlive-suggestion-popover");
           const panel = stablePanel?.querySelector("li[data-command]")
@@ -528,7 +528,7 @@ async function main() {
       if (testCase.query === "\\b") {
         const rankedCommands = await evaluate(`(() => {
           const stablePanel = document.getElementById(
-            "visualtex-native-input-suggestion-popover",
+            "mathlive-suggestion-popover",
           );
           return [...(stablePanel?.querySelectorAll("li[data-command]") ?? [])]
             .map((item) => item.dataset.command ?? "");
@@ -626,7 +626,7 @@ async function main() {
       while (Date.now() - clampStarted < 5_000) {
         clamped = await evaluate(`(() => {
           const panel = document.getElementById(
-            "visualtex-native-input-suggestion-popover",
+            "mathlive-suggestion-popover",
           );
           const list = panel?.querySelector("ul");
           const rect = panel?.getBoundingClientRect();
@@ -687,7 +687,7 @@ async function main() {
             const query = ${JSON.stringify(`\\${prefix}`)};
             const field = document.querySelector("math-field.visual-mathfield");
             const stablePanel = document.getElementById(
-              "visualtex-native-input-suggestion-popover",
+              "mathlive-suggestion-popover",
             );
             const sourcePanel = document.getElementById("mathlive-suggestion-popover");
             const panel = stablePanel?.querySelector("li[data-command]")
@@ -730,7 +730,7 @@ async function main() {
         const entries = await evaluate(`(() => {
           const query = ${JSON.stringify(`\\${prefix}`)};
           const stablePanel = document.getElementById(
-            "visualtex-native-input-suggestion-popover",
+            "mathlive-suggestion-popover",
           );
           const sourcePanel = document.getElementById("mathlive-suggestion-popover");
           const panel = stablePanel?.querySelector("li[data-command]")

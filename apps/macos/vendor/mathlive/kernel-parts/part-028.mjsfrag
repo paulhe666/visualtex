@@ -258,6 +258,64 @@
    * ```
    *  @category Accessing and changing the content
    */
+  visualTexInsertToolbarTemplate(latex, options) {
+    const mathfield = this._mathfield;
+    if (!mathfield) return false;
+    const model = mathfield.model;
+    const anchor = model.at(Math.max(model.position, model.anchor));
+    const parent = anchor?.parent;
+    const branch = anchor?.parentBranch;
+    const inserted = this.insert(latex, options);
+    // Toolbar insertion uses the same branch identity and consumed state as
+    // direct typing. No rendered caret geometry participates in this decision.
+    if (inserted && options?.selectionMode !== "placeholder") {
+      const atom = model.at(model.position);
+      if (atom?.parent === parent && atom.parentBranch === branch) {
+        if (visualTexAutoExitAccentAfterDirectInput(mathfield, atom) ||
+            visualTexAutoExitScriptAfterDirectInput(mathfield, atom))
+          requestUpdate(mathfield);
+      }
+    }
+    return inserted;
+  }
+  visualTexSelectRange(anchor, focus) {
+    if (!this._mathfield) return;
+    this._mathfield.model.extendSelectionTo(anchor, focus);
+    requestUpdate(this._mathfield);
+  }
+  visualTexInsertDocumentEdges(prefix, suffix) {
+    if (!this._mathfield) return;
+    let selection = {
+      ranges: this.selection.ranges.map(range => [...range]), direction: this.selection.direction,
+    };
+    const options = {
+      mode: "math", format: "latex", selectionMode: "after", style: {},
+      silenceNotifications: true, visualTexPreserveStyle: true,
+    };
+    // These fragments already belong to the document. Preserve their styles
+    // and keep the insertion selection relative to the existing live model.
+    if (prefix) {
+      const length = this.lastOffset;
+      this.position = 0;
+      this.insert(prefix, { ...options });
+      const shift = this.lastOffset - length;
+      selection.ranges = selection.ranges.map(([a, b]) => [a + shift, b + shift]);
+    }
+    if (suffix) {
+      this.position = this.lastOffset;
+      this.insert(suffix, { ...options });
+    }
+    this.selection = selection;
+  }
+  visualTexStopPointerTracking() {
+    if (PointerTracker.element === this._mathfield?.field) PointerTracker.cancel?.();
+  }
+  visualTexStartPointerSelection(event) {
+    if (this._mathfield) onPointerDown(this._mathfield, event, true);
+  }
+  get visualTexParentEnvironment() {
+    return this._mathfield?.model?.parentEnvironment?.environmentName ?? null;
+  }
   get value() {
     return this.getValue();
   }

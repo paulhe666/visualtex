@@ -3,7 +3,6 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -13,6 +12,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { wordAdapterSource } from "./word_vba_source.mjs";
 
 if (process.platform !== "darwin") {
   throw new Error("The Word VBE builder is available only on macOS.");
@@ -41,6 +41,8 @@ const outputPath = resolve(
 const outputDocumentName = basename(outputPath);
 const keepWordOpenOnError = process.argv.includes("--keep-word-open-on-error");
 const preserveWord = process.argv.includes("--preserve-word");
+const diagnosticsBuild = process.argv.includes("--diagnostics");
+const diagnosticSourceRoot = join(scratchRoot, `word-diagnostic-source-${process.pid}`);
 // Compile through the established restart/import/Debug > Compile workflow,
 // while leaving production Startup files and their loaded state unchanged.
 const keepStartupFiles = process.argv.includes("--keep-startup-files");
@@ -55,7 +57,9 @@ const wordModuleSources = [
   ["VTMetadata", join(offlineOfficeRoot, "shared", "VTMetadata.bas")],
   ["VTLauncher", join(offlineOfficeRoot, "shared", "VTLauncher.bas")],
   ["VTErrorHandling", join(offlineOfficeRoot, "shared", "VTErrorHandling.bas")],
-  ["VTWordAdapter", join(offlineOfficeRoot, "word", "VTWordAdapter.bas")],
+  ["VTWordAdapter", diagnosticsBuild
+    ? join(diagnosticSourceRoot, "VTWordAdapter.bas")
+    : join(offlineOfficeRoot, "word", "VTWordAdapter.bas")],
   ["VTWordEvents", join(offlineOfficeRoot, "word", "VTWordEvents.cls")],
   ["VTRibbonCallbacks", join(offlineOfficeRoot, "word", "VTRibbonCallbacks.bas")],
 ];
@@ -72,6 +76,9 @@ for (const moduleName of requestedModuleNames) {
   }
 }
 const incrementalBuild = requestedModuleNames.size > 0;
+if (diagnosticsBuild && incrementalBuild && !requestedModuleNames.has("VTWordAdapter")) {
+  throw new Error("--diagnostics requires VTWordAdapter in --modules");
+}
 // Preserve mode may use an incremental copy of the reviewed DOTM. The
 // production Startup add-in is temporarily unloaded while that isolated copy is
 // edited, then restored before the user's Word document snapshot is checked.
@@ -839,46 +846,6 @@ function removeVbaModule(moduleName) {
   ]);
 }
 
-function replaceVbaModuleSourceText(moduleName, modulePath) {
-  const editableSource = readFileSync(modulePath, "utf8")
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("Attribute "))
-    .join("\r");
-  if (!editableSource.trim()) {
-    throw new Error(`VBA module source is empty: ${modulePath}`);
-  }
-  openModuleCodeWindow(moduleName);
-  const clipboard = spawnSync("/usr/bin/pbcopy", [], {
-    input: editableSource,
-    encoding: "utf8",
-  });
-  if (clipboard.status !== 0) {
-    throw new Error(
-      clipboard.stderr?.trim() || `Unable to stage ${moduleName} source on the clipboard`,
-    );
-  }
-  osascript([
-    'tell application "Microsoft Word" to activate',
-    'delay 0.3',
-    'tell application "System Events"',
-    'tell process "Microsoft Word"',
-    'set frontmost to true',
-    'set vbeWindow to first window whose name contains "Microsoft Visual Basic"',
-    'perform action "AXRaise" of vbeWindow',
-    'delay 0.2',
-    // openModuleCodeWindow() leaves the code pane as the keyboard target. The
-    // Mac VBE does not expose that pane as AXTextArea, so use its native editor
-    // shortcuts instead of relying on an accessibility role that is absent.
-    'keystroke "a" using {command down}',
-    'delay 0.1',
-    'keystroke "v" using {command down}',
-    'delay 2',
-    'end tell',
-    'end tell',
-  ], 60_000);
-}
-
 function importVbaModule(modulePath) {
   openVbeWindow();
   osascript([
@@ -1035,32 +1002,11 @@ function compileVbaProject() {
     "-e",
     "end tell",
   ], { timeout: 20_000 }).trim();
-  let copiedSelection = "";
-  if (!highlighted.split("|").at(-1)?.trim()) {
-    const clipboardBefore = bestEffort("/usr/bin/pbpaste", []);
-    bestEffort("/usr/bin/osascript", [
-      "-e",
-      'tell application "System Events"',
-      "-e",
-      'tell process "Microsoft Word"',
-      "-e",
-      "set frontmost to true",
-      "-e",
-      'keystroke "c" using {command down}',
-      "-e",
-      "delay 0.4",
-      "-e",
-      "end tell",
-      "-e",
-      "end tell",
-    ], { timeout: 10_000 });
-    copiedSelection = bestEffort("/usr/bin/pbpaste", []).trim();
-    bestEffort("/usr/bin/pbcopy", [], { input: clipboardBefore });
-  }
+
   throw new Error(
     `Word VBE compile failed: ${compileState.trim()}${
       highlighted ? `\nHighlighted statement: ${highlighted}` : ""
-    }${copiedSelection ? `\nCopied identifier: ${copiedSelection}` : ""}`,
+    }`,
   );
 }
 
@@ -1126,12 +1072,8 @@ function replaceAndCompileAdapter() {
   // Explorer can select the production read-only module with the same name.
   if (keepStartupFiles) setWordVisualTeXAddinInstalled(false);
   for (const [moduleName, modulePath] of selectedWordModuleSources) {
-    if (preserveWord && incrementalBuild) {
-      replaceVbaModuleSourceText(moduleName, modulePath);
-    } else {
-      if (incrementalBuild) removeVbaModule(moduleName);
-      importVbaModule(modulePath);
-    }
+    if (incrementalBuild) removeVbaModule(moduleName);
+    importVbaModule(modulePath);
   }
   if (preserveWord) {
     // With an already-open user document, macOS can keep Word's menu bar active
@@ -1158,106 +1100,11 @@ function replaceAndCompileAdapter() {
   compileVbaProject();
 }
 
-function baseContainsCurrentVbaSources() {
-  const checker = String.raw`
-from pathlib import Path
-from decimal import Decimal, InvalidOperation
-import re
-import sys
-try:
-    from oletools.olevba import VBA_Parser
-except Exception:
-    print("UNAVAILABLE")
-    raise SystemExit(0)
-
-NUMBER_LITERAL = re.compile(
-    r"(?<![\w&])"
-    r"((?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)"
-    r"(?:[#%!@&^])?"
-    r"(?![\w])",
-    re.IGNORECASE,
-)
-
-def normalize_number(match: re.Match[str]) -> str:
-    try:
-        fixed = format(Decimal(match.group(1)), "f")
-    except InvalidOperation:
-        return match.group(0)
-    if "." in fixed:
-        fixed = fixed.rstrip("0").rstrip(".")
-    return "0" if fixed in {"", "-0"} else fixed
-
-def strip_vbe_metadata(value: str) -> str:
-    lines = value.replace("\r\n", "\n").split("\n")
-    if lines and lines[0].lstrip("\ufeff").strip().lower() == "version 1.0 class":
-        while lines:
-            line = lines.pop(0)
-            if line.strip().lower() == "end":
-                break
-    return "\n".join(
-        line for line in lines
-        if not line.lstrip().lower().startswith("attribute ")
-    )
-
-def normalize_vba(value: str) -> str:
-    value = strip_vbe_metadata(value).strip()
-    output = []
-    non_string = []
-    in_string = False
-    index = 0
-
-    def flush_non_string() -> None:
-        if not non_string:
-            return
-        segment = "".join(non_string).lower()
-        output.append(NUMBER_LITERAL.sub(normalize_number, segment))
-        non_string.clear()
-
-    while index < len(value):
-        character = value[index]
-        if character == '"':
-            flush_non_string()
-            output.append(character)
-            if in_string and index + 1 < len(value) and value[index + 1] == '"':
-                output.append('"')
-                index += 2
-                continue
-            in_string = not in_string
-            index += 1
-            continue
-        if in_string:
-            output.append(character)
-        else:
-            non_string.append(character)
-        index += 1
-    flush_non_string()
-    return "".join(output)
-
-base_path, *source_paths = sys.argv[1:]
-parser = VBA_Parser(base_path)
-try:
-    macros = {name: code for _, _, name, code in parser.extract_macros()}
-finally:
-    parser.close()
-checks = [(Path(source_path).name, source_path) for source_path in source_paths]
-matched = all(
-    macros.get(module_name) is not None
-    and normalize_vba(macros[module_name])
-        == normalize_vba(Path(source_path).read_text(encoding="utf-8"))
-    for module_name, source_path in checks
-)
-print("MATCH" if matched else "MISMATCH")
-`;
-  const result = bestEffort("/usr/bin/python3", [
-    "-c",
-    checker,
-    basePath,
-    ...wordModuleSources.map(([, modulePath]) => modulePath),
-  ], { timeout: 90_000 });
-  return result.trim() === "MATCH";
-}
-
 function verifyBuiltVba(path) {
+  run("python3", [
+    join(repositoryRoot, "scripts", "verify_word_vba_source.py"), path,
+    ...(diagnosticsBuild ? ["--diagnostics"] : []),
+  ]);
   run("/usr/bin/unzip", ["-tqq", path]);
   const vbaProject = run(
     "/usr/bin/unzip",
@@ -1277,8 +1124,6 @@ function verifyBuiltVba(path) {
     "VTFinalizeInlineNativeEquation",
     "VTInsertRegisteredEquationCaption",
     "VTWriteWordFailureTrace",
-    "VisualTeX_RunWordNativeRegression",
-    "VisualTeX_RunNumberedNativeComplexStructureRegression",
     "VisualTeX_InitializeWordHost",
     "word-structured-document-import-20260730-r61",
     "VTWordRibbonDocumentImport",
@@ -1296,7 +1141,6 @@ function verifyBuiltVba(path) {
     "App_WindowSelectionChange",
     "VTWordRibbonApplyImageFontSizePreset",
     "VTRefreshNumberedImageFormulaFontLayout",
-    "VisualTeX_RunWordUnnumberedImageParagraphMarkRegression",
     "VisualTeX_EditImageField",
     "VisualTeX_EditSelectedImageFromNativeMonitor",
     "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
@@ -1316,6 +1160,11 @@ function verifyBuiltVba(path) {
 
 acquireBuildLock();
 process.on("exit", releaseBuildLock);
+if (diagnosticsBuild) {
+  mkdirSync(diagnosticSourceRoot, { recursive: true });
+  writeFileSync(join(diagnosticSourceRoot, "VTWordAdapter.bas"), wordAdapterSource({ diagnostics: true }));
+  process.on("exit", () => rmSync(diagnosticSourceRoot, { recursive: true, force: true }));
+}
 mkdirSync(dirname(outputPath), { recursive: true });
 if (!existsSync(basePath)) throw new Error(`Base Word template is missing: ${basePath}`);
 

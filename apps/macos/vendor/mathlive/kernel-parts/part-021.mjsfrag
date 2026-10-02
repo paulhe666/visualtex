@@ -265,6 +265,375 @@ function getLeftSiblings(mf) {
   }
   return result;
 }
+function visualTexCanonicalVariantInputCommand(command) {
+  return ({
+    "\\bf": "\\mathbf", "\\bfseries": "\\mathbf",
+    "\\it": "\\mathit", "\\rm": "\\mathrm", "\\sf": "\\mathsf", "\\tt": "\\mathtt",
+    "\\cal": "\\mathcal", "\\Bbb": "\\mathbb", "\\frak": "\\mathfrak",
+    "\\bold": "\\mathbfit", "\\boldmath": "\\mathbfit", "\\pmb": "\\mathbfit",
+    "\\simbfit": "\\symbfit",
+  })[command] || command;
+}
+function visualTexIsVariantInputCommand(command) {
+  const canonical = visualTexCanonicalVariantInputCommand(command);
+  return ["\\mathbf", "\\mathbb", "\\mathit", "\\mathrm", "\\mathsf", "\\mathtt", "\\mathcal", "\\mathscr", "\\mathfrak", "\\boldsymbol", "\\bm", "\\mathbfit", "\\mathnormal", "\\symup", "\\symit", "\\symbf", "\\symbfup", "\\symbfit", "\\symbb", "\\symcal", "\\symbfcal", "\\symscr", "\\symbfscr", "\\symfrak", "\\symbffrak", "\\symsfup", "\\symsfit", "\\symbfsfup", "\\symbfsfit", "\\symtt"].includes(canonical);
+}
+function visualTexIsAccentSourceCommand(command) {
+  return ["\\acute", "\\grave", "\\dot", "\\ddot", "\\dddot", "\\ddddot", "\\tilde", "\\bar", "\\breve", "\\check", "\\hat", "\\vec", "\\widehat", "\\widetilde", "\\overline", "\\overrightarrow", "\\overleftarrow", "\\overleftrightarrow", "\\mathring"].includes(command);
+}
+function visualTexSourceWrapperKind(command) {
+  const canonical = visualTexCanonicalVariantInputCommand(command);
+  if (visualTexIsVariantInputCommand(canonical)) return "variant";
+  if (visualTexIsAccentSourceCommand(canonical)) return "accent";
+  return null;
+}
+function visualTexSourceWrapperTemplate(input) {
+  if (typeof input !== "string") return null;
+  const match = input.match(/^(\\[a-zA-Z]+)\{\\placeholder\{\}\}$/);
+  if (!match) return null;
+  const command = visualTexCanonicalVariantInputCommand(match[1]);
+  const kind = visualTexSourceWrapperKind(command);
+  return kind ? { command, kind } : null;
+}
+function visualTexSourceWrapperRaw(state) {
+  const group = state?.group;
+  if (!group?.parent) return null;
+  return (group.body || []).filter((atom) => atom.type === "latex" && !atom.isSuggestion).map((atom) => atom.value).join("");
+}
+function visualTexSourceWrapperContent(state) {
+  const raw = visualTexSourceWrapperRaw(state);
+  const prefix = state?.command + "{";
+  if (raw == null || !raw.startsWith(prefix) || !raw.endsWith("}")) return null;
+  return raw.slice(prefix.length, -1);
+}
+function visualTexSyncSourceWrapper(mathfield) {
+  let state = mathfield.visualTexSourceWrapper;
+  if (state) {
+    const group = state.group;
+    const offset = group?.parent ? mathfield.model.offsetOf(group) : -1;
+    if (!group?.parent || offset < 0 || mathfield.model.at(offset) !== group) {
+      mathfield.visualTexSourceWrapper = null;
+      state = null;
+    }
+  }
+  const host = mathfield.host;
+  if (!host) return;
+  const content = state ? visualTexSourceWrapperContent(state) : null;
+  if (state && content != null) {
+    host.dataset.visualtexSourceWrapperCommand = state.command;
+    host.dataset.visualtexSourceWrapperKind = state.kind;
+    host.dataset.visualtexSourceWrapperContent = content;
+  } else {
+    delete host.dataset.visualtexSourceWrapperCommand;
+    delete host.dataset.visualtexSourceWrapperKind;
+    delete host.dataset.visualtexSourceWrapperContent;
+  }
+}
+function visualTexSourceWrapperAutoExitEnabled(mathfield, state) {
+  if (state?.kind === "accent") return (mathfield.host == null ? void 0 : mathfield.host.dataset.visualtexAutoExitAccent) === "true";
+  return (mathfield.host == null ? void 0 : mathfield.host.dataset.visualtexAutoExitWrapperCommand) !== "false";
+}
+function visualTexSourceWrapperOwnsAtom(state, atom) {
+  return Boolean(state?.group?.parent && atom?.parent === state.group);
+}
+function visualTexSourceWrapperCaretIsInside(mathfield, state) {
+  return visualTexSourceWrapperOwnsAtom(state, mathfield.model.at(mathfield.model.position));
+}
+function visualTexCaptureSourceWrapperExitSelection(model, state) {
+  const anchorAtom = model.at(model.anchor);
+  const positionAtom = model.at(model.position);
+  if (anchorAtom === state.group || positionAtom === state.group ||
+      visualTexSourceWrapperOwnsAtom(state, anchorAtom) ||
+      visualTexSourceWrapperOwnsAtom(state, positionAtom)) return null;
+  return { anchorAtom, positionAtom };
+}
+function visualTexRestoreSourceWrapperExitSelection(model, selection) {
+  if (!selection?.anchorAtom || !selection?.positionAtom) return false;
+  const anchor = model.offsetOf(selection.anchorAtom);
+  const position = model.offsetOf(selection.positionAtom);
+  if (anchor < 0 || position < 0) return false;
+  const savedSilence = model.silenceNotifications;
+  model.silenceNotifications = true;
+  model.setSelection(anchor, position);
+  model.silenceNotifications = savedSilence;
+  return true;
+}
+function visualTexStartSourceWrapper(model, input, structuralSlot = null) {
+  const mathfield = model.mathfield;
+  if (mathfield.visualTexSourceWrapper) {
+    visualTexFinalizeSourceWrapperOnCaretExit(mathfield);
+    if (mathfield.visualTexSourceWrapper) return false;
+  }
+  const info = visualTexSourceWrapperTemplate(input);
+  if (!info) return false;
+  const shell = info.command + "{}";
+  const group = new LatexGroupAtom(shell);
+  const cursor = model.at(model.position);
+  if (!cursor?.parent) return false;
+  cursor.parent.addChildAfter(group, cursor);
+  const latexAtoms = (group.body || []).filter((atom) => atom.type === "latex");
+  const close = latexAtoms[latexAtoms.length - 1];
+  const beforeClose = close?.leftSibling;
+  if (!close || !beforeClose) {
+    group.parent?.removeChild(group);
+    return false;
+  }
+  const state = { command: info.command, kind: info.kind, group, structuralSlot };
+  group.visualTexSourceWrapper = state;
+  if (structuralSlot) group.visualTexStructuralSlot = structuralSlot;
+  mathfield.visualTexSourceWrapper = state;
+  // Keep the raw-shell selection private until the matching input event
+  // has updated host state. Publishing selection first can make a host
+  // render stale content and replace this live LatexGroup.
+  const visualTexSavedSilence = model.silenceNotifications;
+  model.silenceNotifications = true;
+  model.mode = "latex";
+  model.position = model.offsetOf(beforeClose);
+  model.silenceNotifications = visualTexSavedSilence;
+  if (!visualTexSavedSilence) mathfield.visualTexDeferredSelectionAfterInput = true;
+  visualTexSyncSourceWrapper(mathfield);
+  model.contentDidChange({ data: shell, inputType: "insertText" });
+  requestUpdate(mathfield);
+  return true;
+}
+function visualTexClearSourceWrapper(mathfield) {
+  if (!mathfield.visualTexSourceWrapper) return;
+  mathfield.visualTexSourceWrapper = null;
+  visualTexSyncSourceWrapper(mathfield);
+}
+function visualTexCancelSourceWrapper(mathfield, { preserveSelection = false } = {}) {
+  const state = mathfield.visualTexSourceWrapper;
+  const group = state?.group;
+  if (!state || !group?.parent) { visualTexClearSourceWrapper(mathfield); return false; }
+  const model = mathfield.model;
+  const preservedSelection = preserveSelection
+    ? visualTexCaptureSourceWrapperExitSelection(model, state)
+    : null;
+  const parent = group.parent;
+  const branch = group.parentBranch;
+  const left = group.leftSibling;
+  parent.removeChild(group);
+  model.mode = "math";
+  model.position = Math.max(0, model.offsetOf(left));
+  visualTexClearSourceWrapper(mathfield);
+  if (state.structuralSlot?.parent &&
+      !visualTexStructuralSlotStillOccupied(state.structuralSlot.parent, state.structuralSlot.branch, state.structuralSlot)) {
+    visualTexRestoreStructuralPlaceholder(model, state.structuralSlot.parent, state.structuralSlot.branch, state.structuralSlot.after, true, state.structuralSlot);
+  } else if (visualTexShouldRetainStructuralPlaceholder(parent, branch) && parent.hasEmptyBranch(branch)) {
+    visualTexRestoreStructuralPlaceholder(model, parent, branch, left);
+  }
+  visualTexRestoreSourceWrapperExitSelection(model, preservedSelection);
+  mathfield.stopCoalescingUndo();
+  requestUpdate(mathfield);
+  const visualTexSavedSilence = model.silenceNotifications;
+  model.silenceNotifications = false;
+  model.contentDidChange({ data: "", inputType: "deleteContentBackward" });
+  model.silenceNotifications = visualTexSavedSilence;
+  return true;
+}
+function visualTexSourceWrapperSimpleCommand(mathfield, content) {
+  if (!/^\\[a-zA-Z]+\*?$/.test(content)) return false;
+  const native = LATEX_COMMANDS[content];
+  if (MATH_SYMBOLS[content]) return true;
+  if (native && !(native.params || []).some((param) => !param.optional)) return true;
+  const macro = mathfield.options.macros?.[content.slice(1)];
+  return typeof macro === "string" && !/#\d/.test(macro);
+}
+function visualTexCommitSourceWrapper(mathfield, { requireComplete = false, notify = true, preserveSelection = false } = {}) {
+  const state = mathfield.visualTexSourceWrapper;
+  const group = state?.group;
+  if (!state || !group?.parent) { visualTexClearSourceWrapper(mathfield); return false; }
+  const content = visualTexSourceWrapperContent(state);
+  if (!content) return false;
+  if (requireComplete && Array.from(content).length !== 1 && !visualTexSourceWrapperSimpleCommand(mathfield, content)) return false;
+  const model = mathfield.model;
+  const preservedSelection = preserveSelection
+    ? visualTexCaptureSourceWrapperExitSelection(model, state)
+    : null;
+  let command = state.command;
+  if (command === "\\mathcal" && /^[a-z]$/.test(content)) command = "\\mathscr";
+  const latex = command + "{" + content + "}";
+  const parsed = parseLatex(latex, { context: mathfield.context });
+  if (!parsed?.length) return false;
+  const parent = group.parent;
+  const left = group.leftSibling;
+  parent.removeChild(group);
+  const last = parent.addChildrenAfter(parsed, left);
+  if (state.structuralSlot) {
+    for (const atom of parsed) atom.visualTexStructuralSlot = state.structuralSlot;
+  }
+  const visualTexSavedSilence = model.silenceNotifications;
+  model.silenceNotifications = true;
+  model.mode = "math";
+  model.position = model.offsetOf(last);
+  model.silenceNotifications = visualTexSavedSilence;
+  visualTexClearSourceWrapper(mathfield);
+  if (!preserveSelection && state.structuralSlot && !model.selectionIsPlaceholder)
+    visualTexAutoExitAfterComposition(mathfield, state.structuralSlot);
+  visualTexRestoreSourceWrapperExitSelection(model, preservedSelection);
+  if (notify && !visualTexSavedSilence)
+    mathfield.visualTexDeferredSelectionAfterInput = true;
+  mathfield.stopCoalescingUndo();
+  requestUpdate(mathfield);
+  if (notify) model.contentDidChange({ data: latex, inputType: "insertText" });
+  return true;
+}
+function visualTexFinalizeSourceWrapper(mathfield, { preserveSelection = false, notify = false } = {}) {
+  const state = mathfield.visualTexSourceWrapper;
+  if (!state?.group?.parent) { visualTexClearSourceWrapper(mathfield); return false; }
+  const content = visualTexSourceWrapperContent(state);
+  if (!content) return visualTexCancelSourceWrapper(mathfield, { preserveSelection });
+  return visualTexCommitSourceWrapper(mathfield, { preserveSelection, notify });
+}
+function visualTexFinalizeSourceWrapperOnCaretExit(mathfield) {
+  const state = mathfield.visualTexSourceWrapper;
+  if (!state || mathfield.visualTexCompositionSourceWrapper === state ||
+      visualTexSourceWrapperCaretIsInside(mathfield, state)) return false;
+  return visualTexFinalizeSourceWrapper(mathfield, { preserveSelection: true, notify: false });
+}
+function visualTexMaybeAutoCommitSourceWrapper(mathfield) {
+  const state = mathfield.visualTexSourceWrapper;
+  if (!state || mathfield.visualTexCompositionCommit || !visualTexSourceWrapperCaretIsInside(mathfield, state)) return false;
+  if (!visualTexSourceWrapperAutoExitEnabled(mathfield, state)) { visualTexSyncSourceWrapper(mathfield); return false; }
+  const content = visualTexSourceWrapperContent(state);
+  visualTexSyncSourceWrapper(mathfield);
+  if (content == null || Array.from(content).length !== 1 || content === "\\") return false;
+  return visualTexCommitSourceWrapper(mathfield, { requireComplete: true, notify: false });
+}
+function visualTexAcceptSourceWrapperCompletion(mathfield) {
+  const state = mathfield.visualTexSourceWrapper;
+  const completion = mathfield.visualTexCompletion;
+  if (!state?.group?.parent || completion?.group !== state.group) return false;
+  const selected = completion.suggestions?.[mathfield.suggestionIndex];
+  if (!selected) return false;
+  const info = visualTexCompletionInfo(mathfield, selected);
+  const token = (info?.command || selected).match(/^\\[a-zA-Z]+\*?/)?.[0];
+  if (!token) return false;
+  const model = mathfield.model;
+  let atom = model.at(model.position);
+  while (atom instanceof LatexAtom && /^[a-zA-Z\*]$/.test(atom.value)) atom = atom.leftSibling;
+  if (!(atom instanceof LatexAtom) || atom.value !== "\\" || atom.parent !== state.group) return false;
+  const first = atom;
+  const commandAtoms = [first];
+  atom = first.rightSibling;
+  while (atom instanceof LatexAtom && /^[a-zA-Z\*]$/.test(atom.value)) { commandAtoms.push(atom); atom = atom.rightSibling; }
+  const left = first.leftSibling;
+  if (!left) return false;
+  for (const item of commandAtoms) state.group.removeChild(item);
+  const visualTexTemplate = selected.startsWith(token) ? selected : token;
+  const visualTexSource = visualTexTemplate.replace(/\\placeholder\{\}/g, "");
+  const replacement = [...visualTexSource].map((value) => new LatexAtom(value));
+  const last = state.group.addChildrenAfter(replacement, left);
+  const visualTexEmptyArgument = visualTexSource.indexOf("{}");
+  const visualTexCaretAtom = visualTexEmptyArgument >= 0
+    ? replacement[visualTexEmptyArgument]
+    : last;
+  model.position = model.offsetOf(visualTexCaretAtom);
+  mathfield.visualTexCompletion = null;
+  hideSuggestionPopover(mathfield);
+  visualTexSyncSourceWrapper(mathfield);
+  model.contentDidChange({ data: visualTexSource, inputType: "insertText" });
+  requestUpdate(mathfield);
+  return true;
+}
+function visualTexAutoExitAccentAfterDirectInput(mathfield, atom) {
+  if (mathfield.visualTexCompositionCommit) return false;
+  if ((mathfield.host == null ? void 0 : mathfield.host.dataset.visualtexAutoExitAccent) !== "true") return false;
+  const visualTexAutoExitAccentCommands = ["\\acute", "\\grave", "\\dot", "\\ddot", "\\dddot", "\\ddddot", "\\tilde", "\\bar", "\\breve", "\\check", "\\hat", "\\vec", "\\widehat", "\\widetilde", "\\overline", "\\overrightarrow", "\\overleftarrow", "\\overleftrightarrow", "\\mathring"];
+  if (atom?.type === "accent" && visualTexAutoExitAccentCommands.includes(atom.command)) {
+    const previousPosition = mathfield.model.position;
+    const target = mathfield.model.offsetOf(atom);
+    if (target >= 0 && target !== previousPosition) {
+      mathfield.model.position = target;
+      mathfield.stopCoalescingUndo();
+      mathfield.model.announce("move", previousPosition);
+      return true;
+    }
+  }
+  let current = atom;
+  while (current == null ? void 0 : current.parent) {
+    if (current.parent.type === "accent") {
+      if (!visualTexAutoExitAccentCommands.includes(current.parent.command)) return false;
+      if (current !== atom) return false;
+      const previousPosition = mathfield.model.position;
+      const target = mathfield.model.offsetOf(current.parent);
+      if (target < 0 || target === previousPosition) return false;
+      mathfield.model.position = target;
+      mathfield.stopCoalescingUndo();
+      mathfield.model.announce("move", previousPosition);
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+function visualTexAutoExitAfterComposition(mathfield, slot) {
+  if (!slot?.parent) return false;
+  const model = mathfield.model;
+  const parent = slot.parent;
+  const branch = slot.branch;
+  const accentCommands = ["\\acute", "\\grave", "\\dot", "\\ddot", "\\dddot", "\\ddddot", "\\tilde", "\\bar", "\\breve", "\\check", "\\hat", "\\vec", "\\widehat", "\\widetilde", "\\overline", "\\overrightarrow", "\\overleftarrow", "\\overleftrightarrow", "\\mathring"];
+  if (parent.type === "accent" && branch === "body" &&
+      (mathfield.host == null ? void 0 : mathfield.host.dataset.visualtexAutoExitAccent) === "true" &&
+      accentCommands.includes(parent.command)) {
+    const previous = model.position;
+    const target = model.offsetOf(parent);
+    if (target >= 0 && target !== previous) {
+      model.position = target;
+      mathfield.stopCoalescingUndo();
+      model.announce("move", previous);
+      return true;
+    }
+  }
+  if (branch !== "superscript" && branch !== "subscript") return false;
+  if (visualTexIsBoundedOperatorParent(parent)) {
+    if (branch === "subscript") {
+      const upper = visualTexBoundedOperatorBranchPlaceholders(model, parent, "superscript");
+      return upper[0] ? leapTo(model, upper[0]) : false;
+    }
+    const operatorOffset = model.offsetOf(parent);
+    const target = leapTarget(model, operatorOffset + 1, "forward");
+    if (target && model.offsetOf(target) > operatorOffset) return leapTo(model, target);
+    return leapTo(model, parent);
+  }
+  return visualTexAutoExitScriptAfterDirectInput(mathfield, parent.branch(branch)?.[0]);
+}
+function visualTexScriptAutoExitBranch(mathfield, atom) {
+  const branch = atom == null ? void 0 : atom.parentBranch;
+  if (branch !== "superscript" && branch !== "subscript") return null;
+  const parent = atom == null ? void 0 : atom.parent;
+  if (!parent) return null;
+  if (visualTexIsBoundedOperatorParent(parent)) return null;
+  const enabled = branch === "superscript"
+    ? (mathfield.host == null ? void 0 : mathfield.host.dataset.visualtexAutoExitSuperscript) === "true"
+    : (mathfield.host == null ? void 0 : mathfield.host.dataset.visualtexAutoExitSubscript) === "true";
+  if (!enabled) return null;
+  const branchAtoms = parent.branch(branch);
+  // Atom identity survives renders; generated DOM ids do not.
+  return branchAtoms?.[0] ?? null;
+}
+function visualTexAutoExitScriptAfterDirectInput(mathfield, atom) {
+  if (mathfield.visualTexCompositionCommit) return false;
+  const key = visualTexScriptAutoExitBranch(mathfield, atom);
+  if (!key) return false;
+  let consumed = mathfield.visualTexConsumedScriptBranches;
+  if (!consumed) {
+    consumed = /* @__PURE__ */ new WeakSet();
+    mathfield.visualTexConsumedScriptBranches = consumed;
+  }
+  if (consumed.has(key)) return false;
+  consumed.add(key);
+  const parent = atom == null ? void 0 : atom.parent;
+  if (!parent || !parent.parent) return false;
+  const model = mathfield.model;
+  const previousPosition = model.position;
+  const targetPosition = model.offsetOf(parent);
+  if (targetPosition < 0 || targetPosition === previousPosition) return false;
+  model.position = targetPosition;
+  model.mathfield.stopCoalescingUndo();
+  model.announce("move", previousPosition);
+  return true;
+}
 function insertMathModeChar(mathfield, c) {
   const model = mathfield.model;
   if (!/\d/.test(c)) formatScientificNotationIfApplicable(mathfield);
@@ -295,6 +664,17 @@ function insertMathModeChar(mathfield, c) {
   }
   const atom = model.at(model.position);
   const wasPlaceholderSelected = model.selectionIsPlaceholder;
+  const visualTexInheritedStructuralSlot = visualTexLiveStructuralSlot(model.at(model.position));
+  const pendingPlaceholder = mathfield.visualTexPendingPlaceholderSelection;
+  mathfield.visualTexPendingPlaceholderSelection = null;
+  const replacedPlaceholder = wasPlaceholderSelected || pendingPlaceholder?.position === model.position;
+  // A font command such as \mathbb is represented by style on its
+  // placeholder atom. Replacing that atom must carry the style to the
+  // typed glyph; otherwise the whole variant silently disappears.
+  if (replacedPlaceholder && /[a-zA-Z0-9]/.test(c)) {
+    const selectedPlaceholder = wasPlaceholderSelected ? model.at(Math.max(model.position, model.anchor)) : null;
+    Object.assign(style, selectedPlaceholder?.style || pendingPlaceholder?.style || {});
+  }
   if (/\d/.test(c) && mathfield.options.smartSuperscript && atom.parentBranch === "superscript" && atom.parent.type !== "mop" && atom.parent.type !== "operator" && atom.parent.type !== "extensible-symbol" && atom.hasNoSiblings) {
     if (!ModeEditor.insert(model, c, {
       style,
@@ -323,7 +703,13 @@ function insertMathModeChar(mathfield, c) {
     selectionMode: wasPlaceholderSelected ? "after" : "placeholder"
   }))
     return;
-  mathfield.snapshot(`insert-${model.at(model.position).type}`);
+  const visualTexInsertedAtom = model.at(model.position);
+  if (visualTexInsertedAtom && (pendingPlaceholder?.slot || visualTexInheritedStructuralSlot)) {
+    visualTexInsertedAtom.visualTexStructuralSlot = pendingPlaceholder?.slot || visualTexInheritedStructuralSlot;
+  }
+  mathfield.snapshot(`insert-${visualTexInsertedAtom.type}`);
+  if (!visualTexAutoExitAccentAfterDirectInput(mathfield, visualTexInsertedAtom))
+    visualTexAutoExitScriptAfterDirectInput(mathfield, visualTexInsertedAtom);
   if (/\d/.test(c)) {
     const timeoutValue = mathfield.options.inlineShortcutTimeout > 0 ? mathfield.options.inlineShortcutTimeout : 1e3;
     clearTimeout(mathfield.scientificNotationTimer);
@@ -848,17 +1234,10 @@ function boundary(model, pos, direction) {
   }
   if (atom.mode === "math") {
     if (atom.isDigit()) {
-      while ((_a3 = model.at(pos + dir)) == null ? void 0 : _a3.isDigit()) pos += dir;
-      return direction === "backward" ? pos - 1 : pos;
-    }
-    if (atom.style.variant || atom.style.variantStyle) {
-      const targetVariant = atom.style.variant;
-      const targetVariantStyle = atom.style.variantStyle;
       while (true) {
-        const nextAtom = model.at(pos + dir);
-        if (!nextAtom) break;
-        if (nextAtom.style.variant !== targetVariant) break;
-        if (nextAtom.style.variantStyle !== targetVariantStyle) break;
+        const next = model.at(pos + dir);
+        if (!next?.isDigit() || next.parent !== atom.parent || next.parentBranch !== atom.parentBranch)
+          break;
         pos += dir;
       }
       return direction === "backward" ? pos - 1 : pos;
@@ -936,10 +1315,14 @@ var PointerTracker = class _PointerTracker {
     _PointerTracker.element = element;
     (_a3 = _PointerTracker.controller) == null ? void 0 : _a3.abort();
     _PointerTracker.controller = new AbortController();
+    _PointerTracker.cancel = onCancel;
     const options = { signal: _PointerTracker.controller.signal };
     if ("PointerEvent" in window) {
       element.addEventListener("pointermove", onMove, options);
-      element.addEventListener("pointerup", onCancel, options);
+      element.addEventListener("pointerup", (upEvent) => {
+        onMove(upEvent);
+        onCancel(upEvent);
+      }, options);
       element.addEventListener("pointercancel", onCancel, options);
       if (isPointerEvent(evt)) {
         _PointerTracker.pointerId = evt.pointerId;
@@ -948,13 +1331,17 @@ var PointerTracker = class _PointerTracker {
     } else {
       window.addEventListener("mousemove", onMove, options);
       window.addEventListener("blur", onCancel, options);
-      window.addEventListener("mouseup", onCancel, options);
+      window.addEventListener("mouseup", (upEvent) => {
+        onMove(upEvent);
+        onCancel(upEvent);
+      }, options);
     }
   }
   static stop() {
     var _a3;
     (_a3 = _PointerTracker.controller) == null ? void 0 : _a3.abort();
     _PointerTracker.controller = void 0;
+    _PointerTracker.cancel = void 0;
     if (typeof _PointerTracker.pointerId === "number") {
       _PointerTracker.element.releasePointerCapture(_PointerTracker.pointerId);
       _PointerTracker.pointerId = void 0;
@@ -972,7 +1359,41 @@ function clamp(value, min, max) {
   if (value > max) return max;
   return value;
 }
-function onPointerDown(mathfield, evt) {
+
+function visualTexPointerRange(model, range) {
+  let [start, end] = range;
+  if (start === end) return range;
+  let firstIndex = start + 1;
+  while (firstIndex < end && model.at(firstIndex)?.type === "first") firstIndex++;
+  let first = model.at(firstIndex), last = model.at(end);
+  if (!first || !last) return range;
+  // The anchor is an exclusive boundary. Its branch matters when a drag
+  // starts outside a wrapper and ends inside it, even if all included atoms
+  // happen to belong to that wrapper's first branch.
+  const parent = Atom.commonAncestor(model.at(start), last);
+  if (!parent) return range;
+  while (first.parent && first.parent !== parent) first = first.parent;
+  while (last.parent && last.parent !== parent) last = last.parent;
+  // Crossing numerator/denominator or upper/lower scripts selects that whole
+  // structure. Cells remain separate so a matrix row can be selected locally.
+  const sameBranch =
+    JSON.stringify(first.parentBranch) === JSON.stringify(last.parentBranch);
+  if (!sameBranch && parent.type !== "array" && parent.type !== "root") {
+    let before = parent.leftSibling;
+    if (parent.type === "subsup" && before?.leftSibling) before = before.leftSibling;
+    return [Math.max(0, model.offsetOf(before)), model.offsetOf(parent)];
+  }
+  // A selection entering/leaving a nested structure takes that structure,
+  // never a flattened list of its children with the radical/fence discarded.
+  start = Math.min(start, Math.max(0, model.offsetOf(first.leftSibling)));
+  end = Math.max(end, model.offsetOf(last));
+  return [start, end];
+}
+function onPointerDown(mathfield, evt, fromRow = false) {
+  const visualTexPointerSignature = [evt.type, evt.pointerId ?? 0, evt.timeStamp, evt.clientX, evt.clientY, evt.button, evt.buttons].join(":");
+  const visualTexDuplicatePointer = mathfield.visualTexLastPointerSignature === visualTexPointerSignature;
+  if (visualTexDuplicatePointer) return;
+  mathfield.visualTexLastPointerSignature = visualTexPointerSignature;
   var _a3, _b3, _c2, _d2, _e, _f;
   if (evt.buttons > 1) return;
   if (!mathfield.atomBoundsCache)
@@ -1025,13 +1446,50 @@ function onPointerDown(mathfield, evt) {
       }
     }
     const focus = offsetFromPoint(that, x, y, {
-      bias: x <= anchorX ? x === anchorX ? 0 : -1 : 1
+      anchor: actualAnchor
     });
     if (actualAnchor >= 0 && focus >= 0) {
       that.model.extendSelectionTo(actualAnchor, focus);
       requestUpdate(mathfield);
     }
     if (trackingWords) selectGroup(that.model);
+  }
+  const visualTexExactPlaceholderNode = [
+    ...mathfield.field.querySelectorAll(
+      ".visualtex-structural-placeholder[data-atom-id], .ML__placeholder[data-atom-id]"
+    )
+  ].find((node) => pointInRect(anchorX, anchorY, node.getBoundingClientRect()));
+  const visualTexExactPlaceholderId =
+    visualTexExactPlaceholderNode?.getAttribute("data-atom-id");
+  const visualTexExactPlaceholder = visualTexExactPlaceholderId
+    ? that.model.atoms.find((atom) => atom.id === visualTexExactPlaceholderId)
+    : null;
+  const visualTexExactPlaceholderOffset = visualTexExactPlaceholder
+    ? that.model.offsetOf(visualTexExactPlaceholder)
+    : -1;
+  if (
+    !evt.shiftKey &&
+    visualTexExactPlaceholderOffset >= 0 &&
+    (visualTexExactPlaceholder.type === "placeholder" ||
+      visualTexExactPlaceholder.type === "prompt")
+  ) {
+    anchor = visualTexExactPlaceholderOffset;
+    that.flushInlineShortcutBuffer();
+    that.model.setSelection(
+      Math.max(0, visualTexExactPlaceholderOffset - 1),
+      visualTexExactPlaceholderOffset
+    );
+    mathfield.element.classList.add("tracking");
+    trackingPointer = true;
+    PointerTracker.start(field, evt, onPointerMove, endPointerTracking);
+    if (!mathfield.hasFocus()) {
+      mathfield.onFocus();
+      mathfield.model.announce("line");
+    }
+    mathfield.stopCoalescingUndo();
+    requestUpdate(mathfield);
+    evt.preventDefault();
+    return;
   }
   if (gLastTap && Math.abs(gLastTap.x - anchorX) < 5 && Math.abs(gLastTap.y - anchorY) < 5 && Date.now() < gLastTap.time + 500) {
     gTapCount += 1;
@@ -1046,10 +1504,10 @@ function onPointerDown(mathfield, evt) {
   }
   const bounds = field.getBoundingClientRect();
   const containerBounds = (_b3 = (_a3 = mathfield.container) == null ? void 0 : _a3.getBoundingClientRect()) != null ? _b3 : mathfield.element.getBoundingClientRect();
-  const hostBounds = (_d2 = (_c2 = mathfield.element) == null ? void 0 : _c2.getBoundingClientRect()) != null ? _d2 : containerBounds;
+  const hostBounds = mathfield.host?.getBoundingClientRect() ?? containerBounds;
   const anchorInsideField = pointInRect(anchorX, anchorY, bounds);
   const anchorInsideContainer = !anchorInsideField && containerBounds ? pointInRect(anchorX, anchorY, containerBounds) : false;
-  const anchorInsideHost = !anchorInsideField && !anchorInsideContainer && hostBounds ? pointInRect(anchorX, anchorY, hostBounds) : false;
+  const anchorInsideHost = fromRow || (!anchorInsideField && !anchorInsideContainer && hostBounds ? pointInRect(anchorX, anchorY, hostBounds) : false);
   const selectionAnchorX = anchorInsideField ? anchorX : anchorInsideContainer || anchorInsideHost ? clamp(anchorX, bounds.left, bounds.right) : anchorX;
   const selectionAnchorY = anchorInsideField ? anchorY : anchorInsideContainer || anchorInsideHost ? clamp(anchorY, bounds.top, bounds.bottom) : anchorY;
   if (anchorInsideField || anchorInsideContainer || anchorInsideHost) {
@@ -1067,6 +1525,7 @@ function onPointerDown(mathfield, evt) {
       if (evt.shiftKey) {
         const wasCollapsed = mathfield.model.selectionIsCollapsed;
         mathfield.model.extendSelectionTo(mathfield.model.anchor, anchor);
+        anchor = mathfield.model.anchor;
         if (acceptCommandSuggestion(mathfield.model) || wasCollapsed)
           dirty = "all";
         else dirty = "selection";
@@ -1115,7 +1574,71 @@ function onPointerDown(mathfield, evt) {
         PointerTracker.start(field, evt, onPointerMove, endPointerTracking);
         if (evt.detail === 2 || gTapCount === 2) {
           trackingWords = true;
-          selectGroup(mathfield.model);
+          // A caret offset on the glyph's left half belongs to its left sibling.
+          // Double click selects the pointed atom, independently of that bias.
+          const inkContainsPoint = node => {
+            let r = node.getBoundingClientRect();
+            const svg = node.querySelector("svg");
+            if (svg) {
+              const box = svg.getBBox(), matrix = svg.getScreenCTM();
+              if (matrix && box.width && box.height) {
+                const a = new DOMPoint(box.x, box.y).matrixTransform(matrix);
+                const b = new DOMPoint(box.x + box.width, box.y + box.height).matrixTransform(matrix);
+                r = {
+                  left: a.x,
+                  right: b.x,
+                  top: a.y,
+                  bottom: b.y,
+                  width: b.x - a.x,
+                  height: b.y - a.y,
+                };
+              }
+            }
+            return r.width > 0 && r.height > 0 &&
+              pointInRect(evt.clientX, evt.clientY, r);
+          };
+          let ink = evt.composedPath().find(node =>
+            node instanceof Element &&
+            ["ML__visualtex-accent-mark", "ML__sqrt-sign", "ML__frac-line", "ML__open", "ML__close"]
+              .some(name => node.classList.contains(name)) &&
+            inkContainsPoint(node)
+          );
+          // Tall accents may paint above the content box: the browser targets
+          // the container there. Resolve their visible mark before clamping Y.
+          const directNode = evt.composedPath().find(node =>
+            node instanceof Element && node.hasAttribute("data-atom-id")
+          );
+          const directAtom = directNode &&
+            mathfield.model.root.children.find(
+              atom => atom.id === directNode.getAttribute("data-atom-id"),
+            );
+          if (!ink && !directAtom?.value) {
+            ink = [...mathfield.field.querySelectorAll(
+              ".ML__visualtex-accent-mark, .ML__sqrt-sign, .ML__frac-line",
+            )].find(inkContainsPoint);
+          }
+          const ownerId = ink?.closest("[data-atom-id]")?.getAttribute("data-atom-id");
+          const owner = ownerId
+            ? mathfield.model.root.children.find(atom => atom.id === ownerId)
+            : null;
+          const pointedOffset = owner
+            ? mathfield.model.offsetOf(owner)
+            : offsetFromPoint(
+                mathfield,
+                selectionAnchorX,
+                selectionAnchorY,
+                { bias: 1 },
+              );
+          const pointedAtom = mathfield.model.at(pointedOffset);
+          if (pointedAtom?.hasChildren) {
+            mathfield.model.setSelection(
+              Math.max(0, mathfield.model.offsetOf(pointedAtom.leftSibling)),
+              pointedOffset,
+            );
+          } else {
+            if (pointedOffset >= 0) mathfield.model.position = pointedOffset;
+            selectGroup(mathfield.model);
+          }
           dirty = "all";
         }
       }
@@ -1205,9 +1728,11 @@ function nearestAtomFromPointRecursive(mathfield, cache, atom, x, y) {
       }
     }
     if (!atom.isMultiline) {
-      for (const child of atom.children) {
-        const r = nearestAtomFromPointRecursive(mathfield, cache, child, x, y);
-        if (r[0] <= result[0]) result = r;
+      for (const branch of ["superscript", "subscript"]) {
+        for (const child of atom.branch(branch) || []) {
+          const r = nearestAtomFromPointRecursive(mathfield, cache, child, x, y);
+          if (r[0] <= result[0]) result = r;
+        }
       }
     }
   } else if (
@@ -1260,6 +1785,12 @@ function offsetFromPoint(mathfield, x, y, options) {
   if (x < bounds.left || y < bounds.top - 8) return 0;
   options = options != null ? options : {};
   options.bias = (_a3 = options.bias) != null ? _a3 : 0;
+  const visualTexPlaceholderHit = mathfield.model.atoms.find((candidate) => {
+    if (candidate.type !== "placeholder" && candidate.type !== "prompt") return false;
+    const candidateBounds = getAtomBounds(mathfield, candidate);
+    return Boolean(candidateBounds && pointInRect(x, y, candidateBounds));
+  });
+  if (visualTexPlaceholderHit != null) return mathfield.model.offsetOf(visualTexPlaceholderHit);
   let atom = nearestAtomFromPoint(mathfield, x, y);
   const parents = [];
   let parent = atom;
@@ -1281,12 +1812,16 @@ function offsetFromPoint(mathfield, x, y, options) {
   let result = mathfield.model.offsetOf(atom);
   if (result < 0) return -1;
   if (atom.leftSibling) {
+    // Screen X is not model order: a backward drag from a denominator into
+    // its numerator can move right. Bias toward the logical selection end.
+    const bias = Number.isFinite(options.anchor)
+      ? Math.sign(result - options.anchor) : options.bias;
     const skipMidlineBias = atom.type === "placeholder" || atom.type === "prompt";
-    if (options.bias === 0 && !skipMidlineBias) {
+    if (bias === 0 && !skipMidlineBias) {
       const bounds2 = getAtomBounds(mathfield, atom);
       if (bounds2 && x < (bounds2.left + bounds2.right) / 2)
         result = mathfield.model.offsetOf(atom.leftSibling);
-    } else if (options.bias < 0)
+    } else if (bias < 0)
       result = mathfield.model.offsetOf(atom.leftSibling);
   }
   return result;
@@ -1401,6 +1936,47 @@ var MathModeEditor = class extends ModeEditor {
     const data = typeof input === "string" ? input : (_b3 = (_a3 = globalThis.MathfieldElement.computeEngine) == null ? void 0 : _a3.box(input).latex) != null ? _b3 : "";
     if (!options.silenceNotifications && !model.contentWillChange({ data, inputType: "insertText" }))
       return false;
+    const visualTexReplacingAll = options.insertionMode === "replaceAll";
+    if (visualTexReplacingAll) {
+      model.mathfield.visualTexPendingStructuralCommandSlot = null;
+      model.mathfield.visualTexPendingPlaceholderSelection = null;
+      if (model.mathfield.visualTexSourceWrapper) visualTexClearSourceWrapper(model.mathfield);
+    }
+    const visualTexInsertionAnchor = model.at(model.position);
+    const visualTexSelectedPlaceholder = model.selectionIsPlaceholder
+      ? model.at(Math.max(model.position, model.anchor))
+      : null;
+    const visualTexPendingCommandSlot = model.mathfield.visualTexPendingStructuralCommandSlot;
+    let visualTexStructuralSlot = null;
+    if (!visualTexReplacingAll && visualTexSelectedPlaceholder?.type === "placeholder") {
+      visualTexStructuralSlot = visualTexFreshStructuralSlot(visualTexSelectedPlaceholder);
+    } else if (!visualTexReplacingAll && visualTexPendingCommandSlot) {
+      visualTexStructuralSlot = visualTexPendingCommandSlot;
+      if (visualTexInsertionAnchor?.parent && visualTexPendingCommandSlot.parent !== visualTexInsertionAnchor.parent) {
+        visualTexStructuralSlot = {
+          ...visualTexPendingCommandSlot,
+          parent: visualTexInsertionAnchor.parent,
+          branch: visualTexInsertionAnchor.parentBranch,
+          after: visualTexInsertionAnchor,
+        };
+      }
+    } else if (!visualTexReplacingAll) {
+      visualTexStructuralSlot = visualTexLiveStructuralSlot(visualTexInsertionAnchor);
+    }
+    model.mathfield.visualTexPendingStructuralCommandSlot = null;
+    const visualTexSourceWrapper = !visualTexReplacingAll ? visualTexSourceWrapperTemplate(input) : null;
+    if (visualTexSourceWrapper) {
+      if (options.insertionMode === "replaceSelection" && !model.selectionIsCollapsed) {
+        const visualTexSourceStart = Math.min(model.position, model.anchor);
+        model.deleteAtoms(range(model.selection));
+        model.position = Math.max(0, Math.min(model.lastOffset, visualTexSourceStart));
+      } else if (options.insertionMode === "insertBefore") {
+        model.collapseSelection("backward");
+      } else if (options.insertionMode === "insertAfter") {
+        model.collapseSelection("forward");
+      }
+      if (visualTexStartSourceWrapper(model, input, visualTexStructuralSlot)) return true;
+    }
     if (!options.insertionMode) options.insertionMode = "replaceSelection";
     if (!options.selectionMode) options.selectionMode = "placeholder";
     if (!options.format) options.format = "auto";
@@ -1415,7 +1991,10 @@ var MathModeEditor = class extends ModeEditor {
     args[0] = options.insertionMode === "replaceAll" ? "" : model.getValue(model.selection, "latex-unstyled");
     if (options.insertionMode === "replaceSelection")
       model.deleteAtoms(range(model.selection));
-    else if (options.insertionMode === "replaceAll") model.deleteAtoms();
+    else if (options.insertionMode === "replaceAll") {
+      model.root = new Atom({ type: "root", mode: "math", body: [] });
+      model.position = 0;
+    }
     else if (options.insertionMode === "insertBefore")
       model.collapseSelection("backward");
     else if (options.insertionMode === "insertAfter")

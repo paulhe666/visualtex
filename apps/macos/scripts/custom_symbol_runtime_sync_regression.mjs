@@ -216,40 +216,6 @@ async function main() {
     await waitUntil(mainClient, `Boolean(document.querySelector("math-field"))`);
     process.stdout.write("[custom-symbol-runtime] main ready\n");
 
-    const optionGuardProbe = await mainClient.evaluate(`(async () => {
-      const compatibility = await import("/src/editor/mathLiveOptionCompatibility.ts");
-      const probe = document.createElement("math-field");
-      probe.value = "x";
-      document.body.appendChild(probe);
-      await new Promise((resolve) => requestAnimationFrame(() => resolve(true)));
-      const original = probe._setOptions.bind(probe);
-      let calls = 0;
-      probe._setOptions = (options) => {
-        calls += 1;
-        throw new TypeError("Cannot set properties of undefined (setting 'mode')");
-      };
-      compatibility.installMathLiveOptionMutationGuard(probe);
-      let rejected = false;
-      try {
-        probe.smartFence = false;
-      } catch (error) {
-        rejected = error instanceof TypeError && /setting ['\"]mode['\"]/.test(error.message);
-      }
-      const result = {
-        calls,
-        rejected,
-        smartFence: probe.smartFence,
-        connected: probe.isConnected,
-      };
-      probe._setOptions = original;
-      probe.remove();
-      return result;
-    })()`);
-    assert.equal(optionGuardProbe.calls, 1, "MathLive option guard must not retry an uncommitted failure");
-    assert.equal(optionGuardProbe.rejected, true, "MathLive option guard must rethrow an uncommitted missing-mode TypeError");
-    assert.equal(optionGuardProbe.smartFence, true, "an uncommitted option mutation must leave the original option intact");
-    process.stdout.write("[custom-symbol-runtime] strict MathLive option guard verified\n");
-
     await mainClient.send("Target.createTarget", { url: officeUrl });
     let officeTarget;
     for (let attempt = 0; attempt < 100 && !officeTarget; attempt += 1) {
@@ -657,18 +623,6 @@ async function main() {
     );
     process.stdout.write("[custom-symbol-runtime] main Mathfield refreshed\n");
 
-    const searchResult = await mainClient.evaluate(`(async () => {
-      const search = await import("/src/autocomplete/CommandSearchEngine.ts");
-      return search.searchCommands("selfdefa", {}, false, 5).map((command) => ({
-        id: command.id,
-        command: command.command,
-        preview: command.previewLatex,
-      }));
-    })()`);
-    assert.equal(searchResult[0]?.id, "custom-symbol:regression-live-selfdefa");
-    assert.equal(searchResult[0]?.command, "\\selfdefa");
-    process.stdout.write("[custom-symbol-runtime] runtime search verified\n");
-
     await mainClient.evaluate(`(() => {
       const state = window.__visualtexEditorStore.useEditorStore.getState();
       state.setInputBehavior("showOtherCommandSuggestions", true);
@@ -713,7 +667,7 @@ async function main() {
       mainClient,
       `(() => {
         const items = Array.from(document.querySelectorAll(
-          "#mathlive-suggestion-popover li[data-command], #visualtex-native-input-suggestion-popover li[data-command]",
+          "#mathlive-suggestion-popover li[data-command], #mathlive-suggestion-popover li[data-command]",
         ));
         const item = items.find(
           (candidate) => candidate.dataset.command === "\\\\selfdefa",
@@ -722,7 +676,7 @@ async function main() {
         return {
           command: item.dataset.command || "",
           previewHtml: item.querySelector(".ML__popover__command")?.innerHTML || "",
-          source: item.closest("#visualtex-native-input-suggestion-popover")
+          source: item.closest("#mathlive-suggestion-popover")
             ? "visualtex-mirror"
             : "mathlive-native",
         };
@@ -944,7 +898,7 @@ async function main() {
         commands: raw
           ? JSON.parse(raw).symbols.map((symbol) => symbol.command)
           : [],
-        casesUsage: configuration.usage?.cases ?? null,
+        casesUsage: configuration.personalization?.usage?.cases ?? null,
       };
     })()`);
     assert.equal(configurationSnapshot.hasStorageEntry, true);

@@ -245,7 +245,6 @@ export function OcrDialog({
   const defaultModel = runtime?.defaultModel ?? DEFAULT_OCR_MODEL;
   const installedModels = runtime?.installedModels ?? [];
   const selectedModelInstalled = installedModels.includes(model);
-  const optionalModelMissing = model !== defaultModel && !selectedModelInstalled;
   const selectedModelRemovable =
     selectedModelInstalled && model !== defaultModel && isTauriEnvironment();
   const activeProvider = providerConfiguration.activeProvider;

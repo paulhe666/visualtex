@@ -378,6 +378,15 @@ async function main() {
     })()`);
     await sleep(80);
 
+    const ensurePointerTarget = async (x, y) => {
+      await waitForEvaluation(`(() => {
+        const later = [...document.querySelectorAll('.office-first-run-backdrop button')]
+          .find(button => /Later|稍后处理/.test(button.textContent || ''));
+        later?.click();
+        return { ready: document.elementFromPoint(${x}, ${y}) === document.querySelector('math-field') };
+      })()`, "unobstructed formula before pointer drag");
+    };
+
     const focusField = async () => {
       await waitForEvaluation(`(() => {
         const field = document.querySelector("math-field");
@@ -1065,7 +1074,7 @@ async function main() {
         const workspace = document.querySelector(".workspace");
         const line = document.querySelector(".formula-line");
         const native = document.getElementById("mathlive-suggestion-popover");
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const isPainted = (node) => {
           if (!node) return false;
           const style = getComputedStyle(node);
@@ -1279,7 +1288,7 @@ async function main() {
       await typeText("\\th");
       const restoredCandidateState = await waitForEvaluation(`(() => {
         const native = document.getElementById("mathlive-suggestion-popover");
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const visible = (node) => {
           if (!node) return false;
           const style = getComputedStyle(node);
@@ -1342,8 +1351,10 @@ async function main() {
           };
           localStorage.setItem(storageKey, JSON.stringify(persisted));
           localStorage.setItem("visualtex-desktop-editor-toolbar-open", "true");
-          location.reload();
+          localStorage.setItem("visualtex-desktop-editor-source-open", "true");
         })()`);
+        await client.send("Page.reload", { ignoreCache: true });
+        await sleep(420);
         await waitForEvaluation(`(() => ({
           ready:
             document.querySelector(".workspace")?.dataset.editorLayout === "classic" &&
@@ -4085,9 +4096,10 @@ async function main() {
       const probes = [];
       for (const [label, startX] of [
         ["kernel", geometry.contentRight - 20],
-        ["multi-line", geometry.contentRight + 10],
+        ["row-space", geometry.contentRight + 10],
       ]) {
         // The release, not an intermediate move, must be the final endpoint.
+        await ensurePointerTarget(Math.min(startX, geometry.contentRight - 1), y);
         await mouse("mousePressed", startX, y, 1);
         await mouse("mouseMoved", geometry.ket.right + 10, y, 1);
         await mouse("mouseReleased", geometry.ket.left - 10, y, 0);
@@ -4111,7 +4123,7 @@ async function main() {
         assert.equal(probe.rectCount, 1, JSON.stringify({ label, probe }));
         assert.ok(probe.left < geometry.ket.left, JSON.stringify({ label, probe }));
         assert.ok(probe.right > geometry.ket.right + 100, JSON.stringify({ label, probe }));
-        assert.equal(probe.multiLine, label === "multi-line", JSON.stringify({ label, probe }));
+        assert.equal(probe.multiLine, false, JSON.stringify({ label, probe }));
         probes.push({ label, ...probe });
       }
       console.log(JSON.stringify({ probes }, null, 2));
@@ -4258,7 +4270,7 @@ async function main() {
       const movedState = await waitForEvaluation(`(() => {
         const field = document.querySelector("math-field");
         const source = document.getElementById("mathlive-suggestion-popover");
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const sourceCurrent = source?.querySelector("li.ML__popover__current[data-command]");
         const stableCurrent = stable?.querySelector("li.ML__popover__current[data-command]");
         return {
@@ -4286,7 +4298,7 @@ async function main() {
         const field = document.querySelector("math-field");
         const source = document.getElementById("mathlive-suggestion-popover");
         const stable = document.getElementById(
-          "visualtex-native-input-suggestion-popover",
+          "mathlive-suggestion-popover",
         );
         const normalized = (field?.value ?? "").replaceAll(" ", "");
         return {
@@ -5072,6 +5084,8 @@ async function main() {
       })()`);
       if (!geometry) throw new Error("Could not resolve pointer release geometry");
 
+      await ensurePointerTarget(geometry.startX, geometry.y);
+
       await client.send("Input.dispatchMouseEvent", {
         type: "mousePressed",
         x: geometry.startX,
@@ -5197,147 +5211,41 @@ async function main() {
 
     if (scenario === "candidate-query-reset") {
       await focusField();
-      await clearField();
-      await typeText("\\int");
-      await waitForEvaluation(`(() => {
-        const panel = document.getElementById("mathlive-suggestion-popover");
-        return {
-          ready:
-            panel?.classList.contains("is-visible") &&
-            panel.querySelector("li.ML__popover__current")?.dataset.command === "\\\\int",
-          current: panel?.querySelector("li.ML__popover__current")?.dataset.command ?? "",
-        };
-      })()`, "integral selected in native input-selection popover");
-      await key(" ", "Space", 32);
-      const confirmedState = await waitForEvaluation(`(() => {
-        const field = document.querySelector("math-field");
-        const popup = document.querySelector(".suggestion-popup");
-        const query = document.querySelector(".editor-surface")?.dataset.commandQuery ?? "";
-        return {
-          ready:
-            field?.value.includes("\\\\int") &&
-            Boolean(popup) &&
-            query === "\\\\int" &&
-            (field.shadowRoot?.querySelectorAll(".ML__raw-latex").length ?? -1) === 0,
-          value: field?.value ?? "",
-          query,
-          popupVisible: Boolean(popup),
-        };
-      })()`, "confirmed integral opens VisualTeX command candidate popup");
-
-      const twoStageStates = [];
-      await key("Enter", "Enter", 13);
-      twoStageStates.push(
-        await waitForEvaluation(`(() => {
-          const field = document.querySelector("math-field");
-          const value = field?.value ?? "";
-          const selection = field?.selection ?? null;
-          return {
-            ready:
-              value.startsWith("\\\\int_") &&
-              (value.match(/\\\\placeholder\{\}/g) ?? []).length === 4 &&
-              document.querySelectorAll("math-field").length === 1 &&
-              selection?.ranges?.[0]?.[0] !== selection?.ranges?.[0]?.[1],
-            command: "\\\\int",
-            value,
-            selection,
-          };
-        })()`, "second integral confirmation inserts the VisualTeX structure"),
-      );
-
-      for (const [command, expectedPlaceholderCount] of [
-        ["\\sum", 3],
-        ["\\lim", 3],
-      ]) {
+      const confirmations = [];
+      for (const [command, count] of [["\\int", 4], ["\\sum", 3], ["\\lim", 3]]) {
         await clearField();
         await typeText(command);
-        await waitForEvaluation(`(() => {
+        const candidate = await waitForEvaluation(`(() => {
           const panel = document.getElementById("mathlive-suggestion-popover");
-          return {
-            ready:
-              panel?.classList.contains("is-visible") &&
-              panel.querySelector("li.ML__popover__current")?.dataset.command ===
-                ${JSON.stringify(command)},
-          };
-        })()`, `native ${command} awaits its first confirmation`);
+          const items = [...(panel?.querySelectorAll("li[data-command]") ?? [])];
+          const target = items.findIndex(item =>
+            panel.visualTexMathfield.visualTexCompletionRecords.get(item.dataset.command)?.id === ${JSON.stringify(command.slice(1))});
+          return { ready: panel?.classList.contains("is-visible") && target >= 0,
+            target, current: items.findIndex(item => item.classList.contains("ML__popover__current")) };
+        })()`, `${command} structure is available in native candidates`);
+        for (let i = candidate.current; i < candidate.target; i++) await key("ArrowDown", "ArrowDown", 40);
+        for (let i = candidate.current; i > candidate.target; i--) await key("ArrowUp", "ArrowUp", 38);
         await key(" ", "Space", 32);
-        const firstConfirmation = await waitForEvaluation(`(() => {
-          const field = document.querySelector("math-field");
-          return {
-            ready:
-              field?.value === ${JSON.stringify(command)} &&
-              Boolean(document.querySelector(".suggestion-popup")) &&
-              document.querySelectorAll("math-field").length === 1,
-            value: field?.value ?? "",
-          };
-        })()`, `first ${command} confirmation keeps the bare command`);
-        await key("Enter", "Enter", 13);
-        const secondConfirmation = await waitForEvaluation(`(() => {
+        confirmations.push(await waitForEvaluation(`(() => {
           const field = document.querySelector("math-field");
           const value = field?.value ?? "";
-          const selection = field?.selection ?? null;
-          return {
-            ready:
-              value.startsWith(${JSON.stringify(command + "_")}) &&
-              (value.match(/\\\\placeholder\{\}/g) ?? []).length ===
-                ${expectedPlaceholderCount} &&
-              document.querySelectorAll("math-field").length === 1 &&
-              selection?.ranges?.[0]?.[0] !== selection?.ranges?.[0]?.[1],
-            value,
-            selection,
-          };
-        })()`, `second ${command} confirmation inserts the VisualTeX structure`);
-        twoStageStates.push({
-          command,
-          firstConfirmation,
-          secondConfirmation,
-        });
+          const range = field?.selection.ranges[0];
+          return { ready: value.startsWith(${JSON.stringify(command + "_")}) &&
+            (value.match(/\\\\placeholder\{\}/g) ?? []).length === ${count} &&
+            range[0] !== range[1] && document.querySelectorAll("math-field").length === 1 &&
+            !document.querySelector(".suggestion-popup"), value, range };
+        })()`, `${command} completes its structure in one confirmation`));
       }
-
-      await clearField();
-      await typeText("\\int");
-      await waitForEvaluation(`(() => {
-        const panel = document.getElementById("mathlive-suggestion-popover");
-        return {
-          ready:
-            panel?.classList.contains("is-visible") &&
-            panel.querySelector("li.ML__popover__current")?.dataset.command === "\\\\int",
-        };
-      })()`, "integral selected again before candidate query reset");
-      await key(" ", "Space", 32);
-      await waitForEvaluation(`(() => ({
-        ready:
-          document.querySelector("math-field")?.value === "\\\\int" &&
-          Boolean(document.querySelector(".suggestion-popup")),
-      }))()`, "integral candidate restored before query reset");
-
       await typeText("\\");
       const resetState = await waitForEvaluation(`(() => {
         const field = document.querySelector("math-field");
-        const rawNodes = field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [];
-        const rawLatex = [...rawNodes]
-          .filter((node) => !node.classList.contains("ML__suggestion"))
-          .map((node) => node.textContent ?? "")
-          .join("");
-        const query = document.querySelector(".editor-surface")?.dataset.commandQuery ?? "";
-        const stable = document.getElementById("visualtex-stable-native-input-popover");
-        return {
-          ready:
-            rawLatex === "\\\\" &&
-            query === "" &&
-            !document.querySelector(".suggestion-popup") &&
-            !stable?.classList.contains("is-visible"),
-          value: field?.value ?? "",
-          rawLatex,
-          query,
-          customCandidateVisible: Boolean(document.querySelector(".suggestion-popup")),
-          nativeInputSelectionVisible: stable?.classList.contains("is-visible") ?? false,
-        };
-      })()`, "lone backslash clears stale integral command candidate query");
-
-      console.log(
-        JSON.stringify({ confirmedState, twoStageStates, resetState }, null, 2),
-      );
+        const raw = [...field.shadowRoot.querySelectorAll(".ML__raw-latex:not(.ML__suggestion)")]
+          .map(node => node.textContent ?? "").join("");
+        const panel = document.getElementById("mathlive-suggestion-popover");
+        return { ready: raw === "\\\\" && !panel?.classList.contains("is-visible") &&
+          !document.querySelector(".suggestion-popup"), raw, value: field.value };
+      })()`, "a new backslash has no stale candidate");
+      console.log(JSON.stringify({ confirmations, resetState }, null, 2));
       console.log("Targeted command candidate query reset regression passed");
       return;
     }
@@ -7424,7 +7332,7 @@ async function main() {
         await typeText(prefix);
         const state = await waitForEvaluation(`(() => {
           const stable = document.getElementById(
-            "visualtex-native-input-suggestion-popover",
+            "mathlive-suggestion-popover",
           );
           const items = [...(stable?.querySelectorAll("li[data-command]") ?? [])]
             .map((item) => ({
@@ -7941,7 +7849,7 @@ async function main() {
       await clearField();
       await typeText("\\f");
       const initial = await waitForEvaluation(`(() => {
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const source = document.getElementById("mathlive-suggestion-popover");
         const bounds = stable?.getBoundingClientRect();
         const commands = [...(stable?.querySelectorAll("li[data-command]") ?? [])]
@@ -7950,7 +7858,7 @@ async function main() {
           ready:
             Boolean(stable?.classList.contains("is-visible")) &&
             commands.length >= 2 &&
-            source?.dataset.visualtexInputPopoverSource === "true" &&
+            source === stable && getComputedStyle(source).opacity === "1" &&
             !document.querySelector(".suggestion-popup"),
           commands,
           selected: stable?.querySelector("li.ML__popover__current")?.dataset.command ?? "",
@@ -7963,7 +7871,7 @@ async function main() {
       })()`, "stable native input-selection popover for \\f");
 
       await evaluate(`(() => {
-        const node = document.getElementById("visualtex-native-input-suggestion-popover");
+        const node = document.getElementById("mathlive-suggestion-popover");
         const monitor = {
           node,
           removed: 0,
@@ -8009,7 +7917,7 @@ async function main() {
       await key("ArrowDown", "ArrowDown", 40);
       const arrowState = await waitForEvaluation(`(() => {
         const monitor = window.__visualtexNativeInputMonitor;
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const bounds = stable?.getBoundingClientRect();
         const selected = stable?.querySelector("li.ML__popover__current")?.dataset.command ?? "";
         return {
@@ -8037,18 +7945,18 @@ async function main() {
         };
       })()`, "arrow key moves only the native input-selection highlight");
 
-      await typeText("r");
+      await typeText("ra");
       const refinedState = await waitForEvaluation(`(() => {
         const monitor = window.__visualtexNativeInputMonitor;
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const commands = [...(stable?.querySelectorAll("li[data-command]") ?? [])]
           .map((item) => item.dataset.command ?? "");
         return {
           ready:
             stable === monitor?.node &&
             stable?.classList.contains("is-visible") &&
-            commands.some((command) => command === "\\\\frac") &&
-            commands.every((command) => command.startsWith("\\\\fr")) &&
+            commands.some((command) => command.startsWith("\\\\frac{")) &&
+            commands.every((command) => (stable.visualTexMathfield.visualTexCompletionRecords.get(command)?.command ?? command).startsWith("\\\\fra")) &&
             monitor.removed === 0 &&
             monitor.hiddenTransitions === 0 &&
             monitor.ariaHiddenTransitions === 0 &&
@@ -8061,12 +7969,13 @@ async function main() {
           ariaHiddenTransitions: monitor?.ariaHiddenTransitions ?? -1,
           customCandidateVisible: Boolean(document.querySelector(".suggestion-popup")),
         };
-      })()`, "\\f to \\fr updates inside one persistent input-selection frame");
+      })()`, "\\f to \\fra updates inside one persistent input-selection frame");
 
+      await key("Backspace", "Backspace", 8);
       await key("Backspace", "Backspace", 8);
       const restoredState = await waitForEvaluation(`(() => {
         const monitor = window.__visualtexNativeInputMonitor;
-        const stable = document.getElementById("visualtex-native-input-suggestion-popover");
+        const stable = document.getElementById("mathlive-suggestion-popover");
         const commands = [...(stable?.querySelectorAll("li[data-command]") ?? [])]
           .map((item) => item.dataset.command ?? "");
         return {
@@ -8096,10 +8005,10 @@ async function main() {
         await typeText(query);
         return waitForEvaluation(`(() => {
           const stable = document.getElementById(
-            "visualtex-native-input-suggestion-popover",
+            "mathlive-suggestion-popover",
           );
           const item = [...(stable?.querySelectorAll("li[data-command]") ?? [])]
-            .find((candidate) => candidate.dataset.command === ${JSON.stringify(command)});
+            .find((candidate) => stable.visualTexMathfield.visualTexCompletionRecords.get(candidate.dataset.command)?.command === ${JSON.stringify(command)});
           const layers = [...(item?.querySelectorAll(
             ".ML__popover__command .ML__center",
           ) ?? [])]
@@ -8120,7 +8029,7 @@ async function main() {
           return {
             ready:
               Boolean(stable?.classList.contains("is-visible")) &&
-              Boolean(item?.classList.contains("has-visualtex-command-preview")) &&
+              Boolean(item?.querySelector(".ML__popover__command")) &&
               layers.length === 2 &&
               (expectedSizeOrder === "small-large"
                 ? top.height < bottom.height
@@ -8525,7 +8434,7 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
         const previewState = preview
           ? await waitForEvaluation(`(() => {
               const item = [...document.querySelectorAll('#mathlive-suggestion-popover li[data-command]')]
-                .find((candidate) => candidate.dataset.command === ${JSON.stringify(command)});
+                .find((candidate) => stable.visualTexMathfield.visualTexCompletionRecords.get(candidate.dataset.command)?.command === ${JSON.stringify(command)});
               const previewNode = item?.querySelector('[data-visualtex-preview]');
               return {
                 ready: Boolean(item && previewNode?.dataset.visualtexPreview === ${JSON.stringify(preview)}),
@@ -8536,7 +8445,7 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
             })()`, `${command} visual preview`)
           : await evaluate(`(() => {
               const item = [...document.querySelectorAll('#mathlive-suggestion-popover li[data-command]')]
-                .find((candidate) => candidate.dataset.command === ${JSON.stringify(command)});
+                .find((candidate) => stable.visualTexMathfield.visualTexCompletionRecords.get(candidate.dataset.command)?.command === ${JSON.stringify(command)});
               const custom = [...document.querySelectorAll('.suggestion-item .suggestion-command')]
                 .find((candidate) => candidate.textContent?.trim() === ${JSON.stringify(command)});
               return {

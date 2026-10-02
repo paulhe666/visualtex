@@ -1152,7 +1152,7 @@ var BoxAtom = class _BoxAtom extends Atom {
       "em"
     );
     if (this.caret) result.caret = this.caret;
-    return this.attachSupsub(parentContext, { base: result });
+    return this.bind(parentContext, this.attachSupsub(parentContext, { base: result }));
   }
   _serialize(options) {
     if (!options.skipStyles) return super._serialize(options);

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { searchCommands } from "../src/autocomplete/CommandSearchEngine.ts";
+import { customSymbolCommands } from "../src/autocomplete/runtimeCommandRegistry.ts";
 import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
 import {
   CUSTOM_SYMBOL_STORAGE_BACKUP_INDEX_KEY,
@@ -77,7 +77,7 @@ try {
   assert.equal(unknownSourceDraft.valid, false);
   assert.equal(unknownSourceDraft.error, "unknown-command");
 
-  const suggestions = searchCommands("selfdefa", {}, false, 8);
+  const suggestions = customSymbolCommands().filter(command => command.command === "\\selfdefa");
   assert.equal(suggestions[0]?.command, "\\selfdefa");
   assert.equal(suggestions[0]?.id, "custom-symbol:regression-selfdefa");
 
@@ -195,7 +195,7 @@ try {
   assert.equal(deletedSourceDraft.valid, false);
   assert.equal(deletedSourceDraft.error, "unknown-command");
   assert.equal(
-    searchCommands("selfdefa", {}, false, 8).some(
+    customSymbolCommands().filter(command => command.command === "\\selfdefa").some(
       (command) => command.command === "\\selfdefa",
     ),
     false,
@@ -405,7 +405,7 @@ try {
   );
 
   console.log(
-    "Custom symbol registry validation, persistence, runtime command search, SVG roles, fallback, update, and delete regression passed",
+    "Custom symbol registry validation, persistence, runtime command catalog, SVG roles, fallback, update, and delete regression passed",
   );
 } finally {
   replaceCustomSymbolLibrary({ version: 1, symbols: [] });

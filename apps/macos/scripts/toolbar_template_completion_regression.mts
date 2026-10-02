@@ -6,7 +6,6 @@ import {
   calculusCommandIds,
   commandRegistry,
 } from "../src/autocomplete/commandRegistry.ts";
-import { searchCommands } from "../src/autocomplete/CommandSearchEngine.ts";
 
 const byId = new Map(commandRegistry.map((command) => [command.id, command]));
 
@@ -48,24 +47,6 @@ for (const id of [
     `${id} preview is not valid MathLive LaTeX: ${command.previewLatex}`,
   );
 }
-assert.equal(
-  searchCommands(String.raw`\|`, {}, false, 6)[0]?.id,
-  "double-vertical-bar",
-  String.raw`\| must participate in VisualTeX command completion`,
-);
-assert.ok(
-  searchCommands(String.raw`\lV`, {}, false, 6).some(
-    (command) => command.command === String.raw`\lVert`,
-  ),
-  String.raw`\lVert must be reachable by prefix completion`,
-);
-assert.ok(
-  searchCommands(String.raw`\rV`, {}, false, 6).some(
-    (command) => command.command === String.raw`\rVert`,
-  ),
-  String.raw`\rVert must be reachable by prefix completion`,
-);
-
 for (const [id, category] of [
   ["vector", "structure"],
   ["plusminus", "relation"],

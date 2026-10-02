@@ -965,14 +965,29 @@ var ExtensibleSymbolAtom = class _ExtensibleSymbolAtom extends Atom {
   render(context) {
     var _a3;
     const large = context.isDisplayStyle && this.value !== "\\smallint";
-    const base = new Box(this.value, {
+    const visualTexIntegralCommand = typeof this.command === "string" ? this.command.slice(1) : "";
+    const visualTexIntegralDefinition = VISUALTEX_RARE_INTEGRAL_GLYPHS[visualTexIntegralCommand];
+    const visualTexIntegralGlyph = visualTexIntegralDefinition == null ? void 0 : visualTexIntegralDefinition[large ? "large" : "small"];
+    const visualTexContourValue = this.value === "\u222F" ? "\u222C" : this.value === "\u2230" ? "\u222D" : this.value;
+    const visualTexContourClass = visualTexIntegralGlyph ? " visualtex-integral-svg" : this.value === "\u222F" ? " visualtex-oiint" : this.value === "\u2230" ? " visualtex-oiiint" : "";
+    const base = new Box(visualTexIntegralGlyph ? "" : visualTexContourValue, {
       fontFamily: large ? "Size2-Regular" : "Size1-Regular",
-      classes: "ML__op-symbol " + (large ? "ML__large-op" : "ML__small-op"),
+      classes: "ML__op-symbol " + (large ? "ML__large-op" : "ML__small-op") + visualTexContourClass,
       type: "op",
       maxFontSize: context.scalingFactor,
       isSelected: this.isSelected
     });
     if (!base) return null;
+    if (visualTexIntegralGlyph) {
+      const units = VISUALTEX_RARE_INTEGRAL_UNITS_PER_EM;
+      base.width = visualTexIntegralGlyph.advanceWidth / units;
+      base.height = visualTexIntegralGlyph.height / units;
+      base.depth = visualTexIntegralGlyph.depth / units;
+      base.italic = visualTexIntegralGlyph.italicCorrection / units;
+      base.skew = 0;
+      base.svgBody = `visualtex-integral:${visualTexIntegralCommand}:${large ? "large" : "small"}`;
+      base.setStyle("display", "inline-block");
+    }
     base.right = base.italic;
     const baseShift = (base.height - base.depth) / 2 - AXIS_HEIGHT * context.scalingFactor;
     const slant = base.italic;

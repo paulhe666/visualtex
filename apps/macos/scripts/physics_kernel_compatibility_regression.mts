@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mathLiveKernelData } from "../vite.mathlive.ts";
 import { convertLatexToMarkup, validateLatex } from "mathlive/ssr";
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../src/math/coreLatexAliases.ts";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../src/math/mathLiveCompatibilityMacros.ts";
@@ -10,7 +10,6 @@ import {
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../src/math/physicsKernelMacros.ts";
 import { physicsToolbarCommands } from "../src/autocomplete/physicsToolbarCommands.ts";
 import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
-import { patchVisualTexMathLiveCoreCompatibility } from "../vite.mathliveCoreCompatibility.ts";
 
 const forbidden = new Set([
   // physics.sty replaces the meanings of these existing commands. \qty is
@@ -108,15 +107,12 @@ assert.equal(
   "Matrix validation masked an unknown command inside a cell",
 );
 
-const originalKernel = readFileSync("node_modules/mathlive/mathlive.mjs", "utf8");
-const patchedKernel = patchVisualTexMathLiveCoreCompatibility(originalKernel);
-const addedMacros = patchedKernel.slice(
-  patchedKernel.indexOf("var DEFAULT_MACROS = {") + "var DEFAULT_MACROS = {".length,
-  patchedKernel.indexOf("\n  \"strut\":", patchedKernel.indexOf("var DEFAULT_MACROS = {")),
-);
+const { macros } = mathLiveKernelData();
 for (const macro of VISUALTEX_PHYSICS_KERNEL_MACROS) {
-  assert.ok(addedMacros.includes(`${JSON.stringify(macro.name)}: { def:`), `\\${macro.name} missing from the kernel`);
+  assert.deepEqual(macros[macro.name], {
+    def: macro.def, args: macro.args, expand: false, captureSelection: false,
+  });
 }
-assert.doesNotMatch(addedMacros, /"(?:div|qty|Re|Im)":/, "A conflicting command entered the kernel");
+for (const name of forbidden) assert.equal(name in macros, false);
 
 console.log(`Physics kernel compatibility passed (${seen.size} non-conflicting command names).`);

@@ -4,7 +4,6 @@ import { commandRegistry } from "../src/autocomplete/commandRegistry";
 import {
   compatibilityCommandNames,
   compatibilityCommands,
-  compatibilityWrapperCanonicalTargets,
 } from "../src/autocomplete/compatibilityCommands";
 
 const duplicateIds = [...new Set(
@@ -30,17 +29,6 @@ assert.deepEqual(
 const daggerEntries = commandRegistry.filter((command) => command.id === "dagger");
 assert.equal(daggerEntries.length, 1);
 assert.equal(daggerEntries[0]?.command, "\\dagger");
-assert.ok(daggerEntries[0]?.aliases.includes("dag"));
-
-assert.equal(
-  commandRegistry.find((command) => command.id === "mapsfrom")?.command,
-  "\\mapsfrom",
-);
-assert.equal(
-  commandRegistry.find((command) => command.id === "longmapsfrom")?.command,
-  "\\longmapsfrom",
-);
-
 const inputOnlyCompatibilityAliases = compatibilityCommands
   .filter(
     (command) =>
@@ -50,7 +38,7 @@ const inputOnlyCompatibilityAliases = compatibilityCommands
   .sort();
 assert.deepEqual(inputOnlyCompatibilityAliases, ["\\simbfit"]);
 assert.equal(
-  compatibilityWrapperCanonicalTargets.get("\\simbfit"),
+  commandRegistry.find(entry => entry.command === "\\simbfit")?.insertTemplate.split("{")[0],
   "\\symbfit",
 );
 

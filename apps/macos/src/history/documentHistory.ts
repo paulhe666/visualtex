@@ -1,13 +1,15 @@
+import type { HistoryManager } from "./HistoryManager";
+import { cloneSelectionMap } from "./documentSnapshot";
 import type { FormulaLine } from "../types/formula";
 import { createUuid } from "../runtime/browserCompatibility";
 import {
   cloneFormulaLines,
   createFormulaLine,
-  normalizeFormulaLines,
   useEditorStore,
 } from "../stores/editorStore";
 import type {
   DocumentSnapshot,
+  FormulaEditInput,
   HistoryEntry,
   MathSelectionSnapshot,
   ReplayDirection,
@@ -17,20 +19,7 @@ export interface FocusRestoreTarget {
   lineId: string;
   latex: string;
   selection: MathSelectionSnapshot | null;
-}
-
-export function cloneSelectionMap(
-  selectionByLineId: Record<string, MathSelectionSnapshot>,
-): Record<string, MathSelectionSnapshot> {
-  return Object.fromEntries(
-    Object.entries(selectionByLineId).map(([lineId, selection]) => [
-      lineId,
-      {
-        ranges: selection.ranges.map(([start, end]) => [start, end]),
-        direction: selection.direction,
-      },
-    ]),
-  );
+  document?: DocumentSnapshot;
 }
 
 export function getEditorDocumentSnapshot(
@@ -46,28 +35,24 @@ export function getEditorDocumentSnapshot(
   };
 }
 
-export function documentSnapshotsEquivalent(
-  left: DocumentSnapshot,
-  right: DocumentSnapshot,
-): boolean {
-  return (
-    left.title === right.title &&
-    left.activeLineId === right.activeLineId &&
-    (left.formulaAlignment ?? "left") ===
-      (right.formulaAlignment ?? "left") &&
-    left.lines.length === right.lines.length &&
-    left.lines.every((line, index) => {
-      const rightLine = right.lines[index];
-      return (
-        line.id === rightLine?.id &&
-        line.latex === rightLine?.latex &&
-        (line.mode === "inline" ? "inline" : "display") ===
-          (rightLine?.mode === "inline" ? "inline" : "display") &&
-        (line.displayStyle ?? "default") ===
-          (rightLine?.displayStyle ?? "default")
-      );
-    })
-  );
+// All field events and explicit commands commit the same normalized document
+// value. Selection metadata belongs to history, not to the persisted store.
+export function commitFormulaEdit(
+  history: HistoryManager,
+  edit: FormulaEditInput,
+  mode: "grouped" | "discrete" | "silent" = "grouped",
+) {
+  const state = useEditorStore.getState();
+  const line = state.lines.find(item => item.id === edit.lineId);
+  if (!line) return;
+  const beforeActiveLineId = state.activeLineId;
+  state.replaceFormulaLine(edit.lineId, edit.afterLatex, edit.lineId);
+  const afterLatex = useEditorStore.getState().lines.find(item => item.id === edit.lineId)!.latex;
+  if (mode === "silent" || history.getState().isReplaying || line.latex === afterLatex) return;
+  const committed = { ...edit, beforeLatex: line.latex, afterLatex,
+    beforeActiveLineId, afterActiveLineId: edit.lineId };
+  if (mode === "grouped") history.recordFormulaEdit(committed);
+  else history.push({ ...committed, type: "replace-formula", timestamp: edit.timestamp ?? Date.now() });
 }
 
 export function reconcileFormulaLines(
@@ -115,6 +100,7 @@ function targetFromSnapshot(snapshot: DocumentSnapshot): FocusRestoreTarget | nu
     lineId,
     latex: line.latex,
     selection: snapshot.selectionByLineId[lineId] ?? null,
+    document: snapshot,
   };
 }
 
@@ -134,8 +120,7 @@ export function applyHistoryEntryToEditor(
       const selection = undoing
         ? entry.beforeSelection
         : entry.afterSelection;
-      store.replaceFormulaLine(entry.lineId, latex);
-      store.setActiveLineId(activeLineId ?? entry.lineId);
+      store.replaceFormulaLine(entry.lineId, latex, activeLineId ?? entry.lineId);
       return {
         lineId: activeLineId ?? entry.lineId,
         latex:
@@ -147,65 +132,21 @@ export function applyHistoryEntryToEditor(
       };
     }
 
-    case "add-line": {
-      if (undoing) {
-        store.removeFormulaLine(entry.line.id);
-        store.setActiveLineId(entry.beforeActiveLineId);
-        const targetLineId =
-          entry.beforeActiveLineId ?? useEditorStore.getState().lines[0]?.id;
-        if (!targetLineId) return null;
-        const line = useEditorStore
-          .getState()
-          .lines.find((item) => item.id === targetLineId);
-        return line
-          ? {
-              lineId: targetLineId,
-              latex: line.latex,
-              selection: entry.beforeSelection,
-            }
-          : null;
-      }
-
-      store.insertFormulaLine(entry.line, entry.index);
-      store.setActiveLineId(entry.afterActiveLineId ?? entry.line.id);
-      return {
-        lineId: entry.afterActiveLineId ?? entry.line.id,
-        latex: entry.line.latex,
-        selection: entry.afterSelection,
-      };
-    }
-
+    case "add-line":
     case "remove-line": {
-      if (undoing) {
-        store.insertFormulaLine(entry.line, entry.index);
-        store.setActiveLineId(entry.beforeActiveLineId ?? entry.line.id);
-        return {
-          lineId: entry.beforeActiveLineId ?? entry.line.id,
-          latex:
-            useEditorStore
-              .getState()
-              .lines.find(
-                (line) => line.id === (entry.beforeActiveLineId ?? entry.line.id),
-              )?.latex ?? entry.line.latex,
-          selection: entry.beforeSelection,
-        };
-      }
-
-      store.removeFormulaLine(entry.line.id);
-      store.setActiveLineId(entry.afterActiveLineId);
-      const targetLineId =
-        entry.afterActiveLineId ?? useEditorStore.getState().lines[0]?.id;
-      if (!targetLineId) return null;
-      const line = useEditorStore
-        .getState()
-        .lines.find((item) => item.id === targetLineId);
-      return line
-        ? {
-            lineId: targetLineId,
-            latex: line.latex,
-            selection: entry.afterSelection,
-          }
-        : null;
+      const inserting = (entry.type === "add-line") !== undoing;
+      const lines = store.lines.filter(line => line.id !== entry.line.id);
+      if (inserting) lines.splice(Math.max(0, Math.min(entry.index, lines.length)), 0, entry.line);
+      const activeLineId = (undoing ? entry.beforeActiveLineId : entry.afterActiveLineId)
+        ?? (inserting ? entry.line.id : null);
+      store.replaceDocumentState({ ...getEditorDocumentSnapshot(), lines, activeLineId });
+      const next = useEditorStore.getState();
+      const line = next.lines.find(item => item.id === next.activeLineId);
+      return line ? {
+        lineId: line.id,
+        latex: line.latex,
+        selection: undoing ? entry.beforeSelection : entry.afterSelection,
+      } : null;
     }
 
     case "replace-document": {

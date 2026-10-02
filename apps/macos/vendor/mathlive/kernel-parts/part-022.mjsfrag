@@ -31,6 +31,10 @@
       options
     );
     if (!newAtoms) return false;
+    // Persistent typing format is applied only to genuinely new glyphs.
+    // A toolbar wrapper that reuses #0 keeps the selected content untouched.
+    if (!usedArg && !options.visualTexPreserveStyle)
+      visualTexApplyPersistentTypingStyle(model.mathfield, newAtoms);
     const insertingFraction = newAtoms.length === 1 && newAtoms[0].type === "genfrac";
     const atomAtPos = model.at(model.position);
     if (insertingFraction && implicitArgumentOffset >= 0 && typeof model.mathfield.options.isImplicitFunction === "function" && atomAtPos && model.mathfield.options.isImplicitFunction(atomAtPos.command)) {
@@ -80,21 +84,49 @@
         }
       }
       if (format === "latex" && typeof input === "string") {
-        if ((parent == null ? void 0 : parent.type) === "root" && hadEmptyBody && !usedArg)
+        // A typed glyph can inherit a variant from the placeholder it replaces.
+        // Raw input is then no longer the full LaTeX serialization.
+        const visualTexPersistentStyledInsertion = newAtoms.some((atom) =>
+          Boolean(atom.visualTexPersistentTypingApplied));
+        if ((parent == null ? void 0 : parent.type) === "root" && hadEmptyBody && !usedArg &&
+            (!options.style || Object.keys(options.style).length === 0) &&
+            !visualTexPersistentStyledInsertion)
           parent.verbatimLatex = input;
       }
     }
     model.silenceNotifications = contentWasChanging;
     const lastNewAtom = newAtoms[newAtoms.length - 1];
+    if (visualTexStructuralSlot) {
+      for (const visualTexInserted of newAtoms) visualTexInserted.visualTexStructuralSlot = visualTexStructuralSlot;
+    }
     if (options.selectionMode === "placeholder") {
       let placeholder;
-      if (newAtoms.length === 1 && newAtoms[0].type === "genfrac") {
+      const wrapper = newAtoms.find(atom => atom.type === "overunder" &&
+        ["\\overset", "\\underset", "\\overunderset", "\\stackrel", "\\stackbin"].includes(atom.command));
+      if (wrapper) {
+        const branch = wrapper.branch(wrapper.command === "\\underset" ? "below" : "above") || [];
+        placeholder = branch.flatMap(atom => [atom, ...atom.children])
+          .find(atom => atom.type === "placeholder" || atom.type === "prompt");
+      }
+      if (!placeholder && newAtoms.length === 1 && newAtoms[0].type === "genfrac") {
         const numerator = newAtoms[0].branch("above");
         placeholder = numerator == null ? void 0 : numerator.find((x) => x.type === "placeholder");
         if (!placeholder) {
           const denominator = newAtoms[0].branch("below");
           placeholder = denominator == null ? void 0 : denominator.find((x) => x.type === "placeholder");
         }
+      }
+      if (!placeholder) {
+        const visualTexBoundedOperator = newAtoms.flatMap((x) => [x, ...x.children]).find((x) => {
+          if (!visualTexIsBoundedOperatorParent(x)) return false;
+          const lower = x.branch("subscript");
+          const upper = x.branch("superscript");
+          const lowerPlaceholder = lower == null ? void 0 : lower.flatMap((atom) => [atom, ...atom.children]).find((atom) => atom.type === "placeholder" || atom.type === "prompt");
+          const upperPlaceholder = upper == null ? void 0 : upper.flatMap((atom) => [atom, ...atom.children]).find((atom) => atom.type === "placeholder" || atom.type === "prompt");
+          return Boolean(lowerPlaceholder && upperPlaceholder);
+        });
+        const lower = visualTexBoundedOperator == null ? void 0 : visualTexBoundedOperator.branch("subscript");
+        placeholder = lower == null ? void 0 : lower.flatMap((atom) => [atom, ...atom.children]).find((atom) => atom.type === "placeholder" || atom.type === "prompt");
       }
       if (!placeholder) {
         placeholder = newAtoms.flatMap((x) => [x, ...x.children]).find((x) => x.type === "placeholder");
@@ -120,6 +152,11 @@
       if (lastNewAtom) model.position = model.offsetOf(lastNewAtom);
     } else if (options.selectionMode === "item")
       model.setSelection(model.anchor, model.offsetOf(lastNewAtom));
+    if (visualTexStructuralSlot &&
+        !model.selectionIsPlaceholder &&
+        !model.mathfield.visualTexCompositionCommit &&
+        !model.mathfield.visualTexSourceWrapper)
+      visualTexAutoExitAfterComposition(model.mathfield, visualTexStructuralSlot);
     model.contentDidChange({ data, inputType: "insertText" });
     model.silenceNotifications = silenceNotifications;
     return true;
@@ -354,6 +391,7 @@ var TextModeEditor = class extends ModeEditor {
     const newAtoms = convertStringToAtoms2(text, model.mathfield.context);
     applyStyleToUnstyledAtoms(newAtoms, options.style);
     if (!newAtoms) return false;
+    visualTexApplyPersistentTypingStyle(model.mathfield, newAtoms);
     const cursor = model.at(model.position);
     const lastNewAtom = cursor.parent.addChildrenAfter(newAtoms, cursor);
     model.silenceNotifications = contentWasChanging;

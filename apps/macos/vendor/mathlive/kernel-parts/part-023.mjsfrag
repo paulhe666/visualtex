@@ -554,7 +554,7 @@ function acceptContextMenu(host) {
 var APPLY_FUNCTION = "<mo>&#x2061;</mo>";
 var INVISIBLE_TIMES = "<mo>&#8290;</mo>";
 function xmlEscape(string) {
-  return string.replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return string.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 function makeID(id, options) {
   if (!id || !options.generateID) return "";
@@ -730,7 +730,7 @@ function scanText(stream, final, options) {
     mathML = `<mtext ${makeID(
       stream.atoms[initial].id,
       options
-    )}>${mathML}</mtext>`;
+    )}>${xmlEscape(mathML)}</mtext>`;
     if (superscript < 0 && isSuperscriptAtom(stream)) {
       superscript = stream.index;
       stream.index += 1;
@@ -958,7 +958,7 @@ function toString2(atoms) {
 function atomToMathML(atom, options) {
   var _a3, _b3, _c2, _d2, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
   if (atom.mode === "text")
-    return `<mi${makeID(atom.id, options)}>${atom.value}</mi>`;
+    return `<mi${makeID(atom.id, options)}>${xmlEscape(atom.value)}</mi>`;
   const SVG_CODE_POINTS = {
     widehat: "^",
     widecheck: "\u02C7",
@@ -1087,7 +1087,7 @@ function atomToMathML(atom, options) {
       if (arrayAtom.leftDelim && arrayAtom.leftDelim !== "." || arrayAtom.rightDelim && arrayAtom.rightDelim !== ".") {
         result += "<mrow>";
         if (arrayAtom.leftDelim && arrayAtom.leftDelim !== ".")
-          result += `<mo>${SPECIAL_DELIMS[arrayAtom.leftDelim] || arrayAtom.leftDelim}</mo>`;
+          result += `<mo>${xmlEscape(SPECIAL_DELIMS[arrayAtom.leftDelim] || arrayAtom.leftDelim)}</mo>`;
       }
       result += "<mtable";
       if (arrayAtom.colFormat) {
@@ -1111,7 +1111,7 @@ function atomToMathML(atom, options) {
       result += "</mtable>";
       if (arrayAtom.leftDelim && arrayAtom.leftDelim !== "." || arrayAtom.rightDelim && arrayAtom.rightDelim !== ".") {
         if (arrayAtom.rightDelim && arrayAtom.rightDelim !== ".")
-          result += `<mo>${SPECIAL_DELIMS[arrayAtom.rightDelim] || arrayAtom.rightDelim}</mo>`;
+          result += `<mo>${xmlEscape(SPECIAL_DELIMS[arrayAtom.rightDelim] || arrayAtom.rightDelim)}</mo>`;
         result += "</mrow>";
       }
       break;
@@ -1119,7 +1119,9 @@ function atomToMathML(atom, options) {
       const genfracAtom = atom;
       if (genfracAtom.leftDelim || genfracAtom.rightDelim) result += "<mrow>";
       if (genfracAtom.leftDelim && genfracAtom.leftDelim !== ".") {
-        result += "<mo" + makeID(atom.id, options) + ">" + (SPECIAL_DELIMS[genfracAtom.leftDelim] || genfracAtom.leftDelim) + "</mo>";
+        result += "<mo" + makeID(atom.id, options) + ">" + xmlEscape(
+          SPECIAL_DELIMS[genfracAtom.leftDelim] || genfracAtom.leftDelim
+        ) + "</mo>";
       }
       if (genfracAtom.hasBarLine) {
         result += "<mfrac>";
@@ -1133,7 +1135,9 @@ function atomToMathML(atom, options) {
         result += "</mtable>";
       }
       if (genfracAtom.rightDelim && genfracAtom.rightDelim !== ".") {
-        result += "<mo" + makeID(atom.id, options) + ">" + (SPECIAL_DELIMS[genfracAtom.rightDelim] || genfracAtom.rightDelim) + "</mo>";
+        result += "<mo" + makeID(atom.id, options) + ">" + xmlEscape(
+          SPECIAL_DELIMS[genfracAtom.rightDelim] || genfracAtom.rightDelim
+        ) + "</mo>";
       }
       if (genfracAtom.leftDelim || genfracAtom.rightDelim) result += "</mrow>";
       break;
@@ -1154,18 +1158,24 @@ function atomToMathML(atom, options) {
       const lDelim = leftrightAtom.leftDelim;
       result = "<mrow>";
       if (lDelim && lDelim !== ".") {
-        result += `<mo${makeID(atom.id, options)}>${(_a3 = SPECIAL_DELIMS[lDelim]) != null ? _a3 : lDelim}</mo>`;
+        result += `<mo${makeID(atom.id, options)}>${xmlEscape(
+          (_a3 = SPECIAL_DELIMS[lDelim]) != null ? _a3 : lDelim
+        )}</mo>`;
       }
       if (atom.body) result += toMathML(atom.body, options);
       const rDelim = leftrightAtom.matchingRightDelim();
       if (rDelim && rDelim !== ".") {
-        result += `<mo${makeID(atom.id, options)}>${(_b3 = SPECIAL_DELIMS[rDelim]) != null ? _b3 : rDelim}</mo>`;
+        result += `<mo${makeID(atom.id, options)}>${xmlEscape(
+          (_b3 = SPECIAL_DELIMS[rDelim]) != null ? _b3 : rDelim
+        )}</mo>`;
       }
       result += "</mrow>";
       break;
     case "sizeddelim":
     case "delim":
-      result += `<mo${makeID(atom.id, options)}>${SPECIAL_DELIMS[atom.value] || atom.value}</mo>`;
+      result += `<mo${makeID(atom.id, options)}>${xmlEscape(
+        SPECIAL_DELIMS[atom.value] || atom.value
+      )}</mo>`;
       break;
     case "accent":
       const accentAtom = atom;
@@ -1225,7 +1235,7 @@ function atomToMathML(atom, options) {
       result = typeof atom.value === "string" ? atom.value : command;
       if (result.length > 0 && result.startsWith("\\")) {
         if (typeof atom.value === "string" && atom.value.charCodeAt(0) > 255) {
-          result = "&#x" + ("000000" + atom.value.charCodeAt(0).toString(16)).slice(-4) + ";";
+          result = String.fromCodePoint(atom.value.codePointAt(0));
         } else if (typeof atom.value === "string")
           result = atom.value.charAt(0);
       } else if (atom.command === "\\char") {
@@ -1233,7 +1243,7 @@ function atomToMathML(atom, options) {
         if (val !== void 0 && "number" in val) {
           const codepoint = val.number;
           if (typeof codepoint === "number") {
-            result = "&#x" + ("000000" + codepoint.toString(16)).slice(-4) + ";";
+            result = String.fromCodePoint(codepoint);
           }
         }
       } else if (typeof atom.value === "string") result = atom.value;
@@ -1330,13 +1340,15 @@ function atomToMathML(atom, options) {
       result += toMathML(atom.body, options);
       break;
     case "latex":
-      result += "<mtext" + makeID(atom.id, options) + ">" + atom.value + "</mtext>";
+      result += "<mtext" + makeID(atom.id, options) + ">" + xmlEscape(atom.value) + "</mtext>";
       break;
     case "tooltip":
       result += toMathML(atom.body, options);
       break;
     case "text":
-      result += `<mtext ${makeID(atom.id, options)}x>${atom.value}</mtext>`;
+      result += `<mtext ${makeID(atom.id, options)}x>${xmlEscape(
+        atom.value
+      )}</mtext>`;
       break;
     default:
       if (atom.command === "\\displaystyle") {

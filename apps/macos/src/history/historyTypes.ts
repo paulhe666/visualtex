@@ -14,6 +14,16 @@ export interface MathSelectionSnapshot {
   direction: SelectionDirection;
 }
 
+export interface DocumentSelectionPoint {
+  lineId: string;
+  offset: number;
+}
+
+export interface DocumentSelection {
+  anchor: DocumentSelectionPoint;
+  focus: DocumentSelectionPoint;
+}
+
 export type FormulaEditSource =
   | "keyboard"
   | "toolbar"
@@ -99,6 +109,7 @@ export interface DocumentSnapshot {
   activeLineId: string | null;
   formulaAlignment: FormulaAlignment;
   selectionByLineId: Record<string, MathSelectionSnapshot>;
+  documentSelection?: DocumentSelection | null;
 }
 
 export type ReplaceDocumentSource =

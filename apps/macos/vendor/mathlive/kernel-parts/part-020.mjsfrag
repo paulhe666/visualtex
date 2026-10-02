@@ -318,6 +318,7 @@ function skip(model, direction, options) {
 function move(model, direction, options) {
   var _a3, _b3;
   options = options != null ? options : { extend: false };
+  if (direction === "forward" && !(options == null ? void 0 : options.extend) && visualTexLeapBoundedOperatorForward(model, false)) return true;
   model.mathfield.styleBias = direction === "backward" ? "right" : "left";
   if (direction !== "forward") {
     const [from, to] = getCommandSuggestionRange(model);
@@ -865,7 +866,44 @@ function leapTo(model, target) {
   model.mathfield.stopCoalescingUndo();
   return true;
 }
+function visualTexIsBoundedOperatorParent(parent) {
+  if (!parent) return false;
+  if (parent.type === "mop" || parent.type === "operator" || parent.type === "extensible-symbol") return true;
+  if (parent.type !== "subsup") return false;
+  const base = parent.leftSibling;
+  return Boolean(base && (base.type === "error" || base.type === "mop" || base.type === "operator" || base.type === "extensible-symbol"));
+}
+function visualTexBoundedOperatorBranchPlaceholders(model, parent, branch) {
+  if (!visualTexIsBoundedOperatorParent(parent)) return [];
+  const branchAtoms = parent.branch(branch);
+  if (!branchAtoms) return [];
+  return branchAtoms.flatMap((atom) => [atom, ...atom.children]).filter((atom) => atom.type === "placeholder" || atom.type === "prompt");
+}
+function visualTexLeapBoundedOperatorForward(model, allowInternalPlaceholderJump = true) {
+  const selected = model.at(Math.max(model.position, model.anchor));
+  if (!selected) return false;
+  const parent = selected.parent;
+  const branch = selected.parentBranch;
+  if (!parent || (branch !== "subscript" && branch !== "superscript")) return false;
+  if (!visualTexIsBoundedOperatorParent(parent)) return false;
+  const lowerBranch = parent.branch("subscript");
+  const upperBranch = parent.branch("superscript");
+  if (!lowerBranch || !upperBranch) return false;
+  const lower = visualTexBoundedOperatorBranchPlaceholders(model, parent, "subscript");
+  const upper = visualTexBoundedOperatorBranchPlaceholders(model, parent, "superscript");
+  const currentOffset = model.offsetOf(selected);
+  const currentList = branch === "subscript" ? lower : upper;
+  const nextInBranch = currentList.find((atom) => model.offsetOf(atom) > currentOffset);
+  if (allowInternalPlaceholderJump && nextInBranch) return leapTo(model, nextInBranch);
+  if (!allowInternalPlaceholderJump && !selected.isLastSibling) return false;
+  if (branch === "subscript") return upper[0] ? leapTo(model, upper[0]) : false;
+  const operatorOffset = model.offsetOf(parent);
+  const target = leapTarget(model, operatorOffset + 1, "forward");
+  if (target && model.offsetOf(target) > operatorOffset) return leapTo(model, target);
+  return leapTo(model, parent);
+}
 function leap(model, dir) {
+  if (dir === "forward" && visualTexLeapBoundedOperatorForward(model)) return true;
   var _a3, _b3;
   const dist = dir === "forward" ? 1 : -1;
   if (model.at(model.anchor).type === "placeholder") move(model, dir);
@@ -983,6 +1021,7 @@ register2(
     },
     moveToNextGroup: (model) => {
       var _a3, _b3, _c2, _d2;
+      if (visualTexLeapBoundedOperatorForward(model)) return true;
       if (model.position === model.lastOffset && model.anchor === model.lastOffset)
         return leap(model, "forward");
       const atom = model.at(model.position);
@@ -1410,10 +1449,19 @@ function onKeystroke(mathfield, evt) {
   let stateIndex = 0;
   const buffer = mathfield.inlineShortcutBuffer;
   let placeholderReplaced = false;
+  mathfield.visualTexPendingPlaceholderSelection = null;
   if (mathfield.isSelectionEditable && model.selectionIsPlaceholder && mightProducePrintableCharacter(evt)) {
+    const selected = model.at(Math.max(model.position, model.anchor));
+    // A direct glyph replacement is not a continuation of a previous raw command.
+    mathfield.visualTexPendingStructuralCommandSlot = null;
+    mathfield.visualTexPendingPlaceholderSelection = {
+      position: Math.min(model.position, model.anchor),
+      style: { ...selected.style },
+      slot: visualTexFreshStructuralSlot(selected),
+    };
+    // Keep the placeholder alive until the actual insert transaction.
+    // If beforeinput is cancelled, the model must remain byte-for-byte unchanged.
     mathfield.flushInlineShortcutBuffer();
-    model.deleteAtoms(range(model.selection));
-    mathfield.snapshot("delete");
     placeholderReplaced = true;
   }
   if (mathfield.isSelectionEditable) {
@@ -1469,6 +1517,28 @@ function onKeystroke(mathfield, evt) {
         evt
       );
     }
+    if (mathfield.visualTexSourceWrapper &&
+        visualTexSourceWrapperCaretIsInside(mathfield, mathfield.visualTexSourceWrapper) &&
+        (keystroke === "[Enter]" || keystroke === "[Return]")) {
+      const visualTexCommittedSourceWrapper = visualTexCommitSourceWrapper(mathfield);
+      if (visualTexCommittedSourceWrapper) {
+        mathfield.snapshot("insert-source-wrapper");
+        mathfield.model.announce("replacement");
+      }
+      if (evt.preventDefault) evt.preventDefault();
+      if (evt.stopPropagation) evt.stopPropagation();
+      return false;
+    }
+    if (mathfield.visualTexSourceWrapper &&
+        visualTexSourceWrapperCaretIsInside(mathfield, mathfield.visualTexSourceWrapper) &&
+        keystroke === "[Backspace]" &&
+        visualTexSourceWrapperContent(mathfield.visualTexSourceWrapper) === "") {
+      visualTexCancelSourceWrapper(mathfield);
+      mathfield.snapshot("delete-source-wrapper");
+      if (evt.preventDefault) evt.preventDefault();
+      if (evt.stopPropagation) evt.stopPropagation();
+      return false;
+    }
     if (!selector && (keystroke === "[Enter]" || keystroke === "[Return]")) {
       let success = true;
       if (model.contentWillChange({ inputType: "insertLineBreak" })) {
@@ -1487,6 +1557,29 @@ function onKeystroke(mathfield, evt) {
         }
       }
       return success;
+    }
+    if (keystroke === "[Space]" && model.mode === "latex" && mathfield.visualTexSourceWrapper) {
+      const visualTexState = mathfield.visualTexSourceWrapper;
+      const visualTexGroup = getLatexGroup(model);
+      if (visualTexGroup === visualTexState.group) {
+        const visualTexAcceptedSuggestion = visualTexAcceptSourceWrapperCompletion(mathfield);
+        visualTexSyncSourceWrapper(mathfield);
+        const visualTexContent = visualTexSourceWrapperContent(visualTexState);
+        const visualTexCanCommit = visualTexSourceWrapperAutoExitEnabled(mathfield, visualTexState) &&
+          (Array.from(visualTexContent || "").length === 1 || visualTexSourceWrapperSimpleCommand(mathfield, visualTexContent || ""));
+        if (visualTexCanCommit) {
+          visualTexCommitSourceWrapper(mathfield);
+          mathfield.snapshot("insert-source-wrapper");
+          mathfield.model.announce("replacement");
+        } else if (visualTexAcceptedSuggestion) {
+          mathfield.snapshot("insert-latex-suggestion");
+          requestUpdate(mathfield);
+        }
+        mathfield.dirty = true;
+        mathfield.scrollIntoView();
+        if (evt.preventDefault) { evt.preventDefault(); evt.stopPropagation(); }
+        return false;
+      }
     }
     if (keystroke === "[Space]" && model.mode === "latex") {
       if (complete(mathfield, "accept-all")) {

@@ -1,3 +1,4 @@
+import { EditorSessionProvider } from "../history/EditorSession";
 import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "mathlive/static.css";
@@ -46,8 +47,10 @@ if (!root) throw new Error("Missing VisualTeX native Office editor root element.
 
 createRoot(root).render(
   <StrictMode>
-    <OfficeFormulaErrorBoundary>
-      <OfficeDialogApp />
-    </OfficeFormulaErrorBoundary>
+    <EditorSessionProvider>
+      <OfficeFormulaErrorBoundary>
+        <OfficeDialogApp />
+      </OfficeFormulaErrorBoundary>
+    </EditorSessionProvider>
   </StrictMode>,
 );

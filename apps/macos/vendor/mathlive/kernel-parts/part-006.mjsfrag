@@ -71,11 +71,16 @@
     if (styles.length > 0)
       props.push(`style=${sanitizeAttributeValue(styles.join(";"))}`);
     let result = "";
+    const visualTexInlineCaret = this.caret === "math" && this.classes.split(" ").includes("visualtex-structural-placeholder")
+      ? '<span class="ML__caret visualtex-structural-placeholder-caret"></span>'
+      : "";
     if (props.length > 0 || svgMarkup.length > 0)
-      result = `<span ${props.join(" ")}>${body}${svgMarkup}</span>`;
+      result = `<span ${props.join(" ")}>${visualTexInlineCaret}${body}${svgMarkup}</span>`;
     else result = body;
-    if (this.caret === "text") result += '<span class="ML__text-caret"></span>';
-    else if (this.caret === "math") result += '<span class="ML__caret"></span>';
+    if (!visualTexInlineCaret) {
+      if (this.caret === "text") result += '<span class="ML__text-caret"></span>';
+      else if (this.caret === "math") result += '<span class="ML__caret"></span>';
+    }
     return result;
   }
   /**
@@ -217,6 +222,9 @@ function horizontalLayout(box, fontName) {
     box._width = box.children.reduce((acc, x) => acc + x.width, 0);
     box.maxFontSize = maxFontSize;
   }
+}
+function visualTexEscapeMathLiveText(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 function sanitizeAttributeName(attribute) {
   attribute = attribute.trim().replace(/ /g, "-");

@@ -3,7 +3,6 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   AlertCircle,
   BookOpenText,
-  Braces,
   Check,
   Code2,
   FileDown,
@@ -14,12 +13,8 @@ import {
   Languages,
   LoaderCircle,
   Menu,
-  Minus,
-  PanelBottomClose,
-  PanelBottomOpen,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus,
   Redo2,
   RefreshCw,
   Save,
@@ -29,12 +24,9 @@ import {
   X,
 } from "lucide-react";
 import {
-  MathEditor,
   type MathEditorHandle,
   type MathEditorInsertionTarget,
 } from "./editor/MathEditor";
-import { FormulaToolbar } from "./toolbar/FormulaToolbar";
-import { LatexSourceEditor } from "./source-editor/LatexSourceEditor";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { FormulaHotkeyManagerDialog } from "./components/FormulaHotkeyManagerDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
@@ -43,24 +35,17 @@ import { OcrDialog } from "./components/OcrDialog";
 import { ExportDialog } from "./components/ExportDialog";
 import { MacOfficeFirstRunPrompt } from "./components/MacOfficeFirstRunPrompt";
 import { decodeMacOfflineOfficeStatus } from "./components/macOfficeStatusValidation";
+import { resolveMacOfficeOnboarding } from "./components/macOfficeOnboarding";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
 import {
   EDITOR_ZOOM_STEP,
-  MAX_EDITOR_ZOOM,
-  MIN_EDITOR_ZOOM,
   joinFormulaLines,
   useEditorStore,
 } from "./stores/editorStore";
+import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "./history/EditorSession";
 import {
-  historyManager,
-  useHistorySnapshot,
-} from "./history/HistoryManager";
-import {
-  applyHistoryEntryToEditor,
   createBlankDocumentSnapshot,
-  documentSnapshotsEquivalent,
-  getEditorDocumentSnapshot,
   reconcileFormulaLines,
 } from "./history/documentHistory";
 import type {
@@ -136,6 +121,9 @@ const MAC_OFFICE_FIRST_RUN_STORAGE_KEY =
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);
+  const historyManager = useHistoryManager();
+  const { openDocumentWithHistory,
+    replaceDocumentWithHistory: replaceDocumentTransaction } = useDocumentSession(editorRef);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const appMenuRef = useRef<HTMLDivElement>(null);
@@ -167,7 +155,6 @@ function App() {
     (state) => state.bindings,
   );
   const [savedPulse, setSavedPulse] = useState(false);
-  const [editorHistoryBusy, setEditorHistoryBusy] = useState(false);
   const [desktopTopToolsMount, setDesktopTopToolsMount] =
     useState<HTMLDivElement | null>(null);
   const [sourceDocumentRevision, setSourceDocumentRevision] = useState(0);
@@ -224,7 +211,6 @@ function App() {
   );
   const addHistory = useEditorStore((state) => state.addHistory);
   const keypadMinimizeOnCopy = useEditorStore((state) => state.keypadMinimizeOnCopy);
-  const loadDocument = useEditorStore((state) => state.loadDocument);
   const toDocument = useEditorStore((state) => state.toDocument);
   const checkUpdatesOnStartup = useEditorStore(
     (state) => state.checkUpdatesOnStartup,
@@ -265,48 +251,9 @@ function App() {
   const inlineOcrIsBusy =
     inlineOcr?.status === "running" || inlineOcr?.status === "cancelling";
 
-  const captureDocumentSnapshot = (): DocumentSnapshot =>
-    getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {});
-
-  const restoreSnapshotFocus = (snapshot: DocumentSnapshot) => {
-    const lineId = snapshot.activeLineId;
-    if (!lineId) return;
-    const line = snapshot.lines.find((item) => item.id === lineId);
-    if (!line) return;
-    void editorRef.current?.restoreSelection(
-      lineId,
-      line.latex,
-      snapshot.selectionByLineId[lineId] ?? null,
-    );
-  };
-
-  const replaceDocumentWithHistory = (
-    after: DocumentSnapshot,
-    source: ReplaceDocumentEntry["source"],
-  ) => {
-    if (source !== "source-apply") {
-      historyManager.commitPendingTransaction();
-      // New/open/history documents own the source buffer even if CodeMirror
-      // retained focus or contains an incomplete draft of the previous document.
-      setSourceDocumentRevision((revision) => revision + 1);
-    }
-    const before = captureDocumentSnapshot();
-    if (documentSnapshotsEquivalent(before, after)) return false;
-    useEditorStore.getState().replaceDocumentState(after);
-    const entry: ReplaceDocumentEntry = {
-      type: "replace-document",
-      before,
-      after,
-      source,
-      timestamp: Date.now(),
-    };
-    if (source === "source-apply") {
-      historyManager.recordSourceDocumentEdit(entry);
-    } else {
-      historyManager.push(entry);
-      window.requestAnimationFrame(() => restoreSnapshotFocus(after));
-    }
-    return true;
+  const replaceDocumentWithHistory = (after: DocumentSnapshot, source: ReplaceDocumentEntry["source"]) => {
+    if (source !== "source-apply") setSourceDocumentRevision(revision => revision + 1);
+    return replaceDocumentTransaction(after, source);
   };
 
   useEffect(() => {
@@ -339,39 +286,15 @@ function App() {
       .then((status) => {
         if (cancelled || !status.compiledArtifactsAvailable) return;
 
-        const wordNeedsCurrentAddin =
-          status.word.applicationInstalled && !status.word.filesInstalled;
-        const powerpointNeedsCurrentAddin =
-          status.powerpoint.applicationInstalled &&
-          !status.powerpoint.filesInstalled;
-        const needsCurrentAddins =
-          wordNeedsCurrentAddin || powerpointNeedsCurrentAddin;
-
-        setPowerpointRegistrationRequired(
-          status.powerpoint.applicationInstalled &&
-            !status.powerpoint.filesPresent,
+        const prompt = resolveMacOfficeOnboarding(
+          status,
+          readLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true",
         );
-        if (!needsCurrentAddins) {
-          setMacOfficeFirstRunOpen(false);
-          return;
-        }
-
-        const staleInstalledAddins =
-          (wordNeedsCurrentAddin && status.word.filesPresent) ||
-          (powerpointNeedsCurrentAddin && status.powerpoint.filesPresent);
-        const previouslyConfigured =
-          readLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true" ||
-          status.word.filesPresent ||
-          status.powerpoint.filesPresent;
-
-        if (staleInstalledAddins) {
-          setMacOfficePromptMode("update");
-        } else if (previouslyConfigured) {
-          setMacOfficePromptMode("repair");
-        } else {
-          setMacOfficePromptMode("setup");
-        }
-        setMacOfficeFirstRunOpen(true);
+        setPowerpointRegistrationRequired(
+          prompt?.powerpointRegistrationRequired ?? false,
+        );
+        if (prompt) setMacOfficePromptMode(prompt.mode);
+        setMacOfficeFirstRunOpen(prompt !== null);
       })
       .catch(() => {
         if (cancelled) return;
@@ -385,36 +308,6 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
-    historyManager.configure({
-      getDocumentSnapshot: () =>
-        getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {}),
-      applyEntry: async (entry, direction) => {
-        const target = applyHistoryEntryToEditor(entry, direction);
-        if (!target) return;
-        // Formula replacement never changes the mounted row identity, so restore
-        // its focus/selection synchronously. Yield only for operations that can
-        // add/remove/remount rows; otherwise the formula visibly changes before
-        // the keyboard focus is restored and a key typed immediately after
-        // Undo/Redo can be lost or applied to the wrong target.
-        if (
-          entry.type === "add-line" ||
-          entry.type === "remove-line" ||
-          entry.type === "replace-document"
-        ) {
-          // Do not wait on requestAnimationFrame here: background desktop windows
-          // and headless release checks can throttle animation frames indefinitely.
-          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-        }
-        await editorRef.current?.restoreSelection(
-          target.lineId,
-          target.latex,
-          target.selection,
-        );
-      },
-    });
-    return () => historyManager.configure(null);
-  }, []);
 
   useEffect(() => {
     const checkpointTimer = window.setInterval(() => {
@@ -1114,21 +1007,8 @@ function App() {
       if (!parsed.formulas || !Array.isArray(parsed.formulas)) {
         throw new Error("invalid");
       }
-      historyManager.commitPendingTransaction();
-      const before = captureDocumentSnapshot();
-      loadDocument(parsed);
+      openDocumentWithHistory(parsed);
       setSourceDocumentRevision((revision) => revision + 1);
-      const after = getEditorDocumentSnapshot({});
-      if (!documentSnapshotsEquivalent(before, after)) {
-        historyManager.push({
-          type: "replace-document",
-          before,
-          after,
-          source: "open-document",
-          timestamp: Date.now(),
-        });
-        window.requestAnimationFrame(() => restoreSnapshotFocus(after));
-      }
       setToast(isEn ? "Formula document opened" : "公式文档已打开");
     } catch {
       setToast(
@@ -1818,7 +1698,6 @@ function App() {
               className="icon-button"
               onClick={() => historyManager.requestUndo()}
               disabled={
-                editorHistoryBusy ||
                 !historyState.canUndo ||
                 historyState.isReplaying
               }
@@ -1832,7 +1711,6 @@ function App() {
               className="icon-button"
               onClick={() => historyManager.requestRedo()}
               disabled={
-                editorHistoryBusy ||
                 !historyState.canRedo ||
                 historyState.isReplaying
               }
@@ -1886,7 +1764,6 @@ function App() {
         editorRef={editorRef}
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}
-        onHistoryBusyChange={setEditorHistoryBusy}
         onPasteImage={handleEditorImagePaste}
         onCopyPng={handleCopyPng}
         onCopy={async () => {

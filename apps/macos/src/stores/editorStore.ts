@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
 import type { CommandSource, CommandUsage } from "../types/command";
 import type {
   FormulaDocument,
@@ -386,13 +386,9 @@ interface EditorState {
   history: FormulaHistoryItem[];
   setTitle: (title: string) => void;
   setActiveLineId: (lineId: string | null) => void;
-  replaceFormulaLine: (lineId: string, latex: string) => void;
-  /** P10 core projection: the core already owns/validates source bytes. */
-  replaceFormulaLineExact: (lineId: string, latex: string) => void;
+  replaceFormulaLine: (lineId: string, latex: string, activeLineId?: string | null) => void;
   setFormulaAlignment: (alignment: FormulaAlignment) => void;
   setEditorLayout: (layout: EditorLayout) => void;
-  insertFormulaLine: (line: FormulaLine, index: number) => void;
-  removeFormulaLine: (lineId: string) => void;
   replaceDocumentState: (snapshot: DocumentSnapshot) => void;
   setTheme: (theme: Theme) => void;
   setLanguage: (language: Language) => void;
@@ -489,48 +485,24 @@ export const useEditorStore = create<EditorState>()(
         set((state) => ({
           activeLineId: validActiveLineId(state.lines, activeLineId),
         })),
-      replaceFormulaLine: (lineId, latex) =>
-        set((state) => ({
-          lines: state.lines.map((line) =>
-            line.id === lineId
-              ? { ...line, latex: normalizeFormulaLineLatex(latex) }
-              : line,
-          ),
-        })),
-      replaceFormulaLineExact: (lineId, latex) =>
-        set((state) => ({
-          lines: state.lines.map((line) =>
-            line.id === lineId ? { ...line, latex } : line,
-          ),
-        })),
+      replaceFormulaLine: (lineId, latex, activeLineId) =>
+        set((state) => {
+          const normalized = normalizeFormulaLineLatex(latex);
+          const nextActive = validActiveLineId(
+            state.lines, activeLineId === undefined ? state.activeLineId : activeLineId,
+          );
+          const line = state.lines.find(item => item.id === lineId);
+          if (!line || (line.latex === normalized && state.activeLineId === nextActive)) return state;
+          return {
+            activeLineId: nextActive,
+            lines: line.latex === normalized ? state.lines : state.lines.map(item =>
+              item.id === lineId ? { ...item, latex: normalized } : item),
+          };
+        }),
       setFormulaAlignment: (formulaAlignment) =>
         set({ formulaAlignment: normalizeFormulaAlignment(formulaAlignment) }),
       setEditorLayout: (editorLayout) =>
         set({ editorLayout: normalizeEditorLayout(editorLayout) }),
-      insertFormulaLine: (line, index) =>
-        set((state) => {
-          const nextLines = state.lines.filter((item) => item.id !== line.id);
-          const targetIndex = Math.max(0, Math.min(index, nextLines.length));
-          nextLines.splice(targetIndex, 0, {
-            id: line.id,
-            latex: normalizeFormulaLineLatex(line.latex),
-            mode: line.mode === "inline" ? "inline" : "display",
-            displayStyle: normalizeFormulaDisplayStyle(line.displayStyle),
-          });
-          return {
-            lines: nextLines,
-            activeLineId: validActiveLineId(nextLines, state.activeLineId),
-          };
-        }),
-      removeFormulaLine: (lineId) =>
-        set((state) => {
-          const nextLines = state.lines.filter((line) => line.id !== lineId);
-          const safeLines = nextLines.length ? nextLines : [createFormulaLine("")];
-          return {
-            lines: safeLines,
-            activeLineId: validActiveLineId(safeLines, state.activeLineId),
-          };
-        }),
       replaceDocumentState: (snapshot) =>
         set(() => {
           const lines = normalizeFormulaLines(snapshot.lines);
@@ -897,7 +869,7 @@ export const useEditorStore = create<EditorState>()(
     }),
     {
       name: "visualtex-editor",
-      storage: createJSONStorage(() => editorPersistenceStorage),
+      storage: editorPersistenceStorage,
       partialize: (state) => ({
         title: state.title,
         lines: state.lines,

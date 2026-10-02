@@ -1484,6 +1484,7 @@ defineFunction("smallint", "", {
   }))
 });
 var EXTENSIBLE_SYMBOLS = {
+  ...visualTexIntegralCharacters,
   int: "\u222B",
   iint: "\u222C",
   iiint: "\u222D",

@@ -283,7 +283,7 @@ async function main() {
       (async () => {
         const registryModule = await import(${JSON.stringify(`${baseUrl}/src/autocomplete/commandRegistry.ts`)});
         const ommlModule = await import(${JSON.stringify(`${baseUrl}/src/office/omml/latexToOmml.ts`)});
-        const mathfieldHarness = await import(${JSON.stringify(`${baseUrl}/src/editor/mathfieldNormalizationHarness.ts`)});
+        const mathfieldHarness = await import(${JSON.stringify(`${baseUrl}/scripts/mathfieldNormalizationHarness.ts`)});
         const ids = ${JSON.stringify(addedCommandIds)};
         const results = [];
         for (const id of ids) {

@@ -247,7 +247,7 @@ async function main() {
             field._mathfield?.visualTexCompositionSourceWrapper ===
             field._mathfield?.visualTexSourceWrapper,
           visibleCandidateLabels: Array.from(
-            document.querySelectorAll('#visualtex-native-input-suggestion-popover li[data-command] .ML__popover__latex')
+            document.querySelectorAll('#mathlive-suggestion-popover li[data-command] .ML__popover__latex')
           ).map((node) => (node.textContent || '').trim()).filter(Boolean),
           offsets: Array.from({ length: field.lastOffset + 1 }, (_, offset) => ({
             offset,

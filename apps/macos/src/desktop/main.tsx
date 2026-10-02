@@ -1,3 +1,4 @@
+import { EditorSessionProvider } from "../history/EditorSession";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "mathlive/static.css";
@@ -36,18 +37,20 @@ if (quickOcrHudView) {
 
 createRoot(root).render(
   <StrictMode>
-    <VisualTexErrorBoundary>
-      {quickOcrHudView ? (
-        <QuickOcrHud />
-      ) : officeFormulaView ? (
-        <OfficeDialogApp />
-      ) : officeDocumentImportView ? (
-        <OfficeDocumentImportApp />
-      ) : officeWordLatexRedrawView ? (
-        <WordLatexRedrawApp />
-      ) : (
-        <DesktopApp />
-      )}
-    </VisualTexErrorBoundary>
+    <EditorSessionProvider>
+      <VisualTexErrorBoundary>
+        {quickOcrHudView ? (
+          <QuickOcrHud />
+        ) : officeFormulaView ? (
+          <OfficeDialogApp />
+        ) : officeDocumentImportView ? (
+          <OfficeDocumentImportApp />
+        ) : officeWordLatexRedrawView ? (
+          <WordLatexRedrawApp />
+        ) : (
+          <DesktopApp />
+        )}
+      </VisualTexErrorBoundary>
+    </EditorSessionProvider>
   </StrictMode>,
 );

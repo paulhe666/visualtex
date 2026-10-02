@@ -129,6 +129,11 @@ function validateMacroContainer(path, kind, options = {}) {
     ...(kind === "PowerPoint" ? ["VTPowerPointNativeTarget", "VTPowerPointNativeMath"] : []),
   ];
   if (requireModules) {
+    if (kind === "Word") {
+      run("python3", [
+        join(repositoryRoot, "scripts", "verify_word_vba_source.py"), path,
+      ]);
+    }
     const missing = expectedModules.filter((moduleName) => !containsModuleName(vbaProject, moduleName));
     if (missing.length > 0) {
       throw new Error(
@@ -143,7 +148,6 @@ function validateMacroContainer(path, kind, options = {}) {
             "VTNativeMathRoot",
             "VTJoinNativeMathAtBoundary",
             "VTRetireLegacyNativeBoundary",
-            "VisualTeX_RunNativeParityRegression",
             "word-structured-document-import-20260730-r61",
             "VTWordRibbonDocumentImport",
             "word-latex-redraw-20260802-r1",
@@ -156,8 +160,6 @@ function validateMacroContainer(path, kind, options = {}) {
             "VisualTeX_EditImageField",
             "VisualTeX_EditSelectedImageFromNativeMonitor",
             "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
-            "VisualTeX_RunWordNumberedCopyIdentityRegression",
-            "VisualTeX_RunNumberedNativeComplexStructureRegression",
             "VTEnsureVisualTeXImageMacroButton",
             "VTAppendText",
             "VTWriteAndLaunchSession",

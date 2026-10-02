@@ -5,19 +5,7 @@ import { MathfieldElement } from "mathlive";
 import { AlertCircle, Check, LoaderCircle, Redo2, Undo2, X } from "lucide-react";
 import { OcrDialog } from "../../components/OcrDialog";
 import { EditorWorkspace } from "../../workspace/EditorWorkspace";
-import {
-  historyManager,
-  useHistorySnapshot,
-} from "../../history/HistoryManager";
-import {
-  applyHistoryEntryToEditor,
-  documentSnapshotsEquivalent,
-  getEditorDocumentSnapshot,
-} from "../../history/documentHistory";
-import type {
-  DocumentSnapshot,
-  ReplaceDocumentEntry,
-} from "../../history/historyTypes";
+import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "../../history/EditorSession";
 import {
   joinFormulaLines,
   useEditorStore,
@@ -356,6 +344,8 @@ function documentFingerprint(
 export function OfficeDialogApp() {
   const tauriResidentEditor = isMacosOfflineTauriTransport();
   const editorRef = useRef<MathEditorHandle>(null);
+  const historyManager = useHistoryManager();
+  const { replaceDocumentWithHistory } = useDocumentSession(editorRef);
   const loadedSessionIdRef = useRef("");
   const nativeOriginalFingerprintRef = useRef<{
     sessionKey: string;
@@ -388,7 +378,6 @@ export function OfficeDialogApp() {
     setSidebarOpenState(open);
     writeWorkspacePanelOpen("office-edit", "tiles", open);
   }, []);
-  const [historyBusy, setHistoryBusy] = useState(false);
   const [autoCommitOnClose, setAutoCommitOnClose] = useState(true);
   const [displayMode, setDisplayMode] = useState<"inline" | "block">("inline");
   const [inlineImageMathStyle, setInlineImageMathStyle] =
@@ -1099,74 +1088,6 @@ export function OfficeDialogApp() {
       stopActivationRepair();
     };
   }, [presentedSessionKey, sessionHydrated, sessionKey, tauriResidentEditor]);
-
-  const captureSnapshot = useCallback(
-    (): DocumentSnapshot =>
-      getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {}),
-    [],
-  );
-
-  const restoreSnapshotFocus = useCallback((snapshot: DocumentSnapshot) => {
-    const lineId = snapshot.activeLineId;
-    if (!lineId) return;
-    const line = snapshot.lines.find((item) => item.id === lineId);
-    if (!line) return;
-    void editorRef.current?.restoreSelection(
-      lineId,
-      line.latex,
-      snapshot.selectionByLineId[lineId] ?? null,
-    );
-  }, []);
-
-  const replaceDocumentWithHistory = useCallback(
-    (
-      after: DocumentSnapshot,
-      source: ReplaceDocumentEntry["source"],
-    ) => {
-      if (source !== "source-apply") historyManager.commitPendingTransaction();
-      const before = captureSnapshot();
-      if (documentSnapshotsEquivalent(before, after)) return false;
-      useEditorStore.getState().replaceDocumentState(after);
-      const entry: ReplaceDocumentEntry = {
-        type: "replace-document",
-        before,
-        after,
-        source,
-        timestamp: Date.now(),
-      };
-      if (source === "source-apply") {
-        historyManager.recordSourceDocumentEdit(entry);
-      } else {
-        historyManager.push(entry);
-        window.requestAnimationFrame(() => restoreSnapshotFocus(after));
-      }
-      return true;
-    },
-    [captureSnapshot, restoreSnapshotFocus],
-  );
-
-  useEffect(() => {
-    historyManager.configure({
-      getDocumentSnapshot: captureSnapshot,
-      applyEntry: async (entry, direction) => {
-        const target = applyHistoryEntryToEditor(entry, direction);
-        if (!target) return;
-        if (
-          entry.type === "add-line" ||
-          entry.type === "remove-line" ||
-          entry.type === "replace-document"
-        ) {
-          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-        }
-        await editorRef.current?.restoreSelection(
-          target.lineId,
-          target.latex,
-          target.selection,
-        );
-      },
-    });
-    return () => historyManager.configure(null);
-  }, [captureSnapshot]);
 
   const generateSvgExportResult = useCallback((): OfficeExportResult | null => {
     if (!latex.trim()) return null;
@@ -2278,7 +2199,7 @@ export function OfficeDialogApp() {
         aria-label={isEn ? "Undo" : "撤销"}
         title={isEn ? "Undo" : "撤销"}
         onClick={() => historyManager.requestUndo()}
-        disabled={historyBusy || !historyState.canUndo || historyState.isReplaying}
+        disabled={!historyState.canUndo || historyState.isReplaying}
       >
         <Undo2 size={16} strokeWidth={2} />
       </button>
@@ -2289,7 +2210,7 @@ export function OfficeDialogApp() {
         aria-label={isEn ? "Redo" : "重做"}
         title={isEn ? "Redo" : "重做"}
         onClick={() => historyManager.requestRedo()}
-        disabled={historyBusy || !historyState.canRedo || historyState.isReplaying}
+        disabled={!historyState.canRedo || historyState.isReplaying}
       >
         <Redo2 size={16} strokeWidth={2} />
       </button>
@@ -2299,7 +2220,7 @@ export function OfficeDialogApp() {
         className="secondary-button"
         data-office-cancel-action
         onClick={() => void handleCancel()}
-        disabled={historyBusy || inlineOcrIsBusy || historyState.isReplaying}
+        disabled={inlineOcrIsBusy || historyState.isReplaying}
       >
         {isEn ? "Cancel" : "取消"}
       </button>
@@ -2309,7 +2230,6 @@ export function OfficeDialogApp() {
         data-office-primary-action
         onClick={() => void handleCommit()}
         disabled={
-          historyBusy ||
           inlineOcrIsBusy ||
           historyState.isReplaying ||
           !latex.trim()
@@ -2364,7 +2284,6 @@ export function OfficeDialogApp() {
         reuseEditorLineSlots
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}
-        onHistoryBusyChange={setHistoryBusy}
         onPasteImage={editorAvailable ? handleEditorImagePaste : undefined}
         onCopy={handleCopy}
         onReplaceDocument={replaceDocumentWithHistory}

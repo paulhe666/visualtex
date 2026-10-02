@@ -200,12 +200,18 @@ async function main() {
           language: "cn",
           history: ${JSON.stringify(history)},
         };
+        localStorage.setItem("visualtex-desktop-editor-source-open", String(${JSON.stringify(sourceOpen)}));
         delete persisted.state.latex;
         localStorage.setItem("visualtex-editor", JSON.stringify(persisted));
       })()`);
       await client.send("Page.reload", { ignoreCache: true });
       await sleep(850);
       await waitForFields(lines.length);
+      // Native-host smoke stubs can show the Office setup dialog on reload.
+      // Close it through its UI before testing document keyboard shortcuts.
+      await evaluate(`document.querySelectorAll('.office-first-run-backdrop button').forEach(button => {
+        if (/^(Later|稍后处理)$/.test(button.textContent.trim())) button.click();
+      })`);
     };
 
     const installFakeTauri = async () => {
@@ -213,6 +219,7 @@ async function main() {
         let callbackId = 1;
         const callbacks = new Map();
         window.__TAURI_INTERNALS__ = {
+          metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
           transformCallback(callback, once = false) {
             const id = callbackId++;
             callbacks.set(id, { callback, once });
@@ -579,30 +586,15 @@ async function main() {
     assertDeepEqual(await values(), ["x"], "wrapped selection should undo in one step");
 
     await resetDocument({ lines: [{ id: "candidate-line", latex: "" }] });
-    await evaluate(`(() => {
-      const field = document.querySelector("math-field");
-      field.focus();
-      field.shadowRoot
-        ?.querySelector('[part="keyboard-sink"]')
-        ?.focus({ preventScroll: true });
-      field.setValue("\\\\the", {
-        mode: "math",
-        format: "latex",
-        insertionMode: "replaceAll",
-        selectionMode: "after",
-        silenceNotifications: true,
-      });
-      field.position = field.lastOffset;
-      field.dispatchEvent(new InputEvent("input", {
-        bubbles: true,
-        composed: true,
-        inputType: "insertText",
-      }));
-    })()`);
+    await focusField(0);
+    for (const character of "\\the") {
+      await key(character, character === "\\" ? "Backslash" : `Key${character.toUpperCase()}`,
+        character === "\\" ? 220 : character.toUpperCase().charCodeAt(0));
+    }
     await sleep(220);
     const candidateBefore = (await values())[0];
     assertEqual(
-      await evaluate(`Boolean(document.querySelector(".suggestion-popup"))`),
+      await evaluate(`Boolean(document.querySelector("#mathlive-suggestion-popover.is-visible"))`),
       true,
       "candidate popup should open",
     );

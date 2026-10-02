@@ -1598,14 +1598,19 @@ var MathMode = class extends Mode {
 function emitBoldRun(run, options) {
   return getPropertyRuns(run, "bold").map((x) => {
     const weight = weightString(x[0]);
-    if (weight !== "bold") return joinLatex(emitVariantRun(x, options));
+    const visualTexVariant = variantString(x[0]);
+    // bolditalic is already serialized by emitVariantRun as \mathbfit.
+    // Wrapping it in an additional \mathbf is redundant and changes
+    // round-trip style semantics.
+    if (weight !== "bold" || visualTexVariant.endsWith("-bolditalic"))
+      return joinLatex(emitVariantRun(x, options));
     if (weightString(x[0].parent) === "bold")
       return joinLatex(emitVariantRun(x, options));
     const value = joinLatex(x.map((x2) => {
       var _a3;
       return (_a3 = x2.value) != null ? _a3 : "";
     }));
-    if (/^[a-zA-Z0-9]+$/.test(value))
+    if (/^[a-zA-Z0-9]+$/.test(value) || (x.every((atom) => atom.style.variant === "normal" && atom.style.variantStyle === "bold") && /^[a-zA-Z0-9ΓΔΘΛΞΠΣΥΦΨΩ]+$/.test(value)))
       return latexCommand("\\mathbf", joinLatex(emitVariantRun(x, options)));
     return latexCommand("\\bm", joinLatex(emitVariantRun(x, options)));
   });

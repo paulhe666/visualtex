@@ -167,56 +167,74 @@ function visibleFloatingLayers() {
 export function installFloatingLayerAutoAvoidance() {
   let frame = 0;
   let disposed = false;
-  const settleTimers = new Set<number>();
+  const observedLayers = new Set<HTMLElement>();
 
   const update = () => {
-    if (disposed) return;
-    window.cancelAnimationFrame(frame);
+    if (disposed || frame) return;
     frame = window.requestAnimationFrame(() => {
-      for (const layer of visibleFloatingLayers()) fitFloatingLayer(layer);
+      frame = 0;
+      const layers = new Set(visibleFloatingLayers());
+      for (const layer of observedLayers) {
+        if (layers.has(layer)) continue;
+        resizeObserver.unobserve(layer);
+        restoreManagedInlineStyles(layer);
+        originalInlineStyles.delete(layer);
+        observedLayers.delete(layer);
+      }
+      for (const layer of layers) {
+        if (!observedLayers.has(layer)) {
+          observedLayers.add(layer);
+          resizeObserver.observe(layer);
+        }
+        fitFloatingLayer(layer);
+      }
     });
   };
+  const resizeObserver = new ResizeObserver(update);
 
-  const updateThroughOpeningAnimation = () => {
-    update();
-    for (const delay of [48, 160, 260]) {
-      const timer = window.setTimeout(() => {
-        settleTimers.delete(timer);
-        update();
-      }, delay);
-      settleTimers.add(timer);
-    }
-  };
-
-  const handleMotionSettled = (event: Event) => {
+  const handleMotion = (event: Event) => {
     const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    if (target.matches(FLOATING_LAYER_SELECTOR) || target.closest(FLOATING_LAYER_SELECTOR)) {
+    if (target instanceof Element && (
+      target.closest(FLOATING_LAYER_SELECTOR) || target.querySelector(FLOATING_LAYER_SELECTOR)
+    )) {
       update();
     }
   };
 
-  const observer = new MutationObserver(updateThroughOpeningAnimation);
+  const containsFloatingLayer = (node: Node) => node instanceof Element && (
+    node.matches(FLOATING_LAYER_SELECTOR) || node.querySelector(FLOATING_LAYER_SELECTOR)
+  );
+  const observer = new MutationObserver((records) => {
+    if (records.some((record) =>
+      (record.target instanceof Element && record.target.closest(FLOATING_LAYER_SELECTOR)) ||
+      (record.type === 'attributes' && containsFloatingLayer(record.target)) ||
+      [...record.addedNodes, ...record.removedNodes].some(containsFloatingLayer)
+    )) update();
+  });
   observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'hidden'],
   });
-  window.addEventListener('resize', updateThroughOpeningAnimation);
+  window.addEventListener('resize', update);
   window.addEventListener('scroll', update, true);
-  document.addEventListener('transitionend', handleMotionSettled, true);
-  document.addEventListener('animationend', handleMotionSettled, true);
-  updateThroughOpeningAnimation();
+  const motionEvents = ['transitionrun', 'transitionend', 'animationstart', 'animationend'];
+  for (const event of motionEvents) document.addEventListener(event, handleMotion, true);
+  update();
 
   return () => {
     disposed = true;
     window.cancelAnimationFrame(frame);
-    for (const timer of settleTimers) window.clearTimeout(timer);
-    settleTimers.clear();
     observer.disconnect();
-    window.removeEventListener('resize', updateThroughOpeningAnimation);
+    resizeObserver.disconnect();
+    window.removeEventListener('resize', update);
     window.removeEventListener('scroll', update, true);
-    document.removeEventListener('transitionend', handleMotionSettled, true);
-    document.removeEventListener('animationend', handleMotionSettled, true);
-    for (const layer of visibleFloatingLayers()) restoreManagedInlineStyles(layer);
+    for (const event of motionEvents) document.removeEventListener(event, handleMotion, true);
+    for (const layer of observedLayers) {
+      restoreManagedInlineStyles(layer);
+      originalInlineStyles.delete(layer);
+    }
+    observedLayers.clear();
   };
 }

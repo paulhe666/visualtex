@@ -210,7 +210,10 @@ var LatexMode = class extends Mode {
     return new LatexAtom(command);
   }
   serialize(run, _options) {
-    return run.filter((x) => x instanceof LatexAtom && !x.isSuggestion).map((x) => x.value);
+    return run
+      .filter((x) => (x instanceof LatexAtom && !x.isSuggestion) ||
+        (x instanceof LatexGroupAtom && x.visualTexSourceWrapper))
+      .map((x) => x instanceof LatexGroupAtom ? x._serialize(_options) : x.value);
   }
   getFont() {
     return null;
@@ -1208,11 +1211,9 @@ function getKeybindingsForCommand(keybindings, command) {
     else if (candidate) result.push(candidate);
   }
   const normalizedCommand = commandToString(command);
-  const regex = new RegExp(
-    "^" + normalizedCommand.replace("\\", "\\\\").replace("|", "\\|").replace("*", "\\*").replace("$", "\\$").replace("^", "\\^") + "([^*a-zA-Z]|$)"
-  );
   for (const keybinding of keybindings) {
-    if (regex.test(commandToString(keybinding.command)))
+    const candidateCommand = commandToString(keybinding.command);
+    if (candidateCommand.startsWith(normalizedCommand) && !/[*a-zA-Z]/.test(candidateCommand.charAt(normalizedCommand.length)))
       result.push(keybinding.key);
   }
   return result.map(getKeybindingMarkup);
@@ -1371,11 +1372,20 @@ var LatexModeEditor = class extends ModeEditor {
       cursor = group.firstChild;
     }
     const lastNewAtom = cursor.parent.addChildrenAfter(newAtoms, cursor);
-    model.silenceNotifications = saveSilenceNotifications;
+    const visualTexSourceWrapperSelectionPending = Boolean(model.mathfield.visualTexSourceWrapper);
+    if (!visualTexSourceWrapperSelectionPending)
+      model.silenceNotifications = saveSilenceNotifications;
     if (options.selectionMode === "before") {
     } else if (options.selectionMode === "item")
       model.setSelection(model.anchor, model.offsetOf(lastNewAtom));
     else if (lastNewAtom) model.position = model.offsetOf(lastNewAtom);
+    if (visualTexSourceWrapperSelectionPending)
+      visualTexMaybeAutoCommitSourceWrapper(model.mathfield);
+    if (visualTexSourceWrapperSelectionPending) {
+      model.silenceNotifications = saveSilenceNotifications;
+      if (!saveSilenceNotifications)
+        model.mathfield.visualTexDeferredSelectionAfterInput = true;
+    }
     model.contentDidChange({ data: text, inputType: "insertText" });
     model.silenceNotifications = silenceNotifications;
     return true;
@@ -1599,6 +1609,7 @@ function updateAutocomplete(mathfield, options) {
   const command = commandAtoms.map((x) => x.value).join("");
   const suggestions = suggest(mathfield, command);
   if (suggestions.length === 0) {
+    mathfield.visualTexCompletion = null;
     if (/^\\[a-zA-Z\*]+$/.test(command))
       for (const atom2 of commandAtoms) atom2.isError = true;
     hideSuggestionPopover(mathfield);
@@ -1606,17 +1617,7 @@ function updateAutocomplete(mathfield, options) {
   }
   const index = (_a3 = options == null ? void 0 : options.atIndex) != null ? _a3 : 0;
   mathfield.suggestionIndex = index < 0 ? suggestions.length - 1 : index % suggestions.length;
-  const suggestion = suggestions[mathfield.suggestionIndex];
-  if (suggestion !== command) {
-    const lastAtom = commandAtoms[commandAtoms.length - 1];
-    lastAtom.parent.addChildrenAfter(
-      [...suggestion.slice(command.length - suggestion.length)].map(
-        (x) => new LatexAtom(x, { isSuggestion: true })
-      ),
-      lastAtom
-    );
-    render(mathfield, { interactive: true });
-  }
+  mathfield.visualTexCompletion = { command, suggestions, group: getLatexGroup(model) };
   showSuggestionPopover(mathfield, suggestions);
 }
 function acceptCommandSuggestion(model) {
@@ -1635,10 +1636,19 @@ function acceptCommandSuggestion(model) {
 }
 function complete(mathfield, completion = "accept", options) {
   var _a3, _b3;
+  const visualTexOwnedSourceGroup = mathfield.visualTexSourceWrapper?.group;
+  const visualTexCurrentLatexGroup = getLatexGroup(mathfield.model);
+  if (visualTexOwnedSourceGroup && visualTexCurrentLatexGroup === visualTexOwnedSourceGroup) {
+    if (completion === "reject") return visualTexCancelSourceWrapper(mathfield);
+    return false;
+  }
+  const completionState = mathfield.visualTexCompletion;
+  const selectedCompletion = completionState?.suggestions[mathfield.suggestionIndex];
   hideSuggestionPopover(mathfield);
   const latexGroup = getLatexGroup(mathfield.model);
   if (!latexGroup) return false;
-  if (completion === "accept-suggestion" || completion === "accept-all") {
+  const useSemanticCompletion = (completion === "accept-suggestion" || completion === "accept-all") && completionState?.group === latexGroup && selectedCompletion;
+  if (!useSemanticCompletion && (completion === "accept-suggestion" || completion === "accept-all")) {
     const suggestions = getLatexGroupBody(mathfield.model).filter(
       (x) => x.isSuggestion
     );
@@ -1653,16 +1663,61 @@ function complete(mathfield, completion = "accept", options) {
   const body = getLatexGroupBody(mathfield.model).filter(
     (x) => !x.isSuggestion
   );
-  const latex = body.map((x) => x.value).join("");
+  const latex = useSemanticCompletion ? selectedCompletion : body.map((x) => x.value).join("");
+  mathfield.visualTexCompletion = null;
   const newPos = latexGroup.leftSibling;
   latexGroup.parent.removeChild(latexGroup);
   mathfield.model.position = mathfield.model.offsetOf(newPos);
   mathfield.switchMode((_a3 = options == null ? void 0 : options.mode) != null ? _a3 : "math");
-  if (completion === "reject") return true;
+  if (completion === "reject") {
+    mathfield.visualTexPendingStructuralCommandSlot = null;
+    return true;
+  }
   const style = __spreadValues({}, computeInsertStyle(mathfield));
   if (!/^[a-zA-Z0-9]$/.test(latex) && mathfield.styleBias !== "none") {
     style.variant = "normal";
     style.variantStyle = void 0;
+  }
+  const visualTexAcceptedInfo = useSemanticCompletion
+    ? visualTexCompletionInfo(mathfield, selectedCompletion)
+    : null;
+  const visualTexSourceWrapperCommand =
+    visualTexAcceptedInfo?.command &&
+    visualTexSourceWrapperKind(visualTexAcceptedInfo.command)
+      ? visualTexCanonicalVariantInputCommand(visualTexAcceptedInfo.command)
+      : null;
+  if (visualTexSourceWrapperCommand) {
+    const visualTexSourceSlot =
+      mathfield.visualTexPendingStructuralCommandSlot || null;
+    const visualTexStartedSourceWrapper = visualTexStartSourceWrapper(
+      mathfield.model,
+      visualTexSourceWrapperCommand + "{\\placeholder{}}",
+      visualTexSourceSlot,
+    );
+    mathfield.snapshot("insert-source-wrapper");
+    if (visualTexStartedSourceWrapper) {
+      const info = visualTexAcceptedInfo;
+      // MathLive contentDidChange() dispatches its public input event on a
+      // zero-delay timer. Queue usage/acceptance after that timer so a
+      // controlled host cannot rerender with the stale pre-completion value
+      // before the model's input transaction has been observed.
+      setTimeout(() => {
+        if (!mathfield.host) return;
+        mathfield.host.dispatchEvent(new CustomEvent("visualtex-command-accepted", {
+          bubbles: true,
+          composed: true,
+          detail: {
+            id: info.id || info.command.slice(1),
+            query: completionState.command,
+            command: info.command,
+            latex: selectedCompletion,
+            variantInput: true,
+          },
+        }));
+      }, 0);
+      mathfield.model.announce("replacement");
+      return true;
+    }
   }
   ModeEditor.insert(mathfield.model, latex, {
     selectionMode: ((_b3 = options == null ? void 0 : options.selectItem) != null ? _b3 : false) ? "item" : "placeholder",
@@ -1671,6 +1726,23 @@ function complete(mathfield, completion = "accept", options) {
     style
   });
   mathfield.snapshot();
+  if (useSemanticCompletion) {
+    const info = visualTexAcceptedInfo;
+    setTimeout(() => {
+      if (!mathfield.host) return;
+      mathfield.host.dispatchEvent(new CustomEvent("visualtex-command-accepted", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          id: info.id || info.command.slice(1),
+          query: completionState.command,
+          command: info.command,
+          latex: selectedCompletion,
+          variantInput: false,
+        },
+      }));
+    }, 0);
+  }
   mathfield.model.announce("replacement");
   mathfield.switchMode("math");
   return true;
@@ -1731,12 +1803,13 @@ function showSuggestionPopover(mf, suggestions) {
   }
   let template = "";
   for (const [i, suggestion] of suggestions.entries()) {
+    const info = visualTexCompletionInfo(mf, suggestion);
     const command = suggestion;
-    const commandMarkup = latexToMarkup(mf, suggestion);
-    const keybinding = getKeybindingsForCommand(mf.keybindings, command).join(
+    const commandMarkup = latexToMarkup(mf, info.preview);
+    const keybinding = getKeybindingsForCommand(mf.keybindings, info.command).join(
       "<br>"
     );
-    template += `<li role="button" data-command="${escapeHtmlAttr(command)}" ${i === mf.suggestionIndex ? "class=ML__popover__current" : ""}><span class="ML__popover__latex">${escapeHtmlAttr(command)}</span><span class="ML__popover__command">${commandMarkup}</span>`;
+    template += `<li role="button" data-command="${escapeHtmlAttr(command)}" ${i === mf.suggestionIndex ? "class=ML__popover__current" : ""}><span class="ML__popover__latex">${escapeHtmlAttr(info.command)}${info.label ? " · " + escapeHtmlAttr(info.label) : ""}</span><span class="ML__popover__command">${commandMarkup}</span>`;
     if (keybinding)
       template += `<span class="ML__popover__keybinding">${keybinding}</span>`;
     template += "</li>";
@@ -1747,7 +1820,7 @@ function showSuggestionPopover(mf, suggestions) {
   }
   setTimeout(() => {
     var _a4;
-    if (panel && !isSuggestionPopoverVisible()) {
+    if (panel?.isConnected && panel.visualTexMathfield === mf && panel.getAttribute("aria-hidden") !== "true" && !isSuggestionPopoverVisible()) {
       panel.classList.add("is-visible");
       updateSuggestionPopoverPosition(mf);
       (_a4 = panel.querySelector(".ML__popover__current")) == null ? void 0 : _a4.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -1762,7 +1835,7 @@ function isSuggestionPopoverVisible() {
 function updateSuggestionPopoverPosition(mf, options) {
   var _a3, _b3, _c2;
   if (!mf.element || mf.element.mathfield !== mf) return;
-  if (!isSuggestionPopoverVisible()) return;
+  if (!isSuggestionPopoverVisible() || document.getElementById("mathlive-suggestion-popover")?.visualTexMathfield !== mf) return;
   if (((_a3 = mf.model.at(mf.model.position)) == null ? void 0 : _a3.type) !== "latex") {
     hideSuggestionPopover(mf);
     return;
@@ -1783,52 +1856,82 @@ function updateSuggestionPopoverPosition(mf, options) {
     panel.style.left = `${viewportWidth - panel.offsetWidth - scrollbarWidth}px`;
   } else if (position.x - panel.offsetWidth / 2 < 0) panel.style.left = "0";
   else panel.style.left = `${position.x - panel.offsetWidth / 2}px`;
-  const spaceAbove = position.y - position.height;
-  const spaceBelow = viewportHeight - scrollbarHeight - virtualkeyboardHeight - position.y;
-  if (spaceBelow < spaceAbove) {
+  const viewportPadding = 8;
+  const tipGap = 15;
+  const viewportRight = viewportWidth - scrollbarWidth - viewportPadding;
+  const viewportBottom =
+    viewportHeight - scrollbarHeight - virtualkeyboardHeight - viewportPadding;
+  const centeredLeft = position.x - panel.offsetWidth / 2;
+  panel.style.left = `${Math.max(
+    viewportPadding,
+    Math.min(centeredLeft, viewportRight - panel.offsetWidth),
+  )}px`;
+
+  const spaceAbove = Math.max(
+    0,
+    position.y - position.height - viewportPadding - tipGap,
+  );
+  const spaceBelow = Math.max(0, viewportBottom - position.y - tipGap);
+  const placeAbove = spaceAbove > spaceBelow;
+  const availableHeight = Math.max(
+    36,
+    Math.min(320, placeAbove ? spaceAbove : spaceBelow),
+  );
+  panel.style.setProperty(
+    "--visualtex-suggestion-max-height",
+    `${availableHeight}px`,
+  );
+
+  if (placeAbove) {
     panel.classList.add("ML__popover--reverse-direction");
     panel.classList.remove("top-tip");
     panel.classList.add("bottom-tip");
-    panel.style.top = `${position.y - position.height - panel.offsetHeight - 15}px`;
+    panel.style.top = `${Math.max(
+      viewportPadding,
+      position.y - position.height - panel.offsetHeight - tipGap,
+    )}px`;
   } else {
     panel.classList.remove("ML__popover--reverse-direction");
     panel.classList.add("top-tip");
     panel.classList.remove("bottom-tip");
-    panel.style.top = `${position.y + 15}px`;
+    panel.style.top = `${Math.max(
+      viewportPadding,
+      Math.min(position.y + tipGap, viewportBottom - panel.offsetHeight),
+    )}px`;
   }
 }
 function hideSuggestionPopover(mf) {
   mf.suggestionIndex = 0;
   const panel = document.getElementById("mathlive-suggestion-popover");
-  if (panel) releaseSharedElement("mathlive-suggestion-popover");
+  if (panel?.visualTexMathfield === mf) { panel.classList.remove("is-visible"); panel.setAttribute("aria-hidden", "true"); }
 }
+
 function createSuggestionPopover(mf, html) {
   let panel = document.getElementById("mathlive-suggestion-popover");
-  if (panel) releaseSharedElement("mathlive-suggestion-popover");
-  else {
-    injectStylesheet("suggestion-popover");
-    injectStylesheet("core");
-  }
-  panel = getSharedElement("mathlive-suggestion-popover");
-  panel.addEventListener("pointerdown", (ev) => ev.preventDefault());
-  panel.addEventListener("click", (ev) => {
-    let el = ev.target;
-    while (el && !el.dataset.command) el = el.parentElement;
-    if (!el) return;
-    complete(mf, "reject");
-    ModeEditor.insert(mf.model, el.dataset.command, {
-      selectionMode: "placeholder",
-      format: "latex",
-      mode: "math"
+  if (!panel) {
+    injectStylesheet("suggestion-popover"); injectStylesheet("core");
+    panel = getSharedElement("mathlive-suggestion-popover");
+    panel.addEventListener("pointerdown", ev => ev.preventDefault());
+    panel.addEventListener("click", ev => {
+      const item = ev.target.closest("li[data-command]");
+      const owner = panel.visualTexMathfield;
+      if (!item || !owner) return;
+      const entries = owner.visualTexCompletion?.suggestions || [];
+      const index = entries.indexOf(item.dataset.command);
+      if (index < 0) return;
+      owner.suggestionIndex = index;
+      complete(owner, "accept-all"); owner.dirty = true; owner.focus();
+      requestUpdate(owner);
     });
-    mf.dirty = true;
-    mf.focus();
-  });
+  }
+  panel.visualTexMathfield = mf;
+  panel.setAttribute("aria-hidden", "false");
   panel.innerHTML = globalThis.MathfieldElement.createHTML(html);
   return panel;
 }
-function disposeSuggestionPopover() {
-  if (!document.getElementById("mathlive-suggestion-popover")) return;
+function disposeSuggestionPopover(mf) {
+  const panel = document.getElementById("mathlive-suggestion-popover");
+  if (!panel || panel.visualTexMathfield !== mf) return;
   releaseSharedElement("mathlive-suggestion-popover");
   releaseStylesheet("suggestion-popover");
   releaseStylesheet("core");

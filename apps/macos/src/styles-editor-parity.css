@@ -76,7 +76,6 @@
   z-index: var(--z-popover, 190);
   top: calc(100% + 7px);
   right: 0;
-  width: min(360px, calc(100vw - 24px));
   display: grid;
   gap: 8px;
   padding: 10px;
@@ -197,7 +196,6 @@
 
 .formula-custom-colors-grid {
   display: grid;
-  grid-template-columns: repeat(4, 28px);
   gap: 8px 6px;
 }
 
