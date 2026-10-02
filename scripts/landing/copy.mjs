@@ -7,9 +7,9 @@ export const copy = {
   navDownload: { zh: "下载", en: "Download" },
   langSwitch: { zh: "EN", en: "中文" },
 
-  say1: { zh: "所见即所得。", en: "What you see is what you write.", display: true },
-  say2: { zh: "不必再看嵌套格式。", en: "No more counting braces.", display: true },
-  say3: { zh: "写一次，到处都能用。", en: "Write it once, use it anywhere.", display: true },
+  say1: { zh: "所见即所得", en: "What you see is what you write.", display: true },
+  say2: { zh: "不必再看嵌套格式", en: "No more counting braces.", display: true },
+  say3: { zh: "写一次，到处都能用", en: "Write it once, use it anywhere.", display: true },
 
   figLabel: { zh: "图 1 · 网页编辑器", enTex: String.raw`\textbf{Figure 1}\ \ \text{The web editor.}` },
   openEditor: { zh: "打开编辑器", en: "Open the editor" },
