@@ -405,7 +405,7 @@ function normalizeDesignerLayerEffects(
   if (!isRecord(value)) return undefined;
   const effects: CustomSymbolLayerEffects = {};
   if (isRecord(value.outline)) {
-    const width = finiteNumber(value.outline.width, 30);
+    const width = finiteNumber(value.outline.width, 72);
     if (width < 1 || width > 1_200) {
       throw new Error("Custom symbol outline width is outside the supported range.");
     }
@@ -1052,6 +1052,13 @@ export function replaceCustomSymbolLibrary(value: unknown) {
   return persistUserLibrary(normalizeCustomSymbolLibrary(value));
 }
 
+export function refreshCustomSymbolLibraryFromStorage() {
+  cachedStorageSignature = undefined;
+  cachedUserLibrary = null;
+  notifyLocalChange();
+  publishCustomSymbolRevision(Date.now());
+}
+
 function formatEm(value: number) {
   const normalized = Math.abs(value) < 0.000001 ? 0 : value;
   return Number(normalized.toFixed(4)).toString();
@@ -1128,6 +1135,13 @@ export function customSymbolMathLiveMacros() {
   );
 }
 
+export function addCustomSymbolMacros<T extends Record<string, unknown>>(macros: T) {
+  return {
+    ...macros,
+    ...customSymbolMathLiveMacros(),
+  };
+}
+
 export function getAppliedCustomSymbolCommandsForMathfield(
   field: MathfieldElement,
 ) {
@@ -1151,4 +1165,10 @@ export function composeCustomSymbolMacrosForMathfield(
 
 export function applyCustomSymbolMacrosToMathfield(field: MathfieldElement) {
   field.macros = composeCustomSymbolMacrosForMathfield(field, field.macros);
+}
+
+export function customSymbolSvgMacros() {
+  return Object.fromEntries(
+    getActiveCustomSymbols().map((symbol) => [symbol.command, customSymbolSvgMacro(symbol)]),
+  ) as Record<string, string>;
 }

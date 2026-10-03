@@ -3,16 +3,16 @@ import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
 import {
-  browserTestProfilePath,
-  resolveBrowserTestChromePath,
+  createBrowserProfilePath,
+  resolveChromiumExecutable,
 } from "./browser_test_runtime.mjs";
 
 const portOffset = process.pid % 700;
 const previewPort = 9400 + portOffset;
 const debugPort = 14400 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
-const chromeProfile = browserTestProfilePath("visualtex-ideographic-comma");
-const chromePath = resolveBrowserTestChromePath();
+const chromeProfile = createBrowserProfilePath("visualtex-ideographic-comma");
+const chromePath = resolveChromiumExecutable();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 12000) {

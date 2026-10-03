@@ -2,6 +2,7 @@ import type { LatexCommand } from "../types/command";
 import { additionalCommands } from "./additionalCommands.ts";
 import { compatibilityCommands } from "./compatibilityCommands.ts";
 import { latestSharedCommands } from "./latestSharedCommands.ts";
+import { physicsToolbarCommands } from "./physicsToolbarCommands.ts";
 
 const baseCommandRegistry: LatexCommand[] = [
   { id: "frac", command: "\\frac", insertTemplate: "\\frac{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\frac{a}{b}", labelZh: "分式", labelEn: "Fraction", aliases: ["divide", "fraction"], keywords: ["分数", "除法"], category: "structure", defaultPriority: 100, supportedInMathMode: true },
@@ -52,7 +53,6 @@ const baseCommandRegistry: LatexCommand[] = [
   { id: "matrix3", command: "\\begin{bmatrix}", insertTemplate: "\\begin{bmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{} \\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} \\\\ \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{bmatrix}", previewLatex: "\\begin{bmatrix}a&b&c\\\\d&e&f\\\\g&h&i\\end{bmatrix}", labelZh: "3×3 方括号矩阵", labelEn: "3×3 matrix", aliases: ["matrix", "bmatrix"], keywords: ["矩阵", "三阶矩阵"], category: "matrix", defaultPriority: 90, supportedInMathMode: true },
   { id: "pmatrix2", command: "\\begin{pmatrix}", insertTemplate: "\\begin{pmatrix}\\placeholder{} & \\placeholder{} \\\\ \\placeholder{} & \\placeholder{}\\end{pmatrix}", previewLatex: "\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}", labelZh: "圆括号矩阵", labelEn: "Parenthesized matrix", aliases: ["pmatrix"], keywords: ["矩阵", "圆括号矩阵"], category: "matrix", defaultPriority: 88, supportedInMathMode: true },
   { id: "determinant", command: "\\begin{vmatrix}", insertTemplate: "\\begin{vmatrix}\\placeholder{} & \\placeholder{} \\\\ \\placeholder{} & \\placeholder{}\\end{vmatrix}", previewLatex: "\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}", labelZh: "行列式", labelEn: "Determinant", aliases: ["det", "determinant"], keywords: ["行列式"], category: "matrix", defaultPriority: 87, supportedInMathMode: true },
-  { id: "vector", command: "\\vec", insertTemplate: "\\vec{\\placeholder{}}", previewLatex: "\\vec{v}", labelZh: "向量", labelEn: "Vector", aliases: ["vector"], keywords: ["矢量", "向量"], category: "matrix", defaultPriority: 84, supportedInMathMode: true },
   { id: "boldsymbol", command: "\\mathbf", insertTemplate: "\\mathbf{\\placeholder{}}", previewLatex: "\\mathbf{ABC}", labelZh: "数学粗体", labelEn: "Bold math", aliases: ["bold", "mathbf"], keywords: ["黑体", "矩阵粗体", "字体"], category: "matrix", defaultPriority: 82, supportedInMathMode: true },
   { id: "blackboard-bold", command: "\\mathbb", insertTemplate: "\\mathbb{\\placeholder{}}", previewLatex: "\\mathbb{ABC}", labelZh: "黑板粗体", labelEn: "Blackboard bold", aliases: ["blackboard", "mathbb"], keywords: ["空心字", "双线体", "字体"], category: "matrix", defaultPriority: 84, supportedInMathMode: true },
   { id: "math-italic", command: "\\mathit", insertTemplate: "\\mathit{\\placeholder{}}", previewLatex: "\\mathit{ABC}", labelZh: "数学斜体", labelEn: "Math italic", aliases: ["italic", "mathit"], keywords: ["斜体", "字体"], category: "matrix", defaultPriority: 76, supportedInMathMode: true },
@@ -87,6 +87,18 @@ const baseCommandRegistry: LatexCommand[] = [
   { id: "propto", command: "\\propto", insertTemplate: "\\propto", previewLatex: "\\propto", labelZh: "正比于", labelEn: "Proportional to", aliases: ["proportional"], keywords: ["正比"], category: "relation", defaultPriority: 82, supportedInMathMode: true },
   { id: "times", command: "\\times", insertTemplate: "\\times", previewLatex: "\\times", labelZh: "乘号", labelEn: "Multiplication", aliases: ["times", "multiply", "multiplication"], keywords: ["乘号", "乘法"], category: "relation", defaultPriority: 98, supportedInMathMode: true },
   { id: "div", command: "\\div", insertTemplate: "\\div", previewLatex: "\\div", labelZh: "除号", labelEn: "Division", aliases: ["divide", "division"], keywords: ["除号", "除法"], category: "relation", defaultPriority: 97, supportedInMathMode: true },
+  { id: "plusminus", command: "\\pm", insertTemplate: "\\pm", previewLatex: "\\pm", labelZh: "正负号", labelEn: "Plus-minus", aliases: ["plus minus", "pm"], keywords: ["正负", "加减"], category: "relation", defaultPriority: 94, supportedInMathMode: true },
+  { id: "minusplus", command: "\\mp", insertTemplate: "\\mp", previewLatex: "\\mp", labelZh: "负正号", labelEn: "Minus-plus", aliases: ["minus plus", "mp"], keywords: ["负正", "减加"], category: "relation", defaultPriority: 86, supportedInMathMode: true },
+  { id: "circ", command: "\\circ", insertTemplate: "\\circ", previewLatex: "\\circ", labelZh: "小圆运算符", labelEn: "Circle operator", aliases: ["circle operator", "circ"], keywords: ["圆", "复合"], category: "relation", defaultPriority: 78, supportedInMathMode: true },
+  { id: "bullet", command: "\\bullet", insertTemplate: "\\bullet", previewLatex: "\\bullet", labelZh: "实心点", labelEn: "Bullet operator", aliases: ["bullet"], keywords: ["实心点", "运算符"], category: "relation", defaultPriority: 72, supportedInMathMode: true },
+  { id: "star", command: "\\star", insertTemplate: "\\star", previewLatex: "\\star", labelZh: "星号运算符", labelEn: "Star operator", aliases: ["star"], keywords: ["星号", "运算符"], category: "relation", defaultPriority: 70, supportedInMathMode: true },
+  { id: "diamond", command: "\\diamond", insertTemplate: "\\diamond", previewLatex: "\\diamond", labelZh: "菱形运算符", labelEn: "Diamond operator", aliases: ["diamond"], keywords: ["菱形", "运算符"], category: "relation", defaultPriority: 68, supportedInMathMode: true },
+  { id: "angle", command: "\\angle", insertTemplate: "\\angle", previewLatex: "\\angle", labelZh: "角", labelEn: "Angle", aliases: ["angle"], keywords: ["角", "几何"], category: "relation", defaultPriority: 88, supportedInMathMode: true },
+  { id: "measuredangle", command: "\\measuredangle", insertTemplate: "\\measuredangle", previewLatex: "\\measuredangle", labelZh: "带弧角", labelEn: "Measured angle", aliases: ["measured angle"], keywords: ["角", "几何", "角度"], category: "relation", defaultPriority: 78, supportedInMathMode: true },
+  { id: "sphericalangle", command: "\\sphericalangle", insertTemplate: "\\sphericalangle", previewLatex: "\\sphericalangle", labelZh: "球面角", labelEn: "Spherical angle", aliases: ["spherical angle"], keywords: ["球面角", "几何"], category: "relation", defaultPriority: 72, supportedInMathMode: true },
+  { id: "triangle", command: "\\triangle", insertTemplate: "\\triangle", previewLatex: "\\triangle", labelZh: "三角形", labelEn: "Triangle", aliases: ["triangle"], keywords: ["三角形", "几何"], category: "relation", defaultPriority: 80, supportedInMathMode: true },
+  { id: "therefore", command: "\\therefore", insertTemplate: "\\therefore", previewLatex: "\\therefore", labelZh: "所以", labelEn: "Therefore", aliases: ["therefore"], keywords: ["所以", "因此", "逻辑"], category: "relation", defaultPriority: 76, supportedInMathMode: true },
+  { id: "because", command: "\\because", insertTemplate: "\\because", previewLatex: "\\because", labelZh: "因为", labelEn: "Because", aliases: ["because"], keywords: ["因为", "逻辑"], category: "relation", defaultPriority: 75, supportedInMathMode: true },
 
   { id: "in", command: "\\in", insertTemplate: "\\in", previewLatex: "\\in", labelZh: "属于", labelEn: "Element of", aliases: ["element"], keywords: ["属于"], category: "set", defaultPriority: 100, supportedInMathMode: true },
   { id: "notin", command: "\\notin", insertTemplate: "\\notin", previewLatex: "\\notin", labelZh: "不属于", labelEn: "Not an element", aliases: ["not element"], keywords: ["不属于"], category: "set", defaultPriority: 92, supportedInMathMode: true },
@@ -95,6 +107,12 @@ const baseCommandRegistry: LatexCommand[] = [
   { id: "cap", command: "\\cap", insertTemplate: "\\cap", previewLatex: "\\cap", labelZh: "交集", labelEn: "Intersection", aliases: ["intersection"], keywords: ["交集"], category: "set", defaultPriority: 88, supportedInMathMode: true },
   { id: "forall", command: "\\forall", insertTemplate: "\\forall", previewLatex: "\\forall", labelZh: "任意", labelEn: "For all", aliases: ["for all"], keywords: ["任意", "所有"], category: "set", defaultPriority: 86, supportedInMathMode: true },
   { id: "exists", command: "\\exists", insertTemplate: "\\exists", previewLatex: "\\exists", labelZh: "存在", labelEn: "Exists", aliases: ["exists"], keywords: ["存在"], category: "set", defaultPriority: 84, supportedInMathMode: true },
+  { id: "ni", command: "\\ni", insertTemplate: "\\ni", previewLatex: "\\ni", labelZh: "包含元素", labelEn: "Contains as member", aliases: ["contains member", "owns"], keywords: ["包含元素", "集合"], category: "set", defaultPriority: 82, supportedInMathMode: true },
+  { id: "varnothing", command: "\\varnothing", insertTemplate: "\\varnothing", previewLatex: "\\varnothing", labelZh: "变体空集", labelEn: "Variant empty set", aliases: ["varnothing"], keywords: ["空集", "集合"], category: "set", defaultPriority: 80, supportedInMathMode: true },
+  { id: "subsetneq", command: "\\subsetneq", insertTemplate: "\\subsetneq", previewLatex: "\\subsetneq", labelZh: "真子集且不等", labelEn: "Proper subset", aliases: ["proper subset"], keywords: ["真子集", "集合"], category: "set", defaultPriority: 78, supportedInMathMode: true },
+  { id: "supsetneq", command: "\\supsetneq", insertTemplate: "\\supsetneq", previewLatex: "\\supsetneq", labelZh: "真超集且不等", labelEn: "Proper superset", aliases: ["proper superset"], keywords: ["真超集", "集合"], category: "set", defaultPriority: 78, supportedInMathMode: true },
+  { id: "top", command: "\\top", insertTemplate: "\\top", previewLatex: "\\top", labelZh: "逻辑真", labelEn: "Logical true", aliases: ["top", "true"], keywords: ["逻辑真", "真值"], category: "set", defaultPriority: 72, supportedInMathMode: true },
+  { id: "bot", command: "\\bot", insertTemplate: "\\bot", previewLatex: "\\bot", labelZh: "逻辑假", labelEn: "Logical false", aliases: ["bottom", "false"], keywords: ["逻辑假", "假值"], category: "set", defaultPriority: 72, supportedInMathMode: true },
 
   { id: "to", command: "\\to", insertTemplate: "\\to", previewLatex: "\\to", labelZh: "趋于", labelEn: "To", aliases: ["to", "right arrow"], keywords: ["趋于", "箭头"], category: "arrow", defaultPriority: 100, supportedInMathMode: true },
   { id: "rightarrow", command: "\\rightarrow", insertTemplate: "\\rightarrow", previewLatex: "\\rightarrow", labelZh: "右箭头", labelEn: "Right arrow", aliases: ["right arrow"], keywords: ["右箭头"], category: "arrow", defaultPriority: 96, supportedInMathMode: true },
@@ -113,6 +131,7 @@ export const commandRegistry: LatexCommand[] = [
   ...baseCommandRegistry,
   ...compatibilityCommands,
   ...additionalCommands,
+  ...physicsToolbarCommands,
   ...latestSharedCommands,
 ];
 

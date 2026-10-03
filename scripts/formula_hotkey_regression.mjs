@@ -2,18 +2,15 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import {
-  browserTestProfilePath,
-  resolveBrowserTestChromePath,
-} from "./browser_test_runtime.mjs";
 
 const portOffset = process.pid % 1000;
 const previewPort = 7600 + portOffset;
 const debugPort = 12600 + portOffset;
-const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
-const chromeProfile = browserTestProfilePath("visualtex-formula-hotkeys");
-const chromePath = resolveBrowserTestChromePath();
+const baseUrl = `http://127.0.0.1:${previewPort}`;
+const chromeProfile = `/tmp/visualtex-formula-hotkeys-${process.pid}`;
+const chromePath = (process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const defaultsOnly = process.argv.includes("--defaults-only");
 
 async function waitFor(url, timeoutMs = 15000) {
   const started = Date.now();
@@ -140,27 +137,22 @@ async function main() {
       })`);
     };
 
-    const seededCustomTiles = [
-      "\\beta_{\\omega_1^2}",
-      "\\beta",
-      "\\int_b^a b",
-      "\\int_b^a a",
-      "\\int_b^a t",
-      "\\frac{R}{Tf}\\int_b^a t",
-      "\\frac{R}{Tf}\\int_b^a t\\,dpq",
-      "\\frac{R}{Tf}\\int_b^a t\\,dp",
-      "a^2+b^2=c^2",
-    ];
     await evaluate(`(() => {
       localStorage.clear();
       localStorage.setItem("visualtex.onboarding.v3.completed", "true");
       localStorage.setItem(
-        "visualtex-editor",
-        JSON.stringify({ state: { editorLayout: "standard" }, version: 0 }),
-      );
-      localStorage.setItem(
         "visualtex-custom-formula-tiles",
-        JSON.stringify(${JSON.stringify(seededCustomTiles)}),
+        JSON.stringify([
+          "\\beta_{\\omega_1^2}",
+          "\\beta",
+          "\\int_b^a b",
+          "\\int_b^a a",
+          "\\int_b^a t",
+          "\\frac{R}{Tf}\\int_b^a t",
+          "\\frac{R}{Tf}\\int_b^a t\\,dpq",
+          "\\frac{R}{Tf}\\int_b^a t\\,dp",
+          "a^2+b^2=c^2",
+        ]),
       );
     })()`);
     await reload();
@@ -274,6 +266,98 @@ async function main() {
         setTimeout(() => resolve(field.value), 120);
       })`);
 
+    const clearFormula = async () =>
+      evaluate(`new Promise((resolve) => {
+        const field = document.querySelector("math-field");
+        field.setValue("", { silenceNotifications: true });
+        field.position = field.lastOffset;
+        field.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          composed: true,
+          inputType: "deleteContentBackward",
+        }));
+        setTimeout(() => resolve(field.value), 80);
+      })`);
+
+    const defaultHotkeys = [
+      ["KeyR", "r", { metaKey: true }, /\\sqrt/],
+      ["KeyF", "f", { metaKey: true }, /\\frac/],
+      ["KeyJ", "j", { metaKey: true }, /[_^]/],
+      ["KeyL", "l", { metaKey: true }, /_/],
+      ["KeyD", "d", { metaKey: true }, /\\circ/],
+      ["KeyP", "P", { metaKey: true, shiftKey: true }, /\\partial/],
+      ["KeyI", "I", { metaKey: true, shiftKey: true }, /\\int/],
+      ["KeyS", "S", { metaKey: true, shiftKey: true }, /\\sum/],
+      ["KeyX", "X", { altKey: true, shiftKey: true }, /\\underline\{X\}/],
+      ["KeyY", "Y", { altKey: true, shiftKey: true }, /\\underline\{Y\}/],
+    ];
+    const hasConflictingCommandH = await evaluate(`(() => {
+      const hotkeys = JSON.parse(
+        localStorage.getItem("visualtex-formula-hotkeys-v1") || "{}",
+      );
+      return (hotkeys.state?.bindings || []).some(
+        (binding) => binding.chord?.metaKey &&
+          !binding.chord?.ctrlKey &&
+          !binding.chord?.altKey &&
+          !binding.chord?.shiftKey &&
+          binding.chord?.code === "KeyH",
+      );
+    })()`);
+    assert.equal(hasConflictingCommandH, false);
+    for (const [code, key, modifiers, expected] of defaultHotkeys) {
+      await clearFormula();
+      const value = await pressInFormula(code, key, modifiers);
+      assert.match(value, expected, `${code}: ${value}`);
+    }
+    await clearFormula();
+
+    const greekLetterHotkeys = [
+      ["KeyA", "a", /\\alpha/],
+      ["KeyB", "b", /\\beta/],
+      ["KeyG", "g", /\\gamma/],
+      ["KeyD", "d", /\\delta/],
+      ["KeyE", "e", /\\epsilon/],
+      ["KeyZ", "z", /\\zeta/],
+      ["KeyH", "h", /\\eta/],
+      ["KeyQ", "q", /\\theta/],
+      ["KeyI", "i", /\\iota/],
+      ["KeyK", "k", /\\kappa/],
+      ["KeyL", "l", /\\lambda/],
+      ["KeyM", "m", /\\mu/],
+      ["KeyN", "n", /\\nu/],
+      ["KeyX", "x", /\\xi/],
+      ["KeyO", "o", /^o$/],
+      ["KeyP", "p", /\\pi/],
+      ["KeyR", "r", /\\rho/],
+      ["KeyS", "s", /\\sigma/],
+      ["KeyT", "t", /\\tau/],
+      ["KeyU", "u", /\\upsilon/],
+      ["KeyF", "f", /\\phi/],
+      ["KeyC", "c", /\\chi/],
+      ["KeyY", "y", /\\psi/],
+      ["KeyW", "w", /\\omega/],
+    ];
+    for (const [code, key, expected] of greekLetterHotkeys) {
+      await clearFormula();
+      const armedValue = await pressInFormula("KeyG", "g", { metaKey: true });
+      assert.equal(armedValue, "", `Command+G inserted text before ${code}`);
+      const value = await pressInFormula(code, key, {});
+      assert.match(value, expected, `Command+G then ${key}: ${value}`);
+    }
+    for (const [code, key, expected] of [
+      ["KeyG", "G", /\\Gamma/],
+      ["KeyD", "D", /\\Delta/],
+      ["KeyQ", "Q", /\\Theta/],
+      ["KeyL", "L", /\\Lambda/],
+      ["KeyW", "W", /\\Omega/],
+    ]) {
+      await clearFormula();
+      await pressInFormula("KeyG", "g", { metaKey: true });
+      const value = await pressInFormula(code, key, { shiftKey: true });
+      assert.match(value, expected, `Command+G then Shift+${key}: ${value}`);
+    }
+    await clearFormula();
+
     await openContextMenu('.template-button[data-command-id="frac"]');
     await assignCurrentContext("KeyF", "f", {
       ctrlKey: true,
@@ -309,6 +393,30 @@ async function main() {
     assert.match(protectedState.warning, /保存|Save/);
     await evaluate(`document.querySelector(".formula-hotkey-recorder-dialog .dialog-header .icon-button")?.click()`);
 
+    await openContextMenu('.template-button[data-command-id="frac"]');
+    const greekPrefixProtectedState = await evaluate(`new Promise((resolve) => {
+      document.querySelector(".formula-hotkey-context-action")?.click();
+      setTimeout(() => {
+        document.dispatchEvent(new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          code: "KeyG",
+          key: "g",
+          metaKey: true,
+        }));
+        setTimeout(() => {
+          const save = document.querySelector(".formula-hotkey-recorder-footer .primary-button");
+          resolve({
+            disabled: save?.disabled ?? false,
+            warning: document.querySelector(".formula-hotkey-message.is-danger")?.textContent ?? "",
+          });
+        }, 40);
+      }, 50);
+    })`);
+    assert.equal(greekPrefixProtectedState.disabled, true);
+    assert.match(greekPrefixProtectedState.warning, /希腊字母|Greek letter/);
+    await evaluate(`document.querySelector(".formula-hotkey-recorder-dialog .dialog-header .icon-button")?.click()`);
+
     const managerState = await evaluate(`new Promise((resolve) => {
       document.querySelector(".settings-toggle")?.click();
       setTimeout(() => {
@@ -320,6 +428,8 @@ async function main() {
           const keycapRect = keycap?.getBoundingClientRect();
           resolve({
             rows: document.querySelectorAll(".formula-hotkey-binding-row").length,
+            officeActions: [...document.querySelectorAll("[data-office-hotkey-action]")]
+              .map((item) => item.getAttribute("data-office-hotkey-action")),
             hotkey: keycap?.textContent ?? "",
             keycapCenterDelta: rowRect && keycapRect
               ? Math.abs(
@@ -331,14 +441,121 @@ async function main() {
         }, 80);
       }, 80);
     })`);
-    assert.equal(
-      managerState.rows,
-      10,
-      "the manager should contain the ten Windows 1.2.5 default formula hotkey bindings",
-    );
+    assert.equal(managerState.rows, 10);
+    assert.deepEqual(managerState.officeActions, [
+      "word-image-inline",
+      "word-image-display",
+      "word-omml-inline",
+      "word-omml-display",
+      "powerpoint-svg-new",
+      "powerpoint-omml-inline",
+      "powerpoint-omml-display",
+    ]);
     assert.ok(managerState.hotkey);
     assert.ok(managerState.keycapCenterDelta <= 1, JSON.stringify(managerState));
+
+    const officeBindingState = await evaluate(`new Promise((resolve) => {
+      document.querySelector(
+        '[data-office-hotkey-action="word-omml-inline"] .formula-hotkey-binding-actions button',
+      )?.click();
+      setTimeout(() => {
+        document.dispatchEvent(new KeyboardEvent("keydown", {
+          code: "KeyU",
+          key: "u",
+          ctrlKey: true,
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        }));
+        setTimeout(() => {
+          const save = document.querySelector(
+            ".office-hotkey-recorder-dialog .formula-hotkey-recorder-footer .primary-button",
+          );
+          if (!save || save.disabled) {
+            resolve({
+              recorderClosed: false,
+              keycap: document.querySelector(".office-hotkey-recorder-dialog .formula-hotkey-capture-box kbd")?.textContent ?? "",
+              bindings: [],
+              formulaRows: document.querySelectorAll(".formula-hotkey-binding-row").length,
+              saveFound: Boolean(save),
+              saveDisabled: save?.disabled ?? null,
+              recorderText: document.querySelector(".office-hotkey-recorder-dialog")?.textContent ?? "",
+            });
+            return;
+          }
+          save.click();
+          setTimeout(() => {
+            const row = document.querySelector(
+              '[data-office-hotkey-action="word-omml-inline"]',
+            );
+            const stored = JSON.parse(
+              localStorage.getItem("visualtex-office-hotkeys-v1") || "{}",
+            );
+            resolve({
+              recorderClosed: !document.querySelector(".office-hotkey-recorder-dialog"),
+              keycap: row?.querySelector(":scope > kbd")?.textContent ?? "",
+              bindings: stored.state?.bindings ?? [],
+              formulaRows: document.querySelectorAll(".formula-hotkey-binding-row").length,
+            });
+          }, 100);
+        }, 50);
+      }, 50);
+    })`);
+    assert.equal(officeBindingState.recorderClosed, true, JSON.stringify(officeBindingState));
+    assert.match(officeBindingState.keycap, /U/);
+    assert.equal(officeBindingState.bindings.length, 1, JSON.stringify(officeBindingState));
+    assert.equal(officeBindingState.bindings[0].actionId, "word-omml-inline");
+    assert.equal(officeBindingState.bindings[0].chord.code, "KeyU");
+    assert.equal(officeBindingState.formulaRows, 10);
     await evaluate(`document.querySelector(".formula-hotkey-manager-dialog .dialog-header .icon-button")?.click()`);
+
+    if (defaultsOnly) {
+      await evaluate(`(() => {
+        localStorage.setItem(
+          "visualtex-formula-hotkeys-v1",
+          JSON.stringify({ state: { bindings: [] }, version: 1 }),
+        );
+      })()`);
+      await reload();
+      const migratedCount = await evaluate(`new Promise((resolve) => {
+        document.querySelector(".settings-toggle")?.click();
+        setTimeout(() => {
+          document.querySelector(".settings-hotkey-button")?.click();
+          setTimeout(() => resolve(
+            document.querySelectorAll(".formula-hotkey-binding-row").length,
+          ), 80);
+        }, 80);
+      })`);
+      assert.equal(migratedCount, 10);
+
+      const removedDefault = await evaluate(`new Promise((resolve) => {
+        const row = [...document.querySelectorAll(".formula-hotkey-binding-row")]
+          .find((item) => item.querySelector("code")?.textContent === "\\\\sqrt");
+        row?.querySelector(".formula-hotkey-binding-actions .is-danger")?.click();
+        setTimeout(() => resolve({
+          rows: document.querySelectorAll(".formula-hotkey-binding-row").length,
+          storedVersion: JSON.parse(
+            localStorage.getItem("visualtex-formula-hotkeys-v1") || "{}",
+          ).version,
+        }), 80);
+      })`);
+      assert.equal(removedDefault.rows, 9);
+      assert.equal(removedDefault.storedVersion, 2);
+      await evaluate(`document.querySelector(".formula-hotkey-manager-dialog .dialog-header .icon-button")?.click()`);
+      await reload();
+      const persistedRemovalCount = await evaluate(`new Promise((resolve) => {
+        document.querySelector(".settings-toggle")?.click();
+        setTimeout(() => {
+          document.querySelector(".settings-hotkey-button")?.click();
+          setTimeout(() => resolve(
+            document.querySelectorAll(".formula-hotkey-binding-row").length,
+          ), 80);
+        }, 80);
+      })`);
+      assert.equal(persistedRemovalCount, 9);
+      console.log("Default formula hotkey regression passed");
+      return;
+    }
 
     const expandedCategories = await evaluate(`new Promise(async (resolve) => {
       const result = {};
@@ -355,8 +572,22 @@ async function main() {
       ];
       for (const category of categories) {
         document.querySelector('[data-category="' + category + '"]')?.click();
-        await new Promise((done) => setTimeout(done, 100));
-        const buttons = Array.from(document.querySelectorAll(".template-button"));
+        const section = document.querySelector(
+          '[data-toolbar-category-section="' + category + '"]',
+        );
+        const waitStartedAt = Date.now();
+        while (Date.now() - waitStartedAt < 1000) {
+          const previews = Array.from(
+            section?.querySelectorAll(".template-button .math-preview") ?? [],
+          );
+          if (previews.length > 0 && previews.every((preview) => preview.dataset.fitReady === "true")) {
+            break;
+          }
+          await new Promise((done) => setTimeout(done, 25));
+        }
+        const buttons = Array.from(
+          section?.querySelectorAll(".template-button") ?? [],
+        );
         result[category] = {
           count: buttons.length,
           unifiedFitCount: buttons.filter((button) =>
@@ -407,8 +638,7 @@ async function main() {
       for (const [id, detail] of Object.entries(result.details)) {
         assert.equal(detail.unifiedFit, true, JSON.stringify({ category, id, detail }));
         assert.equal(detail.fontSize, 24, JSON.stringify({ category, id, detail }));
-        assert.equal(detail.fitReady, true, JSON.stringify({ category, id, detail }));
-        assert.ok(detail.scale > 0 && detail.scale <= 1.55, JSON.stringify({ category, id, detail }));
+        assert.ok(detail.scale > 0 && detail.scale <= 1, JSON.stringify({ category, id, detail }));
         assert.equal(detail.contained, true, JSON.stringify({ category, id, detail }));
       }
     }
@@ -420,7 +650,7 @@ async function main() {
     assert.equal(expandedCategories.physics.details["expectation-operator"].wide, true);
     assert.ok(
       expandedCategories.physics.details.matrixelement.width >
-        expandedCategories.physics.details.outerproduct.width * 1.3,
+        expandedCategories.physics.details.outerproduct.width * 1.5,
       JSON.stringify(expandedCategories.physics.details),
     );
     for (const commandId of ["intplain", "int", "iint", "sum", "series", "prod"]) {
@@ -461,7 +691,7 @@ async function main() {
       const listStyle = list ? getComputedStyle(list) : null;
       const gridRect = grid?.getBoundingClientRect();
       const betaButton = buttons.find(
-        (button) => button.dataset.formulaTileLatex === ${JSON.stringify("\\beta")},
+        (button) => button.dataset.formulaTileLatex === "\\beta",
       );
       const betaRect = betaButton?.getBoundingClientRect();
       const firstTop = Math.min(...rects.map((rect) => Math.round(rect.top)));
@@ -471,8 +701,6 @@ async function main() {
         widths: rects.map((rect) => Math.round(rect.width)),
         tops: rects.map((rect) => Math.round(rect.top)),
         weights: buttons.map((button) => Number(button.dataset.customTileWeight || 0)),
-        latex: buttons.map((button) => button.dataset.formulaTileLatex || ""),
-        minWidths: buttons.map((button) => Number(button.dataset.customTileMinWidth || 0)),
         scales: buttons.map((button) => Number(
           button.querySelector(".math-preview")?.dataset.fitScale || 1,
         )),

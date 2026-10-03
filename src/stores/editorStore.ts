@@ -1,15 +1,17 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
 import type { CommandSource, CommandUsage } from "../types/command";
 import type {
   FormulaDocument,
   FormulaAlignment,
+  FormulaDisplayStyle,
   FormulaHistoryItem,
   FormulaLine,
   FormulaLineMode,
   InputBehaviorSettingKey,
   InputBehaviorSettings,
   LatexCodeFormat,
+  LatexFormatProfile,
   Theme,
 } from "../types/formula";
 import type { DocumentSnapshot } from "../history/historyTypes";
@@ -17,13 +19,18 @@ import {
   DEFAULT_LATEX_CODE_FORMAT,
   isLatexCodeFormat,
 } from "../clipboard/LatexCopyService";
+import {
+  DEFAULT_LATEX_FORMAT_PROFILE,
+  legacyCodeFormatToProfile,
+  normalizeLatexFormatProfile,
+} from "../clipboard/latexFormatProfile";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
 import { normalizeFormulaLinePhysicalWhitespace } from "../math/formulaLineLatex";
 import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
 import { createUuid } from "../runtime/browserCompatibility";
 import { safeStorage } from "../runtime/safeStorage";
-import { isLandingPreview, LANDING_PREVIEW_ZOOM } from "../runtime/landingPreview";
+import { editorPersistenceStorage } from "../runtime/editorPersistenceStorage";
 import {
   DEFAULT_PNG_EXPORT_BACKGROUND,
   normalizePngExportBackground,
@@ -50,7 +57,9 @@ export const DEFAULT_THEME: Theme = "light";
 export const MIN_EDITOR_ZOOM = 0.2;
 export const MAX_EDITOR_ZOOM = 1.6;
 export const EDITOR_ZOOM_STEP = 0.05;
-export const DEFAULT_EDITOR_ZOOM = 0.45;
+export const DEFAULT_SOURCE_EDITOR_FONT_SIZE = 12;
+export const MIN_SOURCE_EDITOR_FONT_SIZE = 9;
+export const MAX_SOURCE_EDITOR_FONT_SIZE = 28;
 export const DEFAULT_FORMULA_INSET = 34;
 export const MIN_FORMULA_INSET = 0;
 export const MAX_FORMULA_INSET = 96;
@@ -135,15 +144,23 @@ function normalizeTheme(value: unknown): Theme {
 }
 
 function normalizeEditorZoom(value: unknown) {
-  const zoom =
-    typeof value === "number" && Number.isFinite(value)
-      ? value
-      : DEFAULT_EDITOR_ZOOM;
+  const zoom = typeof value === "number" && Number.isFinite(value) ? value : 1;
   const steppedZoom =
     Math.round(
       Math.round(zoom / EDITOR_ZOOM_STEP) * EDITOR_ZOOM_STEP * 100,
     ) / 100;
   return Math.min(MAX_EDITOR_ZOOM, Math.max(MIN_EDITOR_ZOOM, steppedZoom));
+}
+
+function normalizeSourceEditorFontSize(value: unknown) {
+  const size =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value)
+      : DEFAULT_SOURCE_EDITOR_FONT_SIZE;
+  return Math.min(
+    MAX_SOURCE_EDITOR_FONT_SIZE,
+    Math.max(MIN_SOURCE_EDITOR_FONT_SIZE, size),
+  );
 }
 
 function normalizeFormulaInset(value: unknown) {
@@ -233,6 +250,15 @@ function normalizeClassicDockHeight(value: unknown) {
   );
 }
 
+function normalizeFormulaDisplayStyle(value: unknown): FormulaDisplayStyle {
+  return value === "double-dollar" ||
+    value === "bracket" ||
+    value === "equation" ||
+    value === "equation-star"
+    ? value
+    : "default";
+}
+
 function normalizeFormulaLineLatex(latex: string) {
   const normalized = latex.replace(/\r\n?/g, "\n");
   const trimmed = normalized.trim();
@@ -247,11 +273,13 @@ export function createFormulaLine(
   latex = "",
   id: string = createUuid(),
   mode: FormulaLineMode = "display",
+  displayStyle: FormulaDisplayStyle = "default",
 ): FormulaLine {
   return {
     id,
     latex: normalizeFormulaLineLatex(latex.replace(/\r\n?/g, "\n")),
     mode: mode === "inline" ? "inline" : "display",
+    displayStyle: normalizeFormulaDisplayStyle(displayStyle),
   };
 }
 
@@ -285,6 +313,7 @@ export function normalizeFormulaLines(
               : "",
           ),
           mode: candidate.mode === "inline" ? "inline" : "display",
+          displayStyle: normalizeFormulaDisplayStyle(candidate.displayStyle),
         } satisfies FormulaLine;
       })
       .filter((line): line is NonNullable<typeof line> => line !== null);
@@ -331,7 +360,9 @@ interface EditorState {
   language: Language;
   zoom: number;
   sourceOpen: boolean;
+  sourceEditorFontSize: number;
   latexCodeFormat: LatexCodeFormat;
+  latexFormatProfile: LatexFormatProfile;
   autoPairDelimiters: boolean;
   showLineNumbers: boolean;
   highlightActiveLine: boolean;
@@ -349,21 +380,27 @@ interface EditorState {
   inputBehavior: InputBehaviorSettings;
   personalize: boolean;
   suggestionCount: number;
+  checkUpdatesOnStartup: boolean;
+  powerPointDefaultFontSizePt: number;
   usage: Record<string, CommandUsage>;
   history: FormulaHistoryItem[];
   setTitle: (title: string) => void;
   setActiveLineId: (lineId: string | null) => void;
-  replaceFormulaLine: (lineId: string, latex: string) => void;
+  replaceFormulaLine: (lineId: string, latex: string, activeLineId?: string | null) => void;
   setFormulaAlignment: (alignment: FormulaAlignment) => void;
   setEditorLayout: (layout: EditorLayout) => void;
-  insertFormulaLine: (line: FormulaLine, index: number) => void;
-  removeFormulaLine: (lineId: string) => void;
   replaceDocumentState: (snapshot: DocumentSnapshot) => void;
   setTheme: (theme: Theme) => void;
   setLanguage: (language: Language) => void;
   setZoom: (zoom: number) => void;
   setSourceOpen: (open: boolean) => void;
+  setSourceEditorFontSize: (size: number) => void;
   setLatexCodeFormat: (format: LatexCodeFormat) => void;
+  setLatexFormatProfile: (
+    update:
+      | Partial<LatexFormatProfile>
+      | ((current: LatexFormatProfile) => Partial<LatexFormatProfile>),
+  ) => void;
   setAutoPairDelimiters: (enabled: boolean) => void;
   setShowLineNumbers: (enabled: boolean) => void;
   setHighlightActiveLine: (enabled: boolean) => void;
@@ -384,6 +421,8 @@ interface EditorState {
   ) => void;
   setPersonalize: (enabled: boolean) => void;
   setSuggestionCount: (count: number) => void;
+  setCheckUpdatesOnStartup: (enabled: boolean) => void;
+  setPowerPointDefaultFontSizePt: (fontSizePt: number) => void;
   recordCommand: (commandId: string, prefix: string, source: CommandSource) => void;
   resetUsage: () => void;
   addHistory: (latex?: string) => void;
@@ -405,9 +444,11 @@ export const useEditorStore = create<EditorState>()(
       editorLayout: DEFAULT_EDITOR_LAYOUT,
       theme: DEFAULT_THEME,
       language: "cn",
-      zoom: isLandingPreview ? LANDING_PREVIEW_ZOOM : DEFAULT_EDITOR_ZOOM,
+      zoom: 0.6,
       sourceOpen: false,
-      latexCodeFormat: DEFAULT_LATEX_CODE_FORMAT,
+      sourceEditorFontSize: DEFAULT_SOURCE_EDITOR_FONT_SIZE,
+      latexCodeFormat: "mixed-inline-display",
+      latexFormatProfile: { ...DEFAULT_LATEX_FORMAT_PROFILE },
       autoPairDelimiters: true,
       showLineNumbers: false,
       highlightActiveLine: false,
@@ -435,6 +476,8 @@ export const useEditorStore = create<EditorState>()(
       inputBehavior: { ...DEFAULT_INPUT_BEHAVIOR_SETTINGS },
       personalize: true,
       suggestionCount: 6,
+      checkUpdatesOnStartup: true,
+      powerPointDefaultFontSizePt: 20,
       usage: {},
       history: [],
       setTitle: (title) => set({ title }),
@@ -442,41 +485,24 @@ export const useEditorStore = create<EditorState>()(
         set((state) => ({
           activeLineId: validActiveLineId(state.lines, activeLineId),
         })),
-      replaceFormulaLine: (lineId, latex) =>
-        set((state) => ({
-          lines: state.lines.map((line) =>
-            line.id === lineId
-              ? { ...line, latex: normalizeFormulaLineLatex(latex) }
-              : line,
-          ),
-        })),
+      replaceFormulaLine: (lineId, latex, activeLineId) =>
+        set((state) => {
+          const normalized = normalizeFormulaLineLatex(latex);
+          const nextActive = validActiveLineId(
+            state.lines, activeLineId === undefined ? state.activeLineId : activeLineId,
+          );
+          const line = state.lines.find(item => item.id === lineId);
+          if (!line || (line.latex === normalized && state.activeLineId === nextActive)) return state;
+          return {
+            activeLineId: nextActive,
+            lines: line.latex === normalized ? state.lines : state.lines.map(item =>
+              item.id === lineId ? { ...item, latex: normalized } : item),
+          };
+        }),
       setFormulaAlignment: (formulaAlignment) =>
         set({ formulaAlignment: normalizeFormulaAlignment(formulaAlignment) }),
       setEditorLayout: (editorLayout) =>
         set({ editorLayout: normalizeEditorLayout(editorLayout) }),
-      insertFormulaLine: (line, index) =>
-        set((state) => {
-          const nextLines = state.lines.filter((item) => item.id !== line.id);
-          const targetIndex = Math.max(0, Math.min(index, nextLines.length));
-          nextLines.splice(targetIndex, 0, {
-            id: line.id,
-            latex: normalizeFormulaLineLatex(line.latex),
-            mode: line.mode === "inline" ? "inline" : "display",
-          });
-          return {
-            lines: nextLines,
-            activeLineId: validActiveLineId(nextLines, state.activeLineId),
-          };
-        }),
-      removeFormulaLine: (lineId) =>
-        set((state) => {
-          const nextLines = state.lines.filter((line) => line.id !== lineId);
-          const safeLines = nextLines.length ? nextLines : [createFormulaLine("")];
-          return {
-            lines: safeLines,
-            activeLineId: validActiveLineId(safeLines, state.activeLineId),
-          };
-        }),
       replaceDocumentState: (snapshot) =>
         set(() => {
           const lines = normalizeFormulaLines(snapshot.lines);
@@ -491,15 +517,32 @@ export const useEditorStore = create<EditorState>()(
         }),
       setTheme: (theme) => set({ theme: normalizeTheme(theme) }),
       setLanguage: (language) => set({ language }),
-      setZoom: (zoom) => set({
-        zoom: isLandingPreview ? LANDING_PREVIEW_ZOOM : normalizeEditorZoom(zoom),
-      }),
+      setZoom: (zoom) => set({ zoom: normalizeEditorZoom(zoom) }),
       setSourceOpen: (sourceOpen) => set({ sourceOpen }),
+      setSourceEditorFontSize: (sourceEditorFontSize) =>
+        set({
+          sourceEditorFontSize: normalizeSourceEditorFontSize(
+            sourceEditorFontSize,
+          ),
+        }),
       setLatexCodeFormat: (latexCodeFormat) =>
         set({
           latexCodeFormat: isLatexCodeFormat(latexCodeFormat)
             ? latexCodeFormat
             : DEFAULT_LATEX_CODE_FORMAT,
+        }),
+      setLatexFormatProfile: (update) =>
+        set((state) => {
+          const patch =
+            typeof update === "function"
+              ? update(state.latexFormatProfile)
+              : update;
+          return {
+            latexFormatProfile: normalizeLatexFormatProfile({
+              ...state.latexFormatProfile,
+              ...patch,
+            }),
+          };
         }),
       setAutoPairDelimiters: (autoPairDelimiters) =>
         set({ autoPairDelimiters }),
@@ -566,6 +609,14 @@ export const useEditorStore = create<EditorState>()(
       setPersonalize: (personalize) => set({ personalize }),
       setSuggestionCount: (suggestionCount) =>
         set({ suggestionCount: Math.min(10, Math.max(3, suggestionCount)) }),
+      setCheckUpdatesOnStartup: (checkUpdatesOnStartup) =>
+        set({ checkUpdatesOnStartup }),
+      setPowerPointDefaultFontSizePt: (powerPointDefaultFontSizePt) =>
+        set({
+          powerPointDefaultFontSizePt:
+            Math.round(Math.min(200, Math.max(5, powerPointDefaultFontSizePt)) * 2) /
+            2,
+        }),
       recordCommand: (commandId, prefix, source) =>
         set((state) => {
           const now = Date.now();
@@ -622,6 +673,7 @@ export const useEditorStore = create<EditorState>()(
               id: formula.id,
               latex: formula.latex,
               mode: formula.displayMode === "inline" ? "inline" : "display",
+              displayStyle: normalizeFormulaDisplayStyle(formula.displayStyle),
             })),
           );
           const settings = document.settings ?? {};
@@ -671,9 +723,17 @@ export const useEditorStore = create<EditorState>()(
             // Keep the user's current workspace choice when opening old files
             // that still carry the legacy settings.sourceOpen field.
             sourceOpen: state.sourceOpen,
-            latexCodeFormat: isLatexCodeFormat(settings.latexCodeFormat)
-              ? settings.latexCodeFormat
-              : state.latexCodeFormat,
+            sourceEditorFontSize:
+              settings.sourceEditorFontSize === undefined
+                ? state.sourceEditorFontSize
+                : normalizeSourceEditorFontSize(
+                    settings.sourceEditorFontSize,
+                  ),
+            latexCodeFormat: "mixed-inline-display",
+            latexFormatProfile:
+              settings.latexFormatProfile === undefined
+                ? state.latexFormatProfile
+                : normalizeLatexFormatProfile(settings.latexFormatProfile),
             autoPairDelimiters:
               typeof settings.autoPairDelimiters === "boolean"
                 ? settings.autoPairDelimiters
@@ -729,6 +789,20 @@ export const useEditorStore = create<EditorState>()(
               Number.isFinite(settings.suggestionCount)
                 ? Math.min(10, Math.max(3, Math.round(settings.suggestionCount)))
                 : state.suggestionCount,
+            checkUpdatesOnStartup:
+              typeof settings.checkUpdatesOnStartup === "boolean"
+                ? settings.checkUpdatesOnStartup
+                : state.checkUpdatesOnStartup,
+            powerPointDefaultFontSizePt:
+              typeof settings.powerPointDefaultFontSizePt === "number" &&
+              Number.isFinite(settings.powerPointDefaultFontSizePt)
+                ? Math.round(
+                    Math.min(
+                      200,
+                      Math.max(5, settings.powerPointDefaultFontSizePt),
+                    ) * 2,
+                  ) / 2
+                : state.powerPointDefaultFontSizePt,
             classicTileWidth:
               settings.classicTileWidth === undefined
                 ? state.classicTileWidth
@@ -753,6 +827,7 @@ export const useEditorStore = create<EditorState>()(
             id: line.id,
             latex: line.latex,
             displayMode: line.mode === "inline" ? "inline" : "block",
+            displayStyle: line.displayStyle,
             alignment: state.formulaAlignment,
             fontSize: Math.round(36 * state.zoom),
             createdAt: now,
@@ -763,10 +838,12 @@ export const useEditorStore = create<EditorState>()(
             theme: state.theme,
             zoom: state.zoom,
             formulaAlignment: state.formulaAlignment,
-            latexCodeFormat: state.latexCodeFormat,
+            latexCodeFormat: "mixed-inline-display",
+            latexFormatProfile: { ...state.latexFormatProfile },
             editorLayout: state.editorLayout,
             language: state.language,
             sourceOpen: state.sourceOpen,
+            sourceEditorFontSize: state.sourceEditorFontSize,
             autoPairDelimiters: state.autoPairDelimiters,
             showLineNumbers: state.showLineNumbers,
             highlightActiveLine: state.highlightActiveLine,
@@ -781,6 +858,8 @@ export const useEditorStore = create<EditorState>()(
             inputBehavior: { ...state.inputBehavior },
             personalize: state.personalize,
             suggestionCount: state.suggestionCount,
+            checkUpdatesOnStartup: state.checkUpdatesOnStartup,
+            powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
             classicTileWidth: state.classicTileWidth,
             classicDockHeight: state.classicDockHeight,
             keypadMinimizeOnCopy: state.keypadMinimizeOnCopy,
@@ -790,7 +869,7 @@ export const useEditorStore = create<EditorState>()(
     }),
     {
       name: "visualtex-editor",
-      storage: createJSONStorage(() => safeStorage),
+      storage: editorPersistenceStorage,
       partialize: (state) => ({
         title: state.title,
         lines: state.lines,
@@ -801,7 +880,9 @@ export const useEditorStore = create<EditorState>()(
         language: state.language,
         zoom: state.zoom,
         sourceOpen: state.sourceOpen,
-        latexCodeFormat: state.latexCodeFormat,
+        sourceEditorFontSize: state.sourceEditorFontSize,
+        latexCodeFormat: "mixed-inline-display",
+        latexFormatProfile: state.latexFormatProfile,
         autoPairDelimiters: state.autoPairDelimiters,
         showLineNumbers: state.showLineNumbers,
         highlightActiveLine: state.highlightActiveLine,
@@ -819,6 +900,8 @@ export const useEditorStore = create<EditorState>()(
         inputBehavior: state.inputBehavior,
         personalize: state.personalize,
         suggestionCount: state.suggestionCount,
+        checkUpdatesOnStartup: state.checkUpdatesOnStartup,
+        powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
         usage: state.usage,
         history: state.history,
       }),
@@ -842,10 +925,19 @@ export const useEditorStore = create<EditorState>()(
           ),
           editorLayout: normalizeEditorLayout(persisted.editorLayout),
           theme: normalizeTheme(persisted.theme),
-          zoom: isLandingPreview ? LANDING_PREVIEW_ZOOM : normalizeEditorZoom(persisted.zoom),
-          latexCodeFormat: isLatexCodeFormat(persisted.latexCodeFormat)
-            ? persisted.latexCodeFormat
-            : DEFAULT_LATEX_CODE_FORMAT,
+          zoom: normalizeEditorZoom(persisted.zoom),
+          sourceEditorFontSize: normalizeSourceEditorFontSize(
+            persisted.sourceEditorFontSize,
+          ),
+          latexCodeFormat: "mixed-inline-display",
+          latexFormatProfile:
+            persisted.latexFormatProfile === undefined
+              ? legacyCodeFormatToProfile(
+                  isLatexCodeFormat(persisted.latexCodeFormat)
+                    ? persisted.latexCodeFormat
+                    : undefined,
+                )
+              : normalizeLatexFormatProfile(persisted.latexFormatProfile),
           autoPairDelimiters:
             typeof persisted.autoPairDelimiters === "boolean"
               ? persisted.autoPairDelimiters
@@ -903,6 +995,14 @@ export const useEditorStore = create<EditorState>()(
           inputBehavior: normalizeInputBehaviorSettings(
             persisted.inputBehavior,
           ),
+          powerPointDefaultFontSizePt:
+            typeof persisted.powerPointDefaultFontSizePt === "number" &&
+            Number.isFinite(persisted.powerPointDefaultFontSizePt)
+              ? Math.round(
+                  Math.min(200, Math.max(5, persisted.powerPointDefaultFontSizePt)) *
+                    2,
+                ) / 2
+              : 20,
         };
       },
     },

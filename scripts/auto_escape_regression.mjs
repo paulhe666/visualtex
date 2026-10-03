@@ -2,17 +2,13 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import {
-  browserTestProfilePath,
-  resolveBrowserTestChromePath,
-} from "./browser_test_runtime.mjs";
 
 const portOffset = process.pid % 700;
 const previewPort = 7600 + portOffset;
 const debugPort = 12600 + portOffset;
-const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
-const chromeProfile = browserTestProfilePath("visualtex-auto-escape");
-const chromePath = resolveBrowserTestChromePath();
+const baseUrl = `http://127.0.0.1:${previewPort}`;
+const chromeProfile = `/tmp/visualtex-auto-escape-${process.pid}`;
+const chromePath = (process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 12000) {
@@ -122,8 +118,6 @@ async function main() {
     await client.connect();
     await client.send("Runtime.enable");
     await client.send("Page.enable");
-    await client.send("Page.navigate", { url: baseUrl });
-    await sleep(300);
 
     const evaluate = async (expression) => {
       const result = await client.send("Runtime.evaluate", {
@@ -143,7 +137,6 @@ async function main() {
 
     const reload = async () => {
       await client.send("Page.reload", { ignoreCache: true });
-      await sleep(500);
       await evaluate(`new Promise((resolve) => {
         const done = () => document.querySelector("math-field")
           ? resolve(true)
@@ -229,12 +222,6 @@ async function main() {
     await configure(true);
 
     await evaluate(`document.querySelector(".canvas-input-behavior-trigger").click()`);
-    await evaluate(`new Promise((resolve) => {
-      const done = () => document.querySelector(".input-behavior-popover")
-        ? resolve(true)
-        : setTimeout(done, 25);
-      done();
-    })`);
     await sleep(80);
     const behaviorUi = await evaluate(`(() => {
       const popover = document.querySelector(".input-behavior-popover");
@@ -242,8 +229,10 @@ async function main() {
         trigger: getComputedStyle(document.querySelector(".canvas-input-behavior-trigger")).fontSize,
         width: getComputedStyle(popover).width,
         heading: getComputedStyle(popover.querySelector(".input-behavior-heading strong")).fontSize,
-        hasDescription: Boolean(popover.querySelector(".input-behavior-heading span")),
+        description: getComputedStyle(popover.querySelector(".input-behavior-heading span")).fontSize,
         optionTitle: getComputedStyle(popover.querySelector(".input-behavior-option strong")).fontSize,
+        optionDescription: getComputedStyle(popover.querySelector(".input-behavior-option small")).fontSize,
+        headerZIndex: getComputedStyle(document.querySelector(".formula-workspace.editor-pane > .workspace-heading")).zIndex,
         menuZIndex: getComputedStyle(document.querySelector(".input-behavior-menu")).zIndex,
         popoverZIndex: getComputedStyle(popover).zIndex,
         ...(() => {
@@ -265,14 +254,21 @@ async function main() {
     })()`);
     assert.equal(behaviorUi.trigger, "13px");
     assert.equal(behaviorUi.width, "420px");
-    assert.equal(behaviorUi.heading, "13px");
-    assert.equal(behaviorUi.hasDescription, false);
-    assert.equal(behaviorUi.optionTitle, "12px");
+    assert.equal(behaviorUi.heading, "16px");
+    assert.equal(behaviorUi.description, "12px");
+    assert.equal(behaviorUi.optionTitle, "14px");
+    assert.equal(behaviorUi.optionDescription, "12px");
+    assert.equal(behaviorUi.headerZIndex, "80");
     assert.equal(behaviorUi.menuZIndex, "90");
     assert.equal(behaviorUi.popoverZIndex, "100");
     assert.ok(
-      behaviorUi.overlapHeight === 0 || behaviorUi.popoverOwnsOverlapPoint,
-      "the input-behavior popover must avoid the dock or paint above it",
+      behaviorUi.overlapHeight > 20,
+      `the popover should overlap the classic bottom dock in this regression viewport (actual ${behaviorUi.overlapHeight}px)`,
+    );
+    assert.equal(
+      behaviorUi.popoverOwnsOverlapPoint,
+      true,
+      "the input-behavior popover must paint above the bottom formula toolbar",
     );
 
     await evaluate(`document.querySelector(".input-behavior-option input").click()`);
@@ -291,32 +287,6 @@ async function main() {
     );
 
     await evaluate(`document.querySelector(".canvas-input-behavior-trigger").click()`);
-    await evaluate(`document.querySelector(".export-menu-trigger").click()`);
-    await sleep(80);
-    const exportUi = await evaluate(`(() => {
-      const popover = document.querySelector(".export-menu-popover");
-      return {
-        width: getComputedStyle(popover).width,
-        heading: getComputedStyle(popover.querySelector(".export-menu-heading strong")).fontSize,
-        description: getComputedStyle(popover.querySelector(".export-menu-heading span")).fontSize,
-        formatTitle: getComputedStyle(popover.querySelector(".export-format-options strong")).fontSize,
-        extension: getComputedStyle(popover.querySelector(".export-format-options small")).fontSize,
-        pathLabel: getComputedStyle(popover.querySelector(".export-path-copy span")).fontSize,
-        path: getComputedStyle(popover.querySelector(".export-path-copy strong")).fontSize,
-        chooseButton: getComputedStyle(popover.querySelector(".export-path-button")).fontSize,
-      };
-    })()`);
-    assert.deepEqual(exportUi, {
-      width: "420px",
-      heading: "16px",
-      description: "12px",
-      formatTitle: "14px",
-      extension: "12px",
-      pathLabel: "12px",
-      path: "12px",
-      chooseButton: "13px",
-    });
-    await evaluate(`document.querySelector(".export-menu-trigger").click()`);
 
     assert.match(await typeText(">="), /\\(?:ge|geq)/);
     assert.match(await typeText("geq"), /\\(?:ge|geq)/);
@@ -352,7 +322,12 @@ async function main() {
     assert.equal(
       await typeText("dx"),
       "\\mathrm{d}x",
-      "semantic differential detection remains active when shortcut expansion is disabled",
+      "upright differential detection must remain active when general shortcuts are disabled",
+    );
+    assert.equal(
+      await typeText("sin"),
+      "\\sin",
+      "upright named-operator detection must remain independent of general shortcuts",
     );
 
     console.log("Auto escape regression passed");

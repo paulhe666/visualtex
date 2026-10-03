@@ -6,9 +6,9 @@ import process from "node:process";
 const portOffset = process.pid % 1000;
 const previewPort = 7600 + portOffset;
 const debugPort = 12600 + portOffset;
-const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
+const baseUrl = `http://127.0.0.1:${previewPort}`;
 const chromeProfile = `/tmp/visualtex-radical-render-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromePath = (process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const screenshotPath = "build-logs/radical-render-regression.png";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -130,7 +130,7 @@ async function main() {
 
     await evaluate(`new Promise((resolve) => {
       const done = () => {
-        if (location.href.startsWith(${JSON.stringify(baseUrl)})) resolve(true);
+        if (location.origin === ${JSON.stringify(baseUrl)}) resolve(true);
         else setTimeout(done, 30);
       };
       done();

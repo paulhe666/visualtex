@@ -633,11 +633,6 @@ const categories = [
 type ToolbarCategory = (typeof categories)[number];
 type ToolbarPreviewMode = "full" | "static";
 
-const staticToolbarPreviewCategories = new Set<ToolbarCategory>([
-  "arrow",
-  "physics",
-  "set",
-]);
 const toolbarPreviewOverscanRatio = 1.35;
 const toolbarScrollIdleDelayMs = 110;
 
@@ -699,8 +694,32 @@ const matrixDelimiterOptions: Array<{
   },
 ];
 
-const hiddenToolbarCommandIds = new Set(["time-ordering"]);
+// Package shorthands remain available through autocomplete and raw LaTeX, but
+// the toolbar should expose each semantic template only once. Prefer the
+// primitive templates here: they render more compactly and give each visible
+// placeholder a direct, predictable caret stop.
+const hiddenToolbarCommandIds = new Set([
+  "time-ordering",
+  "shortcut-bra",
+  "shortcut-ket",
+  "shortcut-expval",
+  "shortcut-comm",
+  "shortcut-acomm",
+  "shortcut-braket",
+  "shortcut-ketbra",
+  "shortcut-mel",
+]);
 const wideToolbarCommandIds = new Set([
+  "shortcut-pb",
+  "commutator",
+  "anticommutator",
+  "outerproduct",
+  "physics-pmqty",
+  "physics-bmqty",
+  "physics-vmqty",
+  "physics-spmqty",
+  "physics-sbmqty",
+  "physics-vev",
   "matrixelement",
   "expectation-operator",
   "matrix-dots",
@@ -710,6 +729,9 @@ const wideToolbarCommandIds = new Set([
 ]);
 const minimumToolbarPreviewInsetRatio = 0.58;
 const maximumToolbarPreviewInsetRatio = 0.94;
+const compactToolbarPreviewInsetRatio = 0.8;
+const compactToolbarPreviewMaximumScale = 0.82;
+const compactCasesPreviewMaximumScale = 0.92;
 
 const calculusPreviewById: Record<string, string> = {
   intplain: "\\int",
@@ -908,17 +930,19 @@ export function FormulaToolbar({
   const effectiveFormulaToolButtonPadding = compactDensity
     ? Math.max(0, formulaToolButtonPadding - 1)
     : formulaToolButtonPadding;
-  const toolbarPreviewInsetRatio = Math.max(
+  const fullSizeToolbarPreviewInsetRatio = Math.max(
     minimumToolbarPreviewInsetRatio,
     Math.min(
       maximumToolbarPreviewInsetRatio,
       maximumToolbarPreviewInsetRatio - effectiveFormulaToolButtonPadding * 0.03,
     ),
   );
-  const toolbarPreviewMaximumScale = Math.min(
-    1.55,
-    Math.max(1, effectiveFormulaToolButtonSize / 42),
-  );
+  const toolbarPreviewInsetRatio = compactDensity
+    ? Math.min(compactToolbarPreviewInsetRatio, fullSizeToolbarPreviewInsetRatio)
+    : fullSizeToolbarPreviewInsetRatio;
+  const toolbarPreviewMaximumScale = compactDensity
+    ? compactToolbarPreviewMaximumScale
+    : Math.min(1.55, Math.max(1, effectiveFormulaToolButtonSize / 42));
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
   const hotkeyBindings = useFormulaHotkeyStore((state) => state.bindings);
@@ -1062,10 +1086,7 @@ export function FormulaToolbar({
       sectionStart,
       section.offsetLeft + section.offsetWidth - strip.clientWidth,
     );
-    strip.scrollTo({
-      left: edge === "end" ? sectionEnd : sectionStart,
-      behavior: "smooth",
-    });
+    strip.scrollLeft = edge === "end" ? sectionEnd : sectionStart;
     setActiveCategory(category);
     root
       .querySelector<HTMLElement>(`.toolbar-tab[data-category="${category}"]`)
@@ -1078,7 +1099,8 @@ export function FormulaToolbar({
   };
 
   useLayoutEffect(() => {
-    const activeTab = toolbarRef.current?.querySelector<HTMLElement>(
+    const root = toolbarRef.current;
+    const activeTab = root?.querySelector<HTMLElement>(
       `.toolbar-tab[data-category="${activeCategory}"]`,
     );
     activeTab?.scrollIntoView({
@@ -1086,7 +1108,30 @@ export function FormulaToolbar({
       inline: "nearest",
       behavior: "auto",
     });
-  }, [activeCategory]);
+
+    if (layout !== "horizontal" || activeView !== "tools") return;
+    const strip = root?.querySelector<HTMLElement>(
+      ".template-strip.is-continuous-categories",
+    );
+    const section = strip?.querySelector<HTMLElement>(
+      `[data-toolbar-category-section="${activeCategory}"]`,
+    );
+    if (!strip || !section) return;
+
+    // Horizontal row-count changes reflow every category section. Keep the
+    // active category anchored to its new geometry immediately; otherwise the
+    // old scrollLeft can leave the selected section far outside the viewport.
+    const targetLeft = Math.max(
+      0,
+      Math.min(
+        section.offsetLeft,
+        Math.max(0, strip.scrollWidth - strip.clientWidth),
+      ),
+    );
+    if (Math.abs(strip.scrollLeft - targetLeft) > 1) {
+      strip.scrollTo({ left: targetLeft, top: 0, behavior: "auto" });
+    }
+  }, [activeCategory, activeView, horizontalRowCount, layout]);
 
   useEffect(() => {
     if (layout !== "horizontal" || activeView !== "tools") return;
@@ -1131,6 +1176,19 @@ export function FormulaToolbar({
 
     const resolveCategory = () => {
       const viewportWidth = Math.max(1, strip.clientWidth);
+      const maxScrollLeft = Math.max(0, strip.scrollWidth - viewportWidth);
+      // The first/last category cannot always be aligned with the viewport
+      // marker because the browser clamps scrollLeft at the strip edges. In
+      // particular, after Physics became wider, clicking the final Sets tab
+      // could land at maxScrollLeft while the 38% marker still sat inside the
+      // Physics section, immediately switching the active tab back to Physics.
+      // Treat the physical scroll edges as authoritative category boundaries.
+      if (strip.scrollLeft <= 1) {
+        return geometry[0]?.category ?? "common";
+      }
+      if (maxScrollLeft - strip.scrollLeft <= 1) {
+        return geometry[geometry.length - 1]?.category ?? "common";
+      }
       const marker = strip.scrollLeft + viewportWidth * 0.38;
       let resolved: ToolbarCategory = geometry[0]?.category ?? "common";
       let nearestDistance = Number.POSITIVE_INFINITY;
@@ -1181,16 +1239,11 @@ export function FormulaToolbar({
       const renderStart = viewportStart - overscan;
       const renderEnd = viewportEnd + overscan;
       const nextFullPreviewCategories = geometry.flatMap((item) =>
-        !staticToolbarPreviewCategories.has(item.category) &&
-        item.end >= renderStart &&
-        item.start <= renderEnd
+        item.end >= renderStart && item.start <= renderEnd
           ? [item.category]
           : [],
       );
-      if (
-        !staticToolbarPreviewCategories.has(resolved) &&
-        !nextFullPreviewCategories.includes(resolved)
-      ) {
+      if (!nextFullPreviewCategories.includes(resolved)) {
         nextFullPreviewCategories.push(resolved);
       }
 
@@ -1307,13 +1360,24 @@ export function FormulaToolbar({
             (availableHeight + rowGap) / (targetRowHeight + rowGap),
           ),
         );
-        const matrixPickerSize = Math.max(
+        const matrixMainWidth = Math.max(
           40,
-          Math.min(152, Math.floor(availableHeight - 8)),
+          effectiveFormulaToolButtonSize * 5 - 44,
+        );
+        const matrixPickerSize = Math.max(
+          32,
+          Math.min(
+            matrixMainWidth,
+            Math.floor(availableHeight - 32),
+          ),
         );
 
         root.style.setProperty("--toolbar-row-count", String(nextRowCount));
         root.style.setProperty("--matrix-picker-size", `${matrixPickerSize}px`);
+        root.style.setProperty(
+          "--matrix-panel-height",
+          `${Math.max(56, Math.floor(availableHeight))}px`,
+        );
         root.dataset.toolbarRowCount = String(nextRowCount);
         setHorizontalRowCount((current) =>
           current === nextRowCount ? current : nextRowCount,
@@ -1323,12 +1387,87 @@ export function FormulaToolbar({
 
     const observer = new ResizeObserver(measureRows);
     observer.observe(root);
+    observer.observe(strip);
     measureRows();
     return () => {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
   }, [activeCategory, activeView, effectiveFormulaToolButtonSize, layout]);
+
+  useLayoutEffect(() => {
+    if (layout === "horizontal" || activeView !== "tools") return;
+    const root = toolbarRef.current;
+    const strip = root?.querySelector<HTMLElement>(".template-strip");
+    if (!root || !strip) return;
+
+    let frame = 0;
+    const measureMatrix = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const styles = window.getComputedStyle(strip);
+        const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+        const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+        const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+        const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
+        const availableHeight = Math.max(
+          0,
+          strip.clientHeight - paddingTop - paddingBottom,
+        );
+        const availableWidth = Math.max(
+          0,
+          strip.clientWidth - paddingLeft - paddingRight,
+        );
+        const railWidth = 32;
+        const builderGap = 6;
+        const builderHorizontalPadding = 12;
+        const headingHeight = 20;
+        const insertHeight = 28;
+        const verticalGaps = 10;
+        const builderVerticalPadding = 12;
+        const widthBound = Math.max(
+          44,
+          availableWidth - railWidth - builderGap - builderHorizontalPadding,
+        );
+        const heightBound = Math.max(
+          44,
+          availableHeight -
+            headingHeight -
+            insertHeight -
+            verticalGaps -
+            builderVerticalPadding,
+        );
+        const matrixPickerSize = Math.max(
+          44,
+          Math.min(220, Math.floor(widthBound), Math.floor(heightBound)),
+        );
+        const matrixPanelHeight = Math.max(
+          112,
+          Math.min(
+            Math.floor(availableHeight),
+            matrixPickerSize +
+              headingHeight +
+              insertHeight +
+              verticalGaps +
+              builderVerticalPadding,
+          ),
+        );
+
+        root.style.setProperty("--matrix-picker-size", `${matrixPickerSize}px`);
+        root.style.setProperty("--matrix-panel-height", `${matrixPanelHeight}px`);
+        root.dataset.matrixPickerSize = String(matrixPickerSize);
+      });
+    };
+
+    const observer = new ResizeObserver(measureMatrix);
+    observer.observe(root);
+    observer.observe(strip);
+    measureMatrix();
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [activeCategory, activeView, layout]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1420,8 +1559,8 @@ export function FormulaToolbar({
     category: ToolbarCategory,
   ): ToolbarPreviewMode =>
     layout !== "horizontal" ||
-    (!staticToolbarPreviewCategories.has(category) &&
-      fullPreviewCategories.includes(category))
+    category === activeCategory ||
+    fullPreviewCategories.includes(category)
       ? "full"
       : "static";
 
@@ -1670,44 +1809,62 @@ export function FormulaToolbar({
       className="matrix-builder"
       aria-label={isEn ? "Custom matrix" : "自定义矩阵"}
     >
-      <div className="matrix-options-column">
+      <div className="matrix-main-picker">
         <div className="matrix-builder-heading">
-          <strong>{isEn ? "Custom matrix" : "自定义矩阵"}</strong>
+          <strong>{isEn ? "Matrix" : "矩阵"}</strong>
           <span className="matrix-size-badge" aria-live="polite">
             {previewRows} × {previewColumns}
           </span>
         </div>
-        <div className="matrix-delimiter-picker">
-          <span className="matrix-control-label">
-            {isEn ? "Delimiter" : "边界样式"}
-          </span>
+        <div className="matrix-size-picker">
           <div
-            className="matrix-delimiter-options"
-            role="group"
-            aria-label={isEn ? "Matrix delimiter" : "矩阵边界"}
+            className="matrix-size-grid"
+            role="grid"
+            aria-label={
+              isEn
+                ? "Select matrix rows and columns"
+                : "选择矩阵行数和列数"
+            }
+            aria-rowcount={10}
+            aria-colcount={10}
+            onPointerLeave={() => setMatrixHover(null)}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setMatrixHover(null);
+              }
+            }}
           >
-            {matrixDelimiterOptions.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                className={matrixDelimiter === option.id ? "is-active" : ""}
-                aria-pressed={matrixDelimiter === option.id}
-                onClick={() => setMatrixDelimiter(option.id)}
-                title={isEn ? option.labelEn : option.labelZh}
-                aria-label={isEn ? option.labelEn : option.labelZh}
-              >
-                <MathPreview
-                  latex={option.preview}
+            {matrixGridCells.map(({ row, column }) => {
+              const previewed = row <= previewRows && column <= previewColumns;
+              const selectedCorner = row === matrixRows && column === matrixColumns;
+              return (
+                <button
+                  key={`${row}-${column}`}
+                  type="button"
+                  role="gridcell"
                   className={
-                    previewMode === "static" ? "toolbar-static-preview" : ""
+                    "matrix-size-cell" +
+                    (previewed ? " is-previewed" : "") +
+                    (selectedCorner ? " is-selected-corner" : "")
                   }
-                  fit
-                  staticLayout={previewMode === "static"}
-                  maximumFitScale={1.15}
-                  fitInsetRatio={0.72}
+                  aria-label={
+                    isEn
+                      ? `${row} rows by ${column} columns`
+                      : `${row} 行 ${column} 列`
+                  }
+                  aria-selected={selectedCorner}
+                  data-matrix-rows={row}
+                  data-matrix-columns={column}
+                  onPointerEnter={() => setMatrixHover({ rows: row, columns: column })}
+                  onFocus={() => setMatrixHover({ rows: row, columns: column })}
+                  onClick={() => {
+                    setMatrixRows(row);
+                    setMatrixColumns(column);
+                    setMatrixHover(null);
+                  }}
                 />
-              </button>
-            ))}
+              );
+            })}
           </div>
         </div>
         <button
@@ -1729,56 +1886,38 @@ export function FormulaToolbar({
             : `插入 ${matrixRows} × ${matrixColumns}`}
         </button>
       </div>
-      <div className="matrix-size-picker">
-        <span className="matrix-control-label">{isEn ? "Size" : "矩阵尺寸"}</span>
+
+      <div className="matrix-compact-options">
+        <span className="matrix-control-label">
+          {isEn ? "Border" : "边界"}
+        </span>
         <div
-          className="matrix-size-grid"
-          role="grid"
-          aria-label={
-            isEn
-              ? "Select matrix rows and columns"
-              : "选择矩阵行数和列数"
-          }
-          aria-rowcount={10}
-          aria-colcount={10}
-          onPointerLeave={() => setMatrixHover(null)}
-          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              setMatrixHover(null);
-            }
-          }}
+          className="matrix-delimiter-options"
+          role="group"
+          aria-label={isEn ? "Matrix delimiter" : "矩阵边界"}
         >
-          {matrixGridCells.map(({ row, column }) => {
-            const previewed = row <= previewRows && column <= previewColumns;
-            const selectedCorner = row === matrixRows && column === matrixColumns;
-            return (
-              <button
-                key={`${row}-${column}`}
-                type="button"
-                role="gridcell"
+          {matrixDelimiterOptions.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={matrixDelimiter === option.id ? "is-active" : ""}
+              aria-pressed={matrixDelimiter === option.id}
+              onClick={() => setMatrixDelimiter(option.id)}
+              title={isEn ? option.labelEn : option.labelZh}
+              aria-label={isEn ? option.labelEn : option.labelZh}
+            >
+              <MathPreview
+                latex={option.preview}
                 className={
-                  "matrix-size-cell" +
-                  (previewed ? " is-previewed" : "") +
-                  (selectedCorner ? " is-selected-corner" : "")
+                  previewMode === "static" ? "toolbar-static-preview" : ""
                 }
-                aria-label={
-                  isEn
-                    ? `${row} rows by ${column} columns`
-                    : `${row} 行 ${column} 列`
-                }
-                aria-selected={selectedCorner}
-                data-matrix-rows={row}
-                data-matrix-columns={column}
-                onPointerEnter={() => setMatrixHover({ rows: row, columns: column })}
-                onFocus={() => setMatrixHover({ rows: row, columns: column })}
-                onClick={() => {
-                  setMatrixRows(row);
-                  setMatrixColumns(column);
-                  setMatrixHover(null);
-                }}
+                fit
+                staticLayout={previewMode === "static"}
+                maximumFitScale={1.15}
+                fitInsetRatio={0.72}
               />
-            );
-          })}
+            </button>
+          ))}
         </div>
       </div>
     </section>
@@ -1826,11 +1965,15 @@ export function FormulaToolbar({
           staticLayout={previewMode === "static"}
           maximumFitScale={
             enlargedCasesPreview
-              ? Math.max(1.85, toolbarPreviewMaximumScale)
+              ? compactDensity
+                ? compactCasesPreviewMaximumScale
+                : Math.max(1.85, toolbarPreviewMaximumScale)
               : toolbarPreviewMaximumScale
           }
           fitInsetRatio={
-            enlargedCasesPreview ? 0.98 : toolbarPreviewInsetRatio
+            enlargedCasesPreview && !compactDensity
+              ? 0.98
+              : toolbarPreviewInsetRatio
           }
         />
       </button>

@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Keyboard, Pencil, Trash2, X } from "lucide-react";
+import {
+  Keyboard,
+  Pencil,
+  Trash2,
+  X,
+} from "lucide-react";
 import { MathPreview } from "./MathPreview";
 import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
 import {
@@ -86,18 +91,29 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
               <Keyboard size={18} />
               <span>
                 <strong>
-                  {sortedBindings.length} {isEn ? "assigned" : "项已设置"}
+                  {sortedBindings.length}{" "}
+                  {isEn ? "assigned" : "项已设置"}
                 </strong>
                 <small>
                   {isEn
-                    ? "Right-click a formula tool or tile to add another hotkey."
-                    : "右键公式工具或磁贴，可以继续添加快捷键。"}
+                    ? "Editor shortcuts are scoped to the formula editor."
+                    : "公式输入快捷键仅作用于公式编辑区。"}
                 </small>
               </span>
             </div>
           </div>
 
           <div className="formula-hotkey-manager-content">
+            <section className="formula-editor-hotkey-group">
+              <header className="formula-hotkey-section-heading">
+                <Keyboard size={16} />
+                <strong>{isEn ? "Formula editor" : "公式编辑器"}</strong>
+                <span>
+                  {isEn
+                    ? "Right-click a formula tool or tile to add more"
+                    : "右键公式工具或磁贴可继续添加"}
+                </span>
+              </header>
             {sortedBindings.length === 0 ? (
               <div className="formula-hotkey-empty-state">
                 <Keyboard size={28} />
@@ -158,13 +174,12 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
                 ))}
               </div>
             )}
+            </section>
           </div>
 
           <footer className="dialog-footer">
             <span>
-              {isEn
-                ? "Hotkeys only take priority inside the visual formula editor."
-                : "快捷键仅在可视化公式编辑区优先生效。"}
+              {isEn ? "Hotkeys are saved automatically" : "快捷键已自动保存"}
             </span>
             <button type="button" className="primary-button" onClick={onClose}>
               {isEn ? "Done" : "完成"}

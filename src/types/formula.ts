@@ -39,16 +39,37 @@ export type Theme =
 
 export type FormulaLineMode = "inline" | "display";
 
+export type InlineLatexWrapper = "dollar" | "paren";
+export type InlineTextPolicy = "text-command" | "outside-math";
+export type DisplayLatexWrapper = "double-dollar" | "bracket" | "equation";
+export type MultilineLatexEnvironment = "gather" | "align";
+export type FormulaDisplayStyle =
+  | "default"
+  | "double-dollar"
+  | "bracket"
+  | "equation"
+  | "equation-star";
+
+export interface LatexFormatProfile {
+  inlineWrapper: InlineLatexWrapper;
+  inlineTextPolicy: InlineTextPolicy;
+  displayWrapper: DisplayLatexWrapper;
+  numbered: boolean;
+  multilineEnvironment: MultilineLatexEnvironment;
+}
+
 export interface FormulaLine {
   id: string;
   latex: string;
   mode?: FormulaLineMode;
+  displayStyle?: FormulaDisplayStyle;
 }
 
 export interface FormulaBlock {
   id: string;
   latex: string;
   displayMode: "inline" | "block";
+  displayStyle?: FormulaDisplayStyle;
   alignment: FormulaAlignment;
   fontSize: number;
   createdAt: number;
@@ -65,9 +86,11 @@ export interface FormulaDocument {
     zoom: number;
     formulaAlignment?: FormulaAlignment;
     latexCodeFormat?: LatexCodeFormat;
+    latexFormatProfile?: LatexFormatProfile;
     editorLayout?: "standard" | "classic";
     language?: "cn" | "en";
     sourceOpen?: boolean;
+    sourceEditorFontSize?: number;
     autoPairDelimiters?: boolean;
     showLineNumbers?: boolean;
     highlightActiveLine?: boolean;
@@ -88,6 +111,8 @@ export interface FormulaDocument {
     inputBehavior?: InputBehaviorSettings;
     personalize?: boolean;
     suggestionCount?: number;
+    checkUpdatesOnStartup?: boolean;
+    powerPointDefaultFontSizePt?: number;
     classicTileWidth?: number;
     classicDockHeight?: number;
     keypadMinimizeOnCopy?: boolean;

@@ -1,4 +1,9 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes";
+import {
+  decodeNativeSystemMathFontProbes,
+  decodeNativeSystemMathGlyphOutline,
+} from "./systemMathGlyphPayloadValidation";
 
 export interface NativeSystemMathFontProbe {
   requestedFamily: string;
@@ -26,24 +31,43 @@ export function systemFontFamilyList(value: string) {
   return result;
 }
 
-/**
- * The browser editor deliberately has no native font bridge. Returning null
- * lets customSymbolSystemGlyphs use document.fonts for availability checks.
- */
 export async function probeNativeSystemMathFonts(
-  _fontFamilies: readonly string[],
+  fontFamilies: readonly string[],
 ): Promise<NativeSystemMathFontProbe[] | null> {
-  return null;
+  if (!isTauri()) return null;
+  return decodeNativeSystemMathFontProbes(
+    await invoke<unknown>("probe_macos_math_fonts", {
+      fontFamilies: [...fontFamilies],
+    }),
+  );
 }
 
-/**
- * Native glyph outlining is a desktop-only capability. The browser caller
- * falls back to a Canvas-measured text glyph, so no local font data or Tauri
- * command crosses the web boundary.
- */
 export async function compileNativeSystemMathGlyphAsset(
-  _character: string,
-  _fontFamilies: readonly string[],
+  character: string,
+  fontFamilies: readonly string[],
 ): Promise<NativeSystemMathGlyphAsset | null> {
-  return null;
+  if (!isTauri()) return null;
+  const outline = decodeNativeSystemMathGlyphOutline(
+    await invoke<unknown>("extract_macos_math_glyph", {
+      fontFamilies: [...fontFamilies],
+      character,
+    }),
+  );
+  return {
+    asset: {
+      sourceLatex: outline.character,
+      metrics: outline.metrics,
+      shapes: [
+        {
+          kind: "path",
+          d: outline.path,
+          fill: true,
+        },
+      ],
+    },
+    requestedFamily: outline.requestedFamily,
+    resolvedFamily: outline.resolvedFamily,
+    fallbackUsed: outline.fallbackUsed,
+    glyphId: outline.glyphId,
+  };
 }

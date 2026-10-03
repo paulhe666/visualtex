@@ -1,10 +1,6 @@
-import { isLandingPreview } from "./landingPreview";
-
 const memoryStorage = new Map<string, string>();
 
 function browserStorage(): Storage | null {
-  // Showcase reads and writes stay in this frame; never touch user documents.
-  if (isLandingPreview) return null;
   try {
     return typeof window === "undefined" ? null : window.localStorage;
   } catch {
@@ -38,7 +34,7 @@ export const safeStorage = {
     try {
       storage.setItem(key, value);
     } catch {
-      // Keep the in-memory preference when WebView storage is unavailable.
+      // The application remains usable when WebKit storage is unavailable.
     }
   },
 

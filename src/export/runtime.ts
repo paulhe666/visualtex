@@ -9,18 +9,19 @@ import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMml
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
+import {
+  isSingleCompleteLatexEnvironment,
+  unwrapSingleLatexDisplayMath,
+} from "../math/latexEnvironment.ts";
 import { applyVisualTexIntegralSvgGlyphs } from "../math/integralSvgExportCompatibility.ts";
 import {
   applyCustomSymbolArtworkToSvg,
   expandCustomSymbolsForMathMl,
   expandCustomSymbolsForSvg,
 } from "../math/customSymbolRendering.ts";
-import { readErrorMessage } from "../errors/readErrorMessage.ts";
 import {
-  assertNoUnfilledStructuralPlaceholders,
   assertResolvedMathJaxSvg,
   assertResolvedPresentationMathMl,
-  normalizePackageLatexCommands,
   VISUALTEX_MATHML_MACROS,
   VISUALTEX_SVG_MACROS,
   type VisualTexMathJaxMacro,
@@ -31,6 +32,7 @@ import type {
   SvgExportOptions,
   SvgExportResult,
 } from "./exportTypes";
+import { errorMessage } from "../runtime/errorMessage.ts";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,
@@ -55,9 +57,10 @@ function createTexInput(macros: Record<string, VisualTexMathJaxMacro>) {
     packages: AllPackages,
     macros,
     formatError: (_jax: unknown, error: unknown) => {
-      const message = readErrorMessage(error, "MathJax 无法解析当前 LaTeX 公式。");
-      if (error instanceof Error && error.message.trim() === message) throw error;
-      throw new Error(message, { cause: error });
+      throw new Error(
+        errorMessage(error, "MathJax could not parse this formula."),
+        { cause: error },
+      );
     },
   });
 }
@@ -76,11 +79,13 @@ const mathMlDocument = mathjax.document("", {
   InputJax: mathMlTexInput,
   OutputJax: mathMlOutput,
 });
-const svgDocument = mathjax.document("", {
+const mathDocument = mathjax.document("", {
   InputJax: svgTexInput,
   OutputJax: svgOutput,
 });
-const serializedMmlVisitor = new SerializedMmlVisitor(mathMlDocument.mmlFactory);
+const serializedMmlVisitor = new SerializedMmlVisitor(
+  mathMlDocument.mmlFactory,
+);
 
 function positiveFinite(value: number, fallback: number) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -90,40 +95,17 @@ function nonNegativeFinite(value: number, fallback: number) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-function isSingleCompleteEnvironment(source: string) {
-  const first = source.match(/^\\begin\s*\{([^{}]+)\}/);
-  if (!first) return false;
-
-  const environmentToken = /\\(begin|end)\s*\{([^{}]+)\}/g;
-  const stack: string[] = [];
-  let match: RegExpExecArray | null;
-  let outerEnd = -1;
-
-  while ((match = environmentToken.exec(source))) {
-    const [, kind, name] = match;
-    if (kind === "begin") {
-      stack.push(name);
-      continue;
-    }
-    if (stack.at(-1) !== name) return false;
-    stack.pop();
-    if (stack.length === 0) {
-      outerEnd = environmentToken.lastIndex;
-      break;
-    }
-  }
-
-  return outerEnd >= 0 && source.slice(outerEnd).trim().length === 0;
-}
-
 function prepareLatex(latex: string) {
-  const normalized = normalizeMathLiveCanonicalUprightCommands(
-    normalizeExtendedIntegralLatexCommands(
-      normalizePackageLatexCommands(latex.replace(/\r\n?/g, "\n")),
-    ),
+  let normalized = normalizeMathLiveCanonicalUprightCommands(
+    normalizeExtendedIntegralLatexCommands(latex.replace(/\r\n?/g, "\n")),
   ).trim();
   if (!normalized) throw new Error("Cannot export an empty formula.");
-  assertNoUnfilledStructuralPlaceholders(normalized);
+
+  // VisualTeX source formats legitimately serialize display formulas as
+  // `\\[ ... \\]`. MathJax's direct conversion API is already invoked in
+  // display mode, so those source delimiters must not become literal glyphs or
+  // be split into extra rows around an inner aligned/align environment.
+  normalized = unwrapSingleLatexDisplayMath(normalized) ?? normalized;
 
   const lines = normalized
     .split("\n")
@@ -135,7 +117,7 @@ function prepareLatex(latex: string) {
   // A document with multiple VisualTeX formula rows may still contain an
   // inner matrix/cases environment on one row; that must not make all rows
   // collapse into a single horizontal TeX expression.
-  if (isSingleCompleteEnvironment(normalized)) return normalized;
+  if (isSingleCompleteLatexEnvironment(normalized)) return normalized;
 
   // `aligned` uses a right/left pair around every alignment marker. Without
   // an explicit marker MathJax right-aligns rows of different widths. Keep
@@ -153,46 +135,13 @@ function extractSvg(markup: string) {
   return markup.slice(start, end + "</svg>".length);
 }
 
-type SvgViewBox = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
-type SvgRootGeometry = {
-  viewBox: SvgViewBox;
-  unitsPerPx: number;
-  baselinePx: number | null;
-  fullViewportNestedSvg: boolean;
-};
-
-function readSvgAttribute(opening: string, name: string) {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return opening.match(new RegExp(`\\s${escaped}=["']([^"']*)["']`, "i"))?.[1] ?? null;
-}
-
-function readStyleDeclaration(style: string | null, name: string) {
-  if (!style) return null;
-  const normalizedName = name.toLowerCase();
-  for (const declaration of style.split(";")) {
-    const separator = declaration.indexOf(":");
-    if (separator <= 0) continue;
-    if (declaration.slice(0, separator).trim().toLowerCase() === normalizedName) {
-      return declaration.slice(separator + 1).trim();
-    }
-  }
-  return null;
-}
-
-function parseSvgViewBox(value: string | null) {
-  if (!value) return null;
-  const match = value.match(
-    /^\s*([-+\d.eE]+)[\s,]+([-+\d.eE]+)[\s,]+([-+\d.eE]+)[\s,]+([-+\d.eE]+)\s*$/,
+function parseViewBox(svg: string) {
+  const match = svg.match(
+    /\bviewBox=["']\s*([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s*["']/,
   );
-  if (!match) throw new Error("Exported SVG has an invalid viewBox.");
+  if (!match) throw new Error("Exported SVG is missing a valid viewBox.");
   const values = match.slice(1).map(Number);
-  if (values.some((number) => !Number.isFinite(number))) {
+  if (values.some((value) => !Number.isFinite(value))) {
     throw new Error("Exported SVG has an invalid viewBox.");
   }
   const [x, y, width, height] = values;
@@ -200,110 +149,6 @@ function parseSvgViewBox(value: string | null) {
     throw new Error("Exported SVG has non-positive dimensions.");
   }
   return { x, y, width, height };
-}
-
-function parseCssSvgLength(
-  value: string | null,
-  fontSizePx: number,
-  exPx: number,
-) {
-  if (!value) return null;
-  const match = value.trim().match(/^([-+\d.eE]+)\s*(px|ex|em)?$/i);
-  if (!match) return null;
-  const number = Number(match[1]);
-  if (!Number.isFinite(number)) return null;
-  const unit = (match[2] ?? "px").toLowerCase();
-  return unit === "ex" ? number * exPx : unit === "em" ? number * fontSizePx : number;
-}
-
-function resolveSvgRootGeometry(
-  svg: string,
-  fontSizePx: number,
-  exPx: number,
-): SvgRootGeometry {
-  const rootOpening = svg.match(/^<svg\b[^>]*>/i)?.[0];
-  if (!rootOpening) throw new Error("MathJax did not produce an SVG root element.");
-
-  const rootViewBox = parseSvgViewBox(readSvgAttribute(rootOpening, "viewBox"));
-  if (rootViewBox) {
-    return {
-      viewBox: rootViewBox,
-      unitsPerPx: 1000 / fontSizePx,
-      baselinePx: null,
-      fullViewportNestedSvg: false,
-    };
-  }
-
-  // MathJax renders a top-level equation tag as a full-width labeled table.
-  // In that special layout the root SVG intentionally has width="100%" and no
-  // viewBox; its intrinsic width is carried in style.min-width, while the table
-  // and label are nested SVG viewports. Materialized Office SVGs have no CSS
-  // layout container, so make that implicit CSS-pixel viewport explicit.
-  const style = readSvgAttribute(rootOpening, "style");
-  const widthPx = parseCssSvgLength(
-    readStyleDeclaration(style, "min-width") ?? readSvgAttribute(rootOpening, "width"),
-    fontSizePx,
-    exPx,
-  );
-  const heightPx = parseCssSvgLength(
-    readSvgAttribute(rootOpening, "height"),
-    fontSizePx,
-    exPx,
-  );
-  const verticalAlignPx = parseCssSvgLength(
-    readStyleDeclaration(style, "vertical-align"),
-    fontSizePx,
-    exPx,
-  ) ?? 0;
-  if (!widthPx || widthPx <= 0 || !heightPx || heightPx <= 0) {
-    throw new Error("Exported SVG is missing a valid root viewBox and intrinsic size.");
-  }
-  return {
-    viewBox: { x: 0, y: 0, width: widthPx, height: heightPx },
-    unitsPerPx: 1,
-    baselinePx: Math.max(0, Math.min(heightPx, heightPx + verticalAlignPx)),
-    fullViewportNestedSvg: true,
-  };
-}
-
-function normalizeFullViewportNestedSvg(
-  svg: string,
-  width: number,
-  height: number,
-) {
-  return svg.replace(
-    /<svg\b([^>]*\bdata-(?:table|labels)=["'][^"']+["'][^>]*)>/gi,
-    (_opening, rawAttributes: string) => {
-      let attributes = rawAttributes;
-      const append: string[] = [];
-      if (!/\swidth=["']/i.test(attributes)) append.push(`width="${width}"`);
-      if (!/\sheight=["']/i.test(attributes)) append.push(`height="${height}"`);
-      if (!/\sx=["']/i.test(attributes)) append.push('x="0"');
-      if (!/\sy=["']/i.test(attributes)) append.push('y="0"');
-      if (!/\soverflow=["']/i.test(attributes)) append.push('overflow="visible"');
-      attributes = attributes.trim();
-      return `<svg${attributes ? ` ${attributes}` : ""}${append.length ? ` ${append.join(" ")}` : ""}>`;
-    },
-  );
-}
-
-function rewriteRootSvgOpening(
-  svg: string,
-  width: number,
-  height: number,
-  viewBox: SvgViewBox,
-) {
-  return svg.replace(/^<svg\b([^>]*)>/i, (_opening, rawAttributes: string) => {
-    const attributes = rawAttributes
-      .replace(
-        /\s(?:xmlns|width|height|role|focusable|style|viewBox)=["'][^"']*["']/gi,
-        "",
-      )
-      .trim();
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" role="img" focusable="false" viewBox="${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}"${
-      attributes ? ` ${attributes}` : ""
-    }>`;
-  });
 }
 
 function assertSelfContained(svg: string) {
@@ -369,6 +214,7 @@ function applyVisualTexSvgFontPreferences(
   );
 
   if (letterFont === DEFAULT_FORMULA_LETTER_FONT) return output;
+
   const families = formulaLetterFontFamilies(letterFont);
   output = output.replace(/<use\b([^>]*)><\/use>/gi, (whole, attributes: string) => {
     const codePoint = attributes.match(/\bdata-c=["']([0-9A-F]+)["']/i)?.[1];
@@ -377,15 +223,97 @@ function applyVisualTexSvgFontPreferences(
     if (!codePoint || !variant) return whole;
     const character = mathAlphabetBaseCharacter(codePoint);
     if (!character) return whole;
+
     const italic = variant === "I" || variant === "BI";
     const bold = variant === "B" || variant === "BI";
     const family = escapeSvgAttribute(italic ? families.italic : families.upright);
-    const originalTransform = attributes.match(/\btransform=["']([^"']*)["']/i)?.[1]?.trim();
-    const originalX = attributes.match(/\bx=["']([^"']*)["']/i)?.[1]?.trim();
-    const originalY = attributes.match(/\by=["']([^"']*)["']/i)?.[1]?.trim();
-    const placement = `${originalX ? ` x="${escapeSvgAttribute(originalX)}"` : ""}${originalY ? ` y="${escapeSvgAttribute(originalY)}"` : ""} transform="${originalTransform ? `${escapeSvgAttribute(originalTransform)} ` : ""}scale(1,-1)"`;
-    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}"${placement} font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
+    const originalTransform = attributes.match(/\btransform=["']([^"']+)["']/i)?.[1]?.trim();
+    const originalX = attributes.match(/\bx=["']([^"']+)["']/i)?.[1]?.trim();
+    const originalY = attributes.match(/\by=["']([^"']+)["']/i)?.[1]?.trim();
+    // MathJax often lays out multi-letter operators such as \\arccos or
+    // \\operatorname{rank} as several <use> glyphs inside one translated
+    // parent. Every glyph after the first then owns an additional local
+    // translate(...). Dropping that transform while replacing <use> with a
+    // system-font <text> puts every character at the same origin and produces
+    // the severe overlap/"garbled" appearance seen in Word. Preserve all
+    // glyph-local positioning before applying the y-axis flip required for SVG
+    // text inside MathJax's outer scale(1,-1) coordinate system.
+    const transform = originalTransform
+      ? `${escapeSvgAttribute(originalTransform)} scale(1,-1)`
+      : "scale(1,-1)";
+    const position = `${
+      originalX ? ` x="${escapeSvgAttribute(originalX)}"` : ""
+    }${originalY ? ` y="${escapeSvgAttribute(originalY)}"` : ""}`;
+    return `<text data-c="${codePoint}" data-visualtex-output-letter-font="${escapeSvgAttribute(letterFont)}"${position} transform="${transform}" font-size="1000px" font-family="${family}"${italic ? ' font-style="italic"' : ""}${bold ? ' font-weight="700"' : ""}>${escapeSvgText(character)}</text>`;
   });
+  return output;
+}
+
+const WORD_EXPLICIT_BLACK = "#000000";
+
+function wordCompatiblePaintValue(value: string) {
+  const trimmed = value.trim();
+  if (/^(?:none|transparent)$/i.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+  return WORD_EXPLICIT_BLACK;
+}
+
+function removeCssCustomProperties(value: string) {
+  return value.replace(
+    /(^|[;{])\s*--[a-zA-Z0-9_-]+\s*:[^;}]*;?/g,
+    "$1",
+  );
+}
+
+function forceStylePaintBlack(value: string) {
+  return removeCssCustomProperties(value).replace(
+    /(^|[;{]\s*)(color|fill|stroke)\s*:\s*([^;}]+)/gi,
+    (_match, prefix: string, property: string, paint: string) =>
+      `${prefix}${property}:${wordCompatiblePaintValue(paint)}`,
+  );
+}
+
+/**
+ * Word 16.89 can initially paint an SVG formula as transparent when its first
+ * resolved colour comes from currentColor, a CSS variable, a white inherited
+ * paint, or another deferred style carrier. Normalize every SVG paint carrier
+ * before either the SVG or PNG is emitted so both compatibility representations
+ * are byte-for-byte derived from the same explicit-black artwork.
+ */
+function forceWordCompatibleBlack(svg: string) {
+  let output = svg.replace(/currentColor/gi, WORD_EXPLICIT_BLACK);
+  output = output.replace(
+    /\b(color|fill|stroke)=(['"])(.*?)\2/gi,
+    (_match, property: string, quote: string, paint: string) =>
+      `${property}=${quote}${wordCompatiblePaintValue(paint)}${quote}`,
+  );
+  output = output.replace(
+    /\bstyle=(['"])(.*?)\1/gi,
+    (_match, quote: string, style: string) =>
+      `style=${quote}${forceStylePaintBlack(style)}${quote}`,
+  );
+  output = output.replace(
+    /<style\b([^>]*)>([\s\S]*?)<\/style>/gi,
+    (_match, attributes: string, css: string) =>
+      `<style${attributes}>${forceStylePaintBlack(css)}</style>`,
+  );
+
+  const lower = output.toLowerCase();
+  if (
+    lower.includes("currentcolor") ||
+    lower.includes("var(") ||
+    /\b(?:color|fill|stroke)\s*[:=]\s*['"]?(?:inherit|white|#fff(?:fff)?)(?:['";\s>]|$)/i.test(
+      output,
+    )
+  ) {
+    throw new Error(
+      "Word SVG export still contains a deferred or white paint style.",
+    );
+  }
+  if (!/\b(?:fill|stroke)=["']#000000["']/i.test(output)) {
+    throw new Error("Word SVG export is missing explicit black formula paint.");
+  }
   return output;
 }
 
@@ -424,12 +352,10 @@ export function latexToSvg(
   const source = expandCustomSymbolsForSvg(prepareLatex(latex));
   const fontSizePt = positiveFinite(options.fontSizePt, DEFAULT_OPTIONS.fontSizePt);
   const paddingPx = nonNegativeFinite(options.paddingPx, DEFAULT_OPTIONS.paddingPx);
-  const paddingXPx = nonNegativeFinite(options.paddingXPx ?? paddingPx, paddingPx);
-  const paddingYPx = nonNegativeFinite(options.paddingYPx ?? paddingPx, paddingPx);
   const fontSizePx = fontSizePt * (96 / 72);
   const exPx = fontSizePx * 0.442;
 
-  const container = svgDocument.convert(source, {
+  const container = mathDocument.convert(source, {
     display: options.displayMode,
     em: fontSizePx,
     ex: exPx,
@@ -439,28 +365,40 @@ export function latexToSvg(
   svg = applyVisualTexIntegralSvgGlyphs(svg, options.displayMode);
   svg = applyCustomSymbolArtworkToSvg(svg);
   svg = applyVisualTexSvgFontPreferences(svg, options);
-  const rootGeometry = resolveSvgRootGeometry(svg, fontSizePx, exPx);
-  const viewBox = rootGeometry.viewBox;
-  if (rootGeometry.fullViewportNestedSvg) {
-    svg = normalizeFullViewportNestedSvg(svg, viewBox.width, viewBox.height);
-  }
+  const viewBox = parseViewBox(svg);
 
-  const paddingXUnits = paddingXPx * rootGeometry.unitsPerPx;
-  const paddingYUnits = paddingYPx * rootGeometry.unitsPerPx;
+  const unitsPerPx = 1000 / fontSizePx;
+  const paddingUnits = paddingPx * unitsPerPx;
   const padded = {
-    x: viewBox.x - paddingXUnits,
-    y: viewBox.y - paddingYUnits,
-    width: viewBox.width + 2 * paddingXUnits,
-    height: viewBox.height + 2 * paddingYUnits,
+    x: viewBox.x - paddingUnits,
+    y: viewBox.y - paddingUnits,
+    width: viewBox.width + 2 * paddingUnits,
+    height: viewBox.height + 2 * paddingUnits,
   };
-  const width = Math.max(1, padded.width / rootGeometry.unitsPerPx);
-  const height = Math.max(1, padded.height / rootGeometry.unitsPerPx);
-  const baseline = rootGeometry.baselinePx === null
-    ? Math.max(0, Math.min(height, -padded.y / rootGeometry.unitsPerPx))
-    : Math.max(0, Math.min(height, paddingYPx + rootGeometry.baselinePx));
+  const width = Math.max(1, padded.width / unitsPerPx);
+  const height = Math.max(1, padded.height / unitsPerPx);
+  const baseline = Math.max(0, Math.min(height, -padded.y / unitsPerPx));
 
-  svg = rewriteRootSvgOpening(svg, width, height, padded)
-    .replaceAll("currentColor", "#111111");
+  svg = svg
+    .replace(
+      /\bviewBox=["'][^"']+["']/,
+      `viewBox="${padded.x} ${padded.y} ${padded.width} ${padded.height}"`,
+    )
+    .replace(/^<svg\b([^>]*)>/, (_opening, rawAttributes: string) => {
+      const attributes = rawAttributes
+        .replace(
+          /\s(?:xmlns|width|height|role|focusable|style)=["'][^"']*["']/g,
+          "",
+        )
+        .trim();
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" role="img" focusable="false"${
+        attributes ? ` ${attributes}` : ""
+      }>`;
+    })
+    .replace(
+      /currentColor/gi,
+      options.forceExplicitBlack ? WORD_EXPLICIT_BLACK : "#111111",
+    );
 
   const openingEnd = svg.indexOf(">");
   if (options.background === "white") {
@@ -472,6 +410,10 @@ export function latexToSvg(
     // entire formula bounds selectable and double-clickable at normal zoom.
     const hitTarget = `<rect x="${padded.x}" y="${padded.y}" width="${padded.width}" height="${padded.height}" fill="#000000" fill-opacity="0.001"/>`;
     svg = `${svg.slice(0, openingEnd + 1)}${hitTarget}${svg.slice(openingEnd + 1)}`;
+  }
+
+  if (options.forceExplicitBlack) {
+    svg = forceWordCompatibleBlack(svg);
   }
 
   assertResolvedMathJaxSvg(svg);
@@ -496,6 +438,45 @@ function blobToBase64(blob: Blob) {
     };
     reader.readAsDataURL(blob);
   });
+}
+
+function pngDataUrlToBlob(value: string) {
+  const prefix = "data:image/png;base64,";
+  if (!value.startsWith(prefix)) {
+    throw new Error("Canvas did not produce a PNG data URL.");
+  }
+  const binary = atob(value.slice(prefix.length));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: "image/png" });
+}
+
+async function encodeCanvasPng(canvas: HTMLCanvasElement) {
+  if (typeof canvas.toBlob === "function") {
+    const blob = await new Promise<Blob | null>((resolve) => {
+      let settled = false;
+      const finish = (value: Blob | null) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        resolve(value);
+      };
+      const timeout = window.setTimeout(() => finish(null), 750);
+      try {
+        canvas.toBlob(finish, "image/png");
+      } catch {
+        finish(null);
+      }
+    });
+    if (blob) return blob;
+  }
+
+  // WKWebView can expose canvas.toBlob() but return null for SVG-backed
+  // canvases. toDataURL() uses a different WebKit encoding path and is stable
+  // on the same canvas, so use it as the required Word compatibility fallback.
+  return pngDataUrlToBlob(canvas.toDataURL("image/png"));
 }
 
 export async function svgToPng(
@@ -533,17 +514,45 @@ export async function svgToPng(
   }
   context.drawImage(image, 0, 0, width, height);
 
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (value) =>
-        value ? resolve(value) : reject(new Error("Unable to encode PNG output.")),
-      "image/png",
-    );
-  });
+  const backgroundRgb = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(
+    opaqueBackground,
+  );
+  const backgroundChannels = backgroundRgb
+    ? backgroundRgb.slice(1).map((channel) => Number.parseInt(channel, 16))
+    : null;
+  const pixels = context.getImageData(0, 0, width, height).data;
+  let inkTop = height;
+  let inkBottom = -1;
+  for (let index = 0; index < pixels.length; index += 4) {
+    const alpha = pixels[index + 3];
+    if (alpha < 16) continue;
+    const differsFromBackground = backgroundChannels
+      ? Math.abs(pixels[index] - backgroundChannels[0]) > 10 ||
+        Math.abs(pixels[index + 1] - backgroundChannels[1]) > 10 ||
+        Math.abs(pixels[index + 2] - backgroundChannels[2]) > 10
+      : pixels[index] < 245 ||
+        pixels[index + 1] < 245 ||
+        pixels[index + 2] < 245;
+    if (!differsFromBackground) continue;
+    const row = Math.floor(index / 4 / width);
+    if (row < inkTop) inkTop = row;
+    if (row > inkBottom) inkBottom = row;
+  }
+  if (inkBottom < inkTop) {
+    throw new Error("PNG rasterization produced no visible formula ink.");
+  }
+  const inkTopRatio = inkTop / height;
+  const inkBottomRatio = (inkBottom + 1) / height;
+  const inkCenterYRatio = (inkTopRatio + inkBottomRatio) / 2;
+
+  const blob = await encodeCanvasPng(canvas);
   return {
     blob,
     base64: await blobToBase64(blob),
     width,
     height,
+    inkTopRatio,
+    inkBottomRatio,
+    inkCenterYRatio,
   };
 }

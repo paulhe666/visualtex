@@ -8,7 +8,7 @@ const previewPort = 9000 + offset;
 const debugPort = 15000 + offset;
 const url = `http://127.0.0.1:${previewPort}`;
 const profile = `/tmp/visualtex-ime-matrix-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromePath = (process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(target, timeout = 15000) {
@@ -129,36 +129,68 @@ try {
               Number(field.dataset.lateCompletionCount || "0") + 1,
             );
           }
-        }, true);
+        });
         resolve(true);
       };
       poll();
     })`);
   };
 
-  const cancelComposition = async (stale = true) => {
+  const cancelComposition = async (stale = true, compositionText = "中") => {
     const state = await evaluate(`(() => {
       const field = document.querySelector("math-field");
+      const sink = field.shadowRoot?.querySelector('[part="keyboard-sink"]');
+      if (!sink) throw new Error("MathLive keyboard sink missing");
       const before = (type, data, composing) => {
         const event = new InputEvent("beforeinput", { inputType: type, data, isComposing: composing, bubbles: true, composed: true, cancelable: true });
-        const allowed = field.dispatchEvent(event);
+        const allowed = sink.dispatchEvent(event);
         return { allowed, prevented: event.defaultPrevented };
       };
-      const input = (type, data, composing) => field.dispatchEvent(new InputEvent("input", { inputType: type, data, isComposing: composing, bubbles: true, composed: true }));
-      field.dispatchEvent(new CompositionEvent("compositionstart", { data: "", bubbles: true, composed: true }));
-      const inserted = before("insertCompositionText", "中", true);
-      if (inserted.allowed) field.insert("中", { mode: "math", format: "latex", insertionMode: "replaceSelection", selectionMode: "after", focus: true });
-      input("insertCompositionText", "中", true);
-      const deleted = before("deleteCompositionText", "", true);
-      input("deleteCompositionText", "", true);
-      if (deleted.allowed) field.executeCommand("deleteBackward");
-      field.dispatchEvent(new CompositionEvent("compositionend", { data: "", bubbles: true, composed: true }));
+      sink.dispatchEvent(new CompositionEvent("compositionstart", { data: "", bubbles: true, composed: true }));
+      const compositionText = ${JSON.stringify(compositionText)};
+      sink.dispatchEvent(new CompositionEvent("compositionupdate", { data: compositionText, bubbles: true, composed: true }));
+      sink.dispatchEvent(new CompositionEvent("compositionend", { data: "", bubbles: true, composed: true }));
       let replay = null;
       if (${stale}) replay = before("insertText", "\\\\", false);
       return { value: field.value, replay };
     })()`);
     assert.equal(state.value, "", JSON.stringify(state));
     if (stale) assert.equal(state.replay.prevented, true, JSON.stringify(state));
+  };
+
+  const cancelNativeComposition = async (compositionText = "a") => {
+    await client.send("Input.imeSetComposition", {
+      text: compositionText,
+      selectionStart: Array.from(compositionText).length,
+      selectionEnd: Array.from(compositionText).length,
+    });
+    await sleep(90);
+    const during = await state();
+    await client.send("Input.imeSetComposition", {
+      text: "",
+      selectionStart: 0,
+      selectionEnd: 0,
+    });
+    await sleep(120);
+    return { during, after: await state() };
+  };
+
+  const commitCompositionAndProbeUnarmedBackslash = async () => {
+    return evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      const sink = field.shadowRoot?.querySelector('[part="keyboard-sink"]');
+      if (!sink) throw new Error("MathLive keyboard sink missing");
+      const before = (type, data, composing) => {
+        const event = new InputEvent("beforeinput", { inputType: type, data, isComposing: composing, bubbles: true, composed: true, cancelable: true });
+        const allowed = sink.dispatchEvent(event);
+        return { allowed, prevented: event.defaultPrevented };
+      };
+      sink.dispatchEvent(new CompositionEvent("compositionstart", { data: "", bubbles: true, composed: true }));
+      sink.dispatchEvent(new CompositionEvent("compositionupdate", { data: "中", bubbles: true, composed: true }));
+      sink.dispatchEvent(new CompositionEvent("compositionend", { data: "中", bubbles: true, composed: true }));
+      const stale = before("insertText", "\\\\", false);
+      return { stale, value: field.value };
+    })()`);
   };
 
   const key = (value, code, keyCode) => ({ key: value, code, windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode });
@@ -168,10 +200,40 @@ try {
     await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
     await sleep(pause);
   };
+  const press = async (value, code, keyCode, pause = 65) => {
+    const common = key(value, code, keyCode);
+    await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...common });
+    await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
+    await sleep(pause);
+  };
 
   const slash = async (pattern) => {
     const common = key("\\", "Backslash", 220);
     if (pattern === "normal") return type("\\", "Backslash", 220, 80);
+    if (pattern === "unidentified-then-latin") {
+      const unidentified = key("Unidentified", "Backslash", 220);
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        ...unidentified,
+        text: "\\",
+        unmodifiedText: "\\",
+      });
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        ...unidentified,
+      });
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        ...common,
+        text: "\\",
+        unmodifiedText: "\\",
+      });
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        ...common,
+      });
+      return sleep(90);
+    }
     if (pattern === "duplicate-char") {
       await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...common });
       await client.send("Input.dispatchKeyEvent", { type: "char", ...common, text: "\\", unmodifiedText: "\\" });
@@ -187,11 +249,14 @@ try {
       await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
       return sleep(90);
     }
-    const comma = key("、", "Backslash", 220);
-    await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...comma, text: "、", unmodifiedText: "、" });
-    await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...comma });
-    await sleep(210);
-    return type("\\", "Backslash", 220, 80);
+    if (pattern === "ideographic-key") {
+      const comma = key("、", "Backslash", 220);
+      await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...comma, text: "、", unmodifiedText: "、" });
+      await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...comma });
+      await sleep(210);
+      return;
+    }
+    throw new Error(`Unknown Backslash pattern: ${pattern}`);
   };
 
   const state = () => evaluate(`(() => {
@@ -204,7 +269,111 @@ try {
     };
   })()`);
 
-  const patterns = ["normal", "duplicate-char", "duplicate-keydown", "ideographic-then-latin"];
+  await reset();
+  const committedComposition = await commitCompositionAndProbeUnarmedBackslash();
+  assert.equal(
+    committedComposition.stale.prevented,
+    true,
+    `committed Chinese IME left an unguarded Backslash input: ${JSON.stringify(committedComposition)}`,
+  );
+  await slash("normal");
+  await type("p", "KeyP", 80);
+  await type("i", "KeyI", 73);
+  await type(" ", "Space", 32, 150);
+  const committedThenEnglish = await state();
+  assert.equal(
+    committedThenEnglish.value.split("\\pi").length - 1,
+    1,
+    `first English command after committed Chinese IME was not unique: ${JSON.stringify(committedThenEnglish)}`,
+  );
+
+  await reset();
+  const nativeCancelledLatin = await cancelNativeComposition("a");
+  assert.equal(
+    nativeCancelledLatin.after.value,
+    "",
+    `native Chinese pinyin cancellation changed the formula: ${JSON.stringify(nativeCancelledLatin)}`,
+  );
+  await slash("normal");
+  await type("a", "KeyA", 65);
+  await type("l", "KeyL", 76);
+  let nativeSelectedAlpha = await state();
+  for (let index = 0; index < 8 && nativeSelectedAlpha.candidate !== String.raw`\alpha`; index += 1) {
+    await press("ArrowDown", "ArrowDown", 40, 45);
+    nativeSelectedAlpha = await state();
+  }
+  assert.equal(
+    nativeSelectedAlpha.candidate,
+    String.raw`\alpha`,
+    `native cancelled Chinese pinyin could not select \\alpha: ${JSON.stringify(nativeSelectedAlpha)}`,
+  );
+  await type(" ", "Space", 32, 150);
+  const nativeCancelledAlpha = await state();
+  assert.equal(
+    nativeCancelledAlpha.value.split(String.raw`\alpha`).length - 1,
+    1,
+    `native cancelled Chinese pinyin duplicated alpha completion: ${JSON.stringify({ nativeCancelledLatin, nativeSelectedAlpha, nativeCancelledAlpha })}`,
+  );
+  assert.equal(nativeCancelledAlpha.raw, "", JSON.stringify(nativeCancelledAlpha));
+
+  await reset();
+  await cancelComposition(false, "a");
+  await slash("normal");
+  await type("a", "KeyA", 65);
+  await type("l", "KeyL", 76);
+  const cancelledLatinPrefix = await state();
+  assert.equal(
+    cancelledLatinPrefix.raw,
+    String.raw`\al`,
+    `cancelled Chinese pinyin did not leave a clean \\al raw query: ${JSON.stringify(cancelledLatinPrefix)}`,
+  );
+  let selectedAlpha = cancelledLatinPrefix;
+  for (let index = 0; index < 8 && selectedAlpha.candidate !== String.raw`\alpha`; index += 1) {
+    await press("ArrowDown", "ArrowDown", 40, 45);
+    selectedAlpha = await state();
+  }
+  assert.equal(
+    selectedAlpha.candidate,
+    String.raw`\alpha`,
+    `cancelled Chinese pinyin could not select native \\alpha: ${JSON.stringify(selectedAlpha)}`,
+  );
+  await type(" ", "Space", 32, 150);
+  const cancelledLatinAlpha = await state();
+  assert.equal(
+    cancelledLatinAlpha.value.split(String.raw`\alpha`).length - 1,
+    1,
+    `cancelled Chinese pinyin duplicated native alpha completion: ${JSON.stringify(cancelledLatinAlpha)}`,
+  );
+  assert.equal(cancelledLatinAlpha.raw, "", JSON.stringify(cancelledLatinAlpha));
+
+  await reset();
+  await cancelNativeComposition("a");
+  await slash("unidentified-then-latin");
+  for (const character of "alph") {
+    const upper = character.toUpperCase();
+    await type(character, `Key${upper}`, upper.charCodeAt(0));
+  }
+  const unidentifiedAlphaPrefix = await state();
+  assert.equal(
+    unidentifiedAlphaPrefix.raw,
+    String.raw`\alph`,
+    `Unidentified Backslash did not produce the failing raw query: ${JSON.stringify(unidentifiedAlphaPrefix)}`,
+  );
+  assert.equal(
+    unidentifiedAlphaPrefix.candidate,
+    String.raw`\alpha`,
+    `Unidentified Backslash did not select native \\alpha: ${JSON.stringify(unidentifiedAlphaPrefix)}`,
+  );
+  await type(" ", "Space", 32, 150);
+  const unidentifiedAlpha = await state();
+  assert.equal(
+    unidentifiedAlpha.value,
+    String.raw`\alpha`,
+    `Unidentified Backslash appended native completion: ${JSON.stringify(unidentifiedAlpha)}`,
+  );
+  assert.equal(unidentifiedAlpha.raw, "", JSON.stringify(unidentifiedAlpha));
+
+  const patterns = ["normal", "duplicate-char", "duplicate-keydown", "ideographic-key"];
   const commands = ["pi", "int", "sum", "sqrt", "frac"];
   for (const pattern of patterns) {
     for (const command of commands) {
@@ -218,7 +387,13 @@ try {
       const pending = await state();
       if (pending.raw) {
         assert.equal(pending.raw, `\\${command}`, `${pattern}/${command}: ${JSON.stringify(pending)}`);
-        if (pending.candidate) assert.equal(pending.candidate, `\\${command}`);
+        if (pending.candidate) {
+          assert.match(
+            pending.candidate,
+            new RegExp(`^\\\\${command}(?:$|[^a-zA-Z])`),
+            `${pattern}/${command}: ${JSON.stringify(pending)}`,
+          );
+        }
       } else {
         assert.equal(
           pending.value.split(`\\${command}`).length - 1,

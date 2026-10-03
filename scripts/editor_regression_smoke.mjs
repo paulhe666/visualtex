@@ -1,35 +1,13 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import process from "node:process";
 
 const portOffset = process.pid % 1000;
 const previewPort = 5300 + portOffset;
 const debugPort = 10300 + portOffset;
-const baseUrl = `http://127.0.0.1:${previewPort}/editor?visualtex-test-probe=1`;
-const chromeProfile = path.join(
-  os.tmpdir(),
-  `visualtex-editor-smoke-${process.pid}`,
-);
-const chromeCandidates =
-  process.platform === "win32"
-    ? [
-        "C:/Program Files/Google/Chrome/Application/chrome.exe",
-        "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-      ]
-    : process.platform === "darwin"
-      ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
-      : ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"];
-const chromePath =
-  process.env.VISUALTEX_CHROME_PATH ??
-  chromeCandidates.find((candidate) => existsSync(candidate));
-if (!chromePath) {
-  throw new Error(
-    "Google Chrome was not found. Set VISUALTEX_CHROME_PATH to run the editor regression smoke test.",
-  );
-}
+const baseUrl = `http://127.0.0.1:${previewPort}`;
+const chromeProfile = `/tmp/visualtex-editor-smoke-${process.pid}`;
+const chromePath = (process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -232,16 +210,21 @@ async function main() {
     };
 
     const replaceFocusedText = async (text) => {
-      await evaluate(`(() => {
-        const content = document.querySelector(".source-panel .cm-content");
-        if (!content) throw new Error("Source editor is unavailable");
-        content.focus();
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(content);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      })()`);
+      const selectAll = {
+        key: "a",
+        code: "KeyA",
+        modifiers: 4,
+        windowsVirtualKeyCode: 65,
+        nativeVirtualKeyCode: 65,
+      };
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        ...selectAll,
+      });
+      await client.send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        ...selectAll,
+      });
       await client.send("Input.insertText", { text });
       await sleep(220);
     };
@@ -269,88 +252,6 @@ async function main() {
       const done = () => document.querySelector("math-field") ? resolve(true) : setTimeout(done, 30);
       done();
     })`);
-
-    const originalWebGeometry = await evaluate(`(() => {
-      const workspace = document.querySelector(".workspace.is-classic-layout");
-      const tileToolbar = document.querySelector(".classic-tile-toolbar");
-      const editorBody = document.querySelector(".classic-editor-pane-body");
-      const bottomDock = document.querySelector(".classic-bottom-dock");
-      const tileResizer = document.querySelector(".classic-tile-resizer");
-      const dockResizer = document.querySelector(".classic-dock-resizer");
-      if (!workspace || !tileToolbar || !editorBody || !bottomDock) {
-        return { ready: false };
-      }
-      const workspaceStyle = getComputedStyle(workspace);
-      const editorBodyStyle = getComputedStyle(editorBody);
-      const tileStyle = tileResizer ? getComputedStyle(tileResizer) : null;
-      const dockStyle = dockResizer ? getComputedStyle(dockResizer) : null;
-      return {
-        ready: true,
-        gridColumns: workspaceStyle.gridTemplateColumns,
-        gridRows: editorBodyStyle.gridTemplateRows,
-        tileWidth: tileToolbar.getBoundingClientRect().width,
-        dockHeight: bottomDock.getBoundingClientRect().height,
-        tileResizerPosition: tileStyle?.position ?? "",
-        dockResizerPosition: dockStyle?.position ?? "",
-        tileResizerWidth: tileResizer?.getBoundingClientRect().width ?? 0,
-        dockResizerHeight: dockResizer?.getBoundingClientRect().height ?? 0,
-      };
-    })()`);
-    if (!originalWebGeometry.ready) {
-      throw new Error(`Classic Web layout did not mount: ${JSON.stringify(originalWebGeometry)}`);
-    }
-    const columnTracks = originalWebGeometry.gridColumns
-      .split(/\s+/)
-      .filter(Boolean);
-    const rowTracks = originalWebGeometry.gridRows
-      .split(/\s+/)
-      .filter(Boolean);
-    if (
-      columnTracks.length !== 3 ||
-      Math.abs(originalWebGeometry.tileWidth - 300) > 1.5 ||
-      rowTracks.length !== 3 ||
-      Math.abs(originalWebGeometry.dockHeight - 240) > 1.5 ||
-      originalWebGeometry.tileResizerPosition !== "relative" ||
-      originalWebGeometry.dockResizerPosition !== "relative" ||
-      Math.abs(originalWebGeometry.tileResizerWidth - 7) > 1.5 ||
-      Math.abs(originalWebGeometry.dockResizerHeight - 7) > 1.5
-    ) {
-      throw new Error(
-        `Classic layout does not match the migrated editor geometry: ${JSON.stringify(originalWebGeometry)}`,
-      );
-    }
-
-    await evaluate(`document.querySelector(".settings-toggle")?.click()`);
-    await waitForEvaluation(
-      `(() => ({ ready: Boolean(document.querySelector(".settings-dialog")) }))()`,
-      "original Web settings dialog",
-    );
-    await sleep(220);
-    const originalWebSettingsGeometry = await evaluate(`(() => {
-      const dialog = document.querySelector(".settings-dialog");
-      if (!dialog) return { ready: false };
-      const rect = dialog.getBoundingClientRect();
-      return {
-        ready: true,
-        width: rect.width,
-        usesOriginalDialog: dialog.classList.contains("settings-dialog"),
-        hasWindowsStyleNavigation: Boolean(document.querySelector(".web-settings-nav")),
-        sectionCount: dialog.querySelectorAll(".settings-section").length,
-        viewportWidth: window.innerWidth,
-      };
-    })()`);
-    if (
-      !originalWebSettingsGeometry.usesOriginalDialog ||
-      originalWebSettingsGeometry.hasWindowsStyleNavigation ||
-      Math.abs(originalWebSettingsGeometry.width - 720) > 1.5 ||
-      originalWebSettingsGeometry.sectionCount < 7
-    ) {
-      throw new Error(
-        `Settings dialog does not match the migrated editor: ${JSON.stringify(originalWebSettingsGeometry)}`,
-      );
-    }
-    await evaluate(`document.querySelector(".settings-dialog .dialog-header .icon-button")?.click()`);
-    await sleep(100);
 
     const setFieldAt = async (index, latex) => {
       await evaluate(`(() => {
@@ -735,16 +636,6 @@ async function main() {
       );
     }
 
-    await evaluate(`(() => {
-      const field = document.querySelectorAll("math-field")[0];
-      if (!field) throw new Error("First formula field was not found");
-      field.position = field.lastOffset;
-      field.focus();
-      field.shadowRoot
-        ?.querySelector('[part="keyboard-sink"]')
-        ?.focus({ preventScroll: true });
-    })()`);
-    await sleep(80);
     await key("ArrowDown", "ArrowDown", 40);
     const arrowDownLineState = await waitForEvaluation(`(() => {
       const rows = [...document.querySelectorAll(".formula-line")];
@@ -1088,8 +979,92 @@ async function main() {
       throw new Error(`Backspace skipped the integral and deleted preceding content: ${JSON.stringify(deletionStates)}`);
     }
 
-    const ocrOpenMetrics = null;
-    const ocrCenterMetrics = null;
+    const ocrOpenMetrics = await evaluate(`new Promise((resolve, reject) => {
+      const button = document.querySelector(
+        'button[aria-label="图片公式识别"], button[aria-label="Recognize formula image"]',
+      );
+      if (!button) {
+        const labels = Array.from(document.querySelectorAll("button")).map((item) => ({
+          ariaLabel: item.getAttribute("aria-label"),
+          text: item.textContent?.trim().slice(0, 80) ?? "",
+          className: item.className,
+        }));
+        reject(new Error(
+          "OCR toolbar button was not found; viewport=" +
+            window.innerWidth +
+            "x" +
+            window.innerHeight +
+            "; buttons=" +
+            JSON.stringify(labels),
+        ));
+        return;
+      }
+      const startedAt = performance.now();
+      const finish = () => {
+        const dialog = document.querySelector(".ocr-dialog");
+        const backdrop = document.querySelector(".ocr-modal-backdrop");
+        if (!dialog || !backdrop) return false;
+        resolve({
+          elapsedMs: performance.now() - startedAt,
+          backdropFilter: getComputedStyle(backdrop).backdropFilter,
+          webkitBackdropFilter: getComputedStyle(backdrop).webkitBackdropFilter,
+        });
+        return true;
+      };
+      const observer = new MutationObserver(() => {
+        if (finish()) observer.disconnect();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      button.click();
+      if (finish()) observer.disconnect();
+      window.setTimeout(() => {
+        observer.disconnect();
+        reject(new Error("OCR dialog did not appear within 500 ms"));
+      }, 500);
+    })`);
+    if (ocrOpenMetrics.elapsedMs > 250) {
+      throw new Error(`OCR dialog first frame is too slow: ${JSON.stringify(ocrOpenMetrics)}`);
+    }
+    if (
+      ocrOpenMetrics.backdropFilter !== "none" &&
+      ocrOpenMetrics.webkitBackdropFilter !== "none"
+    ) {
+      throw new Error(`OCR backdrop still uses a live blur: ${JSON.stringify(ocrOpenMetrics)}`);
+    }
+    const ocrCenterMetrics = await evaluate(`new Promise((resolve) => {
+      const startedAt = performance.now();
+      const sample = () => {
+        const dialog = document.querySelector(".ocr-dialog");
+        const rect = dialog.getBoundingClientRect();
+        const metrics = {
+          dialogCenterX: (rect.left + rect.right) / 2,
+          dialogCenterY: (rect.top + rect.bottom) / 2,
+          viewportCenterX: window.innerWidth / 2,
+          viewportCenterY: window.innerHeight / 2,
+          horizontalDelta: Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2),
+          verticalDelta: Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2),
+          elapsedMs: performance.now() - startedAt,
+          animations: dialog.getAnimations().map((animation) => ({
+            currentTime: animation.currentTime,
+            playState: animation.playState,
+          })),
+        };
+        if (
+          (metrics.horizontalDelta <= 2 && metrics.verticalDelta <= 2) ||
+          metrics.elapsedMs >= 800
+        ) {
+          resolve(metrics);
+          return;
+        }
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    })`);
+    if (ocrCenterMetrics.horizontalDelta > 2 || ocrCenterMetrics.verticalDelta > 2) {
+      throw new Error(`OCR dialog is not centered: ${JSON.stringify(ocrCenterMetrics)}`);
+    }
+    await evaluate(`document.querySelector('button[aria-label="关闭 OCR"]').click()`);
+    await sleep(120);
 
     await setField("a=b");
     await key("Enter", "Enter", 13);
@@ -1115,8 +1090,8 @@ async function main() {
         viewportHeight: window.innerHeight,
       };
     })()`);
-    if (formatMenuState.count !== 18) {
-      throw new Error(`Expected 18 LaTeX code formats, found ${formatMenuState.count}`);
+    if (formatMenuState.count !== 16) {
+      throw new Error(`Expected 16 LaTeX code formats, found ${formatMenuState.count}`);
     }
     if (
       formatMenuState.visibleTitleCount !== 0 ||
@@ -1151,10 +1126,8 @@ async function main() {
     }
     if (
       !alignFormatState.source.includes("\\begin{align*}") ||
-      !alignFormatState.source.includes("a=b") ||
-      !alignFormatState.source.includes("c=d") ||
-      alignFormatState.source.includes("a&=b") ||
-      alignFormatState.source.includes("c&=d") ||
+      !alignFormatState.source.includes("a&=b") ||
+      !alignFormatState.source.includes("c&=d") ||
       !alignFormatState.source.includes("\\end{align*}")
     ) {
       throw new Error(`align* source was not generated correctly: ${alignFormatState.source}`);
@@ -1189,10 +1162,6 @@ async function main() {
     ) {
       throw new Error(`equation source did not create independent environments: ${JSON.stringify(equationFormatState)}`);
     }
-    // The source editor intentionally refreshes a changed format across two
-    // animation frames. In a browser preview those frames may be throttled,
-    // so wait until the formatted source remains stable before typing a draft.
-    await sleep(500);
 
     const editedEquationSource = [
       "\\begin{equation}",
@@ -1209,7 +1178,7 @@ async function main() {
       dirty: Boolean(document.querySelector(".source-panel .unsaved-chip")),
       source: document.querySelector(".source-panel .cm-content")?.innerText ?? "",
     }))()`);
-    if (!dirtyBeforeFormatSwitch.source.includes("a=q")) {
+    if (!dirtyBeforeFormatSwitch.dirty || !dirtyBeforeFormatSwitch.source.includes("a=q")) {
       throw new Error(`CodeMirror draft edit was not registered: ${JSON.stringify(dirtyBeforeFormatSwitch)}`);
     }
 
@@ -1225,8 +1194,7 @@ async function main() {
     if (
       dirtyFormatSwitchState.dirty ||
       !dirtyFormatSwitchState.source.includes("\\begin{align*}") ||
-      !dirtyFormatSwitchState.source.includes("a=q") ||
-      dirtyFormatSwitchState.source.includes("a&=q") ||
+      !dirtyFormatSwitchState.source.includes("a&=q") ||
       dirtyFormatSwitchState.formulas[0] !== "a=q" ||
       dirtyFormatSwitchState.formulas[1] !== "c=d"
     ) {
@@ -1246,40 +1214,45 @@ async function main() {
       await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
       await sleep(100);
     }
-    const onboardingHotkeyStep = await evaluate(`(() => ({
+    const onboardingHotkeysTilesStep = await evaluate(`(() => ({
       progressCount: document.querySelectorAll(".onboarding-progress > span").length,
       visible: Boolean(document.querySelector(".onboarding-hotkeys-tiles-demo")),
       title: document.querySelector("#onboarding-title")?.textContent ?? "",
-      hasCustomTile: Boolean(document.querySelector(".onboarding-custom-tile-guide")),
+      hotkeyCopy: document.querySelector(".onboarding-hotkey-guide")?.textContent ?? "",
+      tileCopy: document.querySelector(".onboarding-custom-tile-guide")?.textContent ?? "",
     }))()`);
     if (
-      onboardingHotkeyStep.progressCount !== 9 ||
-      !onboardingHotkeyStep.visible ||
-      !onboardingHotkeyStep.hasCustomTile ||
-      !onboardingHotkeyStep.title.includes("快捷")
+      onboardingHotkeysTilesStep.progressCount < 9 ||
+      !onboardingHotkeysTilesStep.visible ||
+      !onboardingHotkeysTilesStep.title.includes("快捷") ||
+      !onboardingHotkeysTilesStep.hotkeyCopy.includes("右键") ||
+      !onboardingHotkeysTilesStep.tileCopy.includes("分区")
     ) {
-      throw new Error(`The onboarding hotkey and tile step is incomplete: ${JSON.stringify(onboardingHotkeyStep)}`);
+      throw new Error(`The onboarding hotkeys and tiles step is incomplete: ${JSON.stringify(onboardingHotkeysTilesStep)}`);
     }
 
     await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
     await sleep(100);
-    const onboardingLayoutStep = await evaluate(`(() => ({
+    const onboardingLayoutsThemesStep = await evaluate(`(() => ({
       visible: Boolean(document.querySelector(".onboarding-layout-theme-demo")),
-      selectedText: document.querySelector(".onboarding-layout-choice-list article.is-selected strong")?.textContent ?? "",
+      title: document.querySelector("#onboarding-title")?.textContent ?? "",
+      layouts: document.querySelector(".onboarding-layout-choice-list")?.textContent ?? "",
       themeCount: document.querySelectorAll(".onboarding-theme-swatches > span").length,
+      officeCopy: document.querySelector(".onboarding-theme-sync-note")?.textContent ?? "",
     }))()`);
     if (
-      !onboardingLayoutStep.visible ||
-      !onboardingLayoutStep.selectedText.includes("经典") ||
-      onboardingLayoutStep.themeCount !== 5
+      !onboardingLayoutsThemesStep.visible ||
+      !onboardingLayoutsThemesStep.title.includes("布局") ||
+      !onboardingLayoutsThemesStep.layouts.includes("标准布局") ||
+      !onboardingLayoutsThemesStep.layouts.includes("经典布局") ||
+      onboardingLayoutsThemesStep.themeCount !== 5 ||
+      !onboardingLayoutsThemesStep.officeCopy.includes("Office")
     ) {
-      throw new Error(`The onboarding layout and theme step is incomplete: ${JSON.stringify(onboardingLayoutStep)}`);
+      throw new Error(`The onboarding layouts and themes step is incomplete: ${JSON.stringify(onboardingLayoutsThemesStep)}`);
     }
 
-    for (let index = 0; index < 3; index += 1) {
-      await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
-      await sleep(100);
-    }
+    await evaluate(`document.querySelector(".onboarding-actions .primary-button").click()`);
+    await sleep(100);
     const onboardingFormatStep = await evaluate(`(() => ({
       progressCount: document.querySelectorAll(".onboarding-progress > span").length,
       visible: Boolean(document.querySelector(".onboarding-code-format-demo")),
@@ -1287,7 +1260,7 @@ async function main() {
       source: document.querySelector(".onboarding-code-format-demo pre")?.textContent ?? "",
     }))()`);
     if (
-      onboardingFormatStep.progressCount !== 9 ||
+      onboardingFormatStep.progressCount < 9 ||
       !onboardingFormatStep.visible ||
       !onboardingFormatStep.title.includes("LaTeX") ||
       !onboardingFormatStep.source.includes("\\begin{align*}")
@@ -1319,6 +1292,8 @@ async function main() {
       chineseIdeographicCommaValue,
       arrowUpLineState,
       arrowDownLineState,
+      onboardingHotkeysTilesStep,
+      onboardingLayoutsThemesStep,
       onboardingFormatStep,
     }, null, 2));
     console.log("Editor regression smoke test passed");

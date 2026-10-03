@@ -138,7 +138,6 @@ export function formatLatexSourceForEditor(source: string) {
 
 function latexIndentationAt(
   state: EditorState,
-  pos: number,
   contextLine: { text: string; from: number },
   indentWidth: number,
 ) {
@@ -272,13 +271,7 @@ function insertNewlineWithoutDuplicateEnvironmentEnd(view: EditorView) {
   if (!environmentName) return false;
 
   const source = view.state.doc.toString();
-  if (
-    !hasMatchingEnvironmentEndAfter(
-      source,
-      selection.head,
-      environmentName,
-    )
-  ) {
+  if (!hasMatchingEnvironmentEndAfter(source, selection.head, environmentName)) {
     return false;
   }
 
@@ -295,7 +288,7 @@ export const visualTeXLatexEditingExtensions: Extension = [
   EditorState.tabSize.of(2),
   indentUnit.of(LATEX_SOURCE_INDENT),
   indentService.of((context, pos) =>
-    latexIndentationAt(context.state, pos, context.lineAt(pos, 1), context.unit),
+    latexIndentationAt(context.state, context.lineAt(pos, 1), context.unit),
   ),
   latexLanguage.data.of({
     indentOnInput: /^\s*(?:\\end\{[^}]*\}|\\\]|\$\$|\})/,

@@ -424,6 +424,183 @@
   color: var(--text-placeholder-focus, var(--text-placeholder-selected));
 }
 
+.quick-ocr-controls {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.quick-ocr-split {
+  position: relative;
+  height: 34px;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.quick-ocr-button,
+.quick-ocr-mode-trigger,
+.silent-ocr-toggle {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-sm);
+}
+
+.quick-ocr-button {
+  padding: 0 10px;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.quick-ocr-primary {
+  border-radius: 9px 0 0 9px;
+  border-right: 0;
+}
+
+.quick-ocr-mode-trigger {
+  width: 26px;
+  padding: 0;
+  border-radius: 0 9px 9px 0;
+  cursor: pointer;
+}
+
+.quick-ocr-mode-trigger:hover:not(:disabled),
+.quick-ocr-mode-trigger.is-open {
+  border-color: var(--accent-border);
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+.quick-ocr-mode-trigger.is-custom-provider {
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 82%, transparent);
+}
+
+.quick-ocr-mode-trigger:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.quick-ocr-mode-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 190;
+  width: 258px;
+  display: grid;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.quick-ocr-mode-menu > button {
+  display: grid;
+  gap: 3px;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.quick-ocr-mode-menu > button:hover,
+.quick-ocr-mode-menu > button.is-active {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.quick-ocr-mode-menu > button.is-active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.quick-ocr-mode-menu strong {
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.quick-ocr-mode-menu span {
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.quick-ocr-button svg {
+  color: var(--accent);
+}
+
+.quick-ocr-button:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+.quick-ocr-primary:hover:not(:disabled) + .quick-ocr-mode-trigger {
+  border-color: var(--accent-border);
+}
+
+.quick-ocr-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.silent-ocr-toggle {
+  position: relative;
+  padding: 0 8px;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.silent-ocr-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.silent-ocr-indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--text-faint);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-faint) 10%, transparent);
+}
+
+.silent-ocr-toggle.is-active {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  color: var(--accent);
+}
+
+.silent-ocr-toggle.is-active .silent-ocr-indicator {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.silent-ocr-toggle kbd {
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-faint);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 7px;
+  font-weight: 650;
+}
+
 .formula-tile-list {
   min-width: 0;
   min-height: 0;
@@ -792,6 +969,10 @@
   outline-offset: -2px;
 }
 
+.template-button > .template-label {
+  display: none;
+}
+
 .template-button .math-preview,
 .template-button.is-auto-fit .math-preview,
 .template-button.is-symbol-large .math-preview,
@@ -836,53 +1017,58 @@
   grid-template-columns: 50px minmax(0, 1fr);
 }
 
+.multi-line-editor.has-mixed-line-modes .formula-line {
+  grid-template-columns: 24px minmax(0, 1fr) 24px;
+}
+
+.multi-line-editor.has-mixed-line-modes.has-line-numbers .formula-line {
+  grid-template-columns: 50px 24px minmax(0, 1fr) 24px;
+}
+
 .formula-line-mode-toggle {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  z-index: 5;
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
-  box-shadow: 0 3px 12px color-mix(in srgb, var(--text) 10%, transparent);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-50%);
-  transition: opacity 120ms ease;
-  user-select: none;
-}
-
-.formula-line.is-active .formula-line-mode-toggle,
-.formula-line:hover .formula-line-mode-toggle,
-.formula-line-mode-toggle:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.formula-line-mode-toggle button {
-  min-width: 35px;
-  height: 22px;
-  padding: 0 5px;
+  position: static;
+  align-self: center;
+  justify-self: center;
+  z-index: 2;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-faint);
+  font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 9px;
   font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  opacity: 0.34;
   cursor: pointer;
+  user-select: none;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    background-color 120ms ease;
 }
 
-.formula-line-mode-toggle button:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--bg) 70%, transparent);
+.formula-line.is-active .formula-line-mode-toggle {
+  opacity: 0.68;
 }
 
-.formula-line-mode-toggle button.is-active {
+.formula-line:hover .formula-line-mode-toggle,
+.formula-line-mode-toggle:hover,
+.formula-line-mode-toggle:focus-visible {
   color: var(--accent);
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent-soft) 64%, transparent);
+  opacity: 1;
+  outline: none;
+}
+
+.formula-line-mode-toggle:disabled {
+  color: var(--text-faint);
+  background: transparent;
+  opacity: 0.26;
+  cursor: default;
 }
 
 .formula-line + .formula-line {
@@ -945,9 +1131,88 @@
 
 /* Settings live preview follows the actual editor inset model and must contain
    every preview glyph inside the simulated toolbar button. */
+.formula-inset-preview-toolbar > span {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
 
-/* The settings font preview must be driven by its local preference variables,
-   not by MathLive's bundled KaTeX families or the globally persisted font. */
+.formula-inset-preview-toolbar > span .math-preview {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  contain: strict;
+}
+
+.formula-inset-preview-canvas {
+  padding: 8px var(--preview-formula-inset-right, 34px) 9px
+    var(--preview-formula-inset-left, 34px);
+  background: var(--formula-surface);
+}
+
+.formula-inset-preview-row {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  padding: var(--preview-formula-row-vertical-inset, 7px) 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.formula-inset-preview-row .math-preview {
+  width: min(210px, 100%);
+  min-height: 36px;
+  justify-content: flex-start;
+  font-size: 17px;
+}
+
+/* The settings font preview changes only mathematical letter glyphs.
+   Operators and relation symbols (for example \cdot, +, =, \times) must keep
+   MathLive/KaTeX's native symbol fonts and metrics across font preferences. */
+.formula-font-live-preview
+  .math-preview
+  .ML__mathit.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__mathnormal.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__mathbfit.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__lcGreek.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__ucGreek.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__latin.visualtex-formula-letter-glyph {
+  font-family: var(--visualtex-formula-italic-font-family) !important;
+}
+
+.formula-font-live-preview
+  .math-preview
+  .ML__cmr.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__mathbf.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__mathrm.visualtex-formula-letter-glyph,
+.formula-font-live-preview
+  .math-preview
+  .ML__operator_name.visualtex-formula-letter-glyph {
+  font-family: var(--visualtex-formula-upright-font-family) !important;
+}
+
+.formula-font-live-preview .math-preview .visualtex-chinese-glyph {
+  font-family: var(--visualtex-formula-chinese-font-family) !important;
+}
 
 /* Formula row vertical spacing is a live editor preference. */
 .formula-line .visual-mathfield {
@@ -960,6 +1225,164 @@
 
 .formula-line .visual-mathfield.is-simple-formula {
   padding-block: var(--formula-row-vertical-inset, 5px) !important;
+}
+
+/* Desktop shell compaction: the original global header no longer owns a
+   separate grid row. It is overlaid onto the workspace's existing header row,
+   while the former editor-header controls move into the Formula tools / LaTeX
+   source tab strip below the canvas. */
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) {
+  --desktop-top-tools-width: clamp(560px, 47vw, 790px);
+  position: relative;
+  grid-template-rows: minmax(0, 1fr) 24px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: auto;
+  width: calc(100% - var(--desktop-top-tools-width));
+  min-height: var(--panel-header-height, 52px);
+  grid-template-columns: minmax(155px, 0.75fr) minmax(130px, 0.55fr) minmax(300px, 1.7fr);
+  box-shadow: none;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .menu-button,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .icon-button {
+  width: 28px;
+  height: 28px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-mark {
+  width: 28px;
+  height: 28px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .visualtex-brand-logo {
+  width: 25px;
+  height: 25px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-copy strong {
+  font-size: 13px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .document-title-area input {
+  height: 30px;
+  min-height: 30px;
+  padding-block: 0;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .action-group {
+  gap: 1px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary {
+  min-height: 30px;
+  height: 30px;
+  padding-block: 0;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .copy-chevron {
+  min-height: 30px;
+  height: 30px;
+}
+
+.editor-pane-header-controls {
+  display: contents;
+}
+
+.classic-bottom-workspace-controls {
+  position: relative;
+  z-index: var(--z-workspace-floating, 60);
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  align-self: stretch;
+  overflow: visible;
+}
+
+.classic-bottom-workspace-controls .pane-title-group {
+  width: max-content;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  overflow: visible;
+}
+
+.classic-bottom-workspace-controls .formula-alignment-controls {
+  margin: 0;
+  padding: 0;
+  gap: 1px;
+}
+
+.classic-bottom-workspace-controls .formula-alignment-button,
+.classic-bottom-workspace-controls .formula-formatting-button,
+.classic-bottom-workspace-controls .icon-button.compact {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.classic-bottom-workspace-controls .formula-color-popover {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 7px);
+  left: 0;
+  z-index: var(--z-popover, 190);
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .editor-pane-header {
+  z-index: calc(var(--z-app-header, 120) + 1);
+  padding-left: calc(100% - var(--desktop-top-tools-width));
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .editor-pane-header
+  > .editor-pane-header-controls {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 0 8px;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .editor-pane-header
+  .desktop-editor-header-controls {
+  flex: 0 0 auto;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .editor-pane-header
+  .canvas-tool-group {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  overflow: visible;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tabs {
+  grid-template-columns: minmax(0, 1fr) auto minmax(30px, max-content);
+  gap: 4px;
 }
 
 /* Latest classic desktop layout: the editor header spans the full workspace,
@@ -991,41 +1414,364 @@
   > .formula-workspace.editor-pane
   > .classic-editor-pane-body {
   grid-column: 1;
-  grid-row: 2;
 }
 
 .workspace.is-classic-layout:not(.is-office-workspace)
   > .classic-tile-resizer {
   grid-column: 2;
-  grid-row: 2;
 }
 
 .workspace.is-classic-layout:not(.is-office-workspace)
   > .classic-tile-toolbar {
   grid-column: 3;
-  grid-row: 2;
 }
 
 .workspace.is-classic-layout .formula-workspace.editor-pane {
   border-right: 0;
 }
 
-/* Latest compact matrix builder used by the horizontal/classic formula dock. */
-.formula-toolbar.is-horizontal .matrix-builder {
+/* Desktop single-row toolbar. All top-level desktop actions live in the
+   real app header; the classic editor header is only a portal source and does
+   not consume layout space. This removes the previous two-layer seam and
+   prevents independently-positioned headers from overlapping at narrow widths. */
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) {
+  --desktop-toolbar-control-size: 32px;
+  grid-template-rows: var(--panel-header-height, 52px) minmax(0, 1fr) 24px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header {
+  position: relative;
+  inset: auto;
+  z-index: var(--z-app-header, 120);
   width: 100%;
   min-width: 0;
+  height: var(--panel-header-height, 52px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  overflow: visible;
+  background: color-mix(in srgb, var(--surface) 97%, var(--bg));
+  border-bottom: 1px solid var(--border);
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-area {
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: 5px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-copy {
+  white-space: nowrap;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .document-title-area {
+  flex: 0 1 230px;
+  min-width: 104px;
+  max-width: 260px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .header-actions {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .header-actions .icon-button,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .menu-button,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .keypad-mode-toggle,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .workspace-export-trigger,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .canvas-input-behavior-trigger,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .quick-ocr-button,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .silent-ocr-toggle,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .canvas-ocr-model {
+  box-sizing: border-box;
+  width: var(--desktop-toolbar-control-size);
+  min-width: var(--desktop-toolbar-control-size);
+  height: var(--desktop-toolbar-control-size);
+  min-height: var(--desktop-toolbar-control-size);
+  padding: 0;
+  border-radius: 7px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-control {
+  flex: 0 0 var(--desktop-toolbar-control-size);
+  width: var(--desktop-toolbar-control-size);
+  min-width: var(--desktop-toolbar-control-size);
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary:hover,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .code-format-primary[aria-expanded="true"] {
+  border-color: var(--border);
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+.desktop-top-tools-mount {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.desktop-top-tools-mount .editor-pane-header-trailing {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.desktop-top-tools-mount .desktop-editor-header-controls,
+.desktop-top-tools-mount .canvas-tool-group,
+.desktop-top-tools-mount .quick-ocr-controls,
+.desktop-top-tools-mount .quick-ocr-split,
+.desktop-top-tools-mount .canvas-controls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.desktop-top-tools-mount .workspace-export-trigger > span,
+.desktop-top-tools-mount .canvas-input-behavior-trigger > span,
+.desktop-top-tools-mount .canvas-input-behavior-trigger > svg:last-child,
+.desktop-top-tools-mount .keypad-mode-toggle > span,
+.desktop-top-tools-mount .canvas-controls > span {
+  display: none !important;
+}
+
+.desktop-top-tools-mount .desktop-editor-header-controls {
+  margin-left: 0;
+}
+
+.desktop-top-tools-mount .quick-ocr-mode-trigger {
+  display: none !important;
+}
+
+.desktop-top-tools-mount .quick-ocr-primary {
+  border-radius: 7px !important;
+}
+
+.desktop-top-tools-mount .silent-ocr-toggle {
+  justify-content: center;
+  gap: 0;
+}
+
+.desktop-top-tools-mount .silent-ocr-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.desktop-top-tools-mount .canvas-ocr-model {
+  position: relative;
+  overflow: visible;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.desktop-top-tools-mount .canvas-ocr-model > svg {
+  display: block !important;
+  margin: 0;
+  pointer-events: none;
+}
+
+.desktop-top-tools-mount .canvas-ocr-model select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.desktop-top-tools-mount .canvas-controls {
+  height: var(--desktop-toolbar-control-size);
+}
+
+.desktop-top-tools-mount .canvas-controls .icon-button {
+  width: var(--desktop-toolbar-control-size);
+  min-width: var(--desktop-toolbar-control-size);
+  height: var(--desktop-toolbar-control-size);
+  min-height: var(--desktop-toolbar-control-size);
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace) {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .editor-pane-header {
+  display: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .classic-editor-pane-body,
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .classic-tile-resizer,
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .classic-tile-toolbar {
+  grid-row: 1;
+}
+
+/* Keep the centre switch mathematically centred, independent of the width of
+   the formatting controls on the left or collapse/copy actions on the right. */
+.workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tabs {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  min-width: 0;
+  gap: 0;
+  padding-inline: 6px;
+  overflow: visible;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls {
+  position: absolute;
+  inset: 0 auto 0 6px;
+  width: auto;
+  max-width: calc(50% - 122px);
+  display: flex;
+  align-items: center;
+  overflow: visible;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tab-group {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  z-index: 2;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-actions {
+  position: absolute;
+  inset: 0 6px 0 auto;
+  display: flex;
+  align-items: center;
+  z-index: 2;
+}
+
+@media (max-width: 980px) {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .document-title-area {
+    display: none;
+  }
+
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .header-actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .file-actions,
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .edit-actions,
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell)
+    > .app-header
+    .header-actions
+    > .workspace-action,
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell)
+    > .app-header
+    .header-actions
+    > .settings-toggle {
+    display: none !important;
+  }
+
+  .desktop-top-tools-mount .canvas-controls > span {
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .brand-copy {
+    display: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-tab-label {
+    display: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-tab-group button {
+    min-width: 38px;
+    width: 38px;
+    padding-inline: 0;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls {
+    max-width: calc(50% - 48px);
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls .formula-alignment-button,
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls .formula-formatting-button {
+    width: 24px;
+    min-width: 24px;
+    height: 26px;
+    min-height: 26px;
+  }
+}
+
+@media (max-width: 540px) {
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls {
+    transform: scale(0.74);
+    transform-origin: left center;
+  }
+}
+
+@media (max-width: 460px) {
+  .app-shell:not(.is-keypad-mode):not(.office-dialog-shell) {
+    --desktop-toolbar-control-size: 28px;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls {
+    transform: scale(0.64);
+  }
+}
+
+/* Latest compact matrix builder used by the horizontal/classic formula dock. */
+.formula-toolbar.is-horizontal .matrix-builder {
   height: auto;
-  grid-column: span 7;
-  grid-row: 1 / span var(--toolbar-row-count, 3);
   grid-template-columns:
     minmax(0, 214px)
     minmax(40px, var(--matrix-picker-size, 98px));
-  grid-template-rows: minmax(0, 1fr);
-  align-items: stretch;
   justify-content: stretch;
-  gap: 4px;
-  padding: 5px;
-  overflow: hidden;
 }
 
 .formula-toolbar.is-horizontal .matrix-options-column {
@@ -1070,7 +1816,6 @@
   min-width: 0;
   height: 58px;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 3px;
   overflow: hidden;
 }
 
@@ -1078,8 +1823,6 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  min-height: 0;
-  height: 100%;
   padding: 2px;
   overflow: hidden;
 }
@@ -1090,8 +1833,6 @@
 }
 
 .formula-toolbar.is-horizontal .matrix-size-picker {
-  grid-column: 2;
-  grid-row: 1;
   width: var(--matrix-picker-size, 98px);
   height: var(--matrix-picker-size, 98px);
   max-width: 100%;
@@ -1107,8 +1848,6 @@
   box-sizing: border-box;
   grid-template-columns: repeat(10, minmax(0, 1fr));
   grid-template-rows: repeat(10, minmax(0, 1fr));
-  padding: 3px;
-  gap: 1px;
 }
 
 .formula-toolbar.is-horizontal .matrix-size-cell {
@@ -1119,21 +1858,15 @@
 .formula-toolbar.is-horizontal .matrix-insert-button {
   width: 100%;
   min-width: 0;
-  height: 28px;
-  min-height: 28px;
   padding: 0 14px;
   border-radius: 4px;
-  font-size: 10px;
   white-space: nowrap;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-builder {
-  grid-column: span 5;
   grid-template-columns:
     minmax(0, 190px)
     minmax(40px, var(--matrix-picker-size, 64px));
-  gap: 4px;
-  padding: 4px;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-options-column {
@@ -1158,19 +1891,15 @@
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options {
   height: 40px;
-  gap: 2px;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options button {
-  min-height: 0;
   padding: 1px;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options .math-preview {
   height: 16px;
   max-height: 16px;
-  min-height: 0;
-  font-size: 13px;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-size-picker {
@@ -1180,21 +1909,13 @@
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-size-grid {
   width: 100%;
   height: 100%;
-  padding: 2px;
-  gap: 1px;
 }
 
 .formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-insert-button {
-  height: 23px;
-  min-height: 23px;
-  padding-inline: 7px;
   font-size: 9px;
 }
 
 @media (max-width: 900px) {
-  .workspace:not(.is-office-workspace) .editor-pane-header {
-    padding-inline: 10px;
-  }
 
   .workspace:not(.is-office-workspace)
     .editor-pane-header
@@ -1235,6 +1956,20 @@
     display: none;
   }
 
+  .office-dialog-shell
+    .workspace.is-office-workspace.is-classic-layout.has-sidebar
+    > .classic-tile-resizer {
+    display: block;
+    position: absolute;
+    top: 0;
+    right: min(var(--classic-tile-width, 300px), 82vw);
+    bottom: 0;
+    width: 7px;
+    /* Keep this hit target above the bottom tools, but still inside the normal
+       workspace tier so real modal dialogs always cover it. */
+    z-index: var(--z-workspace-resizer, 70);
+  }
+
   .workspace.is-classic-layout > .classic-tile-toolbar {
     position: absolute;
     inset: 0 0 0 auto;
@@ -1247,6 +1982,12 @@
   .workspace.is-classic-layout:not(.is-office-workspace)
     > .classic-tile-toolbar {
     top: var(--panel-header-height);
+  }
+
+  .office-dialog-shell
+    .workspace.is-classic-layout.has-sidebar
+    .classic-editor-pane-body {
+    margin-right: min(var(--classic-tile-width, 300px), 82vw);
   }
 
   .classic-bottom-tabs {
@@ -1437,14 +2178,20 @@
 }
 
 .custom-symbol-material-input-row button,
+.custom-symbol-quick-materials button,
 .custom-symbol-geometry-materials button,
 .custom-symbol-designer-inspector-actions button,
 .custom-symbol-crop-presets button,
 .custom-symbol-split-actions button,
+.custom-symbol-metric-presets button,
 .custom-symbol-designer-stage-toolbar button,
 .custom-symbol-register-button,
 .custom-symbol-designer-footer button {
   font-size: 10px;
+}
+
+.custom-symbol-quick-materials button {
+  height: 42px;
 }
 
 .custom-symbol-geometry-materials button {
@@ -1508,6 +2255,7 @@
 .custom-symbol-delete-warning,
 .custom-symbol-designer-legacy-warning,
 .custom-symbol-registration-status,
+.custom-symbol-metric-hint,
 .custom-symbol-designer-inspector-empty,
 .custom-symbol-layer-empty,
 .custom-symbol-registered-empty {
@@ -1555,7 +2303,8 @@
 
 .custom-symbol-designer-inspector-actions button,
 .custom-symbol-crop-presets button,
-.custom-symbol-split-actions button {
+.custom-symbol-split-actions button,
+.custom-symbol-metric-presets button {
   min-height: 29px;
   font-size: 9px;
 }
@@ -1614,6 +2363,44 @@
 /* Desktop compact-width parity. The classic tile rail can leave only ~500px
    for the editor at an 820px viewport, so keep every header action available
    while collapsing labels exactly like the current macOS layout. */
+@media (max-width: 1040px) {
+  .workspace:not(.is-office-workspace) .quick-ocr-button {
+    width: 30px;
+    min-width: 30px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .workspace:not(.is-office-workspace) .quick-ocr-mode-trigger {
+    width: 20px;
+    min-width: 20px;
+    padding: 0;
+  }
+
+  .workspace:not(.is-office-workspace) .quick-ocr-button > span,
+  .workspace:not(.is-office-workspace)
+    .silent-ocr-toggle
+    > span:not(.silent-ocr-indicator),
+  .workspace:not(.is-office-workspace) .silent-ocr-toggle kbd,
+  .workspace:not(.is-office-workspace) .canvas-ocr-model > svg {
+    display: none;
+  }
+
+  .workspace:not(.is-office-workspace) .silent-ocr-toggle {
+    width: 30px;
+    min-width: 30px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .workspace:not(.is-office-workspace) .canvas-ocr-model {
+    padding-inline: 3px;
+  }
+
+  .workspace:not(.is-office-workspace) .canvas-ocr-model select {
+    width: 104px;
+  }
+}
 
 @media (max-width: 900px) {
   .workspace:not(.is-office-workspace) .editor-pane-header {
@@ -1652,6 +2439,10 @@
     display: none;
   }
 
+  .workspace:not(.is-office-workspace) .canvas-ocr-model select {
+    width: 88px;
+  }
+
   .workspace:not(.is-office-workspace) .canvas-controls > span {
     display: none;
   }
@@ -1675,6 +2466,47 @@
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+
+.editor-code-format-control {
+  min-width: 0;
+  margin-left: 0;
+}
+
+.editor-code-format-control .copy-primary {
+  min-width: 0;
+  max-width: 150px;
+  padding: 0 9px;
+}
+
+.editor-code-format-control .copy-primary > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keypad-mode-toggle {
+  height: 30px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.keypad-mode-toggle:hover,
+.keypad-mode-toggle.is-active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .app-shell.is-keypad-mode .workspace {
@@ -1707,10 +2539,196 @@
   gap: 5px;
 }
 
+.workspace.is-keypad-mode .editor-code-format-control .copy-primary {
+  max-width: 124px;
+}
+
+.workspace.is-keypad-mode .keypad-mode-toggle {
+  padding-right: 7px;
+  padding-left: 7px;
+}
+
+.keypad-editor-pane-body {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+
+.keypad-editor-pane-body .editor-pane-scroll > .editor-surface {
+  min-height: 100%;
+}
+
+@media (max-width: 720px) {
+  .workspace .keypad-mode-toggle {
+    width: 30px;
+    padding: 0;
+  }
+
+  .workspace .keypad-mode-toggle > span {
+    display: none;
+  }
+}
+
 /* Windows Office editor: one dedicated Office control bar spans the whole
    editor above both the formula pane and the Custom/Common tile tabs. The
    formula-formatting controls live in the Formula tools tab row below instead
    of competing for horizontal space with Office session controls. */
+.office-dialog-shell {
+  grid-template-rows: auto minmax(0, 1fr) 24px;
+}
+
+.office-workspace-actions.office-control-bar {
+  position: relative;
+  z-index: 90;
+  min-width: 0;
+  min-height: 42px;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  overflow: visible;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  scrollbar-width: none;
+}
+
+.office-workspace-actions.office-control-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.office-workspace-actions.office-control-bar > .office-control-bar-leading,
+.office-workspace-actions.office-control-bar > .office-control-bar-tools,
+.office-workspace-actions.office-control-bar > .office-control-bar-actions {
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.office-control-bar-leading {
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.office-workspace-actions.office-control-bar > .office-control-bar-tools {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.office-workspace-actions.office-control-bar > .office-control-bar-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.office-control-bar .office-display-mode-setting {
+  min-width: max-content;
+  padding: 1px;
+  border-radius: 6px;
+}
+
+.office-control-bar .office-display-mode-setting button {
+  min-width: 40px;
+  min-height: 28px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+
+.office-control-bar .office-font-size-setting {
+  min-width: max-content;
+  min-height: 30px;
+  gap: 4px;
+  padding: 2px 5px 2px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+}
+
+.office-control-bar .office-font-size-setting select {
+  width: 112px;
+  min-height: 26px;
+  padding: 1px 18px 1px 5px;
+  font-size: 10px;
+}
+
+.office-control-bar .office-auto-commit-setting {
+  min-width: max-content;
+  gap: 4px;
+  font-size: 9px;
+}
+
+.office-control-bar .office-auto-commit-setting input {
+  width: 13px;
+  height: 13px;
+}
+
+.office-control-bar .canvas-tool-group {
+  min-width: max-content;
+  width: 100%;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  overflow: visible;
+}
+
+.office-control-bar .canvas-input-behavior-trigger {
+  min-height: 28px;
+}
+
+.office-control-bar .canvas-ocr-model {
+  height: 28px;
+  padding-left: 6px;
+}
+
+.office-control-bar .canvas-ocr-model select {
+  width: 110px;
+  height: 26px;
+  font-size: 10px;
+}
+
+.office-control-bar .canvas-controls {
+  height: 28px;
+}
+
+.office-control-bar .canvas-controls > span {
+  min-width: 36px;
+  font-size: 10px;
+}
+
+.office-inline-history-actions {
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.office-inline-history-actions .secondary-button,
+.office-inline-history-actions .primary-button {
+  min-height: 28px;
+  height: 28px;
+  margin: 0;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+}
+
+.office-inline-history-actions .office-inline-primary {
+  padding-inline: 10px;
+}
+
+.office-inline-action-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: var(--border);
+}
 
 /* Classic Office parity: the old editor-pane header no longer consumes a
    second row. Its alignment/selection-formatting portal is mounted into the
@@ -1726,17 +2744,47 @@
   display: none;
 }
 
+.office-formatting-mount {
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+}
+
+.classic-bottom-formatting {
+  position: relative;
+  z-index: 180;
+  min-width: max-content;
+  align-self: center;
+  justify-self: start;
+  overflow: visible;
+}
+
+.classic-bottom-formatting .formula-alignment-controls,
 .editor-pane-header.is-office-editor-header .formula-alignment-controls {
   margin-left: 0;
   padding-left: 0;
   gap: 1px;
 }
 
+.classic-bottom-formatting .formula-alignment-button,
+.classic-bottom-formatting .formula-formatting-button,
 .editor-pane-header.is-office-editor-header .formula-alignment-button,
 .editor-pane-header.is-office-editor-header .formula-formatting-button {
   width: 28px;
   min-width: 28px;
   height: 28px;
+}
+
+.office-dialog-shell .classic-bottom-tabs {
+  z-index: 170;
+}
+
+.classic-bottom-formatting .formula-color-popover {
+  z-index: var(--z-popover, 190);
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 7px);
+  left: 0;
 }
 
 /* Keep the formula color picker compact on Windows. The two-column parity
@@ -1766,14 +2814,159 @@
 /* Office editor WebView2 must paint MathLive glyphs in the same layer as the
    button. Avoid every containment/promotion variant, including the vertical
    toolbar path, not just the classic horizontal dock. */
+.office-dialog-shell .formula-toolbar .template-strip,
+.office-dialog-shell .formula-toolbar .toolbar-category-section,
+.office-dialog-shell .formula-toolbar .template-button,
+.office-dialog-shell .formula-toolbar .template-button .math-preview,
+.office-dialog-shell .formula-toolbar .toolbar-static-preview {
+  contain: none !important;
+  transform: none !important;
+  backface-visibility: visible !important;
+  will-change: auto !important;
+}
 
 /* Do not disable MathPreview's fit transform inside Office. The previous
    WebView2 paint workaround accidentally forced every preview scale to 1 and
    made tall/wide glyphs such as integrals and products overflow their tiles. */
+.office-dialog-shell .formula-toolbar .template-button .math-preview-fit-content {
+  contain: none !important;
+  transform: scale(var(--math-preview-fit-scale, 1)) !important;
+  transform-origin: center center !important;
+  backface-visibility: visible !important;
+  will-change: auto !important;
+}
+
+.office-dialog-shell .formula-toolbar .template-button .math-preview {
+  display: inline-flex;
+  visibility: visible !important;
+  opacity: 1 !important;
+  color: var(--text) !important;
+}
+
+.office-dialog-shell .formula-toolbar .template-button .math-preview-fit-content,
+.office-dialog-shell .formula-toolbar .template-button .ML__latex {
+  display: inline-block;
+  visibility: visible !important;
+  opacity: 1 !important;
+  color: var(--text) !important;
+}
+
+@media (max-width: 1120px) {
+  .office-inline-history-actions .secondary-button > span,
+  .office-control-bar .canvas-ocr-model > svg {
+    display: none;
+  }
+
+  .office-control-bar .office-font-size-setting select {
+    width: 94px;
+  }
+}
+
+@media (max-width: 900px) {
+  .office-workspace-actions.office-control-bar {
+    gap: 4px;
+    padding-inline: 5px;
+  }
+
+  .office-control-bar .canvas-tool-group {
+    gap: 2px;
+  }
+
+  .office-inline-history-actions .secondary-button {
+    padding-inline: 5px;
+  }
+
+  .office-dialog-shell .classic-bottom-tabs {
+    grid-template-columns: max-content auto minmax(28px, 1fr);
+  }
+}
 
 /* Windows Office editor parity with the macOS resident editor. The Office
    controls occupy their own fixed row above both the editor and tile sidebar;
    classic selection formatting lives at the far left of the Formula tools row. */
+.office-dialog-shell {
+  min-height: 100vh;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.office-dialog-shell .workspace {
+  --panel-header-height: 46px;
+}
+
+.office-dialog-shell .workspace.is-office-workspace.is-standard-layout,
+.office-dialog-shell .workspace.is-office-workspace.is-classic-layout {
+  grid-template-rows: minmax(0, 1fr);
+  padding-top: var(--panel-header-height);
+}
+
+.office-dialog-shell .workspace.is-office-workspace.is-standard-layout.has-sidebar {
+  grid-template-columns: minmax(0, 1fr) 252px;
+}
+
+.office-dialog-shell
+  .workspace.is-office-workspace.is-standard-layout
+  > .formula-workspace.editor-pane {
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-rows: minmax(0, 1fr);
+  border-right: 1px solid var(--border);
+}
+
+.office-dialog-shell
+  .workspace.is-office-workspace.is-standard-layout:not(.has-sidebar)
+  > .formula-workspace.editor-pane {
+  grid-column: 1 / -1;
+  border-right: 0;
+}
+
+.office-dialog-shell
+  .workspace.is-office-workspace
+  > .formula-workspace.editor-pane
+  > .editor-pane-header.is-office-editor-header {
+  position: fixed;
+  z-index: var(--z-workspace-header, 80);
+  inset: 0 0 auto;
+  width: auto;
+  height: var(--panel-header-height);
+  display: flex;
+  overflow: visible;
+}
+
+.office-dialog-shell
+  .workspace.is-office-workspace.is-classic-layout
+  > .formula-workspace.editor-pane {
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.office-dialog-shell
+  .workspace.is-office-workspace.is-classic-layout
+  > .classic-tile-resizer {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.office-dialog-shell
+  .workspace.is-office-workspace.is-classic-layout
+  > .classic-tile-toolbar {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.office-dialog-shell
+  .workspace.is-office-workspace.is-standard-layout
+  > .formula-toolbar {
+  position: relative;
+  inset: auto;
+  grid-column: 2;
+  grid-row: 1;
+  width: auto;
+  min-width: 0;
+  box-shadow: none;
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
 
 .editor-pane-header.is-office-editor-header {
   min-width: 0;
@@ -1789,9 +2982,45 @@
   overflow: visible;
 }
 
+.office-inline-options,
+.office-inline-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: visible;
+}
+
+.office-inline-options {
+  flex: 0 1 auto;
+}
+
+.office-inline-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.editor-pane-header.is-office-editor-header .office-formatting-mount {
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  overflow: visible;
+}
+
 .editor-pane-header.is-office-editor-header .formula-alignment-controls {
   margin-left: 0;
   padding-left: 7px;
+}
+
+.editor-pane-header.is-office-editor-header .editor-pane-header-trailing {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  overflow: visible;
 }
 
 .editor-pane-header.is-office-editor-header .canvas-tool-group {
@@ -1800,6 +3029,87 @@
   justify-content: flex-end;
   gap: 5px;
   overflow: visible;
+}
+
+.editor-pane-header.is-office-editor-header .office-display-mode-setting {
+  height: 30px;
+  padding: 1px;
+  border-radius: 7px;
+}
+
+.editor-pane-header.is-office-editor-header .office-display-mode-setting button {
+  min-width: 38px;
+  height: 28px;
+  min-height: 28px;
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
+.editor-pane-header.is-office-editor-header .office-font-size-setting {
+  width: 138px;
+  height: 30px;
+  min-height: 30px;
+  gap: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+}
+
+.editor-pane-header.is-office-editor-header .office-font-size-setting select {
+  width: 104px;
+  height: 26px;
+  min-height: 26px;
+  padding-left: 5px;
+  font-size: 10px;
+}
+
+.editor-pane-header.is-office-editor-header .office-object-mode-setting {
+  width: 164px;
+}
+
+.editor-pane-header.is-office-editor-header .office-object-mode-setting select {
+  width: 116px;
+}
+
+.editor-pane-header.is-office-editor-header .office-auto-commit-setting {
+  flex: 0 0 auto;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.editor-pane-header.is-office-editor-header .office-auto-commit-setting input {
+  width: 14px;
+  height: 14px;
+}
+
+.office-history-icon-button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.office-history-icon-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  color: var(--accent);
+}
+
+.office-inline-actions .primary-button,
+.office-inline-actions .secondary-button {
+  align-self: center;
+  box-sizing: border-box;
+  height: 30px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .editor-pane-header.is-office-editor-header .formula-alignment-button,
@@ -1820,6 +3130,23 @@
   font-size: 11px;
 }
 
+.editor-pane-header.is-office-editor-header .canvas-ocr-model {
+  width: 136px;
+  height: 30px;
+  min-height: 30px;
+  gap: 3px;
+  padding: 0 4px 0 6px;
+  border-radius: 7px;
+}
+
+.editor-pane-header.is-office-editor-header .canvas-ocr-model select {
+  width: 112px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0 18px 0 5px;
+  font-size: 10px;
+}
+
 .editor-pane-header.is-office-editor-header .canvas-controls {
   height: 30px;
   min-height: 30px;
@@ -1837,9 +3164,127 @@
   font-size: 10px;
 }
 
+.office-dialog-shell .classic-bottom-tabs {
+  position: relative;
+  z-index: var(--z-workspace-footer, 50);
+  grid-template-columns: minmax(250px, 1fr) auto minmax(34px, 1fr);
+}
+
+.classic-bottom-formatting-slot {
+  position: relative;
+  z-index: var(--z-workspace-floating, 60);
+  min-width: 0;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-self: start;
+  align-self: stretch;
+  padding-left: 2px;
+  overflow: visible;
+}
+
+.office-dialog-shell .classic-bottom-formatting-slot .formula-alignment-controls {
+  margin: 0;
+  padding: 0;
+  border-left: 0;
+  gap: 2px;
+}
+
+.office-dialog-shell .classic-bottom-formatting-slot .formula-formatting-controls {
+  position: relative;
+  overflow: visible;
+}
+
+.office-dialog-shell .classic-bottom-formatting-slot .formula-color-popover {
+  z-index: var(--z-popover, 190);
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+}
+
+.office-dialog-shell .classic-editor-pane-body,
+.office-dialog-shell .classic-bottom-dock,
+.office-dialog-shell .classic-bottom-tabs,
+.office-dialog-shell .classic-bottom-formatting-slot {
+  overflow: visible;
+}
+
+.office-dialog-shell .classic-bottom-content {
+  overflow: hidden;
+}
+
+.office-dialog-shell .classic-bottom-dock {
+  container-type: inline-size;
+}
+
 /* Keep the Office editor's bottom tools dock compact. At Windows display zoom
    above 100%, the previous 36 px tabs and 52 px formula tiles became visually
    oversized and consumed too much of the formula canvas. */
+.office-dialog-shell .classic-editor-pane-body.is-dock-collapsed {
+  grid-template-rows: minmax(0, 1fr) 30px;
+}
+
+.office-dialog-shell .classic-bottom-dock {
+  grid-template-rows: 30px minmax(0, 1fr);
+}
+
+.office-dialog-shell .classic-bottom-dock.is-collapsed {
+  grid-template-rows: 30px;
+}
+
+.office-dialog-shell .classic-bottom-tabs {
+  min-height: 30px;
+}
+
+.office-dialog-shell .classic-bottom-tab-group {
+  gap: 2px;
+}
+
+.office-dialog-shell .classic-bottom-tab-group button {
+  height: 30px;
+  min-width: 94px;
+  gap: 4px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.office-dialog-shell .classic-bottom-tab-group button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.office-dialog-shell .classic-bottom-actions .icon-button {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+}
+
+.office-dialog-shell .classic-bottom-toolbar.formula-toolbar.is-horizontal {
+  grid-template-rows: 30px minmax(0, 1fr);
+}
+
+.office-dialog-shell .classic-bottom-toolbar.formula-toolbar.is-horizontal .toolbar-tabs {
+  gap: 2px;
+  padding: 2px 6px;
+}
+
+.office-dialog-shell .classic-bottom-toolbar.formula-toolbar.is-horizontal .toolbar-tab {
+  min-width: 64px;
+  height: 24px;
+  min-height: 24px;
+  padding-inline: 7px;
+  font-size: 11px;
+}
+
+.office-dialog-shell
+  .classic-bottom-toolbar.formula-toolbar.is-horizontal
+  .template-strip.is-continuous-categories {
+  gap: 8px;
+  padding: 3px 6px;
+}
 
 @media (max-width: 1180px) {
   .editor-pane-header.is-office-editor-header {
@@ -1847,9 +3292,25 @@
     padding-inline: 6px;
   }
 
+  .editor-pane-header.is-office-editor-header .office-font-size-setting {
+    width: 126px;
+  }
+
+  .editor-pane-header.is-office-editor-header .office-font-size-setting select {
+    width: 92px;
+  }
+
   .editor-pane-header.is-office-editor-header .canvas-input-behavior-trigger {
     width: 84px;
     padding-inline: 5px;
+  }
+
+  .editor-pane-header.is-office-editor-header .canvas-ocr-model {
+    width: 124px;
+  }
+
+  .editor-pane-header.is-office-editor-header .canvas-ocr-model select {
+    width: 100px;
   }
 }
 
@@ -1867,6 +3328,74 @@
     .canvas-input-behavior-trigger
     > svg:last-child {
     display: none;
+  }
+}
+
+@container (max-width: 560px) {
+  .office-dialog-shell .classic-bottom-tabs {
+    grid-template-columns: max-content minmax(72px, 1fr) max-content;
+    gap: 2px;
+    padding-inline: 4px;
+    overflow: visible;
+  }
+
+  .office-dialog-shell .classic-bottom-tab-group {
+    min-width: 72px;
+  }
+
+  .office-dialog-shell .classic-bottom-actions {
+    min-width: max-content;
+    overflow: visible;
+  }
+}
+
+@container (max-width: 360px) {
+  .office-dialog-shell .classic-bottom-tabs {
+    grid-template-columns: minmax(0, 1fr) 64px max-content;
+    gap: 1px;
+    padding-inline: 2px;
+  }
+
+  .office-dialog-shell .classic-bottom-formatting-slot {
+    min-width: 0;
+    padding-left: 0;
+  }
+
+  .office-dialog-shell
+    .classic-bottom-formatting-slot
+    .formula-alignment-button,
+  .office-dialog-shell
+    .classic-bottom-formatting-slot
+    .formula-formatting-button {
+    width: 22px;
+    min-width: 22px;
+    height: 22px;
+    min-height: 22px;
+    padding: 0;
+  }
+
+  .office-dialog-shell
+    .classic-bottom-formatting-slot
+    .formula-alignment-controls {
+    gap: 0;
+  }
+
+  .office-dialog-shell .classic-bottom-tab-group {
+    min-width: 64px;
+  }
+
+  .office-dialog-shell .classic-bottom-tab-group button {
+    min-width: 32px;
+    padding-inline: 4px;
+  }
+
+  .office-dialog-shell .classic-bottom-copy,
+  .office-dialog-shell .classic-bottom-collapse {
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    min-height: 24px;
+    padding: 0;
   }
 }
 
@@ -2095,6 +3624,882 @@
   .help-dialog-content h2 {
     margin-top: 18px;
   }
+}
+
+/* Standard desktop layout -------------------------------------------------
+   Keep the standard workspace independent from the classic-layout portal
+   compaction. The standard app header keeps its own sidebar toggle, while the
+   editor header clips/scrolls its own controls instead of allowing them to
+   spill over the formula pane. */
+.app-shell.is-standard-app-layout:not(.is-keypad-mode) {
+  position: relative;
+  grid-template-rows: var(--panel-header-height, 52px) minmax(0, 1fr) 24px;
+}
+
+.app-shell.is-standard-app-layout:not(.is-keypad-mode) > .app-header {
+  position: relative;
+  inset: auto;
+  z-index: var(--z-app-header, 120);
+  width: 100%;
+  min-width: 0;
+  height: var(--panel-header-height, 52px);
+  min-height: var(--panel-header-height, 52px);
+  display: grid;
+  grid-template-columns: minmax(78px, auto) minmax(120px, 1fr) minmax(260px, auto);
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  overflow: visible;
+  background: color-mix(in srgb, var(--surface) 97%, var(--bg));
+  border-bottom: 1px solid var(--border);
+}
+
+.app-shell.is-standard-app-layout:not(.is-keypad-mode)
+  > .app-header
+  .brand-area {
+  min-width: 0;
+  gap: 3px;
+}
+
+.app-shell.is-standard-app-layout:not(.is-keypad-mode)
+  > .app-header
+  .menu-button,
+.app-shell.is-standard-app-layout:not(.is-keypad-mode)
+  > .app-header
+  .sidebar-toggle,
+.app-shell.is-standard-app-layout:not(.is-keypad-mode)
+  > .app-header
+  .icon-button,
+.app-shell.is-standard-app-layout:not(.is-keypad-mode)
+  > .app-header
+  .code-format-primary {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+}
+
+.app-shell.is-standard-app-layout:not(.is-keypad-mode)
+  > .app-header
+  .document-title-area {
+  min-width: 0;
+}
+
+.app-shell.is-standard-app-layout:not(.is-keypad-mode)
+  > .app-header
+  .document-title-area input {
+  width: min(220px, 100%);
+  min-width: 90px;
+}
+
+.app-shell.is-standard-app-layout:not(.is-keypad-mode)
+  > .app-header
+  .header-actions {
+  min-width: 0;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+.app-shell.is-standard-app-layout:not(.is-keypad-mode)
+  > .app-header
+  .desktop-top-tools-mount {
+  display: none;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace) {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  > .formula-workspace.editor-pane {
+  min-width: 0;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .editor-pane-header {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 7px;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .editor-pane-header-controls {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .editor-pane-header-controls::-webkit-scrollbar {
+  display: none;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .pane-title-group {
+  flex: 0 0 auto;
+  min-width: max-content;
+  gap: 2px;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .editor-pane-header-trailing {
+  flex: 0 0 auto;
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .desktop-editor-header-controls,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .canvas-tool-group,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .quick-ocr-controls,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .quick-ocr-split,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .canvas-controls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .desktop-editor-header-controls {
+  margin-left: 0;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .formula-alignment-button,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .formula-formatting-button,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .desktop-editor-header-controls
+  .keypad-mode-toggle,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .workspace-export-trigger,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .canvas-input-behavior-trigger,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .quick-ocr-button,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .silent-ocr-toggle,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .canvas-ocr-model,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .canvas-controls
+  .icon-button {
+  box-sizing: border-box;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 6px;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .workspace-export-trigger
+  > span,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .canvas-input-behavior-trigger
+  > span,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .canvas-input-behavior-trigger
+  > svg:last-child,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .canvas-controls
+  > span,
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .keypad-mode-toggle
+  > span {
+  display: none !important;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .quick-ocr-mode-trigger {
+  display: none !important;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .quick-ocr-primary {
+  border-radius: 6px !important;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .silent-ocr-toggle {
+  justify-content: center;
+  gap: 0;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .silent-ocr-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .canvas-ocr-model {
+  position: relative;
+  overflow: visible;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .canvas-ocr-model
+  > svg {
+  display: block !important;
+  margin: 0;
+  pointer-events: none;
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace)
+  .canvas-ocr-model select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .app-shell.is-standard-app-layout:not(.is-keypad-mode) > .app-header {
+    grid-template-columns: auto minmax(100px, 1fr) auto;
+  }
+
+  .workspace.is-standard-layout:not(.is-office-workspace)
+    .formula-alignment-button,
+  .workspace.is-standard-layout:not(.is-office-workspace)
+    .formula-formatting-button,
+  .workspace.is-standard-layout:not(.is-office-workspace)
+    .desktop-editor-header-controls
+    .keypad-mode-toggle,
+  .workspace.is-standard-layout:not(.is-office-workspace)
+    .workspace-export-trigger,
+  .workspace.is-standard-layout:not(.is-office-workspace)
+    .canvas-input-behavior-trigger,
+  .workspace.is-standard-layout:not(.is-office-workspace)
+    .quick-ocr-button,
+  .workspace.is-standard-layout:not(.is-office-workspace)
+    .silent-ocr-toggle,
+  .workspace.is-standard-layout:not(.is-office-workspace)
+    .canvas-ocr-model,
+  .workspace.is-standard-layout:not(.is-office-workspace)
+    .canvas-controls
+    .icon-button {
+    width: 26px;
+    min-width: 26px;
+    height: 26px;
+    min-height: 26px;
+  }
+}
+
+@media (max-width: 680px) {
+  .app-shell.is-standard-app-layout:not(.is-keypad-mode)
+    > .app-header
+    .document-title-area {
+    display: none;
+  }
+
+  .app-shell.is-standard-app-layout:not(.is-keypad-mode) > .app-header {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}
+
+/* Standard-layout category tint parity ------------------------------------
+   Vertical/standard formula tools render only the active category, so they
+   need the category tint on the strip itself instead of relying on the
+   horizontal category-section wrapper. */
+.formula-toolbar:not(.is-horizontal)
+  .template-strip[data-active-category="common"] {
+  --toolbar-category-tint: var(--toolbar-category-common);
+}
+.formula-toolbar:not(.is-horizontal)
+  .template-strip[data-active-category="structure"] {
+  --toolbar-category-tint: var(--toolbar-category-structure);
+}
+.formula-toolbar:not(.is-horizontal)
+  .template-strip[data-active-category="calculus"] {
+  --toolbar-category-tint: var(--toolbar-category-calculus);
+}
+.formula-toolbar:not(.is-horizontal)
+  .template-strip[data-active-category="matrix"] {
+  --toolbar-category-tint: var(--toolbar-category-matrix);
+}
+.formula-toolbar:not(.is-horizontal)
+  .template-strip[data-active-category="relation"] {
+  --toolbar-category-tint: var(--toolbar-category-relation);
+}
+.formula-toolbar:not(.is-horizontal)
+  .template-strip[data-active-category="greek"] {
+  --toolbar-category-tint: var(--toolbar-category-greek);
+}
+.formula-toolbar:not(.is-horizontal)
+  .template-strip[data-active-category="arrow"] {
+  --toolbar-category-tint: var(--toolbar-category-arrow);
+}
+.formula-toolbar:not(.is-horizontal)
+  .template-strip[data-active-category="physics"] {
+  --toolbar-category-tint: var(--toolbar-category-physics);
+}
+.formula-toolbar:not(.is-horizontal)
+  .template-strip[data-active-category="set"] {
+  --toolbar-category-tint: var(--toolbar-category-set);
+}
+
+.formula-toolbar:not(.is-horizontal) .template-button {
+  outline-color: color-mix(
+    in srgb,
+    var(--border) 58%,
+    var(--toolbar-category-tint, var(--toolbar-category-common)) 42%
+  );
+  background: linear-gradient(
+    180deg,
+    color-mix(
+      in srgb,
+      var(--surface) 82%,
+      var(--toolbar-category-tint, var(--toolbar-category-common)) 18%
+    ),
+    color-mix(
+      in srgb,
+      var(--bg-elevated) 76%,
+      var(--toolbar-category-tint, var(--toolbar-category-common)) 24%
+    )
+  );
+}
+
+.formula-toolbar:not(.is-horizontal) .template-button:hover,
+.formula-toolbar:not(.is-horizontal) .template-button:focus-visible {
+  outline-color: color-mix(
+    in srgb,
+    var(--accent-border) 54%,
+    var(--toolbar-category-tint, var(--toolbar-category-common)) 46%
+  );
+  background: linear-gradient(
+    180deg,
+    color-mix(
+      in srgb,
+      var(--accent-soft) 62%,
+      var(--toolbar-category-tint, var(--toolbar-category-common)) 38%
+    ),
+    color-mix(
+      in srgb,
+      var(--accent-soft) 70%,
+      var(--toolbar-category-tint, var(--toolbar-category-common)) 30%
+    )
+  );
+}
+
+.formula-toolbar:not(.is-horizontal)
+  .toolbar-tab[data-category="common"] {
+  --toolbar-tab-tint: var(--toolbar-category-common);
+}
+.formula-toolbar:not(.is-horizontal)
+  .toolbar-tab[data-category="structure"] {
+  --toolbar-tab-tint: var(--toolbar-category-structure);
+}
+.formula-toolbar:not(.is-horizontal)
+  .toolbar-tab[data-category="calculus"] {
+  --toolbar-tab-tint: var(--toolbar-category-calculus);
+}
+.formula-toolbar:not(.is-horizontal)
+  .toolbar-tab[data-category="matrix"] {
+  --toolbar-tab-tint: var(--toolbar-category-matrix);
+}
+.formula-toolbar:not(.is-horizontal)
+  .toolbar-tab[data-category="relation"] {
+  --toolbar-tab-tint: var(--toolbar-category-relation);
+}
+.formula-toolbar:not(.is-horizontal)
+  .toolbar-tab[data-category="greek"] {
+  --toolbar-tab-tint: var(--toolbar-category-greek);
+}
+.formula-toolbar:not(.is-horizontal)
+  .toolbar-tab[data-category="arrow"] {
+  --toolbar-tab-tint: var(--toolbar-category-arrow);
+}
+.formula-toolbar:not(.is-horizontal)
+  .toolbar-tab[data-category="physics"] {
+  --toolbar-tab-tint: var(--toolbar-category-physics);
+}
+.formula-toolbar:not(.is-horizontal)
+  .toolbar-tab[data-category="set"] {
+  --toolbar-tab-tint: var(--toolbar-category-set);
+}
+
+.formula-toolbar:not(.is-horizontal) .toolbar-tab {
+  background: color-mix(
+    in srgb,
+    var(--surface) 88%,
+    var(--toolbar-tab-tint, var(--toolbar-category-common)) 12%
+  );
+}
+.formula-toolbar:not(.is-horizontal) .toolbar-tab:hover {
+  background: color-mix(
+    in srgb,
+    var(--surface-hover) 72%,
+    var(--toolbar-tab-tint, var(--toolbar-category-common)) 28%
+  );
+}
+.formula-toolbar:not(.is-horizontal) .toolbar-tab.is-active {
+  background: color-mix(
+    in srgb,
+    var(--surface) 56%,
+    var(--toolbar-tab-tint, var(--toolbar-category-common)) 44%
+  );
+}
+
+/* Matrix builder v2 --------------------------------------------------------
+   The 10×10 selector is the primary control in both standard and classic
+   layouts. Delimiter choice is intentionally a narrow auxiliary rail. */
+.formula-toolbar .matrix-builder {
+  --matrix-grid-cell-gap: 2px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: start;
+  gap: 6px;
+  padding: 6px;
+  overflow: hidden;
+  border: 1px solid color-mix(
+    in srgb,
+    var(--border) 54%,
+    var(--toolbar-category-matrix) 46%
+  );
+  border-radius: 8px;
+  background: color-mix(
+    in srgb,
+    var(--surface) 78%,
+    var(--toolbar-category-matrix) 22%
+  );
+}
+
+.formula-toolbar .matrix-main-picker {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 5px;
+}
+
+.formula-toolbar .matrix-builder-heading {
+  min-width: 0;
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.formula-toolbar .matrix-builder-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.formula-toolbar .matrix-size-badge {
+  min-width: 38px;
+  height: 19px;
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 84%, var(--toolbar-category-matrix) 16%);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.formula-toolbar .matrix-size-picker {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  place-items: start center;
+  gap: 0;
+}
+
+.formula-toolbar .matrix-size-grid {
+  width: min(100%, 174px);
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: repeat(10, minmax(0, 1fr));
+  gap: var(--matrix-grid-cell-gap);
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, var(--toolbar-category-matrix) 30%);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-elevated) 90%, var(--toolbar-category-matrix) 10%);
+}
+
+.formula-toolbar .matrix-size-cell {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 82%, var(--toolbar-category-matrix) 18%);
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.formula-toolbar .matrix-size-cell.is-previewed {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--toolbar-category-matrix) 45%);
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--toolbar-category-matrix) 30%);
+}
+
+.formula-toolbar .matrix-size-cell.is-selected-corner {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.formula-toolbar .matrix-insert-button {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.formula-toolbar .matrix-compact-options {
+  width: 32px;
+  min-width: 32px;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 12px minmax(0, 1fr);
+  align-content: stretch;
+  gap: 3px;
+  padding-left: 5px;
+  overflow: hidden;
+  border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.formula-toolbar .matrix-compact-options .matrix-control-label {
+  display: block;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.formula-toolbar .matrix-delimiter-options {
+  width: 27px;
+  min-width: 27px;
+  display: grid;
+  grid-template-columns: 27px;
+  grid-auto-rows: 25px;
+  gap: 2px;
+}
+
+.formula-toolbar .matrix-delimiter-options button {
+  width: 27px;
+  min-width: 27px;
+  height: 25px;
+  min-height: 25px;
+  padding: 1px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.formula-toolbar .matrix-delimiter-options .math-preview {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  font-size: 15px;
+}
+
+/* Standard/vertical toolbar: give the matrix selector almost the full sidebar
+   width. The delimiter rail remains fixed at only 32px. */
+.formula-toolbar:not(.is-horizontal) .matrix-builder {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  min-height: 112px;
+  height: var(--matrix-panel-height, 250px);
+  align-self: start;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.formula-toolbar:not(.is-horizontal) .matrix-main-picker {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: 20px minmax(0, 1fr) 28px;
+}
+
+.formula-toolbar:not(.is-horizontal) .matrix-size-picker {
+  min-height: 0;
+  align-self: stretch;
+  place-items: center;
+}
+
+.formula-toolbar:not(.is-horizontal) .matrix-size-grid {
+  width: var(--matrix-picker-size, 184px);
+  height: var(--matrix-picker-size, 184px);
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.formula-toolbar:not(.is-horizontal) .matrix-compact-options {
+  height: 100%;
+  align-self: stretch;
+}
+
+.formula-toolbar:not(.is-horizontal) .matrix-delimiter-options {
+  grid-row: 2;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.formula-toolbar:not(.is-horizontal) .matrix-delimiter-options button {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Classic/horizontal dock: matrix selector still dominates the card, but fits
+   within the current dock height instead of using fixed legacy 98px geometry. */
+.formula-toolbar.is-horizontal .matrix-builder {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  grid-column: span 5;
+  grid-row: 1 / span var(--toolbar-row-count, 3);
+  grid-template-columns: minmax(0, 1fr) 30px;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  overflow: hidden;
+}
+
+.formula-toolbar.is-horizontal .matrix-main-picker {
+  height: 100%;
+  min-height: 0;
+  align-self: stretch;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 24px;
+  gap: 3px;
+}
+
+.formula-toolbar.is-horizontal .matrix-builder-heading {
+  display: none;
+}
+
+.formula-toolbar.is-horizontal .matrix-size-picker {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+  max-height: none;
+  align-self: stretch;
+  justify-self: stretch;
+  place-items: stretch center;
+}
+
+.formula-toolbar.is-horizontal .matrix-insert-button {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.formula-toolbar.is-horizontal .matrix-compact-options {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: stretch;
+}
+
+.formula-toolbar.is-horizontal .matrix-size-grid {
+  width: min(var(--matrix-picker-size, 96px), 100%);
+  height: min(var(--matrix-picker-size, 96px), 100%);
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 1;
+  justify-self: center;
+  align-self: center;
+  padding: 2px;
+  gap: 1px;
+}
+
+.formula-toolbar.is-horizontal .matrix-insert-button {
+  height: 24px;
+  min-height: 24px;
+  font-size: 9px;
+}
+
+.formula-toolbar.is-horizontal .matrix-compact-options {
+  width: 30px;
+  min-width: 30px;
+  height: 100%;
+  box-sizing: border-box;
+  padding-left: 3px;
+}
+
+.formula-toolbar.is-horizontal .matrix-delimiter-options {
+  grid-row: 2;
+  width: 25px;
+  min-width: 25px;
+  height: 100%;
+  grid-template-columns: 25px;
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 1px;
+  min-height: 0;
+}
+
+.formula-toolbar.is-horizontal .matrix-delimiter-options button {
+  width: 25px;
+  min-width: 25px;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  padding: 0;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-builder {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  grid-column: span 5;
+  grid-row: 1 / span 2;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-main-picker {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 23px;
+  gap: 3px;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-size-picker {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  height: 100%;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-size-grid {
+  width: min(var(--matrix-picker-size, 96px), 100%);
+  height: min(var(--matrix-picker-size, 96px), 100%);
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 1;
+  padding: 2px;
+  gap: 1px;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-insert-button {
+  grid-column: 1;
+  grid-row: 2;
+  height: 23px;
+  min-height: 23px;
+  padding-inline: 5px;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-compact-options {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  width: 30px;
+  min-width: 30px;
+  height: 100%;
+  padding-left: 3px;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options {
+  grid-row: 2;
+  width: 25px;
+  min-width: 25px;
+  height: 100%;
+  grid-template-columns: 25px;
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  gap: 1px;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options button {
+  width: 25px;
+  min-width: 25px;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  padding: 0;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="2"] .matrix-delimiter-options .math-preview {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  font-size: 12px;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="1"] .matrix-builder {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  grid-column: span 4;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="1"] .matrix-main-picker {
+  grid-template-rows: minmax(0, 1fr) 20px;
+  gap: 2px;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="1"] .matrix-builder-heading {
+  display: none;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="1"] .matrix-size-grid {
+  width: min(var(--matrix-picker-size, 42px), 100%);
+  height: min(var(--matrix-picker-size, 42px), 100%);
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count="1"] .matrix-compact-options .matrix-control-label {
+  display: none;
 }
 
 /* __VISUALTEX_SHARED_LATEST_APPEND__ */

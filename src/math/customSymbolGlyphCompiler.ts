@@ -1,10 +1,10 @@
-import { latexToSvg } from "../export/runtime.ts";
+import { latexToSvg } from "../export/runtime";
 import type {
   CustomSymbolMetrics,
   CustomSymbolVectorMatrix,
   CustomSymbolVectorShape,
-} from "./customSymbolTypes.ts";
-import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes.ts";
+} from "./customSymbolTypes";
+import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes";
 
 type Matrix = CustomSymbolVectorMatrix;
 
@@ -335,6 +335,12 @@ function flattenSvg(
   return result;
 }
 
+/**
+ * Compile a LaTeX/VisualTeX symbol or short math fragment into safe vector
+ * material for the custom-symbol designer. This is intentionally browser-only:
+ * DOMParser is used to inspect MathJax's already-sanitized SVG tree and no raw
+ * SVG markup is ever persisted.
+ */
 export function compileLatexGlyphAsset(sourceLatex: string): CustomSymbolGlyphAsset {
   const source = sourceLatex.trim();
   if (!source || source.length > maximumGlyphSourceLength) {

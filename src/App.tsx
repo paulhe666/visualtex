@@ -1,28 +1,27 @@
+// Web shell for the macOS editor. Mirrors apps/macos/src/App.tsx, minus the
+// desktop-only parts (Office, updates, keypad window, local/quick/silent OCR),
+// plus the web-only parts (API OCR, landing showcase, default zoom).
 import { ChangeEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import "./editor/formulaFontRuntime";
-import "./shortcuts/greekLetterHotkeyRuntime";
-import "./runtime/editorVisualPreferencesRuntime";
-import { installFloatingLayerAutoAvoidance } from "./runtime/floatingLayerAutoAvoidance";
 import {
+  AlertCircle,
   BookOpenText,
   Check,
-  ChevronDown,
-  CircleHelp,
   Code2,
+  FileDown,
   FilePlus2,
   FolderOpen,
   History,
   Languages,
+  LoaderCircle,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
   Redo2,
   Save,
   ScanLine,
   Settings2,
   Undo2,
+  X,
 } from "lucide-react";
 import {
   type MathEditorHandle,
@@ -31,59 +30,48 @@ import {
 import { SettingsDialog } from "./components/SettingsDialog";
 import { FormulaHotkeyManagerDialog } from "./components/FormulaHotkeyManagerDialog";
 import { HistoryPanel } from "./components/HistoryPanel";
-import { HelpDialog } from "./components/HelpDialog";
+import { HelpManualDialog } from "./components/HelpManualDialog";
+import { ExportDialog } from "./components/ExportDialog";
 import { WebOcrDialog } from "./components/WebOcrDialog";
-import { ExportMenu } from "./components/ExportMenu";
-import { OnboardingTour } from "./components/OnboardingTour";
-import { VisualTeXLogo } from "./components/VisualTeXLogo";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
 import {
   EDITOR_ZOOM_STEP,
   joinFormulaLines,
   useEditorStore,
 } from "./stores/editorStore";
+import { useHistoryManager, useHistorySnapshot, useDocumentSession } from "./history/EditorSession";
 import {
-  historyManager,
-  useHistorySnapshot,
-} from "./history/HistoryManager";
-import {
-  applyHistoryEntryToEditor,
   createBlankDocumentSnapshot,
-  documentSnapshotsEquivalent,
-  getEditorDocumentSnapshot,
   reconcileFormulaLines,
 } from "./history/documentHistory";
 import type {
   DocumentSnapshot,
   ReplaceDocumentEntry,
 } from "./history/historyTypes";
-import {
-  copyFormulaLines,
-  getLatexCodeFormatDefinition,
-  latexCodeFormats,
-} from "./clipboard/LatexCopyService";
+import { copyFormulaLinesUniversal } from "./clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "./editor/normalizeChineseLatex";
-import { buildMarkdownDocument } from "./export/markdownExport";
-import { latexToSvg } from "./export/runtime";
-import {
-  copyFormulaDocumentPngToClipboard,
-  renderFormulaDocumentPng,
-} from "./export/pngClipboard";
-import type { WorkspaceExportFormat } from "./workspace/workspaceTypes";
-import type { FormulaDocument, LatexCodeFormat } from "./types/formula";
-import { applyDocumentTheme } from "./themeSync";
+import type {
+  FormulaDocument,
+  LatexFormatProfile,
+} from "./types/formula";
+import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
+import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
+import { isLandingPreview, LANDING_PREVIEW_ZOOM } from "./runtime/landingPreview";
 import {
   loadWebOcrConfiguration,
   recognizeFormulaWithWebApi,
 } from "./ocr/webOcrService";
 
-import { isLandingPreview } from "./runtime/landingPreview";
+type InlineOcrStatus = "running" | "success" | "error";
 
-installFloatingLayerAutoAvoidance();
+interface InlineOcrState {
+  status: InlineOcrStatus;
+  message: string;
+  seconds: number;
+}
 
-const ONBOARDING_STORAGE_KEY = "visualtex.onboarding.web.v3.completed";
-const LEGACY_ONBOARDING_STORAGE_KEY = "visualtex.onboarding.v3.completed";
+const WEB_DEFAULT_ZOOM = 0.45;
 const WEB_DEFAULT_ZOOM_MIGRATION_KEY = "visualtex.web.default-zoom.45.v1";
 const LANDING_PREVIEW_LINES = [
   String.raw`J_\nu(x)=\sum_{k=0}^{\infty}\frac{(-1)^k}{k!\Gamma(k+\nu+1)}\left(\frac{x}{2}\right)^{2k+\nu}`,
@@ -93,8 +81,10 @@ const LANDING_PREVIEW_LINES = [
 ] as const;
 
 function App() {
-  const landingPreview = isLandingPreview;
   const editorRef = useRef<MathEditorHandle>(null);
+  const historyManager = useHistoryManager();
+  const { openDocumentWithHistory,
+    replaceDocumentWithHistory: replaceDocumentTransaction } = useDocumentSession(editorRef);
   const ocrInsertionTargetRef = useRef<MathEditorInsertionTarget | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -106,70 +96,76 @@ function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1040);
-  const [onboardingOpen, setOnboardingOpen] = useState(
-    () =>
-      !landingPreview &&
-      readLocalStorage(ONBOARDING_STORAGE_KEY) !== "true" &&
-      readLocalStorage(LEGACY_ONBOARDING_STORAGE_KEY) !== "true",
-  );
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [savedPulse, setSavedPulse] = useState(false);
-  const [editorHistoryBusy, setEditorHistoryBusy] = useState(false);
-  const [exportBusy, setExportBusy] = useState(false);
+  const [desktopTopToolsMount, setDesktopTopToolsMount] =
+    useState<HTMLDivElement | null>(null);
+  const [sourceDocumentRevision, setSourceDocumentRevision] = useState(0);
+  const [inlineOcr, setInlineOcr] = useState<InlineOcrState | null>(null);
+  const inlineOcrBusyRef = useRef(false);
+  const inlineOcrClearTimerRef = useRef<number | null>(null);
+  const initialEditorFocusDoneRef = useRef(false);
   const pngClipboardBusyRef = useRef(false);
-  const pastedImageOcrBusyRef = useRef(false);
 
   const title = useEditorStore((state) => state.title);
   const setTitle = useEditorStore((state) => state.setTitle);
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
   const formulaAlignment = useEditorStore((state) => state.formulaAlignment);
-  const editorLayout = useEditorStore((state) => state.editorLayout);
   const theme = useEditorStore((state) => state.theme);
+  const synchronizedThemeRef = useRef(theme);
   const language = useEditorStore((state) => state.language);
   const setLanguage = useEditorStore((state) => state.setLanguage);
   const zoom = useEditorStore((state) => state.zoom);
   const setZoom = useEditorStore((state) => state.setZoom);
-  const sourceOpen = useEditorStore((state) => state.sourceOpen);
   const setSourceOpen = useEditorStore((state) => state.setSourceOpen);
-  const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
-  const setLatexCodeFormat = useEditorStore(
-    (state) => state.setLatexCodeFormat,
+  const replaceDocumentState = useEditorStore((state) => state.replaceDocumentState);
+  const editorLayout = useEditorStore((state) => state.editorLayout);
+  const pngExportBackground = useEditorStore(
+    (state) => state.pngExportBackground,
   );
-  const pngExportBackground = useEditorStore((state) => state.pngExportBackground);
   const formulaLetterFont = useEditorStore((state) => state.formulaLetterFont);
   const formulaChineseFont = useEditorStore((state) => state.formulaChineseFont);
+  const latexFormatProfile = useEditorStore((state) => state.latexFormatProfile);
+  const setLatexFormatProfile = useEditorStore(
+    (state) => state.setLatexFormatProfile,
+  );
   const addHistory = useEditorStore((state) => state.addHistory);
-  const loadDocument = useEditorStore((state) => state.loadDocument);
-  const replaceDocumentState = useEditorStore((state) => state.replaceDocumentState);
   const toDocument = useEditorStore((state) => state.toDocument);
   const historyState = useHistorySnapshot();
   const isEn = language === "en";
   const latex = joinFormulaLines(lines);
-  const currentCodeFormat = getLatexCodeFormatDefinition(latexCodeFormat);
-  const codeFormatGroups = [
-    {
-      id: "single" as const,
-      title: isEn ? "Independent formula formats" : "单公式独立环境",
-      description: isEn
-        ? "Each non-empty formula field gets its own wrapper"
-        : "每个非空公式框分别生成一个完整环境",
-      formats: latexCodeFormats.filter((format) => format.group === "single"),
-    },
-    {
-      id: "multi" as const,
-      title: isEn ? "Combined multi-line environments" : "多公式合并环境",
-      description: isEn
-        ? "All non-empty formula fields become rows in one environment"
-        : "所有非空公式框合并成一个多行公式环境",
-      formats: latexCodeFormats.filter((format) => format.group === "multi"),
-    },
-  ];
+  const inlineProfileLabel =
+    latexFormatProfile.inlineWrapper === "paren" ? "\\( \\)" : "$ $";
+  const displayProfileLabel =
+    latexFormatProfile.displayWrapper === "bracket"
+      ? "\\[ \\]"
+      : latexFormatProfile.displayWrapper === "equation"
+        ? latexFormatProfile.numbered
+          ? "equation"
+          : "equation*"
+        : "$$ $$";
+  const multilineProfileLabel =
+    latexFormatProfile.multilineEnvironment +
+    (latexFormatProfile.numbered ? "" : "*");
+  const latexProfileSummary =
+    `${inlineProfileLabel} · ${displayProfileLabel} · ${multilineProfileLabel}`;
+  const inlineOcrIsBusy = inlineOcr?.status === "running";
+
+  const replaceDocumentWithHistory = (after: DocumentSnapshot, source: ReplaceDocumentEntry["source"]) => {
+    if (source !== "source-apply") setSourceDocumentRevision(revision => revision + 1);
+    return replaceDocumentTransaction(after, source);
+  };
+
+  // The landing page embeds /editor?landing-preview as a read-only showcase.
+  // Its storage is in-memory (see runtime/landingPreview), so this never
+  // touches the visitor's own document.
   useLayoutEffect(() => {
-    if (!landingPreview) return;
+    if (!isLandingPreview) return;
     replaceDocumentState({
       title: "示例公式",
       lines: LANDING_PREVIEW_LINES.map((latex, index) => ({
@@ -181,173 +177,31 @@ function App() {
       selectionByLineId: {},
     });
     setSourceOpen(false);
-  }, [formulaAlignment, landingPreview, replaceDocumentState, setSourceOpen]);
+    setZoom(LANDING_PREVIEW_ZOOM);
+    setSourceDocumentRevision((revision) => revision + 1);
+  }, []);
 
+  // The web editor defaults to a smaller zoom than the desktop window.
   useLayoutEffect(() => {
-    if (landingPreview) return;
+    if (isLandingPreview) return;
     if (readLocalStorage(WEB_DEFAULT_ZOOM_MIGRATION_KEY) === "true") return;
-    if (useEditorStore.getState().zoom === 0.6) setZoom(0.45);
+    if (useEditorStore.getState().zoom === 0.6) setZoom(WEB_DEFAULT_ZOOM);
     writeLocalStorage(WEB_DEFAULT_ZOOM_MIGRATION_KEY, "true");
-  }, [landingPreview, setZoom]);
-
-  const captureDocumentSnapshot = (): DocumentSnapshot =>
-    getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {});
-
-  const captureOcrInsertionTarget = () => {
-    const target = editorRef.current?.captureInsertionTarget() ?? null;
-    if (target) ocrInsertionTargetRef.current = target;
-  };
-
-  const openOcrDialog = () => {
-    captureOcrInsertionTarget();
-    setOcrOpen(true);
-  };
-
-  const handleEditorImagePaste = useCallback(async (
-    file: File,
-    target: MathEditorInsertionTarget,
-  ) => {
-    if (pastedImageOcrBusyRef.current) {
-      setToast(
-        isEn
-          ? "Another pasted image is already being recognized"
-          : "已有一张粘贴图片正在识别",
-      );
-      return;
-    }
-
-    pastedImageOcrBusyRef.current = true;
-    setToast(isEn ? "Recognizing the pasted image…" : "正在识别粘贴的图片…");
-    try {
-      const configuration = loadWebOcrConfiguration();
-      const result = await recognizeFormulaWithWebApi(
-        file,
-        configuration,
-        (progress) =>
-          setToast(isEn ? progress.messageEn : progress.messageZh),
-      );
-      const recognizedLatex = result.formulas
-        .map((formula) => formula.trim())
-        .filter(Boolean)
-        .join("\n");
-      if (!recognizedLatex) {
-        throw new Error(
-          isEn ? "OCR returned no usable formula" : "OCR 没有返回可用公式",
-        );
-      }
-
-      const inserted =
-        editorRef.current?.insertLatexAt(target, recognizedLatex, "ocr") ?? false;
-      if (!inserted) {
-        throw new Error(
-          isEn
-            ? "The original formula line no longer exists"
-            : "原来的公式行已被删除，识别结果未插入",
-        );
-      }
-      setToast(
-        isEn
-          ? "Pasted image recognized and inserted at the saved cursor"
-          : "粘贴图片识别完成，已插入原光标位置",
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setToast(isEn ? `Image OCR failed: ${message}` : `图片 OCR 失败：${message}`);
-    } finally {
-      pastedImageOcrBusyRef.current = false;
-    }
-  }, [isEn]);
+  }, [setZoom]);
 
   useEffect(() => {
-    const handleFormulaImagePaste = (event: ClipboardEvent) => {
-      const formulaField = event.composedPath().find(
-        (target): target is HTMLElement =>
-          target instanceof HTMLElement && target.tagName === "MATH-FIELD",
-      );
-      if (!formulaField && document.activeElement?.tagName !== "MATH-FIELD") {
-        return;
-      }
-
-      const clipboard = event.clipboardData;
-      const item = Array.from(clipboard?.items ?? []).find(
-        (candidate) =>
-          candidate.kind === "file" && candidate.type.startsWith("image/"),
-      );
-      const image =
-        item?.getAsFile() ??
-        Array.from(clipboard?.files ?? []).find((file) =>
-          file.type.startsWith("image/"),
-        );
-      if (!image) return;
-
-      const target = editorRef.current?.captureInsertionTarget();
-      if (!target) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      void handleEditorImagePaste(image, target);
-    };
-
-    document.addEventListener("paste", handleFormulaImagePaste, true);
-    return () =>
-      document.removeEventListener("paste", handleFormulaImagePaste, true);
-  }, [handleEditorImagePaste]);
-
-  const restoreSnapshotFocus = (snapshot: DocumentSnapshot) => {
-    const lineId = snapshot.activeLineId;
-    if (!lineId) return;
-    const line = snapshot.lines.find((item) => item.id === lineId);
-    if (!line) return;
-    void editorRef.current?.restoreSelection(
-      lineId,
-      line.latex,
-      snapshot.selectionByLineId[lineId] ?? null,
-    );
-  };
-
-  const replaceDocumentWithHistory = (
-    after: DocumentSnapshot,
-    source: ReplaceDocumentEntry["source"],
-  ) => {
-    if (source !== "source-apply") historyManager.commitPendingTransaction();
-    const before = captureDocumentSnapshot();
-    if (documentSnapshotsEquivalent(before, after)) return false;
-    useEditorStore.getState().replaceDocumentState(after);
-    const entry: ReplaceDocumentEntry = {
-      type: "replace-document",
-      before,
-      after,
-      source,
-      timestamp: Date.now(),
-    };
-    if (source === "source-apply") {
-      historyManager.recordSourceDocumentEdit(entry);
-    } else {
-      historyManager.push(entry);
-      window.requestAnimationFrame(() => restoreSnapshotFocus(after));
-    }
-    return true;
-  };
-
-  useEffect(() => {
-    historyManager.configure({
-      getDocumentSnapshot: () =>
-        getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {}),
-      applyEntry: async (entry, direction) => {
-        const target = applyHistoryEntryToEditor(entry, direction);
-        if (!target) return;
-        // Yield once so React can mount any line restored by the history entry.
-        // Do not wait on requestAnimationFrame here: background macOS windows
-        // and headless release checks can throttle animation frames indefinitely,
-        // leaving history replay active and the Redo action disabled.
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-        await editorRef.current?.restoreSelection(
-          target.lineId,
-          target.latex,
-          target.selection,
-        );
-      },
+    if (isLandingPreview || initialEditorFocusDoneRef.current) return;
+    initialEditorFocusDoneRef.current = true;
+    const frame = window.requestAnimationFrame(() => {
+      const active = document.activeElement;
+      const userOwnsFocus =
+        active instanceof HTMLElement &&
+        active !== document.body &&
+        active !== document.documentElement;
+      if (userOwnsFocus) return;
+      editorRef.current?.focus({ target: "last", moveToEnd: true });
     });
-    return () => historyManager.configure(null);
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
@@ -367,7 +221,12 @@ function App() {
   }, []);
 
   useEffect(() => {
-    applyDocumentTheme(theme);
+    if (synchronizedThemeRef.current === theme) {
+      applyDocumentTheme(theme);
+    } else {
+      synchronizedThemeRef.current = theme;
+      publishSynchronizedTheme(theme);
+    }
   }, [theme]);
 
   useEffect(() => {
@@ -431,38 +290,191 @@ function App() {
     };
   }, [menuOpen, copyMenuOpen]);
 
-  const handleCodeFormatChange = (format: LatexCodeFormat) => {
-    const definition = getLatexCodeFormatDefinition(format);
-    setLatexCodeFormat(format);
-    setSourceOpen(true);
-    setCopyMenuOpen(false);
-    setToast(
-      isEn
-        ? `LaTeX code format: ${definition.titleEn}`
-        : `LaTeX 代码格式已切换为：${definition.titleZh}`,
-    );
+  const inlineOcrStatus = inlineOcr?.status;
+  useEffect(() => {
+    if (inlineOcrStatus !== "running") return;
+    const timer = window.setInterval(() => {
+      setInlineOcr((current) =>
+        current
+          ? {
+              ...current,
+              seconds: current.seconds + 1,
+            }
+          : current,
+      );
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [inlineOcrStatus]);
+
+  useEffect(
+    () => () => {
+      if (inlineOcrClearTimerRef.current !== null) {
+        window.clearTimeout(inlineOcrClearTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const scheduleInlineOcrClear = (delay: number) => {
+    if (inlineOcrClearTimerRef.current !== null) {
+      window.clearTimeout(inlineOcrClearTimerRef.current);
+    }
+    inlineOcrClearTimerRef.current = window.setTimeout(() => {
+      setInlineOcr(null);
+      inlineOcrClearTimerRef.current = null;
+    }, delay);
+  };
+
+  // Images pasted into a formula field are recognized through the configured
+  // web OCR API and inserted at the caret captured when the paste happened.
+  const handleEditorImagePaste = useCallback(async (
+    file: File,
+    target: MathEditorInsertionTarget,
+  ) => {
+    if (inlineOcrBusyRef.current) {
+      setToast(isEn ? "Another pasted image is being recognized" : "已有一张粘贴图片正在识别");
+      return;
+    }
+
+    if (inlineOcrClearTimerRef.current !== null) {
+      window.clearTimeout(inlineOcrClearTimerRef.current);
+      inlineOcrClearTimerRef.current = null;
+    }
+
+    inlineOcrBusyRef.current = true;
+    setInlineOcr({
+      status: "running",
+      message: isEn ? "Recognizing the pasted image…" : "正在识别粘贴的图片…",
+      seconds: 0,
+    });
+    try {
+      const result = await recognizeFormulaWithWebApi(
+        file,
+        loadWebOcrConfiguration(),
+        (progress) =>
+          setInlineOcr((current) =>
+            current
+              ? { ...current, message: isEn ? progress.messageEn : progress.messageZh }
+              : current,
+          ),
+      );
+      const recognizedLatex = result.formulas
+        .map((formula) => formula.trim())
+        .filter(Boolean)
+        .join("\n");
+      if (!recognizedLatex) {
+        throw new Error(isEn ? "OCR returned an empty formula" : "OCR 没有返回可用公式");
+      }
+
+      const inserted =
+        editorRef.current?.insertLatexAt(target, recognizedLatex, "ocr") ?? false;
+      if (!inserted) {
+        throw new Error(
+          isEn
+            ? "The original formula line no longer exists; the OCR result was not inserted"
+            : "原来的公式行已被删除，OCR 结果没有插入到其他位置",
+        );
+      }
+
+      setInlineOcr((current) => ({
+        status: "success",
+        message: isEn
+          ? "Recognized and inserted at the saved cursor"
+          : "识别完成，已插入原光标位置",
+        seconds: current?.seconds ?? 0,
+      }));
+      setToast(isEn ? "Pasted image converted to LaTeX" : "粘贴图片已转换为 LaTeX");
+      scheduleInlineOcrClear(1800);
+    } catch (error) {
+      const message =
+        (error instanceof Error ? error.message : typeof error === "string" ? error : "") ||
+        (isEn ? "Image OCR failed" : "图片 OCR 失败");
+      setInlineOcr((current) => ({
+        status: "error",
+        message,
+        seconds: current?.seconds ?? 0,
+      }));
+      setToast(message);
+      scheduleInlineOcrClear(4500);
+    } finally {
+      inlineOcrBusyRef.current = false;
+    }
+  }, [isEn]);
+
+  // Browsers deliver clipboard images to the document rather than reliably to
+  // the MathLive keyboard sink, so catch them here before MathLive reads text.
+  useEffect(() => {
+    const handleFormulaImagePaste = (event: ClipboardEvent) => {
+      const formulaField = event.composedPath().find(
+        (target): target is HTMLElement =>
+          target instanceof HTMLElement && target.tagName === "MATH-FIELD",
+      );
+      if (!formulaField && document.activeElement?.tagName !== "MATH-FIELD") {
+        return;
+      }
+
+      const clipboard = event.clipboardData;
+      const item = Array.from(clipboard?.items ?? []).find(
+        (candidate) =>
+          candidate.kind === "file" && candidate.type.startsWith("image/"),
+      );
+      const image =
+        item?.getAsFile() ??
+        Array.from(clipboard?.files ?? []).find((file) =>
+          file.type.startsWith("image/"),
+        );
+      if (!image) return;
+
+      const target = editorRef.current?.captureInsertionTarget();
+      if (!target) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void handleEditorImagePaste(image, target);
+    };
+
+    document.addEventListener("paste", handleFormulaImagePaste, true);
+    return () =>
+      document.removeEventListener("paste", handleFormulaImagePaste, true);
+  }, [handleEditorImagePaste]);
+
+  const captureOcrInsertionTarget = () => {
+    const target = editorRef.current?.captureInsertionTarget() ?? null;
+    if (target) ocrInsertionTargetRef.current = target;
+  };
+
+  const openOcrDialog = () => {
+    captureOcrInsertionTarget();
+    setOcrOpen(true);
+  };
+
+  const updateLatexFormatProfile = (
+    patch: Partial<LatexFormatProfile>,
+  ) => {
+    setLatexFormatProfile(patch);
   };
 
   const handleCopy = async () => {
     try {
-      await copyFormulaLines(lines, latexCodeFormat);
+      await copyFormulaLinesUniversal(lines, latexFormatProfile);
       addHistory(latex);
       setToast(
         isEn
-          ? `Copied ${currentCodeFormat.titleEn}`
-          : `已复制：${currentCodeFormat.titleZh}`,
+          ? `Copied · ${latexProfileSummary}`
+          : `已复制 · ${latexProfileSummary}`,
       );
-    } catch {
+      return true;
+    } catch (reason) {
       setToast(
-        isEn
-          ? "Copy failed. Check clipboard permission."
-          : "复制失败，请检查系统剪贴板权限",
+        reason instanceof Error ? reason.message : isEn
+          ? "Could not copy formula source."
+          : "无法复制公式源码。",
       );
+      return false;
     }
   };
 
   const handleCopyPng = async () => {
-    if (pngClipboardBusyRef.current || !lines.some((line) => line.latex.trim())) return;
+    if (pngClipboardBusyRef.current) return;
     pngClipboardBusyRef.current = true;
     try {
       await copyFormulaDocumentPngToClipboard(
@@ -477,94 +489,31 @@ function App() {
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       setToast(
-        isEn ? `Unable to copy PNG: ${message}` : `复制 PNG 失败：${message}`,
+        isEn
+          ? `Unable to copy PNG: ${message}`
+          : `复制 PNG 失败：${message}`,
       );
     } finally {
       pngClipboardBusyRef.current = false;
     }
   };
 
-  const getSafeDocumentTitle = () =>
-    title.trim().replace(/[\\/:*?"<>|]/g, "-") ||
-    (isEn ? "Untitled Formula" : "未命名公式");
-
-  const downloadBlobFile = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob);
-    const link = window.document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const exportDocument = async (format: WorkspaceExportFormat) => {
-    if (exportBusy) return;
-    if (!latex.trim()) {
-      setToast(isEn ? "Cannot export an empty formula" : "空公式无法导出");
-      return;
-    }
-
-    setExportBusy(true);
-    try {
-      const safeTitle = getSafeDocumentTitle();
-      if (format === "markdown") {
-        const markdown = buildMarkdownDocument(
-          title,
-          lines.map((line) => line.latex),
-        );
-        downloadBlobFile(
-          new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
-          `${safeTitle}.md`,
-        );
-      } else {
-        if (format === "svg") {
-          const svg = latexToSvg(latex, {
-            displayMode: true,
-            fontSizePt: 12,
-            paddingPx: 8,
-            background: "transparent",
-            formulaLetterFont,
-            formulaChineseFont,
-          });
-          downloadBlobFile(
-            new Blob([svg.svg], { type: "image/svg+xml;charset=utf-8" }),
-            `${safeTitle}.svg`,
-          );
-        } else {
-          const png = await renderFormulaDocumentPng(
-            lines.map((line) => line.latex),
-            {
-              background: pngExportBackground,
-              formulaLetterFont,
-              formulaChineseFont,
-            },
-          );
-          downloadBlobFile(png.blob, `${safeTitle}.png`);
-        }
-      }
-      setToast(
-        isEn
-          ? `${format.toUpperCase()} exported`
-          : `${format.toUpperCase()} 已导出`,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setToast(isEn ? `Export failed: ${message}` : `导出失败：${message}`);
-    } finally {
-      setExportBusy(false);
-    }
-  };
-
   const saveDocument = () => {
     historyManager.commitPendingTransaction();
-    void historyManager.createCheckpoint("save-document");
+    void historyManager.createCheckpoint("save-document").catch(() => undefined);
     const document = toDocument();
-    downloadBlobFile(
-      new Blob([JSON.stringify(document, null, 2)], {
-        type: "application/json;charset=utf-8",
-      }),
-      `${getSafeDocumentTitle()}.visualtex.json`,
-    );
+    const blob = new Blob([JSON.stringify(document, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = window.document.createElement("a");
+    const safeTitle =
+      title.trim().replace(/[\\/:*?"<>|]/g, "-") ||
+      (isEn ? "Untitled Formula" : "未命名公式");
+    link.href = url;
+    link.download = safeTitle + ".visualtex.json";
+    link.click();
+    URL.revokeObjectURL(url);
     setSavedPulse(true);
     setToast(isEn ? "Formula document saved" : "公式文档已保存");
     window.setTimeout(() => setSavedPulse(false), 900);
@@ -578,20 +527,8 @@ function App() {
       if (!parsed.formulas || !Array.isArray(parsed.formulas)) {
         throw new Error("invalid");
       }
-      historyManager.commitPendingTransaction();
-      const before = captureDocumentSnapshot();
-      loadDocument(parsed);
-      const after = getEditorDocumentSnapshot({});
-      if (!documentSnapshotsEquivalent(before, after)) {
-        historyManager.push({
-          type: "replace-document",
-          before,
-          after,
-          source: "open-document",
-          timestamp: Date.now(),
-        });
-        window.requestAnimationFrame(() => restoreSnapshotFocus(after));
-      }
+      openDocumentWithHistory(parsed);
+      setSourceDocumentRevision((revision) => revision + 1);
       setToast(isEn ? "Formula document opened" : "公式文档已打开");
     } catch {
       setToast(
@@ -627,13 +564,6 @@ function App() {
     action();
   };
 
-  const finishOnboarding = useCallback(() => {
-    writeLocalStorage(ONBOARDING_STORAGE_KEY, "true");
-    writeLocalStorage(LEGACY_ONBOARDING_STORAGE_KEY, "true");
-    setOnboardingOpen(false);
-    window.requestAnimationFrame(() => editorRef.current?.focus());
-  }, []);
-
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -645,16 +575,20 @@ function App() {
       if (
         settingsOpen ||
         formulaHotkeyManagerOpen ||
+        ocrOpen ||
         historyOpen ||
         helpOpen ||
-        ocrOpen ||
-        onboardingOpen
+        exportOpen
       ) {
         return;
       }
 
       const target = event.target instanceof Element ? event.target : null;
-      const inCodeMirror = Boolean(target?.closest(".cm-editor"));
+      const focusedElement =
+        document.activeElement instanceof Element ? document.activeElement : null;
+      const inCodeMirror = Boolean(
+        target?.closest(".cm-editor") || focusedElement?.closest(".cm-editor"),
+      );
       const primaryModifier = (event.metaKey || event.ctrlKey) && !event.altKey;
       const key = event.key.toLowerCase();
       const requestsUndo = primaryModifier && key === "z" && !event.shiftKey;
@@ -666,8 +600,8 @@ function App() {
       if (requestsUndo || requestsRedo) {
         if (inCodeMirror) return;
         event.preventDefault();
-        if (requestsRedo) void historyManager.redo();
-        else void historyManager.undo();
+        if (requestsRedo) historyManager.requestRedo();
+        else historyManager.requestUndo();
         return;
       }
 
@@ -698,10 +632,266 @@ function App() {
 
     window.addEventListener("keydown", handleWindowKeyDown);
     return () => window.removeEventListener("keydown", handleWindowKeyDown);
-  }, [latex, title, isEn, zoom, settingsOpen, formulaHotkeyManagerOpen, historyOpen, helpOpen, ocrOpen, onboardingOpen]);
+  }, [
+    latex,
+    title,
+    isEn,
+    zoom,
+    latexFormatProfile,
+    settingsOpen,
+    formulaHotkeyManagerOpen,
+    ocrOpen,
+    historyOpen,
+    helpOpen,
+    exportOpen,
+  ]);
+
+  const renderLatexProfileMenu = () =>
+    copyMenuOpen ? (
+      <div
+        ref={copyMenuRef}
+        id="copy-format-menu"
+        className="copy-menu code-format-menu latex-profile-menu"
+        role="dialog"
+        aria-label={isEn ? "LaTeX format profile" : "LaTeX 格式配置"}
+      >
+        <div className="code-format-menu-header">
+          <span className="copy-menu-label">
+            {isEn ? "Universal LaTeX format" : "通用 LaTeX 格式"}
+          </span>
+          <small>
+            {isEn
+              ? "One persistent profile for inline, display and multi-line formulas"
+              : "一套持久化规则同时控制行内、行间与多行公式"}
+          </small>
+        </div>
+
+        <div className="latex-profile-options">
+          <div className="latex-profile-row">
+            <span>{isEn ? "Text" : "文字"}</span>
+            <div className="latex-profile-segments">
+              <button
+                type="button"
+                className={
+                  latexFormatProfile.inlineTextPolicy === "text-command"
+                    ? "is-selected"
+                    : ""
+                }
+                data-latex-text-policy="text-command"
+                onClick={() =>
+                  updateLatexFormatProfile({
+                    inlineTextPolicy: "text-command",
+                  })
+                }
+              >
+                {"\\text{}"}
+              </button>
+              <button
+                type="button"
+                className={
+                  latexFormatProfile.inlineTextPolicy === "outside-math"
+                    ? "is-selected"
+                    : ""
+                }
+                data-latex-text-policy="outside-math"
+                onClick={() =>
+                  updateLatexFormatProfile({
+                    inlineTextPolicy: "outside-math",
+                  })
+                }
+              >
+                {isEn ? "outside" : "公式外"}
+              </button>
+            </div>
+          </div>
+
+          <div className="latex-profile-row">
+            <span>{isEn ? "Inline" : "行内"}</span>
+            <div className="latex-profile-segments">
+              <button
+                type="button"
+                className={
+                  latexFormatProfile.inlineWrapper === "dollar"
+                    ? "is-selected"
+                    : ""
+                }
+                data-latex-inline-wrapper="dollar"
+                onClick={() =>
+                  updateLatexFormatProfile({ inlineWrapper: "dollar" })
+                }
+              >
+                $...$
+              </button>
+              <button
+                type="button"
+                className={
+                  latexFormatProfile.inlineWrapper === "paren"
+                    ? "is-selected"
+                    : ""
+                }
+                data-latex-inline-wrapper="paren"
+                onClick={() =>
+                  updateLatexFormatProfile({ inlineWrapper: "paren" })
+                }
+              >
+                {"\\(...\\)"}
+              </button>
+            </div>
+          </div>
+
+          <div className="latex-profile-row">
+            <span>{isEn ? "Display" : "行间"}</span>
+            <div className="latex-profile-segments">
+              <button
+                type="button"
+                className={
+                  latexFormatProfile.displayWrapper === "double-dollar"
+                    ? "is-selected"
+                    : ""
+                }
+                data-latex-display-wrapper="double-dollar"
+                onClick={() =>
+                  updateLatexFormatProfile({
+                    displayWrapper: "double-dollar",
+                  })
+                }
+              >
+                $$...$$
+              </button>
+              <button
+                type="button"
+                className={
+                  latexFormatProfile.displayWrapper === "bracket"
+                    ? "is-selected"
+                    : ""
+                }
+                data-latex-display-wrapper="bracket"
+                onClick={() =>
+                  updateLatexFormatProfile({ displayWrapper: "bracket" })
+                }
+              >
+                {"\\[...\\]"}
+              </button>
+              <button
+                type="button"
+                className={
+                  latexFormatProfile.displayWrapper === "equation"
+                    ? "is-selected"
+                    : ""
+                }
+                data-latex-display-wrapper="equation"
+                onClick={() =>
+                  updateLatexFormatProfile({ displayWrapper: "equation" })
+                }
+              >
+                equation
+              </button>
+            </div>
+          </div>
+
+          <div className="latex-profile-row">
+            <span>{isEn ? "Number" : "编号"}</span>
+            <button
+              type="button"
+              className={
+                "latex-profile-toggle" +
+                (latexFormatProfile.numbered ? " is-selected" : "")
+              }
+              aria-pressed={latexFormatProfile.numbered}
+              data-latex-numbered
+              onClick={() =>
+                updateLatexFormatProfile({
+                  numbered: !latexFormatProfile.numbered,
+                })
+              }
+            >
+              <span aria-hidden="true">#</span>
+              {latexFormatProfile.numbered
+                ? isEn
+                  ? "on"
+                  : "开启"
+                : isEn
+                  ? "off"
+                  : "关闭"}
+            </button>
+          </div>
+
+          <div className="latex-profile-row">
+            <span>{isEn ? "Multi-line" : "多行"}</span>
+            <div className="latex-profile-segments">
+              <button
+                type="button"
+                className={
+                  latexFormatProfile.multilineEnvironment === "gather"
+                    ? "is-selected"
+                    : ""
+                }
+                data-latex-multiline="gather"
+                onClick={() =>
+                  updateLatexFormatProfile({
+                    multilineEnvironment: "gather",
+                  })
+                }
+              >
+                gather
+              </button>
+              <button
+                type="button"
+                className={
+                  latexFormatProfile.multilineEnvironment === "align"
+                    ? "is-selected"
+                    : ""
+                }
+                data-latex-multiline="align"
+                onClick={() =>
+                  updateLatexFormatProfile({
+                    multilineEnvironment: "align",
+                  })
+                }
+              >
+                align
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="latex-profile-summary" data-latex-profile-summary>
+          {latexProfileSummary}
+        </div>
+      </div>
+    ) : null;
+
+  const codeFormatControl = (
+    <div className="copy-control code-format-control">
+      <button
+        ref={copyMenuButtonRef}
+        type="button"
+        className="copy-primary code-format-primary icon-only-toolbar-button"
+        aria-expanded={copyMenuOpen}
+        aria-haspopup="menu"
+        aria-controls="copy-format-menu"
+        title={
+          isEn
+            ? `Current profile: ${latexProfileSummary}`
+            : `当前格式配置：${latexProfileSummary}`
+        }
+        onClick={() => {
+          setMenuOpen(false);
+          setCopyMenuOpen((open) => !open);
+        }}
+      >
+        <Code2 size={17} />
+      </button>
+      {renderLatexProfileMenu()}
+    </div>
+  );
 
   return (
-    <div className="app-shell">
+    <div
+      className={
+        `app-shell ${editorLayout === "classic" ? "is-classic-app-layout" : "is-standard-app-layout"}`
+      }
+    >
       <input
         ref={fileInputRef}
         type="file"
@@ -731,43 +921,29 @@ function App() {
           >
             <Menu size={18} />
           </button>
-          <button
-            type="button"
-            className={"icon-button sidebar-toggle " + (sidebarOpen ? "is-active" : "")}
-            aria-label={
-              editorLayout === "classic"
-                ? sidebarOpen
-                  ? isEn
-                    ? "Hide formula tiles"
-                    : "隐藏公式磁贴"
-                  : isEn
-                    ? "Show formula tiles"
-                    : "显示公式磁贴"
-                : sidebarOpen
+          {editorLayout !== "classic" ? (
+            <button
+              type="button"
+              className={"icon-button sidebar-toggle " + (sidebarOpen ? "is-active" : "")}
+              aria-label={
+                sidebarOpen
                   ? isEn
                     ? "Hide formula tools"
                     : "隐藏公式工具"
                   : isEn
                     ? "Show formula tools"
                     : "显示公式工具"
-            }
-            aria-pressed={sidebarOpen}
-            onClick={() => setSidebarOpen((open) => !open)}
-          >
-            {editorLayout === "classic" ? (
-              sidebarOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />
-            ) : sidebarOpen ? (
-              <PanelLeftClose size={17} />
-            ) : (
-              <PanelLeftOpen size={17} />
-            )}
-          </button>
-          <div className="brand-mark" aria-hidden="true">
-            <VisualTeXLogo className="visualtex-brand-logo" />
-          </div>
-          <div className="brand-copy">
-            <strong>VisualTeX</strong>
-          </div>
+              }
+              aria-pressed={sidebarOpen}
+              onClick={() => setSidebarOpen((open) => !open)}
+            >
+              {sidebarOpen ? (
+                <PanelLeftClose size={17} />
+              ) : (
+                <PanelLeftOpen size={17} />
+              )}
+            </button>
+          ) : null}
 
           {menuOpen && (
             <div
@@ -784,7 +960,7 @@ function App() {
               <button type="button" role="menuitem" onClick={() => runMenuAction(newFormula)}>
                 <FilePlus2 size={16} />
                 <span>{isEn ? "New formula" : "新建公式"}</span>
-                <kbd>⌘N</kbd>
+                <kbd>Ctrl+N</kbd>
               </button>
               <button
                 type="button"
@@ -795,12 +971,21 @@ function App() {
               >
                 <FolderOpen size={16} />
                 <span>{isEn ? "Open document" : "打开文档"}</span>
-                <kbd>⌘O</kbd>
+                <kbd>Ctrl+O</kbd>
               </button>
               <button type="button" role="menuitem" onClick={() => runMenuAction(saveDocument)}>
                 <Save size={16} />
                 <span>{isEn ? "Save document" : "保存文档"}</span>
-                <kbd>⌘S</kbd>
+                <kbd>Ctrl+S</kbd>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMenuAction(() => setExportOpen(true))}
+              >
+                <FileDown size={16} />
+                <span>{isEn ? "Export…" : "导出…"}</span>
+                <kbd>MD/SVG/PNG</kbd>
               </button>
               <div className="app-menu-divider" />
               <button
@@ -834,15 +1019,7 @@ function App() {
                 onClick={() => runMenuAction(() => setHelpOpen(true))}
               >
                 <BookOpenText size={16} />
-                <span>{isEn ? "Help manual" : "帮助手册"}</span>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => runMenuAction(() => setOnboardingOpen(true))}
-              >
-                <CircleHelp size={16} />
-                <span>{isEn ? "Quick tour" : "新手教程"}</span>
+                <span>{isEn ? "Help Manual" : "帮助手册"}</span>
               </button>
               <div className="app-menu-divider" />
               <div className="app-menu-language">
@@ -893,13 +1070,13 @@ function App() {
 
         <div className="header-actions">
           <div className="action-group file-actions">
-            <button type="button" className="icon-button" onClick={newFormula} aria-label={isEn ? "New" : "新建"} title={isEn ? "New · ⌘N" : "新建 · ⌘N"}>
+            <button type="button" className="icon-button" onClick={newFormula} aria-label={isEn ? "New" : "新建"} title={isEn ? "New · Ctrl+N" : "新建 · Ctrl+N"}>
               <FilePlus2 size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} aria-label={isEn ? "Open" : "打开"} title={isEn ? "Open · ⌘O" : "打开 · ⌘O"}>
+            <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} aria-label={isEn ? "Open" : "打开"} title={isEn ? "Open · Ctrl+O" : "打开 · Ctrl+O"}>
               <FolderOpen size={17} />
             </button>
-            <button type="button" className="icon-button" onClick={saveDocument} aria-label={isEn ? "Save" : "保存到本地"} title={isEn ? "Save · ⌘S" : "保存到本地 · ⌘S"}>
+            <button type="button" className="icon-button" onClick={saveDocument} aria-label={isEn ? "Save" : "保存到本地"} title={isEn ? "Save · Ctrl+S" : "保存到本地 · Ctrl+S"}>
               <Save size={17} />
             </button>
           </div>
@@ -907,28 +1084,26 @@ function App() {
             <button
               type="button"
               className="icon-button"
-              onClick={() => void historyManager.undo()}
+              onClick={() => historyManager.requestUndo()}
               disabled={
-                editorHistoryBusy ||
                 !historyState.canUndo ||
                 historyState.isReplaying
               }
               aria-label={isEn ? "Undo" : "撤销"}
-              title={isEn ? "Undo · ⌘/Ctrl+Z" : "撤销 · ⌘/Ctrl+Z"}
+              title={isEn ? "Undo · Ctrl+Z" : "撤销 · Ctrl+Z"}
             >
               <Undo2 size={17} />
             </button>
             <button
               type="button"
               className="icon-button"
-              onClick={() => void historyManager.redo()}
+              onClick={() => historyManager.requestRedo()}
               disabled={
-                editorHistoryBusy ||
                 !historyState.canRedo ||
                 historyState.isReplaying
               }
               aria-label={isEn ? "Redo" : "重做"}
-              title={isEn ? "Redo · ⇧⌘Z / Ctrl+Y" : "重做 · ⇧⌘Z / Ctrl+Y"}
+              title={isEn ? "Redo · Ctrl+Y / Ctrl+Shift+Z" : "重做 · Ctrl+Y / Ctrl+Shift+Z"}
             >
               <Redo2 size={17} />
             </button>
@@ -936,103 +1111,18 @@ function App() {
           <button type="button" className="icon-button workspace-action" onClick={() => setHistoryOpen(true)} aria-label={isEn ? "Formula history" : "公式历史"} title={isEn ? "Formula history" : "公式历史"}>
             <History size={17} />
           </button>
-          <button type="button" className="icon-button workspace-action" onPointerDown={captureOcrInsertionTarget} onClick={openOcrDialog} aria-label={isEn ? "Formula image OCR" : "图片公式识别"} title={isEn ? "Formula image OCR · API" : "图片公式识别 · API"}>
+          <button type="button" className="icon-button workspace-action" onPointerDown={captureOcrInsertionTarget} onClick={openOcrDialog} aria-label={isEn ? "Recognize formula image" : "图片公式识别"} title={isEn ? "Recognize formula image" : "图片公式识别"}>
             <ScanLine size={17} />
           </button>
-          <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings · ⌘," : "设置 · ⌘,"}>
+          <button type="button" className="icon-button settings-toggle" onClick={() => setSettingsOpen(true)} aria-label={isEn ? "Settings" : "设置"} title={isEn ? "Settings · Ctrl+," : "设置 · Ctrl+,"}>
             <Settings2 size={17} />
           </button>
-          <div className="copy-control code-format-control">
-            <button
-              type="button"
-              className="copy-primary code-format-primary"
-              aria-expanded={copyMenuOpen}
-              aria-haspopup="menu"
-              aria-controls="copy-format-menu"
-              title={
-                isEn
-                  ? `Current: ${currentCodeFormat.titleEn}`
-                  : `当前格式：${currentCodeFormat.titleZh}`
-              }
-              onClick={() => {
-                setMenuOpen(false);
-                setCopyMenuOpen((open) => !open);
-              }}
-            >
-              <Code2 size={16} />
-              <span>{isEn ? "LaTeX code format" : "LaTeX 代码格式"}</span>
-            </button>
-            <button
-              ref={copyMenuButtonRef}
-              type="button"
-              className="copy-chevron"
-              aria-label={isEn ? "Choose LaTeX code format" : "选择 LaTeX 代码格式"}
-              aria-expanded={copyMenuOpen}
-              aria-haspopup="menu"
-              aria-controls="copy-format-menu"
-              onClick={() => {
-                setMenuOpen(false);
-                setCopyMenuOpen((open) => !open);
-              }}
-            >
-              <ChevronDown size={15} />
-            </button>
-            {copyMenuOpen && (
-              <div
-                ref={copyMenuRef}
-                id="copy-format-menu"
-                className="copy-menu code-format-menu"
-                role="menu"
-                aria-label={isEn ? "LaTeX code format" : "LaTeX 代码格式"}
-              >
-                <div className="code-format-menu-header">
-                  <span className="copy-menu-label">
-                    {isEn ? "LaTeX code format" : "LaTeX 代码格式"}
-                  </span>
-                  <small>
-                    {isEn
-                      ? "Changes the source panel and copy output"
-                      : "同时改变下方源码区与复制结果"}
-                  </small>
-                </div>
-                {codeFormatGroups.map((group) => (
-                  <div
-                    className="code-format-group"
-                    role="group"
-                    aria-label={group.title}
-                    key={group.id}
-                  >
-                    <div className="code-format-group-heading">
-                      <strong>{group.title}</strong>
-                      <small>{group.description}</small>
-                    </div>
-                    {group.formats.map((format) => {
-                      const selected = format.id === latexCodeFormat;
-                      return (
-                        <button
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={selected}
-                          aria-label={`${isEn ? format.titleEn : format.titleZh}: ${format.hint}`}
-                          data-format={format.id}
-                          className={selected ? "is-selected" : ""}
-                          key={format.id}
-                          onClick={() => handleCodeFormatChange(format.id)}
-                        >
-                          <span className="code-format-item-copy">
-                            <small className="code-format-hint">{format.hint}</small>
-                          </span>
-                          <span className="code-format-check" aria-hidden="true">
-                            {selected && <Check size={14} />}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {codeFormatControl}
+          <div
+            ref={setDesktopTopToolsMount}
+            className="desktop-top-tools-mount"
+            data-desktop-top-tools-mount
+          />
         </div>
       </header>
 
@@ -1049,31 +1139,77 @@ function App() {
       )}
 
       <EditorWorkspace
+        mode="desktop"
         showFileActions
-        desktopHeaderControls={
-          <ExportMenu
-            isEn={isEn}
-            busy={exportBusy}
-            onChooseDirectory={async () => {
-              setToast(
-                isEn
-                  ? "Browser exports use the system Downloads folder"
-                  : "浏览器模式下将导出到系统下载目录",
-              );
-            }}
-            onExport={exportDocument}
-          />
-        }
+        desktopTopToolsMount={desktopTopToolsMount}
+        showUpdateActions={false}
+        showOfficeActions={false}
+        showOcrActions
+        onOpenExport={() => setExportOpen(true)}
         editorRef={editorRef}
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}
-        onHistoryBusyChange={setEditorHistoryBusy}
         onPasteImage={handleEditorImagePaste}
-        onCopy={handleCopy}
         onCopyPng={handleCopyPng}
+        onCopy={async () => {
+          await handleCopy();
+        }}
         onReplaceDocument={replaceDocumentWithHistory}
+        sourceDocumentRevision={sourceDocumentRevision}
+        ocrBusy={inlineOcrIsBusy}
+        ocrOverlay={
+          inlineOcr ? (
+            <div
+              className={`inline-ocr-progress is-${inlineOcr.status}`}
+              role="status"
+              aria-live="polite"
+            >
+              <span className="inline-ocr-progress-icon">
+                {inlineOcr.status === "running" ? (
+                  <LoaderCircle size={17} className="is-spinning" />
+                ) : inlineOcr.status === "success" ? (
+                  <Check size={17} />
+                ) : (
+                  <AlertCircle size={17} />
+                )}
+              </span>
+              <div>
+                <strong>{inlineOcr.message}</strong>
+                <span>
+                  {isEn ? "Web OCR" : "网页 OCR"}
+                  {" · "}
+                  {inlineOcr.seconds}
+                  {isEn ? "s" : " 秒"}
+                </span>
+              </div>
+              {inlineOcrIsBusy ? null : (
+                <button
+                  type="button"
+                  className="inline-ocr-dismiss"
+                  onClick={() => setInlineOcr(null)}
+                  aria-label={isEn ? "Dismiss OCR status" : "关闭 OCR 状态"}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          ) : null
+        }
       />
 
+      <ExportDialog
+        open={exportOpen}
+        title={title}
+        formulas={lines.map((line) => line.latex)}
+        language={language}
+        onClose={() => setExportOpen(false)}
+        onNotify={setToast}
+      />
+      <HelpManualDialog
+        open={helpOpen}
+        language={language}
+        onClose={() => setHelpOpen(false)}
+      />
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -1124,11 +1260,6 @@ function App() {
           setToast(isEn ? "Formula restored" : "已恢复历史公式");
         }}
       />
-      <HelpDialog
-        open={helpOpen}
-        language={language}
-        onClose={() => setHelpOpen(false)}
-      />
       <WebOcrDialog
         open={ocrOpen}
         language={language}
@@ -1145,11 +1276,6 @@ function App() {
         }}
         onAppend={(value) => editorRef.current?.appendLatex(value, "ocr")}
         onNotify={setToast}
-      />
-      <OnboardingTour
-        open={onboardingOpen}
-        language={language}
-        onFinish={finishOnboarding}
       />
 
       {historyOpen && (

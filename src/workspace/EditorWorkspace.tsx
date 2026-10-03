@@ -5,15 +5,19 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   AlignCenter,
   AlignLeft,
   AlignRight,
   Bold,
   Braces,
+  Camera,
   Code2,
   Copy,
+  EyeOff,
   FileDown,
   Highlighter,
   Italic,
@@ -23,6 +27,8 @@ import {
   PanelBottomOpen,
   PanelRightOpen,
   Plus,
+  ScanLine,
+  Type,
   X,
 } from "lucide-react";
 import {
@@ -47,11 +53,12 @@ import {
   useEditorStore,
 } from "../stores/editorStore";
 import {
-  formatFormulaLines,
-  parseLatexSourceDraft,
+  formatFormulaLinesUniversal,
+  parseUniversalLatexSourceDraft,
 } from "../clipboard/LatexCopyService";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { reconcileFormulaLines } from "../history/documentHistory";
+import { useHistorySnapshot } from "../history/EditorSession";
 import type { FormulaAlignment, FormulaLine } from "../types/formula";
 import { normalizeCustomFormulaColor } from "./formulaColor";
 import type { EditorWorkspaceProps } from "./workspaceTypes";
@@ -87,11 +94,23 @@ const formulaBackgroundColorPresets = [
 type FormulaColorMenu = "color" | "backgroundColor";
 type ClassicResizeTarget = "tiles" | "dock";
 
+const compactOfficeTileBreakpoint = 760;
+const compactOfficeEditorReserve = 220;
 
 const customFormulaTextColorsStorageKey = "visualtex-custom-formula-text-colors";
 const customFormulaBackgroundColorsStorageKey =
   "visualtex-custom-formula-background-colors";
 const maximumCustomFormulaColors = 8;
+
+function PortalOrInline({
+  target,
+  children,
+}: {
+  target: HTMLElement | null;
+  children: ReactNode;
+}) {
+  return target ? createPortal(children, target) : children;
+}
 
 function clampPanelSize(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -118,30 +137,56 @@ function persistCustomFormulaColors(storageKey: string, colors: string[]) {
 }
 
 export function EditorWorkspace({
+  mode,
   showFileActions,
+  showOfficeActions,
+  showOcrActions,
+  officeHeaderLeadingControls,
+  officeHeaderTrailingActions,
   desktopHeaderControls,
+  desktopTopToolsMount,
+  keypadMode = false,
   onOpenExport,
   editorRef,
+  editorInstanceKey,
+  sourceDocumentRevision = 0,
+  reuseEditorLineSlots = false,
   sidebarOpen,
   onSidebarOpenChange,
-  onHistoryBusyChange,
   onPasteImage,
   onCopyPng,
   onCopy,
   onReplaceDocument,
+  ocrRecognizer,
+  ocrRecognizers = [],
+  ocrBusy = false,
+  onOcrRecognizerChange,
+  onQuickOcr,
+  quickOcrCaptureMode = "immediate",
+  onQuickOcrCaptureModeChange,
+  silentOcrEnabled = false,
+  silentOcrShortcut = "⌘⇧O",
+  onSilentOcrEnabledChange,
+  ocrOverlay,
 }: EditorWorkspaceProps) {
+  const [quickOcrModeMenuOpen, setQuickOcrModeMenuOpen] = useState(false);
+  const quickOcrModeMenuRef = useRef<HTMLDivElement>(null);
   const [classicDockOpen, setClassicDockOpenState] = useState(() =>
-    readWorkspacePanelOpen("toolbar"),
+    readWorkspacePanelOpen(mode, "toolbar"),
   );
   const setClassicDockOpen = (
     next: boolean | ((current: boolean) => boolean),
   ) => {
     setClassicDockOpenState((current) => {
       const resolved = typeof next === "function" ? next(current) : next;
-      writeWorkspacePanelOpen("toolbar", resolved);
+      writeWorkspacePanelOpen(mode, "toolbar", resolved);
       return resolved;
     });
   };
+  const [officeFormattingMount, setOfficeFormattingMount] =
+    useState<HTMLDivElement | null>(null);
+  const [desktopClassicControlsMount, setDesktopClassicControlsMount] =
+    useState<HTMLDivElement | null>(null);
   const [formulaColorMenu, setFormulaColorMenu] =
     useState<FormulaColorMenu | null>(null);
   const formulaColorMenuRef = useRef<HTMLDivElement>(null);
@@ -173,6 +218,18 @@ export function EditorWorkspace({
   );
   const [formulaTextColor, setFormulaTextColor] = useState("#2563eb");
   const [formulaBackgroundColor, setFormulaBackgroundColor] = useState("#fef3c7");
+  const [persistentFormulaBold, setPersistentFormulaBold] = useState(false);
+  const [persistentFormulaShape, setPersistentFormulaShape] = useState<
+    "auto" | "italic" | "upright"
+  >("auto");
+  const [
+    persistentFormulaTextColorEnabled,
+    setPersistentFormulaTextColorEnabled,
+  ] = useState(false);
+  const [
+    persistentFormulaBackgroundColorEnabled,
+    setPersistentFormulaBackgroundColorEnabled,
+  ] = useState(false);
   const [formulaTextColorPickerValue, setFormulaTextColorPickerValue] =
     useState("#2563eb");
   const [formulaBackgroundColorPickerValue, setFormulaBackgroundColorPickerValue] =
@@ -194,8 +251,8 @@ export function EditorWorkspace({
   const title = useEditorStore((state) => state.title);
   const lines = useEditorStore((state) => state.lines);
   const activeLineId = useEditorStore((state) => state.activeLineId);
+  const historyReplayActive = useHistorySnapshot().isReplaying;
   const language = useEditorStore((state) => state.language);
-  const theme = useEditorStore((state) => state.theme);
   const zoom = useEditorStore((state) => state.zoom);
   const setZoom = useEditorStore((state) => state.setZoom);
   const formulaAlignment = useEditorStore((state) => state.formulaAlignment);
@@ -209,14 +266,22 @@ export function EditorWorkspace({
   const sourceOpen = useEditorStore((state) => state.sourceOpen);
   const setStoredSourceOpen = useEditorStore((state) => state.setSourceOpen);
   const setSourceOpen = (open: boolean) => {
-    writeWorkspacePanelOpen("source", open);
+    writeWorkspacePanelOpen(mode, "source", open);
     setStoredSourceOpen(open);
   };
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
+  const latexFormatProfile = useEditorStore((state) => state.latexFormatProfile);
   const isEn = language === "en";
+  const localOcrRecognizers = ocrRecognizers.filter(
+    (item) => item.group !== "api",
+  );
+  const apiOcrRecognizers = ocrRecognizers.filter(
+    (item) => item.group === "api",
+  );
+  const isOfficeWorkspace = mode !== "desktop";
   const latex = joinFormulaLines(lines);
   const sourceLatex = formatLatexSourceForEditor(
-    formatFormulaLines(lines, latexCodeFormat),
+    formatFormulaLinesUniversal(lines, latexFormatProfile),
   );
 
   const handleSourceFocusChange = (focused: boolean) => {
@@ -227,6 +292,17 @@ export function EditorWorkspace({
     );
     setSourceFocused(focused);
   };
+
+  useLayoutEffect(() => {
+    setSourceDraftFallback(null);
+    handleSourceFocusChange(false);
+  }, [editorInstanceKey, sourceDocumentRevision]);
+
+  useLayoutEffect(() => {
+    if (!historyReplayActive) return;
+    setSourceDraftFallback(null);
+    handleSourceFocusChange(false);
+  }, [historyReplayActive]);
 
   useEffect(() => {
     document.documentElement.classList.toggle(
@@ -241,9 +317,67 @@ export function EditorWorkspace({
   }, [sourceFocused]);
 
   useLayoutEffect(() => {
-    // New browser sessions start on formula tools instead of opening source view.
-    setStoredSourceOpen(readWorkspacePanelOpen("source", false));
-  }, [setStoredSourceOpen]);
+    // The desktop app and Office editor are separate workspaces. Remember the
+    // user's last tools/source tab independently for each one, and default new
+    // users to the formula tools instead of the source panel.
+    setStoredSourceOpen(readWorkspacePanelOpen(mode, "source", false));
+  }, [mode, setStoredSourceOpen]);
+
+  useEffect(() => {
+    const toggleFormulaSourceFocus = (event: KeyboardEvent) => {
+      if (
+        event.isComposing ||
+        !event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        event.code !== "Backslash"
+      ) {
+        return;
+      }
+      const workspace = workspaceRef.current;
+      if (
+        !workspace ||
+        !event.composedPath().some((node) => node === workspace)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      if (sourceFocusedRef.current) {
+        handleSourceFocusChange(false);
+        window.requestAnimationFrame(() => {
+          editorRef.current?.focus();
+        });
+        return;
+      }
+
+      setSourceOpen(true);
+      if (editorLayout === "classic") setClassicDockOpen(true);
+      const focusSource = () => {
+        const sourceContent =
+          workspaceRef.current?.querySelector<HTMLElement>(
+            ".source-panel .cm-content",
+          );
+        if (sourceContent) {
+          sourceContent.focus({ preventScroll: true });
+          return;
+        }
+        window.requestAnimationFrame(() => {
+          workspaceRef.current
+            ?.querySelector<HTMLElement>(".source-panel .cm-content")
+            ?.focus({ preventScroll: true });
+        });
+      };
+      window.requestAnimationFrame(focusSource);
+    };
+
+    document.addEventListener("keydown", toggleFormulaSourceFocus, true);
+    return () =>
+      document.removeEventListener("keydown", toggleFormulaSourceFocus, true);
+  }, [editorLayout, editorRef, mode]);
 
   useEffect(() => {
     setClassicTileWidth(persistedClassicTileWidth);
@@ -260,6 +394,28 @@ export function EditorWorkspace({
   useEffect(() => {
     setSourceDraftFallback(null);
   }, [latexCodeFormat]);
+
+  useEffect(() => {
+    if (!quickOcrModeMenuOpen) return;
+    const close = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        quickOcrModeMenuRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setQuickOcrModeMenuOpen(false);
+    };
+    const closeFromKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setQuickOcrModeMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", close, true);
+    document.addEventListener("keydown", closeFromKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", close, true);
+      document.removeEventListener("keydown", closeFromKey, true);
+    };
+  }, [quickOcrModeMenuOpen]);
 
   useEffect(() => {
     if (!formulaColorMenu) return;
@@ -301,7 +457,11 @@ export function EditorWorkspace({
   const classicTileWidthLimit = () => {
     const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width;
     if (!workspaceWidth) return MAX_CLASSIC_TILE_WIDTH;
-    return Math.max(MIN_CLASSIC_TILE_WIDTH, workspaceWidth - 360);
+    const editorReserve =
+      isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
+        ? compactOfficeEditorReserve
+        : 360;
+    return Math.max(MIN_CLASSIC_TILE_WIDTH, workspaceWidth - editorReserve);
   };
 
   const classicDockHeightLimit = () => {
@@ -438,7 +598,14 @@ export function EditorWorkspace({
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         const workspaceWidth = workspace.getBoundingClientRect().width;
-        const tileMaximum = Math.max(MIN_CLASSIC_TILE_WIDTH, workspaceWidth - 360);
+        const editorReserve =
+          isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
+            ? compactOfficeEditorReserve
+            : 360;
+        const tileMaximum = Math.max(
+          MIN_CLASSIC_TILE_WIDTH,
+          workspaceWidth - editorReserve,
+        );
         setClassicTileWidth((current) => {
           const next = clampPanelSize(
             current,
@@ -474,7 +641,7 @@ export function EditorWorkspace({
       window.cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [editorLayout]);
+  }, [editorLayout, isOfficeWorkspace]);
 
   const preserveFormulaFocus = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -516,11 +683,8 @@ export function EditorWorkspace({
       formulaSelectionTargetRef.current ??
       editorRef.current?.captureSelectionTarget() ??
       null;
-    if (!selection) {
-      setFormulaColorMenu(null);
-      formulaSelectionTargetRef.current = null;
-      return;
-    }
+    // The palette is also the color chooser for persistent typing. Opening it
+    // without a selection must not synthesize or move a MathLive selection.
     formulaSelectionTargetRef.current = selection;
     setFormulaColorMenu((current) => {
       if (current === kind) {
@@ -536,12 +700,13 @@ export function EditorWorkspace({
     value: string,
   ) => {
     const target = formulaSelectionTargetRef.current;
-    if (!target) return;
-    editorRef.current?.applySelectionStyle({ kind, value }, target);
+    if (target) {
+      editorRef.current?.applySelectionStyle({ kind, value }, target);
+    }
     if (kind === "color") {
       setFormulaTextColor(value);
       setFormulaTextColorPickerValue(value);
-    } else {
+    } else if (value !== "none") {
       setFormulaBackgroundColor(value);
       setFormulaBackgroundColorPickerValue(value);
     }
@@ -614,8 +779,11 @@ export function EditorWorkspace({
     editorRef.current?.focus();
   };
 
-  const applySource = (source: string, sourceFormat: typeof latexCodeFormat) => {
-    const parsed = parseLatexSourceDraft(source, sourceFormat);
+  const applySource = (
+    source: string,
+    _sourceFormat: typeof latexCodeFormat,
+  ) => {
+    const parsed = parseUniversalLatexSourceDraft(source, latexFormatProfile);
     if (!parsed.valid) {
       const previewValues = (parsed.previewValues ?? parsed.values).map(
         normalizeChineseLatex,
@@ -624,7 +792,12 @@ export function EditorWorkspace({
         source,
         error: parsed.error ?? "invalid-latex",
         previewLines: previewValues.length
-          ? reconcileFormulaLines(previewValues, lines, parsed.modes)
+          ? reconcileFormulaLines(
+              previewValues,
+              lines,
+              parsed.modes,
+              parsed.displayStyles,
+            )
           : null,
       };
       setSourceDraftFallback(fallback);
@@ -633,7 +806,12 @@ export function EditorWorkspace({
 
     setSourceDraftFallback(null);
     const values = parsed.values.map(normalizeChineseLatex);
-    const nextLines = reconcileFormulaLines(values, lines, parsed.modes);
+    const nextLines = reconcileFormulaLines(
+      values,
+      lines,
+      parsed.modes,
+      parsed.displayStyles,
+    );
     const nextActiveLineId = nextLines.some(
       (line) => line.id === activeLineId,
     )
@@ -664,8 +842,8 @@ export function EditorWorkspace({
     compact?: boolean;
   } = {}) => (
     <LatexSourceEditor
+      key={`${editorInstanceKey ?? ""}:${sourceDocumentRevision}`}
       latex={sourceLatex}
-      theme={theme}
       format={latexCodeFormat}
       onCollapse={() => setSourceOpen(false)}
       showCollapseAction={showCollapseAction}
@@ -674,6 +852,7 @@ export function EditorWorkspace({
       onLiveChange={applySource}
       onFocusChange={handleSourceFocusChange}
       onCopy={() => void onCopy()}
+      forceExternalSync={historyReplayActive}
     />
   );
 
@@ -714,21 +893,36 @@ export function EditorWorkspace({
       : visualLines[0]?.id ?? null;
     return (
       <MathEditor
+        key={editorInstanceKey}
         ref={editorRef}
         lines={visualLines}
         activeLineId={visualActiveLineId}
+        reuseLineSlots={reuseEditorLineSlots}
         formulaAlignment={formulaAlignment}
         latexCodeFormat={latexCodeFormat}
         zoom={zoom}
+        persistentTypingStyle={{
+          bold: persistentFormulaBold,
+          italic: persistentFormulaShape === "auto"
+            ? null
+            : persistentFormulaShape === "italic",
+          color: persistentFormulaTextColorEnabled ? formulaTextColor : null,
+          backgroundColor: persistentFormulaBackgroundColorEnabled
+            ? formulaBackgroundColor
+            : null,
+        }}
         readOnly={false}
+        showLineModeControls={!isOfficeWorkspace}
         previewOnly={sourceFocused || Boolean(sourceDraftFallback)}
         onPreviewActivate={
           sourceDraftFallback ? undefined : () => handleSourceFocusChange(false)
         }
         draftError={sourceDraftFallback?.error}
-        onPasteImage={previewLines ? undefined : onPasteImage}
+        onPasteImage={
+          previewLines ? undefined : showOcrActions ? onPasteImage : undefined
+        }
         onCopyPng={previewLines ? undefined : onCopyPng}
-        onHistoryBusyChange={onHistoryBusyChange}
+        overlay={previewLines ? undefined : ocrOverlay}
       />
     );
   };
@@ -739,7 +933,9 @@ export function EditorWorkspace({
         ref={workspaceRef}
         className={
           `workspace ${editorLayout === "classic" ? "is-classic-layout" : "is-standard-layout"}` +
-          (sidebarOpen ? " has-sidebar" : "") +
+          (!keypadMode && sidebarOpen ? " has-sidebar" : "") +
+          (isOfficeWorkspace ? " is-office-workspace" : "") +
+          (keypadMode ? " is-keypad-mode" : "") +
           (highlightActiveLine ? " has-active-line-highlight" : "") +
           (sourceFocused ? " is-source-editor-focused" : "")
         }
@@ -749,15 +945,16 @@ export function EditorWorkspace({
           } as CSSProperties
         }
         data-editor-layout={editorLayout}
+        data-office-actions={showOfficeActions ? "true" : undefined}
       >
-        {editorLayout === "standard" && sidebarOpen && (
+        {!keypadMode && editorLayout === "standard" && sidebarOpen && (
           <FormulaToolbar
             stabilizeTileLayout
             onInsert={(command) => editorRef.current?.insertCommand(command)}
           />
         )}
 
-        {editorLayout === "classic" && !sidebarOpen && (
+        {!keypadMode && editorLayout === "classic" && !sidebarOpen && (
           <button
             type="button"
             className="classic-tile-expand-button"
@@ -772,9 +969,35 @@ export function EditorWorkspace({
 
         <section className="formula-workspace editor-pane">
           <header
-            className="workspace-heading pane-header editor-pane-header"
+            className={
+              "workspace-heading pane-header editor-pane-header" +
+              (isOfficeWorkspace ? " is-office-editor-header" : "")
+            }
           >
-            <div className="pane-title-group">
+            <div className="editor-pane-header-controls">
+              <PortalOrInline
+                target={
+                  !isOfficeWorkspace && editorLayout === "classic"
+                    ? desktopClassicControlsMount
+                    : null
+                }
+              >
+                <div className="pane-title-group">
+              {isOfficeWorkspace && officeHeaderLeadingControls ? (
+                <div className="office-inline-options">
+                  {officeHeaderLeadingControls}
+                </div>
+              ) : null}
+              {isOfficeWorkspace && editorLayout !== "classic" ? (
+                <div
+                  className="office-formatting-mount"
+                  ref={setOfficeFormattingMount}
+                />
+              ) : null}
+              {!isOfficeWorkspace || officeFormattingMount ? (
+                <PortalOrInline
+                  target={isOfficeWorkspace ? officeFormattingMount : null}
+                >
                   <div
                     className="formula-alignment-controls"
                 role="toolbar"
@@ -918,6 +1141,148 @@ export function EditorWorkspace({
                         <Highlighter size={15} strokeWidth={2} />
                       </button>
 
+                      <span
+                        className="formula-formatting-subdivider"
+                        aria-hidden="true"
+                      />
+
+                      <button
+                        type="button"
+                        className={
+                          "icon-button compact formula-formatting-button is-persistent-action" +
+                          (persistentFormulaBold ? " is-active" : "")
+                        }
+                        aria-label={
+                          isEn ? "Persistent bold input" : "持久化粗体输入"
+                        }
+                        title={
+                          isEn
+                            ? "Persistent bold · affects newly entered glyphs only"
+                            : "持久化粗体 · 仅作用于之后新输入的字符"
+                        }
+                        aria-pressed={persistentFormulaBold}
+                        data-formula-persistent-bold
+                        onPointerDown={preserveFormulaFocus}
+                        onClick={() =>
+                          setPersistentFormulaBold((enabled) => !enabled)
+                        }
+                      >
+                        <Bold size={15} strokeWidth={2.2} />
+                      </button>
+
+                      <button
+                        type="button"
+                        className={
+                          "icon-button compact formula-formatting-button is-persistent-action" +
+                          (persistentFormulaShape !== "auto" ? " is-active" : "")
+                        }
+                        aria-label={
+                          isEn
+                            ? `Persistent input shape: ${persistentFormulaShape}`
+                            : `输入字形：${persistentFormulaShape === "auto" ? "自动" : persistentFormulaShape === "italic" ? "持久斜体" : "持久正体"}`
+                        }
+                        title={
+                          isEn
+                            ? persistentFormulaShape === "auto"
+                              ? "Automatic math shape · click for persistent italic"
+                              : persistentFormulaShape === "italic"
+                                ? "Persistent italic · click for persistent upright"
+                                : "Persistent upright · click to restore automatic math shape"
+                            : persistentFormulaShape === "auto"
+                              ? "自动数学字形 · 点击启用持久斜体"
+                              : persistentFormulaShape === "italic"
+                                ? "持久斜体 · 点击切换为持久正体"
+                                : "持久正体 · 点击恢复自动数学字形"
+                        }
+                        aria-pressed={persistentFormulaShape !== "auto"}
+                        data-formula-persistent-italic
+                        data-formula-persistent-shape={persistentFormulaShape}
+                        onPointerDown={preserveFormulaFocus}
+                        onClick={() =>
+                          setPersistentFormulaShape((shape) =>
+                            shape === "auto"
+                              ? "italic"
+                              : shape === "italic"
+                                ? "upright"
+                                : "auto",
+                          )
+                        }
+                      >
+                        {persistentFormulaShape === "upright"
+                          ? <Type size={15} strokeWidth={2.2} />
+                          : <Italic size={15} strokeWidth={2.2} />}
+                      </button>
+
+                      <button
+                        type="button"
+                        className={
+                          "icon-button compact formula-formatting-button is-persistent-action is-color-action" +
+                          (persistentFormulaTextColorEnabled
+                            ? " is-active"
+                            : "")
+                        }
+                        style={
+                          {
+                            "--formula-format-color": formulaTextColor,
+                          } as CSSProperties
+                        }
+                        aria-label={
+                          isEn
+                            ? "Persistent font color input"
+                            : "持久化字体颜色输入"
+                        }
+                        title={
+                          isEn
+                            ? "Persistent font color · uses the current font color and affects new glyphs only"
+                            : "持久化字体颜色 · 使用当前字体颜色，仅作用于之后新输入的字符"
+                        }
+                        aria-pressed={persistentFormulaTextColorEnabled}
+                        data-formula-persistent-color
+                        onPointerDown={preserveFormulaFocus}
+                        onClick={() =>
+                          setPersistentFormulaTextColorEnabled(
+                            (enabled) => !enabled,
+                          )
+                        }
+                      >
+                        <Palette size={15} strokeWidth={2} />
+                      </button>
+
+                      <button
+                        type="button"
+                        className={
+                          "icon-button compact formula-formatting-button is-persistent-action is-color-action" +
+                          (persistentFormulaBackgroundColorEnabled
+                            ? " is-active"
+                            : "")
+                        }
+                        style={
+                          {
+                            "--formula-format-color": formulaBackgroundColor,
+                          } as CSSProperties
+                        }
+                        aria-label={
+                          isEn
+                            ? "Persistent background color input"
+                            : "持久化背景颜色输入"
+                        }
+                        title={
+                          isEn
+                            ? "Persistent background color · uses the current background color and affects new glyphs only"
+                            : "持久化背景颜色 · 使用当前背景颜色，仅作用于之后新输入的字符"
+                        }
+                        aria-pressed={persistentFormulaBackgroundColorEnabled}
+                        data-formula-persistent-background
+                        onPointerDown={preserveFormulaFocus}
+                        onClick={() =>
+                          setPersistentFormulaBackgroundColorEnabled(
+                            (enabled) => !enabled,
+                          )
+                        }
+                      >
+                        <Highlighter size={15} strokeWidth={2} />
+                      </button>
+
                       {formulaColorMenu && (
                         <div
                           className="formula-color-popover"
@@ -948,6 +1313,25 @@ export function EditorWorkspace({
                               <span className="formula-color-section-label">
                                 {isEn ? "Preset" : "固定颜色"}
                               </span>
+                              {formulaColorMenu === "backgroundColor" ? (
+                                <button
+                                  type="button"
+                                  className="formula-color-none-action"
+                                  aria-label={isEn ? "No background" : "无背景颜色"}
+                                  title={isEn ? "No background" : "取消背景颜色"}
+                                  data-formula-background-none
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() =>
+                                    applySelectedFormulaColor("backgroundColor", "none")
+                                  }
+                                >
+                                  <span
+                                    className="formula-color-none-icon"
+                                    aria-hidden="true"
+                                  />
+                                  <span>{isEn ? "None" : "无背景"}</span>
+                                </button>
+                              ) : null}
                               <div className="formula-color-swatches" role="group">
                                 {(formulaColorMenu === "color"
                                   ? formulaTextColorPresets
@@ -1077,12 +1461,23 @@ export function EditorWorkspace({
                       )}
                     </div>
                   </div>
-              {desktopHeaderControls ? (
+                </PortalOrInline>
+              ) : null}
+                </div>
+              </PortalOrInline>
+              <PortalOrInline
+                target={
+                  !isOfficeWorkspace && !keypadMode && editorLayout === "classic"
+                    ? desktopTopToolsMount ?? null
+                    : null
+                }
+              >
+                <div className="editor-pane-header-trailing">
+              {!isOfficeWorkspace && desktopHeaderControls ? (
                 <div className="desktop-editor-header-controls">
                   {desktopHeaderControls}
                 </div>
               ) : null}
-            </div>
             <div className="canvas-tool-group">
               {showFileActions && onOpenExport && (
                 <button
@@ -1097,7 +1492,146 @@ export function EditorWorkspace({
                 </button>
               )}
               <InputBehaviorMenu />
-              <div className="canvas-controls">
+              {showOcrActions && onQuickOcr && (
+                <div className="quick-ocr-controls">
+                  <div className="quick-ocr-split" ref={quickOcrModeMenuRef}>
+                    <button
+                      type="button"
+                      className={`quick-ocr-button quick-ocr-primary quick-ocr-icon-trigger${quickOcrModeMenuOpen ? " is-open" : ""}`}
+                      onClick={() => {
+                        if (onQuickOcrCaptureModeChange) {
+                          setQuickOcrModeMenuOpen((open) => !open);
+                        } else {
+                          onQuickOcr();
+                        }
+                      }}
+                      disabled={ocrBusy}
+                      data-quick-ocr-button
+                      aria-label={isEn ? "Quick OCR" : "快捷 OCR"}
+                      aria-expanded={quickOcrModeMenuOpen}
+                      title={isEn ? "Quick OCR" : "快捷 OCR"}
+                    >
+                      <Camera size={16} />
+                    </button>
+                    {quickOcrModeMenuOpen && onQuickOcrCaptureModeChange && (
+                      <div className="quick-ocr-mode-menu" role="menu" data-quick-ocr-mode-menu>
+                        <button
+                          type="button"
+                          className="quick-ocr-run-current"
+                          onClick={() => {
+                            setQuickOcrModeMenuOpen(false);
+                            onQuickOcr();
+                          }}
+                          role="menuitem"
+                        >
+                          <Camera size={14} />
+                          <strong>{isEn ? "Run Quick OCR" : "开始快捷 OCR"}</strong>
+                          <span>
+                            {quickOcrCaptureMode === "system-screenshot"
+                              ? isEn
+                                ? "Wait for macOS screenshot"
+                                : "等待 macOS 系统截图"
+                              : isEn
+                                ? "Immediate selection"
+                                : "立即框选"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className={quickOcrCaptureMode === "immediate" ? "is-active" : ""}
+                          onClick={() => {
+                            onQuickOcrCaptureModeChange("immediate");
+                            setQuickOcrModeMenuOpen(false);
+                          }}
+                          role="menuitemradio"
+                          aria-checked={quickOcrCaptureMode === "immediate"}
+                          data-quick-ocr-mode-option="immediate"
+                        >
+                          <strong>{isEn ? "Immediate selection (default)" : "立即框选（默认）"}</strong>
+                          <span>{isEn ? "Start the macOS region selector immediately" : "立即进入 macOS 框选截图"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={quickOcrCaptureMode === "system-screenshot" ? "is-active" : ""}
+                          onClick={() => {
+                            onQuickOcrCaptureModeChange("system-screenshot");
+                            setQuickOcrModeMenuOpen(false);
+                          }}
+                          role="menuitemradio"
+                          aria-checked={quickOcrCaptureMode === "system-screenshot"}
+                          data-quick-ocr-mode-option="system-screenshot"
+                        >
+                          <strong>{isEn ? "Wait for system screenshot" : "等待系统截图"}</strong>
+                          <span>{isEn ? "Switch pages first, then use ⌘⇧3 / 4 / 5" : "先切换页面，再使用 ⌘⇧3 / 4 / 5"}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {onSilentOcrEnabledChange && (
+                    <label
+                      className={`silent-ocr-toggle${silentOcrEnabled ? " is-active" : ""}`}
+                      title={
+                        isEn
+                          ? `Press ${silentOcrShortcut} anywhere to capture, recognize, and copy LaTeX in the background`
+                          : `开启后可在任意应用中按 ${silentOcrShortcut} 框选截图，后台识别并按当前源码格式复制 LaTeX`
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        checked={silentOcrEnabled}
+                        onChange={(event) =>
+                          onSilentOcrEnabledChange(event.target.checked)
+                        }
+                        data-silent-ocr-toggle
+                      />
+                      <EyeOff size={16} aria-hidden="true" />
+                    </label>
+                  )}
+                </div>
+              )}
+              {!keypadMode &&
+                showOcrActions &&
+                ocrRecognizers.length > 0 &&
+                ocrRecognizer && (
+                <label
+                  className="canvas-ocr-model"
+                  title={
+                    isEn
+                      ? "OCR recognizer used for pasted images and quick OCR"
+                      : "选择粘贴图片和快捷 OCR 使用的本地模型或 API"
+                  }
+                >
+                  <ScanLine size={14} />
+                  <select
+                    value={ocrRecognizer}
+                    disabled={ocrBusy}
+                    onChange={(event) =>
+                      onOcrRecognizerChange?.(event.target.value)
+                    }
+                    aria-label={isEn ? "OCR recognizer" : "OCR 识别器"}
+                  >
+                    {localOcrRecognizers.length > 0 && (
+                      <optgroup label={isEn ? "Local models" : "本地模型"}>
+                        {localOcrRecognizers.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {isEn ? item.labelEn : item.labelZh}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {apiOcrRecognizers.length > 0 && (
+                      <optgroup label={isEn ? "OCR APIs" : "OCR API"}>
+                        {apiOcrRecognizers.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {isEn ? item.labelEn : item.labelZh}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </label>
+              )}
+              {!keypadMode && <div className="canvas-controls">
                 <button
                   type="button"
                   className="icon-button compact"
@@ -1133,11 +1667,25 @@ export function EditorWorkspace({
                 >
                   <Plus size={14} />
                 </button>
+              </div>}
+            </div>
+            {isOfficeWorkspace && officeHeaderTrailingActions ? (
+              <div className="office-inline-actions">
+                {officeHeaderTrailingActions}
               </div>
+            ) : null}
+                </div>
+              </PortalOrInline>
             </div>
           </header>
 
-          {editorLayout === "classic" ? (
+          {keypadMode ? (
+            <div className="keypad-editor-pane-body">
+              <div className="editor-pane-scroll">
+                {renderVisualEditor()}
+              </div>
+            </div>
+          ) : editorLayout === "classic" ? (
             <div
               ref={classicEditorBodyRef}
               className={
@@ -1215,7 +1763,27 @@ export function EditorWorkspace({
                   className="classic-bottom-tabs"
                   aria-label={isEn ? "Bottom editor panel" : "底部编辑面板"}
                 >
-                  <span className="classic-bottom-tab-spacer" aria-hidden="true" />
+                  {isOfficeWorkspace ? (
+                    <div
+                      ref={setOfficeFormattingMount}
+                      className="classic-bottom-formatting-slot"
+                      aria-label={
+                        isEn
+                          ? "Formula alignment and formatting"
+                          : "公式对齐与格式"
+                      }
+                    />
+                  ) : (
+                    <div
+                      ref={setDesktopClassicControlsMount}
+                      className="classic-bottom-workspace-controls"
+                      aria-label={
+                        isEn
+                          ? "Formula controls"
+                          : "公式控制"
+                      }
+                    />
+                  )}
                   <div
                     className="classic-bottom-tab-group"
                     role="tablist"
@@ -1247,6 +1815,12 @@ export function EditorWorkspace({
                         setSourceOpen(true);
                         setClassicDockOpen(true);
                       }}
+                      aria-keyshortcuts="Meta+Backslash"
+                      title={
+                        isEn
+                          ? "LaTeX source (⌘\\)"
+                          : "LaTeX 源码（⌘\\）"
+                      }
                     >
                       <Code2 size={16} />
                       <span className="classic-bottom-tab-label">
@@ -1255,18 +1829,16 @@ export function EditorWorkspace({
                     </button>
                   </div>
                   <div className="classic-bottom-actions">
-                    {sourceOpen && classicDockOpen && (
-                      <button
-                        type="button"
-                        className="icon-button compact classic-bottom-copy"
-                        data-classic-bottom-copy
-                        onClick={() => void onCopy()}
-                        aria-label={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
-                        title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
-                      >
-                        <Copy size={14} />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="icon-button compact classic-bottom-copy"
+                      data-classic-bottom-copy
+                      onClick={() => void onCopy()}
+                      aria-label={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                    >
+                      <Copy size={14} />
+                    </button>
                     <button
                       type="button"
                       className="icon-button compact classic-bottom-collapse"
@@ -1315,6 +1887,7 @@ export function EditorWorkspace({
                         view="tools"
                         layout="horizontal"
                         className="classic-bottom-toolbar"
+                        compactDensity={isOfficeWorkspace}
                         onInsert={(command) =>
                           editorRef.current?.insertCommand(command)
                         }
@@ -1342,7 +1915,12 @@ export function EditorWorkspace({
                     className="source-toggle"
                     onClick={() => setSourceOpen(true)}
                     aria-label={isEn ? "Show LaTeX source" : "展开 LaTeX 源码"}
-                    title={isEn ? "Show LaTeX source" : "展开 LaTeX 源码"}
+                    aria-keyshortcuts="Meta+Backslash"
+                    title={
+                      isEn
+                        ? "Show LaTeX source (⌘\\)"
+                        : "展开 LaTeX 源码（⌘\\）"
+                    }
                   >
                     <PanelBottomOpen size={15} />
                   </button>
@@ -1352,7 +1930,7 @@ export function EditorWorkspace({
           )}
         </section>
 
-        {editorLayout === "classic" && sidebarOpen && (
+        {!keypadMode && editorLayout === "classic" && sidebarOpen && (
           <>
             <div
               className="workspace-panel-resizer classic-tile-resizer"

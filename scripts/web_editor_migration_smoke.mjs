@@ -4,8 +4,8 @@ import { rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import process from "node:process";
 import {
-  browserTestProfilePath,
-  resolveBrowserTestChromePath,
+  createBrowserProfilePath,
+  resolveChromiumExecutable,
 } from "./browser_test_runtime.mjs";
 
 const portOffset = process.pid % 1000;
@@ -14,8 +14,8 @@ const ocrMockPort = 9300 + portOffset;
 const debugPort = 12300 + portOffset;
 const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
 const ocrMockBaseUrl = `http://127.0.0.1:${ocrMockPort}/v1`;
-const chromeProfile = browserTestProfilePath("visualtex-web-migration");
-const chromePath = resolveBrowserTestChromePath();
+const chromeProfile = createBrowserProfilePath("visualtex-web-migration");
+const chromePath = resolveChromiumExecutable();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 20_000) {

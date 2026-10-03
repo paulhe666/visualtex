@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { EditorState } from "@codemirror/state";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Annotation, EditorState, Transaction } from "@codemirror/state";
 import {
   foldGutter,
   foldKeymap,
@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
 import type { LatexSourceDraftResult } from "../clipboard/LatexCopyService";
-import type { LatexCodeFormat, Theme } from "../types/formula";
+import type { LatexCodeFormat } from "../types/formula";
 import { visualTeXLatexEditingExtensions } from "./latexSourceEditorSupport";
 
 const visualTeXLatexHighlightStyle = HighlightStyle.define([
@@ -67,9 +67,16 @@ const visualTeXLatexHighlightStyle = HighlightStyle.define([
   { tag: tags.invalid, color: "var(--syntax-error)", textDecoration: "underline" },
 ]);
 
+const externalSourceSync = Annotation.define<boolean>();
+interface SourceDraftStatus {
+  dirty: boolean;
+  error: string | null;
+  hasLivePreview: boolean;
+}
+const syncedDraft: SourceDraftStatus = { dirty: false, error: null, hasLivePreview: true };
+
 interface Props {
   latex: string;
-  theme: Theme;
   format: LatexCodeFormat;
   onCollapse: () => void;
   showCollapseAction?: boolean;
@@ -81,11 +88,11 @@ interface Props {
   ) => LatexSourceDraftResult;
   onFocusChange?: (focused: boolean) => void;
   onCopy: () => void;
+  forceExternalSync?: boolean;
 }
 
 export function LatexSourceEditor({
   latex,
-  theme,
   format,
   onCollapse,
   showCollapseAction = true,
@@ -94,44 +101,57 @@ export function LatexSourceEditor({
   onLiveChange,
   onFocusChange,
   onCopy,
+  forceExternalSync = false,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const draftRef = useRef(latex);
-  const sourceRef = useRef(latex);
-  const latestLatexRef = useRef(latex);
-  const dirtyRef = useRef(false);
-  const sourceFocusedRef = useRef(false);
-  const syncErrorRef = useRef<string | null>(null);
-  const suppressChangeRef = useRef(false);
+  // CodeMirror owns draft text. This baseline is the last accepted source;
+  // canonicalSourceRef is the current serialization of the visual document.
+  const acceptedSourceRef = useRef(latex);
+  const canonicalSourceRef = useRef(latex);
+  canonicalSourceRef.current = latex;
+  const statusRef = useRef(syncedDraft);
+  const [status, setStatus] = useState(syncedDraft);
+  const { dirty, error: syncError, hasLivePreview } = status;
   const formatRef = useRef(format);
   const onLiveChangeRef = useRef(onLiveChange);
   const onFocusChangeRef = useRef(onFocusChange);
-  const formatRefreshFrameRef = useRef<number | null>(null);
   const focusReleaseFrameRef = useRef<number | null>(null);
-  const [dirty, setDirty] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const [hasLivePreview, setHasLivePreview] = useState(true);
-  const hasLivePreviewRef = useRef(true);
   const language = useEditorStore((state) => state.language);
+  const sourceEditorFontSize = useEditorStore(
+    (state) => state.sourceEditorFontSize,
+  );
   const isEn = language === "en";
   onLiveChangeRef.current = onLiveChange;
   onFocusChangeRef.current = onFocusChange;
 
-  const updateDirty = (value: boolean) => {
-    dirtyRef.current = value;
-    setDirty(value);
+  const updateStatus = (next: SourceDraftStatus) => {
+    statusRef.current = next;
+    setStatus(next);
   };
 
-  const updateSyncError = (value: string | null) => {
-    syncErrorRef.current = value;
-    setSyncError(value);
+  const publishDraft = (value: string) => {
+    const result = onLiveChangeRef.current(value, formatRef.current);
+    const preview = result.valid || result.values.length > 0 || Boolean(result.previewValues?.length);
+    if (preview) acceptedSourceRef.current = value;
+    updateStatus({
+      dirty: !preview && value !== acceptedSourceRef.current,
+      error: result.valid ? null : result.error ?? "invalid-latex",
+      hasLivePreview: preview,
+    });
   };
 
-  useEffect(() => {
-    sourceRef.current = latex;
-    latestLatexRef.current = latex;
-  }, [latex]);
+  const syncDocument = (view: EditorView, value: string) => {
+    const current = view.state.doc.toString();
+    if (current !== value) {
+      view.dispatch({
+        changes: { from: 0, to: current.length, insert: value },
+        annotations: [externalSourceSync.of(true), Transaction.addToHistory.of(false)],
+      });
+    }
+    acceptedSourceRef.current = value;
+    updateStatus(syncedDraft);
+  };
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -144,7 +164,7 @@ export function LatexSourceEditor({
       ".cm-content": {
         caretColor: "var(--accent)",
         fontFamily: "'SFMono-Regular', Menlo, Consolas, monospace",
-        fontSize: "12px",
+        fontSize: "var(--source-editor-font-size, 12px)",
         lineHeight: "1.62",
         padding: "10px 0 18px",
       },
@@ -221,7 +241,7 @@ export function LatexSourceEditor({
     });
 
     const state = EditorState.create({
-      doc: sourceRef.current,
+      doc: canonicalSourceRef.current,
       extensions: [
         lineNumbers(),
         foldGutter({ openText: "⌄", closedText: "›" }),
@@ -229,10 +249,10 @@ export function LatexSourceEditor({
         highlightActiveLine(),
         highlightSpecialChars(),
         history(),
+        keymap.of([indentWithTab, ...foldKeymap, ...defaultKeymap, ...historyKeymap]),
         latexLanguageSupport({ enableLinting: false, enableTooltips: false }),
         visualTeXLatexEditingExtensions,
         syntaxHighlighting(visualTeXLatexHighlightStyle),
-        keymap.of([indentWithTab, ...foldKeymap, ...defaultKeymap, ...historyKeymap]),
         EditorView.contentAttributes.of({
           spellcheck: "false",
           autocapitalize: "off",
@@ -243,7 +263,6 @@ export function LatexSourceEditor({
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.focusChanged) {
-            sourceFocusedRef.current = update.view.hasFocus;
             if (focusReleaseFrameRef.current !== null) {
               window.cancelAnimationFrame(focusReleaseFrameRef.current);
               focusReleaseFrameRef.current = null;
@@ -255,137 +274,48 @@ export function LatexSourceEditor({
                 focusReleaseFrameRef.current = null;
                 const view = viewRef.current;
                 if (!view || view.hasFocus) return;
-                sourceFocusedRef.current = false;
                 onFocusChangeRef.current?.(false);
-                if (syncErrorRef.current || !hasLivePreviewRef.current) return;
-                updateDirty(false);
-                const canonical = latestLatexRef.current;
-                const current = view.state.doc.toString();
-                if (current !== canonical) {
-                  suppressChangeRef.current = true;
-                  view.dispatch({
-                    changes: { from: 0, to: current.length, insert: canonical },
-                  });
-                }
-                draftRef.current = canonical;
-                updateDirty(false);
+                if (statusRef.current.error || !statusRef.current.hasLivePreview) return;
+                syncDocument(view, canonicalSourceRef.current);
               });
             }
           }
-          if (!update.docChanged) return;
-          draftRef.current = update.state.doc.toString();
-          if (suppressChangeRef.current) {
-            suppressChangeRef.current = false;
-            updateDirty(false);
-            updateSyncError(null);
-            return;
-          }
-          const result = onLiveChangeRef.current(
-            draftRef.current,
-            formatRef.current,
-          );
-          const acceptedLivePreview =
-            result.valid ||
-            result.values.length > 0 ||
-            Boolean(result.previewValues?.length);
-          hasLivePreviewRef.current = acceptedLivePreview;
-          setHasLivePreview(acceptedLivePreview);
-          updateSyncError(result.valid ? null : result.error ?? "invalid-latex");
-          if (acceptedLivePreview) {
-            sourceRef.current = draftRef.current;
-            updateDirty(false);
-          } else {
-            updateDirty(draftRef.current !== sourceRef.current);
-          }
+          if (!update.docChanged || update.transactions.some(tr => tr.annotation(externalSourceSync))) return;
+          publishDraft(update.state.doc.toString());
         }),
       ],
     });
 
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
-    draftRef.current = sourceRef.current;
-    updateDirty(false);
 
     return () => {
-      if (formatRefreshFrameRef.current !== null) {
-        window.cancelAnimationFrame(formatRefreshFrameRef.current);
-        formatRefreshFrameRef.current = null;
-      }
       if (focusReleaseFrameRef.current !== null) {
         window.cancelAnimationFrame(focusReleaseFrameRef.current);
         focusReleaseFrameRef.current = null;
       }
-      if (sourceFocusedRef.current) {
-        sourceFocusedRef.current = false;
+      if (view.hasFocus) {
         onFocusChangeRef.current?.(false);
       }
       view.destroy();
       viewRef.current = null;
     };
-  }, [theme]);
+  }, []);
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || sourceFocusedRef.current || syncErrorRef.current) return;
-    const current = view.state.doc.toString();
-    if (current === latex) {
-      updateDirty(false);
-      return;
-    }
-
-    suppressChangeRef.current = true;
-    view.dispatch({
-      changes: { from: 0, to: current.length, insert: latex },
-    });
-    draftRef.current = latex;
-    updateDirty(false);
-  }, [latex]);
-
-  useEffect(() => {
-    const previousFormat = formatRef.current;
-    if (previousFormat === format) return;
+    const formatChanged = formatRef.current !== format;
     formatRef.current = format;
-    updateSyncError(null);
-
-    if (formatRefreshFrameRef.current !== null) {
-      window.cancelAnimationFrame(formatRefreshFrameRef.current);
-    }
-    formatRefreshFrameRef.current = window.requestAnimationFrame(() => {
-      formatRefreshFrameRef.current = window.requestAnimationFrame(() => {
-        const view = viewRef.current;
-        if (!view) return;
-        const nextSource = latestLatexRef.current;
-        const current = view.state.doc.toString();
-        if (current !== nextSource) {
-          suppressChangeRef.current = true;
-          view.dispatch({
-            changes: { from: 0, to: current.length, insert: nextSource },
-          });
-        }
-        draftRef.current = nextSource;
-        updateDirty(false);
-        formatRefreshFrameRef.current = null;
-      });
-    });
-  }, [format]);
+    if (!view) return;
+    if (!forceExternalSync && !formatChanged && (view.hasFocus || statusRef.current.error)) return;
+    syncDocument(view, latex);
+  }, [forceExternalSync, format, latex]);
 
   const replaceDraft = (value: string) => {
     const view = viewRef.current;
     if (!view) return;
-    const current = view.state.doc.toString();
-    suppressChangeRef.current = true;
-    view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
-    draftRef.current = value;
-    const result = onLiveChangeRef.current(value, formatRef.current);
-    const acceptedLivePreview =
-      result.valid ||
-      result.values.length > 0 ||
-      Boolean(result.previewValues?.length);
-    hasLivePreviewRef.current = acceptedLivePreview;
-    setHasLivePreview(acceptedLivePreview);
-    updateSyncError(result.valid ? null : result.error ?? "invalid-latex");
-    if (acceptedLivePreview) sourceRef.current = value;
-    updateDirty(false);
+    syncDocument(view, value);
+    publishDraft(value);
   };
 
   const showHeader = !compact || dirty || Boolean(syncError);
@@ -398,6 +328,12 @@ export function LatexSourceEditor({
         (compact && (dirty || syncError) ? " has-dirty-actions" : "") +
         (syncError ? " has-source-error" : "")
       }
+      style={
+        {
+          "--source-editor-font-size": `${sourceEditorFontSize}px`,
+        } as CSSProperties
+      }
+      data-source-editor-font-size={sourceEditorFontSize}
     >
       {showHeader && (
         <div className="source-panel-header">
@@ -413,8 +349,8 @@ export function LatexSourceEditor({
                       ? "Formula wrapper is incomplete"
                       : "公式环境包裹尚未完成"
                     : isEn
-                      ? "Incomplete fragment is shown as LaTeX"
-                      : "未完成片段按源码显示，其余保持渲染"}
+                      ? "Preview only — source validation has not passed"
+                      : "仅预览：源码尚未通过校验"}
                 </span>
               ) : dirty ? (
                 <span className="source-live-chip">
@@ -431,8 +367,8 @@ export function LatexSourceEditor({
                   ? "Incomplete wrapper"
                   : "环境包裹未完成"
                 : isEn
-                  ? "Partial LaTeX preview"
-                  : "局部源码预览"}
+                  ? "Unvalidated source preview"
+                  : "源码未通过校验，仅预览"}
             </span>
           )}
           <div className="source-actions">

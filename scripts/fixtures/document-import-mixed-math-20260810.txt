@@ -1,0 +1,320 @@
+这是一段用于测试 LaTeX 公式排版与识别功能的示例文本。
+全文包含行内公式和行间公式，并尽量覆盖不同类型的数学结构。
+
+首先考虑最简单的一元二次关系。行内公式 $y=ax^2+bx+c$ 描述了一个抛物线。
+
+下面给出第一个行间公式：
+
+\[
+x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}
+\]
+
+勾股定理可以写成
+
+\[
+a^2+b^2=c^2
+\]
+
+指数函数的基本形式为
+
+\[
+y=e^x
+\]
+
+而自然对数满足
+
+\[
+\ln(ab)=\ln a+\ln b
+\]
+
+三角函数中有著名的恒等式
+
+\[
+\sin^2\theta+\cos^2\theta=1
+\]
+
+倍角公式可以表示为
+
+\[
+\sin 2\theta=2\sin\theta\cos\theta
+\]
+
+余弦倍角公式为
+
+\[
+\cos 2\theta=\cos^2\theta-\sin^2\theta
+\]
+
+在微积分中，函数的导数定义为
+
+\[
+f'(x)=\lim_{h\to0}\frac{f(x+h)-f(x)}{h}
+\]
+
+例如，幂函数的导数满足
+
+\[
+\frac{d}{dx}x^n=nx^{n-1}
+\]
+
+指数函数求导得到
+
+\[
+\frac{d}{dx}e^x=e^x
+\]
+
+正弦函数的导数是
+
+\[
+\frac{d}{dx}\sin x=\cos x
+\]
+
+一个简单的不定积分为
+
+\[
+\int x^n\,dx=\frac{x^{n+1}}{n+1}+C
+\]
+
+指数函数的积分为
+
+\[
+\int e^x\,dx=e^x+C
+\]
+
+高斯积分是一个非常经典的积分：
+
+\[
+\int_{-\infty}^{+\infty}e^{-x^2}\,dx=\sqrt{\pi}
+\]
+
+圆的面积也可以通过积分表示：
+
+\[
+A=\int_0^R2\pi r\,dr=\pi R^2
+\]
+
+接下来考虑求和问题。前 $n$ 个正整数之和为
+
+\[
+\sum_{k=1}^{n}k=\frac{n(n+1)}{2}
+\]
+
+平方和满足
+
+\[
+\sum_{k=1}^{n}k^2=\frac{n(n+1)(2n+1)}{6}
+\]
+
+无穷级数中，几何级数满足
+
+\[
+\sum_{n=0}^{\infty}x^n=\frac{1}{1-x},\qquad |x|<1
+\]
+
+指数函数可以展开为 Taylor 级数：
+
+\[
+e^x=\sum_{n=0}^{\infty}\frac{x^n}{n!}
+\]
+
+正弦函数的 Taylor 展开为
+
+\[
+\sin x=\sum_{n=0}^{\infty}(-1)^n\frac{x^{2n+1}}{(2n+1)!}
+\]
+
+余弦函数对应的展开为
+
+\[
+\cos x=\sum_{n=0}^{\infty}(-1)^n\frac{x^{2n}}{(2n)!}
+\]
+
+下面考虑极限。例如，
+
+\[
+\lim_{x\to0}\frac{\sin x}{x}=1
+\]
+
+另一个著名极限是
+
+\[
+\lim_{n\to\infty}\left(1+\frac{1}{n}\right)^n=e
+\]
+
+对于多元函数，偏导数可以写为
+
+\[
+\frac{\partial f}{\partial x}
+\]
+
+函数的全微分为
+
+\[
+df=\frac{\partial f}{\partial x}dx+\frac{\partial f}{\partial y}dy
+\]
+
+二维梯度可以表示为
+
+\[
+\nabla f= \frac{\partial f}{\partial x}\mathbf{i} + \frac{\partial f}{\partial y}\mathbf{j}
+\]
+
+Laplace 算子满足
+
+\[
+\nabla^2 f= \frac{\partial^2f}{\partial x^2} + \frac{\partial^2f}{\partial y^2} + \frac{\partial^2f}{\partial z^2}
+\]
+
+一个典型的微分方程为
+
+\[
+\frac{dy}{dx}+P(x)y=Q(x)
+\]
+
+简谐振子的运动方程为
+
+\[
+m\frac{d^2x}{dt^2}+kx=0
+\]
+
+它的一个解可以写成
+
+\[
+x(t)=A\cos(\omega t+\varphi)
+\]
+
+其中角频率满足
+
+\[
+\omega=\sqrt{\frac{k}{m}}
+\]
+
+在线性代数中，一个 $2\times2$ 矩阵可以写成
+
+\[
+A= \begin{pmatrix} a & b\\ c & d \end{pmatrix}
+\]
+
+它的行列式为
+
+\[
+\det(A)=ad-bc
+\]
+
+矩阵的逆为
+
+\[
+A^{-1}
+=
+\frac{1}{ad-bc}
+\begin{pmatrix}
+d & -b\\
+-c & a
+\end{pmatrix}
+\]
+
+矩阵特征值由方程
+
+\[
+\det(A-\lambda I)=0
+\]
+
+确定。
+
+两个向量的点积可以表示为
+
+\[
+\mathbf{a}\cdot\mathbf{b}
+=
+|\mathbf{a}||\mathbf{b}|\cos\theta
+\]
+
+三维向量的叉积可以写成
+
+\[
+\mathbf{a}\times\mathbf{b} = \begin{vmatrix} \mathbf{i}&\mathbf{j}&\mathbf{k}\\ a_x&a_y&a_z\\ b_x&b_y&b_z \end{vmatrix}
+\]
+
+接下来考虑概率论。条件概率定义为
+
+\[
+P(A\mid B)=\frac{P(A\cap B)}{P(B)}
+\]
+
+Bayes 公式为
+
+\[
+P(A\mid B) = \frac{P(B\mid A)P(A)}{P(B)}
+\]
+
+随机变量的数学期望为
+
+\[
+E[X]=\sum_i x_iP(X=x_i)
+\]
+
+连续随机变量的期望则写成
+
+\[
+E[X]=\int_{-\infty}^{+\infty}xf(x)\,dx
+\]
+
+方差定义为
+
+\[
+\operatorname{Var}(X)=E[(X-E[X])^2]
+\]
+
+正态分布的概率密度函数为
+
+\[
+f(x)= \frac{1}{\sigma\sqrt{2\pi}} \exp\left( -\frac{(x-\mu)^2}{2\sigma^2} \right)
+\]
+
+复数可以使用 Euler 公式描述：
+
+\[
+e^{i\theta}=\cos\theta+i\sin\theta
+\]
+
+因此可以得到著名的 Euler 恒等式：
+
+\[
+e^{i\pi}+1=0
+\]
+
+在经典力学中，Newton 第二定律为
+
+\[
+\mathbf{F}=m\mathbf{a}
+\]
+
+动能可以写成
+
+\[
+E_k=\frac{1}{2}mv^2
+\]
+
+质能关系为
+
+\[
+E=mc^2
+\]
+
+电磁学中的 Coulomb 定律为
+
+\[
+F= \frac{1}{4\pi\varepsilon_0} \frac{q_1q_2}{r^2}
+\]
+
+Maxwell 方程组中的 Gauss 定律为
+
+\[
+\nabla\cdot\mathbf{E} = \frac{\rho}{\varepsilon_0}
+\]
+
+最后，量子力学中的含时 Schrödinger 方程可以写成
+
+\[
+i\hbar\frac{\partial}{\partial t}\Psi(\mathbf{r},t) = \hat{H}\Psi(\mathbf{r},t)
+\]

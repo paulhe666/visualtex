@@ -3,7 +3,7 @@ import {
   registerCustomSymbol,
   setCustomSymbolCommandAvailabilityValidator,
   updateCustomSymbol,
-} from "./customSymbolRegistry.ts";
+} from "./customSymbolRegistry";
 
 function commandFromValue(value: unknown) {
   if (!value || typeof value !== "object") return "";
@@ -24,6 +24,7 @@ setCustomSymbolCommandAvailabilityValidator(
   mathLiveCustomSymbolCommandIsAvailable,
 );
 
+/** Browser-side second-line collision check against MathLive's full parser. */
 export function assertMathLiveCustomSymbolCommandAvailable(command: string) {
   const normalized = command.trim().replace(/^\\/, "");
   if (!/^[A-Za-z]+$/.test(normalized)) return;

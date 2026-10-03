@@ -6,9 +6,9 @@ import process from "node:process";
 const offset = process.pid % 800;
 const previewPort = 8100 + offset;
 const debugPort = 15100 + offset;
-const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
+const baseUrl = `http://127.0.0.1:${previewPort}`;
 const chromeProfile = `/tmp/visualtex-custom-tile-placeholder-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromePath = (process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 15000) {

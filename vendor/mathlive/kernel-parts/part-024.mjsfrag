@@ -1,0 +1,1444 @@
+  "matrix": "matrix",
+  "pmatrix": "parenthesis matrix",
+  "bmatrix": "square brackets matrix",
+  "Bmatrix": "braces matrix",
+  "vmatrix": "bars matrix",
+  "Vmatrix": "double bars matrix",
+  "matrix*": "matrix",
+  "smallmatrix": "small matrix"
+};
+function getSpokenName(latex) {
+  let result = "";
+  if (latex.startsWith("\\")) result = " " + latex.replace("\\", "") + " ";
+  return result;
+}
+function isAtomic(atoms) {
+  let count = 0;
+  if (isArray(atoms)) {
+    for (const atom of atoms) if (atom.type !== "first") count += 1;
+  }
+  return count === 1;
+}
+function atomicID(atoms) {
+  if (isArray(atoms)) {
+    for (const atom of atoms)
+      if (atom.type !== "first" && atom.id) return atom.id.toString();
+  }
+  return "";
+}
+function atomicValue(atoms) {
+  let result = "";
+  if (isArray(atoms)) {
+    for (const atom of atoms) {
+      if (atom.type !== "first" && typeof atom.value === "string")
+        result += atom.value;
+    }
+  }
+  return result;
+}
+function atomsAsText(atoms) {
+  if (!atoms) return "";
+  return atoms.map((atom) => atom.value).join("");
+}
+function atomsAsPotentialText(atoms) {
+  if (!atoms) return void 0;
+  if (atoms.some((x) => x.type !== "first" && x.value === void 0))
+    return void 0;
+  return atoms.map((atom) => atom.value).join("");
+}
+function emph(s) {
+  return `<emphasis>${s}</emphasis>`;
+}
+function atomsToSpeakableFragment(mode, atom) {
+  var _a3;
+  let result = "";
+  let isInDigitRun = false;
+  let isInTextRun = false;
+  for (let i = 0; i < atom.length; i++) {
+    if (atom[i].type === "first") continue;
+    if (atom[i].mode !== "text") isInTextRun = false;
+    if (i < atom.length - 2 && atom[i].type === "mopen" && atom[i + 2].type === "mclose" && atom[i + 1].type === "mord") {
+      result += " of ";
+      result += emph(atomToSpeakableFragment(mode, atom[i + 1]));
+      i += 2;
+    } else if (atom[i].mode === "text") {
+      if (isInTextRun) result += (_a3 = atom[i].value) != null ? _a3 : " ";
+      else {
+        isInTextRun = true;
+        result += atomToSpeakableFragment("text", atom[i]);
+      }
+    } else if (atom[i].isDigit()) {
+      if (isInDigitRun) result += atom[i].asDigit();
+      else {
+        isInDigitRun = true;
+        result += atomToSpeakableFragment(mode, atom[i]);
+      }
+    } else {
+      isInDigitRun = false;
+      result += atomToSpeakableFragment(mode, atom[i]);
+    }
+  }
+  return result;
+}
+function atomToSpeakableFragment(mode, atom) {
+  var _a3, _b3, _c2, _d2, _e, _f, _g, _h;
+  function letter(c) {
+    if (!globalThis.MathfieldElement.textToSpeechMarkup) {
+      if (/[a-z]/.test(c)) return " '" + c.toUpperCase() + "'";
+      if (/[A-Z]/.test(c)) return " 'capital " + c.toUpperCase() + "'";
+      return c;
+    }
+    if (/[a-z]/.test(c))
+      return ` <say-as interpret-as="character">${c}</say-as>`;
+    if (/[A-Z]/.test(c))
+      return `capital <say-as interpret-as="character">${c.toLowerCase()}</say-as>`;
+    return c;
+  }
+  if (!atom) return "";
+  if (isArray(atom)) return atomsToSpeakableFragment(mode, atom);
+  let result = "";
+  if (atom.id && mode === "math")
+    result += '<mark name="' + atom.id.toString() + '"/>';
+  if (atom.mode === "text") return result + atom.value;
+  let numer = "";
+  let denom = "";
+  let body = "";
+  let supsubHandled = false;
+  const { command } = atom;
+  switch (command) {
+    case "\\vec":
+      return "vector " + atomToSpeakableFragment(mode, atom.body);
+    case "\\acute":
+      return atomToSpeakableFragment(mode, atom.body) + " acute";
+    case "\\grave":
+      return atomToSpeakableFragment(mode, atom.body) + " grave";
+    case "\\dot":
+      return "dot over" + atomToSpeakableFragment(mode, atom.body);
+    case "\\ddot":
+      return "double dot over" + atomToSpeakableFragment(mode, atom.body);
+    case "\\mathring":
+      return "ring over" + atomToSpeakableFragment(mode, atom.body);
+    case "\\tilde":
+    case "\\widetilde":
+      return "tilde over" + atomToSpeakableFragment(mode, atom.body);
+    case "\\bar":
+      return atomToSpeakableFragment(mode, atom.body) + " bar";
+    case "\\breve":
+      return atomToSpeakableFragment(mode, atom.body) + " breve";
+    case "\\check":
+    case "\\widecheck":
+      return "check over " + atomToSpeakableFragment(mode, atom.body);
+    case "\\hat":
+    case "\\widehat":
+      return "hat over" + atomToSpeakableFragment(mode, atom.body);
+    case "\\overarc":
+    case "\\overparen":
+    case "\\wideparen":
+      return "arc over " + atomToSpeakableFragment(mode, atom.body);
+    case "\\underarc":
+    case "\\underparen":
+      return "arc under " + atomToSpeakableFragment(mode, atom.body);
+    case "\\mathop":
+      return (_a3 = atomsAsPotentialText(atom.body)) != null ? _a3 : atomToSpeakableFragment(mode, atom.body);
+    case "\\mathit":
+      return (_b3 = atomsAsPotentialText(atom.body)) != null ? _b3 : atomToSpeakableFragment(mode, atom.body);
+    case "\\mathrm":
+      return (_c2 = atomsAsPotentialText(atom.body)) != null ? _c2 : atomToSpeakableFragment(mode, atom.body);
+    case "\\mathbb":
+      return "blackboard" + ((_d2 = atomsAsPotentialText(atom.body)) != null ? _d2 : atomToSpeakableFragment(mode, atom.body));
+  }
+  switch (atom.type) {
+    case "prompt":
+      const input = atom.body.length > 1 ? 'start input . <break time="500ms"/> ' + atomToSpeakableFragment(mode, atom.body) + '. <break time="500ms"/> end input' : "blank";
+      result += ' <break time="300ms"/> ' + input + '. <break time="700ms"/>' + ((_e = atom.correctness) != null ? _e : "") + ' . <break time="700ms"/> ';
+      break;
+    case "array":
+      const array = atom.rows;
+      const environment = atom.environmentName;
+      if (Object.keys(ENVIRONMENTS_NAMES).includes(environment)) {
+        result += ` begin ${ENVIRONMENTS_NAMES[environment]} `;
+        for (let i = 0; i < array.length; i++) {
+          if (i > 0) result += ",";
+          result += ` row ${i + 1} `;
+          for (let j = 0; j < array[i].length; j++) {
+            if (j > 0) result += ",";
+            result += ` column ${j + 1}: `;
+            result += atomToSpeakableFragment("math", array[i][j]);
+          }
+        }
+        result += ` end ${ENVIRONMENTS_NAMES[environment]} `;
+      }
+      break;
+    case "group":
+      if (command === "\\ne") result += " not equal ";
+      else if (command === "\\not") {
+        result += " not ";
+        result += atomToSpeakableFragment("math", atom.body);
+      } else {
+        result += atomToSpeakableFragment("math", atom.body);
+      }
+      break;
+    case "root":
+      result += atomToSpeakableFragment("math", atom.body);
+      break;
+    case "genfrac":
+      numer = atomToSpeakableFragment("math", atom.above);
+      denom = atomToSpeakableFragment("math", atom.below);
+      if (isAtomic(atom.above) && isAtomic(atom.below)) {
+        const COMMON_FRACTIONS = {
+          "1/2": " half ",
+          "1/3": " one third ",
+          "2/3": " two third",
+          "1/4": " one quarter ",
+          "3/4": " three quarter ",
+          "1/5": " one fifth ",
+          "2/5": " two fifths ",
+          "3/5": " three fifths ",
+          "4/5": " four fifths ",
+          "1/6": " one sixth ",
+          "5/6": " five sixths ",
+          "1/8": " one eight ",
+          "3/8": " three eights ",
+          "5/8": " five eights ",
+          "7/8": " seven eights ",
+          "1/9": " one ninth ",
+          "2/9": " two ninths ",
+          "4/9": " four ninths ",
+          "5/9": " five ninths ",
+          "7/9": " seven ninths ",
+          "8/9": " eight ninths "
+          // '1/10':     ' one tenth ',
+          // '1/12':     ' one twelfth ',
+          // 'x/2':     ' <say-as interpret-as="character">X</say-as> over 2',
+        };
+        const commonFraction = COMMON_FRACTIONS[atomicValue(atom.above) + "/" + atomicValue(atom.below)];
+        if (commonFraction) result = commonFraction;
+        else result += numer + " over " + denom;
+      } else {
+        result += ' the fraction <break time="150ms"/>' + numer + ' over <break time="150ms"/>' + denom + '.<break time="150ms"/> End fraction.<break time="150ms"/>';
+      }
+      break;
+    case "surd":
+      body = atomToSpeakableFragment("math", atom.body);
+      if (atom.hasEmptyBranch("above")) {
+        result += isAtomic(atom.body) ? " the square root of " + body + " , " : ' the square root of <break time="200ms"/>' + body + '. <break time="200ms"/> End square root';
+      } else {
+        let index = atomToSpeakableFragment("math", atom.above);
+        index = index.trim();
+        const index2 = index.replace(/<mark([^/]*)\/>/g, "");
+        if (index2 === "3") {
+          result += ' the cube root of <break time="200ms"/>' + body + '. <break time="200ms"/> End cube root';
+        } else if (index2 === "n") {
+          result += ' the nth root of <break time="200ms"/>' + body + '. <break time="200ms"/> End root';
+        } else {
+          result += ' the root with index: <break time="200ms"/>' + index + ', of <break time="200ms"/>' + body + '. <break time="200ms"/> End root';
+        }
+      }
+      break;
+    case "leftright":
+      {
+        const delimAtom = atom;
+        result += (_f = delimAtom.leftDelim ? PRONUNCIATION[delimAtom.leftDelim] : void 0) != null ? _f : delimAtom.leftDelim;
+        result += atomToSpeakableFragment("math", atom.body);
+        result += (_g = delimAtom.rightDelim ? PRONUNCIATION[delimAtom.rightDelim] : void 0) != null ? _g : delimAtom.rightDelim;
+      }
+      break;
+    case "rule":
+      break;
+    case "overunder":
+      break;
+    case "overlap":
+      break;
+    case "macro":
+      const macroName = command.replace(/^\\/g, "");
+      const macro = getMacros()[macroName];
+      if (macro == null ? void 0 : macro.expand) result += atomToSpeakableFragment("math", atom.body);
+      else result += `${macroName} `;
+      break;
+    case "placeholder":
+      result += "placeholder ";
+      break;
+    case "delim":
+    case "sizeddelim":
+    case "mord":
+    case "minner":
+    case "mbin":
+    case "mrel":
+    case "mpunct":
+    case "mopen":
+    case "mclose": {
+      if (command === "\\mathbin" || command === "\\mathrel" || command === "\\mathopen" || command === "\\mathclose" || command === "\\mathpunct" || command === "\\mathord" || command === "\\mathinner") {
+        result = atomToSpeakableFragment(mode, atom.body);
+        break;
+      }
+      let atomValue = atom.isDigit() ? atom.asDigit() : atom.value;
+      let latexValue = atom.command;
+      if (atom.type === "delim" || atom.type === "sizeddelim") {
+        latexValue = atom.value;
+        atomValue = latexValue;
+      }
+      if (mode === "text") result += atomValue;
+      else {
+        if (atom.type === "mbin") result += '<break time="150ms"/>';
+        if (atomValue) {
+          const value = PRONUNCIATION[atomValue] || (latexValue ? PRONUNCIATION[latexValue.trim()] : "");
+          if (value) result += " " + value;
+          else {
+            const spokenName = latexValue ? getSpokenName(latexValue.trim()) : "";
+            result += spokenName ? spokenName : letter(atomValue);
+          }
+        } else result += atomToSpeakableFragment("math", atom.body);
+        if (atom.type === "mbin") result += '<break time="150ms"/>';
+      }
+      break;
+    }
+    case "mop":
+    case "operator":
+    case "extensible-symbol":
+      if (atom.value !== "\u200B") {
+        const trimLatex = atom.command;
+        if (trimLatex === "\\sum") {
+          if (!atom.hasEmptyBranch("superscript") && !atom.hasEmptyBranch("subscript")) {
+            let sup = atomToSpeakableFragment("math", atom.superscript);
+            sup = sup.trim();
+            let sub = atomToSpeakableFragment("math", atom.subscript);
+            sub = sub.trim();
+            result += ' the summation from <break time="200ms"/>' + sub + '<break time="200ms"/> to  <break time="200ms"/>' + sup + '<break time="200ms"/> of <break time="150ms"/>';
+            supsubHandled = true;
+          } else if (!atom.hasEmptyBranch("subscript")) {
+            let sub = atomToSpeakableFragment("math", atom.subscript);
+            sub = sub.trim();
+            result += ' the summation from <break time="200ms"/>' + sub + '<break time="200ms"/> of <break time="150ms"/>';
+            supsubHandled = true;
+          } else result += " the summation of";
+        } else if (trimLatex === "\\prod") {
+          if (!atom.hasEmptyBranch("superscript") && !atom.hasEmptyBranch("subscript")) {
+            let sup = atomToSpeakableFragment("math", atom.superscript);
+            sup = sup.trim();
+            let sub = atomToSpeakableFragment("math", atom.subscript);
+            sub = sub.trim();
+            result += ' the product from <break time="200ms"/>' + sub + '<break time="200ms"/> to <break time="200ms"/>' + sup + '<break time="200ms"/> of <break time="150ms"/>';
+            supsubHandled = true;
+          } else if (!atom.hasEmptyBranch("subscript")) {
+            let sub = atomToSpeakableFragment("math", atom.subscript);
+            sub = sub.trim();
+            result += ' the product from <break time="200ms"/>' + sub + '<break time="200ms"/> of <break time="150ms"/>';
+            supsubHandled = true;
+          } else result += " the product  of ";
+        } else if (trimLatex === "\\int") {
+          if (!atom.hasEmptyBranch("superscript") && !atom.hasEmptyBranch("subscript")) {
+            let sup = atomToSpeakableFragment("math", atom.superscript);
+            sup = sup.trim();
+            let sub = atomToSpeakableFragment("math", atom.subscript);
+            sub = sub.trim();
+            result += ' the integral from <break time="200ms"/>' + emph(sub) + '<break time="200ms"/> to <break time="200ms"/>' + emph(sup) + ' <break time="200ms"/> of ';
+            supsubHandled = true;
+          } else result += ' the integral of <break time="200ms"/> ';
+        } else if (trimLatex === "\\operatorname" || trimLatex === "\\operatorname*")
+          result += atomsAsText(atom.body) + " ";
+        else if (typeof atom.value === "string") {
+          const value = (_h = PRONUNCIATION[atom.value]) != null ? _h : atom.command ? PRONUNCIATION[atom.command] : void 0;
+          result += value ? value : " " + atom.value;
+        } else if (atom.command) {
+          if (atom.command === "\\mathop")
+            result += atomToSpeakableFragment("math", atom.body);
+          else {
+            result += atom.command.startsWith("\\") ? " " + atom.command.slice(1) : " " + atom.command;
+          }
+        }
+      }
+      break;
+    case "enclose":
+      body = atomToSpeakableFragment("math", atom.body);
+      result += " crossed out " + body + ". End crossed out.";
+      break;
+    case "space":
+    case "spacing":
+      break;
+  }
+  if (!supsubHandled && !atom.hasEmptyBranch("superscript")) {
+    let sup = atomToSpeakableFragment(mode, atom.superscript);
+    sup = sup.trim();
+    const sup2 = sup.replace(/<[^>]*>/g, "");
+    if (isAtomic(atom.superscript)) {
+      if (mode === "math") {
+        const id = atomicID(atom.superscript);
+        if (id) result += '<mark name="' + id + '"/>';
+      }
+      if (sup2 === "\u2032") result += " prime ";
+      else if (sup2 === "2") result += " squared ";
+      else if (sup2 === "3") result += " cubed ";
+      else if (Number.isNaN(Number.parseInt(sup2)))
+        result += " to the " + sup + "; ";
+      else {
+        result += ' to the <say-as interpret-as="ordinal">' + sup2 + "</say-as> power; ";
+      }
+    } else if (Number.isNaN(Number.parseInt(sup2)))
+      result += " raised to the " + sup + "; ";
+    else {
+      result += ' raised to the <say-as interpret-as="ordinal">' + sup2 + "</say-as> power; ";
+    }
+  }
+  if (!supsubHandled && !atom.hasEmptyBranch("subscript")) {
+    let sub = atomToSpeakableFragment("math", atom.subscript);
+    sub = sub.trim();
+    result += isAtomic(atom.subscript) ? " sub " + sub : " subscript " + sub + ". End subscript. ";
+  }
+  return result;
+}
+function atomToSpeakableText(atoms) {
+  var _a3, _b3;
+  const mfe = globalThis.MathfieldElement;
+  if (mfe.textToSpeechRules === "sre" && ("sre" in window || "SRE" in window)) {
+    const mathML = toMathML(atoms);
+    if (mathML) {
+      if (mfe.textToSpeechMarkup) {
+        mfe.textToSpeechRulesOptions = (_a3 = mfe.textToSpeechRulesOptions) != null ? _a3 : {};
+        mfe.textToSpeechRulesOptions = __spreadProps(__spreadValues({}, mfe.textToSpeechRulesOptions), {
+          markup: mfe.textToSpeechMarkup
+        });
+        if (mfe.textToSpeechRulesOptions.markup === "ssml") {
+          mfe.textToSpeechRulesOptions = __spreadProps(__spreadValues({}, mfe.textToSpeechRulesOptions), {
+            markup: "ssml_step"
+          });
+        }
+        mfe.textToSpeechRulesOptions = __spreadProps(__spreadValues({}, mfe.textToSpeechRulesOptions), {
+          rate: mfe.speechEngineRate
+        });
+      }
+      const SRE = (_b3 = window["SRE"]) != null ? _b3 : globalThis.sre.System.getInstance();
+      if (mfe.textToSpeechRulesOptions)
+        SRE.setupEngine(mfe.textToSpeechRulesOptions);
+      let result2 = "";
+      try {
+        result2 = SRE.toSpeech(mathML);
+      } catch (e) {
+        console.error(
+          `MathLive 0.109.2: \`SRE.toSpeech()\` runtime error`,
+          e
+        );
+      }
+      return result2;
+    }
+    return "";
+  }
+  let result = atomToSpeakableFragment("math", atoms);
+  if (mfe.textToSpeechMarkup === "ssml") {
+    let prosody = "";
+    if (mfe.speechEngineRate)
+      prosody = '<prosody rate="' + mfe.speechEngineRate + '">';
+    result = `<?xml version="1.0"?><speak version="1.1" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US"><amazon:auto-breaths>` + prosody + "<p><s>" + result + "</s></p>" + (prosody ? "</prosody>" : "") + "</amazon:auto-breaths></speak>";
+  } else if (mfe.textToSpeechMarkup === "mac" && osPlatform() === "macos") {
+    result = result.replace(/<mark([^/]*)\/>/g, "").replace(/<emphasis>/g, "[[emph+]]").replace(/<\/emphasis>/g, "").replace(/<break time="(\d*)ms"\/>/g, "[[slc $1]]").replace(/<say-as[^>]*>/g, "").replace(/<\/say-as>/g, "");
+  } else {
+    result = result.replace(/<[^>]*>/g, "").replace(/\s{2,}/g, " ");
+  }
+  return result;
+}
+
+// src/formats/atom-to-ascii-math.ts
+var IDENTIFIERS = {
+  "\\ne": "\u2260",
+  "\\neq": "\u2260",
+  "\u2212": "-",
+  // MINUS SIGN
+  "-": "-",
+  "\\alpha": "alpha",
+  "\\beta": "beta",
+  "\\gamma": "gamma",
+  "\\delta": "delta",
+  "\\epsilon": "epsilon",
+  "\\varepsilon": "varepsilon",
+  "\\zeta": "zeta",
+  "\\eta": "eta",
+  "\\theta": "theta",
+  "\\vartheta": "vartheta",
+  "\\iota": "iota",
+  "\\kappa": "kappa",
+  "\\lambda": "lambda",
+  "\\mu": "mu",
+  "\\nu": "nu",
+  "\\xi": "xi",
+  "\\pi": "pi",
+  "\\rho": "rho",
+  "\\sigma": "sigma",
+  "\\tau": "tau",
+  "\\upsilon": "upsilon",
+  "\\phi": "phi",
+  "\\varphi": "varphi",
+  "\\chi": "chi",
+  "\\psi": "psi",
+  "\\omega": "omega",
+  "\\Gamma": "Gamma",
+  "\\Delta": "Delta",
+  "\\Theta": "Theta",
+  "\\Lambda": "Lambda",
+  "\\Xi": "Xi",
+  "\\Pi": "Pi",
+  "\\Sigma": "Sigma",
+  "\\Phi": "Phi",
+  "\\Psi": "Psi",
+  "\\Omega": "Omega",
+  "\\exponentialE": "e",
+  "\\imaginaryI": "i",
+  "\\imaginaryJ": "j",
+  "\\!": " ",
+  "\\,": " ",
+  "\\:": " ",
+  "\\>": " ",
+  "\\;": " ",
+  "\\enskip": " ",
+  "\\enspace": " ",
+  "\\qquad": " ",
+  "\\quad": " ",
+  "\\infty": "oo",
+  "\\R": "RR",
+  "\\mathbb{R}": "RR",
+  "\\N": "NN",
+  "\\mathbb{N}": "NN",
+  "\\Z": "ZZ",
+  "\\mathbb{Z}": "ZZ",
+  "\\Q": "QQ",
+  "\\mathbb{Q}": "QQ",
+  "\\C": "CC",
+  "\\mathbb{C}": "CC",
+  "\\emptyset": "O/",
+  "\\varnothing": "O/",
+  "\\varDelta": "Delta",
+  "\\varTheta": "Theta",
+  "\\varLambda": "Lambda",
+  "\\varXi": "Xi",
+  "\\varPi": "Pi",
+  "\\varSigma": "Sigma",
+  "\\varUpsilon": "Upsilon",
+  "\\varPhi": "Phi",
+  "\\varPsi": "Psi",
+  "\\varOmega": "Omega"
+};
+var OPERATORS = {
+  "\\pm": "+-",
+  "\\colon": " : ",
+  "\\sum": " sum ",
+  "\\prod": " prod ",
+  "\\bigcap": " nnn ",
+  "\\bigcup": " uuu ",
+  "\\int": " int ",
+  "\\oint": " oint ",
+  "\\ge": ">=",
+  "\\le": "<=",
+  "\\ne": "!=",
+  "\\neq": "!=",
+  "\\lt": "<",
+  "\\gt": ">",
+  "\\gets": "<-",
+  "\\to": "->",
+  "\\land": " and ",
+  "\\lor": " or ",
+  "\\lnot": " not ",
+  "\\forall": " AA ",
+  "\\exists": " EE ",
+  "\\in": " in ",
+  "\\notin": " !in ",
+  "\\mapsto": "|->",
+  "\\implies": "=>",
+  "\\iff": "<=>",
+  "\\cdot": " * ",
+  "\\ast": " ** ",
+  "\\star": " *** ",
+  "\\times": " * ",
+  "\\div": " -: ",
+  "\\ltimes": " |>< ",
+  "\\rtimes": " ><| ",
+  "\\bowtie": " |><| ",
+  "\\circ": "@"
+  // '\\lfloor': '\u230a',
+  // '\\rfloor': '\u230b',
+  // '\\lceil': '\u2308',
+  // '\\rceil': '\u2309',
+  // '\\vec': '&#x20d7;',
+  // '\\acute': '&#x00b4;',
+  // '\\grave': '&#x0060;',
+  // '\\dot': '&#x02d9;',
+  // '\\ddot': '&#x00a8;',
+  // '\\tilde': '&#x007e;',
+  // '\\bar': '&#x00af;',
+  // '\\breve': '&#x02d8;',
+  // '\\check': '&#x02c7;',
+  // '\\hat': '&#x005e;'
+};
+var FENCES2 = {
+  "\\vert": "|",
+  "\\Vert": "||",
+  "\\mid": "|",
+  "\\lbrack": "[",
+  "\\rbrack": "]",
+  "\\lbrace": "{",
+  "\\rbrace": "}",
+  "\\lparen": "(",
+  "\\rparen": ")",
+  "\\langle": "(:",
+  "\\rangle": ":)"
+};
+function joinAsciiMath(xs) {
+  let result = "";
+  for (const x of xs) {
+    const last = result[result.length - 1];
+    if (last !== void 0 && (/\d$/.test(last) && /^\d/.test(x) || /[a-zA-Z]$/.test(last) && /^[a-zA-Z]/.test(x)))
+      result += " ";
+    result += x;
+  }
+  return result;
+}
+function atomToAsciiMath(atom, options) {
+  var _a3, _b3, _c2, _d2, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s;
+  if (!atom) return "";
+  if (isArray(atom)) {
+    if (atom.length === 0) return "";
+    if (atom[0].mode === "latex")
+      return atom.map((x) => atomToAsciiMath(x)).join("");
+    if (atom[0].mode === "text") {
+      let i2 = 0;
+      let text = "";
+      while (((_a3 = atom[i2]) == null ? void 0 : _a3.mode) === "text") {
+        text += atom[i2].body ? atomToAsciiMath(atom[i2].body, options) : atom[i2].value;
+        i2++;
+      }
+      if (options == null ? void 0 : options.plain) return text + atomToAsciiMath(atom.slice(i2), options);
+      return `"${text}" ${atomToAsciiMath(atom.slice(i2))}`;
+    }
+    let i = 0;
+    const result2 = [];
+    while (((_b3 = atom[i]) == null ? void 0 : _b3.mode) === "math") {
+      let digits = "";
+      while (((_c2 = atom[i]) == null ? void 0 : _c2.type) === "mord" && /\d/.test(atom[i].value))
+        digits += atom[i++].value;
+      if (digits) result2.push(digits);
+      else result2.push(atomToAsciiMath(atom[i++], options));
+    }
+    result2.push(atomToAsciiMath(atom.slice(i), options));
+    return joinAsciiMath(result2);
+  }
+  if (atom.mode === "text")
+    return (options == null ? void 0 : options.plain) ? atom.value : `"${atom.value}"`;
+  let result = "";
+  const { command } = atom;
+  let m;
+  if (command === "\\placeholder")
+    return `(${atomToAsciiMath(atom.body, options)})`;
+  const latex = Atom.serialize([atom], {
+    expandMacro: false,
+    defaultMode: "math"
+  });
+  switch (atom.type) {
+    case "accent":
+      const accent = {
+        "\\vec": "vec",
+        "\\dot": "dot",
+        "\\ddot": "ddot",
+        "\\bar": "bar",
+        "\\hat": "hat",
+        "\\acute": "acute;",
+        // non-standard
+        "\\grave": "grave",
+        // non-standard
+        "\\tilde": "tilde",
+        // non-standard
+        "\\breve": "breave",
+        // non-standard
+        "\\check": "check"
+        // non-standard
+      }[command];
+      result = `${accent != null ? accent : ""} ${atomToAsciiMath(atom.body, options)} `;
+      break;
+    case "first":
+      return "";
+    case "latexgroup":
+      return atom.body.map((x) => x.value).join("");
+    case "group":
+    case "root":
+      result = (_d2 = IDENTIFIERS[command]) != null ? _d2 : atomToAsciiMath(atom.body, options);
+      break;
+    case "genfrac":
+      {
+        const genfracAtom = atom;
+        if (genfracAtom.leftDelim || genfracAtom.rightDelim) {
+          result = genfracAtom.leftDelim === "." || !genfracAtom.leftDelim ? "{:" : genfracAtom.leftDelim;
+        }
+        if (genfracAtom.hasBarLine) {
+          result += "(";
+          result += atomToAsciiMath(genfracAtom.above, options);
+          result += ")/(";
+          result += atomToAsciiMath(genfracAtom.below, options);
+          result += ")";
+        } else {
+          result += "((";
+          result += atomToAsciiMath(genfracAtom.above, options);
+          result += ") choose (";
+          result += atomToAsciiMath(genfracAtom.below, options);
+          result += "))";
+        }
+        if (genfracAtom.leftDelim || genfracAtom.rightDelim) {
+          result += genfracAtom.rightDelim === "." || !genfracAtom.rightDelim ? "{:" : genfracAtom.rightDelim;
+        }
+      }
+      break;
+    case "surd":
+      if (atom.hasEmptyBranch("above"))
+        result += `sqrt(${atomToAsciiMath(atom.body, options)})`;
+      else
+        result += `root(${atomToAsciiMath(atom.above, options)})(${atomToAsciiMath(atom.body, options)})`;
+      break;
+    case "latex":
+      result = atom.value;
+      break;
+    case "leftright":
+      {
+        const leftrightAtom = atom;
+        let lDelim = leftrightAtom.leftDelim;
+        if (lDelim && FENCES2[lDelim]) lDelim = FENCES2[lDelim];
+        result += lDelim === "." || !lDelim ? "{:" : lDelim;
+        result += atomToAsciiMath(leftrightAtom.body, options);
+        let rDelim = leftrightAtom.matchingRightDelim();
+        if (rDelim && FENCES2[rDelim]) rDelim = FENCES2[rDelim];
+        result += rDelim === "." || !rDelim ? ":}" : rDelim;
+      }
+      break;
+    case "sizeddelim":
+    case "delim":
+      result = atom.value;
+      break;
+    case "overlap":
+      break;
+    case "overunder":
+      break;
+    case "mord":
+      if (IDENTIFIERS[latex]) return IDENTIFIERS[latex];
+      result = (_g = (_f = (_e = IDENTIFIERS[command]) != null ? _e : command) != null ? _f : command) != null ? _g : typeof atom.value === "string" ? atom.value : "";
+      if (result.startsWith("\\")) result += " ";
+      m = command ? command.match(/{?\\char"([\dabcdefABCDEF]+)}?/) : null;
+      if (m) {
+        result = String.fromCodePoint(Number.parseInt("0x" + m[1]));
+      } else if (result.length > 0 && result.startsWith("\\")) {
+        result = typeof atom.value === "string" ? atom.value.charAt(0) : atom.command;
+      }
+      result = asciiStyle(result, atom.style);
+      break;
+    case "mbin":
+    case "mrel":
+    case "minner":
+      result = (_j = (_i = (_h = IDENTIFIERS[latex]) != null ? _h : IDENTIFIERS[command]) != null ? _i : OPERATORS[command]) != null ? _j : atom.value;
+      break;
+    case "mopen":
+    case "mclose":
+      result = atom.value;
+      break;
+    case "mpunct":
+      result = (_k = OPERATORS[command]) != null ? _k : command;
+      break;
+    case "mop":
+    case "operator":
+    case "extensible-symbol":
+      if (atom.value !== "\u200B") {
+        if (OPERATORS[command]) result = OPERATORS[command];
+        else {
+          result = command === "\\operatorname" ? atomToAsciiMath(atom.body, options) : (_l = atom.value) != null ? _l : command;
+        }
+        result += " ";
+      }
+      break;
+    case "array":
+      const environment = atom.environmentName;
+      if (atom.isMultiline) {
+        const lines = atom.rows;
+        result = lines.map(
+          (line) => line.map((cell) => atomToAsciiMath(cell, options)).join("")
+        ).join("\n");
+      } else {
+        const rowDelim = (_m = {
+          "bmatrix": ["[", "]"],
+          "bmatrix*": ["[", "]"]
+        }[environment]) != null ? _m : ["(", ")"];
+        const rows = [];
+        const array = atom.rows;
+        for (const row of array) {
+          const cells = [];
+          for (const cell of row) cells.push(atomToAsciiMath(cell, options));
+          rows.push(rowDelim[0] + cells.join(",") + rowDelim[1]);
+        }
+        const delim = (_n = {
+          "bmatrix": ["[", "]"],
+          "bmatrix*": ["[", "]"],
+          "cases": ["{", ":}"]
+        }[environment]) != null ? _n : ["(", ")"];
+        result = delim[0] + rows.join(",") + delim[1];
+      }
+      break;
+    case "box":
+      break;
+    case "spacing":
+      result = (_p = (_o = IDENTIFIERS[latex]) != null ? _o : IDENTIFIERS[command]) != null ? _p : " ";
+      break;
+    case "enclose":
+      result = "(" + atomToAsciiMath(atom.body, options) + ")";
+      break;
+    case "space":
+      result = " ";
+      break;
+    case "subsup":
+      result = "";
+      break;
+    case "macro":
+      result = (_s = (_r = (_q = IDENTIFIERS[latex]) != null ? _q : IDENTIFIERS[command]) != null ? _r : OPERATORS[command]) != null ? _s : atomToAsciiMath(atom.body, options);
+      break;
+  }
+  if (!atom.hasEmptyBranch("subscript")) {
+    result += "_";
+    const arg = atomToAsciiMath(atom.subscript, options);
+    result += arg.length !== 1 ? `(${arg})` : arg;
+  }
+  if (!atom.hasEmptyBranch("superscript")) {
+    result += "^";
+    const arg = atomToAsciiMath(atom.superscript, options);
+    result += arg.length !== 1 ? `(${arg})` : arg;
+  }
+  return result;
+}
+function asciiStyle(body, style) {
+  if (!style) return body;
+  let result = body;
+  if (style.variant === "double-struck") result = `bbb "${result}"`;
+  if (style.variant === "script") result = `cc "${result}"`;
+  if (style.variant === "fraktur") result = `fr "${result}"`;
+  if (style.variant === "sans-serif") result = `sf "${result}"`;
+  if (style.variant === "monospace") result = `tt "${result}"`;
+  if (style.variantStyle === "bold") result = `bb "${result}"`;
+  if (style.color) return `color({${style.color}})(${result})`;
+  return result;
+}
+
+// src/public/mathlive-ssr.ts
+function convertLatexToMarkup(text, options) {
+  var _a3;
+  const from = __spreadProps(__spreadValues({}, getDefaultContext()), {
+    renderPlaceholder: () => new Box(160, { maxFontSize: 1 })
+  });
+  if ((options == null ? void 0 : options.letterShapeStyle) && (options == null ? void 0 : options.letterShapeStyle) !== "auto")
+    from.letterShapeStyle = options.letterShapeStyle;
+  if (options == null ? void 0 : options.macros) {
+    const macros = normalizeMacroDictionary(options == null ? void 0 : options.macros);
+    from.getMacro = (token) => getMacroDefinition(token, macros);
+  }
+  if (options == null ? void 0 : options.registers)
+    from.registers = __spreadValues(__spreadValues({}, from.registers), options.registers);
+  const defaultMode = (_a3 = options == null ? void 0 : options.defaultMode) != null ? _a3 : "math";
+  let parseMode = "math";
+  let mathstyle = "displaystyle";
+  if (defaultMode === "inline-math") mathstyle = "textstyle";
+  else if (defaultMode === "math") mathstyle = "displaystyle";
+  else if (defaultMode === "text") {
+    mathstyle = "textstyle";
+    parseMode = "text";
+  }
+  const effectiveContext = new Context({ from });
+  const root = new Atom({
+    type: "root",
+    mode: parseMode,
+    body: parseLatex(text, { context: effectiveContext, parseMode, mathstyle })
+  });
+  const box = root.render(effectiveContext);
+  if (!box) return "";
+  coalesce(applyInterBoxSpacing(box, effectiveContext));
+  const struts = makeStruts(box, { classes: "ML__latex" });
+  return struts.toMarkup();
+}
+function validateLatex2(s) {
+  return validateLatex(s, { context: getDefaultContext() });
+}
+function convertLatexToMathMl(latex, options = {}) {
+  return toMathML(
+    parseLatex(latex, {
+      parseMode: "math",
+      args: () => "",
+      // Prevent #0 arguments to be replaced with placeholder (default behavior)
+      mathstyle: "displaystyle"
+    }),
+    options
+  );
+}
+function convertLatexToSpeakableText(latex) {
+  const atoms = parseLatex(latex, {
+    parseMode: "math",
+    mathstyle: "displaystyle"
+  });
+  return atomToSpeakableText(atoms);
+}
+var gComputeEngine;
+function convertMathJsonToLatex(json) {
+  var _a3, _b3;
+  if (!gComputeEngine) {
+    const ComputeEngineCtor = (_a3 = globalThis[Symbol.for("io.cortexjs.compute-engine")]) == null ? void 0 : _a3.ComputeEngine;
+    if (ComputeEngineCtor) gComputeEngine = new ComputeEngineCtor();
+    else {
+      console.error(
+        `MathLive 0.109.2: The CortexJS Compute Engine library is not available.
+        
+        Load the library, for example with:
+        
+        import "https://esm.run/@cortex-js/compute-engine"`
+      );
+    }
+  }
+  return (_b3 = gComputeEngine == null ? void 0 : gComputeEngine.box(json).latex) != null ? _b3 : "";
+}
+function convertLatexToAsciiMath(latex, parseMode = "math") {
+  return atomToAsciiMath(
+    new Atom({
+      type: "root",
+      body: parseLatex(latex, { parseMode })
+    })
+  );
+}
+function convertAsciiMathToLatex(ascii) {
+  return parseMathString(ascii, { format: "ascii-math" })[1];
+}
+
+// src/ui/colors/utils.ts
+function asRgb(color) {
+  if (typeof color === "string") {
+    const parsed = parseHex2(color);
+    if (!parsed) throw new Error(`Invalid color: ${color}`);
+    return parsed;
+  }
+  if ("C" in color) return oklchToRgb(color);
+  if ("a" in color) return oklabToRgb(color);
+  return color;
+}
+function clampByte2(v) {
+  if (v < 0) return 0;
+  if (v > 255) return 255;
+  return Math.round(v);
+}
+function parseHex2(hex) {
+  if (!hex) return void 0;
+  if (hex[0] !== "#") return void 0;
+  hex = hex.slice(1);
+  let result;
+  if (hex.length <= 4) {
+    result = {
+      r: parseInt(hex[0] + hex[0], 16),
+      g: parseInt(hex[1] + hex[1], 16),
+      b: parseInt(hex[2] + hex[2], 16)
+    };
+    if (hex.length === 4) result.a = parseInt(hex[3] + hex[3], 16) / 255;
+  } else {
+    result = {
+      r: parseInt(hex[0] + hex[1], 16),
+      g: parseInt(hex[2] + hex[3], 16),
+      b: parseInt(hex[4] + hex[5], 16)
+    };
+    if (hex.length === 8) result.a = parseInt(hex[6] + hex[7], 16) / 255;
+  }
+  if (typeof (result == null ? void 0 : result.a) === "undefined") result.a = 1;
+  return result;
+}
+function oklchToOklab(_) {
+  const [L, C, H] = [_.L, _.C, _.H];
+  const hRadians = H * Math.PI / 180;
+  const result = {
+    L,
+    a: C * Math.cos(hRadians),
+    b: C * Math.sin(hRadians)
+  };
+  if (_.alpha !== void 0) result.alpha = _.alpha;
+  return result;
+}
+function oklabToOklch(_) {
+  const [L, a, b] = [_.L, _.a, _.b];
+  const C = Math.sqrt(a * a + b * b);
+  const hRadians = Math.atan2(b, a);
+  const H = hRadians * 180 / Math.PI;
+  const result = { L, C, H };
+  if (_.alpha !== void 0) result.alpha = _.alpha;
+  return result;
+}
+function oklabToUnclippedRgb(_) {
+  const [l, a, b] = [_.L, _.a, _.b];
+  const L = Math.pow(
+    0.9999999984505198 * l + 0.39633779217376786 * a + 0.2158037580607588 * b,
+    3
+  );
+  const M = Math.pow(
+    1.00000000888176 * l - 0.10556134232365635 * a - 0.0638541747717059 * b,
+    3
+  );
+  const S2 = Math.pow(
+    l * 1.000000054672411 - 0.0894841820949657 * a - 1.2914855378640917 * b,
+    3
+  );
+  const r = 4.076741661347994 * L - 3.307711590408193 * M + 0.230969928729428 * S2;
+  const g = -1.2684380040921763 * L + 2.6097574006633715 * M - 0.3413193963102197 * S2;
+  const bl = -0.004196086541837188 * L - 0.7034186144594493 * M + 1.7076147009309444 * S2;
+  const conv = (n) => {
+    const abs = Math.abs(n);
+    if (abs <= 31308e-7) return n * 12.92;
+    return (Math.sign(n) || 1) * (1.055 * Math.pow(abs, 1 / 2.4) - 0.055);
+  };
+  return [conv(r), conv(g), conv(bl)];
+}
+function inGamut(rgb) {
+  const [r, g, b] = rgb;
+  return r >= 0 && r <= 1 && g >= 0 && g <= 1 && b >= 0 && b <= 1;
+}
+function clampRgb(rgb, alpha) {
+  let [r, g, b] = rgb;
+  r = clampByte2(r * 255);
+  g = clampByte2(g * 255);
+  b = clampByte2(b * 255);
+  return alpha !== void 0 ? { r, g, b, alpha } : { r, g, b };
+}
+function oklabToRgb(color) {
+  let [r, g, b] = oklabToUnclippedRgb(color);
+  if (inGamut([r, g, b])) return clampRgb([r, g, b], color.alpha);
+  const oklch = oklabToOklch(color);
+  oklch.C = 0;
+  [r, g, b] = oklabToUnclippedRgb(oklchToOklab(oklch));
+  if (!inGamut([r, g, b])) return clampRgb([r, g, b], color.alpha);
+  let low = 0;
+  let high = color.L;
+  let mid = (low + high) / 2;
+  oklch.C = mid;
+  const resolution = 0.36 / Math.pow(2, 12);
+  while (high - low > resolution) {
+    mid = (low + high) / 2;
+    oklch.C = mid;
+    [r, g, b] = oklabToUnclippedRgb(oklchToOklab(oklch));
+    if (inGamut([r, g, b])) low = mid;
+    else high = mid;
+  }
+  return clampRgb([r, g, b], color.alpha);
+}
+function oklchToRgb(_) {
+  return oklabToRgb(oklchToOklab(_));
+}
+
+// src/ui/colors/contrast.ts
+function apca(bgColor, fgColor) {
+  const bgRgb = asRgb(bgColor);
+  const fgRgb = asRgb(fgColor);
+  const normBG = 0.56;
+  const normTXT = 0.57;
+  const revTXT = 0.62;
+  const revBG = 0.65;
+  const blkThrs = 0.022;
+  const blkClmp = 1.414;
+  const loClip = 0.1;
+  const deltaYmin = 5e-4;
+  const scaleBoW = 1.14;
+  const loBoWoffset = 0.027;
+  const scaleWoB = 1.14;
+  const loWoBoffset = 0.027;
+  function fclamp(Y) {
+    return Y >= blkThrs ? Y : Y + (blkThrs - Y) ** blkClmp;
+  }
+  function linearize(val) {
+    const sign = val < 0 ? -1 : 1;
+    return sign * Math.pow(Math.abs(val), 2.4);
+  }
+  const Yfg = fclamp(
+    linearize(fgRgb.r / 255) * 0.2126729 + linearize(fgRgb.g / 255) * 0.7151522 + linearize(fgRgb.b / 255) * 0.072175
+  );
+  const Ybg = fclamp(
+    linearize(bgRgb.r / 255) * 0.2126729 + linearize(bgRgb.g / 255) * 0.7151522 + linearize(bgRgb.b / 255) * 0.072175
+  );
+  let S2, C, Sapc;
+  if (Math.abs(Ybg - Yfg) < deltaYmin) C = 0;
+  else {
+    if (Ybg > Yfg) {
+      S2 = Ybg ** normBG - Yfg ** normTXT;
+      C = S2 * scaleBoW;
+    } else {
+      S2 = Ybg ** revBG - Yfg ** revTXT;
+      C = S2 * scaleWoB;
+    }
+  }
+  if (Math.abs(C) < loClip) Sapc = 0;
+  else if (C > 0) Sapc = C - loWoBoffset;
+  else Sapc = C + loBoWoffset;
+  return Sapc * 100;
+}
+function contrast(bgColor, dark, light) {
+  light != null ? light : light = "#fff";
+  dark != null ? dark : dark = "#000";
+  const lightContrast = apca(bgColor, light);
+  const darkContrast = apca(bgColor, dark);
+  return Math.abs(lightContrast) > Math.abs(darkContrast) ? light : dark;
+}
+
+// src/ui/colors/css.ts
+function asHexColor(_) {
+  const rgb = asRgb(_);
+  let hexString = ((1 << 24) + (clampByte2(rgb.r) << 16) + (clampByte2(rgb.g) << 8) + clampByte2(rgb.b)).toString(16).slice(1);
+  if (rgb.alpha !== void 0 && rgb.alpha < 1)
+    hexString += ("00" + Math.round(rgb.alpha * 255).toString(16)).slice(-2);
+  if (hexString[0] === hexString[1] && hexString[2] === hexString[3] && hexString[4] === hexString[5] && hexString[6] === hexString[7]) {
+    hexString = hexString[0] + hexString[2] + hexString[4] + (rgb.alpha !== void 0 && rgb.alpha < 1 ? hexString[6] : "");
+  }
+  return "#" + hexString;
+}
+
+// src/editor/default-menu.ts
+function getSelectionPlainString(mf) {
+  const atoms = getSelectionAtoms(mf);
+  let result = "";
+  for (const atom of atoms) {
+    if (typeof atom.value !== "string") return "";
+    result += atom.value;
+  }
+  return result;
+}
+function getSelectionAtoms(mf) {
+  const model = mf.model;
+  const ranges = model.selection.ranges;
+  if (ranges.length !== 1) return [];
+  let atoms = mf.model.getAtoms(ranges[0]);
+  if (atoms.length === 1 && atoms[0].isRoot) atoms = atoms[0].children;
+  return atoms.filter((x) => x.type !== "first");
+}
+function validVariantAtom(mf, variant) {
+  const atoms = getSelectionAtoms(mf);
+  if (atoms.length !== 1) return false;
+  const repertoire = VARIANT_REPERTOIRE[variant];
+  if (!repertoire) return false;
+  if (repertoire.test(atoms[0].value)) return true;
+  return false;
+}
+function getVariantSubmenu(mf) {
+  return [
+    variantMenuItem(mf, "double-struck", "mathbb", "tooltip.blackboard"),
+    variantMenuItem(mf, "fraktur", "mathfrak", "tooltip.fraktur"),
+    variantMenuItem(mf, "calligraphic", "mathcal", "tooltip.caligraphic"),
+    variantStyleMenuItem(mf, "up", "mathrm", "tooltip.roman-upright"),
+    variantStyleMenuItem(mf, "bold", "bm", "tooltip.bold"),
+    variantStyleMenuItem(mf, "italic", "mathit", "tooltip.italic")
+  ];
+}
+function getAccentSubmenu(mf) {
+  return [
+    {
+      id: "accent-vec",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(`\\vec{${getSelectionPlainString(mf)}}`),
+      visible: () => getSelectionPlainString(mf).length === 1,
+      onMenuSelect: () => mf.insert("\\vec{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "accent-overrightarrow",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(
+        `\\overrightarrow{${getSelectionPlainString(mf)}}`
+      ),
+      visible: () => getSelectionPlainString(mf).length > 0,
+      onMenuSelect: () => mf.insert("\\overrightarrow{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "accent-overleftarrow",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(`\\overleftarrow{${getSelectionPlainString(mf)}}`),
+      visible: () => getSelectionPlainString(mf).length > 0,
+      onMenuSelect: () => mf.insert("\\overleftarrow{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "accent-dot",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(`\\dot{${getSelectionPlainString(mf)}}`),
+      visible: () => getSelectionPlainString(mf).length === 1,
+      onMenuSelect: () => mf.insert("\\dot{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "accent-ddot",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(`\\ddot{${getSelectionPlainString(mf)}}`),
+      visible: () => getSelectionPlainString(mf).length === 1,
+      onMenuSelect: () => mf.insert("\\ddot{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "accent-bar",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(`\\bar{${getSelectionPlainString(mf)}}`),
+      visible: () => getSelectionPlainString(mf).length === 1,
+      onMenuSelect: () => mf.insert("\\bar{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "accent-overline",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(`\\overline{${getSelectionPlainString(mf)}}`),
+      visible: () => getSelectionPlainString(mf).length > 0,
+      onMenuSelect: () => mf.insert("\\overline{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "accent-overgroup",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(`\\overgroup{${getSelectionPlainString(mf)}}`),
+      visible: () => getSelectionPlainString(mf).length > 0,
+      onMenuSelect: () => mf.insert("\\overgroup{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "accent-overbrace",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(`\\overbrace{${getSelectionPlainString(mf)}}`),
+      visible: () => getSelectionPlainString(mf).length > 0,
+      onMenuSelect: () => mf.insert("\\overbrace{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "accent-underline",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(`\\underline{${getSelectionPlainString(mf)}}`),
+      visible: () => getSelectionPlainString(mf).length > 0,
+      onMenuSelect: () => mf.insert("\\underline{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "accent-undergroup",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(`\\undergroup{${getSelectionPlainString(mf)}}`),
+      visible: () => getSelectionPlainString(mf).length > 0,
+      onMenuSelect: () => mf.insert("\\undergroup{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "accent-underbrace",
+      class: "ML__center-menu",
+      label: () => convertLatexToMarkup(`\\underbrace{${getSelectionPlainString(mf)}}`),
+      visible: () => getSelectionPlainString(mf).length > 0,
+      onMenuSelect: () => mf.insert("\\underbrace{#@}", { selectionMode: "item" })
+    }
+  ];
+}
+function getDecorationSubmenu(mf) {
+  return [
+    // {
+    //   label: () => convertLatexToMarkup(`\\cancel{${getSelection(mf)}}`),
+    //   // visible: () => getSelection(mf).length > 0,
+    //   onMenuSelect: () => mf.insert('\\cancel{#@}', { selectionMode: 'item' }),
+    // },
+    {
+      id: "decoration-boxed",
+      label: () => convertLatexToMarkup(`\\boxed{${mf.getValue(mf.model.selection)}}}`),
+      // visible: () => getSelection(mf).length > 0,
+      onMenuSelect: () => mf.insert("\\boxed{#@}", { selectionMode: "item" })
+    },
+    {
+      id: "decoration-red-box",
+      label: () => convertLatexToMarkup(
+        `\\bbox[5px, border: 2px solid red]{${mf.getValue(
+          mf.model.selection
+        )}}`
+      ),
+      // visible: () => getSelection(mf).length > 0,
+      onMenuSelect: () => mf.insert("\\bbox[5px, border: 2px solid red]{#@}", {
+        selectionMode: "item"
+      })
+    },
+    {
+      id: "decoration-dashed-black-box",
+      label: () => convertLatexToMarkup(
+        `\\bbox[5px, border: 2px dashed black]{${mf.getValue(
+          mf.model.selection
+        )}}`
+      ),
+      // visible: () => getSelection(mf).length > 0,
+      onMenuSelect: () => mf.insert("\\bbox[5px, border: 2px dashed black]{#@}", {
+        selectionMode: "item"
+      })
+    }
+  ];
+}
+function getBackgroundColorSubmenu(mf) {
+  const result = [];
+  for (const color of Object.keys(BACKGROUND_COLORS)) {
+    result.push({
+      id: `background-color-${color}`,
+      class: (asHexColor(contrast(BACKGROUND_COLORS[color])) === "#000" ? "dark-contrast" : "light-contrast") + " menu-swatch",
+      label: `<span style="background:${BACKGROUND_COLORS[color]} "></span>`,
+      ariaLabel: () => {
+        var _a3;
+        return (_a3 = localize(color)) != null ? _a3 : color;
+      },
+      checked: () => {
+        var _a3;
+        return (_a3 = { some: "mixed", all: true }[mf.queryStyle({ backgroundColor: color })]) != null ? _a3 : false;
+      },
+      onMenuSelect: () => mf.applyStyle({ backgroundColor: color }, { operation: "toggle" })
+    });
+  }
+  return result;
+}
+function getColorSubmenu(mf) {
+  const result = [];
+  for (const color of Object.keys(FOREGROUND_COLORS)) {
+    result.push({
+      id: `color-${color}`,
+      class: (contrast(FOREGROUND_COLORS[color]) === "#000" ? "dark-contrast" : "light-contrast") + " menu-swatch",
+      label: `<span style="background:${FOREGROUND_COLORS[color]} "></span>`,
+      ariaLabel: () => {
+        var _a3;
+        return (_a3 = localize(color)) != null ? _a3 : color;
+      },
+      checked: () => {
+        var _a3;
+        return (_a3 = { some: "mixed", all: true }[mf.queryStyle({ color })]) != null ? _a3 : false;
+      },
+      onMenuSelect: () => mf.applyStyle({ color }, { operation: "toggle" })
+    });
+  }
+  return result;
+}
+var InsertMatrixMenuItem = class extends _MenuItemState {
+  constructor(decl, parent, row, col) {
+    super(decl, parent);
+    this.row = row;
+    this.col = col;
+  }
+  set active(value) {
+    const cells = this.parentMenu.children;
+    if (value) {
+      for (const cell of cells) {
+        cell.element.classList.toggle(
+          "active",
+          cell.row <= this.row && cell.col <= this.col
+        );
+      }
+    } else for (const cell of cells) cell.element.classList.remove("active");
+  }
+};
+function getInsertMatrixSubmenu(mf) {
+  const result = [];
+  for (let row = 1; row <= 5; row++) {
+    for (let col = 1; col <= 5; col++) {
+      result.push({
+        id: `insert-matrix-${row}x${col}`,
+        onCreate: (decl, parent) => new InsertMatrixMenuItem(decl, parent, row, col),
+        label: `\u2610`,
+        tooltip: () => localize("tooltip.row-by-col", row, col),
+        data: { row, col },
+        onMenuSelect: () => {
+          mf.insert(
+            `\\begin{pmatrix}${Array(row).fill(Array(col).fill("#?").join(" & ")).join("\\\\")}\\end{pmatrix}`,
+            {
+              selectionMode: "item"
+            }
+          );
+        }
+      });
+    }
+  }
+  return result;
+}
+function getDefaultMenuItems(mf) {
+  return [
+    // {
+    //   label: 'Show Virtual Keyboard',
+    //   onMenuSelect: () => window.mathVirtualKeyboard.show({ animate: true }),
+    //   visible: () => window.mathVirtualKeyboard.visible === false,
+    // },
+    // {
+    //   label: 'Hide Virtual Keyboard',
+    //   onMenuSelect: () => window.mathVirtualKeyboard.hide({ animate: true }),
+    //   visible: () => window.mathVirtualKeyboard.visible === true,
+    // },
+    {
+      label: () => localize("menu.array.add row above"),
+      id: "add-row-above",
+      onMenuSelect: () => mf.executeCommand("addRowBefore"),
+      keyboardShortcut: "shift+alt+[Return]",
+      visible: () => {
+        if (!mf.isSelectionEditable || !inMatrix(mf)) return false;
+        const [minRows, _minCols] = minShape(mf);
+        const [maxRows, _maxCols] = maxShape(mf);
+        return minRows !== maxRows;
+      }
+    },
+    {
+      label: () => localize("menu.array.add row below"),
+      id: "add-row-below",
+      onMenuSelect: () => mf.executeCommand("addRowAfter"),
+      keyboardShortcut: "alt+[Return]",
+      visible: () => {
+        if (!mf.isSelectionEditable || !inMatrix(mf)) return false;
+        const [minRows, _minCols] = minShape(mf);
+        const [maxRows, _maxCols] = maxShape(mf);
+        return minRows !== maxRows;
+      }
+    },
+    {
+      label: () => localize("menu.array.add column before"),
+      id: "add-column-before",
+      onMenuSelect: () => mf.executeCommand("addColumnBefore"),
+      visible: () => {
+        if (!mf.isSelectionEditable || !inMatrix(mf)) return false;
+        const [_minRows, minCols] = minShape(mf);
+        const [_maxRows, maxCols] = maxShape(mf);
+        return minCols !== maxCols;
+      },
+      keyboardShortcut: "shift+alt+[Tab]",
+      enabled: () => {
+        const array = mf.model.parentEnvironment;
+        if (!array) return false;
+        const [rows, _cols] = shape(mf);
+        return rows < array.maxColumns;
+      }
+    },
+    {
+      label: () => localize("menu.array.add column after"),
+      id: "add-column-after",
+      onMenuSelect: () => mf.executeCommand("addColumnAfter"),
+      keyboardShortcut: "alt+[Tab]",
+      visible: () => {
+        if (!mf.isSelectionEditable || !inMatrix(mf)) return false;
+        const [_minRows, minCols] = minShape(mf);
+        const [_maxRows, maxCols] = maxShape(mf);
+        return minCols !== maxCols;
+      }
+    },
+    {
+      type: "divider"
+    },
+    {
+      label: () => localize("menu.array.delete row"),
+      id: "delete-row",
+      onMenuSelect: () => mf.executeCommand("removeRow"),
+      enabled: () => {
+        const [minRows, _minCols] = minShape(mf);
+        const [rows, _cols] = shape(mf);
+        return rows > minRows;
+      },
+      visible: () => {
+        if (!mf.isSelectionEditable || !inMatrix(mf)) return false;
+        const [minRows, _minCols] = minShape(mf);
+        const [maxRows, _maxCols] = maxShape(mf);
+        return minRows !== maxRows;
+      }
+    },
+    {
+      label: () => localize("menu.array.delete column"),
+      id: "delete-column",
+      onMenuSelect: () => mf.executeCommand("removeColumn"),
+      enabled: () => {
+        const [_minRows, minCols] = minShape(mf);
+        const [_rows, cols] = shape(mf);
+        return cols > minCols;
+      },
+      visible: () => {
+        if (!mf.isSelectionEditable || !inMatrix(mf)) return false;
+        const [_minRows, minCols] = minShape(mf);
+        const [_maxRows, maxCols] = maxShape(mf);
+        return minCols !== maxCols;
+      }
+    },
+    {
+      type: "divider"
+    },
+    {
+      label: () => localize("menu.borders"),
+      visible: () => (isMatrixSelected(mf) || inMatrix(mf)) && mf.isSelectionEditable,
+      submenu: [
+        {
+          label: " \u22F1 ",

@@ -397,6 +397,39 @@ function shiftArtwork(
   })) as CustomSymbolVectorShape[];
 }
 
+export function fitCustomSymbolDesignerDocumentToArtwork(
+  source: CustomSymbolDesignerDocument,
+  paddingUnits = registrationPaddingUnits,
+): CustomSymbolDesignerDocument {
+  const artwork = compileCustomSymbolDesignerArtwork(source);
+  const measured = measureArtworkBounds(artwork, source.metrics);
+  if (!measured) return source;
+  const baseline = source.metrics.ascentEm * 1000;
+  const left = measured.left - paddingUnits;
+  const right = measured.right + paddingUnits;
+  const top = Math.min(measured.top - paddingUnits, baseline - 20);
+  const bottom = Math.max(measured.bottom + paddingUnits, baseline);
+  const width = Math.max(20, right - left);
+  const height = Math.max(20, bottom - top);
+  const normalizedBaseline = baseline - top;
+  return {
+    ...source,
+    metrics: {
+      widthEm: Number((width / 1000).toFixed(6)),
+      ascentEm: Number((normalizedBaseline / 1000).toFixed(6)),
+      descentEm: Number(((height - normalizedBaseline) / 1000).toFixed(6)),
+    },
+    layers: source.layers.map((layer) => ({
+      ...layer,
+      transform: {
+        ...layer.transform,
+        translateX: (layer.transform.translateX ?? 0) - left,
+        translateY: (layer.transform.translateY ?? 0) - top,
+      },
+    })),
+  };
+}
+
 function autoCropRegisteredArtwork(
   artwork: CustomSymbolVectorShape[],
   designerMetrics: CustomSymbolMetrics,

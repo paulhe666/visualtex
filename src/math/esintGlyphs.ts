@@ -59,8 +59,13 @@ export const ESINT_GLYPH_PAYLOAD = Object.freeze(
   ) as EsintGlyphPayload,
 );
 
+export const ESINT_INTEGRAL_GLYPH_UNITS_PER_EM =
+  ESINT_GLYPH_PAYLOAD.unitsPerEm;
+
 const ESINT_COMPATIBILITY_ALIASES: Readonly<Record<string, readonly string[]>> =
   Object.freeze({
+    // MathLive and UnicodeMath use \\intclockwise for the same clockwise
+    // contour operator that esint names \\ointclockwise.
     ointclockwise: ["intclockwise"],
   });
 
@@ -74,4 +79,14 @@ export const ESINT_INTEGRAL_GLYPHS = Object.freeze(
       ]),
     ),
   })),
+);
+
+export const ESINT_INTEGRAL_GLYPHS_BY_COMMAND: Readonly<
+  Record<string, EsintGlyphDefinition>
+> = Object.freeze(
+  Object.fromEntries(
+    ESINT_INTEGRAL_GLYPHS.flatMap((glyph) =>
+      [glyph.command, ...glyph.aliases].map((command) => [command, glyph]),
+    ),
+  ),
 );

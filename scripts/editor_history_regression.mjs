@@ -1,18 +1,13 @@
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import {
-  browserTestProfilePath,
-  resolveBrowserTestChromePath,
-} from "./browser_test_runtime.mjs";
 
 const portOffset = process.pid % 1000;
 const previewPort = 4300 + portOffset;
 const debugPort = 9300 + portOffset;
-const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
-const chromeProfile = browserTestProfilePath("visualtex-history-smoke");
-const chromePath = resolveBrowserTestChromePath();
-const primaryModifier = process.platform === "darwin" ? 4 : 2;
+const baseUrl = `http://127.0.0.1:${previewPort}`;
+const chromeProfile = `/tmp/visualtex-history-smoke-${process.pid}`;
+const chromePath = (process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 15000) {
@@ -48,7 +43,6 @@ class CdpClient {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
-      clearTimeout(pending.timer);
       if (message.error) pending.reject(new Error(message.error.message));
       else pending.resolve(message.result);
     });
@@ -57,11 +51,7 @@ class CdpClient {
   send(method, params = {}) {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Timed out waiting for CDP ${method}`));
-      }, 15000);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject });
       this.socket.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -125,20 +115,11 @@ async function main() {
     await client.send("Page.enable");
 
     const evaluate = async (expression) => {
-      let result;
-      try {
-        result = await client.send("Runtime.evaluate", {
-          expression,
-          awaitPromise: true,
-          returnByValue: true,
-        });
-      } catch (error) {
-        const preview = String(expression).replace(/\s+/g, " ").slice(0, 160);
-        throw new Error(
-          `${error instanceof Error ? error.message : String(error)} while evaluating: ${preview}`,
-          { cause: error },
-        );
-      }
+      const result = await client.send("Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
       if (result.exceptionDetails) {
         throw new Error(
           result.exceptionDetails.exception?.description ||
@@ -199,6 +180,7 @@ async function main() {
     }) => {
       await evaluate(`(() => {
         localStorage.setItem("visualtex.onboarding.v3.completed", "true");
+        localStorage.setItem("visualtex.release-welcome.1.2.6.seen", "true");
         let persisted;
         try {
           persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "null");
@@ -218,16 +200,18 @@ async function main() {
           language: "cn",
           history: ${JSON.stringify(history)},
         };
+        localStorage.setItem("visualtex-desktop-editor-source-open", String(${JSON.stringify(sourceOpen)}));
         delete persisted.state.latex;
         localStorage.setItem("visualtex-editor", JSON.stringify(persisted));
-        localStorage.setItem(
-          "visualtex-web-editor-source-open",
-          String(${JSON.stringify(sourceOpen)}),
-        );
       })()`);
       await client.send("Page.reload", { ignoreCache: true });
       await sleep(850);
       await waitForFields(lines.length);
+      // Native-host smoke stubs can show the Office setup dialog on reload.
+      // Close it through its UI before testing document keyboard shortcuts.
+      await evaluate(`document.querySelectorAll('.office-first-run-backdrop button').forEach(button => {
+        if (/^(Later|稍后处理)$/.test(button.textContent.trim())) button.click();
+      })`);
     };
 
     const installFakeTauri = async () => {
@@ -235,6 +219,7 @@ async function main() {
         let callbackId = 1;
         const callbacks = new Map();
         window.__TAURI_INTERNALS__ = {
+          metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
           transformCallback(callback, once = false) {
             const id = callbackId++;
             callbacks.set(id, { callback, once });
@@ -601,44 +586,15 @@ async function main() {
     assertDeepEqual(await values(), ["x"], "wrapped selection should undo in one step");
 
     await resetDocument({ lines: [{ id: "candidate-line", latex: "" }] });
-    await evaluate(`(() => {
-      const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
-      persisted.state = {
-        ...(persisted.state || {}),
-        inputBehavior: {
-          ...((persisted.state && persisted.state.inputBehavior) || {}),
-          showOtherCommandSuggestions: true,
-        },
-      };
-      localStorage.setItem("visualtex-editor", JSON.stringify(persisted));
-    })()`);
-    await client.send("Page.reload", { ignoreCache: true });
-    await sleep(850);
-    await waitForFields(1);
-    await evaluate(`(() => {
-      const field = document.querySelector("math-field");
-      field.focus();
-      field.shadowRoot
-        ?.querySelector('[part="keyboard-sink"]')
-        ?.focus({ preventScroll: true });
-      field.setValue("\\\\the", {
-        mode: "math",
-        format: "latex",
-        insertionMode: "replaceAll",
-        selectionMode: "after",
-        silenceNotifications: true,
-      });
-      field.position = field.lastOffset;
-      field.dispatchEvent(new InputEvent("input", {
-        bubbles: true,
-        composed: true,
-        inputType: "insertText",
-      }));
-    })()`);
+    await focusField(0);
+    for (const character of "\\the") {
+      await key(character, character === "\\" ? "Backslash" : `Key${character.toUpperCase()}`,
+        character === "\\" ? 220 : character.toUpperCase().charCodeAt(0));
+    }
     await sleep(220);
     const candidateBefore = (await values())[0];
     assertEqual(
-      await evaluate(`Boolean(document.querySelector(".suggestion-popup"))`),
+      await evaluate(`Boolean(document.querySelector("#mathlive-suggestion-popover.is-visible"))`),
       true,
       "candidate popup should open",
     );
@@ -651,6 +607,78 @@ async function main() {
     await redo();
     assertEqual((await values())[0], candidateAfter, "candidate redo should restore result");
 
+    await resetDocument({ lines: [{ id: "modal-line", latex: "a" }] });
+    await focusField(0);
+    await key("b", "KeyB", 66);
+    await installFakeTauri();
+    await click('button[aria-label="图片公式识别"]');
+    await key("z", "KeyZ", 90, 4, false);
+    assertDeepEqual(await values(), ["ab"], "OCR modal must block underlying global undo");
+    await click('button[aria-label="关闭 OCR"]');
+    await undo();
+    assertDeepEqual(await values(), ["a"], "global undo should resume after OCR closes");
+
+    await resetDocument({ lines: [{ id: "ocr-line", latex: "a" }] });
+    await focusField(0);
+    await installFakeTauri();
+    await click('button[aria-label="图片公式识别"]');
+    await sleep(220);
+    await evaluate(`(() => {
+      const input = document.querySelector('.ocr-dialog input[type="file"]');
+      if (!input) throw new Error("OCR image input was not found");
+      const transfer = new DataTransfer();
+      transfer.items.add(
+        new File([new Uint8Array([137, 80, 78, 71])], "formula.png", {
+          type: "image/png",
+        }),
+      );
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    await sleep(160);
+    await evaluate(`(() => {
+      const button = [...document.querySelectorAll(".ocr-dialog button")].find(
+        (item) => item.textContent?.includes("开始识别"),
+      );
+      if (!button) throw new Error("OCR recognize button was not found");
+      button.click();
+    })()`);
+    await evaluate(`new Promise((resolve, reject) => {
+      const started = performance.now();
+      const done = () => {
+        if (document.querySelector(".ocr-latex-editor textarea")) {
+          resolve(true);
+          return;
+        }
+        if (performance.now() - started > 3000) {
+          reject(new Error("Fake OCR result did not appear"));
+          return;
+        }
+        setTimeout(done, 30);
+      };
+      done();
+    })`);
+    await evaluate(`(() => {
+      const button = [...document.querySelectorAll(".ocr-dialog button")].find(
+        (item) => item.textContent?.includes("插入当前光标"),
+      );
+      if (!button) throw new Error("OCR insert button was not found");
+      button.click();
+    })()`);
+    await sleep(260);
+    const ocrValue = (await values())[0];
+    if (!ocrValue.startsWith("a") || !/\\theta/.test(ocrValue)) {
+      throw new Error(`OCR result was not inserted at the saved caret: ${ocrValue}`);
+    }
+    await undo();
+    assertDeepEqual(await values(), ["a"], "OCR insert should undo in one step");
+    assertEqual(
+      await evaluate(`document.querySelector("math-field").position`),
+      1,
+      "OCR undo should restore original caret",
+    );
+    await redo();
+    assertEqual((await values())[0], ocrValue, "OCR redo should restore result");
 
     await evaluate(`new Promise((resolve) => {
       const request = indexedDB.deleteDatabase("visualtex-history");
@@ -670,27 +698,18 @@ async function main() {
     await evaluate(`document.querySelector(".cm-content").focus()`);
     await client.send("Input.insertText", { text: "c" });
     await sleep(150);
-    assertDeepEqual(
-      await values(),
-      ["ca=b"],
-      "CodeMirror edits should update the visual formula as a live preview",
-    );
-    await key("z", "KeyZ", 90, primaryModifier, false);
+    assertDeepEqual(await values(), ["a=b"], "CodeMirror draft must not update formulas");
+    await key("z", "KeyZ", 90, 4, false);
     await sleep(150);
     assertEqual(
       await evaluate(`document.querySelector(".cm-content").innerText`),
       "a=b",
       "CodeMirror should keep its own draft undo",
     );
-    assertDeepEqual(
-      await values(),
-      ["a=b"],
-      "CodeMirror draft undo should also restore the live formula preview",
-    );
     assertEqual(
       await evaluate(`document.querySelector('button[aria-label="撤销"]').disabled`),
-      false,
-      "Source draft edits remain available in the global document history after local undo",
+      true,
+      "CodeMirror draft undo must not create global history",
     );
 
     await evaluate(`(() => {
@@ -703,14 +722,10 @@ async function main() {
       selection.addRange(range);
     })()`);
     await client.send("Input.insertText", { text: "x=y\nz=w" });
-    await sleep(220);
-    assertDeepEqual(
-      await values(),
-      ["x=y", "z=w"],
-      "valid source edits should update the visual document live",
-    );
-    await evaluate(`document.querySelector(".document-title-area input")?.focus()`);
-    await sleep(1100);
+    await sleep(180);
+    await click(".source-panel .primary-small-button");
+    assertDeepEqual(await values(), ["x=y", "z=w"], "source apply should replace document");
+    await sleep(300);
     const checkpointCount = await evaluate(`new Promise((resolve, reject) => {
       const request = indexedDB.open("visualtex-history", 1);
       request.onerror = () => reject(request.error);
@@ -727,7 +742,7 @@ async function main() {
       };
     })`);
     if (checkpointCount < 1) {
-      throw new Error(`Source live edit did not persist an L3 checkpoint (${checkpointCount})`);
+      throw new Error(`Source apply did not persist an L3 checkpoint (${checkpointCount})`);
     }
     await undo();
     assertDeepEqual(await values(), ["a=b"], "global undo should restore pre-source document");
@@ -823,7 +838,7 @@ async function main() {
       window.__visualtexSavedDocument = null;
       const originalCreateObjectURL = URL.createObjectURL.bind(URL);
       URL.createObjectURL = (blob) => {
-        if (blob.type.startsWith("application/json")) {
+        if (blob.type === "application/json") {
           void blob.text().then((text) => {
             window.__visualtexSavedDocument = text;
           });

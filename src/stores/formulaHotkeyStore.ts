@@ -136,7 +136,9 @@ function mergeDefaultBindings(
   );
   const defaults = createDefaultFormulaHotkeyBindings().filter((binding) => {
     const chordId = formulaHotkeyChordId(binding.chord);
-    if (usedTargets.has(binding.target.id) || usedChords.has(chordId)) return false;
+    if (usedTargets.has(binding.target.id) || usedChords.has(chordId)) {
+      return false;
+    }
     usedTargets.add(binding.target.id);
     usedChords.add(chordId);
     return true;

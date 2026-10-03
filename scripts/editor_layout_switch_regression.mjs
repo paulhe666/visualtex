@@ -2,17 +2,13 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import {
-  browserTestProfilePath,
-  resolveBrowserTestChromePath,
-} from "./browser_test_runtime.mjs";
 
 const offset = process.pid % 700;
 const previewPort = 8100 + offset;
 const debugPort = 15100 + offset;
-const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
-const chromeProfile = browserTestProfilePath("visualtex-editor-layout");
-const chromePath = resolveBrowserTestChromePath();
+const baseUrl = `http://127.0.0.1:${previewPort}`;
+const chromeProfile = `/tmp/visualtex-editor-layout-${process.pid}`;
+const chromePath = (process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 15000) {
@@ -150,6 +146,44 @@ async function main() {
       });
       await sleep(180);
     };
+    const dragElement = async (selector, deltaX, deltaY) => {
+      const rect = await evaluate(`(() => {
+        const element = document.querySelector(${JSON.stringify(selector)});
+        if (!(element instanceof HTMLElement)) return null;
+        const rect = element.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      })()`);
+      if (!rect) throw new Error(`Unable to drag missing element: ${selector}`);
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: rect.x,
+        y: rect.y,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        x: rect.x,
+        y: rect.y,
+        button: "left",
+        buttons: 1,
+        clickCount: 1,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: rect.x + deltaX,
+        y: rect.y + deltaY,
+        button: "left",
+        buttons: 1,
+      });
+      await client.send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        x: rect.x + deltaX,
+        y: rect.y + deltaY,
+        button: "left",
+        buttons: 0,
+        clickCount: 1,
+      });
+      await sleep(120);
+    };
 
     await evaluate(`(() => {
       localStorage.clear();
@@ -164,7 +198,7 @@ async function main() {
           title: "Layout regression",
           lines: [{ id: "layout-line", latex: "a+b" }],
           activeLineId: "layout-line",
-          formulaAlignment: "center",
+          formulaAlignment: "left",
           editorLayout: "standard",
           sourceOpen: false,
           language: "cn",
@@ -199,20 +233,32 @@ async function main() {
 
     const readLayout = () => evaluate(`(() => {
       const workspace = document.querySelector('.workspace');
-      const editor = document.querySelector('.formula-workspace.editor-pane');
+      const editor = document.querySelector('.classic-editor-pane-body') ??
+        document.querySelector('.formula-workspace.editor-pane');
+      const editorHeader = document.querySelector('.editor-pane-header');
+      const activeFormulaLine = document.querySelector('.formula-line.is-active');
       const standardToolbar = document.querySelector('.workspace > .formula-toolbar:not(.classic-tile-toolbar)');
       const classicTiles = document.querySelector('.classic-tile-toolbar');
       const dock = document.querySelector('.classic-bottom-dock');
       const bottomToolbar = document.querySelector('.classic-bottom-toolbar');
       const sourcePanel = document.querySelector('.classic-source-pane-slot .source-panel');
       const editorRect = editor?.getBoundingClientRect();
-      const editorSurface = editor?.querySelector('.editor-surface');
+      const editorHeaderRect = editorHeader?.getBoundingClientRect();
+      const editorSurface = document.querySelector('.editor-surface');
       const firstFormulaLine = editorSurface?.querySelector('.formula-line');
+      const firstMathfield = firstFormulaLine?.querySelector('.visual-mathfield');
       const editorSurfaceRect = editorSurface?.getBoundingClientRect();
       const firstFormulaLineRect = firstFormulaLine?.getBoundingClientRect();
+      const firstMathfieldRect = firstMathfield?.getBoundingClientRect();
       const tileRect = classicTiles?.getBoundingClientRect();
       const dockRect = dock?.getBoundingClientRect();
       const editorScrollRect = document.querySelector('.editor-pane-scroll')?.getBoundingClientRect();
+      const activeFormulaStyle = activeFormulaLine
+        ? getComputedStyle(activeFormulaLine)
+        : null;
+      const firstFormulaStyle = firstFormulaLine
+        ? getComputedStyle(firstFormulaLine)
+        : null;
       const templateRects = Array.from(bottomToolbar?.querySelectorAll('.template-button') ?? [])
         .slice(0, 12)
         .map((button) => button.getBoundingClientRect());
@@ -243,11 +289,16 @@ async function main() {
         hasClassicTiles: Boolean(classicTiles),
         classicTileView: classicTiles?.dataset.toolbarFixedView ?? '',
         tileRightOfEditor: Boolean(editorRect && tileRect && tileRect.left >= editorRect.right - 1),
+        tileBelowHeader: Boolean(
+          editorHeaderRect && tileRect &&
+          Math.abs(tileRect.top - editorHeaderRect.bottom) <= 1
+        ),
         hasDock: Boolean(dock),
         dockBelowEditor: Boolean(dockRect && editorScrollRect && dockRect.top >= editorScrollRect.bottom - 1),
         hasBottomToolbar: Boolean(bottomToolbar),
         bottomToolbarLayout: bottomToolbar?.dataset.toolbarLayout ?? '',
         bottomToolbarView: bottomToolbar?.dataset.toolbarFixedView ?? '',
+        bottomToolbarRowCount: Number(bottomToolbar?.dataset.toolbarRowCount ?? 0),
         templateRows,
         templateNormalMaxWidth: normalTemplateRects.length
           ? Math.max(...normalTemplateRects.map((rect) => rect.width))
@@ -281,6 +332,30 @@ async function main() {
         alignmentControlsInHeader: Boolean(
           document.querySelector('.editor-pane-header .formula-alignment-controls'),
         ),
+        hasVisualEditorTitle: Boolean(
+          document.querySelector('.editor-pane-header .pane-title-copy'),
+        ),
+        hasVisualEditorIcon: Boolean(
+          document.querySelector('.editor-pane-header .pane-icon'),
+        ),
+        activeLineHighlightEnabled:
+          workspace?.classList.contains('has-active-line-highlight') ?? false,
+        activeLineBackground: activeFormulaStyle?.backgroundColor ?? '',
+        activeLineBoxShadow: activeFormulaStyle?.boxShadow ?? '',
+        firstLineBorderBottomWidth: firstFormulaStyle?.borderBottomWidth ?? '',
+        firstLineBorderBottomStyle: firstFormulaStyle?.borderBottomStyle ?? '',
+        firstLineBorderBottomColor: firstFormulaStyle?.borderBottomColor ?? '',
+        hasLineNumbers:
+          editorSurface?.classList.contains('has-line-numbers') ?? false,
+        lineNumberCount:
+          editorSurface?.querySelectorAll('.formula-line-number').length ?? 0,
+        leftAlignedFormulaGap:
+          firstFormulaLineRect && firstMathfieldRect
+            ? firstMathfieldRect.left - firstFormulaLineRect.left
+            : -1,
+        editorSurfaceTopGap: editorSurfaceRect && editorScrollRect
+          ? editorSurfaceRect.top - editorScrollRect.top
+          : -1,
         firstFormulaTopGap: editorSurfaceRect && firstFormulaLineRect
           ? firstFormulaLineRect.top - editorSurfaceRect.top
           : -1,
@@ -299,8 +374,50 @@ async function main() {
     assert.equal(state.hasClassicTiles, false, JSON.stringify(state));
     assert.equal(state.hasDock, false, JSON.stringify(state));
     assert.equal(state.alignmentControlsInHeader, true, JSON.stringify(state));
-    assert.ok(state.editorSurfacePaddingTop >= 5 && state.editorSurfacePaddingTop <= 7, JSON.stringify(state));
-    assert.ok(state.firstFormulaTopGap >= 6 && state.firstFormulaTopGap <= 9, JSON.stringify(state));
+    assert.equal(state.hasVisualEditorTitle, false, JSON.stringify(state));
+    assert.equal(state.hasVisualEditorIcon, false, JSON.stringify(state));
+    assert.equal(state.activeLineHighlightEnabled, false, JSON.stringify(state));
+    assert.equal(state.activeLineBackground, "rgba(0, 0, 0, 0)", JSON.stringify(state));
+    assert.equal(state.activeLineBoxShadow, "none", JSON.stringify(state));
+    assert.equal(state.firstLineBorderBottomWidth, "1px", JSON.stringify(state));
+    assert.equal(state.firstLineBorderBottomStyle, "solid", JSON.stringify(state));
+    assert.notEqual(
+      state.firstLineBorderBottomColor,
+      "rgba(0, 0, 0, 0)",
+      JSON.stringify(state),
+    );
+    assert.equal(state.hasLineNumbers, false, JSON.stringify(state));
+    assert.equal(state.lineNumberCount, 0, JSON.stringify(state));
+    assert.ok(
+      state.leftAlignedFormulaGap >= 0 && state.leftAlignedFormulaGap <= 1,
+      JSON.stringify(state),
+    );
+    assert.equal(state.editorSurfacePaddingTop, 6, JSON.stringify(state));
+    assert.ok(state.editorSurfaceTopGap >= 0 && state.editorSurfaceTopGap <= 1, JSON.stringify(state));
+    assert.ok(state.firstFormulaTopGap >= 6 && state.firstFormulaTopGap <= 8, JSON.stringify(state));
+
+    const formulaLineCenter = await evaluate(`(() => {
+      const rect = document.querySelector('.formula-line')?.getBoundingClientRect();
+      return rect
+        ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+        : null;
+    })()`);
+    assert.ok(formulaLineCenter, "Formula line must exist for hover regression");
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: formulaLineCenter.x,
+      y: formulaLineCenter.y,
+    });
+    await sleep(80);
+    const disabledHoverBackground = await evaluate(`(() => {
+      const line = document.querySelector('.formula-line');
+      return line ? getComputedStyle(line).backgroundColor : '';
+    })()`);
+    assert.equal(
+      disabledHoverBackground,
+      "rgba(0, 0, 0, 0)",
+      `Hover must stay transparent while row highlighting is disabled: ${disabledHoverBackground}`,
+    );
 
     const settingsClick = await evaluate(`(() => {
       const button = document.querySelector('.settings-toggle');
@@ -323,6 +440,497 @@ async function main() {
       throw new Error(`Settings did not open: ${JSON.stringify({ settingsClick, settingsState })}`);
     }
     await waitForSelector('[data-editor-layout-choice="classic"]');
+    await waitForSelector('[data-interface-customization-trigger]');
+    const nestedOptionsBeforeOpen = await evaluate(`({
+      dialog: Boolean(document.querySelector('[data-interface-customization-dialog]')),
+      lineNumbers: Boolean(document.querySelector('[data-show-line-numbers-setting]')),
+      highlight: Boolean(document.querySelector('[data-highlight-active-line-setting]')),
+      insetLeft: Boolean(document.querySelector('[data-formula-inset-left-setting]')),
+      insetRight: Boolean(document.querySelector('[data-formula-inset-right-setting]')),
+      toolbarButtonSize: Boolean(document.querySelector('[data-formula-tool-button-size-setting]')),
+      toolbarButtonPadding: Boolean(document.querySelector('[data-formula-tool-button-padding-setting]')),
+      formulaRowVerticalInset: Boolean(document.querySelector('[data-formula-row-vertical-inset-setting]')),
+      sourceFontSize: Boolean(document.querySelector('[data-source-editor-font-size-setting]')),
+      preview: Boolean(document.querySelector('[data-formula-inset-preview]')),
+    })`);
+    assert.deepEqual(
+      nestedOptionsBeforeOpen,
+      {
+        dialog: false,
+        lineNumbers: false,
+        highlight: false,
+        insetLeft: false,
+        insetRight: false,
+        toolbarButtonSize: false,
+        toolbarButtonPadding: false,
+        formulaRowVerticalInset: false,
+        sourceFontSize: false,
+        preview: false,
+      },
+      JSON.stringify(nestedOptionsBeforeOpen),
+    );
+    await evaluate(`document.querySelector('[data-interface-customization-trigger]')?.click()`);
+    await waitForSelector('[data-interface-customization-dialog]');
+    await waitForSelector('[data-show-line-numbers-setting]');
+    await waitForSelector('[data-highlight-active-line-setting]');
+    await waitForSelector('[data-formula-inset-left-setting]');
+    await waitForSelector('[data-formula-inset-right-setting]');
+    await waitForSelector('[data-formula-tool-button-size-setting]');
+    await waitForSelector('[data-formula-tool-button-padding-setting]');
+    await waitForSelector('[data-formula-row-vertical-inset-setting]');
+    await waitForSelector('[data-source-editor-font-size-setting]');
+    await waitForSelector('[data-formula-inset-preview]');
+
+    const defaultFormulaInsets = await evaluate(`(() => {
+      const left = document.querySelector('[data-formula-inset-left-setting]');
+      const right = document.querySelector('[data-formula-inset-right-setting]');
+      const rowVertical = document.querySelector('[data-formula-row-vertical-inset-setting]');
+      const surface = document.querySelector('.editor-surface.multi-line-editor');
+      const formulaField = document.querySelector('.formula-line .visual-mathfield');
+      const preview = document.querySelector('.formula-inset-preview-canvas');
+      const previewRow = document.querySelector('.formula-inset-preview-row');
+      const leftRect = left?.closest('.formula-inset-range')?.getBoundingClientRect();
+      const rightRect = right?.closest('.formula-inset-range')?.getBoundingClientRect();
+      const rowVerticalRect = rowVertical?.closest('.formula-inset-range')?.getBoundingClientRect();
+      const previewRect = preview?.getBoundingClientRect();
+      const surfaceStyle = surface ? getComputedStyle(surface) : null;
+      const formulaFieldStyle = formulaField ? getComputedStyle(formulaField) : null;
+      const previewStyle = preview ? getComputedStyle(preview) : null;
+      const previewRowStyle = previewRow ? getComputedStyle(previewRow) : null;
+      return {
+        leftValue: Number(left?.value ?? -1),
+        rightValue: Number(right?.value ?? -1),
+        rowVerticalValue: Number(rowVertical?.value ?? -1),
+        surfaceLeft: surfaceStyle ? parseFloat(surfaceStyle.paddingLeft) : -1,
+        surfaceRight: surfaceStyle ? parseFloat(surfaceStyle.paddingRight) : -1,
+        formulaFieldPaddingTop: formulaFieldStyle
+          ? parseFloat(formulaFieldStyle.paddingTop)
+          : -1,
+        formulaFieldPaddingBottom: formulaFieldStyle
+          ? parseFloat(formulaFieldStyle.paddingBottom)
+          : -1,
+        previewLeft: previewStyle ? parseFloat(previewStyle.paddingLeft) : -1,
+        previewRight: previewStyle ? parseFloat(previewStyle.paddingRight) : -1,
+        previewRowPaddingTop: previewRowStyle
+          ? parseFloat(previewRowStyle.paddingTop)
+          : -1,
+        previewRowPaddingBottom: previewRowStyle
+          ? parseFloat(previewRowStyle.paddingBottom)
+          : -1,
+        previewBelowRanges: Boolean(
+          previewRect && leftRect && rightRect && rowVerticalRect &&
+          previewRect.top >= Math.max(
+            leftRect.bottom,
+            rightRect.bottom,
+            rowVerticalRect.bottom,
+          )
+        ),
+      };
+    })()`);
+    assert.deepEqual(
+      defaultFormulaInsets,
+      {
+        leftValue: 34,
+        rightValue: 34,
+        rowVerticalValue: 5,
+        surfaceLeft: 34,
+        surfaceRight: 34,
+        formulaFieldPaddingTop: 5,
+        formulaFieldPaddingBottom: 5,
+        previewLeft: 34,
+        previewRight: 34,
+        previewRowPaddingTop: 5,
+        previewRowPaddingBottom: 5,
+        previewBelowRanges: true,
+      },
+      JSON.stringify(defaultFormulaInsets),
+    );
+
+    const defaultFormulaToolButtons = await evaluate(`(() => {
+      const size = document.querySelector('[data-formula-tool-button-size-setting]');
+      const padding = document.querySelector('[data-formula-tool-button-padding-setting]');
+      const toolbar = document.querySelector('.formula-toolbar');
+      const button = toolbar?.querySelector('.template-button');
+      const previewButton = document.querySelector('.formula-inset-preview-toolbar > span');
+      const previewFormula = document.querySelector(
+        '.formula-inset-preview-row .math-preview',
+      );
+      const toolbarStyle = toolbar ? getComputedStyle(toolbar) : null;
+      const buttonStyle = button ? getComputedStyle(button) : null;
+      const previewButtonStyle = previewButton ? getComputedStyle(previewButton) : null;
+      const previewText = previewFormula?.textContent ?? '';
+      return {
+        sizeValue: Number(size?.value ?? -1),
+        paddingValue: Number(padding?.value ?? -1),
+        toolbarSizeVariable: toolbarStyle
+          ? parseFloat(toolbarStyle.getPropertyValue('--formula-toolbar-button-size'))
+          : -1,
+        buttonPadding: buttonStyle ? parseFloat(buttonStyle.paddingLeft) : -1,
+        previewWidth: previewButtonStyle
+          ? parseFloat(previewButtonStyle.width)
+          : -1,
+        previewHeight: previewButtonStyle
+          ? parseFloat(previewButtonStyle.height)
+          : -1,
+        previewPadding: previewButtonStyle
+          ? parseFloat(previewButtonStyle.paddingLeft)
+          : -1,
+        rawLatexVisible:
+          previewText.includes('\\\\frac') ||
+          previewText.includes('\\\\pm') ||
+          previewText.includes('\\\\sqrt'),
+        previewHasRenderedFormula: Boolean(
+          previewFormula?.querySelector('.ML__latex'),
+        ),
+      };
+    })()`);
+    assert.deepEqual(
+      defaultFormulaToolButtons,
+      {
+        sizeValue: 52,
+        paddingValue: 2,
+        toolbarSizeVariable: 52,
+        buttonPadding: 2,
+        previewWidth: 52,
+        previewHeight: 52,
+        previewPadding: 2,
+        rawLatexVisible: false,
+        previewHasRenderedFormula: true,
+      },
+      JSON.stringify(defaultFormulaToolButtons),
+    );
+
+    const defaultSourceFontSize = await evaluate(`(() => {
+      const input = document.querySelector('[data-source-editor-font-size-setting]');
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        value: Number(input?.value ?? -1),
+        persisted: persisted.sourceEditorFontSize ?? null,
+      };
+    })()`);
+    assert.equal(defaultSourceFontSize.value, 12, JSON.stringify(defaultSourceFontSize));
+    assert.ok(
+      defaultSourceFontSize.persisted === null || defaultSourceFontSize.persisted === 12,
+      JSON.stringify(defaultSourceFontSize),
+    );
+
+    await evaluate(`(() => {
+      const setRange = (selector, value) => {
+        const input = document.querySelector(selector);
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        setter?.call(input, String(value));
+        input?.dispatchEvent(new Event('input', { bubbles: true }));
+        input?.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      setRange('[data-formula-inset-left-setting]', 12);
+      setRange('[data-formula-inset-right-setting]', 68);
+      setRange('[data-formula-row-vertical-inset-setting]', 11);
+      setRange('[data-formula-tool-button-size-setting]', 64);
+      setRange('[data-formula-tool-button-padding-setting]', 8);
+      setRange('[data-source-editor-font-size-setting]', 19);
+    })()`);
+    await sleep(100);
+    const adjustedFormulaInsets = await evaluate(`(() => {
+      const surface = document.querySelector('.editor-surface.multi-line-editor');
+      const formulaField = document.querySelector('.formula-line .visual-mathfield');
+      const preview = document.querySelector('.formula-inset-preview-canvas');
+      const previewRow = document.querySelector('.formula-inset-preview-row');
+      const toolbar = document.querySelector('.formula-toolbar');
+      const toolbarButton = toolbar?.querySelector('.template-button');
+      const previewToolbarButton = document.querySelector(
+        '.formula-inset-preview-toolbar > span',
+      );
+      const surfaceStyle = surface ? getComputedStyle(surface) : null;
+      const formulaFieldStyle = formulaField ? getComputedStyle(formulaField) : null;
+      const previewStyle = preview ? getComputedStyle(preview) : null;
+      const previewRowStyle = previewRow ? getComputedStyle(previewRow) : null;
+      const toolbarStyle = toolbar ? getComputedStyle(toolbar) : null;
+      const toolbarButtonStyle = toolbarButton
+        ? getComputedStyle(toolbarButton)
+        : null;
+      const previewToolbarButtonStyle = previewToolbarButton
+        ? getComputedStyle(previewToolbarButton)
+        : null;
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        surfaceLeft: surfaceStyle ? parseFloat(surfaceStyle.paddingLeft) : -1,
+        surfaceRight: surfaceStyle ? parseFloat(surfaceStyle.paddingRight) : -1,
+        previewLeft: previewStyle ? parseFloat(previewStyle.paddingLeft) : -1,
+        previewRight: previewStyle ? parseFloat(previewStyle.paddingRight) : -1,
+        formulaFieldPaddingTop: formulaFieldStyle
+          ? parseFloat(formulaFieldStyle.paddingTop)
+          : -1,
+        formulaFieldPaddingBottom: formulaFieldStyle
+          ? parseFloat(formulaFieldStyle.paddingBottom)
+          : -1,
+        previewRowPaddingTop: previewRowStyle
+          ? parseFloat(previewRowStyle.paddingTop)
+          : -1,
+        previewRowPaddingBottom: previewRowStyle
+          ? parseFloat(previewRowStyle.paddingBottom)
+          : -1,
+        toolbarSizeVariable: toolbarStyle
+          ? parseFloat(toolbarStyle.getPropertyValue('--formula-toolbar-button-size'))
+          : -1,
+        toolbarButtonPadding: toolbarButtonStyle
+          ? parseFloat(toolbarButtonStyle.paddingLeft)
+          : -1,
+        previewToolbarWidth: previewToolbarButtonStyle
+          ? parseFloat(previewToolbarButtonStyle.width)
+          : -1,
+        previewToolbarHeight: previewToolbarButtonStyle
+          ? parseFloat(previewToolbarButtonStyle.height)
+          : -1,
+        previewToolbarPadding: previewToolbarButtonStyle
+          ? parseFloat(previewToolbarButtonStyle.paddingLeft)
+          : -1,
+        persistedLeft: persisted.formulaInsetLeft ?? null,
+        persistedRight: persisted.formulaInsetRight ?? null,
+        persistedToolbarSize: persisted.formulaToolButtonSize ?? null,
+        persistedToolbarPadding: persisted.formulaToolButtonPadding ?? null,
+        persistedRowVerticalInset: persisted.formulaRowVerticalInset ?? null,
+      };
+    })()`);
+    assert.deepEqual(
+      adjustedFormulaInsets,
+      {
+        surfaceLeft: 12,
+        surfaceRight: 68,
+        previewLeft: 12,
+        previewRight: 68,
+        formulaFieldPaddingTop: 11,
+        formulaFieldPaddingBottom: 11,
+        previewRowPaddingTop: 11,
+        previewRowPaddingBottom: 11,
+        toolbarSizeVariable: 64,
+        toolbarButtonPadding: 8,
+        previewToolbarWidth: 64,
+        previewToolbarHeight: 64,
+        previewToolbarPadding: 8,
+        persistedLeft: 12,
+        persistedRight: 68,
+        persistedToolbarSize: 64,
+        persistedToolbarPadding: 8,
+        persistedRowVerticalInset: 11,
+      },
+      JSON.stringify(adjustedFormulaInsets),
+    );
+    const adjustedSourceFontSize = await evaluate(`(() => {
+      const input = document.querySelector('[data-source-editor-font-size-setting]');
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        value: Number(input?.value ?? -1),
+        persisted: persisted.sourceEditorFontSize ?? null,
+      };
+    })()`);
+    assert.deepEqual(
+      adjustedSourceFontSize,
+      { value: 19, persisted: 19 },
+      JSON.stringify(adjustedSourceFontSize),
+    );
+    const resetDispatch = await evaluate(`(() => {
+      const insetReset = document.querySelector('[data-formula-inset-reset]');
+      const toolbarReset = document.querySelector('[data-formula-tool-button-reset]');
+      const sourceFontReset = document.querySelector('[data-source-editor-font-size-reset]');
+      insetReset?.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }));
+      toolbarReset?.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }));
+      sourceFontReset?.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      }));
+      return {
+        insetReset: Boolean(insetReset),
+        toolbarReset: Boolean(toolbarReset),
+        sourceFontReset: Boolean(sourceFontReset),
+      };
+    })()`);
+    assert.deepEqual(
+      resetDispatch,
+      { insetReset: true, toolbarReset: true, sourceFontReset: true },
+      JSON.stringify(resetDispatch),
+    );
+    await sleep(100);
+    const resetCustomizationState = await evaluate(`(() => {
+      const size = document.querySelector('[data-formula-tool-button-size-setting]');
+      const padding = document.querySelector('[data-formula-tool-button-padding-setting]');
+      const rowVertical = document.querySelector('[data-formula-row-vertical-inset-setting]');
+      const sourceFontSize = document.querySelector('[data-source-editor-font-size-setting]');
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        insetLeft: persisted.formulaInsetLeft ?? null,
+        insetRight: persisted.formulaInsetRight ?? null,
+        rowVerticalValue: Number(rowVertical?.value ?? -1),
+        sizeValue: Number(size?.value ?? -1),
+        paddingValue: Number(padding?.value ?? -1),
+        persistedSize: persisted.formulaToolButtonSize ?? null,
+        persistedPadding: persisted.formulaToolButtonPadding ?? null,
+        persistedRowVerticalInset: persisted.formulaRowVerticalInset ?? null,
+        sourceFontSize: Number(sourceFontSize?.value ?? -1),
+        persistedSourceFontSize: persisted.sourceEditorFontSize ?? null,
+      };
+    })()`);
+    assert.deepEqual(
+      resetCustomizationState,
+      {
+        insetLeft: 34,
+        insetRight: 34,
+        rowVerticalValue: 5,
+        sizeValue: 52,
+        paddingValue: 2,
+        persistedSize: 52,
+        persistedPadding: 2,
+        persistedRowVerticalInset: 5,
+        sourceFontSize: 12,
+        persistedSourceFontSize: 12,
+      },
+      JSON.stringify(resetCustomizationState),
+    );
+
+    const defaultLineNumberSetting = await evaluate(`(() => {
+      const input = document.querySelector('[data-show-line-numbers-setting]');
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        checked: input?.checked ?? null,
+        persisted: persisted.showLineNumbers ?? null,
+      };
+    })()`);
+    assert.equal(defaultLineNumberSetting.checked, false, JSON.stringify(defaultLineNumberSetting));
+    assert.ok(
+      defaultLineNumberSetting.persisted === null ||
+        defaultLineNumberSetting.persisted === false,
+      JSON.stringify(defaultLineNumberSetting),
+    );
+    await evaluate(`document.querySelector('[data-show-line-numbers-setting]')?.click()`);
+    await sleep(100);
+    const enabledLineNumbers = await readLayout();
+    assert.equal(enabledLineNumbers.hasLineNumbers, true, JSON.stringify(enabledLineNumbers));
+    assert.equal(enabledLineNumbers.lineNumberCount, 1, JSON.stringify(enabledLineNumbers));
+    assert.ok(enabledLineNumbers.leftAlignedFormulaGap >= 45, JSON.stringify(enabledLineNumbers));
+    await evaluate(`document.querySelector('[data-show-line-numbers-setting]')?.click()`);
+    await sleep(100);
+    const disabledLineNumbers = await readLayout();
+    assert.equal(disabledLineNumbers.hasLineNumbers, false, JSON.stringify(disabledLineNumbers));
+    assert.equal(disabledLineNumbers.lineNumberCount, 0, JSON.stringify(disabledLineNumbers));
+    assert.ok(
+      disabledLineNumbers.leftAlignedFormulaGap >= 0 &&
+        disabledLineNumbers.leftAlignedFormulaGap <= 1,
+      JSON.stringify(disabledLineNumbers),
+    );
+    const persistedLineNumbers = await evaluate(`
+      (JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {}).showLineNumbers
+    `);
+    assert.equal(persistedLineNumbers, false);
+
+    const defaultHighlightSetting = await evaluate(`(() => {
+      const input = document.querySelector('[data-highlight-active-line-setting]');
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        checked: input?.checked ?? null,
+        persisted: persisted.highlightActiveLine ?? null,
+      };
+    })()`);
+    assert.equal(defaultHighlightSetting.checked, false, JSON.stringify(defaultHighlightSetting));
+    assert.ok(
+      defaultHighlightSetting.persisted === null ||
+        defaultHighlightSetting.persisted === false,
+      JSON.stringify(defaultHighlightSetting),
+    );
+    await evaluate(`document.querySelector('[data-highlight-active-line-setting]')?.click()`);
+    await sleep(80);
+    const enabledHighlightSetting = await evaluate(`(() => {
+      const workspace = document.querySelector('.workspace');
+      const activeLine = document.querySelector('.formula-line.is-active');
+      const field = document.querySelector('math-field.visual-mathfield');
+      const style = activeLine ? getComputedStyle(activeLine) : null;
+      const fieldStyle = field ? getComputedStyle(field) : null;
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        classEnabled: workspace?.classList.contains('has-active-line-highlight') ?? false,
+        persisted: persisted.highlightActiveLine ?? null,
+        background: style?.backgroundColor ?? '',
+        boxShadow: style?.boxShadow ?? '',
+        selectionBackground: fieldStyle?.getPropertyValue('--selection-background-color').trim() ?? '',
+        containsHighlightBackground: fieldStyle?.getPropertyValue('--contains-highlight-background-color').trim() ?? '',
+      };
+    })()`);
+    assert.equal(enabledHighlightSetting.classEnabled, true, JSON.stringify(enabledHighlightSetting));
+    assert.equal(enabledHighlightSetting.persisted, true, JSON.stringify(enabledHighlightSetting));
+    assert.notEqual(enabledHighlightSetting.background, "rgba(0, 0, 0, 0)", JSON.stringify(enabledHighlightSetting));
+    assert.notEqual(enabledHighlightSetting.boxShadow, "none", JSON.stringify(enabledHighlightSetting));
+    assert.notEqual(enabledHighlightSetting.selectionBackground, "transparent", JSON.stringify(enabledHighlightSetting));
+    assert.notEqual(enabledHighlightSetting.containsHighlightBackground, "transparent", JSON.stringify(enabledHighlightSetting));
+    await evaluate(`document.querySelector('[data-highlight-active-line-setting]')?.click()`);
+    await sleep(80);
+    const disabledHighlightSetting = await evaluate(`(() => {
+      const workspace = document.querySelector('.workspace');
+      const field = document.querySelector('math-field.visual-mathfield');
+      const fieldStyle = field ? getComputedStyle(field) : null;
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        classEnabled: workspace?.classList.contains('has-active-line-highlight') ?? false,
+        persisted: persisted.highlightActiveLine ?? null,
+        selectionBackground: fieldStyle?.getPropertyValue('--selection-background-color').trim() ?? '',
+        containsHighlightBackground: fieldStyle?.getPropertyValue('--contains-highlight-background-color').trim() ?? '',
+      };
+    })()`);
+    assert.equal(disabledHighlightSetting.classEnabled, false, JSON.stringify(disabledHighlightSetting));
+    assert.equal(disabledHighlightSetting.persisted, false, JSON.stringify(disabledHighlightSetting));
+    assert.notEqual(
+      disabledHighlightSetting.selectionBackground,
+      "transparent",
+      JSON.stringify(disabledHighlightSetting),
+    );
+    assert.equal(
+      disabledHighlightSetting.selectionBackground,
+      enabledHighlightSetting.selectionBackground,
+      JSON.stringify({ enabledHighlightSetting, disabledHighlightSetting }),
+    );
+    assert.equal(
+      disabledHighlightSetting.containsHighlightBackground,
+      enabledHighlightSetting.containsHighlightBackground,
+      JSON.stringify({ enabledHighlightSetting, disabledHighlightSetting }),
+    );
+    await evaluate(`document.querySelector('[data-interface-customization-close]')?.click()`);
+    await sleep(80);
+    const nestedOptionsAfterClose = await evaluate(`({
+      settingsDialog: Boolean(document.querySelector('.settings-dialog')),
+      customizationDialog: Boolean(document.querySelector('[data-interface-customization-dialog]')),
+      lineNumbers: Boolean(document.querySelector('[data-show-line-numbers-setting]')),
+      highlight: Boolean(document.querySelector('[data-highlight-active-line-setting]')),
+      insetLeft: Boolean(document.querySelector('[data-formula-inset-left-setting]')),
+      insetRight: Boolean(document.querySelector('[data-formula-inset-right-setting]')),
+      toolbarButtonSize: Boolean(document.querySelector('[data-formula-tool-button-size-setting]')),
+      toolbarButtonPadding: Boolean(document.querySelector('[data-formula-tool-button-padding-setting]')),
+      formulaRowVerticalInset: Boolean(document.querySelector('[data-formula-row-vertical-inset-setting]')),
+      sourceFontSize: Boolean(document.querySelector('[data-source-editor-font-size-setting]')),
+      preview: Boolean(document.querySelector('[data-formula-inset-preview]')),
+    })`);
+    assert.deepEqual(
+      nestedOptionsAfterClose,
+      {
+        settingsDialog: true,
+        customizationDialog: false,
+        lineNumbers: false,
+        highlight: false,
+        insetLeft: false,
+        insetRight: false,
+        toolbarButtonSize: false,
+        toolbarButtonPadding: false,
+        formulaRowVerticalInset: false,
+        sourceFontSize: false,
+        preview: false,
+      },
+      JSON.stringify(nestedOptionsAfterClose),
+    );
 
     const themeExpectations = {
       light: {
@@ -367,12 +975,10 @@ async function main() {
       hasHeaderThemeToggle: Boolean(document.querySelector('.app-header .theme-toggle')),
     }))()`);
     assert.deepEqual(
-      themeChoiceState.ids.slice(0, Object.keys(themeExpectations).length),
+      themeChoiceState.ids,
       Object.keys(themeExpectations),
       JSON.stringify(themeChoiceState),
     );
-    assert.ok(themeChoiceState.ids.includes("custom"), JSON.stringify(themeChoiceState));
-    assert.ok(themeChoiceState.ids.length > Object.keys(themeExpectations).length, JSON.stringify(themeChoiceState));
     assert.equal(
       themeChoiceState.hasHeaderThemeToggle,
       false,
@@ -481,6 +1087,8 @@ async function main() {
 
     await evaluate(`document.querySelector('[data-editor-layout-choice="classic"]')?.click()`);
     await sleep(180);
+    await evaluate(`document.querySelector('.settings-dialog button[aria-label]')?.click()`);
+    await sleep(120);
 
     state = await readLayout();
     assert.equal(state.layout, "classic", JSON.stringify(state));
@@ -489,20 +1097,185 @@ async function main() {
     assert.equal(state.hasClassicTiles, true, JSON.stringify(state));
     assert.equal(state.classicTileView, "tiles", JSON.stringify(state));
     assert.equal(state.tileRightOfEditor, true, JSON.stringify(state));
+    assert.equal(state.tileBelowHeader, true, JSON.stringify(state));
     assert.equal(state.hasDock, true, JSON.stringify(state));
     assert.equal(state.dockBelowEditor, true, JSON.stringify(state));
     assert.equal(state.hasBottomToolbar, true, JSON.stringify(state));
     assert.equal(state.bottomToolbarLayout, "horizontal", JSON.stringify(state));
     assert.equal(state.bottomToolbarView, "tools", JSON.stringify(state));
-    assert.equal(state.templateRows.length, 2, JSON.stringify(state));
+    assert.ok(
+      state.bottomToolbarRowCount >= 1 && state.bottomToolbarRowCount <= 4,
+      JSON.stringify(state),
+    );
+    assert.equal(
+      state.templateRows.length,
+      state.bottomToolbarRowCount,
+      JSON.stringify(state),
+    );
     assert.ok(state.templateNormalMaxWidth <= 60, JSON.stringify(state));
-    assert.ok(state.templateMaxHeight <= 80, JSON.stringify(state));
+    assert.ok(
+      state.templateMaxHeight >= 44 && state.templateMaxHeight <= 80,
+      JSON.stringify(state),
+    );
     assert.equal(state.bottomTabsCentered, true, JSON.stringify(state));
     assert.equal(state.hasDockCollapse, true, JSON.stringify(state));
+    assert.equal(state.hasClassicTopCopy, true, JSON.stringify(state));
+    assert.equal(state.copyBeforeCollapse, true, JSON.stringify(state));
     assert.equal(state.dockCollapsed, false, JSON.stringify(state));
     assert.equal(state.alignmentControlsInHeader, true, JSON.stringify(state));
-    assert.ok(state.editorSurfacePaddingTop >= 5 && state.editorSurfacePaddingTop <= 7, JSON.stringify(state));
-    assert.ok(state.firstFormulaTopGap >= 6 && state.firstFormulaTopGap <= 9, JSON.stringify(state));
+    assert.equal(state.hasVisualEditorTitle, false, JSON.stringify(state));
+    assert.equal(state.hasVisualEditorIcon, false, JSON.stringify(state));
+    assert.equal(state.editorSurfacePaddingTop, 6, JSON.stringify(state));
+    assert.ok(state.editorSurfaceTopGap >= 0 && state.editorSurfaceTopGap <= 1, JSON.stringify(state));
+    assert.ok(state.firstFormulaTopGap >= 6 && state.firstFormulaTopGap <= 8, JSON.stringify(state));
+
+    const expandedTileGeometry = await evaluate(`(() => {
+      const workspace = document.querySelector('.workspace.is-classic-layout');
+      const editor = document.querySelector('.classic-editor-pane-body');
+      const tiles = document.querySelector('.classic-tile-toolbar');
+      const collapse = document.querySelector('[data-formula-tile-collapse]');
+      return {
+        hasSidebar: workspace?.classList.contains('has-sidebar') ?? false,
+        editorWidth: editor?.getBoundingClientRect().width ?? 0,
+        tileWidth: tiles?.getBoundingClientRect().width ?? 0,
+        collapseVisible: Boolean(collapse && collapse.getBoundingClientRect().width > 0),
+      };
+    })()`);
+    assert.equal(expandedTileGeometry.hasSidebar, true, JSON.stringify(expandedTileGeometry));
+    assert.equal(expandedTileGeometry.collapseVisible, true, JSON.stringify(expandedTileGeometry));
+    await evaluate(`document.querySelector('[data-formula-tile-collapse]')?.click()`);
+    await sleep(120);
+    const collapsedTileGeometry = await evaluate(`(() => {
+      const workspace = document.querySelector('.workspace.is-classic-layout');
+      const editor = document.querySelector('.classic-editor-pane-body');
+      const expand = document.querySelector('[data-formula-tile-expand]');
+      const expandRect = expand?.getBoundingClientRect();
+      return {
+        hasSidebar: workspace?.classList.contains('has-sidebar') ?? false,
+        hasTiles: Boolean(document.querySelector('.classic-tile-toolbar')),
+        editorWidth: editor?.getBoundingClientRect().width ?? 0,
+        expandVisible: Boolean(
+          expandRect && expandRect.width > 0 && expandRect.height > 0 &&
+          expandRect.left >= 0 && expandRect.right <= innerWidth + 1
+        ),
+      };
+    })()`);
+    assert.equal(collapsedTileGeometry.hasSidebar, false, JSON.stringify(collapsedTileGeometry));
+    assert.equal(collapsedTileGeometry.hasTiles, false, JSON.stringify(collapsedTileGeometry));
+    assert.equal(collapsedTileGeometry.expandVisible, true, JSON.stringify(collapsedTileGeometry));
+    assert.ok(
+      collapsedTileGeometry.editorWidth >=
+        expandedTileGeometry.editorWidth + expandedTileGeometry.tileWidth - 2,
+      JSON.stringify({ expandedTileGeometry, collapsedTileGeometry }),
+    );
+    await evaluate(`document.querySelector('[data-formula-tile-expand]')?.click()`);
+    await sleep(120);
+    const restoredTileGeometry = await evaluate(`(() => ({
+      hasSidebar: document.querySelector('.workspace.is-classic-layout')?.classList.contains('has-sidebar') ?? false,
+      hasTiles: Boolean(document.querySelector('.classic-tile-toolbar')),
+      hasCollapse: Boolean(document.querySelector('[data-formula-tile-collapse]')),
+    }))()`);
+    assert.deepEqual(
+      restoredTileGeometry,
+      { hasSidebar: true, hasTiles: true, hasCollapse: true },
+      JSON.stringify(restoredTileGeometry),
+    );
+
+    const readResizablePanels = () => evaluate(`(() => {
+      const tiles = document.querySelector('.classic-tile-toolbar');
+      const dock = document.querySelector('.classic-bottom-dock');
+      const tileHandle = document.querySelector('.classic-tile-resizer');
+      const dockHandle = document.querySelector('.classic-dock-resizer');
+      const bottomToolbar = document.querySelector('.classic-bottom-toolbar');
+      const templateRows = Array.from(new Set(
+        Array.from(bottomToolbar?.querySelectorAll('.template-button') ?? [])
+          .slice(0, 24)
+          .map((button) => Math.round(button.getBoundingClientRect().top)),
+      ));
+      const appData = JSON.parse(
+        localStorage.getItem('visualtex-editor') || '{}',
+      ).state ?? {};
+      return {
+        tileWidth: tiles?.getBoundingClientRect().width ?? 0,
+        dockHeight: dock?.getBoundingClientRect().height ?? 0,
+        tileHandle: Boolean(tileHandle),
+        dockHandle: Boolean(dockHandle),
+        toolbarRowCount: Number(bottomToolbar?.dataset.toolbarRowCount ?? 0),
+        renderedTemplateRows: templateRows.length,
+        storedTileWidth: Number(localStorage.getItem('visualtex-classic-tile-width')),
+        storedDockHeight: Number(localStorage.getItem('visualtex-classic-dock-height')),
+        appDataTileWidth: Number(appData.classicTileWidth),
+        appDataDockHeight: Number(appData.classicDockHeight),
+      };
+    })()`);
+    const initialPanels = await readResizablePanels();
+    assert.equal(initialPanels.tileHandle, true, JSON.stringify(initialPanels));
+    assert.equal(initialPanels.dockHandle, true, JSON.stringify(initialPanels));
+    await dragElement('.classic-tile-resizer', -72, 0);
+    await dragElement('.classic-dock-resizer', 0, -56);
+    const resizedPanels = await readResizablePanels();
+    assert.ok(
+      resizedPanels.tileWidth >= initialPanels.tileWidth + 60,
+      JSON.stringify({ initialPanels, resizedPanels }),
+    );
+    assert.ok(
+      resizedPanels.dockHeight >= initialPanels.dockHeight + 44,
+      JSON.stringify({ initialPanels, resizedPanels }),
+    );
+    assert.ok(
+      Math.abs(resizedPanels.storedTileWidth - resizedPanels.tileWidth) <= 2,
+      JSON.stringify(resizedPanels),
+    );
+    assert.ok(
+      Math.abs(resizedPanels.storedDockHeight - resizedPanels.dockHeight) <= 2,
+      JSON.stringify(resizedPanels),
+    );
+    assert.ok(
+      Math.abs(resizedPanels.appDataTileWidth - resizedPanels.tileWidth) <= 2,
+      JSON.stringify(resizedPanels),
+    );
+    assert.ok(
+      Math.abs(resizedPanels.appDataDockHeight - resizedPanels.dockHeight) <= 2,
+      JSON.stringify(resizedPanels),
+    );
+    assert.ok(
+      resizedPanels.toolbarRowCount > initialPanels.toolbarRowCount,
+      JSON.stringify({ initialPanels, resizedPanels }),
+    );
+    assert.equal(
+      resizedPanels.renderedTemplateRows,
+      resizedPanels.toolbarRowCount,
+      JSON.stringify(resizedPanels),
+    );
+
+    await dragElement('.classic-dock-resizer', 0, 180);
+    const compactPanels = await readResizablePanels();
+    assert.ok(
+      compactPanels.dockHeight < initialPanels.dockHeight,
+      JSON.stringify({ initialPanels, compactPanels }),
+    );
+    assert.ok(
+      compactPanels.toolbarRowCount < initialPanels.toolbarRowCount,
+      JSON.stringify({ initialPanels, compactPanels }),
+    );
+    assert.equal(
+      compactPanels.renderedTemplateRows,
+      compactPanels.toolbarRowCount,
+      JSON.stringify(compactPanels),
+    );
+    assert.ok(
+      Math.abs(compactPanels.storedDockHeight - compactPanels.dockHeight) <= 2,
+      JSON.stringify(compactPanels),
+    );
+
+    await evaluate(`document.querySelector('.classic-tile-resizer')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+    await evaluate(`document.querySelector('.classic-dock-resizer')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+    await sleep(120);
+    const resetPanels = await readResizablePanels();
+    assert.ok(Math.abs(resetPanels.tileWidth - 300) <= 2, JSON.stringify(resetPanels));
+    assert.ok(Math.abs(resetPanels.dockHeight - 240) <= 2, JSON.stringify(resetPanels));
+    assert.equal(resetPanels.storedTileWidth, 300, JSON.stringify(resetPanels));
+    assert.equal(resetPanels.storedDockHeight, 240, JSON.stringify(resetPanels));
 
     for (const category of [
       "structure",
@@ -520,13 +1293,20 @@ async function main() {
         const toolbar = document.querySelector('.classic-bottom-toolbar');
         const strips = Array.from(toolbar?.querySelectorAll('.template-strip') ?? []);
         const strip = strips[0];
-        const buttons = Array.from(strip?.querySelectorAll('.template-button') ?? []);
+        const section = strip?.querySelector(
+          '[data-toolbar-category-section="${category}"]',
+        );
+        const buttons = Array.from(
+          section?.querySelectorAll(':scope > .template-button') ?? [],
+        );
         const ids = buttons.map((button) => button.dataset.commandId ?? '');
         return {
           category: strip?.dataset.activeCategory ?? '',
           stripCount: strips.length,
           buttonCount: buttons.length,
-          previewCount: strip?.querySelectorAll('.template-button .math-preview').length ?? 0,
+          previewCount:
+            section?.querySelectorAll(':scope > .template-button .math-preview')
+              .length ?? 0,
           ids,
           uniqueIds: new Set(ids).size,
         };
@@ -535,8 +1315,7 @@ async function main() {
       assert.equal(categoryState.stripCount, 1, JSON.stringify(categoryState));
       assert.ok(categoryState.buttonCount > 0, JSON.stringify(categoryState));
       assert.equal(categoryState.previewCount, categoryState.buttonCount, JSON.stringify(categoryState));
-      assert.ok(categoryState.uniqueIds > 300, JSON.stringify(categoryState));
-      assert.ok(categoryState.uniqueIds <= categoryState.buttonCount, JSON.stringify(categoryState));
+      assert.equal(categoryState.uniqueIds, categoryState.buttonCount, JSON.stringify(categoryState));
     }
 
     await evaluate(`document.querySelector('.classic-bottom-toolbar [data-category="matrix"]')?.click()`);
@@ -554,8 +1333,11 @@ async function main() {
       const sizePicker = builder?.querySelector('.matrix-size-picker');
       const sizePickerRect = sizePicker?.getBoundingClientRect();
       const insert = builder?.querySelector('.matrix-insert-button');
-      const nextTemplate = document.querySelector(
-        '.classic-bottom-toolbar .template-strip > .template-button',
+      const matrixSection = builder?.closest(
+        '[data-toolbar-category-section="matrix"]',
+      );
+      const nextTemplate = matrixSection?.querySelector(
+        ':scope > .template-button',
       );
       const nextTemplateRect = nextTemplate?.getBoundingClientRect();
       const delimiterButtons = Array.from(builder?.querySelectorAll('.matrix-delimiter-options button') ?? []);
@@ -613,8 +1395,8 @@ async function main() {
     })()`);
     assert.equal(matrixState.exists, true, JSON.stringify(matrixState));
     assert.ok(matrixState.builderRect.width >= 240, JSON.stringify(matrixState));
-    assert.ok(matrixState.builderRect.width <= 280, JSON.stringify(matrixState));
-    assert.ok(matrixState.builderRect.height >= 130, JSON.stringify(matrixState));
+    assert.ok(matrixState.builderRect.width <= 320, JSON.stringify(matrixState));
+    assert.ok(matrixState.builderRect.height >= 90, JSON.stringify(matrixState));
     assert.equal(matrixState.optionsColumnInside, true, JSON.stringify(matrixState));
     assert.equal(matrixState.sizePickerInside, true, JSON.stringify(matrixState));
     assert.equal(matrixState.hasTwoColumnOrder, true, JSON.stringify(matrixState));
@@ -624,14 +1406,14 @@ async function main() {
     assert.equal(matrixState.badgeInside, true, JSON.stringify(matrixState));
     assert.equal(matrixState.gridInside, true, JSON.stringify(matrixState));
     assert.equal(matrixState.insertInside, true, JSON.stringify(matrixState));
-    assert.ok(matrixState.insertWidth >= 110, JSON.stringify(matrixState));
-    assert.ok(matrixState.insertWidth <= 150, JSON.stringify(matrixState));
+    assert.ok(matrixState.insertWidth >= 150, JSON.stringify(matrixState));
+    assert.ok(matrixState.insertWidth <= 190, JSON.stringify(matrixState));
     assert.ok(matrixState.insertHeight <= 38, JSON.stringify(matrixState));
-    assert.ok(matrixState.nextTemplateGap >= -1, JSON.stringify(matrixState));
+    assert.ok(matrixState.nextTemplateGap >= 0, JSON.stringify(matrixState));
     assert.ok(matrixState.nextTemplateGap <= 8, JSON.stringify(matrixState));
     assert.equal(matrixState.delimiterCount, 6, JSON.stringify(matrixState));
     assert.ok(
-      matrixState.delimiterHeights.every((height) => height >= 39),
+      matrixState.delimiterHeights.every((height) => height >= 12),
       JSON.stringify(matrixState),
     );
     assert.equal(matrixState.delimiterInside, true, JSON.stringify(matrixState));
@@ -749,6 +1531,7 @@ async function main() {
       const firstTop = rects.length ? Math.min(...rects.map((rect) => rect.top)) : -1;
       return {
         height: window.innerHeight,
+        rowCount: Number(document.querySelector('.classic-bottom-toolbar')?.dataset.toolbarRowCount ?? 0),
         topGap: stripRect && firstTop >= 0 ? firstTop - stripRect.top : -1,
         bottomGap: stripRect && lastBottom >= 0 ? stripRect.bottom - lastBottom : -1,
         rowHeights: Array.from(
@@ -764,9 +1547,14 @@ async function main() {
     assert.ok(
       classicToolSpacings.every(
         (spacing) =>
-          spacing.topGap >= 4 && spacing.topGap <= 7 &&
-          spacing.bottomGap >= 4 && spacing.bottomGap <= 9 &&
-          spacing.rowHeights.length === 2,
+          spacing.topGap >= 3 && spacing.topGap <= 5 &&
+          spacing.bottomGap >= 3 && spacing.bottomGap <= 5 &&
+          spacing.rowHeights.length === spacing.rowCount &&
+          spacing.rowHeights.every(
+            (height) =>
+              Math.abs(height - spacing.rowHeights[0]) <= 1 &&
+              height >= 44,
+          ),
       ),
       JSON.stringify(classicToolSpacings),
     );
@@ -798,6 +1586,8 @@ async function main() {
     assert.equal(state.hasBottomToolbar, false, JSON.stringify(state));
     assert.equal(state.hasSourcePanel, false, JSON.stringify(state));
     assert.equal(state.hasDockCollapse, true, JSON.stringify(state));
+    assert.equal(state.hasClassicTopCopy, true, JSON.stringify(state));
+    assert.equal(state.copyBeforeCollapse, true, JSON.stringify(state));
 
     await evaluate(`document.querySelector('[data-classic-bottom-collapse]')?.click()`);
     await sleep(100);
@@ -810,8 +1600,13 @@ async function main() {
     state = await readLayout();
     assert.equal(state.hasBottomToolbar, true, JSON.stringify(state));
     assert.equal(state.hasSourcePanel, false, JSON.stringify(state));
-    assert.equal(state.hasClassicTopCopy, false, JSON.stringify(state));
-    assert.equal(state.templateRows.length, 2, JSON.stringify(state));
+    assert.equal(state.hasClassicTopCopy, true, JSON.stringify(state));
+    assert.equal(state.copyBeforeCollapse, true, JSON.stringify(state));
+    assert.equal(
+      state.templateRows.length,
+      state.bottomToolbarRowCount,
+      JSON.stringify(state),
+    );
 
     await evaluate(`document.querySelector('.classic-tile-toolbar [data-tile-category="custom"]')?.click()`);
     await sleep(350);
@@ -880,8 +1675,12 @@ async function main() {
       JSON.stringify(tileStability),
     );
 
+    await evaluate(`document.querySelector('.settings-toggle')?.click()`);
+    await waitForSelector('[data-editor-layout-choice="standard"]');
     await evaluate(`document.querySelector('[data-editor-layout-choice="standard"]')?.click()`);
     await sleep(180);
+    await evaluate(`document.querySelector('.settings-dialog button[aria-label]')?.click()`);
+    await sleep(80);
     state = await readLayout();
     assert.equal(state.layout, "standard", JSON.stringify(state));
     assert.equal(state.persistedLayout, "standard", JSON.stringify(state));
@@ -946,13 +1745,53 @@ async function main() {
       JSON.stringify(standardTileStability),
     );
 
+    await evaluate(`(() => {
+      const saved = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
+      saved.state = {
+        ...(saved.state ?? {}),
+        sourceOpen: true,
+        sourceEditorFontSize: 19,
+      };
+      localStorage.setItem('visualtex-editor', JSON.stringify(saved));
+      localStorage.setItem('visualtex-desktop-editor-source-open', 'true');
+    })()`);
+    await client.send("Page.reload", { ignoreCache: true });
+    await waitForSelector('.source-panel .cm-content');
+    const appliedSourceFontSize = await evaluate(`(() => {
+      const panel = document.querySelector('.source-panel');
+      const content = panel?.querySelector('.cm-content');
+      const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}').state ?? {};
+      return {
+        panelValue: Number(panel?.getAttribute('data-source-editor-font-size') ?? -1),
+        computed: content ? parseFloat(getComputedStyle(content).fontSize) : -1,
+        persisted: persisted.sourceEditorFontSize ?? null,
+      };
+    })()`);
+    assert.deepEqual(
+      appliedSourceFontSize,
+      { panelValue: 19, computed: 19, persisted: 19 },
+      JSON.stringify(appliedSourceFontSize),
+    );
+
     console.log("Editor layout switch regression passed");
   } finally {
     client?.close();
     chrome?.kill("SIGTERM");
     preview.kill("SIGTERM");
-    await sleep(250);
-    await rm(chromeProfile, { recursive: true, force: true });
+    await sleep(400);
+    let cleanupError = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        await rm(chromeProfile, { recursive: true, force: true });
+        cleanupError = null;
+        break;
+      } catch (error) {
+        cleanupError = error;
+        if (error?.code !== "ENOTEMPTY") throw error;
+        await sleep(150);
+      }
+    }
+    if (cleanupError) throw cleanupError;
   }
 }
 

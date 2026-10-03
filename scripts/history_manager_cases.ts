@@ -395,98 +395,6 @@ async function run() {
 
   {
     const { manager, document } = createHarness([{ id: "line-1", latex: "a" }]);
-    const before = cloneDocument(document);
-    const firstAfter: DocumentSnapshot = {
-      ...cloneDocument(document),
-      lines: [{ id: "line-1", latex: "ax" }],
-      selectionByLineId: { "line-1": selection(2) },
-    };
-    manager.recordSourceDocumentEdit({
-      type: "replace-document",
-      before,
-      after: firstAfter,
-      source: "source-apply",
-      timestamp: 10,
-    });
-    Object.assign(document, {
-      lines: firstAfter.lines.map((line) => ({ ...line })),
-      selectionByLineId: firstAfter.selectionByLineId,
-    });
-
-    const secondBefore = cloneDocument(document);
-    const secondAfter: DocumentSnapshot = {
-      ...secondBefore,
-      lines: [{ id: "line-1", latex: "axy" }],
-      selectionByLineId: { "line-1": selection(3) },
-    };
-    manager.recordSourceDocumentEdit({
-      type: "replace-document",
-      before: secondBefore,
-      after: secondAfter,
-      source: "source-apply",
-      timestamp: 100,
-    });
-    Object.assign(document, {
-      lines: secondAfter.lines.map((line) => ({ ...line })),
-      selectionByLineId: secondAfter.selectionByLineId,
-    });
-
-    assert.equal(
-      manager.getState().undoStack.length,
-      0,
-      "continuous source edits should remain pending during the typing window",
-    );
-    assert.equal(
-      manager.getState().pendingTransaction?.kind,
-      "source-document",
-      "continuous source edits should share one pending document transaction",
-    );
-    await manager.undo();
-    assert.equal(document.lines[0].latex, "a");
-    await manager.redo();
-    assert.equal(document.lines[0].latex, "axy");
-  }
-
-  {
-    const { manager, document } = createHarness([{ id: "line-1", latex: "a" }]);
-    const before = cloneDocument(document);
-    const changed: DocumentSnapshot = {
-      ...before,
-      lines: [{ id: "line-1", latex: "ab" }],
-      selectionByLineId: { "line-1": selection(2) },
-    };
-    manager.recordSourceDocumentEdit({
-      type: "replace-document",
-      before,
-      after: changed,
-      source: "source-apply",
-      timestamp: 10,
-    });
-    Object.assign(document, {
-      lines: changed.lines.map((line) => ({ ...line })),
-      selectionByLineId: changed.selectionByLineId,
-    });
-    manager.recordSourceDocumentEdit({
-      type: "replace-document",
-      before: cloneDocument(document),
-      after: before,
-      source: "source-apply",
-      timestamp: 100,
-    });
-    assert.equal(
-      manager.getState().undoStack.length,
-      0,
-      "a CodeMirror undo back to the source-edit origin should not create global history",
-    );
-    assert.equal(
-      manager.getState().pendingTransaction,
-      null,
-      "a CodeMirror undo back to the source-edit origin should cancel the pending transaction",
-    );
-  }
-
-  {
-    const { manager, document } = createHarness([{ id: "line-1", latex: "a" }]);
     manager.push({
       type: "replace-formula",
       lineId: "line-1",
@@ -621,6 +529,85 @@ async function run() {
     await manager.undo();
     assert.equal(manager.getState().undoStack.length, 0, "replay must not record recursively");
     assert.equal(manager.getState().redoStack.length, 1);
+  }
+
+  {
+    const { manager, document } = createHarness([{ id: "line-1", latex: "" }]);
+    recordFormula(manager, {
+      before: "",
+      after: "a",
+      beforePosition: 0,
+      afterPosition: 1,
+      timestamp: 0,
+    });
+    manager.commitPendingTransaction();
+    document.lines[0].latex = "a";
+    manager.configure({
+      getDocumentSnapshot: () => cloneDocument(document),
+      applyEntry: async () => {
+        throw new Error("history replay probe failure");
+      },
+    });
+
+    await assert.rejects(
+      () => manager.undo(),
+      /history replay probe failure/,
+      "explicit undo callers must still observe replay failures",
+    );
+    assert.equal(manager.getState().undoStack.length, 1, "failed undo must restore its stack entry");
+    assert.equal(manager.getState().isReplaying, false, "failed undo must leave replay mode");
+
+    let unhandled: unknown = null;
+    let logged = false;
+    const onUnhandled = (reason: unknown) => {
+      unhandled = reason;
+    };
+    const originalConsoleError = console.error;
+    process.once("unhandledRejection", onUnhandled);
+    console.error = (...args: unknown[]) => {
+      if (String(args[0]).includes("VisualTeX history undo failed")) logged = true;
+    };
+    try {
+      manager.requestUndo();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    } finally {
+      console.error = originalConsoleError;
+      process.removeListener("unhandledRejection", onUnhandled);
+    }
+    assert.equal(unhandled, null, "fire-and-forget undo must consume replay rejection");
+    assert.equal(logged, true, "fire-and-forget undo must retain a diagnostic");
+    assert.equal(manager.getState().undoStack.length, 1, "safe undo must preserve the failed entry");
+    assert.equal(manager.getState().isReplaying, false, "safe undo must leave replay mode");
+  }
+
+  {
+    const { manager, document } = createHarness([{ id: "line-1", latex: "x", mode: "display", displayStyle: "bracket" }]);
+    const before = cloneDocument(document);
+    const after = cloneDocument(document);
+    after.lines[0].displayStyle = "double-dollar";
+    manager.recordSourceDocumentEdit({ type: "replace-document", before, after, source: "source-apply", timestamp: 0 });
+    manager.commitPendingTransaction();
+    assert.equal(manager.getState().undoStack.length, 1, "display wrapper changes are real document edits");
+    document.lines = after.lines;
+    await manager.undo();
+    assert.equal(document.lines[0].displayStyle, "bracket");
+    await manager.redo();
+    assert.equal(document.lines[0].displayStyle, "double-dollar");
+  }
+
+  {
+    const { manager, document } = createHarness();
+    let finish!: () => void;
+    manager.configure({ getDocumentSnapshot: () => cloneDocument(document),
+      applyEntry: () => new Promise<void>(resolve => { finish = resolve; }),
+    });
+    manager.push({ type: "change-title", beforeTitle: "A", afterTitle: "B", timestamp: 0 });
+    const replay = manager.undo();
+    manager.clear();
+    finish();
+    assert.equal(await replay, false, "a previous session's replay is cancelled");
+    assert.equal(manager.getState().redoStack.length, 0, "old history must not leak into a new Office session");
+    assert.equal(manager.getState().isReplaying, false);
   }
 
   console.log("HistoryManager smoke test passed");

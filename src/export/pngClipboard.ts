@@ -1,3 +1,4 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { latexToSvg, svgToPng } from "./runtime";
 import {
   normalizePngExportBackground,
@@ -40,7 +41,7 @@ export async function renderFormulaDocumentPng(
   });
 }
 
-async function writePngClipboard(blob: Blob) {
+async function writeBrowserPngClipboard(blob: Blob) {
   if (
     typeof navigator === "undefined" ||
     !navigator.clipboard?.write ||
@@ -55,16 +56,17 @@ async function writePngClipboard(blob: Blob) {
   ]);
 }
 
-/**
- * WebView2 exposes the standard image clipboard API while VisualTeX is
- * foregrounded. Keep the Windows implementation on that native browser path
- * instead of importing the macOS AppKit clipboard command.
- */
 export async function copyFormulaDocumentPngToClipboard(
   formulas: readonly string[],
   preferences: FormulaPngRenderPreferences,
 ): Promise<PngExportResult> {
   const png = await renderFormulaDocumentPng(formulas, preferences);
-  await writePngClipboard(png.blob);
+  if (isTauri()) {
+    await invoke("copy_png_to_clipboard", {
+      dataBase64: png.base64,
+    });
+  } else {
+    await writeBrowserPngClipboard(png.blob);
+  }
   return png;
 }

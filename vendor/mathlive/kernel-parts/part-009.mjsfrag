@@ -1,0 +1,1191 @@
+  --_keycap-background-hover: var(--keycap-background-hover, #f5f5f7);
+  --_keycap-background-active: var(--keycap-background-active, var(--_accent-color));
+  --_keycap-background-pressed: var(--keycap-background-pressed, var(--_accent-color));
+  --_keycap-border: var(--keycap-border, #e5e6e9);
+  --_keycap-border-bottom: var(--keycap-border-bottom, #8d8f92);
+  --_keycap-text: var(--keycap-text, #000);
+  --_keycap-text-active: var(--keycap-text-active, #fff);
+  --_keycap-text-hover: var(--keycap-text-hover, var(--_keycap-text));
+  --_keycap-text-pressed: var(--keycap-text-pressed, #fff);
+  --_keycap-shift-text: var(--keycap-shift-text, var(--_accent-color));
+  --_keycap-primary-background: var(--keycap-primary-background, var(--_accent-color));
+  --_keycap-primary-text: var(--keycap-primary-text, #ddd);
+  --_keycap-primary-background-hover: var(--keycap-primary-background-hover, #0d80f2);
+  --_keycap-secondary-background: var(--keycap-secondary-background, #a0a9b8);
+  --_keycap-secondary-background-hover: var(--keycap-secondary-background-hover, #7d8795);
+  --_keycap-secondary-text: var(--keycap-secondary-text, #060707);
+  --_keycap-secondary-border: var(--keycap-secondary-border, #c5c9d0);
+  --_keycap-secondary-border-bottom: var(--keycap-secondary-border-bottom, #989da6);
+  --_keycap-height: var(--keycap-height, 60px);
+  /* Keycap width (incl. margin) */
+  --_keycap-max-width: var(--keycap-max-width, 100px);
+  --_keycap-gap: var(--keycap-gap, 8px);
+  --_keycap-font-size: var(--keycap-font-size, clamp(16px, 4cqw, 24px));
+  --_keycap-small-font-size: var(--keycap-small-font-size, calc(var(--keycap-font-size) * 0.8));
+  --_keycap-extra-small-font-size: var(--keycap-extra-small-font-size, calc(var(--keycap-font-size) / 1.42));
+  --_variant-panel-background: var(--variant-panel-background, #f0f0f0);
+  --_variant-keycap-text: var(--variant-keycap-text, var(--_keycap-text));
+  --_variant-keycap-text-active: var(--variant-keycap-text-active, var(--_keycap-text-active));
+  --_variant-keycap-background-active: var(--variant-keycap-background-active, var(--_accent-color));
+  --_variant-keycap-length: var(--variant-keycap-length, 70px);
+  --_variant-keycap-font-size: var(--variant-keycap-font-size, 30px);
+  --_variant-keycap-aside-font-size: var(--variant-keycap-aside-font-size, 12px);
+  --_keycap-shift-font-size: var(--keycap-shift-font-size, 16px);
+  --_keycap-shift-color: var(--keycap-shift-color, var(--_accent-color));
+  --_box-placeholder-color: var(--box-placeholder-color, var(--_accent-color));
+  --_box-placeholder-pressed-color: var(--box-placeholder-pressed-color, var(--keycap-text-pressed));
+  --_keycap-glyph-size: var(--keycap-glyph-size, 20px);
+  --_keycap-glyph-size-lg: var(--keycap-glyph-size-lg, 24px);
+  --_keycap-glyph-size-xl: var(--keycap-glyph-size-xl, 50px);
+}
+.is-math-mode .MLK__rows .if-text-mode,
+.is-text-mode .MLK__rows .if-math-mode {
+  display: none;
+}
+.if-can-undo,
+.if-can-redo,
+.if-can-copy,
+.if-can-cut,
+.if-can-paste {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.can-undo .if-can-undo,
+.can-redo .if-can-redo,
+.can-copy .if-can-copy,
+.can-cut .if-can-cut,
+.can-paste .if-can-paste {
+  opacity: 1;
+  pointer-events: all;
+}
+body > .ML__keyboard {
+  position: fixed;
+  --_padding-bottom: calc(var(--keyboard-padding-bottom, 0px) + env(safe-area-inset-bottom, 0));
+}
+body > .ML__keyboard.is-visible > .MLK__backdrop {
+  box-shadow: 0 -5px 6px rgba(0, 0, 0, 0.08);
+  border-top: 1px solid var(--_border);
+}
+body > .ML__keyboard.backdrop-is-transparent.is-visible > .MLK__backdrop {
+  box-shadow: none;
+  border: none;
+}
+body > .ML__keyboard.is-visible.animate > .MLK__backdrop {
+  transition: 0.28s cubic-bezier(0, 0, 0.2, 1);
+  transition-property: transform, opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+}
+.ML__keyboard {
+  position: relative;
+  overflow: hidden;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  z-index: var(--_keyboard-zindex);
+  box-sizing: border-box;
+  outline: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  overflow-wrap: unset;
+  text-align: left;
+  vertical-align: baseline;
+  cursor: auto;
+  white-space: pre;
+  box-shadow: none;
+  opacity: 1;
+  transform: none;
+  pointer-events: none;
+}
+.ML__keyboard :where(div) {
+  box-sizing: border-box;
+  outline: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  overflow-wrap: unset;
+  text-align: left;
+  vertical-align: baseline;
+  cursor: auto;
+  white-space: pre;
+  box-shadow: none;
+  transform: none;
+}
+.MLK__backdrop {
+  position: absolute;
+  bottom: calc(-1 * var(--_keyboard-height));
+  width: 100%;
+  height: var(--_keyboard-height);
+  box-sizing: border-box;
+  padding-top: var(--_padding-top);
+  padding-bottom: var(--_padding-bottom);
+  padding-left: var(--_padding-horizontal);
+  padding-right: var(--_padding-horizontal);
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(0, 0);
+  background: var(--_background);
+}
+.backdrop-is-transparent .MLK__backdrop {
+  background: transparent;
+}
+/* If a custom layout has a custom container/backdrop
+  (backdrop-is-transparent), make sure to let pointer event go through. */
+.backdrop-is-transparent .MLK__plate {
+  background: transparent;
+  pointer-events: none;
+}
+/* If a custom layout has a custom container/backdrop, make sure to 
+   allow pointer events on it. */
+.backdrop-is-transparent .MLK__layer > div > div {
+  pointer-events: all;
+}
+.ML__keyboard.is-visible > .MLK__backdrop {
+  transform: translate(0, calc(-1 * var(--_keyboard-height)));
+  opacity: 1;
+  visibility: visible;
+}
+.caps-lock-indicator {
+  display: none;
+  width: 8px;
+  height: 8px;
+  background: #0cbc0c;
+  box-shadow: inset 0 0 4px 0 #13ca13, 0 0 4px 0 #a9ef48;
+  border-radius: 8px;
+  right: 8px;
+  top: 8px;
+  position: absolute;
+}
+.ML__keyboard.is-caps-lock .caps-lock-indicator {
+  display: block;
+}
+.ML__keyboard.is-caps-lock .shift {
+  background: var(--_keycap-background-active);
+  color: var(--_keycap-text-active);
+}
+.MLK__plate {
+  position: absolute;
+  top: var(--_padding-top);
+  left: var(--_padding-horizontal);
+  width: calc(100% - 2 * var(--_padding-horizontal));
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  container-type: inline-size;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: all;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-size: 16px;
+  /* Size of toolbar labels */
+  font-weight: 400;
+  text-shadow: none;
+}
+.ML__box-placeholder {
+  color: var(--_box-placeholder-color);
+}
+.MLK__tex {
+  font-family: KaTeX_Main, KaTeX_Math, 'Cambria Math', 'Asana Math', OpenSymbol, Symbola, STIX, Times, serif !important;
+}
+.MLK__tex-math {
+  font-family: KaTeX_Math, KaTeX_Main, 'Cambria Math', 'Asana Math', OpenSymbol, Symbola, STIX, Times, serif !important;
+  font-style: italic;
+}
+.MLK__layer {
+  display: none;
+  outline: none;
+}
+.MLK__layer.is-visible {
+  display: flex;
+  flex-flow: column;
+}
+/* Keyboard layouts are made or rows of keys... */
+.MLK__rows {
+  --_keycap-width: var(--keycap-width, min(var(--_keycap-max-width), 10cqw));
+  display: flex;
+  flex-flow: column;
+  align-items: center;
+  border-collapse: separate;
+  clear: both;
+  border: 0;
+  margin: 0;
+  margin-bottom: var(--_keycap-gap);
+  gap: var(--_keycap-gap);
+  /* If the styling include, e.g., some shadows, they will be
+  cut off by the overflow. In that case, set the padding to 
+  compensate. */
+  padding-left: var(--_row-padding-left);
+  padding-right: var(--_row-padding-right);
+  overflow: visible;
+  touch-action: none;
+}
+.MLK__rows > .MLK__row {
+  display: flex;
+  flex-flow: row;
+  justify-content: center;
+  width: 100%;
+  gap: var(--_keycap-gap);
+  margin: 0;
+  padding: 0;
+  /* For the alignment of the text on some modifiers (e.g. shift) */
+  /* Extra spacing between two adjacent keys */
+}
+.MLK__rows > .MLK__row .tex {
+  font-family: KaTeX_Math, KaTeX_Main, 'Cambria Math', 'Asana Math', OpenSymbol, Symbola, STIX, Times, serif !important;
+}
+.MLK__rows > .MLK__row .tex-math {
+  font-family: KaTeX_Math, 'Cambria Math', 'Asana Math', OpenSymbol, Symbola, STIX, Times, serif !important;
+}
+.MLK__rows > .MLK__row .big-op {
+  font-size: calc(1.25 * var(--_keycap-font-size));
+}
+.MLK__rows > .MLK__row .small {
+  font-size: var(--_keycap-small-font-size);
+}
+.MLK__rows > .MLK__row .bottom {
+  justify-content: flex-end;
+}
+.MLK__rows > .MLK__row .left {
+  align-items: flex-start;
+  padding-left: 12px;
+}
+.MLK__rows > .MLK__row .right {
+  align-items: flex-end;
+  padding-right: 12px;
+}
+.MLK__rows > .MLK__row .w0 {
+  width: 0;
+}
+.MLK__rows > .MLK__row .w5 {
+  width: calc(0.5 * var(--_keycap-width) - var(--_keycap-gap));
+}
+.MLK__rows > .MLK__row .w15 {
+  width: calc(1.5 * var(--_keycap-width) - var(--_keycap-gap));
+}
+.MLK__rows > .MLK__row .w20 {
+  width: calc(2 * var(--_keycap-width) - var(--_keycap-gap));
+}
+.MLK__rows > .MLK__row .w40 {
+  width: calc(4 * var(--_keycap-width) - var(--_keycap-gap));
+}
+.MLK__rows > .MLK__row .w50 {
+  width: calc(5 * var(--_keycap-width) - var(--_keycap-gap));
+}
+.MLK__rows > .MLK__row .MLK__keycap.w50 {
+  font-size: 80%;
+  padding-top: 10px;
+  font-weight: 100;
+}
+.MLK__rows > .MLK__row .separator {
+  background: transparent;
+  border: none;
+  pointer-events: none;
+}
+.MLK__rows > .MLK__row .horizontal-rule {
+  height: 6px;
+  margin-top: 3px;
+  margin-bottom: 0;
+  width: 100%;
+  border-radius: 0;
+  border-top: var(--_horizontal-rule);
+}
+.MLK__rows > .MLK__row .ghost {
+  background: var(--_toolbar-background);
+  border: none;
+  color: var(--_toolbar-text);
+}
+.MLK__rows > .MLK__row .ghost:hover {
+  background: var(--_toolbar-background-hover);
+}
+.MLK__rows > .MLK__row .bigfnbutton {
+  font-size: var(--_keycap-extra-small-font-size);
+}
+.MLK__rows > .MLK__row .shift,
+.MLK__rows > .MLK__row .action {
+  color: var(--_keycap-secondary-text);
+  background: var(--_keycap-secondary-background);
+  border-color: var(--_keycap-secondary-border);
+  border-bottom-color: var(--_keycap-secondary-border-bottom);
+  line-height: 0.8;
+  font-size: min(1rem, var(--_keycap-small-font-size));
+  font-weight: 600;
+  padding: 8px 12px 8px 12px;
+}
+.MLK__rows > .MLK__row .shift:hover,
+.MLK__rows > .MLK__row .action:hover {
+  background: var(--_keycap-secondary-background-hover);
+}
+.MLK__rows > .MLK__row .action.primary {
+  background: var(--_keycap-primary-background);
+  color: var(--_keycap-primary-text);
+}
+.MLK__rows > .MLK__row .action.primary:hover {
+  background: var(--_keycap-primary-background-hover);
+  color: var(--_keycap-primary-text);
+}
+.MLK__rows > .MLK__row .shift.selected,
+.MLK__rows > .MLK__row .action.selected {
+  color: var(--_toolbar-text-active);
+}
+.MLK__rows > .MLK__row .shift.selected.is-pressed,
+.MLK__rows > .MLK__row .action.selected.is-pressed,
+.MLK__rows > .MLK__row .shift.selected.is-active,
+.MLK__rows > .MLK__row .action.selected.is-active {
+  color: white;
+}
+.MLK__rows > .MLK__row .warning {
+  background: #cd0030;
+  color: white;
+}
+.MLK__rows > .MLK__row .warning svg.svg-glyph {
+  width: var(--_keycap-glyph-size-lg);
+  height: var(--_keycap-glyph-size-lg);
+  min-height: var(--_keycap-glyph-size-lg);
+}
+/** A regular keycap
+ * Use the :where() pseudo-class to give it a very low specifity, 
+ * so that it can be overriden by custom style.
+ */
+:where(.MLK__rows > .MLK__row div) {
+  display: flex;
+  flex-flow: column;
+  align-items: center;
+  justify-content: space-evenly;
+  width: calc(var(--_keycap-width) - var(--_keycap-gap));
+  height: var(--_keycap-height);
+  box-sizing: border-box;
+  padding: 0;
+  vertical-align: top;
+  text-align: center;
+  float: left;
+  color: var(--_keycap-text);
+  fill: currentColor;
+  font-size: var(--_keycap-font-size);
+  background: var(--_keycap-background);
+  border: 1px solid var(--_keycap-border);
+  border-bottom-color: var(--_keycap-border-bottom);
+  border-radius: 6px;
+  cursor: pointer;
+  touch-action: none;
+  /* Keys with a variants panel */
+  position: relative;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+:where(.MLK__rows > .MLK__row div):hover {
+  overflow: visible;
+  background: var(--_keycap-background-hover);
+  color: var(--_keycap-text-hover);
+}
+:where(.MLK__rows > .MLK__row div) .ML__latex {
+  pointer-events: none;
+  touch-action: none;
+}
+:where(.MLK__rows > .MLK__row div) svg.svg-glyph {
+  margin: 8px 0;
+  width: var(--_keycap-glyph-size);
+  height: var(--_keycap-glyph-size);
+  min-height: var(--_keycap-glyph-size);
+}
+:where(.MLK__rows > .MLK__row div) svg.svg-glyph-lg {
+  margin: 8px 0;
+  width: var(--_keycap-glyph-size-lg);
+  height: var(--_keycap-glyph-size-lg);
+  min-height: var(--_keycap-glyph-size-lg);
+}
+:where(.MLK__rows > .MLK__row div).MLK__tex-math {
+  font-size: 25px;
+}
+:where(.MLK__rows > .MLK__row div).is-pressed {
+  background: var(--_keycap-background-pressed);
+  color: var(--_keycap-text-pressed);
+  --_box-placeholder-color: var(--_box-placeholder-pressed-color);
+}
+:where(.MLK__rows > .MLK__row div).MLK__keycap.is-active,
+:where(.MLK__rows > .MLK__row div).action.is-active,
+:where(.MLK__rows > .MLK__row div).MLK__keycap.is-pressed,
+:where(.MLK__rows > .MLK__row div).action.is-pressed {
+  z-index: calc(var(--_keyboard-zindex) - 5);
+}
+:where(.MLK__rows > .MLK__row div).MLK__keycap.is-active aside,
+:where(.MLK__rows > .MLK__row div).action.is-active aside,
+:where(.MLK__rows > .MLK__row div).MLK__keycap.is-pressed aside,
+:where(.MLK__rows > .MLK__row div).action.is-pressed aside {
+  display: none;
+}
+:where(.MLK__rows > .MLK__row div).MLK__keycap.is-active .MLK__shift,
+:where(.MLK__rows > .MLK__row div).action.is-active .MLK__shift,
+:where(.MLK__rows > .MLK__row div).MLK__keycap.is-pressed .MLK__shift,
+:where(.MLK__rows > .MLK__row div).action.is-pressed .MLK__shift {
+  display: none;
+}
+:where(.MLK__rows > .MLK__row div).shift.is-pressed,
+:where(.MLK__rows > .MLK__row div).MLK__keycap.is-pressed,
+:where(.MLK__rows > .MLK__row div).action.is-pressed {
+  background: var(--_keycap-background-pressed);
+  color: var(--_keycap-text-pressed);
+}
+:where(.MLK__rows > .MLK__row div).shift.is-active,
+:where(.MLK__rows > .MLK__row div).MLK__keycap.is-active,
+:where(.MLK__rows > .MLK__row div).action.is-active {
+  background: var(--_keycap-background-active);
+  color: var(--_keycap-text-active);
+  --_box-placeholder-color: var(--_box-placeholder-pressed-color);
+}
+:where(.MLK__rows > .MLK__row div) small {
+  color: var(--_keycap-secondary-text);
+}
+:where(.MLK__rows > .MLK__row div) aside {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-size: 10px;
+  line-height: 10px;
+  color: var(--_keycap-secondary-text);
+}
+/* Add an attribute 'data-tooltip' to display a tooltip on hover.
+Note there are a different set of tooltip rules for the keyboard toggle
+(it's in a different CSS tree) */
+.ML__keyboard [data-tooltip] {
+  position: relative;
+}
+.ML__keyboard [data-tooltip]::after {
+  position: absolute;
+  display: inline-table;
+  content: attr(data-tooltip);
+  top: inherit;
+  bottom: 100%;
+  width: max-content;
+  max-width: 200px;
+  padding: 8px 8px;
+  background: #616161;
+  color: #fff;
+  text-align: center;
+  z-index: 2;
+  box-shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.14), 0 1px 5px 0 rgba(0, 0, 0, 0.12), 0 3px 1px -2px rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-weight: 400;
+  font-size: 12px;
+  transition: all 0.15s cubic-bezier(0.4, 0, 1, 1) 1s;
+  opacity: 0;
+  transform: scale(0.5);
+}
+.ML__keyboard [data-tooltip]:hover {
+  position: relative;
+}
+.ML__keyboard [data-tooltip]:hover::after {
+  opacity: 1;
+  transform: scale(1);
+}
+.MLK__toolbar {
+  align-self: center;
+  display: flex;
+  flex-flow: row;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 996px;
+  min-height: 32px;
+  /* Icons for undo/redo, etc. */
+}
+.MLK__toolbar svg {
+  height: 20px;
+  width: 20px;
+}
+.MLK__toolbar > .left {
+  position: relative;
+  display: flex;
+  justify-content: flex-start;
+  flex-flow: row;
+}
+.MLK__toolbar > .right {
+  display: flex;
+  justify-content: flex-end;
+  flex-flow: row;
+}
+.MLK__toolbar > div > div {
+  /* "button" in the toolbar */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--_toolbar-text);
+  fill: currentColor;
+  background: var(--_toolbar-background);
+  font-size: var(--_toolbar-font-size);
+  padding: 4px 15px;
+  cursor: pointer;
+  width: max-content;
+  min-width: 42px;
+  min-height: 34px;
+  border: none;
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-bottom: 8px;
+  padding-top: 8px;
+  margin-top: 0;
+  margin-bottom: 4px;
+  margin-left: 4px;
+  margin-right: 4px;
+  border-radius: 8px;
+  box-shadow: none;
+  border-bottom: 2px solid transparent;
+}
+.MLK__toolbar > div > div:not(.disabled):not(.selected):hover {
+  background: var(--_toolbar-background-hover);
+}
+.MLK__toolbar > div > div.disabled svg,
+.MLK__toolbar > div > div.disabled:hover svg,
+.MLK__toolbar > div > div.disabled.is-pressed svg {
+  color: var(--_toolbar-text);
+  opacity: 0.2;
+}
+.MLK__toolbar > div > div:hover,
+.MLK__toolbar > div > div:active,
+.MLK__toolbar > div > div.is-pressed,
+.MLK__toolbar > div > div.is-active {
+  color: var(--_toolbar-text-active);
+}
+.MLK__toolbar > div > div.selected {
+  color: var(--_toolbar-text-active);
+  background: var(--_toolbar-background-selected);
+  border-radius: 0;
+  border-bottom-color: var(--_toolbar-text-active);
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+/* This is the element that displays variants on press+hold */
+.MLK__variant-panel {
+  visibility: hidden;
+  position: fixed;
+  display: flex;
+  flex-flow: row wrap-reverse;
+  justify-content: center;
+  align-content: center;
+  margin: 0;
+  padding: 0;
+  bottom: auto;
+  top: 0;
+  box-sizing: content-box;
+  transform: none;
+  z-index: calc(var(--_keyboard-zindex) + 1);
+  touch-action: none;
+  max-width: 350px;
+  background: var(--_variant-panel-background);
+  text-align: center;
+  border-radius: 6px;
+  padding: 6px;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.25), 0 10px 10px rgba(0, 0, 0, 0.22);
+  transition: none;
+}
+.MLK__variant-panel.is-visible {
+  visibility: visible;
+}
+.MLK__variant-panel.compact {
+  --_variant-keycap-length: var(--variant-keycap-length, 50px);
+  --_variant-keycap-font-size: var(--variant-keycap-font-size, 24px);
+  --_variant-keycap-aside-font-size: var(--variant-keycap-aside-font-size, 10px);
+}
+.MLK__variant-panel .item {
+  display: flex;
+  flex-flow: column;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--_variant-keycap-font-size);
+  height: var(--_variant-keycap-length);
+  width: var(--_variant-keycap-length);
+  margin: 0;
+  box-sizing: border-box;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  pointer-events: all;
+  cursor: pointer;
+  color: var(--_variant-keycap-text);
+  fill: currentColor;
+}
+@media (max-height: 412px) {
+  .MLK__variant-panel .item {
+    --_variant-keycap-font-size: var(--variant-keycap-font-size, 24px);
+    --_variant-keycap-length: var(--variant-keycap-length, 50px);
+  }
+}
+.MLK__variant-panel .item .ML__latex {
+  pointer-events: none;
+}
+.MLK__variant-panel .item:hover {
+  color: var(--_keycap-text-hover);
+}
+.MLK__variant-panel .item.is-active {
+  background: var(--_variant-keycap-background-active);
+  color: var(--_variant-keycap-text-active);
+  --_box-placeholder-color: var(--_box-placeholder-pressed-color);
+}
+.MLK__variant-panel .item.is-pressed {
+  background: var(--_variant-keycap-background-pressed);
+  color: var(--_variant-keycap-text-pressed);
+  --_box-placeholder-color: var(--_box-placeholder-pressed-color);
+}
+.MLK__variant-panel .item.small {
+  font-size: var(--_keycap-small-font-size);
+}
+.MLK__variant-panel .item.swatch-button {
+  box-sizing: border-box;
+  background: #fbfbfb;
+}
+.MLK__variant-panel .item.swatch-button > span {
+  display: inline-block;
+  margin: 6px;
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
+  border-radius: 50%;
+}
+.MLK__variant-panel .item.swatch-button:hover {
+  background: #f0f0f0;
+}
+.MLK__variant-panel .item.swatch-button:hover > span {
+  border-radius: 2px;
+}
+.MLK__variant-panel .item.box > div,
+.MLK__variant-panel .item.box > span {
+  border: 1px dashed rgba(0, 0, 0, 0.24);
+}
+.MLK__variant-panel .item .warning {
+  min-height: 60px;
+  min-width: 60px;
+  background: #cd0030;
+  color: white;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+}
+.MLK__variant-panel .item .warning.is-pressed,
+.MLK__variant-panel .item .warning.is-active {
+  background: red;
+}
+.MLK__variant-panel .item .warning svg.svg-glyph {
+  width: var(--_keycap-glyph-size-xl);
+  height: var(--_keycap-glyph-size-xl);
+}
+.MLK__variant-panel .item aside {
+  font-size: var(--_variant-keycap-aside-font-size);
+  line-height: 12px;
+  opacity: 0.78;
+  padding-top: 2px;
+  width: 100%;
+  text-align: center;
+  text-wrap: wrap;
+}
+.MLK__keycap {
+  position: relative;
+}
+.MLK__shift {
+  display: block;
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  font-size: var(--_keycap-shift-font-size);
+  color: var(--_keycap-shift-color);
+}
+.hide-shift .MLK__shift {
+  display: none;
+}
+@media (max-width: 414px) {
+  .MLK__variant-panel {
+    max-width: 350px;
+    --_variant-keycap-font-size: var(--variant-keycap-font-size, 24px);
+    --_variant-keycap-length: var(--variant-keycap-length, 50px);
+  }
+}
+/* @xs breakpoint: iPhone 5 */
+@container (max-width: 414px) {
+  .MLK__rows {
+    --_keycap-gap: max(var(--_keycap-gap, 2px), 2px);
+    --_keycap-height: var(--keycap-height, 42px);
+    --_keycap-width: var(--keycap-width, min(min(var(--_keycap-max-width)), 10cqw), 62px));
+  }
+  .MLK__toolbar > div > div {
+    font-size: 100%;
+    margin-left: 2px;
+    margin-right: 2px;
+  }
+  .MLK__rows .shift,
+  .MLK__rows .action {
+    font-size: 65%;
+  }
+  .MLK__rows .warning svg.svg-glyph {
+    width: 14px;
+    height: 14px;
+    min-height: 14px;
+  }
+}
+@container (max-width: 744px) {
+  .MLK__rows {
+    --_keycap-gap: max(var(--keycap-gap, 2px), 2px);
+    --_keycap-height: var(--keycap-height, 52px);
+    --_keycap-width: var(--keycap-width, min(min(var(--_keycap-max-width), 10cqw), 62px));
+  }
+  .MLK__toolbar > div > div {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .MLK__tooltip::after {
+    padding: 8px 16px;
+    font-size: 16px;
+  }
+  .MLK__rows > .MLK__row > div.fnbutton {
+    font-size: 16px;
+  }
+  .MLK__rows > .MLK__row > div.bigfnbutton {
+    font-size: calc(var(--_keycap-extra-small-font-size) / 1.55);
+  }
+  .MLK__rows > .MLK__row > div.small {
+    font-size: 13px;
+  }
+  .MLK__rows > .MLK__row > div > aside {
+    display: none;
+  }
+  .MLK__shift {
+    display: none;
+  }
+}
+/* Medium breakpoint: larger phones */
+@container (max-width: 768px) {
+  .MLK__rows {
+    --_keycap-height: var(--keycap-height, 42px);
+  }
+  .MLK__rows > .MLK__row > div > small {
+    font-size: 14px;
+  }
+}
+@media (max-height: 768px) {
+  .MLK__rows {
+    --_keycap-height: var(--keycap-height, 42px);
+  }
+  .MLK__rows > .MLK__row > div > small {
+    font-size: 14px;
+  }
+}
+@container (max-width: 1444px) {
+  .MLK__rows .if-wide {
+    display: none;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .ML__keyboard {
+    --_accent-color: var(--keyboard-accent-color, #0b5c9c);
+    --_background: var(--keyboard-background, #151515);
+    --_border: var(--keyboard-border, transparent);
+    --_toolbar-text: var(--keyboard-toolbar-text, #e3e4e8);
+    --_toolbar-background-hover: var(--keyboard-toolbar-background-hover, #303030);
+    --keyboard-toolbar-background-hover: #303030;
+    --_horizontal-rule: var(--keyboard-horizontal-rule, 1px solid #303030);
+    --_keycap-background: var(--keycap-background, #1f2022);
+    --_keycap-background-hover: var(--keycap-background-hover, #2f3032);
+    --_keycap-border: var(--_keycap-border, transparent);
+    --_keycap-border-bottom: var(--_keycap-border-bottom, transparent);
+    --_keycap-text: var(--keycap-text, #e3e4e8);
+    --_keycap-secondary-background: var(--keycap-secondary-background, #3d4144);
+    --_keycap-secondary-background-hover: var(--keycap-secondary-background-hover, #4d5154);
+    --_keycap-secondary-text: var(--keycap-secondary-text, #e7ebee);
+    --keycap-secondary-border: transparent;
+    --keycap-secondary-border-bottom: transparent;
+    --_keycap-secondary-border: var(--keycap-secondary-border, transparent);
+    --_keycap-secondary-border-bottom: var(--keycap-secondary-border-bottom, transparent);
+    --_variant-panel-background: var(--variant-panel-background, #303030);
+    --_variant-keycap-text-active: var(--variant-keycap-text-active, #fff);
+  }
+}
+/* Same as the media query, but with a class */
+[theme='dark'] .ML__keyboard {
+  --_accent-color: var(--keyboard-accent-color, #0b5c9c);
+  --_background: var(--keyboard-background, #151515);
+  --_border: var(--keyboard-border, transparent);
+  --_toolbar-text: var(--keyboard-toolbar-text, #e3e4e8);
+  --_toolbar-background-hover: var(--keyboard-toolbar-background-hover, #303030);
+  --keyboard-toolbar-background-hover: #303030;
+  --_horizontal-rule: var(--keyboard-horizontal-rule, 1px solid #303030);
+  --_keycap-background: var(--keycap-background, #1f2022);
+  --_keycap-background-hover: var(--keycap-background-hover, #2f3032);
+  --_keycap-border: var(--_keycap-border, transparent);
+  --_keycap-border-bottom: var(--_keycap-border-bottom, transparent);
+  --_keycap-text: var(--keycap-text, #e3e4e8);
+  --_keycap-secondary-background: var(--keycap-secondary-background, #3d4144);
+  --_keycap-secondary-background-hover: var(--keycap-secondary-background-hover, #4d5154);
+  --_keycap-secondary-text: var(--keycap-secondary-text, #e7ebee);
+  --keycap-secondary-border: transparent;
+  --keycap-secondary-border-bottom: transparent;
+  --_keycap-secondary-border: var(--keycap-secondary-border, transparent);
+  --_keycap-secondary-border-bottom: var(--keycap-secondary-border-bottom, transparent);
+  --_variant-panel-background: var(--variant-panel-background, #303030);
+  --_variant-keycap-text-active: var(--variant-keycap-text-active, #fff);
+}
+[theme='light'] .ML__keyboard {
+  --_accent-color: var(--keyboard-accent-color, #0c75d8);
+  --_background: var(--keyboard-background, #cacfd7);
+  --_border: var(--keyboard-border, #ddd);
+  --_toolbar-text: var(--keyboard-toolbar-text, #2c2e2f);
+  --_toolbar-background: var(--keyboard-toolbar-background, transparent);
+  --_toolbar-background-hover: var(--keyboard-toolbar-background-hover, #eee);
+  --_toolbar-background-selected: var(--keyboard-toolbar-background-selected, transparent);
+  --_horizontal-rule: var(--keyboard-horizontal-rule, 1px solid #fff);
+  --_keycap-background: var(--keycap-background, white);
+  --_keycap-background-hover: var(--keycap-background-hover, #f5f5f7);
+  --_keycap-background-active: var(--keycap-background-active, var(--_accent-color));
+  --_keycap-background-pressed: var(--keycap-background-pressed, var(--_accent-color));
+  --_keycap-border: var(--_keycap-border, #e5e6e9);
+  --_keycap-border-bottom: var(--_keycap-border-bottom, #8d8f92);
+  --_keycap-text: var(--keycap-text, #000);
+  --_keycap-text-active: var(--keycap-text-active, #fff);
+  --_keycap-text-hover: var(--keycap-text-hover, var(--_keycap-text));
+  --_keycap-text-pressed: var(--keycap-text-pressed, #fff);
+  --_keycap-shift-text: var(--keycap-shift-text, var(--_accent-color));
+  --_keycap-secondary-background: var(--keycap-secondary-background, #a0a9b8);
+  --_keycap-secondary-background-hover: var(--keycap-secondary-background-hover, #7d8795);
+  --_keycap-secondary-text: var(--keycap-secondary-text, #060707);
+  --_keycap-secondary-border: var(--keycap-secondary-border, #c5c9d0);
+  --_keycap-secondary-border-bottom: var(--keycap-secondary-border-bottom, #989da6);
+  --_variant-panel-background: var(--variant-panel-background, #f0f0f0);
+  --_variant-keycap-text: var(--variant-keycap-textvar, var(--_keycap-text));
+  --_variant-keycap-text-active: var(--variant-keycap-text-active, var(--_keycap-text-active));
+  --_variant-keycap-background-active: var(--variant-keycap-background-active, var(--_accent-color));
+}
+`;
+
+// src/ui/style.less
+var style_default = ":host {\n  --primary-color: #5898ff;\n  --primary-color-dimmed: #c0c0f0;\n  --primary-color-dark: var(--blue-500);\n  --primary-color-light: var(--blue-100);\n  --primary-color-reverse: #ffffff;\n  --secondary-color: #ff8a65;\n  --secondary-color-dimmed: #f0d5c5;\n  --secondary-color-dark: var(--orange-500);\n  --secondary-color-light: var(--orange-100);\n  --secondary-color-reverse: #ffffff;\n  --link-color: #5898ff;\n  --link-color-dimmed: #c5c5c5;\n  --link-color-dark: #121212;\n  --link-color-light: #e2e2e2;\n  --link-color-reverse: #ffffff;\n  --semantic-blue: var(--blue-700);\n  --semantic-red: var(--red-400);\n  --semantic-orange: var(--orange-400);\n  --semantic-green: var(--green-700);\n  --neutral-100: #f5f5f5;\n  --neutral-200: #eeeeee;\n  --neutral-300: #e0e0e0;\n  --neutral-400: #bdbdbd;\n  --neutral-500: #9e9e9e;\n  --neutral-600: #757575;\n  --neutral-700: #616161;\n  --neutral-800: #424242;\n  --neutral-900: #212121;\n  --red-25: #fff8f7;\n  --red-50: #fff1ef;\n  --red-100: #ffeae6;\n  --red-200: #ffcac1;\n  --red-300: #ffa495;\n  --red-400: #ff7865;\n  --red-500: #f21c0d;\n  --red-600: #e50018;\n  --red-700: #d30024;\n  --red-800: #bd002c;\n  --red-900: #a1002f;\n  --orange-25: #fffbf8;\n  --orange-50: #fff7f1;\n  --orange-100: #fff3ea;\n  --orange-200: #ffe1c9;\n  --orange-300: #ffcca2;\n  --orange-400: #ffb677;\n  --orange-500: #fe9310;\n  --orange-600: #f58700;\n  --orange-700: #ea7c00;\n  --orange-800: #dc6d00;\n  --orange-900: #ca5b00;\n  --brown-25: #fff8ef;\n  --brown-50: #fff1df;\n  --brown-100: #ffe9ce;\n  --brown-200: #ebcca6;\n  --brown-300: #cdaf8a;\n  --brown-400: #af936f;\n  --brown-500: #856a47;\n  --brown-600: #7f5e34;\n  --brown-700: #78511f;\n  --brown-800: #6e4200;\n  --brown-900: #593200;\n  --yellow-25: #fffdf9;\n  --yellow-50: #fffcf2;\n  --yellow-100: #fffaec;\n  --yellow-200: #fff2ce;\n  --yellow-300: #ffe8ab;\n  --yellow-400: #ffdf85;\n  --yellow-500: #ffcf33;\n  --yellow-600: #f1c000;\n  --yellow-700: #dfb200;\n  --yellow-800: #c9a000;\n  --yellow-900: #ad8a00;\n  --lime-25: #f4ffee;\n  --lime-50: #e9ffdd;\n  --lime-100: #ddffca;\n  --lime-200: #a8fb6f;\n  --lime-300: #94e659;\n  --lime-400: #80d142;\n  --lime-500: #63b215;\n  --lime-600: #45a000;\n  --lime-700: #268e00;\n  --lime-800: #007417;\n  --lime-900: #005321;\n  --green-25: #f5fff5;\n  --green-50: #ebffea;\n  --green-100: #e0ffdf;\n  --green-200: #a7ffa7;\n  --green-300: #5afa65;\n  --green-400: #45e953;\n  --green-500: #17cf36;\n  --green-600: #00b944;\n  --green-700: #00a34a;\n  --green-800: #008749;\n  --green-900: #00653e;\n  --teal-25: #f3ffff;\n  --teal-50: #e6fffe;\n  --teal-100: #d9fffe;\n  --teal-200: #8dfffe;\n  --teal-300: #57f4f4;\n  --teal-400: #43e5e5;\n  --teal-500: #17cfcf;\n  --teal-600: #00c2c0;\n  --teal-700: #00b5b1;\n  --teal-800: #00a49e;\n  --teal-900: #009087;\n  --cyan-25: #f7fcff;\n  --cyan-50: #eff8ff;\n  --cyan-100: #e7f5ff;\n  --cyan-200: #c2e6ff;\n  --cyan-300: #95d5ff;\n  --cyan-400: #61c4ff;\n  --cyan-500: #13a7ec;\n  --cyan-600: #069eda;\n  --cyan-700: #0095c9;\n  --cyan-800: #0088b2;\n  --cyan-900: #0a7897;\n  --blue-25: #f7faff;\n  --blue-50: #eef5ff;\n  --blue-100: #e5f1ff;\n  --blue-200: #bfdbff;\n  --blue-300: #92c2ff;\n  --blue-400: #63a8ff;\n  --blue-500: #0d80f2;\n  --blue-600: #0077db;\n  --blue-700: #006dc4;\n  --blue-800: #0060a7;\n  --blue-900: #005086;\n  --indigo-25: #f8f7ff;\n  --indigo-50: #f1efff;\n  --indigo-100: #eae7ff;\n  --indigo-200: #ccc3ff;\n  --indigo-300: #ac99ff;\n  --indigo-400: #916aff;\n  --indigo-500: #63c;\n  --indigo-600: #5a21b2;\n  --indigo-700: #4e0b99;\n  --indigo-800: #3b0071;\n  --indigo-900: #220040;\n  --purple-25: #fbf7ff;\n  --purple-50: #f8f0ff;\n  --purple-100: #f4e8ff;\n  --purple-200: #e4c4ff;\n  --purple-300: #d49aff;\n  --purple-400: #c36aff;\n  --purple-500: #a219e6;\n  --purple-600: #9000c4;\n  --purple-700: #7c009f;\n  --purple-800: #600073;\n  --purple-900: #3d0043;\n  --magenta-25: #fff8fb;\n  --magenta-50: #fff2f6;\n  --magenta-100: #ffebf2;\n  --magenta-200: #ffcddf;\n  --magenta-300: #ffa8cb;\n  --magenta-400: #ff7fb7;\n  --magenta-500: #eb4799;\n  --magenta-600: #da3689;\n  --magenta-700: #c82179;\n  --magenta-800: #b00065;\n  --magenta-900: #8a004c;\n}\n@media (prefers-color-scheme: dark) {\n  :host {\n    --semantic-blue: var(--blue-700);\n    --semantic-red: var(--red-400);\n    --semantic-orange: var(--orange-400);\n    --semantic-green: var(--green-700);\n    --semantic-bg-blue: var(--blue-25);\n    --semantic-bg-red: var(--red-25);\n    --semantic-bg-orange: var(--orange-25);\n    --semantic-bg-green: var(--green-25);\n    --neutral-100: #121212;\n    --neutral-200: #424242;\n    --neutral-300: #616161;\n    --neutral-400: #757575;\n    --neutral-500: #9e9e9e;\n    --neutral-600: #bdbdbd;\n    --neutral-700: #e0e0e0;\n    --neutral-800: #eeeeee;\n    --neutral-900: #f5f5f5;\n  }\n}\n:host([theme='dark']) {\n  --semantic-blue: var(--blue-700);\n  --semantic-red: var(--red-400);\n  --semantic-orange: var(--orange-400);\n  --semantic-green: var(--green-700);\n  --semantic-bg-blue: var(--blue-25);\n  --semantic-bg-red: var(--red-25);\n  --semantic-bg-orange: var(--orange-25);\n  --semantic-bg-green: var(--green-25);\n  --neutral-100: #121212;\n  --neutral-200: #424242;\n  --neutral-300: #616161;\n  --neutral-400: #757575;\n  --neutral-500: #9e9e9e;\n  --neutral-600: #bdbdbd;\n  --neutral-700: #e0e0e0;\n  --neutral-800: #eeeeee;\n  --neutral-900: #f5f5f5;\n}\n/* @media (prefers-color-scheme: dark) {\n  :host {\n      --label-color: #fff;\n      --active-label-color: #000;\n      --menu-bg: #525252;\n      --active-bg: #5898ff;\n      --active-bg-dimmed: #5c5c5c;\n  }\n} */\n:host {\n  --ui-font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';\n  --ui-font-size: 14px;\n  --ui-line-height: 1.5;\n  --ui-letter-spacing: 0.007em;\n  --mono-font-family: 'Berkeley Mono', 'JetBrains Mono', 'IBM Plex Mono', 'Source Code Pro', Menlo, Monaco, 'Courier New', monospace;\n  --ui-layer-1: var(--neutral-100);\n  --ui-layer-2: var(--neutral-200);\n  --ui-layer-3: var(--neutral-300);\n  --ui-layer-4: var(--neutral-400);\n  --ui-layer-5: var(--neutral-500);\n  --ui-layer-6: var(--neutral-600);\n  --ui-border-color: var(--primary-color);\n  --ui-border-radius: 4px;\n  --ui-text: var(--neutral-900);\n  --ui-text-secondary: var(--neutral-700);\n  --ui-text-placeholder: var(--neutral-500);\n  --ui-text-muted: var(--neutral-300);\n  /** A field is a UI element in which a user can type data, for\n  * example an input or textarea element.\n  */\n  --ui-field-bg: var(--neutral-100);\n  --ui-field-bg-hover: var(--neutral-100);\n  --ui-field-bg-disabled: var(--neutral-300);\n  --ui-field-bg-invalid: var(--red-100);\n  --ui-field-bg-focus: var(--neutral-100);\n  --ui-field-border: 0.5px solid var(--border-color);\n  --ui-field-border-hover: 0.5px solid var(--border-color);\n  --ui-field-border-disabled: 0.5px solid var(--border-color);\n  --ui-field-border-invalid: 0.5px solid var(--border-color);\n  --ui-field-border-focus: 0.5px solid var(--border-color);\n  --ui-menu-bg: var(--neutral-100);\n  --ui-menu-text: var(--neutral-900);\n  --ui-menu-bg-hover: var(--neutral-200);\n  --ui-menu-text-hover: var(--neutral-900);\n  /** The `active` state is used for the state of menu items\n  * when they are selected.\n  */\n  --ui-menu-bg-active: var(--primary-color);\n  --ui-menu-text-active: var(--primary-color-reverse);\n  /** The `active-muted` set is used for the state of\n  * submenus when they are open.\n  */\n  --ui-menu-bg-active-muted: var(--neutral-300);\n  --ui-menu-text-active-muted: var(--neutral-900);\n  /* --ui-menu-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.302),\n0 2px 6px 2px rgba(60, 64, 67, 0.149); */\n  --ui-menu-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 0, 0, 0.2);\n  --ui-menu-divider: 0.5px solid #c7c7c7;\n  /* var(--neutral-300); */\n  --ui-menu-z-index: 10000;\n  --page-bg: var(--neutral-100);\n  --content-bg: var(--neutral-200);\n}\n@media (prefers-color-scheme: dark) {\n  :host {\n    --ui-menu-bg: var(--neutral-200);\n  }\n}\n:host([theme='dark']) {\n  --ui-menu-bg: var(--neutral-200);\n}\n/* PingFang SC is a macOS font. Microsoft Yahei is a Windows font. \n  Noto  is a Linux/Android font.\n*/\n:lang(zh-cn),\n:lang(zh-sg),\n:lang(zh-my),\n:lang(zh) {\n  --ui-font-family: -apple-system, system-ui, 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Noto Sans SC', 'Noto Sans', 'Microsoft Yahei UI', 'Microsoft YaHei New', 'Microsoft Yahei', '\u5FAE\u8F6F\u96C5\u9ED1', SimSun, '\u5B8B\u4F53', STXihei, '\u534E\u6587\u7EC6\u9ED1', sans-serif;\n}\n:lang(zh-tw),\n:lang(zh-hk),\n:lang(zh-mo) {\n  --ui-font-family: -apple-system, system-ui, 'Noto Sans', 'Microsoft JhengHei UI', 'Microsoft JhengHei', '\u5FAE\u8EDF\u6B63\u9ED1\u9AD4', '\u65B0\u7D30\u660E\u9AD4', 'PMingLiU', '\u7D30\u660E\u9AD4', 'MingLiU', sans-serif;\n}\n:lang(ja),\n:lang(ja-jp),\n:lang(ja-jp-mac) {\n  --ui-font-family: -apple-system, system-ui, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans CJK JP', 'Noto Sans JP', 'Noto Sans', '\u6E38\u30B4\u30B7\u30C3\u30AF', '\u6E38\u30B4\u30B7\u30C3\u30AF\u4F53', YuGothic, 'Yu Gothic', '\u30E1\u30A4\u30EA\u30AA', Meiryo, '\uFF2D\uFF33 \uFF30\u30B4\u30B7\u30C3\u30AF', 'MS PGothic', sans-serif;\n}\n:lang(ko),\n:lang(ko-kr),\n:lang(ko-kr-std) {\n  --ui-font-family: -apple-system, system-ui, 'Noto Sans CJK KR', 'Noto Sans KR', 'Noto Sans', 'Malgun Gothic', '\uB9D1\uC740 \uACE0\uB515', 'Apple SD Gothic Neo', '\uC560\uD50C SD \uC0B0\uB3CC\uACE0\uB515 Neo', 'Apple SD \uC0B0\uB3CC\uACE0\uB515 Neo', '\uB3CB\uC6C0', Dotum, sans-serif;\n}\n:lang(ko-kr-apple) {\n  --ui-font-family: -apple-system, system-ui, 'Noto Sans CJK KR', 'Noto Sans KR', 'Noto Sans', 'Apple SD Gothic Neo', '\uC560\uD50C SD \uC0B0\uB3CC\uACE0\uB515 Neo', 'Apple SD \uC0B0\uB3CC\uACE0\uB515 Neo', '\uB3CB\uC6C0', Dotum, sans-serif;\n}\n:lang(zh-cn),\n:lang(zh-sg),\n:lang(zh-my),\n:lang(zh),\n:lang(zh-tw),\n:lang(zh-hk),\n:lang(zh-mo),\n:lang(ja),\n:lang(ja-jp),\n:lang(ja-jp-mac),\n:lang(ko),\n:lang(ko-kr),\n:lang(ko-kr-std),\n:lang(ko-kr-apple) {\n  --ui-font-size: 1rem;\n  --ui-line-height: 1.7;\n  --ui-letter-spacing: 0;\n}\n:dir(rtl) {\n  --ui-line-height: auto;\n  --ui-letter-spacing: 0;\n}\n";
+
+// src/ui/menu/style.less
+var style_default2 = ".ui-menu *,\n.ui-menu ::before,\n.ui-menu ::after {\n  box-sizing: border-box;\n}\n.ui-menu {\n  display: none;\n  color-scheme: light dark;\n  -webkit-user-select: none;\n  /* Important: Safari iOS doesn't respect user-select */\n  user-select: none;\n  cursor: default;\n  -webkit-touch-callout: none;\n  -webkit-tap-highlight-color: rgba(0 0 0 0);\n  --active-label-color: #fff;\n  /* ui-menu-text-active */\n  --label-color: #121212;\n  /* ui-menu-text */\n  --menu-bg: #e2e2e2;\n  /* ui-menu-background */\n  --active-bg: #5898ff;\n  /* ui-menu-background-active */\n  --active-bg-dimmed: #c5c5c5;\n  /* ui-menu-background-active-muted */\n}\n/** Use the :where pseudo selector to make the specificity of the\n * selector 0, so that it can be overridden by the user.\n */\n:where(.ui-menu-container) {\n  position: absolute;\n  overflow: visible;\n  width: auto;\n  height: auto;\n  z-index: 10000;\n  border-radius: 8px;\n  background: var(--ui-menu-bg);\n  box-shadow: var(--ui-menu-shadow);\n  list-style: none;\n  padding: 6px 0 6px 0;\n  margin: 0;\n  user-select: none;\n  cursor: default;\n  color: var(--ui-menu-text);\n  font-weight: normal;\n  font-style: normal;\n  text-shadow: none;\n  text-transform: none;\n  letter-spacing: 0;\n  outline: none;\n  opacity: 1;\n  /* The [popover] elements have a 1px solid black border. Ugh. */\n  border: none;\n  width: fit-content;\n  height: fit-content;\n}\n:where(.ui-menu-container > li) {\n  display: flex;\n  flex-flow: row;\n  align-items: center;\n  padding: 1px 7px 1px 7px;\n  margin-top: 0;\n  margin-left: 6px;\n  margin-right: 6px;\n  border-radius: 4px;\n  white-space: nowrap;\n  position: relative;\n  outline: none;\n  fill: currentColor;\n  user-select: none;\n  cursor: default;\n  text-align: left;\n  color: inherit;\n  font-family: var(--ui-font-family);\n  font-size: var(--ui-font-size);\n  line-height: var(--ui-line-height);\n  letter-spacing: var(--ui-letter-spacing);\n}\n:where(.ui-menu-container > li > .label) {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  appearance: none;\n  background: none;\n  outline: none;\n  width: 100%;\n  margin: 0;\n  padding: 1px 2px 1px 1px;\n  overflow: visible;\n  border: 1px solid transparent;\n  white-space: nowrap;\n  text-align: start;\n  align-content: center;\n}\n:where(.ui-menu-container > li:has(.heading)) {\n  margin-top: 0.5em;\n}\n:where(.ui-menu-container > li > .label.heading) {\n  font-weight: bold;\n  opacity: 0.4;\n}\n:where(.ui-menu-container > li.indent > .label) {\n  margin-inline-start: 12px;\n}\n:where(.ui-menu-container > li > .label.indent) {\n  margin-inline-start: 12px;\n}\n:where(.ui-menu-container > li[role='divider']) {\n  border-bottom: 1px solid var(--ui-menu-divider);\n  border-radius: 0;\n  padding: 0;\n  margin-left: 15px;\n  margin-right: 15px;\n  padding-top: 5px;\n  margin-bottom: 5px;\n  width: calc(100% - 30px);\n  /** 100% - (margin-left + margin-right) */\n}\n:where(.ui-menu-container > li[aria-disabled='true']) {\n  opacity: 0.5;\n}\n:where(.ui-menu-container > li.active) {\n  background: var(--ui-menu-bg-active);\n  background: -apple-system-control-accent;\n  color: var(--ui-menu-text-active);\n}\n:where(.ui-menu-container > li.active.is-submenu-open) {\n  background: var(--ui-menu-bg-active-muted);\n  color: inherit;\n}\n:where(.ui-menu-container > li[aria-haspopup='true'] > .label) {\n  padding-inline-end: 0;\n}\n:where(.ui-menu-container > li[aria-haspopup='true'].active::after) {\n  color: var(--ui-menu-text-active);\n}\n/** Keyboard shortcut */\n:where(.ui-menu-container > li > kbd) {\n  font-family: var(--ui-font-family);\n  margin-inline-start: 12px;\n  opacity: 0.4;\n}\n:where(.ui-menu-container > li.active > kbd) {\n  opacity: 0.85;\n}\n.ui-trailing-chevron {\n  display: flex;\n  margin-inline-start: 24px;\n  width: 10px;\n  height: 10px;\n  margin-bottom: 4px;\n}\n.ui-trailing-chevron:dir(rtl) {\n  transform: scaleX(-1);\n}\n.ui-checkmark {\n  display: flex;\n  margin-inline-end: -11px;\n  margin-inline-start: -4px;\n  margin-top: 2px;\n  width: 16px;\n  height: 16px;\n}\n.ui-mixedmark {\n  display: flex;\n  margin-inline-end: -11px;\n  margin-inline-start: -4px;\n  margin-top: 2px;\n  width: 16px;\n  height: 16px;\n}\n";
+
+// src/common/stylesheet.ts
+var gStylesheets;
+function getStylesheetContent(id) {
+  let content = "";
+  switch (id) {
+    //
+    // Note: the `position: relative` is required to fix https://github.com/arnog/mathlive/issues/971
+    //
+    case "mathfield-element":
+      content = `
+    :host { display: inline-block; background-color: field; color: fieldtext; border-width: 1px; border-style: solid; border-color: #acacac; border-radius: 2px;}
+    :host([hidden]) { display: none; }
+    :host([disabled]), :host([disabled]:focus), :host([disabled]:focus-within) { outline: none; opacity:  .5; }
+    :host(:focus), :host(:focus-within) {
+      outline: Highlight auto 1px;    /* For Firefox */
+      outline: -webkit-focus-ring-color auto 1px;
+    }
+    :host([readonly]:focus), :host([readonly]:focus-within),
+    :host([read-only]:focus), :host([read-only]:focus-within) {
+      outline: none;
+    }`;
+      break;
+    case "core":
+      content = core_default;
+      break;
+    case "mathfield":
+      content = mathfield_default;
+      break;
+    case "environment-popover":
+      content = environment_popover_default;
+      break;
+    case "suggestion-popover":
+      content = suggestion_popover_default;
+      break;
+    case "keystroke-caption":
+      content = keystroke_caption_default;
+      break;
+    case "virtual-keyboard":
+      content = virtual_keyboard_default;
+      break;
+    case "ui":
+      content = style_default;
+      break;
+    case "menu":
+      content = style_default2;
+      break;
+    default:
+      debugger;
+  }
+  return content;
+}
+function getStylesheet(id) {
+  if (!gStylesheets) gStylesheets = {};
+  if (gStylesheets[id]) return gStylesheets[id];
+  gStylesheets[id] = new CSSStyleSheet();
+  gStylesheets[id].replaceSync(getStylesheetContent(id));
+  return gStylesheets[id];
+}
+var gInjectedStylesheets;
+function injectStylesheet(id) {
+  var _a3;
+  try {
+    if (!("adoptedStyleSheets" in document)) {
+      if (window.document.getElementById(`mathlive-style-${id}`)) return;
+      const styleNode = window.document.createElement("style");
+      styleNode.id = `mathlive-style-${id}`;
+      styleNode.append(
+        window.document.createTextNode(getStylesheetContent(id))
+      );
+      window.document.head.appendChild(styleNode);
+      return;
+    }
+    if (!gInjectedStylesheets) gInjectedStylesheets = {};
+    if (((_a3 = gInjectedStylesheets[id]) != null ? _a3 : 0) !== 0) gInjectedStylesheets[id] += 1;
+    else {
+      const stylesheet = getStylesheet(id);
+      document.adoptedStyleSheets = [
+        ...document.adoptedStyleSheets,
+        stylesheet
+      ];
+      gInjectedStylesheets[id] = 1;
+    }
+  } catch (error) {
+    console.error("Error injecting stylesheet", id, error);
+  }
+}
+function releaseStylesheet(id) {
+  if (!("adoptedStyleSheets" in document)) return;
+  if (!(gInjectedStylesheets == null ? void 0 : gInjectedStylesheets[id])) return;
+  gInjectedStylesheets[id] -= 1;
+  if (gInjectedStylesheets[id] <= 0) {
+    const stylesheet = gStylesheets[id];
+    document.adoptedStyleSheets = document.adoptedStyleSheets.filter(
+      (x) => x !== stylesheet
+    );
+  }
+}
+
+// src/atoms/accent.ts
+// VisualTeX kernel: combining Unicode accents need deterministic ink boxes,
+// and structural placeholders must use the same Box-tree geometry as real math.
+function visualTexCombiningAccentBox(codepoint) {
+  const vector = codepoint === 8407;
+  const count = codepoint === 8411 ? 3 : 4;
+  const box = new Box(null, { classes: "ML__accent-body ML__visualtex-accent-ink" });
+  box.width = vector ? 0.42 : count === 3 ? 0.41 : 0.57;
+  box.height = vector ? 0.72 : 0.7;
+  box.depth = vector ? 0 : 0.2;
+  box.setStyle("position", "relative");
+  const y = (box.height + box.depth) / 2;
+  box.svgOverlay = vector
+    ? '<path d="M0.015 0.36H0.39M0.31 0.28L0.39 0.36L0.31 0.44" fill="none" stroke="currentColor" stroke-width="0.035" stroke-linecap="round" stroke-linejoin="round"/>'
+    : Array.from({ length: count }, (_, i) =>
+        '<circle cx="' + (0.045 + i * 0.16) + '" cy="' + y + '" r="0.045" fill="currentColor"/>').join("");
+  return box;
+}
+function visualTexMarkAccentLayout(box) {
+  if (box.classes.split(" ").includes("ML__vlist")) {
+    box.classes += " visualtex-accent-placeholder-layout";
+    return true;
+  }
+  return (box.children || []).some(visualTexMarkAccentLayout);
+}
+var AccentAtom = class _AccentAtom extends Atom {
+  constructor(options) {
+    var _a3;
+    super(__spreadProps(__spreadValues({}, options), { type: "accent", body: (_a3 = options.body) != null ? _a3 : void 0 }));
+    if (options.accentChar) this.accent = options.accentChar;
+    else this.svgAccent = options == null ? void 0 : options.svgAccent;
+    this.skipBoundary = true;
+    this.captureSelection = true;
+  }
+  static fromJson(json) {
+    return new _AccentAtom(json);
+  }
+  toJson() {
+    return __spreadProps(__spreadValues({}, super.toJson()), {
+      accentChar: this.accent,
+      svgAccent: this.svgAccent
+    });
+  }
+  render(parentContext) {
+    var _a3;
+    const context = new Context(
+      { parent: parentContext, mathstyle: "cramp" },
+      this.style
+    );
+    const base = (_a3 = Atom.createBox(context, this.body)) != null ? _a3 : new Box("\u25A1", { style: this.style });
+    let skew = 0;
+    // A placeholder is a centered editing slot, not an italic glyph. Inheriting
+    // the synthetic x metric's skew shifts ring/hat/vector ink sideways.
+    if (
+      !this.hasEmptyBranch("body") &&
+      this.body.length === 2 &&
+      this.body[1].type !== "placeholder" &&
+      this.body[1].type !== "prompt" &&
+      this.body[1].isCharacterBox()
+    )
+      skew = base.skew;
+    let clearance = Math.min(base.height, X_HEIGHT);
+    let accentBox;
+    if (this.svgAccent) {
+      accentBox = makeSVGBox(this.svgAccent);
+      clearance = context.metrics.bigOpSpacing1 - clearance;
+    } else if ([8407, 8411, 8412].includes(this.accent)) {
+      accentBox = visualTexCombiningAccentBox(this.accent);
+    } else if (this.accent) {
+      const accent = new Box(this.accent, { fontFamily: "Main-Regular" });
+      accent.italic = 0;
+      const correctionClass = (
+        // this.accent === 94 || // ^
+        this.accent === 8407 || // \\vec
+        this.accent === 8411 || // \\ddot
+        this.accent === 8412 ? " ML__accent-combining-char" : ""
+      );
+      accentBox = new Box(accent, {
+        classes: "ML__accent-body" + correctionClass
+      });
+    }
+    accentBox.classes += " ML__visualtex-accent-mark";
+    // ML__center already centers the accent row against the rendered base.
+    // Keep only glyph skew; do not reapply half-width compensation.
+    const accentMargin = 2 * skew;
+    if (this.svgAccent) accentBox.setStyle("width", "100%");
+    const visualTexPlaceholderBody =
+      this.body?.length === 2 &&
+      (this.body[1].type === "placeholder" || this.body[1].type === "prompt");
+    accentBox = new VBox({
+      shift: 0,
+      children: [
+        {
+          box: new Box(base),
+          classes: visualTexPlaceholderBody ? ["ML__center"] : []
+        },
+        -clearance,
+        {
+          box: accentBox,
+          marginLeft: accentMargin,
+          classes: ["ML__center"]
+        }
+      ]
+    });
+    if (visualTexPlaceholderBody)
+      visualTexMarkAccentLayout(accentBox);
+    const result = new Box(accentBox, {
+      type: "ord",
+      classes: "ML__visualtex-accent"
+    });
+    if (this.caret) result.caret = this.caret;
+    this.bind(context, result.wrap(context));
+    return this.attachSupsub(context, { base: result });
+  }
+};
+
+// src/core/delimiters.ts
+var RIGHT_DELIM = {
+  "(": ")",
+  "{": "}",
+  "[": "]",
+  "|": "|",
+  "\\lbrace": "\\rbrace",
+  "\\lparen": "\\rparen",
+  "\\{": "\\}",
+  "\\langle": "\\rangle",
+  "\\lfloor": "\\rfloor",
+  "\\lceil": "\\rceil",
+  "\\vert": "\\vert",
+  "\\lvert": "\\rvert",
+  "\\Vert": "\\Vert",
+  "\\lVert": "\\rVert",
+  "\\lbrack": "\\rbrack",
+  "\\ulcorner": "\\urcorner",
+  "\\llcorner": "\\lrcorner",
+  "\\lgroup": "\\rgroup",
+  "\\lmoustache": "\\rmoustache"
+};
+var LEFT_DELIM = Object.fromEntries(
+  Object.entries(RIGHT_DELIM).map(([leftDelim, rightDelim]) => [
+    rightDelim,
+    leftDelim
+  ])
+);
+function getSymbolValue(symbol) {
+  var _a3;
+  return (_a3 = {
+    "[": 91,
+    // '[',
+    "]": 93,
+    // ']',
+    "(": 40,
+    // '(',
+    ")": 41,
+    // ')',
+    "\\mid": 8739,
+    "|": 8739,
+    "\u2223": 8739,
+    // DIVIDES
+    "\u2225": 8741,
+    // PARALLEL TO
+    "\\|": 8739,
+    "\\{": 123,
+    // '{',
+    "\\}": 125,
+    // '}',
+    "\\lbrace": 123,
+    // '{',
+    "\\rbrace": 125,
+    // '}',
+    "\\lparen": 40,
+    // '('
+    "\\rparen": 41,
+    // ')'
+    "\\lbrack": 91,
+    // '[',
+    "\\rbrack": 93,
+    // ']',
+    "\\vert": 8739,
+    "\\lvert": 8739,
+    "\\mvert": 8739,
+    "\\rvert": 8739,
+    "\\Vert": 8741,
+    "\\lVert": 8741,
+    "\\mVert": 8741,
+    "\\rVert": 8741,
+    "\\parallel": 8741,
+    "\\shortparallel": 8741,
+    "\\langle": 10216,
+    "\\rangle": 10217,
+    "\\lfloor": 8970,
+    "\\rfloor": 8971,
+    "\\lceil": 8968,
+    "\\rceil": 8969,
+    "\\ulcorner": 9484,
+    "\\urcorner": 9488,
+    "\\llcorner": 9492,
+    "\\lrcorner": 9496,
+    "\\lgroup": 10222,
+    "\\rgroup": 10223,
+    "\\lmoustache": 9136,
+    "\\rmoustache": 9137,
+    "\\surd": 8730
+  }[symbol]) != null ? _a3 : symbol.codePointAt(0);
+}
+function makeSmallDelim(delim, context, center, options) {
+  var _a3;
+  const text = new Box(getSymbolValue(delim), {
+    fontFamily: "Main-Regular",
+    isSelected: options.isSelected,
+    classes: "ML__small-delim " + ((_a3 = options.classes) != null ? _a3 : "")
+  });
+  const box = text.wrap(context);
+  if (center) box.setTop((1 - context.scalingFactor) * AXIS_HEIGHT);
+  return box;
+}
+function makeLargeDelim(delim, size, center, parentContext, options) {
+  var _a3, _b3;
+  const context = new Context(
+    { parent: parentContext, mathstyle: "textstyle" },
+    options == null ? void 0 : options.style
+  );
+  const result = new Box(getSymbolValue(delim), {
+    fontFamily: `Size${size}-Regular`,
+    isSelected: options.isSelected,
+    classes: ((_a3 = options.classes) != null ? _a3 : "") + ` ML__delim-size${size}`,
+    type: (_b3 = options.type) != null ? _b3 : "ignore"
+  }).wrap(context);

@@ -3,7 +3,7 @@ import type {
   CustomSymbolDefinition,
   CustomSymbolVectorShape,
   CustomSymbolVectorTransform,
-} from "./customSymbolTypes.ts";
+} from "./customSymbolTypes";
 import {
   applyCustomSymbolMacrosToMathfield,
   customSymbolCssClass,
@@ -13,13 +13,14 @@ import {
   customSymbolSvgMarkerClass,
   getActiveCustomSymbols,
   getCustomSymbolRevision,
-} from "./customSymbolRegistry.ts";
+} from "./customSymbolRegistry";
 
 const globalStyleId = "visualtex-custom-symbol-runtime-style";
 const shadowStyleId = "visualtex-custom-symbol-runtime-shadow-style";
 const shadowStyleSignatures = new WeakMap<MathfieldElement, string>();
-let cachedGlobalStyleRevision = -1;
+let cachedGlobalStyleSignature = "";
 let cachedGlobalStyleCss = "";
+const requestedGlobalSymbolIds = new Set<string>();
 
 function number(value: number) {
   const normalized = Math.abs(value) < 0.000001 ? 0 : value;
@@ -160,6 +161,29 @@ function artworkMaskMarkup(
   );
 }
 
+export function customSymbolArtworkSvg(
+  symbol: CustomSymbolDefinition,
+  monochromeMask = true,
+) {
+  const width = Math.max(1, symbol.metrics.widthEm * 1000);
+  const height = Math.max(1, (symbol.metrics.ascentEm + symbol.metrics.descentEm) * 1000);
+  const paint = monochromeMask ? "black" : "inherit";
+  if (!artworkHasErase(symbol)) {
+    return (
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${number(height)}">` +
+      symbol.artwork.shapes.map((shape) => shapeMarkup(shape, paint)).join("") +
+      "</svg>"
+    );
+  }
+  const maskId = "visualtex-custom-symbol-erase";
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${number(height)}">` +
+    artworkMaskMarkup(symbol, maskId, width, height) +
+    `<rect x="0" y="0" width="${number(width)}" height="${number(height)}" fill="${paint}" mask="url(#${maskId})"></rect>` +
+    "</svg>"
+  );
+}
+
 function maskLayerSvg(
   symbol: CustomSymbolDefinition,
   operation: "paint" | "erase",
@@ -260,12 +284,34 @@ export function customSymbolsUsedInSource(source: string) {
   return activeSymbols.filter((symbol) => usedCommands.has(symbol.command));
 }
 
-export function installCustomSymbolGlobalStyle() {
+export function installCustomSymbolGlobalStyle(
+  source?: string,
+  includeAllActiveSymbols = false,
+) {
   if (typeof document === "undefined") return;
   const revision = getCustomSymbolRevision();
-  if (revision !== cachedGlobalStyleRevision) {
-    cachedGlobalStyleRevision = revision;
-    cachedGlobalStyleCss = customSymbolRuntimeCss();
+  const activeSymbols = getActiveCustomSymbols();
+  const activeIds = new Set(activeSymbols.map((symbol) => symbol.id));
+  for (const id of Array.from(requestedGlobalSymbolIds)) {
+    if (!activeIds.has(id)) requestedGlobalSymbolIds.delete(id);
+  }
+  if (includeAllActiveSymbols) {
+    for (const symbol of activeSymbols) requestedGlobalSymbolIds.add(symbol.id);
+  } else if (typeof source === "string" && source.includes("\\")) {
+    for (const symbol of customSymbolsUsedInSource(source)) {
+      requestedGlobalSymbolIds.add(symbol.id);
+    }
+  }
+
+  const requestedSymbols = activeSymbols.filter((symbol) =>
+    requestedGlobalSymbolIds.has(symbol.id),
+  );
+  const signature = `${revision}\u0000${requestedSymbols
+    .map((symbol) => symbol.id)
+    .join("\u0000")}`;
+  if (signature !== cachedGlobalStyleSignature) {
+    cachedGlobalStyleSignature = signature;
+    cachedGlobalStyleCss = customSymbolRuntimeCss(requestedSymbols);
   }
   installStyle(document, globalStyleId, cachedGlobalStyleCss);
 }
@@ -344,6 +390,10 @@ export function refreshCustomSymbolMathfield(field: MathfieldElement) {
   installCustomSymbolShadowStyle(field);
   if (!latex || !needsReparse || !selectionAnchors) return;
 
+  // MathLive's public MathfieldElement.setValue() intentionally skips an
+  // identical source string. A plain math-mode trailing space is ignored by
+  // TeX serialization, but makes the input string different so the public API
+  // reparses the formula against the newly installed macro dictionary.
   field.setValue(`${latex} `, {
     mode: "math",
     format: "latex",

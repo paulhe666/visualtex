@@ -1,3 +1,4 @@
+import { normalizeMathModeSource } from "../math/mathModeSource";
 import {
   EXTENDED_INTEGRAL_COMMANDS,
   EXTENDED_INTEGRAL_COMMAND_PATTERN_SOURCE,
@@ -578,6 +579,9 @@ export function normalizeMathLiveCanonicalUprightCommands(
     "\\mathrm{d}$1",
   );
 }
+
+export const normalizeCanonicalUprightCommands =
+  normalizeMathLiveCanonicalUprightCommands;
 
 const differentialFractionCommands = ["\\dfrac", "\\tfrac", "\\frac"];
 const integralCommandPattern = new RegExp(
@@ -1174,7 +1178,7 @@ export function normalizeChineseLatex(source: string): string {
     index += 1;
   }
 
-  return result;
+  return normalizeMathModeSource(result);
 }
 
 export function normalizeMultilineLatex(source: string): string {

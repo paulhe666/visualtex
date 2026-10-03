@@ -1,3 +1,4 @@
+import { VISUALTEX_CORE_LATEX_ALIASES } from "../math/coreLatexAliases";
 import type { CommandCategory, LatexCommand } from "../types/command";
 
 interface CompatibilityCommandSpec {
@@ -17,7 +18,26 @@ interface CompatibilityCommandSpec {
   sourceSupported?: boolean;
 }
 
+const coreLatexAliasSpecs: CompatibilityCommandSpec[] =
+  VISUALTEX_CORE_LATEX_ALIASES.map((alias) => ({
+    id: `core-alias-${alias.id}`,
+    command: `\\${alias.name}`,
+    insertTemplate: `\\${alias.name}`,
+    previewLatex: alias.previewLatex,
+    labelZh: alias.labelZh,
+    labelEn: alias.labelEn,
+    aliases: alias.aliases,
+    keywords: alias.keywords,
+    category: alias.category,
+    priority: alias.priority,
+  }));
+
 const specs: CompatibilityCommandSpec[] = [
+  ...coreLatexAliasSpecs,
+  { id: "core-pod", command: "\\pod", insertTemplate: "\\pod{\\placeholder{}}", previewLatex: "\\quad(n)", labelZh: "同余括号", labelEn: "Modulo parenthesis", aliases: ["pod"], keywords: ["amsmath", "同余", "模"], category: "relation", priority: 68, rawPlaceholderTemplate: "\\pod{\\placeholder{}}" },
+  { id: "core-substack", command: "\\substack", insertTemplate: "\\substack{\\placeholder{}}", previewLatex: "\\begin{array}{c}i<j\\\\i+j=n\\end{array}", labelZh: "多行下标", labelEn: "Substack", aliases: ["substack"], keywords: ["amsmath", "多行", "下标"], category: "structure", priority: 74, rawPlaceholderTemplate: "\\substack{\\placeholder{}}" },
+  { id: "core-prescript", command: "\\prescript", insertTemplate: "\\prescript{\\placeholder{}}{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\prescript{14}{6}{C}", labelZh: "左上下标", labelEn: "Prescript", aliases: ["prescript"], keywords: ["mathtools", "左上标", "左下标"], category: "structure", priority: 70, rawPlaceholderTemplate: "\\prescript{\\placeholder{}}{\\placeholder{}}{\\placeholder{}}" },
+  { id: "core-sideset", command: "\\sideset", insertTemplate: "\\sideset{_\\placeholder{}^\\placeholder{}}{_\\placeholder{}^\\placeholder{}}{\\placeholder{}}", previewLatex: "\\sideset{_a^b}{_c^d}{\\sum}", labelZh: "算符左右标记", labelEn: "Side-set operator", aliases: ["sideset"], keywords: ["amsmath", "算符", "上下标"], category: "structure", priority: 66 },
   // unicode-math style math alphabet commands. VisualTeX keeps these spellings
   // in source while supplying rendering-only compatibility macros.
   { id: "sym-up", command: "\\symup", insertTemplate: "\\symup{\\placeholder{}}", previewLatex: "\\symup{ABC}", labelZh: "Unicode 数学正体", labelEn: "Unicode math upright", aliases: ["symup"], keywords: ["正体", "unicode math", "字体"], wrapper: true },
@@ -116,21 +136,3 @@ export const compatibilityRequiredArgumentCounts = new Map<string, number>([
       : [];
   }),
 ]);
-
-export const compatibilityWrapperPreviews = new Map<string, string>(
-  specs
-    .filter((spec) => spec.wrapper)
-    .map((spec) => [spec.command, spec.previewLatex]),
-);
-
-export const compatibilityWrapperCanonicalTargets = new Map<string, string>(
-  specs
-    .filter((spec) => spec.wrapper && spec.canonicalWrapperCommand)
-    .map((spec) => [spec.command, spec.canonicalWrapperCommand!]),
-);
-
-export const compatibilityRawPlaceholderTemplates = new Map<string, string>(
-  specs
-    .filter((spec) => spec.rawPlaceholderTemplate)
-    .map((spec) => [spec.command, spec.rawPlaceholderTemplate!]),
-);

@@ -1,0 +1,208 @@
+diff --git a/src/components/SettingsDialog.tsx b/src/components/SettingsDialog.tsx
+index c6ed740..aaeb184 100644
+--- a/src/components/SettingsDialog.tsx
++++ b/src/components/SettingsDialog.tsx
+@@ -14,8 +14,6 @@ import {
+   Eye,
+   Keyboard,
+   Languages,
+-  Presentation,
+-  RefreshCw,
+   RotateCcw,
+   SlidersHorizontal,
+   Upload,
+@@ -41,7 +39,6 @@ import {
+   useEditorStore,
+ } from "../stores/editorStore";
+ import { MathPreview } from "./MathPreview";
+-import { OfficeIntegrationSettings } from "./OfficeIntegrationSettings";
+ import { pngExportBackgroundPickerValue } from "../export/pngBackground";
+ import {
+   DEFAULT_FORMULA_CHINESE_FONT,
+@@ -125,7 +122,6 @@ const THEME_TOOLBAR_COLOR_FIELDS: readonly [keyof ThemePaletteColors, string, st
+ interface Props {
+   open: boolean;
+   onClose: () => void;
+-  onCheckForUpdates: () => void;
+   onOpenFormulaHotkeys: () => void;
+ }
+ 
+@@ -156,7 +152,6 @@ function downloadConfigurationInBrowser(contents: string, filename: string) {
+ export function SettingsDialog({
+   open,
+   onClose,
+-  onCheckForUpdates,
+   onOpenFormulaHotkeys,
+ }: Props) {
+   const dialogRef = useRef<HTMLElement>(null);
+@@ -188,9 +183,6 @@ export function SettingsDialog({
+   const sourceEditorFontSize = useEditorStore(
+     (state) => state.sourceEditorFontSize,
+   );
+-  const keypadMinimizeOnCopy = useEditorStore(
+-    (state) => state.keypadMinimizeOnCopy,
+-  );
+   const formulaInsetLeft = useEditorStore((state) => state.formulaInsetLeft);
+   const formulaInsetRight = useEditorStore((state) => state.formulaInsetRight);
+   const formulaToolButtonSize = useEditorStore(
+@@ -219,9 +211,6 @@ export function SettingsDialog({
+   const setSourceEditorFontSize = useEditorStore(
+     (state) => state.setSourceEditorFontSize,
+   );
+-  const setKeypadMinimizeOnCopy = useEditorStore(
+-    (state) => state.setKeypadMinimizeOnCopy,
+-  );
+   const setFormulaInsetLeft = useEditorStore(
+     (state) => state.setFormulaInsetLeft,
+   );
+@@ -251,18 +240,6 @@ export function SettingsDialog({
+   const suggestionCount = useEditorStore((state) => state.suggestionCount);
+   const setSuggestionCount = useEditorStore((state) => state.setSuggestionCount);
+   const resetUsage = useEditorStore((state) => state.resetUsage);
+-  const powerPointDefaultFontSizePt = useEditorStore(
+-    (state) => state.powerPointDefaultFontSizePt,
+-  );
+-  const setPowerPointDefaultFontSizePt = useEditorStore(
+-    (state) => state.setPowerPointDefaultFontSizePt,
+-  );
+-  const checkUpdatesOnStartup = useEditorStore(
+-    (state) => state.checkUpdatesOnStartup,
+-  );
+-  const setCheckUpdatesOnStartup = useEditorStore(
+-    (state) => state.setCheckUpdatesOnStartup,
+-  );
+   const isEn = language === "en";
+   const formulaLetterFamilies = formulaLetterFontFamilies(formulaLetterFont);
+   const formulaChineseFamily = formulaChineseFontFamily(formulaChineseFont);
+@@ -772,100 +749,6 @@ export function SettingsDialog({
+               </button>
+             </div>
+           </div>
+-
+-          <div className="settings-section">
+-            <div className="settings-section-title">
+-              <Presentation size={18} />
+-              <div>
+-                <h3>
+-                  {isEn
+-                    ? "PowerPoint formula defaults"
+-                    : "PowerPoint 公式默认值"}
+-                </h3>
+-              </div>
+-            </div>
+-            <label className="number-setting office-default-font-size-setting">
+-              <span>
+-                <strong>
+-                  {isEn ? "Default formula font size" : "默认公式字号"}
+-                </strong>
+-                <small>
+-                  {powerPointDefaultFontSizePt} {isEn ? "pt" : "磅"}
+-                </small>
+-              </span>
+-              <input
+-                type="number"
+-                min="5"
+-                max="200"
+-                step="0.5"
+-                value={powerPointDefaultFontSizePt}
+-                data-powerpoint-default-font-size
+-                onChange={(event) => {
+-                  const value = Number(event.target.value);
+-                  if (Number.isFinite(value)) {
+-                    setPowerPointDefaultFontSizePt(value);
+-                  }
+-                }}
+-              />
+-            </label>
+-            <div
+-              className="theme-segment office-font-size-presets"
+-              role="group"
+-              aria-label={
+-                isEn
+-                  ? "PowerPoint formula size presets"
+-                  : "PowerPoint 公式字号预设"
+-              }
+-            >
+-              {[14, 16, 18, 20, 24, 28, 32, 36].map((fontSizePt) => (
+-                <button
+-                  key={fontSizePt}
+-                  type="button"
+-                  className={
+-                    powerPointDefaultFontSizePt === fontSizePt
+-                      ? "is-active"
+-                      : ""
+-                  }
+-                  aria-pressed={powerPointDefaultFontSizePt === fontSizePt}
+-                  onClick={() => setPowerPointDefaultFontSizePt(fontSizePt)}
+-                >
+-                  {fontSizePt}
+-                </button>
+-              ))}
+-            </div>
+-          </div>
+-
+-          <OfficeIntegrationSettings />
+-
+-          <div className="settings-section">
+-            <div className="settings-section-title">
+-              <RefreshCw size={18} />
+-              <div>
+-                <h3>{isEn ? "Application updates" : "应用更新"}</h3>
+-              </div>
+-            </div>
+-            <label className="switch-row">
+-              <span>
+-                <strong>{isEn ? "Automatic update notifications" : "自动更新提醒"}</strong>
+-              </span>
+-              <input
+-                type="checkbox"
+-                checked={checkUpdatesOnStartup}
+-                onChange={(event) =>
+-                  setCheckUpdatesOnStartup(event.target.checked)
+-                }
+-              />
+-              <span className="switch-control" />
+-            </label>
+-            <button
+-              type="button"
+-              className="secondary-button settings-update-button"
+-              onClick={onCheckForUpdates}
+-            >
+-              <RefreshCw size={15} />
+-              {isEn ? "Check now" : "立即检查"}
+-            </button>
+-          </div>
+         </div>
+ 
+         <footer className="dialog-footer">
+@@ -1202,30 +1085,6 @@ export function SettingsDialog({
+                   <span className="switch-control" />
+                 </label>
+ 
+-                <label className="switch-row">
+-                  <span>
+-                    <strong>
+-                      {isEn
+-                        ? "Minimize after keypad copy"
+-                        : "小键盘复制后最小化主应用"}
+-                    </strong>
+-                    <small>
+-                      {isEn
+-                        ? "In keypad mode, ⌘/Ctrl+S copies the current LaTeX format and then minimizes VisualTeX."
+-                        : "小键盘模式下，⌘/Ctrl+S 会按当前 LaTeX 代码格式复制；开启后复制完成再最小化 VisualTeX。"}
+-                    </small>
+-                  </span>
+-                  <input
+-                    type="checkbox"
+-                    checked={keypadMinimizeOnCopy}
+-                    data-keypad-minimize-on-copy-setting
+-                    onChange={(event) =>
+-                      setKeypadMinimizeOnCopy(event.target.checked)
+-                    }
+-                  />
+-                  <span className="switch-control" />
+-                </label>
+-
+                 <section
+                   className="formula-toolbar-customization"
+                   aria-labelledby="formula-toolbar-customization-title"

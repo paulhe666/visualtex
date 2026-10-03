@@ -6,9 +6,9 @@ import process from "node:process";
 const offset = process.pid % 900;
 const previewPort = 7800 + offset;
 const debugPort = 13800 + offset;
-const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
+const baseUrl = `http://127.0.0.1:${previewPort}`;
 const chromeProfile = `/tmp/visualtex-formula-alignment-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromePath = (process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 15000) {
@@ -144,6 +144,7 @@ async function main() {
           ],
           activeLineId: "alignment-line-1",
           formulaAlignment: "left",
+          editorLayout: "classic",
           language: "cn",
           zoom: 1,
         },
@@ -161,34 +162,42 @@ async function main() {
     })`);
 
     const layout = await evaluate(`(() => {
-      const title = document.querySelector(".pane-title-copy h1");
-      const controls = document.querySelector(".formula-alignment-controls");
-      const toolbar = document.querySelector(".formula-toolbar");
-      const header = document.querySelector(".formula-toolbar-header");
-      const titleRect = title?.getBoundingClientRect();
+      const title = document.querySelector(".editor-pane-header .pane-title-copy h1");
+      const icon = document.querySelector(".editor-pane-header .pane-icon");
+      const controls = document.querySelector(".editor-pane-header .formula-alignment-controls");
+      const toolbar = document.querySelector(".classic-tile-toolbar");
+      const header = document.querySelector(".editor-pane-header");
       const controlsRect = controls?.getBoundingClientRect();
+      const headerRect = header?.getBoundingClientRect();
+      const toolbarRect = toolbar?.getBoundingClientRect();
       return {
-        title: title?.textContent ?? "",
-        titleRight: titleRect?.right ?? -1,
+        hasTitle: Boolean(title),
+        hasIcon: Boolean(icon),
         controlsLeft: controlsRect?.left ?? -1,
-        sameVerticalBand: titleRect && controlsRect
-          ? Math.abs((titleRect.top + titleRect.bottom) / 2 - (controlsRect.top + controlsRect.bottom) / 2)
-          : 999,
-        buttons: Array.from(controls?.querySelectorAll("button") ?? []).map(
-          (button) => button.dataset.formulaAlignment,
+        headerLeft: headerRect?.left ?? -1,
+        controlsInsideHeader: Boolean(
+          controlsRect && headerRect &&
+          controlsRect.left >= headerRect.left - 1 &&
+          controlsRect.right <= headerRect.right + 1 &&
+          controlsRect.top >= headerRect.top - 1 &&
+          controlsRect.bottom <= headerRect.bottom + 1
         ),
+        buttons: Array.from(
+          controls?.querySelectorAll("button[data-formula-alignment]") ?? [],
+        ).map((button) => button.dataset.formulaAlignment),
         firstSidebarChild: toolbar?.firstElementChild?.className ?? "",
-        sidebarHeaderTop: header?.getBoundingClientRect().top ?? -1,
-        sidebarTop: toolbar?.getBoundingClientRect().top ?? -1,
+        sidebarTop: toolbarRect?.top ?? -1,
+        editorHeaderBottom: headerRect?.bottom ?? -1,
         hasOldQuickRow: Boolean(document.querySelector(".formula-toolbar-quick-actions")),
       };
     })()`);
-    assert.equal(layout.title, "可视化编辑", JSON.stringify(layout));
+    assert.equal(layout.hasTitle, false, JSON.stringify(layout));
+    assert.equal(layout.hasIcon, false, JSON.stringify(layout));
     assert.deepEqual(layout.buttons, ["left", "center", "right"]);
-    assert.ok(layout.controlsLeft >= layout.titleRight, JSON.stringify(layout));
-    assert.ok(layout.sameVerticalBand <= 1, JSON.stringify(layout));
-    assert.equal(layout.firstSidebarChild, "formula-toolbar-header", JSON.stringify(layout));
-    assert.ok(Math.abs(layout.sidebarHeaderTop - layout.sidebarTop) <= 0.5, JSON.stringify(layout));
+    assert.ok(layout.controlsLeft >= layout.headerLeft + 8, JSON.stringify(layout));
+    assert.equal(layout.controlsInsideHeader, true, JSON.stringify(layout));
+    assert.equal(layout.firstSidebarChild, "formula-tiles-panel", JSON.stringify(layout));
+    assert.ok(Math.abs(layout.sidebarTop - layout.editorHeaderBottom) <= 1, JSON.stringify(layout));
     assert.equal(layout.hasOldQuickRow, false, JSON.stringify(layout));
 
     const readState = () => evaluate(`(() => {
@@ -414,7 +423,61 @@ async function main() {
     );
     assert.ok(state.persistedLines.every((line) => !("alignment" in line)), JSON.stringify(state));
 
-    console.log("Document-level visual formula alignment regression passed");
+    await evaluate(`(() => {
+      const field = document.querySelector('[data-line-id="alignment-line-1"] math-field');
+      if (!field) throw new Error("Missing formula field for horizontal overflow probe");
+      field.value = Array.from({ length: 90 }, (_, index) => "x_{" + index + "}").join("+");
+      field.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    })()`);
+    await sleep(180);
+    const overflowState = await evaluate(`(() => {
+      const host = document.querySelector('[data-line-id="alignment-line-1"] .mathfield-host');
+      const field = host?.querySelector('math-field');
+      if (!host || !field) return null;
+      const before = host.scrollLeft;
+      host.scrollLeft = host.scrollWidth;
+      return {
+        overflowX: getComputedStyle(host).overflowX,
+        hostWidth: host.getBoundingClientRect().width,
+        hostHeight: host.getBoundingClientRect().height,
+        fieldWidth: field.getBoundingClientRect().width,
+        fieldHeight: field.getBoundingClientRect().height,
+        clientWidth: host.clientWidth,
+        clientHeight: host.clientHeight,
+        scrollWidth: host.scrollWidth,
+        scrollHeight: host.scrollHeight,
+        scrollLeftBefore: before,
+        scrollLeftAfter: host.scrollLeft,
+        isOverflowing: host.classList.contains("is-horizontally-overflowing"),
+        justifyContent: getComputedStyle(host).justifyContent,
+      };
+    })()`);
+    assert.ok(overflowState, "Missing horizontal overflow state");
+    assert.equal(overflowState.overflowX, "auto", JSON.stringify(overflowState));
+    assert.equal(overflowState.isOverflowing, true, JSON.stringify(overflowState));
+    assert.equal(overflowState.justifyContent, "flex-start", JSON.stringify(overflowState));
+    assert.ok(
+      overflowState.fieldWidth > overflowState.hostWidth + 20,
+      JSON.stringify(overflowState),
+    );
+    assert.ok(
+      overflowState.scrollWidth > overflowState.clientWidth + 20,
+      JSON.stringify(overflowState),
+    );
+    assert.ok(
+      overflowState.clientHeight >= overflowState.fieldHeight - 1,
+      JSON.stringify(overflowState),
+    );
+    assert.ok(
+      overflowState.scrollHeight <= overflowState.clientHeight + 1,
+      JSON.stringify(overflowState),
+    );
+    assert.ok(
+      overflowState.scrollLeftAfter > overflowState.scrollLeftBefore + 20,
+      JSON.stringify(overflowState),
+    );
+
+    console.log("Document-level visual formula alignment and horizontal overflow regression passed");
   } finally {
     client?.close();
     chrome?.kill("SIGTERM");

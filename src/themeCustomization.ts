@@ -2,6 +2,8 @@ import type { Theme } from "./types/formula";
 import { safeStorage } from "./runtime/safeStorage";
 
 export const CUSTOM_THEME_STORAGE_KEY = "visualtex.custom-theme.v1";
+const CUSTOM_THEME_CHANNEL = "visualtex-custom-theme";
+export const CUSTOM_THEME_CHANGED_EVENT = "visualtex-custom-theme-changed";
 
 export type ThemePaletteMode = "light" | "dark";
 
@@ -1148,4 +1150,40 @@ export function publishCustomTheme(state: CustomThemeState) {
   if (document.documentElement.dataset.theme === "custom") {
     applyThemePalette("custom");
   }
+  window.dispatchEvent(new CustomEvent(CUSTOM_THEME_CHANGED_EVENT));
+  if (typeof BroadcastChannel === "undefined") return;
+  let channel: BroadcastChannel | null = null;
+  try {
+    channel = new BroadcastChannel(CUSTOM_THEME_CHANNEL);
+    channel.postMessage(normalized);
+  } catch {
+    // The current window has already applied and persisted the custom theme.
+  } finally {
+    channel?.close();
+  }
+}
+
+export function subscribeCustomTheme() {
+  const applyIfCustom = () => {
+    if (document.documentElement.dataset.theme === "custom") {
+      applyThemePalette("custom");
+    }
+  };
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === CUSTOM_THEME_STORAGE_KEY) applyIfCustom();
+  };
+  window.addEventListener("storage", handleStorage);
+  let channel: BroadcastChannel | null = null;
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      channel = new BroadcastChannel(CUSTOM_THEME_CHANNEL);
+    } catch {
+      channel = null;
+    }
+  }
+  if (channel) channel.onmessage = applyIfCustom;
+  return () => {
+    window.removeEventListener("storage", handleStorage);
+    channel?.close();
+  };
 }

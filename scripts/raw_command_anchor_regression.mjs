@@ -6,9 +6,9 @@ import process from "node:process";
 const portOffset = process.pid % 1000;
 const previewPort = 7600 + portOffset;
 const debugPort = 12600 + portOffset;
-const baseUrl = `http://127.0.0.1:${previewPort}/editor`;
+const baseUrl = `http://127.0.0.1:${previewPort}`;
 const chromeProfile = `/tmp/visualtex-raw-anchor-${process.pid}`;
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromePath = (process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(url, timeoutMs = 15000) {
@@ -159,6 +159,7 @@ async function main() {
       localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
       localStorage.setItem("visualtex.onboarding.macos.desktop.v1.2.0.completed", "true");
       localStorage.setItem("visualtex.office.macos.native-first-run.v1.2.0.completed", "true");
+      localStorage.setItem("visualtex.release-welcome.1.2.6.seen", "true");
       const key = "visualtex-editor";
       const persisted = JSON.parse(localStorage.getItem(key) || "{}");
       persisted.state = {

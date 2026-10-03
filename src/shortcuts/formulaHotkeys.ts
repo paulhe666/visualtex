@@ -31,7 +31,9 @@ export interface FormulaHotkeyBinding {
 
 function commandById(commandId: string) {
   const command = commandRegistry.find((item) => item.id === commandId);
-  if (!command) throw new Error(`Missing formula hotkey command: ${commandId}`);
+  if (!command) {
+    throw new Error(`Missing formula hotkey command: ${commandId}`);
+  }
   return command;
 }
 
@@ -58,18 +60,18 @@ function defaultHotkeyCommand(
   };
 }
 
-function controlChord(code: string, shiftKey = false): FormulaHotkeyChord {
+function commandChord(code: string, shiftKey = false): FormulaHotkeyChord {
   return {
     code,
     key: /^Key[A-Z]$/.test(code) ? code.slice(3).toLowerCase() : code,
-    ctrlKey: true,
+    ctrlKey: false,
     altKey: false,
     shiftKey,
-    metaKey: false,
+    metaKey: true,
   };
 }
 
-function altShiftChord(code: string): FormulaHotkeyChord {
+function optionShiftChord(code: string): FormulaHotkeyChord {
   return {
     code,
     key: /^Key[A-Z]$/.test(code) ? code.slice(3).toLowerCase() : code,
@@ -120,19 +122,21 @@ const defaultFormulaHotkeyDefinitions: Array<{
   command: LatexCommand;
   chord: FormulaHotkeyChord;
 }> = [
-  { command: commandById("sqrt"), chord: controlChord("KeyR") },
-  { command: commandById("frac"), chord: controlChord("KeyF") },
-  { command: commandById("scripts"), chord: controlChord("KeyJ") },
-  { command: commandById("subscript"), chord: controlChord("KeyL") },
-  { command: commandById("degree"), chord: controlChord("KeyD") },
-  { command: partialSymbolCommand, chord: controlChord("KeyP", true) },
+  { command: commandById("sqrt"), chord: commandChord("KeyR") },
+  { command: commandById("frac"), chord: commandChord("KeyF") },
+  // Command+H is the macOS system shortcut for hiding the active app, so the
+  // matching superscript shortcut is intentionally not installed by default.
+  { command: commandById("scripts"), chord: commandChord("KeyJ") },
+  { command: commandById("subscript"), chord: commandChord("KeyL") },
+  { command: commandById("degree"), chord: commandChord("KeyD") },
+  { command: partialSymbolCommand, chord: commandChord("KeyP", true) },
   {
     command: boundedIntegralTemplateCommand,
-    chord: controlChord("KeyI", true),
+    chord: commandChord("KeyI", true),
   },
-  { command: commandById("sum"), chord: controlChord("KeyS", true) },
-  { command: underlinedXCommand, chord: altShiftChord("KeyX") },
-  { command: underlinedYCommand, chord: altShiftChord("KeyY") },
+  { command: commandById("sum"), chord: commandChord("KeyS", true) },
+  { command: underlinedXCommand, chord: optionShiftChord("KeyX") },
+  { command: underlinedYCommand, chord: optionShiftChord("KeyY") },
 ];
 
 export function createDefaultFormulaHotkeyBindings(): FormulaHotkeyBinding[] {
@@ -367,6 +371,7 @@ export function protectedFormulaHotkeyAction(
         save: "Save",
         greekMode: "Greek letter mode",
         settings: "Settings",
+        keypadMode: "Toggle keypad mode",
         resetZoom: "Reset zoom",
         zoomIn: "Zoom in",
         zoomOut: "Zoom out",
@@ -382,6 +387,7 @@ export function protectedFormulaHotkeyAction(
         save: "保存",
         greekMode: "希腊字母输入",
         settings: "设置",
+        keypadMode: "切换小键盘模式",
         resetZoom: "恢复缩放",
         zoomIn: "放大",
         zoomOut: "缩小",
@@ -396,15 +402,15 @@ export function protectedFormulaHotkeyAction(
   if (key === "o") return labels.open;
   if (!chord.shiftKey && key === "s") return labels.save;
   if (
-    chord.ctrlKey &&
-    !chord.metaKey &&
-    !chord.altKey &&
+    chord.metaKey &&
+    !chord.ctrlKey &&
     !chord.shiftKey &&
     key === "g"
   ) {
     return labels.greekMode;
   }
   if (key === ",") return labels.settings;
+  if (key === "k" && chord.shiftKey) return labels.keypadMode;
   if (key === "0") return labels.resetZoom;
   if (key === "=" || key === "+") return labels.zoomIn;
   if (key === "-") return labels.zoomOut;
