@@ -440,14 +440,14 @@ async function main() {
     })()`);
     assert.deepEqual(helpOpened, { found: true, hit: true });
     await evaluate(`new Promise((resolve) => {
-      const done = () => document.querySelector(".help-dialog")
+      const done = () => document.querySelector(".help-manual-dialog")
         ? resolve(true)
         : setTimeout(done, 30);
       done();
     })`);
     const helpState = await evaluate(`(() => ({
-      subtitle: document.querySelector(".help-dialog-header span")?.textContent ?? "",
-      text: document.querySelector(".help-dialog-content")?.textContent ?? "",
+      subtitle: document.querySelector(".help-manual-header small")?.textContent ?? "",
+      text: document.querySelector(".help-manual-dialog")?.textContent ?? "",
     }))()`);
     assert.equal(helpState.subtitle, "VisualTeX Web");
     assert.match(helpState.text, /浏览器|browser/i);

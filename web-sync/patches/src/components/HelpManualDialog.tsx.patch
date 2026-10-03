@@ -1,0 +1,13 @@
+diff --git a/src/components/HelpManualDialog.tsx b/src/components/HelpManualDialog.tsx
+index 6a39639..3be44cc 100644
+--- a/src/components/HelpManualDialog.tsx
++++ b/src/components/HelpManualDialog.tsx
+@@ -308,7 +308,7 @@ export function HelpManualDialog({ open, language, onClose }: Props) {
+             <BookOpenText size={18} />
+             <span>
+               <strong>{isEn ? "Help Manual" : "帮助手册"}</strong>
+-              <small>VisualTeX 1.2.8 · macOS</small>
++              <small>VisualTeX Web</small>
+             </span>
+           </div>
+           <button

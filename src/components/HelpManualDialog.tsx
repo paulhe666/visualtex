@@ -308,7 +308,7 @@ export function HelpManualDialog({ open, language, onClose }: Props) {
             <BookOpenText size={18} />
             <span>
               <strong>{isEn ? "Help Manual" : "帮助手册"}</strong>
-              <small>VisualTeX 1.2.8 · macOS</small>
+              <small>VisualTeX Web</small>
             </span>
           </div>
           <button

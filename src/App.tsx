@@ -179,6 +179,10 @@ function App() {
     setSourceOpen(false);
     setZoom(LANDING_PREVIEW_ZOOM);
     setSourceDocumentRevision((revision) => revision + 1);
+    // The showcase is always drawn at the same scale.
+    return useEditorStore.subscribe((state) => {
+      if (state.zoom !== LANDING_PREVIEW_ZOOM) setZoom(LANDING_PREVIEW_ZOOM);
+    });
   }, []);
 
   // The web editor defaults to a smaller zoom than the desktop window.
