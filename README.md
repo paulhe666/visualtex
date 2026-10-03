@@ -20,6 +20,19 @@ VisualTeX 是一款面向数学、物理、工程和科研写作场景的可视�
 当前版本：**1.0.6**
 > 网页版数据默认保存在当前浏览器中，不会自动同步到其他设备。Cloudflare 部署说明见 [`docs/WEB_DEPLOYMENT.md`](docs/WEB_DEPLOYMENT.md)。
 
+### 编辑器与 macOS 版同步
+
+网页编辑器直接使用 macOS 版（`main` 分支 `apps/macos`）的编辑器代码。`web-sync/manifest.json` 列出原样复制的文件和来源提交，网页版自己的改动放在 `web-sync/patches/`（去掉 Office、更新、小键盘等桌面功能）。
+
+```bash
+git fetch origin
+npm run sync:mac-editor -- origin/main   # 复制最新的 macOS 编辑器并重新打补丁
+npm run check:mac-editor                 # 检查文件是否与 macOS 版 + 补丁一致
+node scripts/sync-mac-editor.mjs --save-patch <文件>   # 记录对同步文件的网页版改动
+```
+
+macOS 版的浏览器回归测试可以直接运行：设置 `CHROME_PATH`，并用 `npm run build:test`（编辑器在根路径打开）构建，例如 `npm run test:selection`。
+
 ## 下载
 
 | 平台 | 安装包 | 说明 |
@@ -316,6 +329,19 @@ npm run build
 ```
 
 See [`docs/WEB_DEPLOYMENT.md`](docs/WEB_DEPLOYMENT.md) for deployment.
+
+### Keeping the editor in sync with macOS
+
+The web editor runs the macOS editor (`apps/macos` on `main`). `web-sync/manifest.json` lists the byte-for-byte copies and the source commit; web-only edits live in `web-sync/patches/` (no Office, updates or keypad mode).
+
+```bash
+git fetch origin
+npm run sync:mac-editor -- origin/main   # copy the latest macOS editor and re-apply patches
+npm run check:mac-editor                 # verify files match macOS + patches
+node scripts/sync-mac-editor.mjs --save-patch <file>   # record a web edit to a synced file
+```
+
+The macOS browser regressions run as-is: set `CHROME_PATH` and build with `npm run build:test` (editor served at `/`), e.g. `npm run test:selection`.
 
 ## Core design principle
 
