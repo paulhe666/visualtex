@@ -14,7 +14,6 @@
     "build:landing-art": "node scripts/landing/build_landing_art.mjs",
     "test:web-ocr": "node scripts/web_ocr_worker_smoke.mjs",
     "test:ideographic-comma": "npm run build:test && node scripts/ideographic_comma_regression.mjs",
-    "test:suggestion-settings": "node --experimental-strip-types scripts/suggestion_settings_smoke.mjs",
     "build:test": "VITE_VISUALTEX_EDITOR_AT_ROOT=1 tsc --noEmit && VITE_VISUALTEX_EDITOR_AT_ROOT=1 vite build",
     "sync:mac-editor": "node scripts/sync-mac-editor.mjs",
     "check:mac-editor": "node scripts/sync-mac-editor.mjs --check",
