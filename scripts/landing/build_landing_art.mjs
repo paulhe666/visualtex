@@ -171,7 +171,6 @@ const shapes = {
   arrows: {
     hero: arrow(7, [-40, 74], 24), // from the end of the note down to the main button
     figure: arrow(15, [70, 64], 30), // from the margin note down to the figure
-    download: arrow(27, [-240, 170], -40), // from the margin note to the end of the proof
   },
 };
 
@@ -240,7 +239,7 @@ export const ART_TEXT = ${JSON.stringify(text)} as const satisfies Record<string
 export type InkKey = keyof typeof ART_TEXT;
 export const ART_MARKS = ${JSON.stringify(marks)};
 export const ART_FIELD: readonly FieldBlock[] = ${JSON.stringify(field)};
-export const ART_SHAPES: { swash: string[]; box: string[]; loop: string[]; lens: string; blot: string[]; arrows: Record<"hero" | "figure" | "download", ArrowShape> } = ${JSON.stringify(shapes)};
+export const ART_SHAPES: { swash: string[]; box: string[]; loop: string[]; lens: string; blot: string[]; arrows: Record<"hero" | "figure", ArrowShape> } = ${JSON.stringify(shapes)};
 export const ART_DEMO: readonly (readonly DemoStep[])[] = ${JSON.stringify(demo)};
 `;
 writeFileSync(new URL("../../src/landing/art.generated.ts", import.meta.url), out);

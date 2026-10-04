@@ -22,13 +22,10 @@ Each platform offers two direct downloads: the full installer with local OCR and
 - The hero lettering is written in on load; the hero has the two main actions.
 - Figure 1 is a typing demo of the visual editor (`TypingDemo.tsx`, steps in
   `scripts/landing/demo.mjs`), not an embedded editor.
-- Theorem 3 states the detected platform as a proof, offers the two editions as Case 1 / Case 2 and
-  lists the OCR models in a booktabs-style table.
 - Buttons, margin notes, circling loops and ink blots are hand-drawn shapes from
   `scripts/landing/shapes.mjs`. Everything animated has a static `prefers-reduced-motion` form.
 
 Copy lives in `scripts/landing/copy.mjs`; run `npm run build:landing-art` after changing it.
-Installer sizes in the copy (676 / 12 / 347 / 120 MB) must be updated with each release.
 
 ## Local checks
 

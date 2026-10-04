@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { ART_DEFS, ART_FIELD, ART_HERO, ART_MARKS, ART_RULE, ART_SHAPES, ART_TEXT, type InkKey } from "./art.generated";
 import { startFieldEffects } from "./fieldEffects";
 import { layoutFormulaField } from "./formulaField";
@@ -21,8 +21,6 @@ const downloads = [
     meta: "macMeta",
     href: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_aarch64.dmg`,
     secondaryHref: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_aarch64-no-ocr.dmg`,
-    fullLabel: "macFullBtn",
-    liteLabel: "macLiteBtn",
   },
   {
     id: "windows",
@@ -30,27 +28,16 @@ const downloads = [
     meta: "winMeta",
     href: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_x64-setup.exe`,
     secondaryHref: `${DOWNLOAD_BASE}/VisualTeX_${VERSION}_x64-no-ocr-setup.exe`,
-    fullLabel: "winFullBtn",
-    liteLabel: "winLiteBtn",
   },
-] as const satisfies readonly {
-  id: PlatformId; name: InkKey; meta: InkKey; href: string; secondaryHref: string; fullLabel: InkKey; liteLabel: InkKey;
-}[];
+] as const satisfies readonly { id: PlatformId; name: InkKey; meta: InkKey; href: string; secondaryHref: string }[];
 
 const ocrModels = [
-  { label: "ocrS", size: "ocrSSize", use: "ocrSFor", href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-S_windows-x64.vtxocrmodel` },
-  { label: "ocrM", size: "ocrMSize", use: "ocrMFor", href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-M_windows-x64.vtxocrmodel` },
-  { label: "ocrL", size: "ocrLSize", use: "ocrLFor", href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-L_windows-x64.vtxocrmodel` },
-] as const satisfies readonly { label: InkKey; size: InkKey; use: InkKey; href: string }[];
+  { label: "ocrS", href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-S_windows-x64.vtxocrmodel` },
+  { label: "ocrM", href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-M_windows-x64.vtxocrmodel` },
+  { label: "ocrL", href: `${OCR_MODEL_BASE}/VisualTeX_PP-FormulaNet_plus-L_windows-x64.vtxocrmodel` },
+] as const satisfies readonly { label: InkKey; href: string }[];
 
-// Features that need the desktop app are tagged so web visitors are not misled.
-const features = [
-  { key: "feature1", desktop: false },
-  { key: "feature2", desktop: true },
-  { key: "feature3", desktop: true },
-  { key: "feature4", desktop: true },
-  { key: "feature5", desktop: false },
-] as const satisfies readonly { key: InkKey; desktop: boolean }[];
+const features = ["feature1", "feature2", "feature3", "feature4", "feature5"] as const satisfies readonly InkKey[];
 
 // Nav entries double as cross-references to the numbered sheets, like \ref in a paper.
 const navRefs = [
@@ -204,9 +191,6 @@ function useInkSplash(page: RefObject<HTMLElement | null>) {
     return () => root.removeEventListener("pointerdown", onDown);
   }, [page]);
 }
-
-const proofFor = (platform: PlatformId | "", mobile: boolean): InkKey =>
-  mobile ? "proofMobile" : platform === "mac" ? "proofMac" : platform === "windows" ? "proofWin" : "proofOther";
 
 export function LandingPage() {
   const [lang, setLang] = useState<LandingLang>(detectLandingLang);
@@ -363,19 +347,8 @@ export function LandingPage() {
           <section className="landing-section" id="features">
             <Card n={2} label="propLabel" lang={lang}>
               <ul className="landing-features">
-                {features.map(({ key, desktop }, index) => (
-                  <li key={key} style={{ "--i": index } as CSSProperties}>
-                    <Svg className="landing-num" html={ART_MARKS.roman[index]} />
-                    <span className="landing-feature">
-                      <Ink k={key} lang={lang} />
-                      {desktop && (
-                        <span className="landing-tag">
-                          <Ink k="desktopTag" lang={lang} />
-                          <Svg className="landing-tag-loop" html={ART_SHAPES.loop[index % ART_SHAPES.loop.length]} />
-                        </span>
-                      )}
-                    </span>
-                  </li>
+                {features.map((key, index) => (
+                  <li key={key}><Svg className="landing-num" html={ART_MARKS.roman[index]} /><Ink k={key} lang={lang} /></li>
                 ))}
               </ul>
             </Card>
@@ -384,54 +357,29 @@ export function LandingPage() {
           <section className="landing-section"><p className="landing-say" data-clear><Ink k="say3" lang={lang} /></p></section>
 
           <section className="landing-section" id="download">
-            {detectedPlatform && <MarginNote k="noteDownload" lang={lang} arrowKey="download" className="landing-anno-download" />}
             <Card n={3} label="thmLabel" lang={lang}>
-              <p className="landing-proof">
-                <Ink k="proofHead" lang={lang} />
-                <Ink k={proofFor(detectedPlatform, isMobileDevice)} lang={lang} />
-                <Ink k="proofCase" lang={lang} />
-              </p>
+              {isMobileDevice && <p className="landing-device-note"><Ink k="mobileNote" lang={lang} /></p>}
               <div className="landing-platforms">
                 {orderedDownloads.map((download, index) => (
-                  <div className={`landing-platform${download.id === detectedPlatform ? " is-yours" : ""}`} key={download.id}>
+                  <div className="landing-platform" key={download.id}>
                     <div className="landing-platform-name">
                       <Ink k={download.name} lang={lang} />
                       {download.id === detectedPlatform && <span className="landing-device"><Ink k="thisDevice" lang={lang} /></span>}
                     </div>
                     <div className="landing-platform-meta"><Ink k={download.meta} lang={lang} /></div>
-                    <dl className="landing-cases">
-                      <dt><Ink k="caseFull" lang={lang} /></dt>
-                      <dd><BrushButton href={download.href} kind="solid" seed={index + 3}><Ink k={download.fullLabel} lang={lang} /></BrushButton></dd>
-                      <dt><Ink k="caseLite" lang={lang} /></dt>
-                      <dd><BrushButton href={download.secondaryHref} kind="ghost" seed={index + 1}><Ink k={download.liteLabel} lang={lang} /></BrushButton></dd>
-                    </dl>
+                    <div className="landing-platform-actions">
+                      <BrushButton href={download.href} kind="solid" seed={index + 3}><Ink k="full" lang={lang} /></BrushButton>
+                      <BrushButton href={download.secondaryHref} kind="ghost" seed={index + 1}><Ink k="lite" lang={lang} /></BrushButton>
+                    </div>
                   </div>
                 ))}
               </div>
-              <figure className="landing-table">
-                <figcaption><Ink k="tabLabel" lang={lang} /></figcaption>
-                <table>
-                  <thead>
-                    <tr>
-                      <th scope="col"><Ink k="thModel" lang={lang} /></th>
-                      <th scope="col"><Ink k="thSize" lang={lang} /></th>
-                      <th scope="col"><Ink k="thFor" lang={lang} /></th>
-                      <th scope="col"><span className="landing-sr">{lang === "zh" ? "下载" : "Download"}</span></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ocrModels.map((model) => (
-                      <tr key={model.label}>
-                        <td><Ink k={model.label} lang={lang} /></td>
-                        <td><Ink k={model.size} lang={lang} /></td>
-                        <td><Ink k={model.use} lang={lang} /></td>
-                        <td><a className="landing-row-link" href={model.href} aria-label={`${lang === "zh" ? "下载" : "Download"} OCR-${model.label.slice(-1)}`}>{arrow}</a></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="landing-table-note"><Ink k="tabNote" lang={lang} /></p>
-              </figure>
+              <div className="landing-models">
+                <span className="landing-models-cap"><Ink k="ocrCaption" lang={lang} /></span>
+                {ocrModels.map((model) => (
+                  <a className="landing-chip" key={model.label} href={model.href}><Ink k={model.label} lang={lang} /></a>
+                ))}
+              </div>
               <a className="landing-releases" href={RELEASES_URL} target="_blank" rel="noreferrer">
                 <Ink k="allReleases" lang={lang} />{arrow}
                 <Svg className="landing-nav-rule" html={ART_RULE} />
