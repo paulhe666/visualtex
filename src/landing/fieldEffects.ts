@@ -40,7 +40,7 @@ export function startFieldEffects(
           : 120 + Math.random() * 380;
         window.setTimeout(() => el.classList.remove("is-raw"), delay);
       }
-    }, { rootMargin: "0px 0px -8% 0px" });
+    });
     for (const block of blocks) {
       block.el.classList.add("is-raw");
       observer.observe(block.el);
