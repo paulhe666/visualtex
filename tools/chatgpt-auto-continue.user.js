@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT Auto Continue Guard
 // @namespace    local.visualtex.tools
-// @version      2.3.0
+// @version      2.5.0
 // @description  Continue an open ChatGPT conversation after the current answer has stopped and stayed idle.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -14,6 +14,7 @@
 
   const STORAGE_KEY = 'chatgpt-auto-continue-guard-settings-v2';
   const SEND_RECOVERY_KEY = 'chatgpt-auto-continue-send-recovery-v1';
+  const PANEL_HIDDEN_KEY = 'chatgpt-auto-continue-panel-hidden-v1';
   const SEND_RECOVERY_MAX_AGE_MS = 5 * 60 * 1000;
   const PANEL_ID = 'chatgpt-auto-continue-guard';
   const STOP_MISSING_GRACE_MS = 2500;
@@ -112,6 +113,20 @@
 
   function clearSendRecovery() {
     try { sessionStorage.removeItem(SEND_RECOVERY_KEY); } catch (_error) { /* Ignore storage failures. */ }
+  }
+
+  function readPanelHidden() {
+    try { return sessionStorage.getItem(PANEL_HIDDEN_KEY) === '1'; } catch (_error) { return false; }
+  }
+
+  function setPanelHidden(hidden) {
+    if (!ui) return;
+    ui.panel.hidden = hidden;
+    ui.launcher.hidden = !hidden;
+    try {
+      if (hidden) sessionStorage.setItem(PANEL_HIDDEN_KEY, '1');
+      else sessionStorage.removeItem(PANEL_HIDDEN_KEY);
+    } catch (_error) { /* The visual toggle still works when storage is unavailable. */ }
   }
 
   function scheduleSendRecoveryReload(result) {
@@ -687,27 +702,32 @@
       const latestMessage = assistantMessages[assistantMessages.length - 1];
       return latestMessage.closest?.('[data-testid^="conversation-turn-"]') || latestMessage;
     }
-    // A newer user turn exists but its assistant turn has not mounted yet.
-    // Returning an older reply here would reuse its completion marker and
-    // response fingerprint for the new response session.
-    if (latestUserMessage && renderedAssistantMessages.length) return null;
     const isResponseTurn = (element) => (!composer || !element.contains(composer))
       && !element.matches('[data-message-author-role="user"]')
-      && !element.querySelector('[data-message-author-role="user"]');
+      && !element.querySelector('[data-message-author-role="user"]')
+      && (!latestUserMessage || isNodeAfter(element, latestUserMessage));
 
     const numberedTurns = Array.from(root.querySelectorAll('[data-testid^="conversation-turn-"]'))
+      .filter(isRenderedConversationNode)
       .filter(isResponseTurn);
     if (numberedTurns.length) return numberedTurns[numberedTurns.length - 1];
 
     for (const selector of ['article']) {
-      const candidates = Array.from(root.querySelectorAll(selector)).filter(isResponseTurn);
+      const candidates = Array.from(root.querySelectorAll(selector))
+        .filter(isRenderedConversationNode)
+        .filter(isResponseTurn);
       if (candidates.length) return candidates[candidates.length - 1];
     }
     const contentCandidates = Array.from(root.querySelectorAll(
       '.markdown, .prose, [data-testid="assistant-message"]',
     )).filter((element) => !element.closest?.('[data-message-author-role="user"]')
-      && (!composer || !element.contains(composer)));
+      && (!composer || !element.contains(composer))
+      && isRenderedConversationNode(element)
+      && (!latestUserMessage || isNodeAfter(element, latestUserMessage)));
     if (contentCandidates.length) return contentCandidates[contentCandidates.length - 1];
+    // A newer user turn exists but its assistant/tool container has not mounted
+    // yet. Returning an older reply here would reuse its completion marker.
+    if (latestUserMessage && renderedAssistantMessages.length) return null;
     return null;
   }
 
@@ -1296,7 +1316,11 @@
       }
     }
 
-    if (!responseSnapshot && !generatingNow && !responseProgress) {
+    const hasObservedResponseActivity = state.generationActive
+      || state.hasSeenGeneration
+      || state.progressRevision > 0;
+    if (!responseSnapshot && !generatingNow && !responseProgress
+      && !hasObservedResponseActivity) {
       setStatus('尚未定位到助手回复区域，等待页面加载；不会盲目发送');
       return;
     }
@@ -1400,7 +1424,13 @@
       <style>
         :host { all: initial; }
         .panel { position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; width: 286px; box-sizing: border-box; padding: 12px; border: 1px solid rgba(255,255,255,.18); border-radius: 12px; background: rgba(25,25,25,.95); color: #f5f5f5; box-shadow: 0 8px 30px rgba(0,0,0,.28); font: 13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-        .title { margin-bottom: 9px; font-size: 14px; font-weight: 650; }
+        [hidden] { display: none !important; }
+        .header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
+        .title { font-size: 14px; font-weight: 650; }
+        .close { width: 26px; height: 26px; padding: 0; border-radius: 6px; background: transparent; color: #cfcfcf; font-size: 20px; line-height: 1; }
+        .close:hover { background: #3f3f46; color: #fff; }
+        .launcher { position: fixed; right: 5px; bottom: 18px; z-index: 2147483647; width: 34px; height: 42px; padding: 0; border: 1px solid rgba(255,255,255,.2); border-radius: 9px 0 0 9px; background: rgba(25,25,25,.88); color: #b8e6da; box-shadow: 0 4px 18px rgba(0,0,0,.24); cursor: pointer; font: 650 13px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+        .launcher:hover { background: #10a37f; color: #fff; }
         .grid { display: grid; grid-template-columns: 1fr 108px; gap: 7px 8px; align-items: center; }
         label { color: #d4d4d4; }
         input { min-width: 0; box-sizing: border-box; width: 100%; padding: 5px 7px; border: 1px solid #555; border-radius: 6px; background: #111; color: #fff; font: inherit; }
@@ -1414,7 +1444,7 @@
         .note { margin-top: 5px; color: #a8a8a8; font-size: 11px; }
       </style>
       <section class="panel" aria-label="ChatGPT 自动继续监督器">
-        <div class="title">ChatGPT 自动继续 v2.3</div>
+        <div class="header"><div class="title">ChatGPT 自动继续 v2.5</div><button id="close" class="close" type="button" aria-label="收起自动续写面板" title="收起">×</button></div>
         <div class="grid">
           <label for="idle">无更新阈值</label><input id="idle" type="number" min="10" max="3600" step="1">
           <label for="max">最多续写</label><input id="max" type="number" min="1" max="100" step="1">
@@ -1427,10 +1457,14 @@
         <div id="status" class="status" role="status"></div>
         <div class="note">只有“继续”消息进入对话才算成功；发送卡死时会刷新页面并重试一次。</div>
       </section>
+      <button id="launcher" class="launcher" type="button" aria-label="打开自动续写面板" title="打开自动续写面板" hidden>续</button>
     `;
     document.documentElement.appendChild(host);
 
     ui = {
+      panel: shadow.querySelector('.panel'),
+      launcher: shadow.getElementById('launcher'),
+      closeButton: shadow.getElementById('close'),
       idleInput: shadow.getElementById('idle'),
       maxInput: shadow.getElementById('max'),
       sentinelInput: shadow.getElementById('sentinel'),
@@ -1441,6 +1475,8 @@
     ui.idleInput.value = String(settings.idleSeconds);
     ui.maxInput.value = String(settings.maxContinues);
     ui.sentinelInput.value = settings.sentinel;
+    ui.closeButton.addEventListener('click', () => setPanelHidden(true));
+    ui.launcher.addEventListener('click', () => setPanelHidden(false));
     ui.toggleButton.addEventListener('click', () => {
       if (state.enabled) pause();
       else start();
@@ -1450,6 +1486,7 @@
       saveSettings();
       void requestContinue('手动测试');
     });
+    setPanelHidden(readPanelHidden());
     render();
   }
 

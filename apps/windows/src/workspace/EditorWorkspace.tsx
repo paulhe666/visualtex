@@ -192,6 +192,7 @@ export function EditorWorkspace({
   const [formulaColorMenu, setFormulaColorMenu] =
     useState<FormulaColorMenu | null>(null);
   const formulaColorMenuRef = useRef<HTMLDivElement>(null);
+  const formulaColorPopoverRef = useRef<HTMLDivElement>(null);
   const formulaSelectionTargetRef = useRef<MathEditorSelectionTarget | null>(null);
   const customFormulaColorDraftRef = useRef<
     Record<FormulaColorMenu, string | null>
@@ -364,12 +365,50 @@ export function EditorWorkspace({
     };
   }, [quickOcrModeMenuOpen]);
 
+  // Desktop toolbars and the classic dock clip their children. Keep the
+  // palette outside those boundaries, anchored beside the formatting tools.
+  const portalFormulaColorMenu = !isOfficeWorkspace;
+  const classicFormulaColorMenu = portalFormulaColorMenu && editorLayout === "classic";
+  useLayoutEffect(() => {
+    if (!formulaColorMenu || !portalFormulaColorMenu) return;
+    const position = () => {
+      const anchor = formulaColorMenuRef.current;
+      const popup = formulaColorPopoverRef.current;
+      if (!anchor || !popup) return;
+      const bounds = anchor.getBoundingClientRect();
+      popup.style.top = classicFormulaColorMenu ? "auto" : `${bounds.bottom + 7}px`;
+      popup.style.bottom = classicFormulaColorMenu
+        ? `${window.innerHeight - bounds.top + 7}px`
+        : "auto";
+      popup.style.left = classicFormulaColorMenu ? `${bounds.left}px` : "auto";
+      popup.style.right = classicFormulaColorMenu
+        ? "auto"
+        : `${window.innerWidth - bounds.right}px`;
+      if (classicFormulaColorMenu) {
+        // Preserve the trigger row even when the window is too short for
+        // the entire palette. The existing viewport fitter still handles X.
+        popup.style.setProperty(
+          "--formula-color-available-height",
+          `${Math.max(0, bounds.top - 17)}px`,
+        );
+      }
+    };
+    position();
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
+    return () => {
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+    };
+  }, [formulaColorMenu, portalFormulaColorMenu, classicFormulaColorMenu]);
+
   useEffect(() => {
     if (!formulaColorMenu) return;
     const close = (event: PointerEvent) => {
       if (
         event.target instanceof Node &&
-        formulaColorMenuRef.current?.contains(event.target)
+        (formulaColorMenuRef.current?.contains(event.target) ||
+          formulaColorPopoverRef.current?.contains(event.target))
       ) {
         return;
       }
@@ -378,6 +417,8 @@ export function EditorWorkspace({
     };
     const closeFromKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
         setFormulaColorMenu(null);
         formulaSelectionTargetRef.current = null;
       }
@@ -1233,7 +1274,17 @@ export function EditorWorkspace({
                       </button>
 
                       {formulaColorMenu && (
+                        <PortalOrInline target={portalFormulaColorMenu ? document.body : null}>
                         <div
+                          ref={formulaColorPopoverRef}
+                          style={portalFormulaColorMenu ? {
+                            position: "fixed",
+                            ...(classicFormulaColorMenu ? {
+                              maxHeight: "var(--formula-color-available-height)",
+                              overflowY: "auto",
+                              boxSizing: "border-box",
+                            } as CSSProperties : {}),
+                          } : undefined}
                           className="formula-color-popover"
                           data-formula-color-popover={formulaColorMenu}
                           data-visualtex-floating-layer
@@ -1410,6 +1461,7 @@ export function EditorWorkspace({
                             </section>
                           </div>
                         </div>
+                        </PortalOrInline>
                       )}
                     </div>
                   </div>

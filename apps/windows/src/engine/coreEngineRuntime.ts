@@ -461,6 +461,12 @@ export async function resolveCoreFontPreferences(
       exactLetterFamily = Boolean(native);
       if (!native) notices.push(`${profile.families[0]} 不可用，当前使用随软件提供的 ${profile.name}；两者是不同字体。`);
     }
+    // Command-specific AMS alternates are shared across letter-font choices.
+    // An AMS-only texFontSet does not switch ordinary glyphs to TeX faces.
+    if (!layout.texFontSet?.ams) {
+      layout.texFontSet = { ...layout.texFontSet,
+        ams: (await loadBundledFormulaFont(context.runtime, "KaTeX_AMS-Regular")).id };
+    }
     const chineseProfiles = {
       system: { system: null, bundled: "NotoSansCJKsc-Regular", name: "Noto Sans CJK SC" },
       pingfang: { system: "PingFang SC", bundled: "NotoSansCJKsc-Regular", name: "Noto Sans CJK SC" },

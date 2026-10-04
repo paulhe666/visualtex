@@ -7,7 +7,7 @@ public sealed class MathMlGreekSourceRecoveryTests
     [InlineData("α", "normal", @"\mathrm{α}")]
     [InlineData("Γ", "normal", @"\mathrm{Γ}")]
     [InlineData("α", "upright", @"\mathrm{α}")]
-    [InlineData("α", "italic", @"\mathit{α}")]
+    [InlineData("α", "italic", @"\alpha")]
     [InlineData("Γ", "italic", @"\mathit{Γ}")]
     [InlineData("α", "bold", @"\mathbf{α}")]
     [InlineData("Γ", "bold", @"\boldsymbol{\Gamma}")]
@@ -22,13 +22,15 @@ public sealed class MathMlGreekSourceRecoveryTests
 
     [Theory]
     [InlineData("α", @"\alpha")]
-    [InlineData("Γ", @"\Gamma")]
-    public void UnstyledGreekRetainsExistingCommandDefaults(string text,string expected)
+    [InlineData("Γ", @"\mathit{Γ}")]
+    [InlineData("ΓΔ", @"\mathrm{ΓΔ}")]
+    [InlineData("αβ", @"\mathrm{αβ}")]
+    public void UnstyledGreekPreservesEffectiveMathMlDefault(string text,string expected)
         => Assert.Equal(expected,MathMlToLatexConverter.Convert($"<math><mi>{text}</mi></math>"));
 
     [Fact]
     public void NearestInheritedVariantAndChildOverridesRemainDistinct()
-        => Assert.Equal(@"\mathrm{α}\mathit{β}\mathbf{γ}",
+        => Assert.Equal(@"\mathrm{α}\beta \mathbf{γ}",
             MathMlToLatexConverter.Convert("<math><mstyle mathvariant='normal'><mi>α</mi><mstyle mathvariant='italic'><mi>β</mi></mstyle><mi mathvariant='bold'>γ</mi></mstyle></math>"));
 
     [Theory]

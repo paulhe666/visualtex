@@ -162,6 +162,69 @@ fn all_shipped_faces_fit_one_bounded_registry_and_use_no_machine_fonts() {
 }
 
 #[test]
+fn explicit_ams_alternates_use_real_glyphs_across_letter_profiles() {
+    let (mut fonts, base, ids) = resources();
+    let ams = ids["ams"].clone();
+    let mut profiles = vec![("katex", base.clone())];
+    for family in ["termes", "pagella", "heros"] {
+        let mut options = base.clone();
+        options.tex_font_set.clear();
+        options.alphabet_upright_font = Some(load(&mut fonts, &format!("texgyre{family}-regular.otf")));
+        options.alphabet_italic_font = Some(load(&mut fonts, &format!("texgyre{family}-italic.otf")));
+        options.alphabet_bold_font = Some(load(&mut fonts, &format!("texgyre{family}-bold.otf")));
+        options.alphabet_bold_italic_font = Some(load(&mut fonts, &format!("texgyre{family}-bolditalic.otf")));
+        profiles.push((family, options));
+    }
+    let mut stix = base.clone();
+    stix.tex_font_set.clear();
+    stix.math_font = base.math_fallbacks[0].clone();
+    stix.math_fallbacks = vec![base.math_font.clone()];
+    stix.alphabet_upright_font = None;
+    stix.alphabet_italic_font = None;
+    stix.alphabet_bold_font = None;
+    stix.alphabet_bold_italic_font = None;
+    profiles.push(("stix", stix));
+    let control = EngineSession::from_source("ordinary".into(), r"a+\psi=\mathbf{B}\parallel c".into()).unwrap();
+    for (name, mut options) in profiles {
+        let before = LayoutEngine::default().layout(&control, &fonts, &options).unwrap().svg().unwrap();
+        options.tex_font_set.insert("ams".into(), ams.clone());
+        let after = LayoutEngine::default().layout(&control, &fonts, &options).unwrap().svg().unwrap();
+        assert_eq!(before, after, "AMS-only binding changed ordinary {name} glyphs");
+        for spec in visualtex_engine_core::symbol_catalog::ALTERNATE_SYMBOLS {
+            for source in [spec.command.to_owned(), format!("a{} b", spec.command),
+                format!(r"x^{{\mathit{{{}}}}}_{{i}}", spec.command),
+                format!(r"x^{{\mathbf{{{}}}}}_{{i}}", spec.command),
+                format!(r"x^{{\mathbfit{{{}}}}}_{{i}}", spec.command)] {
+                let session = EngineSession::from_source(format!("{name}:{source}"), source.clone()).unwrap();
+                let scene = LayoutEngine::default().layout(&session, &fonts, &options).unwrap();
+                scene.validate().unwrap();
+                assert_glyph(&scene, &fonts, &ams, spec.font_character);
+                assert_eq!(session.source(), source);
+            }
+        }
+    }
+    let short = EngineSession::from_source("short".into(), r"\shortparallel".into()).unwrap();
+    let normal = EngineSession::from_source("normal".into(), r"\parallel".into()).unwrap();
+    let short_scene = LayoutEngine::default().layout(&short, &fonts, &base).unwrap();
+    let normal_scene = LayoutEngine::default().layout(&normal, &fonts, &base).unwrap();
+    assert!(short_scene.ink.unwrap().height() < normal_scene.ink.unwrap().height() * 0.6);
+    assert_ne!(short_scene.svg().unwrap(), normal_scene.svg().unwrap());
+    let strict = LayoutOptions::new(base.math_font.clone());
+    let error = LayoutEngine::default().layout(&short, &fonts, &strict).unwrap_err();
+    assert_eq!(error.code, visualtex_engine_core::ErrorCode::MissingFont);
+    // Optional audit output exercises the real native layout/SVG path.
+    if let Ok(directory) = std::env::var("VISUALTEX_ALTERNATE_AUDIT_DIR") {
+        std::fs::create_dir_all(&directory).unwrap();
+        for (name, source) in [("shortparallel", r"\shortparallel"), ("nshortparallel", r"\nshortparallel"),
+            ("parallel", r"\parallel"), ("nparallel", r"\nparallel"), ("expression", r"a\shortparallel b\quad a\nshortparallel b")] {
+            let session = EngineSession::from_source(name.into(), source.into()).unwrap();
+            let scene = LayoutEngine::default().layout(&session, &fonts, &base).unwrap();
+            std::fs::write(std::path::Path::new(&directory).join(format!("{name}.svg")), scene.svg().unwrap()).unwrap();
+        }
+    }
+}
+
+#[test]
 fn font_switch_changes_only_layout_resources_and_katex_switchback_is_exact() {
     let (mut fonts, mut options, _) = resources();
     let mut renderer = LayoutEngine::default();

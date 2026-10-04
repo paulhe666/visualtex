@@ -1,4 +1,5 @@
 import { patchVisualTexMathLiveCoreCompatibility } from "./vite.mathliveCoreCompatibility";
+import { patchVisualTexMathLiveFontScope } from "./vite.mathliveFontScope";
 import { patchVisualTexMathLiveEditingKernel } from "./vite.mathliveEditingKernel";
 import {
   sourceWrapperCanonicalTargets,
@@ -56,6 +57,45 @@ export function patchVisualTexMathLiveBehavior(source: string) {
       '      return joinLatex(emitVariantRun(x, options));',
     ].join("\n"),
     "avoid duplicate bold wrapper around mathbfit variants",
+  );
+
+  // Basic font weight and symbol-wide bold are distinct AST styles.
+  // Character spelling and a missing structural .value cannot select the scope.
+  patched = replaceExactly(
+    patched,
+    '    else if (property === "bold") value = weightString(atom);',
+    [
+      '    else if (property === "bold") value = weightString(atom);',
+      '    else if (property === "visualTexBoldScope")',
+      '      value = weightString(atom) + ":" + (atom.style.variant === "normal" && atom.style.variantStyle === "bold" ? "basic-font" : "other");',
+    ].join("\n"),
+    "retain basic structural bold scope boundaries",
+  );
+  patched = replaceExactly(
+    patched,
+    '  return getPropertyRuns(run, "bold").map((x) => {',
+    '  return getPropertyRuns(run, "visualTexBoldScope").map((x) => {',
+    "split bold runs by structural scope authority",
+  );
+  patched = replaceExactly(
+    patched,
+    '    const value = joinLatex(x.map((x2) => {',
+    [
+      '    if (x[0].style.variant === "normal" && x[0].style.variantStyle === "bold")',
+      '      return latexCommand("\\\\mathbf", joinLatex(emitVariantRun(x, options)));',
+      '    const value = joinLatex(x.map((x2) => {',
+    ].join("\n"),
+    "serialize basic structural bold without changing descendant styles",
+  );
+
+  patched = replaceExactly(
+    patched,
+    [
+      '    if (/^[a-zA-Z0-9]+$/.test(value))',
+      '      return latexCommand("\\\\mathbf", joinLatex(emitVariantRun(x, options)));',
+    ].join("\n"),
+    '    // Explicit basic font scope was handled above; preserve symbol-wide bold.',
+    "select bold scope from AST style instead of ASCII spelling",
   );
 
   // Normal raw-LaTeX groups are intentionally omitted from the public value
@@ -1130,5 +1170,5 @@ export function patchVisualTexMathLiveBehavior(source: string) {
     ].join('\n'),
     "render core-owned placeholder and variant carets",
   );
-  return patchVisualTexMathLiveSemanticCompletion(patched);
+  return patchVisualTexMathLiveFontScope(patchVisualTexMathLiveSemanticCompletion(patched));
 }

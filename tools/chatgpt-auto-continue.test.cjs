@@ -439,6 +439,7 @@ assert.equal(api.isGenerating(), true, '停止回答 must mean generating');
   let assistantNodes = [];
   let threadUsers = [];
   let toolCardText = '';
+  let laterStaticNode = null;
   const toolCard = {
     tagName: 'DIV',
     innerText: '',
@@ -469,11 +470,12 @@ assert.equal(api.isGenerating(), true, '停止回答 must mean generating');
     getAttribute() { return null; },
   };
   assistantNodes = [assistant];
+  let numberedTurnNodes = [container];
   threadRoot = {
     querySelectorAll(selector) {
       if (selector === '[data-message-author-role="assistant"]') return assistantNodes;
       if (selector === '[data-message-author-role="user"]') return threadUsers;
-      if (selector === '[data-testid^="conversation-turn-"]') return [container];
+      if (selector === '[data-testid^="conversation-turn-"]') return numberedTurnNodes;
       return [];
     },
   };
@@ -503,21 +505,38 @@ assert.equal(api.isGenerating(), true, '停止回答 must mean generating');
   assistantNodes = [assistant, hiddenOldBranchAssistant];
   assert.equal(api.getLatestTurn(), container,
     'a hidden stale branch at the end of the DOM must not become the response target');
+  let toolOnlyTurn = null;
   const newerUser = {
     innerText: '完成后的新问题',
     textContent: '完成后的新问题',
     contains() { return false; },
     closest() { return null; },
-    compareDocumentPosition(candidate) { return candidate === assistant ? 2 : 0; },
+    compareDocumentPosition(candidate) {
+      if (candidate === toolOnlyTurn) return 4;
+      return candidate === assistant || candidate === container ? 2 : 0;
+    },
   };
   threadUsers = [newerUser];
   assistantNodes = [assistant];
   assert.equal(api.getLatestTurn(), null,
     'an old assistant reply before the latest user message must not become the current response');
+  toolOnlyTurn = {
+    ...container,
+    innerText: 'Devspace 工具正在运行',
+    textContent: 'Devspace 工具正在运行',
+    getAttribute(name) { return name === 'data-testid' ? 'conversation-turn-10' : null; },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    contains() { return false; },
+  };
+  numberedTurnNodes = [container, toolOnlyTurn];
+  assert.equal(api.getLatestTurn(), toolOnlyTurn,
+    'a rendered tool-only turn after the latest user must be a valid response region');
+  numberedTurnNodes = [container];
   threadUsers = [];
   assistantNodes = [assistant];
 
-  const laterStaticNode = {
+  laterStaticNode = {
     ...assistant,
     innerText: '静态工具说明',
     textContent: '静态工具说明',
@@ -712,7 +731,7 @@ assert.equal(api.isGenerating(), true, '停止回答 must mean generating');
     contains() { return false; },
     closest() { return null; },
     compareDocumentPosition(candidate) {
-      if (candidate === assistant) return 2;
+      if (candidate === assistant || candidate === container) return 2;
       if (candidate === devspaceBlock) return 4;
       return 0;
     },
@@ -745,6 +764,13 @@ assert.equal(api.isGenerating(), true, '停止回答 must mean generating');
   await api.tick();
   assert.equal(api.state.generationActive, true,
     'tool-only DOM activity must establish an active response without an assistant snapshot');
+  api.state.nextActionNotBefore = fakeNow + 1_000_000;
+  fakeNow += 61_000;
+  await api.tick();
+  assert.equal(api.state.generationActive, false,
+    'tool-only activity must be allowed to finish its quiet timer without an assistant snapshot');
+  assert.doesNotMatch(api.state.status, /尚未定位到助手回复区域/u,
+    'previously observed tool activity must not be rejected by the old assistant-region guard');
   threadUsers = [];
 
   // Reopening supervision after an already handled completion marker must not

@@ -68,7 +68,7 @@ try {
         $previous[$key] = [Environment]::GetEnvironmentVariable($key, "Process")
         [Environment]::SetEnvironmentVariable($key, $environment[$key], "Process")
     }
-    $process = Start-Process -FilePath $executable -ArgumentList "--office-background" -WorkingDirectory (Split-Path $executable) -PassThru -RedirectStandardOutput (Join-Path $runRoot "stdout.log") -RedirectStandardError (Join-Path $runRoot "stderr.log")
+    $process = Start-Process -FilePath $executable -ArgumentList "--office-background" -WorkingDirectory (Split-Path $executable) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runRoot "stdout.log") -RedirectStandardError (Join-Path $runRoot "stderr.log")
 } finally {
     foreach ($key in $previous.Keys) { [Environment]::SetEnvironmentVariable($key, $previous[$key], "Process") }
 }

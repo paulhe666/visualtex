@@ -44,4 +44,31 @@ for (const latex of [String.raw`a\mathit{\parallel}b`,String.raw`\mathit{\parall
   assert.ok(Number.isFinite(rendered.width)&&rendered.width>0);
   assert.ok(!/NaN|Infinity/.test(rendered.svg));passed++;
 }
-console.log(JSON.stringify({passed,scope:"explicit operator styles, real SVG shear, nested font scope, layout baseline"}));
+// Identifier scope is independent of Unicode symbol categories. The named and
+// literal forms must carry the same explicit basic style without erasing an
+// intrinsic alphabet or a nested operator-name scope.
+for (const [command, variant] of [["mathrm","normal"],["mathit","italic"],["mathbf","bold"],["mathbfit","bold-italic"]]) {
+  for (const named of ["hslash","hbar","alpha","Gamma","ell"]) {
+    const latex = "\\" + command + "{\\" + named + "}";
+    const xml = await latexToMathMl(latex,false);
+    const actual = tokens(xml);
+    assert.equal(actual.length,1,latex);
+    assert.equal(actual[0].kind,"mi",latex);
+    assert.equal(actual[0].variant,variant,latex);
+    if (named === "hbar") assert.ok(xml.includes('data-mjx-alternate="1"'),latex);
+    if (named === "hslash") assert.ok(!xml.includes('data-mjx-alternate="1"'),latex);
+    passed++;
+  }
+}
+for (const [latex, expected] of [
+  [String.raw`\mathrm{\Bbbk}`,"double-struck"],
+  [String.raw`\mathit{\mathbb{R}}`,"double-struck"],
+  [String.raw`\mathbf{\mathcal{R}}`,"script"],
+  [String.raw`\mathit{\operatorname{x}}`,"normal"],
+] as const) {
+  assert.equal(tokens(await latexToMathMl(latex,false))[0].variant,expected,latex);passed++;
+}
+assert.ok((await latexToMathMl(String.raw`\mathit{x}`,false)).includes('data-mjx-variant="-tex-mathit"'));passed++;
+const nestedIdentifier=tokens(await latexToMathMl(String.raw`\mathbfit{\hbar\mathrm{\hslash}}`,false));
+assert.deepEqual(nestedIdentifier.map(x=>x.variant),["bold-italic","normal"]);passed++;
+console.log(JSON.stringify({passed,scope:"explicit operator and identifier styles, intrinsic alphabets, real SVG operator shear, nested font scope, layout baseline"}));

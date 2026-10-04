@@ -36,7 +36,7 @@ export function escapeMathLiveTextForXml(value: string) {
  *    on an empty, already-mounted mathfield.
  * 3. Replace the whole model for replaceAll instead of range-deleting atoms.
  *    Range deletion could skip empty structures and retain a root environment.
- * 4. Preserve upright bold uppercase Greek when serializing nested atoms.
+ * Font-scope serialization is maintained in the shared behavior fork.
  * 5. Keep matrix pointer hits in the selected row when atom bounds overlap.
  * 6. Include sentinel-only structures in selection, deletion and serialization.
  *
@@ -90,15 +90,7 @@ export function patchVisualTexMathLiveRuntimeSafety(source: string) {
     "matrix row pointer hit testing",
   );
 
-  // The serializer only recognizes ASCII alphanumerics as a mathbf run. An
-  // accent must serialize its body again, so upright bold Delta becomes bm,
-  // which loses the explicit upright intent used by subsequent style toggles.
-  patched = replaceExactly(
-    patched,
-    '    if (/^[a-zA-Z0-9]+$/.test(value))',
-    '    if (/^[a-zA-Z0-9]+$/.test(value) || (x.every((atom) => atom.style.variant === "normal" && atom.style.variantStyle === "bold") && /^[a-zA-Z0-9ΓΔΘΛΞΠΣΥΦΨΩ]+$/.test(value)))',
-    "upright bold uppercase Greek serialization",
-  );
+  // Font-scope serialization is handled by the shared behavior fork.
 
   // getAtoms([0, -1]) previously excluded sentinel-only structures (e.g.
   // \\vec{}), leaving them behind to accumulate on macro reparse and setValue.

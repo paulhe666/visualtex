@@ -67,7 +67,9 @@ impl<'a> Builder<'a> {
     }
     pub(super) fn product_symbol_glyph(&self,ch:char,class:AtomClass)->EngineResult<Option<(&'a FontAsset,u16)>> {
         use crate::styles::MathVariant;
-        if !self.tex_fonts.is_empty() { return self.tex_symbol_glyph(ch,class); }
+        // An AMS-only binding supplies explicit symbol alternates without
+        // changing a non-TeX profile\'s ordinary alphabet or operator faces.
+        if self.tex_fonts.contains_key("main") { return self.tex_symbol_glyph(ch,class); }
         let cp=u32::from(ch);
         let latin=ch.is_ascii_alphabetic();
         let greek_lower=matches!(cp,0x03B1..=0x03C9|0x03D1|0x03D5|0x03D6|0x03F0|0x03F1|0x03F5);
@@ -193,11 +195,16 @@ impl Builder<'_> {
             NodeKind::CustomSymbol {asset,parts,..}=>self.custom_symbol(node.id,asset,parts,style,cramped,depth)?,
             NodeKind::Grid {environment,columns,array_spec,rows,..}=>self.grid(node.id,*environment,columns,array_spec.as_ref(),rows,style,depth)?,
             NodeKind::GridRow {cells,..}=>self.grid_row(node.id,cells,style,cramped,depth)?,
-            NodeKind::Symbol {value,class,..}=> {
+            NodeKind::Symbol {value,class,command}=> {
                 let mut f=Fragment::new(node.id,"symbol");
+                let alternate=command.as_deref().and_then(crate::symbol_catalog::alternate);
                 let single_glyph=value.chars().count()==1;
                 for ch in value.chars() {
-                    let preferred=self.product_symbol_glyph(ch,*class)?;
+                    let preferred=if let Some(spec)=alternate {
+                        if spec.value != value { return Err(EngineError::new(ErrorCode::InvalidInput,"Symbol alternate disagrees with its semantic value")); }
+                        Some(self.tex_glyph(spec.tex_font_role,spec.font_character)?.ok_or_else(||
+                            EngineError::new(ErrorCode::MissingFont,format!("Symbol {} requires its declared {} font glyph",spec.command,spec.tex_font_role)))?)
+                    } else {self.product_symbol_glyph(ch,*class)?};
                     let (font,gid)=if let Some(preferred)=preferred {preferred} else {
                         let rendered=if self.variant==crate::styles::MathVariant::Default {math_character(ch,*class)}
                             else {crate::styles::map_character(ch,self.variant)};
@@ -305,7 +312,7 @@ impl Builder<'_> {
         self.cache.insert(key,Cached {fingerprint:hash,fragment:Arc::clone(&f)});Ok(f)
     }
 }
-fn atom_class(node:&Node)->AtomClass {match &node.kind {NodeKind::LargeOperator {..}|NodeKind::GeneralOperator {..}=>AtomClass::Operator,NodeKind::Symbol {class,..}=>*class,NodeKind::CustomSymbol {asset,..}=>asset.role(),NodeKind::Text {command,..} if command=="\\operatorname"=>AtomClass::Operator,NodeKind::Fraction {..}|NodeKind::Fence {..}|NodeKind::Grid {..}|NodeKind::MacroCall {..}=>AtomClass::Inner,NodeKind::Scripts {base,..}|NodeKind::Accent {body:base,..}|NodeKind::Style {body:base,..}|NodeKind::Color {body:base,..}=>atom_class(base),NodeKind::Annotation {command,base,..}=>match command.as_str(){"\\stackrel"=>AtomClass::Relation,"\\stackbin"=>AtomClass::Binary,_=>atom_class(base)}, NodeKind::Row {entries,..} if entries.len()==1=>atom_class(&entries[0].node),_=>AtomClass::Ordinary}}
+fn atom_class(node:&Node)->AtomClass {match &node.kind {NodeKind::LargeOperator {..}|NodeKind::GeneralOperator {..}=>AtomClass::Operator,NodeKind::Symbol {class,..}=>*class,NodeKind::CustomSymbol {asset,..}=>asset.role(),NodeKind::Text {command,..} if command=="\\operatorname"=>AtomClass::Operator,NodeKind::MacroCall {macro_kind:crate::macros::BuiltinMacroKind::MathRelation,..}=>AtomClass::Relation,NodeKind::MacroCall {macro_kind:crate::macros::BuiltinMacroKind::MathBinary,..}=>AtomClass::Binary,NodeKind::Fraction {..}|NodeKind::Fence {..}|NodeKind::Grid {..}|NodeKind::MacroCall {..}=>AtomClass::Inner,NodeKind::Scripts {base,..}|NodeKind::Accent {body:base,..}|NodeKind::Style {body:base,..}|NodeKind::Color {body:base,..}=>atom_class(base),NodeKind::Annotation {command,base,..}=>match command.as_str(){"\\stackrel"=>AtomClass::Relation,"\\stackbin"=>AtomClass::Binary,_=>atom_class(base)}, NodeKind::Row {entries,..} if entries.len()==1=>atom_class(&entries[0].node),_=>AtomClass::Ordinary}}
 fn math_character(c:char,class:AtomClass)->char {
     if class!=AtomClass::Ordinary {return c;}
     crate::styles::default_math_character(c)

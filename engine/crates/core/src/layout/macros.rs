@@ -15,6 +15,11 @@ impl Builder<'_> {
         style:MathStyle,cramped:bool,depth:usize)->EngineResult<Fragment>{
         use BuiltinMacroKind::*;
         match kind {
+            MathRelation|MathBinary=>{
+                let child=self.node(&args[0],style,cramped,depth+1)?;
+                let mut f=Fragment::new(id,"macroCall");
+                f.italic=child.italic;f.accent=child.accent;f.child(child,0.0,0.0);Ok(f)
+            },
             Absolute=>self.fence(id,"|",&args[0],"|",style,cramped,depth),
             Norm=>self.fence(id,"\\lVert",&args[0],"\\rVert",style,cramped,depth),
             Bra=>self.fence(id,"\\langle",&args[0],"\\rvert",style,cramped,depth),

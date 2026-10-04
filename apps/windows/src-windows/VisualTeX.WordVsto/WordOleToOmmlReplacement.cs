@@ -97,9 +97,9 @@ internal static class WordOleToOmmlReplacement
                 // not a reason to manufacture synthetic surrounding content.
                 if (_display && math.Type != WdOMathType.wdOMathDisplay)
                     math.Type = WdOMathType.wdOMathDisplay;
-                WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-before-buildup");
-                math.BuildUp();
-                WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-after-buildup");
+                // InsertXML already materialized the prepared OMML tree.
+                // BuildUp reparses literal runs and can replace fixed/styled
+                // delimiters with different structures; preserve the input tree.
                 Release(component); component = locator.Range;
                 _owner.VerifyReplacementBoundary(component);
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-after-boundary-check");

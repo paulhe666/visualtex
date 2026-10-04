@@ -93,13 +93,18 @@ const focused=[
 '\\iint_D f(x,y)\\,dx\\,dy','\\oint_C \\mathbf{F}\\cdot d\\mathbf{r}'
 ];
 for(const latex of focused)for(const mode of ['inline','block']as const)add(latex,'structural-focus',null,mode);
-for(const command of ['varparalle','varparallel'])add('\\'+command,'unknown-command-control',null,'inline','reject-unless-custom-defined');
+for(const command of ['varparallel','parallelslant','sslash'])for(const mode of ['inline','block']as const){
+  add('a\\'+command+' b','package-symbol-regression',{command,scalarText:'⫽',atomClass:command==='sslash'?'binary':'relation'},mode);
+  add('x^{a\\'+command+' b}_{i}','package-symbol-regression',{command,scalarText:'⫽',atomClass:command==='sslash'?'binary':'relation'},mode);
+}
+add('a⫽b','package-symbol-regression',{scalarText:'⫽',atomClass:'binary'});
+add('\\varparalle','unknown-command-control',null,'inline','reject-unless-custom-defined');
 for(const item of formulas){
   try{item.mathMl=await latexToMathMl(item.latex,item.displayMode==='block');item.parseStatus='passed';}
   catch(error){item.mathMl='';item.parseStatus='rejected';item.exportError=String(error);}
   item.nativeExportStatus='not-tested';item.visualFidelityStatus='not-tested';
 }
-const focus=formulas.filter(x=>x.provenance.some((p:any)=>/^(alternate-|structural-|unknown-)/.test(p.category)));
+const focus=formulas.filter(x=>x.provenance.some((p:any)=>/^(alternate-|structural-|unknown-|package-symbol-)/.test(p.category)));
 const failures=formulas.filter(x=>x.parseStatus==='rejected').map(({id,latex,expected,exportError,provenance})=>({id,latex,expected,exportError,categories:provenance.map((p:any)=>p.category)}));
 const counts={inventory:inventory.length,activeInventory:inventory.filter(x=>x.active).length,shadowedInventory:inventory.filter(x=>!x.active).length,atomIdentities:atoms.size,productMacros:macroInventory.length,customSymbolsInNodeSnapshot:customSymbols.length,cases:formulas.length,parsePassed:formulas.length-failures.length,parseRejected:failures.length,focusCases:focus.length,nativeExportTested:0};
 const scope='Finite active command-map inventory plus explicitly generated contexts; not exhaustive formula combinations. Node custom-library snapshot is not proof of browser user-library contents. Parse success is not native-format or pixel-fidelity success.';

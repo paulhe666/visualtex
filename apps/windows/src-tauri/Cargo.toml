@@ -8,12 +8,18 @@ edition = "2021"
 default-run = "visualtex"
 
 [features]
+runtime-handle-acceptance = []
 ocr-install-acceptance = []
 ocr-python-bundle-acceptance = []
 ocr-model-acceptance = []
 ocr-storage-acceptance = []
 ocr-provider-connectivity-acceptance = []
 system-font-asset-acceptance = []
+
+[[bin]]
+name = "runtime_handle_acceptance"
+path = "src/bin/runtime_handle_acceptance.rs"
+required-features = ["runtime-handle-acceptance"]
 
 [[bin]]
 name = "ocr_install_acceptance"
@@ -95,3 +101,7 @@ tempfile = "3"
 x509-parser = "0.18.1"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+
+# Keep the locked runtime version; fix cross-thread ownership of its Tao context.
+[patch.crates-io]
+tauri-runtime-wry = { path = "vendor/tauri-runtime-wry" }

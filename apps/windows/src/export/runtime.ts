@@ -7,7 +7,7 @@ import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
 import { EXPLICIT_MATH_FONT_PACKAGE } from "./explicit-math-font.ts";
 import { createExplicitMathFontSvgFactory } from "./explicit-math-font-svg.ts";
 import { STATE } from "mathjax-full/js/core/MathItem.js";
-import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js";
+import { RolePreservingMmlVisitor } from "./role-preserving-mml-visitor.ts";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { materializeEffectiveOperatorVariants } from "./effectiveMathMlGlyphVariants.ts";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
@@ -87,7 +87,7 @@ const svgDocument = mathjax.document("", {
   InputJax: svgTexInput,
   OutputJax: svgOutput,
 });
-const serializedMmlVisitor = new SerializedMmlVisitor(mathMlDocument.mmlFactory);
+const serializedMmlVisitor = new RolePreservingMmlVisitor(mathMlDocument.mmlFactory);
 
 function positiveFinite(value: number, fallback: number) {
   return Number.isFinite(value) && value > 0 ? value : fallback;

@@ -42,6 +42,36 @@ internal static class MathMlToLatexConverter
         return XDocument.Load(reader, LoadOptions.PreserveWhitespace);
     }
 
+    // MathJax AMS alternate forms have the same semantic scalar as the
+    // ordinary glyph. Only explicit per-token alternate evidence selects these
+    // commands; bare Unicode and container attributes never imply an alternate.
+    private static readonly IReadOnlyDictionary<string, string> AlternateTokenMap =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ℏ"] = @"\hbar ",
+            ["∥"] = @"\shortparallel ",
+            ["∦"] = @"\nshortparallel ",
+            ["∣"] = @"\shortmid ",
+            ["∤"] = @"\nshortmid ",
+            ["∖"] = @"\smallsetminus ",
+            ["⊊"] = @"\varsubsetneq ",
+            ["⊋"] = @"\varsupsetneq ",
+            ["⫋"] = @"\varsubsetneqq ",
+            ["⫌"] = @"\varsupsetneqq ",
+            ["⊈"] = @"\nsubseteqq ",
+            ["⊉"] = @"\nsupseteqq ",
+        };
+
+    // Defaults of the canonical named token commands below, as authored by
+    // MathJax's AMS mi mapping. Preserve a normal imported token explicitly
+    // rather than letting command expansion silently restore implicit italic.
+    private static readonly IReadOnlyDictionary<string, string> TokenDefaultMathVariants =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["∡"] = "italic",
+            ["∢"] = "italic",
+        };
+
     private static readonly IReadOnlyDictionary<string, string> TokenMap =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -72,7 +102,7 @@ internal static class MathMlToLatexConverter
             ["◯"] = @"\bigcirc ",
             ["÷"] = @"\div ",
             ["∞"] = @"\infty ",
-            ["ℏ"] = @"\hbar ",
+            ["ℏ"] = @"\hslash ",
             ["ℵ"] = @"\aleph ",
             ["℘"] = @"\wp ",
             ["ℜ"] = @"\Re ",
@@ -110,7 +140,7 @@ internal static class MathMlToLatexConverter
             ["⟩"] = @"\rangle ",
             ["∂"] = @"\partial ",
             ["∇"] = @"\nabla ",
-            ["⁡"] = string.Empty,
+            ["⁡"] = "⁡", // Preserve the actual application marker in its source slot.
             // A standalone radical glyph is TeX \\surd. Structured square
             // roots arrive as <msqrt> and are handled separately below.
             ["√"] = @"\surd ",
@@ -134,6 +164,8 @@ internal static class MathMlToLatexConverter
             ["⊣"] = @"\dashv ",
             ["⊨"] = @"\models ",
             ["∠"] = @"\angle ",
+            ["∡"] = @"\measuredangle ",
+            ["∢"] = @"\sphericalangle ",
             ["∴"] = @"\therefore ",
             ["∖"] = @"\setminus ",
             ["∝"] = @"\propto ",
@@ -260,17 +292,21 @@ internal static class MathMlToLatexConverter
         return Normalize(ConvertElement(root));
     }
 
-    private static string ConvertElement(XElement element)
+    private static string ConvertElement(XElement element) =>
+        MathMlColorContract.Wrap(ConvertElementContent(element), MathMlColorContract.Explicit(element));
+
+    private static string ConvertElementContent(XElement element)
     {
         var name = element.Name.LocalName;
         return name switch
         {
-            "math" or "mrow" or "mstyle" or "mpadded" => ConvertChildren(element),
+            "math" => ConvertChildren(element),
+            "mrow" or "mstyle" or "mpadded" => ConvertClassedContainer(element),
             "semantics" or "maction" => element.Elements().Select(ConvertElement).FirstOrDefault() ?? string.Empty,
             "annotation" or "annotation-xml" => string.Empty,
             "mi" or "mn" or "mo" => ConvertTokenElement(element),
             "mtext" => ConvertTextElement(element),
-            "mspace" => @"\,",
+            "mspace" => ConvertSpace(element),
             "mfrac" => ConvertFraction(element),
             "msqrt" => @"\sqrt{" + ConvertChildren(element) + "}",
             "mroot" => ConvertRoot(element),
@@ -290,6 +326,35 @@ internal static class MathMlToLatexConverter
             "none" => string.Empty,
             _ => ConvertChildren(element),
         };
+    }
+
+    private static string ConvertSpace(XElement element)
+    {
+        var space = MathSpaceContract.ParseWidth((string?)element.Attribute("width"));
+        // Recover every exactly supported source dimension using the shared
+        // contract. Unrepresented/context-dependent widths retain the legacy
+        // behavior for now; that fallback is not a claim of width fidelity.
+        return space.LatexSource ?? @"\,";
+    }
+
+    private static string? ExplicitAtomClassCommand(XElement element) =>
+        ((string?)element.Attribute("data-mjx-texclass"))?.Trim().ToUpperInvariant() switch
+        {
+            "REL" => @"\mathrel",
+            "BIN" => @"\mathbin",
+            "OP" => @"\mathop",
+            _ => null,
+        };
+
+    private static string ConvertClassedContainer(XElement element)
+    {
+        var content = ConvertChildren(element);
+        var command = ExplicitAtomClassCommand(element);
+        // Preserve explicit atom semantics, never infer a package command from
+        // the glyph. ORD and delimiter wrappers keep their established paths.
+        return command is null || string.IsNullOrWhiteSpace(content)
+            ? content
+            : command + "{" + content.Trim() + "}";
     }
 
     private static string ConvertChildren(XElement element)
@@ -403,19 +468,40 @@ internal static class MathMlToLatexConverter
             return brace;
         var body = ConvertElement(children[0]);
         var over = children[1].Value.Trim();
-        return over switch
+        var stretchy = MathMlAccentGeometry.IsStretchy(children[1]);
+        var accentStyle = over is "¯" or "‾" or "―" or "→" or "←" or "↔"
+            or "^" or "ˆ" or "~" or "˜" or "." or "˙" or "¨"
+            ? MathMlTokenStyleContract.ResolveEffectiveVariant(children[1]) : null;
+        var styleCommand = accentStyle switch
+        {
+            "bold" => @"\mathbf",
+            "italic" => @"\mathit",
+            "bold-italic" => @"\mathbfit",
+            _ => null,
+        };
+        // The mark owns this scope; reset its body before emitting the body's
+        // own styles so the accent font cannot restyle its operands.
+        if (styleCommand is not null) body = @"\mathnormal{" + body + "}";
+        var markColor = MathMlColorContract.Effective(children[1]);
+        var parentColor = MathMlColorContract.Effective(element);
+        var independentColor = markColor is not null && markColor != parentColor;
+        if (independentColor)
+            body = MathMlColorContract.Wrap(body, MathMlColorContract.Effective(children[0]) ?? "#000000");
+        var result = over switch
         {
             "¯" or "‾" or "―" => @"\overline{" + body + "}",
-            "→" => @"\vec{" + body + "}",
+            "→" => (stretchy ? @"\overrightarrow{" : @"\vec{") + body + "}",
             "←" => @"\overleftarrow{" + body + "}",
             "↔" => @"\overleftrightarrow{" + body + "}",
-            "^" or "ˆ" => @"\hat{" + body + "}",
-            "~" or "˜" => @"\tilde{" + body + "}",
+            "^" or "ˆ" => (stretchy ? @"\widehat{" : @"\hat{") + body + "}",
+            "~" or "˜" => (stretchy ? @"\widetilde{" : @"\tilde{") + body + "}",
             "." or "˙" => @"\dot{" + body + "}",
             "¨" => @"\ddot{" + body + "}",
             "⏞" or "\uFE37" => @"\overbrace{" + body + "}",
             _ => @"\overset{" + ConvertElement(children[1]) + "}{" + body + "}",
         };
+        if (styleCommand is not null) result = styleCommand + "{" + result + "}";
+        return MathMlColorContract.Wrap(result, independentColor ? markColor : null);
     }
 
     private static string ConvertUnder(XElement element)
@@ -476,6 +562,7 @@ internal static class MathMlToLatexConverter
         var current = element;
         while (current.Name.LocalName is "mrow" or "mstyle" or "mpadded")
         {
+            if (ExplicitAtomClassCommand(current) is not null) break;
             var children = current.Elements().ToArray();
             if (children.Length != 1) break;
             current = children[0];
@@ -510,7 +597,7 @@ internal static class MathMlToLatexConverter
             return binomial;
         var separators = (string?)element.Attribute("separators") ?? ",";
         var parts = element.Elements().Select(ConvertElement).ToList();
-        var separator = separators.Length > 0 ? separators[0].ToString() : ",";
+        var separator = separators.Length > 0 ? separators[0].ToString() : string.Empty;
         return Delimiter(open, left: true)
             + string.Join(separator, parts)
             + Delimiter(close, left: false);
@@ -663,22 +750,32 @@ internal static class MathMlToLatexConverter
     private static string ConvertTokenElement(XElement element)
     {
         var token = element.Value.Trim();
-        var variant = element.AncestorsAndSelf()
-            .Select(node => ((string?)node.Attribute("mathvariant"))?.Trim())
-            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
-        // A single-scalar mi is italic by MathML default, including symbols
-        // whose TeX command has an intrinsically upright default (angle/nabla).
-        // Ordinary Latin and Greek retain their existing identifier paths.
-        if (variant.Length == 0 && element.Name.LocalName == "mi"
-            && (token.Length == 1 || token.Length == 2 && char.IsSurrogatePair(token, 0))
+        var declaredVariant = MathMlTokenStyleContract.ResolveDeclaredVariant(element);
+        var variant = declaredVariant ?? string.Empty;
+        var effectiveVariant = MathMlTokenStyleContract.ResolveEffectiveVariant(element, declaredVariant);
+        // Source spelling is an adapter decision: some named TeX symbols have
+        // upright intrinsic defaults, so materialize their effective mi italic.
+        // Ordinary Latin and Greek retain their established command spelling.
+        if (declaredVariant is null && effectiveVariant == "italic"
             && char.GetUnicodeCategory(token, 0) == System.Globalization.UnicodeCategory.MathSymbol)
-            variant = "italic";
+            variant = effectiveVariant;
         var nativeCharacterStyle = int.TryParse(
             (string?)element.Attribute("data-mtef-character-style"),
             out var parsedNativeCharacterStyle)
             ? parsedNativeCharacterStyle
             : 0;
-        if (element.Name.LocalName is "mi" or "mo"
+        if (element.Name.LocalName == "mi" && token.Length > 1
+            && token.All(c => c is >= 'A' and <= 'Z' or >= 'a' and <= 'z')
+            && effectiveVariant is "normal" or "upright")
+        {
+            var atomClass = ((string?)element.Attribute("data-mjx-texclass"))?.Trim().ToUpperInvariant();
+            var isOperator = atomClass == "OP" || (atomClass is null
+                && (string?)element.Attribute("data-mjx-auto-op") != "false");
+            // Preserve one upright identifier token without inventing application.
+            // Explicit atom classes override MathJax normal-mi autoOP inference.
+            return (isOperator ? @"\operatorname{" : @"\mathrm{") + EscapeMathIdentifier(token) + "}";
+        }
+        if (element.Name.LocalName == "mo"
             && TryConvertNamedOperator(token, out var namedOperator))
         {
             // A genuine MathType explicit FONT_STYLE_DEF can style an operator
@@ -703,6 +800,9 @@ internal static class MathMlToLatexConverter
                 nativeCharacterStyle,
                 variant,
                 greekIdentifier: false);
+        if (variant == "italic" && nativeCharacterStyle is 0 or 2
+            && TryGetIntrinsicItalicIdentifierSource(element, token, out var italicSource))
+            return italicSource;
         if (element.Name.LocalName == "mi" && IsLatinIdentifier(token)
             || element.Name.LocalName == "mn")
         {
@@ -741,8 +841,12 @@ internal static class MathMlToLatexConverter
                     greekIdentifier: false);
         }
         if (element.Name.LocalName == "mi" && IsGreekIdentifier(token))
-            return ConvertGreekIdentifier(element, token, nativeCharacterStyle);
-        var plain = ConvertToken(token);
+            return ConvertGreekIdentifier(token, nativeCharacterStyle, declaredVariant, effectiveVariant);
+        var plain = element.Name.LocalName is "mi" or "mo"
+            && string.Equals(((string?)element.Attribute("data-mjx-alternate"))?.Trim(), "1", StringComparison.Ordinal)
+            && AlternateTokenMap.TryGetValue(token, out var alternateCommand)
+            ? alternateCommand
+            : ConvertToken(token);
         if (element.Name.LocalName is "mi" or "mo")
         {
             if (variant.IndexOf("bold-italic", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -751,21 +855,48 @@ internal static class MathMlToLatexConverter
                 return @"\mathbf{" + plain.Trim() + "}";
             if (variant.IndexOf("italic", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathit{" + plain.Trim() + "}";
+            if ((explicitlyUpright && element.Name.LocalName == "mi")
+                || ((explicitlyUpright || variant.Length == 0)
+                    && TokenDefaultMathVariants.TryGetValue(token, out var intrinsicVariant)
+                    && string.Equals(intrinsicVariant, "italic", StringComparison.Ordinal)))
+                return @"\mathrm{" + plain.Trim() + "}";
         }
         return plain;
     }
 
-    private static string ConvertGreekIdentifier(
-        XElement element, string token, int nativeCharacterStyle)
+    private static bool TryGetIntrinsicItalicIdentifierSource(
+        XElement element, string token, out string source)
     {
-        // Greek control sequences carry TeX's own font defaults: for example
-        // \mathrm{\alpha} remains italic in the production frontend. A styled
-        // Unicode identifier participates in the requested mathematical alphabet
-        // instead. Preserve the requested style before choosing source spelling.
-        var variant = element.AncestorsAndSelf()
-            .Select(node => ((string?)node.Attribute("mathvariant"))?.Trim())
-            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
-            ?.ToLowerInvariant() ?? string.Empty;
+        source = string.Empty;
+        // MathML italic is the mathematical italic alphabet. TeX \mathit is a
+        // different alphabet for Latin letters (MathJax TEX-MI vs TEX-I), and
+        // only its actual token-level provenance can authorize that spelling.
+        if (element.Name.LocalName != "mi"
+            || !MathMlTokenStyleContract.IsSingleMathMlCharacter(token)
+            || string.Equals((string?)element.Attribute("data-mjx-variant"),
+                "-tex-mathit", StringComparison.Ordinal))
+            return false;
+        if (IsLatinIdentifier(token))
+            source = EscapeMathIdentifier(token);
+        else if (IsGreekIdentifier(token) && token.All(char.IsLower))
+            source = ConvertToken(token);
+        return source.Length > 0;
+    }
+
+    private static string ConvertGreekIdentifier(
+        string token, int nativeCharacterStyle, string? declaredVariant, string? effectiveVariant)
+    {
+        // Keep the established Unicode spelling for explicitly styled Greek.
+        // It participates directly in the requested mathematical alphabet,
+        // including frontends with TeX fixed-family control-sequence defaults.
+        // Preserve the requested style before choosing source spelling.
+        var variant = declaredVariant ?? effectiveVariant ?? string.Empty;
+        // Lowercase Greek commands already have an italic intrinsic default.
+        // An undeclared uppercase mi does not: e.g. TeX \\Gamma is normal while
+        // MathML <mi>Γ</mi> is italic. Source spelling must preserve that default.
+        if (declaredVariant is null && nativeCharacterStyle == 0
+            && variant == "italic" && token.All(char.IsLower))
+            return ConvertToken(token);
         variant = nativeCharacterStyle switch
         {
             1 => "bold",
@@ -927,23 +1058,61 @@ internal static class MathMlToLatexConverter
         return EscapeMathIdentifier(token);
     }
 
+    // Canonical scalar spellings from the production TeX delimiter handlers:
+    // base, AMS and mathtools (including their active priority/shadowing order).
+    // The production roundtrip probe checks the complete runtime inventory.
+    // GetDelimiter accepts registered spellings, not arbitrary Unicode scalars:
+    // e.g. U+27EE and U+23D0 require \\lgroup and \\arrowvert. Keep this role
+    // separate from TokenMap so ordinary operators/prose retain their semantics.
+    private static readonly IReadOnlyDictionary<string, string> DelimiterMap =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["("] = @"(",
+            [")"] = @")",
+            ["["] = @"[",
+            ["]"] = @"]",
+            ["/"] = @"/",
+            ["\\"] = @"\backslash",
+            ["|"] = @"|",
+            ["‖"] = @"\|",
+            ["{"] = @"\{",
+            ["}"] = @"\}",
+            ["⟨"] = @"\langle",
+            ["⟩"] = @"\rangle",
+            ["⌈"] = @"\lceil",
+            ["⌉"] = @"\rceil",
+            ["⌊"] = @"\lfloor",
+            ["⌋"] = @"\rfloor",
+            ["⌜"] = @"\ulcorner",
+            ["⌝"] = @"\urcorner",
+            ["⌞"] = @"\llcorner",
+            ["⌟"] = @"\lrcorner",
+            ["⎰"] = @"\lmoustache",
+            ["⎱"] = @"\rmoustache",
+            ["⟮"] = @"\lgroup",
+            ["⟯"] = @"\rgroup",
+            ["⏐"] = @"\arrowvert",
+            ["⎪"] = @"\bracevert",
+            ["↑"] = @"\uparrow",
+            ["↓"] = @"\downarrow",
+            ["↕"] = @"\updownarrow",
+            ["⇑"] = @"\Uparrow",
+            ["⇓"] = @"\Downarrow",
+            ["⇕"] = @"\Updownarrow",
+            // Preserve existing invisible and legacy angle spellings.
+            [""] = ".",
+            ["."] = ".",
+            ["<"] = "<",
+            [">"] = ">",
+            ["〈"] = @"\langle",
+            ["〉"] = @"\rangle",
+        };
+
     private static string Delimiter(string value, bool left)
     {
-        var escaped = value switch
-        {
-            "" or "." => ".",
-            "{" => @"\{",
-            "}" => @"\}",
-            "|" => "|",
-            "‖" => @"\|",
-            "〈" or "⟨" => @"\langle",
-            "〉" or "⟩" => @"\rangle",
-            "⌊" => @"\lfloor",
-            "⌋" => @"\rfloor",
-            "⌈" => @"\lceil",
-            "⌉" => @"\rceil",
-            _ => value,
-        };
+        // Unknown values retain the legacy source rather than being silently
+        // substituted with a different glyph or claimed as supported.
+        var escaped = DelimiterMap.TryGetValue(value, out var mapped) ? mapped : value;
         return (left ? @"\left" : @"\right") + escaped + " ";
     }
 

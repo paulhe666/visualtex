@@ -1,0 +1,7 @@
+import {latexToMathMl} from '../src/export/runtime.ts';
+import {readFileSync,writeFileSync,existsSync} from 'node:fs';import {DOMParser} from '@xmldom/xmldom';
+const root='../../artifacts/conversion-symbol-audit-20261002/cp257-color/';
+const input=JSON.parse(readFileSync(root+'editor-reopen-reset.json','utf8'));
+function tokens(xml:string){const d=new DOMParser().parseFromString(xml,'application/xml');return Array.from(d.getElementsByTagName('*')).filter(e=>['mi','mo','mn'].includes(e.localName!)).map(e=>{let p:any=e;let color=null;while(p?.getAttribute){if(p.getAttribute('mathcolor')){color=p.getAttribute('mathcolor').toUpperCase();break;}p=p.parentNode;}return {kind:e.localName,text:e.textContent,color,variant:e.getAttribute('mathvariant')||(e.localName==='mi'&&e.textContent?.length===1?'italic':'normal')};});}
+for(const row of input.rows){row.expected=await latexToMathMl(row.source+'+z',false);row.actual=await latexToMathMl(row.edited,false);row.passed=JSON.stringify(tokens(row.expected))===JSON.stringify(tokens(row.actual));}
+const p=root+'editor-reparse-reset.json';if(existsSync(p))throw new Error('Refusing overwrite');writeFileSync(p,JSON.stringify(input,null,2));console.log(JSON.stringify({passed:input.rows.filter((r:any)=>r.passed).length,total:input.rows.length,failed:input.rows.filter((r:any)=>!r.passed)}));if(input.rows.some((r:any)=>!r.passed))process.exitCode=1;

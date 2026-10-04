@@ -25,11 +25,14 @@ fn fonts() -> (FontRegistry, LayoutOptions) {
     let path = std::env::var_os("VISUALTEX_TEST_MATH_FONT").map(PathBuf::from).unwrap_or_else(||
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../apps/windows/src-windows/artifacts/office-fonts/latinmodern-math.otf"));
     let mut f = FontRegistry::default(); let id = f.register(&std::fs::read(path).unwrap(), 0).unwrap().id;
-    let fallback_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test-resources/stix-two-2.13/STIXTwoMath-Regular.otf");
-    let bytes = std::fs::read(fallback_path).expect("Run node tools/prepare-symbol-test-font.mjs before catalog font tests");
+    let fallback_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../apps/windows/src-tauri/resources/formula-fonts/STIXTwoMath-Regular.otf");
+    let bytes = std::fs::read(fallback_path).expect("Required bundled STIX Two Math font missing");
     let fallback = f.register(&bytes, 0).unwrap();
     assert_eq!(fallback.sha256, "f2076b9f1676438439dd41e23676f5ab99056e83d6b8f8c27841591ef2ccfa72");
     let mut options = LayoutOptions::new(id); options.math_fallbacks.push(fallback.id);
+    let ams_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../apps/windows/src-tauri/resources/formula-fonts/KaTeX_AMS-Regular.ttf");
+    let ams = f.register(&std::fs::read(ams_path).unwrap(), 0).unwrap();
+    options.tex_font_set.insert("ams".into(), ams.id);
     (f, options)
 }
 fn action(s: &mut EngineSession, seq: &mut u32, a: EditorAction) -> EditorActionResult {
@@ -69,6 +72,75 @@ fn explicit_font_fallback_is_required_and_never_replaces_existing_primary_glyphs
     // Removing explicit fallback must not reuse its cached geometry.
     layout.layout(&s, &fonts, &options).unwrap();
     assert!(layout.layout(&s, &fonts, &strict).is_err());
+}
+
+#[test]
+fn slanted_parallel_package_commands_preserve_scalar_class_and_source() {
+    for (command, value, class) in [
+        (r"\parallel", "∥", AtomClass::Relation),
+        (r"\varparallel", "⫽", AtomClass::Relation),
+        (r"\parallelslant", "⫽", AtomClass::Relation),
+        (r"\sslash", "⫽", AtomClass::Binary),
+    ] {
+        assert_eq!(named_symbol(command), Some((value, class)));
+        for source in [
+            command.to_owned(),
+            format!("a{command} b"),
+            format!("x^{{a{command} b}}_{{i}}"),
+        ] {
+            let p = parse(&source);
+            assert!(p.complete && p.supported && p.exportable, "{source}: {:?}", p.diagnostics);
+            assert!(atoms(&p.tree).contains(&(value.into(), class)));
+            assert_eq!(model::latex(&p.tree, LatexMode::Lossless), source);
+            let canonical = model::latex(&p.tree, LatexMode::Canonical);
+            assert!(canonical.contains(command), "Source spelling lost: {canonical}");
+            assert_eq!(atoms(&parse(&canonical).tree), atoms(&p.tree));
+            let mut retained = false;
+            p.tree.visit(&mut |node| {
+                if let NodeKind::Symbol { command: Some(spelling), .. } = &node.kind {
+                    retained |= spelling == command;
+                }
+            });
+            assert!(retained, "{command}");
+        }
+    }
+    // The first U+2AFD catalog entry is deliberately a relation alias. Raw
+    // Unicode still follows the binary operator default, never entry ordering.
+    assert_eq!(literal_class("⫽"), AtomClass::Binary);
+    assert_eq!(atoms(&parse("a⫽b").tree)[1], ("⫽".into(), AtomClass::Binary));
+    for source in [r"\mathit{\parallel}", r"\mathbfit{\parallel}"] {
+        let p = parse(source);
+        assert!(p.complete && p.supported && p.exportable);
+        assert_eq!(atoms(&p.tree), vec![("∥".into(), AtomClass::Relation)]);
+        assert_eq!(model::latex(&p.tree, LatexMode::Lossless), source);
+    }
+    for command in [r"\varparalle", r"\varparallelinv", r"\nvarparallel", r"\nparallelslant"] {
+        assert!(named_symbol(command).is_none(), "Unverified alias admitted: {command}");
+        assert!(!parse(command).supported, "Unknown command was silently accepted: {command}");
+    }
+}
+
+#[test]
+fn alternate_symbols_keep_semantic_unicode_and_authored_identity() {
+    for spec in symbol_catalog::ALTERNATE_SYMBOLS {
+        assert_eq!(named_symbol(spec.command), Some((spec.value, AtomClass::Relation)));
+        assert_eq!(symbol_catalog::alternate(spec.command).unwrap().font_character, spec.font_character);
+        for source in [spec.command.to_owned(), format!("a{} b", spec.command),
+            format!(r"x^{{\mathit{{{}}}}}_{{i}}", spec.command)] {
+            let parsed = parse(&source);
+            assert!(parsed.complete && parsed.supported && parsed.exportable, "{source}");
+            assert!(atoms(&parsed.tree).contains(&(spec.value.into(), AtomClass::Relation)));
+            assert_eq!(model::latex(&parsed.tree, LatexMode::Lossless), source);
+            let encoded = serde_json::to_value(&parsed.tree).unwrap();
+            assert!(encoded.to_string().contains(&serde_json::to_string(spec.command).unwrap()));
+            let canonical = model::latex(&parsed.tree, LatexMode::Canonical);
+            let restored = parse(&canonical);
+            assert_eq!(atoms(&restored.tree), atoms(&parsed.tree));
+            assert!(model::latex(&restored.tree, LatexMode::Canonical).contains(spec.command));
+        }
+    }
+    assert!(symbol_catalog::alternate(r"\parallel").is_none());
+    assert!(symbol_catalog::alternate(r"\nparallel").is_none());
 }
 
 #[test]

@@ -17,6 +17,9 @@ internal static partial class Program
         var mixedDisplay = Environment.GetEnvironmentVariable("VISUALTEX_RENDER_MATRIX_MIXED_DISPLAY") == "1";
         var corpusPath = Environment.GetEnvironmentVariable("VISUALTEX_RENDER_MATRIX_CORPUS");
         var corpus = string.IsNullOrWhiteSpace(corpusPath) ? null : LoadConversionCorpus(corpusPath);
+        var captureScreenshots = Environment.GetEnvironmentVariable("VISUALTEX_RENDER_MATRIX_CAPTURE") != "0";
+        if (corpus is not null && !captureScreenshots)
+            Console.WriteLine("[SCREEN CAPTURE NOT RUN] Semantic-only acceptance; visual acceptance remains separately blocked.");
         var count = corpus?.Count ?? int.Parse(Environment.GetEnvironmentVariable("VISUALTEX_RENDER_MATRIX_COUNT") ?? "4");
         var previewRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "VisualTeX", "office", "temp", "render-matrix-" + Guid.NewGuid().ToString("N"));
@@ -86,7 +89,7 @@ internal static partial class Program
                         if (corpus is null && string.IsNullOrWhiteSpace(externalSeed))
                             for (var index = 0; index < count; index++)
                                 AssertRenderMatrixFormula(before.Targets[index], index + 1, label + " source");
-                        if (corpus is not null)
+                        if (corpus is not null && captureScreenshots)
                             CaptureConversionCorpusScreenshots(host, before.Targets, artifactRoot, label + "-source");
                         using var operationMetrics = new WordOperationMetrics();
                         var watch = Stopwatch.StartNew();
@@ -108,10 +111,10 @@ internal static partial class Program
                         AssertTrue(after.Targets.Select(item => item.DisplayMode).SequenceEqual(before.Targets.Select(item => item.DisplayMode)), label + " changed inline/display shape");
                         if (numberingSetting == "0") AssertNoConversionNumberFields(host.Document, label + " target");
                         AssertConversionNumberSequence(host, service, target.Mode, before.Targets.Count(item => item.Numbered), label);
-                        if (corpus is not null)
+                        if (corpus is not null && captureScreenshots)
                             CaptureConversionCorpusScreenshots(host, after.Targets, artifactRoot, label);
                         for (var index = 0; index < count; index++)
-                            if (!string.IsNullOrWhiteSpace(externalSeed)) AssertExternalConversionFormula(before.Targets[index], after.Targets[index], label, index);
+                            if (!string.IsNullOrWhiteSpace(externalSeed)) AssertExternalConversionFormula(before.Targets[index], after.Targets[index], artifactRoot, label, index);
                             else if (corpus is null) AssertRenderMatrixFormula(after.Targets[index], index + 1, label + " target");
                             else AssertConversionCorpusFormula(corpus[index], before.Targets[index], after.Targets[index], artifactRoot, label, index);
                         if (!string.IsNullOrWhiteSpace(externalSeed))
@@ -155,7 +158,15 @@ internal static partial class Program
                         {
                             AssertExternalConversionStructure(reopened, service, sourceSnapshot!, target.Mode, sourceTopology!, sourceParagraphs, label + " reopened");
                             var targets = service.CaptureFormulaFormatConversionPlan(true, target.Mode, source.Mode).Targets;
-                            for (var index = 0; index < count; index++) AssertExternalConversionFormula(sourceSnapshot!.Targets[index], targets[index], label + " reopened", index);
+                            for (var index = 0; index < count; index++) AssertExternalConversionFormula(sourceSnapshot!.Targets[index], targets[index], artifactRoot, label + " reopened", index);
+                        }
+                        else if (corpus is not null)
+                        {
+                            var targets = service.CaptureFormulaFormatConversionPlan(true, target.Mode, source.Mode).Targets;
+                            AssertEqual(count, targets.Count, label + " reopened semantic count");
+                            for (var index = 0; index < count; index++)
+                                AssertConversionCorpusFormula(corpus[index], sourceSnapshot!.Targets[index], targets[index],
+                                    artifactRoot, label + " reopened", index);
                         }
                     }
                     File.WriteAllLines(Path.Combine(artifactRoot, "conversion-render-matrix.csv"), rows);

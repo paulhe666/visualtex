@@ -67,7 +67,7 @@ public sealed class MathMlToLatexConverterTests
             + "<mi>ℵ</mi><mi mathvariant=\"normal\">℘</mi><mi>ℜ</mi><mi>ℑ</mi><mi>ℓ</mi></math>";
 
         Assert.Equal(
-            @"\aleph \wp \Re \Im \ell",
+            @"\aleph \mathrm{\wp}\Re \Im \ell",
             MathMlToLatexConverter.Convert(mathMl));
     }
 
@@ -110,14 +110,14 @@ public sealed class MathMlToLatexConverterTests
     }
 
     [Theory]
-    [InlineData("lim", @"\lim_{x\to 0}")]
-    [InlineData("max", @"\max_{x\in A}")]
-    [InlineData("min", @"\min_{x\in A}")]
-    [InlineData("sup", @"\sup_{x\in A}")]
-    [InlineData("inf", @"\inf_{x\in A}")]
-    [InlineData("limsup", @"\limsup_{n\to \infty}")]
-    [InlineData("liminf", @"\liminf_{n\to \infty}")]
-    public void ConvertsMathMlUnderScriptsOnLimitLikeOperatorsToNativeLatexSubscripts(
+    [InlineData("lim", @"\underset{x\to 0}{\operatorname{lim}}")]
+    [InlineData("max", @"\underset{x\in A}{\operatorname{max}}")]
+    [InlineData("min", @"\underset{x\in A}{\operatorname{min}}")]
+    [InlineData("sup", @"\underset{x\in A}{\operatorname{sup}}")]
+    [InlineData("inf", @"\underset{x\in A}{\operatorname{inf}}")]
+    [InlineData("limsup", @"\underset{n\to \mathrm{\infty}}{\operatorname{limsup}}")]
+    [InlineData("liminf", @"\underset{n\to \mathrm{\infty}}{\operatorname{liminf}}")]
+    public void PreservesIdentifierRoleInUnderScriptsWithoutInventingLimitOperatorTokens(
         string operatorName,
         string expected)
     {

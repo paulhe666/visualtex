@@ -8,9 +8,9 @@ namespace VisualTeX.WordVsto;
 /// <summary>
 /// Canonical host discovery for OMML and VisualTeX.
 ///
-/// Local discovery is strictly bounded to the supplied range. It never falls
-/// back to Document.OMaths, Document.InlineShapes, Document.Bookmarks, or a
-/// document WordOpenXML snapshot.
+/// Local discovery is bounded to the supplied range and its owning paragraphs.
+/// It never falls back to Document.OMaths, Document.InlineShapes,
+/// Document.Bookmarks, or a document WordOpenXML snapshot.
 ///
 /// Whole-document discovery is explicitly separate and builds one immutable
 /// scheduling index. That index is invalid after the first mutation.
@@ -134,79 +134,47 @@ internal static class WordFormulaHostResolver
         Range? candidate = null;
         Range? probe = null;
         var type = WdOMathType.wdOMathInline;
-        var typeKnown = false;
+
         try
         {
             try { maths = selectionRange.OMaths; } catch { maths = null; }
 
-            // Edit Sessions capture the exact native OMath range when the editor
-            // opens. In that overwhelmingly common case, the first local OMaths
-            // collection already proves both the host boundary and its Type.
-            // Keep that OMath result instead of discarding it and immediately
-            // asking Word for candidate.OMaths a second time.
-            if (maths is not null && maths.Count == 1)
+            // Range.OMaths can expose a clipped view of an equation, including
+            // a zero-width view at a caret. Count == 1 and OMath.Range equality
+            // therefore do not establish the complete mathematical host. First
+            // use the tiny local probe only as a presence test; ordinary prose
+            // must not enumerate paragraph equations or export any content.
+            if (maths is null || maths.Count == 0)
             {
-                Range? direct = null;
-                try
-                {
-                    math = maths[1];
-                    direct = math.Range.Duplicate;
-                    if (TouchesSelection(
-                            selectionRange,
-                            direct))
-                    {
-                        var directType = math.Type;
-                        candidate = direct;
-                        direct = null;
-                        type = directType;
-                        typeKnown = true;
-                    }
-                }
-                catch (COMException)
-                {
-                    // Fall back to the existing bounded local resolution below.
-                    Release(candidate);
-                    candidate = null;
-                    typeKnown = false;
-                }
-                finally
-                {
-                    Release(direct);
-                    Release(math);
-                    math = null;
-                }
+                Release(maths);
+                maths = null;
+                probe = selectionRange.Duplicate;
+                try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch { }
+                try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch { }
+                try { maths = probe.OMaths; } catch { maths = null; }
+                if (maths is null || maths.Count == 0) return null;
             }
 
-            if (candidate is null)
-            {
-                AddMatchingOmmlRanges(
-                    maths,
-                    selectionRange,
-                    candidates);
+            // Reacquire the actual host from complete owning paragraphs, never
+            // from the clipped selection. Only original-selection intersections
+            // are candidates: adjacent equations and prose remain untouched.
+            // Expanding this duplicate range changes neither Selection nor text,
+            // and no paragraph XML / neighbouring OLE payload is serialized.
+            Release(maths);
+            maths = null;
+            Release(probe);
+            probe = selectionRange.Duplicate;
+            probe.Expand(WdUnits.wdParagraph);
+            maths = probe.OMaths;
+            AddMatchingOmmlRanges(maths, selectionRange, candidates);
+            DeduplicateRanges(candidates);
+            if (candidates.Count == 0) return null;
+            if (candidates.Count != 1)
+                throw new InvalidDataException(
+                    "The selected range resolves to more than one OMML equation.");
 
-                if (candidates.Count == 0)
-                {
-                    Release(maths);
-                    maths = null;
-                    probe = selectionRange.Duplicate;
-                    try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch { }
-                    try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch { }
-                    try { maths = probe.OMaths; } catch { maths = null; }
-                    AddMatchingOmmlRanges(
-                        maths,
-                        selectionRange,
-                        candidates);
-                }
-
-                DeduplicateRanges(candidates);
-                if (candidates.Count == 0) return null;
-                if (candidates.Count != 1)
-                    throw new InvalidDataException(
-                        "The selected range resolves to more than one OMML equation.");
-
-                candidate = candidates[0];
-                candidates.Clear(); // ownership transferred to candidate
-            }
+            candidate = candidates[0];
+            candidates.Clear(); // ownership transferred to candidate
 
             // Word's native InsertCrossReference can cache an entire numbered
             // OMath inside the Result of a REF field. That OMath is rendering
@@ -216,7 +184,6 @@ internal static class WordFormulaHostResolver
             if (IsNativeReferenceResultOmml(candidate))
                 return null;
 
-            if (!typeKnown)
             {
                 Release(maths);
                 maths = null;

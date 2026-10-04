@@ -26,6 +26,27 @@ fn encode(source: &str, display: bool) -> presentation_mathml::PresentationMathM
 }
 
 #[test]
+fn named_alternates_keep_scalar_annotation_styles_and_scripts() {
+    for spec in visualtex_engine_core::symbol_catalog::ALTERNATE_SYMBOLS {
+        for display in [false, true] {
+            let token = format!("<mo data-mjx-alternate=\"1\">{}</mo>", spec.value);
+            assert!(encode(spec.command, display).math_ml.contains(&token));
+            for (wrapper, variant) in [(r"\mathit", "italic"), (r"\mathbf", "bold"), (r"\mathbfit", "bold-italic")] {
+                let source = format!(r"x^{{{wrapper}{{{}}}}}_{{i}}", spec.command);
+                let mml = encode(&source, display).math_ml;
+                assert!(mml.contains(&token), "{mml}");
+                assert!(mml.contains(&format!("<mstyle mathvariant=\"{variant}\">")), "{mml}");
+                assert!(mml.contains("<msubsup>"), "{mml}");
+                assert!(!mml.contains('\u{E007}'), "Font-local PUA leaked into semantics");
+            }
+        }
+    }
+    for source in [r"\parallel", r"\nparallel", "∥", "∦"] {
+        assert!(!encode(source, false).math_ml.contains("data-mjx-alternate"));
+    }
+}
+
+#[test]
 fn common_structures_are_encoded_from_the_retained_tree() {
     let result = encode(r"\frac{x_1+\text{速度}}{\sqrt{y^2}}", false);
     assert!(result.math_ml.starts_with("<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"inline\">"));
@@ -126,6 +147,32 @@ fn custom_symbol_requires_and_uses_its_frozen_office_fallback() {
     ).unwrap();
     let error = presentation_mathml::encode(&parsed, false).unwrap_err();
     assert_eq!(error.code, ErrorCode::UnsupportedSyntax);
+}
+
+#[test]
+fn explicit_and_named_atom_classes_survive_presentation_mathml() {
+    for display in [false, true] {
+        for source in [r"\varparallel", r"\parallelslant", r"\mathrel{⫽}"] {
+            let math_ml = encode(source, display).math_ml;
+            assert!(math_ml.contains("<mrow data-mjx-texclass=\"REL\"><mo>⫽</mo></mrow>"), "{math_ml}");
+        }
+        for source in [r"\sslash", "⫽"] {
+            let math_ml = encode(source, display).math_ml;
+            assert!(math_ml.contains("<mo>⫽</mo>"), "{math_ml}");
+            assert!(!math_ml.contains("texclass=\"REL\""), "{math_ml}");
+        }
+        let operator = encode(r"\mathop{x+y}_i^n", display).math_ml;
+        assert!(operator.contains("data-mjx-texclass=\"OP\""), "{operator}");
+        assert!(operator.contains(if display { "<munderover>" } else { "<msubsup>" }), "{operator}");
+        let binary = encode(r"x^{a\mathbin{=}b}", display).math_ml;
+        assert!(binary.contains("<mrow data-mjx-texclass=\"BIN\"><mo>=</mo></mrow>"), "{binary}");
+        let composite = encode(r"\mathrel{a+b}", display).math_ml;
+        assert!(composite.contains("data-mjx-texclass=\"REL\""), "{composite}");
+        assert!(composite.contains("<mi>a</mi><mo>+</mo><mi>b</mi>"), "{composite}");
+        let parallel = encode(r"\mathit{\parallel}", display).math_ml;
+        assert!(parallel.contains("<mstyle mathvariant=\"italic\"><mo>∥</mo></mstyle>"), "{parallel}");
+        assert!(!parallel.contains("⫽"), "{parallel}");
+    }
 }
 
 #[test]

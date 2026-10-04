@@ -23,6 +23,8 @@ pub enum BuiltinMacroKind {
     BoldVector,
     ArrowVector,
     UnitVector,
+    MathRelation,
+    MathBinary,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -33,6 +35,8 @@ pub struct MacroSpec {
 }
 
 const SPECS: &[MacroSpec] = &[
+    MacroSpec { command: "\\mathrel", kind: BuiltinMacroKind::MathRelation, arity: 1 },
+    MacroSpec { command: "\\mathbin", kind: BuiltinMacroKind::MathBinary, arity: 1 },
     MacroSpec { command: "\\abs", kind: BuiltinMacroKind::Absolute, arity: 1 },
     MacroSpec { command: "\\norm", kind: BuiltinMacroKind::Norm, arity: 1 },
     MacroSpec { command: "\\dd", kind: BuiltinMacroKind::Differential, arity: 1 },

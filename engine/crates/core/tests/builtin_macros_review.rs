@@ -27,7 +27,7 @@ fn all_bounded_macros_preserve_authored_source_and_real_arguments(){
   r"\abs{x+1}",r"\norm{\frac{x}{y}}",r"\dd{x}",r"\dv{f}{x}",r"\pdv{f}{x}",
   r"\comm{A}{B}",r"\acomm{A}{B}",r"\pb{f}{g}",r"\bra{\psi}",r"\ket{\phi}",
   r"\braket{\phi}{\psi}",r"\expval{A}",r"\mel{\phi}{A}{\psi}",r"\ketbra{\psi}{\phi}",
-  r"\vb{v}",r"\va{v}",r"\vu{e}"];
+  r"\vb{v}",r"\va{v}",r"\vu{e}",r"\mathrel{⫽}",r"\mathbin{=}"];
  assert_eq!(samples.len(),macros::all().len());
  for source in samples {let owned=Owned::new(source);let d=owned.s.document_snapshot();
   assert!(d.analysis.complete&&d.analysis.supported&&d.analysis.exportable,"{source}: {:?}",d.analysis.diagnostics);
@@ -83,8 +83,32 @@ fn native_layout_uses_real_geometry_for_every_macro_kind(){
  let owned=Owned::new(source);let d=owned.s.document_snapshot();assert!(d.analysis.exportable,"{:?}",d.analysis.diagnostics);let(fonts,options)=font();let mut layout=LayoutEngine::default();
  let scene=layout.layout(&owned.s,&fonts,&options).unwrap();assert!(scene.width>0.0&&scene.height>0.0);assert!(scene.glyphs.len()>20);assert!(scene.rules.len()>=3);
  let svg=scene.svg().unwrap();assert!(svg.starts_with("<svg")&&!svg.contains("<text")&&!svg.contains("foreignObject"));
- for spec in macros::all(){let source=match spec.kind{BuiltinMacroKind::Derivative=>r"\dv{f}{x}",BuiltinMacroKind::PartialDerivative=>r"\pdv{f}{x}",BuiltinMacroKind::MatrixElement=>r"\mel{a}{b}{c}",BuiltinMacroKind::BraKet=>r"\braket{a}{b}",BuiltinMacroKind::KetBra=>r"\ketbra{a}{b}",BuiltinMacroKind::Commutator=>r"\comm{a}{b}",BuiltinMacroKind::Anticommutator=>r"\acomm{a}{b}",BuiltinMacroKind::PoissonBracket=>r"\pb{a}{b}",BuiltinMacroKind::Absolute=>r"\abs{x}",BuiltinMacroKind::Norm=>r"\norm{x}",BuiltinMacroKind::Differential=>r"\dd{x}",BuiltinMacroKind::Bra=>r"\bra{x}",BuiltinMacroKind::Ket=>r"\ket{x}",BuiltinMacroKind::Expectation=>r"\expval{x}",BuiltinMacroKind::BoldVector=>r"\vb{x}",BuiltinMacroKind::ArrowVector=>r"\va{x}",BuiltinMacroKind::UnitVector=>r"\vu{x}"};
+ for spec in macros::all(){let source=match spec.kind{BuiltinMacroKind::Derivative=>r"\dv{f}{x}",BuiltinMacroKind::PartialDerivative=>r"\pdv{f}{x}",BuiltinMacroKind::MatrixElement=>r"\mel{a}{b}{c}",BuiltinMacroKind::BraKet=>r"\braket{a}{b}",BuiltinMacroKind::KetBra=>r"\ketbra{a}{b}",BuiltinMacroKind::Commutator=>r"\comm{a}{b}",BuiltinMacroKind::Anticommutator=>r"\acomm{a}{b}",BuiltinMacroKind::PoissonBracket=>r"\pb{a}{b}",BuiltinMacroKind::Absolute=>r"\abs{x}",BuiltinMacroKind::Norm=>r"\norm{x}",BuiltinMacroKind::Differential=>r"\dd{x}",BuiltinMacroKind::Bra=>r"\bra{x}",BuiltinMacroKind::Ket=>r"\ket{x}",BuiltinMacroKind::Expectation=>r"\expval{x}",BuiltinMacroKind::BoldVector=>r"\vb{x}",BuiltinMacroKind::ArrowVector=>r"\va{x}",BuiltinMacroKind::UnitVector=>r"\vu{x}",BuiltinMacroKind::MathRelation=>r"\mathrel{x}",BuiltinMacroKind::MathBinary=>r"\mathbin{x}"};
   let s=Owned::new(source);layout.layout(&s.s,&fonts,&options).unwrap();}
+}
+
+#[test]
+fn explicit_atom_class_macros_keep_enum_source_editing_and_spacing_contracts(){
+ for (source,kind,label) in [
+  (r"\mathrel{⫽}",BuiltinMacroKind::MathRelation,"mathRelation"),
+  (r"\mathbin{=}",BuiltinMacroKind::MathBinary,"mathBinary"),
+ ] {
+  let serialized=serde_json::to_value(kind).unwrap();assert_eq!(serialized,label);
+  assert_eq!(serde_json::from_value::<BuiltinMacroKind>(serialized).unwrap(),kind);
+  let mut owned=Owned::new(source);let before=owned.s.document_snapshot();let m=macro_node(&before.analysis.tree);
+  let NodeKind::MacroCall{macro_kind,arguments,..}=&m.kind else{panic!()};assert_eq!(*macro_kind,kind);
+  owned.select(Position::row(arguments[0].id,1));
+  let edited=owned.edit(EditCommand::InsertText{text:"x".into(),mode:InputMode::Math}).editor;
+  let fresh=Owned::new(&edited.document.source).s.document_snapshot();
+  assert_eq!(semantic(serde_json::to_value(&edited.document.analysis.tree).unwrap()),semantic(serde_json::to_value(&fresh.analysis.tree).unwrap()));
+  assert_eq!(model::latex(&fresh.analysis.tree,LatexMode::Lossless),edited.document.source);
+  assert_eq!(owned.action(EditorAction::Undo).editor.document.source,source);
+ }
+ let(fonts,options)=font();let mut layout=LayoutEngine::default();
+ let rel=layout.layout(&Owned::new(r"a\mathrel{+}b").s,&fonts,&options).unwrap();
+ let bin=layout.layout(&Owned::new(r"a\mathbin{+}b").s,&fonts,&options).unwrap();
+ assert!(rel.width>bin.width,"Explicit relation spacing must exceed binary spacing");
+ for source in [r"\mathrel",r"\mathbin"]{assert!(!Owned::new(source).s.document_snapshot().analysis.exportable);}
 }
 
 #[test]

@@ -312,6 +312,18 @@ internal static partial class Program
 
     private static Word.Application CreateWordApplication(bool visible)
     {
+        var ownedRoot = Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_OWNED_WORD_ROOT");
+        if (!string.IsNullOrWhiteSpace(ownedRoot))
+        {
+            if (AttachActiveWord)
+                throw new InvalidOperationException("Explicit owned Word cannot attach to an existing application.");
+            WordOfficeMathFontLoader.EnsureLoaded();
+            var ownedDirectory = Path.Combine(Path.GetFullPath(ownedRoot), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(ownedDirectory);
+            var owned = CreateFreshAcceptanceAutomationWord(ownedDirectory);
+            owned.Visible = visible;
+            return owned;
+        }
         if (AttachActiveWord)
         {
             var active = Marshal.GetActiveObject("Word.Application") as Word.Application
@@ -1364,6 +1376,14 @@ internal static partial class Program
             else if (string.Equals(mode, "word-format-conversion-verify-saved", StringComparison.OrdinalIgnoreCase))
             {
                 VerifySavedExternalConversion(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-color-edit", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlColorEditAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-omml-style-boundary-probe", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordOmmlStyleBoundaryProbe(artifactRoot);
             }
             else if (string.Equals(mode, "word-format-conversion-render-matrix", StringComparison.OrdinalIgnoreCase))
             {

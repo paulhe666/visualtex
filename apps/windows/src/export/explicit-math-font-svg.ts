@@ -12,6 +12,23 @@ export function createExplicitMathFontSvgFactory(): SVGWrapperFactory<any, any, 
   for (const kind of ["mo", "mi"]) {
     const Base = factory.getNodeClass(kind) as unknown as WrapperConstructor;
     class ExplicitObliqueSymbol extends Base {
+      protected getVariant(): void {
+        super.getVariant();
+        const requested = String(this.node.attributes.get("mathvariant"));
+        if (!this.node.getProperty("variantForm")
+            || !["normal", "italic", "bold", "bold-italic"].includes(requested)) return;
+        // Explicit style must not erase a command-specific AMS alternate.
+        // MathJax has one real -tex-variant face; when it has no styled
+        // alternate, retain that outline rather than silently using the normal
+        // (possibly full-height) symbol. Bold remains semantic only for that
+        // face. The existing oblique pass is applied to this selected outline.
+        const text = this.getText();
+        if (text && Array.from(text).every((character) => {
+          const scalar = character.codePointAt(0)!;
+          const alternate = this.font.getChar("-tex-variant", scalar);
+          return !!alternate && alternate !== this.font.getChar("normal", scalar);
+        })) this.variant = "-tex-variant";
+      }
       private needsOblique(): boolean {
         const variant = String(this.node.attributes.get("mathvariant"));
         const upright = variant === "italic" ? "normal" : variant === "bold-italic" ? "bold" : null;

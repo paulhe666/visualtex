@@ -1,0 +1,20 @@
+import {Configuration} from 'mathjax-full/js/input/tex/Configuration.js';
+import {mathjax} from 'mathjax-full/js/mathjax.js';
+import {TeX} from 'mathjax-full/js/input/tex.js';
+import {SVG} from 'mathjax-full/js/output/svg.js';
+import {AllPackages} from 'mathjax-full/js/input/tex/AllPackages.js';
+import {SerializedMmlVisitor} from 'mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js';
+import {STATE} from 'mathjax-full/js/core/MathItem.js';
+import {MmlMi} from 'mathjax-full/js/core/MmlTree/MmlNodes/mi.js';
+import {TEXCLASS} from 'mathjax-full/js/core/MmlTree/MmlNode.js';
+import {latexToMathMl} from '../src/export/runtime.ts';
+import {EXPLICIT_MATH_FONT_PACKAGE} from '../src/export/explicit-math-font.ts';
+import {VISUALTEX_MATHML_MACROS} from '../src/math/latexCompatibility.ts';
+import {writeFileSync} from 'node:fs';
+const basic=new Set(['normal','italic','bold','bold-italic']), scoped=new WeakMap<any,string>();
+Configuration.create('cp239-identifier-scope',{config:[(_c,jax)=>{const f=jax.parseOptions.nodeFactory,old=f.get('token');f.set('token',(f,kind,def={},text='')=>{const n=old(f,kind,def,text);const env=f.configuration.parser.stack.env; const raw=String(env.font??''),v=raw==='-tex-mathit'?'italic':raw; const declared=String(def.mathvariant??'');if(kind==='mi'&&MmlMi.singleCharacter.test(text)&&basic.has(v)&&(!declared||basic.has(declared))&&!env.operatorLetters)scoped.set(n,v);return n;});},110],postprocessors:[[(args:any)=>args.data.root.walkTree((n:any)=>{const v=scoped.get(n);if(v&&n.texClass!==TEXCLASS.OP)n.attributes.set('mathvariant',v);}),-9]]});
+const tex=new TeX({packages:[...AllPackages.filter(x=>!['noerrors','noundefined'].includes(x)),EXPLICIT_MATH_FONT_PACKAGE,'cp239-identifier-scope'],macros:VISUALTEX_MATHML_MACROS});
+const doc=mathjax.document('',{InputJax:tex,OutputJax:new SVG({fontCache:'local'})}),visitor=new SerializedMmlVisitor(doc.mmlFactory);
+const inputs=[String.raw`\mathrm{\hslash}`,String.raw`\mathbfit{\hbar}`,String.raw`\mathrm{\alpha}`,String.raw`\mathbf{\alpha}`,String.raw`\mathit{\Gamma}`,String.raw`\mathrm{\Bbbk}`,String.raw`\mathit{\Bbbk}`,String.raw`\mathit{\sin x}`,String.raw`\mathit{\operatorname{x}}`,String.raw`\mathbf{\operatorname{xy}}`,String.raw`\mathrm{\mathbb{R}}`,String.raw`\mathbf{\mathcal{R}}`,String.raw`\mathit{x}`,String.raw`\mathbfit{x}`,String.raw`\hslash+\hbar+\alpha+\Gamma`,String.raw`\mathbfit{\hbar+\mathrm{\hslash}}`,String.raw`\mathrm{α}`,String.raw`\mathrm{ℏ}`,String.raw`\mathrm{x́}`,String.raw`\mathit{𝔸}`];
+const rows=[];for(const latex of inputs){const baseline=await latexToMathMl(latex,false);const candidate=visitor.visitTree(doc.convert(latex,{display:false,end:STATE.COMPILED})).trim();rows.push({latex,baseline,candidate,changed:baseline!==candidate});}
+const report={scope:'isolated candidate only; no production edits',rows};if(process.argv[2])writeFileSync(process.argv[2],JSON.stringify(report,null,2));console.log(JSON.stringify(report));

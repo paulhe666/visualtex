@@ -75,7 +75,7 @@ impl Encoder {
                 for cell in cells { body.push_str("<mtd>"); body.push_str(&self.node(cell, depth + 1)?); body.push_str("</mtd>"); }
                 format!("<mtr>{body}</mtr>")
             }
-            NodeKind::Symbol { value, class, .. } => token(value, *class),
+            NodeKind::Symbol { value, class, command } => token(value, *class, command.as_deref()),
             NodeKind::Text { text, .. } => format!("<mtext>{}</mtext>", escape(text)),
             NodeKind::Fraction { command, numerator, denominator, .. } => {
                 let spec = crate::fractions::spec(command).ok_or_else(|| EngineError::new(ErrorCode::UnsupportedSyntax, "Unknown fraction form"))?;
@@ -111,7 +111,7 @@ impl Encoder {
                 self.operator_tail(base, parts, spec.display_limits, depth + 1)?
             }
             NodeKind::GeneralOperator { body, parts, .. } => {
-                let base = format!("<mrow>{}</mrow>", self.node(body, depth + 1)?);
+                let base = classed_row("OP", self.node(body, depth + 1)?);
                 self.operator_tail(base, parts, true, depth + 1)?
             }
             NodeKind::CustomSymbol { asset, parts, .. } => {
@@ -244,6 +244,8 @@ impl Encoder {
     fn macro_call(&mut self, kind: BuiltinMacroKind, args: &[Arc<Node>], depth: usize) -> EngineResult<String> {
         let arg = |this: &mut Self, index: usize| this.node(args.get(index).ok_or_else(|| EngineError::new(ErrorCode::InvalidInput, "Malformed built-in macro"))?, depth + 1);
         Ok(match kind {
+            BuiltinMacroKind::MathRelation => classed_row("REL", arg(self,0)?),
+            BuiltinMacroKind::MathBinary => classed_row("BIN", arg(self,0)?),
             BuiltinMacroKind::Absolute => wrap_table("|", arg(self,0)?, "|"),
             BuiltinMacroKind::Norm => wrap_table("‖", arg(self,0)?, "‖"),
             BuiltinMacroKind::Bra => format!("<mrow><mo>⟨</mo>{}<mo>|</mo></mrow>", arg(self,0)?),
@@ -274,13 +276,28 @@ impl Encoder {
     }
 }
 
-fn token(value: &str, class: AtomClass) -> String {
+fn token(value: &str, class: AtomClass, command: Option<&str>) -> String {
     let escaped = escape(value);
+    // Preserve the command's alternate identity using the shared recovery
+    // annotation, while the token itself remains the semantic Unicode scalar.
+    if command.and_then(crate::symbol_catalog::alternate).is_some_and(|spec| spec.value == value) {
+        return format!("<mo data-mjx-alternate=\"1\">{escaped}</mo>");
+    }
     match class {
         AtomClass::Number => format!("<mn>{escaped}</mn>"),
+        AtomClass::Binary | AtomClass::Relation | AtomClass::Operator if crate::symbols::literal_class(value) != class => {
+            let name = match class { AtomClass::Binary => "BIN", AtomClass::Relation => "REL", _ => "OP" };
+            classed_row(name, format!("<mo>{escaped}</mo>"))
+        },
         AtomClass::Binary | AtomClass::Relation | AtomClass::Open | AtomClass::Close | AtomClass::Punctuation | AtomClass::Operator => format!("<mo>{escaped}</mo>"),
         _ => format!("<mi>{escaped}</mi>"),
     }
+}
+// Explicit TeX atom classes have no standard MathML grouping attribute. Use
+// the same bounded class annotation understood by the import/recovery path;
+// it records semantics only and does not imply a MathJax rendering dependency.
+fn classed_row(class: &str, body: String) -> String {
+    format!("<mrow data-mjx-texclass=\"{class}\">{body}</mrow>")
 }
 fn delimiter(source: &str, fence: bool) -> String {
     let value = crate::delimiters::glyph(source).flatten().map(escape_char).unwrap_or_default();

@@ -38,6 +38,8 @@ internal static partial class MathTypeMtefCodec
     private const byte CharHasEmbellishment = 0x01;
     private const byte CharFunctionStart = 0x02;
     private const byte CharEncoded8 = 0x04;
+    private const byte CharEncoded16 = 0x10;
+    private const byte CharNoMtCode = 0x20;
 
     private const byte TypefaceText = 1;
     private const byte TypefaceFunction = 2;
@@ -694,8 +696,7 @@ internal static partial class MathTypeMtefCodec
     private static string CanonicalizeMathMl(XElement element, string? inheritedMathVariant)
     {
         var local = element.Name.LocalName;
-        var ownVariant = ((string?)element.Attribute("mathvariant"))?.Trim();
-        var variant = string.IsNullOrWhiteSpace(ownVariant) ? inheritedMathVariant : ownVariant;
+        var variant = MathMlTokenStyleContract.ResolveDeclaredVariant(element) ?? inheritedMathVariant;
         string Children(string? childVariant = null) =>
             CanonicalizeElementSequence(
                 element.Elements()
@@ -752,8 +753,6 @@ internal static partial class MathTypeMtefCodec
                 if (value.Length == 0) return string.Empty;
                 var primeSignature = CanonicalPrimeSignature(value);
                 if (primeSignature is not null) return primeSignature;
-                if (value == "ℓ")
-                    return CanonicalToken("mi", "l", "script");
                 if ((value is "ℵ" or "ℜ" or "ℑ")
                     && string.Equals(variant, "normal", StringComparison.OrdinalIgnoreCase))
                 {
@@ -769,8 +768,14 @@ internal static partial class MathTypeMtefCodec
                 // Keep mtext distinct so an actual Symbol -> Text regression is
                 // still rejected by the round-trip validator.
                 if (IsMathematicalSymbolToken(value))
-                    return CanonicalStyledOperator(value, variant);
-                return CanonicalToken("mi", value, variant);
+                    return CanonicalStyledOperator(value,
+                        MathMlTokenStyleContract.ResolveEffectiveVariant(element, variant));
+                // Intrinsic Unicode alphabet variants fold before MathML's
+                // implicit single-mi default; a declaration remains authoritative.
+                var intrinsicVariant = string.IsNullOrWhiteSpace(variant) && value.Length == 1
+                    && TryNormalizeLetterlikeForWrite(value[0], out _, out _);
+                return CanonicalToken("mi", value, intrinsicVariant ? null
+                    : MathMlTokenStyleContract.ResolveEffectiveVariant(element, variant));
             }
             case "mn":
             {
@@ -797,13 +802,14 @@ internal static partial class MathTypeMtefCodec
                 var primeSignature = CanonicalPrimeSignature(value);
                 if (primeSignature is not null) return primeSignature;
                 if (value.Length > 1 && value.All(char.IsLetter))
-                    return CanonicalToken("mi", value, "normal");
+                    return CanonicalToken("mi", value, MathMlTokenStyleContract.ResolveEffectiveVariant(element, variant));
                 // MathJax keeps the TeX definition operator := in one <mo>,
                 // while MathType 7 serializes the same visible operator as two
                 // adjacent operator records ':' and '='. Treat only this known
                 // split as equivalent; other multi-character operators remain
                 // strict so the MTEF round-trip gate still catches real changes.
-                if (value == ":=") return "o(:)o(=)";
+                if (value == ":=")
+                    return CanonicalStyledOperator(":", variant) + CanonicalStyledOperator("=", variant);
                 // MathJax may coalesce adjacent non-ASCII mathematical symbols
                 // into one <mo> (for example \mapsto\parallel\sim), while MTEF
                 // persists one CHAR record per glyph. Normalize only a pure run
@@ -814,8 +820,8 @@ internal static partial class MathTypeMtefCodec
                     && value.All(character => character > 0x7F
                         && IsMathematicalSymbolScalar(character)))
                 {
-                    return string.Concat(value.Select(character =>
-                        "o(" + NormalizeOperatorToken(character.ToString()) + ")"));
+                    return string.Concat(EnumerateBmpScalars(value).Select(scalar =>
+                        CanonicalStyledOperator(char.ConvertFromUtf32(scalar), variant)));
                 }
                 return CanonicalStyledOperator(value, variant);
             }
@@ -1200,8 +1206,10 @@ internal static partial class MathTypeMtefCodec
             // with U+22C3/U+22C2. They are the same semantic operator when used
             // as the base of a limit/script structure.
             var value = element.Value.Trim();
-            if (value == "∪") return "o(⋃)";
-            if (value == "∩") return "o(⋂)";
+            var effectiveVariant = MathMlTokenStyleContract.ResolveEffectiveVariant(element,
+                MathMlTokenStyleContract.ResolveDeclaredVariant(element) ?? variant);
+            if (value == "∪") return CanonicalStyledOperator("⋃", effectiveVariant);
+            if (value == "∩") return CanonicalStyledOperator("⋂", effectiveVariant);
         }
         return CanonicalizeMathMl(element, variant);
     }
@@ -1241,10 +1249,8 @@ internal static partial class MathTypeMtefCodec
                 case 'ℛ': token = "R"; variant = "script"; break;
             }
         }
-        if (kind == "mi" && variant.Length == 0
-            && token.Length == 1
-            && IsUpperGreek(token[0]))
-            variant = "normal";
+        // Native font preferences must be materialized by the MTEF reader;
+        // they cannot override MathML single-mi defaults or explicit italics.
         // Upright ordinary literals (punctuation, digits, mixed text) use MTEF's
         // native Text face and read back as mtext. Preserve their exact text, not
         // the exporter-specific mi tag. Actual mathematical symbols and styled
@@ -1889,6 +1895,10 @@ internal static partial class MathTypeMtefCodec
         {
             if (!TryGetMathJaxFenceRow(row, out var open, out var close, out var children))
                 continue;
+            // Recognizing a source fence does not establish a native template.
+            // Keep unsupported endpoint tokens on their original emission path,
+            // including verified CHAR font/encoding bindings and local attributes.
+            if (!SelectFenceTemplate(open, close).HasValue) continue;
             var fenced = new XElement(
                 "mfenced",
                 new XAttribute("open", NormalizeFence(open)),
@@ -2720,6 +2730,11 @@ internal static partial class MathTypeMtefCodec
         open = string.Empty;
         close = string.Empty;
         children = Array.Empty<XElement>();
+        // Explicit source structure is independent of MTEF template support.
+        // Unsupported templates still use EmitFenced\'s existing fallback;
+        // semantic comparison must not erase a source fence to excuse that loss.
+        if (MathMlExplicitFenceContract.TryGetRow(row, out open, out close, out children))
+            return true;
         if (row.Name.LocalName != "mrow") return false;
         var elements = row.Elements().ToArray();
         if (elements.Length < 3) return false;
@@ -2778,16 +2793,161 @@ internal static partial class MathTypeMtefCodec
                 && fence is ")" or "]" or "}" or "⟩" or "⌉" or "⌋" or "|" or "‖";
     }
 
+    // Exact native glyph contracts, shared by font binding, CHAR emission and
+    // decoding. Do not infer a glyph from a font's Unicode coverage. The corner
+    // positions are Design Science's eumat1 AFM/post names, cross-checked with
+    // lcdf-typetools texglyphlist and native WMF pixels. E92F is MathType's own
+    // shortparallel MTCode; its EuclidMath1 position 89 renders the short bars.
+    private sealed class NativeGlyphAuthority
+    {
+        internal NativeGlyphAuthority(int scalar, bool alternate, string font,
+            string encoding, int mtCode, byte encoded8, string tokenClass, string glyphName)
+        {
+            Scalar = scalar; Alternate = alternate; Font = font; Encoding = encoding;
+            MtCode = mtCode; Encoded8 = encoded8; TokenClass = tokenClass; GlyphName = glyphName;
+        }
+        internal int Scalar { get; }
+        internal bool Alternate { get; }
+        internal string Font { get; }
+        internal string Encoding { get; }
+        internal int MtCode { get; }
+        internal byte Encoded8 { get; }
+        internal string TokenClass { get; }
+        internal string GlyphName { get; }
+    }
+
+    private static void EmitMathSpace(XElement element, List<byte> output)
+    {
+        var space = MathSpaceContract.ParseWidth((string?)element.Attribute("width")).NativeSpace;
+        if (space is null)
+        {
+            // Preserve compatibility for unproven widths; this is not a claim
+            // that ASCII space faithfully represents an arbitrary MathML gap.
+            EmitCharacter(' ', TypefaceSpace, output);
+            return;
+        }
+        // An edited width is authoritative over stale native CHAR metadata.
+        // For an unchanged known space, preserve its original encoding flags.
+        if ((int?)element.Attribute("data-mtef-explicit-typeface") == TypefaceSpace
+            && (int?)element.Attribute("data-mtef-mtcode") == space.MtCode
+            && !IsTrueMathMlBoolean((string?)element.Attribute("data-mtef-no-mtcode"))
+            && TryEmitPreservedCharacter(element, TypefaceSpace, output))
+            return;
+        EmitScalar(space.MtCode, TypefaceSpace, output);
+    }
+
+    private static readonly NativeGlyphAuthority[] NativeGlyphAuthorities =
+    {
+        new(0x231C, false, "Euclid Math One", "EuclidMath1", 0x231C, 0x84, "mo", "rightanglenw"),
+        new(0x231D, false, "Euclid Math One", "EuclidMath1", 0x231D, 0x86, "mo", "rightanglene"),
+        new(0x231E, false, "Euclid Math One", "EuclidMath1", 0x231E, 0x85, "mo", "rightanglesw"),
+        new(0x231F, false, "Euclid Math One", "EuclidMath1", 0x231F, 0x87, "mo", "rightanglese"),
+        new(0x2225, true, "Euclid Math One", "EuclidMath1", 0xE92F, 0x89, "mo", "parallelvar"),
+        new(0x2226, false, "Euclid Math One", "EuclidMath1", 0x2226, 0x8D, "mo", "notparallelto"),
+        new(0x2226, true, "Euclid Math One", "EuclidMath1", 0xEA2F, 0x8B, "mo", "notparalleltovar"),
+        // Vendor Texvc input + Euclid AFM/post/cmap authority; alternate slots
+        // remain distinct from their ordinary Unicode counterparts.
+        new(0x2223, true, "Euclid Math One", "EuclidMath1", 0xE92E, 0x88, "mo", "dividesvar"),
+        new(0x2224, false, "Euclid Math One", "EuclidMath1", 0x2224, 0x8C, "mo", "doesnotdivide"),
+        new(0x2224, true, "Euclid Math One", "EuclidMath1", 0xEA2E, 0x8A, "mo", "doesnotdividevar"),
+        new(0x2216, true, "Euclid Math One", "EuclidMath1", 0x2216, 0x80, "mo", "integerdivide"),
+        new(0x228A, false, "Euclid Math Two", "EuclidMath2", 0x228A, 0xD6, "mo", "subsetnotequal"),
+        new(0x228A, true, "Euclid Math Two", "EuclidMath2", 0xEA42, 0xD8, "mo", "notsubsetoreql"),
+        new(0x228B, false, "Euclid Math Two", "EuclidMath2", 0x228B, 0xD7, "mo", "supersetnotequal"),
+        new(0x228B, true, "Euclid Math Two", "EuclidMath2", 0xEA43, 0xD9, "mo", "notsupersetoreql"),
+        new(0x2288, false, "Euclid Math Two", "EuclidMath2", 0x2288, 0xDA, "mo", "notreflexsubset"),
+        new(0x2288, true, "Euclid Math Two", "EuclidMath2", 0xEA0C, 0xE0, "mo", "notreflexsubsetdbl"),
+        new(0x2289, false, "Euclid Math Two", "EuclidMath2", 0x2289, 0xDB, "mo", "notreflexsuperset"),
+        new(0x2289, true, "Euclid Math Two", "EuclidMath2", 0xEA0B, 0xE1, "mo", "notreflexsupersetdbl"),
+        new(0x2ACB, false, "Euclid Math Two", "EuclidMath2", 0xEA44, 0xDC, "mo", "subsetornotdbleql"),
+        new(0x2ACB, true, "Euclid Math Two", "EuclidMath2", 0xEA46, 0xDE, "mo", "notsubsetordblequal"),
+        new(0x2ACC, false, "Euclid Math Two", "EuclidMath2", 0xEA45, 0xDD, "mo", "supersetornotdbleql"),
+        new(0x2ACC, true, "Euclid Math Two", "EuclidMath2", 0xEA47, 0xDF, "mo", "notsupersetordblequal"),
+        new(0x2220, false, "Symbol", "Symbol", 0x2220, 0xD0, "mi", "angle"),
+        new(0x2221, false, "MT Extra", "MTExtra", 0x2221, 0x52, "mi", "measuredangle"),
+        new(0x2222, false, "MT Extra", "MTExtra", 0x2222, 0x53, "mi", "sphericalangle"),
+    };
+
+    private static NativeGlyphAuthority? ResolveNativeGlyphAuthority(XElement token)
+    {
+        if (token.Name.LocalName is not ("mo" or "mi") || token.Value.Length != 1)
+            return null;
+        var alternate = (string?)token.Attribute("data-mjx-alternate") == "1";
+        return NativeGlyphAuthorities.FirstOrDefault(glyph =>
+            glyph.Scalar == token.Value[0] && glyph.Alternate == alternate);
+    }
+
+    private static NativeGlyphAuthority? ResolveNativeGlyphAuthority(
+        string? font, string? encoding, int scalar, int encoded, bool hasMtCode) =>
+        NativeGlyphAuthorities.FirstOrDefault(glyph =>
+            string.Equals(font, glyph.Font, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(encoding, glyph.Encoding, StringComparison.OrdinalIgnoreCase)
+            && (encoded < 0 || encoded == glyph.Encoded8)
+            && (!hasMtCode || scalar == glyph.MtCode
+                || scalar == glyph.Scalar && encoded == glyph.Encoded8));
+
+    private static string? NativeGlyphCharacterVariant(byte style, NativeGlyphAuthority glyph) =>
+        style switch
+        { 1 => "bold", 2 => "italic", 3 => "bold-italic", _ => glyph.TokenClass == "mi" ? "normal" : null };
+
     private static void EmitExplicitFontDefinitions(
         XElement math,
         byte[] sourceMtef,
         List<byte> output)
     {
         var definitionsStart = output.Count;
+        var existing = CountAvailableDefinitions(sourceMtef);
+        var nativeStyles = ReadNativeCharacterStyleBindings(sourceMtef);
+        // MTEF persists scalar CHARs. Split only the already-canonical equivalent
+        // operator runs before binding fonts, so every glyph receives its style.
+        foreach (var token in math.DescendantsAndSelf().Where(e => e.Name.LocalName == "mo"
+                     && e.Value.Length > 1 && (e.Value == ":="
+                         || e.Value.All(c => c > 0x7F && IsMathematicalSymbolScalar(c)))).ToArray())
+            token.ReplaceWith(EnumerateBmpScalars(token.Value).Select(scalar =>
+                new XElement(token.Name, token.Attributes(), char.ConvertFromUtf32(scalar))));
+        // A single mathematical-symbol mi inherits italic when no variant was
+        // supplied. Inherited variants have already been materialized. Resolve
+        // this before changing token class or binding a native font, so a plain
+        // native glyph cannot masquerade as an implicit-italic MathML token.
+        foreach (var token in math.DescendantsAndSelf().Where(e => e.Name.LocalName == "mi"
+                     && e.Value.Trim().Length == 1
+                     && (IsMathematicalSymbolToken(e.Value.Trim())
+                         || IsLowerGreek(e.Value.Trim()[0]) || IsUpperGreek(e.Value.Trim()[0]))
+                     && MathMlTokenStyleContract.ResolveDeclaredVariant(e) is null))
+        {
+            if (TryNormalizeLetterlikeForWrite(token.Value.Trim()[0], out _, out _)) continue;
+            var effective = MathMlTokenStyleContract.ResolveEffectiveVariant(token);
+            var scalar = token.Value.Trim()[0];
+            var greekFace = IsLowerGreek(scalar) ? TypefaceLowerGreek
+                : IsUpperGreek(scalar) ? TypefaceUpperGreek : 0;
+            if (greekFace != 0 && nativeStyles.TryGetValue(greekFace, out var binding)
+                && TryNativeCharacterStyle(effective, out var requestedBits)
+                && requestedBits == binding.CharacterStyle)
+                continue;
+            token.SetAttributeValue("mathvariant", effective);
+        }
+        foreach (var token in math.DescendantsAndSelf())
+        {
+            if (!int.TryParse((string?)token.Attribute("data-mtef-explicit-typeface"), out var face)
+                || !nativeStyles.TryGetValue(face, out var actual)) continue;
+            var requested = MathMlTokenStyleContract.ResolveEffectiveVariant(token);
+            if (TryNativeCharacterStyle(requested, out var bits) && bits != actual.CharacterStyle)
+            {
+                // A new font/style must not inherit an old font-position byte.
+                foreach (var attribute in token.Attributes().Where(a =>
+                             a.Name.LocalName.StartsWith("data-mtef-", StringComparison.Ordinal)).ToArray())
+                    attribute.Remove();
+            }
+        }
+        foreach (var token in math.DescendantsAndSelf().Where(e => e.Name.LocalName == "mi"
+                     && ResolveNativeGlyphAuthority(e) is not null
+                     && !HasValidPreservedExplicitTypeface(e, existing.FontStyleDefinitions, nativeStyles)))
+            token.Name = token.Name.Namespace + ResolveNativeGlyphAuthority(token)!.TokenClass;
         // A mathematical glyph has the same native character mapping whether
         // a frontend calls it mi or mo. Keep explicit styles on that mapping.
         foreach (var token in math.DescendantsAndSelf().Where(e => e.Name.LocalName == "mi"
                      && IsMathematicalSymbolToken(e.Value.Trim())
+                     && ResolveNativeGlyphAuthority(e)?.TokenClass != "mi"
                      && ((string?)e.Attribute("mathvariant") ?? string.Empty) is "bold" or "italic" or "bold-italic"))
             token.Name = token.Name.Namespace + "mo";
         var specs = new[]
@@ -2806,16 +2966,19 @@ internal static partial class MathTypeMtefCodec
             (Variant: "sans-serif-bold-italic", Encoding: "WindowsANSI", Font: "Arial", CharacterStyle: (byte)3),
             (Variant: "monospace", Encoding: "WindowsANSI", Font: "Courier New", CharacterStyle: (byte)0),
             (Variant: "bold-italic", Encoding: "WindowsANSI", Font: "Times New Roman", CharacterStyle: (byte)3),
+            (Variant: "native-glyph", Encoding: "Symbol", Font: "Symbol", CharacterStyle: (byte)0),
+            (Variant: "native-glyph", Encoding: "MTExtra", Font: "MT Extra", CharacterStyle: (byte)0),
         };
-        var existing = CountAvailableDefinitions(sourceMtef);
         var created = 0;
         foreach (var spec in specs)
         {
             var tokens = math.DescendantsAndSelf()
-                .Where(element => MatchesExplicitFontSpec(element, spec.Variant))
+                .Where(element => ResolveNativeGlyphAuthority(element) is { } glyph
+                    ? spec.CharacterStyle == 0 && glyph.Font == spec.Font && glyph.Encoding == spec.Encoding
+                    : MatchesExplicitFontSpec(element, spec.Variant))
                 .Where(element => !HasValidPreservedExplicitTypeface(
                     element,
-                    existing.FontStyleDefinitions))
+                    existing.FontStyleDefinitions, nativeStyles))
                 .ToArray();
             if (tokens.Length == 0) continue;
 
@@ -2853,7 +3016,7 @@ internal static partial class MathTypeMtefCodec
                 token.SetAttributeValue("data-mtef-explicit-font", spec.Font);
             }
         }
-        MaterializeOperatorCharacterStyles(math, sourceMtef, output, definitionsStart);
+        MaterializeExplicitCharacterStyles(math, sourceMtef, output, definitionsStart);
     }
 
     // Resolve font/style through the native glyph's actual encoding. A bold
@@ -2861,16 +3024,18 @@ internal static partial class MathTypeMtefCodec
     // an arbitrary Times font. Retain the canonical CHAR's MTCode/font-position
     // and bind a FONT_STYLE_DEF to the SAME FONT_DEF with the requested bits.
     // This applies to Symbol, MT Extra, Euclid and text fallback characters.
-    private static void MaterializeOperatorCharacterStyles(
+    private static void MaterializeExplicitCharacterStyles(
         XElement math, byte[] sourceMtef, List<byte> output, int definitionsStart)
     {
-        var tokens = math.DescendantsAndSelf().Where(e => e.Name.LocalName == "mo"
+        var tokens = math.DescendantsAndSelf().Where(e => (e.Name.LocalName is "mo" or "mi")
             && e.Value.Length == 1
-            && ((string?)e.Attribute("mathvariant") ?? string.Empty) is "bold" or "italic" or "bold-italic").ToArray();
+            && (((string?)e.Attribute("mathvariant") ?? string.Empty) is "bold" or "italic" or "bold-italic"
+                || TryGetBasicStyledLegacyIdentifierGlyph(e, out _, out _, out _))).ToArray();
         if (tokens.Length == 0) return;
         var fonts = new List<string>();
         var styles = new List<(int Font, byte Bits)>();
-        var builtin = new Dictionary<int,int>();
+        var builtin = ReadNativeCharacterStyleBindings(sourceMtef)
+            .Where(item => item.Key > 0).ToDictionary(item => item.Key, item => item.Value.FontDefinition);
         void Definition(byte[] data, ref int position)
         {
             var record = data[position++];
@@ -2892,16 +3057,7 @@ internal static partial class MathTypeMtefCodec
             var cursor=record.Start;
             if(record.Type is RecordEncodingDef or RecordFontDef or RecordFontStyleDef)
                 Definition(sourceMtef,ref cursor);
-            else if(record.Type==RecordEqnPrefs)
-            {
-                cursor+=2; cursor=SkipDimensionArray(sourceMtef,cursor); cursor=SkipDimensionArray(sourceMtef,cursor);
-                Require(sourceMtef,cursor,1); var count=sourceMtef[cursor++];
-                for(var index=1;index<=count;index++)
-                {
-                    var font=ReadUnsigned(sourceMtef,ref cursor);
-                    if(font!=0) { Require(sourceMtef,cursor,1); cursor++; builtin[index]=font; }
-                }
-            }
+
         }
         var added=output.Skip(definitionsStart).ToArray();
         for(var cursor=0;cursor<added.Length;) Definition(added,ref cursor);
@@ -2927,8 +3083,22 @@ internal static partial class MathTypeMtefCodec
         }
         foreach(var token in tokens)
         {
+            var variant=MathMlTokenStyleContract.ResolveEffectiveVariant(token)!;
+            var bits=(byte)(variant=="bold" ? 1 : variant=="italic" ? 2 : 3);
+            // A decoded native CHAR already owns its exact explicit style.
+            // Preserve its encoded8/encoded16/no-MTCode contract byte-for-byte.
+            if (HasValidPreservedExplicitTypeface(token, styles.Count, ReadNativeCharacterStyleBindings(sourceMtef))
+                && int.TryParse((string?)token.Attribute("data-mtef-explicit-typeface"), out var retained)
+                && (retained > 0 || styles[-retained - 1].Bits == bits))
+                continue;
             var character=new List<byte>();
-            EmitOperator(token,character);
+            // Bind style to the exact CHAR selected by this token's encoder.
+            // Identifier glyphs must not bypass explicit style merely because
+            // their native glyph is supplied by a legacy font map.
+            if (TryGetBasicStyledLegacyIdentifierGlyph(token, out var mappedCode, out var mappedFace, out var mappedPosition))
+                EmitScalar(mappedCode, mappedFace, character, includeEncoded8: true, encoded8Override: mappedPosition);
+            else if (token.Name.LocalName == "mi") EmitIdentifier(token,character);
+            else EmitOperator(token,character);
             if(character.Count<5 || character[0]!=RecordChar || (character[1] & 0x29)!=0)
                 throw new InvalidDataException("Styled native operator must resolve to one undecorated CHAR.");
             var cursor=2;
@@ -2937,8 +3107,6 @@ internal static partial class MathTypeMtefCodec
             var scalar=character[cursor++] | character[cursor++]<<8;
             byte? encoded=(character[1]&CharEncoded8)!=0 ? character[cursor++] : null;
             if(cursor!=character.Count) throw new InvalidDataException("Styled operator CHAR has unsupported trailing data.");
-            var variant=(string)token.Attribute("mathvariant")!;
-            var bits=(byte)(variant=="bold" ? 1 : variant=="italic" ? 2 : 3);
             var styled=StyledTypeface(typeface,bits);
             token.SetAttributeValue("data-mtef-explicit-typeface",styled);
             token.SetAttributeValue("data-mtef-mtcode",scalar);
@@ -2957,48 +3125,126 @@ internal static partial class MathTypeMtefCodec
         }
     }
 
+    private static string NativeCharacterVariant(byte style) => style switch
+    { 1 => "bold", 2 => "italic", 3 => "bold-italic", _ => "normal" };
+
+    private static bool TryNativeCharacterStyle(string? variant, out byte style)
+    {
+        style = variant switch
+        { "normal" or "upright" => 0, "bold" => 1, "italic" => 2, "bold-italic" => 3, _ => byte.MaxValue };
+        return style != byte.MaxValue;
+    }
+
+    private static Dictionary<int, (int FontDefinition, byte CharacterStyle)> ReadNativeCharacterStyleBindings(byte[] data)
+    {
+        var result = new Dictionary<int, (int FontDefinition, byte CharacterStyle)>();
+        var explicitStyle = 0;
+        foreach (var record in ReadPrefixLayout(data).Records.Concat(ReadRootLeadingFormattingRecords(data)))
+        {
+            var cursor = record.Start + 1;
+            if (record.Type == RecordFontStyleDef)
+            {
+                var font = ReadUnsigned(data, ref cursor);
+                Require(data, cursor, 1);
+                result[-++explicitStyle] = (font, data[cursor]);
+            }
+            else if (record.Type == RecordEqnPrefs)
+            {
+                cursor++;
+                cursor = SkipDimensionArray(data, cursor);
+                cursor = SkipDimensionArray(data, cursor);
+                Require(data, cursor, 1);
+                var count = data[cursor++];
+                for (var face = 1; face <= count; face++)
+                {
+                    var font = ReadUnsigned(data, ref cursor);
+                    if (font == 0) continue;
+                    Require(data, cursor, 1);
+                    result[face] = (font, data[cursor++]);
+                }
+            }
+        }
+        return result;
+    }
+
     private static bool HasValidPreservedExplicitTypeface(
         XElement element,
-        int availableFontStyleDefinitions)
+        int availableFontStyleDefinitions,
+        IReadOnlyDictionary<int, (int FontDefinition, byte CharacterStyle)> nativeStyles)
     {
         return int.TryParse(
                 (string?)element.Attribute("data-mtef-explicit-typeface"),
                 NumberStyles.Integer,
                 CultureInfo.InvariantCulture,
                 out var typeface)
-            && typeface < 0
-            && -typeface <= availableFontStyleDefinitions
-            && int.TryParse(
+            && (typeface < 0 && -typeface <= availableFontStyleDefinitions
+                || typeface > 0 && nativeStyles.TryGetValue(typeface, out var nativeStyle)
+                    && TryNativeCharacterStyle(MathMlTokenStyleContract.ResolveEffectiveVariant(element), out var bits)
+                    && bits == nativeStyle.CharacterStyle)
+            && (int.TryParse(
                 (string?)element.Attribute("data-mtef-mtcode"),
                 NumberStyles.Integer,
                 CultureInfo.InvariantCulture,
-                out _);
+                out _)
+                || IsTrueMathMlBoolean((string?)element.Attribute("data-mtef-no-mtcode")));
+    }
+
+    private static bool TryGetBasicStyledLegacyIdentifierGlyph(
+        XElement token, out int mtCode, out int typeface, out byte encoded8)
+    {
+        mtCode = typeface = 0; encoded8 = 0;
+        if (token.Name.LocalName != "mi" || token.HasElements || token.Value.Length != 1
+            || MathMlTokenStyleContract.ResolveEffectiveVariant(token) is not ("bold" or "italic" or "bold-italic")
+            || (string?)token.Attribute("data-mjx-alternate") == "1"
+            || ResolveNativeGlyphAuthority(token) is not null)
+            return false;
+        var scalar = token.Value[0];
+        // Alphabet-specific Greek and explicit alternate glyphs keep their
+        // established authorities. This is the existing native symbol tuple,
+        // selected before adding weight/slant, not a Unicode-font fallback.
+        if (TryEuclidMathOneGreekVariantEncoded8(scalar, out _)
+            || !(scalar > 0x7F || IsMathematicalSymbolScalar(scalar)))
+            return false;
+        return TryResolveLegacyMathTypeGlyph(scalar, out mtCode, out typeface, out encoded8)
+            && typeface is TypefaceSymbol or TypefaceMtExtra;
     }
 
     private static bool MatchesExplicitFontSpec(XElement element, string variant)
     {
+        if (TryGetBasicStyledLegacyIdentifierGlyph(element, out _, out _, out _)) return false;
         var local = element.Name.LocalName;
         var scalars = EnumerateBmpScalars(element.Value).ToArray();
         if (scalars.Length == 0) return false;
+        if (local == "mo" && scalars.Length > 1 && scalars.All(IsLetterScalar)
+            && variant is "bold" or "italic" or "bold-italic")
+            return MathMlTokenStyleContract.ResolveEffectiveVariant(element) == variant;
 
         if (variant == "normal")
         {
-            // The native Lower/Upper Greek faces inherit equation preferences;
-            // selecting their glyph position does not encode an explicit upright
-            // request. Bind Greek identifiers to the same Unicode text-font
-            // contract used for explicit bold-italic Greek, with style bits zero.
-            // Do not replace ordinary/default Greek or symbol/operator faces.
+            // Explicit upright alphabetic identifiers need their own font style:
+            // the built-in Text face reads back as prose and merges neighboring
+            // identifiers across math spaces. Greek faces also inherit slant
+            // from preferences. Bind Latin/Greek identifiers to the existing
+            // Times New Roman contract with style bits zero; keep prose, mixed
+            // literals, default Greek and symbol/operator mappings unchanged.
             return local == "mi"
                 && string.Equals(((string?)element.Attribute("mathvariant"))?.Trim(),
                     "normal", StringComparison.OrdinalIgnoreCase)
-                && scalars.All(scalar => IsLowerGreek(scalar) || IsUpperGreek(scalar)
+                && scalars.All(scalar => scalar <= 0x7F && IsLetterScalar(scalar)
+                    || IsLowerGreek(scalar) || IsUpperGreek(scalar)
                     || TryEuclidMathOneGreekVariantEncoded8(scalar, out _));
         }
         if (local == "mn")
             return string.Equals(((string?)element.Attribute("mathvariant"))?.Trim(), variant, StringComparison.OrdinalIgnoreCase);
-        // Ordinary identifier bold/italic retain the built-in native styles;
-        // numbers require explicit styles because Number is otherwise upright.
-        if (variant is "bold" or "italic") return false;
+        // Built-in Greek faces inherit equation preferences: UpperGreek is
+        // commonly upright, so it cannot encode an explicit italic request.
+        // Use the same explicit Times font/style contract as upright Greek.
+        // Leave unstyled Greek and ordinary Latin identifier preferences alone.
+        if (variant is "bold" or "italic")
+            return variant == "italic" && local == "mi"
+                && string.Equals(((string?)element.Attribute("mathvariant"))?.Trim(),
+                    variant, StringComparison.OrdinalIgnoreCase)
+                && scalars.All(scalar => IsLowerGreek(scalar) || IsUpperGreek(scalar));
         if (local == "mi")
         {
             if (string.Equals(
@@ -3165,7 +3411,12 @@ internal static partial class MathTypeMtefCodec
                     // strict standalone semantic gate. MathType's native
                     // function run is the matching MTEF representation for an
                     // upright alphabetic operator and round-trips as one run.
-                    EmitFunctionRun(operatorValue, output);
+                {
+                    if (MathMlTokenStyleContract.ResolveEffectiveVariant(element) is "bold" or "italic" or "bold-italic")
+                        EmitIdentifier(element, output);
+                    else
+                        EmitFunctionRun(operatorValue, output);
+                }
                 else
                     EmitOperator(element, output);
                 break;
@@ -3174,7 +3425,7 @@ internal static partial class MathTypeMtefCodec
                 EmitText(element.Value, TypefaceText, output);
                 break;
             case "mspace":
-                EmitCharacter(' ', TypefaceSpace, output);
+                EmitMathSpace(element, output);
                 break;
             case "mfrac":
                 EmitFraction(element, output);
@@ -3590,6 +3841,7 @@ internal static partial class MathTypeMtefCodec
         var over = NormalizeAccentMark(children[1].Value.Trim());
         var embellishmentBody = UnwrapSingleTokenAccentBody(children[0]);
         if (embellishmentBody is not null
+            && !MathMlAccentGeometry.IsStretchy(children[1])
             && TryEmitSingleCharacterEmbellishment(embellishmentBody, over, output)) return;
         switch (over)
         {
@@ -4042,7 +4294,7 @@ internal static partial class MathTypeMtefCodec
         EmitTemplateHeader(selector, 0, output);
         EmitLine(body, output);
         var mark = NormalizeAccentMark(sourceMark.Value.Trim());
-        var expanding = !IsFalseMathMlBoolean((string?)sourceMark.Attribute("stretchy"));
+        var expanding = MathMlAccentGeometry.IsStretchy(sourceMark);
         var combining = mark switch { "^" => 0x0302, "~" => 0x0303, "⌢" or "⏜" => 0x2322, _ => 0 };
         if (expanding && combining != 0)
             EmitScalar(combining, TypefaceFence, output);
@@ -4716,21 +4968,6 @@ internal static partial class MathTypeMtefCodec
             out var parsedExplicitTypeface)
             ? parsedExplicitTypeface
             : (int?)null;
-        var preservedMtCode = int.TryParse(
-            (string?)element.Attribute("data-mtef-mtcode"),
-            NumberStyles.Integer,
-            CultureInfo.InvariantCulture,
-            out var parsedPreservedMtCode)
-            ? parsedPreservedMtCode
-            : (int?)null;
-        var preservedEncoded8 = int.TryParse(
-            (string?)element.Attribute("data-mtef-encoded8"),
-            NumberStyles.Integer,
-            CultureInfo.InvariantCulture,
-            out var parsedPreservedEncoded8)
-            && parsedPreservedEncoded8 is >= 0 and <= byte.MaxValue
-                ? (byte?)parsedPreservedEncoded8
-                : null;
         for (var scalarIndex = 0; scalarIndex < scalars.Length; scalarIndex++)
         {
             var originalScalar = scalars[scalarIndex];
@@ -4753,15 +4990,15 @@ internal static partial class MathTypeMtefCodec
 
             if (explicitTypeface is not null
                 && scalars.Length == 1
-                && preservedMtCode.HasValue)
+                && TryEmitPreservedCharacter(element, explicitTypeface.Value, output, embellishments))
+                continue;
+
+            if (explicitTypeface is not null && scalars.Length == 1
+                && ResolveNativeGlyphAuthority(element) is { } nativeGlyph)
             {
-                EmitScalar(
-                    preservedMtCode.Value,
-                    explicitTypeface.Value,
-                    output,
-                    includeEncoded8: preservedEncoded8.HasValue,
-                    embellishments: embellishments,
-                    encoded8Override: preservedEncoded8);
+                EmitScalar(nativeGlyph.MtCode, explicitTypeface.Value, output,
+                    includeEncoded8: true, embellishments: embellishments,
+                    encoded8Override: nativeGlyph.Encoded8);
                 continue;
             }
 
@@ -5428,13 +5665,12 @@ internal static partial class MathTypeMtefCodec
         }
 
         if (element.Value.Length == 1
-            && int.TryParse((string?)element.Attribute("data-mtef-mtcode"), NumberStyles.Integer,
-                CultureInfo.InvariantCulture, out var preservedCode))
+            && TryEmitPreservedCharacter(element, explicitTypeface.Value, output))
+            return;
+        if (ResolveNativeGlyphAuthority(element) is { } nativeGlyph)
         {
-            byte? encoded = byte.TryParse((string?)element.Attribute("data-mtef-encoded8"), out var position)
-                ? position : null;
-            EmitScalar(preservedCode, explicitTypeface.Value, output,
-                includeEncoded8: encoded.HasValue, encoded8Override: encoded);
+            EmitScalar(nativeGlyph.MtCode, explicitTypeface.Value, output,
+                includeEncoded8: true, encoded8Override: nativeGlyph.Encoded8);
             return;
         }
         foreach (var scalar in EnumerateBmpScalars(element.Value))
@@ -5623,6 +5859,20 @@ internal static partial class MathTypeMtefCodec
         }
     }
 
+    private static bool IsVerifiedMtExtraOperator(int scalar, int encoded)
+    {
+        // MT Extra also contains alphabetic identifiers (ell, hbar, blackboard
+        // letters). Only invert an already verified operator CHAR mapping;
+        // the font name alone must never turn all of its glyphs into operators.
+        if (!IsMathematicalSymbolScalar(scalar)) return false;
+        var character = new List<byte>();
+        EmitOperator(((char)scalar).ToString(), character);
+        return character.Count == 6 && character[0] == RecordChar
+            && character[1] == CharEncoded8 && character[2] == TypefaceMtExtra + 128
+            && (character[3] | character[4] << 8) == scalar
+            && (encoded < 0 || encoded == character[5]);
+    }
+
     private static void EmitText(string value, int typeface, List<byte> output)
     {
         foreach (var scalar in EnumerateBmpScalars(value))
@@ -5655,6 +5905,39 @@ internal static partial class MathTypeMtefCodec
     private static void EmitCharacter(char character, int typeface, List<byte> output) =>
         EmitScalar(character, typeface, output);
 
+    // The semantic MTCode and the font's encoded position are independent.
+    // Keep presence and width from a native CHAR instead of coercing every
+    // font position to encoded8 or inventing a missing MTCode on rewrite.
+    private static bool TryEmitPreservedCharacter(
+        XElement element,
+        int typeface,
+        List<byte> output,
+        IReadOnlyList<byte>? embellishments = null)
+    {
+        var omitMtCode = IsTrueMathMlBoolean((string?)element.Attribute("data-mtef-no-mtcode"));
+        var codeAttribute = element.Attribute("data-mtef-mtcode");
+        if (codeAttribute is null && !omitMtCode) return false;
+
+        int ReadPosition(string name, int maximum)
+        {
+            if (!int.TryParse((string?)element.Attribute(name), NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out var value) || value < 0 || value > maximum)
+                throw new InvalidDataException($"Invalid preserved MathType character attribute {name}.");
+            return value;
+        }
+
+        var scalar = omitMtCode ? 0 : ReadPosition("data-mtef-mtcode", ushort.MaxValue);
+        byte? encoded8 = element.Attribute("data-mtef-encoded8") is null
+            ? null : (byte?)ReadPosition("data-mtef-encoded8", byte.MaxValue);
+        ushort? encoded16 = element.Attribute("data-mtef-encoded16") is null
+            ? null : (ushort?)ReadPosition("data-mtef-encoded16", ushort.MaxValue);
+        EmitScalar(scalar, typeface, output, includeEncoded8: encoded8.HasValue,
+            embellishments: embellishments, encoded8Override: encoded8,
+            functionStart: IsTrueMathMlBoolean((string?)element.Attribute("data-mtef-function-start")),
+            encoded16Override: encoded16, omitMtCode: omitMtCode);
+        return true;
+    }
+
     private static void EmitScalar(
         int scalar,
         int typeface,
@@ -5662,21 +5945,37 @@ internal static partial class MathTypeMtefCodec
         bool includeEncoded8 = false,
         IReadOnlyList<byte>? embellishments = null,
         byte? encoded8Override = null,
-        bool functionStart = false)
+        bool functionStart = false,
+        ushort? encoded16Override = null,
+        bool omitMtCode = false)
     {
+        if (includeEncoded8 && encoded16Override.HasValue)
+            throw new InvalidDataException("MathType CHAR cannot have both 8-bit and 16-bit font positions.");
+        if (omitMtCode && !includeEncoded8 && !encoded16Override.HasValue)
+            throw new InvalidDataException("MathType CHAR without MTCode requires a font position.");
         if (scalar < 0 || scalar > 0xFFFF)
             throw new InvalidDataException(
                 $"MathType MTEF v5 MTCode writer does not yet support non-BMP scalar U+{scalar:X}.");
         var hasEmbellishments = embellishments is { Count: > 0 };
         var options = (byte)(includeEncoded8 ? CharEncoded8 : 0);
+        if (encoded16Override.HasValue) options |= CharEncoded16;
+        if (omitMtCode) options |= CharNoMtCode;
         if (hasEmbellishments) options |= CharHasEmbellishment;
         if (functionStart) options |= CharFunctionStart;
         output.Add(RecordChar);
         output.Add(options);
         WriteSigned(output, typeface);
-        output.Add((byte)(scalar & 0xFF));
-        output.Add((byte)((scalar >> 8) & 0xFF));
+        if (!omitMtCode)
+        {
+            output.Add((byte)(scalar & 0xFF));
+            output.Add((byte)((scalar >> 8) & 0xFF));
+        }
         if (includeEncoded8) output.Add(encoded8Override ?? (byte)scalar);
+        if (encoded16Override.HasValue)
+        {
+            output.Add((byte)(encoded16Override.Value & 0xFF));
+            output.Add((byte)(encoded16Override.Value >> 8));
+        }
         if (!hasEmbellishments) return;
         foreach (var embellishment in embellishments!)
             output.AddRange(new byte[] { RecordEmbellishment, 0, embellishment });
@@ -5728,6 +6027,8 @@ internal static partial class MathTypeMtefCodec
         };
         private readonly List<FontDefinition> _fontDefinitions = new();
         private readonly List<FontStyleDefinition> _fontStyleDefinitions = new();
+        private readonly Dictionary<int, byte> _builtInCharacterStyles = new();
+        private readonly Dictionary<int, int> _builtInFontDefinitions = new();
         private int _position;
 
         internal MtefStructureReader(byte[] data, int position)
@@ -5740,10 +6041,16 @@ internal static partial class MathTypeMtefCodec
         private void ScanPrefixDefinitions(int rootPosition)
         {
             var prefix = ReadPrefixLayout(_data);
+            foreach (var binding in ReadNativeCharacterStyleBindings(_data).Where(item => item.Key > 0))
+            {
+                _builtInFontDefinitions[binding.Key] = binding.Value.FontDefinition;
+                _builtInCharacterStyles[binding.Key] = binding.Value.CharacterStyle;
+            }
             if (rootPosition != prefix.Root)
                 throw new InvalidDataException("MTEF structural reader received a non-root offset.");
             foreach (var record in prefix.Records)
             {
+                if (record.Type == RecordEqnPrefs) continue;
                 if (record.Type is not RecordEncodingDef and not RecordFontDef and not RecordFontStyleDef)
                     continue;
                 _position = record.Start;
@@ -6095,14 +6402,18 @@ internal static partial class MathTypeMtefCodec
             }
         }
 
-        private XElement ReadCharacter()
+        private XElement ReadCharacter() => ReadCharacter(out _);
+
+        private XElement ReadCharacter(out int nativeTypeface)
         {
             Expect(RecordChar);
             var options = ReadByte();
             SkipNudge(options);
             var typeface = ReadSigned();
+            nativeTypeface = typeface;
             int scalar = -1;
-            if ((options & 0x20) == 0)
+            var hasMtCode = (options & CharNoMtCode) == 0;
+            if (hasMtCode)
             {
                 Require(_data, _position, 2);
                 scalar = _data[_position] | (_data[_position + 1] << 8);
@@ -6110,7 +6421,7 @@ internal static partial class MathTypeMtefCodec
             }
             int encoded = -1;
             if ((options & CharEncoded8) != 0) encoded = ReadByte();
-            if ((options & 0x10) != 0)
+            if ((options & CharEncoded16) != 0)
             {
                 Require(_data, _position, 2);
                 encoded = _data[_position] | (_data[_position + 1] << 8);
@@ -6128,15 +6439,18 @@ internal static partial class MathTypeMtefCodec
             string? explicitMathVariant = null;
             byte explicitCharacterStyle = 0;
             var explicitEuclidOperator = false;
+            NativeGlyphAuthority? explicitGlyph = null;
             if (typeface < 0)
             {
                 explicitMathVariant = ResolveExplicitMathVariant(
                     -typeface,
                     scalar,
                     encoded,
+                    hasMtCode,
                     out var explicitText,
                     out explicitCharacterStyle,
-                    out explicitEuclidOperator);
+                    out explicitEuclidOperator,
+                    out explicitGlyph);
                 if (!string.IsNullOrEmpty(explicitText)) text = explicitText;
                 if (explicitEuclidOperator)
                 {
@@ -6161,20 +6475,49 @@ internal static partial class MathTypeMtefCodec
                 }
             }
 
+            if (typeface >= 0
+                && _builtInFontDefinitions.TryGetValue(typeface, out var builtInFont)
+                && _builtInCharacterStyles.TryGetValue(typeface, out var builtInStyle)
+                && builtInFont > 0 && builtInFont <= _fontDefinitions.Count)
+            {
+                var definition = _fontDefinitions[builtInFont - 1];
+                var encoding = definition.EncodingIndex > 0 && definition.EncodingIndex <= _encodingDefinitions.Count
+                    ? _encodingDefinitions[definition.EncodingIndex - 1] : null;
+                explicitGlyph = ResolveNativeGlyphAuthority(
+                    definition.Name, encoding, scalar, encoded, hasMtCode);
+                if (explicitGlyph is not null)
+                {
+                    text = ((char)explicitGlyph.Scalar).ToString();
+                    explicitCharacterStyle = builtInStyle;
+                    explicitMathVariant = NativeGlyphCharacterVariant(builtInStyle, explicitGlyph);
+                }
+            }
+
             XElement token;
-            if (typeface < 0)
+            if (typeface >= 0 && explicitGlyph is not null)
+            {
+                token = new XElement(explicitGlyph.TokenClass, text);
+                if (explicitMathVariant is not null)
+                    token.SetAttributeValue("mathvariant", explicitMathVariant);
+                if (explicitGlyph.Alternate)
+                    token.SetAttributeValue("data-mjx-alternate", "1");
+                SetPreservedCharacterAttributes(token, typeface, options, scalar, encoded);
+                if (explicitCharacterStyle != 0)
+                    token.SetAttributeValue("data-mtef-character-style", explicitCharacterStyle);
+            }
+            else if (typeface < 0)
             {
                 if (explicitEuclidOperator)
                 {
                     // Several MathType relation/harpoon glyphs live in explicit
                     // Euclid Math One/Two styles. They remain mathematical
                     // operators even though their MTEF typeface is negative.
-                    token = new XElement("mo", text);
+                    token = new XElement(explicitGlyph?.TokenClass ?? "mo", text);
+                    if (explicitGlyph?.Alternate == true)
+                        token.SetAttributeValue("data-mjx-alternate", "1");
                     if (!string.IsNullOrWhiteSpace(explicitMathVariant))
                         token.SetAttributeValue("mathvariant", explicitMathVariant);
-                    token.SetAttributeValue("data-mtef-explicit-typeface", typeface);
-                    token.SetAttributeValue("data-mtef-mtcode", scalar);
-                    if (encoded >= 0) token.SetAttributeValue("data-mtef-encoded8", encoded);
+                    SetPreservedCharacterAttributes(token, typeface, options, scalar, encoded);
                     if (explicitCharacterStyle != 0)
                         token.SetAttributeValue("data-mtef-character-style", explicitCharacterStyle);
                 }
@@ -6187,10 +6530,7 @@ internal static partial class MathTypeMtefCodec
                     token = new XElement(text.All(char.IsDigit) ? "mn" : "mi", text);
                     if (!string.IsNullOrWhiteSpace(explicitMathVariant))
                         token.SetAttributeValue("mathvariant", explicitMathVariant);
-                    token.SetAttributeValue("data-mtef-explicit-typeface", typeface);
-                    token.SetAttributeValue("data-mtef-mtcode", scalar);
-                    if (encoded >= 0)
-                        token.SetAttributeValue("data-mtef-encoded8", encoded);
+                    SetPreservedCharacterAttributes(token, typeface, options, scalar, encoded);
                     if (explicitCharacterStyle != 0)
                         token.SetAttributeValue(
                             "data-mtef-character-style",
@@ -6241,8 +6581,17 @@ internal static partial class MathTypeMtefCodec
                 // a plain MT Extra CHAR at position 0x43 is amalg instead.
                 token = new XElement("mo", "⨿");
             }
+            else if (typeface == TypefaceMtExtra && IsVerifiedMtExtraOperator(scalar, encoded))
+                token = new XElement("mo", text);
             else if (typeface == TypefaceSpace)
-                token = new XElement("mspace", new XAttribute("width", "0.2em"));
+            {
+                var space = hasMtCode
+                    ? MathSpaceContract.FindNativeSpace(scalar)
+                    : null;
+                token = new XElement("mspace", new XAttribute("width", space?.MathMlWidth ?? "0.2em"));
+                if (space is not null)
+                    SetPreservedCharacterAttributes(token, typeface, options, scalar, encoded);
+            }
             else if (typeface == TypefaceSymbol
                 && scalar is 0x2135 or 0x2118 or 0x211C or 0x2111)
             {
@@ -6251,6 +6600,12 @@ internal static partial class MathTypeMtefCodec
                 // Preserve that token class without misclassifying ℜ/ℑ as
                 // Fraktur solely from their Unicode letterlike code points.
                 token = new XElement("mi", text);
+                // Fixed letterlike glyphs still inherit the actual Symbol style
+                // from equation preferences. A plain glyph must not become an
+                // implicit-italic single mi merely because its tag is mi.
+                if (_builtInCharacterStyles.TryGetValue(TypefaceSymbol, out var fixedStyle))
+                    token.SetAttributeValue("mathvariant", fixedStyle switch
+                    { 1 => "bold", 2 => "italic", 3 => "bold-italic", _ => "normal" });
             }
             else if (typeface == TypefaceSymbol)
                 token = new XElement("mo", text);
@@ -6275,6 +6630,21 @@ internal static partial class MathTypeMtefCodec
             }
             else
                 token = new XElement("mi", text);
+
+            if (typeface > 0 && token.Name.LocalName == "mi"
+                && (token.Attribute("mathvariant") is null
+                    || TryNativeCharacterStyle((string?)token.Attribute("mathvariant"), out _))
+                && _builtInCharacterStyles.TryGetValue(typeface, out var actualIdentifierStyle)
+                && _builtInFontDefinitions.TryGetValue(typeface, out var actualIdentifierFont)
+                && actualIdentifierFont > 0 && actualIdentifierFont <= _fontDefinitions.Count)
+            {
+                // A native logical face is an adapter binding, not a MathML
+                // default. Materialize its actual style and keep the font-scoped
+                // CHAR tuple so unchanged native read/write remains byte exact.
+                token.SetAttributeValue("mathvariant", NativeCharacterVariant(actualIdentifierStyle));
+                SetPreservedCharacterAttributes(token, typeface, options, scalar, encoded);
+                token.SetAttributeValue("data-mtef-character-style", actualIdentifierStyle);
+            }
 
             // A CHAR contains a fixed glyph; actual scalable delimiters are
             // decoded by the TMPL path as mfenced. Preserve that distinction for
@@ -6310,7 +6680,7 @@ internal static partial class MathTypeMtefCodec
                     "mover",
                     new XAttribute("accent", "true"),
                     token,
-                    new XElement("mo", mark));
+                    new XElement("mo", new XAttribute("stretchy", "false"), mark));
             }
             if (leftPrimes.Length > 0)
             {
@@ -6325,27 +6695,60 @@ internal static partial class MathTypeMtefCodec
             return token;
         }
 
+        private static void SetPreservedCharacterAttributes(
+            XElement token, int typeface, byte options, int scalar, int encoded)
+        {
+            token.SetAttributeValue("data-mtef-explicit-typeface", typeface);
+            if ((options & CharNoMtCode) != 0)
+                token.SetAttributeValue("data-mtef-no-mtcode", "true");
+            else
+                token.SetAttributeValue("data-mtef-mtcode", scalar);
+            if ((options & CharEncoded16) != 0)
+                token.SetAttributeValue("data-mtef-encoded16", encoded);
+            else if ((options & CharEncoded8) != 0)
+                token.SetAttributeValue("data-mtef-encoded8", encoded);
+            if ((options & CharFunctionStart) != 0)
+                token.SetAttributeValue("data-mtef-function-start", "true");
+        }
+
         private string? ResolveExplicitMathVariant(
             int styleIndex,
             int scalar,
             int encoded,
+            bool hasMtCode,
             out string text,
             out byte characterStyle,
-            out bool euclidOperator)
+            out bool euclidOperator,
+            out NativeGlyphAuthority? nativeGlyph)
         {
             text = encoded is >= 0x21 and <= 0x7E
                 ? ((char)encoded).ToString()
                 : ((char)scalar).ToString();
             string? fontName = null;
+            string? encodingName = null;
             characterStyle = 0;
             euclidOperator = false;
+            nativeGlyph = null;
             if (styleIndex > 0 && styleIndex <= _fontStyleDefinitions.Count)
             {
                 var style = _fontStyleDefinitions[styleIndex - 1];
                 characterStyle = style.CharacterStyle;
                 if (style.FontDefinitionIndex > 0
                     && style.FontDefinitionIndex <= _fontDefinitions.Count)
-                    fontName = _fontDefinitions[style.FontDefinitionIndex - 1].Name;
+                {
+                    var definition = _fontDefinitions[style.FontDefinitionIndex - 1];
+                    fontName = definition.Name;
+                    if (definition.EncodingIndex > 0 && definition.EncodingIndex <= _encodingDefinitions.Count)
+                        encodingName = _encodingDefinitions[definition.EncodingIndex - 1];
+                }
+            }
+
+            nativeGlyph = ResolveNativeGlyphAuthority(fontName, encodingName, scalar, encoded, hasMtCode);
+            if (nativeGlyph is not null)
+            {
+                text = ((char)nativeGlyph.Scalar).ToString();
+                euclidOperator = nativeGlyph.TokenClass == "mo";
+                return NativeGlyphCharacterVariant(characterStyle, nativeGlyph);
             }
 
             var font = fontName ?? string.Empty;
@@ -6648,10 +7051,15 @@ internal static partial class MathTypeMtefCodec
                 {
                     var main = ReadNextLineSlot();
                     XElement? selectedAccent = null;
+                    int? selectedAccentTypeface = null;
                     if (selector is TemplateHat or TemplateTilde or TemplateArc)
                     {
                         SkipFormattingRecords();
-                        if (Peek() == RecordChar) selectedAccent = ReadCharacter();
+                        if (Peek() == RecordChar)
+                        {
+                            selectedAccent = ReadCharacter(out var typeface);
+                            selectedAccentTypeface = typeface;
+                        }
                     }
                     ConsumeRemainingTemplateObjects();
                     var body = CollapseRow(main);
@@ -6679,6 +7087,11 @@ internal static partial class MathTypeMtefCodec
                             ? selector == TemplateTilde ? "~" : selector == TemplateArc ? "⌢" : "^"
                             : NormalizeAccentMark(selectedAccent.Value);
                         var accent = new XElement("mo", mark);
+                        if (selectedAccentTypeface == TypefaceFence)
+                            accent.SetAttributeValue("stretchy", "true");
+                        else if (selectedAccentTypeface is >= TypefaceText and <= TypefaceFarEastText
+                            || (selectedAccentTypeface < 0 && selectedAccent?.Attribute("data-mtef-explicit-typeface") is null))
+                            accent.SetAttributeValue("stretchy", "false");
                         var variant = (string?)selectedAccent?.Attribute("mathvariant");
                         if (!string.IsNullOrWhiteSpace(variant)) accent.SetAttributeValue("mathvariant", variant);
                         node = new XElement("mover", new XAttribute("accent", "true"), body, accent);

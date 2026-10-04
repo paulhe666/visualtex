@@ -144,54 +144,12 @@ internal static class WordNativeOmmlSemanticComparer
             additionalValidOmmlContentSignatures);
     }
 
-    internal static string ComputeMathMlSemanticSignature(
-        string mathMl)
+    internal static string ComputeMathMlSemanticSignature(string mathMl)
     {
-        if (string.IsNullOrWhiteSpace(mathMl))
-            return string.Empty;
-
-        var normalized =
-            XDocument.Parse(
-                mathMl,
-                LoadOptions.PreserveWhitespace);
-        foreach (var token in
-                 normalized
-                     .Descendants()
-                     .Where(element =>
-                         element.Name.LocalName == "mi"))
-        {
-            var variant =
-                ((string?)token.Attribute(
-                    "mathvariant")
-                 ?? string.Empty)
-                .Trim()
-                .ToLowerInvariant();
-            var normalizedVariant =
-                variant switch
-                {
-                    "bold-italic" =>
-                        "bold",
-                    "sans-serif-bold-italic" =>
-                        "bold-sans-serif",
-                    "sans-serif-italic" =>
-                        "sans-serif",
-                    _ =>
-                        variant,
-                };
-            if (!string.Equals(
-                    variant,
-                    normalizedVariant,
-                    StringComparison.Ordinal))
-            {
-                token.SetAttributeValue(
-                    "mathvariant",
-                    normalizedVariant);
-            }
-        }
-
-        return MathTypeMtefCodec.SemanticSignature(
-            normalized.Root?.ToString(
-                SaveOptions.DisableFormatting)
-            ?? mathMl);
+        if (string.IsNullOrWhiteSpace(mathMl)) return string.Empty;
+        // The shared canonicalizer resolves actual MathML style defaults.
+        // Removing italic from mi variants both hides real style loss and makes
+        // the same styled mathematical glyph differ after a mi/mo projection.
+        return MathTypeMtefCodec.SemanticSignature(mathMl);
     }
 }

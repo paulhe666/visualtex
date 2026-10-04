@@ -1,5 +1,10 @@
 <Project>
   <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)MathSpaceContract.cs" Link="MathTypeCore\MathSpaceContract.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathMlTokenStyleContract.cs" Link="MathTypeCore\MathMlTokenStyleContract.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathMlColorContract.cs" Link="MathTypeCore\MathMlColorContract.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathMlAccentGeometry.cs" Link="MathTypeCore\MathMlAccentGeometry.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathMlExplicitFenceContract.cs" Link="MathTypeCore\MathMlExplicitFenceContract.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefCodec.cs" Link="MathTypeCore\MathTypeMtefCodec.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefCodec.FontSize.cs" Link="MathTypeCore\MathTypeMtefCodec.FontSize.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleInterop.cs" Link="MathTypeCore\MathTypeOleInterop.cs" />

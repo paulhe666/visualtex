@@ -1,0 +1,5 @@
+import {readFileSync,writeFileSync,existsSync} from 'node:fs';import {latexToMathMl} from '../src/export/runtime.ts';import {DOMParser} from '@xmldom/xmldom';
+const base='../../artifacts/conversion-symbol-audit-20261002/cp252-function-recovery/';const r=JSON.parse(readFileSync(base+'editor-cycle.json','utf8'));
+function leaves(xml:string){const d=new DOMParser().parseFromString(xml,'application/xml');return Array.from(d.getElementsByTagName('*')).filter(x=>['mi','mo','mn','mtext'].includes(x.localName!)).map(x=>[x.localName,x.textContent,x.getAttribute('mathvariant')||null]);}
+for(const row of r.rows){row.expectedEdited=await latexToMathMl(row.source+'+z',false);row.actualEdited=await latexToMathMl(row.edited,false);row.passed=JSON.stringify(leaves(row.expectedEdited))===JSON.stringify(leaves(row.actualEdited));}
+const path=base+'editor-reparse.json';if(existsSync(path))throw new Error('Refusing overwrite');writeFileSync(path,JSON.stringify(r,null,2));console.log(JSON.stringify(r.rows.map((x:any)=>({source:x.source,edited:x.edited,passed:x.passed}))));

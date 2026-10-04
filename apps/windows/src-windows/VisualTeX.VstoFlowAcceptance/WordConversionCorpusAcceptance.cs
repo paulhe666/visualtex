@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Xml.Linq;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
 using VisualTeX.WordVsto;
@@ -30,7 +31,7 @@ internal static partial class Program
             var after = service.CaptureFormulaFormatConversionPlan(true, targetMode, FormulaOleContract.WordOmmlMode);
             AssertEqual(before.Targets.Count, after.Targets.Count, "Saved output count");
             for (var index = 0; index < before.Targets.Count; index++)
-                AssertExternalConversionFormula(before.Targets[index], after.Targets[index], "Saved output", index);
+                AssertExternalConversionFormula(before.Targets[index], after.Targets[index], artifactRoot, "Saved output", index);
         }
         File.WriteAllText(Path.Combine(artifactRoot, "verification.json"), JsonSerializer.Serialize(new { Status = "Passed", Count = before.Targets.Count, Source = source, Target = output }));
     }
@@ -59,7 +60,7 @@ internal static partial class Program
             label + " visible numbers: " + string.Join(",", numbers));
     }
     private static void AssertExternalConversionFormula(WordFormulaFormatConversionTarget before,
-        WordFormulaFormatConversionTarget after, string label, int index)
+        WordFormulaFormatConversionTarget after, string root, string label, int index)
     {
         AssertEqual(before.DisplayMode, after.DisplayMode, label + " display " + index);
         if (after.SourceMathMl is null) { AssertEqual(before.Latex, after.Latex, label + " durable LaTeX " + index); return; }
@@ -75,17 +76,27 @@ internal static partial class Program
             }
         }
         AssertTrue(expected is not null, label + " missing expected MathML " + index);
-        AssertEqual(WordNativeOmmlSemanticComparer.ComputeMathMlSemanticSignature(expected!),
-            WordNativeOmmlSemanticComparer.ComputeMathMlSemanticSignature(after.SourceMathMl), label + " semantics " + index);
+        AssertConversionMathMl(expected!, after.SourceMathMl, before.Latex, root, label, index);
     }
     private sealed class ConversionCorpusItem
     {
         internal string Latex = "";
         internal string MathMl = "";
+        internal string DisplayMode = "block";
     }
     private static List<ConversionCorpusItem> LoadConversionCorpus(string path)
     {
         using var json = JsonDocument.Parse(File.ReadAllText(path));
+        if (json.RootElement.TryGetProperty("acceptanceCorpus", out var acceptanceCorpus) && acceptanceCorpus.GetBoolean())
+        {
+            return json.RootElement.GetProperty("formulas").EnumerateArray()
+                .Select(item => new ConversionCorpusItem
+                {
+                    Latex = item.GetProperty("latex").GetString()!,
+                    MathMl = item.GetProperty("mathMl").GetString()!,
+                    DisplayMode = item.TryGetProperty("displayMode", out var mode) ? mode.GetString()! : "block"
+                }).ToList();
+        }
         var wanted = new HashSet<string>(new[] {
             @"a\parallel b", @"a\shortparallel b", @"a\nparallel b", @"a\nshortparallel b",
             @"a\mid b", @"a\shortmid b", @"a\emptyset b", @"a\varnothing b",
@@ -119,8 +130,11 @@ internal static partial class Program
             foreach (var formula in corpus)
             {
                 SelectDocumentEnd(document);
-                var session = CreateOmmlMathTypeAcceptanceSession(formula.MathMl, "block", true, FormulaOleContract.WordOmmlMode);
+                var inline = formula.DisplayMode == "inline";
+                if (inline) application.Selection.TypeText("INLINE before ");
+                var session = CreateOmmlMathTypeAcceptanceSession(formula.MathMl, formula.DisplayMode, !inline, FormulaOleContract.WordOmmlMode);
                 service.InsertOmml(session, formula.MathMl);
+                if (inline) { SelectDocumentEnd(document); application.Selection.TypeText(" after END-INLINE"); }
                 SelectDocumentEnd(document);
                 application.Selection.TypeParagraph();
             }
@@ -140,8 +154,11 @@ internal static partial class Program
         {
             Environment.SetEnvironmentVariable("VISUALTEX_VSTO_REDRAW_NUMBER_DISPLAY_FORMULAS", "1");
             using var host = new WordPerformanceHost(null);
+            WordEquationNumbering.SetEquationNumberFormatPreference(host.Document, EquationNumberFormat.ContinuousId);
             host.Document.Content.Text = "VisualTeX format conversion scaling source\r"
-                + string.Join("\r", corpus.Select(item => "$$" + item.Latex + "$$")) + "\r";
+                + string.Join("\r", corpus.Select(item => item.DisplayMode == "inline"
+                    ? "INLINE before $" + item.Latex + "$ after END-INLINE"
+                    : "$$" + item.Latex + "$$")) + "\r";
             host.AddIn.OnRedrawDocumentToOle(new object());
             WaitForAddInIdleFast(host.AddIn, TimeSpan.FromMinutes(20));
             var service = new WordFormulaService(host.Application);
@@ -159,18 +176,61 @@ internal static partial class Program
         else
         {
             var expected = before.SourceMathMl ?? item.MathMl;
-            var expectedSignature = WordNativeOmmlSemanticComparer.ComputeMathMlSemanticSignature(expected);
-            var actualSignature = WordNativeOmmlSemanticComparer.ComputeMathMlSemanticSignature(after.SourceMathMl);
-            File.WriteAllText(Path.Combine(root, label + "-semantic-" + index + ".json"),
-                JsonSerializer.Serialize(new { item.Latex, expected, actual = after.SourceMathMl, expectedSignature, actualSignature }));
-            AssertEqual(expectedSignature, actualSignature, label + " structural semantics " + index);
+            AssertConversionMathMl(expected, after.SourceMathMl, item.Latex, root, label, index);
         }
+    }
+    private static void AssertConversionMathMl(string expected, string actual, string latex,
+        string root, string label, int index)
+    {
+        var expectedSignature = WordNativeOmmlSemanticComparer.ComputeMathMlSemanticSignature(expected);
+        var actualSignature = WordNativeOmmlSemanticComparer.ComputeMathMlSemanticSignature(actual);
+        File.WriteAllText(Path.Combine(root, label + "-semantic-" + index + ".json"),
+            JsonSerializer.Serialize(new { Latex = latex, expected, actual, expectedSignature, actualSignature,
+                presentation = new { expected = DescribeConversionPresentation(expected), actual = DescribeConversionPresentation(actual) } }));
+        AssertEqual(expectedSignature, actualSignature, label + " structural semantics " + index);
+    }
+    // Presentation evidence is separate from the content signature: that
+    // signature intentionally ignores spaces and cannot certify visual fidelity.
+    // Record role/style/glyph/width with source positions; do not equate differing
+    // DOM paths after legal native token splitting or fence normalization.
+    private static object DescribeConversionPresentation(string mathMl)
+    {
+        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        var tokens = new List<object>();
+        var spaces = new List<object>();
+        var precedingText = new System.Text.StringBuilder();
+        foreach (var node in document.Descendants())
+        {
+            var kind = node.Name.LocalName;
+            if (node.Name.NamespaceName != "" && node.Name.NamespaceName != "http://www.w3.org/1998/Math/MathML") continue;
+            var path = string.Join("/", node.AncestorsAndSelf().Reverse().Select(part =>
+                part.Name.LocalName + "[" + part.ElementsBeforeSelf().Count() + "]"));
+            if (kind == "mspace")
+            {
+                var width = MathSpaceContract.ParseWidth((string?)node.Attribute("width"));
+                spaces.Add(new { path, precedingText = precedingText.ToString(), width.SourceWidth,
+                    width.CanonicalWidth, sourceSupport = width.SourceSupport.ToString(), width.NativeSupport,
+                    nativeCode = (string?)node.Attribute("data-mtef-mtcode"), width.UnsupportedReason });
+            }
+            else if (kind is "mi" or "mo" or "mn" or "mtext" or "ms")
+            {
+                var declared = MathMlTokenStyleContract.ResolveDeclaredVariant(node);
+                tokens.Add(new { path, kind, text = node.Value, declared,
+                    effective = MathMlTokenStyleContract.ResolveEffectiveVariant(node, declared),
+                    alternate = (string?)node.Attribute("data-mjx-alternate"),
+                    texClass = (string?)node.Attribute("data-mjx-texclass") ?? (string?)node.Attribute("data-mtef-tex-class"),
+                    whitespaceOnly = kind == "mtext" && string.IsNullOrWhiteSpace(node.Value) });
+                precedingText.Append(node.Value);
+            }
+        }
+        return new { scope = "Token/space descriptors only; pixels and structural alignment remain separate acceptance", tokens, spaces };
     }
     private static class ConversionCaptureNative
     {
         [DllImport("user32.dll")] internal static extern IntPtr GetAncestor(IntPtr window, uint flags);
         [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(IntPtr window);
         [DllImport("user32.dll")] internal static extern bool ShowWindow(IntPtr window, int command);
+        [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
     }
     private static void CaptureConversionCorpusScreenshots(WordPerformanceHost host,
         IList<WordFormulaFormatConversionTarget> formulas, string root, string label)
@@ -183,7 +243,12 @@ internal static partial class Program
             window.View.Zoom.Percentage = 150;
             var handle = ConversionCaptureNative.GetAncestor(new IntPtr(window.Hwnd), 2);
             ConversionCaptureNative.ShowWindow(handle, 9);
+            dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!);
+            try { shell.SendKeys("%"); }
+            finally { Marshal.ReleaseComObject(shell); }
             ConversionCaptureNative.SetForegroundWindow(handle);
+            host.Document.Activate();
+            AssertEqual(handle, ConversionCaptureNative.GetForegroundWindow(), "Owned Word must be foreground for pixel capture");
             for (var index = 0; index < formulas.Count; index++)
             {
                 var formula = formulas[index];
@@ -199,6 +264,7 @@ internal static partial class Program
                     width = Math.Min(width + 60, screen.Right - left); height = Math.Min(height + 50, screen.Bottom - top);
                     using var bitmap = new Bitmap(width, height);
                     using var graphics = Graphics.FromImage(bitmap);
+                    AssertEqual(handle, ConversionCaptureNative.GetForegroundWindow(), "Owned Word foreground changed during pixel capture");
                     graphics.CopyFromScreen(left, top, 0, 0, bitmap.Size);
                     bitmap.Save(Path.Combine(root, label + "-formula-" + (index + 1).ToString("000") + ".png"), ImageFormat.Png);
                 }

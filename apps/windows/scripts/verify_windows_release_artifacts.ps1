@@ -442,7 +442,7 @@ foreach ($requiredHookMarker in @(
     'no ocr*, wheel or private-Python resources will be written',
     'Function VisualTeXEnsureNativeRendererStopped',
     'Function un.VisualTeXEnsureNativeRendererStopped',
-    'VisualTeX.NativeRender service',
+    'VisualTeX native-render service',
     'no MathType.exe process enumeration',
     'visualtex-runtime-maintenance.ps1',
     'Call VisualTeXEnsureNativeRendererStopped',

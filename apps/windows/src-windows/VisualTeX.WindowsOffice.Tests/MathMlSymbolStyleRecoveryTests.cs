@@ -21,6 +21,19 @@ public sealed class MathMlSymbolStyleRecoveryTests
     public void PreservesInnerNormalReset()
         => Assert.Equal(@"\parallel", MathMlToLatexConverter.Convert("<math><mstyle mathvariant='italic'><mo mathvariant='normal'>∥</mo></mstyle></math>"));
 
+    [Theory]
+    [InlineData("ℏ", "", @"\mathrm{\hslash}")]
+    [InlineData("ℏ", " data-mjx-alternate='1'", @"\mathrm{\hbar}")]
+    [InlineData("∠", "", @"\mathrm{\angle}")]
+    public void PreservesExplicitNormalIdentifierIndependentOfCommandDefault(
+        string symbol, string attributes, string expected)
+    {
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(
+            "<math><mi mathvariant='normal'" + attributes + ">" + symbol + "</mi></math>"));
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(
+            "<math><mstyle mathvariant='normal'><mi" + attributes + ">" + symbol + "</mi></mstyle></math>"));
+    }
+
     [Fact]
     public void LeavesOrdinaryIdentifierDefaultsUnwrapped()
         => Assert.Equal(@"x\alpha", MathMlToLatexConverter.Convert("<math><mi>x</mi><mi>α</mi></math>"));

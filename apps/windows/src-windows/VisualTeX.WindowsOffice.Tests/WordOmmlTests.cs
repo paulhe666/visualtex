@@ -100,36 +100,20 @@ public sealed class WordOmmlTests
             + "<mi mathvariant=\"normal\">n</mi><mi>x</mi></mrow>"
             + "<mrow><mi>n</mi><mo>→</mo><mi>∞</mi></mrow>"
             + "<mi mathvariant=\"normal\">e</mi></math>";
-        var omml =
-            $"<m:oMath xmlns:m=\"{MathNamespace}\">"
-            + "<m:r><m:rPr><m:nor/></m:rPr><m:t>sin</m:t></m:r>"
-            + "<m:r><m:t>x</m:t></m:r>"
-            + "<m:r><m:t>n→∞</m:t></m:r>"
-            + "<m:r><m:rPr><m:nor/></m:rPr><m:t>e</m:t></m:r>"
-            + "</m:oMath>";
 
-        var normalized = WordOmmlConverter.NormalizeExplicitUprightRuns(omml, mathMl);
-        var document = XDocument.Parse(normalized);
+        // Exercise the source-token projection, rather than asking a text-global
+        // postprocessor to reinterpret synthetic Normal Text runs as mathematics.
+        var document = XDocument.Parse(WordOmmlConverter.TransformMathMlToOmml(mathMl));
         XNamespace math = MathNamespace;
         var runs = document.Descendants(math + "r").ToArray();
-        XElement Run(string text) => runs.Single(run =>
-            string.Concat(run.Elements(math + "t").Select(node => node.Value)) == text);
-
-        Assert.Equal(
-            "p",
-            Run("sin").Element(math + "rPr")
-                ?.Element(math + "sty")
-                ?.Attribute(math + "val")
-                ?.Value);
-        Assert.Equal(
-            "p",
-            Run("e").Element(math + "rPr")
-                ?.Element(math + "sty")
-                ?.Attribute(math + "val")
-                ?.Value);
-        Assert.Null(
-            Run("n→∞").Element(math + "rPr")
-                ?.Element(math + "sty"));
+        string Text(XElement run) => string.Concat(run.Elements(math + "t").Select(node => node.Value));
+        string? Style(XElement run) => (string?)run.Element(math + "rPr")?.Element(math + "sty")?.Attribute(math + "val");
+        Assert.Equal("sinxn→∞e", string.Concat(runs.Select(Text)));
+        Assert.Contains(runs, run => Text(run) == "sin" && Style(run) == "p");
+        Assert.Contains(runs, run => Text(run) == "e" && Style(run) == "p");
+        Assert.Contains(runs, run => Text(run).Contains("n", StringComparison.Ordinal)
+            && !Text(run).Contains("sin", StringComparison.Ordinal) && Style(run) != "p");
+        Assert.DoesNotContain(runs, run => run.Element(math + "rPr")?.Element(math + "nor") is not null);
     }
 
     [Theory]

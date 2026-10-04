@@ -451,7 +451,9 @@ internal sealed class MathTypeLocalEditScope : IDisposable
                 mark.SetRange(component.End, component.End + 1);
                 if (mark.Text != "\r" || mark.End > owner.End)
                     throw new InvalidOperationException("The imported transport mark is not locally owned.");
-                mark.Delete();
+                // Range.Delete can also consume adjacent whitespace when Word
+                // joins paragraphs. Replace only this proven transport mark.
+                mark.Text = string.Empty;
                 Release(paragraphs); paragraphs = null;
                 Release(owner); owner = CurrentParagraph();
                 paragraphs = owner.Paragraphs;
@@ -461,7 +463,14 @@ internal sealed class MathTypeLocalEditScope : IDisposable
             if (paragraphs.Count != _replacementParagraphCount
                 || !string.Equals(left.Text ?? string.Empty, _replacementLeftText, StringComparison.Ordinal)
                 || !string.Equals(right.Text ?? string.Empty, _replacementRightText, StringComparison.Ordinal))
-                throw new InvalidOperationException("The native replacement changed text or paragraph boundaries outside its exact source.");
+                throw new InvalidOperationException(
+                    $"The native replacement changed text or paragraph boundaries outside its exact source. "
+                    + $"owner={owner.Start}:{owner.End}; component={component.Start}:{component.End}; "
+                    + $"paragraphs={paragraphs.Count}/{_replacementParagraphCount}; "
+                    + $"leftLength={(left.Text ?? string.Empty).Length}/{_replacementLeftText.Length}; "
+                    + $"rightLength={(right.Text ?? string.Empty).Length}/{_replacementRightText.Length}; "
+                    + $"leftEqual={string.Equals(left.Text ?? string.Empty, _replacementLeftText, StringComparison.Ordinal)}; "
+                    + $"rightEqual={string.Equals(right.Text ?? string.Empty, _replacementRightText, StringComparison.Ordinal)}.");
 
             // This left context is read-only evidence, just as in Capture. It is
             // never used as the destination of InsertXML or a delete operation.

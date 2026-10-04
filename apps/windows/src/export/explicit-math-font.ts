@@ -1,5 +1,6 @@
 import { Configuration } from "mathjax-full/js/input/tex/Configuration.js";
-import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
+import { TEXCLASS, type MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
+import { MmlMi } from "mathjax-full/js/core/MmlTree/MmlNodes/mi.js";
 import type ParseOptions from "mathjax-full/js/input/tex/ParseOptions.js";
 
 // Record style at token creation, where the real TeX group environment is
@@ -15,10 +16,17 @@ Configuration.create(EXPLICIT_MATH_FONT_PACKAGE, {
     const createToken = factory.get("token");
     factory.set("token", (factory, kind, def = {}, text = "") => {
       const node = createToken(factory, kind, def, text);
-      const font = factory.configuration.parser.stack.env.font;
+      const environment = factory.configuration.parser.stack.env;
+      const font = environment.font;
       const variant = font === "-tex-mathit" ? "italic" : String(font ?? "");
-      if (basicVariants.has(variant) &&
-          (kind === "mo" || (kind === "mi" && /^\p{Sm}+$/u.test(text)))) {
+      const declared = String(def.mathvariant ?? "");
+      // Explicit basic styles apply to a mathematical identifier regardless of
+      // whether it was typed literally or obtained from a fixed-family command.
+      // Preserve intrinsic alphabets and TeX text-italic, and keep operator-name
+      // contents under their own parser authority.
+      const identifier = kind === "mi" && MmlMi.singleCharacter.test(text) &&
+        !environment.operatorLetters && (!declared || basicVariants.has(declared));
+      if (basicVariants.has(variant) && (kind === "mo" || identifier)) {
         explicitVariants.set(node, variant);
       }
       return node;
@@ -31,7 +39,8 @@ Configuration.create(EXPLICIT_MATH_FONT_PACKAGE, {
     data.root.walkTree((raw) => {
       const node = raw as MmlNode;
       const variant = explicitVariants.get(node);
-      if (variant) node.attributes.set("mathvariant", variant);
+      if (variant && !(node.kind === "mi" && node.getProperty("texClass") === TEXCLASS.OP))
+        node.attributes.set("mathvariant", variant);
     });
   }, -10]],
 });

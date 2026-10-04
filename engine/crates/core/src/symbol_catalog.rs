@@ -11,6 +11,24 @@ pub struct SymbolSpec {
     pub class: AtomClass,
 }
 
+/// A command-specific glyph alternate, separate from its semantic Unicode value.
+/// These are real bundled AMS cmap slots, as used by MathLive's AMS definitions;
+/// they are never substituted Unicode values or scaled ordinary symbol outlines.
+#[derive(Debug, Clone, Copy)]
+pub struct AlternateSymbolSpec {
+    pub command: &'static str,
+    pub value: &'static str,
+    pub tex_font_role: &'static str,
+    pub font_character: char,
+}
+pub const ALTERNATE_SYMBOLS: &[AlternateSymbolSpec] = &[
+    AlternateSymbolSpec { command: "\\shortparallel", value: "∥", tex_font_role: "ams", font_character: '\u{2225}' },
+    AlternateSymbolSpec { command: "\\nshortparallel", value: "∦", tex_font_role: "ams", font_character: '\u{E007}' },
+];
+pub fn alternate(command: &str) -> Option<&'static AlternateSymbolSpec> {
+    ALTERNATE_SYMBOLS.iter().find(|spec| spec.command == command)
+}
+
 // The same declaration drives the public inventory and compiled lookup. This
 // avoids a second hand-maintained list that can incorrectly report support.
 macro_rules! symbols {
@@ -72,6 +90,13 @@ symbols! {
     "\\gg" => ("≫", Relation),
     "\\parallel" => ("∥", Relation),
     "\\nparallel" => ("∦", Relation),
+    "\\shortparallel" => ("∥", Relation),
+    "\\nshortparallel" => ("∦", Relation),
+    // txfonts/Fourier slanted relations use U+2AFD, not italic U+2225.
+    // lwarp source manual: fourier and common-mathjax-newpxtxmath mappings.
+    "\\varparallel" | "\\parallelslant" => ("⫽", Relation),
+    // unicode-math assigns the same character a binary-operator spelling.
+    "\\sslash" => ("⫽", Binary),
     "\\perp" => ("⊥", Relation),
     "\\mid" => ("∣", Relation),
     "\\nmid" => ("∤", Relation),
@@ -206,6 +231,9 @@ symbols! {
 /// ASCII typing takes the existing constant-time path and never scans this list.
 pub fn literal_class(value: &str) -> Option<AtomClass> {
     if matches!(value, "|" | "‖" | "⊥") { return Some(AtomClass::Ordinary); }
+    // Raw U+2AFD follows its Unicode operator class, independent of whether a
+    // relation alias appears first in the command inventory above.
+    if value == "⫽" { return Some(AtomClass::Binary); }
     if value.is_ascii() || value.chars().count() != 1 { return None; }
     SYMBOLS.iter().find(|entry| entry.value == value).map(|entry| entry.class)
 }

@@ -1735,7 +1735,7 @@ internal static partial class WordOmmlConverter
                 targetType)
                 insertedMath.Type =
                     targetType;
-            insertedMath.BuildUp();
+            // The imported oMath is already structured. Do not reparse its runs.
 
             result =
                 insertedMath.Range.Duplicate;
@@ -2247,7 +2247,7 @@ internal static partial class WordOmmlConverter
             // of a paragraph may be promoted to wdOMathDisplay by Word itself.
             // Do not add a trailing sentinel or force that native promotion back
             // to inline. Explicit display requests remain authoritative above.
-            insertedMath.BuildUp();
+            // Preserve the parsed OMML tree: BuildUp can reinterpret fixed runs.
 
             if (singleParagraphTableCellBeforeInsert
                 && TryRemoveRedundantEmptyTableParagraph(
@@ -2594,8 +2594,8 @@ internal static partial class WordOmmlConverter
                 : WdOMathType.wdOMathInline;
             if (insertedMath.Type != targetType && (display || !allowWordNativeInlinePromotion))
                 insertedMath.Type = targetType;
-            if (allowWordNativeInlinePromotion)
-                insertedMath.BuildUp();
+            // Native inline promotion controls host type, not equation parsing.
+            // InsertXML has already materialized the prepared OMML structure.
 
             result = insertedMath.Range.Duplicate;
 
@@ -3069,7 +3069,7 @@ internal static partial class WordOmmlConverter
             selected.Type = display
                 ? WdOMathType.wdOMathDisplay
                 : WdOMathType.wdOMathInline;
-            selected.BuildUp();
+            // This is parsed OMML, not linear equation text requiring BuildUp.
             var result = selected.Range.Duplicate;
             return result;
         }
@@ -3096,6 +3096,9 @@ internal static partial class WordOmmlConverter
         mathMl = NormalizeMathMlPrescripts(mathMl);
         mathMl = NormalizeMathMlAccents(mathMl);
         mathMl = NormalizeNaryArguments(mathMl);
+        mathMl = NormalizeMathMlTokenStyleAuthority(mathMl);
+        mathMl = MathMlColorContract.MaterializeInheritedColors(mathMl);
+        mathMl = ProjectMathMlSpacesForOmml(mathMl).MathMl;
         var placeholderResult = ReplaceExtendedIntegralsWithOfficePlaceholders(mathMl);
         mathMl = placeholderResult.MathMl;
         var display = IsBlockMathMl(mathMl);
@@ -3238,57 +3241,64 @@ internal static partial class WordOmmlConverter
 
     internal static string NormalizeFencedMathMlTables(string mathMl)
     {
-        // Conservative fast gate; the parsed expanded name below is authoritative.
-        // A namespace alias such as p:mtable must enter the same normalization.
+        // Both legacy fenced tables and explicit MathJax INNER/OPEN/CLOSE rows
+        // need native delimiter structure. Expanded XML names remain authoritative.
         if (string.IsNullOrWhiteSpace(mathMl)
-            || mathMl.IndexOf("mtable", StringComparison.Ordinal) < 0)
+            || mathMl.IndexOf("mrow", StringComparison.Ordinal) < 0)
             return mathMl;
         var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
         XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        // Only the legacy table fallback uses character recognition. Ordinary
+        // content requires the producer's explicit group and endpoint roles.
         var fallbackFenceCharacters = new HashSet<string>(StringComparer.Ordinal)
         {
             "(", ")", "[", "]", "{", "}", "|", "‖", "⌈", "⌉", "⌊", "⌋",
             "⟨", "⟩", "/", "\\", "↑", "↓", "↕", "⇑", "⇓", "⇕",
         };
 
-        bool IsFenceOperator(XElement element, string expectedTexClass)
+        bool IsLegacyTableFence(XElement element, string expectedTexClass)
         {
-            if (element.Name != presentationMath + "mo") return false;
-            var texClass = element.Attribute("data-mjx-texclass")?.Value;
-            if (string.Equals(texClass, expectedTexClass, StringComparison.OrdinalIgnoreCase))
-                return true;
+            if (element.Name != presentationMath + "mo"
+                || !MathMlExplicitFenceContract.IsProjectableEndpoint(element)) return false;
+            if (MathMlExplicitFenceContract.HasTexClass(element, expectedTexClass)) return true;
             if (string.Equals(element.Attribute("fence")?.Value, "true", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(element.Attribute("stretchy")?.Value, "true", StringComparison.OrdinalIgnoreCase))
                 return true;
             return fallbackFenceCharacters.Contains(element.Value);
         }
 
-        foreach (var row in document.Descendants(presentationMath + "mrow").ToList())
+        // Normalize nested groups before their parents. Retaining each source
+        // row also preserves inherited attributes and applied-function boundaries.
+        foreach (var row in document.Descendants(presentationMath + "mrow").Reverse().ToList())
         {
             var children = row.Elements().ToArray();
-            if (children.Length != 3
-                || children[1].Name != presentationMath + "mtable"
-                || !IsFenceOperator(children[0], "OPEN")
-                || !IsFenceOperator(children[2], "CLOSE"))
-                continue;
-            var open = children[0].Value;
-            var close = children[2].Value;
-            if (open.Length == 0 && close.Length == 0)
-                continue;
+            if (children.Length < 2) continue;
+            var first = children[0];
+            var last = children[children.Length - 1];
+            var explicitFence = MathMlExplicitFenceContract.TryGetRow(row, out _, out _, out _);
+            var tableBody = children.Length == 3
+                && children[1].Name == presentationMath + "mtable";
+            var legacyTableFence = tableBody
+                && IsLegacyTableFence(first, "OPEN") && IsLegacyTableFence(last, "CLOSE");
+            if (!explicitFence && !legacyTableFence) continue;
+            var open = first.Value;
+            var close = last.Value;
+            if (open.Length == 0 && close.Length == 0) continue;
 
-            // MathJax serializes matrices and other fenced multi-line structures
-            // as OPEN mo + mtable + CLOSE mo. For one-sided delimiters (notably
-            // cases and \left...\right.) the invisible side is an empty stretchy
-            // mo. Office's MML2OMML transform treats the visible mo as an ordinary
-            // glyph unless the structure is normalized to mfenced first, which
-            // makes Word emit one native m:d whose delimiter grows with the table.
-            row.ReplaceWith(
-                new XElement(
-                    presentationMath + "mfenced",
-                    new XAttribute("open", open),
-                    new XAttribute("close", close),
-                    new XAttribute("separators", string.Empty),
-                    new XElement(children[1])));
+            // mfenced treats each child as a separate operand. Keep the entire
+            // original body in one mrow so no implicit separators/operand splits
+            // are introduced. A sole mtable remains direct for matrix validation
+            // and existing Office table handling.
+            var bodyNodes = row.Nodes().Where(node => node != first && node != last).ToArray();
+            var operand = tableBody
+                ? new XElement(children[1])
+                : new XElement(presentationMath + "mrow", bodyNodes);
+            row.ReplaceNodes(new XElement(
+                presentationMath + "mfenced",
+                new XAttribute("open", open),
+                new XAttribute("close", close),
+                new XAttribute("separators", string.Empty),
+                operand));
         }
         return document.ToString(SaveOptions.DisableFormatting);
     }
@@ -3335,111 +3345,130 @@ internal static partial class WordOmmlConverter
                 row.Elements(presentationMath + "mtd").Count() == columns);
     }
 
+    private const string OmmlSpaceTextAttribute = "data-visualtex-omml-space";
+
+    internal static (string MathMl, IReadOnlyList<MathSpaceOmmlCapability> Capabilities)
+        ProjectMathMlSpacesForOmml(string mathMl)
+    {
+        if (mathMl.IndexOf("mspace", StringComparison.Ordinal) < 0)
+            return (mathMl, Array.Empty<MathSpaceOmmlCapability>());
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        var capabilities = new List<MathSpaceOmmlCapability>();
+        foreach (var space in document.Descendants(presentationMath + "mspace"))
+        {
+            // Never trust a caller-supplied projection attribute. Only the
+            // shared exact-width contract may select native space characters.
+            space.Attribute(OmmlSpaceTextAttribute)?.Remove();
+            var capability = MathSpaceContract.DescribeOmmlSpace(
+                (string?)space.Attribute("width"), (string?)space.Attribute("height"),
+                (string?)space.Attribute("depth"), (string?)space.Attribute("linebreak"));
+            capabilities.Add(capability);
+            if (capability.CanProject)
+                space.SetAttributeValue(OmmlSpaceTextAttribute, capability.Text);
+            // Unsupported dimensions retain stock behavior. The returned audit
+            // limits expose that gap; do not silently round, reject the whole
+            // formula, or pretend it was an exact spacing conversion.
+        }
+        return (document.ToString(SaveOptions.DisableFormatting), capabilities);
+    }
+
+    private static void RestoreOmmlExplicitSpaceTokens(XElement mathMlRoot)
+    {
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        foreach (var parent in mathMlRoot.DescendantsAndSelf().ToArray())
+        {
+            var children = parent.Elements().ToArray();
+            for (var index = 0; index < children.Length; index++)
+            {
+                var first = children[index];
+                if (first.Name != presentationMath + "mo" || first.HasElements
+                    || MathSpaceContract.FindOmmlSpaceText(first.Value) is null)
+                    continue;
+
+                var text = first.Value;
+                var identity = MathSpaceContract.FindOmmlSpaceText(text)!;
+                var last = index;
+                // Word may coalesce math runs, and stock reverse XSL emits one
+                // mo per space character. Decode only adjacent pure space
+                // tokens with identical attributes, never prose or mixed text.
+                for (var next = index + 1; next < children.Length; next++)
+                {
+                    var candidate = children[next];
+                    if (candidate.Name != presentationMath + "mo" || candidate.HasElements
+                        || !first.Attributes().Select(a => (a.Name, a.Value))
+                            .SequenceEqual(candidate.Attributes().Select(a => (a.Name, a.Value)))
+                        || MathSpaceContract.FindOmmlSpaceText(candidate.Value) is null
+                        || text.Length + candidate.Value.Length > MathSpaceContract.MaximumOmmlSpaceTextLength)
+                        break;
+                    var combined = text + candidate.Value;
+                    var combinedIdentity = MathSpaceContract.FindOmmlSpaceText(combined);
+                    if (combinedIdentity is null) break;
+                    text = combined;
+                    identity = combinedIdentity;
+                    last = next;
+                }
+                first.ReplaceWith(new XElement(presentationMath + "mspace",
+                    first.Attributes().Where(attribute => attribute.Name != "width"),
+                    new XAttribute("width", identity.MathMlWidth)));
+                for (var remove = index + 1; remove <= last; remove++)
+                    children[remove].Remove();
+                index = last;
+            }
+        }
+    }
+
+    private const string OmmlRunRoleAttribute = "data-visualtex-omml-run-role";
+
+    internal static string NormalizeMathMlTokenStyleAuthority(string mathMl)
+    {
+        if (string.IsNullOrWhiteSpace(mathMl)) return mathMl;
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        foreach (var token in document.Descendants().Where(element =>
+                     element.Name.Namespace == presentationMath
+                     && element.Name.LocalName is "mi" or "mo" or "mn" or "mtext" or "ms"))
+        {
+            // Resolve once on the source tree. Both Office run grouping and run
+            // property emission consume this same effective style, before token
+            // text is flattened. In particular, an ordinary mo is normal while
+            // a single-character mi is italic.
+            var variant = MathMlTokenStyleContract.ResolveEffectiveVariant(token);
+            if (variant is null) continue;
+            token.SetAttributeValue("mathvariant", variant);
+
+            // Equal typography does not make prose, an identifier, a number,
+            // or a named operator interchangeable. Preserve these boundaries
+            // while allowing adjacent tokens of the same role and style to
+            // share a run. This private projection attribute is consumed by the
+            // app-owned stylesheet and is never copied into the OMML result.
+            var role = token.Name.LocalName == "mo" && ContainsUnicodeLetter(token.Value)
+                ? "named-operator"
+                : token.Name.LocalName;
+            token.SetAttributeValue(OmmlRunRoleAttribute, role);
+        }
+        return document.Root?.ToString(SaveOptions.DisableFormatting) ?? mathMl;
+    }
+
     internal static string NormalizeExplicitUprightRuns(string omml, string mathMl)
     {
         if (string.IsNullOrWhiteSpace(omml) || string.IsNullOrWhiteSpace(mathMl))
             return omml;
-
-        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
-        var mathMlDocument = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
-
-        static string CanonicalToken(string value) =>
-            new(value
-                .Where(character =>
-                    !char.IsWhiteSpace(character)
-                    && character is not '\u200B' and not '\u200C' and not '\u2060' and not '\uFEFF')
-                .ToArray());
-
-        static bool ContainsLetter(string value) => value.Any(char.IsLetter);
-
-        // m:nor is Office Math's "Normal Text" switch. It is correct for genuine
-        // prose produced by MathML mtext / LaTeX \\text{...}, but it must not be
-        // used merely to make a mathematical identifier upright. Office's stock
-        // MML2OMML transform unfortunately emits m:nor for several named functions
-        // (sin/log/exp/...) and older VisualTeX code also converted explicit
-        // mathvariant=normal identifiers (d/e/i from \\mathrm) to m:nor. Both cases
-        // bypass the document m:mathFont and make the token look like body text.
-        // Collect only source nodes that carry mathematical, not prose, semantics
-        // and normalize those target runs back to plain/upright Office Math.
-        var uprightTokens = new HashSet<string>(StringComparer.Ordinal);
-        var conditionallyUprightSingleTokens =
-            new HashSet<string>(StringComparer.Ordinal);
-        var uprightWords = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var element in mathMlDocument.Descendants())
-        {
-            if (element.Name.Namespace != presentationMath
-                || element.Name == presentationMath + "mtext")
-                continue;
-
-            var text = element.Value;
-            if (string.IsNullOrWhiteSpace(text) || !ContainsLetter(text))
-                continue;
-
-            var variant = element.Attribute("mathvariant")?.Value ?? string.Empty;
-            var explicitlyUpright =
-                variant.IndexOf("normal", StringComparison.OrdinalIgnoreCase) >= 0
-                || variant.IndexOf("upright", StringComparison.OrdinalIgnoreCase) >= 0;
-            var namedIdentifier = element.Name == presentationMath + "mi"
-                && CanonicalToken(text).Length > 1;
-            var namedOperator = element.Name == presentationMath + "mo"
-                && string.Equals(
-                    element.Attribute("data-mjx-texclass")?.Value,
-                    "OP",
-                    StringComparison.OrdinalIgnoreCase);
-            var appliedFunction = element.Name == presentationMath + "mi"
-                && element.ElementsAfterSelf()
-                    .FirstOrDefault(candidate => candidate.Name.Namespace == presentationMath)
-                    is XElement next
-                && next.Name == presentationMath + "mo"
-                && string.Equals(next.Value, "\u2061", StringComparison.Ordinal);
-
-            if (!explicitlyUpright && !namedIdentifier && !namedOperator && !appliedFunction)
-                continue;
-
-            var canonical = CanonicalToken(text);
-            if (canonical.Length == 1)
-                conditionallyUprightSingleTokens.Add(canonical);
-            else if (canonical.Length > 1)
-                uprightTokens.Add(canonical);
-            foreach (Match match in Regex.Matches(text, @"\p{L}+"))
-            {
-                // A single upright source letter is not a document-wide style
-                // declaration. OMML reverse conversion can represent "sin" as
-                // three normal mi tokens; adding "n" here used to upright every
-                // later variable n in the same formula. Multi-letter names remain
-                // safe for the coalesced-run matcher below.
-                if (match.Value.Length > 1)
-                    uprightWords.Add(match.Value);
-            }
-        }
-        if (uprightTokens.Count == 0
-            && conditionallyUprightSingleTokens.Count == 0)
-            return omml;
-
-        var ommlDocument = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        var document = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
         XNamespace math = MathNamespace;
         XNamespace word = WordNamespace;
-
-        void MakeMathUpright(XElement run)
+        foreach (var run in document.Descendants(math + "r"))
         {
             var properties = run.Element(math + "rPr");
-            if (properties is null)
-            {
-                properties = new XElement(math + "rPr");
-                run.AddFirst(properties);
-            }
-            properties.Element(math + "nor")?.Remove();
-            var plainStyle = properties.Element(math + "sty");
-            if (plainStyle is null)
-            {
-                plainStyle = new XElement(math + "sty");
-                properties.AddFirst(plainStyle);
-            }
-            plainStyle.SetAttributeValue(math + "val", "p");
-
-            // These are still mathematical tokens, but spell checking them as
-            // prose is distracting. w:noProof does not change glyph selection, so
-            // keep it while the actual glyphs continue to come from m:mathFont.
+            // The source token projection now provides the style to Office.
+            // Only an actual plain mathematical run permits upright cleanup.
+            // Omitted style is italic, not evidence of an upright named word;
+            // m:nor alone belongs to prose and must remain Normal Text.
+            if ((string?)properties?.Element(math + "sty")?.Attribute(math + "val") != "p")
+                continue;
+            properties!.Element(math + "nor")?.Remove();
+            var text = string.Concat(run.Elements(math + "t").Select(element => element.Value));
+            if (!ContainsUnicodeLetter(text)) continue;
             var wordProperties = run.Element(word + "rPr");
             if (wordProperties is null)
             {
@@ -3449,73 +3478,7 @@ internal static partial class WordOmmlConverter
             if (wordProperties.Element(word + "noProof") is null)
                 wordProperties.Add(new XElement(word + "noProof"));
         }
-
-        bool HasExistingUprightMathStyle(XElement run)
-        {
-            var properties = run.Element(math + "rPr");
-            if (properties is null) return false;
-            if (properties.Element(math + "nor") is not null) return true;
-            return string.Equals(
-                properties.Element(math + "sty")?.Attribute(math + "val")?.Value,
-                "p",
-                StringComparison.OrdinalIgnoreCase);
-        }
-
-        foreach (var run in ommlDocument.Descendants(math + "r").ToList())
-        {
-            var text = string.Concat(run.Elements(math + "t").Select(element => element.Value));
-            if (string.IsNullOrEmpty(text)) continue;
-            var canonicalRunText = CanonicalToken(text);
-            var isConditionallyUprightRun =
-                canonicalRunText.Length > 0
-                && HasExistingUprightMathStyle(run)
-                && canonicalRunText.All(character =>
-                    conditionallyUprightSingleTokens.Contains(character.ToString()));
-            if (uprightTokens.Contains(canonicalRunText)
-                || isConditionallyUprightRun)
-            {
-                MakeMathUpright(run);
-                continue;
-            }
-
-            // Office sometimes coalesces limit-style operators into a surrounding
-            // ordinary run (for example "...(x)+lim(x)+max(x)..."). In that case
-            // changing the whole run to plain style would incorrectly upright x and
-            // other variables. Split only the named operator words and preserve all
-            // original characters/properties on the surrounding segments.
-            var matches = Regex.Matches(text, @"\p{L}+")
-                .Cast<Match>()
-                .Where(match => uprightWords.Contains(match.Value))
-                .ToArray();
-            if (matches.Length == 0) continue;
-
-            var replacements = new List<XElement>();
-            var cursor = 0;
-            void AddSegment(string segment, bool upright)
-            {
-                if (segment.Length == 0) return;
-                var replacement = new XElement(run);
-                replacement.Elements(math + "t").Remove();
-                var textElement = new XElement(math + "t", segment);
-                if (char.IsWhiteSpace(segment[0])
-                    || char.IsWhiteSpace(segment[segment.Length - 1]))
-                    textElement.SetAttributeValue(XNamespace.Xml + "space", "preserve");
-                replacement.Add(textElement);
-                if (upright) MakeMathUpright(replacement);
-                replacements.Add(replacement);
-            }
-
-            foreach (var match in matches)
-            {
-                AddSegment(text.Substring(cursor, match.Index - cursor), upright: false);
-                AddSegment(match.Value, upright: true);
-                cursor = match.Index + match.Length;
-            }
-            AddSegment(text.Substring(cursor), upright: false);
-            run.ReplaceWith(replacements);
-        }
-
-        return ommlDocument.Root?.ToString(SaveOptions.DisableFormatting) ?? omml;
+        return document.Root?.ToString(SaveOptions.DisableFormatting) ?? omml;
     }
 
     internal static string NormalizeAppliedFunctionStructures(string omml, string mathMl)
@@ -4671,8 +4634,10 @@ internal static partial class WordOmmlConverter
         using var sourceText = new StringReader(omml);
         using var source = XmlReader.Create(sourceText, inputSettings);
         using var outputText = new StringWriter();
+        var arguments = new XsltArgumentList();
+        arguments.AddExtensionObject(UnicodeScalarXPathNamespace, new UnicodeScalarXPathFunctions());
         using (var output = XmlWriter.Create(outputText, outputSettings))
-            transform.Transform(source, output);
+            transform.Transform(source, arguments, output);
         var transformed = outputText.ToString();
         using var transformedText = new StringReader(transformed);
         using var transformedReader = XmlReader.Create(transformedText, inputSettings);
@@ -4697,6 +4662,7 @@ internal static partial class WordOmmlConverter
         RestoreOmmlLimitBaseSemantics(omml, canonicalRoot);
         RestoreOmmlScriptBaseRunSemantics(omml, canonicalRoot);
         RestoreOmmlFunctionApplicationRuns(omml, canonicalRoot);
+        RestoreOmmlExplicitSpaceTokens(canonicalRoot);
         canonicalRoot.SetAttributeValue("display", display ? "block" : "inline");
         return canonicalRoot.ToString(SaveOptions.DisableFormatting);
     }
@@ -4735,11 +4701,25 @@ internal static partial class WordOmmlConverter
             var targetAccent = targetAccents[index];
             var children = targetAccent.Elements().ToArray();
             if (children.Length < 2) continue;
-            children[1].ReplaceWith(
-                new XElement(
-                    mathMl + "mo",
-                    new XAttribute("accent", "true"),
-                    canonicalCharacter));
+            var restoredMark = new XElement(mathMl + "mo",
+                new XAttribute("accent", "true"), canonicalCharacter);
+            XNamespace word = WordNamespace;
+            var controlRun = sourceAccent.Element(officeMath + "accPr")?
+                .Element(officeMath + "ctrlPr")?.Element(word + "rPr");
+            var bold = controlRun?.Element(word + "b");
+            var italic = controlRun?.Element(word + "i");
+            if (bold is not null || italic is not null)
+            {
+                bool Enabled(XElement? property) => property is not null
+                    && (string?)property.Attribute(word + "val") is not ("0" or "false" or "off");
+                var variant = Enabled(bold)
+                    ? (Enabled(italic) ? "bold-italic" : "bold")
+                    : (Enabled(italic) ? "italic" : "normal");
+                restoredMark.SetAttributeValue("mathvariant", variant);
+            }
+            var color = MathMlColorContract.Normalize("#" + (string?)controlRun?.Element(word + "color")?.Attribute(word + "val"));
+            if (color is not null) restoredMark.SetAttributeValue("mathcolor", color);
+            children[1].ReplaceWith(restoredMark);
         }
     }
 
@@ -5110,24 +5090,8 @@ internal static partial class WordOmmlConverter
         {
             var baseSlot = script.Element(officeMath + "e");
             if (baseSlot is null) continue;
-            var visibleRuns = baseSlot
-                .Descendants(officeMath + "r")
-                .Where(run => run.Elements(officeMath + "t")
-                    .Any(text => !string.IsNullOrWhiteSpace(text.Value)))
-                .ToArray();
-            if (visibleRuns.Length != 1) continue;
-            var run = visibleRuns[0];
-            var properties = run.Element(officeMath + "rPr");
-            var style = properties?
-                .Element(officeMath + "sty")?
-                .Attribute(officeMath + "val")?
-                .Value;
-            var explicitNormal = properties?.Element(officeMath + "nor") is not null
-                || string.Equals(style, "p", StringComparison.OrdinalIgnoreCase);
-            if (!explicitNormal) continue;
-
             var baseText = string.Concat(
-                run.Elements(officeMath + "t").Select(text => text.Value));
+                baseSlot.Descendants(officeMath + "t").Select(text => text.Value));
             if (string.IsNullOrWhiteSpace(baseText)) continue;
 
             XName targetName;
@@ -5148,14 +5112,50 @@ internal static partial class WordOmmlConverter
                             StringComparison.Ordinal);
                 });
             if (target is null) continue;
+            // Claim the corresponding base even when no repair is required.
+            // A preceding prose/operator/mixed base with the same text must not
+            // steal a later upright identifier's target.
+            usedTargets.Add(target);
 
-            var targetChildren = target.Elements().ToArray();
-            targetChildren[0].ReplaceWith(
+            // This recovery joins one native identifier run split by Office's
+            // projection. A descendant run inside a radical, fraction or nested
+            // script does not own the enclosing base slot.
+            var baseContents = baseSlot.Elements()
+                .Where(element => element.Name != officeMath + "ePr")
+                .ToArray();
+            if (baseContents.Length != 1 || baseContents[0].Name != officeMath + "r")
+                continue;
+            var properties = baseContents[0].Element(officeMath + "rPr");
+            var projectedBase = target.Elements().First();
+            if (IsMathBooleanEnabled(properties, officeMath + "nor"))
+            {
+                // Normal Text is explicit role authority, including a prose
+                // symbol promoted by RestoreMathSymbolTextTokens earlier.
+                // Keep projected typography and wrappers while restoring prose.
+                foreach (var token in projectedBase.DescendantsAndSelf().Where(element =>
+                             element.Name == mathMl + "mi" || element.Name == mathMl + "mo"
+                             || element.Name == mathMl + "mn"))
+                    token.Name = mathMl + "mtext";
+                continue;
+            }
+            var style = (string?)properties?.Element(officeMath + "sty")?.Attribute(officeMath + "val");
+            if (!string.Equals(style, "p", StringComparison.OrdinalIgnoreCase)) continue;
+
+            // Plain style describes typography, not token role. Only a projected
+            // run of upright identifiers can be joined into an upright mi.
+            // Retain projected mo, mn, mtext and structural nodes unchanged.
+            if (projectedBase.DescendantsAndSelf().Any(element =>
+                    element.Name != mathMl + "mrow" && element.Name != mathMl + "mi"))
+                continue;
+            var identifiers = projectedBase.DescendantsAndSelf(mathMl + "mi").ToArray();
+            if (identifiers.Length == 0 || identifiers.Any(identifier =>
+                    MathMlTokenStyleContract.ResolveEffectiveVariant(identifier) != "normal"))
+                continue;
+            projectedBase.ReplaceWith(
                 new XElement(
                     mathMl + "mi",
                     new XAttribute("mathvariant", "normal"),
                     baseText));
-            usedTargets.Add(target);
         }
     }
 
@@ -7088,6 +7088,81 @@ internal static partial class WordOmmlConverter
         }
     }
 
+    private const string UnicodeScalarXPathNamespace = "urn:visualtex:unicode-scalar-xpath";
+
+    internal sealed class UnicodeScalarXPathFunctions
+    {
+        public double StringLength(string value)
+        {
+            var count = 0;
+            for (var index = 0; index < value.Length; count++)
+                index += char.IsSurrogatePair(value, index) ? 2 : 1;
+            return count;
+        }
+
+        public string Substring(string value, double start)
+            => Slice(value, RoundXPath(start), double.PositiveInfinity);
+
+        public string Substring(string value, double start, double length)
+        {
+            var first = RoundXPath(start);
+            return Slice(value, first, first + RoundXPath(length));
+        }
+
+        private static double RoundXPath(double value)
+        {
+            var rounded = Math.Round(value);
+            return value - rounded == 0.5 ? rounded + 1 : rounded;
+        }
+
+        private static string Slice(string value, double first, double end)
+        {
+            var result = new StringBuilder();
+            var position = 1;
+            for (var index = 0; index < value.Length; position++)
+            {
+                var count = char.IsSurrogatePair(value, index) ? 2 : 1;
+                if (position >= first && position < end) result.Append(value, index, count);
+                index += count;
+            }
+            return result.ToString();
+        }
+    }
+
+    internal static string RewriteUnicodeScalarXPath(string expression)
+    {
+        var result = new StringBuilder();
+        var quote = '\0';
+        for (var index = 0; index < expression.Length;)
+        {
+            var character = expression[index];
+            if (quote != '\0')
+            {
+                result.Append(character); index++;
+                if (character == quote) quote = '\0';
+            }
+            else if (character is '\'' or '"')
+            {
+                quote = character; result.Append(character); index++;
+            }
+            else if (char.IsLetter(character) || character == '_')
+            {
+                var start = index++;
+                while (index < expression.Length &&
+                    (char.IsLetterOrDigit(expression[index]) || "_-.:".IndexOf(expression[index]) >= 0)) index++;
+                var name = expression.Substring(start, index - start);
+                var next = index;
+                while (next < expression.Length && char.IsWhiteSpace(expression[next])) next++;
+                if (next < expression.Length && expression[next] == '(' &&
+                    (name == "substring" || name == "string-length"))
+                    result.Append("vtUnicode:").Append(name == "substring" ? "Substring" : "StringLength");
+                else result.Append(name);
+            }
+            else { result.Append(character); index++; }
+        }
+        return result.ToString();
+    }
+
     private static XslCompiledTransform LoadReverseTransform(string path)
     {
         // Office's legacy MathML projection deliberately discards styled
@@ -7096,6 +7171,28 @@ internal static partial class WordOmmlConverter
         // token/structure transform and leaving the Office installation intact.
         XNamespace xsl = "http://www.w3.org/1999/XSL/Transform";
         var stylesheet = XDocument.Load(path);
+        stylesheet.Root!.SetAttributeValue(XNamespace.Xmlns + "vtUnicode", UnicodeScalarXPathNamespace);
+        // The legacy token parser counts UTF-16 units on .NET. Its traversal
+        // must consume complete Unicode scalars, never half a surrogate pair.
+        var tokenParser = stylesheet.Descendants(xsl + "template")
+            .Single(element => (string?)element.Attribute("name") == "ParseMt");
+        foreach (var expression in tokenParser.DescendantsAndSelf().Attributes()
+                     .Where(attribute => attribute.Name.LocalName is "select" or "test"))
+            expression.Value = RewriteUnicodeScalarXPath(expression.Value);
+        // A literal operator in an OMML run has fixed glyph geometry. Preserve
+        // that at the tokenizer, where native provenance is still available,
+        // rather than letting MathML's operator dictionary invent stretching.
+        // ParseMt also creates accent marks: only its m:r/m:t context is a run.
+        // ParseEqArrMr is called exclusively for CreateEqArrRow's m:r branch;
+        // its current node is the containing equation row, not the run itself.
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+        tokenParser.Descendants(presentationMath + "mo").Single().AddFirst(
+            new XElement(xsl + "if", new XAttribute("test", "self::m:t[parent::m:r]"),
+                new XElement(xsl + "attribute", new XAttribute("name", "stretchy"), "false")));
+        stylesheet.Descendants(xsl + "template")
+            .Single(element => (string?)element.Attribute("name") == "ParseEqArrMr")
+            .Descendants(presentationMath + "mo").Single().AddFirst(
+                new XElement(xsl + "attribute", new XAttribute("name", "stretchy"), "false"));
         var attributes = stylesheet.Descendants(xsl + "template")
             .Single(element => (string?)element.Attribute("name") == "CreateTokenAttributes");
         var operatorStyle = attributes.Descendants(xsl + "when")
@@ -7120,7 +7217,12 @@ internal static partial class WordOmmlConverter
             .Single(element => (string?)element.Attribute("name") == "mathvariant")
             .Descendants(xsl + "when")
             .Single(element => (string?)element.Attribute("test") == "$sTokenType='mn'")
-            .SetAttributeValue("test", "$sTokenType='mn' and ($sty='p' or $sty='')");
+            // Upright digits use the default only in the ordinary Roman
+            // alphabet. Preserve explicit mathematical alphabets, including
+            // monospace, through the existing script-to-variant mapping.
+            // string() also covers an omitted scr supplied as an empty node-set.
+            .SetAttributeValue("test", "$sTokenType='mn' and (string($scr)='' or $scr='roman') and ($sty='p' or $sty='')");
+        MathMlColorContract.AdaptReverseTransform(stylesheet);
         var transform = new XslCompiledTransform(enableDebug: false);
         using var reader = stylesheet.CreateReader();
         transform.Load(reader, new XsltSettings(enableDocumentFunction: false, enableScript: false), null);
@@ -7129,11 +7231,92 @@ internal static partial class WordOmmlConverter
 
     private static XslCompiledTransform LoadTransform(string path)
     {
+        // Adapt the installed transform in memory. The Office installation is
+        // unchanged. Its legacy grouping treats an implicit mo and an explicit
+        // italic token as equivalent, then omits their italic run properties.
+        // Require the materialized source style/role before that lossy merge.
+        XNamespace xsl = "http://www.w3.org/1999/XSL/Transform";
+        XNamespace math = MathNamespace;
+        var stylesheet = XDocument.Load(path);
+        var grouping = stylesheet.Descendants(xsl + "template")
+            .Single(element => (string?)element.Attribute("name") == "CreateRunWithSameProp")
+            .Elements(xsl + "variable")
+            .Single(element => (string?)element.Attribute("name") == "nndBeforeLim");
+        var selection = (string?)grouping.Attribute("select")
+            ?? throw new InvalidDataException("Office run grouping has no selection expression.");
+        const string sequence = "$ndTokenFirst/following-sibling::*";
+        var sequenceIndex = selection.IndexOf(sequence, StringComparison.Ordinal);
+        var predicateIndex = sequenceIndex < 0
+            ? -1
+            : selection.IndexOf('[', sequenceIndex + sequence.Length);
+        if (predicateIndex < 0)
+            throw new InvalidDataException("Office run grouping has an unsupported selection expression.");
+        var boundaries =
+            "string(@mathvariant) != string($ndTokenFirst/@mathvariant) or "
+            + "string(@" + OmmlRunRoleAttribute + ") != string($ndTokenFirst/@"
+            + OmmlRunRoleAttribute + ") or "
+            // ApplyFunction starts a structural boundary even though it shares
+            // the normal operator style. Do not merge it into a function name;
+            // it may still share a run with its following opening delimiter.
+            + "(self::mml:mo and normalize-space(.)='\u2061') or ";
+        grouping.SetAttributeValue("select", selection.Insert(predicateIndex + 1, boundaries));
+
+        var properties = stylesheet.Descendants(xsl + "template")
+            .Single(element => (string?)element.Attribute("name") == "CreateMathRPR");
+        properties.Elements(xsl + "if").Single()
+            .SetAttributeValue("test", "$fNor=1 or $sFontCur!=''");
+        var italic = stylesheet.Descendants(xsl + "template")
+            .Single(element => (string?)element.Attribute("name") == "CreateMathScrStyProp")
+            .Elements(xsl + "choose")
+            .Elements(xsl + "when")
+            .Single(element => (string?)element.Attribute("test") == "$font='italic'");
+        italic.ReplaceNodes(new XElement(math + "sty", new XAttribute(math + "val", "i")));
+        // Monospace is a mathematical alphabet, represented by native scr
+        // rather than a Word text font or Normal Text. The source projection
+        // has already resolved inherited variants and kept token roles apart.
+        italic.AddBeforeSelf(new XElement(xsl + "when",
+            new XAttribute("test", "$font='monospace'"),
+            new XElement(math + "scr", new XAttribute(math + "val", "monospace")),
+            new XElement(math + "sty", new XAttribute(math + "val", "p"))));
+
+        // Native accent marks are control characters, independent of the base.
+        // The normalized mark already carries the shared effective token style.
+        // Emit real ctrlPr formatting rather than inheriting the first base run.
+        XNamespace word = WordNamespace;
+        XElement ControlFlag(string name, string condition) => new XElement(word + name,
+            new XElement(xsl + "attribute", new XAttribute("name", "w:val"),
+                new XElement(xsl + "choose",
+                    new XElement(xsl + "when", new XAttribute("test", condition), "1"),
+                    new XElement(xsl + "otherwise", "0"))));
+        stylesheet.Root!.SetAttributeValue(XNamespace.Xmlns + "w", word.NamespaceName);
+        stylesheet.Root.Add(new XElement(xsl + "template",
+            new XAttribute("match", "mml:mover[@accent='true' and count(*)=2 and string-length(*[2])=1 and *[2][self::mml:mo and (@mathvariant='normal' or @mathvariant='bold' or @mathvariant='italic' or @mathvariant='bold-italic')]]"),
+            new XAttribute("priority", "10"),
+            new XElement(math + "acc",
+                new XElement(math + "accPr",
+                    new XElement(math + "chr", new XElement(xsl + "attribute",
+                        new XAttribute("name", "m:val"), new XElement(xsl + "value-of", new XAttribute("select", "*[2]")))),
+                    new XElement(math + "ctrlPr", new XElement(word + "rPr",
+                        ControlFlag("b", "*[2]/@mathvariant='bold' or *[2]/@mathvariant='bold-italic'"),
+                        ControlFlag("i", "*[2]/@mathvariant='italic' or *[2]/@mathvariant='bold-italic'")))),
+                new XElement(math + "e", new XElement(xsl + "apply-templates", new XAttribute("select", "*[1]"))))));
+
+        // Stock XSL has no mspace rule: its catch-all discards empty elements.
+        // Emit only exact native text selected by the shared source projection.
+        stylesheet.Root!.Add(new XElement(xsl + "template",
+            new XAttribute("match", "mml:mspace[@" + OmmlSpaceTextAttribute + "]"),
+            new XElement(xsl + "if",
+                new XAttribute("test", "string-length(@" + OmmlSpaceTextAttribute + ") > 0"),
+                new XElement(math + "r",
+                    new XElement(math + "t",
+                        new XAttribute(XNamespace.Xml + "space", "preserve"),
+                        new XElement(xsl + "value-of",
+                            new XAttribute("select", "@" + OmmlSpaceTextAttribute)))))));
+
+        MathMlColorContract.AdaptForwardTransform(stylesheet);
         var transform = new XslCompiledTransform(enableDebug: false);
-        transform.Load(
-            path,
-            new XsltSettings(enableDocumentFunction: false, enableScript: false),
-            null);
+        using var reader = stylesheet.CreateReader();
+        transform.Load(reader, new XsltSettings(enableDocumentFunction: false, enableScript: false), null);
         return transform;
     }
 
