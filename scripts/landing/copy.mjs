@@ -8,25 +8,18 @@ export const copy = {
   navFeatures: { zh: "功能", en: "Features" },
   navDownload: { zh: "下载", en: "Download" },
   langSwitch: { zh: "EN", en: "中文" },
-  refFig: { tex: String.raw`\text{(1)}` },
   refProp: { tex: String.raw`\text{(2)}` },
   refThm: { tex: String.raw`\text{(3)}` },
 
   heroOpen: { zh: "在浏览器里打开", en: "Open in the browser" },
   heroDownload: { zh: "下载桌面版", en: "Get the desktop app" },
   noteHero: { zh: "无需安装，打开就能写", en: "no install, just start writing" },
-  noteFigure: { zh: "你只管写公式，源码自己长出来", en: "you write the maths, the LaTeX writes itself" },
 
   say1: { zh: "所见即所得", en: "What you see is what you write.", display: true },
   say2: { zh: "不必再看嵌套格式", en: "No more counting braces.", display: true },
   say3: { zh: "写一次，到处都能用", en: "Write it once, use it anywhere.", display: true },
 
   figLabel: { zh: "图 1 · 网页编辑器", enTex: String.raw`\textbf{Figure 1}\ \ \text{The web editor.}` },
-  figView: { zh: "所见", enTex: String.raw`\Phi\ \ \textit{what you see}` },
-  figSource: { zh: "源码", enTex: String.raw`\Lambda\ \ \textit{what LaTeX gets}` },
-  figKeys: { zh: "按键", enTex: String.raw`\text{keystrokes}` },
-  figBraces: { zh: "源码里的括号", enTex: String.raw`\text{braces in the source}` },
-  figTyped: { zh: "你打的括号", enTex: String.raw`\text{braces you typed}` },
   openEditor: { zh: "打开编辑器", en: "Open the editor" },
 
   propLabel: { zh: "命题 2 · 它能做什么", enTex: String.raw`\textbf{Proposition 2}\ \ \text{(What it does).}` },

@@ -15,14 +15,9 @@ Each platform offers two direct downloads: the full installer with local OCR and
 
 ## Page behaviour
 
-- The formula field behind the page is typeset at build time; each block also carries its LaTeX
-  source. Blocks "compile" (source → formula) as they first come into view, and a lens follows the
-  mouse turning the field back into source (`fieldEffects.ts`). On touch, pressing the background
-  opens the lens briefly.
+- The formula field behind the page is typeset at build time and packed around the foreground.
 - The hero lettering is written in on load; the hero has the two main actions.
-- Figure 1 is a typing demo of the visual editor (`TypingDemo.tsx`, steps in
-  `scripts/landing/demo.mjs`), not an embedded editor.
-- Buttons, margin notes, circling loops and ink blots are hand-drawn shapes from
+- Buttons, the hero arrow, the equation-number loops and ink blots are hand-drawn shapes from
   `scripts/landing/shapes.mjs`. Everything animated has a static `prefers-reduced-motion` form.
 
 Copy lives in `scripts/landing/copy.mjs`; run `npm run build:landing-art` after changing it.

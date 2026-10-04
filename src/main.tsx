@@ -1,3 +1,5 @@
+// Must run first: isolates the landing showcase's storage before editor modules load.
+import { isLandingPreview } from "./runtime/landingPreview";
 import { StrictMode, Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { installBrowserCompatibility } from "./runtime/browserCompatibility";
@@ -29,6 +31,7 @@ const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
 const editorAtRoot = import.meta.env.VITE_VISUALTEX_EDITOR_AT_ROOT === "1";
 const showEditor =
   editorAtRoot ||
+  isLandingPreview ||
   normalizedPath === "/editor" ||
   normalizedPath.startsWith("/editor/");
 

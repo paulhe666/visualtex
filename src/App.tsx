@@ -57,6 +57,7 @@ import type {
 import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
 import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
+import { isLandingPreview, LANDING_PREVIEW_ZOOM } from "./runtime/landingPreview";
 import {
   loadWebOcrConfiguration,
   recognizeFormulaWithWebApi,
@@ -72,6 +73,12 @@ interface InlineOcrState {
 
 const WEB_DEFAULT_ZOOM = 0.45;
 const WEB_DEFAULT_ZOOM_MIGRATION_KEY = "visualtex.web.default-zoom.45.v1";
+const LANDING_PREVIEW_LINES = [
+  String.raw`J_\nu(x)=\sum_{k=0}^{\infty}\frac{(-1)^k}{k!\Gamma(k+\nu+1)}\left(\frac{x}{2}\right)^{2k+\nu}`,
+  String.raw`R_{\mu\nu}-\frac{1}{2}Rg_{\mu\nu}+\Lambda g_{\mu\nu}=\frac{8\pi G}{c^4}T_{\mu\nu}`,
+  String.raw`\mathrm{d}s^2=-\left(1-\frac{2GMr}{c^2\Sigma}\right)c^2\mathrm{d}t^2-\frac{4GMar\sin^2\theta}{c^2\Sigma}c\mathrm{d}t\mathrm{d}\phi+\frac{\Sigma}{\Delta}\mathrm{d}r^2+\Sigma\mathrm{d}\theta^2+\left(r^2+a^2+\frac{2GMa^2r\sin^2\theta}{c^2\Sigma}\right)\sin^2\theta\mathrm{d}\phi^2`,
+  String.raw`\mathcal{L}_{\mathrm{SM}}=-\frac{1}{4}F^a_{\mu\nu}F^{a\mu\nu}+i\bar{\psi}\gamma^\mu D_\mu\psi+(D_\mu\Phi)^\dagger(D^\mu\Phi)-V(\Phi)-\left(y_{ij}\bar{\psi}_{Li}\Phi\psi_{Rj}+\mathrm{h.c.}\right)`,
+] as const;
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);
@@ -115,6 +122,8 @@ function App() {
   const setLanguage = useEditorStore((state) => state.setLanguage);
   const zoom = useEditorStore((state) => state.zoom);
   const setZoom = useEditorStore((state) => state.setZoom);
+  const setSourceOpen = useEditorStore((state) => state.setSourceOpen);
+  const replaceDocumentState = useEditorStore((state) => state.replaceDocumentState);
   const editorLayout = useEditorStore((state) => state.editorLayout);
   const pngExportBackground = useEditorStore(
     (state) => state.pngExportBackground,
@@ -152,15 +161,40 @@ function App() {
     return replaceDocumentTransaction(after, source);
   };
 
+  // The landing page embeds /editor?landing-preview as a read-only showcase.
+  // Its storage is in-memory (see runtime/landingPreview), so this never
+  // touches the visitor's own document.
+  useLayoutEffect(() => {
+    if (!isLandingPreview) return;
+    replaceDocumentState({
+      title: "示例公式",
+      lines: LANDING_PREVIEW_LINES.map((latex, index) => ({
+        id: `landing-preview-${index + 1}`,
+        latex,
+      })),
+      activeLineId: "landing-preview-1",
+      formulaAlignment,
+      selectionByLineId: {},
+    });
+    setSourceOpen(false);
+    setZoom(LANDING_PREVIEW_ZOOM);
+    setSourceDocumentRevision((revision) => revision + 1);
+    // The showcase is always drawn at the same scale.
+    return useEditorStore.subscribe((state) => {
+      if (state.zoom !== LANDING_PREVIEW_ZOOM) setZoom(LANDING_PREVIEW_ZOOM);
+    });
+  }, []);
+
   // The web editor defaults to a smaller zoom than the desktop window.
   useLayoutEffect(() => {
+    if (isLandingPreview) return;
     if (readLocalStorage(WEB_DEFAULT_ZOOM_MIGRATION_KEY) === "true") return;
     if (useEditorStore.getState().zoom === 0.6) setZoom(WEB_DEFAULT_ZOOM);
     writeLocalStorage(WEB_DEFAULT_ZOOM_MIGRATION_KEY, "true");
   }, [setZoom]);
 
   useEffect(() => {
-    if (initialEditorFocusDoneRef.current) return;
+    if (isLandingPreview || initialEditorFocusDoneRef.current) return;
     initialEditorFocusDoneRef.current = true;
     const frame = window.requestAnimationFrame(() => {
       const active = document.activeElement;

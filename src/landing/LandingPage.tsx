@@ -1,10 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { ART_DEFS, ART_FIELD, ART_HERO, ART_MARKS, ART_RULE, ART_SHAPES, ART_TEXT, type InkKey } from "./art.generated";
-import { startFieldEffects } from "./fieldEffects";
 import { layoutFormulaField } from "./formulaField";
 import { applyLandingDocumentMeta, detectLandingLang, saveLandingLang, type LandingLang } from "./i18n";
 import { SupportCodes } from "./SupportCodes";
-import { TypingDemo } from "./TypingDemo";
 
 const VERSION = "1.2.7";
 const DOWNLOAD_BASE = `https://download.visualtex.pauljianliao.com/visualtex-downloads/releases/v${VERSION}`;
@@ -101,19 +99,6 @@ function BrushButton({ href, kind, seed, children, ...rest }: {
   );
 }
 
-/** A note in the margin, in the hand of someone marking up the page, with an arrow to its subject. */
-function MarginNote({ k, lang, arrowKey, className }: {
-  k: InkKey; lang: LandingLang; arrowKey: keyof typeof ART_SHAPES.arrows; className: string;
-}) {
-  const shape = ART_SHAPES.arrows[arrowKey];
-  return (
-    <aside className={`landing-anno ${className}`} data-clear data-reveal aria-hidden="true">
-      <Ink k={k} lang={lang} />
-      <Svg className="landing-anno-arrow" html={shape.svg} />
-    </aside>
-  );
-}
-
 /** A white sheet styled like a LaTeX theorem environment: label, equation number, QED box. */
 function Card({ n, label, lang, children }: { n: number; label: InkKey; lang: LandingLang; children: ReactNode }) {
   return (
@@ -129,6 +114,44 @@ function Card({ n, label, lang, children }: { n: number; label: InkKey; lang: La
       <div className="landing-card-body">{children}</div>
       <svg className="landing-qed" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" /></svg>
     </article>
+  );
+}
+
+function EditorPreview({ lang }: { lang: LandingLang }) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const resize = () => {
+      if (frameRef.current) {
+        frameRef.current.style.transform = `scale(${viewport.clientWidth / 1440})`;
+      }
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <>
+      <div className="landing-frame" ref={viewportRef}>
+        <iframe
+          ref={frameRef}
+          src="/editor?landing-preview=1"
+          title={lang === "zh" ? "VisualTeX 网页编辑器预览" : "VisualTeX web editor preview"}
+          loading="lazy"
+          tabIndex={-1}
+          aria-hidden="true"
+          inert
+        />
+      </div>
+      <div className="landing-actions">
+        <BrushButton href="/editor" kind="solid" seed={2}><Ink k="openEditor" lang={lang} />{arrow}</BrushButton>
+      </div>
+    </>
   );
 }
 
@@ -198,9 +221,7 @@ export function LandingPage() {
   const [floating, setFloating] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLDivElement>(null);
-  const ringRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLElement>(null);
-  const firstLayout = useRef(true);
   const { platform: detectedPlatform, isMobileDevice } = detectPlatform();
   const orderedDownloads = [...downloads].sort(
     (left, right) => Number(right.id === detectedPlatform) - Number(left.id === detectedPlatform),
@@ -213,16 +234,10 @@ export function LandingPage() {
   // The formula field is one continuous layer behind the whole page; re-pack it whenever the
   // page width or the language (and so the size of the foreground) changes.
   useLayoutEffect(() => {
-    const page = pageRef.current, field = fieldRef.current, ring = ringRef.current;
-    if (!page || !field || !ring) return;
-    let width = -1, timer = 0, stopEffects = () => {};
-    const build = () => {
-      width = page.clientWidth;
-      stopEffects();
-      const blocks = layoutFormulaField(page, field, ART_FIELD);
-      stopEffects = startFieldEffects(page, field, ring, blocks, { compile: firstLayout.current });
-      firstLayout.current = false;
-    };
+    const page = pageRef.current, field = fieldRef.current;
+    if (!page || !field) return;
+    let width = -1, timer = 0;
+    const build = () => { width = page.clientWidth; layoutFormulaField(page, field, ART_FIELD); };
     build();
     const observer = new ResizeObserver(() => {
       if (page.clientWidth === width) return;
@@ -230,7 +245,7 @@ export function LandingPage() {
       timer = window.setTimeout(build, 120);
     });
     observer.observe(page);
-    return () => { observer.disconnect(); window.clearTimeout(timer); stopEffects(); };
+    return () => { observer.disconnect(); window.clearTimeout(timer); };
   }, [lang]);
 
   // Sheets and margin notes draw themselves in as they enter the viewport; a sheet's QED box
@@ -297,9 +312,6 @@ export function LandingPage() {
     <div className="landing-page" ref={pageRef} lang={lang === "zh" ? "zh-CN" : "en"}>
       <svg className="landing-defs" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ART_DEFS }} />
       <div className="landing-field" ref={fieldRef} aria-hidden="true" />
-      <div className="landing-lens" ref={ringRef} aria-hidden="true">
-        <Svg html={ART_SHAPES.lens} />
-      </div>
       <a className="landing-skip" href="#main">{lang === "zh" ? "跳转到正文" : "Skip to content"}</a>
 
       <nav className={`landing-nav${floating ? " is-floating" : ""}`} data-clear="fixed" aria-label={lang === "zh" ? "主要导航" : "Main navigation"}>
@@ -332,13 +344,9 @@ export function LandingPage() {
         <main id="main">
           <section className="landing-section"><p className="landing-say" data-clear><Ink k="say1" lang={lang} /></p></section>
 
-          <section className="landing-section" id="fig">
-            <MarginNote k="noteFigure" lang={lang} arrowKey="figure" className="landing-anno-figure" />
+          <section className="landing-section">
             <Card n={1} label="figLabel" lang={lang}>
-              <TypingDemo lang={lang} />
-              <div className="landing-actions">
-                <BrushButton href="/editor" kind="solid" seed={2}><Ink k="openEditor" lang={lang} />{arrow}</BrushButton>
-              </div>
+              <EditorPreview lang={lang} />
             </Card>
           </section>
 

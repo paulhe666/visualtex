@@ -76,20 +76,16 @@ export function arrow(seed, to, bend) {
   };
 }
 
-/**
- * A quick loop drawn around something: a little more than one turn, in a 200×80 box
- * (or a 200×200 box when `round`, for the lens).
- */
-export function circleLoop(seed, round = false) {
-  const rand = rng(seed), pts = [], turns = 1.16, n = round ? 120 : 70, wr = wobble(rand, 0.05, 2);
-  const ry = round ? 94 : 34, cy = round ? 100 : 40;
+/** A quick loop drawn around something: a little more than one turn, in a 200×80 box. */
+export function circleLoop(seed) {
+  const rand = rng(seed), pts = [], turns = 1.16, n = 70, wr = wobble(rand, 0.05, 2);
   const start = -2.3 + rand() * 0.3;
   for (let i = 0; i <= n; i++) {
     const t = i / n, a = start + t * turns * 6.283;
     const grow = 1 + 0.08 * t + wr(t);
-    pts.push([100 + 94 * grow * Math.cos(a), cy + ry * grow * Math.sin(a) - 4 * t]);
+    pts.push([100 + 94 * grow * Math.cos(a), 40 + 34 * grow * Math.sin(a) - 4 * t]);
   }
-  return `<svg viewBox="${round ? "-10 -10 220 220" : "-8 -8 216 96"}" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M${pts.map(([x, y]) => `${f(x)} ${f(y)}`).join("L")}"/></svg>`;
+  return `<svg viewBox="-8 -8 216 96" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M${pts.map(([x, y]) => `${f(x)} ${f(y)}`).join("L")}"/></svg>`;
 }
 
 /** An ink blot with a few satellite drops, for the press splash; 100×100 box. */

@@ -8,8 +8,6 @@ const SEED = 20261002;
 export const REVEAL_OFFSET = 28;
 
 type Rect = { x: number; y: number; w: number; h: number };
-/** A placed block, in field (canvas) units. */
-export type PlacedBlock = Rect & { el: HTMLElement };
 
 function random(seed: number) {
   return () => {
@@ -24,30 +22,15 @@ function makeBlock(block: FieldBlock, size: number) {
   const el = document.createElement("div");
   el.className = block.box ? "landing-blk landing-blk-box" : "landing-blk";
   el.style.fontSize = `${size}px`;
-  const typeset = document.createElement("div");
-  typeset.className = "landing-blk-tex";
-  typeset.innerHTML = block.html;
-  const source = document.createElement("code");
-  source.className = "landing-blk-src";
-  source.textContent = block.src;
-  el.append(typeset, source);
+  el.innerHTML = block.html;
   return el;
-}
-
-/** Size the source text so it wraps inside the block it stands for (monospace ≈ 0.6em/char). */
-function fitSource(el: HTMLElement, w: number, h: number, size: number) {
-  const source = el.lastElementChild as HTMLElement;
-  const chars = source.textContent!.length;
-  // allowed to spill past the block a little: it is only ever seen through the lens
-  const fit = Math.sqrt((w * Math.max(h, size * 1.3) * 2) / (chars * 0.6 * 1.3));
-  source.style.fontSize = `${Math.max(10, Math.min(size * 0.8, fit)).toFixed(1)}px`;
 }
 
 /**
  * Packs the notebook blocks into one continuous field as tall as `page`, leaving every
  * `[data-clear]` element uncovered. Deterministic for a given page width.
  */
-export function layoutFormulaField(page: HTMLElement, field: HTMLElement, blocks: readonly FieldBlock[]): PlacedBlock[] {
+export function layoutFormulaField(page: HTMLElement, field: HTMLElement, blocks: readonly FieldBlock[]) {
   const viewportWidth = page.clientWidth;
   const scale = Math.max(viewportWidth / CANVAS_WIDTH, 0.5);
   const offsetX = (viewportWidth - CANVAS_WIDTH * scale) / 2;
@@ -72,16 +55,13 @@ export function layoutFormulaField(page: HTMLElement, field: HTMLElement, blocks
   const collides = (x: number, y: number, w: number, h: number) =>
     taken.some((r) => x < r.x + r.w && x + w > r.x && y < r.y + r.h && y + h > r.y);
   const rand = random(SEED);
-  const placed: PlacedBlock[] = [];
   // Notes are sentences: keep them wholly inside the visible part of the canvas.
   const visibleLeft = Math.max(0, -offsetX / scale) + 12;
   const visibleRight = Math.min(CANVAS_WIDTH, (viewportWidth - offsetX) / scale) - 12;
-  const place = (el: HTMLElement, x: number, y: number, w: number, h: number, size: number) => {
+  const place = (el: HTMLElement, x: number, y: number, w: number, h: number) => {
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
-    fitSource(el, w, h, size);
     taken.push({ x: x - GAP, y: y - GAP, w: w + 2 * GAP, h: h + 2 * GAP });
-    placed.push({ el, x, y, w, h });
   };
 
   for (const block of blocks.filter((b) => b.pin)) {
@@ -91,7 +71,7 @@ export function layoutFormulaField(page: HTMLElement, field: HTMLElement, blocks
     const x = Math.max(visibleLeft, Math.min(block.pin![0], visibleRight - w));
     let y = block.pin![1];
     while (collides(x, y, w, h) && y < 1200) y += 14; // e.g. below the nav on a phone
-    place(el, x, y, w, h, block.size);
+    place(el, x, y, w, h);
   }
 
   // Notes appear once; formulas are dealt from a reshuffled deck so repeats stay far apart.
@@ -126,8 +106,7 @@ export function layoutFormulaField(page: HTMLElement, field: HTMLElement, blocks
       continue;
     }
     misses = 0;
-    place(el, spot.x, spot.y, w, h, size);
+    place(el, spot.x, spot.y, w, h);
     lowest = Math.max(lowest, spot.y);
   }
-  return placed;
 }
