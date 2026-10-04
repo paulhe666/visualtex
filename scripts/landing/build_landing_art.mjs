@@ -11,6 +11,8 @@ import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
 import { loadFonts, pathD } from "./fonts.mjs";
 import { copy } from "./copy.mjs";
 import { notes, formulas } from "./notebook.mjs";
+import { arrow, blot, circleLoop, sketchBox, swash, swashDefs } from "./shapes.mjs";
+import { demos, keystrokes } from "./demo.mjs";
 
 const VERSION = readFileSync(new URL("../../src/landing/LandingPage.tsx", import.meta.url), "utf8")
   .match(/const VERSION = "([^"]+)"/)[1];
@@ -35,7 +37,7 @@ const symbols = new Map(); // one <symbol> per distinct glyph
 function symbolFor(fontKey, glyph) {
   const key = `${fontKey}-${glyph.index}`;
   if (!symbols.has(key)) {
-    symbols.set(key, { id: `g${symbols.size.toString(36)}`, d: pathD(glyph.getPath(0, 0, SIZE[fontKey])) });
+    symbols.set(key, { id: `g${symbols.size.toString(36)}`, d: pathD(glyph.getPath(0, 0, SIZE[fontKey]), 0) });
   }
   return symbols.get(key).id;
 }
@@ -67,6 +69,11 @@ function brush(text, display = false) {
 const text = {};
 for (const [key, entry] of Object.entries(copy)) {
   const fill = (s) => s.replaceAll("{VERSION}", VERSION);
+  if (entry.tex) {
+    const both = `<span class="ink-tex">${tex(entry.tex)}</span>`;
+    text[key] = { zh: both, en: both };
+    continue;
+  }
   text[key] = {
     zh: brush(fill(entry.zh), entry.display),
     en: entry.enTex ? `<span class="ink-tex">${tex(entry.enTex)}</span>` : brush(fill(entry.en), entry.display),
@@ -75,6 +82,7 @@ for (const [key, entry] of Object.entries(copy)) {
 const marks = {
   eq: [1, 2, 3, 4].map((n) => tex(String.raw`(${n})`)),
   roman: ["i", "ii", "iii", "iv", "v"].map((r) => tex(String.raw`\text{(${r})}`)),
+  digits: [..."0123456789"].map((d) => tex(d)),
 };
 
 // ---------------------------------------------------------------- hero "VisualTeX"
@@ -124,9 +132,14 @@ const tail = [wordWidth + 380, -260];
 const stroke = sweep([-60, 150], [500, 260], [1300, 40], tail, 34);
 const M = 24;
 const viewBox = [ink.x1 - M, ink.y1 - M, ink.x2 - ink.x1 + 2 * M, ink.y2 - ink.y1 + 2 * M].map((v) => v.toFixed(1)).join(" ");
+// Write-on masks: the page wipes the letters in, then the sweep, left to right. They start fully
+// open so the word is whole without JavaScript or with reduced motion.
+const [vx, vy, vw, vh] = viewBox.split(" ").map(Number);
+const wipe = (id) => `<mask id="${id}" maskUnits="userSpaceOnUse" x="${vx}" y="${vy}" width="${vw}" height="${vh}"><rect class="wipe-body" x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#fff"/><rect class="wipe-edge" x="${vx + vw}" y="${vy}" width="160" height="${vh}" fill="url(#vt-wipe-g)"/></mask>`;
 const hero = `<svg viewBox="${viewBox}" role="img" aria-label="VisualTeX">
-<g class="hero-letters" filter="url(#vt-ink)">${letters}</g>
-<g class="hero-sweep"><path d="${stroke}" mask="url(#vt-solid)" filter="url(#vt-ink)"/><path d="${stroke}" mask="url(#vt-dry)" filter="url(#vt-dry-brush)"/></g>
+<defs><linearGradient id="vt-wipe-g"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>${wipe("vt-write-letters")}${wipe("vt-write-sweep")}</defs>
+<g mask="url(#vt-write-letters)" data-wipe="${vx.toFixed(0)} ${(wordWidth + M).toFixed(0)}"><g class="hero-letters" filter="url(#vt-ink)">${letters}</g></g>
+<g mask="url(#vt-write-sweep)" data-wipe="-100 ${(tail[0] + M).toFixed(0)}"><g class="hero-sweep"><path d="${stroke}" mask="url(#vt-solid)" filter="url(#vt-ink)"/><path d="${stroke}" mask="url(#vt-dry)" filter="url(#vt-dry-brush)"/></g></g>
 </svg>`;
 
 // ---------------------------------------------------------------- tiny brush rule under card headings
@@ -144,9 +157,33 @@ function brushRule() {
 
 // ---------------------------------------------------------------- background notebook
 const field = [
-  ...notes.map((n) => ({ html: tex(n.src), size: n.size, once: true, ...(n.pin ? { pin: n.pin } : {}), ...(n.box ? { box: true } : {}) })),
-  ...formulas.map((src) => ({ html: tex(src), size: 0 })),
+  ...notes.map((n) => ({ html: tex(n.src), src: n.src, size: n.size, once: true, ...(n.pin ? { pin: n.pin } : {}), ...(n.box ? { box: true } : {}) })),
+  ...formulas.map((src) => ({ html: tex(src), src, size: 0 })),
 ];
+
+// ---------------------------------------------------------------- hand-drawn marks
+const shapes = {
+  swash: [11, 23, 37].map(swash),
+  box: [5, 17, 29].map(sketchBox),
+  loop: [3, 13, 31].map((seed) => circleLoop(seed)),
+  lens: circleLoop(43, true),
+  blot: [2, 19, 41].map(blot),
+  arrows: {
+    hero: arrow(7, [-40, 74], 24), // from the end of the note down to the main button
+    figure: arrow(15, [70, 64], 30), // from the margin note down to the figure
+    download: arrow(27, [-240, 170], -40), // from the margin note to the end of the proof
+  },
+};
+
+// ---------------------------------------------------------------- Figure 1 typing demo
+const CARET = String.raw`\class{vt-caret}{\rule[-0.22em]{0.07em}{1.05em}}`;
+const PLACEHOLDER = String.raw`\class{vt-ph}{\square}`;
+const demo = demos.map((steps) => steps.map((step) => ({
+  key: step.key,
+  keys: keystrokes(step.key),
+  src: step.src,
+  view: tex(step.view.replaceAll("\\C", CARET).replaceAll("\\P", PLACEHOLDER)),
+})));
 
 // ---------------------------------------------------------------- shared defs
 const filters = `
@@ -184,6 +221,7 @@ const filters = `
 <linearGradient id="vt-tail" gradientUnits="userSpaceOnUse" x1="-60" y1="150" x2="${tail[0]}" y2="${tail[1]}"><stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#fff"/><stop offset=".72" stop-color="#000"/></linearGradient>
 <linearGradient id="vt-tail-inv" gradientUnits="userSpaceOnUse" x1="-60" y1="150" x2="${tail[0]}" y2="${tail[1]}"><stop offset="0" stop-color="#000"/><stop offset=".5" stop-color="#000"/><stop offset=".72" stop-color="#fff"/></linearGradient>
 <mask id="vt-solid" maskUnits="userSpaceOnUse" x="-400" y="-900" width="3000" height="1600"><rect x="-400" y="-900" width="3000" height="1600" fill="url(#vt-tail)"/></mask>
+${swashDefs}
 <mask id="vt-dry" maskUnits="userSpaceOnUse" x="-400" y="-900" width="3000" height="1600"><rect x="-400" y="-900" width="3000" height="1600" fill="url(#vt-tail-inv)"/></mask>`;
 const glyphSymbols = [...symbols.values()].map((s) => `<symbol id="${s.id}" overflow="visible"><path d="${s.d}"/></symbol>`).join("");
 const defs = `${adaptor.outerHTML(svgJax.fontCache.getCache()).replace(/^<defs>|<\/defs>$/g, "")}${filters}${glyphSymbols}`;
@@ -191,7 +229,9 @@ const defs = `${adaptor.outerHTML(svgJax.fontCache.getCache()).replace(/^<defs>|
 const out = `// Generated by scripts/landing/build_landing_art.mjs — do not edit by hand.
 // Sources: scripts/landing/copy.mjs (foreground text) and scripts/landing/notebook.mjs (background).
 export type InkText = { zh: string; en: string };
-export type FieldBlock = { html: string; size: number; once?: boolean; pin?: [number, number]; box?: boolean };
+export type FieldBlock = { html: string; src: string; size: number; once?: boolean; pin?: [number, number]; box?: boolean };
+export type DemoStep = { key: string; keys: number; src: string; view: string };
+export type ArrowShape = { w: number; h: number; svg: string };
 
 export const ART_DEFS = ${JSON.stringify(`<defs>${defs}</defs>`)};
 export const ART_HERO = ${JSON.stringify(hero)};
@@ -200,6 +240,8 @@ export const ART_TEXT = ${JSON.stringify(text)} as const satisfies Record<string
 export type InkKey = keyof typeof ART_TEXT;
 export const ART_MARKS = ${JSON.stringify(marks)};
 export const ART_FIELD: readonly FieldBlock[] = ${JSON.stringify(field)};
+export const ART_SHAPES: { swash: string[]; box: string[]; loop: string[]; lens: string; blot: string[]; arrows: Record<"hero" | "figure" | "download", ArrowShape> } = ${JSON.stringify(shapes)};
+export const ART_DEMO: readonly (readonly DemoStep[])[] = ${JSON.stringify(demo)};
 `;
 writeFileSync(new URL("../../src/landing/art.generated.ts", import.meta.url), out);
 console.log(`art.generated.ts: ${(out.length / 1024).toFixed(0)} KB, ${symbols.size} brush glyphs, ${field.length} field blocks, v${VERSION}`);

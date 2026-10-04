@@ -3,13 +3,14 @@ import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { copy } from "./landing/copy.mjs";
 
-const [entry, page, support, art, i18n, preview, styles, wrangler] = await Promise.all([
+const [entry, page, support, art, i18n, demo, effects, styles, wrangler] = await Promise.all([
   readFile(new URL("../src/main.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/landing/LandingPage.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/landing/SupportCodes.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/landing/art.generated.ts", import.meta.url), "utf8"),
   readFile(new URL("../src/landing/i18n.ts", import.meta.url), "utf8"),
-  readFile(new URL("../src/runtime/landingPreview.ts", import.meta.url), "utf8"),
+  readFile(new URL("../src/landing/TypingDemo.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/landing/fieldEffects.ts", import.meta.url), "utf8"),
   readFile(new URL("../src/landing/landing.css", import.meta.url), "utf8"),
   readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
 ]);
@@ -43,7 +44,9 @@ const checks = [
   [page.indexOf("<SupportCodes") > page.indexOf('id="download"'), "Support codes must follow downloads"],
   [page.includes('className="landing-lang"') && page.includes("saveLandingLang"), "The language switch is missing"],
   [i18n.includes("navigator.languages") && i18n.includes('startsWith("zh")'), "Browser-language detection is missing"],
-  [preview.includes("if (isLandingPreview)") && preview.includes("preventScroll: true") && page.includes("inert"), "The embedded preview can scroll the landing page"],
+  [!page.includes("<iframe") && demo.includes("IntersectionObserver") && demo.includes("prefers-reduced-motion"), "Figure 1 must be the light typing demo, paused off screen and static for reduced motion"],
+  [effects.includes("prefers-reduced-motion") && effects.includes("removeEventListener"), "Field effects must respect reduced motion and clean up their listeners"],
+  [art.includes("export const ART_DEMO") && art.includes("vt-caret") && art.includes('"src":'), "Generated art is missing the demo frames or the field sources"],
   [support.includes("IntersectionObserver") && support.includes("/community/qr-codes.json"), "QR codes are no longer lazy-loaded"],
   [staleCopy.length === 0, "art.generated.ts is out of date with scripts/landing/copy.mjs (run npm run build:landing-art):\n    " + staleCopy.join("\n    ")],
   [copy.tips.zh.includes("自愿打赏") && copy.tips.en.includes("optional"), "The voluntary support notice is missing"],
