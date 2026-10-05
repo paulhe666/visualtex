@@ -1,5 +1,5 @@
 diff --git a/src/components/FormulaHotkeyManagerDialog.tsx b/src/components/FormulaHotkeyManagerDialog.tsx
-index a6f6077..e18c0e4 100644
+index a6f6077..c8cbc66 100644
 --- a/src/components/FormulaHotkeyManagerDialog.tsx
 +++ b/src/components/FormulaHotkeyManagerDialog.tsx
 @@ -1,16 +1,12 @@
@@ -161,7 +161,7 @@ index a6f6077..e18c0e4 100644
  
    if (!open) return null;
  
-@@ -197,21 +91,19 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
+@@ -197,21 +91,14 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
                <Keyboard size={18} />
                <span>
                  <strong>
@@ -169,13 +169,11 @@ index a6f6077..e18c0e4 100644
 +                  {sortedBindings.length}{" "}
                    {isEn ? "assigned" : "项已设置"}
                  </strong>
-                 <small>
-                   {isEn
+-                <small>
+-                  {isEn
 -                    ? "Office actions are global; editor shortcuts remain scoped to the formula editor."
 -                    : "Office 动作为全局快捷键；公式输入快捷键仍仅作用于公式编辑区。"}
-+                    ? "Editor shortcuts are scoped to the formula editor."
-+                    : "公式输入快捷键仅作用于公式编辑区。"}
-                 </small>
+-                </small>
                </span>
              </div>
            </div>
@@ -186,18 +184,31 @@ index a6f6077..e18c0e4 100644
              <section className="formula-editor-hotkey-group">
                <header className="formula-hotkey-section-heading">
                  <Keyboard size={16} />
-@@ -287,9 +179,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
+@@ -228,8 +115,8 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
+                 <strong>{isEn ? "No formula hotkeys yet" : "还没有设置公式快捷键"}</strong>
+                 <span>
+                   {isEn
+-                    ? "Close this window, then right-click any formula tool, common tile or custom tile."
+-                    : "关闭此窗口后，右键任意公式工具、常用磁贴或自定义磁贴即可设置。"}
++                    ? "Right-click a formula tool or tile to add one."
++                    : "右键公式工具或磁贴即可设置。"}
+                 </span>
+               </div>
+             ) : (
+@@ -286,11 +173,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
+           </div>
  
            <footer className="dialog-footer">
-             <span>
+-            <span>
 -              {isEn
 -                ? "Office hotkeys run only while the matching Office app is frontmost."
 -                : "Office 快捷键仅在对应 Office 应用位于前台时执行。"}
-+              {isEn ? "Hotkeys are saved automatically" : "快捷键已自动保存"}
-             </span>
+-            </span>
++            <span />
              <button type="button" className="primary-button" onClick={onClose}>
                {isEn ? "Done" : "完成"}
-@@ -302,10 +192,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
+             </button>
+@@ -302,10 +185,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
          target={editingTarget}
          onClose={() => setEditingTarget(null)}
        />

@@ -12,6 +12,7 @@
     "deploy:web": "npx wrangler deploy",
     "test:landing": "node scripts/landing_page_smoke.mjs",
     "build:landing-art": "node scripts/landing/build_landing_art.mjs",
+    "record:tutorial": "node scripts/tutorial/record_tutorial.mjs",
     "test:web-ocr": "node scripts/web_ocr_worker_smoke.mjs",
     "build:test": "VITE_VISUALTEX_EDITOR_AT_ROOT=1 tsc --noEmit && VITE_VISUALTEX_EDITOR_AT_ROOT=1 vite build",
     "sync:mac-editor": "node scripts/sync-mac-editor.mjs",

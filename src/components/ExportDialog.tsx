@@ -224,8 +224,8 @@ export function ExportDialog({
 
       onNotify(
         isEn
-          ? `${definition.labelEn} exported successfully`
-          : `${definition.labelZh} 已成功导出`,
+          ? `${definition.labelEn} exported`
+          : `已导出 ${definition.labelZh}`,
       );
       onClose();
     } catch (cause) {
@@ -334,6 +334,7 @@ export function ExportDialog({
           </button>
         </div>
 
+        {nativeTauri && (
         <label className="export-path-field">
           <span>{isEn ? "Export path" : "导出路径"}</span>
           <div>
@@ -356,6 +357,7 @@ export function ExportDialog({
             </button>
           </div>
         </label>
+        )}
 
         {error && <div className="export-error" role="alert">{error}</div>}
 

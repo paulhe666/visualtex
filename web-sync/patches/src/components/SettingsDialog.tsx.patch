@@ -1,5 +1,5 @@
 diff --git a/src/components/SettingsDialog.tsx b/src/components/SettingsDialog.tsx
-index c6ed740..aaeb184 100644
+index c6ed740..50adf56 100644
 --- a/src/components/SettingsDialog.tsx
 +++ b/src/components/SettingsDialog.tsx
 @@ -14,8 +14,6 @@ import {
@@ -74,7 +74,7 @@ index c6ed740..aaeb184 100644
    const isEn = language === "en";
    const formulaLetterFamilies = formulaLetterFontFamilies(formulaLetterFont);
    const formulaChineseFamily = formulaChineseFontFamily(formulaChineseFont);
-@@ -772,100 +749,6 @@ export function SettingsDialog({
+@@ -772,104 +749,10 @@ export function SettingsDialog({
                </button>
              </div>
            </div>
@@ -175,7 +175,24 @@ index c6ed740..aaeb184 100644
          </div>
  
          <footer className="dialog-footer">
-@@ -1202,30 +1085,6 @@ export function SettingsDialog({
+-          <span>{isEn ? "Settings saved automatically" : "设置已自动保存"}</span>
++          <span />
+           <button type="button" className="primary-button" onClick={onClose}>
+             {isEn ? "Done" : "完成"}
+           </button>
+@@ -1123,11 +1006,6 @@ export function SettingsDialog({
+                       <strong id="source-editor-customization-title">
+                         {isEn ? "Source editor" : "源码编辑器"}
+                       </strong>
+-                      <small>
+-                        {isEn
+-                          ? "Adjust the LaTeX source text without changing formula size."
+-                          : "仅调整 LaTeX 源码文字，不影响公式字号。"}
+-                      </small>
+                     </div>
+                     <button
+                       type="button"
+@@ -1202,30 +1080,6 @@ export function SettingsDialog({
                    <span className="switch-control" />
                  </label>
  
@@ -206,3 +223,16 @@ index c6ed740..aaeb184 100644
                  <section
                    className="formula-toolbar-customization"
                    aria-labelledby="formula-toolbar-customization-title"
+@@ -1572,11 +1426,7 @@ export function SettingsDialog({
+               </div>
+ 
+               <footer className="dialog-footer">
+-                <span>
+-                  {isEn
+-                    ? "Changes apply immediately"
+-                    : "修改会立即生效"}
+-                </span>
++                <span />
+                 <button
+                   type="button"
+                   className="primary-button"

@@ -43,7 +43,7 @@ const checks = [
   [page.indexOf("<SupportCodes") > page.indexOf('id="download"'), "Support codes must follow downloads"],
   [page.includes('className="landing-lang"') && page.includes("saveLandingLang"), "The language switch is missing"],
   [i18n.includes("navigator.languages") && i18n.includes('startsWith("zh")'), "Browser-language detection is missing"],
-  [preview.includes("if (isLandingPreview)") && preview.includes("preventScroll: true") && page.includes("inert"), "The embedded preview can scroll the landing page"],
+  [preview.includes("if (isEditorSandbox)") && preview.includes("isLandingPreview || tutorialLessonId") && preview.includes("preventScroll: true") && page.includes("inert"), "The embedded preview can scroll the landing page"],
   [support.includes("IntersectionObserver") && support.includes("/community/qr-codes.json"), "QR codes are no longer lazy-loaded"],
   [staleCopy.length === 0, "art.generated.ts is out of date with scripts/landing/copy.mjs (run npm run build:landing-art):\n    " + staleCopy.join("\n    ")],
   [copy.tips.zh.includes("自愿打赏") && copy.tips.en.includes("optional"), "The voluntary support notice is missing"],

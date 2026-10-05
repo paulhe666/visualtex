@@ -245,8 +245,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               <Check size={16} />
               <span>
                 {isEn
-                  ? "Available in the visual formula editor."
-                  : "该快捷键可在可视化公式编辑区使用。"}
+                  ? "Available."
+                  : "可以使用。"}
               </span>
             </div>
           )}

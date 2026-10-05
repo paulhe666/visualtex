@@ -15,11 +15,17 @@ import "./styles-editor-parity.css";
 import "./styles-windows-shared-latest.css";
 import "./styles-macos-platform-overrides.css";
 import "./landing/landing.css";
+import "./tutorial/tutorial.css";
 
 const EditorRoot = lazy(() => import("./web/EditorRoot"));
 const LandingPage = lazy(() =>
   import("./landing/LandingPage").then((module) => ({
     default: module.LandingPage,
+  })),
+);
+const TutorialPage = lazy(() =>
+  import("./tutorial/TutorialPage").then((module) => ({
+    default: module.TutorialPage,
   })),
 );
 
@@ -35,7 +41,9 @@ const showEditor =
   normalizedPath === "/editor" ||
   normalizedPath.startsWith("/editor/");
 
-document.documentElement.dataset.page = showEditor ? "editor" : "landing";
+const showTutorial = !showEditor && normalizedPath === "/tutorial";
+
+document.documentElement.dataset.page = showEditor ? "editor" : showTutorial ? "tutorial" : "landing";
 
 if (showEditor) {
   document.documentElement.lang = "zh-CN";
@@ -44,7 +52,7 @@ if (showEditor) {
   if (description) {
     description.content = "免费使用 VisualTeX 网页公式编辑器，通过结构化输入创建、编辑和复制 LaTeX 数学公式。";
   }
-} else {
+} else if (!showTutorial) {
   applyLandingDocumentMeta(detectLandingLang());
 }
 
@@ -52,7 +60,9 @@ const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]
 if (canonical) {
   canonical.href = showEditor
     ? "https://visualtex.pauljianliao.com/editor"
-    : "https://visualtex.pauljianliao.com/";
+    : showTutorial
+      ? "https://visualtex.pauljianliao.com/tutorial"
+      : "https://visualtex.pauljianliao.com/";
 }
 
 function describeBootError(value: unknown): string {
@@ -119,7 +129,7 @@ const render = () =>
     <StrictMode>
       <VisualTexErrorBoundary>
         <Suspense fallback={<main className="route-loading" aria-label="Loading VisualTeX" />}>
-          {showEditor ? <EditorRoot /> : <LandingPage />}
+          {showEditor ? <EditorRoot /> : showTutorial ? <TutorialPage /> : <LandingPage />}
         </Suspense>
       </VisualTexErrorBoundary>
     </StrictMode>,

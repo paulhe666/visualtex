@@ -466,7 +466,7 @@ async function main() {
     const ocrState = await evaluate(`(() => ({
       options: [...document.querySelectorAll('.web-ocr-dialog option')].map((option) => option.value),
       activeProvider: document.querySelector(
-        '.web-ocr-dialog [aria-label="OCR 提供器"] select, .web-ocr-dialog [aria-label="OCR provider"] select',
+        '.web-ocr-dialog [aria-label="识别服务"] select, .web-ocr-dialog [aria-label="OCR service"] select',
       )?.value ?? "",
       privacy: document.querySelector('.web-ocr-dialog .ocr-provider-actions span')?.textContent ?? "",
       localRuntime: /安装 OCR 运行环境|Install OCR runtime/i.test(document.querySelector('.web-ocr-dialog')?.textContent ?? ""),
@@ -476,7 +476,7 @@ async function main() {
     assert.ok(ocrState.options.includes("mathpix"), JSON.stringify(ocrState));
     assert.ok(ocrState.options.includes("openai-compatible"), JSON.stringify(ocrState));
     assert.equal(ocrState.activeProvider, "openai-compatible", JSON.stringify(ocrState));
-    assert.match(ocrState.privacy, /直接发送|directly/i);
+    assert.match(ocrState.privacy, /直接发给|straight to/i);
     assert.equal(ocrState.localRuntime, false, JSON.stringify(ocrState));
 
     await evaluate(`(() => {

@@ -2203,9 +2203,7 @@ export function FormulaToolbar({
                     ? "Create a section before saving formula tiles."
                     : "请先新建一个分区，再保存公式磁贴。"
                   : activeLineLatex
-                    ? isEn
-                      ? "The selected formula line will be saved in the active section."
-                      : "当前公式行将保存到选中的分区。"
+                    ? ""
                     : isEn
                       ? "Select a non-empty formula line first."
                       : "请先选择一个非空公式行。"}
@@ -2495,9 +2493,7 @@ export function FormulaToolbar({
                             className="custom-formula-section-empty"
                             onClick={() => setActiveCustomSectionId(section.id)}
                           >
-                            {isEn
-                              ? "Select this section, then save a formula here"
-                              : "选择此分区后，可将公式保存到这里"}
+                            {isEn ? "No tiles yet" : "还没有磁贴"}
                           </button>
                         )}
                         {sectionRows.map((row) => (

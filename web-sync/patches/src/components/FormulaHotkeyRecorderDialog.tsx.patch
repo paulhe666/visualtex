@@ -1,0 +1,15 @@
+diff --git a/src/components/FormulaHotkeyRecorderDialog.tsx b/src/components/FormulaHotkeyRecorderDialog.tsx
+index 08e2386..795067f 100644
+--- a/src/components/FormulaHotkeyRecorderDialog.tsx
++++ b/src/components/FormulaHotkeyRecorderDialog.tsx
+@@ -245,8 +245,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
+               <Check size={16} />
+               <span>
+                 {isEn
+-                  ? "Available in the visual formula editor."
+-                  : "该快捷键可在可视化公式编辑区使用。"}
++                  ? "Available."
++                  : "可以使用。"}
+               </span>
+             </div>
+           )}

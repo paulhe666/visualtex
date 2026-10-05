@@ -1,8 +1,17 @@
-// The homepage showcase is a separate, ephemeral editor session.
-export const isLandingPreview =
-  typeof window !== "undefined" &&
-  /^\/editor\/?$/.test(window.location.pathname) &&
-  new URLSearchParams(window.location.search).has("landing-preview");
+// The homepage showcase and the tutorial's practice editor are separate,
+// ephemeral editor sessions.
+const editorQuery =
+  typeof window !== "undefined" && /^\/editor\/?$/.test(window.location.pathname)
+    ? new URLSearchParams(window.location.search)
+    : null;
+
+export const isLandingPreview = Boolean(editorQuery?.has("landing-preview"));
+
+/** Lesson id when /editor runs inside the tutorial page (`/editor?tutorial=<id>`). */
+export const tutorialLessonId = editorQuery?.get("tutorial") ?? null;
+export const tutorialLanguage = editorQuery?.get("lang") === "en" ? "en" : "cn";
+
+const isEditorSandbox = isLandingPreview || tutorialLessonId !== null;
 
 export const LANDING_PREVIEW_ZOOM = 0.5;
 
@@ -28,8 +37,8 @@ class MemoryStorage implements Storage {
   }
 }
 
-if (isLandingPreview) {
-  // The showcase shares an origin with /editor. The synced macOS editor reads
+if (isEditorSandbox) {
+  // The sandbox shares an origin with /editor. The synced macOS editor reads
   // localStorage and IndexedDB directly, so replace both before any editor
   // module loads; the preview must never read or overwrite user documents.
   Object.defineProperty(window, "localStorage", {
@@ -41,8 +50,8 @@ if (isLandingPreview) {
     value: undefined,
   });
 
-  // The preview is embedded below the fold of the landing page. Scrolling or
-  // focusing inside it would otherwise scroll the host page down to the iframe.
+  // The sandbox is embedded in a longer page. Scrolling or focusing inside it
+  // would otherwise scroll the host page to the iframe.
   Element.prototype.scrollIntoView = function scrollIntoView() {};
   const focus = HTMLElement.prototype.focus;
   HTMLElement.prototype.focus = function focusWithoutScroll(options?: FocusOptions) {

@@ -10,6 +10,7 @@ import {
   FileDown,
   FilePlus2,
   FolderOpen,
+  GraduationCap,
   History,
   Languages,
   LoaderCircle,
@@ -57,7 +58,8 @@ import type {
 import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
 import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
-import { isLandingPreview, LANDING_PREVIEW_ZOOM } from "./runtime/landingPreview";
+import { isLandingPreview, LANDING_PREVIEW_ZOOM, tutorialLanguage, tutorialLessonId } from "./runtime/landingPreview";
+import { findTutorialLesson, type TutorialSnapshot } from "./tutorial/lessons";
 import {
   loadWebOcrConfiguration,
   recognizeFormulaWithWebApi,
@@ -72,6 +74,7 @@ interface InlineOcrState {
 }
 
 const WEB_DEFAULT_ZOOM = 0.45;
+const TUTORIAL_ZOOM = 0.6;
 const WEB_DEFAULT_ZOOM_MIGRATION_KEY = "visualtex.web.default-zoom.45.v1";
 const LANDING_PREVIEW_LINES = [
   String.raw`J_\nu(x)=\sum_{k=0}^{\infty}\frac{(-1)^k}{k!\Gamma(k+\nu+1)}\left(\frac{x}{2}\right)^{2k+\nu}`,
@@ -185,9 +188,50 @@ function App() {
     });
   }, []);
 
+  // The tutorial page embeds /editor?tutorial=<lesson> as a practice editor
+  // (in-memory storage, see runtime/landingPreview) and polls its state.
+  useLayoutEffect(() => {
+    const lesson = findTutorialLesson(tutorialLessonId);
+    if (!lesson) return;
+    setLanguage(tutorialLanguage);
+    replaceDocumentState({
+      title: lesson.title[tutorialLanguage === "en" ? "en" : "zh"],
+      lines: lesson.start.map((line, index) => ({
+        id: `tutorial-${lesson.id}-${index + 1}`,
+        latex: line.latex,
+        mode: line.mode,
+      })),
+      activeLineId: `tutorial-${lesson.id}-${lesson.start.length}`,
+      formulaAlignment,
+      selectionByLineId: {},
+    });
+    setSourceDocumentRevision((revision) => revision + 1);
+    setZoom(TUTORIAL_ZOOM);
+    const host = window as Window & { visualtexTutorial?: { snapshot: () => TutorialSnapshot } };
+    let copiedText = "";
+    const clipboard = navigator.clipboard;
+    if (clipboard) {
+      const writeText = clipboard.writeText.bind(clipboard);
+      clipboard.writeText = (text: string) => {
+        copiedText = text;
+        return writeText(text);
+      };
+    }
+    host.visualtexTutorial = {
+      snapshot: () => {
+        const state = useEditorStore.getState();
+        return {
+          lines: state.lines.map((line) => ({ latex: line.latex, mode: line.mode === "inline" ? "inline" : "display" })),
+          profile: state.latexFormatProfile,
+          copiedText,
+        };
+      },
+    };
+  }, []);
+
   // The web editor defaults to a smaller zoom than the desktop window.
   useLayoutEffect(() => {
-    if (isLandingPreview) return;
+    if (isLandingPreview || tutorialLessonId) return;
     if (readLocalStorage(WEB_DEFAULT_ZOOM_MIGRATION_KEY) === "true") return;
     if (useEditorStore.getState().zoom === 0.6) setZoom(WEB_DEFAULT_ZOOM);
     writeLocalStorage(WEB_DEFAULT_ZOOM_MIGRATION_KEY, "true");
@@ -375,19 +419,17 @@ function App() {
       if (!inserted) {
         throw new Error(
           isEn
-            ? "The original formula line no longer exists; the OCR result was not inserted"
-            : "原来的公式行已被删除，OCR 结果没有插入到其他位置",
+            ? "The formula row was deleted, so the result was not inserted"
+            : "原公式行已删除，识别结果未插入",
         );
       }
 
       setInlineOcr((current) => ({
         status: "success",
-        message: isEn
-          ? "Recognized and inserted at the saved cursor"
-          : "识别完成，已插入原光标位置",
+        message: isEn ? "Recognized and inserted" : "已识别并插入",
         seconds: current?.seconds ?? 0,
       }));
-      setToast(isEn ? "Pasted image converted to LaTeX" : "粘贴图片已转换为 LaTeX");
+      setToast(isEn ? "Image recognized" : "图片已识别");
       scheduleInlineOcrClear(1800);
     } catch (error) {
       const message =
@@ -461,17 +503,13 @@ function App() {
     try {
       await copyFormulaLinesUniversal(lines, latexFormatProfile);
       addHistory(latex);
+      setToast(isEn ? "LaTeX copied" : "已复制 LaTeX");
+      return true;
+    } catch {
       setToast(
         isEn
-          ? `Copied · ${latexProfileSummary}`
-          : `已复制 · ${latexProfileSummary}`,
-      );
-      return true;
-    } catch (reason) {
-      setToast(
-        reason instanceof Error ? reason.message : isEn
-          ? "Could not copy formula source."
-          : "无法复制公式源码。",
+          ? "Copy failed: the browser blocked the clipboard."
+          : "复制失败：浏览器不允许写入剪贴板。",
       );
       return false;
     }
@@ -661,13 +699,8 @@ function App() {
       >
         <div className="code-format-menu-header">
           <span className="copy-menu-label">
-            {isEn ? "Universal LaTeX format" : "通用 LaTeX 格式"}
+            {isEn ? "LaTeX format" : "LaTeX 格式"}
           </span>
-          <small>
-            {isEn
-              ? "One persistent profile for inline, display and multi-line formulas"
-              : "一套持久化规则同时控制行内、行间与多行公式"}
-          </small>
         </div>
 
         <div className="latex-profile-options">
@@ -858,10 +891,6 @@ function App() {
             </div>
           </div>
         </div>
-
-        <div className="latex-profile-summary" data-latex-profile-summary>
-          {latexProfileSummary}
-        </div>
       </div>
     ) : null;
 
@@ -874,11 +903,7 @@ function App() {
         aria-expanded={copyMenuOpen}
         aria-haspopup="menu"
         aria-controls="copy-format-menu"
-        title={
-          isEn
-            ? `Current profile: ${latexProfileSummary}`
-            : `当前格式配置：${latexProfileSummary}`
-        }
+        title={isEn ? `LaTeX format: ${latexProfileSummary}` : `LaTeX 格式：${latexProfileSummary}`}
         onClick={() => {
           setMenuOpen(false);
           setCopyMenuOpen((open) => !open);
@@ -959,12 +984,10 @@ function App() {
             >
               <div className="app-menu-heading">
                 <strong>VisualTeX</strong>
-                <span>{isEn ? "Formula workspace" : "公式工作区"}</span>
               </div>
               <button type="button" role="menuitem" onClick={() => runMenuAction(newFormula)}>
                 <FilePlus2 size={16} />
                 <span>{isEn ? "New formula" : "新建公式"}</span>
-                <kbd>Ctrl+N</kbd>
               </button>
               <button
                 type="button"
@@ -989,7 +1012,6 @@ function App() {
               >
                 <FileDown size={16} />
                 <span>{isEn ? "Export…" : "导出…"}</span>
-                <kbd>MD/SVG/PNG</kbd>
               </button>
               <div className="app-menu-divider" />
               <button
@@ -1024,6 +1046,14 @@ function App() {
               >
                 <BookOpenText size={16} />
                 <span>{isEn ? "Help Manual" : "帮助手册"}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runMenuAction(() => (window.top ?? window).location.assign("/tutorial"))}
+              >
+                <GraduationCap size={16} />
+                <span>{isEn ? "Tutorial" : "新手教程"}</span>
               </button>
               <div className="app-menu-divider" />
               <div className="app-menu-language">
@@ -1074,7 +1104,7 @@ function App() {
 
         <div className="header-actions">
           <div className="action-group file-actions">
-            <button type="button" className="icon-button" onClick={newFormula} aria-label={isEn ? "New" : "新建"} title={isEn ? "New · Ctrl+N" : "新建 · Ctrl+N"}>
+            <button type="button" className="icon-button" onClick={newFormula} aria-label={isEn ? "New" : "新建"} title={isEn ? "New" : "新建"}>
               <FilePlus2 size={17} />
             </button>
             <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} aria-label={isEn ? "Open" : "打开"} title={isEn ? "Open · Ctrl+O" : "打开 · Ctrl+O"}>

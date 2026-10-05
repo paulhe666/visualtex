@@ -403,8 +403,8 @@ export function InputBehaviorMenu() {
                         <span
                           title={
                             isEn
-                              ? "These entries apply only after the allowed preceding structures defined in code"
-                              : "这些条目只在代码规定的前置结构后触发"
+                              ? "These only apply after certain structures"
+                              : "只在特定结构后面生效"
                           }
                         >
                           {isEn ? "context" : "有前置条件"}

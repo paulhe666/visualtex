@@ -408,11 +408,6 @@ export function WebOcrDialog({
                       ? "Drop a formula image here"
                       : "将公式图片拖到这里"}
                   </strong>
-                  <span>
-                    {isEn
-                      ? "Choose a file or paste an image"
-                      : "选择文件，或直接粘贴剪贴板图片"}
-                  </span>
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
@@ -422,9 +417,7 @@ export function WebOcrDialog({
                   </button>
                   <small>
                     <ClipboardPaste size={13} />
-                    {isEn
-                      ? "Paste with Ctrl/⌘V while this dialog is open"
-                      : "窗口打开时可直接按 Ctrl/⌘V 粘贴"}
+                    {isEn ? "or paste with Ctrl/⌘V" : "或按 Ctrl/⌘V 粘贴"}
                   </small>
                 </div>
               )}
@@ -445,7 +438,7 @@ export function WebOcrDialog({
 
             <section
               className="ocr-provider-card"
-              aria-label={isEn ? "OCR provider" : "OCR 提供器"}
+              aria-label={isEn ? "OCR service" : "识别服务"}
             >
               <div className="ocr-provider-heading">
                 <span className="ocr-provider-icon is-api">
@@ -453,14 +446,13 @@ export function WebOcrDialog({
                 </span>
                 <div>
                   <strong>
-                    {isEn ? "OCR API provider" : "OCR API 提供器"}
+                    {isEn ? "OCR service" : "识别服务"}
                   </strong>
-                  <span>{providerLabel(activeProvider)}</span>
                 </div>
               </div>
               <label className="ocr-provider-field is-wide">
-                <span>{isEn ? "Provider" : "提供器"}</span>
                 <select
+                  aria-label={isEn ? "OCR service" : "识别服务"}
                   value={activeProvider}
                   disabled={recognizing}
                   onChange={(event) =>
@@ -491,11 +483,6 @@ export function WebOcrDialog({
                   <strong>
                     {isEn ? "API configuration" : "API 配置"}
                   </strong>
-                  <span>
-                    {isEn
-                      ? "Secrets stay in this tab session"
-                      : "密钥只保留在当前标签页会话"}
-                  </span>
                 </div>
               </div>
 
@@ -544,11 +531,6 @@ export function WebOcrDialog({
                         }
                       />
                     </label>
-                    <p className="ocr-provider-protocol-note">
-                      {isEn
-                        ? "Sends one image through the fixed SimpleTex relay and reads res.latex."
-                        : "图片经固定目标转发至 SimpleTex V2.5，并读取 res.latex。"}
-                    </p>
                   </>
                 )}
 
@@ -577,11 +559,6 @@ export function WebOcrDialog({
                         }
                       />
                     </label>
-                    <p className="ocr-provider-protocol-note">
-                      {isEn
-                        ? "Uses PaddleOCR-VL-1.6 and waits for the normal asynchronous queue for up to 120 seconds."
-                        : "使用 PaddleOCR-VL-1.6，并正常等待异步队列，最长 120 秒。"}
-                    </p>
                   </>
                 )}
 
@@ -638,11 +615,6 @@ export function WebOcrDialog({
                         }
                       />
                     </label>
-                    <p className="ocr-provider-protocol-note">
-                      {isEn
-                        ? "Uses POST /v3/text. Mathpix limits base64 images to 2 MB."
-                        : "使用 POST /v3/text；Mathpix 的 base64 图片上限为 2 MB。"}
-                    </p>
                   </>
                 )}
 
@@ -740,15 +712,13 @@ export function WebOcrDialog({
                         }
                       />
                     </label>
-                    <p className="ocr-provider-protocol-note">
-                      {openAiUsesFixedRelay(configuration)
-                        ? isEn
-                          ? "The official OpenAI endpoint uses VisualTeX's fixed-target relay. Custom compatible endpoints are contacted directly from the browser."
-                          : "OpenAI 官方地址使用 VisualTeX 固定目标转发；自定义兼容地址仍由浏览器直接连接。"
-                        : isEn
-                          ? "This custom compatible endpoint is contacted directly from the browser and must allow browser CORS."
-                          : "该自定义兼容地址由浏览器直接连接，服务端必须允许浏览器跨域访问。"}
-                    </p>
+                    {!openAiUsesFixedRelay(configuration) && (
+                      <p className="ocr-provider-protocol-note">
+                        {isEn
+                          ? "A custom endpoint must allow browser requests (CORS)."
+                          : "自定义地址需要允许浏览器跨域访问（CORS）。"}
+                      </p>
+                    )}
                   </>
                 )}
               </div>
@@ -758,11 +728,11 @@ export function WebOcrDialog({
                   <ShieldCheck size={14} />
                   {providerUsesFixedRelay(configuration)
                     ? isEn
-                      ? "This provider blocks browser CORS, so requests use VisualTeX's fixed-target relay. The relay accepts no arbitrary URL and does not log or store images, formulas, or credentials."
-                      : "该服务商阻止浏览器跨域调用，因此请求经 VisualTeX 固定目标转发；转发层不接受任意网址，也不记录或存储图片、公式与密钥。"
+                      ? "Sent through VisualTeX's relay, which stores nothing."
+                      : "经 VisualTeX 转发，不保存图片、公式和密钥。"
                     : isEn
-                      ? "Images and credentials are sent directly from your browser to the selected provider and are not uploaded to VisualTeX servers."
-                      : "图片和密钥由浏览器直接发送到所选服务商，不上传到 VisualTeX 服务器。"}
+                      ? "Sent straight to the provider, not to VisualTeX."
+                      : "直接发给服务商，不经过 VisualTeX。"}
                 </span>
                 <button
                   type="button"
@@ -785,7 +755,6 @@ export function WebOcrDialog({
             <section className="ocr-result-card">
               <div className="ocr-result-heading">
                 <div>
-                  <span className="eyebrow">LATEX RESULT</span>
                   <strong>
                     {isEn ? "Recognition result" : "识别结果"}
                   </strong>
@@ -801,8 +770,8 @@ export function WebOcrDialog({
                         ? progress.messageEn
                         : progress.messageZh
                       : isEn
-                        ? "Preparing OCR request…"
-                        : "正在准备 OCR 请求…"}
+                        ? "Recognizing…"
+                        : "正在识别…"}
                   </strong>
                   <span>
                     {providerLabel(activeProvider)} · {elapsedSeconds}s
@@ -814,7 +783,7 @@ export function WebOcrDialog({
                     <MathPreview latex={latex.split("\n")[0]} />
                   </div>
                   <label className="ocr-latex-editor">
-                    <span>{isEn ? "Editable LaTeX" : "可编辑 LaTeX"}</span>
+                    <span>LaTeX</span>
                     <textarea
                       value={latex}
                       onChange={(event) => setLatex(event.target.value)}
@@ -825,11 +794,6 @@ export function WebOcrDialog({
               ) : (
                 <div className="ocr-empty-result">
                   <ScanLine size={24} />
-                  <span>
-                    {isEn
-                      ? "Configure an API, choose an image, and run recognition."
-                      : "配置 API 并选择图片后，即可开始识别。"}
-                  </span>
                 </div>
               )}
             </section>

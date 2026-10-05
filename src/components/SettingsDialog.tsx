@@ -752,7 +752,7 @@ export function SettingsDialog({
         </div>
 
         <footer className="dialog-footer">
-          <span>{isEn ? "Settings saved automatically" : "设置已自动保存"}</span>
+          <span />
           <button type="button" className="primary-button" onClick={onClose}>
             {isEn ? "Done" : "完成"}
           </button>
@@ -1006,11 +1006,6 @@ export function SettingsDialog({
                       <strong id="source-editor-customization-title">
                         {isEn ? "Source editor" : "源码编辑器"}
                       </strong>
-                      <small>
-                        {isEn
-                          ? "Adjust the LaTeX source text without changing formula size."
-                          : "仅调整 LaTeX 源码文字，不影响公式字号。"}
-                      </small>
                     </div>
                     <button
                       type="button"
@@ -1431,11 +1426,7 @@ export function SettingsDialog({
               </div>
 
               <footer className="dialog-footer">
-                <span>
-                  {isEn
-                    ? "Changes apply immediately"
-                    : "修改会立即生效"}
-                </span>
+                <span />
                 <button
                   type="button"
                   className="primary-button"

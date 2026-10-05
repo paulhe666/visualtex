@@ -94,11 +94,6 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
                   {sortedBindings.length}{" "}
                   {isEn ? "assigned" : "项已设置"}
                 </strong>
-                <small>
-                  {isEn
-                    ? "Editor shortcuts are scoped to the formula editor."
-                    : "公式输入快捷键仅作用于公式编辑区。"}
-                </small>
               </span>
             </div>
           </div>
@@ -120,8 +115,8 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
                 <strong>{isEn ? "No formula hotkeys yet" : "还没有设置公式快捷键"}</strong>
                 <span>
                   {isEn
-                    ? "Close this window, then right-click any formula tool, common tile or custom tile."
-                    : "关闭此窗口后，右键任意公式工具、常用磁贴或自定义磁贴即可设置。"}
+                    ? "Right-click a formula tool or tile to add one."
+                    : "右键公式工具或磁贴即可设置。"}
                 </span>
               </div>
             ) : (
@@ -178,9 +173,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
           </div>
 
           <footer className="dialog-footer">
-            <span>
-              {isEn ? "Hotkeys are saved automatically" : "快捷键已自动保存"}
-            </span>
+            <span />
             <button type="button" className="primary-button" onClick={onClose}>
               {isEn ? "Done" : "完成"}
             </button>

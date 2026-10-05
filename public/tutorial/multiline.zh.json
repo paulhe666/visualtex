@@ -1,0 +1,112 @@
+{
+ "duration": 21.62,
+ "width": 1280,
+ "height": 760,
+ "events": [
+  {
+   "t": 1.41,
+   "dur": 1.4,
+   "step": 0,
+   "kind": "click",
+   "label": {
+    "zh": "点击公式行",
+    "en": "Click the row"
+   }
+  },
+  {
+   "t": 2.86,
+   "dur": 1.34,
+   "step": 0,
+   "kind": "type",
+   "text": "a=b+c"
+  },
+  {
+   "t": 4.15,
+   "dur": 1.2,
+   "step": 0,
+   "kind": "keys",
+   "keys": [
+    "Shift",
+    "Enter"
+   ]
+  },
+  {
+   "t": 4.87,
+   "dur": 0.95,
+   "step": 0,
+   "kind": "type",
+   "text": "=d"
+  },
+  {
+   "t": 7.18,
+   "dur": 1.4,
+   "step": 2,
+   "kind": "click",
+   "label": {
+    "zh": "LaTeX 格式",
+    "en": "LaTeX format"
+   }
+  },
+  {
+   "t": 8.52,
+   "dur": 1.4,
+   "step": 2,
+   "kind": "click",
+   "label": {
+    "zh": "选 align",
+    "en": "Choose align"
+   }
+  },
+  {
+   "t": 10.77,
+   "dur": 1.4,
+   "step": 3,
+   "kind": "click",
+   "label": {
+    "zh": "点到行尾",
+    "en": "Click the end of the row"
+   }
+  },
+  {
+   "t": 12.23,
+   "dur": 1.2,
+   "step": 3,
+   "kind": "keys",
+   "keys": [
+    "Alt",
+    "Enter"
+   ]
+  },
+  {
+   "t": 12.94,
+   "dur": 1.48,
+   "step": 3,
+   "kind": "type",
+   "text": "y&=x^2"
+  },
+  {
+   "t": 15.06,
+   "dur": 1.33,
+   "step": 3,
+   "kind": "type",
+   "text": "+2x+1"
+  },
+  {
+   "t": 16.35,
+   "dur": 1.2,
+   "step": 3,
+   "kind": "keys",
+   "keys": [
+    "Shift",
+    "Enter"
+   ]
+  },
+  {
+   "t": 17.06,
+   "dur": 1.85,
+   "step": 3,
+   "kind": "type",
+   "text": "&=(x+1)^2"
+  }
+ ]
+}
