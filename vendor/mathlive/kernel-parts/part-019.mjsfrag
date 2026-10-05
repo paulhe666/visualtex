@@ -1349,18 +1349,31 @@ function visualTexInsertRowBreak(model, environment = "gathered") {
       const before = siblings.slice(1, split);
       const after = siblings.slice(split);
       parent.removeBranch(branch);
+      // A '&' typed before the first line break is stored as a VisualTeX
+      // alignment marker. Split that row at the marker into the standard
+      // right/left column pair, exactly as typing '&' inside the row would.
+      const isAlignmentMarker = (atom) =>
+        atom.command === "\\class" && atom.args?.[0] === "visualtex-align-marker";
+      const alignedRow = (atoms) => {
+        const marker = atoms.findIndex(isAlignmentMarker);
+        return marker < 0
+          ? { cells: [[], atoms], provisional: true }
+          : { cells: [atoms.slice(0, marker), atoms.slice(marker + 1)], provisional: false };
+      };
+      const rows = environment === "aligned" ? [alignedRow(before), alignedRow(after)] : null;
       const array =
-        environment === "aligned"
-          ? makeEnvironment(environment, [[[], before], [[], after]])
+        rows
+          ? makeEnvironment(environment, rows.map((row) => row.cells))
           : makeEnvironment(environment, [[before], [after]]);
-      if (environment === "aligned") {
+      if (rows) {
         const provisionalRows = visualTexProvisionalAlignRows(array);
-        provisionalRows.add(0);
-        provisionalRows.add(1);
+        rows.forEach((row, index) => {
+          if (row.provisional) provisionalRows.add(index);
+        });
       }
       parent.setChildren([array], branch);
       model.position = model.offsetOf(
-        array.getCell(1, environment === "aligned" ? 1 : 0)[0],
+        array.getCell(1, rows?.[1].provisional ? 1 : 0)[0],
       );
     }
     mathfield.snapshot();
