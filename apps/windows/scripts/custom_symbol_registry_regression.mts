@@ -11,9 +11,12 @@ import {
   replaceCustomSymbolLibrary,
   updateCustomSymbol,
 } from "../src/math/customSymbolRegistry.ts";
-import { safeStorage } from "../src/runtime/safeStorage.ts";
+import { createSafeStorage, safeStorage } from "../src/runtime/safeStorage.ts";
+import { memoryStorage } from "./memory_storage.ts";
 import { latexToMathMl, latexToSvg } from "../src/export/runtime.ts";
 
+const storage = memoryStorage();
+Object.assign(safeStorage, createSafeStorage(() => storage));
 const now = Date.now();
 const baseDefinition = {
   id: "regression-selfdefa",
@@ -81,7 +84,7 @@ try {
   assert.equal(suggestions[0]?.command, "\\selfdefa");
   assert.equal(suggestions[0]?.id, "custom-symbol:regression-selfdefa");
 
-  const svg = latexToSvg("A\\selfdefa B", {
+  const svg = await latexToSvg("A\\selfdefa B", {
     displayMode: false,
     fontSizePt: 12,
     paddingPx: 0,
@@ -137,7 +140,7 @@ try {
     },
     ommlFallback: null,
   });
-  const erasedSvg = latexToSvg("\\selferase", {
+  const erasedSvg = await latexToSvg("\\selferase", {
     displayMode: false,
     fontSizePt: 12,
     paddingPx: 0,
@@ -165,7 +168,7 @@ try {
     "erase",
   );
 
-  const mathMl = latexToMathMl("A\\selfdefa B", false);
+  const mathMl = await latexToMathMl("A\\selfdefa B", false);
   assert.match(mathMl, /<mo>&#x2248;<\/mo>/, "OMML/MathML fallback must be semantic, not vector data");
 
   registerCustomSymbol({
@@ -176,9 +179,9 @@ try {
     role: "ordinary",
     ommlFallback: null,
   });
-  assert.throws(
+  await assert.rejects(
     () => latexToMathMl("\\selfdefb", false),
-    /did not resolve LaTeX command \\selfdefb/,
+    /Undefined control sequence \\selfdefb/,
   );
 
   updateCustomSymbol("regression-selfdefa", {
@@ -200,7 +203,7 @@ try {
     ),
     false,
   );
-  assert.throws(
+  await assert.rejects(
     () => latexToSvg("\\selfdefa", {
       displayMode: false,
       fontSizePt: 12,
@@ -232,11 +235,11 @@ try {
     });
   }
   const roleSvgs = Object.fromEntries(
-    roleCases.map(([role, command]) => {
+    await Promise.all(roleCases.map(async ([role, command]) => {
       const latex = role === "operator"
         ? `A\\${command}_{i}^{j}B`
         : `A\\${command} B`;
-      const output = latexToSvg(latex, {
+      const output = await latexToSvg(latex, {
         displayMode: role === "operator",
         fontSizePt: 12,
         paddingPx: 0,
@@ -248,7 +251,7 @@ try {
         `${role} custom symbol SVG marker`,
       );
       return [role, output];
-    }),
+    })),
   );
   assert.ok(
     roleSvgs.binary.width > roleSvgs.ordinary.width,

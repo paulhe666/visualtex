@@ -181,15 +181,21 @@ impl InstallControl {
 
     pub fn cancel(&self) -> Result<bool, String> {
         self.cancel_generation.fetch_add(1, Ordering::SeqCst);
-        let pid = self.active_pid.load(Ordering::SeqCst);
-        if pid == 0 {
-            return Ok(false);
+        // The command runner owns the Child and its process tree. It observes
+        // this generation in its 100 ms loop and performs termination once.
+        Ok(self.active_pid.load(Ordering::SeqCst) != 0)
+    }
+
+    pub fn cancel_and_wait(&self, timeout: Duration) -> Result<(), String> {
+        self.cancel()?;
+        let deadline = Instant::now() + timeout;
+        while self.is_running() {
+            if Instant::now() >= deadline {
+                return Err("OCR installation did not stop in time; its files must remain in place".to_string());
+            }
+            thread::sleep(Duration::from_millis(50));
         }
-        terminate_process_tree(pid)?;
-        let _ = self
-            .active_pid
-            .compare_exchange(pid, 0, Ordering::SeqCst, Ordering::SeqCst);
-        Ok(true)
+        Ok(())
     }
 
     pub fn cancellation_generation(&self) -> u64 {
@@ -540,84 +546,6 @@ pub fn append_install_log(runtime_root: &Path, message: &str) -> Result<(), Stri
         .map_err(|error| format!("Unable to write OCR installation log: {error}"))
 }
 
-pub fn cleanup_runtime_processes(runtime_root: &Path) -> Result<Vec<u32>, String> {
-    #[cfg(windows)]
-    {
-        let escaped_root = runtime_root.display().to_string().replace('\'', "''");
-        let script = format!(
-            "$root='{escaped_root}'.Replace('/',[char]92).ToLowerInvariant(); [Console]::OutputEncoding=[Text.UTF8Encoding]::new(); Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {{ $_.ProcessId -ne $PID -and $_.Name -match '^(python|pythonw|pip|pip3|cargo|rustc|maturin)(\\.exe)?$' -and ((($_.ExecutablePath + ' ' + $_.CommandLine).Replace('/',[char]92).ToLowerInvariant()).Contains($root)) }} | ForEach-Object {{ [Console]::WriteLine($_.ProcessId) }}"
-        );
-        let output = powershell_command()?
-            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-            .creation_flags(CREATE_NO_WINDOW)
-            .env("PYTHONUTF8", "1")
-            .env("PYTHONIOENCODING", "utf-8")
-            .output()
-            .map_err(|error| format!("Unable to scan residual OCR installation processes: {error}"))?;
-        if !output.status.success() {
-            return Err(format!(
-                "Residual OCR process scan failed with {}. stdout:\n{}\nstderr:\n{}",
-                output.status,
-                decode_process_output(&output.stdout),
-                decode_process_output(&output.stderr)
-            ));
-        }
-        let mut terminated = Vec::new();
-        for pid in decode_process_output(&output.stdout)
-            .lines()
-            .filter_map(|line| line.trim().parse::<u32>().ok())
-        {
-            if pid == 0 || pid == std::process::id() || terminated.contains(&pid) {
-                continue;
-            }
-            match terminate_process_tree(pid) {
-                Ok(()) => terminated.push(pid),
-                Err(error) => {
-                    if process_belongs_to_runtime(pid, runtime_root)? {
-                        return Err(error);
-                    }
-                }
-            }
-        }
-        Ok(terminated)
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = runtime_root;
-        Ok(Vec::new())
-    }
-}
-
-pub fn cleanup_runtime_processes_for_install(runtime_root: &Path) -> Vec<u32> {
-    best_effort_runtime_process_cleanup_for_install(
-        runtime_root,
-        cleanup_runtime_processes(runtime_root),
-    )
-}
-
-pub(crate) fn best_effort_runtime_process_cleanup_for_install(
-    runtime_root: &Path,
-    result: Result<Vec<u32>, String>,
-) -> Vec<u32> {
-    match result {
-        Ok(terminated) => terminated,
-        Err(error) => {
-            // Full-process inventory is only a defensive pre-install cleanup.
-            // Enterprise AppLocker/WDAC policies can block VisualTeX from
-            // launching PowerShell even though the application itself is allowed.
-            // The explicitly recorded installer PID is validated separately using
-            // native Win32 APIs, so this auxiliary inventory must not make OCR
-            // installation require administrator elevation or policy changes.
-            let warning = format!(
-                "Residual OCR process inventory was skipped before installation: {error}"
-            );
-            eprintln!("{warning}");
-            let _ = append_install_log(runtime_root, &warning);
-            Vec::new()
-        }
-    }
-}
-
 pub fn cleanup_stale_process(runtime_root: &Path) -> Result<bool, String> {
     let path = active_process_path(runtime_root);
     let Ok(content) = fs::read(&path) else {
@@ -761,16 +689,12 @@ pub fn run_logged_command(
     let result = (|| -> Result<CommandCapture, String> {
         loop {
             if control.cancellation_generation() != generation {
-                let _ = terminate_process_tree(pid);
-                let _ = child.wait();
                 break Err(format!(
-                    "{label} was cancelled. The entire installation process tree was terminated. log={}",
+                    "{label} was cancelled. log={}",
                     log_path.display()
                 ));
             }
             if started.elapsed() > limits.step_timeout {
-                let _ = terminate_process_tree(pid);
-                let _ = child.wait();
                 let download_detail = progress_tracker
                     .status(started.elapsed())
                     .map(|(message, detail)| {
@@ -784,8 +708,6 @@ pub fn run_logged_command(
                 ));
             }
             if last_activity.elapsed() > limits.idle_timeout {
-                let _ = terminate_process_tree(pid);
-                let _ = child.wait();
                 break Err(format!(
                     "{label} showed no stdout/stderr or pip cache/temp-file growth for {} seconds and was stopped as genuinely inactive. The pip cache and existing OCR environment were preserved. log={}",
                     limits.idle_timeout.as_secs(),
@@ -848,10 +770,8 @@ pub fn run_logged_command(
             }
 
             if control.cancellation_generation() != generation {
-                let _ = terminate_process_tree(pid);
-                let _ = child.wait();
                 break Err(format!(
-                    "{label} was cancelled. The entire installation process tree was terminated. log={}",
+                    "{label} was cancelled. log={}",
                     log_path.display()
                 ));
             }
@@ -897,11 +817,15 @@ pub fn run_logged_command(
         }
     })();
 
-    if result.is_err() {
-        if child.try_wait().ok().flatten().is_none() {
-            let _ = terminate_process_tree(pid);
-            let _ = child.wait();
+    if let Err(operation_error) = &result {
+        if child.try_wait().map_err(|error| format!("Unable to inspect owned OCR process {pid}: {error}"))?.is_none() {
+            // The runner is the sole owner. Report a failed termination and keep
+            // the process record instead of waiting for a natural exit as success.
+            if let Err(error) = terminate_process_tree(pid) {
+                return Err(format!("{operation_error}; {error}; process record retained"));
+            }
         }
+        child.wait().map_err(|error| format!("Unable to reap owned OCR process {pid}: {error}"))?;
         let drain_deadline = Instant::now() + Duration::from_secs(2);
         while closed_streams < 2 && Instant::now() < drain_deadline {
             match receiver.recv_timeout(Duration::from_millis(50)) {
@@ -1123,18 +1047,17 @@ pub fn terminate_process_tree(pid: u32) -> Result<(), String> {
     }
     #[cfg(windows)]
     {
-        let status = Command::new("taskkill")
+        let output = Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .creation_flags(CREATE_NO_WINDOW)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .output()
             .map_err(|error| format!("Unable to terminate OCR installation process tree {pid}: {error}"))?;
-        if status.success() {
+        if output.status.success() {
             return Ok(());
         }
         return Err(format!(
-            "taskkill could not terminate OCR installation process tree {pid}: {status}"
+            "taskkill could not terminate OCR installation process tree {pid}: {}; {}",
+            output.status, decode_process_output(&output.stderr).trim()
         ));
     }
     #[cfg(unix)]
@@ -1188,19 +1111,6 @@ mod tests {
         assert!(current.contains("VisualTeX OCR install session"));
         assert!(!current.contains("older attempt"));
         assert!(previous.contains("older attempt"));
-    }
-
-    #[test]
-    fn policy_blocked_residual_scan_does_not_block_installation() {
-        let root = tempdir().unwrap();
-        let terminated = best_effort_runtime_process_cleanup_for_install(
-            root.path(),
-            Err("Unable to scan residual OCR installation processes: os error 786".to_string()),
-        );
-        assert!(terminated.is_empty());
-        let log = fs::read_to_string(install_log_path(root.path())).unwrap();
-        assert!(log.contains("inventory was skipped before installation"));
-        assert!(log.contains("786"));
     }
 
     #[cfg(windows)]

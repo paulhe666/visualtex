@@ -424,7 +424,6 @@ export function OfficeDialogApp() {
   const commitFromShortcutRef = useRef<() => void>(() => undefined);
   const closeFromNativeWindowRef = useRef<() => void>(() => undefined);
   const exportRunIdRef = useRef(0);
-  const activeSessionIdentityRef = useRef({ sessionId: "", formulaId: "" });
   const conversionStartedRef = useRef(false);
   const batchConversionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const initialEditorFocusSessionRef = useRef("");
@@ -467,14 +466,7 @@ export function OfficeDialogApp() {
   const inlineOcrCancelRequestedRef = useRef(false);
   const inlineOcrRunIdRef = useRef(0);
   const inlineOcrClearTimerRef = useRef<number | null>(null);
-  const { sessionId, session, loading, error, reload, save } = useOfficeSession();
-
-  useEffect(() => {
-    activeSessionIdentityRef.current = {
-      sessionId: session?.id ?? "",
-      formulaId: session?.formulaId ?? "",
-    };
-  }, [session?.id, session?.formulaId]);
+  const { activation, isActive, sessionId, session, loading, error, reload, save } = useOfficeSession();
 
   useEffect(() => {
     if (readLocalStorage(OFFICE_EDITOR_ZOOM_60_MIGRATION_KEY) !== "done") {
@@ -494,7 +486,7 @@ export function OfficeDialogApp() {
     initialEditorFocusSessionRef.current = "";
     latestCompleteExportRef.current = null;
     exportRunIdRef.current += 1;
-  }, [sessionId]);
+  }, [activation]);
 
   const title = useEditorStore((state) => state.title);
   const lines = useEditorStore((state) => state.lines);
@@ -1149,6 +1141,7 @@ export function OfficeDialogApp() {
           session.host,
         );
         const exportResult = await generateSessionExportResult(session);
+        if (!isActive()) return;
         await save({
           title: session.title,
           lines: conversionLines,
@@ -1169,6 +1162,7 @@ export function OfficeDialogApp() {
           error: null,
         });
       } catch (reason) {
+        if (!isActive()) return;
         const detail = readErrorMessage(
           reason,
           isEn ? "Formula format conversion failed" : "公式格式转换失败",
@@ -1187,13 +1181,13 @@ export function OfficeDialogApp() {
         }
       } finally {
         try {
-          await closeOfficeSessionWindow(sessionId);
+          if (isActive()) await closeOfficeSessionWindow(sessionId);
         } catch {
           // Completion also removes the hidden conversion window.
         }
       }
     })();
-  }, [session?.id, sessionId, isEn, save, generateSessionExportResult]);
+  }, [session?.id, sessionId, isEn, save, isActive, generateSessionExportResult]);
 
 
   useEffect(() => {
@@ -2023,6 +2017,7 @@ export function OfficeDialogApp() {
       if (status === "committing" && !exportResult) {
         throw new Error(isEn ? "Formula export is empty" : "公式导出结果为空");
       }
+      if (!isActive()) return null;
       const next = await save({
         title,
         lines: persistedLines,
@@ -2042,11 +2037,13 @@ export function OfficeDialogApp() {
         exportHeight: exportResult?.height ?? 0,
         error: null,
       });
+      if (!isActive()) return null;
       lastSavedFingerprintRef.current = currentFingerprint;
       return next;
     }, [
       session,
       save,
+      isActive,
       title,
       lines,
       activeLineId,
@@ -2083,6 +2080,7 @@ export function OfficeDialogApp() {
     finalizingRef.current = true;
     try {
       const next = await saveCurrentSession("committing");
+      if (!next) return;
 
       messageOfficeParent({ type: "visualtex-commit", sessionId: next.id });
       // The parent bridge owns both Word and PowerPoint mutations. Keep the
@@ -2090,12 +2088,14 @@ export function OfficeDialogApp() {
       // PowerPoint decoration therefore leaves this editor open with a useful
       // error instead of closing after creating an anonymous Graphic shape.
       await waitForOfficeCommitResult(next.id, next.host, isEn);
+      if (!isActive()) return;
       if (IS_VSTO_DESKTOP_RUNTIME) {
         await closeOfficeSessionWindow(next.id);
         return;
       }
       window.close();
     } catch (error) {
+      if (!isActive()) return;
       finalizingRef.current = false;
       setToast(readErrorMessage(
         error,
@@ -2130,6 +2130,7 @@ export function OfficeDialogApp() {
     finalizingRef.current = true;
     try {
       const next = await saveCurrentSession("cancelled");
+      if (!next) return;
       if (IS_VSTO_DESKTOP_RUNTIME) {
         await closeOfficeSessionWindow(next.id);
         return;
@@ -2144,6 +2145,7 @@ export function OfficeDialogApp() {
       });
       if (!delivered) window.close();
     } catch (error) {
+      if (!isActive()) return;
       finalizingRef.current = false;
       throw error;
     }

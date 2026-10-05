@@ -54,6 +54,8 @@
     "test:office-metadata": "node --experimental-strip-types scripts/office_metadata_smoke.mjs",
     "test:office-formula-document": "tsx scripts/office_formula_document_regression.mts",
     "test:office-session-safety": "tsx scripts/office_session_payload_safety_regression.mts",
+    "test:runtime-ownership": "node scripts/office_session_ownership_regression.cjs && tsx scripts/storage_contract_regression.mts && tsx scripts/editor_crash_recovery_regression.mts",
+    "test:windows-resource-ownership": "powershell.exe -NoProfile -File scripts/test_clipboard_ownership.ps1 && powershell.exe -NoProfile -File scripts/test_windows_pipe_ownership.ps1",
     "test:companion-payload-safety": "tsx scripts/companion_payload_safety_regression.mts",
     "test:windows-ole-payload-safety": "tsx scripts/windows_ole_payload_safety_regression.mts",
     "test:silent-ocr-hud-safety": "tsx scripts/silent_ocr_hud_payload_safety_regression.mts",

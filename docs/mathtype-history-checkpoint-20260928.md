@@ -1,5 +1,51 @@
 # MathType historical-document / native layout follow-up — resumed 2026-09-28
 
+## CP279 — 2026-10-05 — Local checkpoint authorized; six-way performance work opened
+
+用户明确要求先本地提交，再进行OMML/VisualTeX/MathType六向格式转换性能测试与优化测试。提交范围为CP278的28个源码/测试/CI文件与3份审查/检查点文档，先逐项核对remediation-state.json源码哈希；保留其余既有脚本改动、生成产物和历史证据。本地提交不等于发布验收，沿用CP278限定通过范围，不push/安装/部署。提交后再记录完整commit身份。
+
+本次用户指令解除“六向转换性能测试及依据实测优化”的冻结，其他无关性能改造不扩大。后续先核对冻结R3构建、独立Companion与自有Word测试入口；固定20条代表公式，单列已知保真失败，不把失败方向算成功吞吐，不降低内容比较或取消保护用户内容的边界。区分冷启动、转换本体、宿主写入和离线验收耗时；实际瓶颈有证据后再做最小共享规则/调用链优化及前后同条件对比。held R4与用户Office仍保护。
+
+## CP278 — 2026-10-05 — W01–W07 remediation complete within bounded validation
+
+本轮修复和删减已落盘：OCR全机子串清理及吞错包装删除；取消由持有Child的runner统一回收，reset/exit等lease释放，失败保留记录与诊断；会话激活身份统一GET/PATCH/提交/隐藏转换后续UI归属，删除重复watchdog和未使用身份缓存；保留恢复备份并修strict持久化；旧剪贴板事务异常清理及序列归属；sidecar终态关闭不复活；更新结构/架构/CI入口。28个源码/测试/CI文件净减1059行（含新增375行独立测试，不含文档/产物/他人修改），精确清单与哈希在artifacts/whole-project-remediation-20261005/remediation-state.json，独立报告docs/whole-project-remediation-20261005.md。
+
+最终通过：实际hook模拟6/6、双平台存储及恢复合同、Windows符号库、剪贴板真实类+mock原生边界11/11、sidecar自有进程4/4（另1ignored仅sleep fixture）、严格OCR运行器、OCR前端/协议、Windows/Office TS、Rust check --tests、两个结构入口、桌面/Office前端独立打包、frozen-R3 x64完整C#构建。OCR过程结论已纠正：旧r2 passed不能证明终止；沙箱taskkill对自建进程Access denied，r3强时限失败揭露弱断言；最终授权运行只操作自有进程，超时741ms、idle753ms、取消582ms实际完成回收。原失败全部保留；未改安全设置。前端首轮esbuild父目录权限阻塞后授权本地构建通过。
+
+最终C#候选build-cp277-ownership-final-r1：Word96A13F88B345FCF19FADC9C095C71434A87C72977B767B134F682F9012B4781D；PPT3531DA2E5F1F70B05133773A3C7140882DB257AACC256E86D3DEE24660B1A6A9。heldR4仍6692FDE3…3BAC，frozenR3仍FCE1BB75…D045；不是默认脏树构建。未新启动Office/Companion/WebView、未碰系统剪贴板/用户文档/注册表/Defender，未安装/部署/提交/push。HEAD仍49cf397818ee02b7bb18216630846eda9ade18e6。
+
+本轮未运行实际Word/PPT会话复用/剪贴板、六向/物理按键/视觉验收、Mac完整环境、x86候选及C#公式完整汇总；以上不能由mock或构建代替。CP255/F02/F09/特殊符号/间距/上下标与全量视觉遗留不变，性能重构和搁置探针不重开；不能把当前树标为发布验收全过。下一步为同版本候选在自有宿主补真实会话/剪贴板链，再限定代表公式验收。各文件、日志、失败原因和范围详见独立报告最终表。
+
+## CP277 — 2026-10-05 — Ownership fixes and bounded execution checks
+
+W01取消只发信号，Child所有者统一终止，OCR自有进程r2验收通过；r1重复taskkill失败保留。W02实际hook模拟6/6、W03恢复/W04双平台存储合同通过。旧Windows符号测试补异步等待并核对MathJax准确拒绝文案后r3通过，公式内容/身份断言未放宽。W05真实事务类+替身原生边界11/11通过，发现并补齐copy后抛错的序列记录；不算Office实机。W06隔离管道生命周期执行正在进行。W07两结构入口已绿，继续纠正workflow里的两个已删除Office.js命令并接入新回归。详细修改文件、根因、证据和限制见docs/whole-project-remediation-20261005.md及artifacts/whole-project-remediation-20261005。
+
+frozen-R3 `build-cp276-ownership-r1`完整C#构建、Windows类型检查、Rust check已通过，但W05新增finally晚于该候选，最终构建待做。没有用户Office/剪贴板/注册表/部署/新提交；held R4及CP255、全量六向/视觉缺口不变。尚需完成W06执行、最终构建哈希、差异复查和范围汇总。
+
+## CP276 — 2026-10-05 — W01–W07 remediation authorized
+
+用户明确要求修复删减。已核实起点HEAD49cf3978和现有现场修改，开始按CP275独立审查的七类问题修复，先W01/W02/W03/W04再生命周期及CI。优先删除越界清理和错误回退、统一状态所有权，不加万能防护或性能重构。详细进度docs/whole-project-remediation-20261005.md，证据artifacts/whole-project-remediation-20261005。保留旧失败，held R4/冻结R3不变；不提交/部署/注册表/用户Office操作，单次Undo及搁置探针不重开。此为开工记录，不是修复验收通过。
+
+## CP275 — 2026-10-05 — Whole-project review complete; seven actionable problem groups
+
+已完成本地提交49cf397818ee02b7bb18216630846eda9ade18e6之后的只读全项目关键链复审，详见docs/whole-project-code-review-20261005.md。本轮未改产品代码/测试预期/比较器，未再提交或push。范围为Windows/macOS前端、Rust会话/Companion/OCR/engine、Python入口、Word/PPT共享和宿主链、ATL OLE持久化、CI/脚本；不是逐行审完全部文件或项目验收。
+
+按严重程度：W01/P1 OCR全机残留清理以路径子串当所有权，合成记录证明备份目录和外部读取进程均被选中，调用链包括退出/重置/安装；没有枚举或终止真实用户进程。W02/P1 Windows旧PATCH完成可令sessionId=B而数据=A，消费effect会重载旧内容，实际TS+延迟HTTP/hook模拟复现，宿主误写未运行。W03/P1连续安全启动覆盖唯一原文备份，实际模块两次调用复现；旧单次回归仍通过，暴露测试盲点。W04/P2 safeStorage写失败后旧值复活、strict无后端仍成功；W05/P2旧MathType剪贴板回退构造失败无Dispose清理且恢复无所有权判断（静态真实调用链，未操作剪贴板）；W06/P2 sidecar.shutdown走ensure_started导致关闭时启动（静态，进程实验未做）；W07/P2两条实际CI检查失败：Git清单ENOBUFS及旧私有方法字符串断言，另Office.js依赖断言过时。
+
+新运行：Windows默认TS通过，engine core库23/23通过，旧crash recovery回归通过；缺陷探针退出0表示错误行为复现成功，不能算合同通过。macOS类型检查因独立依赖缺失前提未建立，未安装；无新Office/Companion/WebView/物理按键或视觉验收、无新C#构建/汇总。证据artifacts/whole-project-review-20261005，包含原始失败日志、TS/engine输出、frontend-probes.json、ocr-selection.json及review-state.json源码/产物哈希。
+
+CP272旧候选DLL重新核实：Word41F42D5F3CE327E39D7371D0F80748B1A0A91487BA9AEF39857496EE7AA14F87、PPT8F9E779477E9443524934C127978505548E747E81CEE17718F5D2660FB3215AC；heldR4仍6692FDE3…3BAC。Build-Candidate/FreezeR3已读，仍不能把冻结R3候选当默认树。旧CP255失败和六向/符号/间距/物理/视觉缺口保持；单次Undo不阻塞，CP267探针和已收尾卡顿调查不重开。
+
+架构结论：先删除W01越界清理，统一W02会话所有权和W03/W04持久化真值，再收束W05/W06生命周期并让W07验证实际合同；不追加万能校验/重试/兜底，不逐符号补丁。共享原生规则、独立内容读回和保护用户内容的失败恢复应保留。全局弹层MutationObserver/多轮timer存在冗余职责，但未测得输入延迟，性能冻结未改。Companion快速启停、IStorage失败落盘、自定义符号并发仍需限定实验，不是已证明新故障。当前不适合直接作发布验收包；后续待办是上述修复与限定验证。
+
+## CP274 — 2026-10-05 — Local commit complete; whole-project review in progress
+
+阶段进展：只读复审实际模块已复现Windows旧会话PATCH完成覆盖新会话、重复安全启动覆写唯一原文备份、存储失败后旧值复活/strict假成功；独立模拟与原始源码证据见docs/whole-project-code-review-20261005.md及artifacts/whole-project-review-20261005。未把模拟当宿主误写验收。仓库CI原样执行在Git清单处ENOBUFS失败，清点2296229字节/20963个跟踪文件，过时Office.js断言亦与当前package不符。当前默认Windows TS检查通过；engine core库23/23通过；不是全部集成验收。产品源码未改，继续追踪Office剪贴板异常清理、Companion启停、OCR及其他模块。
+
+用户授权的本地提交已完成：49cf397818ee02b7bb18216630846eda9ade18e6，父提交67e57fef，48个源码/测试/脚本/文档文件，未push。生成DLL/EXE/安装调试符号及历史运行证据未纳入提交且保留原地；提交前后清单见artifacts/local-commit-20261005。发现旧空index.lock后先核实时间、排除活动Git并保留到该目录，再提交；没有reset/clean/stash或改分支。提交是快照，沿用CP272的限定验证及唯一旧失败，未冒充发布验收。
+
+全项目复审正在进行，独立报告docs/whole-project-code-review-20261005.md。扩大到前端持久化/异步状态、Rust服务及引擎、Office/OLE、构建CI；只读产品代码，以实际调用与独立可复现错误为准，不追加防御性编程、不作性能重构。held R4/冻结R3、用户Office及所有旧失败证据保持，单次Undo/搁置探针不重开。下一步完成关键调用链验证并按严重度记录具体根因与最小修复建议。
+
 ## CP273 — 2026-10-05 — User-authorized local checkpoint before whole-project review
 
 用户明确要求先本地提交，再重新审视整个项目，并明确“不要做防御性编程”。本次先保存截至CP272的产品源码、测试、维护脚本与阶段文档（计划48个文件）；生成DLL/EXE、bin/obj、缓存、安装调试符号、旧运行日志/截图/文档及docs/remediation现场证据保留原地，不混入源码提交。不修改或删除任何已有修改，不push、不安装部署、不改注册表/用户Office。已核实提交前HEAD67e57fef62a4abcfa9577fac8849c53817f83893，暂存区为空；候选验证沿用CP272的明确范围，保留CP255唯一离线失败，不把快照称作发布验收。

@@ -2,7 +2,7 @@
 mod ocr_install;
 
 use ocr_install::{
-    active_process_path, best_effort_runtime_process_cleanup_for_install,
+    active_process_path,
     decode_process_output, install_log_path, load_snapshot, process_belongs_to_runtime,
     run_logged_command, save_snapshot, windows_powershell_executable, CommandLimits,
     InstallControl, InstallSnapshot, InstallState,
@@ -18,7 +18,10 @@ fn acceptance_root() -> std::path::PathBuf {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or_default();
-    std::env::temp_dir().join(format!(
+    let parent = std::env::var_os("VISUALTEX_OCR_ACCEPTANCE_OUTPUT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    parent.join(format!(
         "visualtex-ocr-install-acceptance-{}-{stamp}",
         std::process::id()
     ))
@@ -36,23 +39,6 @@ fn main() -> Result<(), String> {
     let root = acceptance_root();
     fs::create_dir_all(&root)
         .map_err(|error| format!("Unable to create acceptance directory: {error}"))?;
-
-    let policy_blocked_cleanup = best_effort_runtime_process_cleanup_for_install(
-        &root,
-        Err("Unable to scan residual OCR installation processes: os error 786".to_string()),
-    );
-    if !policy_blocked_cleanup.is_empty() {
-        return Err("Policy-blocked residual scan unexpectedly reported terminated processes".to_string());
-    }
-    let policy_log = fs::read_to_string(install_log_path(&root))
-        .map_err(|error| format!("Unable to read policy-blocked cleanup log: {error}"))?;
-    if !policy_log.contains("inventory was skipped before installation")
-        || !policy_log.contains("786")
-    {
-        return Err(format!(
-            "Policy-blocked residual scan was not downgraded to a logged warning: {policy_log}"
-        ));
-    }
 
     #[cfg(windows)]
     {
@@ -106,6 +92,7 @@ fn main() -> Result<(), String> {
     drop(lease);
 
     let lease = control.begin()?;
+    let timeout_started = Instant::now();
     let timeout = run_logged_command(
         &mut powershell("Start-Sleep -Seconds 5"),
         "acceptance timeout pip",
@@ -120,6 +107,9 @@ fn main() -> Result<(), String> {
     .expect_err("slow command should time out");
     if !timeout.contains("exceeded the installer limit") {
         return Err(format!("Unexpected timeout error: {timeout}"));
+    }
+    if timeout_started.elapsed() >= Duration::from_secs(4) {
+        return Err("Timeout did not actually terminate the owned five-second process before its natural exit".to_string());
     }
     if lease.control().active_pid() != 0 {
         return Err("Timed-out process PID was not cleared".to_string());
@@ -211,7 +201,7 @@ fn main() -> Result<(), String> {
     let cancel_runner_control = cancel_control.clone();
     let cancel_thread = thread::spawn(move || {
         let mut command = powershell(
-            "[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); Write-Output 'cancel-start'; $childPowerShell = Join-Path $PSHOME 'powershell.exe'; Start-Process -FilePath $childPowerShell -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 30' -Wait",
+            "[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); Write-Output 'cancel-start'; $childPowerShell = Join-Path $PSHOME 'powershell.exe'; Start-Process -WindowStyle Hidden -FilePath $childPowerShell -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 30' -Wait",
         );
         run_logged_command(
             &mut command,
@@ -235,6 +225,10 @@ fn main() -> Result<(), String> {
     thread::sleep(Duration::from_millis(200));
     if !cancel_runner_control.cancel()? {
         return Err("Cancellation did not find the active OCR process".to_string());
+    }
+    cancel_runner_control.cancel_and_wait(Duration::from_secs(5))?;
+    if cancel_runner_control.is_running() || cancel_runner_control.active_pid() != 0 {
+        return Err("Cancellation completed before the process owner released its lease".to_string());
     }
     let cancel_error = cancel_thread
         .join()
@@ -288,6 +282,8 @@ fn main() -> Result<(), String> {
 
     println!("VisualTeX OCR installer acceptance passed");
     println!("log={}", install_log_path(&root).display());
-    let _ = fs::remove_dir_all(&root);
+    if std::env::var_os("VISUALTEX_OCR_ACCEPTANCE_OUTPUT").is_none() {
+        let _ = fs::remove_dir_all(&root);
+    }
     Ok(())
 }

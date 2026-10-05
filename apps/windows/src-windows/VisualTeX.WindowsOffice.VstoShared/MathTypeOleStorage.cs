@@ -33,11 +33,12 @@ internal static partial class MathTypeOleStorage
     {
         private readonly System.Runtime.InteropServices.ComTypes.IDataObject? _previousClipboard;
         private readonly object? _previousClipboardObject;
-        private readonly System.Runtime.InteropServices.ComTypes.IDataObject _sourceClipboard;
-        private readonly object _sourceClipboardObject;
+        private readonly System.Runtime.InteropServices.ComTypes.IDataObject _sourceClipboard = null!;
+        private readonly object? _sourceClipboardObject;
         private MathTypeOleClipboardProxy? _replacementProxy;
         private readonly bool _oleInitializedHere;
         private bool _disposed;
+        private uint _clipboardSequence;
 
         internal ClipboardTransaction(Action copyObject)
         {
@@ -47,14 +48,25 @@ internal static partial class MathTypeOleStorage
                 _oleInitializedHere = true;
             else if (oleResult < 0)
                 Marshal.ThrowExceptionForHR(oleResult);
-            _previousClipboard = TryGetOleClipboard(out _previousClipboardObject);
-
-            copyObject();
-
-            _sourceClipboard = GetOleClipboard(out var sourceClipboardObject);
-            _sourceClipboardObject = sourceClipboardObject;
-            CompoundFile = ReadEmbeddedObject(_sourceClipboard);
-            ValidateCompoundFile(CompoundFile);
+            try
+            {
+                _previousClipboard = TryGetOleClipboard(out _previousClipboardObject);
+                var beforeCopy = GetClipboardSequenceNumber();
+                try { copyObject(); }
+                finally
+                {
+                    var afterCopy = GetClipboardSequenceNumber();
+                    if (afterCopy != beforeCopy) _clipboardSequence = afterCopy;
+                }
+                _sourceClipboard = GetOleClipboard(out _sourceClipboardObject);
+                CompoundFile = ReadEmbeddedObject(_sourceClipboard);
+                ValidateCompoundFile(CompoundFile);
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
         }
 
         internal byte[] CompoundFile { get; }
@@ -82,9 +94,11 @@ internal static partial class MathTypeOleStorage
                 // restores the user's previous clipboard when it completes.
                 var clearResult = OleSetClipboard(null);
                 if (clearResult < 0) Marshal.ThrowExceptionForHR(clearResult);
+                _clipboardSequence = GetClipboardSequenceNumber();
             }
             var result = OleSetClipboard(_replacementProxy);
             if (result < 0) Marshal.ThrowExceptionForHR(result);
+            _clipboardSequence = GetClipboardSequenceNumber();
         }
 
         internal int ReplacementStorageWriteCount =>
@@ -96,18 +110,24 @@ internal static partial class MathTypeOleStorage
             _disposed = true;
             try
             {
-                var result = OleSetClipboard(_previousClipboard);
-                if (result < 0) Marshal.ThrowExceptionForHR(result);
+                if (_clipboardSequence != 0 && GetClipboardSequenceNumber() == _clipboardSequence)
+                {
+                    var result = OleSetClipboard(_previousClipboard);
+                    if (result < 0) Marshal.ThrowExceptionForHR(result);
+                }
             }
-            catch
+            catch (Exception error)
             {
-                // Formula insertion outcome is more important than clipboard
-                // restoration failure; source data remains valid until here.
+                System.Diagnostics.Trace.WriteLine(
+                    $"MathType clipboard restoration failed: {error}");
             }
-            _replacementProxy = null;
-            Release(_sourceClipboardObject);
-            Release(_previousClipboardObject);
-            if (_oleInitializedHere) OleUninitialize();
+            finally
+            {
+                _replacementProxy = null;
+                Release(_sourceClipboardObject);
+                Release(_previousClipboardObject);
+                if (_oleInitializedHere) OleUninitialize();
+            }
         }
     }
 
@@ -1202,6 +1222,9 @@ internal static partial class MathTypeOleStorage
     private static extern int OleIsCurrentClipboard(
         [MarshalAs(UnmanagedType.Interface)]
         System.Runtime.InteropServices.ComTypes.IDataObject dataObject);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern uint RegisterClipboardFormatW(string format);

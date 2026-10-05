@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -49,27 +49,34 @@ pub struct PipeResponse {
     pub error: Option<PipeError>,
 }
 
+enum PipeProcess {
+    NotStarted,
+    Running(Child),
+    Stopped,
+}
+
 pub struct WindowsPipeClient {
     pipe_name: String,
     token: String,
     executable: PathBuf,
     temp_root: PathBuf,
     log_root: PathBuf,
-    child: Mutex<Option<Child>>,
+    child: Mutex<PipeProcess>,
 }
 
 impl WindowsPipeClient {
     pub fn new(executable: PathBuf, temp_root: PathBuf, log_root: PathBuf) -> Result<Self, String> {
         let sid = current_user_sid()?;
         let mut token = [0_u8; 32];
-        fill_random(&mut token).map_err(|error| format!("Unable to create Office pipe token: {error}"))?;
+        fill_random(&mut token)
+            .map_err(|error| format!("Unable to create Office pipe token: {error}"))?;
         Ok(Self {
             pipe_name: format!(r"\\.\pipe\VisualTeX.OfficeBridge.{sid}"),
             token: hex::encode(token),
             executable,
             temp_root,
             log_root,
-            child: Mutex::new(None),
+            child: Mutex::new(PipeProcess::NotStarted),
         })
     }
 
@@ -105,22 +112,59 @@ impl WindowsPipeClient {
     }
 
     pub fn shutdown(&self) -> Result<(), String> {
-        let request_result = self.request_method("shutdown", json!({})).map(|_| ());
-        if let Ok(mut child) = self.child.lock() {
-            if let Some(mut process) = child.take() {
-                let deadline = Instant::now() + Duration::from_secs(2);
-                while Instant::now() < deadline {
-                    match process.try_wait() {
-                        Ok(Some(_)) => return request_result,
-                        Ok(None) => thread::sleep(Duration::from_millis(50)),
-                        Err(_) => break,
-                    }
-                }
-                let _ = process.kill();
-                let _ = process.wait();
-            }
+        let mut guard = self
+            .child
+            .lock()
+            .map_err(|_| "Windows Office bridge process lock is poisoned".to_string())?;
+        let PipeProcess::Running(mut child) = std::mem::replace(&mut *guard, PipeProcess::Stopped)
+        else {
+            return Ok(());
+        };
+        if child
+            .try_wait()
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            return Ok(());
         }
-        request_result
+        let pipe_name = self.pipe_name.clone();
+        let token = self.token.clone();
+        let (sender, receiver) = mpsc::channel();
+        // Only the already-owned child can receive shutdown. A stuck pipe must
+        // not prevent its owner from releasing the process during application exit.
+        let request = PipeRequest {
+            protocol_version: WINDOWS_OFFICE_PROTOCOL_VERSION,
+            id: Uuid::new_v4().to_string(),
+            method: "shutdown".to_string(),
+            params: json!({}),
+        };
+        thread::spawn(move || {
+            let result = exchange(&pipe_name, &token, request, Duration::from_secs(2));
+            let _ = sender.send(result);
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let _ = receiver.recv_timeout(Duration::from_secs(2));
+        while Instant::now() < deadline {
+            if child
+                .try_wait()
+                .map_err(|error| error.to_string())?
+                .is_some()
+            {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        if child
+            .try_wait()
+            .map_err(|error| error.to_string())?
+            .is_none()
+        {
+            child
+                .kill()
+                .map_err(|error| format!("Unable to stop owned Office sidecar: {error}"))?;
+        }
+        child.wait().map_err(|error| error.to_string())?;
+        Ok(())
     }
 
     fn request(&self, request: PipeRequest) -> Result<Value, String> {
@@ -128,30 +172,12 @@ impl WindowsPipeClient {
             return Err("Unsupported Windows Office bridge protocol version".to_string());
         }
         self.ensure_started()?;
-        let mut file = self.connect_with_retry(Duration::from_secs(5))?;
-        let reader_file = file
-            .try_clone()
-            .map_err(|error| format!("Unable to clone Office pipe handle: {error}"))?;
-        let mut reader = BufReader::new(reader_file);
-
-        let handshake = PipeRequest {
-            protocol_version: WINDOWS_OFFICE_PROTOCOL_VERSION,
-            id: Uuid::new_v4().to_string(),
-            method: "handshake".to_string(),
-            params: json!({ "token": self.token }),
-        };
-        write_json_line(&mut file, &handshake)?;
-        let handshake_response = read_response(&mut reader)?;
-        if !handshake_response.ok {
-            return Err(response_error(handshake_response, "Office bridge authentication failed"));
-        }
-
-        write_json_line(&mut file, &request)?;
-        let response = read_response(&mut reader)?;
-        if !response.ok {
-            return Err(response_error(response, "Windows Office bridge request failed"));
-        }
-        Ok(response.result.unwrap_or(Value::Null))
+        exchange(
+            &self.pipe_name,
+            &self.token,
+            request,
+            Duration::from_secs(5),
+        )
     }
 
     fn ensure_started(&self) -> Result<(), String> {
@@ -159,11 +185,17 @@ impl WindowsPipeClient {
             .child
             .lock()
             .map_err(|_| "Windows Office bridge process lock is poisoned".to_string())?;
-        if let Some(child) = guard.as_mut() {
+        if matches!(*guard, PipeProcess::Stopped) {
+            return Err("Windows Office bridge has shut down".to_string());
+        }
+        if let PipeProcess::Running(child) = &mut *guard {
             match child.try_wait() {
                 Ok(None) => return Ok(()),
-                Ok(Some(_)) | Err(_) => {
-                    *guard = None;
+                Ok(Some(_)) => {
+                    *guard = PipeProcess::NotStarted;
+                }
+                Err(error) => {
+                    return Err(format!("Unable to inspect owned Office sidecar: {error}"))
                 }
             }
         }
@@ -196,30 +228,67 @@ impl WindowsPipeClient {
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|error| format!("Unable to start Windows Office bridge: {error}"))?;
-        *guard = Some(child);
+        *guard = PipeProcess::Running(child);
         Ok(())
     }
+}
 
-    fn connect_with_retry(&self, timeout: Duration) -> Result<File, String> {
-        let deadline = Instant::now() + timeout;
-        loop {
-            match OpenOptions::new().read(true).write(true).open(&self.pipe_name) {
-                Ok(file) => return Ok(file),
-                Err(error) if Instant::now() < deadline => {
-                    let _ = error;
-                    thread::sleep(Duration::from_millis(75));
-                }
-                Err(error) => {
-                    return Err(format!(
-                        "Unable to connect to Windows Office pipe {}: {error}",
-                        self.pipe_name
-                    ))
-                }
+fn exchange(
+    pipe_name: &str,
+    token: &str,
+    request: PipeRequest,
+    timeout: Duration,
+) -> Result<Value, String> {
+    let mut file = connect_with_retry(pipe_name, timeout)?;
+    let reader_file = file
+        .try_clone()
+        .map_err(|error| format!("Unable to clone Office pipe handle: {error}"))?;
+    let mut reader = BufReader::new(reader_file);
+
+    let handshake = PipeRequest {
+        protocol_version: WINDOWS_OFFICE_PROTOCOL_VERSION,
+        id: Uuid::new_v4().to_string(),
+        method: "handshake".to_string(),
+        params: json!({ "token": token }),
+    };
+    write_json_line(&mut file, &handshake)?;
+    let handshake_response = read_response(&mut reader)?;
+    if !handshake_response.ok {
+        return Err(response_error(
+            handshake_response,
+            "Office bridge authentication failed",
+        ));
+    }
+
+    write_json_line(&mut file, &request)?;
+    let response = read_response(&mut reader)?;
+    if !response.ok {
+        return Err(response_error(
+            response,
+            "Windows Office bridge request failed",
+        ));
+    }
+    Ok(response.result.unwrap_or(Value::Null))
+}
+
+fn connect_with_retry(pipe_name: &str, timeout: Duration) -> Result<File, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match OpenOptions::new().read(true).write(true).open(pipe_name) {
+            Ok(file) => return Ok(file),
+            Err(error) if Instant::now() < deadline => {
+                let _ = error;
+                thread::sleep(Duration::from_millis(75));
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Unable to connect to Windows Office pipe {}: {error}",
+                    pipe_name
+                ))
             }
         }
     }
 }
-
 impl Drop for WindowsPipeClient {
     fn drop(&mut self) {
         let _ = self.shutdown();

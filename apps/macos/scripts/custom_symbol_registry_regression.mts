@@ -11,9 +11,12 @@ import {
   replaceCustomSymbolLibrary,
   updateCustomSymbol,
 } from "../src/math/customSymbolRegistry.ts";
-import { safeStorage } from "../src/runtime/safeStorage.ts";
+import { createSafeStorage, safeStorage } from "../src/runtime/safeStorage.ts";
+import { memoryStorage } from "./memory_storage.ts";
 import { latexToMathMl, latexToSvg } from "../src/export/runtime.ts";
 
+const storage = memoryStorage();
+Object.assign(safeStorage, createSafeStorage(() => storage));
 const now = Date.now();
 const baseDefinition = {
   id: "regression-selfdefa",

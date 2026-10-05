@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { dirname, relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const failures = [];
@@ -79,16 +79,19 @@ if (macPackage.name !== "visualtex-macos") {
 if (windowsPackage.name !== "visualtex-windows") {
   failures.push(`Unexpected Windows package name: ${windowsPackage.name}`);
 }
-if (macPackage.version !== windowsPackage.version) {
-  failures.push(
-    `Platform versions differ: macOS ${macPackage.version}, Windows ${windowsPackage.version}`,
-  );
+for (const [platform, packageInfo] of [["macos", macPackage], ["windows", windowsPackage]]) {
+  const config = JSON.parse(readFileSync(resolve(root, `apps/${platform}/src-tauri/tauri.conf.json`), "utf8"));
+  const cargo = readFileSync(resolve(root, `apps/${platform}/src-tauri/Cargo.toml`), "utf8");
+  const cargoVersion = cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+  if (config.version !== packageInfo.version || cargoVersion !== packageInfo.version) {
+    failures.push(`${platform} package, Tauri and Cargo versions must agree`);
+  }
 }
 if (macPackage.dependencies?.["@microsoft/office-js"] || macPackage.devDependencies?.["@types/office-js"]) {
   failures.push("The macOS application must not depend on Office.js");
 }
-if (!windowsPackage.devDependencies?.["@microsoft/office-js"] || !windowsPackage.devDependencies?.["@types/office-js"]) {
-  failures.push("The Windows compatibility build must retain its explicit Office.js dependencies");
+if (windowsPackage.dependencies?.["@microsoft/office-js"] || windowsPackage.devDependencies?.["@microsoft/office-js"] || windowsPackage.devDependencies?.["@types/office-js"]) {
+  failures.push("The Windows native VSTO build must not depend on retired Office.js packages");
 }
 
 for (const path of ["apps/macos", "apps/windows"]) {
@@ -97,31 +100,42 @@ for (const path of ["apps/macos", "apps/windows"]) {
   }
 }
 
-const trackedFiles = execFileSync("git", ["ls-files", "apps/macos", "apps/windows"], {
-  cwd: root,
-  encoding: "utf8",
-})
-  .split("\n")
-  .filter(Boolean);
-
-for (const relativePath of trackedFiles) {
-  if (/^apps\/macos\/office\/vendor\/office-js\//.test(relativePath)) {
-    failures.push(`Committed Office.js vendor file remains in macOS: ${relativePath}`);
+// Stream NUL-delimited names: Unicode paths and large repositories are ordinary input.
+const git = spawn("git", ["ls-files", "-z", "apps/macos", "apps/windows"], { cwd: root });
+git.stdout.setEncoding("utf8");
+let gitError = "";
+git.stderr.setEncoding("utf8");
+git.stderr.on("data", chunk => { gitError += chunk; });
+const finished = new Promise((resolve, reject) => {
+  git.on("error", reject);
+  git.on("close", code => code === 0 ? resolve() : reject(new Error(gitError || `git exited ${code}`)));
+});
+function checkTrackedPath(relativePath) {
+  if (/^apps\/(macos|windows)\/office\/vendor\/office-js\//.test(relativePath)) {
+    failures.push(`Retired committed Office.js vendor file: ${relativePath}`);
   }
-  if (/^apps\/windows\/office\/vendor\/office-js\//.test(relativePath)) {
-    failures.push(`Generic committed Office.js vendor file remains in Windows: ${relativePath}`);
-  }
-  if (!/\.(?:ts|tsx|js|mjs|cjs|rs|cs|cpp|c|h|hpp|ps1|sh|json|toml|xml|md)$/.test(relativePath)) {
-    continue;
-  }
+  // Check declared source dependencies, not prose, archived evidence or test launchers.
+  if (!/^apps\/(?:macos|windows)\/(?:src\/|src-tauri\/src\/|src-windows\/)/.test(relativePath)
+      || /\/(?:bin|obj|artifacts)\//.test(relativePath)
+      || !/\.(?:ts|tsx|rs|csproj|projitems)$/.test(relativePath)) return;
   const content = readFileSync(resolve(root, relativePath), "utf8");
-  if (relativePath.startsWith("apps/macos/") && content.includes("apps/windows/")) {
-    failures.push(`macOS source references the Windows application: ${relativePath}`);
-  }
-  if (relativePath.startsWith("apps/windows/") && content.includes("apps/macos/")) {
-    failures.push(`Windows source references the macOS application: ${relativePath}`);
+  const platform = relativePath.split("/")[1];
+  const other = platform === "windows" ? "macos" : "windows";
+  const references = content.matchAll(/(?:from\s*|import\s*\(\s*|(?:Include|Project|path)\s*=\s*)["']([^"']+)["']/g);
+  for (const [, specifier] of references) {
+    if (!specifier.startsWith(".")) continue;
+    const target = relative(root, resolve(dirname(resolve(root, relativePath)), specifier.replaceAll("\\", "/"))).replaceAll("\\", "/");
+    if (target.startsWith(`apps/${other}/`)) failures.push(`${relativePath} imports the other platform: ${specifier}`);
   }
 }
+let pending = "";
+for await (const chunk of git.stdout) {
+  const paths = (pending + chunk).split("\0");
+  pending = paths.pop();
+  for (const path of paths) checkTrackedPath(path);
+}
+await finished;
+if (pending) throw new Error("Git file listing did not end at a path boundary");
 
 if (failures.length) {
   console.error("VisualTeX repository structure verification failed:\n");

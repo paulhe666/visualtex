@@ -42,8 +42,8 @@ mod windows_quick_ocr;
 mod windows_silent_ocr_hotkey;
 
 use ocr_install::{
-    append_install_log, begin_install_log_session, cleanup_runtime_processes,
-    cleanup_runtime_processes_for_install, cleanup_stale_process, decode_process_output,
+    append_install_log, begin_install_log_session,
+    cleanup_stale_process, decode_process_output,
     install_log_path, load_snapshot,
     run_logged_command, save_snapshot,
     CommandCapture, CommandLimits,
@@ -630,9 +630,9 @@ impl OcrState {
         self.cancel_generation.fetch_add(1, Ordering::SeqCst);
         let _ = self.install_control.cancel();
         stop_worker(&self.worker, &self.worker_pid)?;
+        self.install_control.cancel_and_wait(Duration::from_secs(5))?;
         if let Ok(paths) = runtime_paths(app) {
             let _ = cleanup_stale_process(&paths.root);
-            cleanup_runtime_processes(&paths.root)?;
         }
         Ok(())
     }
@@ -753,18 +753,11 @@ impl OcrState {
         write_cached_runtime_status(&runtime_status, None)?;
         tauri::async_runtime::spawn_blocking(move || {
             let _mutation = mutation;
-            let deadline = Instant::now() + Duration::from_secs(15);
-            while install_control.is_running() && Instant::now() < deadline {
-                thread::sleep(Duration::from_millis(100));
-            }
-            if install_control.is_running() {
-                return Err("OCR installation did not stop in time; reset was not started to avoid deleting files that are still in use".to_string());
-            }
+            install_control.cancel_and_wait(Duration::from_secs(15))?;
             write_cached_runtime_status(&runtime_status, None)?;
             stop_worker(&worker, &worker_pid)?;
             let paths = runtime_paths(&app)?;
             let _ = cleanup_stale_process(&paths.root);
-            cleanup_runtime_processes(&paths.root)?;
             reset_runtime_contents(&paths.root)?;
             install_control.set_snapshot(InstallSnapshot::new(&install_log_path(&paths.root)))?;
             let status = get_runtime_status_fast(&app)?;
@@ -940,7 +933,6 @@ impl OcrState {
                     }
                     Err(error) if ocr_storage::marker_is_valid(&change.target_root) => {
                         let _ = cleanup_stale_process(&change.target_root);
-                        cleanup_runtime_processes(&change.target_root)?;
                         reset_runtime_contents(&change.target_root)?;
                         Err(format!(
                             "The selected VisualTeX OCR directory contained an incomplete environment and was reset before reinstalling: {error}"
@@ -960,7 +952,6 @@ impl OcrState {
 
             if change.reset_source {
                 let _ = cleanup_stale_process(&current.root);
-                cleanup_runtime_processes(&current.root)?;
                 reset_runtime_contents(&current.root)?;
             }
 
@@ -2177,7 +2168,6 @@ fn remove_runtime_entry_with_retry(path: &Path, runtime_root: &Path) -> Result<(
     loop {
         attempt += 1;
         let _ = cleanup_stale_process(runtime_root);
-        let _ = cleanup_runtime_processes(runtime_root);
         match remove_runtime_entry_once(path) {
             Ok(()) => return Ok(()),
             Err(error) => last_error = Some(error),
@@ -2649,14 +2639,13 @@ fn install_windows_runtime_inner(
     if let Err(error) = begin_install_log_session(&paths.root) {
         eprintln!("Unable to rotate OCR installation log: {error}");
     }
-    let residual_processes = cleanup_runtime_processes_for_install(&paths.root);
     let stale_removed = cleanup_stale_process(&paths.root)?;
     cleanup_worker_temp(paths)?;
-    if !residual_processes.is_empty() || stale_removed {
+    if stale_removed {
         append_install_log(
             &paths.root,
             &format!(
-                "terminated stale OCR installation process trees before starting a new task; residual_pids={residual_processes:?}; recorded_process_removed={stale_removed}"
+                "terminated the recorded OCR installation process before starting a new task; recorded_process_removed={stale_removed}"
             ),
         )?;
     }

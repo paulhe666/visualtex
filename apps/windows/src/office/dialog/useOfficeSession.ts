@@ -26,14 +26,18 @@ function sessionIdFromLocation() {
 }
 
 export function useOfficeSession() {
-  const [sessionId, setSessionId] = useState(sessionIdFromLocation);
+  const [owner, setOwner] = useState(() => ({ id: sessionIdFromLocation() }));
+  const sessionId = owner.id;
+  const activeOwnerRef = useRef<typeof owner | null>(owner);
   const [session, setSession] = useState<OfficeFormulaSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const loadRunIdRef = useRef(0);
+  const isActive = useCallback(() => activeOwnerRef.current === owner, [owner]);
 
   useEffect(() => {
+    activeOwnerRef.current = owner;
     const handleSessionChange = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail;
       const rawSessionId =
@@ -41,16 +45,19 @@ export function useOfficeSession() {
           ? (detail as { sessionId?: unknown }).sessionId
           : undefined;
       const next = typeof rawSessionId === "string" ? rawSessionId.trim() : "";
+      const nextOwner = { id: next };
+      activeOwnerRef.current = nextOwner;
       (window as OfficeSessionWindow).__VISUALTEX_OFFICE_SESSION_ID__ = next || undefined;
       saveQueueRef.current = Promise.resolve();
       loadRunIdRef.current += 1;
       setSession(null);
       setError("");
       setLoading(Boolean(next));
-      setSessionId(next);
+      setOwner(nextOwner);
     };
     window.addEventListener("visualtex-office-session", handleSessionChange);
     return () => {
+      activeOwnerRef.current = null;
       window.removeEventListener("visualtex-office-session", handleSessionChange);
     };
   }, []);
@@ -67,37 +74,22 @@ export function useOfficeSession() {
     setLoading(true);
     try {
       const next = await getOfficeSession(sessionId);
-      if (loadRunId !== loadRunIdRef.current) return null;
+      if (activeOwnerRef.current !== owner || loadRunId !== loadRunIdRef.current) return null;
       setSession(next);
       setError("");
       return next;
     } catch (reason) {
-      if (loadRunId !== loadRunIdRef.current) return null;
+      if (activeOwnerRef.current !== owner || loadRunId !== loadRunIdRef.current) return null;
       setError(readErrorMessage(reason, "Unable to load Office session."));
       return null;
     } finally {
-      if (loadRunId === loadRunIdRef.current) setLoading(false);
+      if (activeOwnerRef.current === owner && loadRunId === loadRunIdRef.current) setLoading(false);
     }
-  }, [sessionId]);
+  }, [owner]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
-
-  useEffect(() => {
-    if (!loading || !sessionId) return;
-    const expectedLoadRunId = loadRunIdRef.current;
-    const watchdog = window.setTimeout(() => {
-      if (loadRunIdRef.current !== expectedLoadRunId) return;
-      loadRunIdRef.current += 1;
-      setSession(null);
-      setError(
-        "VisualTeX Office Session 加载超过 15 秒。请点击重新加载；若仍失败，请重启 VisualTeX。",
-      );
-      setLoading(false);
-    }, 15_000);
-    return () => window.clearTimeout(watchdog);
-  }, [loading, sessionId]);
 
   const save = useCallback(
     (update: UpdateOfficeSessionInput) => {
@@ -118,14 +110,16 @@ export function useOfficeSession() {
         () => undefined,
       );
       return request.then((next) => {
-        setSession(next);
+        if (activeOwnerRef.current === owner) setSession(next);
         return next;
       });
     },
-    [sessionId],
+    [owner],
   );
 
   return {
+    activation: owner,
+    isActive,
     sessionId,
     session,
     loading,

@@ -28,7 +28,7 @@ const storageSource = fs.readFileSync(
   "utf8",
 );
 const tauriConfigSource = fs.readFileSync(
-  path.join(root, "src-tauri", "tauri.conf.json"),
+  path.join(root, "src-tauri", "tauri.ocr-bundle.conf.json"),
   "utf8",
 );
 const privateSiteCustomizeSource = fs.readFileSync(
@@ -154,7 +154,6 @@ assert.match(rustSource, /begin_runtime_mutation/);
 assert.match(rustSource, /A cached runtime status is only safe while installation/);
 assert.doesNotMatch(rustSource, /if !force_refresh \|\| installing/);
 assert.match(dialogSource, /runtimeRequestGenerationRef/);
-assert.match(dialogSource, /Re-read the pointer and actual runtime files every time the dialog is/);
 assert.match(dialogSource, /applyRuntimeStatus\(nextRuntime\)/);
 assert.match(storageSource, /STORAGE_DIRECTORY_NAME: &str = "VisualTeX-OCR"/);
 assert.match(storageSource, /STORAGE_CONFIG_FILE: &str = "ocr-storage\.json"/);
@@ -176,11 +175,9 @@ assert.match(processSource, /PYTHONUTF8/);
 assert.match(processSource, /PYTHONIOENCODING/);
 assert.match(processSource, /MultiByteToWideChar/);
 assert.match(processSource, /GetOEMCP/);
-assert.match(processSource, /cleanup_runtime_processes/);
 assert.match(rustSource, /PIP_DEFAULT_TIMEOUT/);
 assert.match(rustSource, /PIP_CACHE_DIR/);
 assert.match(rustSource, /CARGO_TARGET_DIR/);
-assert.match(rustSource, /cleanup_runtime_processes\(&paths\.root\)/);
 assert.match(processSource, /no stdout\/stderr or pip cache\/temp-file growth/);
 assert.match(processSource, /exceeded the installer limit/);
 assert.match(processSource, /Downloading /);
