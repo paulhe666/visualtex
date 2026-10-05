@@ -167,8 +167,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private string _lastDoubleClickFormulaId = string.Empty;
     private DateTimeOffset _lastDoubleClickAt;
     private string? _activeSessionId;
-    private OfficeSelection? _lastFormulaSelection;
-    private OfficeSelection? _lastTextInsertionTarget;
     private int _formulaFontInvalidationPending;
     private object? _ribbonUi;
     private Office.COMAddIn? _comAddIn;
@@ -199,7 +197,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _lifetime = new CancellationTokenSource();
         _ = PrewarmCompanionAsync(_sessionClient, _lifetime.Token);
         _application.WindowSelectionChange += OnWindowSelectionChange;
-        _application.PresentationBeforeClose += OnPresentationBeforeClose;
         string? doubleClickError = null;
         try
         {
@@ -422,46 +419,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private void OnWindowSelectionChange(Selection selection)
     {
         ScheduleFormulaFontControlsInvalidation();
-        var service = _formulaService;
-        if (service is null) return;
-        try
-        {
-            if (selection.Type == PpSelectionType.ppSelectionText)
-            {
-                var textTarget = service.TryCaptureTextInsertionTarget();
-                if (textTarget is not null)
-                    _lastTextInsertionTarget = textTarget;
-            }
-            else if (selection.Type != PpSelectionType.ppSelectionNone)
-            {
-                // Keep the text target only across the transient ppSelectionNone
-                // state that PowerPoint exposes while the user clicks the Ribbon.
-                // Any explicit non-text selection means the old caret is stale.
-                _lastTextInsertionTarget = null;
-            }
-
-            var current = service.ReadSelection(selection);
-            if (current.Metadata is not null || current.ObjectMode == FormulaOleContract.MathTypeOleMode)
-            {
-                _lastFormulaSelection = current;
-                return;
-            }
-            // Clicking the Ribbon can temporarily expose ppSelectionNone. Keep
-            // the last formula only for that transient state; any explicit
-            // non-formula shape selection invalidates the cache.
-            if (selection.Type == PpSelectionType.ppSelectionShapes)
-                _lastFormulaSelection = null;
-        }
-        catch
-        {
-            // Selection notifications must never destabilize PowerPoint.
-        }
-    }
-
-    private void OnPresentationBeforeClose(Presentation presentation, ref bool cancel)
-    {
-        _lastFormulaSelection = null;
-        _lastTextInsertionTarget = null;
+        // A notification is not an insertion command. In particular None also
+        // means explicit deselection, not proof of a transient Ribbon handoff.
+        // Capture text/source only at the command; never hydrate or cache here.
     }
 
     private void OnNativeDoubleClick(int screenX, int screenY)
@@ -474,7 +434,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var selected = service.ReadFormulaAtScreenPoint(screenX, screenY);
             if (selected?.Metadata is null || string.IsNullOrWhiteSpace(selected.FormulaId))
                 return;
-            _lastFormulaSelection = selected;
             var now = DateTimeOffset.UtcNow;
             if (selected.FormulaId == _lastDoubleClickFormulaId
                 && now - _lastDoubleClickAt < TimeSpan.FromSeconds(1))
@@ -552,14 +511,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private OfficeSelection? ResolveOmmlTextInsertionTarget(
         PowerPointFormulaService service)
     {
-        var liveTarget = service.TryCaptureTextInsertionTarget();
-        if (liveTarget is not null)
-        {
-            _lastTextInsertionTarget = liveTarget;
-            return liveTarget;
-        }
-
-        return _lastTextInsertionTarget;
+        return service.TryCaptureTextInsertionTarget();
     }
 
     private void BeginSelectedSession(
@@ -572,8 +524,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var service = _formulaService
                 ?? throw new InvalidOperationException("PowerPoint formula service is unavailable.");
             var selection = ResolveFormulaSelection(service);
-            if (selection.Metadata is null)
-                throw new InvalidOperationException("请先选择一个 VisualTeX 或 MathType 公式。");
+            if (selection.Metadata is null
+                && !PowerPointFormulaService.IsNativeOmmlReference(selection.ObjectId)
+                && selection.ObjectMode != FormulaOleContract.MathTypeOleMode)
+                throw new InvalidOperationException("请先选择一个 VisualTeX、PowerPoint 原生或 MathType 公式。");
             BeginSession("edit", requestedObjectMode, selection, conversionOnly);
         }
         catch (Exception error)
@@ -657,6 +611,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     () => mode == "create" ? service.CaptureSlideInsertionTarget() : ResolveFormulaSelection(service)).ConfigureAwait(false);
             if (selection.ReadOnly)
                 throw new UnauthorizedAccessException("当前 PowerPoint 演示文稿为只读状态。");
+            // Source snapshots belong to the acquired operation, not to a
+            // repeated Ribbon click that only refocuses an existing editor.
+            if (mode == "edit")
+                selection = await dispatcher.InvokeAsync(() =>
+                    PowerPointFormulaService.IsNativeOmmlReference(selection.ObjectId)
+                        ? service.LoadNativeOmmlSelection(selection)
+                        : selection.ObjectMode == FormulaOleContract.MathTypeOleMode
+                            ? service.LoadMathTypeSelection(selection)
+                            : service.PrepareManagedSelectionForEdit(selection)).ConfigureAwait(false);
             if (mode == "edit" && selection.Metadata is null)
                 throw new InvalidOperationException("请先选择一个 VisualTeX 或 MathType 公式。");
 
@@ -780,7 +743,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 throw new InvalidOperationException($"Unsupported PowerPoint object mode: {session.ObjectMode}");
             }
-            var writeResult = await dispatcher.InvokeAsync(() =>
+            await dispatcher.InvokeAsync(() =>
             {
                 var current = service.ReadSelection();
                 if (!string.Equals(
@@ -811,21 +774,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     ? service.Replace(session, imagePath)
                     : service.Insert(session, imagePath);
             }).ConfigureAwait(false);
-            _lastFormulaSelection = string.Equals(
-                    session.ObjectMode,
-                    FormulaOleContract.WordOmmlMode,
-                    StringComparison.Ordinal)
-                ? null
-                : new OfficeSelection
-                {
-                    Host = "powerpoint",
-                    DocumentId = writeResult.DocumentId,
-                    ObjectId = writeResult.ObjectId,
-                    ReadOnly = false,
-                    FormulaId = session.FormulaId,
-                    Metadata = session.ToMetadata(),
-                    ObjectMode = session.ObjectMode,
-                };
             await client.CompleteAsync(session.Id, cancellationToken).ConfigureAwait(false);
             SetStatus(requiresObjectModeChange && session.ObjectMode == "nativeOle"
                 ? "已转换为原生 OLE：外观保持不变，可双击编辑，并嵌入 PowerPoint 文件。"
@@ -918,38 +866,11 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private OfficeSelection ResolveFormulaSelection(PowerPointFormulaService service)
     {
-        var current = service.ReadSelection();
-        if (current.ObjectMode == FormulaOleContract.MathTypeOleMode)
-        {
-            current = service.LoadMathTypeSelection(current);
-            _lastFormulaSelection = current;
-            return current;
-        }
-        if (current.Metadata is not null)
-        {
-            _lastFormulaSelection = current;
-            return current;
-        }
-        var cached = _lastFormulaSelection;
-        if (cached?.ObjectMode == FormulaOleContract.MathTypeOleMode
-            && string.Equals(cached.DocumentId, current.DocumentId, StringComparison.OrdinalIgnoreCase))
-            return service.LoadMathTypeSelection(cached);
-        if (cached?.Metadata is null
-            || !string.Equals(
-                cached.DocumentId,
-                current.DocumentId,
-                StringComparison.OrdinalIgnoreCase))
-            return current;
-        return new OfficeSelection
-        {
-            Host = current.Host,
-            DocumentId = current.DocumentId,
-            ObjectId = cached.ObjectId,
-            ReadOnly = current.ReadOnly,
-            FormulaId = cached.FormulaId,
-            Metadata = cached.Metadata,
-            ObjectMode = cached.ObjectMode,
-        };
+        // A blank-slide click and a transient Ribbon state can both be
+        // ppSelectionNone. Neither authorizes editing a previous object.
+        // Capture the current target now; hydrate its source only after the
+        // operation gate has been acquired.
+        return service.ReadSelection();
     }
 
     private void ReportError(string message)
@@ -991,7 +912,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         if (_application is not null)
         {
             try { _application.WindowSelectionChange -= OnWindowSelectionChange; } catch { }
-            try { _application.PresentationBeforeClose -= OnPresentationBeforeClose; } catch { }
         }
         _doubleClickHook?.Dispose();
         _keyboardHook?.Dispose();
@@ -1004,7 +924,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         _sessionClient = null;
         _dispatcher = null;
         _formulaService = null;
-        _lastFormulaSelection = null;
         Volatile.Write(ref _activeSessionId, null);
         _lifetime = null;
         _ribbonUi = null;

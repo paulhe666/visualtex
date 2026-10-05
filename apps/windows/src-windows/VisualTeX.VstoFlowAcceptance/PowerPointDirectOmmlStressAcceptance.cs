@@ -106,6 +106,7 @@ internal static partial class Program
                     inlineTarget.ObjectId,
                     originalMetadata: null,
                     displayMode: "inline");
+                inlineSession.SourceDocumentId = inlineTarget.DocumentId;
                 service.InsertOmml(inlineSession);
 
                 AssertEqual(originalShapeCount, slide.Shapes.Count,
@@ -170,6 +171,7 @@ internal static partial class Program
                     displayTarget.ObjectId,
                     originalMetadata: null,
                     displayMode: "block");
+                displaySession.SourceDocumentId = displayTarget.DocumentId;
                 service.InsertOmml(displaySession);
 
                 AssertEqual(originalShapeCount, slide.Shapes.Count,

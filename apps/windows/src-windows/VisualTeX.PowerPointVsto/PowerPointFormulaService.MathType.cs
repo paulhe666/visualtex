@@ -366,6 +366,8 @@ public sealed partial class PowerPointFormulaService
 
     private void EnsureMathTypeSourceUnchanged(OfficeSessionDocument session, Presentation presentation, Slide slide, Shape shape)
     {
+        // All non-VisualTeX sources are validated at this shared replacement boundary.
+        EnsureNativeOmmlSourceUnchanged(session, presentation);
         if (!TryParseMathTypeReference(session.SourceObjectId, out _, out _)) return;
         var source = _mathTypeSource;
         if (source is null || source.DocumentId != session.SourceDocumentId
@@ -379,6 +381,11 @@ public sealed partial class PowerPointFormulaService
 
     private static void DeleteReplacedShape(Slide slide, Shape source, Shape target)
     {
+        target.Title = source.Title;
+        var alternativeText = source.AlternativeText;
+        if (!string.IsNullOrWhiteSpace(alternativeText)
+            && FormulaMetadataCodec.Decode(alternativeText) is null)
+            target.AlternativeText = alternativeText;
         CopyMathTypeShapeTags(source, target);
         CopyMathTypeShapeActions(source, target);
         using var references = TransferMathTypeShapeReferences(slide, source, target);

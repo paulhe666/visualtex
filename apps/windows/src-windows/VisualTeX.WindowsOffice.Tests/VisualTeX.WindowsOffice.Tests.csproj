@@ -34,6 +34,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonIconData.cs" Link="RibbonIconData.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonVectorIconRenderer.cs" Link="RibbonVectorIconRenderer.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlToLatexConverter.cs" Link="MathMlToLatexConverter.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\FormulaXml.cs" Link="FormulaXml.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathSpaceContract.cs" Link="MathSpaceContract.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlTokenStyleContract.cs" Link="MathMlTokenStyleContract.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlColorContract.cs" Link="MathMlColorContract.cs" />

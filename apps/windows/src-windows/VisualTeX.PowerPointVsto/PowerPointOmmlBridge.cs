@@ -69,7 +69,8 @@ internal static class PowerPointOmmlBridge
             textFrame = shape.TextFrame2;
             range = ((dynamic)textFrame).TextRange;
             mathZones = GetMathZones(range);
-            return Convert.ToInt32(((dynamic)mathZones).Length) > 0;
+            // MathZones returns a fallback text range even when Count is zero.
+            return Convert.ToInt32(((dynamic)mathZones).Count) > 0;
         }
         catch
         {
@@ -95,7 +96,7 @@ internal static class PowerPointOmmlBridge
             textFrame = shape.TextFrame2;
             range = ((dynamic)textFrame).TextRange;
             mathZones = GetMathZones(range);
-            if (Convert.ToInt32(((dynamic)mathZones).Length) <= 0) return null;
+            if (Convert.ToInt32(((dynamic)mathZones).Count) <= 0) return null;
             font = ((dynamic)mathZones).Font;
             return FormulaFontSize.Normalize(Convert.ToDouble(((dynamic)font).Size), 20f);
         }
@@ -132,7 +133,7 @@ internal static class PowerPointOmmlBridge
             textFrame = shape.TextFrame2;
             range = ((dynamic)textFrame).TextRange;
             mathZones = GetMathZones(range);
-            if (Convert.ToInt32(((dynamic)mathZones).Length) <= 0) return null;
+            if (Convert.ToInt32(((dynamic)mathZones).Count) <= 0) return null;
             ((dynamic)mathZones).Copy();
             return ReadMathMlFromClipboard();
         }
@@ -227,6 +228,18 @@ internal static class PowerPointOmmlBridge
         return false;
     }
 
+    internal static object? ReadSingleSelectedMathZone(object range)
+    {
+        object? zones = null;
+        try
+        {
+            zones = GetMathZones(range);
+            if (Convert.ToInt32(((dynamic)zones).Count) != 1) return null;
+            return ((dynamic)range).MathZones(1, 1);
+        }
+        finally { Release(zones); }
+    }
+
     private static object GetMathZones(object range)
     {
         try { return ((dynamic)range).MathZones(); }
@@ -269,7 +282,7 @@ internal static class PowerPointOmmlBridge
             textFrame = shape.TextFrame2;
             range = ((dynamic)textFrame).TextRange;
             mathZones = GetMathZones(range);
-            if (Convert.ToInt32(((dynamic)mathZones).Length) <= 0) return;
+            if (Convert.ToInt32(((dynamic)mathZones).Count) <= 0) return;
             font = ((dynamic)mathZones).Font;
             ((dynamic)font).Size = size;
         }

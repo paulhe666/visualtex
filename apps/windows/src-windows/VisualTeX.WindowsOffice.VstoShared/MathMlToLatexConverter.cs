@@ -6,42 +6,6 @@ namespace VisualTeX.WordVsto;
 
 internal static class MathMlToLatexConverter
 {
-    private const int MaximumMathMlCharacters = 16 * 1024 * 1024;
-    private const int MaximumMathMlDepth = 256;
-    private const int MaximumMathMlElements = 250_000;
-
-    private static XDocument ParseMathMlSafely(string mathMl)
-    {
-        if (mathMl.Length > MaximumMathMlCharacters)
-            throw new InvalidDataException(
-                $"MathML exceeds the supported safety limit of {MaximumMathMlCharacters} characters.");
-        var settings = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            MaxCharactersInDocument = MaximumMathMlCharacters,
-            IgnoreWhitespace = false,
-        };
-        var elements = 0;
-        using (var preflightText = new StringReader(mathMl))
-        using (var preflight = XmlReader.Create(preflightText, settings))
-        {
-            while (preflight.Read())
-            {
-                if (preflight.NodeType != XmlNodeType.Element) continue;
-                if (preflight.Depth >= MaximumMathMlDepth)
-                    throw new InvalidDataException(
-                        $"MathML nesting exceeds the supported safety limit of {MaximumMathMlDepth} levels.");
-                if (++elements > MaximumMathMlElements)
-                    throw new InvalidDataException(
-                        $"MathML contains more than the supported safety limit of {MaximumMathMlElements} elements.");
-            }
-        }
-        using var text = new StringReader(mathMl);
-        using var reader = XmlReader.Create(text, settings);
-        return XDocument.Load(reader, LoadOptions.PreserveWhitespace);
-    }
-
     // MathJax AMS alternate forms have the same semantic scalar as the
     // ordinary glyph. Only explicit per-token alternate evidence selects these
     // commands; bare Unicode and container attributes never imply an alternate.
@@ -276,17 +240,7 @@ internal static class MathMlToLatexConverter
     {
         if (string.IsNullOrWhiteSpace(mathMl))
             throw new InvalidDataException("Word OMML conversion produced empty MathML.");
-        var settings = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            IgnoreComments = true,
-            IgnoreWhitespace = true,
-            MaxCharactersInDocument = 4_000_000,
-        };
-        using var text = new StringReader(mathMl);
-        using var reader = XmlReader.Create(text, settings);
-        var document = XDocument.Load(reader, LoadOptions.None);
+        var document = FormulaXml.Parse(mathMl, "MathML", LoadOptions.PreserveWhitespace);
         var root = document.Root
             ?? throw new InvalidDataException("Word MathML has no root element.");
         return Normalize(ConvertElement(root));

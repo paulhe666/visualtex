@@ -120,6 +120,16 @@ export function OfficeFormulaShortcutSettingsSection() {
         setMessage(captureErrorText(result, isEn));
         return;
       }
+      if (capturing.host === "word" && !event.ctrlKey) {
+        setMessage(isEn
+          ? "Word shortcuts must include Ctrl; Alt-only shortcuts remain available to Word menus."
+          : "Word 公式快捷键必须包含 Ctrl；仅含 Alt 的组合键保留给 Word 菜单。");
+        return;
+      }
+      if (capturing.host === "word" && /^F(?:1[7-9]|2[0-4])$/.test(event.code)) {
+        setMessage(isEn ? "Word supports F1–F16 here." : "这里的 Word 快捷键支持 F1–F16。");
+        return;
+      }
       const moved =
         capturing.host === "word"
           ? Object.entries(wordSettings).some(
@@ -214,6 +224,11 @@ export function OfficeFormulaShortcutSettingsSection() {
           <header className="office-formula-shortcut-host-header">
             <strong>Word</strong>
           </header>
+          <p className="office-formula-shortcut-help">
+            {isEn
+              ? "Word’s built-in and custom shortcuts take priority. Use an unassigned Ctrl combination in the document; clear a shortcut to disable it."
+              : "Word 自带和自定义快捷键优先。请在正文中使用未被占用的 Ctrl 组合键；设为“无”即可停用。"}
+          </p>
           <div className="office-formula-shortcut-list">
             {wordRows.map(({ action, labelEn, labelZh }) => {
               const setting = wordSettings[action];

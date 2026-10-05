@@ -119,7 +119,7 @@ internal readonly struct OfficeFormulaShortcut : IEquatable<OfficeFormulaShortcu
             }
             return false;
         }
-        if (key[0] != 'F'
+        if (key.Length == 0 || key[0] != 'F'
             || !int.TryParse(key.Substring(1), out var functionNumber)
             || functionNumber < 1
             || functionNumber > 24)
@@ -272,9 +272,13 @@ internal sealed class OfficeFormulaShortcutKeyboardHook : IDisposable
     private const int VkMenu = 0x12;
     private const int VkLeftWindows = 0x5B;
     private const int VkRightWindows = 0x5C;
+    private const int VkRightMenu = 0xA5;
 
     private readonly OfficeFormulaShortcutHost _host;
-    private readonly Action<OfficeFormulaShortcutCommand> _formulaCallback;
+    private readonly Func<OfficeFormulaShortcut, OfficeFormulaShortcut?, OfficeFormulaShortcutCommand, bool> _formulaCallback;
+    private OfficeFormulaShortcut? _previousGesture;
+    private IntPtr _previousFocus;
+    private bool _routingFormula;
     private readonly Action? _pasteCallback;
     private readonly Action<string>? _trace;
     private HookProc? _hookCallback;
@@ -285,6 +289,20 @@ internal sealed class OfficeFormulaShortcutKeyboardHook : IDisposable
     internal OfficeFormulaShortcutKeyboardHook(
         OfficeFormulaShortcutHost host,
         Action<OfficeFormulaShortcutCommand> formulaCallback,
+        Action? pasteCallback = null,
+        Action<string>? trace = null)
+        : this(host, (shortcut, previous, command) =>
+        {
+            formulaCallback(command);
+            return true;
+        }, pasteCallback, trace)
+    {
+        if (formulaCallback is null) throw new ArgumentNullException(nameof(formulaCallback));
+    }
+
+    internal OfficeFormulaShortcutKeyboardHook(
+        OfficeFormulaShortcutHost host,
+        Func<OfficeFormulaShortcut, OfficeFormulaShortcut?, OfficeFormulaShortcutCommand, bool> formulaCallback,
         Action? pasteCallback = null,
         Action<string>? trace = null)
     {
@@ -326,45 +344,73 @@ internal sealed class OfficeFormulaShortcutKeyboardHook : IDisposable
 
     private IntPtr HookCallback(int code, IntPtr wParam, IntPtr lParam)
     {
-        if (code < 0) return CallNextHookEx(_hook, code, wParam, lParam);
-        var state = lParam.ToInt64();
-        if ((state & 0xC0000000L) != 0)
+        // HC_NOREMOVE is only a queue peek. Never execute or record it.
+        if (!IsActionKeyDown(code, lParam.ToInt64()))
             return CallNextHookEx(_hook, code, wParam, lParam);
 
         var key = unchecked((uint)wParam.ToInt64());
         var ctrl = IsKeyDown(VkControl);
         var alt = IsKeyDown(VkMenu);
         var shift = IsKeyDown(VkShift);
-        if ((ctrl || alt)
-            && !IsKeyDown(VkLeftWindows)
-            && !IsKeyDown(VkRightWindows))
+        var windows = IsKeyDown(VkLeftWindows) || IsKeyDown(VkRightWindows);
+        var altGr = ctrl && IsKeyDown(VkRightMenu);
+        var command = (ctrl || alt) && !windows && !altGr
+            ? OfficeFormulaShortcutConfiguration.Read(_host).Match(key, ctrl, alt, shift)
+            : null;
+        if (ProcessKeyDown(key, ctrl, alt, shift, windows, altGr, GetFocus(), command))
+            return new IntPtr(1);
+        return CallNextHookEx(_hook, code, wParam, lParam);
+    }
+
+    internal static bool IsActionKeyDown(int code, long state) =>
+        code == 0 && (state & 0xC0000000L) == 0;
+
+    // Kept separate from native input for deterministic routing tests. A true
+    // result means the host accepted a launch, not eventual async completion.
+    internal bool ProcessKeyDown(uint key, bool ctrl, bool alt, bool shift,
+        bool windows, bool altGr, IntPtr focus, OfficeFormulaShortcutCommand? command)
+    {
+        if (_routingFormula) return false;
+        if (key == VkControl || key == VkShift || key == VkMenu
+            || key == VkLeftWindows || key == VkRightWindows
+            || (key >= 0xA0 && key <= 0xA5))
+            return false;
+
+        var shortcut = new OfficeFormulaShortcut(key, ctrl, alt, shift);
+        var previous = focus != IntPtr.Zero && focus == _previousFocus
+            ? _previousGesture : null;
+        _previousGesture = shortcut;
+        _previousFocus = focus;
+        if ((ctrl || alt) && !windows && !altGr && command.HasValue)
         {
-            var command = OfficeFormulaShortcutConfiguration.Read(_host)
-                .Match(key, ctrl, alt, shift);
-            if (command.HasValue)
+            _routingFormula = true;
+            try
             {
-                try { _formulaCallback(command.Value); }
-                catch (Exception error)
+                if (_formulaCallback(shortcut, previous, command.Value))
                 {
-                    Trace(
-                        $"formula-shortcut-callback-error {error.GetType().Name}:{error.Message}");
+                    _previousGesture = null;
+                    return true;
                 }
-                return new IntPtr(1);
             }
+            catch (Exception error)
+            {
+                Trace($"formula-shortcut-callback-error {error.GetType().Name}:{error.Message}");
+            }
+            finally { _routingFormula = false; }
         }
 
-        if (_pasteCallback is null)
-            return CallNextHookEx(_hook, code, wParam, lParam);
-        var ctrlPaste = key == VkV && ctrl;
-        var shiftInsertPaste = key == VkInsert && shift;
-        if (!ctrlPaste && !shiftInsertPaste)
-            return CallNextHookEx(_hook, code, wParam, lParam);
-        try { _pasteCallback(); }
-        catch (Exception error)
+        // A denied formula binding must not disable the ordinary paste observer.
+        var ctrlPaste = key == VkV && ctrl && !alt && !shift && !windows;
+        var shiftInsertPaste = key == VkInsert && shift && !ctrl && !alt && !windows;
+        if (_pasteCallback is not null && (ctrlPaste || shiftInsertPaste))
         {
-            Trace($"paste-key-callback-error {error.GetType().Name}:{error.Message}");
+            try { _pasteCallback(); }
+            catch (Exception error)
+            {
+                Trace($"paste-key-callback-error {error.GetType().Name}:{error.Message}");
+            }
         }
-        return CallNextHookEx(_hook, code, wParam, lParam);
+        return false;
     }
 
     private void Trace(string message)
@@ -409,6 +455,9 @@ internal sealed class OfficeFormulaShortcutKeyboardHook : IDisposable
 
     [DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetFocus();
 
     [DllImport("user32.dll")]
     private static extern short GetKeyState(int virtualKey);

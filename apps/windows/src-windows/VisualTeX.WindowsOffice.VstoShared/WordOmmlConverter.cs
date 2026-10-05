@@ -17,41 +17,6 @@ namespace VisualTeX.WordVsto;
 
 internal static partial class WordOmmlConverter
 {
-    private const int MaximumFormulaXmlCharacters = 16 * 1024 * 1024;
-    private const int MaximumFormulaXmlDepth = 256;
-    private const int MaximumFormulaXmlElements = 250_000;
-
-    private static XmlReader CreateSafeXmlReader(string xml, string kind)
-    {
-        if (xml.Length > MaximumFormulaXmlCharacters)
-            throw new InvalidDataException(
-                $"{kind} exceeds the supported safety limit of {MaximumFormulaXmlCharacters} characters.");
-        var settings = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            MaxCharactersInDocument = MaximumFormulaXmlCharacters,
-            IgnoreWhitespace = false,
-            CloseInput = true,
-        };
-
-        var elements = 0;
-        using (var preflight = XmlReader.Create(new StringReader(xml), settings))
-        {
-            while (preflight.Read())
-            {
-                if (preflight.NodeType != XmlNodeType.Element) continue;
-                if (preflight.Depth >= MaximumFormulaXmlDepth)
-                    throw new InvalidDataException(
-                        $"{kind} nesting exceeds the supported safety limit of {MaximumFormulaXmlDepth} levels.");
-                if (++elements > MaximumFormulaXmlElements)
-                    throw new InvalidDataException(
-                        $"{kind} contains more than the supported safety limit of {MaximumFormulaXmlElements} elements.");
-            }
-        }
-        return XmlReader.Create(new StringReader(xml), settings);
-    }
-
     private const string MathNamespace =
         "http://schemas.openxmlformats.org/officeDocument/2006/math";
     private const string WordNamespace =
@@ -3088,7 +3053,6 @@ internal static partial class WordOmmlConverter
     {
         if (string.IsNullOrWhiteSpace(mathMl))
             throw new InvalidDataException("VisualTeX did not provide MathML for the Word OMML formula.");
-        mathMl = RemoveVisualTeXBoundaryArtifactsFromMathMl(mathMl);
         ValidateMathMlForOmml(mathMl);
         mathMl = NormalizeMathTypeBinomialPiles(mathMl);
         mathMl = NormalizeFencedMathMlTables(mathMl);
@@ -3132,44 +3096,6 @@ internal static partial class WordOmmlConverter
         return omml;
     }
 
-    private static string RemoveVisualTeXBoundaryArtifactsFromMathMl(string mathMl)
-    {
-        static bool IsBoundaryArtifact(char character) =>
-            character is '\u200B' or '\u200C' or '\u2060' or '\uFEFF';
-
-        if (mathMl.IndexOf('\u200B') < 0
-            && mathMl.IndexOf('\u200C') < 0
-            && mathMl.IndexOf('\u2060') < 0
-            && mathMl.IndexOf('\uFEFF') < 0
-            && mathMl.IndexOf("200B", StringComparison.OrdinalIgnoreCase) < 0
-            && mathMl.IndexOf("200C", StringComparison.OrdinalIgnoreCase) < 0
-            && mathMl.IndexOf("2060", StringComparison.OrdinalIgnoreCase) < 0
-            && mathMl.IndexOf("FEFF", StringComparison.OrdinalIgnoreCase) < 0)
-            return mathMl;
-
-        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
-        var affectedAncestors = new HashSet<XElement>();
-        foreach (var textNode in document.DescendantNodes().OfType<XText>().ToList())
-        {
-            var original = textNode.Value;
-            if (!original.Any(IsBoundaryArtifact)) continue;
-            foreach (var ancestor in textNode.Ancestors())
-                affectedAncestors.Add(ancestor);
-            textNode.Value = new string(
-                original.Where(character => !IsBoundaryArtifact(character)).ToArray());
-        }
-
-        foreach (var element in document.Descendants().Reverse().ToList())
-        {
-            if (!affectedAncestors.Contains(element)) continue;
-            if (element.Elements().Any()) continue;
-            if (!string.IsNullOrWhiteSpace(element.Value)) continue;
-            if (element.Parent is null) continue;
-            element.Remove();
-        }
-        return document.ToString(SaveOptions.DisableFormatting);
-    }
-
     internal static void ValidateMathMlForOmml(string mathMl)
     {
         // Presentation MathML is already parsed mathematical content. Literal
@@ -3177,16 +3103,7 @@ internal static partial class WordOmmlConverter
         // not be interpreted as LaTeX a second time. The TeX producer reports
         // unknown commands at parse time; this boundary rejects real error nodes.
         // Use expanded XML names, so namespace aliases cannot bypass validation.
-        var settings = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            IgnoreComments = true,
-            MaxCharactersInDocument = 4_000_000,
-        };
-        using var text = new StringReader(mathMl);
-        using var reader = XmlReader.Create(text, settings);
-        var document = XDocument.Load(reader, LoadOptions.PreserveWhitespace);
+        var document = FormulaXml.Parse(mathMl, "MathML");
         XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
         if (document.Root?.Name != presentationMath + "math")
             throw new InvalidDataException("The OMML source must have a Presentation MathML math root.");
@@ -6346,17 +6263,7 @@ internal static partial class WordOmmlConverter
     {
         if (string.IsNullOrWhiteSpace(omml))
             throw new InvalidDataException("Office produced an empty OMML transformation.");
-        var settings = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            IgnoreComments = true,
-            IgnoreWhitespace = true,
-            MaxCharactersInDocument = 4_000_000,
-        };
-        using var text = new StringReader(omml);
-        using var reader = XmlReader.Create(text, settings);
-        var document = XDocument.Load(reader, LoadOptions.None);
+        var document = FormulaXml.Parse(omml, "OMML", LoadOptions.None);
         XNamespace math = MathNamespace;
         // This API promises one complete equation, not the first equation in a
         // larger range. Counting also detects an illegally nested oMath root.
@@ -7238,6 +7145,7 @@ internal static partial class WordOmmlConverter
         XNamespace xsl = "http://www.w3.org/1999/XSL/Transform";
         XNamespace math = MathNamespace;
         var stylesheet = XDocument.Load(path);
+        AdaptLiteralTextOutput(stylesheet);
         var grouping = stylesheet.Descendants(xsl + "template")
             .Single(element => (string?)element.Attribute("name") == "CreateRunWithSameProp")
             .Elements(xsl + "variable")
@@ -7318,6 +7226,47 @@ internal static partial class WordOmmlConverter
         using var reader = stylesheet.CreateReader();
         transform.Load(reader, new XsltSettings(enableDocumentFunction: false, enableScript: false), null);
         return transform;
+    }
+
+    private static void AdaptLiteralTextOutput(XDocument stylesheet)
+    {
+        XNamespace xsl = "http://www.w3.org/1999/XSL/Transform";
+        const string literal = "self::mml:mtext or self::mml:ms";
+        var output = stylesheet.Descendants(xsl + "template")
+            .Single(element => (string?)element.Attribute("name") == "OutputText");
+        var body = output.Elements().Where(element => element.Name != xsl + "param").ToArray();
+        foreach (var node in body) node.Remove();
+        output.Add(new XElement(xsl + "param", new XAttribute("name", "fLiteral"), new XAttribute("select", literal)),
+            new XElement(xsl + "choose",
+                new XElement(xsl + "when", new XAttribute("test", "$fLiteral"),
+                    new XElement(xsl + "value-of", new XAttribute("select", "$sInput"))),
+                new XElement(xsl + "otherwise", body)));
+
+        // Literal text is not a stream of mathematical operators. Preserve its
+        // characters and whitespace instead of applying Office's operator-only
+        // OutputText rewrites (invisible multiplication, spaces, ligatures).
+        // Grouped runs have an explicit first token; never infer their role from
+        // the caller's current node. Existing grouping already separates mtext.
+        foreach (var call in stylesheet.Descendants(xsl + "call-template")
+                     .Where(element => (string?)element.Attribute("name") == "OutputText").ToArray())
+        {
+            var template = call.Ancestors(xsl + "template").First();
+            var grouped = (string?)template.Attribute("name") == "CreateRunWithSameProp";
+            call.Add(new XElement(xsl + "with-param", new XAttribute("name", "fLiteral"),
+                new XAttribute("select", grouped ? "$ndTokenFirst/self::mml:mtext or $ndTokenFirst/self::mml:ms" : literal)));
+            foreach (var value in call.Descendants(xsl + "value-of").ToArray())
+            {
+                var expression = (string?)value.Attribute("select");
+                var token = expression == "normalize-space($ndTokenFirst)" ? "$ndTokenFirst"
+                    : expression == "normalize-space(.)" ? "." : null;
+                if (token is null) continue;
+                value.ReplaceWith(new XElement(xsl + "choose",
+                    new XElement(xsl + "when", new XAttribute("test", token == "." ? literal
+                        : "$ndTokenFirst/self::mml:mtext or $ndTokenFirst/self::mml:ms"),
+                        new XElement(xsl + "value-of", new XAttribute("select", token))),
+                    new XElement(xsl + "otherwise", new XElement(value))));
+            }
+        }
     }
 
     private static string NormalizeMathFontName(string? mathFontName) =>

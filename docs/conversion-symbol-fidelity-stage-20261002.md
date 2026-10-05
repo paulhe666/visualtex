@@ -356,3 +356,12 @@ MTEF仍缺完整F09模板权威：vendor的Euclid Symbol/BD/F8E6只证明arrowve
 以上四项通过是代表集合的语义及持久化检查，不是全部符号、间距、变体或像素保真。两个 OMML 出向只对实际已保存源负责，不补回原始 VT 已丢的信息。F09 未进入 Word 批次；CP217 原始 20 项纯审计再次确认 MTEF/OMML 各 19 个 codec 签名相等、F09 仍失配，不能称 20/20。纯审计的 WordSignature 不可用（比较器编入验收 EXE），该字段无通过主张。
 
 证据：artifacts/conversion-symbol-audit-20261002/cp218-handoff/matrix-summary.json、final-runtime-audit.json、cp218-representative20-pure/，以及 cp218-{源}-{目标}19 各目录。Word DLL、冻结 R3 及 held R4 哈希均再次核对一致。新 Companion PID46904 全程存活，未见启动后新增源码崩溃事件；原有三个 Word 进程及已安装 Companion 保留。C# 1992/1992 是本次核对的既有结果，没有声称重新执行。未提交、安装或推送；性能及截图限制保持。
+
+## 2026-10-05 CP269–CP270 架构根因修复补充
+
+共享FormulaXml已接入所列公开转换入口，解析时执行4M字符/256层/250k元素边界；移除不分所有权的全token零宽清理，并按mtext/ms文字角色保留字符/空白。新增23项离线检查通过；当前离线汇总2367/2368，仍保留CP255原字节失败，未扩展为全部符号或宿主视觉通过。最终frozen-R3 Word C1F790B2…C58FB3、PPT30957E9D…86D406，完整SHA/产物/根因在docs/architecture-root-remediation-20261005.md及cp270-final-state.json。旧source中已丢失的信息、本轮未运行的六向视觉、F02/F09/U+2AFD/固定组重音/复杂脚本/任意间距仍按本报告原范围保留。没有重开搁置探针、部署或提交。
+## CP272 补充（2026-10-05）
+
+共享MTEF读取已补齐完整根终止检查、原生递归256层和生成MathML树256层/250k元素边界，防止首根后内容被静默忽略及无界嵌套。新增独立字节测试修改前2/8、修改后8/8；相邻37/37；离线汇总2371/2372，四项未启用原生服务测试明确排除，唯一失败仍CP255原字节契约。精确net472新旧DLL只读解包归档19个MathType载荷，读回逐字19/19一致，不是新宿主/视觉矩阵。实际候选build-cp271-native-structure-final-r1，Word41F42D5F…A14F87、PPT8F9E7794…3215AC，完整证据和SHA见docs/architecture-root-remediation-20261005.md与artifacts/architecture-root-20261005/cp272-final-state.json。
+
+固定组重音仍缺真正原生布局依据；本机厂商MathML输入规则也未提供保固定宽度的组模板，未据其扩展输出更改预期。用户已取消单次Undo阻塞要求；CP255、R08、F02/F09及原先六向视觉缺口没有据此关闭。此阶段未提交/部署/注册表/用户Office操作。

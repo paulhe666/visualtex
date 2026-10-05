@@ -7,7 +7,6 @@ using System.Text.Json;
 using System.Xml.Linq;
 using Extensibility;
 using Microsoft.Office.Core;
-using Microsoft.Win32;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WordVsto;
 using WinForms = System.Windows.Forms;
@@ -109,89 +108,9 @@ internal static partial class Program
         }
     }
 
-    private sealed class UserOfficeAddInAutoLoadSuppression : IDisposable
-    {
-        private readonly string _keyPath;
-        private readonly bool _keyExisted;
-        private readonly bool _loadBehaviorExisted;
-        private readonly object? _loadBehavior;
-        private readonly RegistryValueKind _loadBehaviorKind;
-        private bool _disposed;
-
-        private UserOfficeAddInAutoLoadSuppression(
-            string keyPath,
-            bool keyExisted,
-            bool loadBehaviorExisted,
-            object? loadBehavior,
-            RegistryValueKind loadBehaviorKind)
-        {
-            _keyPath = keyPath;
-            _keyExisted = keyExisted;
-            _loadBehaviorExisted = loadBehaviorExisted;
-            _loadBehavior = loadBehavior;
-            _loadBehaviorKind = loadBehaviorKind;
-        }
-
-        internal static UserOfficeAddInAutoLoadSuppression Create(
-            string applicationName,
-            string progId)
-        {
-            var keyPath = $@"Software\Microsoft\Office\{applicationName}\Addins\{progId}";
-            using var existingKey = Registry.CurrentUser.OpenSubKey(keyPath);
-            var keyExisted = existingKey is not null;
-            using var key = Registry.CurrentUser.CreateSubKey(keyPath, writable: true)
-                ?? throw new InvalidOperationException(
-                    $"The per-user {applicationName} add-in acceptance override could not be created.");
-            var valueNames = key.GetValueNames();
-            var loadBehaviorExisted = valueNames.Any(name =>
-                string.Equals(name, "LoadBehavior", StringComparison.OrdinalIgnoreCase));
-            var loadBehavior = loadBehaviorExisted
-                ? key.GetValue("LoadBehavior", null, RegistryValueOptions.DoNotExpandEnvironmentNames)
-                : null;
-            var loadBehaviorKind = loadBehaviorExisted
-                ? key.GetValueKind("LoadBehavior")
-                : RegistryValueKind.DWord;
-            if (!keyExisted)
-            {
-                key.SetValue("FriendlyName", "VisualTeX", RegistryValueKind.String);
-                key.SetValue(
-                    "Description",
-                    "VisualTeX VSTO flow acceptance auto-load suppression",
-                    RegistryValueKind.String);
-            }
-            key.SetValue("LoadBehavior", 0, RegistryValueKind.DWord);
-            return new UserOfficeAddInAutoLoadSuppression(
-                keyPath,
-                keyExisted,
-                loadBehaviorExisted,
-                loadBehavior,
-                loadBehaviorKind);
-        }
-
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-            if (!_keyExisted)
-            {
-                try { Registry.CurrentUser.DeleteSubKeyTree(_keyPath, throwOnMissingSubKey: false); }
-                catch { }
-                return;
-            }
-
-            try
-            {
-                using var key = Registry.CurrentUser.OpenSubKey(_keyPath, writable: true);
-                if (key is null) return;
-                if (_loadBehaviorExisted && _loadBehavior is not null)
-                    key.SetValue("LoadBehavior", _loadBehavior, _loadBehaviorKind);
-                else
-                    key.DeleteValue("LoadBehavior", throwOnMissingValue: false);
-            }
-            catch { }
-        }
-    }
-
+    private static void RequireRegistryFreeAcceptance(string mode)
+        => throw new InvalidOperationException(
+            $"Acceptance mode '{mode}' requires migration to an owned, registry-free entry; user add-in registration must not be changed.");
     private sealed class PerformanceFormulaEntry
     {
         public int Index { get; set; }
@@ -533,6 +452,62 @@ internal static partial class Program
             }
         }
 
+        if (string.Equals(mode, "powerpoint-undo-grouping", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var messageFilter = OfficeComMessageFilter.Register();
+                RunPowerPointUndoGroupingAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
+
+        if (string.Equals(mode, "powerpoint-text-safety", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var messageFilter = OfficeComMessageFilter.Register();
+                RunPowerPointTextSafetyAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                return 1;
+            }
+        }
+
+        if (string.Equals(mode, "powerpoint-native-styles", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var messageFilter = OfficeComMessageFilter.Register();
+                RunPowerPointNativeStyleAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                return 1;
+            }
+        }
+
+        if (string.Equals(mode, "powerpoint-basic-functions", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var messageFilter = OfficeComMessageFilter.Register();
+                RunPowerPointBasicFunctionsAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                return 1;
+            }
+        }
+
         if (string.Equals(mode, "powerpoint-mathtype", StringComparison.OrdinalIgnoreCase))
         {
             try
@@ -683,11 +658,7 @@ internal static partial class Program
             {
                 Console.WriteLine("Exact core initialization: COM message filter.");
                 using var exactMessageFilter = OfficeComMessageFilter.Register();
-                Console.WriteLine("Exact core initialization: Word add-in suppression.");
-                using var exactWordSuppression =
-                    UserOfficeAddInAutoLoadSuppression.Create(
-                        "Word",
-                        "VisualTeX.WordVsto");
+                RequireRegistryFreeAcceptance(mode);
                 Console.WriteLine("Exact core initialization complete.");
                 if (string.Equals(
                         mode,
@@ -717,126 +688,20 @@ internal static partial class Program
         }
 
         using var officeMessageFilter = OfficeComMessageFilter.Register();
-        var exerciseInstalledWordAddIn = string.Equals(
-                mode,
-                "word-installed-unsaved-first-omml",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-mathtype-left-right-stability",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-mathtype-right-left-live",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-installed-format-conversion",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-live-format-conversion-fixture",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-installed-visualtex-number-toggle-close",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-installed-omml-mathtype-format-conversion",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-installed-mathtype-native-regression",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-installed-mathtype-left-ui-e2e",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-installed-inline-ole-ribbon-reedit",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-physical-ui-edit-performance",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-installed-mathtype-reedit-regression",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-installed-mathtype-50-edit-stress",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-installed-format-50-batch-stress",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-installed-vt-omml-50-direct-stress",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-user-100-mathtype-conversion",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-user-100-mathtype-reverse",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-user-100-omml-to-mathtype",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-user-visualtex-to-omml-regression",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-user-omml-to-visualtex-regression",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-active-user-100-failure-inspect",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-active-mathtype-omml-source-audit",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-active-mathtype-omml-copy-diagnostic",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                mode,
-                "word-installed-exact-mathtype-omml-clone",
-                StringComparison.OrdinalIgnoreCase);
         var directOmmlCoreAcceptance = string.Equals(
             mode,
             "word-omml-complex-recovery",
             StringComparison.OrdinalIgnoreCase);
-        using var installedWordAutoLoadSuppression =
-            exerciseInstalledWordAddIn || directOmmlCoreAcceptance
-            ? null
-            : UserOfficeAddInAutoLoadSuppression.Create("Word", "VisualTeX.WordVsto");
-        var exerciseInstalledPowerPointAddIn = string.Equals(
-            mode,
-            "powerpoint-installed-ole-presentation",
-            StringComparison.OrdinalIgnoreCase);
-        using var installedPowerPointAutoLoadSuppression =
-            exerciseInstalledPowerPointAddIn || directOmmlCoreAcceptance
-            ? null
-            : UserOfficeAddInAutoLoadSuppression.Create("PowerPoint", "VisualTeX.PowerPointVsto");
-        Console.WriteLine(directOmmlCoreAcceptance
-            ? "Registry add-in suppression is skipped for the direct isolated OMML core acceptance; its private Word host disconnects the installed add-in before creating the fixture document."
-            : exerciseInstalledWordAddIn
-            ? "Installed Word add-in remains enabled for this MathType real-environment stability acceptance."
-            : exerciseInstalledPowerPointAddIn
-                ? "Installed Word add-in auto-load is suppressed; installed PowerPoint add-in remains enabled for this acceptance."
-                : "Installed Word and PowerPoint add-in auto-load is suppressed for this isolated acceptance process.");
-
+        var registryFreeOwnedProseAcceptance = string.Equals(
+            mode, "word-prose-selection-cost", StringComparison.OrdinalIgnoreCase);
+        // Older runners depended on changing per-user add-in registration.
+        // They must migrate to a proven owned host before they can run again.
+        // Never silently change the environment or continue with different setup.
+        if (!directOmmlCoreAcceptance && !registryFreeOwnedProseAcceptance)
+        {
+            Console.Error.WriteLine($"Acceptance mode '{mode}' requires migration to an owned, registry-free entry; no Office host or user setting was changed.");
+            return 2;
+        }
         // Pure COM/Word performance acceptance does not depend on the desktop
         // companion. Running it before VisualTeXSessionClient also prevents an
         // unrelated companion-health or assembly-binding failure from polluting
@@ -1720,6 +1585,10 @@ internal static partial class Program
             else if (string.Equals(mode, "word-omml-deferred-finalization-cost", StringComparison.OrdinalIgnoreCase))
             {
                 RunWordOmmlDeferredFinalizationCostAcceptance(artifactRoot);
+            }
+            else if (string.Equals(mode, "word-prose-selection-cost", StringComparison.OrdinalIgnoreCase))
+            {
+                RunWordProseSelectionCostAcceptance(artifactRoot);
             }
             else if (string.Equals(mode, "word-selection-change-idle", StringComparison.OrdinalIgnoreCase))
             {

@@ -617,20 +617,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         BeginSession("create", "inline", FormulaOleContract.WordOmmlMode);
     public void OnInsertDisplayOmml(object control) =>
         BeginSession("create", "block", FormulaOleContract.WordOmmlMode);
-    private void OnWordFormulaShortcut(OfficeFormulaShortcutCommand command)
+    private bool OnWordFormulaShortcut(OfficeFormulaShortcut shortcut,
+        OfficeFormulaShortcut? previous, OfficeFormulaShortcutCommand command)
     {
-        if (command.Kind == OfficeFormulaShortcutKind.Inline)
-        {
-            if (command.Format == OfficeFormulaShortcutFormat.Omml)
-                OnInsertInlineOmml(this);
-            else
-                OnInsertInline(this);
-            return;
-        }
-        if (command.Format == OfficeFormulaShortcutFormat.Omml)
-            OnInsertDisplayOmml(this);
-        else
-            OnInsertDisplay(this);
+        if (!WordFormulaShortcutPolicy.CanExecute(_application, shortcut, previous))
+            return false;
+        return BeginSession("create",
+            command.Kind == OfficeFormulaShortcutKind.Inline ? "inline" : "block",
+            command.Format == OfficeFormulaShortcutFormat.Omml
+                ? FormulaOleContract.WordOmmlMode : null);
     }
     public void OnEditSelected(object control) => BeginSession("edit", null, null);
     public void OnConvertSelected(object control) =>
@@ -2525,7 +2520,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
     }
 
-    private void BeginSession(
+    private bool BeginSession(
         string mode,
         string? displayMode,
         string? requestedObjectMode,
@@ -2537,7 +2532,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             SetStatus("VisualTeX Word 插件正在重新初始化，请稍后再试。");
             WordDoubleClickHook.TraceMessage("ribbon-session-rejected-addin-lifetime-unavailable");
-            return;
+            return false;
         }
         if (string.Equals(mode, "create", StringComparison.Ordinal)
             && capturedSelection is null)
@@ -2552,7 +2547,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 SetStatus($"无法读取当前插入位置：{error.Message}");
                 WordDoubleClickHook.TraceMessage(
                     $"ribbon-create-selection-capture-failed: {error}");
-                return;
+                return false;
             }
         }
         _ = ObserveRibbonSessionTaskAsync(RunSessionAsync(
@@ -2562,6 +2557,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             capturedSelection,
             conversionOnly,
             lifetime.Token));
+        return true;
     }
 
     private async Task ObserveRibbonSessionTaskAsync(Task task)

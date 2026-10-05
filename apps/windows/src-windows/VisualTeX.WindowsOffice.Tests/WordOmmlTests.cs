@@ -383,7 +383,7 @@ public sealed class WordOmmlTests
     }
 
     [Fact]
-    public void OfficeMathMlTransformRemovesVisualTeXTypingAnchorButKeepsFollowingDigit()
+    public void OfficeMathMlTransformDoesNotInferBoundaryOwnershipFromAnOrdinaryOperator()
     {
         const string mathMl =
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">"
@@ -396,9 +396,9 @@ public sealed class WordOmmlTests
         XNamespace math = MathNamespace;
         var visibleText = string.Concat(document.Descendants(math + "t").Select(node => node.Value));
 
-        Assert.DoesNotContain("\u200C", omml, StringComparison.Ordinal);
-        Assert.DoesNotContain("200C", omml, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("1", visibleText, StringComparison.Ordinal);
+        // An ORD mo alone is not proof of a VisualTeX-owned host anchor.
+        // Native host boundary removal belongs to the host range/ownership layer.
+        Assert.Equal("c2\u200C1", visibleText);
     }
 
     [Fact]

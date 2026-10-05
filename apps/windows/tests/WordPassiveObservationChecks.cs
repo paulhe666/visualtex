@@ -18,6 +18,7 @@ public static class WordPassiveObservationChecks
         public int ObjectActivations;
         public int ClipboardCopies;
         public int SelectionWrites;
+        public int LayoutQueries;
         public string[] UnexpectedCalls;
         public bool BoundarySatisfied;
     }
@@ -42,7 +43,7 @@ public static class WordPassiveObservationChecks
     private sealed class Model
     {
         internal readonly List<string> Unexpected = new List<string>();
-        internal int Exports, Activations, ClipboardCopies, SelectionWrites;
+        internal int Exports, Activations, ClipboardCopies, SelectionWrites, LayoutQueries;
         internal readonly string ProgId;
         internal readonly bool MissingRegistration;
         internal Word.Application Application;
@@ -54,7 +55,7 @@ public static class WordPassiveObservationChecks
         internal Word.OMaths EmptyMaths;
         internal Word.Range SelectedRange;
 
-        internal Model(string progId, bool missingRegistration, bool collapsed)
+        internal Model(string progId, bool missingRegistration, bool collapsed, int caretPosition = 11, int shapeCount = 1)
         {
             ProgId = progId; MissingRegistration = missingRegistration;
             EmptyMaths = Make<Word.OMaths>("OMaths", delegate(MethodInfo m, object[] a) {
@@ -82,11 +83,11 @@ public static class WordPassiveObservationChecks
                 }
             });
             Shapes = Make<Word.InlineShapes>("InlineShapes", delegate(MethodInfo m, object[] a) {
-                if (m.Name == "get_Count") return 1;
+                if (m.Name == "get_Count") return shapeCount;
                 if (m.Name == "get_Item") return Shape;
                 return Unknown("InlineShapes", m);
             });
-            SelectedRange = Range(collapsed ? 11 : 10, 11);
+            SelectedRange = Range(collapsed ? caretPosition : 10, collapsed ? caretPosition : 11);
             Selection = Make<Word.Selection>("Selection", delegate(MethodInfo m, object[] a) {
                 if (m.Name == "get_Range") return SelectedRange;
                 if (m.Name == "get_Document") return Document;
@@ -117,6 +118,7 @@ public static class WordPassiveObservationChecks
                     case "get_InlineShapes": return Shapes;
                     case "get_OMaths": return EmptyMaths;
                     case "get_Document": return Document;
+                    case "get_Information": LayoutQueries++; return false;
                     case "MoveStart": start += Convert.ToInt32(a[1]); return Convert.ToInt32(a[1]);
                     case "MoveEnd": end += Convert.ToInt32(a[1]); return Convert.ToInt32(a[1]);
                     case "Copy":
@@ -174,6 +176,22 @@ public static class WordPassiveObservationChecks
                     BoundarySatisfied = model.Exports == 0 && model.Activations == 0 && model.ClipboardCopies == 0 && model.SelectionWrites == 0 && model.Unexpected.Count == 0
                 });
             }
+        }
+        // Ordinary text immediately before an owned OLE must not activate it or
+        // request document layout. Ambiguous touching hosts also remain rejected.
+        foreach (int count in new[] { 1, 2 })
+        {
+            var model = new Model("VisualTeX.Formula.1", false, true, 10, count);
+            object service = Activator.CreateInstance(serviceType, new object[] { model.Application });
+            serviceType.GetMethod("NormalizeTypingCaretAfterInlineFormula").Invoke(service, new object[] { model.Selection });
+            results.Add(new Result {
+                Case = count == 1 ? "visualtex-leading-caret-no-payload-or-layout" : "ambiguous-visualtex-caret-no-payload-or-layout",
+                ContentExports = model.Exports, ObjectActivations = model.Activations,
+                ClipboardCopies = model.ClipboardCopies, SelectionWrites = model.SelectionWrites,
+                LayoutQueries = model.LayoutQueries, UnexpectedCalls = model.Unexpected.ToArray(),
+                BoundarySatisfied = model.Exports == 0 && model.Activations == 0 && model.ClipboardCopies == 0
+                    && model.SelectionWrites == 0 && model.LayoutQueries == 0 && model.Unexpected.Count == 0
+            });
         }
         MethodInfo command = serviceType.GetMethod("ReadSelectedFormulaFontSizeForCommand", BindingFlags.Instance | BindingFlags.NonPublic);
         if (command != null)

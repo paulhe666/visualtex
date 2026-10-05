@@ -933,55 +933,54 @@ internal sealed partial class WordFormulaService
         Selection selection)
     {
         Range? caret = null;
-        Document? document = null;
+        Range? probe = null;
+        InlineShapes? shapes = null;
+        InlineShape? shape = null;
+        Range? shapeRange = null;
+        InlineShape? host = null;
         Range? hostRange = null;
         try
         {
             caret = selection.Range;
-            if (caret.Start != caret.End)
-                return;
-            document = caret.Document;
+            var position = caret.Start;
+            if (position != caret.End) return;
 
-            WordFormulaHostDescriptor? host = null;
-            try
+            // A passive caret repair needs only the exact trailing boundary.
+            // Generic host discovery also reads the OLE payload at the leading
+            // boundary and asks layout-backed wdWithInTable for a descriptor
+            // field unused here. Keep the same tiny structural/ownership probe,
+            // but establish the trailing boundary before any payload access.
+            probe = caret.Duplicate;
+            try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch { }
+            try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch { }
+            shapes = probe.InlineShapes;
+            var touchingHosts = 0;
+            for (var index = 1; index <= shapes.Count; index++)
             {
-                host =
-                    WordFormulaHostResolver.ResolveLocal(
-                        document,
-                        caret,
-                        WordFormulaHostKind.VisualTeX);
+                Release(shapeRange); shapeRange = null;
+                Release(shape); shape = shapes[index];
+                shapeRange = shape.Range.Duplicate;
+                if (shapeRange.StoryType != caret.StoryType
+                    || position < shapeRange.Start || position > shapeRange.End
+                    || !WordFormulaMetadataReader.IsNativeOle(shape))
+                    continue;
+                touchingHosts++;
+                if (touchingHosts > 1) return;
+                if (position != shapeRange.End) continue;
+                host = shape; shape = null;
+                hostRange = shapeRange; shapeRange = null;
             }
-            catch (InvalidDataException) { }
+            if (touchingHosts != 1 || host is null || hostRange is null) return;
 
-            // Pure native OMath is Word-owned, not an OLE requiring a typing
-            // baseline repair. Passive OMML resolution used to export XML and
-            // rewrite Selection.Font after an explicit operation/Undo, creating
-            // extra undo entries (even when the desired font was unchanged).
-            // Explicit native create/edit restores its own caret inside its
-            // transaction; ordinary selection/Undo must not mutate native math.
-            // Only a proved VisualTeX OLE above may enter this repair.
-
-            // MathType owns its OLE insertion/edit lifecycle. A passive Word
-            // selection notification is not permission to import its payload or
-            // change its caret. ResolveLocal(MathType) serializes WordOpenXML;
-            // doing that inside native insertion re-enters Word's unfinished OLE
-            // save and crashes wwlib. VisualTeX's explicit MathType insert/edit/
-            // conversion paths already restore typing format when they complete.
-            if (host is null
-                || !string.Equals(
-                    host.DisplayMode,
-                    "inline",
-                    StringComparison.OrdinalIgnoreCase)
-                || caret.Start != host.Range.End)
+            // Preserve authoritative block/inline semantics at the one boundary
+            // that can need normalization. Native OMML and third-party OLE never
+            // enter this payload path; their insertion/edit lifecycle is owned
+            // by Word/their own server, not passive selection notifications.
+            var metadata = WordFormulaMetadataReader.TryReadEmbeddedNativeOle(host);
+            if (string.Equals(metadata?.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                || caret.Start != hostRange.End)
                 return;
-
-            hostRange =
-                WordFormulaHostSemanticReader.CreateRange(
-                    document,
-                    host.Range);
-            WordFormulaHostLayout.RestoreInlineCaret(
-                _application,
-                hostRange);
+            WordFormulaHostLayout.RestoreInlineCaret(_application, hostRange);
         }
         catch
         {
@@ -991,7 +990,11 @@ internal sealed partial class WordFormulaService
         finally
         {
             Release(hostRange);
-            Release(document);
+            Release(host);
+            Release(shapeRange);
+            Release(shape);
+            Release(shapes);
+            Release(probe);
             Release(caret);
         }
     }

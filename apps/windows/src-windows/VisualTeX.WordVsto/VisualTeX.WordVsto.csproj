@@ -30,6 +30,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonIconProvider.cs" Link="RibbonIconProvider.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonVectorIconRenderer.cs" Link="RibbonVectorIconRenderer.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlToLatexConverter.cs" Link="MathMlToLatexConverter.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\FormulaXml.cs" Link="FormulaXml.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OlePngPreviewExtractor.cs" Link="OlePngPreviewExtractor.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDoubleClickRouting.cs" Link="WordDoubleClickRouting.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordEquationNumbering.cs" Link="WordEquationNumbering.cs" />

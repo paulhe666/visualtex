@@ -165,15 +165,28 @@ internal static partial class MathTypeMtefCodec
         // which our LaTeX reader tolerated, but standards-based MathML->OMML XSLT
         // saw an empty equation. Normalize every parser-owned descendant into the
         // MathML namespace at the direct MTEF read boundary.
-        foreach (var element in math.Descendants().ToArray())
+        // Sibling native script/embellishment records can build nested XML
+        // without recursively nested native containers. Bound that resulting
+        // tree as well, before serialization or downstream recursive rules.
+        var pending = new Stack<(XElement Element, int Depth)>();
+        pending.Push((math, 1));
+        var elements = 1;
+        while (pending.Count != 0)
         {
+            var (element, depth) = pending.Pop();
+            if (depth > FormulaXml.MaximumDepth)
+                throw new InvalidDataException($"MathType formula exceeds the nesting limit of {FormulaXml.MaximumDepth} levels.");
             if (element.Name.Namespace == XNamespace.None)
                 element.Name = mathMlNamespace + element.Name.LocalName;
+            element.Attribute("data-mtef-run")?.Remove();
+            for (var node = element.LastNode; node is not null; node = node.PreviousNode)
+            {
+                if (node is not XElement child) continue;
+                if (++elements > FormulaXml.MaximumElements)
+                    throw new InvalidDataException($"MathType formula exceeds the limit of {FormulaXml.MaximumElements} elements.");
+                pending.Push((child, depth + 1));
+            }
         }
-        foreach (var marker in math.DescendantsAndSelf()
-                     .Attributes("data-mtef-run")
-                     .ToArray())
-            marker.Remove();
         return new XDocument(math).ToString(SaveOptions.DisableFormatting);
     }
 
@@ -210,7 +223,7 @@ internal static partial class MathTypeMtefCodec
             throw new InvalidDataException(
                 "VisualTeX's standalone MathType MTEF prefix is internally inconsistent.");
 
-        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        var document = FormulaXml.Parse(mathMl, "MathML");
         var math = document.Root?.DescendantsAndSelf()
             .FirstOrDefault(element => element.Name.LocalName == "math")
             ?? throw new InvalidDataException("MathML has no <math> root.");
@@ -281,7 +294,7 @@ internal static partial class MathTypeMtefCodec
         if (structureOffset <= 0 || structureOffset > sourceMtef.Length)
             throw new InvalidDataException("Could not locate the MathType root equation structure.");
 
-        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        var document = FormulaXml.Parse(mathMl, "MathML");
         var math = document.Root?.DescendantsAndSelf()
             .FirstOrDefault(element => element.Name.LocalName == "math")
             ?? throw new InvalidDataException("MathML has no <math> root.");
@@ -320,7 +333,7 @@ internal static partial class MathTypeMtefCodec
     internal static string SemanticSignature(string mathMl)
     {
         if (string.IsNullOrWhiteSpace(mathMl)) return string.Empty;
-        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        var document = FormulaXml.Parse(mathMl, "MathML");
         var math = document.Root?.DescendantsAndSelf()
             .FirstOrDefault(element => element.Name.LocalName == "math")
             ?? document.Root
@@ -1562,7 +1575,7 @@ internal static partial class MathTypeMtefCodec
     {
         if (string.IsNullOrWhiteSpace(mathMl))
             throw new InvalidDataException("MathType conversion requires MathML.");
-        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        var document = FormulaXml.Parse(mathMl, "MathML");
         var math = document.Root?.DescendantsAndSelf()
             .FirstOrDefault(element => element.Name.LocalName == "math")
             ?? throw new InvalidDataException("MathML has no <math> root.");
@@ -6030,6 +6043,22 @@ internal static partial class MathTypeMtefCodec
         private readonly Dictionary<int, byte> _builtInCharacterStyles = new();
         private readonly Dictionary<int, int> _builtInFontDefinitions = new();
         private int _position;
+        private int _structureDepth;
+
+        private StructureScope EnterStructure()
+        {
+            if (_structureDepth >= FormulaXml.MaximumDepth)
+                throw new InvalidDataException($"MathType MTEF exceeds the native nesting limit of {FormulaXml.MaximumDepth} levels at offset {_position}.");
+            _structureDepth++;
+            return new StructureScope(this);
+        }
+
+        private readonly struct StructureScope : IDisposable
+        {
+            private readonly MtefStructureReader _reader;
+            internal StructureScope(MtefStructureReader reader) => _reader = reader;
+            public void Dispose() => _reader._structureDepth--;
+        }
 
         internal MtefStructureReader(byte[] data, int position)
         {
@@ -6105,14 +6134,19 @@ internal static partial class MathTypeMtefCodec
         internal IEnumerable<XNode> ReadRoot()
         {
             SkipFormattingRecords();
+            XNode[] nodes;
             if (Peek() == RecordLine)
-                return ReadLine().Nodes().ToArray();
-            if (Peek() == RecordPile)
-                return new XNode[] { ReadPile() };
-            if (Peek() == RecordMatrix)
-                return new XNode[] { ReadMatrix() };
-            throw new InvalidDataException(
-                $"Unsupported MathType root record {Peek()} at offset {_position}.");
+                nodes = ReadLine().Nodes().ToArray();
+            else if (Peek() == RecordPile)
+                nodes = new XNode[] { ReadPile() };
+            else if (Peek() == RecordMatrix)
+                nodes = new XNode[] { ReadMatrix() };
+            else
+                throw new InvalidDataException(
+                    $"Unsupported MathType root record {Peek()} at offset {_position}.");
+            if (!HasOnlyEquationEndRemaining())
+                throw new InvalidDataException($"MathType MTEF root does not end at the equation boundary at offset {_position}.");
+            return nodes;
         }
 
         internal bool HasOnlyEquationEndRemaining()
@@ -6124,6 +6158,7 @@ internal static partial class MathTypeMtefCodec
 
         private XElement ReadLine()
         {
+            using var structure = EnterStructure();
             Expect(RecordLine);
             var options = ReadByte();
             SkipNudge(options);
@@ -6137,6 +6172,7 @@ internal static partial class MathTypeMtefCodec
 
         private XElement ReadPile()
         {
+            using var structure = EnterStructure();
             Expect(RecordPile);
             var options = ReadByte();
             SkipNudge(options);
@@ -6282,6 +6318,7 @@ internal static partial class MathTypeMtefCodec
 
         private XElement ReadMatrix()
         {
+            using var structure = EnterStructure();
             Expect(RecordMatrix);
             var options = ReadByte();
             SkipNudge(options);
@@ -6950,6 +6987,7 @@ internal static partial class MathTypeMtefCodec
 
         private ParsedTemplate ReadTemplate()
         {
+            using var structure = EnterStructure();
             Expect(RecordTemplate);
             var options = ReadByte();
             SkipNudge(options);

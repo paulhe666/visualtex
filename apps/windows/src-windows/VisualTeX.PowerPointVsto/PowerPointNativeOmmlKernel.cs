@@ -129,7 +129,7 @@ internal static class PowerPointNativeOmmlKernel
             fontSize);
     }
 
-    internal static void InsertIntoText(
+    internal static Action PrepareTextInsertion(
         Application application,
         Shape shape,
         int start,
@@ -156,9 +156,12 @@ internal static class PowerPointNativeOmmlKernel
             throw new InvalidDataException(
                 "PowerPoint text OMML insertion requires inline or block display mode.");
 
+        // Resolve the native converter and all pure/Word-scratch preparation
+        // before a single character of the PowerPoint source can be replaced.
+        var linear = PrepareLinearMath(mathMl, display);
+
         object? frame2 = null;
         object? fullRange2 = null;
-        object? targetRange2 = null;
         try
         {
             frame2 = shape.TextFrame2;
@@ -183,6 +186,7 @@ internal static class PowerPointNativeOmmlKernel
 
             var insertionStart = start;
             var replacementLength = length;
+            string? paragraphBreaks = null;
             if (display)
             {
                 var originalText =
@@ -199,12 +203,7 @@ internal static class PowerPointNativeOmmlKernel
                     zeroBasedEnd < originalText.Length
                     && originalText[zeroBasedEnd] != '\r';
 
-                targetRange2 =
-                    GetCharacterRange(
-                        fullRange2,
-                        start,
-                        length);
-                ((dynamic)targetRange2).Text =
+                paragraphBreaks =
                     (needsLeadingBreak ? "\r" : string.Empty)
                     + (needsTrailingBreak ? "\r" : string.Empty);
                 insertionStart =
@@ -212,18 +211,27 @@ internal static class PowerPointNativeOmmlKernel
                 replacementLength = 0;
             }
 
-            Insert(
-                application,
-                shape,
-                insertionStart,
-                replacementLength,
-                mathMl,
-                display,
-                contextFontSize);
+            return () =>
+            {
+                if (paragraphBreaks is not null)
+                {
+                    object? frame = null;
+                    object? text = null;
+                    object? selected = null;
+                    try
+                    {
+                        frame = shape.TextFrame2;
+                        text = ((dynamic)frame).TextRange;
+                        selected = GetCharacterRange(text, start, length);
+                        ((dynamic)selected).Text = paragraphBreaks;
+                    }
+                    finally { Release(selected); Release(text); Release(frame); }
+                }
+                InsertPrepared(application, shape, insertionStart, replacementLength, linear, display, contextFontSize);
+            };
         }
         finally
         {
-            Release(targetRange2);
             Release(fullRange2);
             Release(frame2);
         }
@@ -237,15 +245,21 @@ internal static class PowerPointNativeOmmlKernel
         string mathMl,
         bool display,
         float fontSize)
+        => InsertPrepared(application, shape, start, replacementLength, PrepareLinearMath(mathMl, display), display, fontSize);
+
+    private static StyledLinearMath PrepareLinearMath(string mathMl, bool display)
     {
-        var linearText =
-            ConvertMathMlToUnicodeMath(
-                mathMl,
-                display);
-        if (string.IsNullOrWhiteSpace(linearText))
+        var linear = ConvertMathMlToUnicodeMath(mathMl, display);
+        if (string.IsNullOrWhiteSpace(linear.Text))
             throw new InvalidOperationException(
                 "VisualTeX could not derive a linear Office Math expression for PowerPoint.");
+        return linear;
+    }
 
+    private static void InsertPrepared(Application application, Shape shape, int start,
+        int replacementLength, StyledLinearMath linear, bool display, float fontSize)
+    {
+        var linearText = linear.Text;
         PptTextFrame? legacyFrame = null;
         PptTextRange? legacyRange = null;
         PptTextRange? target = null;
@@ -301,6 +315,20 @@ internal static class PowerPointNativeOmmlKernel
             sourceFont2 = ((dynamic)sourceRange2).Font;
             ((dynamic)sourceFont2).Size =
                 Math.Max(5f, fontSize);
+            // Apply retained colors to exact inserted UnicodeMath spans before
+            // Professional conversion; never format its expanded selection.
+            foreach (var color in linear.Colors)
+            {
+                object? coloredRange = null;
+                object? coloredFont = null;
+                try
+                {
+                    coloredRange = GetCharacterRange(((dynamic)sourceFrame2).TextRange, start + color.Start, color.Length);
+                    coloredFont = ((dynamic)coloredRange).Font;
+                    ((dynamic)coloredFont).Fill.ForeColor.RGB = color.Rgb;
+                }
+                finally { Release(coloredFont); Release(coloredRange); }
+            }
             if (display)
             {
                 try
@@ -356,6 +384,7 @@ internal static class PowerPointNativeOmmlKernel
                     || application.CommandBars.GetEnabledMso(
                         "EquationLinearFormat"));
 
+            ApplyNativeUprightLetters(selection, linear);
             if (application.CommandBars.GetEnabledMso(
                     "EquationProfessional"))
             {
@@ -390,7 +419,70 @@ internal static class PowerPointNativeOmmlKernel
         }
     }
 
-    private static string ConvertMathMlToUnicodeMath(
+    private sealed class LinearColor
+    {
+        internal int Start;
+        internal int Length;
+        internal int Rgb;
+    }
+
+    private sealed class StyledLinearMath
+    {
+        internal string Text = string.Empty;
+        internal List<LinearColor> Colors = new();
+        internal List<int> UprightLetters = new();
+    }
+
+    private static void ApplyNativeUprightLetters(Selection selection, StyledLinearMath linear)
+    {
+        if (linear.UprightLetters.Count == 0) return;
+        object? selected = null;
+        object? zone = null;
+        try
+        {
+            selected = selection.TextRange2;
+            zone = PowerPointOmmlBridge.ReadSingleSelectedMathZone(selected);
+            if (zone is null)
+                throw new InvalidOperationException("PowerPoint did not expose one exact native zone for upright-math formatting.");
+            var actual = Convert.ToString(((dynamic)zone).Text) ?? string.Empty;
+            var expectedElements = System.Globalization.StringInfo.ParseCombiningCharacters(linear.Text);
+            var actualElements = System.Globalization.StringInfo.ParseCombiningCharacters(actual);
+            if (expectedElements.Length != actualElements.Length)
+                throw new InvalidOperationException("PowerPoint changed the native linear expression before upright-math formatting; conversion cannot preserve its semantics.");
+            var targets = new List<(int Start, int Length)>();
+            for (var i = 0; i < expectedElements.Length; i++)
+            {
+                var sourceStart = expectedElements[i];
+                var sourceEnd = i + 1 < expectedElements.Length ? expectedElements[i + 1] : linear.Text.Length;
+                var targetStart = actualElements[i];
+                var targetEnd = i + 1 < actualElements.Length ? actualElements[i + 1] : actual.Length;
+                // Comparison only: do not replace either text with normalized
+                // text. Native build-up can encode italic letters as scalars.
+                if (linear.Text.Substring(sourceStart, sourceEnd - sourceStart).Normalize(NormalizationForm.FormKC)
+                    != actual.Substring(targetStart, targetEnd - targetStart).Normalize(NormalizationForm.FormKC))
+                    throw new InvalidOperationException("PowerPoint changed the native linear expression before upright-math formatting; conversion cannot preserve its semantics.");
+                if (linear.UprightLetters.Contains(sourceStart)) targets.Add((targetStart, targetEnd - targetStart));
+            }
+            // Native style assignment may shorten an astral italic scalar.
+            // Work backwards so earlier exact offsets remain unchanged.
+            foreach (var target in targets.AsEnumerable().Reverse())
+            {
+                object? character = null;
+                object? font = null;
+                try
+                {
+                    character = GetCharacterRange(zone, target.Start + 1, target.Length);
+                    font = ((dynamic)character).Font;
+                    ((dynamic)font).Italic = MsoTriState.msoFalse;
+                }
+                finally { Release(font); Release(character); }
+            }
+            ((dynamic)zone).Select();
+        }
+        finally { Release(zone); Release(selected); }
+    }
+
+    private static StyledLinearMath ConvertMathMlToUnicodeMath(
         string mathMl,
         bool display)
     {
@@ -443,6 +535,24 @@ internal static class PowerPointNativeOmmlKernel
         }
     }
 
+    internal static string ReadNativeMathMl(string omml)
+    {
+        var converter = ResolveWordOmmlConverterType();
+        var method = converter.GetMethod(
+            "TransformOmmlToMathMl", BindingFlags.Static | BindingFlags.NonPublic,
+            binder: null, types: new[] { typeof(string), typeof(bool) }, modifiers: null)
+            ?? throw new MissingMethodException(converter.FullName, "TransformOmmlToMathMl");
+        try
+        {
+            return method.Invoke(null, new object[] { PowerPointNativeOmmlFormatting.ForWordReverseTransform(omml), true }) as string
+                ?? throw new InvalidDataException("Native PowerPoint equation returned no MathML.");
+        }
+        catch (TargetInvocationException error) when (error.InnerException is not null)
+        {
+            throw new InvalidOperationException("Native PowerPoint source recovery failed: " + error.InnerException.Message, error.InnerException);
+        }
+    }
+
     private static void ResolveConverterMethods(
         out MethodInfo transform,
         out MethodInfo replace)
@@ -461,14 +571,20 @@ internal static class PowerPointNativeOmmlKernel
                     converter.FullName,
                     "TransformMathMlToOmml");
             _replaceWithPreparedOmmlDirectMethod =
-                converter.GetMethods(
-                        BindingFlags.Static
-                        | BindingFlags.NonPublic)
-                    .SingleOrDefault(method =>
-                        method.Name
-                            == "ReplaceWithPreparedOmmlDirect"
-                        && method.GetParameters().Length
-                            == 5)
+                converter.GetMethod(
+                    "ReplaceWithPreparedOmmlDirect",
+                    BindingFlags.Static | BindingFlags.NonPublic,
+                    binder: null,
+                    types: new[]
+                    {
+                        typeof(Word.Document),
+                        typeof(Word.Range),
+                        typeof(string),
+                        typeof(bool),
+                        typeof(string),
+                        typeof(bool),
+                    },
+                    modifiers: null)
                 ?? throw new MissingMethodException(
                     converter.FullName,
                     "ReplaceWithPreparedOmmlDirect");
@@ -561,7 +677,7 @@ internal static class PowerPointNativeOmmlKernel
         }
     }
 
-    private static string LinearizePreparedOmml(
+    private static StyledLinearMath LinearizePreparedOmml(
         Word.Document document,
         MethodInfo replace,
         string omml,
@@ -590,6 +706,7 @@ internal static class PowerPointNativeOmmlKernel
                             omml,
                             display,
                             null,
+                            false, // Do not promote the private Word inline scratch range.
                         }) as Word.Range
                     ?? throw new InvalidOperationException(
                         "VisualTeX Word OMML converter returned no materialized formula range.");
@@ -612,22 +729,44 @@ internal static class PowerPointNativeOmmlKernel
             math = maths[1];
             math.Linearize();
             linearRange = math.Range;
-            var linearText =
-                (Convert.ToString(linearRange.Text)
-                    ?? string.Empty)
-                .Trim(
-                    ' ',
-                    '\t',
-                    '\r',
-                    '\n',
-                    '\a',
-                    '\0');
-            if (string.IsNullOrWhiteSpace(linearText))
+            var raw = Convert.ToString(linearRange.Text) ?? string.Empty;
+            var trimChars = new[] { ' ', '\t', '\r', '\n', '\a', '\0' };
+            var text = raw.Trim(trimChars);
+            if (string.IsNullOrWhiteSpace(text))
                 throw new InvalidOperationException(
                     "Microsoft Word produced an empty linear Office Math expression.");
-
-            return linearText.Normalize(
-                NormalizationForm.FormKC);
+            var prefix = raw.Length - raw.TrimStart(trimChars).Length;
+            var result = new StyledLinearMath { Text = text };
+            // Keep Office's UnicodeMath alphabet scalars intact. NFKC collapses
+            // bold/script/double-struck letters and discards their semantics.
+            var elements = System.Globalization.StringInfo.GetTextElementEnumerator(text);
+            while (elements.MoveNext())
+            {
+                var element = elements.GetTextElement();
+                Word.Range? character = null;
+                Word.Font? font = null;
+                try
+                {
+                    character = document.Range(linearRange.Start + prefix + elements.ElementIndex,
+                        linearRange.Start + prefix + elements.ElementIndex + element.Length);
+                    font = character.Font;
+                    // Only plain Latin/Greek letters are mapped here. Do not
+                    // reinterpret letterlike math symbols (for example ℝ) or
+                    // claim combining/supplementary upright support.
+                    if (element.Length == 1 && font.Italic == 0
+                        && ((element[0] >= 'A' && element[0] <= 'Z') || (element[0] >= 'a' && element[0] <= 'z')
+                            || (element[0] >= '\u0370' && element[0] <= '\u03FF' && char.IsLetter(element[0]))))
+                        result.UprightLetters.Add(elements.ElementIndex);
+                    var rgb = (int)font.Color;
+                    if (rgb < 0 || rgb > 0xFFFFFF) continue; // Office automatic/mixed.
+                    var previous = result.Colors.LastOrDefault();
+                    if (previous is not null && previous.Rgb == rgb && previous.Start + previous.Length == elements.ElementIndex)
+                        previous.Length += element.Length;
+                    else result.Colors.Add(new LinearColor { Start = elements.ElementIndex, Length = element.Length, Rgb = rgb });
+                }
+                finally { Release(font); Release(character); }
+            }
+            return result;
         }
         finally
         {

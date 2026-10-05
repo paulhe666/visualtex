@@ -9,6 +9,7 @@ internal static partial class Program
     // Keep one owned blank Word document open for that specific manual check.
     private static void RunWordMathTypeManualCoexistenceAcceptance(string artifactRoot)
     {
+        RequireRegistryFreeAcceptance("word-mathtype-manual-coexistence");
         if (Process.GetProcessesByName("WINWORD").Any())
             throw new InvalidOperationException("Close existing Word sessions before this owned-document test.");
         var statePath = Path.Combine(artifactRoot, "manual-state.json");
@@ -18,7 +19,6 @@ internal static partial class Program
         try
         {
         using var filter = OfficeComMessageFilter.Register();
-        using var suppression = UserOfficeAddInAutoLoadSuppression.Create("Word", "VisualTeX.WordVsto");
         RunMathTypeNativePreviewPrivateBoundaryAcceptance(artifactRoot);
         using var host = new WordPerformanceHost(documentPath: null);
         host.Application.Caption = "VisualTeX MathType 共存验收";
