@@ -1,0 +1,89 @@
+{
+ "duration": 39.42,
+ "width": 1280,
+ "height": 760,
+ "events": [
+  {
+   "t": 2.14,
+   "dur": 2,
+   "step": 0,
+   "kind": "click",
+   "label": {
+    "zh": "LaTeX 格式",
+    "en": "LaTeX format"
+   }
+  },
+  {
+   "t": 4.89,
+   "dur": 2,
+   "step": 0,
+   "kind": "click",
+   "label": {
+    "zh": "多行：align",
+    "en": "Multi-line: align"
+   }
+  },
+  {
+   "t": 11.05,
+   "dur": 2,
+   "step": 1,
+   "kind": "click",
+   "label": {
+    "zh": "点击空行",
+    "en": "Click the empty row"
+   }
+  },
+  {
+   "t": 13.15,
+   "dur": 1.71,
+   "step": 1,
+   "kind": "type",
+   "text": "y"
+  },
+  {
+   "t": 14.96,
+   "dur": 1.73,
+   "step": 1,
+   "kind": "type",
+   "text": "&"
+  },
+  {
+   "t": 17.29,
+   "dur": 2.63,
+   "step": 1,
+   "kind": "type",
+   "text": "=x^2"
+  },
+  {
+   "t": 20.35,
+   "dur": 2.93,
+   "step": 1,
+   "kind": "type",
+   "text": "+2x+1"
+  },
+  {
+   "t": 23.39,
+   "dur": 2,
+   "step": 2,
+   "kind": "keys",
+   "keys": [
+    "Shift",
+    "Enter"
+   ]
+  },
+  {
+   "t": 24.94,
+   "dur": 1.71,
+   "step": 2,
+   "kind": "type",
+   "text": "&"
+  },
+  {
+   "t": 27.25,
+   "dur": 3.87,
+   "step": 2,
+   "kind": "type",
+   "text": "=(x+1)^2"
+  }
+ ]
+}

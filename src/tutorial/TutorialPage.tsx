@@ -23,6 +23,7 @@ const UI = {
     cheatsheet: "快捷键速查",
     watch: "演示",
     replay: "重播",
+    speed: "播放速度",
     pause: "暂停",
     play: "播放",
     practice: "动手试试",
@@ -44,6 +45,7 @@ const UI = {
     cheatsheet: "Shortcuts",
     watch: "Demo",
     replay: "Replay",
+    speed: "Playback speed",
     pause: "Pause",
     play: "Play",
     practice: "Try it",
@@ -164,6 +166,7 @@ function DemoPlayer({ lesson, lang, onStep }: { lesson: TutorialLesson; lang: Tu
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(true);
+  const [rate, setRate] = useState(1);
   const base = `/tutorial/${lesson.id}.${lang}`;
 
   useEffect(() => {
@@ -217,6 +220,11 @@ function DemoPlayer({ lesson, lang, onStep }: { lesson: TutorialLesson; lang: Tu
     video.currentTime = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * video.duration;
   };
   const duration = timeline?.duration || videoRef.current?.duration || 1;
+  const nextRate = () => {
+    const next = rate === 1 ? 0.75 : rate === 0.75 ? 0.5 : 1;
+    setRate(next);
+    if (videoRef.current) videoRef.current.playbackRate = next;
+  };
 
   return (
     <figure className="tut-demo">
@@ -231,6 +239,9 @@ function DemoPlayer({ lesson, lang, onStep }: { lesson: TutorialLesson; lang: Tu
           autoPlay
           playsInline
           preload="auto"
+          onLoadedMetadata={(event) => {
+            event.currentTarget.playbackRate = rate;
+          }}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           onClick={toggle}
@@ -251,6 +262,9 @@ function DemoPlayer({ lesson, lang, onStep }: { lesson: TutorialLesson; lang: Tu
               <span key={event.t} className="tut-progress-mark" style={{ left: `${(event.t / duration) * 100}%` }} />
             ))}
         </div>
+        <button type="button" className="tut-rate-btn" onClick={nextRate} aria-label={UI[lang].speed} title={UI[lang].speed}>
+          {`${rate}×`}
+        </button>
         <button type="button" className="tut-icon-btn" onClick={replay} aria-label={UI[lang].replay}>
           <RotateCcw size={15} />
         </button>
@@ -449,6 +463,22 @@ export function TutorialPage() {
                     </li>
                   ))}
                 </ol>
+                {lesson.figures?.length ? (
+                  <div className="tut-figures">
+                    {lesson.figures.map((figure) => (
+                      <figure key={figure.id} className="tut-figure">
+                        <img src={`/tutorial/${lesson.id}-${figure.id}.${lang}.png`} alt={figure.caption[lang]}
+                          loading="lazy"
+                          // Captured at 2× device pixels; show at CSS size.
+                          onLoad={(event) => {
+                            event.currentTarget.style.width = `${event.currentTarget.naturalWidth / 2}px`;
+                          }}
+                        />
+                        <figcaption>{figure.caption[lang]}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               <Practice lesson={lesson} lang={lang} done={progress[lesson.id] ?? []} onTaskDone={onTaskDone} />

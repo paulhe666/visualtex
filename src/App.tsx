@@ -60,6 +60,7 @@ import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
 import { isLandingPreview, LANDING_PREVIEW_ZOOM, tutorialLanguage, tutorialLessonId } from "./runtime/landingPreview";
 import { findTutorialLesson, type TutorialSnapshot } from "./tutorial/lessons";
+import { useFormulaHotkeyStore } from "./stores/formulaHotkeyStore";
 import {
   loadWebOcrConfiguration,
   recognizeFormulaWithWebApi,
@@ -82,6 +83,19 @@ const LANDING_PREVIEW_LINES = [
   String.raw`\mathrm{d}s^2=-\left(1-\frac{2GMr}{c^2\Sigma}\right)c^2\mathrm{d}t^2-\frac{4GMar\sin^2\theta}{c^2\Sigma}c\mathrm{d}t\mathrm{d}\phi+\frac{\Sigma}{\Delta}\mathrm{d}r^2+\Sigma\mathrm{d}\theta^2+\left(r^2+a^2+\frac{2GMa^2r\sin^2\theta}{c^2\Sigma}\right)\sin^2\theta\mathrm{d}\phi^2`,
   String.raw`\mathcal{L}_{\mathrm{SM}}=-\frac{1}{4}F^a_{\mu\nu}F^{a\mu\nu}+i\bar{\psi}\gamma^\mu D_\mu\psi+(D_\mu\Phi)^\dagger(D^\mu\Phi)-V(\Phi)-\left(y_{ij}\bar{\psi}_{Li}\Phi\psi_{Rj}+\mathrm{h.c.}\right)`,
 ] as const;
+
+// Custom tiles live in localStorage (in-memory inside the tutorial sandbox).
+function readTutorialCustomTiles() {
+  try {
+    const library = JSON.parse(localStorage.getItem("visualtex-custom-formula-tiles") ?? "{}");
+    return {
+      customTiles: Array.isArray(library?.tiles) ? library.tiles : [],
+      customSectionCount: Array.isArray(library?.sections) ? library.sections.length : 0,
+    };
+  } catch {
+    return { customTiles: [], customSectionCount: 0 };
+  }
+}
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);
@@ -224,6 +238,8 @@ function App() {
           lines: state.lines.map((line) => ({ latex: line.latex, mode: line.mode === "inline" ? "inline" : "display" })),
           profile: state.latexFormatProfile,
           copiedText,
+          hotkeyIds: useFormulaHotkeyStore.getState().bindings.map((binding) => binding.id),
+          ...readTutorialCustomTiles(),
         };
       },
     };

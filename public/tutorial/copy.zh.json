@@ -1,11 +1,11 @@
 {
- "duration": 13.38,
+ "duration": 23.24,
  "width": 1280,
  "height": 760,
  "events": [
   {
-   "t": 1.41,
-   "dur": 1.4,
+   "t": 2.1,
+   "dur": 2,
    "step": 0,
    "kind": "click",
    "label": {
@@ -14,8 +14,8 @@
    }
   },
   {
-   "t": 3.73,
-   "dur": 1.4,
+   "t": 5.78,
+   "dur": 2,
    "step": 2,
    "kind": "click",
    "label": {
@@ -24,8 +24,8 @@
    }
   },
   {
-   "t": 5.07,
-   "dur": 1.4,
+   "t": 8.51,
+   "dur": 2,
    "step": 2,
    "kind": "click",
    "label": {
@@ -34,8 +34,8 @@
    }
   },
   {
-   "t": 6.75,
-   "dur": 1.4,
+   "t": 11.96,
+   "dur": 2,
    "step": 2,
    "kind": "click",
    "label": {
@@ -44,8 +44,8 @@
    }
   },
   {
-   "t": 9.6,
-   "dur": 1.4,
+   "t": 17.32,
+   "dur": 2,
    "step": 3,
    "kind": "click",
    "label": {

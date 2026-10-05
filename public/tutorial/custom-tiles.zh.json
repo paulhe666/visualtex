@@ -1,0 +1,93 @@
+{
+ "duration": 32.28,
+ "width": 1280,
+ "height": 760,
+ "events": [
+  {
+   "t": 2.13,
+   "dur": 2,
+   "step": 0,
+   "kind": "click",
+   "label": {
+    "zh": "自定义",
+    "en": "Custom"
+   }
+  },
+  {
+   "t": 4.86,
+   "dur": 2,
+   "step": 1,
+   "kind": "click",
+   "label": {
+    "zh": "分区",
+    "en": "Section"
+   }
+  },
+  {
+   "t": 6.96,
+   "dur": 2.33,
+   "step": 1,
+   "kind": "type",
+   "text": "电磁学"
+  },
+  {
+   "t": 9.4,
+   "dur": 2,
+   "step": 1,
+   "kind": "keys",
+   "keys": [
+    "Enter"
+   ]
+  },
+  {
+   "t": 12.75,
+   "dur": 2,
+   "step": 2,
+   "kind": "click",
+   "label": {
+    "zh": "点击要保存的公式",
+    "en": "Click the formula to keep"
+   }
+  },
+  {
+   "t": 15.48,
+   "dur": 2,
+   "step": 2,
+   "kind": "click",
+   "label": {
+    "zh": "保存到「电磁学」",
+    "en": "Save to “Physics”"
+   }
+  },
+  {
+   "t": 20.12,
+   "dur": 2,
+   "step": 3,
+   "kind": "click",
+   "label": {
+    "zh": "点击空行",
+    "en": "Click the empty row"
+   }
+  },
+  {
+   "t": 22.92,
+   "dur": 2,
+   "step": 3,
+   "kind": "click",
+   "label": {
+    "zh": "点击磁贴",
+    "en": "Click the tile"
+   }
+  },
+  {
+   "t": 26.36,
+   "dur": 2,
+   "step": 3,
+   "kind": "click",
+   "label": {
+    "zh": "右键磁贴",
+    "en": "Right-click the tile"
+   }
+  }
+ ]
+}
