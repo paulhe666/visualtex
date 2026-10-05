@@ -2,6 +2,7 @@
 // one EditorSessionProvider around the shell (stylesheets load in main.tsx).
 import { EditorSessionProvider } from "../history/EditorSession";
 import App from "../App";
+import "./editorLayoutFixes.css";
 
 export default function EditorRoot() {
   return (

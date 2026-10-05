@@ -1,0 +1,33 @@
+/* Web-only layout fixes on top of the synced macOS stylesheets. */
+
+/* The "Formula tools | LaTeX source" switch is centred absolutely over the
+   formatting buttons. When the editor pane is narrow (e.g. 1040-1240 px
+   windows with the tile bar open) it covered those buttons. Size it to the
+   pane: move it next to the copy/collapse actions, then drop the labels. */
+.workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tabs {
+  container-type: inline-size;
+}
+
+@container (max-width: 940px) {
+  .workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tab-group {
+    left: auto;
+    right: 72px;
+    transform: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-workspace-controls {
+    max-width: none;
+  }
+}
+
+@container (max-width: 680px) {
+  .workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tab-label {
+    display: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tab-group button {
+    min-width: 38px;
+    width: 38px;
+    padding-inline: 0;
+  }
+}
