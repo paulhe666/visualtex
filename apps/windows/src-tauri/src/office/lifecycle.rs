@@ -51,8 +51,10 @@ fn development_ui_root() -> PathBuf {
 
 fn resolve_ui_root(app: &AppHandle) -> Result<PathBuf, String> {
     if crate::office::state::isolated_acceptance_runtime() {
-        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..").join("dist-office-windows-native");
+        let source = std::env::var_os("VISUALTEX_ACCEPTANCE_OFFICE_UI_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..").join("dist-office-windows-native"));
         if source.join("dialog").join("index.html").is_file() {
             return Ok(source);
         }

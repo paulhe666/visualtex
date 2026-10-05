@@ -73,6 +73,7 @@ internal static partial class MathTypeMtefCodec
     private const byte TemplateDoubleBar = 5;
     private const byte TemplateFloor = 6;
     private const byte TemplateCeiling = 7;
+    private const byte TemplateInterval = 9;
     private const byte TemplateRoot = 10;
     private const byte TemplateFraction = 11;
     private const byte TemplateUnderbar = 12;
@@ -1586,10 +1587,37 @@ internal static partial class MathTypeMtefCodec
     private static XElement PrepareMathForMathType(XElement math)
     {
         var preparedMath = new XElement(math);
+        MaterializeMfencedSeparators(preparedMath);
         MaterializeInheritedMathVariants(preparedMath, inheritedMathVariant: null);
         NormalizeMathJaxFenceRows(preparedMath);
         MaterializeLooseFenceGroups(preparedMath);
         return preparedMath;
+    }
+
+    private static void MaterializeMfencedSeparators(XElement root)
+    {
+        // MathML's mfenced implicitly inserts operators between operands; a
+        // ParBox has a single LINE slot and therefore needs those real CHARs.
+        // Expand before resolving inherited styles so separators obey the same
+        // token rules as explicit mo elements. One operand needs no expansion.
+        foreach (var fence in root.DescendantsAndSelf()
+                     .Where(element => element.Name.LocalName == "mfenced").Reverse().ToArray())
+        {
+            var children = fence.Elements().ToArray();
+            if (children.Length < 2) continue;
+            var separators = ((string?)fence.Attribute("separators") ?? ",")
+                .Where(character => !char.IsWhiteSpace(character)).ToArray();
+            var body = new XElement(fence.Name.Namespace + "mrow");
+            for (var index = 0; index < children.Length; index++)
+            {
+                if (index > 0 && separators.Length > 0)
+                    body.Add(new XElement(fence.Name.Namespace + "mo",
+                        separators[Math.Min(index - 1, separators.Length - 1)].ToString()));
+                body.Add(children[index]);
+            }
+            fence.ReplaceNodes(body);
+            fence.SetAttributeValue("separators", string.Empty);
+        }
     }
 
     // MTEF logical sizes are stream state, not properties local to a TMPL.
@@ -1916,6 +1944,7 @@ internal static partial class MathTypeMtefCodec
                 "mfenced",
                 new XAttribute("open", NormalizeFence(open)),
                 new XAttribute("close", NormalizeFence(close)),
+                new XAttribute("separators", string.Empty),
                 children.Select(child => new XElement(child)));
             row.ReplaceNodes(fenced);
         }
@@ -4849,8 +4878,11 @@ internal static partial class MathTypeMtefCodec
             if (!string.IsNullOrEmpty(close)) EmitOperator(close, output);
             return;
         }
-        var variation = (string.IsNullOrEmpty(open) ? 0 : 1)
-            | (string.IsNullOrEmpty(close) ? 0 : 2);
+        // tmINTERVAL uses two independent two-bit endpoint selectors, unlike
+        // the left/right presence bits of the other ParBox templates (MTEF v5).
+        var variation = selector == TemplateInterval
+            ? IntervalEndpoint(open) | (IntervalEndpoint(close) << 4)
+            : (string.IsNullOrEmpty(open) ? 0 : 1) | (string.IsNullOrEmpty(close) ? 0 : 2);
         EmitTemplateHeader(selector.Value, variation, output);
         EmitColor(0, output);
         EmitLineContents(SignificantChildren(element), output);
@@ -4947,8 +4979,15 @@ internal static partial class MathTypeMtefCodec
         if ((open == "⌈" || string.IsNullOrEmpty(open))
             && (close == "⌉" || string.IsNullOrEmpty(close))
             && probe is "⌈" or "⌉") return TemplateCeiling;
+        if (IntervalEndpoint(open) >= 0 && IntervalEndpoint(close) >= 0)
+            return TemplateInterval;
         return null;
     }
+
+    private static int IntervalEndpoint(string value) => value switch
+    {
+        "(" => 0, ")" => 1, "[" => 2, "]" => 3, _ => -1,
+    };
 
     private static void EmitLine(XElement element, MtefWriter output)
     {
@@ -7051,6 +7090,7 @@ internal static partial class MathTypeMtefCodec
                 case TemplateDoubleBar:
                 case TemplateFloor:
                 case TemplateCeiling:
+                case TemplateInterval:
                 {
                     var main = ReadNextLineSlot();
                     // MathType may include explicit left/right fence CHAR records.
@@ -7570,6 +7610,11 @@ internal static partial class MathTypeMtefCodec
 
         private static (string Open, string Close) FenceCharacters(byte selector, int variation)
         {
+            if (selector == TemplateInterval)
+            {
+                const string endpoints = "()[]";
+                return (endpoints[variation & 3].ToString(), endpoints[(variation >> 4) & 3].ToString());
+            }
             var presentLeft = (variation & 0x01) != 0;
             var presentRight = (variation & 0x02) != 0;
             var pair = selector switch

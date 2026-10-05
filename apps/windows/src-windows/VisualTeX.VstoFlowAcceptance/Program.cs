@@ -393,6 +393,31 @@ internal static partial class Program
         Console.SetError(new TeeTextWriter(originalError, log));
         Console.WriteLine($"Acceptance mode: {mode}");
 
+        if (string.Equals(mode, "word-owned-six-way-performance", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-field-read-check", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                if (AttachActiveWord) throw new InvalidOperationException("Performance acceptance cannot attach to user Word.");
+                Environment.SetEnvironmentVariable("VISUALTEX_ACCEPTANCE_OWNED_WORD_ROOT", Path.Combine(artifactRoot, "owned-word"));
+                using var filter = OfficeComMessageFilter.Register();
+                if (string.Equals(mode, "word-owned-field-read-check", StringComparison.OrdinalIgnoreCase))
+                {
+                    RunWordNativeFieldRevisionProbeAcceptance(artifactRoot);
+                    return 0;
+                }
+                using var client = new VisualTeXSessionClient();
+                client.EnsureHealthyAsync(CancellationToken.None).GetAwaiter().GetResult();
+                RunOwnedSixWayPerformance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                return 1;
+            }
+        }
+
         if (string.Equals(mode, "word-mathtype-manual-coexistence", StringComparison.OrdinalIgnoreCase))
         {
             try

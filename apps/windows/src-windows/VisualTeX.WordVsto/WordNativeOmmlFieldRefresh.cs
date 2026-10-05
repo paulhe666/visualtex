@@ -330,21 +330,13 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
         var seen = new HashSet<int>();
         for (var index = 1; index <= fields.Count; index++)
         {
-            Field? field = null;
-            Range? code = null;
-            try
-            {
-                field = fields[index];
-                if (field.Type != WdFieldType.wdFieldRef) continue;
-                code = field.Code;
-                if (!WordEquationReferenceFields.TryReadReferenceBookmark(code.Text, out var name)
-                    || !_numberAliases.Contains(name)
-                    || !seen.Add(code.Start))
-                    continue;
-                _references.Add(field);
-                field = null;
-            }
-            finally { Release(code); Release(field); }
+            using var entry = fields.TakeEntry(index);
+            if (entry.Type != WdFieldType.wdFieldRef) continue;
+            if (!WordEquationReferenceFields.TryReadReferenceBookmark(entry.Instruction, out var name)
+                || !_numberAliases.Contains(name)
+                || !seen.Add(entry.Code.Start))
+                continue;
+            _references.Add(entry.TakeField());
         }
     }
 
@@ -399,7 +391,7 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
                 { StoryType = range.StoryType, Start = range.Start, End = range.End };
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application,
                     $"native-number-update-host start={address.Start} end={address.End}");
-                _ = WordNativeOmmlNumbering.RefreshCanonicalNativeFields(_document,
+                _ = WordNativeOmmlNumbering.RefreshCanonicalNativeFields(host,
                     new WordFormulaHostDescriptor
                     {
                         Kind = WordFormulaHostKind.Omml, DisplayMode = "block", Range = address,

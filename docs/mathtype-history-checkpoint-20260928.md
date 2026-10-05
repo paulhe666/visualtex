@@ -1,5 +1,75 @@
 # MathType historical-document / native layout follow-up — resumed 2026-09-28
 
+## CP291 — 2026-10-05 — Local source/test/report checkpoint requested by user
+
+用户明确要求提交到本地。本检查点与CP280–290尚未提交的共享编号读取优化、MTEF区间/分隔符修复、隔离性能验收入口、39项区间/分隔符测试及三个阶段报告一同保存；本次提交的确切SHA以包含CP291的Git提交为准，不push。CP288样式复用实验已撤回，FormatConversionCore未带入提交。CP290最终FreezeR3构建成功且Word DLL与已测CP284同字节0DE80AE7…B36E6C；36次20/40性能运行/1080转换及480份候选raw对比证据保持。没有为提交重新运行同字节矩阵，也没有将48个旧F02/F05失败、CP255及其他未验边界改为通过。既有构建产物、临时文件、现场UI证据和原失败日志继续原位保留，不随此次源码提交混入；heldR4、用户实例与设置保持，不安装/部署。
+
+## CP290 — 2026-10-05 — 20/40 six-way scaling complete; local style experiment withdrawn, baseline binary reproduced
+
+36次/1080转换完成（28基线+8候选）。CP284同构建基线20/40中位秒：VT→MT14.444/28.350（3次/档），VT→OMML13.390/27.694、MT→VT12.186/23.872、MT→OMML15.532/31.169、OMML→VT13.906/27.935（各2次/档），OMML→MT16.782/37.891（3次/档）。五向1.96–2.07倍；OMML→MT2.258倍/单位+12.89%，40范围34.119–39.340s，不能据两规模断言平方复杂度。热点为Word应用/源定位/布局，OMML→MT栏宽0.73→2.00s、display配置2.36→5.65s；两个OMML目标最终编号约1.5→3.7s（每批仅1次）。原生渲染40任务仍约0.43–0.47s；前端20/40重复组实际20/20去重任务，不推广到40种唯一内容。
+
+CP288样式复用计数10/20→1、局部节省109–230ms；共同两轮交替顺序配对VT→MT20/40总时−5.66%/+4.64%，OMML→MT−1.86%/+2.06%，40逐轮优劣翻转且未改源绑定亦有明显波动，不能认定整体收益或直接因果退化。仅撤回本轮FormatConversionCore实验源码，保留cp288-style-reuse-experiment.patch、候选AE164322…61F5D及所有证据；此前全部修改保留。最终FreezeR3 build-cp290-scaling-final-source-r1成功，Word SHA256 **0DE80AE7800F1B2042AEB934CEA9F78637EC8644BBF616DFB53885F294B36E6C**，与已测CP284逐字同，heldR4不变；未当默认脏树构建、不重复同字节矩阵。
+
+36份DOCX独立编号/正文/段落数全保持；8候选的480份raw native MathML逐字同、pPr精确同、3类native样式仅w:rsid不同且原差异完整保留。8次OMML目标仍旧F02/F05，共48个转换/重开失败断言，不能报36次保真全过；另外28次通过限定比较，源OMML既有差异仍保留。未验40唯一内容/100/1000/PPT性能/像素/本轮UndoRedo，未闭合原围栏、间距、脚本、CP255等缺口。自有Word全退，Companion82236身份核对关闭；原3Word+4Companion和4处LoadBehavior不变，无残留/部署/注册表或安全修改/新提交。HEAD仍a57e568。完整阶段、范围、优先级、证据见docs/conversion-scaling-stage-20261005.md及artifacts/conversion-scaling-20261005。下一步优先拆OMML→MT几何布局与OMML编号字段更新，保留源新鲜度/精确所有权/实际编号保护。
+
+## CP289 — 2026-10-05 — Six-way first scaling pass complete; candidate output equal, total benefit unproven
+
+CP284首轮20/40六向均完成写入：VT→MT14.36/28.35s、VT→OMML13.40/27.59、MT→VT12.45/23.60、MT→OMML15.43/31.94、OMML→VT14.05/27.70、OMML→MT16.38/39.34。最后一向2.40倍需反序复测，其余1.90–2.07。两个OMML目标F02/F05严格失败保留；四向限定存储内容通过，源OMML损失不当恢复。12DOCX独立编号/正文/段落数保持。候选AE164322…61F5D已VT→MT20/40写入重开通过，样式初始化10/20→1次，但40首候选总时31.85s较相邻基线28.02s慢，增加落在未改源定位，尚不能认定整批收益。120份raw MathML逐字同、pPr精确同；native样式仅w:rsid不同，原始不等保留，具体格式相同。工具0起始索引修正及构建重叠转换后验证的计时限制均记入独立报告。反序/配对仍在执行，收尾未完成；详见docs/conversion-scaling-stage-20261005.md与artifacts/conversion-scaling-20261005。没有部署/提交/注册表或用户实例变更。
+
+## CP288 — 2026-10-05 — First scaling pairs linear; reuse existing per-batch MathType style initialization
+
+CP284基线首对VT→MT20/40=14.36/28.35s（1.97倍），Word应用12.04/24.11s、前端去重任务20/20、native预览20/40任务0.29/0.43s。VT→OMML13.40/27.59s（2.06倍），原F02/F05严格失败保留。其余及反序复测进行中。发现每个display重复查询既存MTDisplayEquation并重写MTEquationSection字体属性；现有bulk路径已有mathTypeNativeStylesPrepared参数。仅FormatConversionCore在本次同步事务首次成功display后复用该参数，inline不置位、下次转换重置，无跨次缓存，不改范围/源一致性/编号/布局保护。FreezeR3候选build-cp288-conversion-style-reuse-r1已成功，候选验收/收益未完成；基线仍固定CP284。自有Companion82236/43136，收尾待执行。详细证据和限制见docs/conversion-scaling-stage-20261005.md及artifacts/conversion-scaling-20261005。
+
+## CP287 — 2026-10-05 — Six-way20/40 scaling audit begins
+
+用户要求40与20对比并细查阶段优化空间。基线锁CP284 Word0DE80AE7…B36E6C（FreezeR3/heldR4不变）、固定Companion/前端。独立吞吐20在原F07/F08/F09位置换CP286 I1/I3/I4，其余17原样；40顺序重复2遍、比例相同，originId/copy透明记录，不冒充原20保真通过。F02/F05严格失败保留。计划两轮交替20/40顺序，跟踪转换/源读/渲染去重/Word替换/编号/校验/保存重开及逐操作次数，嵌套指标不求和。尚无新性能数字或生产优化。详见docs/conversion-scaling-stage-20261005.md和artifacts/conversion-scaling-20261005；全部原修改保留、不提交，使用自有Office/Companion并核对LoadBehavior。
+
+## CP286 — 2026-10-05 — Six bounded controls pass all six directions; original20 gaps remain
+
+CP284候选0DE80AE7…B36E6C同一构建/运行时，6条控制六向各6转换+6保存重开全部通过，36转换/72阶段比较、sourceDifferences全空；不是原20。保存DOCX中6张原生WMF实际离屏检查：混合/反向括号与分数伸缩方向、分隔符存在。另2条真实隐式mfenced经codec+现有核验native服务2/2排版并检查逗号/分号；不冒充异常OMML外部探针通过。新增定向测试最终39/39，正式聚合2408/2409旧CP255失败保留（末增2测试在定向39中通过）。原20 MTEF/OMML逐项字节不变，F07/F08/F09、F02/F05及其他视觉/间距缺口未关闭；无全20新Word矩阵、Undo/Redo或真实Word截图。详细范围/矩阵/下一步见docs/conversion-completeness-repair-stage-20261005.md及artifacts/conversion-completeness-20261005/matrix-summary.json。所有自有Word退出，自有Companion64148已核对身份停止；原3Word+4Companion及4处LoadBehavior全部不变。无部署/提交，heldR4不变，HEAD仍a57e568；保留原全部修改及失败证据。生产本轮仅codec47增/2删，不能当完整验收包。
+
+## CP285 — 2026-10-05 — Native interval and mfenced separator fixes; first owned conversion passes
+
+生产仅MathTypeMtefCodec.cs新增官方selector9读写/两端variation及mfenced真实分隔符展开，显式行声明空分隔符；没有比较器或旧测试改动。独立MTEF记录/编码/嵌套/样式测试：基线33失败/4通过，最终39/39。正式聚合排除4个未启用native方法后2408/2409，唯一旧CP255重音字节失败保留；初次沙箱SVG权限2失败在正常权限重跑通过。FreezeR3 build-cp284-interval-separators-r1成功，Word0DE80AE7800F1B2042AEB934CEA9F78637EC8644BBF616DFB53885F294B36E6C。原20 MTEF/OMML哈希逐项与CP282一致，F07/F08/F09仍失败。新6条区间/标点控制VT→MT已6转换+6重开通过，另外5向正在验证。另隐式mfenced离线进程I5异常终止（部分输出保留），未扩大搁置的外部运行器问题、不算通过。证据artifacts/conversion-completeness-20261005，独立报告docs/conversion-completeness-repair-stage-20261005.md。自有Companion64148/43136，现有Office/注册表前快照保留；收尾仍待执行。原20及像素/CP255不报全过。
+
+## CP284 — 2026-10-05 — Complete-conversion repair resumed; native contracts rechecked
+
+用户要求继续解决完整转换缺口；HEAD a57e568、CP283性能改动及所有旧失败证据保留。重新核对当前codec、CP222–225和官方MTEF/OfficeMath规则。F07/F08/F09仍缺可靠原生伸缩围栏表示；F02/F05不能通过普通文本/literal/opEmu替换角色来报通过。发现另外两处明确共享实现缺陷：漏掉原生tmINTERVAL selector9，且EmitFenced丢弃默认/显式分隔符。开始独立复现与修复，尚无新构建或验收。详见docs/conversion-completeness-repair-stage-20261005.md；本阶段没有启动用户Office、改注册表、部署或提交。
+
+## CP283 — 2026-10-05 — Six-way performance comparison complete; bounded improvement, fidelity gaps retained
+
+本轮先完成本地提交a57e568d5295dc67490e30f4169cd5d05c7ce7c5（不push），再完成六向性能/优化验证。原20完整输入保留；当前MT F07/F08/F09原生围栏缺口下，明确17条子集旧/新各每向3次，共36次实测，不当20/20。优化仅4个Word编号共享文件，复用已检查的当前字段Entry/Code/Text和批次保留OMath；保持修订过滤、编号拓扑、源一致性/内容边界/回滚保护，未改变符号比较器或转换语义。
+
+17条3次中位秒：VT→MT12.021→12.101；VT→OMML11.435→11.374；MT→VT10.280→10.299；MT→OMML13.464→12.918；OMML→VT12.296→12.054；OMML→MT14.440→14.069。主要局部收益为OMML编号Apply约13.54%/15.16%；整批观察从增加0.67%到减少4.06%，小样本有重叠波动，不能说六向全面显著提速，也不等同安装版进程内时延。
+
+验证：36次各17写入；两个OMML目标的F02/F05在每次转换/重开均仍失败，其余四向通过限定逐项内容。408份旧/新native读回MathML逐字相同；36份DOCX独立编号1..9、普通正文和段落数保持。编号离线111/111、自有Word实际修订9断言通过。工具最初仅识别英文SEQ使直接OMML20本地化标签假阴性，按标准SEQ语法读取后固定序列断言通过；旧工具输出保留，未放宽产品比较器。PowerShell5首轮两失败case的RunnerExit空值及实际失败log保留，后续pwsh正确记exit。
+
+最终完整20复核：VT→OMML20写入13.324s但F02/F05严格失败；OMML→VT20写入15.019s及持久LaTeX重开通过，但源8项已有差异；两个→MT仍F07预检停止、0目标/20源保留，失败延迟1.493/3.027s不当成功吞吐。MT完整20源未建立，两出向只运行17子集。完整20保留失败输出的编号1..12/普通文字/段落数亦独立保持。未做像素、安装版进程内时延、规模100/1000、PPT性能或全项目验收。
+
+最终frozen-R3候选build-cp282-performance-harness-final成功，产品Word DLL与计时cp282-performance-fields-r1逐字相同BD567E89984B859384EF29F78FFFB3F5BC054D36ADAC351CCD85045ECCF20157；heldR4保持6692FDE3…3BAC，frozenR3仍FCE1BB75…D045。最后仅补测试SaveAs2 AddToRecentFiles=false；早期种子旧Save没指定且无MRU前快照，不能用LoadBehavior不变冒充全部Office设置不变。未安装/部署/安全配置变更/用户文档操作。随后优化源码未提交，HEAD仍a57e568。
+
+自有Word全部退出；独立Companion59760/43136在身份/哈希核对后关闭。environment-after.json确认原3Word/4Companion创建身份与4个Word/PPT加载项LoadBehavior分支保持且无本轮残留。完整报告docs/conversion-performance-stage-20261005.md；artifacts/conversion-performance-20261005/{performance-summary,matrix-with-docx-checks,final20-summary,pinned-sources-and-builds,environment-after}.json等含全部样本、源码/构建/UI哈希和失败证据。CP255及原生符号/间距/脚本/视觉缺口不关闭，不是全保真发布包。下一步应先补原生围栏及显式运算符样式权威再恢复完整20六向，性能不得绕过预检。
+
+## CP282 — 2026-10-05 — Six-way17 baseline complete; shared numbering read reuse candidate
+
+baseline17六向均实际写入17，四向逐项转换/重开通过；VT/MT→OMML各F02/F05斜体失败不关闭，OMML来源2项损失单列。实测10.71–14.44s是跨进程验收链而非安装版用户时延。完整20的F07/F08/F09 MathType原生结构缺口仍阻塞，不称全20六向验收。
+
+基于编号阶段耗时与调用链，优化4个共享生产文件：WordNumberingFieldCollection、MathTypeEquationNumbering、WordNativeOmmlNumbering、WordNativeOmmlFieldRefresh。消费已读的有效字段代码/Entry并借用批次已持有的OMath，去掉同一同步操作内重读/重新定位；修订排除、唯一字段、原生编号拓扑及边界保护全部保留，无异步缓存或比较放宽。cp282-performance-fields-r1 frozen-R3完整构建成功，Word BD567E89984B859384EF29F78FFFB3F5BC054D36ADAC351CCD85045ECCF20157；heldR4不变。离线编号111/111与自有Word实际修订字段9断言通过。独立DOCX字段/全文普通文字核对在Inspect-Results.py中，不依赖产品编号读取器。
+
+同种子同Companion六向首轮复测中，暂不据一次波动宣称性能提升；接下来旧新交替重复测量并汇总全部样本。docs/conversion-performance-stage-20261005.md记录准确基线、修改/证据及未验收范围，artifacts/conversion-performance-20261005保存所有失败与原文。未部署/改注册表/新提交/用户Office操作。
+
+## CP281 — 2026-10-05 — Current20 performance baseline; MathType fence preflight remains failing
+
+本地提交a57e568后，cp280 frozen-R3候选Word3A31648D…CE2F已在自有Word完成原20条VT/OMML源创建。VT→OMML14.14s写20但F02/F05斜体严格失败（含重开）；OMML→VT14.71s写20并通过持久LaTeX重开，源OMML8项已有差异单列，不能恢复原始保真。两个→MT全20在F07 MTEF围栏预检停止、0写入/20源保留，原失败证据保存；当前CP224/225实际缺口是F07/F08/F09，不能沿用CP217的19条结论。未运行的草稿19子集已明确标注，正在建立17条性能子集；全20及两个MT源方向前提未因此通过。
+
+详细指标、根因候选、构建与通过/失败/未运行范围在docs/conversion-performance-stage-20261005.md；artifacts/conversion-performance-20261005/baseline-*-r1保存日志、JSON、文档、加载项前后检查。指标是验收进程COM调用隔离Word的实际转换，非安装版进程内用户延迟。主要耗时在Word准备/替换/编号，纯MathML投影很小；此时尚无生产优化或收益主张。下一步固定17六向基线并选择共享重复工作优化，保持R4冻结和全部保真边界。
+
+## CP280 — 2026-10-05 — Commit complete; owned six-way performance baseline setup
+
+本地提交已完成`a57e568d5295dc67490e30f4169cd5d05c7ce7c5`，31文件，父49cf3978；未push。提交清单/前哈希/commit身份在artifacts/local-commit-cp278-20261005，旧残余脚本、wixpdb、现场证据未纳入且保留。用户明确授权六向性能优化，本范围解除冻结。
+
+发现旧矩阵启动入口当前被安全门禁阻止、旧WordPerformanceHost会修改COMAddIn.Connect，因此不原样运行。正在建立无注册表写入、自有Word PID/文档、固定当前DLL/Companion/前端的基线；原20代表公式保留，保真失败不算成功吞吐。只读保护快照artifacts/conversion-performance-20261005/environment-before.json，详细计划与后续结果docs/conversion-performance-stage-20261005.md。尚无性能改善结论；下一步完成入口迁移和实测基线。
+
 ## CP279 — 2026-10-05 — Local checkpoint authorized; six-way performance work opened
 
 用户明确要求先本地提交，再进行OMML/VisualTeX/MathType六向格式转换性能测试与优化测试。提交范围为CP278的28个源码/测试/CI文件与3份审查/检查点文档，先逐项核对remediation-state.json源码哈希；保留其余既有脚本改动、生成产物和历史证据。本地提交不等于发布验收，沿用CP278限定通过范围，不push/安装/部署。提交后再记录完整commit身份。

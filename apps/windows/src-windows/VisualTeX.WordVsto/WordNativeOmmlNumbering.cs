@@ -76,7 +76,7 @@ internal static class WordNativeOmmlNumbering
             // Numbering is a live OMath/Field topology, not an XML export result.
             // Word can omit an exact OMath at a serialization boundary; that
             // must never turn an ordinary edit into a number-attachment edit.
-            numberRange = TryResolveNumberContentRange(exact);
+            numberRange = TryResolveNumberContentRange(math, exact);
             if (numberRange is null)
                 return false;
 
@@ -85,10 +85,8 @@ internal static class WordNativeOmmlNumbering
             {
                 Release(code); code = null;
                 Release(field); field = fields[index];
-                if (!WordNumberingFieldCollection.IsCurrentField(field))
+                if (!WordNumberingFieldCollection.TryCaptureCurrentCode(field, out code, out var instruction))
                     continue;
-                code = field.Code.Duplicate;
-                var instruction = code.Text ?? string.Empty;
 
                 if (IsReferenceField(instruction))
                     return false;
@@ -374,10 +372,8 @@ internal static class WordNativeOmmlNumbering
                 {
                     Release(code); code = null;
                     Release(field); field = fields[index];
-                    if (!WordNumberingFieldCollection.IsCurrentField(field))
+                    if (!WordNumberingFieldCollection.TryCaptureCurrentCode(field, out code, out var instruction))
                         continue;
-                    code = field.Code.Duplicate;
-                    var instruction = code.Text ?? string.Empty;
                     var isStyleRef =
                         instruction.TrimStart().StartsWith(
                             "STYLEREF ",
@@ -408,6 +404,26 @@ internal static class WordNativeOmmlNumbering
         Range? liveRange = null;
         OMaths? maths = null;
         OMath? math = null;
+        try
+        {
+            liveRange = WordFormulaHostSemanticReader.CreateRange(document, host.Range);
+            maths = liveRange.OMaths;
+            if (maths.Count != 1)
+                throw new InvalidDataException(
+                    "The canonical native OMML host no longer contains exactly one equation.");
+            math = maths[1];
+            return RefreshCanonicalNativeFields(math, host);
+        }
+        finally { Release(math); Release(maths); Release(liveRange); }
+    }
+
+    // The batch already retains each exact native owner across preceding edits.
+    // Borrow it for the same topology/field checks, rather than resolving its
+    // numeric range back into another OMath collection in the same UI turn.
+    internal static WordFormulaHostDescriptor RefreshCanonicalNativeFields(
+        OMath math,
+        WordFormulaHostDescriptor host)
+    {
         Range? exact = null;
         Fields? fields = null;
         Field? field = null;
@@ -419,16 +435,6 @@ internal static class WordNativeOmmlNumbering
         Range? numberRange = null;
         try
         {
-            liveRange =
-                WordFormulaHostSemanticReader.CreateRange(
-                    document,
-                    host.Range);
-            maths = liveRange.OMaths;
-            if (maths.Count != 1)
-                throw new InvalidDataException(
-                    "The canonical native OMML host no longer contains exactly one equation.");
-
-            math = maths[1];
             if (math.Type != WdOMathType.wdOMathDisplay)
                 throw new InvalidDataException(
                     "Canonical native numbering requires wdOMathDisplay.");
@@ -449,12 +455,8 @@ internal static class WordNativeOmmlNumbering
                 code = null;
                 Release(field);
                 field = fields[index];
-                if (!WordNumberingFieldCollection.IsCurrentField(field))
+                if (!WordNumberingFieldCollection.TryCaptureCurrentCode(field, out code, out var instruction))
                     continue;
-                code = field.Code.Duplicate;
-                var instruction =
-                    code.Text
-                    ?? string.Empty;
 
                 if (IsReferenceField(instruction))
                     throw new InvalidDataException(
@@ -502,7 +504,8 @@ internal static class WordNativeOmmlNumbering
             exact =
                 math.Range.Duplicate;
 
-            numberRange = ResolveNumberContentRange(exact);
+            numberRange = TryResolveNumberContentRange(math, exact)
+                ?? throw new InvalidDataException("The equation has no native #(number) host.");
             if (sequenceResult.Start < numberRange.Start || sequenceResult.End > numberRange.End
                 || (styleResult is not null && (styleResult.Start < numberRange.Start || styleResult.End > numberRange.End)))
                 throw new InvalidDataException("The native number fields escaped their exact delimiter argument.");
@@ -547,9 +550,6 @@ internal static class WordNativeOmmlNumbering
             Release(field);
             Release(fields);
             Release(exact);
-            Release(math);
-            Release(maths);
-            Release(liveRange);
         }
     }
 
@@ -565,6 +565,18 @@ internal static class WordNativeOmmlNumbering
     {
         OMaths? maths = null;
         OMath? math = null;
+        try
+        {
+            maths = equation.OMaths;
+            if (maths.Count != 1) return null;
+            math = maths[1];
+            return TryResolveNumberContentRange(math, equation);
+        }
+        finally { Release(math); Release(maths); }
+    }
+
+    private static Range? TryResolveNumberContentRange(OMath math, Range equation)
+    {
         OMathFunctions? roots = null;
         OMathFunction? arrayFunction = null;
         OMathEqArray? array = null;
@@ -582,9 +594,6 @@ internal static class WordNativeOmmlNumbering
         Range? separator = null;
         try
         {
-            maths = equation.OMaths;
-            if (maths.Count != 1) return null;
-            math = maths[1];
             roots = math.Functions;
             if (roots.Count != 1) return null;
             arrayFunction = roots[1];
@@ -620,7 +629,7 @@ internal static class WordNativeOmmlNumbering
             Release(separator); Release(delimiterRange); Release(bodyRange); Release(arrayRange);
             Release(range); Release(number); Release(arguments); Release(delimiter);
             Release(delimiterFunction); Release(functions); Release(body); Release(entries);
-            Release(array); Release(arrayFunction); Release(roots); Release(math); Release(maths);
+            Release(array); Release(arrayFunction); Release(roots);
         }
     }
 

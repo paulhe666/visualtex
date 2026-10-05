@@ -161,8 +161,6 @@ internal static class MathTypeEquationNumbering
         // global scan. Also skip reference refresh entirely when the document has
         // no REF/GOTOBUTTON field at all.
         WordNumberingFieldCollection? fields = null;
-        Field? field = null;
-        Range? code = null;
         var sequenceFields =
             new List<Field>();
         var numberedEquationCount = 0;
@@ -174,12 +172,8 @@ internal static class MathTypeEquationNumbering
                  index <= fields.Count;
                  index++)
             {
-                Release(code);
-                code = null;
-                Release(field);
-                field = fields[index];
-
-                var type = field.Type;
+                using var entry = fields.TakeEntry(index);
+                var type = entry.Type;
                 if (type is
                     WdFieldType.wdFieldRef
                     or WdFieldType.wdFieldGoToButton)
@@ -191,24 +185,21 @@ internal static class MathTypeEquationNumbering
                     && type != WdFieldType.wdFieldSequence)
                     continue;
 
-                code = field.Code;
                 if (type ==
                     WdFieldType.wdFieldMacroButton)
                 {
                     if (MathTypeEquationReferences
                         .IsMathTypePlaceRefCode(
-                            code.Text))
+                            entry.Instruction))
                         numberedEquationCount++;
                     continue;
                 }
 
                 if (!IsMathTypeSequenceFieldCode(
-                        code.Text))
+                        entry.Instruction))
                     continue;
 
-                sequenceFields.Add(
-                    field);
-                field = null;
+                sequenceFields.Add(entry.TakeField());
             }
 
             if (numberedEquationCount == 0)
@@ -225,9 +216,7 @@ internal static class MathTypeEquationNumbering
             foreach (var sequenceField in
                      sequenceFields)
                 Release(sequenceField);
-            Release(code);
-            Release(field);
-            Release(fields);
+            fields?.Dispose();
         }
     }
 

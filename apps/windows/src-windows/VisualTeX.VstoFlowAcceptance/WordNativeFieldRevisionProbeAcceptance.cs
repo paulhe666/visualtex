@@ -68,6 +68,14 @@ internal static partial class Program
                 break;
             }
             if (span is null) throw new InvalidDataException("Probe did not find the initial SEQ field.");
+            Word.Range? capturedCode = null;
+            try
+            {
+                AssertTrue(WordNumberingFieldCollection.TryCaptureCurrentCode(sequence!, out capturedCode, out var instruction),
+                    "The original sequence must be current before replacement.");
+                AssertTrue(instruction.Contains("\\s 1"), "Initial native sequence scope");
+            }
+            finally { Release(capturedCode); }
             writer = span.Fields;
             replacement = writer.Add(
                 span,
@@ -81,6 +89,41 @@ internal static partial class Program
             number = WordNativeOmmlNumbering.ResolveNumberContentRange(exact);
             File.WriteAllText(Path.Combine(artifactRoot, "after-replace.json"),
                 JsonSerializer.Serialize(SnapshotFields(number), new JsonSerializerOptions { WriteIndented = true }));
+
+            capturedCode = null;
+            try
+            {
+                AssertTrue(!WordNumberingFieldCollection.TryCaptureCurrentCode(sequence!, out capturedCode, out _),
+                    "Revision-deleted predecessor must not re-enter the current field projection.");
+                AssertTrue(capturedCode is null, "Rejected field must not transfer a code owner.");
+                AssertTrue(WordNumberingFieldCollection.TryCaptureCurrentCode(replacement, out capturedCode, out var instruction),
+                    "Inserted replacement must remain current next to deleted fields.");
+                AssertTrue(instruction.Contains("\\s 2"), "Replacement native sequence scope");
+            }
+            finally { Release(capturedCode); }
+
+            var currentSequences = new List<string>();
+            using (var snapshot = WordNumberingFieldCollection.Capture(document))
+                for (var i = 1; i <= snapshot.Count; i++)
+                {
+                    using var entry = snapshot.TakeEntry(i);
+                    if (entry.Type == Word.WdFieldType.wdFieldSequence)
+                        currentSequences.Add(entry.Instruction);
+                }
+            AssertEqual(1, currentSequences.Count, "Only the replacement SEQ belongs to the current snapshot.");
+            AssertTrue(currentSequences[0].Contains("\\s 2"), "Snapshot must keep the replacement code.");
+            var host = new WordFormulaHostDescriptor
+            {
+                Kind = WordFormulaHostKind.Omml,
+                DisplayMode = "block",
+                Range = new WordFormulaRangeAddress { Start=exact.Start, End=exact.End, StoryType=exact.StoryType },
+            };
+            var refreshed = WordNativeOmmlNumbering.RefreshCanonicalNativeFields(math, host);
+            AssertTrue(refreshed.Numbering.Numbered, "Retained native owner preserves numbered topology under revisions.");
+            File.WriteAllText(Path.Combine(artifactRoot, "current-projection-check.json"), JsonSerializer.Serialize(new {
+                passed=true, assertions=9, currentSequences,
+                scope="Actual isolated Word: initial/current, revision-deleted predecessor, inserted replacement, snapshot and retained-OMath refresh. No user document."
+            }, new JsonSerializerOptions { WriteIndented=true }));
 
             Console.WriteLine("Native field revision probe complete.");
         }

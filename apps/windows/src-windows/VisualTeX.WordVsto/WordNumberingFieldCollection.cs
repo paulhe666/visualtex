@@ -212,7 +212,10 @@ internal sealed class WordNumberingFieldCollection : IDisposable
         finally { Release(code); }
     }
 
-    private static bool TryCaptureCurrentCode(Field field, out Range? currentCode, out string instruction)
+    // Transfer the current-projection code owner and its text together. Callers
+    // inspecting this same field must not discard that proof and immediately
+    // read Code/Text again through COM. The caller releases currentCode.
+    internal static bool TryCaptureCurrentCode(Field field, out Range? currentCode, out string instruction)
     {
         currentCode = null;
         instruction = string.Empty;
@@ -296,17 +299,12 @@ internal sealed class WordNumberingFieldCollection : IDisposable
         using var fields = Capture(document);
         for (var index = 1; index <= fields.Count; index++)
         {
-            Field? field = null; Range? code = null;
-            try
-            {
-                field = fields[index]; code = field.Code;
-                if (WordVisualTeXParagraphNumbering.IsPlaceRefCode(code.Text ?? string.Empty)
-                    || field.Type == WdFieldType.wdFieldSequence
-                        && System.Text.RegularExpressions.Regex.IsMatch(code.Text ?? string.Empty,
-                            "^\\s*SEQ\\s+(?:VisualTeXEquation|\"VisualTeXEquation\")(?:\\s|$)",
-                            System.Text.RegularExpressions.RegexOptions.IgnoreCase)) return true;
-            }
-            finally { Release(code); Release(field); }
+            using var entry = fields.TakeEntry(index);
+            if (WordVisualTeXParagraphNumbering.IsPlaceRefCode(entry.Instruction)
+                || entry.Type == WdFieldType.wdFieldSequence
+                    && System.Text.RegularExpressions.Regex.IsMatch(entry.Instruction,
+                        "^\\s*SEQ\\s+(?:VisualTeXEquation|\"VisualTeXEquation\")(?:\\s|$)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase)) return true;
         }
         return false;
     }

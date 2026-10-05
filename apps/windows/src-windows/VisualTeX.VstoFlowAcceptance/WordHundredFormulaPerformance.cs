@@ -20,28 +20,16 @@ internal static partial class Program
     private sealed class WordPerformanceHost : IDisposable
     {
         private Array _custom = Array.Empty<object>();
-        private COMAddIns? _installedAddIns;
-        private COMAddIn? _installedAddIn;
-        private bool _restoreInstalledAddInConnection;
         private bool _disposed;
 
         internal WordPerformanceHost(string? documentPath)
         {
+            if (AttachActiveWord || string.IsNullOrWhiteSpace(
+                    Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_OWNED_WORD_ROOT")))
+                throw new InvalidOperationException("Performance hosts require an explicit owned Word root.");
             Application = CreateWordApplication(visible: false);
-            _installedAddIns = Application.COMAddIns;
-            try
-            {
-                object addInIndex = "VisualTeX.WordVsto";
-                _installedAddIn = _installedAddIns.Item(ref addInIndex);
-                _restoreInstalledAddInConnection = _installedAddIn.Connect;
-                if (_restoreInstalledAddInConnection) _installedAddIn.Connect = false;
-            }
-            catch
-            {
-                Release(_installedAddIn);
-                _installedAddIn = null;
-            }
-
+            // The acceptance environment suppresses the installed add-in in this
+            // new process. Never toggle COMAddIn.Connect or user LoadBehavior.
             Document = string.IsNullOrWhiteSpace(documentPath)
                 ? Application.Documents.Add()
                 : Application.Documents.Open(
@@ -72,7 +60,7 @@ internal static partial class Program
 
         internal void Save(string path)
         {
-            Document.SaveAs2(path, Word.WdSaveFormat.wdFormatXMLDocument);
+            Document.SaveAs2(path, Word.WdSaveFormat.wdFormatXMLDocument, AddToRecentFiles: false);
         }
 
         public void Dispose()
@@ -81,14 +69,8 @@ internal static partial class Program
             _disposed = true;
             try { AddIn.OnDisconnection(ext_DisconnectMode.ext_dm_UserClosed, ref _custom); }
             catch { }
-            if (_installedAddIn is not null && _restoreInstalledAddInConnection)
-            {
-                try { _installedAddIn.Connect = true; } catch { }
-            }
             try { Document.Close(Word.WdSaveOptions.wdDoNotSaveChanges); } catch { }
             try { QuitWordApplicationIfOwned(Application); } catch { }
-            Release(_installedAddIn);
-            Release(_installedAddIns);
             Release(Document);
             Release(Application);
             ForceComCleanup();

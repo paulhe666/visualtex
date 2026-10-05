@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$ExecutablePath,
     [Parameter(Mandatory = $true)][string]$IdentityRoot,
+    [string]$OfficeUiRoot,
     [ValidateRange(1, 65535)][int]$Port = 43129,
     [ValidatePattern('^[A-Za-z0-9_-]+$')][string]$RunName = ("run-" + (Get-Date -Format "yyyyMMdd-HHmmss")),
     [switch]$Start
@@ -33,7 +34,11 @@ if ($sourceConfig.port -ne 43127 -or $sourceConfig.protocolVersion -ne 1 -or $so
     throw "Existing Office identity metadata does not match installed port/protocol/token requirements."
 }
 $sourceConfig = $null
-$ui = Join-Path $repo "apps\windows\dist-office-windows-native\dialog\index.html"
+$uiRoot = if ($OfficeUiRoot) { (Resolve-Path -LiteralPath $OfficeUiRoot).Path } else { Join-Path $repo "apps\windows\dist-office-windows-native" }
+if (-not $uiRoot.StartsWith($repo.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Acceptance UI must be a source build under this checkout."
+}
+$ui = Join-Path $uiRoot "dialog\index.html"
 if (-not (Test-Path -LiteralPath $ui -PathType Leaf)) { throw "Build the source Office UI before launch." }
 $runRoot = Join-Path $repo (".cache\companion-source-acceptance\" + $RunName)
 if (Test-Path -LiteralPath $runRoot) { throw "Choose a fresh run name; existing acceptance artifacts are preserved." }
@@ -61,6 +66,7 @@ $environment = [ordered]@{
     VISUALTEX_ACCEPTANCE_OFFICE_CERTIFICATE_THUMBPRINT = $thumbprint
     VISUALTEX_ACCEPTANCE_OFFICE_PROTOCOL_VERSION = "1"
     VISUALTEX_ACCEPTANCE_OFFICE_EXECUTABLE_PATH = $executable
+    VISUALTEX_ACCEPTANCE_OFFICE_UI_ROOT = $uiRoot
 }
 $previous = @{}
 try {
