@@ -584,8 +584,10 @@ export const normalizeCanonicalUprightCommands =
   normalizeMathLiveCanonicalUprightCommands;
 
 const differentialFractionCommands = ["\\dfrac", "\\tfrac", "\\frac"];
+// The extended list covers only rare/esint spellings; the standard integrals
+// must be listed here or ordinary \int ... dx never receives an upright d.
 const integralCommandPattern = new RegExp(
-  `\\\\(?:${EXTENDED_INTEGRAL_COMMAND_PATTERN_SOURCE})(?![A-Za-z])`,
+  `\\\\(?:${EXTENDED_INTEGRAL_COMMAND_PATTERN_SOURCE}|iiint|iint|oint|int)(?![A-Za-z])`,
   "g",
 );
 const nonVariableCommands = new Set([

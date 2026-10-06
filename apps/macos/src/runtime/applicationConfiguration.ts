@@ -371,44 +371,10 @@ async function readWindowConfiguration(): Promise<VisualTexConfigurationWindowSt
   }
 }
 
-async function readWordPreferences(): Promise<VisualTexConfigurationWordPreferences | undefined> {
-  if (!isTauri()) return undefined;
-  try {
-    return normalizeWordPreferences(
-      await invoke<VisualTexConfigurationWordPreferences>(
-        "get_word_numbering_user_configuration",
-      ),
-    );
-  } catch {
-    return undefined;
-  }
-}
-
-async function applyWordPreferences(
-  word: VisualTexConfigurationWordPreferences | undefined,
-) {
-  if (!word || !isTauri()) return;
-  const current = await readWordPreferences();
-  const merged: VisualTexConfigurationWordPreferences = {
-    defaultDisplayEquationNumbered:
-      word.defaultDisplayEquationNumbered ??
-      current?.defaultDisplayEquationNumbered ??
-      false,
-    defaultEquationNumberFormat:
-      word.defaultEquationNumberFormat ??
-      current?.defaultEquationNumberFormat ??
-      "continuous",
-  };
-  try {
-    await invoke("apply_word_numbering_user_configuration", {
-      configuration: merged,
-    });
-  } catch {
-    // Older runtimes do not know this command. Cross-version imports should
-    // still restore every preference that the running version understands.
-  }
-}
-
+// The Word numbering preference on macOS is owned by the DOTM (Ribbon -> VBA ->
+// AppleScriptTask file) and uses its own mode|separator format. The desktop
+// backend has no command for it: an imported `word` block (e.g. from Windows)
+// is parsed but not applied, and macOS exports omit it.
 async function applyWindowConfiguration(
   windows: VisualTexConfigurationWindowState | undefined,
 ) {
@@ -445,7 +411,6 @@ export async function buildVisualTexConfiguration(): Promise<VisualTexUserConfig
       usage: normalizeUsage(editorState.usage) ?? {},
       history: normalizeHistory(editorState.history) ?? [],
     },
-    word: await readWordPreferences(),
     windows: await readWindowConfiguration(),
   };
 }
@@ -506,6 +471,5 @@ export async function applyVisualTexConfiguration(
       theme: useEditorStore.getState().theme,
     }).catch(() => undefined);
   }
-  await applyWordPreferences(configuration.word);
   await applyWindowConfiguration(configuration.windows);
 }

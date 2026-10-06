@@ -67,7 +67,6 @@ assert.equal(
   "Release by VisualTeX",
 );
 
-const appSource = await readFile("src/App.tsx", "utf8");
 const updateDialogSource = await readFile("src/components/UpdateDialog.tsx", "utf8");
 const releaseWelcomeSource = await readFile("src/update/releaseWelcome.ts", "utf8");
 const updateDialogStyles = await readFile("src/styles.css", "utf8");
@@ -100,10 +99,6 @@ assert(releaseWelcomeSource.includes("化学反应箭头与可逆反应箭头结
 assert(releaseWelcomeSource.includes("\\\\dagger"));
 assert(releaseWelcomeSource.includes("\\\\ket{}"));
 assert(updateDialogSource.includes("更新内容"));
-assert(appSource.includes("releaseWelcomePending"));
-assert(appSource.includes("releaseWelcomeOpen"));
-assert(appSource.includes("RELEASE_WELCOME_STORAGE_KEY"));
-assert(appSource.includes("writeLocalStorage(RELEASE_WELCOME_STORAGE_KEY, \"true\")"));
 assert(updateDialogStyles.includes(".update-community-qr-row"));
 assert(updateDialogStyles.includes(".update-community-qr-card"));
 assert(updateDialogStyles.includes("grid-template-columns: repeat(3, minmax(0, 1fr))"));

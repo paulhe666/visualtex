@@ -59,10 +59,6 @@ import type {
   LatexFormatProfile,
 } from "./types/formula";
 import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
-import {
-  CUSTOM_THEME_CHANGED_EVENT,
-  readCustomTheme,
-} from "./themeCustomization";
 import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
 import {
   DEFAULT_OCR_MODEL,
@@ -218,9 +214,6 @@ function App() {
   const setCheckUpdatesOnStartup = useEditorStore(
     (state) => state.setCheckUpdatesOnStartup,
   );
-  const powerPointDefaultFontSizePt = useEditorStore(
-    (state) => state.powerPointDefaultFontSizePt,
-  );
   const historyState = useHistorySnapshot();
   const isEn = language === "en";
   const latex = joinFormulaLines(lines);
@@ -336,48 +329,6 @@ function App() {
       void invoke<string>("set_app_theme", { theme }).catch(() => undefined);
     }
   }, [theme]);
-
-  useEffect(() => {
-    if (!isTauriEnvironment()) return;
-    void invoke<string>("set_app_editor_layout", { editorLayout }).catch(
-      () => undefined,
-    );
-  }, [editorLayout]);
-
-  useEffect(() => {
-    if (!isTauriEnvironment()) return;
-    let timer = 0;
-    let disposed = false;
-    const publishPreferences = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        if (disposed) return;
-        const settings = useEditorStore.getState().toDocument().settings;
-        void invoke("set_app_editor_preferences", {
-          preferences: {
-            settings,
-            customTheme: readCustomTheme(),
-          },
-        }).catch(() => undefined);
-      }, 24);
-    };
-    publishPreferences();
-    const unsubscribeStore = useEditorStore.subscribe(publishPreferences);
-    window.addEventListener(CUSTOM_THEME_CHANGED_EVENT, publishPreferences);
-    return () => {
-      disposed = true;
-      window.clearTimeout(timer);
-      unsubscribeStore();
-      window.removeEventListener(CUSTOM_THEME_CHANGED_EVENT, publishPreferences);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isTauriEnvironment()) return;
-    void invoke<number>("set_powerpoint_default_font_size", {
-      fontSizePt: powerPointDefaultFontSizePt,
-    }).catch(() => undefined);
-  }, [powerPointDefaultFontSizePt]);
 
   useEffect(() => {
     document.documentElement.lang = isEn ? "en" : "zh-CN";
