@@ -3,6 +3,142 @@ Private VT_NATIVE_PARITY_DIAGNOSTIC As Boolean
 Private VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING As Boolean
 Private VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT As Document
 
+Public Sub VisualTeX_RunWordOleInsertionRegression()
+    Dim sourcePath As String
+    Dim doc As Document
+    Dim shape As InlineShape
+    Dim copied As InlineShape
+    Dim source As Range
+    Dim initialEnd As Long
+    Dim report As String
+    On Error GoTo Failed
+    sourcePath = ActiveDocument.FullName
+    VTBeginWordInternalMutation
+    Set doc = Documents.Add(Visible:=False)
+    doc.Content.Text = "BEFORE AFTER"
+    Set shape = VTAddWordFormulaOle(doc, doc.Range(7, 7), sourcePath)
+    If doc.Paragraphs.Count <> 1 Or Left$(doc.Content.Text, 7) <> "BEFORE " Or _
+       Right$(doc.Content.Text, 6) <> "AFTER" & vbCr Then _
+        Err.Raise 5, , "OLE insertion changed surrounding text or split its paragraph."
+    If Not VTIsVisualTeXOleShape(shape) Then Err.Raise 5, , "OLE insertion lost the EMBED identity."
+    Set shape = VTEnsureVisualTeXImageMacroButton(shape)
+    Set source = VTVisualTeXImageContainerRange(shape)
+    If source.Fields.Count <> 1 Then Err.Raise 5, , "OLE container omitted its EMBED field."
+    initialEnd = doc.Content.End
+    doc.Range(0, 0).FormattedText = source.FormattedText
+    Set copied = doc.Range(0, doc.Content.End - initialEnd).InlineShapes(1)
+    If doc.InlineShapes.Count <> 2 Or Not VTIsVisualTeXOleShape(copied) Then _
+        Err.Raise 5, , "Whole-field copy in this document lost its OLE identity."
+    VTDeleteVisualTeXImageContainer copied
+    If doc.InlineShapes.Count <> 1 Or doc.Fields.Count <> 1 Then _
+        Err.Raise 5, , "Deleting the copy left an empty EMBED field or removed the source."
+    VTDeleteVisualTeXImageContainer doc.InlineShapes(1)
+    If doc.InlineShapes.Count <> 0 Or doc.Fields.Count <> 0 Or _
+       doc.Content.Text <> "BEFORE AFTER" & vbCr Then _
+        Err.Raise 5, , "Deleting the source left its EMBED code or changed body text."
+    report = "Word=" & Application.Version & vbLf & _
+        "direct-insert-body=PASS" & vbLf & "whole-field-copy=PASS" & vbLf & _
+        "delete-entire-embed=PASS"
+Finished:
+    On Error GoTo 0
+    If Not doc Is Nothing Then doc.Close SaveChanges:=wdDoNotSaveChanges
+    VTEndWordInternalMutation
+    MsgBox report, vbInformation, "Word OLE insertion regression"
+    Exit Sub
+Failed:
+    report = "FAIL " & CStr(Err.Number) & ":" & Err.Description
+    Resume Finished
+End Sub
+
+Public Sub VisualTeX_RunWordOleReplacementRegression()
+    Dim doc As Document
+    Dim original As InlineShape
+    Dim dispatch As Object
+    Dim sourcePath As String
+    Dim formulaId As String
+    Dim sessionId As String
+    Dim beforeText As String
+    Dim beforeCode As String
+    Dim sample As Long
+    Dim numbered As Boolean
+    Dim report As String
+    Dim fault As Long
+    On Error GoTo Failed
+    sourcePath = VTApplicationSupportRoot() & "/Tests/ole-formula.docx"
+    Set doc = Documents.Add(Visible:=False)
+    doc.Content.Text = "BEFORE" & vbCr & vbCr & "AFTER"
+    Set dispatch = VTRegressionOleDispatch(doc, Nothing, False, sessionId, "create")
+    VTCommitWordDispatch sessionId, dispatch
+    If doc.InlineShapes.Count <> 1 Then Err.Raise 5, , "Empty-anchor create deleted its OLE."
+    Set original = doc.InlineShapes(1)
+    formulaId = CStr(dispatch("formulaId"))
+    original.Title = VTFormulaReference(formulaId, "block", False)
+    For sample = 0 To 1
+        numbered = sample = 0
+        beforeText = doc.Content.Text
+        beforeCode = VTContainingFieldForInlineShape(original).Code.Text
+        Set dispatch = VTRegressionOleDispatch(doc, original, numbered, sessionId)
+        fault = 0
+        On Error GoTo ExpectedFailure
+        VTCommitWordDispatch sessionId, dispatch, True
+AfterFailure:
+        On Error GoTo Failed
+        If fault = 0 Then Err.Raise 5, , "Injected OLE edit did not fail."
+        If doc.InlineShapes.Count <> 1 Or Not VTIsVisualTeXOleShape(original) Then _
+            Err.Raise 5, , "Rollback replaced or removed the original OLE."
+        If doc.Content.Text <> beforeText Or _
+           VTContainingFieldForInlineShape(original).Code.Text <> beforeCode Then _
+            Err.Raise 5, , "Rollback changed the original paragraph or EMBED field."
+        Set dispatch = VTRegressionOleDispatch(doc, original, numbered, sessionId)
+        VTCommitWordDispatch sessionId, dispatch
+        If doc.InlineShapes.Count <> 1 Then Err.Raise 5, , "Replacement left two formulas."
+        Set original = doc.InlineShapes(1)
+        If Not VTIsVisualTeXOleShape(original) Then Err.Raise 5, , "Replacement lost the OLE."
+        If (Not VTImagePlaceRef(original.Range) Is Nothing) <> numbered Then _
+            Err.Raise 5, , "The number checkbox did not change the number."
+        If Len(original.AlternativeText) <> 0 Then Err.Raise 5, , "OLE has a metadata cache."
+    Next sample
+    report = "Word=" & Application.Version & vbLf & _
+        "empty-anchor-create=PASS" & vbLf & _
+        "number-on-off=PASS" & vbLf & "rollback-original-ole=PASS"
+Finished:
+    On Error GoTo 0
+    If Not doc Is Nothing Then doc.Close SaveChanges:=wdDoNotSaveChanges
+    MsgBox report, vbInformation, "Word OLE replacement regression"
+    Exit Sub
+ExpectedFailure:
+    fault = Err.Number
+    Resume AfterFailure
+Failed:
+    report = "FAIL " & CStr(Err.Number) & ":" & Err.Description
+    Resume Finished
+End Sub
+
+Private Function VTRegressionOleDispatch(ByVal doc As Document, _
+    ByVal shape As InlineShape, ByVal numbered As Boolean, _
+    ByRef sessionId As String, Optional ByVal mode As String = "edit") As Object
+    Dim dispatch As New Collection
+    Dim row As Variant
+    Dim splitAt As Long
+    For Each row In Split(VTReadText( _
+        VTApplicationSupportRoot() & "/Tests/ole-dispatch.txt", 262144), vbLf)
+        splitAt = InStr(1, CStr(row), "=", vbBinaryCompare)
+        If splitAt > 1 Then dispatch.Add Mid$(CStr(row), splitAt + 1), Left$(CStr(row), splitAt - 1)
+    Next row
+    sessionId = VTNewUuidV4()
+    If mode = "create" Then
+        VTAddPendingBookmark doc.Range(7, 7), sessionId
+    Else
+        VTAddWordEditRangeBookmark shape.Range, sessionId
+        dispatch.Add VTWordEditBookmarkName(sessionId), "sourceMarker"
+    End If
+    dispatch.Add mode, "mode"
+    dispatch.Add "block", "displayMode"
+    dispatch.Add IIf(numbered, "1", "0"), "numbered"
+    dispatch.Add VTWordDocumentIdentityForDocument(doc), "sourceDocumentId"
+    Set VTRegressionOleDispatch = dispatch
+End Function
+
 Public Sub VisualTeX_RunEditOpenAndTabsRegression()
     Dim shape As InlineShape
     Dim numberRange As Range

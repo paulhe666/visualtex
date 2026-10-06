@@ -42,7 +42,7 @@ const outputDocumentName = basename(outputPath);
 const keepWordOpenOnError = process.argv.includes("--keep-word-open-on-error");
 const preserveWord = process.argv.includes("--preserve-word");
 const diagnosticsBuild = process.argv.includes("--diagnostics");
-const diagnosticSourceRoot = join(scratchRoot, `word-diagnostic-source-${process.pid}`);
+const diagnosticSourceRoot = join(dirname(outputPath), `word-diagnostic-source-${process.pid}`);
 // Compile through the established restart/import/Debug > Compile workflow,
 // while leaving production Startup files and their loaded state unchanged.
 const keepStartupFiles = process.argv.includes("--keep-startup-files");

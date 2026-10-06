@@ -1408,8 +1408,7 @@ fn word_native_edit_source(request: &MacOfflineSessionRequest) -> Result<super::
 }
 
 /// The OLE formula selected for editing, read from the Flat OPC parts VBA
-/// copied out of `Range.WordOpenXML`. The embedded JSON is authoritative; the
-/// AlternativeText copy is only Word's cache.
+/// copied out of `Range.WordOpenXML`. The embedded JSON is authoritative.
 fn word_ole_edit_source(session_id: &str) -> Result<OleFormula, String> {
     let path = session_directory(OfficeHost::Word, session_id)?.join(WORD_OLE_EDIT_SOURCE_FILE);
     let size = fs::metadata(&path)
@@ -1561,10 +1560,10 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
     if request.host == "word"
         && request.mode == "edit"
         && operation == "formula"
-        && (request.formula_id.is_none()
+        && ((!request.ole_object && request.formula_id.is_none())
             || request.source_document_id.is_none()
             || request.source_object_id.is_none()
-            || (request.encoded_metadata.is_none() && !is_untagged_word_edit(request))
+            || (request.encoded_metadata.is_none() && !request.ole_object && !is_untagged_word_edit(request))
             || request.pending_marker.is_some()
             || request.power_point.is_some())
     {
@@ -2468,6 +2467,12 @@ fn import_request(
         });
 
     let session_id = request.session_id.clone();
+    let (display_mode, numbered) = if ole_source.is_some() {
+        let metadata = original_metadata.as_ref().expect("OLE source metadata was loaded");
+        (metadata.display_mode.clone(), metadata.numbered)
+    } else {
+        (request.display_mode, request.numbered)
+    };
     let session_operation = request
         .operation
         .as_deref()
@@ -2489,9 +2494,9 @@ fn import_request(
             lines: Some(lines),
             active_line_id: None,
             code_format: Some(code_format),
-            display_mode: Some(request.display_mode),
+            display_mode: Some(display_mode),
             inline_image_math_style: None,
-            numbered: Some(request.numbered),
+            numbered: Some(numbered),
             font_size_pt,
             formula_letter_font: request
                 .formula_letter_font
@@ -9079,6 +9084,17 @@ mod tests {
         request.source_object_id = Some("VT_E_31345678123442349234".to_string());
         validate_request(&request, &session_id)
             .expect("image formula edits with an explicit edit bookmark should validate");
+
+        request.ole_object = true;
+        request.formula_id = None;
+        request.encoded_metadata = None;
+        validate_request(&request, &session_id)
+            .expect("OLE edits read identity and metadata from the embedded JSON");
+        request.source_object_id = None;
+        assert!(validate_request(&request, &session_id).is_err());
+        request.ole_object = false;
+        request.formula_id = Some("41345678-1234-4234-9234-123456789abc".to_string());
+        request.encoded_metadata = Some(format!("{METADATA_PREFIX}fixture"));
 
         request.native_equation = true;
         request.source_object_id = Some(

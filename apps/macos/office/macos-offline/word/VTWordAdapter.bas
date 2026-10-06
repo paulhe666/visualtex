@@ -4979,19 +4979,17 @@ Private Function VTContainingFieldForInlineShape( _
     Dim matchCount As Long
 
     If formulaShape Is Nothing Then Exit Function
+    ' Word 16.89.1 returns Nothing from InlineShape.Field for an EMBED result.
     Set paragraphRange = formulaShape.Range.Paragraphs(1).Range.Duplicate
     For Each candidateField In paragraphRange.Fields
-        On Error Resume Next
-        Err.Clear
+        If formulaShape.Type = wdInlineShapeEmbeddedOLEObject And _
+           candidateField.Type <> wdFieldEmbed Then GoTo NextField
         If candidateField.Result.Start <= formulaShape.Range.Start And _
            candidateField.Result.End >= formulaShape.Range.End Then
-            If Err.Number = 0 Then
-                matchCount = matchCount + 1
-                Set match = candidateField
-            End If
+            matchCount = matchCount + 1
+            Set match = candidateField
         End If
-        Err.Clear
-        On Error GoTo 0
+NextField:
     Next candidateField
     If matchCount > 1 Then
         Err.Raise vbObjectError + 7593, "VisualTeX", _
@@ -5058,7 +5056,11 @@ Private Function VTVisualTeXImageContainerRange( _
     Dim macroField As Field
 
     If formulaShape Is Nothing Then Exit Function
-    Set macroField = VTVisualTeXImageMacroButtonFieldForShape(formulaShape)
+    Set macroField = VTContainingFieldForInlineShape(formulaShape)
+    If Not macroField Is Nothing Then
+        If Not VTIsVisualTeXImageMacroButtonField(macroField) And _
+           Not VTIsVisualTeXOleField(macroField) Then Set macroField = Nothing
+    End If
     If macroField Is Nothing Then
         Set VTVisualTeXImageContainerRange = formulaShape.Range.Duplicate
     Else
@@ -5083,6 +5085,13 @@ Private Function VTMacroButtonResultHasOnlyImage( _
     VTMacroButtonResultHasOnlyImage = True
 End Function
 
+Private Function VTVisualTeXFormulaFieldHasOnlyShape(ByVal candidate As Field) As Boolean
+    If Not VTIsVisualTeXImageMacroButtonField(candidate) And _
+       Not VTIsVisualTeXOleField(candidate) Then Exit Function
+    VTVisualTeXFormulaFieldHasOnlyShape = _
+        (candidate.Result.InlineShapes.Count = 1 And candidate.Result.OMaths.Count = 0)
+End Function
+
 Private Function VTParagraphHasSingleVisualTeXImageMacroButton( _
     ByVal paragraphRange As Range) As Boolean
 
@@ -5092,18 +5101,18 @@ Private Function VTParagraphHasSingleVisualTeXImageMacroButton( _
     Dim targetBookmarkName As String
     Dim managedFieldCount As Long
 
-    ' Compatibility name retained for existing call sites. The current image is
-    ' always one plain InlineShape with no enclosing Word field. A numbered image
-    ' may additionally own exactly one visible REF to a VisualTeX VT_N_ sequence
-    ' Bookmark after the image; the true SEQ lives in its adjacent helper paragraph.
     If paragraphRange Is Nothing Then Exit Function
     If paragraphRange.InlineShapes.Count <> 1 Or _
        paragraphRange.OMaths.Count <> 0 Then Exit Function
     Set formulaShape = paragraphRange.InlineShapes(1)
     If Not VTIsVisualTeXInlineShape(formulaShape) Then Exit Function
-    If Not VTContainingFieldForInlineShape(formulaShape) Is Nothing Then Exit Function
+    Set candidateField = VTContainingFieldForInlineShape(formulaShape)
+    If Not candidateField Is Nothing Then
+        If Not VTIsVisualTeXOleField(candidateField) Then Exit Function
+    End If
     Set formulaContainerRange = VTVisualTeXImageContainerRange(formulaShape)
     For Each candidateField In paragraphRange.Fields
+        If VTIsVisualTeXOleField(candidateField) Then GoTo NextManagedField
         If candidateField.Type <> wdFieldRef Or _
            VTEquationFieldStart(candidateField) <= formulaContainerRange.End Then
             Exit Function
@@ -5115,6 +5124,7 @@ Private Function VTParagraphHasSingleVisualTeXImageMacroButton( _
            VT_WORD_SEQUENCE_NUMBER_BOOKMARK_PREFIX Then Exit Function
         managedFieldCount = managedFieldCount + 1
         If managedFieldCount > 1 Then Exit Function
+NextManagedField:
     Next candidateField
     VTParagraphHasSingleVisualTeXImageMacroButton = True
 End Function
@@ -5153,6 +5163,11 @@ Public Function VTEnsureVisualTeXImageMacroButton( _
     End If
     Set containingField = VTContainingFieldForInlineShape(formulaShape)
     If containingField Is Nothing Then
+        Set VTEnsureVisualTeXImageMacroButton = formulaShape
+        Exit Function
+    End If
+    If formulaShape.Type = wdInlineShapeEmbeddedOLEObject And _
+       VTIsVisualTeXOleField(containingField) Then
         Set VTEnsureVisualTeXImageMacroButton = formulaShape
         Exit Function
     End If
@@ -5254,15 +5269,8 @@ End Function
 Private Sub VTDeleteVisualTeXImageContainer( _
     ByVal formulaShape As InlineShape)
 
-    Dim macroField As Field
-
     If formulaShape Is Nothing Then Exit Sub
-    Set macroField = VTVisualTeXImageMacroButtonFieldForShape(formulaShape)
-    If macroField Is Nothing Then
-        formulaShape.Delete
-    Else
-        macroField.Delete
-    End If
+    VTVisualTeXImageContainerRange(formulaShape).Delete
 End Sub
 
 Public Sub VTCleanupEmptyVisualTeXImageMacroButtons( _
@@ -5634,7 +5642,7 @@ Private Function VTInlineShapeHasVisualTeXMetadata( _
     On Error GoTo InvalidShape
     If candidate Is Nothing Then Exit Function
     VTInlineShapeHasVisualTeXMetadata = _
-        VTIsEncodedMetadata(candidate.AlternativeText)
+        VTIsVisualTeXOleShape(candidate) Or VTIsEncodedMetadata(candidate.AlternativeText)
     Exit Function
 
 InvalidShape:
@@ -5667,8 +5675,7 @@ Private Function VTTryVisualTeXMetadataShapeAtSelection( _
     End If
 
     For Each candidateField In selected.Range.Paragraphs(1).Range.Fields
-        If VTIsVisualTeXImageMacroButtonField(candidateField) And _
-           VTMacroButtonResultHasOnlyImage(candidateField) Then
+        If VTVisualTeXFormulaFieldHasOnlyShape(candidateField) Then
             fieldStart = candidateField.Code.Start - 1
             fieldEnd = candidateField.Result.End + 1
             If selected.Range.Start <= fieldEnd + 1 And _
@@ -6101,6 +6108,12 @@ Private Function VTTryResolveVisualTeXInlineShapeReference( _
     metadataNeedsWrite = False
     formatNeedsWrite = False
     If selectedShape Is Nothing Then Exit Function
+    If VTIsVisualTeXOleShape(selectedShape) Then
+        ' The editor reads identity and layout from the embedded JSON.
+        displayMode = "inline"
+        VTTryResolveVisualTeXInlineShapeReference = True
+        Exit Function
+    End If
     titleValue = selectedShape.Title
     alternativeValue = selectedShape.AlternativeText
 
@@ -6507,8 +6520,7 @@ Private Function VTTryResolveVisualTeXInlineShapeAtSelection( _
     ' rather than with its result selected. Resolve that exact field before the
     ' generic adjacent-character fallback, without scanning the document.
     For Each candidateField In selected.Range.Paragraphs(1).Range.Fields
-        If VTIsVisualTeXImageMacroButtonField(candidateField) And _
-           VTMacroButtonResultHasOnlyImage(candidateField) Then
+        If VTVisualTeXFormulaFieldHasOnlyShape(candidateField) Then
             fieldStart = candidateField.Code.Start - 1
             fieldEnd = candidateField.Result.End + 1
             If selected.Range.Start <= fieldEnd + 1 And _
@@ -6928,10 +6940,11 @@ Private Sub VTWordOpenResolvedInlineShape( _
         VTTraceWordDoubleClick "edit-inline-error", Selection, "reason=no-shape"
         Err.Raise vbObjectError + 7400, "VisualTeX", "Select exactly one VisualTeX inline formula."
     End If
-    If Not VTIsCanonicalUuid(formulaId) Or _
+    oleObject = VTIsVisualTeXOleShape(selectedShape)
+    If Not oleObject And (Not VTIsCanonicalUuid(formulaId) Or _
        (displayMode <> "inline" And displayMode <> "block") Or _
        (numbered And displayMode <> "block") Or _
-       Not VTIsEncodedMetadata(encodedMetadata) Then
+       Not VTIsEncodedMetadata(encodedMetadata)) Then
         VTTraceWordDoubleClick _
             "edit-inline-error", Selection, _
             "reason=metadata-unrecoverable " & _
@@ -6943,6 +6956,20 @@ Private Sub VTWordOpenResolvedInlineShape( _
     On Error GoTo OpenFailed
     openStage = "resolve-document"
     Set documentObject = selectedShape.Range.Document
+    If oleObject Then
+        If convertToNative Then Err.Raise vbObjectError + 7428, "VisualTeX", _
+            "OLE-to-OMML conversion is not implemented."
+        sessionId = VTNewUuidV4()
+        VTWriteTextAtomic VTSessionDirectory(sessionId) & "/ole-edit-source.xml", _
+            VTWordOleEditSourceXml(selectedShape)
+        VTAddWordEditBookmark selectedShape, sessionId
+        editBookmarkCreated = True
+        sourceObjectId = VTWordEditBookmarkName(sessionId)
+        requestJson = VTRequestJson(sessionId, VT_WORD_HOST, "edit", "", _
+            "inline", False, VTWordDocumentIdentity(), sourceObjectId, "", "", _
+            oleObject:=True)
+        GoTo LaunchSession
+    End If
     If displayMode = "block" And numbered And _
        selectedShape.Range.Information(wdWithInTable) Then
         openStage = "migrate-numbered-image-table"
@@ -6998,12 +7025,6 @@ Private Sub VTWordOpenResolvedInlineShape( _
 
     openStage = "build-request"
     sessionId = VTNewUuidV4()
-    oleObject = VTIsVisualTeXOleShape(selectedShape)
-    If oleObject Then
-        ' The embedded JSON, not the AlternativeText cache, is authoritative.
-        VTWriteTextAtomic VTSessionDirectory(sessionId) & "/ole-edit-source.xml", _
-            VTWordOleEditSourceXml(selectedShape)
-    End If
     VTAddWordEditBookmark selectedShape, sessionId
     editBookmarkCreated = True
     sourceObjectId = VTWordEditBookmarkName(sessionId)
@@ -7034,6 +7055,7 @@ Private Sub VTWordOpenResolvedInlineShape( _
         " forkCopied=" & CStr(forkCopiedFormula) & _
         " displayMode=" & displayMode & _
         " numbered=" & CStr(numbered)
+LaunchSession:
     openStage = "launch-session"
     If displayMode = "block" Then VTPrepareNativeRollbackDocument documentObject
     launchTiming = _
@@ -7088,7 +7110,17 @@ End Function
 
 Private Function VTIsVisualTeXOleShape(ByVal candidate As InlineShape) As Boolean
     If candidate.Type <> wdInlineShapeEmbeddedOLEObject Then Exit Function
-    VTIsVisualTeXOleShape = (candidate.OLEFormat.ProgID = VT_WORD_OLE_PROG_ID)
+    VTIsVisualTeXOleShape = VTIsVisualTeXOleField( _
+        VTContainingFieldForInlineShape(candidate))
+End Function
+
+Private Function VTIsVisualTeXOleField(ByVal candidate As Field) As Boolean
+    Dim prefix As String
+    If candidate Is Nothing Then Exit Function
+    If candidate.Type <> wdFieldEmbed Then Exit Function
+    prefix = "EMBED " & VT_WORD_OLE_PROG_ID
+    VTIsVisualTeXOleField = (StrComp( _
+        Left$(Trim$(candidate.Code.Text), Len(prefix)), prefix, vbTextCompare) = 0)
 End Function
 
 ' Keeps only the Flat OPC parts the editor reads: the body, its relationships
@@ -7448,6 +7480,10 @@ Public Sub VisualTeX_ConvertSelectedToNativeEquation()
     If selectedShape Is Nothing Then
         Err.Raise vbObjectError + 7428, "VisualTeX", _
             "Select exactly one VisualTeX formula image to convert to Word OMML."
+    End If
+    If VTIsVisualTeXOleShape(selectedShape) Then
+        Err.Raise vbObjectError + 7428, "VisualTeX", _
+            "OLE-to-OMML conversion is not implemented."
     End If
     Set targetDocument = selectedShape.Range.Document
     sourceStart = selectedShape.Range.Start
@@ -11158,52 +11194,45 @@ Failed:
     VTShowError "Word formula creation", errorNumber, errorDescription
 End Sub
 
-' Imports the one-object staging package written by VisualTeX and transfers
-' only its VisualTeX.Formula.1 object, like the SVG picture route. There is no
-' raster fallback: a failure leaves the original formula in place.
 Private Function VTAddWordFormulaOle( _
     ByVal documentObject As Document, _
     ByVal targetRange As Range, _
     ByVal oleDocumentPath As String) As InlineShape
 
-    Dim stagingDocument As Document
-    Dim stagingRange As Range
     Dim insertionRange As Range
+    Dim paragraphMark As Range
     Dim targetStart As Long
+    Dim originalEnd As Long
+    Dim insertedLength As Long
     Dim errorNumber As Long
     Dim errorDescription As String
 
     targetStart = targetRange.Start
+    originalEnd = documentObject.Content.End
     On Error GoTo Failed
-    Set stagingDocument = Documents.Add(Visible:=False)
-    Set stagingRange = stagingDocument.Content.Duplicate
-    stagingRange.Collapse wdCollapseStart
-    stagingRange.InsertFile _
-        FileName:=oleDocumentPath, _
+    Set insertionRange = documentObject.Range(targetStart, targetStart)
+    insertionRange.InsertFile FileName:=oleDocumentPath, _
         ConfirmConversions:=False, Link:=False, Attachment:=False
-    If stagingDocument.InlineShapes.Count <> 1 Then
+    insertedLength = documentObject.Content.End - originalEnd
+    Set insertionRange = documentObject.Range( _
+        targetStart, targetStart + insertedLength)
+    Set paragraphMark = documentObject.Range( _
+        insertionRange.End - 1, insertionRange.End)
+    If paragraphMark.Text <> vbCr Then
+        Err.Raise vbObjectError + 7612, "VisualTeX", _
+            "The imported OLE package did not end with a paragraph mark."
+    End If
+    ' InsertFile imports the source paragraph boundary; retaining it splits body text.
+    paragraphMark.Delete
+    Set insertionRange = documentObject.Range( _
+        targetStart, targetStart + insertedLength - 1)
+    If insertionRange.InlineShapes.Count <> 1 Then
         Err.Raise vbObjectError + 7612, "VisualTeX", _
             "Word did not import exactly one VisualTeX OLE formula."
     End If
-    If Not VTIsVisualTeXOleShape(stagingDocument.InlineShapes(1)) Then
+    If Not VTIsVisualTeXOleShape(insertionRange.InlineShapes(1)) Then
         Err.Raise vbObjectError + 7612, "VisualTeX", _
             "Word did not import the staged formula as a VisualTeX OLE object."
-    End If
-    Set stagingRange = stagingDocument.InlineShapes(1).Range.Duplicate
-    documentObject.Activate
-    Set insertionRange = documentObject.Range( _
-        Start:=targetStart, End:=targetRange.End)
-    insertionRange.FormattedText = stagingRange.FormattedText
-    stagingDocument.Saved = True
-    stagingDocument.Close SaveChanges:=wdDoNotSaveChanges
-    Set stagingDocument = Nothing
-    documentObject.Activate
-
-    Set insertionRange = documentObject.Range( _
-        Start:=targetStart, End:=targetStart + 1)
-    If insertionRange.InlineShapes.Count <> 1 Then
-        Err.Raise vbObjectError + 7612, "VisualTeX", _
-            "Word did not transfer exactly one VisualTeX OLE formula."
     End If
     Set VTAddWordFormulaOle = insertionRange.InlineShapes(1)
     Exit Function
@@ -11211,11 +11240,15 @@ Private Function VTAddWordFormulaOle( _
 Failed:
     errorNumber = Err.Number
     errorDescription = Err.Description
-    If Not stagingDocument Is Nothing Then
-        stagingDocument.Saved = True
-        stagingDocument.Close SaveChanges:=wdDoNotSaveChanges
-        documentObject.Activate
-    End If
+    On Error GoTo CleanupFailed
+    insertedLength = documentObject.Content.End - originalEnd
+    If insertedLength > 0 Then _
+        documentObject.Range(targetStart, targetStart + insertedLength).Delete
+    On Error GoTo 0
+    Err.Raise errorNumber, "VisualTeX Word OLE insertion", errorDescription
+CleanupFailed:
+    errorDescription = errorDescription & "; insertion rollback: " & Err.Description
+    On Error GoTo 0
     Err.Raise errorNumber, "VisualTeX Word OLE insertion", errorDescription
 End Function
 
@@ -11664,6 +11697,14 @@ Private Sub VTCommitWordDispatch( _
     Dim vectorDocumentPath As String
     Dim fallbackImagePath As String
     Dim oleDocumentPath As String
+    Dim oleReplacement As Boolean
+    Dim oleSourceContainer As Range
+    Dim oleLayoutTail As Range
+    Dim oleLayoutPrefixText As String
+    Dim oleLayoutFormat As ParagraphFormat
+    Dim oleLayoutStyle As Style
+    Dim oleLayoutPrepared As Boolean
+    Dim oleSourceTextLength As Long
     Dim metadata As String
     Dim latexBase64 As String
     Dim ommlBase64 As String
@@ -11787,9 +11828,11 @@ Private Sub VTCommitWordDispatch( _
     displayMode = CStr(dispatch("displayMode"))
     numbered = (CStr(dispatch("numbered")) = "1")
     nativeEquation = (CStr(dispatch("nativeEquation")) = "1")
+    oleDocumentPath = VTDispatchOptional(dispatch, "oleDocumentPath")
+    oleReplacement = (Len(oleDocumentPath) > 0)
     If nativeEquation Then
         VTRequireDispatchValue dispatch, "nativeDocumentPath"
-    Else
+    ElseIf Not oleReplacement Then
         VTRequireDispatchValue dispatch, "imagePath"
         VTRequireDispatchValue dispatch, "vectorDocumentPath"
         VTRequireDispatchValue dispatch, "fallbackImagePath"
@@ -11799,7 +11842,6 @@ Private Sub VTCommitWordDispatch( _
         dispatch, "vectorDocumentPath")
     fallbackImagePath = VTDispatchOptional( _
         dispatch, "fallbackImagePath")
-    oleDocumentPath = VTDispatchOptional(dispatch, "oleDocumentPath")
     metadata = CStr(dispatch("metadata"))
     latexBase64 = CStr(dispatch("latexBase64"))
     ommlBase64 = CStr(dispatch("ommlBase64"))
@@ -11866,6 +11908,12 @@ Private Sub VTCommitWordDispatch( _
             Err.Raise vbObjectError + 7406, "VisualTeX", _
                 "VisualTeX Word native DOCX result is missing."
         End If
+    ElseIf oleReplacement Then
+        VTValidateAbsoluteVisualTeXPath oleDocumentPath
+        If Not VTPathFileExists(oleDocumentPath) Then
+            Err.Raise vbObjectError + 7406, "VisualTeX", _
+                "VisualTeX Word OLE staging document is missing."
+        End If
     Else
         VTValidateAbsoluteVisualTeXPath imagePath
         VTValidateAbsoluteVisualTeXPath vectorDocumentPath
@@ -11881,13 +11929,6 @@ Private Sub VTCommitWordDispatch( _
         If Not VTPathFileExists(fallbackImagePath) Then
             Err.Raise vbObjectError + 7406, "VisualTeX", _
                 "VisualTeX Word PNG compatibility preview is missing."
-        End If
-        If Len(oleDocumentPath) > 0 Then
-            VTValidateAbsoluteVisualTeXPath oleDocumentPath
-            If Not VTPathFileExists(oleDocumentPath) Then
-                Err.Raise vbObjectError + 7406, "VisualTeX", _
-                    "VisualTeX Word OLE staging document is missing."
-            End If
         End If
     End If
 
@@ -11966,6 +12007,10 @@ Private Sub VTCommitWordDispatch( _
         originalNativeBookmarkName = nativeTarget.Name
         Set targetRange = originalNativeRange.Duplicate
     ElseIf Not targetImage Is Nothing Then
+        If nativeEquation And VTIsVisualTeXOleShape(targetImage) Then
+            Err.Raise vbObjectError + 7428, "VisualTeX", _
+                "OLE-to-OMML conversion is not implemented."
+        End If
         Set targetRange = VTVisualTeXImageContainerRange(targetImage)
         sourceWasNumbered = Not VTImagePlaceRef(targetImage.Range) Is Nothing
         If mode = "create" Then pendingPlaceholderStart = targetImage.Range.Start
@@ -12080,7 +12125,7 @@ Private Sub VTCommitWordDispatch( _
     If Not hadPreviousFormat Then previousNumbered = sourceWasNumbered
     numberingChanged = mode = "edit" And _
         previousNumbered <> numbered And displayMode = "block"
-    If numberingChanged And Not targetImage Is Nothing Then
+    If numberingChanged And Not targetImage Is Nothing And Not oleReplacement Then
         ' Number toggles change tabs, fields and paragraph formatting as well as
         ' the image. Back up that exact paragraph for transactional rollback.
         transactionStage = "backup-numbering-paragraph"
@@ -12098,7 +12143,7 @@ Private Sub VTCommitWordDispatch( _
         targetDocument.Activate
     End If
 
-    If numberingChanged And Not nativeEquation And Not targetImage Is Nothing And _
+    If numberingChanged And Not oleReplacement And Not nativeEquation And Not targetImage Is Nothing And _
        VTDispatchOptional(dispatch, "numberingOnly") = "1" And _
        previousLatexBase64 = latexBase64 And previousOmmlBase64 = ommlBase64 And _
        hadPreviousImageScale And Abs(previousFontSizePt - fontSizePt) < 0.01 Then
@@ -12191,7 +12236,7 @@ Private Sub VTCommitWordDispatch( _
             replacementRollbackRange:=originalNativeBackupRange, _
             joinedNative:=joinedNative, nativeFontSizePt:=fontSizePt)
         nativeEquationStart = nativeEquationRange.Start
-        nativeTargetReplaced = targetIsNative
+        nativeTargetReplaced = targetIsNative And Not oleReplacement
         VTWordPerformanceMark "native-insert-complete"
 
         transactionStage = "store-native-state"
@@ -12424,8 +12469,29 @@ Private Sub VTCommitWordDispatch( _
         VTWordPerformanceMark "image-native-backup-complete"
     End If
 
+    If oleReplacement And Not targetImage Is Nothing Then
+        Set oleSourceContainer = VTVisualTeXImageContainerRange(targetImage)
+        If displayMode = "block" Then
+            ' Only the number tail is backed up; the old OLE stays in this document.
+            Set oleLayoutFormat = oleSourceContainer.ParagraphFormat.Duplicate
+            Set oleLayoutStyle = oleSourceContainer.Style
+            oleLayoutPrefixText = targetDocument.Range( _
+                oleSourceContainer.Paragraphs(1).Range.Start, oleSourceContainer.Start).Text
+            Set oleLayoutTail = targetDocument.Range( _
+                oleSourceContainer.End, oleSourceContainer.Paragraphs(1).Range.End - 1)
+            Set imageNumberBookmarks = VTCaptureImageNumberBookmarks(targetImage, formulaId)
+            Set originalImageBackupDocument = Documents.Add(Visible:=False)
+            Set originalImageBackupRange = originalImageBackupDocument.Content.Duplicate
+            originalImageBackupRange.Collapse wdCollapseStart
+            originalImageBackupRange.FormattedText = oleLayoutTail.FormattedText
+            Set originalImageBackupRange = originalImageBackupDocument.Range( _
+                0, originalImageBackupDocument.Content.End - 1)
+            oleLayoutPrepared = True
+        End If
+    End If
     Set insertionRange = targetRange.Duplicate
-    If Not targetIsNative Then insertionRange.Collapse wdCollapseStart
+    If oleReplacement Then oleSourceTextLength = targetRange.End - targetRange.Start
+    If Not targetIsNative Or oleReplacement Then insertionRange.Collapse wdCollapseStart
     targetDocument.Activate
     transactionStage = "insert-image-replacement"
     If Len(oleDocumentPath) > 0 Then
@@ -12439,7 +12505,7 @@ Private Sub VTCommitWordDispatch( _
     VTWordPerformanceMark "image-staging-inserted"
     nativeTargetReplaced = targetIsNative
     transactionStage = "detach-image-replacement"
-    If targetIsNative Then
+    If targetIsNative And Not oleReplacement Then
         Set candidate = _
             VTDetachWordFormulaPictureFromMath(stagedCandidate)
     Else
@@ -12450,7 +12516,7 @@ Private Sub VTCommitWordDispatch( _
     candidate.Width = CSng(widthPoints)
     candidate.Height = CSng(heightPoints)
     candidate.LockAspectRatio = msoTrue
-    candidate.AlternativeText = metadata
+    If Not oleReplacement Then candidate.AlternativeText = metadata
     candidate.Title = formulaReference
     ' Record the staging anchor before deleting the old source. Normal image
     ' create/edit resolution is then bounded to this tiny local window instead
@@ -12459,10 +12525,14 @@ Private Sub VTCommitWordDispatch( _
     ' Mac Word versions differ on whether the native Home font-size box
     ' persists InlineShape.Range.Font.Size. Attempt it, but Width/Height remain
     ' the authoritative visual result and the monitor records what Word reports.
-    On Error Resume Next
-    candidate.Range.Font.Size = CSng(fontSizePt)
-    Err.Clear
-    On Error GoTo RollbackCandidate
+    If oleReplacement Then
+        candidate.Range.Font.Size = CSng(fontSizePt)
+    Else
+        On Error Resume Next
+        candidate.Range.Font.Size = CSng(fontSizePt)
+        Err.Clear
+        On Error GoTo RollbackCandidate
+    End If
     If displayMode = "inline" Then
         If baselinePoints > 0# Or baselinePoints < -256# Then
             Err.Raise vbObjectError + 7408, "VisualTeX", "VisualTeX Word baseline is outside the allowed range."
@@ -12477,7 +12547,7 @@ Private Sub VTCommitWordDispatch( _
     End If
 
     If Abs(candidate.Width - widthPoints) > 0.1 Or Abs(VTWordImageGlyphHeight(candidate) - heightPoints) > 0.1 Or _
-       candidate.AlternativeText <> metadata Or candidate.Title <> formulaReference Then
+       (Not oleReplacement And candidate.AlternativeText <> metadata) Or candidate.Title <> formulaReference Then
         Err.Raise vbObjectError + 7422, "VisualTeX", "Word did not persist the VisualTeX formula properties."
     End If
     If displayMode = "inline" Then
@@ -12493,9 +12563,11 @@ Private Sub VTCommitWordDispatch( _
     End If
     VTWordPerformanceMark "image-properties-ready"
 
-    VTSetWordLatexPayload targetDocument, formulaId, latexBase64
-    VTSetWordOmmlPayload targetDocument, formulaId, ommlBase64
-    VTSetWordMetadataPayload targetDocument, formulaId, metadata
+    If Not oleReplacement Then
+        VTSetWordLatexPayload targetDocument, formulaId, latexBase64
+        VTSetWordOmmlPayload targetDocument, formulaId, ommlBase64
+        VTSetWordMetadataPayload targetDocument, formulaId, metadata
+    End If
     VTSetWordFormulaFormat targetDocument, formulaId, displayMode, numbered
     observedWordFontSizePt = VTInlineShapeWordFontSize(candidate)
     If Not VTValidWordFormulaFontSize(observedWordFontSizePt) Then
@@ -12512,40 +12584,44 @@ Private Sub VTCommitWordDispatch( _
     ' Finalize the paragraph only after the old image/native target has gone.
     ' Otherwise the placeholder participates in the tabbed line and Word shifts
     ' the formula away from the true text-column center when it is deleted.
-    transactionStage = "remove-image-source"
-    If targetIsNative Then
-        If Not originalNativeTable Is Nothing Then
-            originalNativeTable.Delete
-            ' Removing the table moves the staged paragraph to its old start.
-            ' The previous image offset can now be beyond Document.Content.End.
-            committedImageStart = nativeTableStart
+    If Not oleReplacement Then
+        transactionStage = "remove-image-source"
+        If targetIsNative Then
+            If Not originalNativeTable Is Nothing Then
+                originalNativeTable.Delete
+                ' Removing the table moves the staged paragraph to its old start.
+                ' The previous image offset can now be beyond Document.Content.End.
+                committedImageStart = nativeTableStart
+            End If
+            If regressionFailureAfterSourceRemoval Then
+                Err.Raise vbObjectError + 7564, "VisualTeX regression", _
+                    "Injected native-to-image layout failure after source deletion."
+            End If
+            If targetRange.Document.Bookmarks.Exists(originalNativeBookmarkName) Then
+                targetRange.Document.Bookmarks(originalNativeBookmarkName).Delete
+            End If
+            originalNativeBookmarkDeleted = True
+        ElseIf Not targetImage Is Nothing Then
+            If mode = "create" Then pendingPlaceholderRemoved = True
+            VTDeleteVisualTeXImageContainer targetImage
+            If numberingChanged Then originalImageRemoved = True
         End If
-        If regressionFailureAfterSourceRemoval Then
-            Err.Raise vbObjectError + 7564, "VisualTeX regression", _
-                "Injected native-to-image layout failure after source deletion."
-        End If
-        If targetRange.Document.Bookmarks.Exists(originalNativeBookmarkName) Then
-            targetRange.Document.Bookmarks(originalNativeBookmarkName).Delete
-        End If
-        originalNativeBookmarkDeleted = True
-    ElseIf Not targetImage Is Nothing Then
-        If mode = "create" Then pendingPlaceholderRemoved = True
-        VTDeleteVisualTeXImageContainer targetImage
-        If numberingChanged Then originalImageRemoved = True
     End If
 
     transactionStage = "resolve-image-after-source-removal"
-    Set candidate = VTFindCommittedInlineShapeNearPosition( _
-        targetDocument, committedImageStart, metadata, formulaReference, 64)
-    If candidate Is Nothing Then
-        ' Compatibility fallback only for host builds that move a freshly
-        ' inserted picture unexpectedly far during source deletion. Healthy
-        ' create/edit transactions never pay this document-wide scan.
-        Set candidate = VTFindCommittedInlineShape(metadata, formulaReference)
-    End If
-    If candidate Is Nothing Then
-        Err.Raise vbObjectError + 7426, "VisualTeX", _
-            "Word could not resolve the committed formula image after replacement."
+    If Not oleReplacement Then
+        Set candidate = VTFindCommittedInlineShapeNearPosition( _
+            targetDocument, committedImageStart, metadata, formulaReference, 64)
+        If candidate Is Nothing Then
+            ' Compatibility fallback only for host builds that move a freshly
+            ' inserted picture unexpectedly far during source deletion. Healthy
+            ' create/edit transactions never pay this document-wide scan.
+            Set candidate = VTFindCommittedInlineShape(metadata, formulaReference)
+        End If
+        If candidate Is Nothing Then
+            Err.Raise vbObjectError + 7426, "VisualTeX", _
+                "Word could not resolve the committed formula image after replacement."
+        End If
     End If
     committedImageStart = candidate.Range.Start
     Set candidate = VTEnsureVisualTeXImageMacroButton(candidate)
@@ -12564,7 +12640,11 @@ Private Sub VTCommitWordDispatch( _
         If numbered Then
             transactionStage = "normalize-image-number-layout"
             numberCreated = False
-            If numberingChanged Then
+            If oleReplacement Then
+                Set oleSourceContainer = VTVisualTeXImageContainerRange(targetImage)
+                Set numberLayoutRange = VTWriteSingleParagraphImageNumber( _
+                    candidate, formulaId, sourceContainer:=oleSourceContainer)
+            ElseIf numberingChanged Then
                 Set numberLayoutRange = VTWriteSingleParagraphImageNumber(candidate, formulaId)
             Else
                 Set numberLayoutRange = VTEnsureImageEquationNumber( _
@@ -12576,7 +12656,7 @@ Private Sub VTCommitWordDispatch( _
             If numberingChanged Then
                 VTRemoveImageNumberingForEdit candidate, formulaId
                 Set numberingPrefix = candidate.Range.Paragraphs(1).Range.Duplicate
-                numberingPrefix.End = candidate.Range.Start
+                numberingPrefix.End = VTVisualTeXImageContainerRange(candidate).Start
                 ' The numbered image layout owns a leading tab. Delete only
                 ' that exact whitespace, never surrounding ordinary text.
                 If numberingPrefix.Text = vbTab Then numberingPrefix.Delete
@@ -12587,7 +12667,8 @@ Private Sub VTCommitWordDispatch( _
         VTNormalizeImageDisplayParagraph candidate.Range
         If numberingChanged Then
             transactionStage = "reconcile-image-numbering"
-            VTReconcileNumberingAfterEdit targetDocument, candidate.Range.Start, True
+            VTReconcileNumberingAfterEdit targetDocument, candidate.Range.Start, True, _
+                oleSourceContainer
         End If
     End If
     If numberingChanged And regressionFailureAfterSourceRemoval Then
@@ -12596,20 +12677,22 @@ Private Sub VTCommitWordDispatch( _
     End If
 
     transactionStage = "validate-image-native-final"
-    Set candidate = VTFindCommittedInlineShapeNearPosition( _
-        targetDocument, committedImageStart, metadata, formulaReference, 96)
-    If candidate Is Nothing Then
-        ' Keep the old global lookup strictly as damaged-host recovery; it is
-        ' not part of the normal numbered-image edit complexity.
-        Set candidate = VTFindCommittedInlineShapeInDocument( _
-            targetDocument, metadata, formulaReference)
-    End If
-    If candidate Is Nothing Then
-        Err.Raise vbObjectError + 7593, "VisualTeX", _
-            "Word lost the committed formula picture after final layout."
+    If Not oleReplacement Then
+        Set candidate = VTFindCommittedInlineShapeNearPosition( _
+            targetDocument, committedImageStart, metadata, formulaReference, 96)
+        If candidate Is Nothing Then
+            ' Keep the old global lookup strictly as damaged-host recovery; it is
+            ' not part of the normal numbered-image edit complexity.
+            Set candidate = VTFindCommittedInlineShapeInDocument( _
+                targetDocument, metadata, formulaReference)
+        End If
+        If candidate Is Nothing Then
+            Err.Raise vbObjectError + 7593, "VisualTeX", _
+                "Word lost the committed formula picture after final layout."
+        End If
     End If
     Set finalImageField = VTContainingFieldForInlineShape(candidate)
-    If Not finalImageField Is Nothing Then
+    If Not finalImageField Is Nothing And Not VTIsVisualTeXOleField(finalImageField) Then
         Err.Raise vbObjectError + 7593, "VisualTeX", _
             "The committed VisualTeX formula picture is still inside a Word field."
     End If
@@ -12623,6 +12706,25 @@ Private Sub VTCommitWordDispatch( _
     End If
     On Error GoTo RollbackCandidate
     transactionStage = "place-image-caret"
+    If oleReplacement Then
+        candidate.Select
+        VTDeleteWordEditBookmark targetDocument, sessionId
+        If regressionFailureAfterSourceRemoval Then
+            Err.Raise vbObjectError + 7564, "VisualTeX regression", _
+                "Injected OLE replacement failure before source removal."
+        End If
+        transactionStage = "remove-ole-source"
+        If Not targetImage Is Nothing Then
+            VTDeleteVisualTeXImageContainer targetImage
+        ElseIf targetIsNative Then
+            originalNativeRange.Delete
+        ElseIf oleSourceTextLength > 0 Then
+            Set insertionRange = VTVisualTeXImageContainerRange(candidate)
+            targetDocument.Range(insertionRange.End, _
+                insertionRange.End + oleSourceTextLength).Delete
+        End If
+        GoTo CommitSucceeded
+    End If
     On Error Resume Next
     If displayMode = "block" And mode = "create" Then
         VTPlaceCaretAfterDisplayFormula candidate.Range, formulaId
@@ -12639,7 +12741,7 @@ CommitSucceeded:
         VTRestoreNativeNumberBookmarks nativeEquationRange, nativeNumberBookmarks
         VTFinishPureNativeEquation nativeEquationRange, formulaId
     End If
-    VTDeleteWordEditBookmark targetDocument, sessionId
+    If Not oleReplacement Then VTDeleteWordEditBookmark targetDocument, sessionId
     On Error Resume Next
     If Not originalImageBackupDocument Is Nothing Then
         originalImageBackupDocument.Close SaveChanges:=wdDoNotSaveChanges
@@ -12660,6 +12762,27 @@ RollbackCandidate:
     VTWriteWordFailureTrace _
         sessionId, transactionStage, transactionErrorNumber, transactionErrorDescription
     On Error Resume Next
+    If oleReplacement Then
+        On Error GoTo OleRollbackFailed
+        If Not candidate Is Nothing Then VTDeleteVisualTeXImageContainer candidate
+        If numbered And mode = "create" Then _
+            VTDeleteEquationNumberScaffold targetDocument, formulaId, False, True
+        If oleLayoutPrepared Then
+            Set oleSourceContainer = VTVisualTeXImageContainerRange(targetImage)
+            targetDocument.Range(oleSourceContainer.Paragraphs(1).Range.Start, _
+                oleSourceContainer.Start).Text = oleLayoutPrefixText
+            Set oleSourceContainer = VTVisualTeXImageContainerRange(targetImage)
+            Set oleLayoutTail = targetDocument.Range( _
+                oleSourceContainer.End, oleSourceContainer.Paragraphs(1).Range.End - 1)
+            oleLayoutTail.FormattedText = originalImageBackupRange.FormattedText
+            oleSourceContainer.Style = oleLayoutStyle
+            oleSourceContainer.ParagraphFormat = oleLayoutFormat
+            VTRestoreImageNumberBookmarks targetImage, imageNumberBookmarks
+        End If
+        If mode = "edit" And Not targetImage Is Nothing Then _
+            VTSetWordImageOwnerBookmark targetDocument, targetImage, formulaId
+        GoTo RestorePreviousState
+    End If
     If nativeTableBackupReady Then
         Set rollbackRange = targetDocument.Range( _
             Start:=nativeTableStart, End:=nativeTableReplacementEnd.Start)
@@ -12774,7 +12897,16 @@ RollbackCandidate:
         End If
     End If
 
+    GoTo RestorePreviousState
+
+OleRollbackFailed:
+    transactionErrorDescription = transactionErrorDescription & _
+        "; OLE rollback: " & Err.Description
+    VTWriteWordFailureTrace sessionId, "ole-rollback", Err.Number, Err.Description
+    Resume RestorePreviousState
+
 RestorePreviousState:
+    If oleReplacement Then On Error GoTo OleStateRollbackFailed
     ' Canvas writes precede the general state commit and can fail during
     ' staging validation. Restore them even when formulaStateStored is False.
     If imageCanvasCaptured Then
@@ -12830,20 +12962,26 @@ RestorePreviousState:
                 Name:=originalNativeBookmarkName, Range:=originalNativeRange
         End If
     End If
-    If Not originalNativeBackupDocument Is Nothing Then
-        originalNativeBackupDocument.Close SaveChanges:=wdDoNotSaveChanges
-    End If
-    If Not originalImageBackupDocument Is Nothing Then
-        originalImageBackupDocument.Close SaveChanges:=wdDoNotSaveChanges
-    End If
+EndRollback:
     If internalMutationStarted Then
         VTEndWordInternalMutation
         internalMutationStarted = False
     End If
     If screenUpdatingCaptured Then Application.ScreenUpdating = previousScreenUpdating
     On Error GoTo 0
+    If Not originalNativeBackupDocument Is Nothing Then
+        originalNativeBackupDocument.Close SaveChanges:=wdDoNotSaveChanges
+    End If
+    If Not originalImageBackupDocument Is Nothing Then
+        originalImageBackupDocument.Close SaveChanges:=wdDoNotSaveChanges
+    End If
     Err.Raise transactionErrorNumber, "VisualTeX Word transaction", _
         transactionStage & ": " & transactionErrorDescription
+OleStateRollbackFailed:
+    transactionErrorDescription = transactionErrorDescription & _
+        "; OLE state rollback: " & Err.Description
+    VTWriteWordFailureTrace sessionId, "ole-state-rollback", Err.Number, Err.Description
+    Resume EndRollback
 End Sub
 
 Private Sub VTCancelWordDispatch(ByVal sessionId As String, ByVal dispatch As Object)
@@ -23566,7 +23704,8 @@ Private Function VTWriteSingleParagraphImageNumber( _
     Optional ByVal headingPrefixOverride As String = "", _
     Optional ByVal headingPrefixResolved As Boolean = False, _
     Optional ByVal restartAtOneOverride As Boolean = False, _
-    Optional ByVal restartResolved As Boolean = False) As Range
+    Optional ByVal restartResolved As Boolean = False, _
+    Optional ByVal sourceContainer As Range = Nothing) As Range
     Dim doc As Document
     Dim paragraphRange As Range
     Dim container As Range
@@ -23587,6 +23726,7 @@ Private Function VTWriteSingleParagraphImageNumber( _
     Dim position As Long
     Dim discardedText As String
     Dim candidate As Field
+    Dim tailStart As Long
     Set doc = formulaShape.Range.Document
     level = VTNativeHeadingLevelAtRange(formulaShape.Range)
     If level > 0 Then
@@ -23624,7 +23764,9 @@ Private Function VTWriteSingleParagraphImageNumber( _
     If Not placeRef Is Nothing Then
         If Not VTImagePlaceRefIsCanonical( _
            placeRef, restartAtOne, prefixText) Then
-            Set suffix = doc.Range(container.End, paragraphRange.End - 1)
+            tailStart = container.End
+            If Not sourceContainer Is Nothing Then tailStart = sourceContainer.End
+            Set suffix = doc.Range(tailStart, paragraphRange.End - 1)
             Set oldFullNumber = doc.Range( _
                 VTEquationFieldStart(placeRef), VTEquationFieldEnd(placeRef))
             If oldFullNumber.Start < suffix.Start Or _
@@ -23661,7 +23803,9 @@ Private Function VTWriteSingleParagraphImageNumber( _
         End If
     End If
     If placeRef Is Nothing Then
-        Set suffix = doc.Range(container.End, paragraphRange.End - 1)
+        tailStart = container.End
+        If Not sourceContainer Is Nothing Then tailStart = sourceContainer.End
+        Set suffix = doc.Range(tailStart, paragraphRange.End - 1)
         discardedText = suffix.Text
         For Each candidate In suffix.Fields
             If candidate.Type <> wdFieldRef And candidate.Type <> wdFieldSequence Then
@@ -24176,7 +24320,8 @@ End Function
 
 Private Sub VTReconcileNumberingAfterEdit( _
     ByVal doc As Document, ByVal changedFrom As Long, _
-    ByVal imageFormula As Boolean)
+    ByVal imageFormula As Boolean, _
+    Optional ByVal sourceContainer As Range = Nothing)
 
     Dim shape As InlineShape
     Dim math As OMath
@@ -24196,6 +24341,10 @@ Private Sub VTReconcileNumberingAfterEdit( _
     If VTEquationNumberingRestartLevel(doc) > 0 Then
         If imageFormula Then
             For Each shape In doc.InlineShapes
+                If Not sourceContainer Is Nothing Then
+                    If shape.Range.Start >= sourceContainer.Start And _
+                       shape.Range.End <= sourceContainer.End Then GoTo NextImageNumber
+                End If
                 If shape.Range.Start > changedFrom Then
                     If VTTryParseFormulaReference(shape.Title, formulaId, displayMode, numbered) Then
                         If numbered And displayMode = "block" Then
@@ -24209,6 +24358,7 @@ Private Sub VTReconcileNumberingAfterEdit( _
                         End If
                     End If
                 End If
+NextImageNumber:
             Next shape
         Else
             For Each math In doc.OMaths

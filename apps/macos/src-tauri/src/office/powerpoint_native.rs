@@ -1187,15 +1187,15 @@ pub fn start_double_click_monitor(
                     let _ = crate::office::macos_offline::focus_open_office_editor(&app);
                     return;
                 };
+                // Only Word's cancellable event can prevent OLE's native UI.
+                if selection.ole_object {
+                    return;
+                }
                 if !selection.marker.starts_with(WORD_METADATA_PREFIX) {
                     return;
                 }
 
-                // Word opens its picture-format pane only for pictures. An OLE
-                // formula must never show it, so there is nothing to close.
-                let mut pane_cleanup = if selection.ole_object {
-                    None
-                } else {
+                let mut pane_cleanup = {
                     std::thread::Builder::new()
                         .name("visualtex-word-pane-cleanup".to_string())
                         .spawn(close_word_picture_format_task_pane_with_retries)
@@ -1217,9 +1217,7 @@ pub fn start_double_click_monitor(
                 // the native fallback never creates a duplicate editor. If Word
                 // skipped the VBA event, use the same strict metadata-only image
                 // edit entry that also supports legacy bare InlineShapes.
-                // MacroButton-wrapped pictures and OLE formulas normally reach
-                // VBA through Word's own double-click route.
-                if selection.macro_button_wrapped || selection.ole_object {
+                if selection.macro_button_wrapped {
                     for delay_ms in [35_u64, 55, 85] {
                         std::thread::sleep(Duration::from_millis(delay_ms));
                         if crate::office::macos_offline::focus_open_office_editor(&app) {
@@ -1379,15 +1377,32 @@ else if titleMarker starts with "visualtex:v1:deflate:" then
     set formulaMarker to titleMarker
 end if
 set macroButtonWrapped to "0"
-try
-    set formulaField to field of formulaPicture
-    if field type of formulaField is field macro button then set macroButtonWrapped to "1"
-end try
-if formulaMarker does not start with "visualtex:v1:deflate:" then error "The selected Word picture is not a VisualTeX formula"
 set oleObject to "0"
-try
-    if ((inline shape type of formulaPicture) as text) contains "OLE" then set oleObject to "1"
-end try
+set formulaField to missing value
+if exists field of formulaPicture then set formulaField to field of formulaPicture
+if formulaField is missing value then
+    set pictureRange to text object of formulaPicture
+    set pictureStart to start of content of pictureRange
+    set pictureEnd to end of content of pictureRange
+    repeat with candidateField in fields of text object of paragraph 1 of pictureRange
+        set candidateResult to result range of candidateField
+        if field type of candidateField is field embed and start of content of candidateResult is less than or equal to pictureStart and end of content of candidateResult is greater than or equal to pictureEnd then
+            set formulaField to candidateField
+            exit repeat
+        end if
+    end repeat
+end if
+if formulaField is not missing value then
+    if field type of formulaField is field macro button then set macroButtonWrapped to "1"
+    if field type of formulaField is field embed then
+        set formulaCode to content of field code of formulaField
+        repeat while formulaCode starts with " "
+            set formulaCode to text 2 thru -1 of formulaCode
+        end repeat
+        if formulaCode starts with "EMBED VisualTeX.Formula.1" then set oleObject to "1"
+    end if
+end if
+if oleObject is "0" and formulaMarker does not start with "visualtex:v1:deflate:" then error "The selected Word object is not a VisualTeX formula"
 run VB macro macro name "VisualTeX_WriteSelectedDoubleClickScreenBounds"
 return formulaMarker & fieldSeparator & (width of formulaPicture as text) & fieldSeparator & (height of formulaPicture as text) & fieldSeparator & macroButtonWrapped & fieldSeparator & oleObject
 end tell"#,
