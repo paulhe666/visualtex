@@ -56,6 +56,9 @@ Private Const VT_WORD_NUMBERING_FORMAT_CONTROL_ID As String = _
     "VisualTeX.Mac.Word.NumberingFormat"
 Private Const VT_WORD_IMAGE_EDIT_MACRO As String = _
     "VisualTeX_EditImageField"
+' Published class of the Windows LocalServer. macOS writes the same embedded
+' storage so the object stays editable on both platforms.
+Private Const VT_WORD_OLE_PROG_ID As String = "VisualTeX.Formula.1"
 Private Const VT_WORD_IMAGE_MACRO_SCHEMA_VARIABLE As String = _
     "VT_ImageMacroButtonSchema"
 Private Const VT_WORD_IMAGE_MACRO_SCHEMA_VERSION As String = "10"
@@ -4498,11 +4501,11 @@ Failed:
 End Sub
 
 Public Sub VisualTeX_CreateInline()
-    VTWordCreate "inline", False
+    VTWordCreate "inline", False, oleObject:=True
 End Sub
 
 Public Sub VisualTeX_CreateDisplay()
-    VTWordCreate "block", False
+    VTWordCreate "block", False, oleObject:=True
 End Sub
 
 Public Sub VisualTeX_CreateNativeInline()
@@ -4518,7 +4521,7 @@ Public Sub VisualTeX_CreateNativeNumberedDisplay()
 End Sub
 
 Public Sub VisualTeX_CreateNumberedDisplay()
-    VTWordCreate "block", True
+    VTWordCreate "block", True, oleObject:=True
 End Sub
 
 ' Keep every RibbonX callback resolvable from the single adapter module that is
@@ -6915,6 +6918,7 @@ Private Sub VTWordOpenResolvedInlineShape( _
     Dim sourceObjectId As String
     Dim forkCopiedFormula As Boolean
     Dim editBookmarkCreated As Boolean
+    Dim oleObject As Boolean
 
     VTTraceWordDoubleClick _
         "edit-inline-enter", Selection, _
@@ -6994,6 +6998,12 @@ Private Sub VTWordOpenResolvedInlineShape( _
 
     openStage = "build-request"
     sessionId = VTNewUuidV4()
+    oleObject = VTIsVisualTeXOleShape(selectedShape)
+    If oleObject Then
+        ' The embedded JSON, not the AlternativeText cache, is authoritative.
+        VTWriteTextAtomic VTSessionDirectory(sessionId) & "/ole-edit-source.xml", _
+            VTWordOleEditSourceXml(selectedShape)
+    End If
     VTAddWordEditBookmark selectedShape, sessionId
     editBookmarkCreated = True
     sourceObjectId = VTWordEditBookmarkName(sessionId)
@@ -7015,7 +7025,8 @@ Private Sub VTWordOpenResolvedInlineShape( _
         referenceWidthPt, _
         referenceHeightPt, _
         operationName, _
-        forkCopiedFormula)
+        forkCopiedFormula, _
+        oleObject:=oleObject)
     VTTraceWordDoubleClick _
         "edit-inline-resolved", Selection, _
         "formulaId=" & formulaId & _
@@ -7073,6 +7084,45 @@ Private Function VTDispatchVisualTeXImageEditAtSelection( _
         selectedShape, formulaId, displayMode, numbered, encodedMetadata, _
         metadataNeedsWrite, formatNeedsWrite, False
     VTDispatchVisualTeXImageEditAtSelection = True
+End Function
+
+Private Function VTIsVisualTeXOleShape(ByVal candidate As InlineShape) As Boolean
+    If candidate.Type <> wdInlineShapeEmbeddedOLEObject Then Exit Function
+    VTIsVisualTeXOleShape = (candidate.OLEFormat.ProgID = VT_WORD_OLE_PROG_ID)
+End Function
+
+' Keeps only the Flat OPC parts the editor reads: the body, its relationships
+' and the embedded objects. Styles, theme and font tables would make the
+' AppleScriptTask transfer several times larger.
+Private Function VTWordOleEditSourceXml(ByVal formulaShape As InlineShape) As String
+    Dim sourceXml As String
+    Dim result As String
+    Dim partStart As Long
+    Dim partEnd As Long
+    Dim nameStart As Long
+    Dim partName As String
+
+    sourceXml = formulaShape.Range.WordOpenXML
+    result = "<pkg:package xmlns:pkg=""http://schemas.microsoft.com/office/2006/xmlPackage"">"
+    partStart = InStr(1, sourceXml, "<pkg:part ", vbBinaryCompare)
+    Do While partStart > 0
+        partEnd = InStr(partStart, sourceXml, "</pkg:part>", vbBinaryCompare)
+        If partEnd = 0 Then
+            Err.Raise vbObjectError + 7611, "VisualTeX", _
+                "Word returned an incomplete OLE formula package."
+        End If
+        partEnd = partEnd + Len("</pkg:part>")
+        nameStart = InStr(partStart, sourceXml, "pkg:name=""", vbBinaryCompare) + Len("pkg:name=""")
+        partName = Mid$(sourceXml, nameStart, _
+            InStr(nameStart, sourceXml, """", vbBinaryCompare) - nameStart)
+        If partName = "/word/document.xml" Or _
+           partName = "/word/_rels/document.xml.rels" Or _
+           Left$(partName, Len("/word/embeddings/")) = "/word/embeddings/" Then
+            result = result & Mid$(sourceXml, partStart, partEnd - partStart)
+        End If
+        partStart = InStr(partEnd, sourceXml, "<pkg:part ", vbBinaryCompare)
+    Loop
+    VTWordOleEditSourceXml = result & "</pkg:package>"
 End Function
 
 Private Sub VTWordEditInlineShape( _
@@ -11030,7 +11080,8 @@ End Sub
 Private Sub VTWordCreate( _
     ByVal displayMode As String, _
     ByVal numbered As Boolean, _
-    Optional ByVal nativeEquation As Boolean = False)
+    Optional ByVal nativeEquation As Boolean = False, _
+    Optional ByVal oleObject As Boolean = False)
     Dim sessionId As String
     Dim formulaId As String
     Dim pendingMarker As String
@@ -11079,7 +11130,8 @@ Private Sub VTWordCreate( _
         pendingMarker, _
         "", _
         nativeEquation, _
-        requestedFontSizePt)
+        requestedFontSizePt, _
+        oleObject:=oleObject)
     VTWordPerformanceMark "request-serialized"
     launchTiming = _
         VTWriteAndLaunchSession(VT_WORD_HOST, sessionId, requestJson)
@@ -11105,6 +11157,67 @@ Failed:
     On Error GoTo 0
     VTShowError "Word formula creation", errorNumber, errorDescription
 End Sub
+
+' Imports the one-object staging package written by VisualTeX and transfers
+' only its VisualTeX.Formula.1 object, like the SVG picture route. There is no
+' raster fallback: a failure leaves the original formula in place.
+Private Function VTAddWordFormulaOle( _
+    ByVal documentObject As Document, _
+    ByVal targetRange As Range, _
+    ByVal oleDocumentPath As String) As InlineShape
+
+    Dim stagingDocument As Document
+    Dim stagingRange As Range
+    Dim insertionRange As Range
+    Dim targetStart As Long
+    Dim errorNumber As Long
+    Dim errorDescription As String
+
+    targetStart = targetRange.Start
+    On Error GoTo Failed
+    Set stagingDocument = Documents.Add(Visible:=False)
+    Set stagingRange = stagingDocument.Content.Duplicate
+    stagingRange.Collapse wdCollapseStart
+    stagingRange.InsertFile _
+        FileName:=oleDocumentPath, _
+        ConfirmConversions:=False, Link:=False, Attachment:=False
+    If stagingDocument.InlineShapes.Count <> 1 Then
+        Err.Raise vbObjectError + 7612, "VisualTeX", _
+            "Word did not import exactly one VisualTeX OLE formula."
+    End If
+    If Not VTIsVisualTeXOleShape(stagingDocument.InlineShapes(1)) Then
+        Err.Raise vbObjectError + 7612, "VisualTeX", _
+            "Word did not import the staged formula as a VisualTeX OLE object."
+    End If
+    Set stagingRange = stagingDocument.InlineShapes(1).Range.Duplicate
+    documentObject.Activate
+    Set insertionRange = documentObject.Range( _
+        Start:=targetStart, End:=targetRange.End)
+    insertionRange.FormattedText = stagingRange.FormattedText
+    stagingDocument.Saved = True
+    stagingDocument.Close SaveChanges:=wdDoNotSaveChanges
+    Set stagingDocument = Nothing
+    documentObject.Activate
+
+    Set insertionRange = documentObject.Range( _
+        Start:=targetStart, End:=targetStart + 1)
+    If insertionRange.InlineShapes.Count <> 1 Then
+        Err.Raise vbObjectError + 7612, "VisualTeX", _
+            "Word did not transfer exactly one VisualTeX OLE formula."
+    End If
+    Set VTAddWordFormulaOle = insertionRange.InlineShapes(1)
+    Exit Function
+
+Failed:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    If Not stagingDocument Is Nothing Then
+        stagingDocument.Saved = True
+        stagingDocument.Close SaveChanges:=wdDoNotSaveChanges
+        documentObject.Activate
+    End If
+    Err.Raise errorNumber, "VisualTeX Word OLE insertion", errorDescription
+End Function
 
 Private Function VTAddWordFormulaPicture( _
     ByVal documentObject As Document, _
@@ -11550,6 +11663,7 @@ Private Sub VTCommitWordDispatch( _
     Dim imagePath As String
     Dim vectorDocumentPath As String
     Dim fallbackImagePath As String
+    Dim oleDocumentPath As String
     Dim metadata As String
     Dim latexBase64 As String
     Dim ommlBase64 As String
@@ -11685,6 +11799,7 @@ Private Sub VTCommitWordDispatch( _
         dispatch, "vectorDocumentPath")
     fallbackImagePath = VTDispatchOptional( _
         dispatch, "fallbackImagePath")
+    oleDocumentPath = VTDispatchOptional(dispatch, "oleDocumentPath")
     metadata = CStr(dispatch("metadata"))
     latexBase64 = CStr(dispatch("latexBase64"))
     ommlBase64 = CStr(dispatch("ommlBase64"))
@@ -11766,6 +11881,13 @@ Private Sub VTCommitWordDispatch( _
         If Not VTPathFileExists(fallbackImagePath) Then
             Err.Raise vbObjectError + 7406, "VisualTeX", _
                 "VisualTeX Word PNG compatibility preview is missing."
+        End If
+        If Len(oleDocumentPath) > 0 Then
+            VTValidateAbsoluteVisualTeXPath oleDocumentPath
+            If Not VTPathFileExists(oleDocumentPath) Then
+                Err.Raise vbObjectError + 7406, "VisualTeX", _
+                    "VisualTeX Word OLE staging document is missing."
+            End If
         End If
     End If
 
@@ -12306,9 +12428,14 @@ Private Sub VTCommitWordDispatch( _
     If Not targetIsNative Then insertionRange.Collapse wdCollapseStart
     targetDocument.Activate
     transactionStage = "insert-image-replacement"
-    Set stagedCandidate = VTAddWordFormulaPicture( _
-        targetDocument, insertionRange, vectorDocumentPath, _
-        fallbackImagePath)
+    If Len(oleDocumentPath) > 0 Then
+        Set stagedCandidate = VTAddWordFormulaOle( _
+            targetDocument, insertionRange, oleDocumentPath)
+    Else
+        Set stagedCandidate = VTAddWordFormulaPicture( _
+            targetDocument, insertionRange, vectorDocumentPath, _
+            fallbackImagePath)
+    End If
     VTWordPerformanceMark "image-staging-inserted"
     nativeTargetReplaced = targetIsNative
     transactionStage = "detach-image-replacement"

@@ -4879,6 +4879,51 @@ fn materialize_word_svg_package(
     Ok((svg_path, document_path, png_path))
 }
 
+/// Builds `formula-ole.docx`, the staging package whose single
+/// `VisualTeX.Formula.1` object VBA transfers into the document.
+fn materialize_word_ole_package(
+    session: &OfficeFormulaSession,
+    geometry: WordGeometry,
+    metadata: &VisualTeXFormulaMetadata,
+) -> Result<PathBuf, String> {
+    let export = session
+        .export_result
+        .as_ref()
+        .ok_or_else(|| "Word Session has no formula export".to_string())?;
+    let svg = decode_stabilized_word_svg(&export.svg_base64)?;
+    let png = export
+        .png_base64
+        .as_deref()
+        .ok_or_else(|| "Word OLE formulas require a PNG preview".to_string())
+        .and_then(decode_png)?;
+    let emf = super::svg_emf::svg_to_vector_emf(&svg, export.width, export.height)?;
+    let formula = OleFormula {
+        metadata: word_ole::ole_metadata(
+            session.original_ole_metadata.as_ref(),
+            metadata,
+            export.baseline,
+        )?,
+        emf,
+        png,
+    };
+    let storage = word_ole::build_ole_storage(&formula)?;
+    // Word's VML ObjectID is "_" plus a decimal number; derive a stable one
+    // from the formula identity. Word renumbers it if it collides.
+    let object_id = Uuid::parse_str(&session.formula_id)
+        .map(|id| (id.as_u128() as u32) & 0x7FFF_FFFF)
+        .map_err(|error| format!("Word OLE formula id is invalid: {error}"))?;
+    let package = word_ole::build_word_ole_docx(
+        &storage,
+        &formula.emf,
+        geometry.width,
+        geometry.height,
+        object_id,
+    )?;
+    let path = session_directory(OfficeHost::Word, &session.id)?.join(RESULT_WORD_OLE_DOCX_FILE);
+    atomic_write_runtime(&path, &package, 0o600)?;
+    Ok(path)
+}
+
 fn materialize_powerpoint_svg(session: &OfficeFormulaSession) -> Result<PathBuf, String> {
     if session.host != OfficeHost::Powerpoint {
         return Err("PowerPoint SVG materialization requires a PowerPoint Session".to_string());
@@ -4944,11 +4989,15 @@ fn commit_word(
     geometry: WordGeometry,
 ) -> Result<(), String> {
     let commit_started = Instant::now();
-    let numbering_only = word_image_numbering_only_edit(
-        request,
-        session.original_metadata.as_ref(),
-        &decode_metadata(metadata)?,
-    );
+    let committed_metadata = decode_metadata(metadata)?;
+    // A numbering-only edit keeps the existing object. An OLE object must be
+    // rebuilt so its embedded JSON records the new `numbered` state.
+    let numbering_only = !session.ole_object
+        && word_image_numbering_only_edit(
+            request,
+            session.original_metadata.as_ref(),
+            &committed_metadata,
+        );
     let export = session
         .export_result
         .as_ref()
@@ -5000,6 +5049,11 @@ fn commit_word(
         None
     } else {
         Some(prepared_image_artifacts)
+    };
+    let ole_document_path = if session.ole_object {
+        Some(materialize_word_ole_package(session, geometry, &committed_metadata)?)
+    } else {
+        None
     };
     queue_editor_performance(
         OfficeHost::Word,
@@ -5085,6 +5139,13 @@ fn commit_word(
             image_artifacts
                 .as_ref()
                 .map(|artifacts| artifacts.2.to_string_lossy().to_string())
+                .unwrap_or_default(),
+        ),
+        (
+            "oleDocumentPath",
+            ole_document_path
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string())
                 .unwrap_or_default(),
         ),
         ("metadata", metadata.to_string()),

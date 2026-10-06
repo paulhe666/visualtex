@@ -71,6 +71,8 @@ struct WordNativeFormulaSelection {
     width: f64,
     height: f64,
     macro_button_wrapped: bool,
+    /// A `VisualTeX.Formula.1` OLE object rather than a picture.
+    ole_object: bool,
     screen_bounds: WordScreenBounds,
 }
 
@@ -1189,14 +1191,20 @@ pub fn start_double_click_monitor(
                     return;
                 }
 
-                let mut pane_cleanup = std::thread::Builder::new()
-                    .name("visualtex-word-pane-cleanup".to_string())
-                    .spawn(close_word_picture_format_task_pane_with_retries)
-                    .map_err(|error| {
-                        eprintln!("Unable to start Word picture-pane cleanup: {error}");
-                        error
-                    })
-                    .ok();
+                // Word opens its picture-format pane only for pictures. An OLE
+                // formula must never show it, so there is nothing to close.
+                let mut pane_cleanup = if selection.ole_object {
+                    None
+                } else {
+                    std::thread::Builder::new()
+                        .name("visualtex-word-pane-cleanup".to_string())
+                        .spawn(close_word_picture_format_task_pane_with_retries)
+                        .map_err(|error| {
+                            eprintln!("Unable to start Word picture-pane cleanup: {error}");
+                            error
+                        })
+                        .ok()
+                };
                 if crate::office::macos_offline::focus_open_office_editor(&app) {
                     if let Some(handle) = pane_cleanup.take() {
                         let _ = handle.join();
@@ -1209,7 +1217,9 @@ pub fn start_double_click_monitor(
                 // the native fallback never creates a duplicate editor. If Word
                 // skipped the VBA event, use the same strict metadata-only image
                 // edit entry that also supports legacy bare InlineShapes.
-                if selection.macro_button_wrapped {
+                // MacroButton-wrapped pictures and OLE formulas normally reach
+                // VBA through Word's own double-click route.
+                if selection.macro_button_wrapped || selection.ole_object {
                     for delay_ms in [35_u64, 55, 85] {
                         std::thread::sleep(Duration::from_millis(delay_ms));
                         if crate::office::macos_offline::focus_open_office_editor(&app) {
@@ -1374,15 +1384,19 @@ try
     if field type of formulaField is field macro button then set macroButtonWrapped to "1"
 end try
 if formulaMarker does not start with "visualtex:v1:deflate:" then error "The selected Word picture is not a VisualTeX formula"
+set oleObject to "0"
+try
+    if ((inline shape type of formulaPicture) as text) contains "OLE" then set oleObject to "1"
+end try
 run VB macro macro name "VisualTeX_WriteSelectedDoubleClickScreenBounds"
-return formulaMarker & fieldSeparator & (width of formulaPicture as text) & fieldSeparator & (height of formulaPicture as text) & fieldSeparator & macroButtonWrapped
+return formulaMarker & fieldSeparator & (width of formulaPicture as text) & fieldSeparator & (height of formulaPicture as text) & fieldSeparator & macroButtonWrapped & fieldSeparator & oleObject
 end tell"#,
         APPLESCRIPT_QUERY_TIMEOUT,
     )?;
     let fields = output
         .split(WORD_SELECTION_FIELD_SEPARATOR)
         .collect::<Vec<_>>();
-    if fields.len() != 4 {
+    if fields.len() != 5 {
         return Err(format!(
             "Word returned an invalid formula selection payload: {output}"
         ));
@@ -1403,6 +1417,7 @@ end tell"#,
             "1" => true,
             value => return Err(format!("Invalid Word MacroButton state: {value}")),
         },
+        ole_object: fields[4].trim() == "1",
         screen_bounds: read_word_double_click_bounds()?,
     })
 }
@@ -1540,6 +1555,7 @@ mod tests {
                     width: 84.0,
                     height: 21.0,
                     macro_button_wrapped: true,
+                    ole_object: false,
                     screen_bounds: WordScreenBounds {
                         left: 100.0,
                         top: 200.0,
@@ -1575,6 +1591,7 @@ mod tests {
                     width: 72.0,
                     height: 18.0,
                     macro_button_wrapped: false,
+                    ole_object: false,
                     screen_bounds: WordScreenBounds {
                         left: 300.0,
                         top: 400.0,
@@ -1605,6 +1622,7 @@ mod tests {
                     width: 72.0,
                     height: 18.0,
                     macro_button_wrapped: true,
+                    ole_object: false,
                     screen_bounds: WordScreenBounds {
                         left: 300.0,
                         top: 400.0,

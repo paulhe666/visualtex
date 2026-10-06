@@ -245,7 +245,8 @@ Public Function VTRequestJson( _
     Optional ByVal operationName As String = "formula", _
     Optional ByVal forkCopiedFormula As Boolean = False, _
     Optional ByVal formulaLetterFont As String = "", _
-    Optional ByVal wordMathFontName As String = "") As String
+    Optional ByVal wordMathFontName As String = "", _
+    Optional ByVal oleObject As Boolean = False) As String
 
     If Not VTIsCanonicalUuid(sessionId) Then
         Err.Raise vbObjectError + 7203, "VisualTeX", "Invalid VisualTeX Session id."
@@ -327,6 +328,7 @@ Public Function VTRequestJson( _
         """displayMode"":" & VTJsonString(displayMode) & "," & _
         """numbered"":" & VTJsonBoolean(numbered) & "," & _
         """nativeEquation"":" & VTJsonBoolean(nativeEquation) & "," & _
+        """oleObject"":" & VTJsonBoolean(oleObject) & "," & _
         """sourceDocumentId"":" & VTJsonNullableString(sourceDocumentId) & "," & _
         """sourceObjectId"":" & VTJsonNullableString(sourceObjectId) & "," & _
         """encodedMetadata"":" & VTJsonNullableString(encodedMetadata) & "," & _

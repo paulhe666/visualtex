@@ -901,8 +901,8 @@ Word 功能区位于 **VisualTeX** 选项卡。
 
 ## 18.1 新建公式按钮
 
-- **图片行内公式**：插入 VisualTeX 图片行内公式。
-- **图片行间公式**：插入 VisualTeX 图片行间公式。
+- **OLE 行内公式**：插入 VisualTeX OLE 行内公式（与 Windows 版相同的 `VisualTeX.Formula.1` 对象，可在两个平台上编辑）。
+- **OLE 行间公式**：插入 VisualTeX OLE 行间公式。
 - **OMML 行内公式**：插入 Word 原生行内公式。
 - **OMML 行间公式**：插入 Word 原生行间公式。
 - **编辑所选公式**：编辑当前 VisualTeX 公式。

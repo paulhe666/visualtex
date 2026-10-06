@@ -8,12 +8,12 @@
            insertAfterMso="TabInsert">
         <group id="VisualTeX.Mac.Word.Group" label="公式">
           <button id="VisualTeX.Mac.Word.Inline"
-                  label="图片行内公式"
+                  label="OLE 行内公式"
                   size="large"
                   image="VisualTeXWordImageInline"
                   onAction="VTWordRibbonInline"/>
           <button id="VisualTeX.Mac.Word.Display"
-                  label="图片行间公式"
+                  label="OLE 行间公式"
                   size="large"
                   image="VisualTeXWordImageDisplay"
                   onAction="VTWordRibbonDisplay"/>
