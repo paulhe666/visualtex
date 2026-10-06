@@ -4,6 +4,8 @@ use crate::office::sessions::{
     OfficeSessionMode, OfficeSessionStatus, SessionError, VisualTeXFormulaMetadata,
 };
 use crate::office::state::OfficeCompanionState;
+use crate::office::stored_zip::build_stored_zip;
+use crate::office::word_ole::{self, OleFormula};
 use base64::{
     engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD},
     Engine as _,
@@ -48,6 +50,10 @@ const DISPATCH_FILE: &str = "dispatch.txt";
 const RESULT_PNG_FILE: &str = "formula.png";
 const RESULT_SVG_FILE: &str = "formula.svg";
 const RESULT_WORD_SVG_DOCX_FILE: &str = "formula-svg.docx";
+const RESULT_WORD_OLE_DOCX_FILE: &str = "formula-ole.docx";
+/// `Range.WordOpenXML` parts of the OLE formula being edited, written by VBA.
+const WORD_OLE_EDIT_SOURCE_FILE: &str = "ole-edit-source.xml";
+const MAX_WORD_OLE_EDIT_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
 const DOCUMENT_IMPORT_MANIFEST_FILE: &str = "document-import.txt";
 const DOCUMENT_IMPORT_PROGRESS_FILE: &str = "document-import-progress.txt";
 const LATEX_REDRAW_VECTOR_BATCH_FILE: &str = "latex-redraw-vectors.docx";
@@ -227,6 +233,9 @@ struct MacOfflineSessionRequest {
     numbered: bool,
     #[serde(default)]
     native_equation: bool,
+    /// The Word formula is (or becomes) a `VisualTeX.Formula.1` OLE object.
+    #[serde(default)]
+    ole_object: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     native_edit_xml: Option<String>,
     source_document_id: Option<String>,
@@ -1282,6 +1291,8 @@ fn cleanup_session_files_at(
         "native-edit-copy-status.txt", "native-edit-current.bin",
         "native-edit-current.mathml", "native-edit-original.omml",
         "formula.docx",
+        RESULT_WORD_OLE_DOCX_FILE,
+        WORD_OLE_EDIT_SOURCE_FILE,
     ] {
         let path = directory.join(name);
         match fs::remove_file(&path) {
@@ -1396,6 +1407,26 @@ fn word_native_edit_source(request: &MacOfflineSessionRequest) -> Result<super::
     word_native_edit_latex(&xml)
 }
 
+/// The OLE formula selected for editing, read from the Flat OPC parts VBA
+/// copied out of `Range.WordOpenXML`. The embedded JSON is authoritative; the
+/// AlternativeText copy is only Word's cache.
+fn word_ole_edit_source(session_id: &str) -> Result<OleFormula, String> {
+    let path = session_directory(OfficeHost::Word, session_id)?.join(WORD_OLE_EDIT_SOURCE_FILE);
+    let size = fs::metadata(&path)
+        .map_err(|error| format!("The Word OLE formula snapshot is missing: {error}"))?
+        .len();
+    if size == 0 || size > MAX_WORD_OLE_EDIT_SOURCE_BYTES {
+        return Err("The Word OLE formula snapshot has an invalid size".to_string());
+    }
+    let xml = fs::read_to_string(&path)
+        .map_err(|error| format!("Unable to read the Word OLE formula snapshot: {error}"))?;
+    let mut storages = word_ole::visualtex_ole_storages(&xml)?;
+    if storages.len() != 1 {
+        return Err("Select exactly one VisualTeX OLE formula".to_string());
+    }
+    word_ole::read_ole_storage(&storages.remove(0))
+}
+
 fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Result<(), String> {
     if request.protocol_version != OFFLINE_PROTOCOL_VERSION {
         return Err("Unsupported VisualTeX macOS offline protocol version".to_string());
@@ -1416,6 +1447,9 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
         }
     }
     let operation = request.operation.as_deref().unwrap_or("formula");
+    if request.ole_object && (request.host != "word" || !matches!(operation, "formula" | "imageToNative")) {
+        return Err("Only Word formula requests can use a VisualTeX OLE object".to_string());
+    }
     if matches!(operation, "documentImport" | "latexRedraw" | "formulaRestore") {
         if request.host != "word" || request.mode != "create" {
             return Err("Document import is supported only as a new Word operation".to_string());
@@ -2285,11 +2319,23 @@ fn import_request(
         Err(error) => return Err(error.to_string()),
     }
 
-    let mut original_metadata = request
-        .encoded_metadata
-        .as_deref()
-        .map(decode_metadata)
-        .transpose()?;
+    let ole_source = if request.ole_object && request.mode == "edit" {
+        Some(word_ole_edit_source(&request.session_id)?)
+    } else {
+        None
+    };
+    let mut original_metadata = match &ole_source {
+        Some(source) => {
+            let metadata = word_ole::session_metadata(&source.metadata)?;
+            validate_metadata(&metadata)?;
+            Some(metadata)
+        }
+        None => request
+            .encoded_metadata
+            .as_deref()
+            .map(decode_metadata)
+            .transpose()?,
+    };
     if let (Some(metadata), Some(live_font)) = (
         original_metadata.as_mut(),
         request.formula_letter_font.as_ref(),
@@ -2434,6 +2480,8 @@ fn import_request(
             host,
             operation: session_operation,
             native_equation: request.native_equation,
+            // An OLE object converted to native OMML is no longer an OLE output.
+            ole_object: request.ole_object && !request.native_equation,
             formula_id: Some(formula_id),
             source_document_id,
             source_object_id,
@@ -2460,6 +2508,7 @@ fn import_request(
             export_width: None,
             export_height: None,
             original_metadata,
+            original_ole_metadata: ole_source.map(|source| source.metadata),
             auto_commit_on_close: Some(true),
         },
     ) {
@@ -4572,117 +4621,6 @@ fn materialize_result_svg(session: &OfficeFormulaSession) -> Result<PathBuf, Str
 fn decode_stabilized_word_svg(value: &str) -> Result<Vec<u8>, String> {
     let svg = decode_svg(value)?;
     crate::svg_font_stabilizer::stabilize_word_svg_font_outlines(&svg)
-}
-
-fn crc32(bytes: &[u8]) -> u32 {
-    let mut crc = 0xffff_ffff_u32;
-    for byte in bytes {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            let mask = 0_u32.wrapping_sub(crc & 1);
-            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
-        }
-    }
-    !crc
-}
-
-fn push_zip_u16(output: &mut Vec<u8>, value: u16) {
-    output.extend_from_slice(&value.to_le_bytes());
-}
-
-fn push_zip_u32(output: &mut Vec<u8>, value: u32) {
-    output.extend_from_slice(&value.to_le_bytes());
-}
-
-struct StoredZipEntry {
-    name: Vec<u8>,
-    crc: u32,
-    size: u32,
-    offset: u32,
-}
-
-pub(super) fn build_stored_zip<N, C>(entries: &[(N, C)]) -> Result<Vec<u8>, String>
-where
-    N: AsRef<str>,
-    C: AsRef<[u8]>,
-{
-    let entry_count = u16::try_from(entries.len())
-        .map_err(|_| "Word SVG staging package has too many ZIP entries".to_string())?;
-    let mut output = Vec::new();
-    let mut records = Vec::with_capacity(entries.len());
-
-    for (name, contents) in entries {
-        let name = name.as_ref();
-        let contents = contents.as_ref();
-        let name_bytes = name.as_bytes();
-        let name_length = u16::try_from(name_bytes.len())
-            .map_err(|_| "Word SVG staging package contains an overlong ZIP path".to_string())?;
-        let size = u32::try_from(contents.len())
-            .map_err(|_| "Word SVG staging package entry is too large".to_string())?;
-        let offset = u32::try_from(output.len())
-            .map_err(|_| "Word SVG staging package is too large".to_string())?;
-        let checksum = crc32(contents);
-
-        push_zip_u32(&mut output, 0x0403_4b50);
-        push_zip_u16(&mut output, 20);
-        push_zip_u16(&mut output, 0x0800);
-        push_zip_u16(&mut output, 0);
-        push_zip_u16(&mut output, 0);
-        push_zip_u16(&mut output, 33);
-        push_zip_u32(&mut output, checksum);
-        push_zip_u32(&mut output, size);
-        push_zip_u32(&mut output, size);
-        push_zip_u16(&mut output, name_length);
-        push_zip_u16(&mut output, 0);
-        output.extend_from_slice(name_bytes);
-        output.extend_from_slice(contents);
-
-        records.push(StoredZipEntry {
-            name: name_bytes.to_vec(),
-            crc: checksum,
-            size,
-            offset,
-        });
-    }
-
-    let central_offset = u32::try_from(output.len())
-        .map_err(|_| "Word SVG staging package is too large".to_string())?;
-    for record in &records {
-        let name_length = u16::try_from(record.name.len())
-            .map_err(|_| "Word SVG staging package contains an overlong ZIP path".to_string())?;
-        push_zip_u32(&mut output, 0x0201_4b50);
-        push_zip_u16(&mut output, 20);
-        push_zip_u16(&mut output, 20);
-        push_zip_u16(&mut output, 0x0800);
-        push_zip_u16(&mut output, 0);
-        push_zip_u16(&mut output, 0);
-        push_zip_u16(&mut output, 33);
-        push_zip_u32(&mut output, record.crc);
-        push_zip_u32(&mut output, record.size);
-        push_zip_u32(&mut output, record.size);
-        push_zip_u16(&mut output, name_length);
-        push_zip_u16(&mut output, 0);
-        push_zip_u16(&mut output, 0);
-        push_zip_u16(&mut output, 0);
-        push_zip_u16(&mut output, 0);
-        push_zip_u32(&mut output, 0);
-        push_zip_u32(&mut output, record.offset);
-        output.extend_from_slice(&record.name);
-    }
-    let central_size = u32::try_from(output.len())
-        .map_err(|_| "Word SVG staging package is too large".to_string())?
-        .checked_sub(central_offset)
-        .ok_or_else(|| "Word SVG staging package central directory is invalid".to_string())?;
-
-    push_zip_u32(&mut output, 0x0605_4b50);
-    push_zip_u16(&mut output, 0);
-    push_zip_u16(&mut output, 0);
-    push_zip_u16(&mut output, entry_count);
-    push_zip_u16(&mut output, entry_count);
-    push_zip_u32(&mut output, central_size);
-    push_zip_u32(&mut output, central_offset);
-    push_zip_u16(&mut output, 0);
-    Ok(output)
 }
 
 fn build_word_svg_docx(
@@ -8292,6 +8230,7 @@ mod tests {
             display_mode: "inline".to_string(),
             numbered: false,
             native_equation: false,
+            ole_object: false,
             native_edit_xml: None,
             source_document_id: Some("Document".to_string()),
             source_object_id: None,
@@ -8776,6 +8715,7 @@ mod tests {
             display_mode: "inline".to_string(),
             numbered: false,
             native_equation: false,
+            ole_object: false,
             native_edit_xml: None,
             source_document_id: Some("/Users/测试/公式😀.docx".to_string()),
             source_object_id: Some("书签-公式".to_string()),
@@ -9056,6 +8996,7 @@ mod tests {
             display_mode: "block".to_string(),
             numbered: true,
             native_equation: false,
+            ole_object: false,
             native_edit_xml: None,
             source_document_id: Some("Document1".to_string()),
             source_object_id: None,
@@ -9102,6 +9043,7 @@ mod tests {
             display_mode: "inline".to_string(),
             numbered: false,
             native_equation: true,
+            ole_object: false,
             native_edit_xml: None,
             source_document_id: Some("Document1".to_string()),
             source_object_id: Some("VT_E_32345678123442349234".to_string()),
@@ -9401,6 +9343,7 @@ c &= e
             host: OfficeHost::Powerpoint,
             operation: None,
             native_equation: false,
+            ole_object: false,
             formula_id: "12345678-1234-4234-9234-123456789abc".to_string(),
             source_document_id: None,
             source_object_id: None,
@@ -9454,6 +9397,7 @@ c &= e
                 created_at: "1".to_string(),
                 updated_at: "1".to_string(),
             }),
+            original_ole_metadata: None,
             dirty: true,
             status: OfficeSessionStatus::Committing,
             auto_commit_on_close: true,
@@ -9517,6 +9461,7 @@ c &= e
             display_mode: "inline".to_string(),
             numbered: false,
             native_equation: false,
+            ole_object: false,
             native_edit_xml: None,
             source_document_id: Some("Document".to_string()),
             source_object_id: Some("VT_F_12345678-1234-4234-9234-123456789abc".to_string()),

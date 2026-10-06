@@ -172,6 +172,9 @@ pub struct OfficeFormulaSession {
     pub operation: Option<String>,
     #[serde(default)]
     pub native_equation: bool,
+    /// Word output is a `VisualTeX.Formula.1` OLE object, not an SVG picture.
+    #[serde(default)]
+    pub ole_object: bool,
     pub formula_id: String,
     pub source_document_id: Option<String>,
     pub source_object_id: Option<String>,
@@ -195,6 +198,10 @@ pub struct OfficeFormulaSession {
     pub export_height: f64,
     pub export_result: Option<OfficeExportResult>,
     pub original_metadata: Option<VisualTeXFormulaMetadata>,
+    /// The edited OLE object's `VisualTeX.Formula.json`, kept whole so that
+    /// fields written by other VisualTeX builds survive the edit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_ole_metadata: Option<Map<String, Value>>,
     pub dirty: bool,
     pub status: OfficeSessionStatus,
     pub auto_commit_on_close: bool,
@@ -214,6 +221,8 @@ pub struct CreateOfficeSessionInput {
     pub operation: Option<String>,
     #[serde(default)]
     pub native_equation: bool,
+    #[serde(default)]
+    pub ole_object: bool,
     pub formula_id: Option<String>,
     pub source_document_id: Option<String>,
     pub source_object_id: Option<String>,
@@ -230,6 +239,8 @@ pub struct CreateOfficeSessionInput {
     pub export_width: Option<f64>,
     pub export_height: Option<f64>,
     pub original_metadata: Option<VisualTeXFormulaMetadata>,
+    #[serde(default)]
+    pub original_ole_metadata: Option<Map<String, Value>>,
     pub auto_commit_on_close: Option<bool>,
 }
 
@@ -581,6 +592,7 @@ impl SessionStore {
             host: input.host,
             operation: input.operation,
             native_equation: input.native_equation,
+            ole_object: input.ole_object,
             formula_id,
             source_document_id: input.source_document_id,
             source_object_id: input.source_object_id,
@@ -598,6 +610,7 @@ impl SessionStore {
             export_height: input.export_height.unwrap_or_default(),
             export_result: None,
             original_metadata: input.original_metadata,
+            original_ole_metadata: input.original_ole_metadata,
             dirty: false,
             status: OfficeSessionStatus::Created,
             auto_commit_on_close: input.auto_commit_on_close.unwrap_or(true),
@@ -880,6 +893,7 @@ mod tests {
             host: OfficeHost::Word,
             operation: None,
             native_equation: false,
+            ole_object: false,
             formula_id: None,
             source_document_id: None,
             source_object_id: None,
@@ -896,6 +910,7 @@ mod tests {
             export_width: None,
             export_height: None,
             original_metadata: None,
+            original_ole_metadata: None,
             auto_commit_on_close: Some(true),
         }
     }

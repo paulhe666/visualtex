@@ -33,6 +33,8 @@ zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate
 tar = "0.4"
 sha2 = "0.10"
 quick-xml = "0.41"
+cfb = "0.15.0"
+usvg = { version = "0.48.1", default-features = false }
 uuid = { version = "1", features = ["v4", "serde"] }
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-single-instance = "2.4.2"

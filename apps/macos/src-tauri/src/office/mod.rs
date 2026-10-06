@@ -11,7 +11,10 @@ mod powerpoint_omml;
 pub mod server;
 pub mod sessions;
 pub mod state;
+pub mod stored_zip;
+pub mod svg_emf;
 pub mod word_native;
 pub mod word_image_alignment;
+pub mod word_ole;
 
 pub use lifecycle::initialize;

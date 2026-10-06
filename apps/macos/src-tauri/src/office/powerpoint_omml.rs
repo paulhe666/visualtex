@@ -353,18 +353,18 @@ mod tests {
     }
     #[test] fn reads_untagged_native_math_and_rejects_plain_text() {
         let entries=clipboard_entries(&sample(),24.0,false,false,false).unwrap();
-        let bytes=super::super::macos_offline::build_stored_zip(&entries).unwrap();
+        let bytes=super::super::stored_zip::build_stored_zip(&entries).unwrap();
         let equation=native_equation_from_clipboard(&bytes).unwrap();
         assert_eq!(equation.matches("<m:f>").count(),1);
         assert_eq!(to_latex::from_omml(&equation).unwrap().latex,r"\frac{x+1}{2}");
         assert!(!equation.contains("lc:") && !equation.contains("VisualTeX"));
         let mut invalid=entries.clone();
         invalid[2].1=invalid[2].1.replace("<a:p>","<a:p><a:r><a:t>text</a:t></a:r>");
-        let invalid=super::super::macos_offline::build_stored_zip(&invalid).unwrap();
+        let invalid=super::super::stored_zip::build_stored_zip(&invalid).unwrap();
         assert!(native_equation_from_clipboard(&invalid).is_err());
         let mut merged=entries;
         merged[2].1=merged[2].1.replace("</m:oMathPara>",&format!("{}</m:oMathPara>",sample()));
-        let merged=super::super::macos_offline::build_stored_zip(&merged).unwrap();
+        let merged=super::super::stored_zip::build_stored_zip(&merged).unwrap();
         assert_eq!(native_equation_from_clipboard(&merged).unwrap().matches("<m:f>").count(),2);
     }
     #[test] fn explicit_paragraph_boundaries_only_for_display() {
@@ -388,7 +388,7 @@ mod tests {
     #[test] fn preserves_full_paragraph_format_without_copying_original_text() {
         let mut source=clipboard_entries(&sample(),24.0,false,false,false).unwrap();
         source[2].1=source[2].1.replace("<a:p>","<a:p><a:pPr algn=\"r\"><a:spcBef><a:spcPts val=\"1100\"/></a:spcBef><a:buAutoNum type=\"arabicPeriod\"/></a:pPr><a:r><a:t>PRIVATE_ORIGINAL_TEXT</a:t></a:r>");
-        let zip=super::super::macos_offline::build_stored_zip(&source).unwrap();
+        let zip=super::super::stored_zip::build_stored_zip(&source).unwrap();
         let fresh=clipboard_entries(&sample(),24.0,true,true,true).unwrap();
         let result=preserve_leading_paragraph(fresh,&zip,1).unwrap();
         let xml=std::str::from_utf8(&result.iter().find(|(n,_)|n=="clipboard/drawings/drawing1.xml").unwrap().1).unwrap();
@@ -404,7 +404,7 @@ mod tests {
             let fresh=clipboard_entries(&sample(),24.0,true,true,trailing).unwrap();
             let index=std::env::var("VISUALTEX_PPT_CONTEXT_PARAGRAPH").unwrap_or("1".into()).parse().unwrap();
             let entries=preserve_leading_paragraph(fresh,&context,index).unwrap();
-            std::fs::write(output,super::super::macos_offline::build_stored_zip(&entries).unwrap()).unwrap();
+            std::fs::write(output,super::super::stored_zip::build_stored_zip(&entries).unwrap()).unwrap();
         }
     }
     #[test]
@@ -419,7 +419,7 @@ mod tests {
             assert!(name.chars().all(|c|c.is_ascii_alphanumeric()||c=='_'));
             let xml=String::from_utf8(URL_SAFE_NO_PAD.decode(sample["ommlBase64"].as_str().unwrap()).unwrap()).unwrap();
             let entries=clipboard_entries(&xml,24.0,false,false,false).unwrap();
-            std::fs::write(directory.join(format!("{name}.bin")),super::super::macos_offline::build_stored_zip(&entries).unwrap()).unwrap();
+            std::fs::write(directory.join(format!("{name}.bin")),super::super::stored_zip::build_stored_zip(&entries).unwrap()).unwrap();
         }
     }
 
@@ -427,7 +427,7 @@ mod tests {
         if let Ok(directory)=std::env::var("VISUALTEX_PPT_NATIVE_FIXTURE_DIR") {
             for (name,size,display,l,r) in [("inline",24.0,false,false,false),("inline36",36.0,false,false,false),("display00",24.0,true,false,false),("display10",24.0,true,true,false),("display01",24.0,true,false,true),("display11",24.0,true,true,true)] {
                 let entries=clipboard_entries(&sample(),size,display,l,r).unwrap();
-                let bytes=super::super::macos_offline::build_stored_zip(&entries).unwrap();
+                let bytes=super::super::stored_zip::build_stored_zip(&entries).unwrap();
                 std::fs::write(std::path::Path::new(&directory).join(format!("native-{name}.bin")),bytes).unwrap();
             }
         }
