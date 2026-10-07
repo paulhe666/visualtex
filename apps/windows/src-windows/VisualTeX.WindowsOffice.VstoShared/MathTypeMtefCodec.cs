@@ -428,7 +428,18 @@ internal static partial class MathTypeMtefCodec
         NormalizeMathMlPrescripts(normalized);
         NormalizeMathTypeExportedTabPiles(normalized);
         MaterializeLooseFenceGroups(normalized);
-        return CanonicalizeMathMl(normalized, inheritedMathVariant: null);
+        var structure = CanonicalizeMathMl(normalized, inheritedMathVariant: null);
+        var tokenColors = normalized.DescendantsAndSelf()
+            .Where(element => element.Name.LocalName is "mi" or "mn" or "mo" or "mtext"
+                && !string.IsNullOrWhiteSpace(element.Value))
+            .Select(element => MathMlColorContract.Effective(element))
+            .Select(color => string.Equals(color, "#000000", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : color)
+            .ToArray();
+        return tokenColors.Any(color => color is not null)
+            ? structure + "|colors(" + string.Join(",", tokenColors.Select(color => color ?? "-")) + ")"
+            : structure;
     }
 
     internal static void NormalizeMathMlPrescripts(XElement root)
@@ -1699,13 +1710,152 @@ internal static partial class MathTypeMtefCodec
         }
     }
 
-    // MTEF logical sizes are stream state, not properties local to a TMPL.
+    private sealed class MtefColorPlan
+    {
+        internal Dictionary<string, int> Indexes { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+        internal List<byte> InsertedDefinitions { get; } = new();
+        internal int InsertedCount { get; set; }
+        internal int PrefixDefinitionCount { get; set; }
+    }
+
+    private static string? ReadRgbColorDefinition(
+        byte[] data,
+        (byte Type, int Start, int End) record)
+    {
+        if (record.Type != RecordColorDef) return null;
+        Require(data, record.Start, 8);
+        var options = data[record.Start + 1];
+        if ((options & 0x01) != 0) return null; // CMYK is preserved but not reused for RGB input.
+        var red = data[record.Start + 2] | (data[record.Start + 3] << 8);
+        var green = data[record.Start + 4] | (data[record.Start + 5] << 8);
+        var blue = data[record.Start + 6] | (data[record.Start + 7] << 8);
+        if (red > 1000 || green > 1000 || blue > 1000) return null;
+        static int ToByte(int component) =>
+            Math.Min(255, Math.Max(0, (int)Math.Round(component * 255d / 1000d,
+                MidpointRounding.AwayFromZero)));
+        return $"#{ToByte(red):X2}{ToByte(green):X2}{ToByte(blue):X2}";
+    }
+
+    private static void AppendRgbColorDefinition(string color, List<byte> output)
+    {
+        var normalized = MathMlColorContract.Normalize(color)
+            ?? throw new InvalidDataException($"Unsupported MathType formula color '{color}'.");
+        static ushort ToMtef(byte component) => checked((ushort)Math.Round(
+            component * 1000d / 255d,
+            MidpointRounding.AwayFromZero));
+        var red = ToMtef(byte.Parse(normalized.Substring(1, 2), NumberStyles.HexNumber,
+            CultureInfo.InvariantCulture));
+        var green = ToMtef(byte.Parse(normalized.Substring(3, 2), NumberStyles.HexNumber,
+            CultureInfo.InvariantCulture));
+        var blue = ToMtef(byte.Parse(normalized.Substring(5, 2), NumberStyles.HexNumber,
+            CultureInfo.InvariantCulture));
+        output.AddRange(new byte[]
+        {
+            RecordColorDef,
+            0,
+            (byte)(red & 0xFF), (byte)(red >> 8),
+            (byte)(green & 0xFF), (byte)(green >> 8),
+            (byte)(blue & 0xFF), (byte)(blue >> 8),
+        });
+    }
+
+    private static MtefColorPlan BuildColorPlan(
+        XElement preparedMath,
+        byte[] sourceMtef,
+        IReadOnlyList<(byte Type, int Start, int End)> rootFormattingRecords,
+        bool requiresNativeBlack)
+    {
+        var plan = new MtefColorPlan();
+        var prefix = ReadPrefixLayout(sourceMtef);
+        var prefixColors = prefix.Records.Where(record => record.Type == RecordColorDef).ToArray();
+        var rootColors = rootFormattingRecords.Where(record => record.Type == RecordColorDef).ToArray();
+        plan.PrefixDefinitionCount = prefixColors.Length;
+
+        var prefixValues = prefixColors.Select(record => ReadRgbColorDefinition(sourceMtef, record)).ToArray();
+        var rootValues = rootColors.Select(record => ReadRgbColorDefinition(sourceMtef, record)).ToArray();
+        for (var index = 0; index < prefixValues.Length; index++)
+            if (prefixValues[index] is { } color && !plan.Indexes.ContainsKey(color))
+                plan.Indexes[color] = index + 1;
+
+        var requested = preparedMath.DescendantsAndSelf()
+            .Select(MathMlColorContract.Explicit)
+            .Where(color => color is not null)
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (requiresNativeBlack && prefixValues.Length + rootValues.Length == 0)
+            requested.Insert(0, "#000000");
+
+        var newColors = new List<string>();
+        foreach (var color in requested)
+        {
+            if (plan.Indexes.ContainsKey(color)
+                || rootValues.Any(existing => string.Equals(existing, color,
+                    StringComparison.OrdinalIgnoreCase))
+                || newColors.Contains(color, StringComparer.OrdinalIgnoreCase))
+                continue;
+            newColors.Add(color);
+        }
+        plan.InsertedCount = newColors.Count;
+        for (var index = 0; index < newColors.Count; index++)
+        {
+            var color = newColors[index];
+            plan.Indexes[color] = prefixValues.Length + index + 1;
+            AppendRgbColorDefinition(color, plan.InsertedDefinitions);
+        }
+        for (var index = 0; index < rootValues.Length; index++)
+            if (rootValues[index] is { } color && !plan.Indexes.ContainsKey(color))
+                plan.Indexes[color] = prefixValues.Length + plan.InsertedCount + index + 1;
+        return plan;
+    }
+
+    // MTEF logical sizes and colors are stream state, not properties local to a TMPL.
     // Carry that state with this one emission buffer so nested templates can
     // restore their parent size without global/thread-local mutable state.
     private sealed class MtefWriter : List<byte>
     {
+        private readonly IReadOnlyDictionary<string, int> _colorIndexes;
         internal byte ContentSize { get; private set; } = RecordFull;
         internal byte SymbolSize => ContentSize == RecordFull ? RecordSym : RecordSubSym;
+        internal int CurrentColorIndex { get; private set; }
+        internal int? ExplicitColorIndex { get; private set; }
+
+        internal MtefWriter(
+            IReadOnlyDictionary<string, int>? colorIndexes = null,
+            int currentColorIndex = 0,
+            int? explicitColorIndex = null)
+        {
+            _colorIndexes = colorIndexes ?? new Dictionary<string, int>();
+            CurrentColorIndex = currentColorIndex;
+            ExplicitColorIndex = explicitColorIndex;
+        }
+
+        // Scratch emission is inspected as one standalone OBJECT and then copied
+        // into this writer. Stream state already exists in the destination; if
+        // it is inherited here, a native COLOR transition precedes the scratch
+        // CHAR and prevents the compact EMBELL representation from being used.
+        // Keep the palette available for an explicitly colored scratch node,
+        // but start its detached byte stream from neutral state.
+        internal MtefWriter CreateScratch() => new(_colorIndexes);
+
+        internal IDisposable EnterExplicitColor(string color)
+        {
+            var normalized = MathMlColorContract.Normalize(color)
+                ?? throw new InvalidDataException($"Unsupported MathType formula color '{color}'.");
+            if (!_colorIndexes.TryGetValue(normalized, out var index))
+                throw new InvalidDataException(
+                    $"MathType formula color {normalized} has no MTEF palette definition.");
+            return new ColorScope(this, index);
+        }
+
+        internal void EmitNativeColor(int nativeDefaultIndex)
+        {
+            var index = ExplicitColorIndex ?? nativeDefaultIndex;
+            Add(RecordColor);
+            WriteUnsigned(this, index);
+            CurrentColorIndex = index;
+        }
 
         internal IDisposable EnterScriptSize()
         {
@@ -1732,6 +1882,37 @@ internal static partial class MathTypeMtefCodec
                 writer.Add(_parent);
             }
         }
+
+        private sealed class ColorScope : IDisposable
+        {
+            private MtefWriter? _writer;
+            private readonly int _previousColorIndex;
+            private readonly int? _previousExplicitColorIndex;
+
+            internal ColorScope(MtefWriter writer, int index)
+            {
+                _writer = writer;
+                _previousColorIndex = writer.CurrentColorIndex;
+                _previousExplicitColorIndex = writer.ExplicitColorIndex;
+                writer.ExplicitColorIndex = index;
+                if (writer.CurrentColorIndex != index)
+                    writer.EmitNativeColor(index);
+            }
+
+            public void Dispose()
+            {
+                var writer = _writer;
+                if (writer is null) return;
+                _writer = null;
+                writer.ExplicitColorIndex = _previousExplicitColorIndex;
+                if (writer.CurrentColorIndex != _previousColorIndex)
+                {
+                    writer.Add(RecordColor);
+                    WriteUnsigned(writer, _previousColorIndex);
+                    writer.CurrentColorIndex = _previousColorIndex;
+                }
+            }
+        }
     }
 
     private static byte[] BuildRootStructure(
@@ -1739,17 +1920,20 @@ internal static partial class MathTypeMtefCodec
         byte[] sourceMtef,
         out byte[] prefixDefinitions)
     {
-        var rootFormatting = new List<byte>();
-        var retainedColors = ReadPrefixLayout(sourceMtef).Colors
-            + CopyRootLeadingFormattingRecords(sourceMtef, rootFormatting);
+        var prefixLayout = ReadPrefixLayout(sourceMtef);
+        var rootFormattingRecords = ReadRootLeadingFormattingRecords(sourceMtef);
+        var retainedColors = prefixLayout.Colors
+            + rootFormattingRecords.Count(record => record.Type == RecordColorDef);
         var preparedMath = PrepareMathForMathType(math);
-        var requiredDefinitions = new List<byte>();
         prefixDefinitions = Array.Empty<byte>();
         var topLevelElements = SignificantChildren(preparedMath)
             .OfType<XElement>()
             .Where(element => element.Name.LocalName is not ("annotation" or "annotation-xml"))
             .ToArray();
-        if (topLevelElements.Length == 1
+        var hasExplicitColor = preparedMath.DescendantsAndSelf()
+            .Any(element => MathMlColorContract.Explicit(element) is not null);
+        if (!hasExplicitColor
+            && topLevelElements.Length == 1
             && topLevelElements[0].Name.LocalName == "mtable")
         {
             // Font/encoding definitions are global MTEF records. MathType accepts
@@ -1791,19 +1975,41 @@ internal static partial class MathTypeMtefCodec
             }
         }
 
-        // The ordinary template/matrix writer does use COLOR 1 in several native
-        // structures, so preserve the historical default-palette guarantee there.
-        if (retainedColors == 0
-            && MathTypeEmissionRequiresColorDefinition(
+        // The ordinary template/matrix writer uses a native palette entry for
+        // several structures. Add that black entry only when the original had no
+        // palette, then append the exact RGB colors requested by the editor.
+        var colorPlan = BuildColorPlan(
+            preparedMath,
+            sourceMtef,
+            rootFormattingRecords,
+            MathTypeEmissionRequiresColorDefinition(
                 preparedMath,
-                topLevelTableIsAlignedPile: false))
-        {
-            requiredDefinitions.AddRange(
-                new byte[] { RecordColorDef, 0, 0, 0, 0, 0, 0, 0 });
-        }
-        prefixDefinitions = requiredDefinitions.ToArray();
+                topLevelTableIsAlignedPile: false));
+        prefixDefinitions = colorPlan.InsertedDefinitions.ToArray();
 
-        var output = new MtefWriter { RecordLine, 0 };
+        var rootFormatting = new List<byte>();
+        // Once MathML carries explicit colors, those attributes are the source
+        // of truth for the rewritten stream. A leading MTEF COLOR is state for
+        // the first object, not an independent document default. Re-copying it
+        // makes a later uncolored sibling inherit that first object's color.
+        // Keep definitions and all other native formatting, but let EmitNode
+        // recreate the COLOR transitions from the actual MathML scopes.
+        var retainedRootFormatting = hasExplicitColor
+            ? rootFormattingRecords.Where(record => record.Type != RecordColor).ToArray()
+            : rootFormattingRecords;
+        CopyRootLeadingFormattingRecords(
+            sourceMtef,
+            retainedRootFormatting,
+            rootFormatting,
+            colorPlan.PrefixDefinitionCount,
+            colorPlan.InsertedCount,
+            out var currentColorIndex);
+
+        var output = new MtefWriter(colorPlan.Indexes, currentColorIndex)
+        {
+            RecordLine,
+            0,
+        };
         // Preserve MathType's root-level formatting state (notably COLOR_DEF /
         // COLOR) from the source equation. MathType 7 writes these records even
         // when the visible formula is plain black; dropping them produced OLEs
@@ -1811,7 +2017,7 @@ internal static partial class MathTypeMtefCodec
         // reinterpret with the wrong expandable-fence family.
         output.AddRange(rootFormatting);
         EmitExplicitFontDefinitions(preparedMath, sourceMtef, output);
-        EmitContainerChildren(preparedMath, output, inheritedMathVariant: null);
+        EmitNode(preparedMath, output);
         output.Add(RecordEnd); // root line
         output.Add(RecordEnd); // equation
         return output.ToArray();
@@ -1882,19 +2088,63 @@ internal static partial class MathTypeMtefCodec
         return prefix.Root;
     }
 
-    private static int CopyRootLeadingFormattingRecords(
+    private static void CopyRootLeadingFormattingRecords(
+        byte[] sourceMtef,
+        IReadOnlyList<(byte Type, int Start, int End)> records,
+        List<byte> output,
+        int prefixDefinitionCount,
+        int insertedDefinitionCount,
+        out int currentColorIndex)
+    {
+        currentColorIndex = ReadPrefixCurrentColorIndex(sourceMtef);
+        foreach (var record in records)
+        {
+            if (record.Type == RecordColor && insertedDefinitionCount != 0)
+            {
+                var position = record.Start + 1;
+                var index = ReadUnsigned(sourceMtef, ref position);
+                var remapped = index > prefixDefinitionCount
+                    ? index + insertedDefinitionCount
+                    : index;
+                output.Add(RecordColor);
+                WriteUnsigned(output, remapped);
+                currentColorIndex = remapped;
+                continue;
+            }
+            for (var index = record.Start; index < record.End; index++)
+                output.Add(sourceMtef[index]);
+            if (record.Type == RecordColor)
+            {
+                var position = record.Start + 1;
+                currentColorIndex = ReadUnsigned(sourceMtef, ref position);
+            }
+        }
+    }
+
+    private static void CopyRootLeadingFormattingRecords(
         byte[] sourceMtef,
         List<byte> output)
     {
-        var colorDefinitions = 0;
-        foreach (var record in ReadRootLeadingFormattingRecords(sourceMtef))
+        var records = ReadRootLeadingFormattingRecords(sourceMtef);
+        CopyRootLeadingFormattingRecords(
+            sourceMtef,
+            records,
+            output,
+            ReadPrefixLayout(sourceMtef).Colors,
+            insertedDefinitionCount: 0,
+            out _);
+    }
+
+    private static int ReadPrefixCurrentColorIndex(byte[] sourceMtef)
+    {
+        var color = 0;
+        foreach (var record in ReadPrefixLayout(sourceMtef).Records)
         {
-            if (record.Type == RecordColorDef)
-                colorDefinitions++;
-            for (var index = record.Start; index < record.End; index++)
-                output.Add(sourceMtef[index]);
+            if (record.Type != RecordColor) continue;
+            var position = record.Start + 1;
+            color = ReadUnsigned(sourceMtef, ref position);
         }
-        return colorDefinitions;
+        return color;
     }
 
     private static IReadOnlyList<(byte Type, int Start, int End)>
@@ -3496,6 +3746,18 @@ internal static partial class MathTypeMtefCodec
 
     private static void EmitNode(XNode node, MtefWriter output)
     {
+        if (node is XElement element
+            && MathMlColorContract.Explicit(element) is { } color)
+        {
+            using (output.EnterExplicitColor(color))
+                EmitNodeCore(node, output);
+            return;
+        }
+        EmitNodeCore(node, output);
+    }
+
+    private static void EmitNodeCore(XNode node, MtefWriter output)
+    {
         if (node is XText text)
         {
             EmitText(text.Value, TypefaceText, output);
@@ -4565,7 +4827,7 @@ internal static partial class MathTypeMtefCodec
     private static bool TryEmitSingleCharacterEmbellishment(
         XElement body,
         string over,
-        List<byte> output)
+        MtefWriter output)
     {
         var code = NormalizeAccentMark(over) switch
         {
@@ -4590,7 +4852,7 @@ internal static partial class MathTypeMtefCodec
         // Re-resolving just a typeface here loses special operator glyphs as well
         // as styled identifiers; keeping their bytes makes the invariant apply
         // to all existing and future character mappings, not an accent whitelist.
-        var character = new MtefWriter();
+        var character = output.CreateScratch();
         // Use the actual ordinary-object writer, not the fixed-glyph shortcut.
         // A large/composite operator owns a template, possibly multiple styled
         // glyphs. It must receive a group accent around that same native object.
@@ -4998,11 +5260,8 @@ internal static partial class MathTypeMtefCodec
         output.Add(RecordEnd);
     }
 
-    private static void EmitColor(int index, List<byte> output)
-    {
-        output.Add(RecordColor);
-        WriteUnsigned(output, index);
-    }
+    private static void EmitColor(int index, MtefWriter output) =>
+        output.EmitNativeColor(index);
 
     private static void EmitMathTypeColoredLine(
         XElement element,
@@ -6188,10 +6447,12 @@ internal static partial class MathTypeMtefCodec
         };
         private readonly List<FontDefinition> _fontDefinitions = new();
         private readonly List<FontStyleDefinition> _fontStyleDefinitions = new();
+        private readonly List<string?> _colorDefinitions = new();
         private readonly Dictionary<int, byte> _builtInCharacterStyles = new();
         private readonly Dictionary<int, int> _builtInFontDefinitions = new();
         private int _position;
         private int _structureDepth;
+        private int _currentColorIndex;
 
         private StructureScope EnterStructure()
         {
@@ -6228,6 +6489,22 @@ internal static partial class MathTypeMtefCodec
             foreach (var record in prefix.Records)
             {
                 if (record.Type == RecordEqnPrefs) continue;
+                if (record.Type == RecordColorDef)
+                {
+                    _position = record.Start;
+                    ReadColorDefinitionRecord();
+                    if (_position != record.End)
+                        throw new InvalidDataException($"MTEF color definition reader diverged at offset {record.Start}.");
+                    continue;
+                }
+                if (record.Type == RecordColor)
+                {
+                    _position = record.Start + 1;
+                    SetCurrentColorIndex(ReadUnsigned(_data, ref _position));
+                    if (_position != record.End)
+                        throw new InvalidDataException($"MTEF color reader diverged at offset {record.Start}.");
+                    continue;
+                }
                 if (record.Type is not RecordEncodingDef and not RecordFontDef and not RecordFontStyleDef)
                     continue;
                 _position = record.Start;
@@ -6538,7 +6815,11 @@ internal static partial class MathTypeMtefCodec
                 }
                 if (record == RecordTemplate)
                 {
+                    var templateColor = CurrentMathColor;
                     var template = ReadTemplate();
+                    template.MathColor = templateColor;
+                    if (template.Node is not null)
+                        ApplyMathColor(template.Node, templateColor);
                     if (template.ScriptKind != 0)
                     {
                         if (template.ScriptPrecedes)
@@ -6884,6 +7165,7 @@ internal static partial class MathTypeMtefCodec
             }
             else if (rightPrimes.Length > 0)
                 token = new XElement("msup", token, new XElement("mo", rightPrimes.ToString()));
+            ApplyMathColor(token, CurrentMathColor);
             return token;
         }
 
@@ -7063,7 +7345,8 @@ internal static partial class MathTypeMtefCodec
                 var end = start + 1;
                 while (end < children.Length && IsNumericPart(children[end])
                        && (int?)children[end].Attribute("data-mtef-explicit-typeface") == face
-                       && (string?)children[end].Attribute("mathvariant") == (string?)first.Attribute("mathvariant"))
+                       && (string?)children[end].Attribute("mathvariant") == (string?)first.Attribute("mathvariant")
+                       && (string?)children[end].Attribute("mathcolor") == (string?)first.Attribute("mathcolor"))
                     end++;
                 var run = new StringBuilder();
                 for (var index = start; index < end; index++) run.Append(children[index].Value);
@@ -7080,6 +7363,65 @@ internal static partial class MathTypeMtefCodec
             static bool IsNumericPart(XElement token) => !token.HasElements
                 && token.Name.LocalName is "mn" or "mi"
                 && token.Value.Length > 0 && token.Value.All(c => char.IsDigit(c) || c is '.' or '\u066B');
+        }
+
+        private void ReadColorDefinitionRecord()
+        {
+            Expect(RecordColorDef);
+            var options = ReadByte();
+            var cmyk = (options & 0x01) != 0;
+            var components = new int[cmyk ? 4 : 3];
+            for (var index = 0; index < components.Length; index++)
+            {
+                Require(_data, _position, 2);
+                components[index] = _data[_position] | (_data[_position + 1] << 8);
+                _position += 2;
+            }
+            if ((options & 0x04) != 0)
+                _ = ReadNullTerminatedString(_data, ref _position);
+            if (components.Any(component => component is < 0 or > 1000))
+            {
+                _colorDefinitions.Add(null);
+                return;
+            }
+            static int ToByte(int component) => Math.Min(255, Math.Max(0, (int)Math.Round(
+                component * 255d / 1000d,
+                MidpointRounding.AwayFromZero)));
+            if (!cmyk)
+            {
+                _colorDefinitions.Add(
+                    $"#{ToByte(components[0]):X2}{ToByte(components[1]):X2}{ToByte(components[2]):X2}");
+                return;
+            }
+            var cyan = components[0] / 1000d;
+            var magenta = components[1] / 1000d;
+            var yellow = components[2] / 1000d;
+            var black = components[3] / 1000d;
+            _colorDefinitions.Add(
+                $"#{Math.Min(255, Math.Max(0, (int)Math.Round(255d * (1d - cyan) * (1d - black)))):X2}"
+                + $"{Math.Min(255, Math.Max(0, (int)Math.Round(255d * (1d - magenta) * (1d - black)))):X2}"
+                + $"{Math.Min(255, Math.Max(0, (int)Math.Round(255d * (1d - yellow) * (1d - black)))):X2}");
+        }
+
+        private void SetCurrentColorIndex(int index)
+        {
+            if (index < 0 || index > _colorDefinitions.Count)
+                throw new InvalidDataException(
+                    $"MathType MTEF COLOR index {index} exceeds {_colorDefinitions.Count} definitions.");
+            _currentColorIndex = index;
+        }
+
+        private string? CurrentMathColor =>
+            _currentColorIndex <= 0 || _currentColorIndex > _colorDefinitions.Count
+                ? null
+                : string.Equals(_colorDefinitions[_currentColorIndex - 1], "#000000",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : _colorDefinitions[_currentColorIndex - 1];
+
+        private static void ApplyMathColor(XElement element, string? color)
+        {
+            if (color is not null) element.SetAttributeValue("mathcolor", color);
         }
 
         private static void AppendNode(XElement row, XElement node)
@@ -7103,8 +7445,10 @@ internal static partial class MathTypeMtefCodec
                     if (precedingText is not null
                         && precedingText.Name.LocalName == "mtext"
                         && !precedingText.HasElements
-                        && string.Equals((string?)precedingText.Attribute("mathvariant") ?? "normal",
-                            (string?)node.Attribute("mathvariant") ?? "normal", StringComparison.OrdinalIgnoreCase))
+                         && string.Equals((string?)precedingText.Attribute("mathvariant") ?? "normal",
+                             (string?)node.Attribute("mathvariant") ?? "normal", StringComparison.OrdinalIgnoreCase)
+                         && string.Equals((string?)precedingText.Attribute("mathcolor") ?? string.Empty,
+                             (string?)node.Attribute("mathcolor") ?? string.Empty, StringComparison.OrdinalIgnoreCase))
                     {
                         precedingText.Value += new string(' ', trailingTextSpaces.Length) + node.Value;
                         foreach (var space in trailingTextSpaces) space.Remove();
@@ -7129,6 +7473,10 @@ internal static partial class MathTypeMtefCodec
                 && string.Equals(
                     (string?)previous.Attribute("mathvariant") ?? string.Empty,
                     (string?)node.Attribute("mathvariant") ?? string.Empty,
+                    StringComparison.OrdinalIgnoreCase)
+                && string.Equals(
+                    (string?)previous.Attribute("mathcolor") ?? string.Empty,
+                    (string?)node.Attribute("mathcolor") ?? string.Empty,
                     StringComparison.OrdinalIgnoreCase)
                 && !previous.HasElements
                 && !node.HasElements)
@@ -7164,6 +7512,7 @@ internal static partial class MathTypeMtefCodec
         {
             internal byte ScriptKind { get; set; }
             internal bool ScriptPrecedes { get; set; }
+            internal string? MathColor { get; set; }
             internal XElement? Node { get; set; }
             internal XElement? Subscript { get; set; }
             internal XElement? Superscript { get; set; }
@@ -7540,6 +7889,12 @@ internal static partial class MathTypeMtefCodec
 
         private static XNode BuildScriptNode(XNode baseNode, ParsedTemplate template)
         {
+            XNode WithColor(XNode node)
+            {
+                if (node is XElement element)
+                    ApplyMathColor(element, template.MathColor);
+                return node;
+            }
             var sub = template.Subscript is null
                 ? new XElement("mrow")
                 : CollapseRow(template.Subscript);
@@ -7547,9 +7902,9 @@ internal static partial class MathTypeMtefCodec
                 ? new XElement("mrow")
                 : CollapseRow(template.Superscript);
             if (template.ScriptPrecedes)
-                return new XElement("mmultiscripts", baseNode, new XElement("mprescripts"),
+                return WithColor(new XElement("mmultiscripts", baseNode, new XElement("mprescripts"),
                     template.ScriptKind == TemplateSup ? new XElement("none") : sub,
-                    template.ScriptKind == TemplateSub ? new XElement("none") : sup);
+                    template.ScriptKind == TemplateSub ? new XElement("none") : sup));
             if (baseNode is XElement multiscripts
                 && multiscripts.Name.LocalName == "mmultiscripts"
                 && multiscripts.Elements().FirstOrDefault(element =>
@@ -7558,13 +7913,13 @@ internal static partial class MathTypeMtefCodec
                 marker.AddBeforeSelf(
                     template.ScriptKind == TemplateSup ? new XElement("none") : sub,
                     template.ScriptKind == TemplateSub ? new XElement("none") : sup);
-                return multiscripts;
+                return WithColor(multiscripts);
             }
             if (template.ScriptKind == TemplateSub)
-                return new XElement("msub", baseNode, sub);
+                return WithColor(new XElement("msub", baseNode, sub));
             if (template.ScriptKind == TemplateSup)
-                return new XElement("msup", baseNode, sup);
-            return new XElement("msubsup", baseNode, sub, sup);
+                return WithColor(new XElement("msup", baseNode, sup));
+            return WithColor(new XElement("msubsup", baseNode, sub, sup));
         }
 
         private static XNode BuildPrecedingScriptNode(
@@ -7664,12 +8019,12 @@ internal static partial class MathTypeMtefCodec
                 if (record == 15)
                 {
                     _position++;
-                    _ = ReadUnsigned(_data, ref _position);
+                    SetCurrentColorIndex(ReadUnsigned(_data, ref _position));
                     continue;
                 }
                 if (record == RecordColorDef)
                 {
-                    _position = SkipColorDefinition(_data, _position);
+                    ReadColorDefinitionRecord();
                     continue;
                 }
                 if (record is RecordEncodingDef or RecordFontDef or RecordFontStyleDef)

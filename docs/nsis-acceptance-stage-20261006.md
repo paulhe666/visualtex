@@ -1,5 +1,7 @@
 # NSIS 验收包（2026-10-06）
 
+2026-10-07已由包含MathType颜色修复的CP325包取代；见[当前打包报告](nsis-acceptance-stage-20261007.md)。以下保留CP315及更早包的证据与限制。
+
 ## 当前包：CP315 重编译验收包（CP317交付）
 
 [VisualTeX_1.2.8_x64_CP315_Acceptance_20261006.exe](../artifacts/nsis-acceptance-cp315-20261006/VisualTeX_1.2.8_x64_CP315_Acceptance_20261006.exe)，**376939702字节（约359.5MiB）**，SHA256 **21660726A9233105C7C630E7753EF12530D3EF13EAA2A573D3F60B329765AAA9**。版本1.2.8，Office MSI1.0.43.0，含两种Office架构和标准离线OCR运行时。此次实际重编译，产品行为同CP309；上一轮批量替换调查只新增测试/报告，没有新增产品性能优化。旧CP309/CP304包原位保留。

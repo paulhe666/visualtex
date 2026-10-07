@@ -716,6 +716,37 @@ internal static partial class Program
             }
         }
 
+        if (string.Equals(
+                mode,
+                "word-owned-mathtype-color-edit",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                if (AttachActiveWord)
+                    throw new InvalidOperationException(
+                        "MathType color acceptance must not attach to the user's Word instance.");
+                Environment.SetEnvironmentVariable(
+                    "VISUALTEX_ACCEPTANCE_OWNED_WORD_ROOT",
+                    Path.Combine(artifactRoot, "owned-word"));
+                using var colorEditFilter = OfficeComMessageFilter.Register();
+                RunWordOwnedMathTypeColorEditAcceptance(artifactRoot);
+                Console.WriteLine("VisualTeX owned MathType color edit acceptance passed.");
+                Console.WriteLine($"Artifacts: {artifactRoot}");
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(
+                    $"{error.GetType().FullName} (0x{error.HResult:X8}): "
+                    + error.Message);
+                Console.Error.WriteLine(error.StackTrace);
+                Console.Error.WriteLine(
+                    $"Acceptance artifacts retained: {artifactRoot}");
+                return 1;
+            }
+        }
+
         // This exact-document core mode owns all of its input and prepares OMML
         // locally. Run it before companion startup and keep every initialization
         // step inside the same exception boundary so a harness problem is logged

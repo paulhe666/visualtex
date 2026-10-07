@@ -1,5 +1,25 @@
 # MathType historical-document / native layout follow-up — resumed 2026-09-28
 
+## CP325 — 2026-10-07 — MathType color fix NSIS rebuilt, extracted payload verified, ready for user acceptance
+
+用户要求编译NSIS验收包。先核对到现有CP324包在20:45完成，而本轮颜色源码在21:09–21:16才写入，因此明确拒绝把CP324冒充颜色修复包；它原位保留。新建CP325输入清单，锁定当前未提交颜色源码、HEAD `dc501c9c6fe607b1aef0ef1404981b62d1668027`、冻结R3和heldR4，并要求新鲜x64 Word/PPT与CP323候选逐字节相同。
+
+CP325完整重建x64/x86 Formula OLE、Word/PPT VSTO、两个Office MSI、Office/桌面前端、Rust Release及NSIS；Ribbon分发和离线依赖加载探针均通过。交付包 `VisualTeX_1.2.8_x64_CP325_MathTypeColor_Acceptance_20261007.exe`，377000590字节，SHA256 `A2908B2629FFA055CA3A267DFCD69274027C000E8A527718ED966E2CDA19C99F`。x64 Word为 `353C20B4B1EFA31E3A53FB1E51E392F6970DAF5DEFDE9912A8FE4251BE58A18C`，与真实Word颜色验收候选一致；x86 Word为 `D95B24CA60B308A6163D14A211AA3D8BD4F9607C44292881B1187CBC2AB8C1C5`。
+
+实际反向解出NSIS及Office/NativeRender MSI，没有执行安装程序。两架构Office各19文件、Office前端23、OCR74、NativeRender完整清单、Bridge/VSTO及桌面嵌入资源逐项相等，报告状态 `VerifiedEmbeddedPayloadNotInstalled`。最终环境复核确认8处LoadBehavior、已安装Word/PPT DLL及原有受保护进程身份均未变化，新增进程0；未安装、未改注册表/安全设置、未操作用户文档。证据和独立报告分别见 `artifacts/nsis-acceptance-cp325-20261007`、`docs/nsis-acceptance-stage-20261007.md`。
+
+## CP323 — 2026-10-07 — MathType editor color loss fixed and verified in an owned Word document
+
+用户报告 VisualTeX 插入的 MathType 公式在编辑窗口修改颜色后，写回 Word 仍显示旧颜色。前端实际通过 MathLive `applyStyle({ color })` 生成 `mathcolor`，OMML 也已有完整颜色边界；故障位于共享 `MathTypeMtefCodec`：写入器只使用历史黑色 COLOR/COLOR_DEF，不把任意 `mathcolor` 编成 MTEF 调色板/颜色状态，读取器又跳过 COLOR/COLOR_DEF，`SemanticSignature` 也不比较颜色。新增红/蓝/绿和嵌套选区测试在修复前4项全部读回 null，构成稳定复现，不把普通公式通过当问题解决。
+
+共享修复按 MTEF 流状态实现，不放宽语义保护：复用或追加RGB COLOR_DEF，把显式颜色映射为有作用域的 COLOR 切换；原生模板内部的黑色控制受当前显式颜色覆盖；读取端解析RGB/CMYK定义及COLOR状态并投影回 `mathcolor`；相邻数字/文本只有颜色相同才合并。带显式颜色重写时不复制源首对象的 root-leading COLOR，因为它不是文档默认值，继续复制会把第一个颜色泄漏到后续未着色字符。颜色签名只在存在非黑颜色时追加逐token序列，旧无色/黑色签名保持。没有删除源校验、改变比较器容差或触碰转换安全边界。
+
+新增 `word-owned-mathtype-color-edit` 验收入口，严格使用 `VISUALTEX_ACCEPTANCE_OWNED_WORD_ROOT` 的 `/x /Automation` 自有 Word；运行前无WINWORD。它新建文档，先插入全黑 `Equation.DSMT4`，再走产品 `ReadSelection` + `ReplaceMathTypeOle` 模拟编辑窗口写回红x/蓝y/红+z/黑q，检查MTEF读回、Word真实增强图元预览、保存及重开后的OLE显示缓存。最终 `cp322-owned-r3-final` 通过：应用阶段红/蓝/黑像素4152/1676/3442，重开4622/1848/3772，人工查看图像颜色/字符也一致；1个OLE，ProgID `Equation.DSMT4`。最终DOCX SHA256 `71BE2526689603B7A1F2A2ADA74294CD87634E18DE226233950C8E84E74D32FE`。首次运行只在重开后剪贴板取图失败，应用读回和图像已成功；验收随后使用同一DOCX/OLE持久WMF缓存作重开备用取证，原失败保留，不冒充产品失败。
+
+专项颜色11/11通过；直接运行最终已编译测试DLL为2458通过/1失败。唯一失败是HEAD `dc501c9c6fe607b1aef0ef1404981b62d1668027` 已存在的CP255冲突：旧测试要求未声明stretchy的 `~` 使用单字符EMBELL，而当前共享 `MathMlAccentGeometry` 按字典默认将其视为可伸缩HatBox；该测试及实现均无本轮diff，未为颜色修复更改旧断言。沙箱内完整运行另有两个AppData写入拒绝；正常用户下直接vstest后两项通过。一次正常权限 `dotnet test` 因宿主把NuGet路径改到不存在的 `C:\Users\CodexSandboxOffline` 而未启动测试，原输出保留。
+
+最终冻结R3 x64候选 `build-cp322-mathtype-color-edit-r4` 构建成功：Word DLL SHA256 `353C20B4B1EFA31E3A53FB1E51E392F6970DAF5DEFDE9912A8FE4251BE58A18C`，验收EXE `334AE895142862266B6F80BF574F935580D3BF9BF43D6AFCCE6F5894C24374E4`，heldR4仍 `6692FDE3…8B3BAC`。最终自有Word PID106552已退出，无WINWORD遗留。证据在 `artifacts/mathtype-color-edit-20261007/cp322-owned-r3-final`，独立报告 `docs/mathtype-color-edit-stage-20261007.md`。本轮未安装、未打包NSIS、未提交、未改注册表或用户文档；既有未提交修改和失败证据全部保留。
+
 ## CP322 — 2026-10-07 — Direct run ended after 200/200 apply; real Ribbon reproduction prepared but no live Word window exists
 
 `actual-user-direct-visualtex` 不是通过，也没有复现“source changed”。正常确认窗口确实选择 Yes；产品 trace 由实际插件进程 PID72364 记录 `format-conversion-word-apply-finished ... converted=200 failed=0` 和 `format-conversion-complete ... target=VisualTeX converted=200 failed=0`。随后验收程序在转换返回后的 `CountMathTypeOleShapes(document)` 访问已删除的 COM 文档代理，报 `0x800A16C1 对象已被删除`（`WordFormulaFormatConversionAcceptance.cs:1290`，上层 `WordMathTypeOutgoingAcceptance.cs:92`）。独立只读包检查 `converted.docx` 为200 OLE、0 OMML、SHA256 `4BCC90906FBA7359BF9BC58279FCF77E2AE6D3B2AACE4A88015C50EC448CF0C7`；这只界定该失败发生在测试程序的转换后计数，不证明用户源改变问题不存在或已解决。
