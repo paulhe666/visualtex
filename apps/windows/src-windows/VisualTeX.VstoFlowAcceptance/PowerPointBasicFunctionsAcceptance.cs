@@ -240,7 +240,7 @@ internal static partial class Program
                 AssertEqual(oldId, shape.Id, "Stale native edit replaced the source.");
                 AssertNear(31, shape.TextFrame2.TextRange.Font.Size, 0.01f, "Stale native edit lost current native formatting.");
             });
-            Check("Mixed native textbox is never replaced as a whole", () =>
+            Check("Mixed native textbox edits only its equation and rejects whole-shape conversion", () =>
             {
                 AssertTrue(shape is not null, "Native fixture missing.");
                 shape!.TextFrame.TextRange.InsertAfter(" neighbor");
@@ -257,13 +257,29 @@ internal static partial class Program
                 Release(neighbor);
                 shape.Select(MsoTriState.msoTrue);
                 var beforeCount = slide.Shapes.Count;
-                var refused = false;
-                try { service.LoadNativeOmmlSelection(service.ReadSelection()); }
-                catch (InvalidOperationException) { refused = true; }
-                AssertTrue(refused, "Mixed text was accepted for whole-shape replacement.");
+                var originalId = shape.Id;
+                var selected = service.LoadNativeOmmlSelection(service.ReadSelection());
                 AssertEqual(beforeText, shape.TextFrame.TextRange.Text, "Native source capture changed mixed text.");
+                var edit = CreatePowerPointAcceptanceSession("edit", "wordOmml",
+                    selected.FormulaId!, selected.ObjectId, selected.Metadata);
+                edit.SourceDocumentId = selected.DocumentId;
+                edit.ExportResult!.MathMl = "<math xmlns='http://www.w3.org/1998/Math/MathML'><mi>z</mi><mo>+</mo><mn>9</mn></math>";
+                service.ReplaceOmml(edit);
+                AssertEqual(originalId, shape.Id, "Native range edit replaced the textbox.");
+                AssertTrue(shape.TextFrame.TextRange.Text.EndsWith(" neighbor"), "Native range edit deleted adjacent prose.");
+                var newLength = shape.TextFrame.TextRange.Length;
+                AssertNear(18, shape.TextFrame.TextRange.Characters(newLength - 8, 9).Font.Size, 0.01f, "Native edit changed adjacent prose formatting.");
+                shape.Select(MsoTriState.msoTrue);
+                selected = service.LoadNativeOmmlSelection(service.ReadSelection());
+                var whole = CreatePowerPointAcceptanceSession("edit", "crossPlatformPicture",
+                    selected.FormulaId!, selected.ObjectId, selected.Metadata);
+                whole.SourceDocumentId = selected.DocumentId;
+                var refused = false;
+                try { service.Replace(whole, svgPath); }
+                catch (InvalidOperationException error) when (error.Message.Contains("独立文本框")) { refused = true; }
+                AssertTrue(refused, "Mixed text was accepted for whole-shape replacement.");
                 AssertEqual(beforeCount, slide.Shapes.Count, "Native source capture changed shapes.");
-                shape.TextFrame.TextRange.Characters(beforeText.Length - 8, 9).Delete();
+                shape.TextFrame.TextRange.Characters(newLength - 8, 9).Delete();
             });
             Check("Native OMML save and reopen", () =>
             {

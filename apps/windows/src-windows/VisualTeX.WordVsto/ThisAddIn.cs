@@ -3229,6 +3229,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             return;
         }
 
+        var progress = await dispatcher.InvokeAsync(
+            () => BeginOperationProgress("VisualTeX LaTeX 重绘", service)).ConfigureAwait(false);
+
         var rendered = new Dictionary<string, RenderedWordBulkFormulaTemplate>(
             StringComparer.Ordinal);
         var prepared = new Dictionary<string, PreparedWordBulkFormula>(
@@ -3286,6 +3289,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     "VISUALTEX_VSTO_REDRAW_NUMBER_DISPLAY_FORMULAS");
             if (!acceptanceMode)
             {
+                // Capture has finished. Waiting for the user's choice is not
+                // scanning, and its dialog must not compete with an owned HUD.
+                progress.Dispose();
                 var options = await dispatcher.InvokeAsync(() =>
                 {
                     using var dialog = new LatexRedrawDialog(
@@ -3295,7 +3301,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         modeLabel,
                         service.GetEquationNumberFormatDisplayName(),
                         allowRedrawNumbering);
-                    var accepted = dialog.ShowDialog()
+                    var accepted = dialog.ShowDialog(progress.Owner)
                         == System.Windows.Forms.DialogResult.OK;
                     return (
                         Accepted: accepted,
@@ -3311,6 +3317,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     return;
                 }
                 numberDisplayFormulas = options.NumberDisplayFormulas;
+                progress = await dispatcher.InvokeAsync(
+                    () => BeginOperationProgress("VisualTeX LaTeX 重绘", service, "正在准备重绘…")).ConfigureAwait(false);
             }
             plan.NumberDisplayFormulas = allowRedrawNumbering && numberDisplayFormulas;
             var mathTypeNumberPosition = string.Equals(
@@ -3328,7 +3336,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 + $"numberDisplayFormulas={plan.NumberDisplayFormulas}");
             SetStatus($"正在准备重绘 {plan.Targets.Count} 个 LaTeX 公式为 {modeLabel}…");
             phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
+            progress.Report("正在连接公式转换服务…");
             await client.EnsureHealthyAsync(lifetime.Token).ConfigureAwait(false);
+            progress.Report("正在准备公式渲染器…");
             await client.PrewarmConverterAsync(lifetime.Token).ConfigureAwait(false);
             WriteRedrawAcceptanceLog(
                 $"redraw-phase healthPrewarmMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
@@ -3433,6 +3443,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         lifetime.Token)
                     .ConfigureAwait(false);
 
+                var renderCompleted = 0;
+                progress.Report("正在渲染公式…", 0, pendingTemplates.Count);
                 foreach (var pending in pendingTemplates)
                 {
                     lifetime.Token.ThrowIfCancellationRequested();
@@ -3521,6 +3533,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
                             + $"latex={pending.Target.Latex} error={detail}");
                     }
+                    progress.Report("正在渲染公式…", ++renderCompleted, pendingTemplates.Count);
                 }
                 WriteRedrawAcceptanceLog(
                     $"redraw-phase renderBatchMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
@@ -3539,6 +3552,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 // the rule that every formula is fully validated before Word is
                 // mutated.
                 var preflightAwaitStart = redrawPhaseWatch.ElapsedMilliseconds;
+                progress.Report("正在生成并校验 MathType 数据…");
                 await Task.WhenAll(mathTypePreflightTasks)
                     .ConfigureAwait(false);
                 WriteRedrawAcceptanceLog(
@@ -3684,6 +3698,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     + "renderAverageMs=0 renderMaxMs=0 insertTotalMs=0 insertMaxMs=0");
                 SetStatus(
                     $"LaTeX 重绘未转换任何公式：{skippedTargets.Count} 个公式无法重绘，均已保留原代码。");
+                progress.Dispose();
                 await ShowLatexRedrawFailuresAsync(
                         dispatcher,
                         skippedTargets)
@@ -3784,6 +3799,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 : $"；另有 {result.Warnings.Count} 个收尾警告";
             SetStatus(
                 $"LaTeX 重绘完成：{result.FormulaCount} 个公式已转换为 {modeLabel}{skippedSuffix}{warningSuffix}；{performanceSuffix}。");
+            progress.Dispose();
             await ShowLatexRedrawFailuresAsync(
                     dispatcher,
                     skippedTargets,
@@ -3817,6 +3833,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     "1",
                     StringComparison.Ordinal))
             {
+                progress.Dispose();
                 try
                 {
                     await dispatcher.InvokeAsync(() =>
@@ -3842,6 +3859,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 TryDeleteFile(template.SvgPath);
                 TryDeleteFile(template.PngPath);
             }
+            progress.Dispose();
             _operationGate.Release();
         }
     }
@@ -3961,6 +3979,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             return;
         }
 
+        var progress = await dispatcher.InvokeAsync(
+            () => BeginOperationProgress("VisualTeX 公式转为 LaTeX", service)).ConfigureAwait(false);
+
         var modeLabel = string.Equals(
             objectMode,
             FormulaOleContract.NativeOleMode,
@@ -3991,8 +4012,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     "1",
                     StringComparison.Ordinal))
             {
+                progress.Dispose();
                 var confirmed = await dispatcher.InvokeAsync(() =>
                     System.Windows.Forms.MessageBox.Show(
+                        progress.Owner,
                         T(
                             $"将把当前文档中的 {count} 个 {modeLabel} 公式原位恢复为 LaTeX 代码。\r\n\r\n另一种公式对象不会被修改；该操作可通过一次 Ctrl+Z 整体撤销。是否继续？",
                             $"Restore {count} {modeLabel} equations in the current document to LaTeX source in place?\r\n\r\nOther equation object types will not be changed. The operation can be undone with a single Ctrl+Z."),
@@ -4006,6 +4029,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     SetStatus($"已取消全文 {modeLabel} 公式转为 LaTeX，Word 文档未修改。");
                     return;
                 }
+                progress = await dispatcher.InvokeAsync(
+                    () => BeginOperationProgress("VisualTeX 公式转为 LaTeX", service, "正在准备恢复 LaTeX…")).ConfigureAwait(false);
             }
 
             WriteRedrawAcceptanceLog(
@@ -4056,7 +4081,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 catch { }
             }
         }
-        finally { _operationGate.Release(); }
+        finally { progress.Dispose(); _operationGate.Release(); }
     }
 
     private async Task BulkImportAsync()
@@ -4083,6 +4108,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             return;
         }
 
+        using var progress = await dispatcher.InvokeAsync(
+            () => BeginOperationProgress("VisualTeX 批量导入", service)).ConfigureAwait(false);
+
         var rendered = new Dictionary<string, RenderedWordBulkFormulaTemplate>(
             StringComparer.Ordinal);
         var prepared = new Dictionary<string, PreparedWordBulkFormula>(
@@ -4103,6 +4131,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         {
             if (!operationGateHeld) return;
             operationGateHeld = false;
+            progress.Dispose();
             _operationGate.Release();
             WriteBulkAcceptanceLog("bulk-operation-gate-released");
         }
@@ -5247,6 +5276,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
     private void SetStatus(string message)
     {
+        _operationProgress?.Report(OfficePluginLanguage.SafeStatusMessage(message));
         var dispatcher = _dispatcher;
         var application = _application;
         if (dispatcher is null || application is null) return;

@@ -394,6 +394,13 @@ internal static partial class Program
         Console.WriteLine($"Acceptance mode: {mode}");
 
         if (string.Equals(mode, "word-owned-six-way-performance", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-installed-outgoing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-progress-focus", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-mathtype-outgoing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-feedback", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-progress-window", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-redraw-progress", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-bulk-text-replace", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, "word-owned-field-read-check", StringComparison.OrdinalIgnoreCase))
         {
             try
@@ -401,6 +408,31 @@ internal static partial class Program
                 if (AttachActiveWord) throw new InvalidOperationException("Performance acceptance cannot attach to user Word.");
                 Environment.SetEnvironmentVariable("VISUALTEX_ACCEPTANCE_OWNED_WORD_ROOT", Path.Combine(artifactRoot, "owned-word"));
                 using var filter = OfficeComMessageFilter.Register();
+                if (string.Equals(mode, "word-owned-installed-outgoing", StringComparison.OrdinalIgnoreCase))
+                {
+                    RunInstalledMathTypeOutgoing(artifactRoot);
+                    return 0;
+                }
+                if (string.Equals(mode, "word-owned-progress-focus", StringComparison.OrdinalIgnoreCase))
+                {
+                    RunProgressFocusAcceptance(artifactRoot);
+                    return 0;
+                }
+                if (string.Equals(mode, "word-owned-bulk-text-replace", StringComparison.OrdinalIgnoreCase))
+                {
+                    RunOwnedBulkTextReplace(artifactRoot);
+                    return 0;
+                }
+                if (string.Equals(mode, "word-owned-redraw-progress", StringComparison.OrdinalIgnoreCase))
+                {
+                    RunOwnedRedrawProgressAcceptance(artifactRoot);
+                    return 0;
+                }
+                if (string.Equals(mode, "word-owned-progress-window", StringComparison.OrdinalIgnoreCase))
+                {
+                    RunOwnedProgressWindowAcceptance(artifactRoot);
+                    return 0;
+                }
                 if (string.Equals(mode, "word-owned-field-read-check", StringComparison.OrdinalIgnoreCase))
                 {
                     RunWordNativeFieldRevisionProbeAcceptance(artifactRoot);
@@ -408,7 +440,14 @@ internal static partial class Program
                 }
                 using var client = new VisualTeXSessionClient();
                 client.EnsureHealthyAsync(CancellationToken.None).GetAwaiter().GetResult();
-                RunOwnedSixWayPerformance(artifactRoot);
+                if (string.Equals(mode, "word-owned-mathtype-outgoing", StringComparison.OrdinalIgnoreCase))
+                {
+                    RunOwnedMathTypeOutgoing(artifactRoot);
+                    return 0;
+                }
+                if (string.Equals(mode, "word-owned-feedback", StringComparison.OrdinalIgnoreCase))
+                    RunOwnedFeedbackAcceptance(artifactRoot);
+                else RunOwnedSixWayPerformance(artifactRoot);
                 return 0;
             }
             catch (Exception error)
@@ -516,6 +555,17 @@ internal static partial class Program
                 Console.Error.WriteLine(error);
                 return 1;
             }
+        }
+
+        if (string.Equals(mode, "powerpoint-native-edit-entry", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var messageFilter = OfficeComMessageFilter.Register();
+                RunPowerPointNativeEditEntryAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
 
         if (string.Equals(mode, "powerpoint-basic-functions", StringComparison.OrdinalIgnoreCase))

@@ -27,7 +27,8 @@ public sealed class MathTypeCharacterEmissionContractTests
             {
                 var decorated=Native(new XElement("mover",new XAttribute("accent","true"),
                     new XElement(token),new XElement("mo",mark.Item1))).Mtef;
-                Assert.Equal(bare.Length+4,decorated.Length);
+                Assert.True(bare.Length+4 == decorated.Length,
+                    $"{glyph}/{variant}/{mark.Item1}: bare {bare.Length}, decorated {decorated.Length}");
                 Assert.Equal(new byte[]{6,0,(byte)mark.Item2,0,0,0},decorated.Skip(decorated.Length-6).ToArray());
                 var changes=Enumerable.Range(0,bare.Length-2).Where(i=>bare[i]!=decorated[i]).ToArray();
                 var changed=Assert.Single(changes);

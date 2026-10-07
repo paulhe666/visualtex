@@ -61,6 +61,7 @@ internal sealed partial class WordFormulaService
                     {
                         var block =
                             source.Blocks[blockIndex];
+                        ReportOperationProgress("正在写入导入内容…", insertedIds.Count, prepared.Count);
                         var nextKind =
                             blockIndex + 1
                                 < source.Blocks.Count

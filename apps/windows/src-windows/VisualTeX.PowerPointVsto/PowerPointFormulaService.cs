@@ -142,9 +142,16 @@ public sealed partial class PowerPointFormulaService : IDisposable
                         // by exact package source capture on the explicit command;
                         // passive selection does not call MathZones or copy data.
                         objectId = NativeOmmlReference(slide, shape);
-                        if (selection.Type == PpSelectionType.ppSelectionText
-                            && IsCurrentSelectionNativeEquation())
-                            objectMode = FormulaOleContract.WordOmmlMode;
+                        if (selection.Type == PpSelectionType.ppSelectionText)
+                        {
+                            object? text = null;
+                            try
+                            {
+                                text = ((dynamic)selection).TextRange2;
+                                objectId = NativeOmmlTextReference(slide, shape, text);
+                            }
+                            finally { Release(text); }
+                        }
                     }
                 }
             }
@@ -259,6 +266,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
         View? view = null;
         Slide? slide = null;
         object? hit = null;
+        object? hitParent = null;
         Shape? shape = null;
         try
         {
@@ -272,13 +280,24 @@ public sealed partial class PowerPointFormulaService : IDisposable
             try { hit = window.RangeFromPoint(screenX, screenY); }
             catch { return null; }
             shape = hit as Shape;
+            if (shape is null && (hit is TextRange || hit is Microsoft.Office.Core.TextRange2))
+            {
+                hitParent = ((dynamic)hit).Parent;
+                shape = ((dynamic)hitParent).Parent as Shape;
+            }
             if (shape is null || IsMathTypeShape(shape)) return null;
 
-            // Native PowerPoint equations carry no VisualTeX metadata, so
-            // this hit-test naturally ignores them and preserves PowerPoint's
-            // own double-click editing behavior.
             var metadata = ReadMetadata(shape);
-            if (metadata is null) return null;
+            if (metadata is null)
+            {
+                var nativeReference = HitNativeMathZone(window, slide, shape, screenX, screenY);
+                return nativeReference is null ? null : new OfficeSelection
+                {
+                    Host = "powerpoint", DocumentId = DocumentIdentity(presentation),
+                    ObjectId = nativeReference, ReadOnly = presentation.ReadOnly == MsoTriState.msoTrue,
+                    ObjectMode = FormulaOleContract.WordOmmlMode,
+                };
+            }
             metadata.FontSizePt = InferPowerPointFormulaFontSize(
                 shape.Width,
                 shape.Height,
@@ -303,8 +322,9 @@ public sealed partial class PowerPointFormulaService : IDisposable
             if (shape is not null)
             {
                 Release(shape);
-                hit = null;
+                if (hitParent is null) hit = null;
             }
+            Release(hitParent);
             Release(hit);
             Release(slide);
             Release(view);
@@ -893,6 +913,8 @@ public sealed partial class PowerPointFormulaService : IDisposable
                 session.SourceObjectId);
             if (slide is null || oldShape is null)
                 throw new InvalidOperationException("The target PowerPoint formula no longer exists.");
+            if (IsNativeOmmlReference(session.SourceObjectId))
+                return ReplaceNativeOmmlText(session, presentation, slide, oldShape, mathMl!);
             EnsureMathTypeSourceUnchanged(session, presentation, slide, oldShape);
 
             var left = oldShape.Left;

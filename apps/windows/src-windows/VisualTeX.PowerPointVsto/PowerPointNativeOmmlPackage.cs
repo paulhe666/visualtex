@@ -58,6 +58,15 @@ internal static class PowerPointNativeOmmlPackage
         finally { try { File.Delete(path); } catch { } }
     }
 
+    internal static string ReadEquation(string shapeXml, int ordinal, int expectedCount)
+    {
+        var shape = XElement.Parse(shapeXml, LoadOptions.PreserveWhitespace);
+        var equations = shape.Descendants(M + "oMath").ToArray();
+        if (equations.Length != expectedCount || ordinal < 1 || ordinal > equations.Length)
+            throw new InvalidDataException("The native math ranges do not match the saved PowerPoint equations.");
+        return equations[ordinal - 1].ToString(SaveOptions.DisableFormatting);
+    }
+
     private static XElement ReadTextShape(ZipArchive archive, int slideId, int shapeId)
     {
         var slide = ReadXml(archive, "ppt/presentation.xml").Descendants(P + "sldId")

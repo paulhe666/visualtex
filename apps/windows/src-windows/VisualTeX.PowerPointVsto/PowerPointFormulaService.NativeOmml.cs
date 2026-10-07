@@ -17,6 +17,8 @@ public sealed partial class PowerPointFormulaService
         internal string ObjectId = string.Empty;
         internal string FormulaId = string.Empty;
         internal string Omml = string.Empty;
+        internal int Start, Length;
+        internal string? ShapeFingerprint;
     }
 
     public static bool IsNativeOmmlReference(string? reference) =>
@@ -30,8 +32,80 @@ public sealed partial class PowerPointFormulaService
         slideId = shapeId = 0;
         if (reference is null || !reference.StartsWith(NativeOmmlReferencePrefix, StringComparison.Ordinal)) return false;
         var parts = reference.Substring(NativeOmmlReferencePrefix.Length).Split(':');
-        return parts.Length == 2 && int.TryParse(parts[0], out slideId) && slideId > 0
+        return (parts.Length == 2 || parts.Length == 4
+                && int.TryParse(parts[2], out var start) && start > 0
+                && int.TryParse(parts[3], out var length) && length >= 0)
+            && int.TryParse(parts[0], out slideId) && slideId > 0
             && int.TryParse(parts[1], out shapeId) && shapeId > 0;
+    }
+
+    private static string NativeOmmlTextReference(Slide slide, Shape shape, object range) =>
+        NativeOmmlReference(slide, shape) + ":" + Convert.ToInt32(((dynamic)range).Start)
+            + ":" + Convert.ToInt32(((dynamic)range).Length);
+
+    private static string? HitNativeMathZone(DocumentWindow window, Slide slide, Shape shape, int x, int y)
+    {
+        object? frame = null, range = null, zones = null;
+        try
+        {
+            if (shape.HasTextFrame != MsoTriState.msoTrue) return null;
+            frame = shape.TextFrame2;
+            range = ((dynamic)frame).TextRange;
+            zones = ((dynamic)range).MathZones();
+            var count = Convert.ToInt32(((dynamic)zones).Count);
+            for (var index = 1; index <= count; index++)
+            {
+                object? zone = null;
+                try
+                {
+                    zone = ((dynamic)range).MathZones(index, 1);
+                    float left = Convert.ToSingle(((dynamic)zone).BoundLeft), top = Convert.ToSingle(((dynamic)zone).BoundTop);
+                    float right = left + Convert.ToSingle(((dynamic)zone).BoundWidth), bottom = top + Convert.ToSingle(((dynamic)zone).BoundHeight);
+                    if (x >= window.PointsToScreenPixelsX(left) && x <= window.PointsToScreenPixelsX(right)
+                        && y >= window.PointsToScreenPixelsY(top) && y <= window.PointsToScreenPixelsY(bottom))
+                        return NativeOmmlTextReference(slide, shape, zone);
+                }
+                finally { Release(zone); }
+            }
+            return null;
+        }
+        finally { Release(zones); Release(range); Release(frame); }
+    }
+
+    // Math-zone offsets are transient coordinates, never persisted metadata.
+    // They select one native equation while leaving all neighboring text intact.
+    private static (int Ordinal, int Start, int Length, int Count) ResolveNativeMathZone(Shape shape, string reference)
+    {
+        var parts = reference.Substring(NativeOmmlReferencePrefix.Length).Split(':');
+        var selectedStart = parts.Length == 4 ? int.Parse(parts[2]) : 0;
+        var selectedLength = parts.Length == 4 ? int.Parse(parts[3]) : 0;
+        object? frame = null, range = null, zones = null;
+        try
+        {
+            frame = shape.TextFrame2;
+            range = ((dynamic)frame).TextRange;
+            zones = ((dynamic)range).MathZones();
+            var count = Convert.ToInt32(((dynamic)zones).Count);
+            var matches = new List<(int Ordinal, int Start, int Length, int Count)>();
+            for (var index = 1; index <= count; index++)
+            {
+                object? zone = null;
+                try
+                {
+                    zone = ((dynamic)range).MathZones(index, 1);
+                    int start = Convert.ToInt32(((dynamic)zone).Start), length = Convert.ToInt32(((dynamic)zone).Length);
+                    if (selectedStart == 0 || (selectedLength == 0
+                        ? selectedStart >= start && selectedStart < start + length
+                        : selectedStart < start + length && selectedStart + selectedLength > start))
+                        matches.Add((index, start, length, count));
+                }
+                finally { Release(zone); }
+            }
+            if (matches.Count != 1)
+                throw new InvalidOperationException("请把光标放入要编辑的一个原生公式中，或只选择该公式。");
+            return matches[0];
+        }
+        finally { Release(zones); Release(range); Release(frame); }
     }
 
     private static (Slide? Slide, Shape? Shape) FindNativeOmml(Presentation presentation, int slideId, int shapeId)
@@ -74,7 +148,9 @@ public sealed partial class PowerPointFormulaService
             EnsureSourceDocument(presentation, selection.DocumentId);
             (slide, shape) = FindNativeOmml(presentation, slideId, shapeId);
             if (shape is null) throw new InvalidOperationException("The selected native equation no longer exists.");
-            var omml = PowerPointNativeOmmlPackage.ReadStandalone(presentation, slideId, shapeId);
+            var zone = ResolveNativeMathZone(shape, selection.ObjectId!);
+            var shapeXml = PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, shapeId);
+            var omml = PowerPointNativeOmmlPackage.ReadEquation(shapeXml, zone.Ordinal, zone.Count);
             var mathMl = PowerPointNativeOmmlKernel.ReadNativeMathMl(omml);
             var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
             if (string.IsNullOrWhiteSpace(latex)) throw new InvalidDataException("The selected native equation has no recoverable source.");
@@ -96,6 +172,8 @@ public sealed partial class PowerPointFormulaService
             {
                 DocumentId = selection.DocumentId!, ObjectId = selection.ObjectId!,
                 FormulaId = metadata.FormulaId, Omml = omml,
+                Start = zone.Start, Length = zone.Length,
+                ShapeFingerprint = PowerPointTextEditTransaction.Fingerprint(shapeXml),
             };
             return new OfficeSelection
             {
@@ -105,6 +183,23 @@ public sealed partial class PowerPointFormulaService
             };
         }
         finally { Release(shape); Release(slide); Release(presentation); }
+    }
+
+    private OfficeObjectResult ReplaceNativeOmmlText(OfficeSessionDocument session, Presentation presentation,
+        Slide slide, Shape shape, string mathMl)
+    {
+        var source = _nativeOmmlSource;
+        if (source is null || source.DocumentId != session.SourceDocumentId
+            || source.ObjectId != session.SourceObjectId || source.FormulaId != session.FormulaId
+            || source.ShapeFingerprint is null)
+            throw new InvalidOperationException("Reopen the native equation before saving it.");
+        // Replace exactly the existing math zone. Its paragraph and neighboring
+        // content already exist; inserting a new display paragraph would split them.
+        var write = PowerPointNativeOmmlKernel.PrepareTextInsertion(
+            _application, shape, source.Start, source.Length, mathMl, "inline");
+        PowerPointTextEditTransaction.Execute(_application, presentation, slide.SlideID, shape.Id,
+            source.ShapeFingerprint, write);
+        return Result(session, presentation, shape.Name);
     }
 
     private void EnsureNativeOmmlSourceUnchanged(OfficeSessionDocument session, Presentation presentation)

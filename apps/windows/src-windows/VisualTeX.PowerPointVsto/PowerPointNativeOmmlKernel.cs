@@ -356,8 +356,22 @@ internal static class PowerPointNativeOmmlKernel
                 window,
                 "before native equation insertion",
                 350);
+            object? selectedRange = null, existingZone = null;
+            bool alreadyMath;
+            try
+            {
+                selectedRange = selection.TextRange2;
+                existingZone = PowerPointOmmlBridge.ReadSingleSelectedMathZone(selectedRange);
+                alreadyMath = existingZone is not null;
+            }
+            finally { Release(existingZone); Release(selectedRange); }
             Release(selection);
             selection = null;
+            // Replacing the text of an existing native zone keeps that zone.
+            // Invoking Insert Equation again toggles/leaves its native context
+            // instead of editing it. New prose insertion still needs the command.
+            if (!alreadyMath)
+            {
             var canInsertGallery =
                 application.CommandBars.GetEnabledMso(
                     "InsertBuildingBlocksEquationsGallery");
@@ -373,6 +387,7 @@ internal static class PowerPointNativeOmmlKernel
                 canInsertGallery
                     ? "InsertBuildingBlocksEquationsGallery"
                     : "EquationInsertNew");
+            }
 
             selection = GetTextSelectionWithRetry(
                 window,

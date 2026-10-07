@@ -1,5 +1,7 @@
 # Word ordinary-text interaction latency — CP264/CP265, 2026-10-04
 
+2026-10-06 follow-up: bulk text ReplaceAll is investigated separately in [word-bulk-text-replace-stage-20261006.md](word-bulk-text-replace-stage-20261006.md), CP312–314. Those real native replacement and in-process add-in results must not be conflated with the older out-of-process caret measurements below.
+
 ## CP265 installed-file comparison and count-scaling follow-up
 
 The registered installed Word DLL (5702CC88C7CF5C795FE92D110AD336495CEE2E9F88FC77E5F207561CEC5D6575) was inspected read-only with the existing Mono.Cecil comparison tool. Its compiled OnWindowSelectionChange, caret normalization, selected-OLE classification and relevant passive numbering checks match the pre-fix source DLLFB031CF2. Entire HostResolver22 methods, MetadataReader15, HostLayout12 and SelectionPerformance5 also match. Differences elsewhere in ThisAddIn/WordFormulaService concern explicit operations; the only WordEquationNumbering difference is explicit PrepareVisualTeXDisplayHostLayout. This is compiled-method evidence, not a claim that every assembly byte/dependency is identical.

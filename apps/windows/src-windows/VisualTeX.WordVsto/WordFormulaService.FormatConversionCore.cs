@@ -108,6 +108,7 @@ internal sealed partial class WordFormulaService
             foreach (var host in hosts
                          .OrderBy(item => item.Range.Start))
             {
+                ReportOperationProgress("正在读取源公式…", plan.Targets.Count, hosts.Count);
                 var target = CaptureCoreConversionTarget(
                     document,
                     host,
@@ -236,6 +237,7 @@ internal sealed partial class WordFormulaService
             // same synchronous UI turn before starting the one batch record.
             foreach (var target in plan.Targets.OrderByDescending(item => item.SourceStart))
             {
+                ReportOperationProgress("正在核对源公式并准备替换…", resolvedSources.Count, plan.Targets.Count);
                 using var preparationMetric = WordOperationMetrics.Measure("FormatConversion.PrepareBoundSource." + sourceKind + "To" + targetKind);
                 WordFormulaHostDescriptor source;
                 if (sourceKind == WordFormulaHostKind.MathType)
@@ -259,7 +261,13 @@ internal sealed partial class WordFormulaService
                             || source.Numbering.Numbered != target.Numbered
                             || semanticFont != FormulaFontSize.ResolveSemanticFontSize(target.Metadata)
                             || currentFont != target.FontSizePt)
+                        {
+                            WordDoubleClickHook.TraceMessage(
+                                $"format-conversion-source-changed start={target.SourceStart} mathMlEqual={string.Equals(binding.MathMl, target.SourceMathMl, StringComparison.Ordinal)} "
+                                + $"display={target.DisplayMode}/{source.DisplayMode} numbered={target.Numbered}/{source.Numbering.Numbered} "
+                                + $"semanticFont={FormulaFontSize.ResolveSemanticFontSize(target.Metadata)}/{semanticFont} presentationFont={target.FontSizePt}/{currentFont}");
                             throw new InvalidOperationException("The MathType source changed while its conversion was being prepared.");
+                        }
                     }
                     finally { Release(captured); }
                 }
@@ -361,6 +369,7 @@ internal sealed partial class WordFormulaService
                         : plan.Targets.OrderByDescending(item => item.SourceStart);
                     foreach (var target in mutationOrder)
                     {
+                        ReportOperationProgress("正在写入目标公式…", result.FormulaCount, plan.Targets.Count);
                         var preparedFormula =
                             prepared[target.Id];
                         var source = resolvedSources[target.Id];
@@ -512,6 +521,7 @@ internal sealed partial class WordFormulaService
                         // unnecessarily extends their COM/storage lifetime.
                         sourceOwner?.Dispose();
                         result.FormulaCount++;
+                        ReportOperationProgress("正在写入目标公式…", result.FormulaCount, plan.Targets.Count);
                     }
 
                     // OMML sources and MathType-to-VisualTeX follow live Word

@@ -1,5 +1,217 @@
 # MathType historical-document / native layout follow-up — resumed 2026-09-28
 
+## CP322 — 2026-10-07 — Direct run ended after 200/200 apply; real Ribbon reproduction prepared but no live Word window exists
+
+`actual-user-direct-visualtex` 不是通过，也没有复现“source changed”。正常确认窗口确实选择 Yes；产品 trace 由实际插件进程 PID72364 记录 `format-conversion-word-apply-finished ... converted=200 failed=0` 和 `format-conversion-complete ... target=VisualTeX converted=200 failed=0`。随后验收程序在转换返回后的 `CountMathTypeOleShapes(document)` 访问已删除的 COM 文档代理，报 `0x800A16C1 对象已被删除`（`WordFormulaFormatConversionAcceptance.cs:1290`，上层 `WordMathTypeOutgoingAcceptance.cs:92`）。独立只读包检查 `converted.docx` 为200 OLE、0 OMML、SHA256 `4BCC90906FBA7359BF9BC58279FCF77E2AE6D3B2AACE4A88015C50EC448CF0C7`；这只界定该失败发生在测试程序的转换后计数，不证明用户源改变问题不存在或已解决。
+
+用户再次明确真实复现步骤为当前活动文档点击 `MathType → OMML`，等待扫描，随后在全文确认窗口点“是”。已改用现有 `artifacts/mathtype-history-20260929/Ui-MathTypeCycle.ps1` 的真实 Ribbon/UIAutomation 路径，只增加全文模式、只读检查当前 Ribbon 范围、等待并点击正常确认及保留终态对话框证据；不调用产品内部转换方法，不写注册表、不改比较器。20:15重新枚举时机器上仅有 WINWORD PID35724（启动 `2026-10-07T11:39:49.2663758Z`），`MainWindowHandle=0`、无任何顶层窗口，`Connect-RunningWord` 也因无原生文档窗口失败。因此本阶段没有执行 Ribbon 点击；没有用保存/重开的副本冒充仍在内存中的失败现场，也没有再次启动87811。需要真实窗口重新出现后，先精确核对PID/启动时间/文档路径/全文范围，再运行已准备脚本。
+
+一条临时只读 live-rebind 旁路在绑定 PID35724 时即因无原生窗口失败，未读取、保存或修改文档；用户指出应直接复用现有真实点击脚本后，该旁路源码入口及新增文件已撤回，失败构建/日志保留。当前仍未定位五项中哪一项在捕获计划与重新绑定之间变化，未修改严格保护边界；焦点候选也仍未安装/打包。证据见 `artifacts/mathtype-outgoing-focus-20261007/actual-user-direct-visualtex`、`live-user-rebind-cp322` 和 `cp322-direct-run-and-live-window.json`。
+
+随后确认前述“无窗口”是沙箱桌面枚举误判，不是用户关闭Word：通过仓库既有 `word-connection.ps1` 的 `OpenInputDesktop` 路径，在交互桌面精确绑定同一 PID35724/HWND17583344/活动文档 `user-failure-mathtype-20261007.docx`，当时Saved=true、200 OLE/0 OMML。真实 `Ui-MathTypeCycle.ps1` 核对 Ribbon `默认：转换全文` pressed=true，并于20:27:49点击真实 `MathType → OMML`；原生对话框证据随后精确记录全文200 MT→OMML正文、IDYES=6，并于20:29:29点击“是”。20:32:36 Word UI显示撤消项 `VisualTeX Convert Formula Format`，20:32:45同一活动文档只读计数为0 OLE/200 OMML、Saved=false；没有出现源改变错误。磁盘文件未保存，前后SHA仍E8B21FCF…D96。
+
+这次必须归类为“真实Ribbon当前状态转换成功，未复现”，不能称问题已解决。与用户原失败现场可确认的差异至少包括此前已经Save As、随后长时间驻留/扫描；哪一个动作令瞬态源状态稳定仍未知，不能将保存后成功倒推为比较器正确。安装版没有本轮新增的五项失败字段trace，且当前成功没有失败字段可读。外层UI脚本自身因跨桌面UIA确认句柄竞态未识别窗口并最终报“confirmation did not appear”，但主按钮、原生确认及0/200结果是三条独立证据，此外层错误不属于产品转换失败。完整证据 `cp322-live-real-ribbon-omml/result.json`。
+
+## CP321 — 2026-10-07 — User explicitly authorized Save As of live failure; original LaTeX preserved
+
+用户明确要求把当前失败现场另存新副本，不保存覆盖原LaTeX。只对授权的唯一Word PID35724/HWND17583344、精确Downloads源路径执行一次成功SaveAs2，未关闭Word或改其文档内容。新文件artifacts/mathtype-outgoing-focus-20261007/user-failure-mathtype-20261007.docx，SHA E8B21FCF9D092189B22AB023920631C95C70C25E091C0A6747EAB5DF34218D96；另生成逐字节一致的user-failure-analysis.docx供隔离测试。原Downloads文件前后SHA均5726E65007EF18AB0BCACAD44B4FD7E6CE2CF2C8C69A89AA6A3C7D7736C81C91，原源码未覆盖。当前用户窗口已指向新副本。现场保存前Saved=false、Compatibility14、TrackRevisions=false、200OLE/0OMML。Save脚本先有uint常量、COM参数绑定/ActiveDocument代理不可用等前提失败，均在写入前中止；成功SaveAs后普通hash读取受Word文件共享限制，改只读共享哈希验证，没有重复另存或覆盖。
+
+保存后副本在自有Word的200项五字段诊断全部一致，当前已通过源校验进入OMML写入；尚不能排除另存或重开改变了触发状态。实际安装插件全选200→OMML也已通过；copy-snapshot在关闭自有文档后有“对象已删除”日志，保留，不将它归为当前源改变根因。焦点候选实际Word STA阻塞1300ms仍显示37/200与计时，正常确认20重绘/读回/owner/gate均通过（redraw-progress-20261006/cp320-word-focus-{responsive,confirm20}）。
+
+继续核对普通交互Word与/x /Automation生命周期差异，新候选build-cp321-interactive-probe只增加自有Word测试启动模式及UserControl记录，不修改产品转换校验。Word产品仍B45C2794…44D30B、冻结R3/heldR4保持。现场转换根因仍未找到，不宣称修复。用户Word不再接入，后续只用副本。未安装/提交/改注册表或安全设置。
+
+## CP320 — 2026-10-07 — Focus regression fixed; installed runtime comparison and user failing specimen pending
+
+共享进度窗口修复在focus-fixed-background实际建立两项自有前台前提（prerequisite均true），宿主及其他应用替身各自保持唯一前台HWND，2/2通过；旧实现2/2失败及两次前提未建立日志均保留。候选build-cp319-normal-ui-r2/build-cp320系列仅产品焦点修改及源改变字段日志，Word SHA B45C279405884DC79FE8430B0F3AB2305B7381A9CD1F605E050243D8DB44D30B，冻结R3/heldR4不变。
+
+转换错误仍未复现，用户在新文档再次复现，已明确不能据实验通过否认现场错误。normal200-visualtex-r2通过可见自有Word、默认重绘选项及正常确认的真实200 MT→VT写入，原MT剩余0；这是候选手动跨进程插件测试，不是安装插件。此前fresh200-visualtex目录因脚本漏传target环境变量实际又运行OMML，只算OMML对照，绝不计入VT通过；request.json与脚本已修正。此次对象数量与命令成功不等于内容/样式/视觉全保真。
+
+新增真正进程内已安装插件入口word-owned-installed-outgoing，使用自有Word COMAddIns.Object的IDispatch回调，绝不改变Connect/注册值；默认确认自动响应仅本测试PID。installed200-omml-r2以实际安装0BD8CCE7…1272C2/MVID dbe7e9f1-32dc-4a84-ae58-105ca6bb5445完成200重绘及MT→OMML。全选入口继续核对。最初接口强转失败、日志共享模式错误、一个残留自有Word42104均保留证据；后者通过启动回执PID/时间/可执行路径/专属seed命令行核实后关闭，未动用户进程；第一次清理时间解析前提不符时没有关闭，修正仅测试回执解析。未声称保护的旧用户Word10496仍存活：用户期间自行关闭/新建文档，测试每次重新快照保护列表。Downloads原源以FileShare.ReadWrite只读SHA核实仍5726E650…C91，同归档。
+
+用户正在准备失败现场的MathType副本路径，等其提供后优先读取副本原生数据，定位五项哪个误报。未修剪校验、改预期、放宽比较器或安装/提交；焦点修复尚未打包。继续证据artifacts/mathtype-outgoing-focus-20261007，独立报告docs/mathtype-conversion-source-focus-stage-20261007.md。
+
+## CP319 — 2026-10-07 — Foreground activation reproduced; source conversion control continues
+
+19:23 CP319进展：已安装Word确为CP315内嵌0BD8CCE7…1272C2；旧200 MathType副本源五项200/200一致、OMML200对象完成；原LaTeX200即时重绘→OMML同样无源改变报错（70.05s+158.88s，测试跳过确认），尚未复现用户转换错误。自有窗口焦点基线2/2失败，明确进度Form抢激活及关闭恢复前台链；WordOperationProgress已改不激活/无任务栏，独立STA和Word owner保留。修复后两次探针的自有前台前提未成立，不能算通过，后台生命周期和正常确认测试继续。原Word10496受保护，自有Companion108056/43136；不安装/注册/提交。产品转换仅增加失败字段日志，没有删校验。证据mathtype-outgoing-focus-20261007，完整根因/构建/范围/前提失败见独立报告同名stage；VT200正在运行，正常可见Word流程与现场错误根因未完成。
+
+## CP318 — 2026-10-07 — MathType outgoing stale-source and scan foreground regression investigation
+
+用户确认同一份 latex_100_inline_100_display.docx，全文 LaTeX→MathType 后转 OMML/VisualTeX 报源改变；扫描还将浏览器/文件管理器带前台。HEAD 已变为2476775786badb732e68a3e6a806bb85970b2ac0（新增中文字体前端提交），全部继承修改保留。共享 Capture/Apply 五项严格比较及 MathType 存储读取、独立 STA 进度窗口已审阅；尚无实测根因。新增诊断入口记录源内容/布局/字号差异，继续冻结R3候选与自有Word隔离运行。产品暂未修改，未安装/提交/改安全设置，不能宣布复现或修复。独立报告 docs/mathtype-conversion-source-focus-stage-20261007.md，证据 artifacts/mathtype-outgoing-focus-20261007；下一步先复现两方向错误和焦点生命周期，再共享修复及正反例验证。
+
+## CP317 — 2026-10-06 — CP315 NSIS rebuilt and extracted payload verified; ready for acceptance
+
+已实际重新编译并生成`artifacts/nsis-acceptance-cp315-20261006/VisualTeX_1.2.8_x64_CP315_Acceptance_20261006.exe`，VisualTeX1.2.8/Office MSI1.0.43.0，**376939702字节**，SHA256 **21660726A9233105C7C630E7753EF12530D3EF13EAA2A573D3F60B329765AAA9**，邻接.exe.sha256一致。HEAD66a8c709加全部现有修改，冻结R3/heldR4保持，旧包原位保留。产品同CP309，CP312–314只增加测试/报告，未将诊断预览控制当性能修复发布。
+
+两架构Office/OLE/MSI、离线Ribbon/依赖加载、两前端TypeScript/Vite、Rust Release、NSIS和静态检查均通过。实际反向解包NSIS及三个MSI，Office每架构19文件、Office前端23、NativeRender83、OCR74、Bridge/VSTO及桌面嵌入资源核对通过；`verified-embedded/report.json`状态VerifiedEmbeddedPayloadNotInstalled。内嵌x64 Word0BD8CCE72979B50FD7B49BF824AFBAAE7B60AC24AE560C70D41F8AA9161272C2/PPT93884956…3C3325，x86 WordE17144B9…151046/PPT E8193FAE…680AE，均同CP309。内嵌Companion SHAB86B7295910E36759F1AF19279D5DDC0A493588F97A7610C3370277F7CFC9F4E，与本轮Release EF4F8C89…4F67A9只有Tauri唯一UNK→NSS三字节bundle标记差异，其余字节完全相同。
+
+`environment-final.json`确认原进程身份、8处LoadBehavior及已安装CP304两DLL保持，无新增Office/Companion/OLE进程。`source-recheck.json`锁定输入保持；未安装、提交、推送或改安全设置。独立打包报告docs/nsis-acceptance-stage-20261006.md已更新。此次只新增构建/包内容验收，未重新扩大功能/六向保真/物理入口测试；CP255及既有缺口、CP314严格OMML保存XML差异和用户实际批量替换卡顿待复现均保持。下一步由用户安装这个确切CP315包验收。
+
+## CP316 — 2026-10-06 — CP315 Office/frontends rebuilt; Rust and NSIS pending
+
+CP315重建x64/x86 OLE、Word/PPT、Office MSI及两位数离线Ribbon COM分发/依赖加载探针均通过，Office/桌面前端TypeScript/Vite和资源引用核对通过，当前Rust Release构建中。x64 Word0BD8CCE7…1272C2/PPT93884956…3C3325及x86 WordE17144B9…151046/PPT E8193FAE…680AE均保持CP309字节；新MSI x64 SHA549B51902DA9D575F16D4FD0E96C3F42CFD9C3359F2BE449CAADF206E365A00B，x86 07773E7C88961DBFDC891874F798F3EFDECD60D8CA6461AA22F0B282AE45B59E。既有编译警告保留，无错误豁免。
+
+证据artifacts/nsis-acceptance-cp315-20261006/{build/build-state.json,build-console.log}；尚未完成新NSIS和实际解包，不提前声明可交付。冻结R3/heldR4和未提交修改保持，安装冒烟禁用，不安装/提交或操作Office实例。下一步完成bundle、静态核验、真实载荷解包与环境前后对照；功能验收范围仍按CP309/CP314，不追加保真或性能修复宣称。
+
+## CP315 — 2026-10-06 — Current-worktree NSIS rebuild requested after bulk replacement investigation
+
+用户要求编译NSIS验收。核对HEAD仍66a8c709，CP312–314只增加诊断测试/报告，没有产品性能修复；产品预期仍CP309 Word SHA0BD8CCE72979B50FD7B49BF824AFBAAE7B60AC24AE560C70D41F8AA9161272C2、PPT93884956…3C3325。本次实际重新构建两架构Office/OLE/MSI、前端、Rust和NSIS，单独输出artifacts/nsis-acceptance-cp315-20261006，旧包不覆盖。Build-CP315.ps1沿用审阅的CP309分阶段入口；新verified-inputs.json保留原清单，唯一变动的Program.cs是已记录的测试入口，不属于安装载荷。最终两产品DLL仍严格钉住已验字节；冻结R3/heldR4不变，不把默认工作树与冻结构建混同。
+
+构建后需实际解开NSIS/三MSI核对载荷，并检查原进程、8处LoadBehavior和已安装DLL前后保持。不安装、不提交、保留全部修改/失败证据。尚未生成或验证新包。CP314原生批量替换未稳定复现明显退化的结论不因打包变成性能修复；CP255与既有完整保真/视觉缺口、CP314严格OMML保存XML差异保持。进展同步docs/nsis-acceptance-stage-20261006.md。
+
+## CP314 — 2026-10-06 — Bulk text ReplaceAll90 operations; severe slowdown not reproduced, preview affects open/save
+
+调查完成本轮可建立的范围：原生inert24、手动跨进程插件24、真实进程内安装插件24、200预览控制inert9+安装9，共90次；精确正文去空格与公式数90/90、保存后独立正文90/90；72个含OLE样本载荷逐字节保持。18个OMML样本字符内容保持，但严格XML/样式树等值报Word拆分run/复制样式差异，保留退出码1和diff，未放宽比较，未认定完整OMML样式/视觉保真；无操作保存对照未做。全部原日志/前提失败保留，详见docs/word-bulk-text-replace-stage-20261006.md及artifacts/word-bulk-replace-20261006/{summary.json,verification.json}。
+
+进程内实际加载**已安装CP304** SHA279CA2F1…645C3E，自身PID/path/MVID和hook trace成立；没有将源码CP309当已安装版本。20/40公式VT替换中位32.956/60.125ms，MT31.355/60.933ms，OMML33.515/60.877ms。200首轮VT443.754ms/MT304.041ms的1.46倍差异保留；重复同路径VT287.287ms/MT292.533ms，严重卡顿或稳定退化未复现。真实插件替换期间最多一个选区回调，重叠耗时首轮至多6.378ms、重复至多1.925ms，不是每个空格都扫描公式；转换/MTEF校验未进入这条链。手动跨进程回调有RCW时序干扰，不用于安装性能结论。
+
+确定差异在打开/保存：200原VT打开3308.875ms、保存6901.206ms，MT2859.197/5523.182ms。诊断副本保留全部200 VT OLE字节/形状尺寸，仅换DOCX外部EMF预览为同序MT WMF预览后，打开1163.600ms、保存4571.988ms，而替换300.238ms未变快；inert对照一致支持预览处理成本影响打开/保存。不能把这一因果贡献冒充用户原生替换卡顿根因，也没有证明具体原生OLE Draw/Load/Save被调用。控制文件不作为发布修复或视觉保真通过。
+
+冻结R3候选build-cp312-bulk-replace-r4产品Word仍CP309 SHA0BD8CCE72979B50FD7B49BF824AFBAAE7B60AC24AE560C70D41F8AA9161272C2；heldR4不变。仅新增测试入口/自有Word子进程加载开关、证据脚本与报告，产品不改。environment-final.json证实自有Word全部退出、Companion104292按回执关闭，原三进程身份及8处LoadBehavior保持，无新增Office/Companion/OLE进程，安装DLL保持。HEAD66a8c709，不安装/提交/改安全设置；既有保真缺口未关闭。复现材料fixtures/020/040/200配对文档与原生运行脚本已落盘；下一步需要用户异常副本与准确入口（原生Ctrl+H或宏/其他插件）再定位，不无证据改共享规则。物理Ctrl+H、宏逐匹配循环、修订/通配符、用户原文档未运行。
+
+## CP313 — 2026-10-06 — Bulk replacement baseline24 complete; real installed callback isolation underway
+
+受控正文20/40三格式及200VT/MT原生Range.Find.ReplaceAll共24次，正文精确去空格和公式数24/24；20/40/200 VisualTeX替换中位61.892/83.409/316.560ms，MathType54.577/75.834/293.216ms，OMML20/40为51.623/73.890ms，选区事件均0；没有复现严重卡顿。200独立Save为VT7429.231ms/MT6496.259ms，不能混入替换计时。证据artifacts/word-bulk-replace-20261006/native-r3；范围、条件和限制见docs/word-bulk-text-replace-stage-20261006.md。
+
+手动插件+可见Selection.Find的addin-selection-r1正文/数量24次通过，但跨进程回调有延迟和关闭文档后RCW错误，不能当正常运行时证据；保留原日志。下一步已启动真正进程内已安装CP304插件的自有Word对照，加载路径/PID/MVID明确，连接自有Companion104292/43136。候选r2/r3/r4的产品Word都保持CP309 SHA0BD8CCE7…1272C2；只改诊断测试/脚本，未改产品或安装。首编译缺using、两个进程快照前提失败均保留；以CIM改正测试快照，不改任何安全或注册表设置。最终逐包独立核对、运行时矩阵与环境清理仍待完成。
+
+## CP312 — 2026-10-06 — Native Word bulk text replacement investigation started
+
+用户报告 VisualTeX 公式文档批量去空格慢于 MathType/OMML。此前 CP264/265 仅光标/插入，不能排除本问题。准备真实公式、相同正文20/40及200对照，分开计量 Word Find.Execute 全部替换、回调、排版、刷新、保存并核对文本与公式保留。新增诊断入口 word-owned-bulk-text-replace 使用明确新建 /x /Automation 自有 Word、跳过旧注册表启动器；先不加载手动插件以区分 Word 原生处理与插件事件。HEAD66a8c709和所有继承修改保留，产品不改，冻结R3/heldR4保持，不安装/提交/修改用户设置。证据 artifacts/word-bulk-replace-20261006，独立报告 docs/word-bulk-text-replace-stage-20261006.md；结果尚未建立，不能提前归因 OLE、插件、缓存或正文扫描。
+
+## CP311 — 2026-10-06 — Redraw progress repair NSIS CP309 verified and ready for user acceptance
+
+替代验收包已完成：artifacts/nsis-acceptance-cp309-20261006/VisualTeX_1.2.8_x64_CP309_Acceptance_20261006.exe，**376945197字节**，SHA256 **10AE3A80112BF804CF88F86E421CDF637A87A4808662AAAAC25D8345B5CDF237**。版本1.2.8/Office MSI1.0.43.0，冻结R3/heldR4保持，包含CP309进度/确认生命周期修复及此前CP304共享转换规则。x64/x86 Office、加载/COM探针、前端类型检查与Vite、Rust Release、NSIS和静态验证成功。实际解出NSIS和三MSI，两Office架构各19文件、Office前端23、NativeRender83、OCR74及Bridge/VSTO核对通过。实际内嵌x64 Word **0BD8CCE72979B50FD7B49BF824AFBAAE7B60AC24AE560C70D41F8AA9161272C2**，精确同真实进度验收候选；PPT93884956…3C3325未变。x86 Word E17144B9A903725607334F88B89CE6B0985607D1B8E27A8CC5387D8B72151046，PPT E8193FAE…680AE。内嵌Companion DF9436E9A9F9481B4956C7C7DAACAB1E383DD5389313CFD1F75ABA6FA6D6E841，与本轮构建仅唯一3字节Tauri bundle标记不同。
+
+verified-embedded/report.json状态VerifiedEmbeddedPayloadNotInstalled；environment-final.json原进程身份、8处LoadBehavior、已安装CP304两DLL保持，无新增Office/Companion。没有运行安装包、提交或修改安全/注册表，旧包和baseline-r1/r2失败证据保留。HEAD仍66a8c709，源码哈希见redraw-progress-20261006/final-inputs.json。独立问题报告docs/redraw-progress-stage-20261006.md和打包报告docs/nsis-acceptance-stage-20261006.md已更新。
+
+交付验证范围仍按CP310：正常确认后真实20 MathType重绘/读回/执行进度通过，原200副本准备与确认取消通过（约8.3秒准备，包含约6.1秒字号读取），Office STA阻塞时进度可刷新。没有用户现场40–50秒trace，不宣称消除所有实际准备耗时；本轮未做200全重绘、物理按钮/其他两类确认逐入口或六向全视觉。CP255和既有保真缺口保持。下一步用户安装此确切CP309包复验重绘进度和确认界面；如仍有长等待，按明确显示的阶段取证，不以等待确认冒充扫描。
+
+## CP310 — 2026-10-06 — Real confirmation20, original200 preparation and responsive progress pass; replacement NSIS building
+
+冻结R3最终测试候选build-cp309-progress-final Word仍SHA **0BD8CCE72979B50FD7B49BF824AFBAAE7B60AC24AE560C70D41F8AA9161272C2**（后续只补测试），PPT不变。确认/取消旧bug证据baseline-r2保留；最终confirm20-final使用独立Companion并走正常选项确认，接受后实际20 MathType重绘完成，源表达式逐项读回通过，真实写入进度到20/20，确认前后进度分别销毁/新建，文档保存成功。操作计时约9.963s含本测试800ms确认观察，不作为性能基准。capture200-final使用原latex_100_inline_100_display归档副本，只capture及正常确认后取消：实际命令capture8.285s，其中snapshot56ms、坐标1855ms、fontIndex58ms、targets6314ms/实际字体fallback6113ms；进度如实覆盖各阶段和0–200字号计数。独立直接capture为7.972s，不能将两次相加或说纯扫描8秒。确认期间可见进度0，owner同自有Word、原文前后相同及gate释放通过；未重跑200转换全流程。
+
+window-final在阻塞Office STA1300ms时实际进度窗口仍显示阶段、37/200及00:01，Dispose回调通过。源码未改转换/校验算法，本轮不重复全量离线/六向视觉，既有CP255和保真缺口保持。全文格式转换/转LaTeX共用确认生命周期已修正并编译，尚未逐入口实际点击；不能据重绘测试代替其全部验收。
+
+自有Companion80352已按PID/路径/hash/创建时间检查后退出；environment-final.json核实原3进程身份、8处LoadBehavior及已安装CP304 DLL保持，无新增Office/Companion。baseline阶段未隔离后台预热事件按CP309保留。final-inputs.json记录源码/构建哈希。准备新NSIS artifacts/nsis-acceptance-cp309-20261006，复用已审阅CP304构建/解包流程，实际x64 Word必须同0BD8…72C2；仅编译不安装/提交，旧包不删除。详细证据与范围docs/redraw-progress-stage-20261006.md。
+## CP309 — 2026-10-06 — Stale scan window reproduced and confirmation lifecycle repaired
+
+同CP304 DLL的baseline-r2真实20公式：capture约0.26秒返回后，确认框等待期间仍有独立可见“正在读取公式范围…”和增长计时；确认框native owner不同于自有Word HWND，三个针对断言失败。baseline-r1额外“取消改文”是测试将Word规范化后的文本与写入前字符串比较：已改为操作前真实Range.Text快照并独立保存前后文本，两者SHA相同；未放宽产品比较，原失败保留。
+
+产品修复：WordOperationProgress暴露现有窗口owner并允许初始阶段；ThisAddIn在重绘/全文格式转换/公式转LaTeX确认前结束扫描进度，显式以Word窗口为owner，确认后新建执行进度；重绘结果/错误通知前也结束进度。LatexRedrawCore按实际读取文本、扫描、定位、核对、字号索引/逐条读取上报，真实处理数量不伪造百分比；渲染阶段补完成计数和健康连接/渲染器/MathType预检提示。没有删坐标/内容保护、改转换规则或优化算法。cp309-progress-r1固定R3 Word SHA0BD8CCE72979B50FD7B49BF824AFBAAE7B60AC24AE560C70D41F8AA9161272C2；相同真实确认/取消测试已通过，确认可见时进度0窗口，owner同Word、原文保持且gate释放。最终测试候选cp309-progress-final继续同源构建。
+
+发现测试入口侧影响需记录：最初baseline/fixed-r1的自有Word虽隔离，但手动OnConnection启动后台PrewarmCompanionAsync，默认指向已运行安装Companion；没有转换/编辑用户公式，前后原进程身份及注册表保持，但不能宣称零Companion调用。后续入口已强制显式独立runtime manifest，将预热和正向验证一起隔离；启动仓库Release Companion PID80352/43136、独立.cache目录、正常TLS，未修改身份或用户服务。下一步确认后真实20重绘及原200准备阶段验证，记录最终通过/未跑范围。证据artifacts/redraw-progress-20261006及docs/redraw-progress-stage-20261006.md，未安装/提交。
+## CP308 — 2026-10-06 — Redraw progress feedback: normal confirmation lifecycle omitted from prior acceptance
+
+用户反馈CP304安装后LaTeX重绘进度停在扫描40–50秒，认为几秒已经完成扫描。只读核实已安装Word SHA确为279CA2F1…645C3E。代码确认CaptureLatexRedrawPlan内部扫描、坐标核对、字体索引/逐目标字号共用初始“正在读取公式范围”；Capture完成后弹LatexRedrawDialog时进度仍显示旧阶段并保持Word owned浮窗。此前VISUALTEX_VSTO_ACCEPTANCE跳过该确认，进度窗口测试仅验证独立线程刷新，漏掉正常交互路径。尚未把用户现场40–50秒全部归因遮挡；实际坐标/字号阶段耗时需单独记录。
+
+新增仅自有Word的word-owned-redraw-progress验收入口：20条可控LaTeX，真实capture阶段、非acceptance确认框/窗口owner/可见进度、取消后原文不变和operation gate释放；在调用转换服务前取消，不接入用户文档。准备同CP304字节baseline后验证，再修正阶段和确认生命周期。基线构建build-cp308-progress-baseline成功，Word仍同279CA2F1…645C3E。证据artifacts/redraw-progress-20261006，独立报告docs/redraw-progress-stage-20261006.md；未改产品代码/安装/提交/注册表，冻结R3/heldR4保持。下一步建立旧版失败证据后修复并用同入口复测，不能只用模拟Report断言通过。
+## CP307 — 2026-10-06 — CP304 NSIS delivered: extracted payloads verified, not installed
+
+新验收包完成：artifacts/nsis-acceptance-cp304-20261006/VisualTeX_1.2.8_x64_CP304_Acceptance_20261006.exe，版本1.2.8，**376950662字节**，SHA256 **C9D071B67CF53E818405B91504DC387C28B72C32C6D0FE364C314AE3AE6D6838**，邻接.sha256文件已生成。包含CP304共享角色/数字/运算符/Text样式规则修复及此前CP300进度/PPT纯原生OMML编辑修复。使用HEAD66a8c709和现有未提交修改、冻结R3，heldR4未变；未提交、未安装或推送，全部旧包与失败证据保留。
+
+两架构Office/OLE/MSI及离线Ribbon/依赖探针、两前端TypeScript/Vite、Rust Release和NSIS构建全部成功，原警告保留。实际反向解包NSIS后再解出两Office MSI与NativeRender MSI，核对两架构各19文件、Office前端23、原生服务/worker/runtime83、OCR74、Bridge及VSTO runtime；桌面实际嵌入前端资源检查通过。内嵌x64 Word SHA279CA2F19998DEF308B69AE9BB8B8D121CF557B41CC484B44F8F564D02645C3E，PPT SHA938849565B2CFBB1A8B2602CF540EF3525E1ACE86ECBFC15ACA81462BE3C3325，精确同CP304已测候选；x86哈希见CP306和报告。内嵌Companion SHA2D2F170013E926AAA241878E43AB1C874727FCBBE07CD3136D0B9E6D9CBBAAC3，和本轮build仅唯一UNK→NSS三字节bundle标记不同，其余字节精确相同。
+
+证据artifacts/nsis-acceptance-cp304-20261006/{build/build-state.json,verified-embedded/report.json,environment-final.json}；最终提取状态VerifiedEmbeddedPayloadNotInstalled，构建状态保留其完成时的BuiltStaticVerifiedPendingExtraction。前后8处LoadBehavior及已安装CP295两DLL未变，原有Companion/NativeRender共3进程身份保持，无新增受保护进程；CP304源码验证哈希全部未变。独立报告docs/nsis-acceptance-stage-20261006.md已更新。
+
+本轮只证明构建与真实包内容完整性，没有重跑CP304同字节公式回归或真实Office操作。CP304静态377+200/PPT codec377/native离屏20及完整离线2453/2454仍按原范围；CP255、混合文本/中西文样式、特殊符号/间距/上下标及六向全量视觉缺口未转为通过，x86没有真实Office新验收。下一步由用户安装这个确切验收包复验原文档重绘/转换进度及PowerPoint原生OMML编辑；不把本包称为全项目发布验收完成。
+
+## CP306 — 2026-10-06 — CP304 packaging: both Office architectures and frontends pass
+
+x64/x86 OLE/VSTO/MSI构建及两架构离线Ribbon COM分发、实际依赖加载/JSON探针均已通过；没有启动Office或改注册表。x64 Word/PPT精确同CP304 SHA279CA2F1…645C3E/93884956…3C3325。x86 Word SHA14D37116142A687EB24A456A53178855AB30571E57EDE85169752B574424A6C5，PPT E8193FAE6A0BD68A18816270BE526B7B5D748329BCFC3CA9A869F3832A6680AE；x86仅这些离线探针，未做真实Office验收。两前端TypeScript/Vite及引用核对通过，目前Rust Release构建中。证据artifacts/nsis-acceptance-cp304-20261006/{build/build-state.json,build-console.log}，阶段报告docs/nsis-acceptance-stage-20261006.md。现有警告保留，NSIS生成、实际解包及环境复核仍待完成，不提前认定交付；全部旧失败/验收范围保持。
+
+## CP305 — 2026-10-06 — CP304 NSIS acceptance packaging started
+
+用户要求编译NSIS验收包。本轮只构建/静态验证/实际解包，不执行安装或提交。以HEAD66a8c709及全部现有修改为输入，冻结R3/heldR4保持，目标VisualTeX_1.2.8_x64_CP304_Acceptance_20261006.exe。已审阅上一轮明确分阶段构建与解包入口，生成artifacts/nsis-acceptance-cp304-20261006/Build-CP304.ps1和Verify-CP304.ps1；重新编译两架构Office及前端/Rust，核对未变Bridge/NativeRender/OCR后复用，保留原包和失败证据。x64 Word必须精确同CP304 SHA279CA2F1…645C3E，PPT必须同93884956…3C3325；源码验证哈希也在构建前核对。依赖探针直接在匹配位数PowerShell中调用原Probe入口，不使用安装或Office宿主。
+
+构建前后只读快照当前8处HKCU/HKLM和WOW6432Node LoadBehavior、实际已安装DLL及受保护进程身份，使用本轮现场快照，不沿用旧安装版本假设。包生成后将反向解出NSIS和三MSI，逐项核对实际payload。尚无新NSIS成功声明；本轮不重跑未变的公式回归，CP304完整离线2453/2454及混合文本/CP255/既有六向视觉缺口不因打包转为通过。独立打包报告docs/nsis-acceptance-stage-20261006.md记录范围与后续结果。
+
+## CP304 — 2026-10-06 — Final shared-rule candidate: runtime preflight577, compiled PPT377, native byte identity
+
+本轮最终冻结R3候选build-cp304-rules-final构建成功：Word SHA256 **279CA2F19998DEF308B69AE9BB8B8D121CF557B41CC484B44F8F564D02645C3E**；PPT **938849565B2CFBB1A8B2602CF540EF3525E1ACE86ECBFC15ACA81462BE3C3325**。SDK8.0.423/VS18 BuildTools，Build-Candidate.ps1继续加载artifacts/mathtype-install-20260927/coexistence-20260928/release-inputs-r3/FreezeR3.targets，不能当默认脏树构建；heldR4 SHA6692FDE3…8B3BAC未变。HEAD仍66a8c709，未提交、未安装、未重新打包；CP300安装包不含CP302–304新修复。
+
+共享规则根因和修改文件见CP302–303及docs/conversion-rule-audit-stage-20261006.md。本轮最后补齐mtext跨原生空格合并时的样式边界，避免西文bold通过合并掩盖后续FarEast文本未加粗；新增负向断言明确捕获实际丢失。新字体定义若既存native前缀没有Times New Roman编码，则生成真实WindowsANSI ENCODING_DEF，未引入自定义记录；显式数字run扫描保持单次索引遍历。改动仍集中共享MathTypeMtefCodec及两组合同测试，WordFormulaService只删无调用旧等待/宽松LaTeX比较死代码，真实预删内容保护保留。
+
+最终两组新增测试28/28（含拒绝损失的负向用例，并非28种转换能力全通过）；完整离线2453/2454，唯一EverySingleCharacterDecorationRetainsItsNativeEncodingBytes仍报A//~: bare226, decorated241，既有CP255原预期未改。实际Word静态PrepareStandaloneMathTypeOleData及OLE容器读回：扩展377/377、原文档200/200；实际PPT DLL内共享codec377/377。这些调用没有启动Word/PPT，不等于宿主选区替换、保存重开或视觉验收。初次sandbox下577次OLE存储创建均STG_E_ACCESSDENIED，为测试前提失败，原日志保留；同一授权入口已在r2及最终候选建立存储前提并通过，不计作修复577个公式失败。
+
+最终Word全部377份MTEF与after-r3已测原生候选、PPT最终codec输出分别逐字节377/377相等；其中20份已在native20-r2实际离屏渲染，WMF独立字体检查6/6。没有用读写双方同一signature作为唯一证据：新增测试独立断言角色/字符/样式/原生记录，WMF检查实际字体/粗斜体；离屏仍不冒充Word真实截图。审计脚本首次误用FreezeR3.targets路径导致证据汇总未写出，仅更正为Build-Candidate实际路径后成功，没有产品或测试预期变动。最终聚合证据artifacts/conversion-rule-audit-20261006/final-verification.json记录DLL/源码/构建输入哈希、计数及比较结果；全部首轮失败留存。
+
+未完成：同一公式不同mtext样式、部分带样式中西文混合仍无法完整native表达，当前严格拦截实际损失，不能算转换通过；CP255、既有F02/F05/F09等符号/围栏/间距/上下标及六向全量视觉缺口继续开放。本轮未重跑实际Office200替换、六向宿主矩阵、Undo/保存重开或物理入口；CP300既有宿主结果只属于其版本。下一步优先补文本多样式/中西文的原生表示证据及共享读写，再安排含这些变化的新验收包和真实宿主复验。本轮已完成共性规则修复和扩展回归，不宣称全部公式/整个项目已验收。
+
+## CP303 — 2026-10-06 — Shared role/number/operator/text-style repairs; native20 and full offline regression
+
+共性修复落在共享MathTypeMtefCodec：fnTEXT角色优先于Unicode符号/letterlike猜测；无旧字体槽位的数学运算符使用Function角色而不冒充Text；显式字体数字按同字体/样式连续十进制词法重建，不能越过空格、模板或不同样式；复合mo用同一纯运算符run规则进行逐字形绑定/签名，替代仅:=和非ASCII的特例，保留每个字形/顺序/样式。新增独立输出类别、内容、每字符样式、原生重写字节及负向损失断言。
+
+额外漏检也处理：同一公式统一文本样式通过MTEF原生EQN_PREFS Text字体/粗斜体位表达，保留fnTEXT标点角色，不借用隐藏metadata；需要的新字体定义保持原索引顺序并置于引用前，其他前缀/根记录保留。读回显式恢复文本字体族/样式，signature现在保留mtext样式而不是忽略。实际textbf/textit/texttt和sans-serif各样式测试通过，包括分式/普通数学变量组合及重复原生编辑字节一致。不同mtext混合多样式仍未完整表达；新增的是拒绝损失的负向测试，不是混合样式转换通过。需继续区分字体文本/native role能力，不能称所有公式已支持。
+
+删除WordFormulaService中已无调用的WaitForMathTypeOleMaterialization及其剥空格/大括号LaTeX比较函数；rg确认仅死函数内部引用，真实创建/编辑/批量/读回仍走严格共享结构签名，没有移除运行时内容保护。新增MathTypeTokenRunContractTests.cs、MathTypeTextStyleContractTests.cs。第一次新增测试误将下标外部x的自然italic也计入候选，14/15，已按精确目标文本选取并仍断言mn与样式；原失败保留。共享回归1403/1404；完整离线2452/2453，唯一旧CP255宽重音字节不变量未动。
+
+冻结R3候选build-cp303-rules-r2成功：Word FB6CD652B9434E28E5D4CE73E21B42DE2064665F598891AC19F7E98479B96653；PPT 61B3091C33BE46438CFC107542C8BD78C69FD836CAE330EE46EFC7A170F05A85；heldR4不变。377有效组合45失败→0，后续文字样式强化后仍377/377。原生服务native20-r1受sandbox身份环境返回0/20（不算产品失败），授权同一探针native20-r2成功20/20；独立解析WMF的6项实际字体/粗斜体检查通过（native-font-inspection.json），并非Word截图/视觉验收。证据均在artifacts/conversion-rule-audit-20261006。当前未启动Office、未安装/提交/重新打包；CP300包不含本次修改。下一步核对静态实际运行时preflight入口及原200回归，并记录仍未建立的混合文本/其他原生能力边界。
+
+## CP302 — 2026-10-06 — Global redraw-rule audit: 377 combinations expose 45 additional failures
+
+用户要求按共性规则修复而非只修原16个公式。当前HEAD仍66a8c709，全部未提交修改保留。沿共享MathML→MTEF→读回→运行时signature路径审查，确认Word三个批量入口及PPT使用相同codec；初始扩展由实际MathJax导出样式×上下标/分式、围栏×结构、常见算式和直接MathML token组合共377项。首轮生成器缺控制词后的分隔空格导致8项输入无效，保留corpus.json/before；修正测试生成器后的corpus-r2.json全部有效，CP300同字节候选离线45失败。并未修改比较器或产品规则来得出该结果。
+
+失败主要包括显式字体小数在读回中把小数点认成mi、fnTEXT内运算符被按Unicode类别强行改成mo、复合mo仅针对:=及非ASCII设特例。额外发现mtext写入忽略mathvariant且旧signature忽略文字样式，可出现无报错丢样式。上述均为共享规则问题，不能以原200通过代表全局。证据artifacts/conversion-rule-audit-20261006/{Generate-Corpus.mts,ProbeRules.cs,corpus-r2.json,before-r2/results.json}；该探针为纯离线codec核对，不是实际Word/PPT或原生视觉验收。下一步从native角色/字形/样式及数字词法恢复修正共享读写规则，并以独立字符/样式/结构断言验证，保留真实损失拦截与全部旧失败。未启动Office、未安装、未提交；CP300包还不含本次新改动。
+
+## CP301 — 2026-10-05 — Repaired acceptance NSIS built and embedded payload verified; not installed
+
+CP300新验收包完成：artifacts/nsis-acceptance-cp300-20261005/VisualTeX_1.2.8_x64_CP300_Acceptance_20261005.exe，376946517字节，SHA256 66A950AE8730198F986F53676BEFE74AF5194FA8BAF57A849D1475BDEADAADDC。基于HEAD66a8c709及本轮未提交修复，冻结R3构建，heldR4未动。x64/x86 Office、前端、Rust Release、NSIS和静态核验均成功；原编译警告保留。实际逆向解NSIS和三个内嵌MSI后，两Office架构各19文件、23 Office前端文件、83 NativeRender文件、74 OCR资源、Bridge及VSTO runtime核对通过，verified-embedded/report.json状态VerifiedEmbeddedPayloadNotInstalled。包内x64 Word096EF484…B192358及PPT7DDD3DAA…CEB74A严格等于CP300记录候选；不是仅检查资源目录。Companion构建与内嵌文件仅唯一UNK→NSS三字节bundle标记不同，其余精确一致；内嵌SHA9F1EB1999C0CBA8D5F9622E24BB0AB2349F315CAE2F70163647CE8DB4EC193C6。
+
+environment-final.json核实六处LoadBehavior、构建前原有进程身份、已安装CP295两DLL均未改变，无新增受保护进程；源Downloads文档SHA仍5726E65007EF18AB0BCACAD44B4FD7E6CE2CF2C8C69A89AA6A3C7D7736C81C91。没有安装、提交或推送。独立修复报告和NSIS报告已更新，首轮CIM sandbox拒绝和所有测试失败证据保留。
+
+交付范围：原200定向转换写入/保存重开、响应进度、PPT纯原生OMML精确区域编辑及物理双击。此前用户的无限卡住本轮未复现，不能宣称所有卡顿根因已消除；CP298计时不是最终候选的重复全量测试。完整离线仍2425/2426（既有CP255），物理Ribbon点击/多公式文本框/任意逐字符字体与混合字号/六向全量视觉等未运行或前提未建立保持。此包供具体问题复验，不能视为整个项目发布验收完成。下一步由用户使用此确切包复验原文档与编辑入口；后续缺陷以新证据定向处理，不擅自扩大冻结范围或掩盖旧失败。
+
+## CP300 — 2026-10-05 — Feedback fixes regression and native package checks complete; new NSIS building
+
+最终候选build-cp299-feedback-r3冻结R3 x64 Word 096EF484DFEDE92B6906C048429FB660CC102615F2BAE11195740E745B192358，PPT 7DDD3DAAB78B0F00064C9AF5ED6E28002D116FB063788957FD70CF81A2CEB74A。Word进度窗口使用自有STA/普通消息快照，保持在所属Word窗口之上；实测阻塞Office STA 1300ms时仍显示“正在写入目标公式”、37/200及00:01，Dispose回调通过（progress-window-r1/progress-window.json）。本次是原生可见窗口/子控件读取验证，不是截图或200全量重新计时。CP298原200转换/保存重开结果仍按其构建记录。
+
+PPT基础回归10/10（ppt-basic-regression-r2）；限定颜色/统一字号/实际宿主字体/粗斜体/正体/保存重开7/7（ppt-style-regression-r2），任意逐字符字体和混合字号前提仍未建立，实际Ribbon点击0。旧基础用例要求混排OMML读取必须失败，与新增精确区域编辑能力冲突；已改为验证读取不变、编辑保留文字/字号/形状，以及整对象转换混排仍明确拒绝。原9/10失败保留，没有删内容保护。第一轮样式测试因上一自有PPT尚未退出而被隔离入口拒绝，属于未运行；确认退出后再运行通过。独立ZIP/XML检查三个实际保存PPTX均为原生oMath/sSup和z^3+9，0 OLE、无VisualTeX身份字符串、无customXml，混排前后文字保留（ppt-package-independent.json）。物理双击已通过CP299；物理Ribbon、多公式同文本框选择、全量视觉仍未验收。
+
+同一离线测试程序集在允许写临时SVG的环境完整重跑2425/2426（tests/full-regression-authorized.trx），唯一既有CP255宽重音失败保留且HEAD基线已同样复现，不得报全绿。自有Companion81460及旧ProbeCodec进程均已退出，Word/PPT无残留自有实例（owned-runtime-cleanup.json）。未关闭用户进程/修改注册表或安全机制。进度、PPT内核、MTEF与测试修改文件见独立报告。
+
+准备新验收包artifacts/nsis-acceptance-cp300-20261005。首轮build只读CIM进程核查被sandbox拒绝，尚未编译；原日志保留。经工具授权运行同一已审阅脚本到独立build-r2输出；当前x64/x86 Office、Ribbon/依赖探针、前端均通过，x64 DLL与候选严格同SHA，Rust/NSIS及逆向解包待完成。未安装/提交/推送。下一步完成实际包内DLL/资源核对及环境不变核查，记录确切交付哈希。不得把本次定向修复扩大为六向全符号/视觉或发布级全量通过。
+
+## CP299 — 2026-10-05 — Native PPT standalone/mixed editing and physical double-click pass; known accent failure isolated
+
+PowerPoint实测进一步根因：已存在的MathZone在替换文本后仍保持原生数学区域，旧InsertPrepared再次执行Insert Equation会退出数学上下文并导致after-insertion选择等待失败。共享内核现在检查已存在的单一MathZone，复用其Professional转换；新插入仍执行Insert Equation，未放宽内容/新鲜度保护。build-cp298-ppt-r6自有PPT独立原生式与前后文字混排式均通过实际OnEditSelected回调、会话提交z^3+9、原形状ID/数量不变、文字颜色保留、双击命中路由、取消和保存重开；证据ppt-standalone-r5、ppt-mixed-r1。build-cp299-feedback-r1自有混排式进一步通过真实mouse_event双击→实际PowerPointDoubleClickHook→原生编辑会话（不是直接调用回调），提交/重开同样通过，见ppt-physical-r1/native-entry.json。物理Ribbon点击未覆盖，按钮通过实际公开回调。没有为OMML增加VisualTeX持久metadata、OLE或额外形状。
+
+CP299候选冻结R3 x64：Word 0C247C8F0590015826C36861A132C995C1089A66E488268B41AC77126FB10A8F；PPT 7DDD3DAAB78B0F00064C9AF5ED6E28002D116FB063788957FD70CF81A2CEB74A。六处Word/PPT LoadBehavior前后JSON哈希完全一致0C90FCEA44D043770619927B69AE809C3242B4180F9338C69DD3DB897A1A83F8；用户实例/设置未操作。新增Word进度关闭所有权检查，防止前一任务释放gate后的Dispose清空新任务进度；原生预览及导入写入补阶段/计数。Word200验收依据CP298，不冒充本候选重新全量像素验收。
+
+完整WindowsOffice测试2423/2426；两项SVG临时文件写入被sandbox拒绝，直接运行原程序集获授权后VectorExport6/6通过。剩余宽tildeCHAR不变量：当前及从HEAD只读导出编解码器到独立测试输出均同样报A/default/tilde bare226 decorated241（tests/head-accent-baseline-r3.trx），确认既有CP255宽重音候选问题，未放宽断言。首次基线测试输出意外带本地hostfxr/hostpolicy造成运行时解析失败，保留原文件为.build-copy后使用已有系统运行时完成，未安装/修改安全设置。外部ProbeCodec旧异常证据保留且清理仍需核对。下一步：既有PPT基本/样式回归、原生包结构独立核查、最终进度窗口及候选记录；没有提交或部署。
+## CP298 — 2026-10-05 — Original200 native Word passes; responsive stage progress; PPT native edit candidate pending
+
+build-cp297-owned200-r1冻结R3 Word ADC6D6D193EA7581C56F646B84840C1072344DC89A2CFCB4BC99E24D907DBB2A原文档离线200/200严格MTEF读回通过，新增physics11/11。自有Word原200 LaTeX→MathType实际重绘65.384s、200成功/0跳过，写后200和保存重开200内容/DisplayMode全部通过；原生预览188独立模板2.197s，写入insertTotal34.549s，见word200-direct-r1。随后build-cp298-ppt-r1自有Word同原200先LaTeX→VT重绘66.349s，VT→MT实际生产ConvertFormulaFormatAsync124.703s，VT持久LaTeX200、MT写后200、重开200共600项全部通过；见word200-vt-mt-r1/result.json、conversion-metrics.json、trace.log。不是20/40外推，不宣称像素视觉/所有公式全部通过。转换inclusive主要指标ReplaceExternalFrom.VisualTeX66.738s、PrepareBoundSource29.495s、CaptureTarget13.506s；NumberingResolver31.781s是嵌套开销不得直接相加。当前复现未出现无限卡住；原用户卡住原因不能据此认定唯一根因。
+
+新增WordOperationProgress：独立STA进度窗口只接收纯数据，避免Office长同步写入阻塞显示，不用DoEvents重入生产Word。LaTeX重绘、六向转换、恢复LaTeX、批量导入入口在读取前显示；共享服务读取/核对/逐条写入计数，转换渲染按20式有界批次报告真实完成数。原子内容边界、原生保真检查未删除。实际Word trace覆盖0–200写入及阶段耗时；窗口像素验收尚未完成。
+
+PPT候选新增原生MathZone瞬时坐标/包内序号定位，按精确原生区域回写，允许文字混排和多公式中单选目标，不加持久身份/额外结构，双击按命中公式区域路由。文件PowerPointFormulaService.NativeOmml.cs、PowerPointFormulaService.cs、PowerPointNativeOmmlPackage.cs、ThisAddIn.cs；尚需实测。新增owned编辑入口验收在会话提交前先遇svg、svgBase64必填项及MathML namespace测试数据缺失，证据ppt-standalone-r1/r2/r3保留；是测试前提错误，未称产品通过。当前build-cp298-ppt-r5继续验证。对旧CP255宽tilde字节失败进行安装DLL小探针时外部ProbeCodec异常并挂起，未取得有效基线；已记录独有进程78756及故障子93032，尝试仅关闭自有探针被OS拒绝/异常，不能据此归因产品或改安全设置。后续继续PPT编辑/混排/双击/保存验证、进度范围补齐和回归，最终才打候选。详细进展与失败范围见独立repair-stage报告。
+## CP297 — 2026-10-05 — Exact200 reproduction; shared physics fixes in progress; isolated PPT entry baseline
+
+从用户Downloads已落盘文档只读复制并由生产MathJax导出100inline+100display共200式，安装CP295原DLL离线精确复现16失败。根因是hbar绕过共享字体样式绑定及bra/ket缺少tmDIRAC原生模板，非任意严格策略拒绝正常公式。共享MathTypeMtefCodec已增加有原生MT Extra槽位依据的hbar authority、对原生mi有效样式的绑定、负字体索引读取时保留mi变体身份，及MTEF v5 tmDIRAC读写；未改比较器。新增独立手组MTEF及字体/样式/槽位测试10/10。候选build-cp297-physics-r1（冻结R3）Word SHA256 B905C186538D7090A73D7D388C6F5B06CD128682FD09356B68A603531D9026B9；原200离线184→192通过，残余8证明实际MathJax mrow归一化另有模板支持门禁，已补共享SelectFenceTemplate，尚待重建重跑。不得先写200通过。MathType组919/920，失败为A空variant宽tilde使用模板导致CHAR字节断言失败，待与原DLL对比，不改预期。新字体测试曾错误查询未存在的data-mtef-explicit-font，已改为查真实MTEF中的MTExtra编码/字体名称和负FONT_STYLE引用，原失败日志保留。旧外部NativePhysicsOracle探针异常未产有效原生证据，不能归因产品。
+
+用户已自行保存退出PPT；独立Companion PID81460/43136与自有PPT PID34320完成简单独立native OMML的实际OnEditSelected回调探针：约1001ms创建wordOmml会话，source恢复正确；取消并保存后无VisualTeX持久身份。这里只证明回调/源/会话，不是物理Ribbon点击、编辑窗口像素或回写验收；用户按钮问题尚未复现，双击无metadata门禁已确认。所有证据artifacts/acceptance-feedback-20261005；独立报告docs/acceptance-feedback-repair-stage-20261005.md。未部署/提交/改注册表/安全设置。下一步：实际200/native验证、进度窗口与阶段计数、200真实Word分段计时，PPT双击及文本内原生公式编辑链路。
+## CP296 — 2026-10-05 — Real installed-package feedback: redraw16 failures, conversion stalls/no progress, native PPT edit
+
+用户实际安装CP295后反馈latex_100_inline_100_display全文LaTeX→MathType有16项失败（截图集中hbar样式与ket竖线/尖括号）、VT→MT数分钟无可见进度；PPT原生OMML双击和编辑按钮均无反应。用户补充Word转换已结束或关闭。只读核对安装Word9673B5DC…8E282、PPT8500D4BC…5F492确与交付一致，不是加载旧DLL。截图/客户端日志/当前保护进程快照保存在artifacts/acceptance-feedback-20261005。代码确认PPT双击两处要求持久Metadata并主动忽略原生OMML；按钮链路仍需实际定位。Word转换先同步捕获全部源，开始捕获前无进度；其余仅阶段StatusBar，实际耗时归属尚未复现，不以20/40外推解释200。准备最小复现、共享规则根修及自有实例验收；保持纯原生OMML、不加额外持久结构、不放宽保真比较器、不操作用户实例或部署。详细进展见docs/acceptance-feedback-repair-stage-20261005.md；当前没有新修复/测试通过声明。
+
+## CP295 — 2026-10-05 — NSIS acceptance candidate built and actual embedded payloads verified; not installed
+
+用户要求的NSIS已完成：artifacts/nsis-acceptance-cp292-20261005/VisualTeX_1.2.8_x64_CP292_Acceptance_20261005.exe，版本1.2.8，376925832字节，SHA256 B6147915D7BEBC44B656708B2A3927F15AE53F6C3CE1296E8DCEA03420F1E4C9。基于66a8c709当前源码、冻结R3，包含x64/x86 Office 1.0.43.0、当前Bridge/NativeRender及锁定离线OCR运行时（S/M/L模型按既有设计不内置）。前端TypeScript/Vite、Rust Release、NSIS、静态发布核验全部通过，原警告保留。逆向解包实际NSIS再解两Office MSI和NativeRender MSI，核对每架构19文件、23 Office前端文件、83原生服务/worker/runtime文件、74 OCR资源、Bridge及VSTO runtime；当前桌面前端内嵌校验通过。实际x64 Word为9673B5DC…8E282（CP293已解释提交标识变化），PPT8500D4BC…5F492。Companion与构建输出仅Tauri唯一UNK→NSS三字节bundle标记不同，其余字节精确相同。证据verified-embedded/report.json状态VerifiedEmbeddedPayloadNotInstalled，build-r3/build-state.json、launcher-r3.log及environment-final.json；独立报告docs/nsis-acceptance-stage-20261005.md载全哈希/版本/失败历史/范围。
+
+原9个Word/Companion/NativeRender进程身份全保持，无新增受保护进程；4处LoadBehavior与32/64位持久PowerShell策略均未变。heldR4、Cargo.lock、Arc修复及OCR锁定输入未变；未运行安装包/部署/用户文档操作/安全设置变更/提交推送。既有未提交修改及失败证据保留，diff检查通过。本轮只完成构建/静态包完整性，不等于安装和产品全量验收：CP255、F02/F05、原F07/F08/F09等符号/围栏/间距/上下标/视觉缺口不被转为通过；未重跑六向或扩大测试。下一步由用户验收该确切安装包，并按具体反馈定位。
+
+## CP294 — 2026-10-05 — x64/x86 Office package probes complete; NSIS frontend/Rust stages resumed
+
+build-r2已完成x64 Word/PPT/OLE/MSI和离线Ribbon/依赖探针；x86编译成功后，32位PowerShell入口因默认Restricted执行策略拒绝本地探针脚本，原失败日志保留。这不是Defender/隔离事件：32位各策略作用域均Undefined，64位LocalMachine为RemoteSigned，本地脚本无Zone.Identifier。build-r3仅为自建32位探针子进程显式传RemoteSigned，不执行Set-ExecutionPolicy、不改持久策略/注册表/Defender。x86 Word/PPT Ribbon COM回调、依赖加载/JSON执行现已通过，x86 MSI生成；复用并核对此前当前源码Bridge/NativeRender及x64产物，未重复编译或触及用户实例。当前进入前端/Rust/NSIS阶段，尚未宣称包完成；输出artifacts/nsis-acceptance-cp292-20261005/{Build-CP292-R3.ps1,launcher-r3.log,build-r3/build-state.json}。逆向解包校验脚本同时修正任务内heldR4文件路径拼接错误，产品代码与任何保真比较器未改。独立报告docs/nsis-acceptance-stage-20261005.md记录范围与待办。
+
+## CP293 — 2026-10-05 — Packaging identity check caught commit metadata change; controlled rebuild explains mismatch
+
+CP292首轮已重建当前Bridge/NativeRender与x64 OLE/VSTO，在强制x64 Word SHA与CP290相等时停止，失败日志保留。新DLL为9673B5DC13EE854E11BCB627DAEB4B799E52D2D78E480DDBB2044AE4E148E282；生成AssemblyInformationalVersion从旧a57e568变成新提交66a8c709，故不能报逐字同旧SHA。当前提交独立Build-Candidate再次得到同9673B5DC。另以同一当前源码、仅显式旧SourceRevisionId进行控制构建：Word/PPT/Contracts三DLL经既有保守PE比较器确认相对CP290仅MVID/COFF/PE校验和/PDB调试记录不同，执行代码/资源/其余元数据字节同；没有修改任何DLL或放宽产品保真比较器。证据artifacts/nsis-acceptance-cp292-20261005/{current-commit-build.log,identity-control-build.log,*.identity-control.json}。交付将保留正确的新提交标识并固定9673B5DC，不把控制构建装进包。重新打包使用独立build-r2输出，复用首轮已成功重建并核对哈希的Bridge/NativeRender，其余阶段继续；还未生成新NSIS/安装。冻结R3及heldR4不变。
+
+## CP292 — 2026-10-05 — NSIS acceptance package build started from local commit 66a8c709
+
+用户要求编译NSIS供其验收，授权构建、不执行安装。基于66a8c709，继续冻结R3编译输入/heldR4不变；目标为1.2.8 x64标准含OCR安装包，包含x64/x86 Office MSI。已审阅tauri_build/build_platform_bundle/build_windows_office及CP235打包入口；默认入口会清理产物、重解析OCR且可能安装冒烟，因此采用明确分阶段构建：保留旧NSIS/MSI，重建当前Bridge/NativeRender/OLE/VSTO/前端/Rust，沿用已验证OCR锁定资源，不清理证据、不安装、不启动或终止用户进程。x64 Word必须与CP290 SHA0DE80AE7…B36E6C一致；包生成后需逆向解包核对实际嵌入DLL/资源和哈希，不仅检查资源目录。状态及日志位于artifacts/nsis-acceptance-cp292-20261005，尚未完成构建或宣称静态核验通过；CP255及原符号/六向保真缺口仍保留。
+
 ## CP291 — 2026-10-05 — Local source/test/report checkpoint requested by user
 
 用户明确要求提交到本地。本检查点与CP280–290尚未提交的共享编号读取优化、MTEF区间/分隔符修复、隔离性能验收入口、39项区间/分隔符测试及三个阶段报告一同保存；本次提交的确切SHA以包含CP291的Git提交为准，不push。CP288样式复用实验已撤回，FormatConversionCore未带入提交。CP290最终FreezeR3构建成功且Word DLL与已测CP284同字节0DE80AE7…B36E6C；36次20/40性能运行/1080转换及480份候选raw对比证据保持。没有为提交重新运行同字节矩阵，也没有将48个旧F02/F05失败、CP255及其他未验边界改为通过。既有构建产物、临时文件、现场UI证据和原失败日志继续原位保留，不随此次源码提交混入；heldR4、用户实例与设置保持，不安装/部署。

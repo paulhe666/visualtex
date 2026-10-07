@@ -432,13 +432,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         dispatcher.Post(() =>
         {
             var selected = service.ReadFormulaAtScreenPoint(screenX, screenY);
-            if (selected?.Metadata is null || string.IsNullOrWhiteSpace(selected.FormulaId))
+            if (selected is null || (selected.Metadata is null
+                && !PowerPointFormulaService.IsNativeOmmlReference(selected.ObjectId)))
                 return;
+            var identity = selected.FormulaId ?? selected.ObjectId!;
             var now = DateTimeOffset.UtcNow;
-            if (selected.FormulaId == _lastDoubleClickFormulaId
+            if (identity == _lastDoubleClickFormulaId
                 && now - _lastDoubleClickAt < TimeSpan.FromSeconds(1))
                 return;
-            _lastDoubleClickFormulaId = selected.FormulaId!;
+            _lastDoubleClickFormulaId = identity;
             _lastDoubleClickAt = now;
             BeginSession("edit", null, selected);
         });

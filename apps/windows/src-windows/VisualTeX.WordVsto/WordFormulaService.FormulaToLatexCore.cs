@@ -161,6 +161,7 @@ internal sealed partial class WordFormulaService
                                     });
 
                             converted.FormulaCount++;
+                            ReportOperationProgress("正在恢复 LaTeX 源码…", converted.FormulaCount, targets.Count);
                             converted.FormulaIds.Add(
                                 target.Metadata.FormulaId);
                         }

@@ -18,16 +18,28 @@ internal static partial class Program
         var seed = Path.Combine(artifactRoot, "owned-empty-startup.docx");
         CreateEmptyWordPerformanceSeed(seed);
         var protectedIds = Process.GetProcessesByName("WINWORD").Select(process => process.Id).ToArray();
-        var process = Process.Start(new ProcessStartInfo(executable, "/x /Automation \"" + seed + "\"")
+        var startupMode = Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_INTERACTIVE_WORD") == "1"
+            ? "/x" : "/x /Automation";
+        var startInfo = new ProcessStartInfo(executable, startupMode + " \"" + seed + "\"")
         {
             UseShellExecute = false,
             WorkingDirectory = artifactRoot,
-        }) ?? throw new InvalidOperationException("Could not start an independent /Automation Word.");
+        };
+        // Opt-in diagnostic: only this newly created child may load the installed
+        // add-in normally. Its Companion must still be an explicit isolated runtime.
+        if (Environment.GetEnvironmentVariable("VISUALTEX_REPLACE_INSTALLED") == "1")
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_OFFICE_APP_DATA_ROOT")))
+                throw new InvalidOperationException("Installed add-in probe needs an isolated Companion.");
+            startInfo.EnvironmentVariables["VISUALTEX_VSTO_ACCEPTANCE"] = "0";
+        }
+        var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Could not start an independent /Automation Word.");
         var started = process.StartTime.ToUniversalTime();
         if (protectedIds.Contains(process.Id)) throw new InvalidOperationException("Word returned a pre-existing process ID.");
         File.WriteAllText(Path.Combine(artifactRoot, "owned-word-process.json"),
             System.Text.Json.JsonSerializer.Serialize(new { pid = process.Id, started, protectedIds,
-                command = executable + " /x /Automation " + seed, seed }));
+                command = executable + " " + startupMode + " " + seed, seed }));
         try
         {
             var deadline = DateTime.UtcNow.AddSeconds(35);

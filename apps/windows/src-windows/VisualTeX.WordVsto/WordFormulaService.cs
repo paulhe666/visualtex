@@ -7409,43 +7409,6 @@ internal sealed partial class WordFormulaService
         }
     }
 
-    private static byte[] WaitForMathTypeOleMaterialization(
-        InlineShape shape,
-        string expectedLatex)
-    {
-        var delaysMs = new[] { 0, 15, 35, 70, 120, 200 };
-        Exception? lastError = null;
-        string? lastLatex = null;
-        foreach (var delayMs in delaysMs)
-        {
-            if (delayMs > 0) Thread.Sleep(delayMs);
-            try
-            {
-                var compound = MathTypeOleStorage.CaptureCompoundFile(shape);
-                if (!MathTypeOleStorage.LooksLikeMathTypeCompoundFile(compound))
-                {
-                    lastError = new InvalidDataException(
-                        "Word's replacement object is not yet a valid MathType compound storage.");
-                    continue;
-                }
-                var mathMl = MathTypeOleStorage.ReadMathMl(compound);
-                lastLatex = MathMlToLatexConverter.Convert(mathMl);
-                if (MathTypeOleRoundTripMatches(expectedLatex, lastLatex))
-                    return compound;
-                lastError = new InvalidDataException(
-                    $"MathType OLE materialization mismatch. Expected '{expectedLatex}', actual '{lastLatex}'.");
-            }
-            catch (Exception error)
-            {
-                lastError = error;
-            }
-        }
-
-        throw new InvalidDataException(
-            $"Word did not finish materializing the rewritten MathType OLE. Expected '{expectedLatex}', last='{lastLatex ?? "<unreadable>"}'.",
-            lastError);
-    }
-
     // Shared by redraw preflight and the actual insertion. Validate generated
     // bytes before the first source deletion; preview success alone does not
     // establish a lossless MathML -> Equation Native -> MathML round trip.
@@ -7500,20 +7463,6 @@ internal sealed partial class WordFormulaService
             + $"expectedChar={DescribeAt(expected, index)}; actualChar={DescribeAt(actual, index)}; "
             + $"expectedContext='{Escape(expected.Substring(start, expectedEnd - start))}'; "
             + $"actualContext='{Escape(actual.Substring(start, actualEnd - start))}'";
-    }
-
-    private static bool MathTypeOleRoundTripMatches(string expectedLatex, string actualLatex)
-    {
-        static string Normalize(string value) =>
-            (value ?? string.Empty)
-                .Replace(" ", string.Empty)
-                .Replace("{", string.Empty)
-                .Replace("}", string.Empty)
-                .Trim();
-        return string.Equals(
-            Normalize(expectedLatex),
-            Normalize(actualLatex),
-            StringComparison.Ordinal);
     }
 
     private static InlineShape? FindNewMathTypeOleAtStart(

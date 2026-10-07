@@ -32,7 +32,9 @@ internal sealed partial class WordFormulaService
                 throw new InvalidOperationException(
                     "请先选择包含 LaTeX 代码的 Word 内容。");
 
+            ReportOperationProgress("正在读取 Word 文本…", 0, 0);
             var sourceText = scope.Text ?? string.Empty;
+            ReportOperationProgress("正在扫描 LaTeX 公式…", 0, 0);
             var spans = WordBulkImportParser.FindFormulaSpans(
                 sourceText);
             if (spans.Count == 0)
@@ -69,6 +71,7 @@ internal sealed partial class WordFormulaService
                 captureWatch.ElapsedMilliseconds - captureStageStart;
 
             captureStageStart = captureWatch.ElapsedMilliseconds;
+            ReportOperationProgress("正在分析公式上下文…", 0, 0);
             var contexts =
                 BuildLatexRedrawSourceContexts(
                     sourceText,
@@ -77,6 +80,7 @@ internal sealed partial class WordFormulaService
                 captureWatch.ElapsedMilliseconds - captureStageStart;
 
             captureStageStart = captureWatch.ElapsedMilliseconds;
+            ReportOperationProgress("正在读取正文和公式字号…", 0, 0);
             // Most ordinary Word redraw scopes use one body font size. Prove that
             // cheaply once through Range.Font before asking Word to serialize the
             // complete scope as Flat OPC merely to recover per-character sizes.
@@ -114,6 +118,8 @@ internal sealed partial class WordFormulaService
             captureStageStart = captureWatch.ElapsedMilliseconds;
             var fontFallbackCount = 0L;
             var fontFallbackMilliseconds = 0L;
+            var fontTargetsCompleted = 0;
+            ReportOperationProgress("正在读取公式字号…", 0, plan.Targets.Count);
             foreach (var target in plan.Targets
                          .OrderBy(item => item.RelativeStart))
             {
@@ -195,12 +201,14 @@ internal sealed partial class WordFormulaService
                         Release(exact);
                     }
                 }
+                ReportOperationProgress("正在读取公式字号…", ++fontTargetsCompleted, plan.Targets.Count);
             }
             plan.CaptureTimings["targets"] =
                 captureWatch.ElapsedMilliseconds - captureStageStart;
             plan.CaptureTimings["fontFallbackCount"] = fontFallbackCount;
             plan.CaptureTimings["fontFallback"] = fontFallbackMilliseconds;
             plan.CaptureTimings["total"] = captureWatch.ElapsedMilliseconds;
+            ReportOperationProgress($"已找到 {plan.Targets.Count} 个 LaTeX 公式", plan.Targets.Count, plan.Targets.Count);
 
             return plan;
         }
@@ -220,12 +228,13 @@ internal sealed partial class WordFormulaService
     // Word's Characters collection for the logical boundaries. In both cases the
     // mapped formulas are accepted only if the complete gap/source/tail text chain
     // exactly reproduces the captured Range.Text snapshot.
-    private static void ResolveLatexRedrawTargetCoordinates(
+    private void ResolveLatexRedrawTargetCoordinates(
         Document document,
         Range scope,
         WordLatexRedrawPlan plan,
         bool allowStoredCoordinates)
     {
+        ReportOperationProgress("正在定位公式范围…", 0, plan.Targets.Count);
         var liveText =
             scope.Text ?? string.Empty;
         if (!string.Equals(
@@ -348,6 +357,7 @@ internal sealed partial class WordFormulaService
                         Target: target,
                         Start: sourceStart,
                         End: sourceEnd));
+                ReportOperationProgress("正在定位公式范围…", mapped.Count, plan.Targets.Count);
             }
 
             if (!TryValidateLatexRedrawCoordinateChain(
@@ -372,7 +382,7 @@ internal sealed partial class WordFormulaService
         }
     }
 
-    private static bool TryValidateLatexRedrawCoordinateChain(
+    private bool TryValidateLatexRedrawCoordinateChain(
         Document document,
         Range scope,
         WordLatexRedrawPlan plan,
@@ -391,6 +401,8 @@ internal sealed partial class WordFormulaService
         Range? gap = null;
         Range? source = null;
         Range? tail = null;
+        var verified = 0;
+        ReportOperationProgress("正在核对公式位置…", 0, mapped.Count);
         try
         {
             foreach (var item in mapped
@@ -448,6 +460,7 @@ internal sealed partial class WordFormulaService
                     relativeEnd;
                 wordCursor =
                     item.End;
+                ReportOperationProgress("正在核对公式位置…", ++verified, mapped.Count);
             }
 
             tail = document.Range(
@@ -638,6 +651,7 @@ internal sealed partial class WordFormulaService
         foreach (var target in plan.Targets
                      .OrderBy(item => item.AbsoluteStart))
         {
+            ReportOperationProgress("正在原位写入重绘公式…", result.FormulaCount, plan.Targets.Count);
             var formula = prepared[target.Id];
 
             // Source identity and target kind are pure preflight checks. Keep
@@ -714,6 +728,7 @@ internal sealed partial class WordFormulaService
             result.FormulaIds.Add(
                 targetResult.FormulaId);
             result.FormulaCount++;
+            ReportOperationProgress("正在原位写入重绘公式…", result.FormulaCount, plan.Targets.Count);
             successfulTargetIds.Add(target.Id);
 
             if (targetResult.MathTypeNativeStylesPrepared)

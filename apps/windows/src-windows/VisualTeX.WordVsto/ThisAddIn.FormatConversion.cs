@@ -340,6 +340,8 @@ public sealed partial class ThisAddIn
             $"format-conversion-start sourceMode={sourceMode} targetMode={targetMode} wholeDocument={wholeDocument}");
 
         var rendered = new Dictionary<string, RenderedWordBulkFormulaTemplate>(StringComparer.Ordinal);
+        var progress = await dispatcher.InvokeAsync(
+            () => BeginOperationProgress("VisualTeX 公式格式转换", service)).ConfigureAwait(false);
         var prepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal);
         WordFormulaService.WordViewState? originalViewState = null;
         try
@@ -385,8 +387,10 @@ public sealed partial class ThisAddIn
                     "1",
                     StringComparison.Ordinal))
             {
+                progress.Dispose();
                 var confirmed = await dispatcher.InvokeAsync(() =>
                     System.Windows.Forms.MessageBox.Show(
+                        progress.Owner,
                         T(
                             $"将把全文 {plan.Targets.Count} 个 {sourceName} 公式重新绘制为 {targetName}。\r\n\r\n旧公式宿主和旧编号会直接删除，目标编号将按当前 Word 编号设置重新创建。是否继续？",
                             $"Redraw all {plan.Targets.Count} {sourceName} equations in the document as {targetName}?\r\n\r\nThe old equation hosts and numbering will be removed, and target numbering will be recreated using the current Word numbering settings."),
@@ -400,6 +404,8 @@ public sealed partial class ThisAddIn
                     SetStatus("已取消公式格式转换，Word 文档未修改。");
                     return;
                 }
+                progress = await dispatcher.InvokeAsync(
+                    () => BeginOperationProgress("VisualTeX 公式格式转换", service, "正在准备公式转换…")).ConfigureAwait(false);
             }
 
             SetStatus($"正在准备 {plan.Targets.Count} 个公式的 {targetName} 重绘结果…");
@@ -462,22 +468,27 @@ public sealed partial class ThisAddIn
             {
                 WordDoubleClickHook.TraceMessage(
                     $"format-conversion-render-start sourceMode={sourceMode} targetMode={targetMode} formulas={pending.Count}");
-                var batch = await client.RenderBatchAsync(
-                    pending.Select(item => new RenderBatchItemRequest
-                    { Id = item.Run.Id, Request = item.Request }).ToList(),
-                    TimeSpan.FromMinutes(3), lifetime.Token).ConfigureAwait(false);
-                for (var index = 0; index < pending.Count; index++)
+                // Bounded submissions expose actual completed counts and avoid
+                // one opaque multi-minute request for an entire document.
+                for (var offset = 0; offset < pending.Count; offset += 20)
                 {
-                    var item = pending[index];
-                    var completed = batch.Items[index].Session;
-                    rendered[item.Key] = MaterializeBulkFormulaTemplate(
-                        client,
-                        item.Run,
-                        targetMode,
-                        completed,
-                        materializePreview: targetMode == FormulaOleContract.NativeOleMode);
-                    WordDoubleClickHook.TraceMessage(
-                        $"format-conversion-rendered sourceMode={sourceMode} targetMode={targetMode} itemId={item.Run.Id} status={completed.Status}");
+                    progress.Report("正在渲染公式…", offset, pending.Count);
+                    var chunk = pending.Skip(offset).Take(20).ToArray();
+                    var batch = await client.RenderBatchAsync(
+                        chunk.Select(item => new RenderBatchItemRequest
+                        { Id = item.Run.Id, Request = item.Request }).ToList(),
+                        TimeSpan.FromMinutes(3), lifetime.Token).ConfigureAwait(false);
+                    for (var index = 0; index < chunk.Length; index++)
+                    {
+                        var item = chunk[index];
+                        var completed = batch.Items[index].Session;
+                        rendered[item.Key] = MaterializeBulkFormulaTemplate(
+                            client, item.Run, targetMode, completed,
+                            materializePreview: targetMode == FormulaOleContract.NativeOleMode);
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-rendered sourceMode={sourceMode} targetMode={targetMode} itemId={item.Run.Id} status={completed.Status}");
+                    }
+                    progress.Report("公式渲染进度", offset + chunk.Length, pending.Count);
                 }
             }
 
@@ -556,6 +567,7 @@ public sealed partial class ThisAddIn
                         new Dictionary<string, byte[]>(StringComparer.Ordinal);
                     foreach (var target in plan.Targets)
                     {
+                        progress.Report("正在编码 MathType 公式…", nativePreviewInputs.Count, plan.Targets.Count);
                         var formula = prepared[target.Id];
                         var mathMl = formula.MathMl
                             ?? throw new InvalidDataException(
@@ -579,11 +591,13 @@ public sealed partial class ThisAddIn
                         .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
                         ?? Path.GetTempPath();
                     var nativePreviewWatch = System.Diagnostics.Stopwatch.StartNew();
+                    progress.Report("正在生成 MathType 原生预览…", 0, plan.Targets.Count);
                     var renderedAllNativePreviews =
                         MathTypeNativePreviewRenderer.TryRenderBatch(
                             nativePreviewInputs,
                             nativePreviewRoot,
                             out var nativePreviews);
+                    progress.Report("MathType 原生预览已生成", nativePreviews.Count, plan.Targets.Count);
                     var missingNativePreviewIds = plan.Targets
                         .Where(target => !nativePreviews.ContainsKey(target.Id))
                         .Select(target => target.Id)
@@ -728,6 +742,7 @@ public sealed partial class ThisAddIn
                          .Where(preview => preview is not null)
                          .Distinct())
                 preview!.Dispose();
+            progress.Dispose();
             _operationGate.Release();
         }
     }

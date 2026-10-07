@@ -1,0 +1,48 @@
+# Shared redraw and conversion rule audit — 2026-10-06
+
+The user requires general shared-rule repairs, not an allowlist for the reported16 formulas. HEAD66a8c709 and all inherited dirty work remain. This stage starts from the CP300 candidate Word096EF484DFEDE92B6906C048429FB660CC102615F2BAE11195740E745B192358, frozenR3; heldR4 is unchanged. No installation, registry writes, Office sessions or commits in this stage so far.
+
+## Final status (CP304)
+
+Packaging follow-up CP307: these changes are now included in `artifacts/nsis-acceptance-cp304-20261006/VisualTeX_1.2.8_x64_CP304_Acceptance_20261006.exe`, SHA256 `C9D071B67CF53E818405B91504DC387C28B72C32C6D0FE364C314AE3AE6D6838`. Actual extracted x64 DLLs exactly match the CP304 hashes below. Built and inspected, not installed; no additional fidelity claims. See [the packaging report](nsis-acceptance-stage-20261006.md). The following candidate findings and prior failures retain their original scope.
+
+Final candidate `build-cp304-rules-final` uses the existing frozen R3 build inputs, not the default dirty-tree build. Word SHA256 `279CA2F19998DEF308B69AE9BB8B8D121CF557B41CC484B44F8F564D02645C3E`; PowerPoint SHA256 `938849565B2CFBB1A8B2602CF540EF3525E1ACE86ECBFC15ACA81462BE3C3325`. Held R4 SHA256 `6692FDE39133F2C604D87E21BA78380AC6C3C2A9E5A084723203C03FB98B3BAC` is unchanged. Source changes remain uncommitted; the previous CP300 installer does not include this stage.
+
+| Verification | Result | Scope / evidence under artifacts/conversion-rule-audit-20261006 |
+| --- | --- | --- |
+| Expanded production-export/direct-MathML corpus | 45 strict failures before, 0 after, 377 valid inputs | `before-r2/results.json`, `word-gate-final/results.json`; nine additional silent text-style losses were found independently and now checked |
+| Actual Word static preflight plus compound OLE readback | 377/377 expanded and 200/200 original formulas | `word-gate-final`, `original200-gate-final`; no Word application or document replacement |
+| Shared codec compiled into final PPT DLL | 377/377 | `ppt-codec-final/results.json`; no PowerPoint process or edit entry validation |
+| New token/text contract tests | 28/28 | `tests/targeted-final.trx`; includes negative loss-rejection tests, not 28 successful conversion capabilities |
+| Full offline suite | 2453/2454 | `tests/full-rules-final.trx`; only existing CP255 character-decoration invariant fails, with unchanged expectation |
+| Native offscreen render | 20/20 | `native20-r2`; final Word MTEF equals this candidate's input set |
+| Independent actual WMF font/style checks | 6/6 | `native-font-inspection.json`, `InspectNativeFonts.py`; not Word screenshots |
+| Exact MTEF parity | 377/377 against native-tested candidate, 377/377 against final PPT | `final-verification.json`, `Verify-FinalEvidence.ps1`; exact byte comparison, no normalization |
+
+The final text-space boundary check prevents merging differently styled text on the two sides of native 0.2em spaces. Without it, a bold western run could incorrectly lend its style to an unstyled Far-East run during readback. A negative test now exposes the unsupported style instead of reporting success. New native fonts use an actual WindowsANSI encoding definition when an inherited Times encoding is unavailable. Number reconstruction scans each contiguous native run without repeated prefix scans.
+
+Both initial runtime-gate probes hit `STG_E_ACCESSDENIED` in compound-storage creation under the sandbox (577 test-precondition failures). The same authorized probe established the storage precondition and passed, first with the intermediate candidate and then with the final candidate. The first native probe similarly lacked the effective service precondition; the authorized service probe rendered all20. These are preserved environmental failures, not hundreds of product formula failures. The final evidence aggregator initially referenced the wrong FreezeR3 file path; correcting it to the path actually loaded by Build-Candidate produced the report without product/test changes.
+
+Changed product files: `MathTypeMtefCodec.cs` contains the shared rule repairs; `WordFormulaService.cs` only removes two unreferenced private methods. New tests are `MathTypeTokenRunContractTests.cs` and `MathTypeTextStyleContractTests.cs`. Inherited changes from the preceding feedback repair remain intact. The pre-delete runtime comparison still checks actual glyph order, styles and structure; no formula allowlist, bypass flag, hidden source storage or reduced equality fields were added. Text-style equality became stricter. Pure-operator segmentation is a representation equivalence checked independently by native character order and per-character style assertions.
+
+Open scope: multiple distinct text styles within one equation and styled western/Far-East mixtures remain incomplete; their negative tests prove detection of loss, not successful support. Existing CP255 and symbol/fence/spacing/script gaps from the main fidelity report remain open. No live Office six-way matrix,200-object replacement,save/reopen,Undo/Redo or physical input was rerun for this candidate. Offscreen native rendering does not establish host pixel fidelity. Next priority is native evidence and shared representation for mixed text styles, then a new package and live host validation; no whole-project release approval is implied.
+
+## Baseline findings (CP302)
+
+377 valid cases are generated using the production MathJax exporter plus direct MathML token contracts. They cover seven style families on twelve atoms under scalar/subscript/fraction structures, twelve fence pairs over four structures, common operators/accents/matrices/spaces and token-run segmentation. The initial generator omitted a lexical separator after named opening fences; its8 invalid exports remain preserved, and the corrected corpus has0 export errors.
+
+Against CP300 the corrected corpus has45 strict codec failures. Evidence: `artifacts/conversion-rule-audit-20261006/corpus-r2.json`, `before-r2/results.json`; source/recovered MathML and raw MTEF are retained. These are offline failures, not a native host or visual result.
+
+Shared defects identified: explicit-font decimal punctuation loses numeric role; the reader overrides Text typeface with Unicode operator classification; multi-character operator emission recognizes only special-cased runs; mtext ignores requested style both in emission and comparison (silent false positives, separate from45). Runtime gates in Word redraw/import/format conversion and PPT all consume the shared codec. The strict pre-delete structural comparison must remain; correcting its input or proven representation equivalence is different from deleting fields/ignoring errors.
+
+Next: repair native font/role and numeric-run reconstruction, replace case-specific operator splitting with a shared predicate where native evidence supports it, add independent tests that inspect output text/roles/styles and deliberate-loss rejection. Text style/native representation requires special care because negative native font references do not intrinsically retain an arbitrary MathML token tag; do not invent metadata or conflate text operators with mathematical operators to force a pass. Broad existing limitations remain open until tested.
+
+Native format authority: [Wiris MTEF v5](https://docs.wiris.com/en_US/mathtype-mtef-v5-mathtype-40-and-later): positive typefaces identify logical roles, negative references identify FONT_STYLE_DEF; character-style bits encode bold/italic. No new custom records are authorized.
+
+## CP303 implemented rules and verification
+
+Shared codec repairs native Text-role precedence (including literal punctuation/letterlike glyphs), explicit-font decimal-run reconstruction within native boundaries, generic pure-operator run segmentation before font binding, and native Text EQN_PREFS font/style emission and readback. Styled text comparison is strengthened to retain mathvariant. Existing strict runtime fields/order/glyph variants remain. No formula text whitelist, custom MTEF records or hidden source metadata. Uniform text style is represented by the actual native Text logical face; multiple text styles in the same equation are still an unclosed capability gap, with a rejection test preventing silent style loss.
+
+Removed two dead private Word methods: legacy materialization polling and its brace/space-stripping LaTeX comparator. No live call site used either; production creation/edit/bulk readback retains strict shared comparison. New tests inspect exact readback roles/text/styles, native Text CHARs, font definitions, byte-stable native rewrites and deliberately damaged output. First new decimal test14/15 erroneously included the external italic x in its selector; corrected selector still independently requires mn, value and variant. Original test log retained.
+
+FrozenR3 `build-cp303-rules-r2`: WordFB6CD652B9434E28E5D4CE73E21B42DE2064665F598891AC19F7E98479B96653; PPT61B3091C33BE46438CFC107542C8BD78C69FD836CAE330EE46EFC7A170F05A85. The valid377 corpus has0 remaining signature failures, including9 prior silent text-style losses now explicitly verified. Shared tests1403/1404; full offline2452/2453 (`tests/full-rules-r1.trx`), sole failure pre-existing CP255. Native20-r1 returned0 in the sandbox environment; authorized same probe succeeds20/20 in native20-r2. `InspectNativeFonts.py` independently parses WMF CREATEFONTINDIRECT records and verifies6 actual typography cases, beyond matching two codec signatures. This is offscreen native rendering, not Word/PPT visual acceptance. No Office/interactive MathType process touched or settings changed. Runtime gate and original200 verification pending; no new installer/commit.
