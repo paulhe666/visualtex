@@ -1065,20 +1065,39 @@ internal static partial class WordEquationReferenceFields
         Bookmarks? bookmarks = null;
         Bookmark? bookmark = null;
         Range? target = null;
+        Range? shown = null;
         try
         {
             bookmarks = document.Bookmarks;
             if (!bookmarks.Exists(bookmarkName)) return false;
             bookmark = bookmarks[bookmarkName];
-            target = bookmark.Range;
-            return string.Equals(result.Text, target.Text, StringComparison.Ordinal);
+            target = bookmark.Range.Duplicate;
+            shown = result.Duplicate;
+            // With Word's "show field codes" view (Alt+F9) Range.Text returns
+            // the SEQ/STYLEREF codes inside a number instead of their results.
+            // Compare what the number and the REF actually display.
+            ExcludeFieldCodes(target);
+            ExcludeFieldCodes(shown);
+            return string.Equals(shown.Text, target.Text, StringComparison.Ordinal);
         }
         finally
         {
+            Release(shown);
             Release(target);
             Release(bookmark);
             Release(bookmarks);
         }
+    }
+
+    private static void ExcludeFieldCodes(Range range)
+    {
+        TextRetrievalMode? retrieval = null;
+        try
+        {
+            retrieval = range.TextRetrievalMode;
+            retrieval.IncludeFieldCodes = false;
+        }
+        finally { Release(retrieval); }
     }
 
     internal static bool TryReadVisualTeXNumberBookmark(

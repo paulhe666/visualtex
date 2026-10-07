@@ -5,6 +5,81 @@ namespace VisualTeX.WordVsto;
 
 internal static partial class WordEquationReferenceFields
 {
+    // User REF fields whose target bookmark lies inside a numbered native OMML
+    // host (Word's hidden _Ref bound to the #(...) number). Format conversion
+    // deletes that host together with the bookmark, so these references must be
+    // migrated to the converted formula's number target.
+    internal static IReadOnlyDictionary<string, int> CaptureNativeOmmlNumberReferences(
+        Document document,
+        WordFormulaHostDescriptor host)
+    {
+        if (document is null)
+            throw new ArgumentNullException(nameof(document));
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (host is null
+            || host.Kind != WordFormulaHostKind.Omml
+            || !host.Display)
+            return counts;
+
+        var targets = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        Fields? fields = null;
+        Bookmarks? bookmarks = null;
+        try
+        {
+            fields = document.Fields;
+            bookmarks = document.Bookmarks;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Field? field = null;
+                Range? code = null;
+                Bookmark? bookmark = null;
+                Range? target = null;
+                try
+                {
+                    field = fields[index];
+                    if (field.Type != WdFieldType.wdFieldRef) continue;
+                    code = field.Code;
+                    if (code.StoryType == host.Range.StoryType
+                        && code.Start >= host.Range.Start
+                        && code.End <= host.Range.End)
+                        continue;
+                    if (!TryReadReferenceBookmark(code.Text, out var name))
+                        continue;
+                    if (!targets.TryGetValue(name, out var insideHost))
+                    {
+                        insideHost = false;
+                        if (bookmarks.Exists(name))
+                        {
+                            bookmark = bookmarks[name];
+                            target = bookmark.Range;
+                            insideHost =
+                                target.StoryType == host.Range.StoryType
+                                && target.Start >= host.Range.Start
+                                && target.End <= host.Range.End;
+                        }
+                        targets[name] = insideHost;
+                    }
+                    if (!insideHost) continue;
+                    counts.TryGetValue(name, out var count);
+                    counts[name] = count + 1;
+                }
+                finally
+                {
+                    Release(target);
+                    Release(bookmark);
+                    Release(code);
+                    Release(field);
+                }
+            }
+            return counts;
+        }
+        finally
+        {
+            Release(bookmarks);
+            Release(fields);
+        }
+    }
+
     internal static string CreateNativeOmmlNumberReferenceBookmark(
         Document document,
         WordFormulaHostDescriptor host)

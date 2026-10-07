@@ -83,6 +83,14 @@ internal static class WordFormulaHostMutationKernel
                         ? WordNativeOmmlEdit.Prepare(document, source, target)
                         : null;
 
+            // Read REF targets before Undo opens; the source host and its
+            // reference bookmark are removed by the replacement below.
+            var convertedNumberReferences =
+                CaptureConvertedNumberReferences(
+                    document,
+                    source,
+                    target);
+
             Action? verifyRollback =
                 nativeEdit is null
                 && nativeNumberInsertion is null
@@ -155,6 +163,11 @@ internal static class WordFormulaHostMutationKernel
                             Release(exact);
                         }
                     }
+
+                    MigrateConvertedNumberReferences(
+                        document,
+                        result,
+                        convertedNumberReferences);
 
                     finalize?.Invoke(result);
                     return result;
@@ -1271,6 +1284,95 @@ internal static class WordFormulaHostMutationKernel
         if (!WordFormulaMutationTransaction.IsActiveOnCurrentThread)
             throw new InvalidOperationException(
                 "The batch mutation primitive requires one active VisualTeX core transaction.");
+    }
+
+    // Converting a numbered display formula between OMML and VisualTeX OLE
+    // deletes the host that owns the user's REF target: Word's hidden _Ref
+    // inside the OMath number, or VTEqNum_<FormulaId> on the OLE number. The
+    // two families keep independent counters, so the reference follows the
+    // converted formula's new number rather than its old label.
+    internal static IReadOnlyDictionary<string, int> CaptureConvertedNumberReferences(
+        Document document,
+        WordFormulaHostDescriptor source,
+        WordFormulaHostWriteRequest target)
+    {
+        var references =
+            new Dictionary<string, int>(
+                StringComparer.OrdinalIgnoreCase);
+        if (!source.Display
+            || !target.Numbered
+            || source.Kind == target.Kind)
+            return references;
+
+        if (source.Kind == WordFormulaHostKind.Omml
+            && target.Kind == WordFormulaHostKind.VisualTeX)
+            return WordEquationReferenceFields
+                .CaptureNativeOmmlNumberReferences(
+                    document,
+                    source);
+
+        if (source.Kind == WordFormulaHostKind.VisualTeX
+            && target.Kind == WordFormulaHostKind.Omml
+            && Guid.TryParse(source.FormulaId, out _))
+        {
+            var name =
+                WordFormulaNumberingKernel.ReferenceBookmarkName(
+                    source.FormulaId!);
+            if (WordEquationReferenceFields
+                    .CaptureReferenceCounts(document)
+                    .TryGetValue(name, out var count)
+                && count > 0)
+                references[name] = count;
+        }
+        return references;
+    }
+
+    internal static void MigrateConvertedNumberReferences(
+        Document document,
+        WordFormulaHostDescriptor converted,
+        IReadOnlyDictionary<string, int> references)
+    {
+        if (references.Count == 0)
+            return;
+
+        string newTarget;
+        if (converted.Kind == WordFormulaHostKind.Omml)
+        {
+            newTarget =
+                WordEquationReferenceFields
+                    .CreateNativeOmmlNumberReferenceBookmark(
+                        document,
+                        converted);
+        }
+        else
+        {
+            newTarget =
+                WordFormulaNumberingKernel.ReferenceBookmarkName(
+                    converted.FormulaId
+                    ?? throw new InvalidDataException(
+                        "The converted numbered VisualTeX OLE has no FormulaId."));
+            Bookmarks? bookmarks = null;
+            bool exists;
+            try
+            {
+                bookmarks = document.Bookmarks;
+                exists = bookmarks.Exists(newTarget);
+            }
+            finally { Release(bookmarks); }
+            if (!exists)
+                WordVisualTeXParagraphNumbering.EnsureReferenceBookmark(
+                    document,
+                    converted,
+                    newTarget);
+        }
+
+        _ = WordEquationReferenceFields.MigrateReferenceTargets(
+            document,
+            references.Keys.ToDictionary(
+                name => name,
+                _ => newTarget,
+                StringComparer.OrdinalIgnoreCase),
+            references);
     }
 
     private static void Release(object? value)

@@ -145,6 +145,7 @@ internal sealed partial class WordFormulaService
         var preparedWrites = new Dictionary<string, WordFormulaHostWriteRequest>(StringComparer.Ordinal);
         var resolvedSources = new Dictionary<string, WordFormulaHostDescriptor>(StringComparer.Ordinal);
         var nativeSources = new Dictionary<string, WordNativeConversionSource>(StringComparer.Ordinal);
+        var nativeNumberReferences = new Dictionary<string, IReadOnlyDictionary<string, int>>(StringComparer.Ordinal);
         WordNativeOmmlFieldRefresh? nativeNumberRefresh = null;
         WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? visualTeXNumbers = null;
         Document? document = null;
@@ -301,6 +302,15 @@ internal sealed partial class WordFormulaService
                         nativeSources.Add(target.Id, new WordNativeConversionSource(document, source));
                 }
                 resolvedSources.Add(target.Id, source);
+                if (sourceKind == WordFormulaHostKind.Omml
+                    && targetKind == WordFormulaHostKind.VisualTeX
+                    && target.Numbered)
+                {
+                    // Word's _Ref target lives inside the OMath being deleted.
+                    var references = WordEquationReferenceFields.CaptureNativeOmmlNumberReferences(document, source);
+                    if (references.Count > 0)
+                        nativeNumberReferences.Add(target.Id, references);
+                }
                 if (targetKind is not (WordFormulaHostKind.Omml or WordFormulaHostKind.VisualTeX))
                     continue;
                 var preparedFormula = prepared[target.Id];
@@ -565,6 +575,20 @@ internal sealed partial class WordFormulaService
                                 MathTypeEquationNumbering
                                     .UpdateEquationNumbers(
                                         document);
+                        }
+                    }
+
+                    if (nativeNumberReferences.Count > 0)
+                    {
+                        // VisualTeX numbers are final only after the batch
+                        // refresh above; bind references to the fresh hosts.
+                        var convertedHosts = WordFormulaHostResolver.CaptureDocumentIndex(document).VisualTeX;
+                        foreach (var pending in nativeNumberReferences)
+                        {
+                            var formulaId = preparedWrites[pending.Key].FormulaId;
+                            var host = convertedHosts.Single(candidate => string.Equals(
+                                candidate.FormulaId, formulaId, StringComparison.OrdinalIgnoreCase));
+                            WordFormulaHostMutationKernel.MigrateConvertedNumberReferences(document, host, pending.Value);
                         }
                     }
 
