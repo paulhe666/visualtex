@@ -99,6 +99,7 @@ import {
   dismissMathLiveSuggestions,
   insertMathLiveAlignmentPoint,
   insertMathLiveRowBreak,
+  paintMathLiveDetachedScripts,
   setMathLivePersistentTypingStyle,
   toggleMathLiveSelectionStyle,
   type MathLivePersistentTypingStyle,
@@ -6277,6 +6278,26 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         }
       }
 
+      if (
+        event.key === "Escape" &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        !rawLatexInputActive &&
+        field.mode !== "latex" &&
+        selectionHasContent(captureSelection(field))
+      ) {
+        // MathLive's Escape turns a selection into a raw LaTeX group whose
+        // characters are excluded from field.value, so the synced formula
+        // silently loses them. Escape only dismisses the selection here.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const end = Math.max(...field.selection.ranges.flat());
+        field.selection = { ranges: [[end, end]], direction: "none" };
+        return;
+      }
+
       const forcedNewLineMode =
         showLineModeControls &&
         event.key === "Enter" &&
@@ -6851,6 +6872,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               operation: "set",
             });
           }
+          paintMathLiveDetachedScripts(field, entry.selection);
           // MathLive normally derives the implicit style for future input from
           // the atom immediately before the caret. If the formatted selection
           // includes the last atom, typing at the end would otherwise inherit

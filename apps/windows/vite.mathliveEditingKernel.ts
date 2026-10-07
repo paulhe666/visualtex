@@ -293,6 +293,35 @@ function visualTexToggleSelectionStyle(model, kind, requestedSelection) {
   });
   return true;
 }
+function visualTexPaintDetachedScripts(model, requestedSelection) {
+  const selection = requestedSelection ? model.normalizeSelection(requestedSelection) : model.selection;
+  if (!selection || selection.ranges.every(([start, end]) => start === end)) return false;
+  const atoms = [...new Set(model.getAtoms(selection, { includeChildren: true }))];
+  // A keyboard selection can cover only the ^/_ attachment of c^2. MathLive
+  // then paints that glyph-less container, which serializes as
+  // \textcolor{..}{^2}: invisible, and dropped by the next LaTeX round trip.
+  // Paint the script content instead, giving c^{\textcolor{..}{2}}.
+  const detached = atoms.filter(atom => atom.type === "subsup" &&
+    !atoms.includes(atom.leftSibling) &&
+    (atom.style?.color !== undefined || atom.style?.backgroundColor !== undefined));
+  if (!detached.length) return false;
+  model.deferNotifications({ content: true, type: "formatFontColor" }, () => {
+    for (const script of detached) {
+      const paint = {};
+      for (const key of ["color", "backgroundColor"]) {
+        if (script.style[key] !== undefined) paint[key] = script.style[key];
+      }
+      for (const child of script.children) {
+        if (child.type === "first") continue;
+        child.style = { ...child.style, ...paint };
+        child.isDirty = true;
+      }
+      script.style = { ...script.style, color: undefined, backgroundColor: undefined };
+      script.isDirty = true;
+    }
+  });
+  return true;
+}
 function visualTexAlignedCellIsEmpty(cell) {
   return !cell || cell.every(atom => atom.type === "first");
 }
@@ -497,6 +526,7 @@ function visualTexInsertRowBreak(model, environment = "gathered") {
 }
 register2({
   visualTexToggleSelectionStyle,
+  visualTexPaintDetachedScripts,
   visualTexInsertAlignmentPoint,
   visualTexInsertRowBreak,
 }, {

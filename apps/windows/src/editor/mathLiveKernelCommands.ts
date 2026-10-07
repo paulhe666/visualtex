@@ -379,6 +379,13 @@ export function toggleMathLiveSelectionStyle(
   return field.executeCommand("visualTexToggleSelectionStyle" as Selector, kind, selection);
 }
 
+export function paintMathLiveDetachedScripts(
+  field: MathfieldElement,
+  selection: Selection,
+) {
+  return field.executeCommand("visualTexPaintDetachedScripts" as Selector, selection);
+}
+
 export function insertMathLiveAlignmentPoint(field: MathfieldElement) {
   return field.executeCommand("visualTexInsertAlignmentPoint" as Selector);
 }

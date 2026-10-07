@@ -2862,6 +2862,49 @@ async function main() {
         italicRestored: uppercaseGreekItalicRestored,
       };
 
+      // F01: coloring a keyboard-selected superscript must color the script
+      // content itself (not the glyph-less ^ attachment), and Escape must
+      // never turn the selection into a raw LaTeX group that drops it.
+      await setFormattingValue('E=mc^2');
+      await key('ArrowLeft', 'ArrowLeft', 37);
+      await key('End', 'End', 35);
+      for (let index = 0; index < 3; index += 1) {
+        await key('ArrowLeft', 'ArrowLeft', 37, 8);
+      }
+      const scriptSelected = await evaluate(`(() => {
+        const field = document.querySelector('math-field');
+        const [start, end] = field.selection.ranges[0];
+        return field.getValue(Math.min(start, end), Math.max(start, end), 'latex');
+      })()`);
+      if (scriptSelected !== '^2') {
+        throw new Error(`Superscript selection setup changed: ${scriptSelected}`);
+      }
+      await clickSelectorWithPointer('[data-formula-selection-color]');
+      await clickSelectorWithPointer('[data-formula-color="#111827"]');
+      await sleep(100);
+      const scriptColored = await readFormattingValue();
+      if (scriptColored !== String.raw`E=mc^{\textcolor{#111827}{2}}`) {
+        throw new Error(`Superscript color must wrap the script content: ${scriptColored}`);
+      }
+      await evaluate(`(() => {
+        const field = document.querySelector('math-field');
+        field.focus();
+        field.selection = { ranges: [[4, field.lastOffset]], direction: 'backward' };
+        return true;
+      })()`);
+      await key('Escape', 'Escape', 27);
+      await sleep(100);
+      const scriptAfterEscape = await readFormattingValue();
+      if (scriptAfterEscape !== scriptColored) {
+        throw new Error(`Escape on a selection must not change the formula: ${scriptAfterEscape}`);
+      }
+      await typeText('x');
+      const scriptAfterTyping = await readFormattingValue();
+      if (scriptAfterTyping !== String.raw`E=mc^{\textcolor{#111827}{2}}x`) {
+        throw new Error(`Typing after Escape must stay outside the colored script: ${scriptAfterTyping}`);
+      }
+      const scriptColor = { colored: scriptColored, afterEscape: scriptAfterEscape, afterTyping: scriptAfterTyping };
+
       await setFormattingValue('abc');
       await evaluate(`(() => {
         const field = document.querySelector('math-field');
@@ -3010,6 +3053,7 @@ async function main() {
         selectionBold,
         selectionItalic,
         uppercaseGreekFormatting,
+        scriptColor,
         selectionColors,
         removedPersistentControls,
         staleSelectionIsolation,
