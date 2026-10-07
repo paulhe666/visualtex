@@ -99,6 +99,7 @@ import {
   dismissMathLiveSuggestions,
   insertMathLiveAlignmentPoint,
   insertMathLiveRowBreak,
+  moveMathLiveToEmptySiblingScript,
   paintMathLiveDetachedScripts,
   setMathLivePersistentTypingStyle,
   toggleMathLiveSelectionStyle,
@@ -2197,7 +2198,7 @@ function moveCaretThroughEnabledAutoExitContainers(
   const moveOne = (
     setting: InputBehaviorSettingKey,
     preferredScriptKey: string | null = null,
-  ) => {
+  ): boolean | "sibling" => {
     if (!settings[setting]) return false;
     if (setting === "autoExitAccent" && !caretIsInsideAccent(field)) {
       return false;
@@ -2212,6 +2213,10 @@ function moveCaretThroughEnabledAutoExitContainers(
       if (context?.kind === "operator-limit") return false;
       scriptKey = preferredScriptKey ?? context?.autoExitKey ?? null;
       if (scriptAutoExitWasConsumed(field, scriptKey)) return false;
+      if (moveMathLiveToEmptySiblingScript(field)) {
+        markScriptAutoExitConsumed(field, scriptKey);
+        return "sibling";
+      }
     }
 
     const previousPosition = field.position;
@@ -2224,15 +2229,18 @@ function moveCaretThroughEnabledAutoExitContainers(
   };
 
   if (capturedSetting) {
-    return moveOne(capturedSetting, capturedScriptKey ?? null);
+    return Boolean(moveOne(capturedSetting, capturedScriptKey ?? null));
   }
 
   let moved = false;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const setting = getCaretAutoExitSetting(field);
     if (!setting) break;
-    if (!moveOne(setting)) break;
+    const result = moveOne(setting);
+    if (!result) break;
     moved = true;
+    // The caret now waits in the empty sibling script; do not exit it too.
+    if (result === "sibling") break;
   }
   return moved;
 }
@@ -3780,6 +3788,16 @@ function FormulaField(props: FormulaFieldProps) {
     lastSnapshotRef.current = captureFieldSnapshot(field);
     fieldRef.current = field;
     propsRef.current.register(initialLineId, field);
+    // MathLive's Tab with no next placeholder fires move-out and then moves
+    // browser focus to the next control, so the following keystrokes are lost.
+    // Tab stays inside the formula; arrow-key move-out keeps its behavior.
+    let tabKeyPending = false;
+    const trackTabKey = (event: KeyboardEvent) => {
+      tabKeyPending = event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey;
+    };
+    const keepTabFocusInFormula = (event: Event) => {
+      if (tabKeyPending) event.preventDefault();
+    };
     // Capture before MathLive's keyboard sink replaces a selected placeholder;
     // the bubble phase is already too late because the parent structure is gone.
     field.addEventListener("compositionstart", handleCompositionStart, true);
@@ -3791,6 +3809,8 @@ function FormulaField(props: FormulaFieldProps) {
     field.addEventListener("blur", handleBlur);
     window.addEventListener("keydown", handleWindowRawWrapperKeyDown, true);
     field.addEventListener("keydown", handleKeyDown, true);
+    field.addEventListener("keydown", trackTabKey, true);
+    field.addEventListener("move-out", keepTabFocusInFormula);
     field.addEventListener("keyup", handleKeyUp, true);
     const keyboardSink = field.shadowRoot?.querySelector<HTMLElement>(
       '[part="keyboard-sink"]',
@@ -3864,6 +3884,8 @@ function FormulaField(props: FormulaFieldProps) {
       window.removeEventListener("keydown", handleWindowRawWrapperKeyDown, true);
       field.removeEventListener("keydown", handleKeyDown, true);
       field.removeEventListener("keyup", handleKeyUp, true);
+      field.removeEventListener("keydown", trackTabKey, true);
+      field.removeEventListener("move-out", keepTabFocusInFormula);
       keyboardSink?.removeEventListener("input", scheduleInputActivity, true);
       keyboardSink?.removeEventListener("keyup", scheduleInputActivity, true);
       field.removeEventListener("paste", handlePaste, true);

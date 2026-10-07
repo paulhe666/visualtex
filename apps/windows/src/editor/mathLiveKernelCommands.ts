@@ -386,6 +386,10 @@ export function paintMathLiveDetachedScripts(
   return field.executeCommand("visualTexPaintDetachedScripts" as Selector, selection);
 }
 
+export function moveMathLiveToEmptySiblingScript(field: MathfieldElement) {
+  return field.executeCommand("visualTexMoveToEmptySiblingScript" as Selector);
+}
+
 export function insertMathLiveAlignmentPoint(field: MathfieldElement) {
   return field.executeCommand("visualTexInsertAlignmentPoint" as Selector);
 }

@@ -7,7 +7,7 @@ import {
 } from "./browser_test_runtime.mjs";
 
 const scenario = process.argv[2];
-if (!new Set(["startup", "history-core", "multiline-input", "multiline-align", "bounded-operator-model", "fences", "variant-core", "variant-core-extended", "command-surface-audit", "native-input-popover", "usage-ranking", "native-space-selection", "candidate-query-reset", "raw-placeholder-visual", "placeholder-core", "placeholder-visual-audit", "nested-input-core", "structured-chinese-ime", "formula-chinese-font", "ime-stale-recovery", "direct-shortcut-placeholder", "toolbar-placeholder-overflow", "horizontal-overflow", "atomic-structure", "caret-probe", "scripts", "upright", "context-style", "suggestions", "navigation", "geometry", "source-layout", "toolbar-compact", "toolbar-postfix", "classic-panel-resize", "ocr-storage-ui", "formula-tiles", "latex-profile-ui", "persistent-formatting", "formula-formatting", "cursor-placement", "settings", "layout", "multi-line-selection", "delete", "export"]).has(scenario)) {
+if (!new Set(["startup", "history-core", "multiline-input", "multiline-align", "script-template", "bounded-operator-model", "fences", "variant-core", "variant-core-extended", "command-surface-audit", "native-input-popover", "usage-ranking", "native-space-selection", "candidate-query-reset", "raw-placeholder-visual", "placeholder-core", "placeholder-visual-audit", "nested-input-core", "structured-chinese-ime", "formula-chinese-font", "ime-stale-recovery", "direct-shortcut-placeholder", "toolbar-placeholder-overflow", "horizontal-overflow", "atomic-structure", "caret-probe", "scripts", "upright", "context-style", "suggestions", "navigation", "geometry", "source-layout", "toolbar-compact", "toolbar-postfix", "classic-panel-resize", "ocr-storage-ui", "formula-tiles", "latex-profile-ui", "persistent-formatting", "formula-formatting", "cursor-placement", "settings", "layout", "multi-line-selection", "delete", "export"]).has(scenario)) {
   throw new Error(
     "Usage: node scripts/targeted_editor_regression.mjs <startup|history-core|multiline-input|bounded-operator-model|fences|variant-core|variant-core-extended|command-surface-audit|native-input-popover|usage-ranking|native-space-selection|candidate-query-reset|raw-placeholder-visual|placeholder-core|placeholder-visual-audit|nested-input-core|structured-chinese-ime|formula-chinese-font|ime-stale-recovery|direct-shortcut-placeholder|toolbar-placeholder-overflow|horizontal-overflow|atomic-structure|caret-probe|scripts|upright|context-style|suggestions|navigation|geometry|source-layout|toolbar-compact|toolbar-postfix|classic-panel-resize|ocr-storage-ui|formula-tiles|latex-profile-ui|persistent-formatting|formula-formatting|cursor-placement|settings|layout|multi-line-selection|delete|export>",
   );
@@ -1575,6 +1575,37 @@ async function main() {
         multilineRedo,
       }, null, 2));
       console.log("Targeted core undo/redo regression passed");
+      return;
+    }
+
+    if (scenario === "script-template") {
+      // F04: Ctrl+J builds A_{#?}^{#?}. After the subscript auto-exits, the
+      // caret belongs in the empty superscript; Tab must not leave the formula.
+      await clearField();
+      await typeText("A");
+      await key("j", "KeyJ", 74, 2);
+      await sleep(150);
+      await key("1", "Digit1", 49);
+      await sleep(100);
+      const afterSubscript = await evaluate(`(() => {
+        const field = document.querySelector('math-field');
+        const [start, end] = field.selection.ranges[0];
+        return { value: field.value, selected: field.getValue(Math.min(start, end), Math.max(start, end), 'latex') };
+      })()`);
+      await key("Tab", "Tab", 9);
+      await sleep(100);
+      await key("2", "Digit2", 50);
+      await sleep(150);
+      const scriptTemplate = await evaluate(`(() => {
+        const field = document.querySelector('math-field');
+        return { value: field.value.replace(/\\s+/g, ''), focused: document.activeElement === field && field.hasFocus() };
+      })()`);
+      const filled = /^A(_1\^2|\^2_1|_\{1\}\^\{2\}|\^\{2\}_\{1\})$/.test(scriptTemplate.value);
+      if (!filled || !scriptTemplate.focused) {
+        throw new Error(`Ctrl+J subscript then Tab must fill the superscript: ${JSON.stringify({ afterSubscript, scriptTemplate })}`);
+      }
+      console.log(JSON.stringify({ afterSubscript, scriptTemplate }, null, 2));
+      console.log("Targeted desktop script template regression passed");
       return;
     }
 

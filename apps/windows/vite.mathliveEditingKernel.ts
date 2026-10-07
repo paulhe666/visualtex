@@ -452,6 +452,21 @@ function visualTexInsertAlignmentPoint(model) {
   });
   return true;
 }
+// Ctrl+J creates base_{#?}^{#?}. Auto-exit after the first script must enter
+// the still-empty sibling script instead of leaving the whole structure.
+function visualTexMoveToEmptySiblingScript(model) {
+  let atom = model.at(model.position);
+  while (atom && atom.parentBranch !== "subscript" && atom.parentBranch !== "superscript") {
+    atom = atom.parent;
+  }
+  if (!atom?.parent) return false;
+  const sibling = atom.parentBranch === "subscript" ? "superscript" : "subscript";
+  const content = (atom.parent.branch(sibling) ?? []).filter(item => item.type !== "first");
+  if (content.length !== 1 || content[0].type !== "placeholder") return false;
+  const offset = model.offsetOf(content[0]);
+  model.setSelection(offset - 1, offset);
+  return true;
+}
 function visualTexIsAlignmentMarker(atom) {
   return atom?.command === "\\class" && atom.args?.[0] === "visualtex-align-marker";
 }
@@ -549,6 +564,11 @@ register2({
   visualTexInsertRowBreak,
 }, {
   target: "model", canUndo: true, changeContent: true, changeSelection: true
+});
+register2({
+  visualTexMoveToEmptySiblingScript,
+}, {
+  target: "model", changeSelection: true
 });
 
 ` + anchor);
