@@ -121,6 +121,61 @@ const CHINESE_FONT_FAMILIES: Record<FormulaChineseFont, string> = {
   heiti: 'SimHei, "Microsoft YaHei", "Heiti SC", STHeiti, sans-serif',
 };
 
+// local() names (full and PostScript) of the faces in CHINESE_FONT_FAMILIES.
+const CHINESE_LOCAL_FACES: Record<FormulaChineseFont, readonly string[]> = {
+  system: [
+    "Microsoft YaHei", "MicrosoftYaHei", "Microsoft JhengHei", "MicrosoftJhengHeiRegular",
+    "Noto Sans CJK SC", "NotoSansCJKsc-Regular", "PingFang SC", "PingFangSC-Regular",
+  ],
+  pingfang: [
+    "PingFang SC", "PingFangSC-Regular", "Microsoft YaHei", "MicrosoftYaHei",
+    "Noto Sans CJK SC", "NotoSansCJKsc-Regular",
+  ],
+  songti: ["SimSun", "NSimSun", "Songti SC", "STSongti-SC-Regular", "STSong"],
+  kaiti: ["KaiTi", "KaiTi_GB2312", "Kaiti SC", "STKaiti-SC-Regular", "STKaiti"],
+  heiti: ["SimHei", "Microsoft YaHei", "MicrosoftYaHei", "Heiti SC", "STHeiti"],
+};
+
+// CJK ideographs plus the punctuation in VISUALTEX_FORMULA_CHINESE_GLYPH_PATTERN.
+const CHINESE_UNICODE_RANGE = [
+  "U+2E80-2FDF", "U+3001-3002", "U+3005-3007", "U+300A-300B", "U+3010-3011",
+  "U+3021-3029", "U+3038-303B", "U+3400-4DBF", "U+4E00-9FFF", "U+F900-FAFF",
+  "U+FF01", "U+FF08-FF09", "U+FF0C", "U+FF1A-FF1B", "U+FF1F", "U+2018-2019",
+  "U+201C-201D", "U+20000-2FA1F",
+].join(", ");
+
+const CHINESE_FALLBACK_FONT_FACE_STYLE_ID = "visualtex-formula-chinese-fallback-faces";
+
+function chineseFallbackFamilyName(value: FormulaChineseFont) {
+  return `VisualTeX Formula Chinese ${value}`;
+}
+
+/**
+ * Family that renders only CJK code points with the chosen formula Chinese
+ * font. Appended after a MathLive KaTeX family it catches Chinese glyphs in
+ * any font class without touching the KaTeX glyphs or the fallback for other
+ * characters missing from KaTeX.
+ */
+export function formulaChineseFallbackFamily(value: FormulaChineseFont) {
+  return `"${chineseFallbackFamilyName(normalizeFormulaChineseFont(value))}"`;
+}
+
+/** @font-face rules must live in the document; shadow roots do not register them. */
+export function installFormulaChineseFallbackFontFaces() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(CHINESE_FALLBACK_FONT_FACE_STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = CHINESE_FALLBACK_FONT_FACE_STYLE_ID;
+  style.textContent = FORMULA_CHINESE_FONT_OPTIONS.map(({ id }) => `
+@font-face {
+  font-family: "${chineseFallbackFamilyName(id)}";
+  src: ${CHINESE_LOCAL_FACES[id].map((name) => `local("${name}")`).join(", ")};
+  font-weight: 400;
+  unicode-range: ${CHINESE_UNICODE_RANGE};
+}`).join("\n");
+  document.head.append(style);
+}
+
 export function normalizeFormulaLetterFont(value: unknown): FormulaLetterFont {
   return FORMULA_LETTER_FONT_OPTIONS.some((item) => item.id === value)
     ? (value as FormulaLetterFont)

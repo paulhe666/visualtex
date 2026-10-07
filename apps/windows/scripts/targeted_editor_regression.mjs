@@ -7,9 +7,9 @@ import {
 } from "./browser_test_runtime.mjs";
 
 const scenario = process.argv[2];
-if (!new Set(["startup", "history-core", "multiline-input", "bounded-operator-model", "fences", "variant-core", "variant-core-extended", "command-surface-audit", "native-input-popover", "usage-ranking", "native-space-selection", "candidate-query-reset", "raw-placeholder-visual", "placeholder-core", "placeholder-visual-audit", "nested-input-core", "structured-chinese-ime", "ime-stale-recovery", "direct-shortcut-placeholder", "toolbar-placeholder-overflow", "horizontal-overflow", "atomic-structure", "caret-probe", "scripts", "upright", "context-style", "suggestions", "navigation", "geometry", "source-layout", "toolbar-compact", "toolbar-postfix", "classic-panel-resize", "ocr-storage-ui", "formula-tiles", "latex-profile-ui", "persistent-formatting", "formula-formatting", "cursor-placement", "settings", "layout", "multi-line-selection", "delete", "export"]).has(scenario)) {
+if (!new Set(["startup", "history-core", "multiline-input", "bounded-operator-model", "fences", "variant-core", "variant-core-extended", "command-surface-audit", "native-input-popover", "usage-ranking", "native-space-selection", "candidate-query-reset", "raw-placeholder-visual", "placeholder-core", "placeholder-visual-audit", "nested-input-core", "structured-chinese-ime", "formula-chinese-font", "ime-stale-recovery", "direct-shortcut-placeholder", "toolbar-placeholder-overflow", "horizontal-overflow", "atomic-structure", "caret-probe", "scripts", "upright", "context-style", "suggestions", "navigation", "geometry", "source-layout", "toolbar-compact", "toolbar-postfix", "classic-panel-resize", "ocr-storage-ui", "formula-tiles", "latex-profile-ui", "persistent-formatting", "formula-formatting", "cursor-placement", "settings", "layout", "multi-line-selection", "delete", "export"]).has(scenario)) {
   throw new Error(
-    "Usage: node scripts/targeted_editor_regression.mjs <startup|history-core|multiline-input|bounded-operator-model|fences|variant-core|variant-core-extended|command-surface-audit|native-input-popover|usage-ranking|native-space-selection|candidate-query-reset|raw-placeholder-visual|placeholder-core|placeholder-visual-audit|nested-input-core|structured-chinese-ime|ime-stale-recovery|direct-shortcut-placeholder|toolbar-placeholder-overflow|horizontal-overflow|atomic-structure|caret-probe|scripts|upright|context-style|suggestions|navigation|geometry|source-layout|toolbar-compact|toolbar-postfix|classic-panel-resize|ocr-storage-ui|formula-tiles|latex-profile-ui|persistent-formatting|formula-formatting|cursor-placement|settings|layout|multi-line-selection|delete|export>",
+    "Usage: node scripts/targeted_editor_regression.mjs <startup|history-core|multiline-input|bounded-operator-model|fences|variant-core|variant-core-extended|command-surface-audit|native-input-popover|usage-ranking|native-space-selection|candidate-query-reset|raw-placeholder-visual|placeholder-core|placeholder-visual-audit|nested-input-core|structured-chinese-ime|formula-chinese-font|ime-stale-recovery|direct-shortcut-placeholder|toolbar-placeholder-overflow|horizontal-overflow|atomic-structure|caret-probe|scripts|upright|context-style|suggestions|navigation|geometry|source-layout|toolbar-compact|toolbar-postfix|classic-panel-resize|ocr-storage-ui|formula-tiles|latex-profile-ui|persistent-formatting|formula-formatting|cursor-placement|settings|layout|multi-line-selection|delete|export>",
   );
 }
 
@@ -338,6 +338,9 @@ async function main() {
         delete persisted.state.inputBehavior;
       }
       localStorage.setItem(storageKey, JSON.stringify(persisted));
+      if (${JSON.stringify(scenario === "formula-chinese-font" ? process.env.VISUALTEX_TEST_FORMULA_CHINESE_FONT ?? "" : "")}) {
+        localStorage.setItem("visualtex.formula-chinese-font", ${JSON.stringify(process.env.VISUALTEX_TEST_FORMULA_CHINESE_FONT ?? "")});
+      }
     })()`);
     await client.send("Page.reload", { ignoreCache: true });
     await waitForEvaluation(
@@ -7950,6 +7953,211 @@ async function main() {
 
       console.log(JSON.stringify(states, null, 2));
       console.log("Targeted structured Chinese IME regression passed");
+      return;
+    }
+
+    if (scenario === "formula-chinese-font") {
+      // Chinese inside a formula must render with the formula Chinese font no
+      // matter which MathLive class holds it (\text{} or a raw math-mode atom
+      // left by an IME commit) and whether the JS glyph marker is present.
+      const commitImeText = async (text) => {
+        await sleep(120);
+        await client.send("Input.imeSetComposition", {
+          text,
+          selectionStart: Array.from(text).length,
+          selectionEnd: Array.from(text).length,
+        });
+        await sleep(80);
+        await client.send("Input.insertText", { text });
+        await client.send("Input.imeSetComposition", { text: "", selectionStart: 0, selectionEnd: 0 });
+        await sleep(260);
+      };
+      await client.send("DOM.enable");
+      await client.send("CSS.enable");
+      const readGlyphFonts = async (stripMarker) => {
+        await client.send("DOM.getDocument", { depth: -1, pierce: true });
+        const listed = await client.send("Runtime.evaluate", {
+          expression: `(() => {
+            const field = document.querySelector("math-field");
+            const spans = [...(field?.shadowRoot?.querySelectorAll("[part=content] span") ?? [])]
+              .filter((span) => [...span.childNodes].some((node) => node.nodeType === 3 && /\\p{Script=Han}/u.test(node.textContent)));
+            if (${stripMarker}) spans.forEach((span) => span.classList.remove("visualtex-chinese-glyph"));
+            return spans;
+          })()`,
+          returnByValue: false,
+        });
+        const properties = await client.send("Runtime.getProperties", {
+          objectId: listed.result.objectId,
+          ownProperties: true,
+        });
+        const glyphs = [];
+        for (const property of properties.result) {
+          if (!/^\d+$/.test(property.name) || !property.value?.objectId) continue;
+          const { nodeId } = await client.send("DOM.requestNode", { objectId: property.value.objectId });
+          const { fonts } = await client.send("CSS.getPlatformFontsForNode", { nodeId });
+          const described = await client.send("Runtime.callFunctionOn", {
+            objectId: property.value.objectId,
+            functionDeclaration: "function () { return { text: this.textContent, className: this.className, fontFamily: getComputedStyle(this).fontFamily }; }",
+            returnByValue: true,
+          });
+          glyphs.push({ ...described.result.value, rendered: fonts.map((font) => font.familyName) });
+        }
+        return glyphs;
+      };
+      await clearField();
+      const expected = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const span = document.createElement("span");
+        span.textContent = "便";
+        span.style.fontFamily = getComputedStyle(field).getPropertyValue("--visualtex-formula-chinese-font-family");
+        document.body.append(span);
+        return { family: span.style.fontFamily };
+      })()`);
+      await client.send("DOM.getDocument", { depth: -1, pierce: true });
+      const probe = await client.send("Runtime.evaluate", {
+        expression: `[...document.body.children].at(-1)`,
+        returnByValue: false,
+      });
+      const { nodeId: probeNodeId } = await client.send("DOM.requestNode", { objectId: probe.result.objectId });
+      const expectedFont = (await client.send("CSS.getPlatformFontsForNode", { nodeId: probeNodeId })).fonts.map((font) => font.familyName)[0];
+      await evaluate(`[...document.body.children].at(-1).remove()`);
+
+      const states = { expected: { ...expected, rendered: expectedFont } };
+      await focusField();
+      await commitImeText("便");
+      states.imeCommit = {
+        value: await evaluate(`document.querySelector("math-field").value`),
+        glyphs: await readGlyphFonts(false),
+      };
+      states.imeCommitWithoutMarker = { glyphs: await readGlyphFonts(true) };
+      // Handwriting, voice and some third-party IMEs insert text without any
+      // composition events; MathLive then keeps the character in math mode.
+      await clearField();
+      await client.send("Input.insertText", { text: "便" });
+      await sleep(260);
+      states.directInsert = {
+        value: await evaluate(`document.querySelector("math-field").value`),
+        glyphs: await readGlyphFonts(false),
+      };
+      for (const family of ["KaTeX_Main", "KaTeX_Math"]) {
+        const probeFallback = await client.send("Runtime.evaluate", {
+          expression: `(() => { const span = document.createElement("span"); span.textContent = "便"; span.style.fontFamily = ${JSON.stringify(family)}; document.body.append(span); return span; })()`,
+          returnByValue: false,
+        });
+        await client.send("DOM.getDocument", { depth: -1, pierce: true });
+        const { nodeId } = await client.send("DOM.requestNode", { objectId: probeFallback.result.objectId });
+        states[`unmarked${family}`] = (await client.send("CSS.getPlatformFontsForNode", { nodeId })).fonts.map((font) => font.familyName);
+        await evaluate(`[...document.body.children].at(-1).remove()`);
+      }
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        field.setValue("\\\\text{进而可以解得}\\\\quad \\\\Delta U_o", { format: "latex", insertionMode: "replaceAll" });
+      })()`);
+      await sleep(200);
+      states.textCommand = { glyphs: await readGlyphFonts(false) };
+      // The JS glyph marker never looks at these spans: \hat puts the glyph in
+      // ML__cmr, while \mathsf/\mathtt/\mathbb have no face for Chinese and
+      // MathLive emits a class-less atom span that inherits the page font.
+      states.styledCommands = {};
+      for (const latex of ["\\mathsf{便}", "\\mathtt{便}", "\\mathbb{便}", "\\hat{便}"]) {
+        await evaluate(`document.querySelector("math-field").setValue(${JSON.stringify(latex)}, { format: "latex", insertionMode: "replaceAll" })`);
+        await sleep(200);
+        states.styledCommands[latex] = { glyphs: await readGlyphFonts(false) };
+      }
+      // Class-less atom spans holding non-Chinese text must keep the page font.
+      states.classlessLatin = {};
+      for (const latex of ["\\mathbb{a}", "\\mathsf{α}", "\\mathtt{α}"]) {
+        await evaluate(`document.querySelector("math-field").setValue(${JSON.stringify(latex)}, { format: "latex", insertionMode: "replaceAll" })`);
+        await sleep(200);
+        const listedSpans = await client.send("Runtime.evaluate", {
+          expression: `[...document.querySelector("math-field").shadowRoot.querySelectorAll("[data-atom-id]:not([class])")].filter((span) => span.textContent.trim())`,
+          returnByValue: false,
+        });
+        const spanProperties = await client.send("Runtime.getProperties", { objectId: listedSpans.result.objectId, ownProperties: true });
+        await client.send("DOM.getDocument", { depth: -1, pierce: true });
+        const spans = [];
+        for (const property of spanProperties.result) {
+          if (!/^\d+$/.test(property.name) || !property.value?.objectId) continue;
+          const { nodeId } = await client.send("DOM.requestNode", { objectId: property.value.objectId });
+          const rendered = (await client.send("CSS.getPlatformFontsForNode", { nodeId })).fonts.map((font) => font.familyName);
+          const text = (await client.send("Runtime.callFunctionOn", { objectId: property.value.objectId, functionDeclaration: "function () { return this.textContent; }", returnByValue: true })).result.value;
+          const reference = await client.send("Runtime.evaluate", {
+            expression: `(() => { const span = document.createElement("span"); span.textContent = ${JSON.stringify(text)}; span.style.fontFamily = getComputedStyle(document.querySelector("math-field")).fontFamily; document.body.append(span); return span; })()`,
+            returnByValue: false,
+          });
+          await client.send("DOM.getDocument", { depth: -1, pierce: true });
+          const { nodeId: referenceNodeId } = await client.send("DOM.requestNode", { objectId: reference.result.objectId });
+          const referenceRendered = (await client.send("CSS.getPlatformFontsForNode", { nodeId: referenceNodeId })).fonts.map((font) => font.familyName);
+          await evaluate(`[...document.body.children].at(-1).remove()`);
+          spans.push({ text, rendered, referenceRendered });
+        }
+        states.classlessLatin[latex] = spans;
+      }
+      const classlessChanged = Object.entries(states.classlessLatin).flatMap(([latex, spans]) =>
+        spans.filter((span) => span.rendered.join() !== span.referenceRendered.join()).map((span) => ({ latex, ...span })),
+      );
+      if (classlessChanged.length) {
+        throw new Error(`Class-less non-Chinese glyphs changed font: ${JSON.stringify(classlessChanged)}`);
+      }
+
+      // Contract independent of the JS marker: a span the marker skips (its
+      // text is not purely Chinese) must still draw Chinese in the formula font.
+      states.unmarkedSpans = {};
+      for (const className of ["ML__cmr", "ML__mathit", "ML__sans"]) {
+        const probeSpan = await client.send("Runtime.evaluate", {
+          // MathLive wipes foreign nodes from a live field, so render the probe
+          // in a separate shadow root carrying the field's styles and font variables.
+          expression: `(() => {
+            const field = document.querySelector("math-field");
+            const host = document.createElement("div");
+            host.style.cssText = field.style.cssText;
+            host.style.fontSize = "54px";
+            document.body.append(host);
+            const root = host.attachShadow({ mode: "open" });
+            root.adoptedStyleSheets = [...field.shadowRoot.adoptedStyleSheets];
+            field.shadowRoot.querySelectorAll("style").forEach((style) => root.append(style.cloneNode(true)));
+            const span = document.createElement("span");
+            span.className = ${JSON.stringify(className)};
+            span.textContent = "x便";
+            root.append(span);
+            return span;
+          })()`,
+          returnByValue: false,
+        });
+        await client.send("DOM.getDocument", { depth: -1, pierce: true });
+        const { nodeId } = await client.send("DOM.requestNode", { objectId: probeSpan.result.objectId });
+        const { fonts } = await client.send("CSS.getPlatformFontsForNode", { nodeId });
+        const marked = await client.send("Runtime.callFunctionOn", {
+          objectId: probeSpan.result.objectId,
+          functionDeclaration: "function () { const marked = this.classList.contains('visualtex-chinese-glyph'); const connected = this.isConnected; const width = this.getBoundingClientRect().width; this.getRootNode().host.remove(); return { marked, connected, width }; }",
+          returnByValue: true,
+        });
+        states.unmarkedSpans[className] = {
+          ...marked.result.value,
+          rendered: fonts.map((font) => font.familyName),
+        };
+      }
+      console.log(JSON.stringify(states, null, 2));
+
+      const unmarkedWrong = Object.entries(states.unmarkedSpans).filter(
+        ([, state]) => state.marked || !state.rendered.includes(expectedFont) ||
+          state.rendered.some((family) => family !== expectedFont && !family.startsWith("KaTeX")),
+      );
+      if (unmarkedWrong.length) {
+        throw new Error(`Unmarked formula spans did not draw Chinese with ${expectedFont}: ${JSON.stringify(unmarkedWrong)}`);
+      }
+
+      const wrong = [states.imeCommit, states.imeCommitWithoutMarker, states.directInsert, states.textCommand, ...Object.values(states.styledCommands)]
+        .flatMap((state) => state.glyphs)
+        .filter((glyph) => glyph.rendered[0] !== expectedFont);
+      const empty = Object.entries(states.styledCommands).filter(([, state]) => !state.glyphs.length);
+      if (empty.length) {
+        throw new Error(`No Chinese glyph found for: ${JSON.stringify(empty.map(([latex]) => latex))}`);
+      }
+      if (!expectedFont || wrong.length) {
+        throw new Error(`Formula Chinese glyphs did not render with ${expectedFont}: ${JSON.stringify(wrong)}`);
+      }
+      console.log("Targeted formula Chinese font regression passed");
       return;
     }
 

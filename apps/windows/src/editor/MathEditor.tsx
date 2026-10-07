@@ -106,8 +106,10 @@ import {
 import { isSafeFormulaStyleColor } from "../workspace/formulaColor";
 import { copyFormulaDocumentPngToClipboard } from "../export/pngClipboard";
 import {
+  formulaChineseFallbackFamily,
   formulaChineseFontFamily,
   formulaLetterFontFamilies,
+  installFormulaChineseFallbackFontFaces,
   markVisualTexFormulaFontGlyphs,
   VISUALTEX_FORMULA_CHINESE_GLYPH_CLASS,
   VISUALTEX_FORMULA_LETTER_GLYPH_CLASS,
@@ -1365,6 +1367,10 @@ const visualTexFormulaItalicFontProperty =
   "--visualtex-formula-italic-font-family";
 const visualTexFormulaChineseFontProperty =
   "--visualtex-formula-chinese-font-family";
+const visualTexFormulaChineseFallbackProperty =
+  "--visualtex-formula-chinese-fallback-family";
+const visualTexFormulaInheritedFontProperty =
+  "--visualtex-formula-inherited-font-family";
 const visualTexPlaceholderClass = "visualtex-structural-placeholder";
 const visualTexAccentPlaceholderClass =
   "visualtex-accent-structural-placeholder";
@@ -1547,7 +1553,49 @@ function installVisualTexFormulaFontStyle(field: MathfieldElement) {
 
   const style = document.createElement("style");
   style.id = visualTexFormulaFontStyleId;
+  const chineseFallback = `var(${visualTexFormulaChineseFallbackProperty}, ${formulaChineseFallbackFamily("system")})`;
   style.textContent = `
+    /*
+     * Chinese can sit in any MathLive font class, e.g. a raw math-mode glyph
+     * left by input that arrives without IME composition events. Mirror
+     * MathLive's KaTeX families and append a face that covers only CJK code
+     * points, so the formula Chinese font no longer depends on the JS glyph
+     * marker below. KaTeX glyphs and the fallback for other missing glyphs
+     * are unchanged. Marked glyphs still get the full family list below.
+     */
+    .ML__cmr,
+    .ML__mathbf,
+    .ML__accent-body {
+      font-family: KaTeX_Main, ${chineseFallback} !important;
+    }
+
+    .ML__mathit,
+    .lcGreek.ML__mathbf,
+    .ML__mathbfit {
+      font-family: KaTeX_Math, ${chineseFallback} !important;
+    }
+
+    .ML__ams,
+    .ML__bb {
+      font-family: KaTeX_AMS, ${chineseFallback} !important;
+    }
+
+    .ML__cal { font-family: KaTeX_Caligraphic, ${chineseFallback} !important; }
+    .ML__frak { font-family: KaTeX_Fraktur, ${chineseFallback} !important; }
+    .ML__tt { font-family: KaTeX_Typewriter, ${chineseFallback} !important; }
+    .ML__script { font-family: KaTeX_Script, ${chineseFallback} !important; }
+    .ML__sans { font-family: KaTeX_SansSerif, ${chineseFallback} !important; }
+
+    /*
+     * When the requested variant (\\mathsf, \\mathtt, \\mathbb, ...) has no face
+     * for a character, MathLive emits a class-less atom span that inherits the
+     * page font. Keep that font for everything else and send only CJK code
+     * points through the formula Chinese font.
+     */
+    [data-atom-id]:not([class]) {
+      font-family: ${chineseFallback}, var(${visualTexFormulaInheritedFontProperty}, sans-serif) !important;
+    }
+
     .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}:not(.ML__it) {
       font-family: var(${visualTexFormulaUprightFontProperty}, KaTeX_Main, serif) !important;
       font-style: normal !important;
@@ -1596,6 +1644,7 @@ function applyVisualTexFormulaFonts(
   letterFont: FormulaLetterFont,
   chineseFont: FormulaChineseFont,
 ) {
+  installFormulaChineseFallbackFontFaces();
   installVisualTexFormulaFontStyle(field);
   markVisualTexFormulaGlyphFonts(field);
   const letterFamilies = formulaLetterFontFamilies(letterFont);
@@ -1611,6 +1660,15 @@ function applyVisualTexFormulaFonts(
     visualTexFormulaChineseFontProperty,
     formulaChineseFontFamily(chineseFont),
   );
+  field.style.setProperty(
+    visualTexFormulaChineseFallbackProperty,
+    formulaChineseFallbackFamily(chineseFont),
+  );
+  // The field's own font is what class-less atom spans would inherit.
+  const inheritedFont = field.isConnected ? getComputedStyle(field).fontFamily : "";
+  if (inheritedFont) {
+    field.style.setProperty(visualTexFormulaInheritedFontProperty, inheritedFont);
+  }
 }
 
 function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
