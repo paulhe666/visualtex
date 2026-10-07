@@ -8,6 +8,7 @@
     "allow-read-system-font-asset",
     "allow-office-desktop-integration",
     "allow-ocr-desktop",
+    "allow-main-window-files",
     "dialog:allow-open",
     "dialog:allow-save",
     {

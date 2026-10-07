@@ -29,5 +29,7 @@ commands.allow = [
   "uninstall_office_integration",
   "regenerate_office_certificate",
   "open_word",
-  "open_powerpoint"
+  "open_powerpoint",
+  "get_word_numbering_user_configuration",
+  "apply_word_numbering_user_configuration"
 ]

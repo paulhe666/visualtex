@@ -1,0 +1,7 @@
+[[permission]]
+identifier = "allow-main-window-files"
+description = "Allow the trusted embedded VisualTeX main window to write user-chosen export and configuration files and to minimize itself after keypad-mode save."
+commands.allow = [
+  "write_export_file",
+  "minimize_visualtex_main_window"
+]
