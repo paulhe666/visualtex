@@ -452,6 +452,15 @@ function visualTexInsertAlignmentPoint(model) {
   });
   return true;
 }
+function visualTexIsAlignmentMarker(atom) {
+  return atom?.command === "\\class" && atom.args?.[0] === "visualtex-align-marker";
+}
+// A top-level '&' typed before the first Shift+Enter is a zero-width marker.
+// When the row becomes an aligned row, that marker is its column split.
+function visualTexSplitAtAlignmentMarker(atoms) {
+  const index = atoms.findIndex(visualTexIsAlignmentMarker);
+  return index < 0 ? null : [atoms.slice(0, index), atoms.slice(index + 1)];
+}
 function visualTexInsertRowBreak(model, environment = "gathered") {
   if (environment !== "aligned" && environment !== "gathered") return false;
   if (!model.contentWillChange({ inputType: "insertLineBreak" })) return false;
@@ -489,13 +498,20 @@ function visualTexInsertRowBreak(model, environment = "gathered") {
         for (let column = 0; column < parent.colCount; column += 1) {
           parent.setCell(row + 1, column, []);
         }
-        // Put a newly-created align row into the left-aligned second cell.
-        // This keeps normal typing direction intuitive until the user enters
-        // an explicit '&', which visualTexInsertAlignmentPoint then commits
-        // into the standard right/left TeX column pair.
-        visualTexProvisionalAlignRows(parent).add(row + 1);
-        parent.setCell(row + 1, 1, after);
-        model.position = model.offsetOf(parent.getCell(row + 1, 1)[0]);
+        const afterCells = visualTexSplitAtAlignmentMarker(after);
+        if (afterCells) {
+          parent.setCell(row + 1, 0, afterCells[0]);
+          parent.setCell(row + 1, 1, afterCells[1]);
+          model.position = model.offsetOf(parent.getCell(row + 1, 0)[0]);
+        } else {
+          // Put a newly-created align row into the left-aligned second cell.
+          // This keeps normal typing direction intuitive until the user enters
+          // an explicit '&', which visualTexInsertAlignmentPoint then commits
+          // into the standard right/left TeX column pair.
+          visualTexProvisionalAlignRows(parent).add(row + 1);
+          parent.setCell(row + 1, 1, after);
+          model.position = model.offsetOf(parent.getCell(row + 1, 1)[0]);
+        }
       } else {
         parent.setCell(row + 1, col, after);
         model.position = model.offsetOf(parent.getCell(row + 1, col)[0]);
@@ -506,18 +522,20 @@ function visualTexInsertRowBreak(model, environment = "gathered") {
       const before = siblings.slice(1, split);
       const after = siblings.slice(split);
       parent.removeBranch(branch);
+      const beforeCells = environment === "aligned" ? visualTexSplitAtAlignmentMarker(before) : null;
+      const afterCells = environment === "aligned" ? visualTexSplitAtAlignmentMarker(after) : null;
       const array =
         environment === "aligned"
-          ? makeEnvironment(environment, [[[], before], [[], after]])
+          ? makeEnvironment(environment, [beforeCells ?? [[], before], afterCells ?? [[], after]])
           : makeEnvironment(environment, [[before], [after]]);
       if (environment === "aligned") {
         const provisionalRows = visualTexProvisionalAlignRows(array);
-        provisionalRows.add(0);
-        provisionalRows.add(1);
+        if (!beforeCells) provisionalRows.add(0);
+        if (!afterCells) provisionalRows.add(1);
       }
       parent.setChildren([array], branch);
       model.position = model.offsetOf(
-        array.getCell(1, environment === "aligned" ? 1 : 0)[0],
+        array.getCell(1, environment === "aligned" && !afterCells ? 1 : 0)[0],
       );
     }
     mathfield.snapshot();

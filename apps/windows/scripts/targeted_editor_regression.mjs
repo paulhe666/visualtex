@@ -7,7 +7,7 @@ import {
 } from "./browser_test_runtime.mjs";
 
 const scenario = process.argv[2];
-if (!new Set(["startup", "history-core", "multiline-input", "bounded-operator-model", "fences", "variant-core", "variant-core-extended", "command-surface-audit", "native-input-popover", "usage-ranking", "native-space-selection", "candidate-query-reset", "raw-placeholder-visual", "placeholder-core", "placeholder-visual-audit", "nested-input-core", "structured-chinese-ime", "formula-chinese-font", "ime-stale-recovery", "direct-shortcut-placeholder", "toolbar-placeholder-overflow", "horizontal-overflow", "atomic-structure", "caret-probe", "scripts", "upright", "context-style", "suggestions", "navigation", "geometry", "source-layout", "toolbar-compact", "toolbar-postfix", "classic-panel-resize", "ocr-storage-ui", "formula-tiles", "latex-profile-ui", "persistent-formatting", "formula-formatting", "cursor-placement", "settings", "layout", "multi-line-selection", "delete", "export"]).has(scenario)) {
+if (!new Set(["startup", "history-core", "multiline-input", "multiline-align", "bounded-operator-model", "fences", "variant-core", "variant-core-extended", "command-surface-audit", "native-input-popover", "usage-ranking", "native-space-selection", "candidate-query-reset", "raw-placeholder-visual", "placeholder-core", "placeholder-visual-audit", "nested-input-core", "structured-chinese-ime", "formula-chinese-font", "ime-stale-recovery", "direct-shortcut-placeholder", "toolbar-placeholder-overflow", "horizontal-overflow", "atomic-structure", "caret-probe", "scripts", "upright", "context-style", "suggestions", "navigation", "geometry", "source-layout", "toolbar-compact", "toolbar-postfix", "classic-panel-resize", "ocr-storage-ui", "formula-tiles", "latex-profile-ui", "persistent-formatting", "formula-formatting", "cursor-placement", "settings", "layout", "multi-line-selection", "delete", "export"]).has(scenario)) {
   throw new Error(
     "Usage: node scripts/targeted_editor_regression.mjs <startup|history-core|multiline-input|bounded-operator-model|fences|variant-core|variant-core-extended|command-surface-audit|native-input-popover|usage-ranking|native-space-selection|candidate-query-reset|raw-placeholder-visual|placeholder-core|placeholder-visual-audit|nested-input-core|structured-chinese-ime|formula-chinese-font|ime-stale-recovery|direct-shortcut-placeholder|toolbar-placeholder-overflow|horizontal-overflow|atomic-structure|caret-probe|scripts|upright|context-style|suggestions|navigation|geometry|source-layout|toolbar-compact|toolbar-postfix|classic-panel-resize|ocr-storage-ui|formula-tiles|latex-profile-ui|persistent-formatting|formula-formatting|cursor-placement|settings|layout|multi-line-selection|delete|export>",
   );
@@ -1575,6 +1575,61 @@ async function main() {
         multilineRedo,
       }, null, 2));
       console.log("Targeted core undo/redo regression passed");
+      return;
+    }
+
+    if (scenario === "multiline-align") {
+      const charKeys = {
+        "(": ["Digit9", 57, 8], ")": ["Digit0", 48, 8], "^": ["Digit6", 54, 8],
+        "&": ["Digit7", 55, 8], "+": ["Equal", 187, 8], "=": ["Equal", 187, 0],
+        "'": ["Quote", 222, 0], " ": ["Space", 32, 0],
+      };
+      const typeChars = async (text) => {
+        for (const character of text) {
+          if (/[0-9]/.test(character)) await key(character, `Digit${character}`, 48 + Number(character));
+          else if (charKeys[character]) {
+            const [code, vk, modifiers] = charKeys[character];
+            await key(character, code, vk, modifiers);
+          } else await typeText(character);
+        }
+      };
+      const readMultiline = () => evaluate(`(() => {
+        const fields = [...document.querySelectorAll('math-field')];
+        const source = document.querySelector('.cm-content')?.innerText ?? null;
+        return { values: fields.map((field) => field.value), source };
+      })()`);
+
+      const useMultilineEnvironment = async (environment) => {
+        await evaluate(`(() => {
+          const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
+          persisted.state = persisted.state || {};
+          persisted.state.latexFormatProfile = { ...(persisted.state.latexFormatProfile || {}), multilineEnvironment: ${JSON.stringify(environment)}, numbered: false };
+          localStorage.setItem('visualtex-editor', JSON.stringify(persisted));
+          location.reload();
+          return true;
+        })()`).catch(() => {});
+        await sleep(900);
+        await waitForEvaluation(`(() => ({ ready: Boolean(document.querySelector('math-field')?.isConnected) }))()`, 'reloaded editor');
+      };
+
+      // F03: '&' typed before the first Shift+Enter becomes the row's align point.
+      await useMultilineEnvironment('align');
+      await clearField();
+      await typeChars("f(x)&=(x+1)^2");
+      await key("ArrowRight", "ArrowRight", 39);
+      await key("Enter", "Enter", 13, 8);
+      await typeChars("&=x^2");
+      await typeChars("+2x+1");
+      await key("Enter", "Enter", 13, 8);
+      await typeChars("f'(x)&=2x+2");
+      await sleep(300);
+      const shiftEnterAlign = (await readMultiline()).values[0].replace(/\s+/g, "");
+      const expectedAlign = String.raw`\begin{aligned}f\left(x\right)&=\left(x+1\right)^2\\&=x^2+2x+1\\f^{\prime}\left(x\right)&=2x+2\end{aligned}`;
+      if (shiftEnterAlign !== expectedAlign) {
+        throw new Error(`First Shift+Enter row must split at its typed '&': ${shiftEnterAlign}`);
+      }
+      console.log(JSON.stringify({ shiftEnterAlign }, null, 2));
+      console.log("Targeted desktop multiline alignment regression passed");
       return;
     }
 

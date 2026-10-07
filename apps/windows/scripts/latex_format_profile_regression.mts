@@ -152,4 +152,31 @@ assert.equal(
   String.raw`\(\text{前}x\text{后}\)`,
 );
 
+// F05: rows written in align mode keep an empty left cell ("& a=b"). gather
+// has one column, so that '&' must not reach the copied LaTeX.
+const alignTypedRows: FormulaLine[] = [
+  {
+    id: "align-typed",
+    latex: String.raw`\begin{aligned} & a=b\\ & c=d\end{aligned}`,
+    mode: "display",
+    displayStyle: "default",
+  },
+];
+assert.equal(
+  formatFormulaLinesUniversal(alignTypedRows, {
+    ...DEFAULT_LATEX_FORMAT_PROFILE,
+    multilineEnvironment: "gather",
+    numbered: false,
+  }),
+  "\\begin{gather*}\na=b \\\\\nc=d\n\\end{gather*}",
+);
+assert.equal(
+  formatFormulaLinesUniversal(alignTypedRows, {
+    ...DEFAULT_LATEX_FORMAT_PROFILE,
+    multilineEnvironment: "align",
+    numbered: false,
+  }),
+  "\\begin{align*}\n& a=b \\\\\n& c=d\n\\end{align*}",
+);
+
 console.log("universal LaTeX format profile regression: PASS");
