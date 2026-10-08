@@ -99,7 +99,9 @@ public sealed class WordOmmlTokenStyleBoundaryTests
         var nameRun = Assert.Single(function.Element(M + "fName")!.Descendants(M + "r"));
         Assert.Equal("sin", Text(nameRun));
         Assert.Equal("p", Style(nameRun));
-        Assert.Equal("(x+y)", string.Concat(function.Element(M + "e")!.Descendants(M + "t").Select(t => t.Value)));
+        // The argument's parentheses are one native group, as Word writes sin(x+y).
+        var argument = Assert.Single(function.Element(M + "e")!.Descendants(M + "d"));
+        Assert.Equal("x+y", string.Concat(argument.Descendants(M + "t").Select(t => t.Value)));
         Assert.Equal(new[] { "+", "+", "z" }, document.Root!.Elements(M + "r").Select(Text));
         Assert.DoesNotContain(document.Descendants(M + "t"), text => text.Value.Contains('\u2061'));
     }

@@ -3056,6 +3056,7 @@ internal static partial class WordOmmlConverter
         ValidateMathMlForOmml(mathMl);
         mathMl = NormalizeMathTypeBinomialPiles(mathMl);
         mathMl = NormalizeMathJaxBinomialDelimiters(mathMl);
+        mathMl = NormalizePlainBracketPairs(mathMl);
         mathMl = NormalizeFencedMathMlTables(mathMl);
         mathMl = NormalizeNestedEmptyBaseScripts(mathMl);
         mathMl = NormalizeMathMlPrescripts(mathMl);
@@ -3212,6 +3213,174 @@ internal static partial class WordOmmlConverter
                 new XElement(fraction)));
         }
         return document.ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static readonly (string Open, string Close)[] AdaptiveBracketPairs =
+    {
+        ("(", ")"), ("[", "]"), ("{", "}"), ("⟨", "⟩"),
+        ("⌊", "⌋"), ("⌈", "⌉"),
+    };
+
+    /// <summary>
+    /// Word's own equation editor builds matching brackets into m:d, which
+    /// grows with its content. A bracket that arrives as a bare character
+    /// (typed without \left/\right, or hand-sized with \big) is just a glyph
+    /// and stays small beside tall content, and a closing bracket that carries
+    /// a superscript sits alone as the base of the script. Pair brackets that
+    /// match within one sequence of siblings and write them as one fenced
+    /// group. Unmatched or mismatched brackets (intervals such as [0,1)),
+    /// vertical bars and relation-class brackets are left alone.
+    /// </summary>
+    internal static string NormalizePlainBracketPairs(string mathMl)
+    {
+        if (string.IsNullOrWhiteSpace(mathMl)) return mathMl;
+        // MathML read back from a MathType equation carries data-mtef-*
+        // attributes. Its literal brackets are the author's choice and a
+        // conversion keeps them as they are.
+        if (mathMl.IndexOf("data-mtef-", StringComparison.Ordinal) >= 0) return mathMl;
+        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        XNamespace mml = "http://www.w3.org/1998/Math/MathML";
+        var containerNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "math", "mrow", "mstyle", "mtd", "msqrt", "mpadded", "mphantom",
+        };
+        var scriptNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "msup", "msub", "msubsup",
+        };
+
+        string? Token(XElement element, string role)
+        {
+            var token = element;
+            if (element.Name == mml + "mrow")
+            {
+                var inner = element.Elements().ToArray();
+                if (inner.Length != 1) return null;
+                var wrapperClass = element.Attribute("data-mjx-texclass")?.Value;
+                if (!string.IsNullOrEmpty(wrapperClass)
+                    && !string.Equals(wrapperClass, role, StringComparison.OrdinalIgnoreCase))
+                    return null;
+                token = inner[0];
+            }
+            if (token.Name != mml + "mo" || token.HasElements) return null;
+            // MathJax marks every unprefixed bracket (and \{, \lfloor, ...)
+            // fence="false" stretchy="false", so those flags are the ordinary
+            // case here. A bracket that Word wrote as a literal character is
+            // recognizable by mathvariant and keeps its fixed size; MathType
+            // sources are skipped as a whole above.
+            if (token.Attribute("mathvariant") is not null) return null;
+            var tokenClass = token.Attribute("data-mjx-texclass")?.Value;
+            if (!string.IsNullOrEmpty(tokenClass)
+                && !string.Equals(tokenClass, role, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return token.Value.Trim();
+        }
+
+        string? ScriptBaseClose(XElement element)
+        {
+            if (!scriptNames.Contains(element.Name.LocalName)) return null;
+            var first = element.Elements().FirstOrDefault();
+            return first is null ? null : Token(first, "CLOSE");
+        }
+
+        bool Matches(string open, string close) =>
+            AdaptiveBracketPairs.Any(pair => pair.Open == open && pair.Close == close);
+        bool IsOpen(string? value) =>
+            value is not null && AdaptiveBracketPairs.Any(pair => pair.Open == value);
+
+        List<XElement> Rebuild(List<XElement> items)
+        {
+            var pairs = new Dictionary<int, (int Close, string Open, string CloseText, bool InScript)>();
+            var stack = new List<(int Index, string Open)>();
+            for (var index = 0; index < items.Count; index++)
+            {
+                var open = Token(items[index], "OPEN");
+                if (IsOpen(open))
+                {
+                    stack.Add((index, open!));
+                    continue;
+                }
+                var scriptClose = ScriptBaseClose(items[index]);
+                var close = scriptClose ?? Token(items[index], "CLOSE");
+                if (close is null || stack.Count == 0) continue;
+                var top = stack[stack.Count - 1];
+                if (!Matches(top.Open, close)) continue;
+                stack.RemoveAt(stack.Count - 1);
+                var inScript = scriptClose is not null;
+                // An empty group has no operand to build; leave it as text.
+                if (!inScript && index == top.Index + 1) continue;
+                if (inScript && index == top.Index + 1) continue;
+                pairs[top.Index] = (index, top.Open, close, inScript);
+            }
+            if (pairs.Count == 0) return items;
+
+            List<XElement> Build(int start, int end)
+            {
+                var result = new List<XElement>();
+                for (var index = start; index < end; index++)
+                {
+                    if (!pairs.TryGetValue(index, out var pair))
+                    {
+                        result.Add(items[index]);
+                        continue;
+                    }
+                    var body = Build(index + 1, pair.Close);
+                    var operand = body.Count == 1 && body[0].Name == mml + "mtable"
+                        ? new XElement(body[0])
+                        : new XElement(mml + "mrow", body.Select(node => new XElement(node)));
+                    var fenced = new XElement(
+                        mml + "mfenced",
+                        new XAttribute("open", pair.Open),
+                        new XAttribute("close", pair.CloseText),
+                        new XAttribute("separators", string.Empty),
+                        operand);
+                    if (pair.InScript)
+                    {
+                        var script = new XElement(items[pair.Close]);
+                        script.Elements().First().ReplaceWith(fenced);
+                        result.Add(script);
+                    }
+                    else
+                    {
+                        result.Add(fenced);
+                    }
+                    index = pair.Close;
+                }
+                return result;
+            }
+            return Build(0, items.Count);
+        }
+
+        var changed = false;
+        foreach (var container in document.Descendants()
+                     .Where(element => containerNames.Contains(element.Name.LocalName)
+                         && element.Name.Namespace == mml)
+                     .Reverse()
+                     .ToList())
+        {
+            var children = container.Elements().ToList();
+            if (children.Count < 2) continue;
+            // Explicit \left...\right rows are already one native group; only
+            // their body can hold further bare brackets.
+            var explicitRow = MathMlExplicitFenceContract.TryGetRow(container, out _, out _, out _)
+                || (MathMlExplicitFenceContract.HasTexClass(container, "INNER")
+                    && MathMlExplicitFenceContract.HasTexClass(children[0], "OPEN")
+                    && MathMlExplicitFenceContract.HasTexClass(children[children.Count - 1], "CLOSE"));
+            var head = new List<XElement>();
+            var tail = new List<XElement>();
+            var middle = children;
+            if (explicitRow)
+            {
+                head.Add(children[0]);
+                tail.Add(children[children.Count - 1]);
+                middle = children.Skip(1).Take(children.Count - 2).ToList();
+            }
+            var rebuilt = Rebuild(middle);
+            if (ReferenceEquals(rebuilt, middle)) continue;
+            container.ReplaceNodes(head.Concat(rebuilt).Concat(tail));
+            changed = true;
+        }
+        return changed ? document.ToString(SaveOptions.DisableFormatting) : mathMl;
     }
 
     internal static string NormalizeFencedMathMlTables(string mathMl)

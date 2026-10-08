@@ -16,7 +16,7 @@ public sealed class WordOmmlScriptBaseRoleRecoveryTests
     [Theory]
     [InlineData("C01434", false)]
     [InlineData("C01435", true)]
-    public void CorpusClosingParenKeepsOperatorRole(string id, bool display)
+    public void CorpusBareBracketPairWithAPowerBecomesOneNativeGroup(string id, bool display)
     {
         var source = Math("<mo stretchy=\"false\">(</mo><mi>x</mi><mo>+</mo><mi>y</mi>"
             + "<msup><mo stretchy=\"false\">)</mo><mn>2</mn></msup>", display);
@@ -25,7 +25,8 @@ public sealed class WordOmmlScriptBaseRoleRecoveryTests
         var script = Assert.Single(actual.Descendants(P + "msup"));
         var slots = script.Elements().ToArray();
         Assert.Equal(2, slots.Length);
-        AssertToken(slots[0], "mo", ")");
+        // The base is the whole bracketed group, not a lone closing character.
+        Assert.Equal("x+y", slots[0].Value);
         Assert.Equal("2", slots[1].Value);
     }
 

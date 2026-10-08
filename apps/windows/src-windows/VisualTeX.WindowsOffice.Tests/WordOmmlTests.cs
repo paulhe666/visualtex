@@ -533,7 +533,9 @@ public sealed class WordOmmlTests
         var omml = WordOmmlConverter.TransformMathMlToOmml(mathMl);
         var document = XDocument.Parse(omml);
         XNamespace math = MathNamespace;
-        var delimiter = document.Descendants(math + "d").SingleOrDefault();
+        // f(x) is a native group as well; the cases brace is the one opened by {.
+        var delimiter = document.Descendants(math + "d").SingleOrDefault(candidate =>
+            candidate.Element(math + "dPr")?.Element(math + "begChr")?.Attribute(math + "val")?.Value == "{");
 
         Assert.NotNull(delimiter);
         Assert.Equal(

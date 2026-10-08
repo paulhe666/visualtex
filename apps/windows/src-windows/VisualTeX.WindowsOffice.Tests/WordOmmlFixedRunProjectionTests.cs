@@ -31,15 +31,18 @@ public sealed class WordOmmlFixedRunProjectionTests
 
     [Theory]
     [InlineData(false)][InlineData(true)]
-    public void OriginalScriptedFixedParenthesesRetainExactContentSignature(bool display)
+    public void ScriptedBareParenthesesBecomeOneNativeGroupWithItsPower(bool display)
     {
+        // A bracket pair typed without \left/\right is written as one native
+        // group, so it grows with its content and the power sits on the group
+        // instead of on a lone closing character.
         var source = "<math xmlns='" + P + "'><mo stretchy='false'>(</mo><mi>x</mi><mo>+</mo><mi>y</mi>"
             + "<msup><mo stretchy='false'>)</mo><mn>2</mn></msup></math>";
         var native = WordOmmlConverter.TransformMathMlToOmml(source);
         var actual = WordOmmlConverter.TransformOmmlToMathMl(native, display);
-        Assert.Equal(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(actual));
-        var script = Assert.Single(XDocument.Parse(actual).Descendants(P + "msup"));
-        Fixed(Assert.Single(script.Elements().First().DescendantsAndSelf(P + "mo")));
+        Assert.Equal(
+            "sup(fence((,),mi[](x)o(+)mi[](y)),n(2))",
+            MathTypeMtefCodec.SemanticSignature(actual));
     }
 
     [Theory]
