@@ -706,6 +706,30 @@ const latexExtended: CoverageCase[] = [
     check: (parsed) => !text(parsed).includes("\\cite") && !text(parsed).includes("\\ref"),
   },
   {
+    name: "Markdown notes with environments inside $$ are auto-detected as Markdown",
+    format: "auto",
+    source: [
+      "# 第一章 运动学",
+      "",
+      String.raw`速度 $v=\frac{dx}{dt}$。`,
+      "",
+      "## 1.1 能量",
+      "",
+      String.raw`- 动能 $E_k=\frac12mv^2$`,
+      String.raw`- 势能 $E_p=mgh$`,
+      "",
+      String.raw`> 注意：$g\approx 9.8$`,
+      "",
+      String.raw`$$\begin{aligned} F&=ma\\ &=m\frac{dv}{dt}\end{aligned}$$`,
+    ].join("\n"),
+    check: (parsed) =>
+      parsed.format === "markdown" &&
+      blocksOf(parsed, "heading").length === 2 &&
+      blocksOf(parsed, "quote").length === 1 &&
+      !text(parsed).includes("# ") &&
+      formulas(parsed).length === 5,
+  },
+  {
     name: "proof-only fragments are auto-detected as LaTeX",
     format: "auto",
     source: String.raw`\begin{proof}[Spectral argument]

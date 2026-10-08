@@ -832,14 +832,28 @@ function appendMixedBlocks(
 }
 
 function detectFormat(source: string): ResolvedDocumentSourceFormat {
+  // A Markdown note often holds `$$\begin{aligned}…$$`; commands inside the
+  // dollar-delimited math say nothing about the surrounding document.
+  const outsideMath = source
+    .replace(/\$\$[\s\S]*?\$\$/g, " ")
+    .replace(/\$[^$\n]*\$/g, " ");
   // A LaTeX fragment may consist only of a proof/theorem/custom environment or
   // a preamble macro definition. Do not require one of a tiny fixed set of
   // environments before enabling the LaTeX parser.
-  return /\\(?:documentclass|usepackage|RequirePackage|newcommand|renewcommand|providecommand|DeclareMathOperator\*?|DeclarePairedDelimiter\w*|newtheorem\*?|begin\{[A-Za-z@*]+\}|\[|\(|text(?:bf|it|tt)\{|emph\{|item(?:\s|\[)|(?:part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\{)/i.test(
-    source,
+  if (
+    !/\\(?:documentclass|usepackage|RequirePackage|newcommand|renewcommand|providecommand|DeclareMathOperator\*?|DeclarePairedDelimiter\w*|newtheorem\*?|begin\{[A-Za-z@*]+\}|\[|\(|text(?:bf|it|tt)\{|emph\{|item(?:\s|\[)|(?:part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\{)/i.test(
+      outsideMath,
+    )
   )
-    ? "latex"
-    : "markdown";
+    return "markdown";
+  // `\[…\]`, `\(…\)` and `\textbf{}` also occur in Markdown notes. Headings,
+  // lists and quotes decide for Markdown unless the source has LaTeX
+  // document structure or an environment outside math.
+  const markdownBlocks = /^(?:#{1,6}[ \t]|>|[ \t]*(?:[-*+]|\d+[.)])[ \t]|```|~~~)/m.test(outsideMath);
+  const latexStructure = /\\(?:documentclass|usepackage|begin\{[A-Za-z@*]+\}|(?:part|chapter|section|subsection|subsubsection)\*?\{|item\b)/.test(
+    outsideMath,
+  );
+  return markdownBlocks && !latexStructure ? "markdown" : "latex";
 }
 
 function markdownTableCells(line: string) {
