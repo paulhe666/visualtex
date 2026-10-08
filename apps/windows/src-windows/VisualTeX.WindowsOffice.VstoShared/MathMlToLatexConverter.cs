@@ -382,6 +382,12 @@ internal static class MathMlToLatexConverter
     {
         var children = element.Elements().ToList();
         if (children.Count < 2) return ConvertChildren(element);
+        // A zero-width rule is a stacked pair without a bar (\atop, an m:f of
+        // type noBar). \binom is recognized with its fence elsewhere; the bare
+        // form must not come back with a rule, or an edit would draw one.
+        var thickness = ((string?)element.Attribute("linethickness") ?? string.Empty).Trim();
+        if (thickness.StartsWith("0", StringComparison.Ordinal))
+            return @"\genfrac{}{}{0pt}{}{" + ConvertElement(children[0]) + "}{" + ConvertElement(children[1]) + "}";
         return @"\frac{" + ConvertElement(children[0]) + "}{" + ConvertElement(children[1]) + "}";
     }
 

@@ -51,7 +51,7 @@ public sealed class MathMlAtomClassRecoveryTests
 
     [Fact]
     public void DoesNotStripRelationClassThroughLooseBinomialRecognition()
-        => Assert.Equal(@"\mathrel{(}\frac{n}{k})", MathMlToLatexConverter.Convert(
+        => Assert.Equal(@"\mathrel{(}\genfrac{}{}{0pt}{}{n}{k})", MathMlToLatexConverter.Convert(
             "<math><mrow data-mjx-texclass='REL'><mo>(</mo></mrow>"
             + "<mfrac linethickness='0'><mi>n</mi><mi>k</mi></mfrac><mo>)</mo></math>"));
 

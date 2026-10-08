@@ -20,6 +20,17 @@ public sealed class MathMlToLatexConverterTests
         Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
     }
 
+    [Theory]
+    [InlineData("<mfrac linethickness=\"0\"><mi>n</mi><mi>k</mi></mfrac>", @"\genfrac{}{}{0pt}{}{n}{k}")]
+    [InlineData("<mfrac linethickness=\"0pt\"><mi>n</mi><mi>k</mi></mfrac>", @"\genfrac{}{}{0pt}{}{n}{k}")]
+    [InlineData("<mfrac linethickness=\"1\"><mi>n</mi><mi>k</mi></mfrac>", @"\frac{n}{k}")]
+    [InlineData("<mo>[</mo><mfrac linethickness=\"0\"><mi>n</mi><mi>k</mi></mfrac><mo>]</mo>", @"[\genfrac{}{}{0pt}{}{n}{k}]")]
+    public void KeepsABarlessFractionBarless(string body, string expected)
+    {
+        var mathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">" + body + "</math>";
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
     [Fact]
     public void ConvertsMathTypeGreekVariantsAndDotOperatorBackToExactLatex()
     {
