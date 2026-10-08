@@ -1659,7 +1659,28 @@ async function main() {
       if (shiftEnterAlign !== expectedAlign) {
         throw new Error(`First Shift+Enter row must split at its typed '&': ${shiftEnterAlign}`);
       }
-      console.log(JSON.stringify({ shiftEnterAlign }, null, 2));
+      // Backspace on the empty row a Shift+Enter created removes that row and,
+      // with one row left, the aligned/gathered wrapper too.
+      const backspaceDowngrade = {};
+      for (const environment of ["gather", "align"]) {
+        await useMultilineEnvironment(environment);
+        await clearField();
+        await typeChars("x");
+        await key("Enter", "Enter", 13, 8);
+        await sleep(150);
+        const upgraded = (await readMultiline()).values[0];
+        if (!/\\begin\{(?:aligned|gathered)\}/.test(upgraded)) {
+          throw new Error(`${environment}: Shift+Enter did not create a multiline formula: ${upgraded}`);
+        }
+        await key("Backspace", "Backspace", 8);
+        await sleep(200);
+        const state = await readMultiline();
+        backspaceDowngrade[environment] = { upgraded, after: state.values };
+        if (state.values.length !== 1 || state.values[0].replace(/\s+/g, "") !== "x") {
+          throw new Error(`${environment}: Backspace must leave the ordinary formula x: ${JSON.stringify(state.values)}`);
+        }
+      }
+      console.log(JSON.stringify({ shiftEnterAlign, backspaceDowngrade }, null, 2));
       console.log("Targeted desktop multiline alignment regression passed");
       return;
     }
