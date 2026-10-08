@@ -1108,6 +1108,15 @@ internal static class WordOmmlHostWriter
                     verifyStart,
                     verifyEnd);
                 verifyMaths = verify.OMaths;
+                if (verifyMaths.Count != 0
+                    && HasEmptyMathZone(verifyMaths)
+                    && TryClearMathParagraphMark(document, anchor.Start))
+                {
+                    Release(verifyMaths);
+                    Release(verify);
+                    verify = document.Range(verifyStart, verifyEnd);
+                    verifyMaths = verify.OMaths;
+                }
                 if (verifyMaths.Count != 0)
                     throw new InvalidDataException(
                         "The exact OMML source host survived text clearing.");
@@ -1129,6 +1138,66 @@ internal static class WordOmmlHostWriter
             Release(math);
             Release(maths);
             Release(range);
+        }
+    }
+
+    private static bool HasEmptyMathZone(OMaths maths)
+    {
+        for (var index = 1; index <= maths.Count; index++)
+        {
+            OMath? math = null;
+            Range? range = null;
+            try
+            {
+                math = maths[index];
+                range = math.Range;
+                if (range.Start == range.End) return true;
+            }
+            finally
+            {
+                Release(range);
+                Release(math);
+            }
+        }
+        return false;
+    }
+
+    // A display paragraph's mark may itself carry the math property
+    // (w:pPr/w:rPr/w:oMath). macOS VisualTeX writes it, and so does Word for
+    // equations typed in their own paragraph. Clearing the equation text then
+    // leaves an empty math zone on that mark, which Word still reports as an
+    // OMath. Rewrite only that mark without the property; its paragraph
+    // formatting travels in the same XML.
+    private static bool TryClearMathParagraphMark(
+        Document document,
+        int position)
+    {
+        Range? content = null;
+        Range? mark = null;
+        try
+        {
+            content = document.Content;
+            if (position < content.Start || position + 1 > content.End) return false;
+            mark = document.Range(position, position + 1);
+            if (!string.Equals(mark.Text, "\r", StringComparison.Ordinal)) return false;
+            var package = XDocument.Parse(mark.WordOpenXML, LoadOptions.PreserveWhitespace);
+            XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+            var flags = package
+                .Descendants(w + "pPr")
+                .Elements(w + "rPr")
+                .Elements(w + "oMath")
+                .ToArray();
+            if (flags.Length == 0) return false;
+            foreach (var flag in flags) flag.Remove();
+            mark.InsertXML(
+                (package.Declaration?.ToString() ?? string.Empty)
+                + package.ToString(SaveOptions.DisableFormatting));
+            return true;
+        }
+        finally
+        {
+            Release(mark);
+            Release(content);
         }
     }
 
