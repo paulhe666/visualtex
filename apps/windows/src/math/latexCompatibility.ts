@@ -742,12 +742,29 @@ export function isIncompleteLatexDraft(source: string, error?: unknown) {
   return false;
 }
 
-export function assertNoUnfilledStructuralPlaceholders(source: string) {
-  if (structuralPlaceholder.test(source)) {
-    throw new Error(
+/** Lets the main window say "empty box" in the user's language. */
+export class UnfilledPlaceholderError extends Error {
+  constructor() {
+    super(
       "The formula still contains empty VisualTeX placeholders. Fill or remove them before inserting.",
     );
+    this.name = "UnfilledPlaceholderError";
   }
+}
+
+export function assertNoUnfilledStructuralPlaceholders(source: string) {
+  if (structuralPlaceholder.test(source)) {
+    throw new UnfilledPlaceholderError();
+  }
+}
+
+export function formulaExportErrorMessage(cause: unknown, isEn: boolean) {
+  if (cause instanceof UnfilledPlaceholderError) {
+    return isEn
+      ? "The formula still has empty boxes. Fill or delete them first."
+      : "公式里还有空白占位框，请先填写或删除。";
+  }
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 /** Parser errors are structural; literal text and color are not error signals. */

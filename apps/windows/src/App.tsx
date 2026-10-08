@@ -77,6 +77,7 @@ import {
   readCustomTheme,
 } from "./themeCustomization";
 import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
+import { formulaExportErrorMessage } from "./math/latexCompatibility";
 import {
   DEFAULT_OCR_MODEL,
   OCR_MODELS,
@@ -430,7 +431,11 @@ function App() {
 
   useEffect(() => {
     if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(""), 1800);
+    // Error toasts carry a reason; give longer text time to be read.
+    const timeout = window.setTimeout(
+      () => setToast(""),
+      Math.min(6000, Math.max(1800, toast.length * 100)),
+    );
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
@@ -988,7 +993,7 @@ function App() {
       );
       setToast(isEn ? "PNG copied to Clipboard" : "PNG 已复制到剪贴板");
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = formulaExportErrorMessage(cause, isEn);
       setToast(
         isEn
           ? `Unable to copy PNG: ${message}`
