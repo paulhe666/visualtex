@@ -943,6 +943,8 @@ internal static partial class MathTypeMtefCodec
             case "mfrac":
             {
                 var fractionKind = CanonicalFractionKind(element);
+                if (fractionKind == "nobarfrac" && children.Length == 2)
+                    return CanonicalBinary("stack", children, variant);
                 return CanonicalBinary(fractionKind, children, variant);
             }
             case "msqrt":
@@ -1033,8 +1035,19 @@ internal static partial class MathTypeMtefCodec
                     fencedChildren);
             }
             case "mtable":
+            {
+                // EmitFraction writes every zero-rule fraction as a centered
+                // two-line PILE, because MTEF has no rule-less fraction, and a
+                // rewritten native PILE can come back as a one-column MATRIX.
+                // A zero-rule fraction and any two-row, one-column table are
+                // therefore one "stack" wherever they appear, not only inside a
+                // recognized binomial fence: Word OMML writes \binom with fixed
+                // literal parentheses, which no fence rule accepts.
+                if (TryCanonicalizeTwoLineStack(element, variant, out var stacked))
+                    return stacked;
                 return "table(" + string.Join(";", children.Select(row =>
                     CanonicalizeMathMl(row, variant))) + ")";
+            }
             case "mtr":
             case "mlabeledtr":
                 return "row(" + string.Join(",", children.Select(cell =>
@@ -1271,6 +1284,30 @@ internal static partial class MathTypeMtefCodec
         "∣" => "|",
         _ => NormalizeOperatorToken(value),
     };
+
+    private static bool TryCanonicalizeTwoLineStack(
+        XElement table,
+        string? variant,
+        out string signature)
+    {
+        signature = string.Empty;
+        var rows = table.Elements()
+            .Where(row => row.Name.LocalName is "mtr" or "mlabeledtr")
+            .ToArray();
+        if (rows.Length != 2) return false;
+        var cells = rows.Select(row => row.Elements()
+                .Where(cell => cell.Name.LocalName == "mtd")
+                .ToArray())
+            .ToArray();
+        if (cells.Any(row => row.Length != 1)) return false;
+        string Line(XElement cell) => CanonicalizeElementSequence(
+            cell.Elements()
+                .Where(child => child.Name.LocalName is not ("annotation" or "annotation-xml"))
+                .ToArray(),
+            variant);
+        signature = "stack(" + Line(cells[0][0]) + "," + Line(cells[1][0]) + ")";
+        return true;
+    }
 
     private static string CanonicalBinary(
         string name,
