@@ -704,8 +704,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
             var scale = Math.Min(1f, Math.Min(600f / width, 400f / height));
             width *= scale;
             height *= scale;
-            var left = Math.Max(0f, (presentation.PageSetup.SlideWidth - width) / 2f);
-            var top = Math.Max(0f, (presentation.PageSetup.SlideHeight - height) / 2f);
+            var (left, top) = NewFormulaPosition(presentation, slide, width, height);
             shape = slide.Shapes.AddPicture(
                 imagePath,
                 MsoTriState.msoFalse,
@@ -764,8 +763,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
             var scale = Math.Min(1f, Math.Min(600f / width, 400f / height));
             width *= scale;
             height *= scale;
-            var left = Math.Max(0f, (presentation.PageSetup.SlideWidth - width) / 2f);
-            var top = Math.Max(0f, (presentation.PageSetup.SlideHeight - height) / 2f);
+            var (left, top) = NewFormulaPosition(presentation, slide, width, height);
             redrawFreeze = FreezePowerPointWindowRedraw(window);
             shape = AddOleObjectOffscreen(slide, width, height);
             ProbeOleStage("allocated", shape);
@@ -858,8 +856,7 @@ public sealed partial class PowerPointFormulaService : IDisposable
             var scale = Math.Min(1f, Math.Min(600f / width, 400f / height));
             width *= scale;
             height *= scale;
-            var left = Math.Max(0f, (presentation.PageSetup.SlideWidth - width) / 2f);
-            var top = Math.Max(0f, (presentation.PageSetup.SlideHeight - height) / 2f);
+            var (left, top) = NewFormulaPosition(presentation, slide, width, height);
             shape = PowerPointNativeOmmlKernel.CreateStandalone(
                 _application,
                 slide,
@@ -2067,6 +2064,57 @@ public sealed partial class PowerPointFormulaService : IDisposable
                 "The PowerPoint slide captured for OMML insertion no longer exists.");
         }
         finally { Release(slides); }
+    }
+
+    // New formulas go to the slide center. When a shape is already centered
+    // there (usually the previous new formula), step down and right like
+    // PowerPoint's own repeated paste, so formulas do not pile up.
+    internal static (float Left, float Top) NewFormulaPosition(
+        Presentation presentation,
+        Slide slide,
+        float width,
+        float height)
+    {
+        const float step = 24f;
+        const float tolerance = 4f;
+        var slideWidth = presentation.PageSetup.SlideWidth;
+        var slideHeight = presentation.PageSetup.SlideHeight;
+        var centerX = slideWidth / 2f;
+        var centerY = slideHeight / 2f;
+        var centers = new List<(float X, float Y)>();
+        Shapes? shapes = null;
+        try
+        {
+            shapes = slide.Shapes;
+            for (var index = 1; index <= shapes.Count; index++)
+            {
+                Shape? shape = null;
+                try
+                {
+                    shape = shapes[index];
+                    centers.Add((shape.Left + shape.Width / 2f, shape.Top + shape.Height / 2f));
+                }
+                catch { }
+                finally { Release(shape); }
+            }
+        }
+        catch { }
+        finally { Release(shapes); }
+
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var x = centerX + attempt * step;
+            var y = centerY + attempt * step;
+            if (x + width / 2f > slideWidth || y + height / 2f > slideHeight) break;
+            if (centers.Any(c => Math.Abs(c.X - x) <= tolerance && Math.Abs(c.Y - y) <= tolerance))
+                continue;
+            centerX = x;
+            centerY = y;
+            break;
+        }
+        return (
+            Math.Max(0f, centerX - width / 2f),
+            Math.Max(0f, centerY - height / 2f));
     }
 
     private static Slide ResolveTargetSlide(

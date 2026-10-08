@@ -264,8 +264,9 @@ public sealed partial class PowerPointFormulaService
                 width = size.Width;
                 height = size.Height;
             }
-            var left = source?.Left ?? (presentation.PageSetup.SlideWidth - width) / 2f;
-            var top = source?.Top ?? (presentation.PageSetup.SlideHeight - height) / 2f;
+            var (left, top) = source is not null
+                ? (source.Left, source.Top)
+                : NewFormulaPosition(presentation, slide, width, height);
             StartNewUndoEntry();
             redraw = FreezePowerPointWindowRedraw(window);
             shapes = slide.Shapes;
