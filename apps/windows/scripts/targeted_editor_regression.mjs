@@ -4480,12 +4480,46 @@ async function main() {
         };
       })()`, "narrow desktop toolbar without overlap");
 
+      // Keypad mode hides the desktop top toolbar. In the classic layout the
+      // editor header must come back with the format selector and the exit.
+      await client.send("Emulation.setDeviceMetricsOverride", {
+        width: 760,
+        height: 260,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await evaluate(`document.querySelector(".keypad-mode-toggle")?.click()`);
+      const keypadHeader = await waitForEvaluation(`(() => {
+        const workspace = document.querySelector(".workspace");
+        const header = document.querySelector(".formula-workspace.editor-pane > .editor-pane-header");
+        const visible = (selector) => [...(header?.querySelectorAll(selector) ?? [])].some((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== "hidden";
+        });
+        const rect = header?.getBoundingClientRect();
+        return {
+          ready:
+            workspace?.classList.contains("is-keypad-mode") === true &&
+            workspace?.classList.contains("is-classic-layout") === true &&
+            Boolean(rect && rect.height > 0) &&
+            visible(".keypad-mode-toggle") &&
+            visible(".code-format-primary, .editor-code-format-control"),
+          headerHeight: rect?.height ?? 0,
+          exit: visible(".keypad-mode-toggle"),
+        };
+      })()`, "classic keypad header with exit and format controls");
+      await evaluate(`document.querySelector(".editor-pane-header .keypad-mode-toggle")?.click()`);
+      await waitForEvaluation(`(() => ({
+        ready: !document.querySelector(".workspace")?.classList.contains("is-keypad-mode"),
+      }))()`, "keypad mode exits from its header button");
+
       console.log(
         JSON.stringify(
           {
             initial,
             quickOcrDropdown,
             narrowToolbar,
+            keypadHeader,
             tileDuringDrag,
             tileAfterDrag,
             dockGrowDuringDrag,

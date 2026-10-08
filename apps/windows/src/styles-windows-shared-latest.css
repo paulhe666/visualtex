@@ -2601,6 +2601,47 @@
   padding-left: 7px;
 }
 
+/* Keypad mode removes the desktop top toolbar, so the editor header becomes
+   the only home for its format selector and exit control. The classic layout
+   normally hides this header because those controls are portalled into the
+   desktop toolbar; restore a compact header while keypad mode is active. */
+.workspace.is-classic-layout.is-keypad-mode:not(.is-office-workspace) {
+  grid-template-rows: var(--panel-header-height) minmax(0, 1fr);
+}
+
+.workspace.is-classic-layout.is-keypad-mode:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .editor-pane-header {
+  display: flex;
+  grid-column: 1;
+  grid-row: 1;
+  padding-inline: 9px;
+  background: var(--surface);
+  pointer-events: auto;
+}
+
+.workspace.is-classic-layout.is-keypad-mode:not(.is-office-workspace)
+  > .formula-workspace.editor-pane
+  > .keypad-editor-pane-body {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.workspace.is-keypad-mode:not(.is-office-workspace)
+  .editor-pane-header-trailing {
+  min-width: 0;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.workspace.is-keypad-mode:not(.is-office-workspace)
+  .editor-pane-header
+  .canvas-tool-group {
+  flex: 0 0 auto;
+}
+
 .keypad-editor-pane-body {
   min-width: 0;
   min-height: 0;
