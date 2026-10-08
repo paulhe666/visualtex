@@ -3055,6 +3055,7 @@ internal static partial class WordOmmlConverter
             throw new InvalidDataException("VisualTeX did not provide MathML for the Word OMML formula.");
         ValidateMathMlForOmml(mathMl);
         mathMl = NormalizeMathTypeBinomialPiles(mathMl);
+        mathMl = NormalizeMathJaxBinomialDelimiters(mathMl);
         mathMl = NormalizeFencedMathMlTables(mathMl);
         mathMl = NormalizeNestedEmptyBaseScripts(mathMl);
         mathMl = NormalizeMathMlPrescripts(mathMl);
@@ -3152,6 +3153,63 @@ internal static partial class WordOmmlConverter
                     new XAttribute("linethickness", "0"),
                     CopyCellAsRow(cells[0][0]),
                     CopyCellAsRow(cells[1][0])));
+        }
+        return document.ToString(SaveOptions.DisableFormatting);
+    }
+
+    /// <summary>
+    /// MathJax renders \binom{n}{k} as an ORD row of
+    /// [OPEN row(mo)] [mfrac linethickness=0] [CLOSE row(mo)], with fixed-size
+    /// delimiters. The extra wrapper rows hide the delimiters from the Office
+    /// XSLT, which then writes them as two ordinary characters that do not grow
+    /// with the fraction (small parentheses in Word). Native Word writes a
+    /// binomial as m:d around a bar-less m:f, so project exactly this shape to
+    /// an mfenced around the fraction. Hand-sized delimiters (\bigl, \Bigr) and
+    /// any other body are left untouched.
+    /// </summary>
+    internal static string NormalizeMathJaxBinomialDelimiters(string mathMl)
+    {
+        if (string.IsNullOrWhiteSpace(mathMl)
+            || mathMl.IndexOf("linethickness", StringComparison.Ordinal) < 0)
+            return mathMl;
+        var document = XDocument.Parse(mathMl, LoadOptions.PreserveWhitespace);
+        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
+
+        bool TryGetWrappedFence(XElement element, string role, out string fence)
+        {
+            fence = string.Empty;
+            if (element.Name != presentationMath + "mrow"
+                || !MathMlExplicitFenceContract.HasTexClass(element, role))
+                return false;
+            var inner = element.Elements().ToArray();
+            if (inner.Length != 1
+                || inner[0].Name != presentationMath + "mo"
+                || inner[0].HasElements
+                || string.IsNullOrWhiteSpace(inner[0].Value))
+                return false;
+            fence = inner[0].Value.Trim();
+            return true;
+        }
+
+        foreach (var row in document.Descendants(presentationMath + "mrow").Reverse().ToList())
+        {
+            var children = row.Elements().ToArray();
+            if (children.Length != 3) continue;
+            if (!TryGetWrappedFence(children[0], "OPEN", out var open)
+                || !TryGetWrappedFence(children[2], "CLOSE", out var close))
+                continue;
+            var fraction = children[1];
+            if (fraction.Name != presentationMath + "mfrac") continue;
+            var thickness = (fraction.Attribute("linethickness")?.Value ?? string.Empty).Trim();
+            if (!thickness.StartsWith("0", StringComparison.Ordinal)
+                || fraction.Elements().Count() != 2)
+                continue;
+            row.ReplaceNodes(new XElement(
+                presentationMath + "mfenced",
+                new XAttribute("open", open),
+                new XAttribute("close", close),
+                new XAttribute("separators", string.Empty),
+                new XElement(fraction)));
         }
         return document.ToString(SaveOptions.DisableFormatting);
     }
