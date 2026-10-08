@@ -4534,6 +4534,19 @@ async function main() {
         ready: !document.querySelector(".workspace")?.classList.contains("is-keypad-mode"),
       }))()`, "keypad mode exits from its header button");
 
+      // Ctrl+\ jumps from the formula into the LaTeX source and back.
+      await evaluate(`document.querySelector("math-field")?.focus()`);
+      await key("\\", "Backslash", 220, 2);
+      const sourceFocus = await waitForEvaluation(`(() => ({
+        ready: Boolean(document.activeElement?.closest?.(".source-panel .cm-content")),
+        active: document.activeElement?.className ?? null,
+      }))()`, "Ctrl+Backslash focuses the LaTeX source");
+      await key("\\", "Backslash", 220, 2);
+      await waitForEvaluation(`(() => ({
+        ready: document.activeElement?.tagName === "MATH-FIELD",
+        active: document.activeElement?.tagName ?? null,
+      }))()`, "Ctrl+Backslash returns to the formula");
+
       console.log(
         JSON.stringify(
           {
@@ -4541,6 +4554,7 @@ async function main() {
             quickOcrDropdown,
             narrowToolbar,
             keypadHeader,
+            sourceFocus,
             tileDuringDrag,
             tileAfterDrag,
             dockGrowDuringDrag,

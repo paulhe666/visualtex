@@ -327,6 +327,64 @@ export function EditorWorkspace({
     setStoredSourceOpen(readWorkspacePanelOpen(mode, "source", false));
   }, [mode, setStoredSourceOpen]);
 
+  // Ctrl+\ moves focus between the formula and the LaTeX source, opening the
+  // source panel when needed (macOS uses Cmd+\).
+  useEffect(() => {
+    const toggleFormulaSourceFocus = (event: KeyboardEvent) => {
+      if (
+        event.isComposing ||
+        !event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.shiftKey ||
+        event.code !== "Backslash"
+      ) {
+        return;
+      }
+      const workspace = workspaceRef.current;
+      if (
+        !workspace ||
+        !event.composedPath().some((node) => node === workspace)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      if (sourceFocusedRef.current) {
+        handleSourceFocusChange(false);
+        window.requestAnimationFrame(() => {
+          editorRef.current?.focus();
+        });
+        return;
+      }
+
+      setSourceOpen(true);
+      if (editorLayout === "classic") setClassicDockOpen(true);
+      const focusSource = () => {
+        const sourceContent =
+          workspaceRef.current?.querySelector<HTMLElement>(
+            ".source-panel .cm-content",
+          );
+        if (sourceContent) {
+          sourceContent.focus({ preventScroll: true });
+          return;
+        }
+        window.requestAnimationFrame(() => {
+          workspaceRef.current
+            ?.querySelector<HTMLElement>(".source-panel .cm-content")
+            ?.focus({ preventScroll: true });
+        });
+      };
+      window.requestAnimationFrame(focusSource);
+    };
+
+    document.addEventListener("keydown", toggleFormulaSourceFocus, true);
+    return () =>
+      document.removeEventListener("keydown", toggleFormulaSourceFocus, true);
+  }, [editorLayout, editorRef, mode]);
+
   useEffect(() => {
     setClassicTileWidth(persistedClassicTileWidth);
   }, [persistedClassicTileWidth]);
@@ -1835,6 +1893,12 @@ export function EditorWorkspace({
                         setSourceOpen(true);
                         setClassicDockOpen(true);
                       }}
+                      aria-keyshortcuts="Control+Backslash"
+                      title={
+                        isEn
+                          ? "LaTeX source (Ctrl+\\)"
+                          : "LaTeX 源码（Ctrl+\\）"
+                      }
                     >
                       <Code2 size={16} />
                       <span className="classic-bottom-tab-label">
@@ -1929,7 +1993,12 @@ export function EditorWorkspace({
                     className="source-toggle"
                     onClick={() => setSourceOpen(true)}
                     aria-label={isEn ? "Show LaTeX source" : "展开 LaTeX 源码"}
-                    title={isEn ? "Show LaTeX source" : "展开 LaTeX 源码"}
+                    aria-keyshortcuts="Control+Backslash"
+                    title={
+                      isEn
+                        ? "Show LaTeX source (Ctrl+\\)"
+                        : "展开 LaTeX 源码（Ctrl+\\）"
+                    }
                   >
                     <PanelBottomOpen size={15} />
                   </button>
