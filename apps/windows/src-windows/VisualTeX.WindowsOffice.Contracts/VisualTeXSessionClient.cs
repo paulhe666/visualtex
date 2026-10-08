@@ -242,8 +242,17 @@ public sealed class VisualTeXSessionClient : IDisposable
         }
         if (HasFreshHealth())
         {
-            AppendClientLog("health-cache-hit", LastHealthDiagnostic, null);
-            return;
+            // The user may have closed VisualTeX since the last successful
+            // request. A loopback connect is cheap; without it the cached
+            // result skips the auto-start and the next request fails.
+            if (await IsPortListeningAsync(_configuration.CompanionPort, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                AppendClientLog("health-cache-hit", LastHealthDiagnostic, null);
+                return;
+            }
+            InvalidateHealth();
+            AppendClientLog("health-cache-stale", LastHealthDiagnostic, null);
         }
         var diagnostic = CreateDiagnostic("configuration");
         LastHealthDiagnostic = diagnostic;
