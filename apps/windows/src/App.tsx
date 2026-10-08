@@ -78,6 +78,7 @@ import {
 } from "./themeCustomization";
 import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
 import { formulaExportErrorMessage } from "./math/latexCompatibility";
+import { ask } from "@tauri-apps/plugin-dialog";
 import {
   DEFAULT_OCR_MODEL,
   OCR_MODELS,
@@ -129,9 +130,21 @@ interface InlineOcrState {
 
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
 
+function documentContentKey() {
+  const { title, lines } = useEditorStore.getState();
+  return JSON.stringify([
+    title,
+    lines.map((line) => [line.latex, line.mode, line.displayStyle]),
+  ]);
+}
+
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Formula content as last saved, opened or newly created; 「新建」 asks
+  // before discarding anything else.
+  const savedContentRef = useRef<string | null>(null);
+  const newFormulaPendingRef = useRef(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const appMenuRef = useRef<HTMLDivElement>(null);
   const copyMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -1020,6 +1033,7 @@ function App() {
     link.download = safeTitle + ".visualtex.json";
     link.click();
     URL.revokeObjectURL(url);
+    savedContentRef.current = documentContentKey();
     setSavedPulse(true);
     setToast(isEn ? "Formula document saved" : "公式文档已保存");
     window.setTimeout(() => setSavedPulse(false), 900);
@@ -1037,6 +1051,7 @@ function App() {
       const before = captureDocumentSnapshot();
       loadDocument(parsed);
       setSourceDocumentRevision((revision) => revision + 1);
+      savedContentRef.current = documentContentKey();
       const after = getEditorDocumentSnapshot({});
       if (!documentSnapshotsEquivalent(before, after)) {
         historyManager.push({
@@ -1060,12 +1075,36 @@ function App() {
     }
   };
 
-  const newFormula = () => {
+  const confirmDiscardUnsaved = async () => {
+    const { lines: currentLines } = useEditorStore.getState();
+    if (!currentLines.some((line) => line.latex.trim())) return true;
+    if (documentContentKey() === savedContentRef.current) return true;
+    const message = isEn
+      ? "The current formula document has not been saved. Create a new one anyway? (Ctrl+Z brings it back.)"
+      : "当前公式文档还没有保存。仍要新建吗？（新建后可以按 Ctrl+Z 找回）";
+    if (!isTauriEnvironment()) return window.confirm(message);
+    return ask(message, {
+      title: "VisualTeX",
+      kind: "warning",
+      okLabel: isEn ? "New" : "新建",
+      cancelLabel: isEn ? "Cancel" : "取消",
+    });
+  };
+
+  const newFormula = async () => {
+    if (newFormulaPendingRef.current) return;
+    newFormulaPendingRef.current = true;
+    try {
+      if (!(await confirmDiscardUnsaved())) return;
+    } finally {
+      newFormulaPendingRef.current = false;
+    }
     addHistory(latex);
     const after = createBlankDocumentSnapshot(
       isEn ? "Untitled Formula" : "未命名公式",
     );
     replaceDocumentWithHistory(after, "new-document");
+    savedContentRef.current = documentContentKey();
     setToast(isEn ? "Created a blank formula" : "已新建空白公式");
   };
 
@@ -1192,7 +1231,7 @@ function App() {
         void handleKeypadModeToggle();
       } else if (key === "n") {
         event.preventDefault();
-        newFormula();
+        void newFormula();
       } else if (key === "o") {
         event.preventDefault();
         fileInputRef.current?.click();
