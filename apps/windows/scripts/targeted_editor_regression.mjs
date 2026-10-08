@@ -4501,6 +4501,26 @@ async function main() {
         };
       })()`, "narrow desktop toolbar without overlap");
 
+      // A collapsed tile rail leaves an expand button at the top of the
+      // formula canvas, not one (hidden) header row below it.
+      await client.send("Emulation.setDeviceMetricsOverride", {
+        width: 1200,
+        height: 800,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await evaluate(`document.querySelector("[data-formula-tile-collapse]")?.click()`);
+      const collapsedTiles = await waitForEvaluation(`(() => {
+        const workspace = document.querySelector(".workspace")?.getBoundingClientRect();
+        const button = document.querySelector(".classic-tile-expand-button")?.getBoundingClientRect();
+        const offset = workspace && button ? button.top - workspace.top : null;
+        return { ready: offset !== null && offset >= 0 && offset <= 12, offset };
+      })()`, "collapsed tile rail button at the top of the canvas");
+      await evaluate(`document.querySelector(".classic-tile-expand-button")?.click()`);
+      await waitForEvaluation(`(() => ({
+        ready: Boolean(document.querySelector("[data-formula-tile-collapse]")),
+      }))()`, "tile rail expands again");
+
       // Keypad mode hides the desktop top toolbar. In the classic layout the
       // editor header must come back with the format selector and the exit.
       await client.send("Emulation.setDeviceMetricsOverride", {
@@ -4553,6 +4573,7 @@ async function main() {
             initial,
             quickOcrDropdown,
             narrowToolbar,
+            collapsedTiles,
             keypadHeader,
             sourceFocus,
             tileDuringDrag,

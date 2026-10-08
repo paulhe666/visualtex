@@ -1647,6 +1647,14 @@
   display: none;
 }
 
+/* The classic header lives in the desktop top toolbar, not in the workspace.
+   Anchor the collapsed tile-rail button to the formula canvas instead of the
+   old in-workspace header row (macOS a4d1ad7a). */
+.workspace.is-classic-layout:not(.is-office-workspace)
+  > .classic-tile-expand-button {
+  top: 8px;
+}
+
 .workspace.is-classic-layout:not(.is-office-workspace)
   > .formula-workspace.editor-pane
   > .classic-editor-pane-body,
