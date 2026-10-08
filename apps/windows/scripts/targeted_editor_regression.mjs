@@ -5894,6 +5894,19 @@ async function main() {
           fitReady: host?.dataset.fitReady ?? "missing",
         };
       })()`, "persisted selected-line custom formula tile");
+      await waitForEvaluation(`(() => ({
+        ready: /已保存到|Saved to/.test(document.querySelector("[data-tile-save-notice]")?.textContent ?? ""),
+      }))()`, "custom tile save notice");
+      await evaluate(`document.querySelector(".save-current-formula-tile").click()`);
+      await waitForEvaluation(`(() => {
+        const stored = JSON.parse(localStorage.getItem("visualtex-custom-formula-tiles") || "{}");
+        const notice = document.querySelector("[data-tile-save-notice]")?.textContent ?? "";
+        return {
+          ready: /已经是磁贴|already a tile/.test(notice) && stored.tiles?.length === 1,
+          notice,
+          tiles: stored.tiles?.length,
+        };
+      })()`, "duplicate custom tile save says it already exists");
 
       await evaluate(`(() => {
         const button = document.querySelector(

@@ -864,6 +864,8 @@ export function FormulaToolbar({
     useState<SectionEditorState | null>(null);
   const [pendingSectionDeleteId, setPendingSectionDeleteId] =
     useState<string | null>(null);
+  // Result of the last "save as tile" click, shown in place of the hint.
+  const [tileSaveNotice, setTileSaveNotice] = useState<string | null>(null);
   const [pendingCustomSymbolDeleteId, setPendingCustomSymbolDeleteId] =
     useState<string | null>(null);
   const [contextMenu, setContextMenu] =
@@ -1615,8 +1617,31 @@ export function FormulaToolbar({
     updater: (current: CustomFormulaTileLibrary) => CustomFormulaTileLibrary,
   ) => setCustomTileLibrary((current) => updater(current));
 
+  useEffect(() => {
+    if (!tileSaveNotice) return;
+    const timeout = window.setTimeout(() => setTileSaveNotice(null), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [tileSaveNotice]);
+
   const saveActiveFormulaAsTile = () => {
     if (!activeLineLatex || !activeCustomSection) return;
+    const duplicate = customTileLibrary.tiles.find(
+      (tile) => tile.latex === activeLineLatex,
+    );
+    const sectionName = activeCustomSection.name;
+    setTileSaveNotice(
+      !duplicate
+        ? isEn
+          ? `Saved to “${sectionName}”.`
+          : `已保存到「${sectionName}」。`
+        : duplicate.sectionId === activeCustomSection.id
+          ? isEn
+            ? "This formula is already a tile; moved it to the front."
+            : "这个公式已经是磁贴了，已把它移到最前面。"
+          : isEn
+            ? `This formula is already a tile; moved it to “${sectionName}”.`
+            : `这个公式已经是磁贴了，已把它移到「${sectionName}」。`,
+    );
     updateCustomTileLibrary((current) => {
       const existing = current.tiles.find(
         (tile) => tile.latex === activeLineLatex,
@@ -2173,8 +2198,8 @@ export function FormulaToolbar({
                   {isEn ? "Symbol designer" : "字符设计器"}
                 </button>
               </div>
-              <span>
-                {!activeCustomSection
+              <span role="status" data-tile-save-notice={tileSaveNotice ? "" : undefined}>
+                {tileSaveNotice ?? (!activeCustomSection
                   ? isEn
                     ? "Create a section before saving formula tiles."
                     : "请先新建一个分区，再保存公式磁贴。"
@@ -2184,7 +2209,7 @@ export function FormulaToolbar({
                       : "当前公式行将保存到选中的分区。"
                     : isEn
                       ? "Select a non-empty formula line first."
-                      : "请先选择一个非空公式行。"}
+                      : "请先选择一个非空公式行。")}
               </span>
               {sectionEditor && (
                 <div className="custom-formula-section-editor">
