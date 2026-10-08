@@ -221,7 +221,7 @@ internal sealed partial class WordFormulaService
                     ("(", ")"),
                 EquationReferenceStyle.EquationPrefix =>
                     (OfficePluginLanguage.Text(
-                        "式（",
+                        "式(",
                         "Eq. ("),
                      ")"),
                 _ => (string.Empty, string.Empty),

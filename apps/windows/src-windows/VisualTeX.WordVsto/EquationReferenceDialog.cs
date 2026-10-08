@@ -190,7 +190,7 @@ internal sealed class EquationReferenceDialog : Form
             _styleBox.Items.AddRange(new object[]
             {
                 "(1)",
-                T("式（1）", "Eq. (1)"),
+                T("式(1)", "Eq. (1)"),
                 "1",
             });
             _styleBox.SelectedIndex = 0;

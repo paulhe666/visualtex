@@ -15275,13 +15275,13 @@ internal static partial class WordEquationNumbering
 
         var prefix = style switch
         {
-            EquationReferenceStyle.EquationPrefix => "式（",
+            EquationReferenceStyle.EquationPrefix => OfficePluginLanguage.Text("式(", "Eq. ("),
             EquationReferenceStyle.Parenthesized => "(",
             _ => string.Empty,
         };
         var suffix = style switch
         {
-            EquationReferenceStyle.EquationPrefix => "）",
+            EquationReferenceStyle.EquationPrefix => ")",
             EquationReferenceStyle.Parenthesized => ")",
             _ => string.Empty,
         };
