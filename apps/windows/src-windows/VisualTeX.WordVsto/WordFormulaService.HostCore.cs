@@ -793,6 +793,10 @@ internal sealed partial class WordFormulaService
                 if (nextStart >= contentRange.End)
                 {
                     paragraphRange.InsertParagraphAfter();
+                    ApplyBodyFormatToTypingParagraph(
+                        document,
+                        paragraph,
+                        nextStart);
                 }
             }
             finally { Release(contentRange); }
@@ -818,6 +822,63 @@ internal sealed partial class WordFormulaService
             Release(paragraphs);
             Release(target);
             Release(selection);
+        }
+    }
+
+    // The paragraph created after a display formula copies its centered
+    // format, so the user's next sentence would be centered too. Word's own
+    // display equations leave the body format in place; take it from the body
+    // paragraph before the formula, or fall back to the style's format.
+    private static void ApplyBodyFormatToTypingParagraph(
+        Document document,
+        Paragraph displayParagraph,
+        int typingStart)
+    {
+        Range? typing = null;
+        Paragraphs? typingParagraphs = null;
+        Paragraph? typingParagraph = null;
+        Range? typingRange = null;
+        Paragraph? previous = null;
+        Range? previousRange = null;
+        ParagraphFormat? format = null;
+        try
+        {
+            typing = document.Range(typingStart, typingStart);
+            typingParagraphs = typing.Paragraphs;
+            if (typingParagraphs.Count != 1) return;
+            typingParagraph = typingParagraphs[1];
+            typingRange = typingParagraph.Range;
+            if (typingRange.Start != typingStart) return;
+
+            object one = 1;
+            previous = displayParagraph.Previous(ref one);
+            previousRange = previous?.Range;
+            if (previousRange is not null
+                && previous!.OutlineLevel == WdOutlineLevel.wdOutlineLevelBodyText
+                && previousRange.OMaths.Count == 0
+                && previousRange.InlineShapes.Count == 0
+                && previousRange.Tables.Count == 0)
+            {
+                using var body = WordParagraphFormatting.Capture(previousRange);
+                body.Apply(typingRange);
+                return;
+            }
+            format = typingRange.ParagraphFormat;
+            format.Reset();
+        }
+        catch
+        {
+            // Formatting the continuation line must never fail the formula write.
+        }
+        finally
+        {
+            Release(format);
+            Release(previousRange);
+            Release(previous);
+            Release(typingRange);
+            Release(typingParagraph);
+            Release(typingParagraphs);
+            Release(typing);
         }
     }
 }
