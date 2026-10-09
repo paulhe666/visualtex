@@ -54,6 +54,7 @@ internal static partial class MathTypeMtefCodec
     // persists a few native glyphs such as reverse membership (\\ni) and
     // \\bigcirc in this slot; those are distinguished by MTCode when reading.
     private const byte TypefaceFarEastText = 12;
+    private const string FarEastOperatorMarker = "data-mtef-fe-operator";
     private const byte TypefaceMarker = 23;
     // MathType 7 persists expanding fence characters ((), [], {}, |, ...)
     // with typeface 22 and MTCode, not Symbol style. Using Symbol here makes
@@ -3316,6 +3317,21 @@ internal static partial class MathTypeMtefCodec
                      && IsScalarOperatorRun(e.Value)).ToArray())
             token.ReplaceWith(EnumerateBmpScalars(token.Value).Select(scalar =>
                 new XElement(token.Name, token.Attributes(), char.ConvertFromUtf32(scalar))));
+        // An operator outside Times New Roman's code pages (e.g. U+25B3) has no
+        // styled identifier form; bind it to SimSun/WinAllCodePages below.
+        foreach (var token in math.DescendantsAndSelf().Where(e => e.Value.Trim().Length == 1
+                     && (e.Name.LocalName == "mo"
+                         || e.Name.LocalName == "mi" && IsMathematicalSymbolScalar(e.Value.Trim()[0]))
+                     && IsFarEastCodePageOperator(e.Value.Trim()[0])
+                     && MathMlTokenStyleContract.ResolveDeclaredVariant(e) is null
+                     && ResolveNativeGlyphAuthority(e) is null
+                     && !HasValidPreservedExplicitTypeface(e, existing.FontStyleDefinitions, nativeStyles)).ToArray())
+        {
+            // A symbol mi keeps its implicit italic, as SemanticSignature does.
+            token.SetAttributeValue(FarEastOperatorMarker, token.Name.LocalName == "mi" ? "italic" : "normal");
+            token.Name = token.Name.Namespace + "mo";
+            token.Attribute("mathvariant")?.Remove();
+        }
         // A single mathematical-symbol mi inherits italic when no variant was
         // supplied. Inherited variants have already been materialized. Resolve
         // this before changing token class or binding a native font, so a plain
@@ -3380,8 +3396,14 @@ internal static partial class MathTypeMtefCodec
             (Variant: "bold-italic", Encoding: "WindowsANSI", Font: "Times New Roman", CharacterStyle: (byte)3),
             (Variant: "native-glyph", Encoding: "Symbol", Font: "Symbol", CharacterStyle: (byte)0),
             (Variant: "native-glyph", Encoding: "MTExtra", Font: "MT Extra", CharacterStyle: (byte)0),
+            // Font is the prefix's own typeface-12 FONT_DEF (SimSun under its
+            // localized name); MathType rejects the English name "SimSun".
+            (Variant: "far-east-operator", Encoding: "WinAllCodePages", Font: "", CharacterStyle: (byte)0),
+            (Variant: "far-east-operator-italic", Encoding: "WinAllCodePages", Font: "", CharacterStyle: (byte)2),
         };
-        var created = 0;
+        var createdEncodings = 0;
+        var createdFonts = 0;
+        var createdStyles = 0;
         foreach (var spec in specs)
         {
             var tokens = math.DescendantsAndSelf()
@@ -3393,6 +3415,24 @@ internal static partial class MathTypeMtefCodec
                     existing.FontStyleDefinitions, nativeStyles))
                 .ToArray();
             if (tokens.Length == 0) continue;
+
+            if (spec.Variant.StartsWith("far-east-operator", StringComparison.Ordinal))
+            {
+                // Without a typeface-12 font the operator keeps its old Times binding.
+                if (!nativeStyles.TryGetValue(TypefaceFarEastText, out var farEast) || farEast.FontDefinition <= 0)
+                    continue;
+                var farEastStyle = FindPrefixFontStyleIndex(sourceMtef, farEast.FontDefinition, spec.CharacterStyle);
+                if (farEastStyle is null)
+                {
+                    farEastStyle = existing.FontStyleDefinitions + ++createdStyles;
+                    output.Add(RecordFontStyleDef);
+                    WriteUnsigned(output, farEast.FontDefinition);
+                    output.Add(spec.CharacterStyle);
+                }
+                foreach (var token in tokens)
+                    token.SetAttributeValue("data-mtef-explicit-typeface", -farEastStyle.Value);
+                continue;
+            }
 
             var existingStyleIndex = FindPrefixFontStyleIndex(
                 sourceMtef,
@@ -3408,10 +3448,9 @@ internal static partial class MathTypeMtefCodec
                 continue;
             }
 
-            created++;
-            var encodingIndex = 4 + existing.EncodingDefinitions + created;
-            var fontDefinitionIndex = existing.FontDefinitions + created;
-            var fontStyleIndex = existing.FontStyleDefinitions + created;
+            var encodingIndex = 4 + existing.EncodingDefinitions + ++createdEncodings;
+            var fontDefinitionIndex = existing.FontDefinitions + ++createdFonts;
+            var fontStyleIndex = existing.FontStyleDefinitions + ++createdStyles;
 
             output.Add(RecordEncodingDef);
             WriteNullTerminatedAscii(output, spec.Encoding);
@@ -3629,6 +3668,14 @@ internal static partial class MathTypeMtefCodec
 
     private static bool MatchesExplicitFontSpec(XElement element, string variant)
     {
+        if (variant.StartsWith("far-east-operator", StringComparison.Ordinal)
+            || element.Attribute(FarEastOperatorMarker) is not null)
+            return (string?)element.Attribute(FarEastOperatorMarker) switch
+            {
+                "normal" => variant == "far-east-operator",
+                "italic" => variant == "far-east-operator-italic",
+                _ => false,
+            };
         if (TryGetBasicStyledLegacyIdentifierGlyph(element, out _, out _, out _)) return false;
         var local = element.Name.LocalName;
         var scalars = EnumerateBmpScalars(element.Value).ToArray();
@@ -3705,6 +3752,20 @@ internal static partial class MathTypeMtefCodec
         }
 
         return false;
+    }
+
+    private static int? FindPrefixFontStyleIndex(
+        byte[] mtef, int fontDefinition, byte expectedCharacterStyle)
+    {
+        var styleIndex = 0;
+        foreach (var record in ReadPrefixLayout(mtef).Records.Where(r => r.Type == RecordFontStyleDef))
+        {
+            var position = record.Start + 1;
+            styleIndex++;
+            if (ReadUnsigned(mtef, ref position) == fontDefinition && mtef[position] == expectedCharacterStyle)
+                return styleIndex;
+        }
+        return null;
     }
 
     private static int? FindPrefixFontStyleIndex(
@@ -5863,6 +5924,62 @@ internal static partial class MathTypeMtefCodec
             or >= 0xFE30 and <= 0xFE6F     // CJK compatibility/small forms
             or >= 0xFF00 and <= 0xFFEF;    // Halfwidth and fullwidth forms
 
+    // The standalone prefix binds Text/Function/Variable/Number/Vector to
+    // Times New Roman with encoding WinAllBasicCodePages (Windows 1250-1258).
+    // MathType renders an MTCode outside those code pages as U+FFFD there,
+    // e.g. the geometry triangle U+25B3. SimSun with WinAllCodePages (also
+    // 874/932/936/949/950) renders it; verified in MathType 7 with U+25B3,
+    // U+2312, U+224C, U+2235, U+2460 and U+2103. Text goes to typeface 12
+    // (the prefix's SimSun slot, read back as mtext); operators get an
+    // explicit SimSun style so they read back as mo.
+    private static bool NeedsFarEastCodePage(int scalar) =>
+        scalar >= 0x80 && scalar <= char.MaxValue && !IsWinAllBasicCodePageScalar(scalar);
+
+    private static bool IsFarEastCodePageOperator(int scalar)
+    {
+        if (IsFarEastTextScalar(scalar) || !NeedsFarEastCodePage(scalar)
+            || char.GetUnicodeCategory((char)scalar) is UnicodeCategory.Format or UnicodeCategory.Control)
+            return false;
+        var character = new List<byte>();
+        EmitOperator(((char)scalar).ToString(), character);
+        return character.Count == 5 && character[0] == RecordChar
+            && (character[2] == TypefaceText + 128 || character[2] == TypefaceFunction + 128);
+    }
+
+    private static bool IsWinAllBasicCodePageScalar(int scalar)
+    {
+        var low = 0;
+        var high = WinAllBasicCodePageRanges.Length - 1;
+        while (low <= high)
+        {
+            var middle = (low + high) / 2;
+            var range = WinAllBasicCodePageRanges[middle];
+            if (scalar < range.First) high = middle - 1;
+            else if (scalar > range.Last) low = middle + 1;
+            else return true;
+        }
+        return false;
+    }
+
+    // Non-ASCII BMP scalars that round-trip through at least one of the
+    // Windows code pages 1250-1258 (generated from the Windows code pages).
+    private static readonly (int First, int Last)[] WinAllBasicCodePageRanges =
+    {
+        (0x0081, 0x0081), (0x0083, 0x0083), (0x0088, 0x0088), (0x008A, 0x008A), (0x008C, 0x0090), (0x0098, 0x0098),
+        (0x009A, 0x009A), (0x009C, 0x0107), (0x010C, 0x0113), (0x0116, 0x011B), (0x011E, 0x011F), (0x0122, 0x0123),
+        (0x012A, 0x012B), (0x012E, 0x0131), (0x0136, 0x0137), (0x0139, 0x013E), (0x0141, 0x0148), (0x014C, 0x014D),
+        (0x0150, 0x015B), (0x015E, 0x0165), (0x016A, 0x016B), (0x016E, 0x0173), (0x0178, 0x017E), (0x0192, 0x0192),
+        (0x01A0, 0x01A1), (0x01AF, 0x01B0), (0x02C6, 0x02C7), (0x02D8, 0x02D9), (0x02DB, 0x02DD), (0x0300, 0x0301),
+        (0x0303, 0x0303), (0x0309, 0x0309), (0x0323, 0x0323), (0x0384, 0x0386), (0x0388, 0x038A), (0x038C, 0x038C),
+        (0x038E, 0x03A1), (0x03A3, 0x03CE), (0x0401, 0x040C), (0x040E, 0x044F), (0x0451, 0x045C), (0x045E, 0x045F),
+        (0x0490, 0x0491), (0x05B0, 0x05C3), (0x05D0, 0x05EA), (0x05F0, 0x05F4), (0x060C, 0x060C), (0x061B, 0x061B),
+        (0x061F, 0x061F), (0x0621, 0x063A), (0x0640, 0x0652), (0x0679, 0x0679), (0x067E, 0x067E), (0x0686, 0x0686),
+        (0x0688, 0x0688), (0x0691, 0x0691), (0x0698, 0x0698), (0x06A9, 0x06A9), (0x06AF, 0x06AF), (0x06BA, 0x06BA),
+        (0x06BE, 0x06BE), (0x06C1, 0x06C1), (0x06D2, 0x06D2), (0x200C, 0x200F), (0x2013, 0x2015), (0x2018, 0x201A),
+        (0x201C, 0x201E), (0x2020, 0x2022), (0x2026, 0x2026), (0x2030, 0x2030), (0x2039, 0x203A), (0x20AA, 0x20AC),
+        (0x2116, 0x2116), (0x2122, 0x2122), (0xF88D, 0xF896), (0xF8F9, 0xF8FD),
+    };
+
     private static string NormalizeOperatorToken(string value) => value switch
     {
         "〈" or "〈" or "⟨" => "⟨",
@@ -6337,7 +6454,8 @@ internal static partial class MathTypeMtefCodec
             if (IsWhiteSpaceScalar(scalar)) EmitScalar(scalar, TypefaceSpace, output);
             else EmitScalar(
                 scalar,
-                IsFarEastTextScalar(scalar) ? TypefaceFarEastText : typeface,
+                IsFarEastTextScalar(scalar) || typeface == TypefaceText && NeedsFarEastCodePage(scalar)
+                    ? TypefaceFarEastText : typeface,
                 output);
         }
     }
@@ -7053,6 +7171,9 @@ internal static partial class MathTypeMtefCodec
                     if (textVariant != "normal") token.SetAttributeValue("mathvariant", textVariant);
                 }
             }
+            else if (typeface == TypefaceFarEastText
+                && scalar is not (0x220B or 0x25EF or 0x2661))
+                token = new XElement("mtext", text);
             else if (typeface != TypefaceSymbol
                 && TryNormalizeLetterlikeScalar(
                          scalar,
@@ -7076,8 +7197,6 @@ internal static partial class MathTypeMtefCodec
                 token = new XElement("mo", "◯");
             else if (typeface == TypefaceFarEastText && scalar == 0x2661)
                 token = new XElement("mo", "♡");
-            else if (typeface == TypefaceFarEastText)
-                token = new XElement("mtext", text);
             else if (typeface == TypefaceMtExtra && scalar == 0xFFFD && encoded == 0x6E)
             {
                 // MathType 7 uses this MT Extra position for the diamondsuit glyph.
@@ -7237,6 +7356,7 @@ internal static partial class MathTypeMtefCodec
                 : ((char)scalar).ToString();
             string? fontName = null;
             string? encodingName = null;
+            var fontDefinitionIndex = 0;
             characterStyle = 0;
             euclidOperator = false;
             nativeGlyph = null;
@@ -7248,6 +7368,7 @@ internal static partial class MathTypeMtefCodec
                     && style.FontDefinitionIndex <= _fontDefinitions.Count)
                 {
                     var definition = _fontDefinitions[style.FontDefinitionIndex - 1];
+                    fontDefinitionIndex = style.FontDefinitionIndex;
                     fontName = definition.Name;
                     if (definition.EncodingIndex > 0 && definition.EncodingIndex <= _encodingDefinitions.Count)
                         encodingName = _encodingDefinitions[definition.EncodingIndex - 1];
@@ -7273,6 +7394,18 @@ internal static partial class MathTypeMtefCodec
             if (euclidOperator)
             {
                 text=scalar switch { 0xE938=>"⪯", 0xE939=>"⪰", _=>((char)scalar).ToString() };
+                return characterVariant;
+            }
+            if (fontDefinitionIndex > 0
+                && _builtInFontDefinitions.TryGetValue(TypefaceFarEastText, out var farEastFont)
+                && fontDefinitionIndex == farEastFont
+                && string.Equals(encodingName, "WinAllCodePages", StringComparison.OrdinalIgnoreCase)
+                && !IsFarEastTextScalar(scalar)
+                && (IsMathematicalSymbolScalar(scalar) || NeedsFarEastCodePage(scalar)))
+            {
+                // VisualTeX's SimSun binding for operators such as U+25B3.
+                text = ((char)scalar).ToString();
+                euclidOperator = true;
                 return characterVariant;
             }
             if (string.Equals(font, "MT Extra", StringComparison.OrdinalIgnoreCase))
