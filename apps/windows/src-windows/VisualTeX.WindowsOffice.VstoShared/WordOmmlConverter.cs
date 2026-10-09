@@ -7077,12 +7077,30 @@ internal static partial class WordOmmlConverter
 
     internal static string ResolveReverseTransformPath() => ResolveTransformPath("OMML2MML.XSL");
 
-    private static string ResolveTransformPath(string fileName)
+    private static string ResolveTransformPath(string fileName) =>
+        ExistingTransformCandidates(fileName).FirstOrDefault()
+        ?? throw new FileNotFoundException(
+            $"Unable to locate Office {fileName}. Searched the registered Word installation and Office 2007-365 roots. Repair Microsoft Word or reinstall the Office integration.");
+
+    private static IEnumerable<string> ExistingTransformCandidates(string fileName)
     {
         var candidates = new List<string>();
         var overrideRoot = Environment.GetEnvironmentVariable(
             "VISUALTEX_OFFICE_MATH_XSL_ROOT");
         AddCandidateRoot(candidates, overrideRoot, fileName);
+
+        // The stylesheet shipped beside the Office application that is running
+        // this add-in (WINWORD.EXE or POWERPNT.EXE share one install folder) is
+        // the one that matches this Office. Registry App Paths can name another
+        // or stale installation, and the conventional roots below are guesses.
+        try
+        {
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            var hostDirectory = Path.GetDirectoryName(process.MainModule?.FileName ?? string.Empty);
+            if (!string.IsNullOrWhiteSpace(hostDirectory))
+                candidates.Add(Path.Combine(hostDirectory!, fileName));
+        }
+        catch { }
 
         // App Paths is the authoritative Office location for MSI, Click-to-Run,
         // per-user and alternate-bit installations. Derive the stylesheet folder
@@ -7101,12 +7119,33 @@ internal static partial class WordOmmlConverter
         AddCandidateRoot(candidates, Environment.GetEnvironmentVariable("CommonProgramFiles"), fileName);
         AddCandidateRoot(candidates, Environment.GetEnvironmentVariable("CommonProgramFiles(x86)"), fileName);
         AddCandidateRoot(candidates, AppContext.BaseDirectory, fileName);
-        foreach (var candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        return candidates.Distinct(StringComparer.OrdinalIgnoreCase).Where(File.Exists).ToArray();
+    }
+
+    // VisualTeX adapts Microsoft's stylesheet at named templates. Any file with
+    // the same name (another Office build, a third-party copy found first on
+    // the search path) is only a candidate until that adaptation succeeds; the
+    // first one that does is used. Report every rejected file when none fits.
+    internal static XslCompiledTransform LoadFirstUsableTransform(
+        string fileName,
+        IEnumerable<string> candidates,
+        Func<string, XslCompiledTransform> load)
+    {
+        var rejected = new List<string>();
+        foreach (var candidate in candidates)
         {
-            if (File.Exists(candidate)) return candidate;
+            try { return load(candidate); }
+            catch (Exception error)
+            {
+                rejected.Add($"{candidate} ({error.GetType().Name}: {error.Message})");
+            }
         }
-        throw new FileNotFoundException(
-            $"Unable to locate Office {fileName}. Searched the registered Word installation and Office 2007-365 roots. Repair Microsoft Word or reinstall the Office integration.");
+        if (rejected.Count == 0)
+            throw new FileNotFoundException(
+                $"Unable to locate Office {fileName}. Searched the running Office, the registered Word installation and Office 2007-365 roots. Repair Microsoft Office or reinstall the Office integration.");
+        throw new InvalidDataException(
+            $"No usable Office {fileName}: none of the installed copies has the Microsoft templates VisualTeX adapts. Repair Microsoft Office. Rejected: "
+            + string.Join("; ", rejected));
     }
 
     private static void AddCandidateRoot(List<string> candidates, string? root, string fileName)
@@ -7200,7 +7239,8 @@ internal static partial class WordOmmlConverter
         lock (TransformLock)
         {
             if (_mathMlToOmml is not null) return _mathMlToOmml;
-            _mathMlToOmml = LoadTransform(ResolveTransformPath());
+            _mathMlToOmml = LoadFirstUsableTransform(
+                "MML2OMML.XSL", ExistingTransformCandidates("MML2OMML.XSL"), LoadTransform);
             return _mathMlToOmml;
         }
     }
@@ -7217,7 +7257,8 @@ internal static partial class WordOmmlConverter
         lock (TransformLock)
         {
             if (_ommlToMathMl is not null) return _ommlToMathMl;
-            _ommlToMathMl = LoadReverseTransform(ResolveReverseTransformPath());
+            _ommlToMathMl = LoadFirstUsableTransform(
+                "OMML2MML.XSL", ExistingTransformCandidates("OMML2MML.XSL"), LoadReverseTransform);
             return _ommlToMathMl;
         }
     }
@@ -7297,7 +7338,7 @@ internal static partial class WordOmmlConverter
         return result.ToString();
     }
 
-    private static XslCompiledTransform LoadReverseTransform(string path)
+    internal static XslCompiledTransform LoadReverseTransform(string path)
     {
         // Office's legacy MathML projection deliberately discards styled
         // operators and numbers even when OMML carries their exact m:sty.
@@ -7363,7 +7404,7 @@ internal static partial class WordOmmlConverter
         return transform;
     }
 
-    private static XslCompiledTransform LoadTransform(string path)
+    internal static XslCompiledTransform LoadTransform(string path)
     {
         // Adapt the installed transform in memory. The Office installation is
         // unchanged. Its legacy grouping treats an implicit mo and an explicit
