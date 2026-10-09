@@ -73,6 +73,8 @@ internal readonly struct OfficeOleVerticalInkMetrics
 internal static class OfficeOlePreview
 {
     private const long MaximumSvgBytes = 16L * 1024L * 1024L;
+    private const int HorzSize = 4;
+    private const int VertSize = 6;
     private const int HorzRes = 8;
     private const int VertRes = 10;
     private const int DesktopVertRes = 117;
@@ -860,14 +862,26 @@ internal static class OfficeOlePreview
                     heightPixels);
                 // The physical frame and the EMF recording coordinate space are
                 // different units. PowerPoint gets a fixed CSS-96-dpi physical
-                // frame, but GDI+ records the vector geometry in device pixels.
-                // In a Per-Monitor-DPI-aware Office process HORZRES and
-                // DESKTOPHORZRES are already equal, so desktop/logical is 1 even
-                // on a 175% (168-dpi) display. Derive PowerPoint's recording scale
-                // directly from the recording Graphics DPI instead. Word keeps its
-                // established desktop/logical mapping paired with the Pixel frame.
-                var powerPointRecordingScaleX = graphics.DpiX / 96d;
-                var powerPointRecordingScaleY = graphics.DpiY / 96d;
+                // frame, but GDI+ records the vector geometry in reference-device
+                // pixels. The EMF header maps its millimetre frame to those pixels
+                // with the reference DC's physical resolution over HORZSIZE (the
+                // monitor's pixel density), not with the Windows scaling DPI. A
+                // DPI-unaware caller sees a virtualized HORZRES, but the EMF still
+                // records the physical DESKTOPHORZRES as its device size. Scaling by
+                // Graphics.DpiX left the formula in the top-left of its frame
+                // wherever the two differ (e.g. 144 dpi scaling on a 164 ppi
+                // panel fills 88%). Word keeps its established desktop/logical
+                // mapping paired with the Pixel frame.
+                var horizontalMillimetres = GetDeviceCaps(referenceHdc, HorzSize);
+                var verticalMillimetres = GetDeviceCaps(referenceHdc, VertSize);
+                var physicalWidth = desktopWidth > 0 ? desktopWidth : logicalWidth;
+                var physicalHeight = desktopHeight > 0 ? desktopHeight : logicalHeight;
+                var powerPointRecordingScaleX = physicalWidth > 0 && horizontalMillimetres > 0
+                    ? physicalWidth / (double)horizontalMillimetres * millimetresPerCssPixel
+                    : graphics.DpiX / 96d;
+                var powerPointRecordingScaleY = physicalHeight > 0 && verticalMillimetres > 0
+                    ? physicalHeight / (double)verticalMillimetres * millimetresPerCssPixel
+                    : graphics.DpiY / 96d;
                 if (!IsPositiveFinite(powerPointRecordingScaleX)) powerPointRecordingScaleX = 1d;
                 if (!IsPositiveFinite(powerPointRecordingScaleY)) powerPointRecordingScaleY = 1d;
                 var coordinateScaleX = usePowerPointStablePhysicalFrame

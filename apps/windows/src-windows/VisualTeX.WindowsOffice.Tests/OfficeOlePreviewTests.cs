@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using System.Text;
 using VisualTeX.WindowsOffice.VstoShared;
 
@@ -65,6 +66,57 @@ public sealed class OfficeOlePreviewTests
             bounds.Width >= 98 && bounds.Height >= 48,
             $"Full SVG frame recorded as only {bounds.Width}x{bounds.Height} pixels at {bounds.X},{bounds.Y}. {OfficeOlePreview.LastRecordingDiagnostics}");
     }
+
+    [Fact]
+    public void FullViewBoxRectangleFillsThePowerPointPhysicalFrame()
+    {
+        using var temp = new TemporaryDirectory();
+        var svgPath = Path.Combine(temp.Path, "full-frame.svg");
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 50\"><rect x=\"0\" y=\"0\" width=\"100\" height=\"50\" fill=\"#111111\"/></svg>",
+            new UTF8Encoding(false));
+
+        var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(
+            svgPath, 100, 50, usePowerPointStablePhysicalFrame: true);
+        // Office replays the EMF with GDI into the object's frame. The
+        // recorded geometry must cover that whole frame on any display,
+        // whatever its scaling DPI and physical pixel density.
+        using var bitmap = new Bitmap(400, 200, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(Color.White);
+            var hdc = graphics.GetHdc();
+            var metafile = GetEnhMetaFileW(emfPath);
+            try
+            {
+                var frame = new NativeRect { Right = bitmap.Width, Bottom = bitmap.Height };
+                Assert.True(PlayEnhMetaFile(hdc, metafile, ref frame));
+            }
+            finally
+            {
+                DeleteEnhMetaFile(metafile);
+                graphics.ReleaseHdc(hdc);
+            }
+        }
+
+        var bounds = FindDarkBounds(bitmap);
+        Assert.True(
+            bounds.Width >= 394 && bounds.Height >= 194 && bounds.Right <= 400 && bounds.Bottom <= 200,
+            $"PowerPoint frame replayed the full SVG as {bounds.Width}x{bounds.Height} at {bounds.X},{bounds.Y} of 400x200. {OfficeOlePreview.LastRecordingDiagnostics}");
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect { public int Left, Top, Right, Bottom; }
+
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr GetEnhMetaFileW(string path);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool PlayEnhMetaFile(IntPtr hdc, IntPtr metafile, ref NativeRect frame);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteEnhMetaFile(IntPtr metafile);
 
     [Fact]
     public void MathJaxChineseTextIsConvertedToVectorGlyphOutlines()
