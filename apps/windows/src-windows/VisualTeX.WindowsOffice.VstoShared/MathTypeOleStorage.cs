@@ -649,6 +649,35 @@ internal static partial class MathTypeOleStorage
         finally { TryDelete(path); }
     }
 
+    // A container keeps cached presentations (\u0002OlePres*) inside the object's
+    // storage. After VisualTeX rewrites Equation Native they no longer show this
+    // equation, and a node VisualTeX added earlier with ADVF_NODATA was never
+    // refreshed by MathType at all. Hand the host only the semantic streams; the
+    // host draws its own preview picture until MathType itself renders again.
+    internal static byte[] RemovePresentationCaches(byte[] compoundFile)
+    {
+        var caches = ListCompoundFileEntries(compoundFile)
+            .Where(name => name.StartsWith("\u0002OlePres", StringComparison.Ordinal))
+            .ToArray();
+        if (caches.Length == 0) return compoundFile;
+        var path = MaterializeTemporaryCompoundFile(compoundFile, "remove-presentation-cache");
+        try
+        {
+            var storage = OpenStorage(path, StgmReadWrite | StgmShareExclusive);
+            try
+            {
+                ValidateMathTypeStorage(storage);
+                foreach (var name in caches) storage.DestroyElement(name);
+                storage.Commit(0);
+            }
+            finally { Release(storage); }
+            var cleaned = File.ReadAllBytes(path);
+            _ = ReadMathMl(cleaned);
+            return cleaned;
+        }
+        finally { TryDelete(path); }
+    }
+
     internal static byte[] ReadEnhancedMetafilePresentationCache(byte[] compoundFile)
     {
         ValidateCompoundFile(compoundFile);

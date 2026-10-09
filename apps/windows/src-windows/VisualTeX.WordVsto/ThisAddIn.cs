@@ -2099,7 +2099,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var selectedMathTypeOle = _formulaService?.IsSelectedMathTypeOle() == true;
             if (selectedMathTypeOle)
             {
-                if (!MathTypeDoubleClickPreference.IsEnabled())
+                if (!MathTypeDoubleClickPreference.VisualTeXEditsMathType())
                 {
                     // The hook object merely being alive does not prove that it
                     // claimed this physical double-click. After inserting another
@@ -2207,7 +2207,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
             if (_nativeOleTargetIsMathType)
             {
-                if (!MathTypeDoubleClickPreference.IsEnabled())
+                if (!MathTypeDoubleClickPreference.VisualTeXEditsMathType())
                 {
                     // Word 2021 can consume a released Equation.DSMT4 double-click
                     // without opening MathType or raising WindowBeforeDoubleClick.
@@ -2257,7 +2257,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             try
             {
                 if (interceptedNativeOle
-                    && !MathTypeDoubleClickPreference.IsEnabled())
+                    && !MathTypeDoubleClickPreference.VisualTeXEditsMathType())
                 {
                     int targetStart;
                     int targetEnd;
@@ -2368,7 +2368,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     // field text after the first click even though the double-click
                     // unquestionably hit the OLE. Re-resolve the frozen range and
                     // verify the original screen point before invoking the native verb.
-                    if (MathTypeDoubleClickPreference.IsEnabled())
+                    if (MathTypeDoubleClickPreference.VisualTeXEditsMathType())
                     {
                         WordDoubleClickHook.TraceMessage(
                             "addin-native-mathtype-open-skipped preference-changed");

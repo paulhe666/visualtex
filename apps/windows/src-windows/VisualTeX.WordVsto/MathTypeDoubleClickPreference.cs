@@ -13,6 +13,13 @@ internal static class MathTypeDoubleClickPreference
     private static DateTime _nextRefreshUtc = DateTime.MinValue;
     private static DateTime _lastWriteUtc = DateTime.MinValue;
 
+    // Whether a MathType equation's double-click opens VisualTeX. The user's
+    // preference decides only while MathType itself is installed; without it the
+    // native OLE verb has no server and VisualTeX is the only editor available.
+    public static bool VisualTeXEditsMathType() =>
+        IsEnabled()
+        || !MathTypeOleInterop.TryResolveCapabilities(MathTypeOleInterop.CanonicalProgId, out _);
+
     public static bool IsEnabled()
     {
         var now = DateTime.UtcNow;

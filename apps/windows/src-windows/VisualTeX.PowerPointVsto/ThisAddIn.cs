@@ -5,6 +5,7 @@ using Extensibility;
 using Office = Microsoft.Office.Core;
 using VisualTeX.WindowsOffice.Contracts;
 using VisualTeX.WindowsOffice.VstoShared;
+using VisualTeX.WordVsto;
 
 namespace VisualTeX.PowerPointVsto;
 
@@ -166,6 +167,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private CancellationTokenSource? _lifetime;
     private string _lastDoubleClickFormulaId = string.Empty;
     private DateTimeOffset _lastDoubleClickAt;
+    // The MathType equation selected by the first click of a gesture, in screen
+    // pixels, so the hook thread can claim the second click without COM.
+    private readonly object _mathTypeTargetGate = new();
+    private string? _mathTypeTargetReference;
+    private int _mathTypeTargetLeft, _mathTypeTargetTop, _mathTypeTargetRight, _mathTypeTargetBottom;
+    private string? _claimedMathTypeReference;
     private string? _activeSessionId;
     private int _formulaFontInvalidationPending;
     private object? _ribbonUi;
@@ -200,7 +207,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         string? doubleClickError = null;
         try
         {
-            _doubleClickHook = new PowerPointDoubleClickHook(OnNativeDoubleClick);
+            _doubleClickHook = new PowerPointDoubleClickHook(ClaimMathTypeDoubleClick, OnNativeDoubleClick);
             _doubleClickHook.Start();
         }
         catch (Exception error)
@@ -419,16 +426,87 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private void OnWindowSelectionChange(Selection selection)
     {
         ScheduleFormulaFontControlsInvalidation();
+        RememberSelectedMathType(selection);
         // A notification is not an insertion command. In particular None also
         // means explicit deselection, not proof of a transient Ribbon handoff.
         // Capture text/source only at the command; never hydrate or cache here.
     }
 
-    private void OnNativeDoubleClick(int screenX, int screenY)
+    private void RememberSelectedMathType(Selection selection)
+    {
+        var service = _formulaService;
+        string? reference = null;
+        int left = 0, top = 0, right = 0, bottom = 0;
+        if (service is not null
+            && service.TryReadSelectedMathTypeScreenBounds(selection, out var found, out left, out top, out right, out bottom))
+            reference = found;
+        lock (_mathTypeTargetGate)
+        {
+            _mathTypeTargetReference = reference;
+            _mathTypeTargetLeft = left;
+            _mathTypeTargetTop = top;
+            _mathTypeTargetRight = right;
+            _mathTypeTargetBottom = bottom;
+        }
+    }
+
+    // Hook thread. A MathType equation is edited in VisualTeX when the user chose
+    // that, and always when MathType itself is not installed.
+    private bool ClaimMathTypeDoubleClick(int screenX, int screenY)
+    {
+        lock (_mathTypeTargetGate)
+        {
+            _claimedMathTypeReference = null;
+            if (_mathTypeTargetReference is null
+                || screenX < _mathTypeTargetLeft || screenX > _mathTypeTargetRight
+                || screenY < _mathTypeTargetTop || screenY > _mathTypeTargetBottom)
+                return false;
+            if (!MathTypeDoubleClickPreference.VisualTeXEditsMathType())
+                return false;
+            _claimedMathTypeReference = _mathTypeTargetReference;
+            return true;
+        }
+    }
+
+    private void OnNativeDoubleClick(bool claimedMathType, int screenX, int screenY)
     {
         var dispatcher = _dispatcher;
         var service = _formulaService;
         if (dispatcher is null || service is null) return;
+        if (claimedMathType)
+        {
+            string? claimed;
+            lock (_mathTypeTargetGate)
+            {
+                claimed = _claimedMathTypeReference;
+                _claimedMathTypeReference = null;
+            }
+            dispatcher.Post(() =>
+            {
+                try
+                {
+                    var selected = service.ReadSelection();
+                    if (selected.ObjectMode != FormulaOleContract.MathTypeOleMode
+                        || !string.Equals(selected.ObjectId, claimed, StringComparison.Ordinal))
+                        return;
+                    var now = DateTimeOffset.UtcNow;
+                    if (selected.ObjectId == _lastDoubleClickFormulaId
+                        && now - _lastDoubleClickAt < TimeSpan.FromSeconds(1))
+                        return;
+                    _lastDoubleClickFormulaId = selected.ObjectId!;
+                    _lastDoubleClickAt = now;
+                    BeginSession("edit", null, selected);
+                }
+                catch (Exception error)
+                {
+                    ReportError(OfficePluginLanguage.FormatOperationError(
+                        error,
+                        "无法打开 MathType 公式",
+                        "Unable to open the MathType equation"));
+                }
+            });
+            return;
+        }
         dispatcher.Post(() =>
         {
             var selected = service.ReadFormulaAtScreenPoint(screenX, screenY);

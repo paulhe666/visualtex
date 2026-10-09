@@ -11,7 +11,8 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
     private const int WmQuit = 0x0012;
     private const int SmCxDoubleClick = 36;
     private const int SmCyDoubleClick = 37;
-    private readonly Action<int, int> _callbackAction;
+    private readonly Func<int, int, bool> _claimSecondClick;
+    private readonly Action<bool, int, int> _callbackAction;
     private readonly Thread _thread;
     private readonly ManualResetEventSlim _ready = new(false);
     private HookProc? _hookCallback;
@@ -21,8 +22,14 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
     private int _lastClickX = int.MinValue;
     private int _lastClickY = int.MinValue;
 
-    public PowerPointDoubleClickHook(Action<int, int> callbackAction)
+    // claimSecondClick runs on the hook thread and must not call Office. When it
+    // returns true the second button-down is swallowed, so PowerPoint never
+    // raises its own double-click (which would activate the OLE server).
+    public PowerPointDoubleClickHook(
+        Func<int, int, bool> claimSecondClick,
+        Action<bool, int, int> callbackAction)
     {
+        _claimSecondClick = claimSecondClick;
         _callbackAction = callbackAction;
         _thread = new Thread(Run)
         {
@@ -87,13 +94,17 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
             if (withinTime && withinX && withinY)
             {
                 Interlocked.Exchange(ref _lastClickTimestamp, 0);
+                bool claimed;
+                try { claimed = _claimSecondClick(input.Pt.X, input.Pt.Y); }
+                catch { claimed = false; }
                 ThreadPool.QueueUserWorkItem(_ =>
                 {
                     // Let PowerPoint update its ShapeRange before the add-in
                     // reads the selected formula on the Office UI thread.
                     Thread.Sleep(80);
-                    try { _callbackAction(input.Pt.X, input.Pt.Y); } catch { }
+                    try { _callbackAction(claimed, input.Pt.X, input.Pt.Y); } catch { }
                 });
+                if (claimed) return new IntPtr(1);
             }
         }
         return CallNextHookEx(_hook, code, wParam, lParam);

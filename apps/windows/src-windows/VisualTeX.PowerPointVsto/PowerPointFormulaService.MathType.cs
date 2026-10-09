@@ -203,8 +203,11 @@ public sealed partial class PowerPointFormulaService
                 }
             }
             finally { foreach (var preview in previews.Values) preview.Dispose(); }
-            result.CompoundFile = MathTypeOleStorage.AddEnhancedMetafilePresentationCache(
-                result.CompoundFile, result.EmfPath, replaceExisting: true);
+            // The preview travels as the slide's picture, never as a cache node
+            // inside MathType's storage: MathType refreshes only the caches it
+            // advises, so any other node keeps showing (and sizing) the old
+            // equation after the user edits it in MathType.
+            result.CompoundFile = MathTypeOleStorage.RemovePresentationCaches(result.CompoundFile);
             return result;
         }
         catch { result.Dispose(); throw; }
@@ -269,28 +272,10 @@ public sealed partial class PowerPointFormulaService
                 : NewFormulaPosition(presentation, slide, width, height);
             StartNewUndoEntry();
             redraw = FreezePowerPointWindowRedraw(window);
-            shapes = slide.Shapes;
-            using (var clipboard = MathTypeOleStorage.BeginStandaloneClipboardTransaction(
-                       prepared.CompoundFile, prepared.EmfPath, prepared.Width, prepared.Height))
-            {
-                pasted = shapes.PasteSpecial(PpPasteDataType.ppPasteOLEObject);
-                if (pasted.Count == 0) throw new InvalidDataException("PowerPoint did not paste a MathType object.");
-                replacement = pasted[1];
-                // PowerPoint can return repeated references to the same OLE
-                // shape for the source and presentation clipboard formats.
-                // Validate object identity, not the number of range entries.
-                for (var i = 2; i <= pasted.Count; i++)
-                {
-                    var item = pasted[i];
-                    try
-                    {
-                        if (item.Id != replacement.Id)
-                            throw new InvalidDataException("PowerPoint pasted more than one distinct object.");
-                    }
-                    finally { Release(item); }
-                }
-                if (!IsMathTypeShape(replacement)) throw new InvalidDataException("PowerPoint did not create a MathType OLE object.");
-            }
+            pasted = PasteMathTypeShape(slide, prepared, width, height);
+            if (pasted.Count != 1) throw new InvalidDataException("PowerPoint did not paste exactly one MathType object.");
+            replacement = pasted[1];
+            if (!IsMathTypeShape(replacement)) throw new InvalidDataException("PowerPoint did not create a MathType OLE object.");
             replacement.LockAspectRatio = MsoTriState.msoFalse;
             replacement.Width = width;
             replacement.Height = height;
@@ -342,6 +327,105 @@ public sealed partial class PowerPointFormulaService
             StartNewUndoEntry();
             Release(pasted); Release(shapes); Release(replacement); Release(source);
             Release(slide); Release(view); Release(window); Release(presentation);
+        }
+    }
+
+    // Screen rectangle of the single selected MathType equation, for the
+    // low-level double-click hook, which must decide without calling Office.
+    // Runs on the Office UI thread when the selection changes (the first click).
+    public bool TryReadSelectedMathTypeScreenBounds(
+        Selection selection,
+        out string reference,
+        out int left,
+        out int top,
+        out int right,
+        out int bottom)
+    {
+        reference = string.Empty;
+        left = top = right = bottom = 0;
+        DocumentWindow? window = null;
+        View? view = null;
+        Slide? slide = null;
+        ShapeRange? range = null;
+        Shape? shape = null;
+        try
+        {
+            if (selection.Type != PpSelectionType.ppSelectionShapes) return false;
+            range = selection.ShapeRange;
+            if (range.Count != 1) return false;
+            shape = range[1];
+            if (shape.Type != MsoShapeType.msoEmbeddedOLEObject || !IsMathTypeShape(shape)) return false;
+            window = _application.ActiveWindow;
+            view = window.View;
+            slide = (Slide)view.Slide;
+            reference = MathTypeReference(slide, shape);
+            left = window.PointsToScreenPixelsX(shape.Left);
+            top = window.PointsToScreenPixelsY(shape.Top);
+            right = window.PointsToScreenPixelsX(shape.Left + shape.Width);
+            bottom = window.PointsToScreenPixelsY(shape.Top + shape.Height);
+            return right > left && bottom > top;
+        }
+        catch { return false; }
+        finally { Release(shape); Release(range); Release(slide); Release(view); Release(window); }
+    }
+
+    // Creating an embedded object from the clipboard (PasteSpecial) makes OLE load
+    // the object's registered server, so it fails where MathType is not installed.
+    // Stage the equation as package markup instead, let PowerPoint load that file
+    // without any server, and copy the finished shape onto the target slide.
+    private ShapeRange PasteMathTypeShape(Slide target, PreparedMathType prepared, float width, float height)
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"visualtex-ppt-mathtype-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        Presentations? presentations = null;
+        Presentation? staging = null;
+        Slides? slides = null;
+        Slide? slide = null;
+        Shapes? shapes = null;
+        Shape? shape = null;
+        Shapes? targetShapes = null;
+        try
+        {
+            var package = Path.Combine(root, "equation.pptx");
+            presentations = _application.Presentations;
+            staging = presentations.Add(MsoTriState.msoFalse);
+            slides = staging.Slides;
+            slide = slides.Add(1, PpSlideLayout.ppLayoutBlank);
+            shapes = slide.Shapes;
+            shape = shapes.AddShape(MsoAutoShapeType.msoShapeRectangle, 0, 0, Math.Max(1f, width), Math.Max(1f, height));
+            shape.Name = PowerPointMathTypePackage.StagingPlaceholderName;
+            staging.SaveCopyAs(package, PpSaveAsFileType.ppSaveAsOpenXMLPresentation);
+            Release(shape); shape = null;
+            Release(shapes); shapes = null;
+            Release(slide); slide = null;
+            Release(slides); slides = null;
+            staging.Close();
+            Release(staging); staging = null;
+
+            PowerPointMathTypePackage.WriteEquation(
+                package, prepared.CompoundFile, File.ReadAllBytes(prepared.EmfPath), prepared.Width, prepared.Height);
+            staging = presentations.Open(package, MsoTriState.msoTrue, MsoTriState.msoFalse, MsoTriState.msoFalse);
+            slides = staging.Slides;
+            slide = slides[1];
+            shapes = slide.Shapes;
+            if (shapes.Count != 1) throw new InvalidDataException("The staged MathType slide is not a single equation.");
+            shape = shapes[1];
+            if (!IsMathTypeShape(shape)) throw new InvalidDataException("PowerPoint did not load the staged MathType equation.");
+            shape.Copy();
+            targetShapes = target.Shapes;
+            return targetShapes.Paste();
+        }
+        finally
+        {
+            Release(targetShapes);
+            Release(shape);
+            Release(shapes);
+            Release(slide);
+            Release(slides);
+            if (staging is not null) { try { staging.Close(); } catch { } }
+            Release(staging);
+            Release(presentations);
+            try { Directory.Delete(root, true); } catch { }
         }
     }
 
