@@ -1675,6 +1675,16 @@ function visualTexScriptStructureToRemove(model) {
   if (!visualTexOwnsScriptStructure(owner) || !visualTexScriptStructureIsBlank(owner)) return null;
   return owner;
 }
+// A filled big operator whose first slot of a limit holds the selected
+// placeholder, e.g. \prod_{\placeholder{}=1}^{\infty}: Backspace selects the
+// whole operator instead of deleting the placeholder and leaving "_{=1}".
+function visualTexScriptStructureToSelect(model) {
+  const [start, end] = range(model.selection);
+  const node = model.at(end);
+  if (end !== start + 1 || node?.type !== "placeholder" || node.leftSibling?.type !== "first") return null;
+  if (node.parentBranch !== "subscript" && node.parentBranch !== "superscript") return null;
+  return visualTexOwnsScriptStructure(node.parent) ? node.parent : null;
+}
 function visualTexShouldRetainStructuralPlaceholder(parent, branch) {
   if (!parent || branch == null || parent.type === "root") return false;
   if (Array.isArray(branch)) return parent.type === "array";
@@ -1746,6 +1756,11 @@ function deleteBackward(model) {
     );
     if (model.mathfield.visualTexSourceWrapper) visualTexSyncSourceWrapper(model.mathfield);
     return removed;
+  }
+  const visualTexFilledStructure = visualTexScriptStructureToSelect(model);
+  if (visualTexFilledStructure) {
+    model.setSelection(model.offsetOf(visualTexFilledStructure.leftSibling), model.offsetOf(visualTexFilledStructure));
+    return true;
   }
   if (!model.selectionIsCollapsed)
     return deleteRange(model, range(model.selection), "deleteContentBackward");
