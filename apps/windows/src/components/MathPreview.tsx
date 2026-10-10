@@ -3,6 +3,7 @@ import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompati
 import { inspectMathLiveSourceSafety } from "../editor/mathLiveSourceSafety";
 import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
+import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 
 interface MathPreviewProps {
   latex: string;
@@ -213,6 +214,13 @@ function MathPreviewComponent({
     }
 
     let animationFrame = 0;
+    // Fit-to-width previews change their own height, which can toggle a
+    // tile list's classic scroll bar and hand the width back; the guard
+    // settles that loop on the narrower width instead of re-scaling every
+    // frame.
+    const stableHostWidth = createLayoutOscillationGuard();
+    let lastInputs = "";
+    let lastScale = "";
     const measure = () => {
       animationFrame = 0;
       // Always measure the unscaled MathLive formula itself. WebView2 can report
@@ -240,6 +248,16 @@ function MathPreviewComponent({
         contentRect.height,
         visualRect.height,
       );
+      const hostWidth = stableHostWidth(host.clientWidth);
+      // Writing the fluid row height resizes the host and re-triggers the
+      // observer; with unchanged inputs there is nothing to recompute, only
+      // the scale removed for measuring has to be put back.
+      const inputs = `${hostWidth}|${fluidHeight ? "" : host.clientHeight}|${naturalWidth}|${naturalHeight}`;
+      if (inputs === lastInputs && lastScale) {
+        content.style.setProperty("--math-preview-fit-scale", lastScale);
+        return;
+      }
+      lastInputs = inputs;
       onMeasureRef.current?.({ width: naturalWidth, height: naturalHeight });
       if (intrinsicWidth) {
         const desiredWidth = Math.min(
@@ -259,10 +277,11 @@ function MathPreviewComponent({
         host.style.removeProperty("--math-preview-fluid-height");
         host.dataset.fitReady = "false";
         host.dataset.fitScale = "1";
+        lastScale = "1";
         return;
       }
 
-      const availableWidth = Math.max(1, host.clientWidth * fitInsetRatio);
+      const availableWidth = Math.max(1, hostWidth * fitInsetRatio);
       let scale = 1;
 
       if (fluidHeight) {
@@ -298,10 +317,8 @@ function MathPreviewComponent({
         );
       }
 
-      content.style.setProperty(
-        "--math-preview-fit-scale",
-        scale.toFixed(4),
-      );
+      lastScale = scale.toFixed(4);
+      content.style.setProperty("--math-preview-fit-scale", lastScale);
       host.dataset.fitReady = "true";
       host.dataset.fitScale = scale.toFixed(4);
     };

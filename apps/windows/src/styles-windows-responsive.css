@@ -1,0 +1,264 @@
+/* Responsive layout guards for the Windows desktop and Office editors.
+   Loaded after every other stylesheet.
+
+   Rules here follow three principles:
+   1. A region adapts to its own width (container queries), never to the window
+      width: the bottom dock shares the window with the resizable tile panel,
+      so a window breakpoint said "wide" while the dock itself was narrow, and
+      the formatting buttons were painted over the panel tabs.
+   2. Nothing shrinks by transform: buttons keep their hit size; text labels
+      collapse to icons first, then the formatting strip scrolls sideways.
+   3. No region may paint into its neighbour: a strip that does not fit clips
+      and scrolls, with a fade on the clipped edge. */
+
+/* ---- Bottom dock tab bar: formatting strip | panel tabs | actions ------- */
+
+.workspace.is-classic-layout .classic-bottom-tabs {
+  container: vt-bottom-tabs / inline-size;
+}
+
+/* Formatting strip (desktop: classic workspace controls; Office: formatting
+   slot). It owns only the space left of the tabs and scrolls inside it. The
+   color picker is rendered on <body>, so clipping here is safe. */
+.workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-workspace-controls,
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-formatting-slot {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  transform: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls::-webkit-scrollbar,
+.office-dialog-shell
+  .workspace.is-classic-layout
+  .classic-bottom-formatting-slot::-webkit-scrollbar {
+  display: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls
+  .pane-title-group,
+.office-dialog-shell
+  .workspace.is-classic-layout
+  .classic-bottom-formatting-slot
+  .formula-alignment-controls {
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: max-content;
+}
+
+/* Fade whichever edge hides buttons (flags set by trackHorizontalOverflow). */
+.classic-bottom-tabs [data-overflow-end="true"]:not([data-overflow-start="true"]),
+.is-office-editor-header [data-overflow-end="true"]:not([data-overflow-start="true"]) {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+}
+
+.classic-bottom-tabs [data-overflow-start="true"]:not([data-overflow-end="true"]),
+.is-office-editor-header [data-overflow-start="true"]:not([data-overflow-end="true"]) {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 22px);
+  mask-image: linear-gradient(to right, transparent, #000 22px);
+}
+
+.classic-bottom-tabs [data-overflow-start="true"][data-overflow-end="true"],
+.is-office-editor-header [data-overflow-start="true"][data-overflow-end="true"] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 22px,
+    #000 calc(100% - 22px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 22px,
+    #000 calc(100% - 22px),
+    transparent
+  );
+}
+
+/* Desktop: the tabs stay centred; the strip may use the left half minus half
+   of the tab group. */
+.workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tabs {
+  --vt-bottom-tabs-half: 122px;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls {
+  max-width: calc(50% - var(--vt-bottom-tabs-half));
+}
+
+/* Undo the old window-width breakpoints for the dock; the container queries
+   below replace them with the dock's own width. */
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls
+  .formula-alignment-button,
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls
+  .formula-formatting-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tab-label {
+  display: inline;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tab-group
+  button {
+  width: auto;
+  min-width: 112px;
+  padding-inline: 14px;
+}
+
+/* Office: one compact row, strip in the flexible first column. */
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-tabs {
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  overflow: hidden;
+}
+
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-formatting-slot {
+  width: 100%;
+  max-width: 100%;
+}
+
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-tab-label {
+  display: inline;
+}
+
+/* Narrow dock: the panel tabs become icon buttons (their names stay in the
+   accessible label and the tooltip). 940px is where the formatting strip
+   stops fitting beside the labelled tab group. Below it the tabs become icons
+   placed on the right, and the strip scrolls only when even that does not
+   fit (about 500px). */
+@container vt-bottom-tabs (max-width: 939px) {
+  .workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tab-label,
+  .office-dialog-shell .workspace.is-classic-layout .classic-bottom-tab-label {
+    display: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-tab-group
+    button,
+  .office-dialog-shell .workspace.is-classic-layout .classic-bottom-tab-group button {
+    width: 36px;
+    min-width: 36px;
+    padding-inline: 0;
+    gap: 0;
+  }
+
+  .office-dialog-shell .workspace.is-classic-layout .classic-bottom-tab-group button {
+    width: 32px;
+    min-width: 32px;
+  }
+
+  /* Stop centring the tabs: they move next to the right-hand actions and
+     the formatting strip takes all remaining width, so a narrow dock still
+     shows every formatting button instead of hiding half of them. */
+  .workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tabs {
+    display: flex;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls,
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-tab-group,
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-actions {
+    position: static;
+    inset: auto;
+    transform: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-tab-group,
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-actions {
+    flex: 0 0 auto;
+  }
+}
+
+/* ---- Office editor header: options | canvas tools | actions ------------
+   The tools and the Cancel/Insert actions keep their size; the leading
+   options (object format, font size) take what is left and scroll sideways
+   with an edge fade when that is not enough. Before, both groups shrank below
+   their content and the font-size picker was painted under the next button. */
+.editor-pane-header.is-office-editor-header .pane-title-group {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.editor-pane-header.is-office-editor-header .pane-title-group::-webkit-scrollbar {
+  display: none;
+}
+
+.editor-pane-header.is-office-editor-header .office-inline-options,
+.editor-pane-header.is-office-editor-header .office-inline-options > *,
+.editor-pane-header.is-office-editor-header .canvas-tool-group > * {
+  flex-shrink: 0;
+}
+
+.editor-pane-header.is-office-editor-header .editor-pane-header-trailing,
+.editor-pane-header.is-office-editor-header .canvas-tool-group {
+  min-width: max-content;
+}
+
+/* ---- Header menus ------------------------------------------------------ */
+
+/* The main menu sits inside the 10px safe inset that floating layers keep
+   from the window edge, so the auto-avoidance never has to nudge it; the
+   entry animation only fades and scales from the anchored corner (no slide),
+   so the menu's anchored edges stay put while it appears. */
+.app-menu-popover {
+  left: 2px;
+  transform-origin: top left;
+  animation-name: vt-anchored-menu-in;
+}
+
+.copy-menu {
+  transform-origin: top right;
+  animation-name: vt-anchored-menu-in;
+}
+
+@keyframes vt-anchored-menu-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---- Width-dependent scroll containers ----------------------------------
+   Tile previews scale to the list's width and custom tile rows are packed by
+   it, so the list's height depends on its width. Windows shows classic scroll
+   bars by default: if one appears or disappears, the width changes and the
+   layout can flip back and forth. scrollbar-gutter keeps the width fixed;
+   where it is unsupported the tile list keeps a permanent scroll track. */
+.formula-tile-list {
+  scrollbar-gutter: stable;
+}
+
+@supports not (scrollbar-gutter: stable) {
+  .formula-tile-list,
+  .classic-tile-toolbar .formula-tile-list {
+    overflow-y: scroll;
+  }
+}

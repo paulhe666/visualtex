@@ -4452,11 +4452,13 @@ async function main() {
         const bottomStrip = document.querySelector(".classic-bottom-tabs")?.getBoundingClientRect();
         const tabs = document.querySelector(".classic-bottom-tab-group")?.getBoundingClientRect();
         const formatting = document.querySelector(".classic-bottom-workspace-controls")?.getBoundingClientRect();
-        const centered = Boolean(bottomStrip && tabs) &&
-          Math.abs(
-            (tabs.left + tabs.right) / 2 -
-            (bottomStrip.left + bottomStrip.right) / 2
-          ) <= 1;
+        const actions = document.querySelector(".classic-bottom-actions")?.getBoundingClientRect();
+        // A dock narrower than 940px stops centring the tabs: they sit next to
+        // the right-hand actions and the formatting strip takes the rest.
+        const tabsBesideActions = Boolean(bottomStrip && tabs && actions) &&
+          tabs.right <= actions.left + 1 &&
+          actions.right <= bottomStrip.right + 1 &&
+          actions.left - tabs.right <= 12;
         const bottomNonOverlapping = Boolean(formatting && tabs) &&
           formatting.right <= tabs.left + 1;
         const longLabelsVisible = [
@@ -4479,13 +4481,13 @@ async function main() {
             window.innerWidth === 500 &&
             inside &&
             nonOverlapping &&
-            centered &&
+            tabsBesideActions &&
             bottomNonOverlapping &&
             !longLabelsVisible,
           width: window.innerWidth,
           inside,
           nonOverlapping,
-          centered,
+          tabsBesideActions,
           bottomNonOverlapping,
           longLabelsVisible,
           rects,

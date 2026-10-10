@@ -40,6 +40,8 @@
     "test:radical-render": "npm run build:desktop && node scripts/run_upstream_macos_regression.mjs ../macos/scripts/radical_render_regression.mjs",
     "test:history": "node scripts/history_manager_smoke.mjs",
     "test:toolbar-completion": "npm run build:desktop && tsx scripts/toolbar_template_completion_regression.mts",
+    "test:responsive-layout:run": "node scripts/windows_responsive_layout_regression.mjs",
+    "test:responsive-layout": "npm run build:all && npm run test:responsive-layout:run",
     "test:latex-format": "tsx scripts/latex_format_smoke.mjs",
     "test:source-structural": "npm run build:desktop && tsx scripts/source_structural_draft_regression.mts",
     "test:source-editor-ux": "npm run build:desktop && tsx scripts/source_editor_ux_regression.mts",

@@ -47,6 +47,7 @@ import {
 } from "../shortcuts/formulaHotkeys";
 import { useEditorStore } from "../stores/editorStore";
 import { writeLocalStorage } from "../runtime/safeStorage";
+import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 
 const LazyCustomSymbolDesignerDialog = lazy(async () => {
@@ -991,7 +992,19 @@ export function FormulaToolbar({
     let frame = 0;
     const quantizeWidth = (width: number) =>
       Math.max(120, Math.floor(width / 2) * 2);
-    const commitWidths = (entries: Array<[string, number]>) => {
+    // Re-packing custom tile rows changes the list height; when that toggles
+    // a classic scroll bar the measured width flips with it. One guard per
+    // section settles such a flip-flop.
+    const widthGuards = new Map<string, (width: number) => number>();
+    const commitWidths = (rawEntries: Array<[string, number]>) => {
+      const entries = rawEntries.map(([sectionId, width]): [string, number] => {
+        let guard = widthGuards.get(sectionId);
+        if (!guard) {
+          guard = createLayoutOscillationGuard();
+          widthGuards.set(sectionId, guard);
+        }
+        return [sectionId, guard(width)];
+      });
       if (!entries.length) return;
       setCustomTileGridWidths((current) => {
         let changed = false;
@@ -1333,6 +1346,9 @@ export function FormulaToolbar({
     if (!root || !tabs || !strip) return;
 
     let frame = 0;
+    // The row count changes how wide the strip's content is, which can show
+    // or hide its horizontal scroll bar and so change clientHeight.
+    const stableStripHeight = createLayoutOscillationGuard();
     const measureRows = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
@@ -1342,7 +1358,7 @@ export function FormulaToolbar({
         const rowGap = Number.parseFloat(styles.rowGap) || 0;
         const availableHeight = Math.max(
           0,
-          strip.clientHeight - paddingTop - paddingBottom,
+          stableStripHeight(strip.clientHeight) - paddingTop - paddingBottom,
         );
         const targetRowHeight = Math.max(26, effectiveFormulaToolButtonSize - 8);
         const nextRowCount = Math.max(
@@ -1393,6 +1409,9 @@ export function FormulaToolbar({
     if (!root || !strip) return;
 
     let frame = 0;
+    // The matrix picker size feeds back into the strip's scroll bars.
+    const stableStripHeight = createLayoutOscillationGuard();
+    const stableStripWidth = createLayoutOscillationGuard();
     const measureMatrix = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
@@ -1403,11 +1422,11 @@ export function FormulaToolbar({
         const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
         const availableHeight = Math.max(
           0,
-          strip.clientHeight - paddingTop - paddingBottom,
+          stableStripHeight(strip.clientHeight) - paddingTop - paddingBottom,
         );
         const availableWidth = Math.max(
           0,
-          strip.clientWidth - paddingLeft - paddingRight,
+          stableStripWidth(strip.clientWidth) - paddingLeft - paddingRight,
         );
         const railWidth = 32;
         const builderGap = 6;

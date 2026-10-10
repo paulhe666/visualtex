@@ -37,6 +37,7 @@ import {
   type MathEditorSelectionTarget,
 } from "../editor/MathEditor";
 import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
+import { trackHorizontalOverflow } from "../runtime/horizontalOverflowState";
 import { FormulaToolbar } from "../toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
 import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
@@ -97,6 +98,25 @@ type ClassicResizeTarget = "tiles" | "dock";
 
 const compactOfficeTileBreakpoint = 760;
 const compactOfficeEditorReserve = 220;
+const officeTileShare = 0.45;
+
+// The formula canvas is the primary surface. In the Office editor the tile
+// rail may take at most 45% of the workspace (never less than its minimum
+// width), so the canvas is not squeezed narrower than the rail; a rail
+// widened in a large window is narrowed again when the window shrinks.
+function classicTileWidthMaximum(
+  workspaceWidth: number,
+  isOfficeWorkspace: boolean,
+) {
+  const compactOffice =
+    isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint;
+  const byReserve =
+    workspaceWidth - (compactOffice ? compactOfficeEditorReserve : 360);
+  const limit = isOfficeWorkspace
+    ? Math.min(byReserve, Math.floor(workspaceWidth * officeTileShare))
+    : byReserve;
+  return Math.max(MIN_CLASSIC_TILE_WIDTH, limit);
+}
 
 const customFormulaTextColorsStorageKey = "visualtex-custom-formula-text-colors";
 const customFormulaBackgroundColorsStorageKey =
@@ -423,9 +443,11 @@ export function EditorWorkspace({
     };
   }, [quickOcrModeMenuOpen]);
 
-  // Desktop toolbars and the classic dock clip their children. Keep the
-  // palette outside those boundaries, anchored beside the formatting tools.
-  const portalFormulaColorMenu = !isOfficeWorkspace;
+  // Desktop toolbars, the classic dock and the Office header clip their
+  // children (the formatting strip and the Office header options scroll
+  // sideways on narrow windows). Keep the palette outside those boundaries,
+  // anchored beside the formatting tools.
+  const portalFormulaColorMenu = true;
   const classicFormulaColorMenu = portalFormulaColorMenu && editorLayout === "classic";
   useLayoutEffect(() => {
     if (!formulaColorMenu || !portalFormulaColorMenu) return;
@@ -489,6 +511,31 @@ export function EditorWorkspace({
     };
   }, [formulaColorMenu]);
 
+  useEffect(() => {
+    const strip =
+      editorLayout === "classic"
+        ? isOfficeWorkspace
+          ? officeFormattingMount
+          : desktopClassicControlsMount
+        : null;
+    return strip ? trackHorizontalOverflow(strip) : undefined;
+  }, [
+    desktopClassicControlsMount,
+    editorLayout,
+    isOfficeWorkspace,
+    officeFormattingMount,
+  ]);
+
+  // The Office header's leading options scroll sideways when the window is
+  // narrow (styles-windows-responsive.css); fade the clipped edge.
+  useEffect(() => {
+    if (!isOfficeWorkspace) return;
+    const options = workspaceRef.current?.querySelector<HTMLElement>(
+      ".is-office-editor-header .pane-title-group",
+    );
+    return options ? trackHorizontalOverflow(options) : undefined;
+  }, [editorLayout, isOfficeWorkspace]);
+
   useEffect(
     () => () => {
       activeResizeCleanupRef.current?.();
@@ -503,11 +550,7 @@ export function EditorWorkspace({
   const classicTileWidthLimit = () => {
     const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width;
     if (!workspaceWidth) return MAX_CLASSIC_TILE_WIDTH;
-    const editorReserve =
-      isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
-        ? compactOfficeEditorReserve
-        : 360;
-    return Math.max(MIN_CLASSIC_TILE_WIDTH, workspaceWidth - editorReserve);
+    return classicTileWidthMaximum(workspaceWidth, isOfficeWorkspace);
   };
 
   const classicDockHeightLimit = () => {
@@ -644,13 +687,9 @@ export function EditorWorkspace({
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         const workspaceWidth = workspace.getBoundingClientRect().width;
-        const editorReserve =
-          isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
-            ? compactOfficeEditorReserve
-            : 360;
-        const tileMaximum = Math.max(
-          MIN_CLASSIC_TILE_WIDTH,
-          workspaceWidth - editorReserve,
+        const tileMaximum = classicTileWidthMaximum(
+          workspaceWidth,
+          isOfficeWorkspace,
         );
         setClassicTileWidth((current) => {
           const next = clampPanelSize(
