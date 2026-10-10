@@ -1,0 +1,216 @@
+/* Responsive layout guards for the macOS desktop and Office editors.
+   Loaded after every other stylesheet.
+
+   Rules here follow three principles:
+   1. A region adapts to its own width (container queries), never to the window
+      width: the bottom dock shares the window with the resizable tile panel,
+      so a window breakpoint said "wide" while the dock itself was narrow, and
+      the formatting buttons were painted over the panel tabs.
+   2. Nothing shrinks by transform: buttons keep their hit size; text labels
+      collapse to icons first, then the formatting strip scrolls sideways.
+   3. No region may paint into its neighbour: a strip that does not fit clips
+      and scrolls, with a fade on the clipped edge. */
+
+/* ---- Bottom dock tab bar: formatting strip | panel tabs | actions ------- */
+
+.workspace.is-classic-layout .classic-bottom-tabs {
+  container: vt-bottom-tabs / inline-size;
+}
+
+/* Formatting strip (desktop: classic workspace controls; Office: formatting
+   slot). It owns only the space left of the centred tabs and scrolls inside
+   it. The color picker is rendered on <body>, so clipping here is safe. */
+.workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-workspace-controls,
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-formatting-slot {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  transform: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls::-webkit-scrollbar,
+.office-dialog-shell
+  .workspace.is-classic-layout
+  .classic-bottom-formatting-slot::-webkit-scrollbar {
+  display: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls
+  .pane-title-group,
+.office-dialog-shell
+  .workspace.is-classic-layout
+  .classic-bottom-formatting-slot
+  .formula-alignment-controls {
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: max-content;
+}
+
+/* Fade whichever edge hides buttons (flags set by trackHorizontalOverflow). */
+.classic-bottom-tabs [data-overflow-end="true"]:not([data-overflow-start="true"]) {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+}
+
+.classic-bottom-tabs [data-overflow-start="true"]:not([data-overflow-end="true"]) {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 22px);
+  mask-image: linear-gradient(to right, transparent, #000 22px);
+}
+
+.classic-bottom-tabs [data-overflow-start="true"][data-overflow-end="true"] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 22px,
+    #000 calc(100% - 22px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 22px,
+    #000 calc(100% - 22px),
+    transparent
+  );
+}
+
+/* Desktop: the tabs stay centred; the strip may use the left half minus half
+   of the tab group. --vt-bottom-tabs-half follows the tab group's width. */
+.workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tabs {
+  --vt-bottom-tabs-half: 122px;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls {
+  max-width: calc(50% - var(--vt-bottom-tabs-half));
+}
+
+/* Undo the old window-width breakpoints for the dock; the container queries
+   below replace them with the dock's own width. */
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls
+  .formula-alignment-button,
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls
+  .formula-formatting-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tab-label {
+  display: inline;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tab-group
+  button {
+  width: auto;
+  min-width: 112px;
+  padding-inline: 14px;
+}
+
+/* Office: one compact row, strip in the flexible first column. */
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-tabs {
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  overflow: hidden;
+}
+
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-formatting-slot {
+  width: 100%;
+  max-width: 100%;
+}
+
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-tab-label {
+  display: inline;
+}
+
+/* Narrow dock: the panel tabs become icon buttons (their names stay in the
+   accessible label and the tooltip). 940px is where the 345px formatting strip
+   stops fitting beside the 227px labelled tab group. Below it the tabs
+   become icons placed on the right, and the strip scrolls only when even
+   that does not fit (about 500px). */
+@container vt-bottom-tabs (max-width: 939px) {
+  .workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tab-label,
+  .office-dialog-shell .workspace.is-classic-layout .classic-bottom-tab-label {
+    display: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-tab-group
+    button,
+  .office-dialog-shell .workspace.is-classic-layout .classic-bottom-tab-group button {
+    width: 36px;
+    min-width: 36px;
+    padding-inline: 0;
+    gap: 0;
+  }
+
+  .office-dialog-shell .workspace.is-classic-layout .classic-bottom-tab-group button {
+    width: 32px;
+    min-width: 32px;
+  }
+
+  /* Stop centring the tabs: they move next to the right-hand actions and
+     the formatting strip takes all remaining width, so a narrow dock still
+     shows every formatting button instead of hiding half of them. */
+  .workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tabs {
+    display: flex;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls,
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-tab-group,
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-actions {
+    position: static;
+    inset: auto;
+    transform: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-workspace-controls {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-tab-group,
+  .workspace.is-classic-layout:not(.is-office-workspace)
+    .classic-bottom-actions {
+    flex: 0 0 auto;
+  }
+}
+
+/* Portalled color picker: fixed to its trigger, never clipped by the strip. */
+.formula-color-popover.is-anchored {
+  position: fixed;
+  right: auto;
+  z-index: var(--z-popover, 190);
+  max-width: calc(100vw - 20px);
+}
+
+/* ---- Header menus ------------------------------------------------------ */
+
+/* The main menu sits inside the 10px safe inset that floating layers keep
+   from the window edge, so the auto-avoidance never has to nudge it; the
+   entry animation scales from the anchored corner so the menu's edges stay
+   put while it fades in. */
+.app-menu-popover {
+  left: 2px;
+  transform-origin: top left;
+}
+
+.copy-menu {
+  transform-origin: top right;
+}

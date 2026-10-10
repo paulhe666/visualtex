@@ -36,6 +36,7 @@ import {
   type MathEditorSelectionTarget,
 } from "../editor/MathEditor";
 import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
+import { trackHorizontalOverflow } from "../runtime/horizontalOverflowState";
 import { FormulaToolbar } from "../toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
 import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
@@ -96,6 +97,24 @@ type ClassicResizeTarget = "tiles" | "dock";
 
 const compactOfficeTileBreakpoint = 760;
 const compactOfficeEditorReserve = 220;
+const compactOfficeTileShare = 0.45;
+
+// The formula canvas is the primary surface. In a compact Office editor the
+// tile rail may take at most 45% of the workspace (never less than its
+// minimum width), so the canvas is not squeezed narrower than the rail.
+function classicTileWidthMaximum(
+  workspaceWidth: number,
+  isOfficeWorkspace: boolean,
+) {
+  const compactOffice =
+    isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint;
+  const byReserve =
+    workspaceWidth - (compactOffice ? compactOfficeEditorReserve : 360);
+  const limit = compactOffice
+    ? Math.min(byReserve, Math.floor(workspaceWidth * compactOfficeTileShare))
+    : byReserve;
+  return Math.max(MIN_CLASSIC_TILE_WIDTH, limit);
+}
 
 const customFormulaTextColorsStorageKey = "visualtex-custom-formula-text-colors";
 const customFormulaBackgroundColorsStorageKey =
@@ -190,6 +209,9 @@ export function EditorWorkspace({
   const [formulaColorMenu, setFormulaColorMenu] =
     useState<FormulaColorMenu | null>(null);
   const formulaColorMenuRef = useRef<HTMLDivElement>(null);
+  const formulaColorPopoverRef = useRef<HTMLDivElement>(null);
+  const [formulaColorPopoverStyle, setFormulaColorPopoverStyle] =
+    useState<CSSProperties>();
   const formulaSelectionTargetRef = useRef<MathEditorSelectionTarget | null>(null);
   const customFormulaColorDraftRef = useRef<
     Record<FormulaColorMenu, string | null>
@@ -422,7 +444,8 @@ export function EditorWorkspace({
     const close = (event: PointerEvent) => {
       if (
         event.target instanceof Node &&
-        formulaColorMenuRef.current?.contains(event.target)
+        (formulaColorMenuRef.current?.contains(event.target) ||
+          formulaColorPopoverRef.current?.contains(event.target))
       ) {
         return;
       }
@@ -443,6 +466,62 @@ export function EditorWorkspace({
     };
   }, [formulaColorMenu]);
 
+  useEffect(() => {
+    const strip =
+      editorLayout === "classic"
+        ? isOfficeWorkspace
+          ? officeFormattingMount
+          : desktopClassicControlsMount
+        : null;
+    return strip ? trackHorizontalOverflow(strip) : undefined;
+  }, [
+    desktopClassicControlsMount,
+    editorLayout,
+    isOfficeWorkspace,
+    officeFormattingMount,
+  ]);
+
+  // The color picker is rendered on <body> with fixed coordinates taken from
+  // its trigger. Its toolbar strip scrolls horizontally on narrow windows, and
+  // an absolutely positioned child would be clipped by that strip.
+  useLayoutEffect(() => {
+    if (!formulaColorMenu) {
+      setFormulaColorPopoverStyle(undefined);
+      return;
+    }
+    const place = () => {
+      const trigger = formulaColorMenuRef.current?.querySelector<HTMLElement>(
+        formulaColorMenu === "color"
+          ? "[data-formula-selection-color]"
+          : "[data-formula-selection-background]",
+      );
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const width = formulaColorPopoverRef.current?.offsetWidth ?? 196;
+      const left = Math.round(
+        Math.max(10, Math.min(rect.left, window.innerWidth - width - 10)),
+      );
+      const opensUpward = rect.top + rect.height / 2 > window.innerHeight / 2;
+      const next: CSSProperties = opensUpward
+        ? { left, bottom: Math.round(window.innerHeight - rect.top + 7) }
+        : { left, top: Math.round(rect.bottom + 7) };
+      setFormulaColorPopoverStyle((current) =>
+        current?.left === next.left &&
+        current?.top === next.top &&
+        current?.bottom === next.bottom
+          ? current
+          : next,
+      );
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [formulaColorMenu]);
+
   useEffect(
     () => () => {
       activeResizeCleanupRef.current?.();
@@ -457,11 +536,7 @@ export function EditorWorkspace({
   const classicTileWidthLimit = () => {
     const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width;
     if (!workspaceWidth) return MAX_CLASSIC_TILE_WIDTH;
-    const editorReserve =
-      isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
-        ? compactOfficeEditorReserve
-        : 360;
-    return Math.max(MIN_CLASSIC_TILE_WIDTH, workspaceWidth - editorReserve);
+    return classicTileWidthMaximum(workspaceWidth, isOfficeWorkspace);
   };
 
   const classicDockHeightLimit = () => {
@@ -598,13 +673,9 @@ export function EditorWorkspace({
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         const workspaceWidth = workspace.getBoundingClientRect().width;
-        const editorReserve =
-          isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
-            ? compactOfficeEditorReserve
-            : 360;
-        const tileMaximum = Math.max(
-          MIN_CLASSIC_TILE_WIDTH,
-          workspaceWidth - editorReserve,
+        const tileMaximum = classicTileWidthMaximum(
+          workspaceWidth,
+          isOfficeWorkspace,
         );
         setClassicTileWidth((current) => {
           const next = clampPanelSize(
@@ -1283,9 +1354,11 @@ export function EditorWorkspace({
                         <Highlighter size={15} strokeWidth={2} />
                       </button>
 
-                      {formulaColorMenu && (
+                      {formulaColorMenu && createPortal(
                         <div
-                          className="formula-color-popover"
+                          ref={formulaColorPopoverRef}
+                          className="formula-color-popover is-anchored"
+                          style={formulaColorPopoverStyle}
                           data-formula-color-popover={formulaColorMenu}
                           data-visualtex-floating-layer
                           role="dialog"
@@ -1457,7 +1530,8 @@ export function EditorWorkspace({
                               )}
                             </section>
                           </div>
-                        </div>
+                        </div>,
+                        document.body,
                       )}
                     </div>
                   </div>

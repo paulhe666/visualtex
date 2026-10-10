@@ -7,6 +7,9 @@ const FLOATING_LAYER_SELECTOR = [
 
 const VIEWPORT_PADDING = 10;
 const MIN_FLOATING_LAYER_SIZE = 96;
+// Sub-pixel differences are rounding noise, not a new position. Ignoring them
+// keeps a re-fit from writing a style that would trigger yet another re-fit.
+const POSITION_EPSILON = 0.5;
 
 type InlineStyleSnapshot = {
   translate: string;
@@ -15,12 +18,16 @@ type InlineStyleSnapshot = {
   overflowX: string;
   overflowY: string;
   boxSizing: string;
+  // Stylesheet limits seen before this module wrote any inline style.
+  cssMaxWidth: string;
+  cssMaxHeight: string;
 };
 
 const originalInlineStyles = new WeakMap<HTMLElement, InlineStyleSnapshot>();
 
 function rememberInlineStyles(layer: HTMLElement) {
   if (originalInlineStyles.has(layer)) return;
+  const computed = window.getComputedStyle(layer);
   originalInlineStyles.set(layer, {
     translate: layer.style.translate,
     maxWidth: layer.style.maxWidth,
@@ -28,6 +35,8 @@ function rememberInlineStyles(layer: HTMLElement) {
     overflowX: layer.style.overflowX,
     overflowY: layer.style.overflowY,
     boxSizing: layer.style.boxSizing,
+    cssMaxWidth: computed.maxWidth,
+    cssMaxHeight: computed.maxHeight,
   });
 }
 
@@ -84,72 +93,100 @@ function visibleBoundaryFor(layer: HTMLElement) {
   };
 }
 
+function parsePixelPair(value: string): [number, number] {
+  if (!value || value === 'none') return [0, 0];
+  const [x = '0', y = '0'] = value.trim().split(/\s+/);
+  return [Number.parseFloat(x) || 0, Number.parseFloat(y) || 0];
+}
+
+/**
+ * The layer's layout box in viewport coordinates, without our own `translate`
+ * and without an entry animation's scale/offset. Measuring the transformed box
+ * instead made every fit depend on the previous fit and on the animation frame,
+ * so menus visibly slid after opening and could keep re-fitting each other.
+ */
+function untransformedRect(layer: HTMLElement) {
+  const rect = layer.getBoundingClientRect();
+  const width = layer.offsetWidth || rect.width;
+  const height = layer.offsetHeight || rect.height;
+  const style = window.getComputedStyle(layer);
+  const [translateX, translateY] = parsePixelPair(style.translate);
+  let scaleX = 1;
+  let scaleY = 1;
+  let offsetX = 0;
+  let offsetY = 0;
+  const matrix = /^matrix\(([^)]+)\)$/.exec(style.transform);
+  if (matrix) {
+    const [a, b, c, d, e, f] = matrix[1].split(',').map((part) => Number.parseFloat(part));
+    if (Math.abs(b) < 1e-6 && Math.abs(c) < 1e-6 && a > 0 && d > 0) {
+      scaleX = a;
+      scaleY = d;
+      offsetX = e;
+      offsetY = f;
+    }
+  }
+  const [originX, originY] = parsePixelPair(style.transformOrigin);
+  const left = rect.left - translateX - offsetX - originX * (1 - scaleX);
+  const top = rect.top - translateY - offsetY - originY * (1 - scaleY);
+  return { left, top, right: left + width, bottom: top + height, width, height };
+}
+
+function cappedSize(cssLimit: string, available: number) {
+  const px = `${Math.floor(available)}px`;
+  return cssLimit && cssLimit !== 'none' ? `min(${cssLimit}, ${px})` : px;
+}
+
 function fitFloatingLayer(layer: HTMLElement) {
   if (!layer.isConnected) return;
   rememberInlineStyles(layer);
-  restoreManagedInlineStyles(layer);
+  const original = originalInlineStyles.get(layer)!;
 
-  const initialRect = layer.getBoundingClientRect();
-  if (initialRect.width <= 0 || initialRect.height <= 0) return;
+  const box = untransformedRect(layer);
+  if (box.width <= 0 || box.height <= 0) return;
 
   const boundary = visibleBoundaryFor(layer);
-  const availableWidth = Math.max(
-    MIN_FLOATING_LAYER_SIZE,
-    boundary.right - boundary.left,
-  );
-  const availableHeight = Math.max(
-    MIN_FLOATING_LAYER_SIZE,
-    boundary.bottom - boundary.top,
-  );
-  const initialScaleX =
-    layer.offsetWidth > 0 ? initialRect.width / layer.offsetWidth : 1;
-  const initialScaleY =
-    layer.offsetHeight > 0 ? initialRect.height / layer.offsetHeight : 1;
+  const availableWidth = Math.max(MIN_FLOATING_LAYER_SIZE, boundary.right - boundary.left);
+  const availableHeight = Math.max(MIN_FLOATING_LAYER_SIZE, boundary.bottom - boundary.top);
 
-  if (initialRect.width > availableWidth) {
-    layer.style.maxWidth = `${Math.floor(
-      availableWidth / Math.max(0.1, initialScaleX),
-    )}px`;
+  // Size caps depend only on the boundary, never on the layer's current size,
+  // so applying them cannot feed back into the next measurement.
+  if (!original.maxWidth) {
+    const cap = cappedSize(original.cssMaxWidth, availableWidth);
+    if (layer.style.maxWidth !== cap) layer.style.maxWidth = cap;
+  }
+  if (!original.maxHeight) {
+    const cap = cappedSize(original.cssMaxHeight, availableHeight);
+    if (layer.style.maxHeight !== cap) layer.style.maxHeight = cap;
+  }
+  if (layer.scrollWidth > layer.clientWidth + 1 && layer.style.overflowX !== 'auto') {
     layer.style.boxSizing = 'border-box';
     layer.style.overflowX = 'auto';
   }
-  if (initialRect.height > availableHeight) {
-    layer.style.maxHeight = `${Math.floor(
-      availableHeight / Math.max(0.1, initialScaleY),
-    )}px`;
+  if (layer.scrollHeight > layer.clientHeight + 1 && layer.style.overflowY !== 'auto') {
     layer.style.boxSizing = 'border-box';
     layer.style.overflowY = 'auto';
   }
 
+  const fitted = untransformedRect(layer);
   let shiftX = 0;
   let shiftY = 0;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const rect = layer.getBoundingClientRect();
-    let viewportShiftX = 0;
-    let viewportShiftY = 0;
+  if (fitted.left < boundary.left) shiftX = boundary.left - fitted.left;
+  else if (fitted.right > boundary.right) {
+    shiftX = Math.max(boundary.left - fitted.left, boundary.right - fitted.right);
+  }
+  if (fitted.top < boundary.top) shiftY = boundary.top - fitted.top;
+  else if (fitted.bottom > boundary.bottom) {
+    shiftY = Math.max(boundary.top - fitted.top, boundary.bottom - fitted.bottom);
+  }
 
-    if (rect.left < boundary.left) {
-      viewportShiftX += boundary.left - rect.left;
-    }
-    if (rect.right + viewportShiftX > boundary.right) {
-      viewportShiftX -= rect.right + viewportShiftX - boundary.right;
-    }
-    if (rect.top < boundary.top) {
-      viewportShiftY += boundary.top - rect.top;
-    }
-    if (rect.bottom + viewportShiftY > boundary.bottom) {
-      viewportShiftY -= rect.bottom + viewportShiftY - boundary.bottom;
-    }
-
-    if (Math.abs(viewportShiftX) < 0.25 && Math.abs(viewportShiftY) < 0.25) {
-      break;
-    }
-
-    const scaleX = layer.offsetWidth > 0 ? rect.width / layer.offsetWidth : 1;
-    const scaleY = layer.offsetHeight > 0 ? rect.height / layer.offsetHeight : 1;
-    shiftX += viewportShiftX / Math.max(0.1, scaleX);
-    shiftY += viewportShiftY / Math.max(0.1, scaleY);
-    layer.style.translate = `${shiftX}px ${shiftY}px`;
+  const [currentX, currentY] = parsePixelPair(layer.style.translate);
+  if (Math.abs(shiftX) < POSITION_EPSILON && Math.abs(shiftY) < POSITION_EPSILON) {
+    if (layer.style.translate !== original.translate) layer.style.translate = original.translate;
+  } else if (
+    Math.abs(currentX - shiftX) >= POSITION_EPSILON ||
+    Math.abs(currentY - shiftY) >= POSITION_EPSILON
+  ) {
+    layer.style.translate = `${Math.round(shiftX)}px ${Math.round(shiftY)}px`;
   }
 
   layer.dataset.visualtexAutoAvoidAdjusted = 'true';
@@ -169,46 +206,56 @@ export function installFloatingLayerAutoAvoidance() {
   let disposed = false;
   const observedLayers = new Set<HTMLElement>();
 
+  const fitVisibleLayers = () => {
+    const layers = new Set(visibleFloatingLayers());
+    for (const layer of observedLayers) {
+      if (layers.has(layer)) continue;
+      resizeObserver.unobserve(layer);
+      restoreManagedInlineStyles(layer);
+      originalInlineStyles.delete(layer);
+      observedLayers.delete(layer);
+    }
+    for (const layer of layers) {
+      if (!observedLayers.has(layer)) {
+        observedLayers.add(layer);
+        resizeObserver.observe(layer);
+      }
+      fitFloatingLayer(layer);
+    }
+  };
   const update = () => {
     if (disposed || frame) return;
     frame = window.requestAnimationFrame(() => {
       frame = 0;
-      const layers = new Set(visibleFloatingLayers());
-      for (const layer of observedLayers) {
-        if (layers.has(layer)) continue;
-        resizeObserver.unobserve(layer);
-        restoreManagedInlineStyles(layer);
-        originalInlineStyles.delete(layer);
-        observedLayers.delete(layer);
-      }
-      for (const layer of layers) {
-        if (!observedLayers.has(layer)) {
-          observedLayers.add(layer);
-          resizeObserver.observe(layer);
-        }
-        fitFloatingLayer(layer);
-      }
+      fitVisibleLayers();
     });
   };
-  const resizeObserver = new ResizeObserver(update);
-
-  const handleMotion = (event: Event) => {
-    const target = event.target;
-    if (target instanceof Element && (
-      target.closest(FLOATING_LAYER_SELECTOR) || target.querySelector(FLOATING_LAYER_SELECTOR)
-    )) {
-      update();
+  // A layer that has just been inserted is fitted in the same task, before
+  // the browser paints it; waiting for the next frame showed it unadjusted
+  // for one frame and then slid it into place.
+  const fitNow = () => {
+    if (disposed) return;
+    if (frame) {
+      window.cancelAnimationFrame(frame);
+      frame = 0;
     }
+    fitVisibleLayers();
   };
+  const resizeObserver = new ResizeObserver(update);
 
   const containsFloatingLayer = (node: Node) => node instanceof Element && (
     node.matches(FLOATING_LAYER_SELECTOR) || node.querySelector(FLOATING_LAYER_SELECTOR)
   );
+  // Only structural changes and class/hidden toggles can open, close or move a
+  // layer. Hover transitions and entry animations inside a menu do not, and
+  // reacting to them is what made open menus re-fit on every pointer move.
   const observer = new MutationObserver((records) => {
-    if (records.some((record) =>
-      (record.target instanceof Element && record.target.closest(FLOATING_LAYER_SELECTOR)) ||
-      (record.type === 'attributes' && containsFloatingLayer(record.target)) ||
-      [...record.addedNodes, ...record.removedNodes].some(containsFloatingLayer)
+    if (records.some((record) => [...record.addedNodes].some(containsFloatingLayer) ||
+      (record.type === 'attributes' && containsFloatingLayer(record.target)))) {
+      fitNow();
+    } else if (records.some((record) =>
+      [...record.removedNodes].some(containsFloatingLayer) ||
+      (record.type === 'childList' && record.target instanceof Element && record.target.closest(FLOATING_LAYER_SELECTOR))
     )) update();
   });
   observer.observe(document.documentElement, {
@@ -219,8 +266,6 @@ export function installFloatingLayerAutoAvoidance() {
   });
   window.addEventListener('resize', update);
   window.addEventListener('scroll', update, true);
-  const motionEvents = ['transitionrun', 'transitionend', 'animationstart', 'animationend'];
-  for (const event of motionEvents) document.addEventListener(event, handleMotion, true);
   update();
 
   return () => {
@@ -230,7 +275,6 @@ export function installFloatingLayerAutoAvoidance() {
     resizeObserver.disconnect();
     window.removeEventListener('resize', update);
     window.removeEventListener('scroll', update, true);
-    for (const event of motionEvents) document.removeEventListener(event, handleMotion, true);
     for (const layer of observedLayers) {
       restoreManagedInlineStyles(layer);
       originalInlineStyles.delete(layer);
