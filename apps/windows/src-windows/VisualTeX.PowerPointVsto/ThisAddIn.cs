@@ -167,12 +167,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private CancellationTokenSource? _lifetime;
     private string _lastDoubleClickFormulaId = string.Empty;
     private DateTimeOffset _lastDoubleClickAt;
-    // The MathType equation selected by the first click of a gesture, in screen
-    // pixels, so the hook thread can claim the second click without COM.
-    private readonly object _mathTypeTargetGate = new();
-    private string? _mathTypeTargetReference;
-    private int _mathTypeTargetLeft, _mathTypeTargetTop, _mathTypeTargetRight, _mathTypeTargetBottom;
-    private string? _claimedMathTypeReference;
+    // The formula the double-click hook claimed, handed to its callback.
+    private string? _claimedOleReference;
+    private bool _claimedOleIsMathType;
     private string? _activeSessionId;
     private int _formulaFontInvalidationPending;
     private object? _ribbonUi;
@@ -207,7 +204,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         string? doubleClickError = null;
         try
         {
-            _doubleClickHook = new PowerPointDoubleClickHook(ClaimMathTypeDoubleClick, OnNativeDoubleClick);
+            _doubleClickHook = new PowerPointDoubleClickHook(ClaimOleDoubleClick, OnNativeDoubleClick);
             _doubleClickHook.Start();
         }
         catch (Exception error)
@@ -426,90 +423,54 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private void OnWindowSelectionChange(Selection selection)
     {
         ScheduleFormulaFontControlsInvalidation();
-        RememberSelectedMathType(selection);
         // A notification is not an insertion command. In particular None also
         // means explicit deselection, not proof of a transient Ribbon handoff.
         // Capture text/source only at the command; never hydrate or cache here.
     }
 
-    private void RememberSelectedMathType(Selection selection)
+    // Office UI thread, inside the mouse hook, when PowerPoint retrieves the
+    // second click (the first one is already processed). A VisualTeX OLE formula
+    // always opens VisualTeX; letting PowerPoint activate it instead starts the
+    // OLE server concurrently. A MathType equation is edited in VisualTeX when
+    // the user chose that, and always when MathType itself is not installed.
+    private bool ClaimOleDoubleClick(int screenX, int screenY)
     {
+        _claimedOleReference = null;
         var service = _formulaService;
-        string? reference = null;
-        int left = 0, top = 0, right = 0, bottom = 0;
-        if (service is not null
-            && service.TryReadSelectedMathTypeScreenBounds(selection, out var found, out left, out top, out right, out bottom))
-            reference = found;
-        lock (_mathTypeTargetGate)
-        {
-            _mathTypeTargetReference = reference;
-            _mathTypeTargetLeft = left;
-            _mathTypeTargetTop = top;
-            _mathTypeTargetRight = right;
-            _mathTypeTargetBottom = bottom;
-        }
+        if (service is null
+            || !service.TryHitOleFormula(screenX, screenY, out var reference, out var isMathType))
+            return false;
+        if (isMathType && !MathTypeDoubleClickPreference.VisualTeXEditsMathType())
+            return false;
+        _claimedOleReference = reference;
+        _claimedOleIsMathType = isMathType;
+        return true;
     }
 
-    // Hook thread. A MathType equation is edited in VisualTeX when the user chose
-    // that, and always when MathType itself is not installed.
-    private bool ClaimMathTypeDoubleClick(int screenX, int screenY)
-    {
-        lock (_mathTypeTargetGate)
-        {
-            _claimedMathTypeReference = null;
-            if (_mathTypeTargetReference is null
-                || screenX < _mathTypeTargetLeft || screenX > _mathTypeTargetRight
-                || screenY < _mathTypeTargetTop || screenY > _mathTypeTargetBottom)
-                return false;
-            if (!MathTypeDoubleClickPreference.VisualTeXEditsMathType())
-                return false;
-            _claimedMathTypeReference = _mathTypeTargetReference;
-            return true;
-        }
-    }
-
-    private void OnNativeDoubleClick(bool claimedMathType, int screenX, int screenY)
+    private void OnNativeDoubleClick(bool claimedOle, int screenX, int screenY)
     {
         var dispatcher = _dispatcher;
         var service = _formulaService;
         if (dispatcher is null || service is null) return;
-        if (claimedMathType)
+        if (claimedOle)
         {
-            string? claimed;
-            lock (_mathTypeTargetGate)
-            {
-                claimed = _claimedMathTypeReference;
-                _claimedMathTypeReference = null;
-            }
-            dispatcher.Post(() =>
-            {
-                try
-                {
-                    var selected = service.ReadSelection();
-                    if (selected.ObjectMode != FormulaOleContract.MathTypeOleMode
-                        || !string.Equals(selected.ObjectId, claimed, StringComparison.Ordinal))
-                        return;
-                    var now = DateTimeOffset.UtcNow;
-                    if (selected.ObjectId == _lastDoubleClickFormulaId
-                        && now - _lastDoubleClickAt < TimeSpan.FromSeconds(1))
-                        return;
-                    _lastDoubleClickFormulaId = selected.ObjectId!;
-                    _lastDoubleClickAt = now;
-                    BeginSession("edit", null, selected);
-                }
-                catch (Exception error)
-                {
-                    ReportError(OfficePluginLanguage.FormatOperationError(
-                        error,
-                        "无法打开 MathType 公式",
-                        "Unable to open the MathType equation"));
-                }
-            });
+            var claimed = _claimedOleReference;
+            var isMathType = _claimedOleIsMathType;
+            _claimedOleReference = null;
+            dispatcher.Post(() => OpenOleFormula(service, claimed, isMathType));
             return;
         }
         dispatcher.Post(() =>
         {
-            var selected = service.ReadFormulaAtScreenPoint(screenX, screenY);
+            OfficeSelection? selected;
+            try { selected = service.ReadFormulaAtScreenPoint(screenX, screenY); }
+            catch (Exception error)
+            {
+                PowerPointDoubleClickHook.TraceMessage($"hit-test-error {error.GetType().Name}: {error.Message}");
+                return;
+            }
+            PowerPointDoubleClickHook.TraceMessage(
+                $"hit-test mode={selected?.ObjectMode ?? "none"} metadata={selected?.Metadata is not null}");
             if (selected is null || (selected.Metadata is null
                 && !PowerPointFormulaService.IsNativeOmmlReference(selected.ObjectId)))
                 return;
@@ -522,6 +483,42 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             _lastDoubleClickAt = now;
             BeginSession("edit", null, selected);
         });
+    }
+
+    private void OpenOleFormula(PowerPointFormulaService service, string? reference, bool isMathType)
+    {
+        try
+        {
+            var selected = service.ReadSelection();
+            var expectedMode = isMathType
+                ? FormulaOleContract.MathTypeOleMode
+                : FormulaOleContract.NativeOleMode;
+            if (selected.ObjectMode != expectedMode
+                || !string.Equals(selected.ObjectId, reference, StringComparison.Ordinal)
+                || !isMathType && selected.Metadata is null)
+            {
+                PowerPointDoubleClickHook.TraceMessage(
+                    $"claimed-target-changed expected={expectedMode} selected={selected.ObjectMode} sameObject={string.Equals(selected.ObjectId, reference, StringComparison.Ordinal)} metadata={selected.Metadata is not null}");
+                return;
+            }
+            var now = DateTimeOffset.UtcNow;
+            var identity = selected.FormulaId ?? selected.ObjectId!;
+            if (identity == _lastDoubleClickFormulaId
+                && now - _lastDoubleClickAt < TimeSpan.FromSeconds(1))
+                return;
+            _lastDoubleClickFormulaId = identity;
+            _lastDoubleClickAt = now;
+            PowerPointDoubleClickHook.TraceMessage($"open-editor mode={selected.ObjectMode}");
+            BeginSession("edit", null, selected);
+        }
+        catch (Exception error)
+        {
+            PowerPointDoubleClickHook.TraceMessage($"open-error {error.GetType().Name}: {error.Message}");
+            ReportError(OfficePluginLanguage.FormatOperationError(
+                error,
+                isMathType ? "无法打开 MathType 公式" : "无法打开 VisualTeX 公式",
+                isMathType ? "Unable to open the MathType equation" : "Unable to open the VisualTeX formula"));
+        }
     }
 
     private void BeginContextAwareOmmlSession()
@@ -607,7 +604,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (selection.Metadata is null
                 && !PowerPointFormulaService.IsNativeOmmlReference(selection.ObjectId)
                 && selection.ObjectMode != FormulaOleContract.MathTypeOleMode)
-                throw new InvalidOperationException("请先选择一个 VisualTeX、PowerPoint 原生或 MathType 公式。");
+                throw new InvalidOperationException("没有选中公式。请先选中一个 VisualTeX 公式、PowerPoint 原生公式或 MathType 公式。");
             BeginSession("edit", requestedObjectMode, selection, conversionOnly);
         }
         catch (Exception error)
@@ -701,7 +698,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             ? service.LoadMathTypeSelection(selection)
                             : service.PrepareManagedSelectionForEdit(selection)).ConfigureAwait(false);
             if (mode == "edit" && selection.Metadata is null)
-                throw new InvalidOperationException("请先选择一个 VisualTeX 或 MathType 公式。");
+                throw new InvalidOperationException("没有选中公式。请先选中一个 VisualTeX 公式、PowerPoint 原生公式或 MathType 公式。");
 
             // PowerPoint commonly leaves the just-inserted formula selected.
             // Do not treat that selection as initial content for New Formula;

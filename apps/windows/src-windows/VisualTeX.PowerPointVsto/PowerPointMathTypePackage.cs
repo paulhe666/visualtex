@@ -27,6 +27,8 @@ internal static class PowerPointMathTypePackage
         internal float HeightPt { get; set; }
     }
 
+    // Saving a copy is cheap even for large decks (116 MB of pictures: ~0.1 s):
+    // PowerPoint copies the stored parts. It also leaves the clipboard alone.
     internal static Equation Read(Presentation presentation, int slideId, int shapeId)
     {
         var path = Path.Combine(Path.GetTempPath(), $"visualtex-ppt-mathtype-{Guid.NewGuid():N}.pptx");

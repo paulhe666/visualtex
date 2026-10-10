@@ -4,133 +4,145 @@ using System.Runtime.InteropServices;
 
 namespace VisualTeX.PowerPointVsto;
 
+/// <summary>
+/// Watches left-button double-clicks on PowerPoint's own UI thread (WH_MOUSE).
+/// PowerPoint retrieves mouse messages in order, so when the second click is
+/// retrieved the first one has been fully processed, and the callback may ask
+/// PowerPoint what lies under the pointer. A desktop-wide low-level hook sees the
+/// second click earlier, on another thread, before PowerPoint has caught up, and
+/// cannot call Office at all.
+/// </summary>
 internal sealed class PowerPointDoubleClickHook : IDisposable
 {
-    private const int WhMouseLl = 14;
+    private const int WhMouse = 7;
+    private const int HcAction = 0;
     private const int WmLButtonDown = 0x0201;
-    private const int WmQuit = 0x0012;
+    private const int WmLButtonDblClk = 0x0203;
+    private const int WmNcLButtonDown = 0x00A1;
+    private const int WmNcLButtonDblClk = 0x00A3;
     private const int SmCxDoubleClick = 36;
     private const int SmCyDoubleClick = 37;
+    private const long TraceLimitBytes = 512 * 1024;
+    private static readonly object TraceGate = new();
+    private static readonly int OwnerProcessId = Process.GetCurrentProcess().Id;
     private readonly Func<int, int, bool> _claimSecondClick;
     private readonly Action<bool, int, int> _callbackAction;
-    private readonly Thread _thread;
-    private readonly ManualResetEventSlim _ready = new(false);
     private HookProc? _hookCallback;
     private IntPtr _hook;
-    private uint _threadId;
-    private long _lastClickTimestamp;
-    private int _lastClickX = int.MinValue;
-    private int _lastClickY = int.MinValue;
+    private uint _lastClickTime;
+    private bool _hasLastClick;
+    private int _lastClickX;
+    private int _lastClickY;
 
-    // claimSecondClick runs on the hook thread and must not call Office. When it
-    // returns true the second button-down is swallowed, so PowerPoint never
-    // raises its own double-click (which would activate the OLE server).
+    // Both callbacks run on the Office UI thread inside the hook. When
+    // claimSecondClick returns true the second click is swallowed, so PowerPoint
+    // never runs its own double-click (which would activate the OLE server).
     public PowerPointDoubleClickHook(
         Func<int, int, bool> claimSecondClick,
         Action<bool, int, int> callbackAction)
     {
         _claimSecondClick = claimSecondClick;
         _callbackAction = callbackAction;
-        _thread = new Thread(Run)
-        {
-            IsBackground = true,
-            Name = "VisualTeX PowerPoint Double Click",
-        };
     }
 
+    // Call on the Office UI thread.
     public void Start()
     {
-        _thread.Start();
-        if (!_ready.Wait(TimeSpan.FromSeconds(5)))
-            throw new TimeoutException("PowerPoint double-click hook did not start.");
+        if (_hook != IntPtr.Zero) return;
+        _hookCallback = HookCallback;
+        _hook = SetWindowsHookEx(WhMouse, _hookCallback, IntPtr.Zero, GetCurrentThreadId());
         if (_hook == IntPtr.Zero)
             throw new Win32Exception(
                 Marshal.GetLastWin32Error(),
                 "PowerPoint double-click hook could not be installed.");
+        TraceMessage($"hook-started handle=0x{_hook.ToInt64():X} thread={GetCurrentThreadId()}");
     }
 
-    private void Run()
+    // %LOCALAPPDATA%\VisualTeX\office\logs\powerpoint-double-click.log. Written
+    // on the thread pool so the UI thread never waits for the disk.
+    internal static void TraceMessage(string message)
     {
-        _threadId = GetCurrentThreadId();
-        _hookCallback = HookCallback;
-        _hook = SetWindowsHookEx(WhMouseLl, _hookCallback, IntPtr.Zero, 0);
-        _ready.Set();
-        if (_hook == IntPtr.Zero) return;
-        while (GetMessage(out var message, IntPtr.Zero, 0, 0) > 0)
+        var line = $"{DateTimeOffset.Now:O} pid={OwnerProcessId} {message}{Environment.NewLine}";
+        ThreadPool.QueueUserWorkItem(_ =>
         {
-            TranslateMessage(ref message);
-            DispatchMessage(ref message);
-        }
-        UnhookWindowsHookEx(_hook);
-        _hook = IntPtr.Zero;
+            try
+            {
+                var directory = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "VisualTeX", "office", "logs");
+                var path = Path.Combine(directory, "powerpoint-double-click.log");
+                lock (TraceGate)
+                {
+                    Directory.CreateDirectory(directory);
+                    var file = new FileInfo(path);
+                    if (file.Exists && file.Length > TraceLimitBytes)
+                    {
+                        var previous = path + ".1";
+                        if (File.Exists(previous)) File.Delete(previous);
+                        File.Move(path, previous);
+                    }
+                    File.AppendAllText(path, line);
+                }
+            }
+            catch { }
+        });
     }
 
     private IntPtr HookCallback(int code, IntPtr wParam, IntPtr lParam)
     {
-        if (code >= 0 && wParam.ToInt32() == WmLButtonDown && IsPowerPointForeground())
+        // HC_NOREMOVE is only a peek; act once, when the message is retrieved.
+        if (code != HcAction) return CallNextHookEx(_hook, code, wParam, lParam);
+        var message = wParam.ToInt32();
+        if (message is WmNcLButtonDown or WmNcLButtonDblClk)
         {
-            var input = Marshal.PtrToStructure<LowLevelMouseInput>(lParam);
-            var now = Stopwatch.GetTimestamp();
-            var previous = Interlocked.Read(ref _lastClickTimestamp);
-            var hasPreviousClick = previous != 0;
-            var elapsedMilliseconds = hasPreviousClick
-                ? (now - previous) * 1000d / Stopwatch.Frequency
-                : double.PositiveInfinity;
-            var withinTime = hasPreviousClick
-                && elapsedMilliseconds <= GetDoubleClickTime();
-            // The initial coordinates use int.MinValue sentinels. Never subtract
-            // them in 32-bit arithmetic on the first click: Math.Abs(int.MinValue)
-            // throws OverflowException and can terminate the low-level hook thread.
-            var withinX = hasPreviousClick
-                && Math.Abs((long)input.Pt.X - _lastClickX)
-                    <= Math.Max(1, GetSystemMetrics(SmCxDoubleClick));
-            var withinY = hasPreviousClick
-                && Math.Abs((long)input.Pt.Y - _lastClickY)
-                    <= Math.Max(1, GetSystemMetrics(SmCyDoubleClick));
+            _hasLastClick = false;
+            return CallNextHookEx(_hook, code, wParam, lParam);
+        }
+        if (message is not (WmLButtonDown or WmLButtonDblClk))
+            return CallNextHookEx(_hook, code, wParam, lParam);
 
+        var input = Marshal.PtrToStructure<MouseHookInput>(lParam);
+        var now = unchecked((uint)Environment.TickCount);
+        // Windows reports the second click as WM_LBUTTONDBLCLK only for windows
+        // whose class asks for it; otherwise compare with the previous click.
+        var isDouble = message == WmLButtonDblClk
+            || _hasLastClick
+                && unchecked(now - _lastClickTime) <= GetDoubleClickTime()
+                && Math.Abs((long)input.Pt.X - _lastClickX) <= Math.Max(1, GetSystemMetrics(SmCxDoubleClick))
+                && Math.Abs((long)input.Pt.Y - _lastClickY) <= Math.Max(1, GetSystemMetrics(SmCyDoubleClick));
+        if (!isDouble)
+        {
+            _hasLastClick = true;
+            _lastClickTime = now;
             _lastClickX = input.Pt.X;
             _lastClickY = input.Pt.Y;
-            Interlocked.Exchange(ref _lastClickTimestamp, now);
-            if (withinTime && withinX && withinY)
-            {
-                Interlocked.Exchange(ref _lastClickTimestamp, 0);
-                bool claimed;
-                try { claimed = _claimSecondClick(input.Pt.X, input.Pt.Y); }
-                catch { claimed = false; }
-                ThreadPool.QueueUserWorkItem(_ =>
-                {
-                    // Let PowerPoint update its ShapeRange before the add-in
-                    // reads the selected formula on the Office UI thread.
-                    Thread.Sleep(80);
-                    try { _callbackAction(claimed, input.Pt.X, input.Pt.Y); } catch { }
-                });
-                if (claimed) return new IntPtr(1);
-            }
+            return CallNextHookEx(_hook, code, wParam, lParam);
         }
-        return CallNextHookEx(_hook, code, wParam, lParam);
-    }
 
-    private static bool IsPowerPointForeground()
-    {
-        var window = GetForegroundWindow();
-        if (window == IntPtr.Zero) return false;
-        GetWindowThreadProcessId(window, out var processId);
-        if (processId == 0) return false;
-        try
+        _hasLastClick = false;
+        var started = Stopwatch.GetTimestamp();
+        bool claimed;
+        try { claimed = _claimSecondClick(input.Pt.X, input.Pt.Y); }
+        catch (Exception error)
         {
-            return string.Equals(
-                Process.GetProcessById((int)processId).ProcessName,
-                "POWERPNT",
-                StringComparison.OrdinalIgnoreCase);
+            TraceMessage($"claim-error {error.GetType().Name}: {error.Message}");
+            claimed = false;
         }
-        catch { return false; }
+        var elapsed = (Stopwatch.GetTimestamp() - started) * 1000d / Stopwatch.Frequency;
+        TraceMessage($"double-click x={input.Pt.X} y={input.Pt.Y} message=0x{message:X} claimed={claimed} decideMs={elapsed:0.###}");
+        try { _callbackAction(claimed, input.Pt.X, input.Pt.Y); }
+        catch (Exception error) { TraceMessage($"callback-error {error.GetType().Name}: {error.Message}"); }
+        return claimed ? new IntPtr(1) : CallNextHookEx(_hook, code, wParam, lParam);
     }
 
     public void Dispose()
     {
-        if (_threadId != 0) PostThreadMessage(_threadId, WmQuit, IntPtr.Zero, IntPtr.Zero);
-        _thread.Join(TimeSpan.FromSeconds(2));
-        _ready.Dispose();
+        if (_hook != IntPtr.Zero)
+        {
+            try { UnhookWindowsHookEx(_hook); } catch { }
+            _hook = IntPtr.Zero;
+        }
+        _hookCallback = null;
     }
 
     private delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
@@ -139,24 +151,12 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
     private struct Point { public int X; public int Y; }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct LowLevelMouseInput
+    private struct MouseHookInput
     {
         public Point Pt;
-        public uint MouseData;
-        public uint Flags;
-        public uint Time;
+        public IntPtr Window;
+        public uint HitTestCode;
         public UIntPtr ExtraInfo;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Message
-    {
-        public IntPtr HWnd;
-        public uint Value;
-        public UIntPtr WParam;
-        public IntPtr LParam;
-        public uint Time;
-        public Point Pt;
     }
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -165,22 +165,10 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
     private static extern bool UnhookWindowsHookEx(IntPtr hook);
     [DllImport("user32.dll")]
     private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")]
-    private static extern int GetMessage(out Message message, IntPtr window, uint min, uint max);
-    [DllImport("user32.dll")]
-    private static extern bool TranslateMessage(ref Message message);
-    [DllImport("user32.dll")]
-    private static extern IntPtr DispatchMessage(ref Message message);
-    [DllImport("user32.dll")]
-    private static extern bool PostThreadMessage(uint threadId, int message, IntPtr wParam, IntPtr lParam);
     [DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")]
     private static extern uint GetDoubleClickTime();
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 }

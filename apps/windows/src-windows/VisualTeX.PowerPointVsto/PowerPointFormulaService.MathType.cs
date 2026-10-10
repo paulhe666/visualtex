@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.Office.Core;
 using Microsoft.Office.Interop.PowerPoint;
 using VisualTeX.WindowsOffice.Contracts;
@@ -330,43 +331,55 @@ public sealed partial class PowerPointFormulaService
         }
     }
 
-    // Screen rectangle of the single selected MathType equation, for the
-    // low-level double-click hook, which must decide without calling Office.
-    // Runs on the Office UI thread when the selection changes (the first click).
-    public bool TryReadSelectedMathTypeScreenBounds(
-        Selection selection,
-        out string reference,
-        out int left,
-        out int top,
-        out int right,
-        out int bottom)
+    // The MathType equation or VisualTeX OLE formula under a screen point, for the
+    // double-click hook on the Office UI thread. Independent of the selection.
+    // DocumentWindow.RangeFromPoint never returns embedded OLE objects, so the
+    // topmost shape containing the point is found from the slide's shapes. Only
+    // the ProgID is checked: reading VisualTeX metadata would start the OLE
+    // server on every double-click.
+    public bool TryHitOleFormula(int screenX, int screenY, out string reference, out bool isMathType)
     {
         reference = string.Empty;
-        left = top = right = bottom = 0;
+        isMathType = false;
         DocumentWindow? window = null;
         View? view = null;
         Slide? slide = null;
-        ShapeRange? range = null;
-        Shape? shape = null;
+        Shapes? shapes = null;
         try
         {
-            if (selection.Type != PpSelectionType.ppSelectionShapes) return false;
-            range = selection.ShapeRange;
-            if (range.Count != 1) return false;
-            shape = range[1];
-            if (shape.Type != MsoShapeType.msoEmbeddedOLEObject || !IsMathTypeShape(shape)) return false;
+            if (_application.SlideShowWindows.Count > 0) return false;
             window = _application.ActiveWindow;
+            if (window is null) return false;
             view = window.View;
-            slide = (Slide)view.Slide;
-            reference = MathTypeReference(slide, shape);
-            left = window.PointsToScreenPixelsX(shape.Left);
-            top = window.PointsToScreenPixelsY(shape.Top);
-            right = window.PointsToScreenPixelsX(shape.Left + shape.Width);
-            bottom = window.PointsToScreenPixelsY(shape.Top + shape.Height);
-            return right > left && bottom > top;
+            try { slide = (Slide)view.Slide; }
+            catch { return false; }
+            shapes = slide.Shapes;
+            for (var index = shapes.Count; index >= 1; index--)
+            {
+                var shape = shapes[index];
+                try
+                {
+                    if (shape.Visible != MsoTriState.msoTrue) continue;
+                    var left = window.PointsToScreenPixelsX(shape.Left);
+                    var top = window.PointsToScreenPixelsY(shape.Top);
+                    var right = window.PointsToScreenPixelsX(shape.Left + shape.Width);
+                    var bottom = window.PointsToScreenPixelsY(shape.Top + shape.Height);
+                    if (screenX < left || screenX > right || screenY < top || screenY > bottom) continue;
+                    // The topmost shape under the pointer receives the click.
+                    if (shape.Type != MsoShapeType.msoEmbeddedOLEObject) return false;
+                    isMathType = IsMathTypeShape(shape);
+                    if (!isMathType && !IsNativeOle(shape)) return false;
+                    reference = isMathType ? MathTypeReference(slide, shape) : ManagedReference(slide, shape);
+                    // The second click normally follows a first click that selected it.
+                    try { shape.Select(MsoTriState.msoTrue); } catch { }
+                    return true;
+                }
+                finally { Release(shape); }
+            }
+            return false;
         }
         catch { return false; }
-        finally { Release(shape); Release(range); Release(slide); Release(view); Release(window); }
+        finally { Release(shapes); Release(slide); Release(view); Release(window); }
     }
 
     // Creating an embedded object from the clipboard (PasteSpecial) makes OLE load
@@ -411,9 +424,9 @@ public sealed partial class PowerPointFormulaService
             if (shapes.Count != 1) throw new InvalidDataException("The staged MathType slide is not a single equation.");
             shape = shapes[1];
             if (!IsMathTypeShape(shape)) throw new InvalidDataException("PowerPoint did not load the staged MathType equation.");
-            shape.Copy();
             targetShapes = target.Shapes;
-            return targetShapes.Paste();
+            using (PowerPointClipboard.Preserve())
+                return CopyShapeInto(shape, targetShapes);
         }
         finally
         {
@@ -428,6 +441,32 @@ public sealed partial class PowerPointFormulaService
             try { Directory.Delete(root, true); } catch { }
         }
     }
+
+    // Copy renders lazily: a clipboard listener (input method, chat or clipboard
+    // tool) that reads the new data makes PowerPoint render it on this thread and
+    // keeps the clipboard open until it has. Blocking here (Paste, Sleep) holds
+    // that listener, and Paste then reports an empty clipboard. Serve those
+    // requests before pasting and between retries. The caller preserves the
+    // user's clipboard around it (PowerPointClipboard.Preserve).
+    private static ShapeRange CopyShapeInto(Shape shape, Shapes target)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                shape.Copy();
+                PowerPointClipboard.ServeSentMessages(attempt == 1 ? 40 : 150 * attempt);
+                return target.Paste();
+            }
+            catch (COMException) when (attempt < 5) { }
+            catch (COMException error)
+            {
+                throw new InvalidOperationException(
+                    $"{error.Message} (clipboard held by: {PowerPointClipboard.Holder()})", error);
+            }
+        }
+    }
+
 
     private static void CopyMathTypeShapeTags(Shape source, Shape target)
     {

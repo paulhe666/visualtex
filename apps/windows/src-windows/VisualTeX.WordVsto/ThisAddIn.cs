@@ -583,7 +583,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         try
         {
             var current = _formulaService?.ReadSelectedFormulaFontSizeForCommand()
-                ?? throw new InvalidOperationException(T("请先选择一个 VisualTeX 公式。", "Select a VisualTeX formula first."));
+                ?? throw new InvalidOperationException(T("请先选择一个公式。", "Select a formula first."));
             ApplyFormulaFontSize(FormulaFontSize.PreviousPreset(current));
         }
         catch (Exception error)
@@ -599,7 +599,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         try
         {
             var current = _formulaService?.ReadSelectedFormulaFontSizeForCommand()
-                ?? throw new InvalidOperationException(T("请先选择一个 VisualTeX 公式。", "Select a VisualTeX formula first."));
+                ?? throw new InvalidOperationException(T("请先选择一个公式。", "Select a formula first."));
             ApplyFormulaFontSize(FormulaFontSize.NextPreset(current));
         }
         catch (Exception error)
@@ -2809,7 +2809,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (selection.ReadOnly)
                 throw new UnauthorizedAccessException("当前 Word 文档为只读状态。");
             if (mode == "edit" && selection.Metadata is null)
-                throw new InvalidOperationException("请先选择一个 VisualTeX 公式。");
+                throw new InvalidOperationException("没有选中公式。请先选中一个 VisualTeX 公式、Word 原生公式或 MathType 公式。");
 
             // A create command may be invoked while the previous formula is
             // still selected. Only edit commands are allowed to seed the new
