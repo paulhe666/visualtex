@@ -1554,6 +1554,13 @@ function onDelete(model, direction, atom, branch) {
       }
       return false;
     }
+    if (direction === "backward" && visualTexOwnsScriptStructure(atom) && (branch === "superscript" || branch === "subscript" && !atom.superscript)) {
+      // Backspace at the start of the operator's first limit must not leave
+      // the structure: a blank operator is removed, a filled one is selected.
+      if (visualTexScriptStructureIsBlank(atom)) return visualTexRemoveScriptStructure(model, atom);
+      model.setSelection(model.offsetOf(atom.leftSibling), model.offsetOf(atom));
+      return true;
+    }
     if (!atom.hasChildren && atom.type === "subsup") {
       const pos = direction === "forward" ? model.offsetOf(atom) : Math.max(0, model.offsetOf(atom) - 1);
       atom.parent.removeChild(atom);
@@ -1628,6 +1635,46 @@ function onDelete(model, direction, atom, branch) {
   }
   return false;
 }
+function visualTexOwnsScriptStructure(atom) {
+  if (!atom?.parent) return false;
+  if (atom.type === "extensible-symbol") return true;
+  return atom.type === "operator" && atom.subsupPlacement !== "adjacent";
+}
+function visualTexScriptBranchIsBlank(atom, branch) {
+  const atoms = atom.branch(branch);
+  // A template relation such as the "=" in \sum_{\placeholder{}=\placeholder{}}
+  // is not user content.
+  return !atoms || atoms.every((child) => child.type === "first" || child.type === "placeholder" || child.type === "mrel" && child.value === "=");
+}
+function visualTexScriptStructureIsBlank(atom) {
+  return visualTexScriptBranchIsBlank(atom, "subscript") && visualTexScriptBranchIsBlank(atom, "superscript");
+}
+function visualTexRemoveScriptStructure(model, atom) {
+  const parent = atom.parent;
+  const branch = atom.parentBranch;
+  const previous = atom.leftSibling;
+  const body = atom.rightSibling;
+  parent.removeChild(atom);
+  if (body?.type === "placeholder") parent.removeChild(body);
+  model.position = model.offsetOf(previous);
+  model.announce("delete", void 0, [atom]);
+  visualTexRestoreStructuralPlaceholder(model, parent, branch);
+  return true;
+}
+// The big operator (\sum, \int, \lim...) Backspace removes at once: one that
+// is selected as a whole, or a blank one whose limit holds the caret or a
+// selected limit placeholder.
+function visualTexScriptStructureToRemove(model) {
+  const [start, end] = range(model.selection);
+  const selected = model.at(end);
+  if (end !== start && visualTexOwnsScriptStructure(selected) && model.offsetOf(selected.leftSibling) === start) return selected;
+  if (end !== start && !(end === start + 1 && selected?.type === "placeholder")) return null;
+  const node = model.at(end);
+  const owner = node?.parent;
+  if (node?.parentBranch !== "subscript" && node?.parentBranch !== "superscript") return null;
+  if (!visualTexOwnsScriptStructure(owner) || !visualTexScriptStructureIsBlank(owner)) return null;
+  return owner;
+}
 function visualTexShouldRetainStructuralPlaceholder(parent, branch) {
   if (!parent || branch == null || parent.type === "root") return false;
   if (Array.isArray(branch)) return parent.type === "array";
@@ -1690,6 +1737,15 @@ function deleteBackward(model) {
         "backward",
       ),
     );
+  }
+  const visualTexStructure = visualTexScriptStructureToRemove(model);
+  if (visualTexStructure) {
+    const removed = model.deferNotifications(
+      { content: true, selection: true, type: "deleteContentBackward" },
+      () => visualTexRemoveScriptStructure(model, visualTexStructure),
+    );
+    if (model.mathfield.visualTexSourceWrapper) visualTexSyncSourceWrapper(model.mathfield);
+    return removed;
   }
   if (!model.selectionIsCollapsed)
     return deleteRange(model, range(model.selection), "deleteContentBackward");
