@@ -49,6 +49,9 @@ const MAX_MAIN_WINDOW_HEIGHT: f64 = 3000.0;
 static MAIN_WINDOW_SIZE_WRITE_GENERATION: AtomicU64 = AtomicU64::new(0);
 static MAIN_WINDOW_KEYPAD_MODE: AtomicBool = AtomicBool::new(false);
 
+#[cfg(target_os = "macos")]
+const FAST_OPEN_MAIN_THREAD_WAIT: std::time::Duration = std::time::Duration::from_millis(300);
+
 pub(crate) fn spawn_background_task(
     name: &'static str,
     task: impl FnOnce() + Send + 'static,
@@ -1989,9 +1992,14 @@ pub fn run() {
                     return;
                 }
                 #[cfg(target_os = "macos")]
-                match office::macos_offline::consume_fast_open_request(app) {
-                    Ok(true) => return,
-                    Ok(false) => {}
+                match office::macos_offline::consume_fast_open_request_off_main(
+                    app,
+                    FAST_OPEN_MAIN_THREAD_WAIT,
+                ) {
+                    Ok(Some(true)) => return,
+                    // A pending read means macOS is holding the Office sandbox
+                    // behind its privacy prompt; show the workspace meanwhile.
+                    Ok(Some(false)) | Ok(None) => {}
                     Err(error) => {
                         eprintln!("Unable to consume VisualTeX Office fast-open request: {error}");
                         return;
@@ -2221,9 +2229,17 @@ pub fn run() {
             // then asks LaunchServices to deliver this Reopen event to the resident
             // app. Consume that inbox before any startup/Dock reveal logic so the
             // editor can open without a Terminal prompt, custom URL, or /tmp socket.
-            match office::macos_offline::consume_fast_open_request(app) {
-                Ok(true) => return,
-                Ok(false) => {}
+            // The inbox read runs off the AppKit thread: macOS may hold it until
+            // the user answers the "access data from other apps" prompt.
+            match office::macos_offline::consume_fast_open_request_off_main(
+                app,
+                FAST_OPEN_MAIN_THREAD_WAIT,
+            ) {
+                Ok(Some(true)) => return,
+                Ok(Some(false)) => {}
+                // Still pending: the worker opens the editor once macOS allows
+                // the read, so do not reveal the workspace over it.
+                Ok(None) => return,
                 Err(error) => {
                     eprintln!("Unable to consume VisualTeX Office fast-open request on Reopen: {error}");
                     report_office_open_failure(app, &error);

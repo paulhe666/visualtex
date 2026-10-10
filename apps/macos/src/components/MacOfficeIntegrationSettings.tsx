@@ -55,10 +55,10 @@ async function invokeWithTimeout<T>(command: string, timeoutMs = 6_000): Promise
 }
 
 function officeErrorSummary(raw: string, isEn: boolean) {
-  if (/timed out|timeout/i.test(raw)) {
+  if (/timed out|timeout|temporarily unavailable/i.test(raw)) {
     return isEn
-      ? "Office status checking timed out. You can still uninstall the add-ins, or quit Office and refresh."
-      : "Office 状态读取超时。仍可直接卸载插件，或退出 Office 后重新刷新。";
+      ? "Office status checking timed out. If macOS asks whether VisualTeX may access data from other apps, click Allow; otherwise quit Office and refresh. You can still uninstall the add-ins."
+      : "Office 状态读取超时。如果 macOS 弹出「VisualTeX 想访问其他 App 的数据」，请点「允许」；否则退出 Office 后重新刷新。仍可直接卸载插件。";
   }
   if (/OfficePluginStatus|health file|invalid JSON|sourceRevision/i.test(raw)) {
     return isEn

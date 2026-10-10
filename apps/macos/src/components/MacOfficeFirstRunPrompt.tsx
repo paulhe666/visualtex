@@ -14,6 +14,8 @@ import type { Language } from "../stores/editorStore";
 import { PowerPointAddinGuide } from "./PowerPointAddinGuide";
 import {
   decodeMacOfflineOfficeStatus,
+  isMacOfficeStatusUnavailable,
+  macOfficeStatusUnavailableText,
   type MacOfflineOfficeStatus,
 } from "./macOfficeStatusValidation";
 
@@ -85,10 +87,8 @@ export function MacOfficeFirstRunPrompt({
             : "无法检测这台 Mac 上的原生 Office 加载项。",
         );
         setError(
-          raw === "Office status request timed out"
-            ? isEn
-              ? "Office status checking timed out. Quit Word and PowerPoint, then retry."
-              : "Office 状态读取超时。请退出 Word 和 PowerPoint 后重试。"
+          isMacOfficeStatusUnavailable(reason)
+            ? macOfficeStatusUnavailableText(isEn)
             : raw,
         );
       })
@@ -342,10 +342,8 @@ export function MacOfficeFirstRunPrompt({
                           : "无法刷新原生 Office 加载项状态。",
                       );
                       setError(
-                        raw === "Office status request timed out"
-                          ? isEn
-                            ? "Office status checking timed out. Quit Word and PowerPoint, then retry."
-                            : "Office 状态读取超时。请退出 Word 和 PowerPoint 后重试。"
+                        isMacOfficeStatusUnavailable(reason)
+                          ? macOfficeStatusUnavailableText(isEn)
                           : raw,
                       );
                     })
