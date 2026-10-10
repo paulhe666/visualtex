@@ -6,6 +6,36 @@ import {
   normalizeWordFormulaShortcutSettings,
   officeFormulaShortcutFromEvent,
 } from "../src/office/officeFormulaShortcuts";
+import {
+  describeWordShortcutBinding,
+  parseWordShortcutConflicts,
+  WORD_FREE_SHORTCUT_SUGGESTIONS,
+  wordDefaultBinding,
+} from "../src/office/wordShortcutConflicts";
+
+// Word keeps its own default bindings; the settings page must say so.
+assert.deepEqual(wordDefaultBinding("Ctrl+D"), { category: 1, name: "FormatFont" });
+assert.deepEqual(wordDefaultBinding("Ctrl+F"), { category: 1, name: "SmartFind" });
+assert.equal(wordDefaultBinding("Ctrl+Shift+7")?.category, 7);
+assert.equal(wordDefaultBinding("Ctrl+Alt+Q"), null);
+assert.equal(wordDefaultBinding(null), null);
+for (const suggestion of WORD_FREE_SHORTCUT_SUGGESTIONS) {
+  assert.equal(wordDefaultBinding(suggestion), null, `${suggestion} must be free in Word`);
+  assert.equal(normalizeOfficeFormulaShortcut(suggestion), suggestion);
+}
+assert.equal(
+  describeWordShortcutBinding({ category: 1, name: "FormatFont" }, false),
+  "Word 的「字体」",
+);
+assert.equal(
+  describeWordShortcutBinding({ category: 1, name: "FormatFont" }, true),
+  "the Word command “FormatFont”",
+);
+const reported = parseWordShortcutConflicts("Ctrl+Alt+Q=2:MTCommand_InsertInlineEqn;Ctrl+F7=0:;bad");
+assert.deepEqual(reported.get("Ctrl+Alt+Q"), { category: 2, name: "MTCommand_InsertInlineEqn" });
+assert.deepEqual(reported.get("Ctrl+F7"), { category: 0, name: "" });
+assert.equal(reported.size, 2);
+assert.equal(parseWordShortcutConflicts(undefined).size, 0);
 
 assert.equal(normalizeOfficeFormulaShortcut("Ctrl+Alt+I"), "Ctrl+Alt+I");
 assert.equal(normalizeOfficeFormulaShortcut("Alt+Shift+F12"), "Alt+Shift+F12");

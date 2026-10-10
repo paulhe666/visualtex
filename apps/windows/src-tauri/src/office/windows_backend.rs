@@ -23,6 +23,7 @@ const WORD_INLINE_FORMULA_SHORTCUT_VALUE: &str = "WordInlineFormulaShortcut";
 const WORD_INLINE_FORMULA_FORMAT_VALUE: &str = "WordInlineFormulaFormat";
 const WORD_DISPLAY_FORMULA_SHORTCUT_VALUE: &str = "WordDisplayFormulaShortcut";
 const WORD_DISPLAY_FORMULA_FORMAT_VALUE: &str = "WordDisplayFormulaFormat";
+const WORD_FORMULA_SHORTCUT_CONFLICTS_VALUE: &str = "WordFormulaShortcutConflicts";
 const POWERPOINT_SVG_FORMULA_SHORTCUT_VALUE: &str = "PowerPointSvgFormulaShortcut";
 const POWERPOINT_OLE_FORMULA_SHORTCUT_VALUE: &str = "PowerPointOleFormulaShortcut";
 const POWERPOINT_INLINE_OMML_FORMULA_SHORTCUT_VALUE: &str =
@@ -424,6 +425,10 @@ fn normalize_office_formula_shortcut(value: Option<&str>) -> Result<String, Stri
         return Err("Ctrl+Alt+O is reserved for VisualTeX Quick OCR".to_string());
     }
     Ok(normalized)
+}
+
+pub fn word_formula_shortcut_conflicts() -> String {
+    registry_string_value(OFFICE_MODE_KEY, WORD_FORMULA_SHORTCUT_CONFLICTS_VALUE).unwrap_or_default()
 }
 
 pub fn background_start_enabled() -> bool {

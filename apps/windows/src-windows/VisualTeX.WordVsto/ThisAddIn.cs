@@ -335,6 +335,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private WordDoubleClickHook? _doubleClickHook;
     private WordCopyPasteHook? _copyPasteHook;
     private OfficeFormulaShortcutKeyboardHook? _keyboardHook;
+    private readonly HashSet<OfficeFormulaShortcut> _reportedShortcutConflicts = new();
     private WordDeleteKeyHook? _deleteKeyHook;
     private readonly object _copyPasteGate = new();
     private WordFormulaService.WordFormulaCopySnapshot? _formulaCopySnapshot;
@@ -620,12 +621,45 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private bool OnWordFormulaShortcut(OfficeFormulaShortcut shortcut,
         OfficeFormulaShortcut? previous, OfficeFormulaShortcutCommand command)
     {
-        if (!WordFormulaShortcutPolicy.CanExecute(_application, shortcut, previous))
+        if (!WordFormulaShortcutPolicy.CanExecute(_application, shortcut, previous, out var conflict))
+        {
+            if (conflict.HasValue) ReportWordShortcutConflict(conflict.Value);
             return false;
+        }
+        WordShortcutConflictRecord.Clear(shortcut);
         return BeginSession("create",
             command.Kind == OfficeFormulaShortcutKind.Inline ? "inline" : "block",
             command.Format == OfficeFormulaShortcutFormat.Omml
                 ? FormulaOleContract.WordOmmlMode : null);
+    }
+
+    // Runs inside the keyboard hook: record for the settings page, and explain
+    // once per chord in this Word session through the (posted) status bar.
+    private void ReportWordShortcutConflict(WordShortcutConflict conflict)
+    {
+        WordShortcutConflictRecord.Write(conflict);
+        lock (_reportedShortcutConflicts)
+        {
+            if (!_reportedShortcutConflicts.Add(conflict.Shortcut)) return;
+        }
+        var chord = conflict.Shortcut.Format();
+        var name = conflict.Command;
+        var owner = conflict.Category switch
+        {
+            WdKeyCategory.wdKeyCategoryDisable => T("Word（此键在 Word 中被设为禁用）", "Word (the key is disabled in Word)"),
+            WdKeyCategory.wdKeyCategoryPrefix => T("Word 两段式快捷键的第一段", "the first stroke of a Word key sequence"),
+            WdKeyCategory.wdKeyCategoryMacro => T($"Word 宏「{name}」", $"the Word macro “{name}”"),
+            WdKeyCategory.wdKeyCategoryFont => T($"Word 字体「{name}」", $"the Word font “{name}”"),
+            WdKeyCategory.wdKeyCategoryStyle => T($"Word 样式「{name}」", $"the Word style “{name}”"),
+            WdKeyCategory.wdKeyCategoryAutoText => T($"Word 自动图文集「{name}」", $"the Word AutoText “{name}”"),
+            WdKeyCategory.wdKeyCategorySymbol => T($"Word 插入符号「{name}」", $"the Word symbol “{name}”"),
+            _ => string.IsNullOrWhiteSpace(name)
+                ? T("Word 命令", "a Word command")
+                : T($"Word 命令「{name}」", $"the Word command “{name}”"),
+        };
+        SetStatus(T(
+            $"VisualTeX：{chord} 已被 {owner}占用，已交给 Word 处理。请在 VisualTeX 设置里换一个未占用的快捷键。",
+            $"VisualTeX: {chord} is used by {owner}, so Word handled it. Choose an unused shortcut in VisualTeX settings."));
     }
     public void OnEditSelected(object control) => BeginSession("edit", null, null);
     public void OnConvertSelected(object control) =>

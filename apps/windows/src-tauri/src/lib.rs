@@ -4123,6 +4123,7 @@ pub fn run() {
             office::lifecycle::set_app_theme,
             office::lifecycle::set_app_editor_layout,
             office::lifecycle::set_app_editor_preferences,
+            office::lifecycle::get_word_formula_shortcut_conflicts,
             office::lifecycle::set_powerpoint_default_font_size,
             office::lifecycle::get_powerpoint_default_font_size,
             office::lifecycle::get_mathtype_double_click_edit_enabled,

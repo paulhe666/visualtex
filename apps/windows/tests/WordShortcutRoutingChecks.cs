@@ -88,14 +88,23 @@ public static class WordShortcutRoutingChecks
                 if(lookups==1 && code!=expectedCode) unexpected.Add("Incorrect Word key code: "+code);
                 return (Word.KeyBinding)new Double(typeof(Word.KeyBinding),delegate(MethodInfo m,object[] ignored){
                     if(m.Name=="get_KeyCategory")return category;
+                    if(m.Name=="get_Command")return "TestCommand";
                     unexpected.Add(m.Name);throw new InvalidOperationException(m.Name);
                 }).GetTransparentProxy();
             }
             unexpected.Add(method.Name);throw new InvalidOperationException(method.Name);
         }).GetTransparentProxy();
-        return (bool)policyType.GetMethod("CanExecuteInContext",BindingFlags.Static|BindingFlags.NonPublic).Invoke(null,
-            new[]{app,Shortcut(key,ctrl,alt,shift),previous,(object)focus});
+        lastConflict=null;
+        var arguments=new[]{app,Shortcut(key,ctrl,alt,shift),previous,(object)focus,null};
+        var withConflict=Array.Find(policyType.GetMethods(BindingFlags.Static|BindingFlags.NonPublic),
+            m=>m.Name=="CanExecuteInContext"&&m.GetParameters().Length==5);
+        var allowed=(bool)withConflict.Invoke(null,arguments);
+        lastConflict=arguments[4];
+        return allowed;
     }
+    private static object lastConflict;
+    private static object ConflictValue(string property)
+    { return lastConflict==null?null:lastConflict.GetType().GetProperty(property,BindingFlags.Instance|BindingFlags.NonPublic).GetValue(lastConflict); }
     private static void Check(List<Result> results,string name,bool condition)
     { results.Add(new Result{Case=name,Passed=condition,Detail=condition?"":"Boundary assertion failed"}); }
     public static Result[] Run(string assemblyPath)
@@ -113,7 +122,12 @@ public static class WordShortcutRoutingChecks
             if(category==Word.WdKeyCategory.wdKeyCategoryNil)continue;
             currentCategory=category;
             Check(results,"Word category "+category+" has priority",!Policy(0x44,true,false,false,true,null)&&unexpected.Count==0);
+            Check(results,"Word category "+category+" is reported",
+                Equals(ConflictValue("Category"),category)&&(string)ConflictValue("Command")=="TestCommand");
         }
+        currentCategory=Word.WdKeyCategory.wdKeyCategoryNil;
+        Check(results,"unassigned chord reports no conflict",Policy(0x44,true,false,false,true,null)&&lastConflict==null);
+        Check(results,"dialog focus reports no conflict",!Policy(0x44,true,false,false,false,null)&&lastConflict==null);
         currentCategory=Word.WdKeyCategory.wdKeyCategoryNil;
         previousCategory=Word.WdKeyCategory.wdKeyCategoryPrefix;
         Check(results,"second stroke after Word prefix passes through",!Policy(0x44,true,false,false,true,Shortcut(0x4B,true))&&lookups==2);

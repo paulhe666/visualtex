@@ -5,6 +5,7 @@ commands.allow = [
   "set_app_theme",
   "set_app_editor_layout",
   "set_app_editor_preferences",
+  "get_word_formula_shortcut_conflicts",
   "get_app_window_configuration",
   "apply_app_window_configuration",
   "set_main_window_keypad_mode",

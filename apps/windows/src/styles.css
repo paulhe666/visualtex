@@ -9216,6 +9216,12 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   font-size: 10px;
 }
 
+.office-formula-shortcut-copy .office-formula-shortcut-warning {
+  color: var(--warning);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
 .office-formula-shortcut-copy small,
 .office-formula-shortcut-help,
 .office-formula-format-select span {

@@ -1,9 +1,17 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Keyboard, X } from "lucide-react";
 import {
   officeFormulaShortcutFromEvent,
   type OfficeFormulaShortcutCapture,
 } from "../office/officeFormulaShortcuts";
+import {
+  describeWordShortcutBinding,
+  parseWordShortcutConflicts,
+  WORD_FREE_SHORTCUT_SUGGESTIONS,
+  wordDefaultBinding,
+  type WordShortcutBinding,
+} from "../office/wordShortcutConflicts";
 import { useEditorStore } from "../stores/editorStore";
 import type {
   PowerPointFormulaShortcutAction,
@@ -80,7 +88,30 @@ export function OfficeFormulaShortcutSettingsSection() {
   );
   const [capturing, setCapturing] = useState<ShortcutTarget | null>(null);
   const [message, setMessage] = useState("");
+  const [wordReportedConflicts, setWordReportedConflicts] = useState(
+    () => new Map<string, WordShortcutBinding>(),
+  );
   const isEn = language === "en";
+
+  // Conflicts only the running Word knows (custom keys, macros, MathType's
+  // template) are recorded by the add-in when it leaves a chord to Word.
+  const refreshWordReportedConflicts = useCallback(() => {
+    invoke<string>("get_word_formula_shortcut_conflicts")
+      .then((value) => setWordReportedConflicts(parseWordShortcutConflicts(value)))
+      .catch(() => setWordReportedConflicts(new Map()));
+  }, []);
+
+  useEffect(() => {
+    refreshWordReportedConflicts();
+    window.addEventListener("focus", refreshWordReportedConflicts);
+    return () => window.removeEventListener("focus", refreshWordReportedConflicts);
+  }, [refreshWordReportedConflicts]);
+
+  const wordConflictText = (shortcut: string | null) => {
+    const binding = wordDefaultBinding(shortcut)
+      ?? (shortcut ? wordReportedConflicts.get(shortcut) : undefined);
+    return binding ? describeWordShortcutBinding(binding, isEn) : null;
+  };
 
   const assignShortcut = (target: ShortcutTarget, shortcut: string | null) => {
     if (target.host === "word") {
@@ -128,6 +159,24 @@ export function OfficeFormulaShortcutSettingsSection() {
       }
       if (capturing.host === "word" && /^F(?:1[7-9]|2[0-4])$/.test(event.code)) {
         setMessage(isEn ? "Word supports F1–F16 here." : "这里的 Word 快捷键支持 F1–F16。");
+        return;
+      }
+      const wordBinding =
+        capturing.host === "word" ? wordDefaultBinding(result.shortcut) : null;
+      if (wordBinding) {
+        // Word always keeps its own bindings, so this chord could never fire.
+        const owner = describeWordShortcutBinding(wordBinding, isEn);
+        const suggestions = WORD_FREE_SHORTCUT_SUGGESTIONS.filter(
+          (candidate) =>
+            !Object.values(wordSettings).some((setting) => setting.shortcut === candidate),
+        )
+          .slice(0, 2)
+          .join(isEn ? " or " : " 或 ");
+        setMessage(
+          isEn
+            ? `${result.shortcut} is used by ${owner}. Word runs its own command first, so VisualTeX would never respond. Try ${suggestions}.`
+            : `${result.shortcut} 已被 ${owner}占用，Word 会优先执行自己的功能，VisualTeX 不会响应。请换一个，例如 ${suggestions}。`,
+        );
         return;
       }
       const moved =
@@ -234,6 +283,7 @@ export function OfficeFormulaShortcutSettingsSection() {
               const setting = wordSettings[action];
               const target = { host: "word", action } as const;
               const label = isEn ? labelEn : labelZh;
+              const conflict = wordConflictText(setting.shortcut);
               return (
                 <div
                   className="office-formula-shortcut-row"
@@ -242,6 +292,16 @@ export function OfficeFormulaShortcutSettingsSection() {
                 >
                   <div className="office-formula-shortcut-copy">
                     <strong>{label}</strong>
+                    {conflict && (
+                      <small
+                        className="office-formula-shortcut-warning"
+                        data-office-formula-shortcut-conflict
+                      >
+                        {isEn
+                          ? `Not active in Word: ${setting.shortcut} is used by ${conflict}.`
+                          : `在 Word 中不会生效：${setting.shortcut} 已被 ${conflict}占用。`}
+                      </small>
+                    )}
                   </div>
                   {shortcutControls(target, `Word ${label}`, setting.shortcut)}
                   <label className="office-formula-format-select">

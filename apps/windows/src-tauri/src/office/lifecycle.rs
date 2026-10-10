@@ -604,6 +604,20 @@ pub async fn regenerate_office_certificate(
     status_for(&companion).await
 }
 
+/// Word formula chords the Word add-in had to leave to Word's own bindings,
+/// as written by WordShortcutConflictRecord (e.g. "Ctrl+D=1:FormatFont").
+#[tauri::command]
+pub async fn get_word_formula_shortcut_conflicts() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        crate::office::windows_backend::word_formula_shortcut_conflicts()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        String::new()
+    }
+}
+
 #[tauri::command]
 pub fn get_office_platform_status(
     state: tauri::State<'_, OfficeCompanionState>,

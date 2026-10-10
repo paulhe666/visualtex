@@ -72,6 +72,9 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDocumentXml.cs" Link="WordDocumentXml.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOleObjectAccessor.cs" Link="WordOleObjectAccessor.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordBulkImportParser.cs" Link="WordBulkImportParser.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeFormulaShortcutKeyboardHook.cs" Link="OfficeFormulaShortcutKeyboardHook.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordFormulaShortcutPolicy.cs" Link="WordFormulaShortcutPolicy.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordShortcutConflictRecord.cs" Link="WordShortcutConflictRecord.cs" />
     <ProjectReference Include="..\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj" />
     <ProjectReference Include="..\VisualTeX.WindowsOleBridge\VisualTeX.WindowsOleBridge.csproj" />
   </ItemGroup>

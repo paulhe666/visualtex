@@ -77,6 +77,15 @@ internal readonly struct OfficeFormulaShortcut : IEquatable<OfficeFormulaShortcu
     public static bool operator !=(OfficeFormulaShortcut left, OfficeFormulaShortcut right) =>
         !left.Equals(right);
 
+    /// <summary>The canonical text the settings page and TryParse use, e.g. Ctrl+Alt+Shift+F7.</summary>
+    internal string Format()
+    {
+        var key = VirtualKey >= 0x70 && VirtualKey <= 0x87
+            ? "F" + (VirtualKey - 0x70 + 1)
+            : ((char)VirtualKey).ToString();
+        return (Ctrl ? "Ctrl+" : "") + (Alt ? "Alt+" : "") + (Shift ? "Shift+" : "") + key;
+    }
+
     internal static bool TryParse(string? value, out OfficeFormulaShortcut shortcut)
     {
         shortcut = default;

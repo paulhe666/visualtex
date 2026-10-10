@@ -6,6 +6,22 @@ using Application = Microsoft.Office.Interop.Word.Application;
 
 namespace VisualTeX.WordVsto;
 
+/// <summary>The Word binding that kept a configured formula chord.</summary>
+internal readonly struct WordShortcutConflict
+{
+    internal WordShortcutConflict(OfficeFormulaShortcut shortcut,
+        WdKeyCategory category, string? command)
+    {
+        Shortcut = shortcut;
+        Category = category;
+        Command = command;
+    }
+
+    internal OfficeFormulaShortcut Shortcut { get; }
+    internal WdKeyCategory Category { get; }
+    internal string? Command { get; }
+}
+
 /// <summary>
 /// Word owns existing commands, custom bindings (including disabled bindings),
 /// key-sequence prefixes, menus and non-document input. Never rewrites bindings.
@@ -16,12 +32,22 @@ internal static class WordFormulaShortcutPolicy
 {
     internal static bool CanExecute(Application? application,
         OfficeFormulaShortcut shortcut, OfficeFormulaShortcut? previous)
+        => CanExecute(application, shortcut, previous, out _);
+
+    /// <summary>
+    /// <paramref name="conflict"/> is set only when a Word binding of the chord
+    /// itself decided the result, not for focus, prefix or lookup failures.
+    /// </summary>
+    internal static bool CanExecute(Application? application,
+        OfficeFormulaShortcut shortcut, OfficeFormulaShortcut? previous,
+        out WordShortcutConflict? conflict)
     {
+        conflict = null;
         if (application is null) return false;
         try
         {
             return CanExecuteWithWordBindings(application, shortcut, previous,
-                HasDocumentInputFocus(application));
+                HasDocumentInputFocus(application), out conflict);
         }
         catch { return false; }
     }
@@ -29,8 +55,16 @@ internal static class WordFormulaShortcutPolicy
     internal static bool CanExecuteWithWordBindings(Application application,
         OfficeFormulaShortcut shortcut, OfficeFormulaShortcut? previous,
         bool documentInputFocused)
+        => CanExecuteWithWordBindings(application, shortcut, previous,
+            documentInputFocused, out _);
+
+    internal static bool CanExecuteWithWordBindings(Application application,
+        OfficeFormulaShortcut shortcut, OfficeFormulaShortcut? previous,
+        bool documentInputFocused, out WordShortcutConflict? conflict)
     {
-        if (!CanExecuteInContext(application, shortcut, previous, documentInputFocused))
+        conflict = null;
+        if (!CanExecuteInContext(application, shortcut, previous, documentInputFocused,
+                out conflict))
             return false;
         object? originalContext = null;
         var capturedContext = false;
@@ -40,9 +74,9 @@ internal static class WordFormulaShortcutPolicy
             originalContext = application.CustomizationContext;
             if (originalContext is null) return false;
             capturedContext = true;
-            allowed = CheckDocumentAndTemplateContexts(application, shortcut, previous);
+            allowed = CheckDocumentAndTemplateContexts(application, shortcut, previous, out conflict);
         }
-        catch { allowed = false; }
+        catch { allowed = false; conflict = null; }
         finally
         {
             if (capturedContext)
@@ -56,8 +90,10 @@ internal static class WordFormulaShortcutPolicy
     }
 
     private static bool CheckDocumentAndTemplateContexts(Application application,
-        OfficeFormulaShortcut shortcut, OfficeFormulaShortcut? previous)
+        OfficeFormulaShortcut shortcut, OfficeFormulaShortcut? previous,
+        out WordShortcutConflict? conflict)
     {
+        conflict = null;
         Document? document = null;
         Template? attached = null;
         Template? normal = null;
@@ -67,15 +103,15 @@ internal static class WordFormulaShortcutPolicy
             document = application.ActiveDocument;
             if (document is null) return false;
             application.CustomizationContext = document;
-            if (!CanExecuteInContext(application, shortcut, previous, true)) return false;
+            if (!CanExecuteInContext(application, shortcut, previous, true, out conflict)) return false;
             attached = document.get_AttachedTemplate() as Template;
             if (attached is null) return false;
             application.CustomizationContext = attached;
-            if (!CanExecuteInContext(application, shortcut, previous, true)) return false;
+            if (!CanExecuteInContext(application, shortcut, previous, true, out conflict)) return false;
             normal = application.NormalTemplate;
             if (normal is null) return false;
             application.CustomizationContext = normal;
-            if (!CanExecuteInContext(application, shortcut, previous, true)) return false;
+            if (!CanExecuteInContext(application, shortcut, previous, true, out conflict)) return false;
             templates = application.Templates;
             for (var index = 1; index <= templates.Count; index++)
             {
@@ -86,7 +122,7 @@ internal static class WordFormulaShortcutPolicy
                     template = templates[ref templateIndex];
                     if (template.Type != WdTemplateType.wdGlobalTemplate) continue;
                     application.CustomizationContext = template;
-                    if (!CanExecuteInContext(application, shortcut, previous, true)) return false;
+                    if (!CanExecuteInContext(application, shortcut, previous, true, out conflict)) return false;
                 }
                 finally { Release(template); }
             }
@@ -104,31 +140,42 @@ internal static class WordFormulaShortcutPolicy
     internal static bool CanExecuteInContext(Application application,
         OfficeFormulaShortcut shortcut, OfficeFormulaShortcut? previous,
         bool documentInputFocused)
+        => CanExecuteInContext(application, shortcut, previous, documentInputFocused, out _);
+
+    internal static bool CanExecuteInContext(Application application,
+        OfficeFormulaShortcut shortcut, OfficeFormulaShortcut? previous,
+        bool documentInputFocused, out WordShortcutConflict? conflict)
     {
+        conflict = null;
         // Alt-only gestures can be Word Ribbon/menu accelerators without a
         // FindKey entry. Leave them to Word rather than guessing from a key list.
         if (!documentInputFocused || !shortcut.Ctrl) return false;
         try
         {
-            if (!TryGetCategory(application, shortcut, out var category)
-                || category != WdKeyCategory.wdKeyCategoryNil)
+            if (!TryGetBinding(application, shortcut, out var category, out var command))
                 return false;
+            if (category != WdKeyCategory.wdKeyCategoryNil)
+            {
+                conflict = new WordShortcutConflict(shortcut, category, command);
+                return false;
+            }
             // Word supports two-stroke bindings. The first stroke may not be a
             // configured VisualTeX chord, so the hook remembers passed-through
             // nonmodifier input on the same focused document window.
             if (previous.HasValue
-                && (!TryGetCategory(application, previous.Value, out var previousCategory)
+                && (!TryGetBinding(application, previous.Value, out var previousCategory, out _)
                     || previousCategory == WdKeyCategory.wdKeyCategoryPrefix))
                 return false;
             return true;
         }
-        catch { return false; }
+        catch { conflict = null; return false; }
     }
 
-    private static bool TryGetCategory(Application application,
-        OfficeFormulaShortcut shortcut, out WdKeyCategory category)
+    private static bool TryGetBinding(Application application,
+        OfficeFormulaShortcut shortcut, out WdKeyCategory category, out string? command)
     {
         category = WdKeyCategory.wdKeyCategoryNil;
+        command = null;
         var key = shortcut.VirtualKey;
         // These are the WdKey values that match virtual-key values. Word's
         // documented function-key constants stop at F16.
@@ -149,6 +196,12 @@ internal static class WordFormulaShortcutPolicy
             binding = application.FindKey[code];
             if (binding is null) return false;
             category = binding.KeyCategory;
+            if (category != WdKeyCategory.wdKeyCategoryNil)
+            {
+                // The name only explains a conflict; the category alone decides.
+                try { command = binding.Command; }
+                catch { command = null; }
+            }
             return true;
         }
         finally { Release(binding); }
