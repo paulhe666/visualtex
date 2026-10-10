@@ -214,3 +214,17 @@
 .copy-menu {
   transform-origin: top right;
 }
+
+/* ---- Width-dependent scroll containers ----------------------------------
+   Tile previews scale to the list's width and custom tile rows are packed by
+   it, so the list's height depends on its width. If a classic (non-overlay)
+   scroll bar then appears or disappears, the width changes and the layout can
+   flip back and forth. scrollbar-gutter keeps the width fixed where WebKit
+   supports it; older macOS WebKit (the app supports macOS 11) gets a permanent
+   scroll track instead. */
+@supports not (scrollbar-gutter: stable) {
+  .formula-tile-list,
+  .classic-tile-toolbar .formula-tile-list {
+    overflow-y: scroll;
+  }
+}

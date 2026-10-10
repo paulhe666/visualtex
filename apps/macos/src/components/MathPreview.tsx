@@ -3,6 +3,7 @@ import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompati
 import { inspectMathLiveSourceSafety } from "../editor/mathLiveSourceSafety";
 import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
+import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 
 interface MathPreviewProps {
   latex: string;
@@ -161,10 +162,21 @@ function MathPreviewComponent({
     }
 
     let animationFrame = 0;
+    // Fit-to-width previews change their own height, which can toggle a
+    // tile list's scroll bar and hand the width back; the guard settles that
+    // loop on the narrower width instead of re-scaling every frame.
+    const stableHostWidth = createLayoutOscillationGuard();
+    let lastInputs = "";
     const measure = () => {
       animationFrame = 0;
       const naturalWidth = Math.max(1, content.offsetWidth);
       const naturalHeight = Math.max(1, content.offsetHeight);
+      const hostWidth = stableHostWidth(host.clientWidth);
+      // Writing the fluid row height resizes the host and re-triggers the
+      // observer; with unchanged inputs there is nothing to recompute.
+      const inputs = `${hostWidth}|${fluidHeight ? "" : host.clientHeight}|${naturalWidth}|${naturalHeight}`;
+      if (inputs === lastInputs) return;
+      lastInputs = inputs;
       onMeasureRef.current?.({ width: naturalWidth, height: naturalHeight });
       if (intrinsicWidth) {
         const desiredWidth = Math.min(
@@ -187,7 +199,7 @@ function MathPreviewComponent({
         return;
       }
 
-      const availableWidth = Math.max(1, host.clientWidth * fitInsetRatio);
+      const availableWidth = Math.max(1, hostWidth * fitInsetRatio);
       let scale = 1;
 
       if (fluidHeight) {
