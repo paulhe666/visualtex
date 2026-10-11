@@ -51,6 +51,7 @@
     "test:native-suggestion-previews": "npm run build:desktop && node scripts/native_suggestion_preview_regression.mjs --audit",
     "test:word-omml": "node scripts/word_omml_regression.mjs",
     "test:word-image-fonts": "tsx scripts/word_image_font_regression.mjs",
+    "test:word-idle": "node scripts/word_idle_noninterference_regression.mjs",
     "verify:ocr-offline": "python3 scripts/verify_offline_ocr_bundle.py",
     "verify:ocr-offline:full": "python3 scripts/verify_offline_ocr_bundle.py --full",
     "verify:ocr-model-packs": "python3 scripts/verify_offline_ocr_bundle.py --model-packs dist-ocr/model-packs/macos-arm64",
