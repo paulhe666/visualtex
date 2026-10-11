@@ -460,12 +460,34 @@ async function main() {
     };
     const tileWidth = () => client.evaluate("Math.round(document.querySelector('.classic-tile-toolbar')?.getBoundingClientRect().width ?? 0)");
 
+    const priorityReport = `(() => {
+      const header = document.querySelector('.app-header');
+      const shown = (element) => { if (!element) return false; const box = element.getBoundingClientRect(); return box.width > 1 && box.height > 1 && getComputedStyle(element).visibility !== 'hidden'; };
+      const items = [...header.querySelectorAll('button, input, label.silent-ocr-toggle, label.canvas-ocr-model')].filter((element) => !element.closest('[role=menu], .app-menu-popover') && shown(element));
+      const title = header.querySelector('.document-title-area'); const actions = header.querySelector('.header-actions').getBoundingClientRect();
+      const leftEnd = shown(title) ? title.getBoundingClientRect().right : header.querySelector('.brand-area').getBoundingClientRect().right;
+      return { level: (header.dataset.vtCollapse || '').split(' ').filter(Boolean).length, free: Math.round(actions.left - leftEnd),
+        right: Math.max(...items.map((element) => element.getBoundingClientRect().right)),
+        settings: shown(header.querySelector('.settings-toggle')), format: shown(header.querySelector('.code-format-primary svg')) };
+    })()`;
+    const standardReport = `(() => {
+      const box = (selector) => document.querySelector(selector)?.getBoundingClientRect();
+      const paneHeader = box('.workspace > .editor-pane > .editor-pane-header');
+      const tiles = box('.workspace > .formula-toolbar'); const editor = box('.editor-pane-scroll'); const bar = box('.standard-source-bar'); const surface = box('.editor-pane-scroll > .editor-surface');
+      return { paneHeaderHeight: Math.round(paneHeader?.height ?? 0), editorTop: Math.round(editor.top - box('.app-header').bottom),
+        formattingInBar: Boolean(document.querySelector('.standard-source-bar .formula-alignment-controls')),
+        toolsInHeader: Boolean(document.querySelector('.app-header .canvas-controls')),
+        tilesBesideEditor: Boolean(tiles) && tiles.right <= editor.left + 1 && tiles.right <= bar.left + 1,
+        resizer: Boolean(document.querySelector('[data-standard-panel-resizer]')),
+        inset: Math.round(surface.left - editor.left), editorWidth: Math.round(editor.width) };
+    })()`;
+
     if (only !== "office") {
       // ---- Desktop window ----
       distRoot = desktopDist;
       await viewport(1280, 820, 0);
       const { identifier: desktopScript } = await client.send("Page.addScriptToEvaluateOnNewDocument", {
-        source: `try { if (location.pathname === '/') { localStorage.setItem('visualtex-editor', JSON.stringify({ state: { editorLayout: 'classic', language: 'zh', sidebarOpen: true, lines: [{ id: 'layout', latex: 'x^2+y^2=z^2' }], activeLineId: 'layout' }, version: 0 })); localStorage.setItem('visualtex-onboarding-completed', 'true'); } } catch {}`,
+        source: `try { if (location.pathname === '/') { localStorage.setItem('visualtex-editor', JSON.stringify({ state: { editorLayout: sessionStorage.getItem('vt-test-layout') || 'classic', language: 'zh', sidebarOpen: true, lines: [{ id: 'layout', latex: 'x^2+y^2=z^2' }], activeLineId: 'layout' }, version: 0 })); localStorage.setItem('visualtex-onboarding-completed', 'true'); } } catch {}`,
       });
       await client.send("Page.navigate", { url: baseUrl + "/" });
       await waitFor("Boolean(document.querySelector('.workspace.is-classic-layout .classic-bottom-tabs') && document.querySelector('math-field'))", "desktop classic dock");
@@ -486,10 +508,95 @@ async function main() {
         check(dock.overlaps.length === 0, `desktop ${width}px: dock buttons overlap: ${dock.overlaps.join(", ")}`);
         check(dock.scaled.length === 0, `desktop ${width}px: dock content shrunk by transform: ${dock.scaled.join(", ")}`);
         check(dock.unreachable.length === 0, `desktop ${width}px: dock buttons cut off: ${dock.unreachable.join(", ")}`);
-        check(dock.labelVisible === dock.dockWidth >= 940, `desktop ${width}px: tab labels should show only on a dock of 940px or more (dock ${dock.dockWidth}px)`);
+        // Rows collapse by priority and only when they are full (runtime/priorityCollapse):
+        // Settings and the LaTeX format selector never leave the header, nothing is hidden
+        // while the title's worth of room is still free, and nothing leaves the window.
+        const priority = await client.evaluate(priorityReport);
+        row.priority = priority;
+        check(priority.settings && priority.format, `desktop ${width}px: Settings and the LaTeX format selector must stay visible`);
+        check(priority.right <= width + 0.5, `desktop ${width}px: header content leaves the window (${priority.right})`);
+        if (priority.level > 0) check(priority.free < 240, `desktop ${width}px: header hides items with ${priority.free}px free`);
+        if (width >= 1000) check(dock.labelVisible, `desktop ${width}px: tab labels hidden although the dock has room (dock ${dock.dockWidth}px)`);
         if (row.rest) check(stable(row.rest), `desktop ${width}px: layout still changing at rest ${JSON.stringify(row.rest)}`);
         if ([1280, 1000, 900, 800, 700, 600, 520].includes(width)) await shot(`desktop-${width}`);
       }
+
+      // ---- Standard layout: one row above the formula area, formatting in the
+      // source bar, the tools/tiles panel beside the editor and resizable.
+      await client.evaluate("sessionStorage.setItem('vt-test-layout', 'standard'), true");
+      await client.send("Page.reload");
+      await waitFor("Boolean(document.querySelector('.workspace.is-standard-layout .standard-source-bar') && document.querySelector('math-field'))", "desktop standard layout");
+      await client.evaluate("document.querySelectorAll('.onboarding-backdrop').forEach((node) => node.remove()), true");
+      report.desktop.standard = [];
+      for (const width of [1280, 1000, 800, 640, 500]) {
+        await viewport(width, 820);
+        await client.evaluate("document.querySelector('.workspace.has-sidebar') || document.querySelector('.sidebar-toggle').click(), true");
+        await sleep(300);
+        const standard = await client.evaluate(standardReport);
+        report.desktop.standard.push({ width, ...standard });
+        check(standard.paneHeaderHeight === 0 && standard.editorTop === 0, `standard ${width}px: more than one row above the formula area ${JSON.stringify(standard)}`);
+        check(standard.formattingInBar && standard.toolsInHeader, `standard ${width}px: formatting must be in the source bar and tools in the header ${JSON.stringify(standard)}`);
+        check(standard.tilesBesideEditor && standard.resizer, `standard ${width}px: the tile panel must sit beside the editor with a resizer ${JSON.stringify(standard)}`);
+        check(standard.inset === 0, `standard ${width}px: gap of ${standard.inset}px between the formula area and the pane edge`);
+        check(standard.editorWidth >= 240, `standard ${width}px: editor only ${standard.editorWidth}px wide`);
+        const priority = await client.evaluate(priorityReport);
+        check(priority.settings && priority.format, `standard ${width}px: Settings and the LaTeX format selector must stay visible`);
+        if ([1280, 800, 500].includes(width)) await shot(`desktop-standard-${width}`);
+      }
+      // ---- Common formula tiles: resize the panel, add from the library,
+      // remove again, and every library formula must render.
+      await viewport(1280, 820);
+      await client.evaluate("document.querySelector('.workspace.has-sidebar') || document.querySelector('.sidebar-toggle').click(), true");
+      const tiles = await client.evaluate(`(async () => {
+        const wait = (ms) => new Promise((done) => setTimeout(done, ms));
+        const panelWidth = () => Math.round(document.querySelector('.workspace > .formula-toolbar').getBoundingClientRect().width);
+        const before = panelWidth();
+        const handle = document.querySelector('[data-standard-panel-resizer]');
+        handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        await wait(200);
+        const widened = panelWidth();
+        handle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        await wait(200);
+        const reset = panelWidth();
+        [...document.querySelectorAll('.formula-toolbar-view-tabs button')].find((button) => /磁贴|Tiles/.test(button.textContent))?.click();
+        await wait(300);
+        document.querySelector('[data-tile-category="common"]')?.click();
+        await wait(400);
+        const common = () => [...document.querySelectorAll('.formula-tile-list.is-common [data-formula-tile-id]')].map((button) => button.dataset.formulaTileId);
+        const initial = common();
+        document.querySelector('[data-formula-tile-add]').click();
+        await wait(500);
+        const problems = []; let total = 0;
+        for (const subject of [...document.querySelectorAll('[data-formula-tile-subject]')]) {
+          subject.click(); await wait(120);
+          for (const group of [...document.querySelectorAll('[data-formula-tile-group]')].map((button) => button.dataset.formulaTileGroup)) {
+            document.querySelector('[data-formula-tile-group="' + group + '"]').click();
+            await wait(350);
+            for (const item of document.querySelectorAll('[data-formula-library-tile]')) {
+              total += 1;
+              const preview = item.querySelector('.math-preview');
+              const inner = preview?.firstElementChild?.getBoundingClientRect();
+              if (!preview || preview.querySelector('.ML__error') || !(preview.textContent || '').length || !inner || inner.width < 6) problems.push(group + '/' + item.dataset.formulaLibraryTile);
+            }
+          }
+        }
+        document.querySelector('[data-formula-tile-subject="physics"]').click(); await wait(150);
+        document.querySelector('[data-formula-library-tile="newton-second-law"]').click(); await wait(150);
+        document.querySelector('[data-formula-tile-library] .dialog-header .icon-button').click(); await wait(300);
+        const added = common();
+        document.querySelector('[data-formula-tile-remove="newton-second-law"]').click(); await wait(200);
+        return { before, widened, reset, total, problems, initial: initial.length, added: added.includes('newton-second-law'), removed: !common().includes('newton-second-law'), dialogClosed: !document.querySelector('[data-formula-tile-library]') };
+      })()`);
+      report.desktop.tileLibrary = tiles;
+      check(tiles.widened === tiles.before + 16 && tiles.reset === 252, `standard panel resizer: ${tiles.before} -> ${tiles.widened} -> ${tiles.reset}`);
+      check(tiles.total >= 700 && tiles.problems.length === 0, `formula library: ${tiles.total} tiles, not rendered: ${tiles.problems.join(", ")}`);
+      check(tiles.initial === 10 && tiles.added && tiles.removed && tiles.dialogClosed, `common tiles add/remove ${JSON.stringify({ ...tiles, problems: undefined })}`);
+
+      await client.evaluate("sessionStorage.removeItem('vt-test-layout'), true");
+      await client.send("Page.reload");
+      await waitFor("Boolean(document.querySelector('.workspace.is-classic-layout .classic-bottom-tabs') && document.querySelector('math-field'))", "desktop classic dock");
+      await client.evaluate("document.querySelectorAll('.onboarding-backdrop').forEach((node) => node.remove()), true");
+      await sleep(400);
 
       // Menus: the edges must not move once the menu is on screen, also while
       // the pointer moves over its items (hover transitions).

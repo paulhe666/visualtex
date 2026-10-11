@@ -106,6 +106,7 @@ import {
   type UpdateCheckResult,
 } from "./update/updateService";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
+import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollapse";
 import {
   captureQuickOcrScreenshot,
   configureSilentOcr,
@@ -129,6 +130,7 @@ interface InlineOcrState {
 }
 
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
+const APP_HEADER_COLLAPSE_LEVELS = 8;
 
 function documentContentKey() {
   const { title, lines } = useEditorStore.getState();
@@ -169,6 +171,7 @@ function App() {
   const [editorHistoryBusy, setEditorHistoryBusy] = useState(false);
   const [desktopTopToolsMount, setDesktopTopToolsMount] =
     useState<HTMLDivElement | null>(null);
+  const [appHeader, setAppHeader] = useState<HTMLElement | null>(null);
   const [sourceDocumentRevision, setSourceDocumentRevision] = useState(0);
   const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
     const stored = readLocalStorage(OCR_MODEL_STORAGE_KEY);
@@ -426,6 +429,16 @@ function App() {
   useEffect(() => {
     document.documentElement.lang = isEn ? "en" : "zh-CN";
   }, [isEn]);
+
+  // The header hides its least important items first, and only when the row
+  // has no room left (levels are listed in styles-macos-responsive.css).
+  useEffect(() => {
+    if (!appHeader) return;
+    return trackPriorityCollapse(appHeader, {
+      maxLevel: APP_HEADER_COLLAPSE_LEVELS,
+      fits: childrenFitRow,
+    });
+  }, [appHeader]);
 
   useEffect(() => {
     const compactWindow = window.matchMedia("(max-width: 1040px)");
@@ -1563,9 +1576,11 @@ function App() {
 
       {!keypadMode && (
       <header
+        ref={setAppHeader}
         className={
           "app-header" + (menuOpen || copyMenuOpen ? " has-open-menu" : "")
         }
+        data-vt-app-header
       >
         <div className="brand-area">
           <button

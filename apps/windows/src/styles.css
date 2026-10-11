@@ -3295,18 +3295,8 @@ button:disabled {
     width: 140px;
   }
 
-  .action-group:first-of-type,
-  .header-actions > .icon-button:nth-of-type(1),
-  .header-actions > .icon-button:nth-of-type(2) {
-    display: none;
-  }
-
   .copy-primary {
     padding: 0 10px;
-  }
-
-  .copy-primary svg {
-    display: none;
   }
 
   .template-button {
@@ -4061,10 +4051,6 @@ button:disabled {
     grid-template-columns: minmax(150px, 1fr) minmax(120px, auto) minmax(330px, 1fr);
   }
 
-  .file-actions {
-    display: none;
-  }
-
   .workspace.has-sidebar {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -4091,8 +4077,7 @@ button:disabled {
     padding: 0 8px;
   }
 
-  .brand-copy,
-  .workspace-action {
+  .brand-copy {
     display: none;
   }
 
@@ -4109,13 +4094,6 @@ button:disabled {
   }
 
   .source-toggle-row > span {
-    display: none;
-  }
-}
-
-@media (max-width: 760px) {
-  .edit-actions,
-  .settings-toggle {
     display: none;
   }
 }

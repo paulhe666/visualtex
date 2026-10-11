@@ -8,6 +8,7 @@ import "./styles-editor-parity.css";
 import "./styles-latest-macos-ui.css";
 import "./styles-windows-shared-latest.css";
 import "./styles-custom-symbol-designer.css";
+import "./styles-formula-tiles.css";
 import "./styles-windows-responsive.css";
 
 installBrowserCompatibility();
