@@ -46,10 +46,11 @@ pub(crate) fn fraction_target(scene:&LayoutSnapshot, from:Position, down:bool, d
             if let Some(position)=grid_target(scene,parent,index,down,desired_x){return Some(position);}
             continue;
         }
-        if !matches!(scene.regions[parent].role.as_str(),"fraction"|"largeOperator"|"generalOperator"|"customSymbol") {continue;}
+        if !matches!(scene.regions[parent].role.as_str(),"fraction"|"largeOperator"|"generalOperator"|"customSymbol"|"scripts"|"annotation") {continue;}
         let end=subtree_end(scene,parent);
         let direct:Vec<_>=(parent+1..end).filter(|i|scene.regions[*i].depth==scene.regions[parent].depth+1).collect();
-        let general=scene.regions[parent].role=="generalOperator";
+        // Base/superscript/subscript and label/base move by actual baseline.
+        let general=matches!(scene.regions[parent].role.as_str(),"generalOperator"|"scripts"|"annotation");
         if (general && direct.len()<2) || (!general && direct.len()!=2) {continue;}
         // Use the children's actual baselines so authored source order never
         // decides the direction of navigation. This also covers side scripts.
@@ -78,4 +79,33 @@ pub(crate) fn fraction_target(scene:&LayoutSnapshot, from:Position, down:bool, d
         if let Some(candidate)=candidate {return Some(candidate.position);}
     }
     None
+}
+
+/// The innermost contained line (grid row) holding a caret, if any.
+pub(crate) fn line_of(scene:&LayoutSnapshot, from:Position)->Option<(usize,usize)> {
+    let index=scene.regions.iter().position(|r|r.node_id==node_id(from))?;
+    let mut best=None;
+    for (i,region) in scene.regions.iter().enumerate().take(index+1) {
+        if region.role=="gridRow" && index<subtree_end(scene,i) { best=Some((i,subtree_end(scene,i))); }
+    }
+    best
+}
+/// Node ids drawn inside a region subtree.
+pub(crate) fn subtree_ids(scene:&LayoutSnapshot, start:usize, end:usize)->BTreeSet<NodeId> {
+    scene.regions[start..end].iter().map(|r|r.node_id).collect()
+}
+
+/// The grid row a point falls into: the deepest grid whose box contains the
+/// point, then its row spanning that y (or the vertically nearest row).
+pub(crate) fn line_at(scene:&LayoutSnapshot, x:f64, y:f64)->Option<BTreeSet<NodeId>> {
+    let grid=(0..scene.regions.len()).filter(|&i|scene.regions[i].role=="grid"&&scene.regions[i].logical.contains(x,y))
+        .max_by_key(|&i|scene.regions[i].depth)?;
+    let end=subtree_end(scene,grid);let depth=scene.regions[grid].depth;
+    let row=(grid+1..end).filter(|&i|scene.regions[i].depth==depth+1&&scene.regions[i].role=="gridRow")
+        .min_by(|&a,&b|{
+            let distance=|i:usize|{let r=scene.regions[i].logical;if y<r.y_min{r.y_min-y}else if y>r.y_max{y-r.y_max}else{0.0}};
+            distance(a).total_cmp(&distance(b))
+        })?;
+    let ids=subtree_ids(scene,row,subtree_end(scene,row));
+    scene.carets.iter().any(|c|ids.contains(&c.position.node_id())).then_some(ids)
 }

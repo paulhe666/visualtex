@@ -166,7 +166,8 @@ fn fingerprint(node:&Node,out:&mut BTreeMap<NodeId,[u8;32]>,depth:usize)->Engine
             if let Some(spec)=array_spec {hash.update(spec.source.as_bytes());hash.update([0]);for alignment in &spec.alignments{hash.update([*alignment as u8]);}for rule in &spec.vertical_rules{hash.update(rule.to_le_bytes());}}
         },
         NodeKind::GridRow {cells,..}=>{hash.update([20]);hash.update(cells.len().to_le_bytes());},
-        NodeKind::Symbol {value,class,..}=>{hash.update([1,*class as u8]);hash.update(value.as_bytes());},
+        NodeKind::Symbol {value,class,command}=>{hash.update([1,*class as u8]);hash.update(value.as_bytes());hash.update([0]);if let Some(command)=command {hash.update(command.as_bytes());}},
+        NodeKind::StyleChange {command,..}=>{hash.update([26]);hash.update(command.as_bytes());},
         NodeKind::Text {command,text,..}=>{hash.update([2]);hash.update(command.as_bytes());hash.update([0]);hash.update(text.as_bytes());},
         NodeKind::Fraction {command,..}=>{hash.update([3]);hash.update(command.as_bytes());},
         NodeKind::Scripts {slots,..}=>{hash.update([4]);for s in slots {hash.update([s.script as u8]);}},

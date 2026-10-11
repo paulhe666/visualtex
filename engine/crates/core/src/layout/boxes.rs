@@ -162,8 +162,8 @@ impl Builder<'_> {
         initial:Option<AtomClass>)->EngineResult<Fragment>{
         if depth>MAX_DEPTH {return Err(EngineError::new(ErrorCode::ResourceLimit,"Layout depth budget exceeded"));}
         let NodeKind::Row{entries,..}=&node.kind else{return Err(EngineError::new(ErrorCode::InvalidInput,"Math row requires editable Row"));};
-        let scale=style.scale(self.math);let mut f=Fragment::new(node.id,if depth>0&&entries.is_empty(){"emptyRow"}else{"row"});
-        let mut classes:Vec<_>=entries.iter().map(|e|if matches!(e.node.kind,NodeKind::Space{..}|NodeKind::ColorChange{..}){None}else{Some(atom_class(&e.node))}).collect();
+        let mut style=style;let mut scale=style.scale(self.math);let mut f=Fragment::new(node.id,if depth>0&&entries.is_empty(){"emptyRow"}else{"row"});
+        let mut classes:Vec<_>=entries.iter().map(|e|if matches!(e.node.kind,NodeKind::Space{..}|NodeKind::ColorChange{..}|NodeKind::StyleChange{..}){None}else{Some(atom_class(&e.node))}).collect();
         let atoms:Vec<_>=classes.iter().enumerate().filter_map(|(i,c)|c.map(|_|i)).collect();
         for (j,&i) in atoms.iter().enumerate(){if classes[i]==Some(AtomClass::Binary){
             let left=if j==0{initial}else{classes[atoms[j-1]]};
@@ -171,11 +171,18 @@ impl Builder<'_> {
             if left.is_none_or(|c|matches!(c,AtomClass::Binary|AtomClass::Relation|AtomClass::Open|AtomClass::Punctuation|AtomClass::Operator))
                 ||right.is_none_or(|c|matches!(c,AtomClass::Relation|AtomClass::Close|AtomClass::Punctuation)){classes[i]=Some(AtomClass::Ordinary);}
         }}
-        let mut previous=initial;let top=-self.math_font.ascent*scale;let bottom=self.math_font.descent*scale;
+        let mut previous=initial;let mut top=-self.math_font.ascent*scale;let mut bottom=self.math_font.descent*scale;
         f.carets.push((Position::row(node.id,0),0.0,top,bottom));
         for (i,e) in entries.iter().enumerate(){
+            // A style declaration applies to the following siblings only.
+            if let NodeKind::StyleChange{style:next,..}=&e.node.kind {
+                style=*next;scale=style.scale(self.math);
+                top=-self.math_font.ascent*scale;bottom=self.math_font.descent*scale;
+            }
             if let Some(current)=classes[i]{if let Some(prior)=previous{f.advance+=spacing(prior,current,style)*scale;}previous=Some(current);}
             let child=self.node(&e.node,style,cramped,depth+1)?;
+            // A prime is a superscript of the preceding atom: keep its italic correction.
+            if matches!(&e.node.kind,NodeKind::Symbol{command:Some(command),..} if command=="'") {f.advance+=f.italic;}
             let x=f.advance;let advance=x+child.advance;f.italic=child.italic;
             if entries.len()==1{f.accent=child.accent.map(|a|a+x);}
             f.child(child,x,0.0);f.advance=advance;
@@ -195,6 +202,28 @@ impl Builder<'_> {
             NodeKind::CustomSymbol {asset,parts,..}=>self.custom_symbol(node.id,asset,parts,style,cramped,depth)?,
             NodeKind::Grid {environment,columns,array_spec,rows,..}=>self.grid(node.id,*environment,columns,array_spec.as_ref(),rows,style,depth)?,
             NodeKind::GridRow {cells,..}=>self.grid_row(node.id,cells,style,cramped,depth)?,
+            NodeKind::Symbol {command,..} if command.as_deref()==Some("'")=> {
+                // f' is drawn exactly like f^{\prime}: a script-size prime at
+                // the font's superscript shift, never a substitute glyph.
+                let script=style.script_child().scale(self.math);
+                let (font,gid)=match self.product_symbol_glyph('′',AtomClass::Ordinary)? {Some(found)=>found,None=>self.math_glyph('′')?};
+                let shape=font.glyph(gid)?;
+                let descent=shape.ink.map_or(0.0,|ink|ink[3]*script);
+                let raise=((if cramped {self.math.superscript_cramped_shift} else {self.math.superscript_shift})*scale)
+                    .max(descent+self.math.superscript_bottom_min*scale);
+                let mut f=Fragment::new(node.id,"symbol");
+                f.advance=shape.advance*script;f.glyph(font,shape,0.0,-raise,script);f
+            }
+            NodeKind::Symbol {value,class,command} if command.as_deref().and_then(crate::delimiters::big_spelling).is_some()=> {
+                let (size,_)=command.as_deref().and_then(crate::delimiters::big_spelling).unwrap();
+                let ch=value.chars().next().ok_or_else(||EngineError::new(ErrorCode::InvalidInput,"Fixed-size delimiter has no glyph"))?;
+                let (font,glyph)=self.vertical_product_or_math_glyph(ch,*class,size*scale,scale)?;
+                let axis=self.math.axis*scale;let top=-axis-glyph.height*scale/2.0;
+                let mut f=Fragment::new(node.id,"symbol");
+                f.advance=glyph.width*scale;f.italic=glyph.italic_correction*scale;
+                for piece in glyph.pieces {f.glyph(font,piece.shape,0.0,top+piece.y*scale,scale);}
+                f
+            }
             NodeKind::Symbol {value,class,command}=> {
                 let mut f=Fragment::new(node.id,"symbol");
                 let alternate=command.as_deref().and_then(crate::symbol_catalog::alternate);
@@ -268,6 +297,7 @@ impl Builder<'_> {
             NodeKind::ColorChange {spec}=> {
                 let mut f=Fragment::new(node.id,"colorChange");f.color_change=Some(spec.color);f
             }
+            NodeKind::StyleChange {..}=>Fragment::new(node.id,"styleChange"),
             NodeKind::Boxed {body,..}=> {
                 // AMS boxed bodies are display-style even inside a script.
                 // Padding is a documented engine default; rule thickness comes
@@ -312,7 +342,7 @@ impl Builder<'_> {
         self.cache.insert(key,Cached {fingerprint:hash,fragment:Arc::clone(&f)});Ok(f)
     }
 }
-fn atom_class(node:&Node)->AtomClass {match &node.kind {NodeKind::LargeOperator {..}|NodeKind::GeneralOperator {..}=>AtomClass::Operator,NodeKind::Symbol {class,..}=>*class,NodeKind::CustomSymbol {asset,..}=>asset.role(),NodeKind::Text {command,..} if command=="\\operatorname"=>AtomClass::Operator,NodeKind::MacroCall {macro_kind:crate::macros::BuiltinMacroKind::MathRelation,..}=>AtomClass::Relation,NodeKind::MacroCall {macro_kind:crate::macros::BuiltinMacroKind::MathBinary,..}=>AtomClass::Binary,NodeKind::Fraction {..}|NodeKind::Fence {..}|NodeKind::Grid {..}|NodeKind::MacroCall {..}=>AtomClass::Inner,NodeKind::Scripts {base,..}|NodeKind::Accent {body:base,..}|NodeKind::Style {body:base,..}|NodeKind::Color {body:base,..}=>atom_class(base),NodeKind::Annotation {command,base,..}=>match command.as_str(){"\\stackrel"=>AtomClass::Relation,"\\stackbin"=>AtomClass::Binary,_=>atom_class(base)}, NodeKind::Row {entries,..} if entries.len()==1=>atom_class(&entries[0].node),_=>AtomClass::Ordinary}}
+fn atom_class(node:&Node)->AtomClass {match &node.kind {NodeKind::LargeOperator {..}|NodeKind::GeneralOperator {..}=>AtomClass::Operator,NodeKind::Symbol {class,..}=>*class,NodeKind::CustomSymbol {asset,..}=>asset.role(),NodeKind::Text {command,..} if command=="\\operatorname"=>AtomClass::Operator,NodeKind::MacroCall {macro_kind:crate::macros::BuiltinMacroKind::MathRelation,..}=>AtomClass::Relation,NodeKind::MacroCall {macro_kind:crate::macros::BuiltinMacroKind::MathBinary,..}=>AtomClass::Binary,NodeKind::MacroCall {macro_kind:crate::macros::BuiltinMacroKind::ExtensibleRightArrow|crate::macros::BuiltinMacroKind::ExtensibleLeftArrow,..}=>AtomClass::Relation,NodeKind::MacroCall {macro_kind:crate::macros::BuiltinMacroKind::ParenthesizedMod,..}=>AtomClass::Ordinary,NodeKind::Fraction {..}|NodeKind::Fence {..}|NodeKind::Grid {..}|NodeKind::MacroCall {..}=>AtomClass::Inner,NodeKind::Scripts {base,..}|NodeKind::Accent {body:base,..}|NodeKind::Style {body:base,..}|NodeKind::Color {body:base,..}=>atom_class(base),NodeKind::Annotation {command,base,..}=>match command.as_str(){"\\stackrel"=>AtomClass::Relation,"\\stackbin"=>AtomClass::Binary,_=>atom_class(base)}, NodeKind::Row {entries,..} if entries.len()==1=>atom_class(&entries[0].node),_=>AtomClass::Ordinary}}
 fn math_character(c:char,class:AtomClass)->char {
     if class!=AtomClass::Ordinary {return c;}
     crate::styles::default_math_character(c)

@@ -153,7 +153,7 @@ pub fn prepare(document: &Arc<ParseResult>, selection: &Selection, command: &Edi
     } else { Arc::clone(document) };
     let new_index = TreeIndex::new(&result.tree)?;
     new_index.validate_selection(&builder.selection)?;
-    let position_map = PositionMap::between(&document.tree, &result.tree, builder.overrides)?;
+    let position_map = PositionMap::between_indexed(&index, &new_index, builder.overrides)?;
     let prepared = PreparedEdit { document: result, selection: builder.selection, position_map, changed: builder.changed };
     // Speculative paste roots or other temporary nodes are not document edits.
     // A no-op must leave the monotonic identity allocator unchanged as well.
@@ -273,7 +273,11 @@ impl Builder<'_> {
                 entries.push(RowEntry{leading:String::new(),node:self.node(NodeKind::LargeOperator{command:grapheme.into(),parts:Vec::new()})?});
                 continue;
             }
-            if grapheme.chars().any(char::is_control) || matches!(grapheme, "\\" | "^" | "_" | "~") {
+            if grapheme == "~" {
+                entries.push(RowEntry{leading:String::new(),node:self.node(NodeKind::Space{command:"~".into(),width_mu:crate::spacing::space_mu("~").unwrap()})?});
+                continue;
+            }
+            if grapheme.chars().any(char::is_control) || matches!(grapheme, "\\" | "^" | "_") {
                 return Err(EngineError::new(ErrorCode::UnsupportedSyntax, "Use a structural command or explicit LaTeX paste for this math input"));
             }
             let escaped = match grapheme { "{" => Some("\\{"), "}" => Some("\\}"), "%" => Some("\\%"),
@@ -281,8 +285,9 @@ impl Builder<'_> {
             let (value, class, command) = if let Some(command) = escaped {
                 let (value, class) = named_symbol(command).unwrap(); (value.to_owned(), class, Some(command.into()))
             } else {
-                if grapheme == "'" { return Err(EngineError::new(ErrorCode::UnsupportedSyntax, "Prime notation is outside the K0 structural capability")); }
-                (grapheme.to_owned(), literal_class(grapheme), None)
+                // Same model as the parsed spelling f': a prime atom drawn raised.
+                if grapheme == "'" { ("′".to_owned(), crate::model::AtomClass::Ordinary, Some("'".to_owned())) }
+                else { (grapheme.to_owned(), literal_class(grapheme), None) }
             };
             entries.push(RowEntry { leading: String::new(), node: self.node(NodeKind::Symbol { value, class, command })? });
         }
@@ -665,8 +670,18 @@ impl Builder<'_> {
                 (node, Position::row(focus, 0))
             }
             StructureKind::Text => {
+                // The run shows what the selection looked like, not its source:
+                // symbols contribute their characters, spaces a blank, and any
+                // structure (scripts, fractions, ...) has no plain-text form.
                 let mut text = String::new();
-                for entry in selected { text.push_str(&crate::model::latex(&entry.node, crate::model::LatexMode::Lossless)); }
+                for entry in &selected {
+                    match &entry.node.kind {
+                        NodeKind::Symbol { value, .. } => text.push_str(value),
+                        NodeKind::Text { text: value, .. } => text.push_str(value),
+                        NodeKind::Space { width_mu, .. } => if *width_mu > 0 { text.push(' ') },
+                        _ => return Err(EngineError::new(ErrorCode::UnsupportedSyntax, "Only symbols and text can become a text run; remove structures from the selection first")),
+                    }
+                }
                 let node = self.node(NodeKind::Text { command: "\\text".into(), before_body: String::new(), text })?;
                 let focus = Position::text(node.id, 0); (node, focus)
             }
@@ -697,12 +712,13 @@ impl Builder<'_> {
                     else { ((start as usize) < entries.len()).then_some(start as usize) };
                 let Some(offset) = offset else {
                     if self.merge_line(direction)? { return Ok(()); }
+                    if entries.is_empty() && self.remove_empty_slot(node_id)? { return Ok(()); }
                     self.selection = TreeIndex::new(&self.tree)?.move_horizontal(&self.selection, direction, false)?;
                     return Ok(());
                 };
                 let target = &entries[offset].node;
                 match &target.kind {
-                    NodeKind::Symbol { .. } | NodeKind::Space { .. } | NodeKind::ColorChange { .. } | NodeKind::EmptySlot { .. } => {
+                    NodeKind::Symbol { .. } | NodeKind::Space { .. } | NodeKind::ColorChange { .. } | NodeKind::StyleChange { .. } | NodeKind::EmptySlot { .. } => {
                         self.splice_row(node_id, offset, offset+1, Vec::new(), true)?;
                         self.selection = Selection::caret(Position::row(node_id, offset));
                     }
@@ -717,6 +733,74 @@ impl Builder<'_> {
                     _ => { self.selection = Selection::Node { node_id: target.id }; }
                 }
                 Ok(())
+            }
+        }
+    }
+    /// Backspace/Delete inside an empty slot removes what that slot belongs
+    /// to instead of reaching across the structure to delete a neighbor:
+    /// an empty script or operator bound is dropped; a structure whose
+    /// editable rows are all empty (x/{} with both slots empty, \sqrt{},
+    /// \hat{}, \left(\right), an empty group) is removed as a whole.
+    fn remove_empty_slot(&mut self, row: NodeId) -> EngineResult<bool> {
+        let index = TreeIndex::new(&self.tree)?;
+        let Some(parent_id) = index.nodes.get(&row).and_then(|entry| entry.parent) else { return Ok(false) };
+        let parent = index.node(parent_id)?;
+        let empty = |node: &Node| !node.has_formula_content();
+        match &parent.kind {
+            NodeKind::Grid { .. } | NodeKind::GridRow { .. } => Ok(false),
+            NodeKind::Row { .. } => {
+                // An empty braced group that is itself a row entry.
+                let (outer, at) = index.row_owner(row)?;
+                self.splice_row(outer, at, at + 1, Vec::new(), true)?;
+                self.selection = Selection::caret(Position::row(outer, at));
+                Ok(true)
+            }
+            NodeKind::Scripts { base, slots } => {
+                let (outer, at) = index.row_owner(parent_id)?;
+                if base.id == row {
+                    if !slots.iter().all(|slot| empty(&slot.argument)) { return Ok(false); }
+                    self.splice_row(outer, at, at + 1, Vec::new(), true)?;
+                    self.selection = Selection::caret(Position::row(outer, at));
+                    return Ok(true);
+                }
+                let remaining: Vec<ScriptSlot> = slots.iter().filter(|slot| slot.argument.id != row).cloned().collect();
+                let base_entries = match &base.kind { NodeKind::Row { entries, .. } => entries.clone(), _ => return Ok(false) };
+                if remaining.is_empty() {
+                    // Unwrap x^{} back to x. Base atoms keep their identities.
+                    let count = base_entries.len();
+                    self.splice_row(outer, at, at + 1, base_entries, true)?;
+                    self.selection = Selection::caret(Position::row(outer, at + count));
+                } else {
+                    let base_id = base.id; let base_len = base_entries.len();
+                    self.update(parent_id, move |node| {
+                        let NodeKind::Scripts { slots, .. } = &mut node.kind else { return Err(invalid_position()); };
+                        *slots = remaining; Ok(())
+                    })?;
+                    let caret = Position::row(base_id, base_len);
+                    self.overrides.push(PositionStep::Removed { node_id: row, fallback: caret });
+                    self.selection = Selection::caret(caret);
+                }
+                Ok(true)
+            }
+            _ if crate::operators::parts(parent).is_some_and(|parts| crate::operators::slots(parts).any(|slot| slot.argument.id == row)) => {
+                // An empty \sum bound: drop only that bound.
+                let (outer, at) = index.row_owner(parent_id)?;
+                self.update(parent_id, move |node| {
+                    let parts = crate::operators::parts_mut(node).ok_or_else(invalid_position)?;
+                    parts.retain(|part| !matches!(part, crate::operators::OperatorPart::Script { slot } if slot.argument.id == row));
+                    Ok(())
+                })?;
+                let caret = Position::row(outer, at + 1);
+                self.overrides.push(PositionStep::Removed { node_id: row, fallback: caret });
+                self.selection = Selection::caret(caret);
+                Ok(true)
+            }
+            _ => {
+                if !parent.children().into_iter().all(empty) { return Ok(false); }
+                let (outer, at) = index.row_owner(parent_id)?;
+                self.splice_row(outer, at, at + 1, Vec::new(), true)?;
+                self.selection = Selection::caret(Position::row(outer, at));
+                Ok(true)
             }
         }
     }

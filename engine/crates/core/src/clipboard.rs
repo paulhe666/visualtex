@@ -201,7 +201,7 @@ fn validate_shape_budget(shape:&Value)->EngineResult<()> {
     fn allowed_kind(kind:&str)->bool {matches!(kind,
         "row"|"grid"|"gridRow"|"symbol"|"text"|"fraction"|"radical"|"fence"|"middleDelimiter"|
         "accent"|"annotation"|"largeOperator"|"generalOperator"|"customSymbol"|"macroCall"|"style"|"space"|"boxed"|
-        "color"|"colorChange"|"phantom"|"scripts"|"emptySlot"|"script"|"limits")}
+        "color"|"colorChange"|"styleChange"|"phantom"|"scripts"|"emptySlot"|"script"|"limits")}
     fn walk(value:&Value,depth:usize,objects:&mut usize)->EngineResult<()> {
         if depth>MAX_STRUCTURAL_JSON_DEPTH{return Err(EngineError::new(ErrorCode::ResourceLimit,"Structural clipboard nesting budget exceeded"));}
         match value {

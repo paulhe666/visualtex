@@ -37,6 +37,18 @@ pub const STYLE_ALIASES: &[(&str, MathVariant)] = &[
     ("\\symtt", MathVariant::Monospace),
 ];
 
+/// Declarations that switch the math style of the rest of their group.
+pub fn style_change(command: &str) -> Option<crate::layout::MathStyle> {
+    use crate::layout::MathStyle;
+    Some(match command {
+        "\\displaystyle" => MathStyle::Display,
+        "\\textstyle" => MathStyle::Text,
+        "\\scriptstyle" => MathStyle::Script,
+        "\\scriptscriptstyle" => MathStyle::ScriptScript,
+        _ => return None,
+    })
+}
+
 pub fn command_variant(command: &str) -> Option<MathVariant> {
     Some(match command {
         "\\mathnormal" => MathVariant::Default,

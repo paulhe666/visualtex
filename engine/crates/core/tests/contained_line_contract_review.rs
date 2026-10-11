@@ -182,14 +182,16 @@ fn duplicate_entire_multiline_allocates_disjoint_nodes_and_column_ids() {
 
 #[test]
 fn deletion_at_row_boundary_merges_only_internal_rows_and_preserves_source_order() {
-    let mut t = Owned::new(r"\begin{gathered}a\\b\end{gathered}");
+    // Three lines: merging two of them keeps the group (merging the last two
+    // lines of a whole-formula group dissolves it; see review_fixes_20261011).
+    let mut t = Owned::new(r"\begin{gathered}a\\b\\c\end{gathered}");
     let before = t.session.document_snapshot();
     let a = ids(cell(&before.analysis.tree, 0)); let b = ids(cell(&before.analysis.tree, 1));
     t.select(Position::row(cell(&before.analysis.tree, 1).id, 0));
     let snapshot = t.snapshot(); let merged = t.edit(EditCommand::DeleteBackward);
     assert_eq!(merged.editor.document.analysis.facts.grids, 1);
-    assert_eq!(merged.editor.document.analysis.facts.grid_rows, 1);
-    assert_eq!(t.session.source(), r"\begin{gathered}ab\end{gathered}");
+    assert_eq!(merged.editor.document.analysis.facts.grid_rows, 2);
+    assert_eq!(t.session.source(), r"\begin{gathered}ab\\c\end{gathered}");
     let remaining = ids(cell(&merged.editor.document.analysis.tree, 0));
     assert!(a.iter().filter(|id| **id != cell(&before.analysis.tree, 0).id.0).all(|id| remaining.contains(id)));
     assert!(b.iter().filter(|id| **id != cell(&before.analysis.tree, 1).id.0).all(|id| remaining.contains(id)));

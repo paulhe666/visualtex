@@ -40,7 +40,44 @@ impl Builder<'_> {
             BoldVector=>self.variant_macro(id,MathVariant::Bold,&args[0],style,cramped,depth),
             ArrowVector=>self.accented_variant_macro(id,MathVariant::Bold,"\\vec",&args[0],style,cramped,depth),
             UnitVector=>self.accented_variant_macro(id,MathVariant::Bold,"\\hat",&args[0],style,cramped,depth),
+            ExtensibleRightArrow=>self.extensible_arrow(id,'→',&args[0],style,cramped,depth),
+            ExtensibleLeftArrow=>self.extensible_arrow(id,'←',&args[0],style,cramped,depth),
+            ParenthesizedMod=>self.parenthesized_mod(id,&args[0],style,cramped,depth),
         }
+    }
+
+    /// An arrow stretched under a script-style label (amsmath \xrightarrow).
+    fn extensible_arrow(&mut self,id:NodeId,arrow:char,label:&Node,style:MathStyle,cramped:bool,depth:usize)->EngineResult<Fragment>{
+        let scale=style.scale(self.math);
+        let label=self.node(label,style.script_child(),cramped,depth+1)?;
+        // Documented engine default: half an em of arrow beyond each label edge.
+        let pad=0.5*scale;let target=(label.advance+2.0*pad).max(scale)/scale;
+        let (font,glyph)=self.horizontal_product_or_math_glyph(arrow,Some(target))?;
+        let arrow_width=glyph.width*scale;let width=arrow_width.max(label.advance+2.0*pad);
+        let mut f=Fragment::new(id,"macroCall");
+        let ax=(width-arrow_width)/2.0;
+        for piece in glyph.pieces {f.glyph(font,piece.shape,ax+piece.x*scale,0.0,scale);}
+        let gap=self.math.upper_limit_gap*scale;
+        let label_y=glyph.ink_top*scale-gap-label.descent;
+        let lx=(width-label.advance)/2.0;
+        f.child(label,lx,label_y);f.advance=width;Ok(f)
+    }
+    fn upright_glyph(&self,f:&mut Fragment,ch:char,class:AtomClass,x:f64,scale:f64)->EngineResult<f64>{
+        let (font,gid)=match self.product_symbol_glyph(ch,class)? {Some(found)=>found,None=>self.math_glyph(ch)?};
+        let shape=font.glyph(gid)?;let advance=shape.advance*scale;f.glyph(font,shape,x,0.0,scale);Ok(advance)
+    }
+    /// amsmath \pmod{n}: leading glue, then "(mod" 6mu n ")".
+    fn parenthesized_mod(&mut self,id:NodeId,arg:&Node,style:MathStyle,cramped:bool,depth:usize)->EngineResult<Fragment>{
+        let scale=style.scale(self.math);
+        let child=self.node(arg,style,cramped,depth+1)?;
+        let mut f=Fragment::new(id,"macroCall");
+        let mut x=(if style==MathStyle::Display {18.0} else {8.0})/18.0*scale;
+        x+=self.upright_glyph(&mut f,'(',AtomClass::Open,x,scale)?;
+        for ch in "mod".chars() {x+=self.upright_glyph(&mut f,ch,AtomClass::Operator,x,scale)?;}
+        x+=6.0/18.0*scale;
+        let advance=child.advance;f.child(child,x,0.0);x+=advance;
+        x+=self.upright_glyph(&mut f,')',AtomClass::Close,x,scale)?;
+        f.advance=x;Ok(f)
     }
 
     fn variant_macro(&mut self,id:NodeId,variant:MathVariant,arg:&Node,style:MathStyle,cramped:bool,depth:usize)->EngineResult<Fragment>{

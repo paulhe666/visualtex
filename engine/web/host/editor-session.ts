@@ -1,5 +1,5 @@
 import type {ClipboardFragment,EngineCommand,EngineReply,EngineResponse} from './protocol';
-import type {EditorAction,EditorActionResult,EditorSnapshot,OcrInsertionTarget} from './editing';
+import type {EditorAction,EditorActionResult,EditorActionWireResult,EditorSnapshot,OcrInsertionTarget} from './editing';
 import type {LayoutOptions,LayoutSnapshot,SceneQuery,SceneQueryResult} from './layout';
 import type {SourceEdit,SourceChangeMap} from './source-edit';
 
@@ -43,9 +43,14 @@ export class EngineEditorSessionOwner {
   get isDestroyed():boolean{return this.destroyed;}
   inspect():EditorSnapshot{return structuredClone(this.state);}
   current():EditorSnapshot{return this.state;}
+  /** Caret/selection-only replies omit the unchanged document; reuse ours. */
+  private complete(result:EditorActionWireResult):EditorActionResult{
+    if(result.editor.document)return result as EditorActionResult;
+    return {...result,editor:{...result.editor,document:this.state.document}};
+  }
   action(action:EditorAction):EditorActionResult{
     this.active();
-    const result=this.send({op:'editorAction',handle:this.handle,expectedRevision:this.state.document.revision,eventSequence:++this.sequence,action},'editorAction').result;
+    const result=this.complete(this.send({op:'editorAction',handle:this.handle,expectedRevision:this.state.document.revision,eventSequence:++this.sequence,action,omitUnchangedDocument:true},'editorAction').result);
     this.state=result.editor;return result;
   }
   replaceSource(source:string):EditorSnapshot{
@@ -80,7 +85,7 @@ export class EngineEditorSessionOwner {
     this.pendingOcr=null;
     try{
       this.active();
-      const result=this.send({op:'editorAction',handle:this.handle,expectedRevision:pending.target.revision,eventSequence:++this.sequence,action:{kind:'applyOcrLatex',target:pending.target,latex}},'editorAction').result;
+      const result=this.complete(this.send({op:'editorAction',handle:this.handle,expectedRevision:pending.target.revision,eventSequence:++this.sequence,action:{kind:'applyOcrLatex',target:pending.target,latex}},'editorAction').result);
       this.state=result.editor;return {status:'applied',latex,result};
     }catch(error){return {status:'rejected',latex,reason:error instanceof Error?error.message:String(error)};}
   }

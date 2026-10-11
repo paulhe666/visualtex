@@ -77,7 +77,11 @@ impl LayoutSnapshot {
     }
     pub fn hit_test(&self, x_em: f64, y_em: f64) -> EngineResult<Position> {
         if !x_em.is_finite() || !y_em.is_finite() { return Err(EngineError::new(ErrorCode::InvalidInput, "Hit-test coordinates must be finite")); }
-        self.carets.iter().min_by(|a,b| {
+        // Inside a multi-line grid a click belongs to the line under it, even
+        // in the blank space beside a short line; the grid's outer edges are
+        // not closer candidates than that line's own end.
+        let line = crate::scene_navigation::line_at(self, x_em, y_em);
+        self.carets.iter().filter(|c| line.as_ref().is_none_or(|ids| ids.contains(&c.position.node_id()))).min_by(|a,b| {
             let score = |c: &CaretStop| {
                 let dy = if y_em < c.top { c.top-y_em } else if y_em>c.bottom { y_em-c.bottom } else {0.0};
                 (c.x-x_em).powi(2)+4.0*dy.powi(2)
@@ -98,7 +102,12 @@ impl LayoutSnapshot {
         let x = desired_x.unwrap_or(start.x);
         if !x.is_finite() { return Err(EngineError::new(ErrorCode::InvalidInput, "Desired caret coordinate must be finite")); }
         if let Some(target) = crate::scene_navigation::fraction_target(self, from, down, x) { return Ok(target); }
-        let candidates: Vec<_> = self.carets.iter().filter(|c| if down {c.baseline>start.baseline+1e-8} else {c.baseline<start.baseline-1e-8}).collect();
+        // Without a structural target, only another line is a vertical
+        // neighbor: a subscript/denominator elsewhere on the same line is not.
+        let Some((line_start, line_end)) = crate::scene_navigation::line_of(self, from) else { return Ok(from) };
+        let same_line = crate::scene_navigation::subtree_ids(self, line_start, line_end);
+        let candidates: Vec<_> = self.carets.iter().filter(|c| !same_line.contains(&c.position.node_id()))
+            .filter(|c| if down {c.baseline>start.baseline+1e-8} else {c.baseline<start.baseline-1e-8}).collect();
         Ok(candidates.into_iter().min_by(|a,b| {
             let score=|c: &CaretStop| (c.x-x).abs() + (c.baseline-start.baseline).abs()*0.5;
             score(a).total_cmp(&score(b)).then(b.depth.cmp(&a.depth))

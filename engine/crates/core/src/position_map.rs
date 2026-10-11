@@ -70,8 +70,11 @@ pub struct PositionMap {
 
 impl PositionMap {
     pub fn between(old: &Node, new: &Node, overrides: Vec<PositionStep>) -> EngineResult<Self> {
-        let old_index = TreeIndex::new(old)?;
-        let new_index = TreeIndex::new(new)?;
+        Self::between_indexed(&TreeIndex::new(old)?, &TreeIndex::new(new)?, overrides)
+    }
+    /// `between` for callers that already hold both trees' indexes.
+    pub fn between_indexed(old_index: &TreeIndex<'_>, new_index: &TreeIndex<'_>, overrides: Vec<PositionStep>) -> EngineResult<Self> {
+        let new = new_index.root;
         let old_ids: BTreeSet<_> = old_index.nodes.keys().copied().collect();
         let new_ids: BTreeSet<_> = new_index.nodes.keys().copied().collect();
         let retained_ids: Vec<_> = old_ids.intersection(&new_ids).copied().collect();

@@ -15,6 +15,9 @@ pub fn space_mu(command: &str) -> Option<i16> {
         "\\negmedspace" => -4,
         "\\negthickspace" => -5,
         "\\enspace" | "\\enskip" => 9,
+        // TeX's tie and control space are interword glue (about a third of
+        // an em); in math they are explicit, non-collapsing spaces.
+        "~" | "\\ " => 6,
         "\\quad" => 18,
         "\\qquad" => 36,
         _ => return None,

@@ -67,6 +67,7 @@ impl EngineSession {
 
     pub fn document_id(&self) -> &str { &self.document_id }
     pub fn revision(&self) -> Revision { self.revision }
+    pub fn source_id(&self) -> u32 { self.document.source.id() }
     pub fn source(&self) -> &str { self.document.source.text() }
 
     pub fn check_revision(&self, expected: Revision) -> EngineResult<()> {

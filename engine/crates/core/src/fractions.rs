@@ -9,6 +9,8 @@ pub enum FractionForm { Barred, Binomial, Bevelled }
 pub struct FractionSpec {
     pub form: FractionForm,
     pub forced_style: Option<MathStyle>,
+    /// \cfrac keeps both arguments in display style (continued fractions).
+    pub display_arguments: bool,
 }
 pub fn spec(command: &str) -> Option<FractionSpec> {
     use FractionForm::*;
@@ -20,9 +22,10 @@ pub fn spec(command: &str) -> Option<FractionSpec> {
         "\\dbinom" => (Binomial, Some(MathStyle::Display)),
         "\\tbinom" => (Binomial, Some(MathStyle::Text)),
         "\\nicefrac" => (Bevelled, None),
+        "\\cfrac" => (Barred, Some(MathStyle::Display)),
         _ => return None,
     };
-    Some(FractionSpec { form, forced_style })
+    Some(FractionSpec { form, forced_style, display_arguments: command == "\\cfrac" })
 }
 
 #[cfg(test)]

@@ -21,19 +21,22 @@ impl Builder<'_>{
         if !environment.accepts_columns(columns.len()) || rows.is_empty(){
             return Err(EngineError::new(ErrorCode::InvalidInput,"Invalid gathered dimensions"));
         }
-        if environment!=GridKind::Gathered {return self.cell_grid(id,environment,columns,array_spec,rows,ambient,depth);}
+        if !matches!(environment,GridKind::Gathered|GridKind::Substack) {return self.cell_grid(id,environment,columns,array_spec,rows,ambient,depth);}
         // gathered is a display-style subenvironment. The parent mathematical
         // axis still determines its vertical placement as one inline box.
-        let row_style=MathStyle::Display;
+        // \substack keeps the ambient (limit) style with tight rows.
+        let substack=environment==GridKind::Substack;
+        let row_style=if substack {ambient} else {MathStyle::Display};
         let local=row_style.scale(self.math);
         // Documented grid defaults, not claims of MATH constants: 0.8/0.2em
         // minimum row strut and 0.3em clear inter-row gap. Taller content wins.
-        let gap=0.3*local;let mut fragments=Vec::with_capacity(rows.len());let mut width:f64=0.0;
+        let (strut_ascent,strut_descent,gap)=if substack {(0.7*local,0.3*local,0.0)} else {(0.8*local,0.2*local,0.3*local)};
+        let mut fragments=Vec::with_capacity(rows.len());let mut width:f64=0.0;
         let mut height=0.0;let mut previous_descent=0.0;
         for (i,row) in rows.iter().enumerate(){
             let fragment=self.node(row,row_style,false,depth+1)?;let bounds=extent(&fragment);
             width=width.max(bounds.width());
-            let ascent=fragment.ascent.max(0.8*local);let descent=fragment.descent.max(0.2*local);
+            let ascent=fragment.ascent.max(strut_ascent);let descent=fragment.descent.max(strut_descent);
             let baseline=if i==0{ascent}else{height+previous_descent+gap+ascent};
             height=baseline;previous_descent=descent;
             fragments.push((fragment,bounds,baseline));

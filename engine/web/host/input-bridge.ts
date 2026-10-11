@@ -227,13 +227,25 @@ export class BrowserInputBridge {
         case 'insertReplacementText':
         case 'insertFromComposition': return data ? this.port.insert(data) : true;
         case 'insertFromPaste': return this.port.paste(data, null, null);
-        case 'deleteContentBackward': return this.port.remove(true);
-        case 'deleteContentForward': return this.port.remove(false);
+        case 'deleteContentBackward':
+        case 'deleteWordBackward':
+        case 'deleteSoftLineBackward':
+        case 'deleteHardLineBackward': return this.port.remove(true);
+        case 'deleteContentForward':
+        case 'deleteWordForward':
+        case 'deleteSoftLineForward':
+        case 'deleteHardLineForward': return this.port.remove(false);
         case 'historyUndo': return this.port.history(false);
         case 'historyRedo': return this.port.history(true);
         case 'insertLineBreak': return this.port.lineBreak?.() ?? true;
         case 'insertParagraph': return this.port.paragraph?.() ?? true;
-        default: throw new Error(`当前输入桥尚未支持浏览器操作：${inputType}`);
+        default:
+          // Holding is only useful when there is typed text to keep. An
+          // unknown text-free operation (format*, deleteByDrag, ...) is
+          // reported and dropped so the next keystroke still works.
+          if (data) throw new Error(`当前输入桥尚未支持浏览器操作：${inputType}`);
+          this.port.error(new Error(`已忽略浏览器操作：${inputType}`));
+          return true;
       }
     }, false);
   }

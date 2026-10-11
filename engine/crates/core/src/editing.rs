@@ -69,6 +69,45 @@ pub struct EditorActionResult {
     pub vertical_move: Option<VerticalMoveRequest>,
 }
 
+/// Wire form of an action result. With `omit_document`, a reply to a client
+/// that already holds the unchanged document leaves `editor.document` out;
+/// for a typical caret move that is nearly all of the payload.
+#[derive(Debug, Clone)]
+pub struct EditorActionReply { pub result: EditorActionResult, pub omit_document: bool }
+impl Serialize for EditorActionReply {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct EditorView<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            document: Option<&'a DocumentSnapshot>,
+            selection: &'a Selection,
+            normalized_selection: &'a NormalizedRange,
+            selection_epoch: u32,
+            undo_depth: usize,
+            redo_depth: usize,
+            history_weight: usize,
+            composition: &'a Option<Composition>,
+        }
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct ResultView<'a> {
+            editor: EditorView<'a>,
+            content_changed: bool,
+            replayed: bool,
+            position_map: &'a Option<PositionMap>,
+            vertical_move: &'a Option<VerticalMoveRequest>,
+        }
+        let (r, e) = (&self.result, &self.result.editor);
+        ResultView {
+            editor: EditorView { document: (!self.omit_document).then_some(&e.document), selection: &e.selection,
+                normalized_selection: &e.normalized_selection, selection_epoch: e.selection_epoch, undo_depth: e.undo_depth,
+                redo_depth: e.redo_depth, history_weight: e.history_weight, composition: &e.composition },
+            content_changed: r.content_changed, replayed: r.replayed, position_map: &r.position_map, vertical_move: &r.vertical_move,
+        }.serialize(serializer)
+    }
+}
+
 struct EventReceipt {
     sequence: u32,
     expected_revision: Revision,
@@ -87,13 +126,16 @@ pub(crate) struct EditorState {
     receipt_bytes: usize,
     can_group: bool,
     previous_input_mode: Option<InputMode>,
+    /// normalize_range of `selection` at a revision, computed while an index
+    /// of that tree was already at hand; spares editor_snapshot a rebuild.
+    normalized_cache: Option<(Revision, Selection, NormalizedRange)>,
 }
 impl EditorState {
     pub fn new(root_id: NodeId, end_offset: usize) -> Self {
         Self { selection: Selection::caret(Position::row(root_id, end_offset)), selection_epoch: 0,
             history: History::default(), composition: None, ocr: crate::ocr::OcrState::default(), next_composition_id: 1,
             last_event_sequence: 0, receipts: VecDeque::new(), receipt_bytes: 0,
-            can_group: false, previous_input_mode: None }
+            can_group: false, previous_input_mode: None, normalized_cache: None }
     }
     fn break_group(&mut self) { self.can_group = false; self.previous_input_mode = None; }
 }
@@ -103,9 +145,12 @@ struct Outcome { content_changed: bool, position_map: Option<PositionMap>, verti
 
 impl EngineSession {
     pub fn editor_snapshot(&self) -> EngineResult<EditorSnapshot> {
-        let index = TreeIndex::new(&self.document.tree)?;
+        let normalized_selection = match &self.editor.normalized_cache {
+            Some((revision, selection, normalized)) if *revision == self.revision && *selection == self.editor.selection => normalized.clone(),
+            _ => TreeIndex::new(&self.document.tree)?.normalize_range(&self.editor.selection)?,
+        };
         Ok(EditorSnapshot { document: self.document_snapshot(), selection: self.editor.selection.clone(),
-            normalized_selection: index.normalize_range(&self.editor.selection)?, selection_epoch: self.editor.selection_epoch,
+            normalized_selection, selection_epoch: self.editor.selection_epoch,
             undo_depth: self.editor.history.undo_depth(), redo_depth: self.editor.history.redo_depth(),
             history_weight: self.editor.history.weight(), composition: self.editor.composition.clone() })
     }
@@ -153,17 +198,20 @@ impl EngineSession {
             }
             EditorAction::PointerSelection { anchor, focus } => {
                 self.ensure_no_composition()?;
-                let next=TreeIndex::new(&self.document.tree)?.pointer_selection(anchor,focus)?;
-                self.set_editor_selection(next)?;self.editor.break_group();Outcome::default()
+                let document=Arc::clone(&self.document);let index=TreeIndex::new(&document.tree)?;
+                let next=index.pointer_selection(anchor,focus)?;
+                self.set_editor_selection_indexed(&index,next)?;self.editor.break_group();Outcome::default()
             }
             EditorAction::ExtendGridSelection { direction } => {
                 self.ensure_no_composition()?;
-                let next=TreeIndex::new(&self.document.tree)?.extend_grid_selection(&self.editor.selection,direction)?;
-                self.set_editor_selection(next)?;self.editor.break_group();Outcome::default()
+                let document=Arc::clone(&self.document);let index=TreeIndex::new(&document.tree)?;
+                let next=index.extend_grid_selection(&self.editor.selection,direction)?;
+                self.set_editor_selection_indexed(&index,next)?;self.editor.break_group();Outcome::default()
             }
             EditorAction::MoveHorizontal { direction, extend } => {
-                let next = TreeIndex::new(&self.document.tree)?.move_horizontal(&self.editor.selection, direction, extend)?;
-                self.set_editor_selection(next)?; self.editor.break_group(); Outcome::default()
+                let document = Arc::clone(&self.document); let index = TreeIndex::new(&document.tree)?;
+                let next = index.move_horizontal(&self.editor.selection, direction, extend)?;
+                self.set_editor_selection_indexed(&index, next)?; self.editor.break_group(); Outcome::default()
             }
             EditorAction::MoveVertical { direction, desired_x } => {
                 if desired_x.is_some_and(|x| !x.is_finite()) {
@@ -211,7 +259,13 @@ impl EngineSession {
     }
 
     fn set_editor_selection(&mut self, selection: Selection) -> EngineResult<()> {
-        TreeIndex::new(&self.document.tree)?.validate_selection(&selection)?;
+        let document = Arc::clone(&self.document);
+        self.set_editor_selection_indexed(&TreeIndex::new(&document.tree)?, selection)
+    }
+    /// `index` must be built from the current document tree.
+    fn set_editor_selection_indexed(&mut self, index: &TreeIndex<'_>, selection: Selection) -> EngineResult<()> {
+        index.validate_selection(&selection)?;
+        self.editor.normalized_cache = index.normalize_range(&selection).ok().map(|n| (self.revision, selection.clone(), n));
         if selection != self.editor.selection {
             let epoch = self.editor.selection_epoch.checked_add(1)
                 .ok_or_else(|| EngineError::new(ErrorCode::ResourceLimit, "Selection epoch exhausted"))?;
@@ -265,6 +319,7 @@ impl EngineSession {
         let new_index = TreeIndex::new(&document.tree)?;
         let selection = match selection { Some(selection) => selection, None => map.apply_selection(&self.editor.selection, &new_index)? };
         new_index.validate_selection(&selection)?;
+        let normalized = new_index.normalize_range(&selection).ok();
         let selection_epoch = if selection != self.editor.selection { self.editor.selection_epoch.checked_add(1)
             .ok_or_else(|| EngineError::new(ErrorCode::ResourceLimit, "Selection epoch exhausted"))? } else { self.editor.selection_epoch };
         let last_complete = if document.complete { Some(Arc::clone(&document.tree)) } else { self.last_complete.clone() };
@@ -273,6 +328,7 @@ impl EngineSession {
         self.editor.history.record(before, after, group_id, allow_group)?;
         self.document = document; self.last_complete = last_complete;
         self.next_node_id = next_node_id; self.next_source_id = next_source_id; self.revision = Revision(revision);
+        self.editor.normalized_cache = normalized.map(|n| (self.revision, selection.clone(), n));
         self.editor.selection = selection; self.editor.selection_epoch = selection_epoch;
         if !allow_group { self.editor.break_group(); }
         Ok(map)

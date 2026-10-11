@@ -213,6 +213,15 @@ impl Parser<'_> {
                 if let Some(width_mu)=crate::spacing::space_mu(&raw) {
                     return self.make(NodeKind::Space{command:raw,width_mu},start,self.position(),None);
                 }
+                if let Some(style)=crate::styles::style_change(&raw) {
+                    return self.make(NodeKind::StyleChange{command:raw,style},start,self.position(),None);
+                }
+                if raw == "\\not" {
+                    if let Some(node) = self.negation(start)? { return Ok(node); }
+                }
+                if let Some((_, class)) = crate::delimiters::big_command(&raw) {
+                    return self.fixed_size_delimiter(start, class);
+                }
                 if let Some((value, class)) = named_symbol(&raw) {
                     return self.make(NodeKind::Symbol { value: value.into(), class, command: Some(raw) }, start, self.position(), None);
                 }
@@ -224,12 +233,21 @@ impl Parser<'_> {
                     || crate::fractions::spec(&raw).is_some()
                     || crate::accents::spec(&raw).is_some() || crate::accents::annotation_above(&raw).is_some()
                     || crate::styles::command_variant(&raw).is_some() || crate::spacing::phantom_axis(&raw).is_some()
-                    || crate::macros::spec(&raw).is_some() || matches!(raw.as_str(),"\\boxed"|"\\textcolor"|"\\color");
+                    || crate::macros::spec(&raw).is_some() || matches!(raw.as_str(),"\\boxed"|"\\textcolor"|"\\color"|"\\substack");
                 if structural && !allow_structure {
                     self.diagnostic(DiagnosticCode::UnbracedStructure, Severity::Error, start, self.position(), "A structural command used as an argument requires braces")?;
                     return self.make(NodeKind::UnparsedSource { raw }, start, self.position(), None);
                 }
                 match raw.as_str() {
+                    // Only the mandatory-label form is modelled; an optional
+                    // lower label stays preserved, unsupported source.
+                    "\\xrightarrow" | "\\xleftarrow" if self.optional_argument_follows() => {
+                        self.capture_opaque_arguments()?;
+                        self.diagnostic(DiagnosticCode::UnknownCommand, Severity::Unsupported, start, self.position(), "Extensible arrows with an optional lower label are not supported yet")?;
+                        let raw = self.source.text()[start..self.position()].to_owned();
+                        self.make(NodeKind::UnparsedSource { raw }, start, self.position(), None)
+                    }
+                    "\\substack" => self.substack(start, depth + 1),
                     _ if crate::macros::spec(&raw).is_some() => {
                         let spec=crate::macros::spec(&raw).unwrap();
                         let mut before_arguments=Vec::with_capacity(spec.arity);
@@ -325,6 +343,14 @@ impl Parser<'_> {
                 if crate::operators::spec(&raw).is_some() {
                     return self.make(NodeKind::LargeOperator{command:raw,parts:Vec::new()},start,self.position(),None);
                 }
+                if raw == "'" {
+                    // A prime is stored with its authored spelling and drawn as
+                    // a raised \prime; f' and f^{\prime} keep distinct source.
+                    return self.make(NodeKind::Symbol { value: "′".into(), class: crate::model::AtomClass::Ordinary, command: Some(raw) }, start, self.position(), None);
+                }
+                if let Some(width_mu) = crate::spacing::space_mu(&raw) {
+                    return self.make(NodeKind::Space { command: raw, width_mu }, start, self.position(), None);
+                }
                 if matches!(raw.as_str(), "$" | "&" | "#" | "~" | "'") || raw.chars().any(char::is_control) {
                     self.diagnostic(DiagnosticCode::UnsupportedToken, Severity::Unsupported, start, self.position(), "Token requires a language feature outside the current capability")?;
                     self.make(NodeKind::UnparsedSource { raw }, start, self.position(), None)
@@ -336,6 +362,106 @@ impl Parser<'_> {
                 Err(EngineError::new(ErrorCode::InvalidInput, "Unexpected trivia at atom boundary"))
             }
         }
+    }
+
+    fn optional_argument_follows(&self) -> bool {
+        let mut at = self.at;
+        while self.tokens.get(at).is_some_and(Token::is_trivia) { at += 1; }
+        self.tokens.get(at).is_some_and(|t| t.kind == TokenKind::Character && t.text(&self.source) == "[")
+    }
+
+    /// \not followed by a relation with a precomposed negation. Other uses stay
+    /// unsupported; no overlay glyph is invented.
+    fn negation(&mut self, start: usize) -> EngineResult<Option<Arc<Node>>> {
+        let saved = self.at;
+        self.trivia();
+        let value = match self.tokens.get(self.at) {
+            Some(token) if token.kind == TokenKind::Character => Some(token.text(&self.source).to_owned()),
+            Some(token) if matches!(token.kind, TokenKind::ControlWord | TokenKind::ControlSymbol) =>
+                named_symbol(token.text(&self.source)).filter(|(_, class)| *class == crate::model::AtomClass::Relation).map(|(value, _)| value.to_owned()),
+            _ => None,
+        };
+        let Some(negated) = value.as_deref().and_then(crate::delimiters::negated_relation) else { self.at = saved; return Ok(None); };
+        self.at += 1;
+        let command = self.source.text()[start..self.position()].to_owned();
+        self.make(NodeKind::Symbol { value: negated.into(), class: crate::model::AtomClass::Relation, command: Some(command) }, start, self.position(), None).map(Some)
+    }
+
+    /// \big( ... \Biggr]: a single delimiter atom with an authored fixed size.
+    fn fixed_size_delimiter(&mut self, start: usize, class: crate::model::AtomClass) -> EngineResult<Arc<Node>> {
+        let errors = self.diagnostics.len();
+        let (_, delimiter) = self.delimiter()?;
+        let raw = self.source.text()[start..self.position()].to_owned();
+        match crate::delimiters::glyph(&delimiter) {
+            Some(Some(ch)) => self.make(NodeKind::Symbol { value: ch.to_string(), class, command: Some(raw) }, start, self.position(), None),
+            _ => {
+                if self.diagnostics.len() == errors {
+                    self.diagnostic(DiagnosticCode::UnsupportedDelimiter, Severity::Unsupported, start, self.position(), "A fixed-size null delimiter is not supported")?;
+                }
+                self.make(NodeKind::UnparsedSource { raw }, start, self.position(), None)
+            }
+        }
+    }
+
+    /// amsmath \substack{a\\b}: one centered column of rows.
+    fn substack(&mut self, start: usize, depth: usize) -> EngineResult<Arc<Node>> {
+        self.depth(depth)?;
+        let before = self.trivia();
+        if self.kind() != Some(TokenKind::OpenBrace) {
+            self.diagnostic(DiagnosticCode::MissingArgument, Severity::Error, start, self.position(), "\\substack requires a braced argument")?;
+            let raw = self.source.text()[start..self.position()].to_owned();
+            return self.make(NodeKind::UnparsedSource { raw }, start, self.position(), None);
+        }
+        self.at += 1;
+        let first = self.at;
+        let mut at = first; let mut braces = 0usize; let mut breaks = Vec::new(); let mut closed = false; let mut unsupported = false;
+        while let Some(token) = self.tokens.get(at) {
+            let raw = token.text(&self.source);
+            match token.kind {
+                TokenKind::OpenBrace => braces += 1,
+                TokenKind::CloseBrace if braces == 0 => { closed = true; break; }
+                TokenKind::CloseBrace => braces -= 1,
+                TokenKind::ControlSymbol if braces == 0 && raw == "\\\\" => {
+                    breaks.push(at);
+                    let mut next = at + 1; while self.tokens.get(next).is_some_and(Token::is_trivia) { next += 1; }
+                    if self.tokens.get(next).is_some_and(|t| matches!(t.text(&self.source), "[" | "*")) { unsupported = true; }
+                }
+                TokenKind::ControlWord if braces == 0 && matches!(raw, "\\begin" | "\\end") => unsupported = true,
+                TokenKind::Character if braces == 0 && raw == "&" => unsupported = true,
+                _ => {}
+            }
+            if braces + depth > MAX_DEPTH { return Err(EngineError::new(ErrorCode::ResourceLimit, "Substack nesting budget exhausted")); }
+            at += 1;
+        }
+        let body_end = at;
+        let end_position = self.tokens.get(body_end).map_or(self.end_position, |t| t.span.byte_start as usize);
+        self.at = body_end + usize::from(closed);
+        if !closed {
+            self.diagnostic(DiagnosticCode::UnclosedGroup, Severity::Error, start, end_position, "\\substack is missing its closing brace")?;
+        }
+        if unsupported {
+            self.diagnostic(DiagnosticCode::UnsupportedEnvironmentOption, Severity::Unsupported, start, self.position(), "\\substack supports plain rows only")?;
+            let raw = self.source.text()[start..self.position()].to_owned();
+            return self.make(NodeKind::UnparsedSource { raw }, start, self.position(), None);
+        }
+        if breaks.len() + 1 > crate::grids::MAX_GRID_ROWS { return Err(EngineError::new(ErrorCode::ResourceLimit, "Substack row budget exhausted")); }
+        let column = crate::grids::GridColumnId::allocate(self.ids)?;
+        let mut rows = Vec::new(); let mut row_start = first;
+        for boundary in breaks.into_iter().map(Some).chain(std::iter::once(None)) {
+            let row_end = boundary.unwrap_or(body_end);
+            let start_position = self.tokens.get(row_start).map_or(end_position, |t| t.span.byte_start as usize);
+            let cell_end = self.tokens.get(row_end).map_or(end_position, |t| t.span.byte_start as usize);
+            let mut nested = Parser { source: Arc::clone(&self.source), tokens: self.tokens[row_start..row_end].to_vec(), at: 0,
+                ids: &mut *self.ids, diagnostics: Vec::new(), nodes: self.nodes, end_position: cell_end, allow_middle: self.allow_middle, symbols: Arc::clone(&self.symbols) };
+            let cell = nested.row(Grouping::Bare, None, depth + 2)?;
+            self.nodes = nested.nodes; self.diagnostics.extend(nested.diagnostics);
+            let row_break = boundary.map_or(String::new(), |i| self.tokens[i].text(&self.source).to_owned());
+            let row_source_end = boundary.map_or(cell_end, |i| self.tokens[i].span.byte_end as usize);
+            rows.push(self.make(NodeKind::GridRow { cells: vec![cell], separators: Vec::new(), row_break }, start_position, row_source_end, None)?);
+            row_start = row_end + usize::from(boundary.is_some());
+        }
+        self.make(NodeKind::Grid { environment: crate::grids::GridKind::Substack, columns: vec![column], array_spec: None,
+            before_begin_name: before, before_end_name: String::new(), rows }, start, self.position(), None)
     }
 
     fn color(&mut self,start:usize,declaration:bool,depth:usize)->EngineResult<Arc<Node>> {

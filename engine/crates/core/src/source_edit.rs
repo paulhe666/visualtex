@@ -222,6 +222,7 @@ fn kind(node: &Node) -> u8 {
         NodeKind::MacroCall { .. } => 22,
         NodeKind::MiddleDelimiter { .. } => 23,
         NodeKind::CustomSymbol { .. } => 24,
+        NodeKind::StyleChange { .. } => 25,
     }
 }
 

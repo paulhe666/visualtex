@@ -142,7 +142,7 @@ impl Encoder {
             }
             NodeKind::Boxed { body, .. } => format!("<menclose notation=\"box\">{}</menclose>", self.node(body, depth + 1)?),
             NodeKind::Color { spec, body, .. } => format!("<mstyle mathcolor=\"{}\">{}</mstyle>", spec.color.hex(), self.node(body, depth + 1)?),
-            NodeKind::ColorChange { .. } => String::new(), // Row handles scoped color changes.
+            NodeKind::ColorChange { .. } | NodeKind::StyleChange { .. } => String::new(), // Row handles scoped declarations.
             NodeKind::Scripts { base, slots } => {
                 let base = self.node(base, depth + 1)?;
                 self.scripts(base, slots, false, depth + 1)?
@@ -156,12 +156,26 @@ impl Encoder {
     fn row<'a>(&mut self, nodes: impl Iterator<Item=&'a Node>, depth: usize) -> EngineResult<String> {
         let mut children = Vec::new();
         let mut current_color: Option<crate::paint::RgbColor> = None;
+        let mut current_style: Option<crate::layout::MathStyle> = None;
+        let outer_display = self.display_mode;
         for node in nodes {
             if let NodeKind::ColorChange { spec } = &node.kind { current_color = Some(spec.color); continue; }
-            let mut child = self.node(node, depth + 1)?;
+            if let NodeKind::StyleChange { style, .. } = &node.kind {
+                current_style = Some(*style);
+                self.display_mode = *style == crate::layout::MathStyle::Display;
+                continue;
+            }
+            let child = self.node(node, depth + 1);
+            let mut child = match child { Ok(child) => child, Err(error) => { self.display_mode = outer_display; return Err(error); } };
+            if let Some(style) = current_style {
+                use crate::layout::MathStyle;
+                let (display, level) = match style { MathStyle::Display => (true, 0), MathStyle::Text => (false, 0), MathStyle::Script => (false, 1), MathStyle::ScriptScript => (false, 2) };
+                child = format!("<mstyle displaystyle=\"{display}\" scriptlevel=\"{level}\">{child}</mstyle>");
+            }
             if let Some(color) = current_color { child = format!("<mstyle mathcolor=\"{}\">{child}</mstyle>", color.hex()); }
             children.push(child);
         }
+        self.display_mode = outer_display;
         Ok(match children.len() {
             0 => "<mrow></mrow>".into(),
             1 => children.pop().unwrap(),
@@ -262,6 +276,9 @@ impl Encoder {
             BuiltinMacroKind::BoldVector => format!("<mstyle mathvariant=\"bold\">{}</mstyle>", arg(self,0)?),
             BuiltinMacroKind::ArrowVector => format!("<mover accent=\"true\"><mstyle mathvariant=\"bold\">{}</mstyle><mo>→</mo></mover>", arg(self,0)?),
             BuiltinMacroKind::UnitVector => format!("<mover accent=\"true\"><mstyle mathvariant=\"bold\">{}</mstyle><mo>ˆ</mo></mover>", arg(self,0)?),
+            BuiltinMacroKind::ExtensibleRightArrow => format!("<mover><mo stretchy=\"true\">→</mo><mpadded width=\"+1em\" lspace=\"0.5em\">{}</mpadded></mover>", arg(self,0)?),
+            BuiltinMacroKind::ExtensibleLeftArrow => format!("<mover><mo stretchy=\"true\">←</mo><mpadded width=\"+1em\" lspace=\"0.5em\">{}</mpadded></mover>", arg(self,0)?),
+            BuiltinMacroKind::ParenthesizedMod => format!("<mrow><mspace width=\"0.444em\"/><mo>(</mo><mi>mod</mi><mspace width=\"0.333em\"/>{}<mo>)</mo></mrow>", arg(self,0)?),
         })
     }
 
@@ -278,6 +295,10 @@ impl Encoder {
 
 fn token(value: &str, class: AtomClass, command: Option<&str>) -> String {
     let escaped = escape(value);
+    if command == Some("'") { return format!("<mo>{escaped}</mo>"); }
+    if let Some((size, _)) = command.and_then(crate::delimiters::big_spelling) {
+        return format!("<mo fence=\"false\" stretchy=\"true\" symmetric=\"true\" minsize=\"{size}em\" maxsize=\"{size}em\">{escaped}</mo>");
+    }
     // Preserve the command's alternate identity using the shared recovery
     // annotation, while the token itself remains the semantic Unicode scalar.
     if command.and_then(crate::symbol_catalog::alternate).is_some_and(|spec| spec.value == value) {

@@ -109,3 +109,7 @@ export interface EditorActionResult {
   positionMap: PositionMap | null;
   verticalMove: { selection: Selection; direction: Vertical; desiredX: number | null } | null;
 }
+/** As sent by the core: with omitUnchangedDocument the document is absent when unchanged. */
+export type EditorActionWireResult = Omit<EditorActionResult, 'editor'> & {
+  editor: Omit<EditorSnapshot, 'document'> & { document?: EditorSnapshot['document'] };
+};

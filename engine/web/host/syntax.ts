@@ -1,5 +1,6 @@
 // Internal syntax-analysis schema, independent of Office metadata and Session DTOs.
 // IDs returned by analyzeSource are local to that analysis, never edit handles.
+import type { MathStyle } from './layout';
 export interface SourceSpan {
   sourceId: number;
   byteStart: number;
@@ -23,10 +24,11 @@ export type GridColumnAlignment = 'left' | 'center' | 'right';
 export interface ArrayColumnSpec { beforeSpec: string; source: string; alignments: GridColumnAlignment[]; verticalRules: number[] }
 export type BuiltinMacroKind = 'absolute' | 'norm' | 'differential' | 'derivative' | 'partialDerivative'
   | 'commutator' | 'anticommutator' | 'poissonBracket' | 'bra' | 'ket' | 'braKet' | 'expectation'
-  | 'matrixElement' | 'ketBra' | 'boldVector' | 'arrowVector' | 'unitVector';
+  | 'matrixElement' | 'ketBra' | 'boldVector' | 'arrowVector' | 'unitVector'
+  | 'extensibleRightArrow' | 'extensibleLeftArrow' | 'parenthesizedMod';
 export type MathNode = { id: number; origin: SourceSpan | null } & (
   | { kind: 'row'; grouping: 'bare' | 'braced'; entries: RowEntry[]; trailing: string }
-  | { kind: 'grid'; environment: 'gathered' | 'matrix' | 'pmatrix' | 'bmatrix' | 'Bmatrix' | 'vmatrix' | 'Vmatrix' | 'array' | 'cases' | 'aligned' | 'align' | 'alignStar'; columns: number[]; arraySpec: ArrayColumnSpec | null; beforeBeginName: string; beforeEndName: string; rows: MathNode[] }
+  | { kind: 'grid'; environment: 'gathered' | 'matrix' | 'pmatrix' | 'bmatrix' | 'Bmatrix' | 'vmatrix' | 'Vmatrix' | 'array' | 'cases' | 'aligned' | 'align' | 'alignStar' | 'substack'; columns: number[]; arraySpec: ArrayColumnSpec | null; beforeBeginName: string; beforeEndName: string; rows: MathNode[] }
   | { kind: 'gridRow'; cells: MathNode[]; separators: string[]; rowBreak: string }
   | { kind: 'symbol'; value: string; class: AtomClass; command: string | null }
   | { kind: 'text'; command: string; beforeBody: string; text: string }
@@ -46,6 +48,7 @@ export type MathNode = { id: number; origin: SourceSpan | null } & (
   | { kind: 'boxed'; beforeBody: string; body: MathNode }
   | { kind: 'color'; spec: ColorSpec; beforeBody: string; body: MathNode }
   | { kind: 'colorChange'; spec: ColorSpec }
+  | { kind: 'styleChange'; command: string; style: MathStyle }
   | { kind: 'scripts'; base: MathNode; slots: ScriptSlot[] }
   | { kind: 'emptySlot'; label: string }
   | { kind: 'unparsedSource'; raw: string }

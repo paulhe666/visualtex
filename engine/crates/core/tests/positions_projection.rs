@@ -73,8 +73,9 @@ fn reversed_cross_structure_range_promotes_to_whole_fraction_without_cutting_it(
     assert_eq!(index.normalize_range(&selection).unwrap(), NormalizedRange::Row { node_id: root.id, start: 2, end: 3, promoted: true });
     let forward = Selection::Range { anchor: Position::row(numerator.id, 0), focus: Position::row(denominator.id, 1) };
     assert_eq!(index.normalize_range(&selection).unwrap(), index.normalize_range(&forward).unwrap());
-    assert_eq!(index.move_horizontal(&selection, Horizontal::Left, false).unwrap(), Selection::caret(Position::row(numerator.id, 0)));
-    assert_eq!(index.move_horizontal(&selection, Horizontal::Right, false).unwrap(), Selection::caret(Position::row(denominator.id, 1)));
+    // Collapsing lands at the edges of the highlighted (whole-fraction) span.
+    assert_eq!(index.move_horizontal(&selection, Horizontal::Left, false).unwrap(), Selection::caret(Position::row(root.id, 2)));
+    assert_eq!(index.move_horizontal(&selection, Horizontal::Right, false).unwrap(), Selection::caret(Position::row(root.id, 3)));
 }
 
 #[test]

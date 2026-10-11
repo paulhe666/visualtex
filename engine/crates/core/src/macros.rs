@@ -25,6 +25,12 @@ pub enum BuiltinMacroKind {
     UnitVector,
     MathRelation,
     MathBinary,
+    /// amsmath \xrightarrow{label} (mandatory label form).
+    ExtensibleRightArrow,
+    /// amsmath \xleftarrow{label} (mandatory label form).
+    ExtensibleLeftArrow,
+    /// amsmath \pmod{n}: "(mod n)" with leading space.
+    ParenthesizedMod,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -54,6 +60,9 @@ const SPECS: &[MacroSpec] = &[
     MacroSpec { command: "\\vb", kind: BuiltinMacroKind::BoldVector, arity: 1 },
     MacroSpec { command: "\\va", kind: BuiltinMacroKind::ArrowVector, arity: 1 },
     MacroSpec { command: "\\vu", kind: BuiltinMacroKind::UnitVector, arity: 1 },
+    MacroSpec { command: "\\xrightarrow", kind: BuiltinMacroKind::ExtensibleRightArrow, arity: 1 },
+    MacroSpec { command: "\\xleftarrow", kind: BuiltinMacroKind::ExtensibleLeftArrow, arity: 1 },
+    MacroSpec { command: "\\pmod", kind: BuiltinMacroKind::ParenthesizedMod, arity: 1 },
 ];
 
 pub fn spec(command: &str) -> Option<MacroSpec> {

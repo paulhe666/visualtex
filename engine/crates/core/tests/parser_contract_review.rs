@@ -25,6 +25,7 @@ fn semantic_tokens(node: &Node, out: &mut Vec<String>) {
         NodeKind::Boxed { .. } => out.push("boxed".into()),
         NodeKind::Color {spec,..}=>out.push(format!("color:{}",spec.color.hex())),
         NodeKind::ColorChange {spec}=>out.push(format!("colorChange:{}",spec.color.hex())),
+        NodeKind::StyleChange {command,..}=>out.push(format!("styleChange:{command}")),
         NodeKind::GeneralOperator { command, parts, .. } => out.push(format!("generalOperator:{command}:{:?}:{:?}",visualtex_engine_core::operators::effective_mode(parts),visualtex_engine_core::operators::slots(parts).map(|s|s.script).collect::<Vec<_>>())),
         NodeKind::MacroCall { command, macro_kind, arguments, .. } => out.push(format!("macro:{command}:{macro_kind:?}:{}",arguments.len())),
         NodeKind::Grid { environment, columns, rows, .. } => out.push(format!("grid:{environment:?}:{}:{}",columns.len(),rows.len())),

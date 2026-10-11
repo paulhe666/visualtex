@@ -19,6 +19,7 @@ fn semantic(n:&Node)->Value {
         NodeKind::Boxed{body,..}=>json!(["boxed",semantic(body)]),
         NodeKind::Color{spec,body,..}=>json!(["color",spec.color,semantic(body)]),
         NodeKind::ColorChange{spec}=>json!(["colorChange",spec.color]),
+        NodeKind::StyleChange{command,..}=>json!(["styleChange",command]),
         NodeKind::GeneralOperator{command,body,parts,..}=>json!(["generalOperator",command,semantic(body),visualtex_engine_core::operators::effective_mode(parts),visualtex_engine_core::operators::slots(parts).map(|s|json!([s.script,semantic(&s.argument)])).collect::<Vec<_>>()]),
         NodeKind::MacroCall{command,macro_kind,arguments,..}=>json!(["macro",command,macro_kind,arguments.iter().map(|a|semantic(a)).collect::<Vec<_>>()]),
         NodeKind::Grid{environment,columns,rows,..}=>json!(["grid",environment,columns.len(),rows.iter().map(|r|semantic(r)).collect::<Vec<_>>()]),

@@ -27,7 +27,7 @@ fn all_bounded_macros_preserve_authored_source_and_real_arguments(){
   r"\abs{x+1}",r"\norm{\frac{x}{y}}",r"\dd{x}",r"\dv{f}{x}",r"\pdv{f}{x}",
   r"\comm{A}{B}",r"\acomm{A}{B}",r"\pb{f}{g}",r"\bra{\psi}",r"\ket{\phi}",
   r"\braket{\phi}{\psi}",r"\expval{A}",r"\mel{\phi}{A}{\psi}",r"\ketbra{\psi}{\phi}",
-  r"\vb{v}",r"\va{v}",r"\vu{e}",r"\mathrel{⫽}",r"\mathbin{=}"];
+  r"\vb{v}",r"\va{v}",r"\vu{e}",r"\mathrel{⫽}",r"\mathbin{=}",r"\xrightarrow{f}",r"\xleftarrow{n\to\infty}",r"\pmod{p}"];
  assert_eq!(samples.len(),macros::all().len());
  for source in samples {let owned=Owned::new(source);let d=owned.s.document_snapshot();
   assert!(d.analysis.complete&&d.analysis.supported&&d.analysis.exportable,"{source}: {:?}",d.analysis.diagnostics);
@@ -83,7 +83,7 @@ fn native_layout_uses_real_geometry_for_every_macro_kind(){
  let owned=Owned::new(source);let d=owned.s.document_snapshot();assert!(d.analysis.exportable,"{:?}",d.analysis.diagnostics);let(fonts,options)=font();let mut layout=LayoutEngine::default();
  let scene=layout.layout(&owned.s,&fonts,&options).unwrap();assert!(scene.width>0.0&&scene.height>0.0);assert!(scene.glyphs.len()>20);assert!(scene.rules.len()>=3);
  let svg=scene.svg().unwrap();assert!(svg.starts_with("<svg")&&!svg.contains("<text")&&!svg.contains("foreignObject"));
- for spec in macros::all(){let source=match spec.kind{BuiltinMacroKind::Derivative=>r"\dv{f}{x}",BuiltinMacroKind::PartialDerivative=>r"\pdv{f}{x}",BuiltinMacroKind::MatrixElement=>r"\mel{a}{b}{c}",BuiltinMacroKind::BraKet=>r"\braket{a}{b}",BuiltinMacroKind::KetBra=>r"\ketbra{a}{b}",BuiltinMacroKind::Commutator=>r"\comm{a}{b}",BuiltinMacroKind::Anticommutator=>r"\acomm{a}{b}",BuiltinMacroKind::PoissonBracket=>r"\pb{a}{b}",BuiltinMacroKind::Absolute=>r"\abs{x}",BuiltinMacroKind::Norm=>r"\norm{x}",BuiltinMacroKind::Differential=>r"\dd{x}",BuiltinMacroKind::Bra=>r"\bra{x}",BuiltinMacroKind::Ket=>r"\ket{x}",BuiltinMacroKind::Expectation=>r"\expval{x}",BuiltinMacroKind::BoldVector=>r"\vb{x}",BuiltinMacroKind::ArrowVector=>r"\va{x}",BuiltinMacroKind::UnitVector=>r"\vu{x}",BuiltinMacroKind::MathRelation=>r"\mathrel{x}",BuiltinMacroKind::MathBinary=>r"\mathbin{x}"};
+ for spec in macros::all(){let source=match spec.kind{BuiltinMacroKind::Derivative=>r"\dv{f}{x}",BuiltinMacroKind::PartialDerivative=>r"\pdv{f}{x}",BuiltinMacroKind::MatrixElement=>r"\mel{a}{b}{c}",BuiltinMacroKind::BraKet=>r"\braket{a}{b}",BuiltinMacroKind::KetBra=>r"\ketbra{a}{b}",BuiltinMacroKind::Commutator=>r"\comm{a}{b}",BuiltinMacroKind::Anticommutator=>r"\acomm{a}{b}",BuiltinMacroKind::PoissonBracket=>r"\pb{a}{b}",BuiltinMacroKind::Absolute=>r"\abs{x}",BuiltinMacroKind::Norm=>r"\norm{x}",BuiltinMacroKind::Differential=>r"\dd{x}",BuiltinMacroKind::Bra=>r"\bra{x}",BuiltinMacroKind::Ket=>r"\ket{x}",BuiltinMacroKind::Expectation=>r"\expval{x}",BuiltinMacroKind::BoldVector=>r"\vb{x}",BuiltinMacroKind::ArrowVector=>r"\va{x}",BuiltinMacroKind::UnitVector=>r"\vu{x}",BuiltinMacroKind::MathRelation=>r"\mathrel{x}",BuiltinMacroKind::MathBinary=>r"\mathbin{x}",BuiltinMacroKind::ExtensibleRightArrow=>r"\xrightarrow{f}",BuiltinMacroKind::ExtensibleLeftArrow=>r"\xleftarrow{f}",BuiltinMacroKind::ParenthesizedMod=>r"\pmod{p}"};
   let s=Owned::new(source);layout.layout(&s.s,&fonts,&options).unwrap();}
 }
 

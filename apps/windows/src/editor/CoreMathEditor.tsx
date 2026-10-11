@@ -207,6 +207,15 @@ export const CoreMathEditor = forwardRef<MathEditorHandle, Props>(
     const rejectedRef = useRef(false);
     const onInitialRejectRef = useRef(onInitialReject);
     onInitialRejectRef.current = onInitialReject;
+    // Fonts depend on each line's mode, not on its source. Keying the font
+    // effect on ids+modes keeps keystrokes from re-resolving fonts and
+    // relaying out every line.
+    const linesRef = useRef(lines);
+    linesRef.current = lines;
+    const lineModesKey = useMemo(
+      () => lines.map((line) => `${line.id}\u0000${line.mode}`).join("\u0001"),
+      [lines],
+    );
 
     useEffect(() => {
       const retry = () => setRetryGeneration((value) => value + 1);
@@ -530,7 +539,7 @@ export const CoreMathEditor = forwardRef<MathEditorHandle, Props>(
         const context = await getCoreEngineRuntime();
         let unresolved = false;
         for (const [lineId, record] of hostRecords.current) {
-          const line = lines.find((item) => item.id === lineId);
+          const line = linesRef.current.find((item) => item.id === lineId);
           if (!line) continue;
           const style = line.mode === "inline" ? "text" : "display";
           let resolution: CoreFontResolution | null = null;
@@ -587,7 +596,7 @@ export const CoreMathEditor = forwardRef<MathEditorHandle, Props>(
       return () => {
         cancelled = true;
       };
-    }, [accepted, formulaChineseFont, formulaLetterFont, lines, retryGeneration]);
+    }, [accepted, formulaChineseFont, formulaLetterFont, lineModesKey, retryGeneration]);
 
     useEffect(() => {
       if (!accepted) return;
@@ -627,7 +636,7 @@ export const CoreMathEditor = forwardRef<MathEditorHandle, Props>(
           hostRecords.current.delete(lineId);
           continue;
         }
-        if (record.host.inspect().document.source !== line.latex) {
+        if (record.host.source !== line.latex) {
           record.host.replaceSource(line.latex);
         }
         record.host.setZoom(zoom);
@@ -698,7 +707,7 @@ export const CoreMathEditor = forwardRef<MathEditorHandle, Props>(
       restoreSelection: async (lineId, latex, _selection: MathSelectionSnapshot | null) => {
         const record = hostRecords.current.get(lineId);
         if (!record) return false;
-        if (record.host.inspect().document.source !== latex) record.host.replaceSource(latex);
+        if (record.host.source !== latex) record.host.replaceSource(latex);
         record.host.focus();
         return true;
       },
@@ -709,7 +718,7 @@ export const CoreMathEditor = forwardRef<MathEditorHandle, Props>(
       ) => {
         const record = hostRecords.current.get(lineId);
         if (!record) return false;
-        if (record.host.inspect().document.source !== latex) return false;
+        if (record.host.source !== latex) return false;
         if (!selection) {
           record.host.focus();
           return true;
@@ -760,7 +769,7 @@ export const CoreMathEditor = forwardRef<MathEditorHandle, Props>(
       replaceLineSource: (lineId, latex) => {
         const record = hostRecords.current.get(lineId);
         if (!record) return false;
-        if (record.host.inspect().document.source !== latex) record.host.replaceSource(latex);
+        if (record.host.source !== latex) record.host.replaceSource(latex);
         return true;
       },
       getCoreExportPort: (): CoreEditorExportPort | null => {

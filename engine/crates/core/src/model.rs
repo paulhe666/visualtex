@@ -75,6 +75,9 @@ pub enum NodeKind {
     Boxed { before_body: String, body: Arc<Node> },
     Color { spec: crate::paint::ColorSpec, before_body: String, body: Arc<Node> },
     ColorChange { spec: crate::paint::ColorSpec },
+    /// \displaystyle-like declaration: changes the math style of the
+    /// following siblings in its row only, like a color declaration.
+    StyleChange { command: String, style: crate::layout::MathStyle },
     Phantom { command: String, before_body: String, axis: crate::spacing::PhantomAxis, body: Arc<Node> },
     Scripts { base: Arc<Node>, slots: Vec<ScriptSlot> },
     EmptySlot { label: String },
@@ -144,7 +147,7 @@ impl Node {
             NodeKind::LargeOperator { .. } | NodeKind::CustomSymbol { .. } | NodeKind::Space { .. } | NodeKind::MiddleDelimiter { .. } => true,
             NodeKind::MacroCall { arguments, .. } => arguments.iter().any(|argument| argument.has_formula_content()),
             NodeKind::Style { body, .. } | NodeKind::Phantom { body, .. } | NodeKind::Boxed { body, .. } | NodeKind::Color { body, .. } => body.has_formula_content(),
-            NodeKind::ColorChange { .. } => false,
+            NodeKind::ColorChange { .. } | NodeKind::StyleChange { .. } => false,
             NodeKind::Text { text, .. } => !text.is_empty(),
             NodeKind::UnparsedSource { raw } => !raw.is_empty(),
             NodeKind::EmptySlot { .. } => false,
@@ -320,6 +323,14 @@ fn emit(node: &Node, mode: LatexMode, argument: bool, output: &mut String,
             }
             if braced { output.push('}'); }
         }
+        NodeKind::Grid { environment: crate::grids::GridKind::Substack, before_begin_name, rows, .. } => {
+            output.push_str("\\substack");
+            if mode == LatexMode::Lossless { output.push_str(before_begin_name); }
+            output.push('{');
+            for row in rows { emit(row, mode, false, output, ranges); }
+            if mode == LatexMode::Lossless && ends_in_line_comment(output) { output.push('\n'); }
+            output.push('}');
+        }
         NodeKind::Grid { environment, array_spec, before_begin_name, before_end_name, rows, .. } => {
             output.push_str("\\begin");
             if mode == LatexMode::Lossless { output.push_str(before_begin_name); }
@@ -443,6 +454,7 @@ fn emit(node: &Node, mode: LatexMode, argument: bool, output: &mut String,
             emit(body,mode,true,output,ranges);
         }
         NodeKind::ColorChange { spec } => {output.push_str("\\color");spec.emit(mode==LatexMode::Lossless,output);}
+        NodeKind::StyleChange { command, .. } => output.push_str(command),
         NodeKind::Space { command, .. } => output.push_str(command),
         NodeKind::Boxed { before_body, body } => {
             output.push_str("\\boxed");
@@ -731,6 +743,11 @@ pub fn validate_tree(root: &Node) -> EngineResult<TreeFacts> {
                 if !body.is_row(){return Err(EngineError::new(ErrorCode::InvalidInput,"Color body must be an editable row"));}
             }
             NodeKind::ColorChange { spec } => {facts.color_changes+=1;spec.validate()?;}
+            NodeKind::StyleChange { command, style } => {
+                if crate::styles::style_change(command) != Some(*style) {
+                    return Err(EngineError::new(ErrorCode::InvalidInput, "Invalid math style declaration"));
+                }
+            }
             NodeKind::Boxed { body, .. } => {
                 facts.boxes += 1;
                 if !body.is_row() {return Err(EngineError::new(ErrorCode::InvalidInput,"Boxed body must be an editable row"));}

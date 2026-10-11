@@ -111,6 +111,16 @@ const results=await withOwnedBrowser(assets,'<!doctype html><meta charset="utf-8
    const data=new DataTransfer();data.setData('text/plain','x'.repeat(1048577));h.input.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,cancelable:true}));
    equal(h.calls,[],'oversize paste reached port');check(h.errors.length===1,'missing budget diagnostic');
   }finally{h.dispose();}});
+  await test('word and line deletion input types map to one formula deletion',()=>{const h=harness();try{
+   for(const t of ['deleteWordBackward','deleteSoftLineBackward','deleteHardLineBackward','deleteWordForward','deleteSoftLineForward','deleteHardLineForward'])h.edit('beforeinput',t);
+   equal(h.calls,[['remove',true],['remove',true],['remove',true],['remove',false],['remove',false],['remove',false]],'deletion mapping');
+   equal(h.bridge.pendingInput,null,'deletion left a pending edit');
+  }finally{h.dispose();}});
+  await test('an unknown text-free browser operation is reported, not held',()=>{const h=harness();try{
+   h.edit('beforeinput','formatBold');equal(h.bridge.pendingInput,null,'text-free operation was held');check(h.errors.length===1,'missing diagnostic');
+   h.edit('beforeinput','insertText','x');equal(h.calls,[['insert','x']],'later typing was swallowed');
+   h.edit('beforeinput','insertTranspose','ab');check(h.bridge.pendingInput?.text==='ab','unknown operation with text lost its payload');
+  }finally{h.dispose();}});
   await test('disposal disconnects input listeners and DOM',()=>{const h=harness();h.dispose();h.edit('beforeinput','insertText','x');equal(h.calls,[],'disposed listener ran');check(!h.input.isConnected,'input retained');});
   return {syntheticDomEvents:true,scope:'Input bridge component boundary only; fault-injectable InputPort',tests,passed:tests.filter(t=>t.status==='PASS').length,failed:tests.filter(t=>t.status==='FAILED').length};
  })()`));

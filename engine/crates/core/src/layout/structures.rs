@@ -17,8 +17,9 @@ impl Builder<'_> {
             crate::fractions::FractionForm::Barred=>{},
         }
         let scale=style.scale(self.math);let display=style==MathStyle::Display;
-        let num=self.node(numerator,style.fraction_child(),cramped,depth+1)?;
-        let den=self.node(denominator,style.fraction_child(),true,depth+1)?;
+        let child_style=if spec.display_arguments {MathStyle::Display} else {style.fraction_child()};
+        let num=self.node(numerator,child_style,cramped,depth+1)?;
+        let den=self.node(denominator,child_style,true,depth+1)?;
         let m=self.math;let axis=m.axis*scale;let thickness=m.fraction_rule*scale;
         let num_gap=(if display {m.numerator_display_gap} else {m.numerator_gap})*scale;
         let den_gap=(if display {m.denominator_display_gap} else {m.denominator_gap})*scale;

@@ -31,6 +31,7 @@ fn semantic(n:&Node)->Value{match &n.kind{
     NodeKind::Boxed{body,..}=>json!(["boxed",semantic(body)]),
     NodeKind::Color{spec,body,..}=>json!(["color",spec.color,semantic(body)]),
     NodeKind::ColorChange{spec}=>json!(["colorChange",spec.color]),
+    NodeKind::StyleChange{command,..}=>json!(["styleChange",command]),
     NodeKind::CustomSymbol{command,asset_sha256,parts,..}=>json!(["customSymbol",command,asset_sha256,operators::effective_mode(parts),operators::slots(parts).map(|s|json!([s.script,semantic(&s.argument)])).collect::<Vec<_>>()]),
     NodeKind::EmptySlot{label}=>json!(["slot",label]),NodeKind::UnparsedSource{raw}=>json!(["opaque",raw]),
 }}

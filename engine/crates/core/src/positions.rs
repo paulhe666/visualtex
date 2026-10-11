@@ -172,9 +172,21 @@ impl<'a> TreeIndex<'a> {
             }
             None
         };
+        // Every enclosing non-gathered grid and the cell holding the position.
+        let cells=|mut id:NodeId| -> Vec<(NodeId,NodeId)> {
+            let mut chain=Vec::new();
+            while let Some((grid,cell))=owner(id) { chain.push((grid,cell)); id=grid; }
+            chain
+        };
         let unsupported=match selection {
             Selection::GridCells{..}=>false,
-            Selection::Range{anchor,focus}=>owner(anchor.node_id())!=owner(focus.node_id()),
+            // Ambiguous only when both ends sit in different cells of the same
+            // grid. An end outside the grid promotes to the whole grid, which
+            // is exactly what the highlight shows and what an edit replaces.
+            Selection::Range{anchor,focus}=>{
+                let (a,b)=(cells(anchor.node_id()),cells(focus.node_id()));
+                a.iter().any(|(grid,cell)|b.iter().any(|(other,other_cell)|grid==other&&cell!=other_cell))
+            }
             Selection::Node{node_id}=>{
                 let entry=self.nodes.get(node_id).ok_or_else(invalid_position)?;
                 (matches!(entry.node.kind,NodeKind::GridRow{..})
@@ -267,6 +279,12 @@ impl<'a> TreeIndex<'a> {
             }
             Selection::Range { anchor, focus } => {
                 if !extend && !selection.is_collapsed() {
+                    // A range whose ends sit at different depths is shown (and
+                    // edited) as whole structures in their common row; collapse
+                    // to that highlighted span's edge, not into a structure.
+                    if let Ok(NormalizedRange::Row { node_id, start, end, promoted: true }) = self.normalize_range(selection) {
+                        return Ok(Selection::caret(Position::row(node_id, if direction == Horizontal::Left { start } else { end } as usize)));
+                    }
                     let left = self.rank(*anchor)? < self.rank(*focus)?;
                     let target = if (direction == Horizontal::Left) == left { *anchor } else { *focus };
                     return Ok(Selection::caret(target));

@@ -55,7 +55,7 @@ const roles:Record<string,string>={root:'公式',fraction:'分式',numerator:'�
   largeOperator:'大运算符',generalOperator:'自定义算子',customSymbol:'自定义符号',operatorBody:'算子本体',macroCall:'兼容宏',
   'macroArgument:1':'宏参数 1','macroArgument:2':'宏参数 2','macroArgument:3':'宏参数 3',lowerLimit:'下限',upperLimit:'上限',
   space:'数学空白',phantom:'隐藏占位',phantomBody:'隐藏内容',boxed:'方框',boxedBody:'方框内容',
-  color:'着色公式',colorBody:'着色内容',colorChange:'颜色声明',style:'数学样式',styleBody:'样式内容',
+  color:'着色公式',colorBody:'着色内容',colorChange:'颜色声明',styleChange:'样式声明',style:'数学样式',styleBody:'样式内容',
   grid:'框内多行公式',gridRow:'公式行',middleDelimiter:'中间定界符',
   scripts:'上下标',base:'底数',subscript:'下标',superscript:'上标',text:'文本',symbol:'符号',group:'分组'};
 
@@ -73,7 +73,11 @@ export class EngineEditorHost {
   private readonly ownsOwner:boolean;
   private commandInput:CommandInputState|null;
   private dragAnchor:Position|null=null;
+  private pendingMove:ViewPointer|null=null;
+  private moveFrame:number|null=null;
   private desiredX:number|null=null;
+  private extendVertical=false;
+  private zoom:number|null=null;
   private focused=false;
   private disposed=false;
   private readonly abort=new AbortController();
@@ -95,7 +99,7 @@ export class EngineEditorHost {
     this.commandPopup.setAttribute('role','listbox');this.commandPopup.setAttribute('aria-label','公式命令候选');this.commandPopup.hidden=true;parent.append(this.commandPopup);
     this.input=new BrowserInputBridge(parent,{
       key:event=>this.key(event),
-      insert:text=>{
+      insert:text=>this.guardKeystroke(text,()=>{
         const mode=this.inputMode();
         if(this.commandInput?.active){
           if(this.commandInput.append(text,this.commandTarget())){this.renderCommandInput();return true;}
@@ -122,7 +126,7 @@ export class EngineEditorHost {
           this.autoExitAfterAtomicInput(path);
         }else this.recentMathInput='';
         return committed;
-      },
+      }),
       remove:backward=>{this.typingGroup++;this.recentMathInput='';return this.commitAndRender({kind:'edit',command:{kind:backward?'deleteBackward':'deleteForward'}});},
       history:redo=>{this.typingGroup++;this.recentMathInput='';return this.commitAndRender({kind:redo?'redo':'undo'});},
       beginComposition:()=>{this.cancelCommandInput();this.typingGroup++;this.recentMathInput='';const result=this.dispatch({kind:'beginComposition',mode:this.inputMode()});this.paintResult(result);return result.editor.composition?.id??null;},
@@ -212,6 +216,8 @@ export class EngineEditorHost {
     this.status.textContent=error.message;this.options.onError?.(error);
   }
   inspect():EditorSnapshot{return structuredClone(this.state);}
+  /** The current source without cloning the whole editor snapshot. */
+  get source():string{return this.state.document.source;}
   captureSelectionToken():CoreEditorSelectionToken{return {schema:'visualtex-core-selection-v1',ownerId:this.selectionOwnerId,documentId:this.state.document.documentId,revision:this.state.document.revision,sourceId:this.state.document.sourceId,selection:structuredClone(this.state.selection)};}
   restoreSelectionToken(token:CoreEditorSelectionToken):boolean{
     if(token.schema!=='visualtex-core-selection-v1'||token.ownerId!==this.selectionOwnerId||token.documentId!==this.state.document.documentId||token.revision!==this.state.document.revision||token.sourceId!==this.state.document.sourceId)return false;
@@ -231,14 +237,28 @@ export class EngineEditorHost {
     if(this.commandInput?.active)this.cancelCommandInput();
     const result=this.rawAction(action);
     if(result.verticalMove){
-      const selection=result.verticalMove.selection;
-      const queried=this.query({kind:'selection',selection});
-      if(queried.kind!=='selection')return result;
-      const from=queried.caret??(selection.kind==='gridCells'?{kind:'row' as const,nodeId:selection.focusCell,offset:0,affinity:'after' as const}:null);
+      const extend=action.kind==='moveVertical'&&this.extendVertical;
+      const down=result.verticalMove.direction==='down';
+      let selection=result.verticalMove.selection;
+      let from:Position|null=null;
+      if(extend&&selection.kind==='range')from=selection.focus;
+      else{
+        const queried=this.query({kind:'selection',selection});
+        if(queried.kind!=='selection')return result;
+        from=queried.caret??(selection.kind==='gridCells'?{kind:'row' as const,nodeId:selection.focusCell,offset:0,affinity:'after' as const}:null);
+        if(!from&&selection.kind==='range'){
+          // A highlighted range first collapses to its upper/lower edge,
+          // then the caret moves vertically from there.
+          selection=this.rawAction({kind:'moveHorizontal',direction:down?'right':'left',extend:false}).editor.selection;
+          if(selection.kind==='range')from=selection.focus;
+        }
+      }
       if(!from)return result;
-      const target=this.query({kind:'vertical',from,down:result.verticalMove.direction==='down',desiredX:this.desiredX});
+      const target=this.query({kind:'vertical',from,down,desiredX:this.desiredX});
       if(target.kind!=='vertical')throw new Error('Invalid vertical navigation response');
-      this.desiredX=target.desiredX;return this.rawAction({kind:'setSelection',selection:caret(target.position)});
+      this.desiredX=target.desiredX;
+      const anchor=extend&&selection.kind==='range'?selection.anchor:target.position;
+      return this.rawAction({kind:'setSelection',selection:{kind:'range',anchor,focus:target.position}});
     }
     if(action.kind!=='updateComposition')this.desiredX=null;
     return result;
@@ -281,6 +301,10 @@ export class EngineEditorHost {
   private commitAndRender(action:EditorAction):boolean{const result=this.dispatch(action);this.paintResult(result);return true;}
   private key(event:KeyboardEvent):boolean{
     const commandResult=this.commandKey(event);if(commandResult!==null)return commandResult;
+    // Word/line deletion (Ctrl/Alt/Cmd+Backspace/Delete) has no formula
+    // meaning beyond one atom. Owning it here keeps the browser from sending
+    // deleteWord*/deleteSoftLine* input the bridge cannot map.
+    if((event.key==='Backspace'||event.key==='Delete')&&(event.ctrlKey||event.metaKey||event.altKey))return this.deleteKey(event.key==='Backspace');
     if((event.ctrlKey||event.metaKey)&&!event.altKey){
       const directions={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'} as const;
       if(event.shiftKey&&event.key in directions){
@@ -318,16 +342,12 @@ export class EngineEditorHost {
     }
     if(event.key==='Home'||event.key==='End')return this.moveBoundary(event.key==='End',false,event.shiftKey);
     if(event.key==='ArrowLeft'||event.key==='ArrowRight'){this.typingGroup++;return this.commitAndRender({kind:'moveHorizontal',direction:event.key==='ArrowLeft'?'left':'right',extend:event.shiftKey});}
-    if(event.key==='ArrowUp'||event.key==='ArrowDown'){this.typingGroup++;return this.commitAndRender({kind:'moveVertical',direction:event.key==='ArrowUp'?'up':'down'});}
-    if(event.key==='Backspace'||event.key==='Delete'){
-      this.typingGroup++;
-      // This key is owned even when the core rejects a destructive range.
-      // Do not fall through to beforeinput, retry the deletion and hold an
-      // empty native pending edit after the already-reported refusal.
-      try{this.commitAndRender({kind:'edit',command:{kind:event.key==='Backspace'?'deleteBackward':'deleteForward'}});}
-      catch(error){this.reportError(error);}
-      return true;
+    if(event.key==='ArrowUp'||event.key==='ArrowDown'){
+      this.typingGroup++;this.extendVertical=event.shiftKey;
+      try{return this.commitAndRender({kind:'moveVertical',direction:event.key==='ArrowUp'?'up':'down'});}
+      finally{this.extendVertical=false;}
     }
+    if(event.key==='Backspace'||event.key==='Delete')return this.deleteKey(event.key==='Backspace');
     if(event.key==='Enter'){
       this.typingGroup++;
       if(event.shiftKey){
@@ -342,6 +362,26 @@ export class EngineEditorHost {
       return true;
     }
     return false;
+  }
+  private guardKeystroke(text:string,insert:()=>boolean):boolean{
+    try{return insert();}
+    catch(error){
+      // A single refused keystroke has nothing worth preserving: report it and
+      // stay ready for the next key instead of holding a pending edit that
+      // swallows all further typing until Enter/Escape. Longer text (IME or
+      // dictation commits) is still held for retry.
+      if([...text].length>1)throw error;
+      this.recentMathInput='';this.reportError(error);return true;
+    }
+  }
+  private deleteKey(backward:boolean):boolean{
+    this.typingGroup++;this.recentMathInput='';
+    // This key is owned even when the core rejects a destructive range.
+    // Do not fall through to beforeinput, retry the deletion and hold an
+    // empty native pending edit after the already-reported refusal.
+    try{this.commitAndRender({kind:'edit',command:{kind:backward?'deleteBackward':'deleteForward'}});}
+    catch(error){this.reportError(error);}
+    return true;
   }
   private paragraph():boolean{
     this.typingGroup++;
@@ -423,10 +463,35 @@ export class EngineEditorHost {
     this.input.setAnchor(top.x,top.y,Math.max(1,bottom.y-top.y));
   }
   private pointer(event:ViewPointer){
+    // A drag produces far more pointermove events than frames; hit-test and
+    // re-select once per frame with the latest point. down/up stay immediate
+    // and supersede any queued move.
+    if(event.phase==='move'){
+      const first=this.pendingMove===null;this.pendingMove=event;
+      if(first)this.moveFrame=requestAnimationFrame(()=>{this.moveFrame=null;const move=this.pendingMove;this.pendingMove=null;if(move)this.applyPointer(move);});
+      return;
+    }
+    this.cancelPendingMove();this.applyPointer(event);
+  }
+  private cancelPendingMove(){
+    if(this.moveFrame!==null)cancelAnimationFrame(this.moveFrame);
+    this.moveFrame=null;this.pendingMove=null;
+  }
+  private applyPointer(event:ViewPointer){
     if(this.disposed||this.input.hasUncommittedInput)return;
     if(!this.scene||event.documentId!==this.scene.documentId||event.revision!==this.scene.revision||event.sourceId!==this.scene.sourceId)return;
     try{
       const query=this.query({kind:'hitTest',xEm:event.xEm,yEm:event.yEm});if(query.kind!=='hitTest')return;
+      if(event.phase==='double'){
+        if(event.shiftKey)return;
+        // Double click selects the slot (or text run) under the pointer.
+        const at=caret(query.position);
+        const start=this.query({kind:'boundary',selection:at,toEnd:false,document:false});
+        const end=this.query({kind:'boundary',selection:at,toEnd:true,document:false});
+        if(start.kind!=='boundary'||end.kind!=='boundary')return;
+        this.dragAnchor=null;this.typingGroup++;
+        this.dispatch({kind:'setSelection',selection:{kind:'range',anchor:start.position,focus:end.position}});this.refresh(false);this.input.focus();return;
+      }
       if(event.phase==='down')this.dragAnchor=event.shiftKey&&this.state.selection.kind==='range'?this.state.selection.anchor:
         event.shiftKey&&this.state.selection.kind==='gridCells'?{kind:'row',nodeId:this.state.selection.anchorCell,offset:0,affinity:'after'}:query.position;
       if(!this.dragAnchor)return;
@@ -492,6 +557,9 @@ export class EngineEditorHost {
     const result=this.dispatch({kind:'edit',command:{kind:'setOperatorLimits',mode}});this.refresh(result.contentChanged);this.input.focus();
   }
   setLayoutOptions(layout:LayoutOptions):void{
+    // Identical options are a no-op: a full relayout per call is the costly
+    // part, and callers may re-apply the same resolved fonts on every render.
+    if(JSON.stringify(layout)===JSON.stringify(this.options.layout))return;
     if(this.input.hasUncommittedInput)throw new Error('Confirm, retry or cancel pending input before changing layout resources');
     const previous=this.options.layout;this.options.layout=structuredClone(layout);
     try{this.refresh(true);}catch(error){this.options.layout=previous;this.refresh(true);throw error;}
@@ -550,7 +618,8 @@ export class EngineEditorHost {
     this.typingGroup++;const result=this.dispatch({kind:redo?'redo':'undo'});this.refresh(result.contentChanged);
   }
   setZoom(zoom:number):void{
-    this.view.setZoom(zoom);this.positionInput();
+    if(zoom===this.zoom)return;
+    this.view.setZoom(zoom);this.zoom=zoom;this.positionInput();
     if(this.scene)this.options.onLayout?.(structuredClone(this.scene));
   }
   focus():void{this.input.focus();}
@@ -563,7 +632,7 @@ export class EngineEditorHost {
   }
   dispose():void{
     if(this.disposed)return;
-    this.input?.dispose();this.abort.abort();
+    this.cancelPendingMove();this.input?.dispose();this.abort.abort();
     try{this.owner.cancelPendingOcr();if(this.ownsOwner)this.owner.destroy();}
     finally{this.disposed=true;this.view?.dispose();this.status?.remove();this.commandPopup?.remove();}
   }

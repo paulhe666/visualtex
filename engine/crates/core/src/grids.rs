@@ -66,13 +66,16 @@ pub enum GridKind {
     #[serde(rename="Bmatrix")] BraceMatrix,
     #[serde(rename="vmatrix")] VMatrix,
     #[serde(rename="Vmatrix")] DoubleVMatrix,
+    /// amsmath \substack{a\\b}: a command, not an environment, whose rows
+    /// are centered in the ambient (usually script) style.
+    Substack,
 }
 impl GridKind {
     pub fn name(self) -> &'static str { match self {
         Self::Gathered=>"gathered", Self::Matrix=>"matrix", Self::Cases=>"cases",
         Self::Aligned=>"aligned", Self::Align=>"align", Self::AlignStar=>"align*", Self::Array=>"array",
         Self::PMatrix=>"pmatrix", Self::BMatrix=>"bmatrix", Self::BraceMatrix=>"Bmatrix",
-        Self::VMatrix=>"vmatrix", Self::DoubleVMatrix=>"Vmatrix",
+        Self::VMatrix=>"vmatrix", Self::DoubleVMatrix=>"Vmatrix", Self::Substack=>"substack",
     } }
     pub fn is_aligned(self)->bool { matches!(self,Self::Aligned|Self::Align|Self::AlignStar) }
     pub fn is_matrix(self)->bool {matches!(self,Self::Matrix|Self::PMatrix|Self::BMatrix|Self::BraceMatrix|Self::VMatrix|Self::DoubleVMatrix)}
@@ -88,7 +91,7 @@ impl GridKind {
             "vmatrix"=>Some(Self::VMatrix), "Vmatrix"=>Some(Self::DoubleVMatrix), _=>None }
     }
     pub fn accepts_columns(self, count: usize) -> bool {
-        if self==Self::Gathered {return count==1;} if self==Self::Cases {return (1..=2).contains(&count);}
+        if self==Self::Gathered||self==Self::Substack {return count==1;} if self==Self::Cases {return (1..=2).contains(&count);}
         (self.is_matrix()||self.is_aligned()||self.is_array())&&(1..=MAX_GRID_COLUMNS).contains(&count)
     }
 }

@@ -77,7 +77,7 @@ symbols! {
     "\\triangle" => ("△", Ordinary),
     "\\prime" => ("′", Ordinary),
     "\\backprime" => ("‵", Ordinary),
-    "\\ldots" => ("…", Inner),
+    "\\ldots" | "\\dots" => ("…", Inner),
     "\\cdots" => ("⋯", Inner),
     "\\vdots" => ("⋮", Ordinary),
     "\\ddots" => ("⋱", Ordinary),
@@ -185,7 +185,9 @@ symbols! {
     "\\longleftrightarrow" => ("⟷", Relation),
     "\\Longrightarrow" => ("⟹", Relation),
     "\\Longleftarrow" => ("⟸", Relation),
-    "\\Longleftrightarrow" => ("⟺", Relation),
+    "\\Longleftrightarrow" | "\\iff" => ("⟺", Relation),
+    "\\implies" => ("⟹", Relation),
+    "\\impliedby" => ("⟸", Relation),
     "\\longmapsto" => ("⟼", Relation),
     "\\hookrightarrow" => ("↪", Relation),
     "\\hookleftarrow" => ("↩", Relation),
@@ -222,7 +224,7 @@ symbols! {
     "\\vert" => ("|", Ordinary),
     "\\lVert" => ("‖", Open),
     "\\rVert" => ("‖", Close),
-    "\\Vert" => ("‖", Ordinary),
+    "\\Vert" | "\\|" => ("‖", Ordinary),
     "\\backslash" => ("\\", Ordinary),
 }
 

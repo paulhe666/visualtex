@@ -172,7 +172,12 @@ try {
   assert.deepEqual(cells[1].entries.map(e=>e.node.id),originalIds.slice(1));
   assert.equal(split.selection.focus.nodeId,cells[1].id);assert.equal(split.selection.focus.offset,0);
   await key('Backspace','Backspace',8);const merged=await checkpoint('M10 row-start Backspace merges within the same frame');
-  assert.equal(getGrid(merged).rows.length,1);assert.equal((await stats()).enters.A,1);
+  // Merging the last two lines dissolves the group: the plain formula returns
+  // with its original atoms and the caret at the join.
+  assert.equal(merged.document.analysis.facts.grids,0);assert.equal(merged.document.source,'abc');
+  assert.deepEqual(merged.document.analysis.tree.entries.map(e=>e.node.id),originalIds);
+  assert.equal(merged.selection.focus.nodeId,middleRoot);assert.equal(merged.selection.focus.offset,1);
+  assert.equal((await stats()).enters.A,1);
 
   await setSource('A',String.raw`\frac{x}{y}`);
   const fraction=await inspect('A');const numerator=fraction.document.analysis.tree.entries[0].node.numerator;

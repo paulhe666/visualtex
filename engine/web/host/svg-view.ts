@@ -43,7 +43,8 @@ export interface ViewPointer extends SceneIdentity {
   yEm: number;
   shiftKey: boolean;
   pointerId: number;
-  phase: 'down'|'move'|'up';
+  /** 'double' follows a completed double click (pointer events carry no click count). */
+  phase: 'down'|'move'|'up'|'double';
 }
 export interface SvgViewOptions {
   onPointer?: (event: ViewPointer) => void;
@@ -91,6 +92,11 @@ export class SvgSceneView {
     this.svg.addEventListener('pointermove',listen('move'),{signal:this.abort.signal});
     this.svg.addEventListener('pointerup',listen('up'),{signal:this.abort.signal});
     this.svg.addEventListener('pointercancel',()=>{this.pointerActive=null;},{signal:this.abort.signal});
+    this.svg.addEventListener('dblclick',event=>{
+      if(!this.scene||this.disposed||event.button!==0)return;
+      const point=this.clientToLayout(event.clientX,event.clientY);
+      this.options.onPointer?.({...this.identity(),...point,shiftKey:event.shiftKey,pointerId:-1,phase:'double'});
+    },{signal:this.abort.signal});
   }
   get stats() {return {sceneBuilds:this.sceneBuilds,overlayBuilds:this.overlayBuilds,zoom:this.zoom};}
   get snapshotIdentity(): SceneIdentity | null {return this.scene?this.identity():null;}

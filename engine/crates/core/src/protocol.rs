@@ -35,7 +35,10 @@ pub enum Command {
     CopySelection { handle: u32, expected_revision: Revision },
     CaptureOcrTarget { handle: u32, expected_revision: Revision },
     CancelOcrTarget { handle: u32, request_id: u32 },
-    EditorAction { handle: u32, expected_revision: Revision, event_sequence: u32, action: crate::editing::EditorAction },
+    EditorAction { handle: u32, expected_revision: Revision, event_sequence: u32, action: crate::editing::EditorAction,
+        /// Opt-in: leave `editor.document` out of the reply when the action
+        /// did not change the document (same revision and source identity).
+        #[serde(default)] omit_unchanged_document: bool },
     /// Stateless syntax diagnostics for source editors and headless validation.
     /// Returned node ids are analysis-local and must not be used as edit anchors.
     AnalyzeSource { source: String },
@@ -52,7 +55,7 @@ pub enum Reply {
     CustomSymbolAnalysis { asset:Arc<crate::custom_symbols::SymbolAsset> },
     Document { handle: u32, snapshot: DocumentSnapshot },
     Editor { handle: u32, snapshot: crate::editing::EditorSnapshot },
-    EditorAction { handle: u32, result: crate::editing::EditorActionResult },
+    EditorAction { handle: u32, result: crate::editing::EditorActionReply },
     SourcePatched { handle: u32, snapshot: DocumentSnapshot, mapping: crate::source_edit::SourceChangeMap },
     Layout { handle: u32, scene_token: u32, snapshot: Arc<crate::scene::LayoutSnapshot>, svg: Option<String> },
     PresentationMathMl { handle: u32, result: crate::presentation_mathml::PresentationMathMl },
@@ -304,12 +307,15 @@ impl Runtime {
                 let cancelled=self.get_mut(handle)?.cancel_ocr_target(request_id);
                 Ok(Reply::OcrTargetCancelled{handle,cancelled})
             }
-            Command::EditorAction { handle, expected_revision, event_sequence, action } => {
+            Command::EditorAction { handle, expected_revision, event_sequence, action, omit_unchanged_document } => {
                 if let crate::editing::EditorAction::ApplyOcrLatex{target,..}=&action {
                     if target.session_handle!=handle{return Err(EngineError::new(ErrorCode::Conflict,"OCR target belongs to another session handle"));}
                 }
-                let result = self.get_mut(handle)?.apply_action(expected_revision, event_sequence, action)?;
-                Ok(Reply::EditorAction { handle, result })
+                let session = self.get_mut(handle)?;
+                let before = (session.revision(), session.source_id());
+                let result = session.apply_action(expected_revision, event_sequence, action)?;
+                let omit_document = omit_unchanged_document && before == (result.editor.document.revision, result.editor.document.source_id);
+                Ok(Reply::EditorAction { handle, result: crate::editing::EditorActionReply { result, omit_document } })
             }
             Command::Layout { handle, expected_revision, options, include_svg } => {
                 let session = self.sessions.get(&handle)

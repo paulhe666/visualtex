@@ -118,7 +118,7 @@ impl Builder<'_>{
         let NodeKind::Grid{rows,..}=&index.node(owner.grid)?.kind else{return Err(invalid_position());};
         if (direction==Horizontal::Left&&owner.index==0)||(direction==Horizontal::Right&&owner.index+1==rows.len()){return Ok(true)}
         let left_index=if direction==Horizontal::Left{owner.index-1}else{owner.index};
-        let left_row=rows[left_index].as_ref().clone();let right_row=rows[left_index+1].as_ref().clone();
+        let left_row=rows[left_index].as_ref().clone();let right_row=rows[left_index+1].as_ref().clone();let row_count=rows.len();
         let NodeKind::GridRow{cells:left_cells,..}=&left_row.kind else{return Err(invalid_position());};
         let NodeKind::GridRow{cells:right_cells,row_break,..}=&right_row.kind else{return Err(invalid_position());};
         let left_cell=left_cells[0].as_ref().clone();let right_cell=right_cells[0].as_ref().clone();
@@ -133,6 +133,25 @@ impl Builder<'_>{
         let trailing=if let Some(first)=following.first_mut(){first.leading.insert_str(0,&trivia);tb.clone()}else{format!("{trivia}{tb}")};
         joined.extend(following);
         let left_id=left_cell.id;let right_id=right_cell.id;let removed_row=right_row.id;
+        // Merging the last two lines of a gathered group that is the whole
+        // formula dissolves the group again instead of leaving a one-line
+        // \begin{gathered}..\end{gathered} behind.
+        let root_id=self.tree.id;
+        let dissolve=row_count==2&&matches!(&self.tree.kind,NodeKind::Row{entries,..} if entries.len()==1&&entries[0].node.id==owner.grid);
+        if dissolve {
+            let count=joined.len()as u32;
+            self.update(root_id,move|root|{
+                let NodeKind::Row{entries,trailing:root_trailing,..}=&mut root.kind else{return Err(invalid_position());};
+                let leading=std::mem::take(&mut entries[0].leading);
+                let mut joined=joined;
+                let trailing=match joined.first_mut(){Some(first)=>{first.leading.insert_str(0,&leading);format!("{trailing}{root_trailing}")}None=>format!("{leading}{trailing}{root_trailing}")};
+                *entries=joined;*root_trailing=trailing;Ok(())
+            })?;
+            self.overrides.push(PositionStep::RowSplice{node_id:root_id,start:0,removed:1,inserted:count});
+            self.overrides.push(PositionStep::RowOffset{node_id:left_id,target_id:root_id,offset:0});
+            self.overrides.push(PositionStep::RowOffset{node_id:right_id,target_id:root_id,offset:(join+usize::from(reset))as u32});
+            self.selection=Selection::caret(Position::row(root_id,join));return Ok(true);
+        }
         let mut left=left_cell;left.origin=None;left.kind=NodeKind::Row{grouping:Grouping::Bare,entries:joined,trailing};
         let row_break=row_break.clone();
         self.update(owner.grid,move|grid|{

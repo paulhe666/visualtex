@@ -1,7 +1,7 @@
 // Internal engine v1 only. These types are NOT Office DTOs or persisted Office metadata.
 import type { MathNode, SourceAnalysis } from './syntax';
 import type { SourceEdit, SourceChangeMap } from './source-edit';
-import type { EditorAction, EditorSnapshot, EditorActionResult, StructuredClipboardFragment, OcrInsertionTarget } from './editing';
+import type { EditorAction, EditorSnapshot, EditorActionWireResult, StructuredClipboardFragment, OcrInsertionTarget } from './editing';
 import type { LayoutOptions, LayoutSnapshot, FontIdentity, SceneQuery, SceneQueryResult } from './layout';
 export type NodeId = number;
 export type Revision = number;
@@ -45,7 +45,7 @@ export type EngineCommand =
   | { op: 'copySelection'; handle: SessionHandle; expectedRevision: Revision }
   | { op: 'captureOcrTarget'; handle:SessionHandle; expectedRevision:Revision }
   | { op: 'cancelOcrTarget'; handle:SessionHandle; requestId:number }
-  | { op: 'editorAction'; handle: SessionHandle; expectedRevision: Revision; eventSequence: number; action: EditorAction }
+  | { op: 'editorAction'; handle: SessionHandle; expectedRevision: Revision; eventSequence: number; action: EditorAction; omitUnchangedDocument?: boolean }
   | { op: 'layout'; handle: SessionHandle; expectedRevision: Revision; options: LayoutOptions; includeSvg: boolean }
   | { op: 'exportPresentationMathMl'; handle: SessionHandle; expectedRevision: Revision; displayMode: boolean }
   | { op: 'queryScene'; handle: SessionHandle; expectedRevision: Revision; sceneToken: number; query: SceneQuery }
@@ -56,7 +56,7 @@ export type EngineReply =
   | { kind: 'customSymbolAnalysis'; asset:import('./custom-artwork').CustomSymbolAsset }
   | { kind: 'document'; handle: SessionHandle; snapshot: DocumentSnapshot }
   | { kind: 'editor'; handle: SessionHandle; snapshot: EditorSnapshot }
-  | { kind: 'editorAction'; handle: SessionHandle; result: EditorActionResult }
+  | { kind: 'editorAction'; handle: SessionHandle; result: EditorActionWireResult }
   | { kind: 'sourcePatched'; handle: SessionHandle; snapshot: DocumentSnapshot; mapping: SourceChangeMap }
   | { kind: 'layout'; handle: SessionHandle; sceneToken: number; snapshot: LayoutSnapshot; svg: string | null }
   | { kind: 'presentationMathMl'; handle: SessionHandle; result: { mathMl: string; alignedGridIds: number[] } }
