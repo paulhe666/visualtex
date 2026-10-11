@@ -18,7 +18,7 @@ export type SceneQueryResult =
   | { kind: 'hitTest'; position: Position }
   | { kind: 'vertical'; position: Position; origin: Position; desiredX: number }
   | { kind: 'boundary'; position: Position; origin: Position }
-  | { kind: 'selection'; caret: Position | null; rectangles: Rect[]; description: PositionDescription }
+  | { kind: 'selection'; caret: Position | null; caretGeometry: CaretGeometry | null; rectangles: Rect[]; description: PositionDescription }
   | { kind: 'svg'; svg: string; width: number; height: number; baseline: number };
 export interface CustomSymbolTextFontBinding {
   fontFamily:string;
@@ -78,7 +78,15 @@ export interface CaretStop {
   top: number;
   bottom: number;
   depth: number;
+  /** Laid-out box of the row or text run that owns this stop. */
+  slot: Rect;
 }
+/** Core-owned caret paint geometry: a zero-width bar spanning the slot, and
+ * the slot whose bottom edge is marked (null in the root row and empty slots). */
+export interface CaretGeometry { bar: Rect; slot: Rect | null }
+/** Core-owned unfilled slot: the placeholder box to draw, the area a click
+ * enters it from, and the caret that click lands on. */
+export interface EmptySlotBox { nodeId: number; position: Position; rect: Rect; hit: Rect }
 export interface LayoutSnapshot {
   artworks?:import('./custom-artwork').ArtworkInstance[];
   paintOrder?:import('./custom-artwork').PaintItem[];
@@ -101,6 +109,7 @@ export interface LayoutSnapshot {
   carets: CaretStop[];
   regions: { nodeId: number; role: string; logical: Rect; ink: Rect | null; depth: number }[];
   gridColumns?: { gridId: number; columnId: number; index: number; x: number; width: number }[];
+  emptySlots: EmptySlotBox[];
   exportReady: boolean;
   rebuiltFragments: number;
   reusedFragments: number;

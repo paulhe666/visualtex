@@ -135,7 +135,7 @@ impl<'a> TreeIndex<'a> {
             }
             NodeKind::Scripts { base, slots } => {
                 self.collect(base, Some(node.id), None)?;
-                for slot in slots { self.collect(&slot.argument, Some(node.id), None)?; }
+                for slot in crate::model::script_navigation_order(slots.iter()) { self.collect(&slot.argument, Some(node.id), None)?; }
             }
             _ => {}
         }
@@ -246,7 +246,7 @@ impl<'a> TreeIndex<'a> {
         while let Some(parent)=self.nodes.get(&current).and_then(|entry|entry.parent) {
             match &self.node(parent)?.kind {
                 NodeKind::Row{entries,..} if entries.last().is_some_and(|entry|entry.node.id==current)=>current=parent,
-                NodeKind::Scripts{slots,..} if slots.last().is_some_and(|slot|slot.argument.id==current)
+                NodeKind::Scripts{slots,..} if crate::model::script_navigation_order(slots.iter()).last().is_some_and(|slot|slot.argument.id==current)
                     && !self.node(parent)?.has_unfilled_slots()=>current=parent,
                 NodeKind::Accent{body,..} if body.id==current && body.has_formula_content() && !body.has_unfilled_slots()=>{
                     let (row,offset)=self.row_owner(parent)?;

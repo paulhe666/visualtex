@@ -364,7 +364,8 @@ fn flatten_paint(f:&Fragment,x:f64,y:f64,depth:usize,paint:bool,color:Option<cra
         return Err(EngineError::new(ErrorCode::ResourceLimit,"Scene budget exceeded"));
     }
     for anchor in &f.column_anchors {let mut anchor=anchor.clone();anchor.x+=x;scene.snapshot.grid_columns.push(anchor);}
-    scene.snapshot.regions.push(NodeRegion {node_id:f.node_id,role:f.role.into(),logical:Rect::new(x.min(x+f.advance),y-f.ascent,x.max(x+f.advance),y+f.descent),ink:if paint {f.ink.map(|r|r.translated(x,y))}else{None},depth});
+    let logical=Rect::new(x.min(x+f.advance),y-f.ascent,x.max(x+f.advance),y+f.descent);
+    scene.snapshot.regions.push(NodeRegion {node_id:f.node_id,role:f.role.into(),logical,ink:if paint {f.ink.map(|r|r.translated(x,y))}else{None},depth});
     if paint {
         for g in &f.glyphs {scene.glyph(f.node_id,&g.font_id,Arc::clone(&g.shape),g.x+x,g.y+y,g.scale,color);}
         for r in &f.rules {scene.snapshot.paint_order.push(crate::artwork_scene::PaintItem::Rule{index:scene.snapshot.rules.len()});scene.snapshot.rules.push(Rule {node_id:f.node_id,rect:r.translated(x,y),color});}
@@ -375,7 +376,9 @@ fn flatten_paint(f:&Fragment,x:f64,y:f64,depth:usize,paint:bool,color:Option<cra
             scene.snapshot.paint_order.push(crate::artwork_scene::PaintItem::Artwork{index:scene.snapshot.artworks.len()});scene.snapshot.artworks.push(artwork);
         }
     }
-    for (position,cx,top,bottom) in &f.carets {scene.snapshot.carets.push(CaretStop {position:*position,x:x+cx,baseline:y,top:y+top,bottom:y+bottom,depth});}
+    // A fragment only emits stops for its own editable row/text positions,
+    // so its logical box is exactly the slot those stops belong to.
+    for (position,cx,top,bottom) in &f.carets {scene.snapshot.carets.push(CaretStop {position:*position,x:x+cx,baseline:y,top:y+top,bottom:y+bottom,depth,slot:logical});}
     let mut current_color=color;
     for child in &f.children {
         flatten_paint(&child.fragment,x+child.x,y+child.y,depth+1,paint,current_color,scene)?;

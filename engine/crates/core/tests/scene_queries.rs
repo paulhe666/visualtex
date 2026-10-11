@@ -115,6 +115,85 @@ fn operator_bounds_are_described_and_vertical_navigation_does_not_land_in_unrela
         assert_eq!(down["position"]["nodeId"],lower,"{source}, {style}");
     }
 }
+fn collapsed(runtime:&mut Runtime,token:&Value,p:&Value)->Value {
+    query(runtime,token,0,json!({"kind":"selection","selection":{"kind":"range","anchor":p,"focus":p}}))
+}
+fn region<'a>(scene:&'a Value,id:&Value)->&'a Value {
+    scene["snapshot"]["regions"].as_array().unwrap().iter().find(|r|&r["nodeId"]==id).unwrap()
+}
+fn f(v:&Value)->f64 {v.as_f64().unwrap()}
+#[test]
+fn caret_geometry_spans_and_marks_the_slot_it_is_in() {
+    let (mut runtime,options)=setup(r"\frac{a+b}{c}+x");let scene=layout(&mut runtime,&options,0);let token=&scene["sceneToken"];
+    let doc=ok(&mut runtime,json!({"op":"inspectDocument","handle":1}));
+    let root=&doc["snapshot"]["analysis"]["tree"];let fraction=&root["entries"][0]["node"];
+    // Inside a numerator: the bar covers that slot and the slot is marked.
+    let inner=collapsed(&mut runtime,token,&row(&fraction["numerator"]["id"],1));
+    let numerator=&region(&scene,&fraction["numerator"]["id"])["logical"];
+    let geometry=&inner["caretGeometry"];
+    let (slot,bar)=(&geometry["slot"],&geometry["bar"]);
+    assert_eq!((&slot["xMin"],&slot["xMax"]),(&numerator["xMin"],&numerator["xMax"]),"{inner}");
+    assert_eq!(bar["xMin"],bar["xMax"]);
+    assert!(f(&bar["yMin"])<=f(&numerator["yMin"])+1e-9&&f(&bar["yMax"])>=f(&numerator["yMax"])-1e-9);
+    // The slot mark meets the foot of the bar.
+    assert_eq!((&slot["yMin"],&slot["yMax"]),(&bar["yMin"],&bar["yMax"]));
+    // In the root row the caret spans the formula's tallest content, unmarked.
+    let outer=collapsed(&mut runtime,token,&row(&root["id"],1));
+    let whole=&region(&scene,&fraction["id"])["logical"];
+    assert!(outer["caretGeometry"]["slot"].is_null(),"{outer}");
+    assert!(f(&outer["caretGeometry"]["bar"]["yMin"])<=f(&whole["yMin"])+1e-9);
+    assert!(f(&outer["caretGeometry"]["bar"]["yMax"])>=f(&whole["yMax"])-1e-9);
+    // A range selection paints rectangles, never a caret.
+    let range=query(&mut runtime,token,0,json!({"kind":"selection","selection":{"kind":"range","anchor":row(&root["id"],0),"focus":row(&root["id"],2)}}));
+    assert!(range["caretGeometry"].is_null());
+}
+#[test]
+fn an_empty_slot_caret_is_not_additionally_underlined() {
+    let (mut runtime,options)=setup(r"\frac{}{x}");let scene=layout(&mut runtime,&options,0);
+    let doc=ok(&mut runtime,json!({"op":"inspectDocument","handle":1}));
+    let fraction=&doc["snapshot"]["analysis"]["tree"]["entries"][0]["node"];
+    let empty=collapsed(&mut runtime,&scene["sceneToken"],&row(&fraction["numerator"]["id"],0));
+    assert!(empty["caretGeometry"]["slot"].is_null(),"{empty}");
+    let filled=collapsed(&mut runtime,&scene["sceneToken"],&row(&fraction["denominator"]["id"],1));
+    assert!(filled["caretGeometry"]["slot"].is_object(),"{filled}");
+}
+/// Every empty row of the document, as (id, logical box).
+fn empty_rows(scene:&Value)->Vec<(Value,Value)> {
+    scene["snapshot"]["regions"].as_array().unwrap().iter().filter(|r|r["role"]=="emptyRow")
+        .map(|r|(r["nodeId"].clone(),r["logical"].clone())).collect()
+}
+#[test]
+fn every_unfilled_slot_has_one_core_placeholder_box_and_entry_caret() {
+    for (source,expected) in [(r"x^{}+y",1),(r"\frac{}{}+1",2),(r"a+\placeholder{}",1),(r"\frac{x}{y}",0)] {
+        let (mut runtime,options)=setup(source);let scene=layout(&mut runtime,&options,0);
+        let slots=scene["snapshot"]["emptySlots"].as_array().unwrap();
+        assert_eq!(slots.len(),expected,"{source}");
+        for slot in slots {
+            let (rect,hit)=(&slot["rect"],&slot["hit"]);
+            assert!(f(&hit["xMin"])<=f(&rect["xMin"])&&f(&hit["xMax"])>=f(&rect["xMax"])&&f(&hit["yMin"])<=f(&rect["yMin"])&&f(&hit["yMax"])>=f(&rect["yMax"]));
+            for (fx,fy) in [(0.05,0.5),(0.5,0.5),(0.95,0.5),(0.5,0.1),(0.5,0.9)] {
+                let x=f(&rect["xMin"])+(f(&rect["xMax"])-f(&rect["xMin"]))*fx;
+                let y=f(&rect["yMin"])+(f(&rect["yMax"])-f(&rect["yMin"]))*fy;
+                let hit=query(&mut runtime,&scene["sceneToken"],0,json!({"kind":"hitTest","xEm":x,"yEm":y}));
+                assert_eq!(hit["position"],slot["position"],"{source}: drawn box at ({fx},{fy})");
+            }
+        }
+    }
+}
+#[test]
+fn a_click_anywhere_on_an_empty_slot_box_lands_in_that_slot() {
+    for source in [r"x^{}+y",r"x_{}+y",r"\sum_{}^{}x",r"\frac{}{}+1",r"\sqrt[]{}",r"a^{}_{}"] {
+        let (mut runtime,options)=setup(source);let scene=layout(&mut runtime,&options,0);
+        let rows=empty_rows(&scene);assert!(!rows.is_empty(),"{source}");
+        for (id,logical) in rows {
+            let (x0,x1,y0,y1)=(f(&logical["xMin"]),f(&logical["xMax"]),f(&logical["yMin"]),f(&logical["yMax"]));
+            for fx in [0.1,0.5,0.9] {
+                let hit=query(&mut runtime,&scene["sceneToken"],0,json!({"kind":"hitTest","xEm":x0+(x1-x0)*fx,"yEm":(y0+y1)/2.0}));
+                assert_eq!(hit["position"],row(&id,0),"{source}: click at {fx} of empty box {id}");
+            }
+        }
+    }
+}
 #[test]
 fn failed_layout_does_not_retire_previous_valid_geometry() {
     let (mut runtime,options)=setup("x");let scene=layout(&mut runtime,&options,0);
