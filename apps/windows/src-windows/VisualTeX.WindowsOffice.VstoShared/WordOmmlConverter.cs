@@ -7125,20 +7125,29 @@ internal static partial class WordOmmlConverter
     // VisualTeX adapts Microsoft's stylesheet at named templates. Any file with
     // the same name (another Office build, a third-party copy found first on
     // the search path) is only a candidate until that adaptation succeeds; the
-    // first one that does is used. Report every rejected file when none fits.
+    // first one every adaptation fits is used. Office builds differ, so when no
+    // copy fits them all, the first Microsoft stylesheet that fits some of them
+    // is used with stock behaviour for the rest. Report every rejected file
+    // when none fits at all.
     internal static XslCompiledTransform LoadFirstUsableTransform(
         string fileName,
         IEnumerable<string> candidates,
-        Func<string, XslCompiledTransform> load)
+        Func<string, bool, XslCompiledTransform> load)
     {
+        var paths = candidates.ToArray();
         var rejected = new List<string>();
-        foreach (var candidate in candidates)
+        foreach (var candidate in paths)
         {
-            try { return load(candidate); }
+            try { return load(candidate, false); }
             catch (Exception error)
             {
                 rejected.Add($"{candidate} ({error.GetType().Name}: {error.Message})");
             }
+        }
+        foreach (var candidate in paths)
+        {
+            try { return load(candidate, true); }
+            catch { }
         }
         if (rejected.Count == 0)
             throw new FileNotFoundException(
@@ -7146,6 +7155,43 @@ internal static partial class WordOmmlConverter
         throw new InvalidDataException(
             $"No usable Office {fileName}: none of the installed copies has the Microsoft templates VisualTeX adapts. Repair Microsoft Office. Rejected: "
             + string.Join("; ", rejected));
+    }
+
+    // Each step edits Microsoft templates on a copy, so a step whose template
+    // is absent is never half-applied. A strict load requires every step; a
+    // tolerant load skips absent ones but requires at least one, which also
+    // tells a Microsoft stylesheet from a foreign file of the same name.
+    private static XDocument AdaptStylesheet(
+        XDocument stylesheet,
+        bool tolerant,
+        params (string Name, Action<XDocument> Apply)[] steps)
+    {
+        var skipped = new List<string>();
+        foreach (var (name, apply) in steps)
+        {
+            var copy = new XDocument(stylesheet);
+            try
+            {
+                apply(copy);
+                stylesheet = copy;
+            }
+            catch (Exception error) when (
+                error is InvalidOperationException or InvalidDataException or ArgumentException)
+            {
+                if (!tolerant)
+                    throw new InvalidDataException(
+                        $"Office stylesheet does not have the {name} template VisualTeX adapts ({error.Message})",
+                        error);
+                skipped.Add(name);
+            }
+        }
+        if (skipped.Count == steps.Length)
+            throw new InvalidDataException(
+                "The stylesheet has none of the Microsoft templates VisualTeX adapts.");
+        if (skipped.Count > 0)
+            System.Diagnostics.Trace.TraceWarning(
+                "VisualTeX adapted the Office stylesheet without: " + string.Join(", ", skipped));
+        return stylesheet;
     }
 
     private static void AddCandidateRoot(List<string> candidates, string? root, string fileName)
@@ -7338,73 +7384,79 @@ internal static partial class WordOmmlConverter
         return result.ToString();
     }
 
-    internal static XslCompiledTransform LoadReverseTransform(string path)
+    internal static XslCompiledTransform LoadReverseTransform(string path, bool tolerant = false)
     {
         // Office's legacy MathML projection deliberately discards styled
         // operators and numbers even when OMML carries their exact m:sty.
         // Correct that projection before compilation, retaining the original
         // token/structure transform and leaving the Office installation intact.
         XNamespace xsl = "http://www.w3.org/1999/XSL/Transform";
-        var stylesheet = XDocument.Load(path);
-        stylesheet.Root!.SetAttributeValue(XNamespace.Xmlns + "vtUnicode", UnicodeScalarXPathNamespace);
-        // The legacy token parser counts UTF-16 units on .NET. Its traversal
-        // must consume complete Unicode scalars, never half a surrogate pair.
-        var tokenParser = stylesheet.Descendants(xsl + "template")
-            .Single(element => (string?)element.Attribute("name") == "ParseMt");
-        foreach (var expression in tokenParser.DescendantsAndSelf().Attributes()
-                     .Where(attribute => attribute.Name.LocalName is "select" or "test"))
-            expression.Value = RewriteUnicodeScalarXPath(expression.Value);
-        // A literal operator in an OMML run has fixed glyph geometry. Preserve
-        // that at the tokenizer, where native provenance is still available,
-        // rather than letting MathML's operator dictionary invent stretching.
-        // ParseMt also creates accent marks: only its m:r/m:t context is a run.
-        // ParseEqArrMr is called exclusively for CreateEqArrRow's m:r branch;
-        // its current node is the containing equation row, not the run itself.
         XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
-        tokenParser.Descendants(presentationMath + "mo").Single().AddFirst(
-            new XElement(xsl + "if", new XAttribute("test", "self::m:t[parent::m:r]"),
-                new XElement(xsl + "attribute", new XAttribute("name", "stretchy"), "false")));
-        stylesheet.Descendants(xsl + "template")
-            .Single(element => (string?)element.Attribute("name") == "ParseEqArrMr")
-            .Descendants(presentationMath + "mo").Single().AddFirst(
-                new XElement(xsl + "attribute", new XAttribute("name", "stretchy"), "false"));
-        var attributes = stylesheet.Descendants(xsl + "template")
-            .Single(element => (string?)element.Attribute("name") == "CreateTokenAttributes");
-        var operatorStyle = attributes.Descendants(xsl + "when")
-            .Single(element => (string?)element.Attribute("test") == "$sTokenType='mo' and $mathvariant!='normal'");
-        operatorStyle.ReplaceWith(new XElement(xsl + "when",
-            new XAttribute("test", "$sTokenType='mo' or $sTokenType='mn'"),
-            new XElement(xsl + "if", new XAttribute("test", "$mathvariant!=''"),
-                new XElement(xsl + "attribute", new XAttribute("name", "mathvariant"),
-                    new XElement(xsl + "value-of", new XAttribute("select", "$mathvariant"))))));
-        foreach (var call in stylesheet.Descendants(xsl + "call-template")
-                     .Where(element => (string?)element.Attribute("name") == "CreateTokenAttributes"))
-        {
-            var token = call.Elements(xsl + "with-param")
-                .FirstOrDefault(element => (string?)element.Attribute("name") == "sTokenType");
-            if ((string?)token?.Attribute("select") is not ("\'mo\'" or "\'mn\'")) continue;
-            foreach (var name in new[] { "scr", "sty" })
-                call.Elements(xsl + "with-param")
-                    .Single(element => (string?)element.Attribute("name") == name)
-                    .SetAttributeValue("select", "$" + name);
-        }
-        attributes.Descendants(xsl + "variable")
-            .Single(element => (string?)element.Attribute("name") == "mathvariant")
-            .Descendants(xsl + "when")
-            .Single(element => (string?)element.Attribute("test") == "$sTokenType='mn'")
-            // Upright digits use the default only in the ordinary Roman
-            // alphabet. Preserve explicit mathematical alphabets, including
-            // monospace, through the existing script-to-variant mapping.
-            // string() also covers an omitted scr supplied as an empty node-set.
-            .SetAttributeValue("test", "$sTokenType='mn' and (string($scr)='' or $scr='roman') and ($sty='p' or $sty='')");
-        MathMlColorContract.AdaptReverseTransform(stylesheet);
+        XElement Template(XDocument stylesheet, string name) => stylesheet.Descendants(xsl + "template")
+            .Single(element => (string?)element.Attribute("name") == name);
+        var source = XDocument.Load(path);
+        source.Root!.SetAttributeValue(XNamespace.Xmlns + "vtUnicode", UnicodeScalarXPathNamespace);
+        var stylesheet = AdaptStylesheet(source, tolerant,
+            ("ParseMt Unicode scalars", stylesheet =>
+            {
+                // The legacy token parser counts UTF-16 units on .NET. Its traversal
+                // must consume complete Unicode scalars, never half a surrogate pair.
+                foreach (var expression in Template(stylesheet, "ParseMt").DescendantsAndSelf().Attributes()
+                             .Where(attribute => attribute.Name.LocalName is "select" or "test"))
+                    expression.Value = RewriteUnicodeScalarXPath(expression.Value);
+            }),
+            // A literal operator in an OMML run has fixed glyph geometry. Preserve
+            // that at the tokenizer, where native provenance is still available,
+            // rather than letting MathML's operator dictionary invent stretching.
+            // ParseMt also creates accent marks: only its m:r/m:t context is a run.
+            // ParseEqArrMr is called exclusively for CreateEqArrRow's m:r branch;
+            // its current node is the containing equation row, not the run itself.
+            ("ParseMt operator", stylesheet =>
+                Template(stylesheet, "ParseMt").Descendants(presentationMath + "mo").Single().AddFirst(
+                    new XElement(xsl + "if", new XAttribute("test", "self::m:t[parent::m:r]"),
+                        new XElement(xsl + "attribute", new XAttribute("name", "stretchy"), "false")))),
+            ("ParseEqArrMr operator", stylesheet =>
+                Template(stylesheet, "ParseEqArrMr").Descendants(presentationMath + "mo").Single().AddFirst(
+                    new XElement(xsl + "attribute", new XAttribute("name", "stretchy"), "false"))),
+            ("CreateTokenAttributes operator style", stylesheet =>
+            {
+                var operatorStyle = Template(stylesheet, "CreateTokenAttributes").Descendants(xsl + "when")
+                    .Single(element => (string?)element.Attribute("test") == "$sTokenType='mo' and $mathvariant!='normal'");
+                operatorStyle.ReplaceWith(new XElement(xsl + "when",
+                    new XAttribute("test", "$sTokenType='mo' or $sTokenType='mn'"),
+                    new XElement(xsl + "if", new XAttribute("test", "$mathvariant!=''"),
+                        new XElement(xsl + "attribute", new XAttribute("name", "mathvariant"),
+                            new XElement(xsl + "value-of", new XAttribute("select", "$mathvariant"))))));
+                foreach (var call in stylesheet.Descendants(xsl + "call-template")
+                             .Where(element => (string?)element.Attribute("name") == "CreateTokenAttributes"))
+                {
+                    var token = call.Elements(xsl + "with-param")
+                        .FirstOrDefault(element => (string?)element.Attribute("name") == "sTokenType");
+                    if ((string?)token?.Attribute("select") is not ("\'mo\'" or "\'mn\'")) continue;
+                    foreach (var name in new[] { "scr", "sty" })
+                        call.Elements(xsl + "with-param")
+                            .Single(element => (string?)element.Attribute("name") == name)
+                            .SetAttributeValue("select", "$" + name);
+                }
+            }),
+            ("CreateTokenAttributes number variant", stylesheet =>
+                Template(stylesheet, "CreateTokenAttributes").Descendants(xsl + "variable")
+                    .Single(element => (string?)element.Attribute("name") == "mathvariant")
+                    .Descendants(xsl + "when")
+                    .Single(element => (string?)element.Attribute("test") == "$sTokenType='mn'")
+                    // Upright digits use the default only in the ordinary Roman
+                    // alphabet. Preserve explicit mathematical alphabets, including
+                    // monospace, through the existing script-to-variant mapping.
+                    // string() also covers an omitted scr supplied as an empty node-set.
+                    .SetAttributeValue("test", "$sTokenType='mn' and (string($scr)='' or $scr='roman') and ($sty='p' or $sty='')")),
+            ("text color", MathMlColorContract.AdaptReverseTransform));
         var transform = new XslCompiledTransform(enableDebug: false);
         using var reader = stylesheet.CreateReader();
         transform.Load(reader, new XsltSettings(enableDocumentFunction: false, enableScript: false), null);
         return transform;
     }
 
-    internal static XslCompiledTransform LoadTransform(string path)
+    internal static XslCompiledTransform LoadTransform(string path, bool tolerant = false)
     {
         // Adapt the installed transform in memory. The Office installation is
         // unchanged. Its legacy grouping treats an implicit mo and an explicit
@@ -7412,48 +7464,9 @@ internal static partial class WordOmmlConverter
         // Require the materialized source style/role before that lossy merge.
         XNamespace xsl = "http://www.w3.org/1999/XSL/Transform";
         XNamespace math = MathNamespace;
-        var stylesheet = XDocument.Load(path);
-        AdaptLiteralTextOutput(stylesheet);
-        var grouping = stylesheet.Descendants(xsl + "template")
-            .Single(element => (string?)element.Attribute("name") == "CreateRunWithSameProp")
-            .Elements(xsl + "variable")
-            .Single(element => (string?)element.Attribute("name") == "nndBeforeLim");
-        var selection = (string?)grouping.Attribute("select")
-            ?? throw new InvalidDataException("Office run grouping has no selection expression.");
-        const string sequence = "$ndTokenFirst/following-sibling::*";
-        var sequenceIndex = selection.IndexOf(sequence, StringComparison.Ordinal);
-        var predicateIndex = sequenceIndex < 0
-            ? -1
-            : selection.IndexOf('[', sequenceIndex + sequence.Length);
-        if (predicateIndex < 0)
-            throw new InvalidDataException("Office run grouping has an unsupported selection expression.");
-        var boundaries =
-            "string(@mathvariant) != string($ndTokenFirst/@mathvariant) or "
-            + "string(@" + OmmlRunRoleAttribute + ") != string($ndTokenFirst/@"
-            + OmmlRunRoleAttribute + ") or "
-            // ApplyFunction starts a structural boundary even though it shares
-            // the normal operator style. Do not merge it into a function name;
-            // it may still share a run with its following opening delimiter.
-            + "(self::mml:mo and normalize-space(.)='\u2061') or ";
-        grouping.SetAttributeValue("select", selection.Insert(predicateIndex + 1, boundaries));
-
-        var properties = stylesheet.Descendants(xsl + "template")
-            .Single(element => (string?)element.Attribute("name") == "CreateMathRPR");
-        properties.Elements(xsl + "if").Single()
-            .SetAttributeValue("test", "$fNor=1 or $sFontCur!=''");
-        var italic = stylesheet.Descendants(xsl + "template")
-            .Single(element => (string?)element.Attribute("name") == "CreateMathScrStyProp")
-            .Elements(xsl + "choose")
-            .Elements(xsl + "when")
-            .Single(element => (string?)element.Attribute("test") == "$font='italic'");
-        italic.ReplaceNodes(new XElement(math + "sty", new XAttribute(math + "val", "i")));
-        // Monospace is a mathematical alphabet, represented by native scr
-        // rather than a Word text font or Normal Text. The source projection
-        // has already resolved inherited variants and kept token roles apart.
-        italic.AddBeforeSelf(new XElement(xsl + "when",
-            new XAttribute("test", "$font='monospace'"),
-            new XElement(math + "scr", new XAttribute(math + "val", "monospace")),
-            new XElement(math + "sty", new XAttribute(math + "val", "p"))));
+        XElement Template(XDocument stylesheet, string name) => stylesheet.Descendants(xsl + "template")
+            .Single(element => (string?)element.Attribute("name") == name);
+        var source = XDocument.Load(path);
 
         // Native accent marks are control characters, independent of the base.
         // The normalized mark already carries the shared effective token style.
@@ -7464,8 +7477,8 @@ internal static partial class WordOmmlConverter
                 new XElement(xsl + "choose",
                     new XElement(xsl + "when", new XAttribute("test", condition), "1"),
                     new XElement(xsl + "otherwise", "0"))));
-        stylesheet.Root!.SetAttributeValue(XNamespace.Xmlns + "w", word.NamespaceName);
-        stylesheet.Root.Add(new XElement(xsl + "template",
+        source.Root!.SetAttributeValue(XNamespace.Xmlns + "w", word.NamespaceName);
+        source.Root.Add(new XElement(xsl + "template",
             new XAttribute("match", "mml:mover[@accent='true' and count(*)=2 and string-length(*[2])=1 and *[2][self::mml:mo and (@mathvariant='normal' or @mathvariant='bold' or @mathvariant='italic' or @mathvariant='bold-italic')]]"),
             new XAttribute("priority", "10"),
             new XElement(math + "acc",
@@ -7479,7 +7492,7 @@ internal static partial class WordOmmlConverter
 
         // Stock XSL has no mspace rule: its catch-all discards empty elements.
         // Emit only exact native text selected by the shared source projection.
-        stylesheet.Root!.Add(new XElement(xsl + "template",
+        source.Root!.Add(new XElement(xsl + "template",
             new XAttribute("match", "mml:mspace[@" + OmmlSpaceTextAttribute + "]"),
             new XElement(xsl + "if",
                 new XAttribute("test", "string-length(@" + OmmlSpaceTextAttribute + ") > 0"),
@@ -7489,7 +7502,51 @@ internal static partial class WordOmmlConverter
                         new XElement(xsl + "value-of",
                             new XAttribute("select", "@" + OmmlSpaceTextAttribute)))))));
 
-        MathMlColorContract.AdaptForwardTransform(stylesheet);
+        var stylesheet = AdaptStylesheet(source, tolerant,
+            ("OutputText literal text", AdaptLiteralTextOutput),
+            ("CreateRunWithSameProp grouping", stylesheet =>
+            {
+                var grouping = Template(stylesheet, "CreateRunWithSameProp")
+                    .Elements(xsl + "variable")
+                    .Single(element => (string?)element.Attribute("name") == "nndBeforeLim");
+                var selection = (string?)grouping.Attribute("select")
+                    ?? throw new InvalidDataException("Office run grouping has no selection expression.");
+                const string sequence = "$ndTokenFirst/following-sibling::*";
+                var sequenceIndex = selection.IndexOf(sequence, StringComparison.Ordinal);
+                var predicateIndex = sequenceIndex < 0
+                    ? -1
+                    : selection.IndexOf('[', sequenceIndex + sequence.Length);
+                if (predicateIndex < 0)
+                    throw new InvalidDataException("Office run grouping has an unsupported selection expression.");
+                var boundaries =
+                    "string(@mathvariant) != string($ndTokenFirst/@mathvariant) or "
+                    + "string(@" + OmmlRunRoleAttribute + ") != string($ndTokenFirst/@"
+                    + OmmlRunRoleAttribute + ") or "
+                    // ApplyFunction starts a structural boundary even though it shares
+                    // the normal operator style. Do not merge it into a function name;
+                    // it may still share a run with its following opening delimiter.
+                    + "(self::mml:mo and normalize-space(.)='⁡') or ";
+                grouping.SetAttributeValue("select", selection.Insert(predicateIndex + 1, boundaries));
+            }),
+            ("CreateMathRPR", stylesheet =>
+                Template(stylesheet, "CreateMathRPR").Elements(xsl + "if").Single()
+                    .SetAttributeValue("test", "$fNor=1 or $sFontCur!=''")),
+            ("CreateMathScrStyProp italic", stylesheet =>
+            {
+                var italic = Template(stylesheet, "CreateMathScrStyProp")
+                    .Elements(xsl + "choose")
+                    .Elements(xsl + "when")
+                    .Single(element => (string?)element.Attribute("test") == "$font='italic'");
+                italic.ReplaceNodes(new XElement(math + "sty", new XAttribute(math + "val", "i")));
+                // Monospace is a mathematical alphabet, represented by native scr
+                // rather than a Word text font or Normal Text. The source projection
+                // has already resolved inherited variants and kept token roles apart.
+                italic.AddBeforeSelf(new XElement(xsl + "when",
+                    new XAttribute("test", "$font='monospace'"),
+                    new XElement(math + "scr", new XAttribute(math + "val", "monospace")),
+                    new XElement(math + "sty", new XAttribute(math + "val", "p"))));
+            }),
+            ("text color", MathMlColorContract.AdaptForwardTransform));
         var transform = new XslCompiledTransform(enableDebug: false);
         using var reader = stylesheet.CreateReader();
         transform.Load(reader, new XsltSettings(enableDocumentFunction: false, enableScript: false), null);

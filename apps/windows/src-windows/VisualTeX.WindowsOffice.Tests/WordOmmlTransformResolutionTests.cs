@@ -42,6 +42,64 @@ public sealed class WordOmmlTransformResolutionTests
         Assert.Contains(foreign, error.Message);
     }
 
+    // Office builds word their templates differently. A copy where one adapted
+    // template has another shape is still a Microsoft stylesheet and must be
+    // used, with only that adaptation left out.
+    [Fact]
+    public void AnOfficeCopyMissingOneReverseAdaptationStillConverts()
+    {
+        using var temp = new TemporaryDirectory();
+        var variant = WriteVariant(temp, WordOmmlConverter.ResolveReverseTransformPath(),
+            "$sTokenType='mo' and $mathvariant!='normal'",
+            "$sTokenType='mo' and not($mathvariant='normal')");
+
+        Assert.Throws<InvalidDataException>(() => WordOmmlConverter.LoadReverseTransform(variant));
+        var transform = WordOmmlConverter.LoadFirstUsableTransform(
+            "OMML2MML.XSL", new[] { variant }, WordOmmlConverter.LoadReverseTransform);
+
+        var output = Transform(transform,
+            "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\">"
+            + "<m:r><m:t>x+1</m:t></m:r></m:oMath>");
+        Assert.Contains(">x<", output);
+        Assert.Contains(">1<", output);
+    }
+
+    [Fact]
+    public void AnOfficeCopyMissingOneForwardAdaptationStillLoads()
+    {
+        using var temp = new TemporaryDirectory();
+        var variant = WriteVariant(temp, WordOmmlConverter.ResolveTransformPath(),
+            "$font='italic'", "$font = 'italic'");
+
+        Assert.Throws<InvalidDataException>(() => WordOmmlConverter.LoadTransform(variant));
+        var transform = WordOmmlConverter.LoadFirstUsableTransform(
+            "MML2OMML.XSL", new[] { variant }, WordOmmlConverter.LoadTransform);
+
+        var output = Transform(transform,
+            "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>x</mi><mo>+</mo><mn>1</mn></math>");
+        Assert.Contains("oMath", output);
+    }
+
+    private static string WriteVariant(TemporaryDirectory temp, string office, string anchor, string replacement)
+    {
+        var text = File.ReadAllText(office);
+        Assert.Contains(anchor, text);
+        var variant = Path.Combine(temp.Path, Path.GetFileName(office));
+        File.WriteAllText(variant, text.Replace(anchor, replacement), new UTF8Encoding(false));
+        return variant;
+    }
+
+    private static string Transform(System.Xml.Xsl.XslCompiledTransform transform, string xml)
+    {
+        using var input = System.Xml.XmlReader.Create(new StringReader(xml));
+        using var output = new StringWriter();
+        var arguments = new System.Xml.Xsl.XsltArgumentList();
+        arguments.AddExtensionObject(
+            "urn:visualtex:unicode-scalar-xpath", new WordOmmlConverter.UnicodeScalarXPathFunctions());
+        transform.Transform(input, arguments, output);
+        return output.ToString();
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()

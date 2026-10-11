@@ -64,21 +64,21 @@
     },
     {
         "id":  "",
-        "name":  "VBA-Font.Position",
+        "name":  "无法撤消",
         "offscreen":  false,
         "type":  "ControlType.SplitButton",
         "rect":  "219,2,56,46",
         "value":  "",
-        "enabled":  true
+        "enabled":  false
     },
     {
         "id":  "",
-        "name":  "VBA-Font.Position",
+        "name":  "无法撤消",
         "offscreen":  false,
         "type":  "ControlType.Button",
         "rect":  "219,2,37,46",
         "value":  "",
-        "enabled":  true
+        "enabled":  false
     },
     {
         "id":  "",
@@ -87,11 +87,11 @@
         "type":  "ControlType.MenuItem",
         "rect":  "256,2,19,46",
         "value":  "",
-        "enabled":  true
+        "enabled":  false
     },
     {
         "id":  "",
-        "name":  "重复格式",
+        "name":  "恢复VisualTeX Redraw LaTeX",
         "offscreen":  false,
         "type":  "ControlType.Button",
         "rect":  "276,2,42,46",
@@ -118,10 +118,19 @@
     },
     {
         "id":  "",
-        "name":  "‪文档1‬  -  Word",
+        "name":  "‪latex_100_inline_100_display.docx  -  兼容性模式‬  -  已保存到这台电脑",
         "offscreen":  false,
         "type":  "ControlType.TitleBar",
         "rect":  "416,0,1240,51",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "‪latex_100_inline_100_display.docx  -  兼容性模式‬  -  已保存到这台电脑",
+        "offscreen":  false,
+        "type":  "ControlType.MenuItem",
+        "rect":  "714,0,642,47",
         "value":  "",
         "enabled":  true
     },
@@ -316,24 +325,6 @@
     },
     {
         "id":  "",
-        "name":  "公式工具",
-        "offscreen":  false,
-        "type":  "ControlType.Group",
-        "rect":  "1153,51,79,45",
-        "value":  "",
-        "enabled":  true
-    },
-    {
-        "id":  "",
-        "name":  "公式",
-        "offscreen":  false,
-        "type":  "ControlType.TabItem",
-        "rect":  "1153,55,78,38",
-        "value":  "",
-        "enabled":  true
-    },
-    {
-        "id":  "",
         "name":  "共享",
         "offscreen":  false,
         "type":  "ControlType.Button",
@@ -382,7 +373,7 @@
         "name":  "VisualTeX",
         "offscreen":  false,
         "type":  "ControlType.Group",
-        "rect":  "0,97,1010,144",
+        "rect":  "0,97,1088,144",
         "value":  "",
         "enabled":  true
     },
@@ -435,8 +426,26 @@
         "id":  "",
         "name":  "VisualTeX → MathType",
         "offscreen":  false,
+        "type":  "ControlType.SplitButton",
+        "rect":  "360,100,264,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX → MathType",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "360,100,240,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "更多选项",
+        "offscreen":  false,
         "type":  "ControlType.MenuItem",
-        "rect":  "360,100,225,34",
+        "rect":  "600,100,24,34",
         "value":  "",
         "enabled":  true
     },
@@ -444,8 +453,26 @@
         "id":  "",
         "name":  "MathType → VisualTeX",
         "offscreen":  false,
+        "type":  "ControlType.SplitButton",
+        "rect":  "360,134,264,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "MathType → VisualTeX",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "360,134,240,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "更多选项",
+        "offscreen":  false,
         "type":  "ControlType.MenuItem",
-        "rect":  "360,134,225,34",
+        "rect":  "600,134,24,34",
         "value":  "",
         "enabled":  true
     },
@@ -453,8 +480,26 @@
         "id":  "",
         "name":  "OMML → MathType",
         "offscreen":  false,
+        "type":  "ControlType.SplitButton",
+        "rect":  "360,168,241,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OMML → MathType",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "360,168,217,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "更多选项",
+        "offscreen":  false,
         "type":  "ControlType.MenuItem",
-        "rect":  "360,168,202,34",
+        "rect":  "577,168,24,34",
         "value":  "",
         "enabled":  true
     },
@@ -462,8 +507,26 @@
         "id":  "",
         "name":  "MathType → OMML",
         "offscreen":  false,
+        "type":  "ControlType.SplitButton",
+        "rect":  "624,100,241,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "MathType → OMML",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "624,100,217,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "更多选项",
+        "offscreen":  false,
         "type":  "ControlType.MenuItem",
-        "rect":  "585,100,202,34",
+        "rect":  "841,100,24,34",
         "value":  "",
         "enabled":  true
     },
@@ -471,8 +534,26 @@
         "id":  "",
         "name":  "VisualTeX → OMML",
         "offscreen":  false,
+        "type":  "ControlType.SplitButton",
+        "rect":  "624,134,236,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "VisualTeX → OMML",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "624,134,212,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "更多选项",
+        "offscreen":  false,
         "type":  "ControlType.MenuItem",
-        "rect":  "585,134,197,34",
+        "rect":  "836,134,24,34",
         "value":  "",
         "enabled":  true
     },
@@ -480,8 +561,26 @@
         "id":  "",
         "name":  "OMML → VisualTeX",
         "offscreen":  false,
+        "type":  "ControlType.SplitButton",
+        "rect":  "624,168,236,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "OMML → VisualTeX",
+        "offscreen":  false,
+        "type":  "ControlType.Button",
+        "rect":  "624,168,212,34",
+        "value":  "",
+        "enabled":  true
+    },
+    {
+        "id":  "",
+        "name":  "更多选项",
+        "offscreen":  false,
         "type":  "ControlType.MenuItem",
-        "rect":  "585,168,197,34",
+        "rect":  "836,168,24,34",
         "value":  "",
         "enabled":  true
     },
@@ -490,7 +589,7 @@
         "name":  "更新公式编号",
         "offscreen":  false,
         "type":  "ControlType.Button",
-        "rect":  "787,100,149,34",
+        "rect":  "865,100,149,34",
         "value":  "",
         "enabled":  true
     },
@@ -499,7 +598,7 @@
         "name":  "编号格式",
         "offscreen":  false,
         "type":  "ControlType.MenuItem",
-        "rect":  "787,134,98,34",
+        "rect":  "865,134,98,34",
         "value":  "",
         "enabled":  true
     },
@@ -508,7 +607,7 @@
         "name":  "插入公式引用",
         "offscreen":  false,
         "type":  "ControlType.Button",
-        "rect":  "787,168,149,34",
+        "rect":  "865,168,149,34",
         "value":  "",
         "enabled":  true
     },
@@ -517,7 +616,7 @@
         "name":  "批量导入",
         "offscreen":  false,
         "type":  "ControlType.Button",
-        "rect":  "936,100,62,111",
+        "rect":  "1014,100,62,111",
         "value":  "",
         "enabled":  true
     },
@@ -526,7 +625,7 @@
         "name":  "LaTeX 重绘",
         "offscreen":  false,
         "type":  "ControlType.Group",
-        "rect":  "1010,97,148,144",
+        "rect":  "1088,97,148,144",
         "value":  "",
         "enabled":  true
     },
@@ -535,7 +634,7 @@
         "name":  "重绘所选",
         "offscreen":  false,
         "type":  "ControlType.MenuItem",
-        "rect":  "1022,100,62,111",
+        "rect":  "1100,100,62,111",
         "value":  "",
         "enabled":  true
     },
@@ -544,7 +643,7 @@
         "name":  "重绘全文",
         "offscreen":  false,
         "type":  "ControlType.MenuItem",
-        "rect":  "1084,100,62,111",
+        "rect":  "1162,100,62,111",
         "value":  "",
         "enabled":  true
     },
@@ -553,7 +652,7 @@
         "name":  "公式字号",
         "offscreen":  false,
         "type":  "ControlType.Group",
-        "rect":  "1158,97,207,144",
+        "rect":  "1236,97,207,144",
         "value":  "",
         "enabled":  true
     },
@@ -562,61 +661,61 @@
         "name":  "减小",
         "offscreen":  false,
         "type":  "ControlType.Button",
-        "rect":  "1170,100,77,34",
+        "rect":  "1248,100,77,34",
         "value":  "",
-        "enabled":  true
+        "enabled":  false
     },
     {
         "id":  "",
         "name":  "字号",
         "offscreen":  false,
         "type":  "ControlType.Text",
-        "rect":  "1170,139,42,24",
+        "rect":  "1248,139,42,24",
         "value":  "",
-        "enabled":  true
+        "enabled":  false
     },
     {
         "id":  "",
         "name":  "字号",
         "offscreen":  false,
         "type":  "ControlType.ComboBox",
-        "rect":  "1212,134,141,35",
-        "value":  "五号",
-        "enabled":  true
+        "rect":  "1290,134,141,35",
+        "value":  "",
+        "enabled":  false
     },
     {
         "id":  "",
         "name":  "字号",
         "offscreen":  false,
         "type":  "ControlType.Edit",
-        "rect":  "1213,136,121,30",
-        "value":  "五号",
-        "enabled":  true
+        "rect":  "1291,136,121,30",
+        "value":  "",
+        "enabled":  false
     },
     {
         "id":  "",
         "name":  "打开",
         "offscreen":  false,
         "type":  "ControlType.Button",
-        "rect":  "1334,135,18,33",
+        "rect":  "1412,135,18,33",
         "value":  "",
-        "enabled":  true
+        "enabled":  false
     },
     {
         "id":  "",
         "name":  "增大",
         "offscreen":  false,
         "type":  "ControlType.Button",
-        "rect":  "1170,169,77,34",
+        "rect":  "1248,169,77,34",
         "value":  "",
-        "enabled":  true
+        "enabled":  false
     },
     {
         "id":  "",
         "name":  "兼容修复",
         "offscreen":  false,
         "type":  "ControlType.Group",
-        "rect":  "1365,97,86,144",
+        "rect":  "1443,97,86,144",
         "value":  "",
         "enabled":  true
     },
@@ -625,7 +724,7 @@
         "name":  "修复公式偏移",
         "offscreen":  false,
         "type":  "ControlType.Button",
-        "rect":  "1377,100,62,111",
+        "rect":  "1455,100,62,111",
         "value":  "",
         "enabled":  true
     },
