@@ -179,17 +179,11 @@ internal static partial class Program
             !MathTypeOleStorage.LooksLikeMathTypeCompoundFile(new byte[512]),
             "An arbitrary/non-CFB payload was misidentified as MathType.");
 
-        var forwardXslt = WordOmmlConverter.ResolveTransformPath();
-        var reverseXslt = WordOmmlConverter.ResolveReverseTransformPath();
-        AssertTrue(File.Exists(forwardXslt),
-            "Registered Office installation did not resolve MML2OMML.XSL.");
-        AssertTrue(File.Exists(reverseXslt),
-            "Registered Office installation did not resolve OMML2MML.XSL.");
         var transformProbe = WordOmmlConverter.TransformMathMlToOmml(
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mi>x</mi><mo>+</mo><mn>1</mn></math>");
         AssertTrue(
             transformProbe.IndexOf("oMath", StringComparison.OrdinalIgnoreCase) >= 0,
-            "Resolved Office Math stylesheet did not produce OMML.");
+            "The MathML to OMML projection did not produce OMML.");
 
         static bool Contains(byte[] data, params byte[] pattern)
         {

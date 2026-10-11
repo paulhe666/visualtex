@@ -6,9 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
-using System.Xml.Xsl;
 using Microsoft.Office.Interop.Word;
-using Microsoft.Win32;
 using VisualTeX.WindowsOffice.Contracts;
 using Application = Microsoft.Office.Interop.Word.Application;
 using Range = Microsoft.Office.Interop.Word.Range;
@@ -30,12 +28,9 @@ internal static partial class WordOmmlConverter
     private const string VisualTeXEquationNumberPlaceholderPrefix = "981730";
     private const string VisualTeXNativeNumberBookmarkPrefix = "VTEqNum_";
     private const string VisualTeXEquationSequenceName = "VisualTeXEquation";
-    private static readonly object TransformLock = new();
     private static readonly object InlineScratchLock = new();
     private static Document? _inlineScratchDocument;
     private static bool _inlineScratchPrimed;
-    private static XslCompiledTransform? _mathMlToOmml;
-    private static XslCompiledTransform? _ommlToMathMl;
 
     internal sealed class BatchSource : IDisposable
     {
@@ -3068,25 +3063,9 @@ internal static partial class WordOmmlConverter
         var placeholderResult = ReplaceExtendedIntegralsWithOfficePlaceholders(mathMl);
         mathMl = placeholderResult.MathMl;
         var display = IsBlockMathMl(mathMl);
-        var transform = GetTransform();
-        var inputSettings = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            IgnoreComments = true,
-            IgnoreWhitespace = true,
-            MaxCharactersInDocument = 4_000_000,
-        };
-        var outputSettings = transform.OutputSettings?.Clone() ?? new XmlWriterSettings();
-        outputSettings.OmitXmlDeclaration = true;
-        outputSettings.Encoding = new UTF8Encoding(false);
-        using var sourceText = new StringReader(mathMl);
-        using var source = XmlReader.Create(sourceText, inputSettings);
-        using var outputText = new StringWriter();
-        using (var output = XmlWriter.Create(outputText, outputSettings))
-            transform.Transform(source, output);
-        var transformed = outputText.ToString();
-        var omml = ExtractSingleOMath(transformed);
+        // The projection is VisualTeX's own: the installed Office's MML2OMML.XSL
+        // changes with Office updates and is never read.
+        var omml = ExtractSingleOMath(MathMlOmmlProjection.Project(mathMl));
         omml = RestoreExtendedIntegralCharacters(omml, placeholderResult.NaryCharacters);
         omml = NormalizeExplicitUprightRuns(omml, mathMl);
         omml = NormalizeAppliedFunctionStructures(omml, mathMl);
@@ -4732,16 +4711,12 @@ internal static partial class WordOmmlConverter
 
     private static bool ReadMathBooleanValue(XElement property)
     {
-        // Element omission is handled by the caller. Only an omitted ATTRIBUTE
-        // means true here; empty/unknown values must never erase content as false.
+        // Element omission is handled by the caller. A present switch is on
+        // unless its value is explicitly false, read case-insensitively as
+        // Office does: empty or unknown values never erase content as false,
+        // and never make a formula Word displays unreadable.
         var value = property.Attribute(XName.Get("val", MathNamespace))?.Value;
-        return value switch
-        {
-            null or "1" or "true" or "on" => true,
-            "0" or "false" or "off" => false,
-            _ => throw new InvalidDataException(
-                $"Invalid OMML boolean value '{value}' for {property.Name.LocalName}."),
-        };
+        return value?.ToLowerInvariant() is not ("0" or "false" or "off");
     }
 
     internal static string TransformOmmlToMathMl(string wordOpenXml, bool display)
@@ -4763,41 +4738,10 @@ internal static partial class WordOmmlConverter
                     slot.RemoveNodes();
             }
         omml = reverseDocument.Root!.ToString(SaveOptions.DisableFormatting);
-        var transform = GetOmmlToMathMlTransform();
-        var inputSettings = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            IgnoreComments = true,
-            IgnoreWhitespace = true,
-            MaxCharactersInDocument = 4_000_000,
-        };
-        var outputSettings = transform.OutputSettings?.Clone() ?? new XmlWriterSettings();
-        outputSettings.OmitXmlDeclaration = true;
-        outputSettings.Encoding = new UTF8Encoding(false);
-        using var sourceText = new StringReader(omml);
-        using var source = XmlReader.Create(sourceText, inputSettings);
-        using var outputText = new StringWriter();
-        var arguments = new XsltArgumentList();
-        arguments.AddExtensionObject(UnicodeScalarXPathNamespace, new UnicodeScalarXPathFunctions());
-        using (var output = XmlWriter.Create(outputText, outputSettings))
-            transform.Transform(source, arguments, output);
-        var transformed = outputText.ToString();
-        using var transformedText = new StringReader(transformed);
-        using var transformedReader = XmlReader.Create(transformedText, inputSettings);
-        var document = XDocument.Load(transformedReader, LoadOptions.None);
-        var root = document.Root?.Name.LocalName == "math"
-            ? document.Root
-            : document.Descendants().FirstOrDefault(element => element.Name.LocalName == "math");
-        if (root is null)
-            throw new InvalidDataException("Office OMML conversion did not produce a MathML math node.");
-
-        // MML2OMML's reverse stylesheet may serialize the result as <mml:math>.
-        // That is XML-equivalent MathML, but VisualTeX's existing MathType bridge
-        // intentionally accepts the canonical <math xmlns="..."> contract used by
-        // the renderer. Rebuild the presentation tree with one default MathML
-        // namespace so OMML -> MathType can use the exact same validated path.
-        var canonicalRoot = CanonicalizeMathMlElement(root);
+        // The projection is VisualTeX's own: the installed Office's OMML2MML.XSL
+        // changes with Office updates and is never read. The result uses the one
+        // default MathML namespace the renderer and MathType bridge accept.
+        var canonicalRoot = CanonicalizeMathMlElement(OmmlMathMlProjection.Project(omml));
         RestoreMergedNumericPunctuationTokens(canonicalRoot);
         RestoreMathSymbolTextTokens(canonicalRoot);
         RestoreWordCanonicalAsteriskOperators(canonicalRoot);
@@ -6957,9 +6901,11 @@ internal static partial class WordOmmlConverter
         separatorIndex = -1;
         numberDelimiter = null;
         XNamespace math = MathNamespace;
-        var equationArray = equation.Elements(math + "eqArr").SingleOrDefault();
-        if (equationArray is null) return false;
-        var entries = equationArray.Elements(math + "e").ToArray();
+        // VisualTeX numbers an equation through its one root equation array.
+        // Word also allows several arrays side by side; those are never ours.
+        var equationArrays = equation.Elements(math + "eqArr").Take(2).ToArray();
+        if (equationArrays.Length != 1) return false;
+        var entries = equationArrays[0].Elements(math + "e").ToArray();
         if (entries.Length != 1) return false;
         var candidateBody = entries[0];
         var children = candidateBody.Elements().ToArray();
@@ -7073,525 +7019,12 @@ internal static partial class WordOmmlConverter
             + $"<w:body><w:p>{contextPrefix}{bookmarkedFormula}{contextSuffix}</w:p><w:sectPr/></w:body></w:document>";
     }
 
-    internal static string ResolveTransformPath() => ResolveTransformPath("MML2OMML.XSL");
-
-    internal static string ResolveReverseTransformPath() => ResolveTransformPath("OMML2MML.XSL");
-
-    private static string ResolveTransformPath(string fileName) =>
-        ExistingTransformCandidates(fileName).FirstOrDefault()
-        ?? throw new FileNotFoundException(
-            $"Unable to locate Office {fileName}. Searched the registered Word installation and Office 2007-365 roots. Repair Microsoft Word or reinstall the Office integration.");
-
-    private static IEnumerable<string> ExistingTransformCandidates(string fileName)
-    {
-        var candidates = new List<string>();
-        var overrideRoot = Environment.GetEnvironmentVariable(
-            "VISUALTEX_OFFICE_MATH_XSL_ROOT");
-        AddCandidateRoot(candidates, overrideRoot, fileName);
-
-        // The stylesheet shipped beside the Office application that is running
-        // this add-in (WINWORD.EXE or POWERPNT.EXE share one install folder) is
-        // the one that matches this Office. Registry App Paths can name another
-        // or stale installation, and the conventional roots below are guesses.
-        try
-        {
-            using var process = System.Diagnostics.Process.GetCurrentProcess();
-            var hostDirectory = Path.GetDirectoryName(process.MainModule?.FileName ?? string.Empty);
-            if (!string.IsNullOrWhiteSpace(hostDirectory))
-                candidates.Add(Path.Combine(hostDirectory!, fileName));
-        }
-        catch { }
-
-        // App Paths is the authoritative Office location for MSI, Click-to-Run,
-        // per-user and alternate-bit installations. Derive the stylesheet folder
-        // from every visible 32/64-bit registry view before trying conventional
-        // Program Files roots.
-        foreach (var wordPath in ReadRegisteredWordPaths())
-        {
-            var directory = Path.GetDirectoryName(wordPath);
-            if (!string.IsNullOrWhiteSpace(directory))
-                candidates.Add(Path.Combine(directory!, fileName));
-        }
-
-        AddCandidateRoot(candidates, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), fileName);
-        AddCandidateRoot(candidates, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), fileName);
-        AddCandidateRoot(candidates, Environment.GetEnvironmentVariable("ProgramW6432"), fileName);
-        AddCandidateRoot(candidates, Environment.GetEnvironmentVariable("CommonProgramFiles"), fileName);
-        AddCandidateRoot(candidates, Environment.GetEnvironmentVariable("CommonProgramFiles(x86)"), fileName);
-        AddCandidateRoot(candidates, AppContext.BaseDirectory, fileName);
-        return candidates.Distinct(StringComparer.OrdinalIgnoreCase).Where(File.Exists).ToArray();
-    }
-
-    // VisualTeX adapts Microsoft's stylesheet at named templates. Any file with
-    // the same name (another Office build, a third-party copy found first on
-    // the search path) is only a candidate until that adaptation succeeds; the
-    // first one every adaptation fits is used. Office builds differ, so when no
-    // copy fits them all, the first Microsoft stylesheet that fits some of them
-    // is used with stock behaviour for the rest. Report every rejected file
-    // when none fits at all.
-    internal static XslCompiledTransform LoadFirstUsableTransform(
-        string fileName,
-        IEnumerable<string> candidates,
-        Func<string, bool, XslCompiledTransform> load)
-    {
-        var paths = candidates.ToArray();
-        var rejected = new List<string>();
-        foreach (var candidate in paths)
-        {
-            try { return load(candidate, false); }
-            catch (Exception error)
-            {
-                rejected.Add($"{candidate} ({error.GetType().Name}: {error.Message})");
-            }
-        }
-        foreach (var candidate in paths)
-        {
-            try { return load(candidate, true); }
-            catch { }
-        }
-        if (rejected.Count == 0)
-            throw new FileNotFoundException(
-                $"Unable to locate Office {fileName}. Searched the running Office, the registered Word installation and Office 2007-365 roots. Repair Microsoft Office or reinstall the Office integration.");
-        throw new InvalidDataException(
-            $"No usable Office {fileName}: none of the installed copies has the Microsoft templates VisualTeX adapts. Repair Microsoft Office. Rejected: "
-            + string.Join("; ", rejected));
-    }
-
-    // Each step edits Microsoft templates on a copy, so a step whose template
-    // is absent is never half-applied. A strict load requires every step; a
-    // tolerant load skips absent ones but requires at least one, which also
-    // tells a Microsoft stylesheet from a foreign file of the same name.
-    private static XDocument AdaptStylesheet(
-        XDocument stylesheet,
-        bool tolerant,
-        params (string Name, Action<XDocument> Apply)[] steps)
-    {
-        var skipped = new List<string>();
-        foreach (var (name, apply) in steps)
-        {
-            var copy = new XDocument(stylesheet);
-            try
-            {
-                apply(copy);
-                stylesheet = copy;
-            }
-            catch (Exception error) when (
-                error is InvalidOperationException or InvalidDataException or ArgumentException)
-            {
-                if (!tolerant)
-                    throw new InvalidDataException(
-                        $"Office stylesheet does not have the {name} template VisualTeX adapts ({error.Message})",
-                        error);
-                skipped.Add(name);
-            }
-        }
-        if (skipped.Count == steps.Length)
-            throw new InvalidDataException(
-                "The stylesheet has none of the Microsoft templates VisualTeX adapts.");
-        if (skipped.Count > 0)
-            System.Diagnostics.Trace.TraceWarning(
-                "VisualTeX adapted the Office stylesheet without: " + string.Join(", ", skipped));
-        return stylesheet;
-    }
-
-    private static void AddCandidateRoot(List<string> candidates, string? root, string fileName)
-    {
-        if (string.IsNullOrWhiteSpace(root)) return;
-        var expandedRoot = Environment.ExpandEnvironmentVariables(
-            root!.Trim().Trim('"'));
-        if (File.Exists(expandedRoot))
-        {
-            candidates.Add(expandedRoot);
-            return;
-        }
-
-        candidates.Add(Path.Combine(expandedRoot, fileName));
-        foreach (var version in new[] { "Office16", "Office15", "Office14", "Office12" })
-        {
-            candidates.Add(Path.Combine(
-                expandedRoot,
-                "Microsoft Office",
-                "root",
-                version,
-                fileName));
-            candidates.Add(Path.Combine(
-                expandedRoot,
-                "Microsoft Office",
-                version,
-                fileName));
-            candidates.Add(Path.Combine(expandedRoot, version, fileName));
-            candidates.Add(Path.Combine(
-                expandedRoot,
-                "Microsoft Shared",
-                version.ToUpperInvariant(),
-                fileName));
-        }
-    }
-
-    private static IEnumerable<string> ReadRegisteredWordPaths()
-    {
-        var views = Environment.Is64BitOperatingSystem
-            ? new[] { RegistryView.Registry64, RegistryView.Registry32 }
-            : new[] { RegistryView.Registry32 };
-        foreach (var view in views)
-        {
-            foreach (var hive in new[]
-                     {
-                         RegistryHive.CurrentUser,
-                         RegistryHive.LocalMachine,
-                     })
-            {
-                RegistryKey? baseKey = null;
-                RegistryKey? appPathKey = null;
-                try
-                {
-                    baseKey = RegistryKey.OpenBaseKey(hive, view);
-                    appPathKey = baseKey.OpenSubKey(
-                        "Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\WINWORD.EXE");
-                    var value = appPathKey?.GetValue(null) as string;
-                    if (string.IsNullOrWhiteSpace(value)) continue;
-                    var path = NormalizeRegisteredExecutablePath(value!);
-                    if (!string.IsNullOrWhiteSpace(path)) yield return path;
-                }
-                finally
-                {
-                    appPathKey?.Dispose();
-                    baseKey?.Dispose();
-                }
-            }
-        }
-    }
-
-    private static string NormalizeRegisteredExecutablePath(string value)
-    {
-        var source = Environment.ExpandEnvironmentVariables(value.Trim());
-        if (source.StartsWith("\"", StringComparison.Ordinal))
-        {
-            var closing = source.IndexOf('"', 1);
-            return closing > 1
-                ? source.Substring(1, closing - 1)
-                : source.Trim('"');
-        }
-        var exeEnd = source.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
-        return (exeEnd >= 0
-                ? source.Substring(0, exeEnd + 4)
-                : source.Split(new[] { ' ', '\t' }, 2)[0])
-            .Trim()
-            .Trim('"');
-    }
-
-    private static XslCompiledTransform GetTransform()
-    {
-        lock (TransformLock)
-        {
-            if (_mathMlToOmml is not null) return _mathMlToOmml;
-            _mathMlToOmml = LoadFirstUsableTransform(
-                "MML2OMML.XSL", ExistingTransformCandidates("MML2OMML.XSL"), LoadTransform);
-            return _mathMlToOmml;
-        }
-    }
-
     internal static void PrewarmOmmlReadPipeline()
     {
-        _ = GetOmmlToMathMlTransform();
+        _ = OmmlMathMlProjection.Project(
+            "<m:oMath xmlns:m=\"" + MathNamespace + "\"><m:r><m:t>x</m:t></m:r></m:oMath>");
         _ = MathMlToLatexConverter.Convert(
             @"<math xmlns=""http://www.w3.org/1998/Math/MathML"" display=""inline""><mi>x</mi></math>");
-    }
-
-    private static XslCompiledTransform GetOmmlToMathMlTransform()
-    {
-        lock (TransformLock)
-        {
-            if (_ommlToMathMl is not null) return _ommlToMathMl;
-            _ommlToMathMl = LoadFirstUsableTransform(
-                "OMML2MML.XSL", ExistingTransformCandidates("OMML2MML.XSL"), LoadReverseTransform);
-            return _ommlToMathMl;
-        }
-    }
-
-    private const string UnicodeScalarXPathNamespace = "urn:visualtex:unicode-scalar-xpath";
-
-    internal sealed class UnicodeScalarXPathFunctions
-    {
-        public double StringLength(string value)
-        {
-            var count = 0;
-            for (var index = 0; index < value.Length; count++)
-                index += char.IsSurrogatePair(value, index) ? 2 : 1;
-            return count;
-        }
-
-        public string Substring(string value, double start)
-            => Slice(value, RoundXPath(start), double.PositiveInfinity);
-
-        public string Substring(string value, double start, double length)
-        {
-            var first = RoundXPath(start);
-            return Slice(value, first, first + RoundXPath(length));
-        }
-
-        private static double RoundXPath(double value)
-        {
-            var rounded = Math.Round(value);
-            return value - rounded == 0.5 ? rounded + 1 : rounded;
-        }
-
-        private static string Slice(string value, double first, double end)
-        {
-            var result = new StringBuilder();
-            var position = 1;
-            for (var index = 0; index < value.Length; position++)
-            {
-                var count = char.IsSurrogatePair(value, index) ? 2 : 1;
-                if (position >= first && position < end) result.Append(value, index, count);
-                index += count;
-            }
-            return result.ToString();
-        }
-    }
-
-    internal static string RewriteUnicodeScalarXPath(string expression)
-    {
-        var result = new StringBuilder();
-        var quote = '\0';
-        for (var index = 0; index < expression.Length;)
-        {
-            var character = expression[index];
-            if (quote != '\0')
-            {
-                result.Append(character); index++;
-                if (character == quote) quote = '\0';
-            }
-            else if (character is '\'' or '"')
-            {
-                quote = character; result.Append(character); index++;
-            }
-            else if (char.IsLetter(character) || character == '_')
-            {
-                var start = index++;
-                while (index < expression.Length &&
-                    (char.IsLetterOrDigit(expression[index]) || "_-.:".IndexOf(expression[index]) >= 0)) index++;
-                var name = expression.Substring(start, index - start);
-                var next = index;
-                while (next < expression.Length && char.IsWhiteSpace(expression[next])) next++;
-                if (next < expression.Length && expression[next] == '(' &&
-                    (name == "substring" || name == "string-length"))
-                    result.Append("vtUnicode:").Append(name == "substring" ? "Substring" : "StringLength");
-                else result.Append(name);
-            }
-            else { result.Append(character); index++; }
-        }
-        return result.ToString();
-    }
-
-    internal static XslCompiledTransform LoadReverseTransform(string path, bool tolerant = false)
-    {
-        // Office's legacy MathML projection deliberately discards styled
-        // operators and numbers even when OMML carries their exact m:sty.
-        // Correct that projection before compilation, retaining the original
-        // token/structure transform and leaving the Office installation intact.
-        XNamespace xsl = "http://www.w3.org/1999/XSL/Transform";
-        XNamespace presentationMath = "http://www.w3.org/1998/Math/MathML";
-        XElement Template(XDocument stylesheet, string name) => stylesheet.Descendants(xsl + "template")
-            .Single(element => (string?)element.Attribute("name") == name);
-        var source = XDocument.Load(path);
-        source.Root!.SetAttributeValue(XNamespace.Xmlns + "vtUnicode", UnicodeScalarXPathNamespace);
-        var stylesheet = AdaptStylesheet(source, tolerant,
-            ("ParseMt Unicode scalars", stylesheet =>
-            {
-                // The legacy token parser counts UTF-16 units on .NET. Its traversal
-                // must consume complete Unicode scalars, never half a surrogate pair.
-                foreach (var expression in Template(stylesheet, "ParseMt").DescendantsAndSelf().Attributes()
-                             .Where(attribute => attribute.Name.LocalName is "select" or "test"))
-                    expression.Value = RewriteUnicodeScalarXPath(expression.Value);
-            }),
-            // A literal operator in an OMML run has fixed glyph geometry. Preserve
-            // that at the tokenizer, where native provenance is still available,
-            // rather than letting MathML's operator dictionary invent stretching.
-            // ParseMt also creates accent marks: only its m:r/m:t context is a run.
-            // ParseEqArrMr is called exclusively for CreateEqArrRow's m:r branch;
-            // its current node is the containing equation row, not the run itself.
-            ("ParseMt operator", stylesheet =>
-                Template(stylesheet, "ParseMt").Descendants(presentationMath + "mo").Single().AddFirst(
-                    new XElement(xsl + "if", new XAttribute("test", "self::m:t[parent::m:r]"),
-                        new XElement(xsl + "attribute", new XAttribute("name", "stretchy"), "false")))),
-            ("ParseEqArrMr operator", stylesheet =>
-                Template(stylesheet, "ParseEqArrMr").Descendants(presentationMath + "mo").Single().AddFirst(
-                    new XElement(xsl + "attribute", new XAttribute("name", "stretchy"), "false"))),
-            ("CreateTokenAttributes operator style", stylesheet =>
-            {
-                var operatorStyle = Template(stylesheet, "CreateTokenAttributes").Descendants(xsl + "when")
-                    .Single(element => (string?)element.Attribute("test") == "$sTokenType='mo' and $mathvariant!='normal'");
-                operatorStyle.ReplaceWith(new XElement(xsl + "when",
-                    new XAttribute("test", "$sTokenType='mo' or $sTokenType='mn'"),
-                    new XElement(xsl + "if", new XAttribute("test", "$mathvariant!=''"),
-                        new XElement(xsl + "attribute", new XAttribute("name", "mathvariant"),
-                            new XElement(xsl + "value-of", new XAttribute("select", "$mathvariant"))))));
-                foreach (var call in stylesheet.Descendants(xsl + "call-template")
-                             .Where(element => (string?)element.Attribute("name") == "CreateTokenAttributes"))
-                {
-                    var token = call.Elements(xsl + "with-param")
-                        .FirstOrDefault(element => (string?)element.Attribute("name") == "sTokenType");
-                    if ((string?)token?.Attribute("select") is not ("\'mo\'" or "\'mn\'")) continue;
-                    foreach (var name in new[] { "scr", "sty" })
-                        call.Elements(xsl + "with-param")
-                            .Single(element => (string?)element.Attribute("name") == name)
-                            .SetAttributeValue("select", "$" + name);
-                }
-            }),
-            ("CreateTokenAttributes number variant", stylesheet =>
-                Template(stylesheet, "CreateTokenAttributes").Descendants(xsl + "variable")
-                    .Single(element => (string?)element.Attribute("name") == "mathvariant")
-                    .Descendants(xsl + "when")
-                    .Single(element => (string?)element.Attribute("test") == "$sTokenType='mn'")
-                    // Upright digits use the default only in the ordinary Roman
-                    // alphabet. Preserve explicit mathematical alphabets, including
-                    // monospace, through the existing script-to-variant mapping.
-                    // string() also covers an omitted scr supplied as an empty node-set.
-                    .SetAttributeValue("test", "$sTokenType='mn' and (string($scr)='' or $scr='roman') and ($sty='p' or $sty='')")),
-            ("text color", MathMlColorContract.AdaptReverseTransform));
-        var transform = new XslCompiledTransform(enableDebug: false);
-        using var reader = stylesheet.CreateReader();
-        transform.Load(reader, new XsltSettings(enableDocumentFunction: false, enableScript: false), null);
-        return transform;
-    }
-
-    internal static XslCompiledTransform LoadTransform(string path, bool tolerant = false)
-    {
-        // Adapt the installed transform in memory. The Office installation is
-        // unchanged. Its legacy grouping treats an implicit mo and an explicit
-        // italic token as equivalent, then omits their italic run properties.
-        // Require the materialized source style/role before that lossy merge.
-        XNamespace xsl = "http://www.w3.org/1999/XSL/Transform";
-        XNamespace math = MathNamespace;
-        XElement Template(XDocument stylesheet, string name) => stylesheet.Descendants(xsl + "template")
-            .Single(element => (string?)element.Attribute("name") == name);
-        var source = XDocument.Load(path);
-
-        // Native accent marks are control characters, independent of the base.
-        // The normalized mark already carries the shared effective token style.
-        // Emit real ctrlPr formatting rather than inheriting the first base run.
-        XNamespace word = WordNamespace;
-        XElement ControlFlag(string name, string condition) => new XElement(word + name,
-            new XElement(xsl + "attribute", new XAttribute("name", "w:val"),
-                new XElement(xsl + "choose",
-                    new XElement(xsl + "when", new XAttribute("test", condition), "1"),
-                    new XElement(xsl + "otherwise", "0"))));
-        source.Root!.SetAttributeValue(XNamespace.Xmlns + "w", word.NamespaceName);
-        source.Root.Add(new XElement(xsl + "template",
-            new XAttribute("match", "mml:mover[@accent='true' and count(*)=2 and string-length(*[2])=1 and *[2][self::mml:mo and (@mathvariant='normal' or @mathvariant='bold' or @mathvariant='italic' or @mathvariant='bold-italic')]]"),
-            new XAttribute("priority", "10"),
-            new XElement(math + "acc",
-                new XElement(math + "accPr",
-                    new XElement(math + "chr", new XElement(xsl + "attribute",
-                        new XAttribute("name", "m:val"), new XElement(xsl + "value-of", new XAttribute("select", "*[2]")))),
-                    new XElement(math + "ctrlPr", new XElement(word + "rPr",
-                        ControlFlag("b", "*[2]/@mathvariant='bold' or *[2]/@mathvariant='bold-italic'"),
-                        ControlFlag("i", "*[2]/@mathvariant='italic' or *[2]/@mathvariant='bold-italic'")))),
-                new XElement(math + "e", new XElement(xsl + "apply-templates", new XAttribute("select", "*[1]"))))));
-
-        // Stock XSL has no mspace rule: its catch-all discards empty elements.
-        // Emit only exact native text selected by the shared source projection.
-        source.Root!.Add(new XElement(xsl + "template",
-            new XAttribute("match", "mml:mspace[@" + OmmlSpaceTextAttribute + "]"),
-            new XElement(xsl + "if",
-                new XAttribute("test", "string-length(@" + OmmlSpaceTextAttribute + ") > 0"),
-                new XElement(math + "r",
-                    new XElement(math + "t",
-                        new XAttribute(XNamespace.Xml + "space", "preserve"),
-                        new XElement(xsl + "value-of",
-                            new XAttribute("select", "@" + OmmlSpaceTextAttribute)))))));
-
-        var stylesheet = AdaptStylesheet(source, tolerant,
-            ("OutputText literal text", AdaptLiteralTextOutput),
-            ("CreateRunWithSameProp grouping", stylesheet =>
-            {
-                var grouping = Template(stylesheet, "CreateRunWithSameProp")
-                    .Elements(xsl + "variable")
-                    .Single(element => (string?)element.Attribute("name") == "nndBeforeLim");
-                var selection = (string?)grouping.Attribute("select")
-                    ?? throw new InvalidDataException("Office run grouping has no selection expression.");
-                const string sequence = "$ndTokenFirst/following-sibling::*";
-                var sequenceIndex = selection.IndexOf(sequence, StringComparison.Ordinal);
-                var predicateIndex = sequenceIndex < 0
-                    ? -1
-                    : selection.IndexOf('[', sequenceIndex + sequence.Length);
-                if (predicateIndex < 0)
-                    throw new InvalidDataException("Office run grouping has an unsupported selection expression.");
-                var boundaries =
-                    "string(@mathvariant) != string($ndTokenFirst/@mathvariant) or "
-                    + "string(@" + OmmlRunRoleAttribute + ") != string($ndTokenFirst/@"
-                    + OmmlRunRoleAttribute + ") or "
-                    // ApplyFunction starts a structural boundary even though it shares
-                    // the normal operator style. Do not merge it into a function name;
-                    // it may still share a run with its following opening delimiter.
-                    + "(self::mml:mo and normalize-space(.)='⁡') or ";
-                grouping.SetAttributeValue("select", selection.Insert(predicateIndex + 1, boundaries));
-            }),
-            ("CreateMathRPR", stylesheet =>
-                Template(stylesheet, "CreateMathRPR").Elements(xsl + "if").Single()
-                    .SetAttributeValue("test", "$fNor=1 or $sFontCur!=''")),
-            ("CreateMathScrStyProp italic", stylesheet =>
-            {
-                var italic = Template(stylesheet, "CreateMathScrStyProp")
-                    .Elements(xsl + "choose")
-                    .Elements(xsl + "when")
-                    .Single(element => (string?)element.Attribute("test") == "$font='italic'");
-                italic.ReplaceNodes(new XElement(math + "sty", new XAttribute(math + "val", "i")));
-                // Monospace is a mathematical alphabet, represented by native scr
-                // rather than a Word text font or Normal Text. The source projection
-                // has already resolved inherited variants and kept token roles apart.
-                italic.AddBeforeSelf(new XElement(xsl + "when",
-                    new XAttribute("test", "$font='monospace'"),
-                    new XElement(math + "scr", new XAttribute(math + "val", "monospace")),
-                    new XElement(math + "sty", new XAttribute(math + "val", "p"))));
-            }),
-            ("text color", MathMlColorContract.AdaptForwardTransform));
-        var transform = new XslCompiledTransform(enableDebug: false);
-        using var reader = stylesheet.CreateReader();
-        transform.Load(reader, new XsltSettings(enableDocumentFunction: false, enableScript: false), null);
-        return transform;
-    }
-
-    private static void AdaptLiteralTextOutput(XDocument stylesheet)
-    {
-        XNamespace xsl = "http://www.w3.org/1999/XSL/Transform";
-        const string literal = "self::mml:mtext or self::mml:ms";
-        var output = stylesheet.Descendants(xsl + "template")
-            .Single(element => (string?)element.Attribute("name") == "OutputText");
-        var body = output.Elements().Where(element => element.Name != xsl + "param").ToArray();
-        foreach (var node in body) node.Remove();
-        output.Add(new XElement(xsl + "param", new XAttribute("name", "fLiteral"), new XAttribute("select", literal)),
-            new XElement(xsl + "choose",
-                new XElement(xsl + "when", new XAttribute("test", "$fLiteral"),
-                    new XElement(xsl + "value-of", new XAttribute("select", "$sInput"))),
-                new XElement(xsl + "otherwise", body)));
-
-        // Literal text is not a stream of mathematical operators. Preserve its
-        // characters and whitespace instead of applying Office's operator-only
-        // OutputText rewrites (invisible multiplication, spaces, ligatures).
-        // Grouped runs have an explicit first token; never infer their role from
-        // the caller's current node. Existing grouping already separates mtext.
-        foreach (var call in stylesheet.Descendants(xsl + "call-template")
-                     .Where(element => (string?)element.Attribute("name") == "OutputText").ToArray())
-        {
-            var template = call.Ancestors(xsl + "template").First();
-            var grouped = (string?)template.Attribute("name") == "CreateRunWithSameProp";
-            call.Add(new XElement(xsl + "with-param", new XAttribute("name", "fLiteral"),
-                new XAttribute("select", grouped ? "$ndTokenFirst/self::mml:mtext or $ndTokenFirst/self::mml:ms" : literal)));
-            foreach (var value in call.Descendants(xsl + "value-of").ToArray())
-            {
-                var expression = (string?)value.Attribute("select");
-                var token = expression == "normalize-space($ndTokenFirst)" ? "$ndTokenFirst"
-                    : expression == "normalize-space(.)" ? "." : null;
-                if (token is null) continue;
-                value.ReplaceWith(new XElement(xsl + "choose",
-                    new XElement(xsl + "when", new XAttribute("test", token == "." ? literal
-                        : "$ndTokenFirst/self::mml:mtext or $ndTokenFirst/self::mml:ms"),
-                        new XElement(xsl + "value-of", new XAttribute("select", token))),
-                    new XElement(xsl + "otherwise", new XElement(value))));
-            }
-        }
     }
 
     private static string NormalizeMathFontName(string? mathFontName) =>

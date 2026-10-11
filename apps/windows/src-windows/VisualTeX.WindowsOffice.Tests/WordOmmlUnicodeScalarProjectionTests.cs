@@ -5,7 +5,7 @@ namespace VisualTeX.WindowsOffice.Tests;
 
 public sealed class WordOmmlUnicodeScalarProjectionTests
 {
-    private readonly WordOmmlConverter.UnicodeScalarXPathFunctions _functions = new();
+    private readonly ClassicOfficeReverseStylesheet.UnicodeScalarXPathFunctions _functions = new();
 
     [Theory]
     [InlineData("abc", 3)]
@@ -49,10 +49,10 @@ public sealed class WordOmmlUnicodeScalarProjectionTests
     [Fact]
     public void XPathRewritePreservesQuotedStringsAndQualifiedNames()
     {
-        Assert.Equal("vtUnicode:Substring($text, 1, vtUnicode:StringLength($text))", WordOmmlConverter.RewriteUnicodeScalarXPath("substring($text, 1, string-length($text))"));
+        Assert.Equal("vtUnicode:Substring($text, 1, vtUnicode:StringLength($text))", ClassicOfficeReverseStylesheet.RewriteUnicodeScalarXPath("substring($text, 1, string-length($text))"));
         const string expression = "concat('substring(x)', \"string-length(y)\", custom:substring($text,1), $substring)";
-        Assert.Equal(expression, WordOmmlConverter.RewriteUnicodeScalarXPath(expression));
-        Assert.Equal("vtUnicode:Substring ($text,2)", WordOmmlConverter.RewriteUnicodeScalarXPath("substring ($text,2)"));
+        Assert.Equal(expression, ClassicOfficeReverseStylesheet.RewriteUnicodeScalarXPath(expression));
+        Assert.Equal("vtUnicode:Substring ($text,2)", ClassicOfficeReverseStylesheet.RewriteUnicodeScalarXPath("substring ($text,2)"));
     }
 
     [Theory]

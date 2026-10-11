@@ -336,12 +336,18 @@ public sealed class WordOmmlCoreContractTests
         Assert.Equal("Office OMML contains a visible empty e slot inside sSup.", error.Message);
     }
 
+    // A switch Word displays is read as Office reads it: present and not
+    // explicitly false means on. An unexpected value never becomes off and
+    // never makes the formula unreadable.
     [Theory]
     [InlineData("<m:degHide m:val=\"bogus\"/>")]
     [InlineData("<m:degHide m:val=\"\"/>")]
+    [InlineData("<m:degHide m:val=\"On\"/>")]
     public void InvalidBooleanCannotBeSilentlyNormalizedToFalse(string property)
     {
-        var xml = Math("<m:rad><m:radPr>" + property + "</m:radPr><m:deg/><m:e>" + Run("x") + "</m:e></m:rad>");
-        Assert.Throws<InvalidDataException>(() => WordOmmlConverter.ComputeImportedOmmlContentSignature(xml));
+        string Signature(string switchXml) => WordOmmlConverter.ComputeImportedOmmlContentSignature(
+            Math("<m:rad><m:radPr>" + switchXml + "</m:radPr><m:deg/><m:e>" + Run("x") + "</m:e></m:rad>"));
+        Assert.Equal(Signature("<m:degHide m:val=\"1\"/>"), Signature(property));
+        Assert.NotEqual(Signature("<m:degHide m:val=\"0\"/>"), Signature(property));
     }
 }

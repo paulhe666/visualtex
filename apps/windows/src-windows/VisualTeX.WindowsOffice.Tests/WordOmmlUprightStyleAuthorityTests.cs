@@ -26,7 +26,7 @@ public sealed class WordOmmlUprightStyleAuthorityTests
     private static string StockForward(string mathMl)
     {
         var transform = new XslCompiledTransform();
-        transform.Load(WordOmmlConverter.ResolveTransformPath(),
+        transform.Load(ClassicOfficeForwardStylesheet.ResolvePath(),
             new XsltSettings(enableDocumentFunction: false, enableScript: false), null);
         using var input = XmlReader.Create(new StringReader(mathMl), new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, IgnoreWhitespace = true });
         using var result = new StringWriter();

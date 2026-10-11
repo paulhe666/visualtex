@@ -231,6 +231,7 @@ internal static partial class MathTypeMtefCodec
             .FirstOrDefault(element => element.Name.LocalName == "math")
             ?? throw new InvalidDataException("MathML has no <math> root.");
         NormalizeMathMlPrescripts(math);
+        DecomposeMathematicalAlphanumerics(math);
         var generated = BuildRootStructure(math, seedMtef, out var prefixDefinitions);
         var mtef = AssembleRewrittenMtef(
             seedMtef,
@@ -302,6 +303,7 @@ internal static partial class MathTypeMtefCodec
             .FirstOrDefault(element => element.Name.LocalName == "math")
             ?? throw new InvalidDataException("MathML has no <math> root.");
         NormalizeMathMlPrescripts(math);
+        DecomposeMathematicalAlphanumerics(math);
 
         // Preserve MathType's equation-options byte exactly as stored in the
         // source MTEF. Word controls whether this OLE sits inline or as a display
@@ -427,6 +429,7 @@ internal static partial class MathTypeMtefCodec
             ?? throw new InvalidDataException("MathML has no root element.");
         var normalized = new XElement(math);
         NormalizeMathMlPrescripts(normalized);
+        DecomposeMathematicalAlphanumerics(normalized);
         NormalizeMathTypeExportedTabPiles(normalized);
         MaterializeLooseFenceGroups(normalized);
         var structure = CanonicalizeMathMl(normalized, inheritedMathVariant: null);
@@ -1708,6 +1711,7 @@ internal static partial class MathTypeMtefCodec
         var math = document.Root?.DescendantsAndSelf()
             .FirstOrDefault(element => element.Name.LocalName == "math")
             ?? throw new InvalidDataException("MathML has no <math> root.");
+        DecomposeMathematicalAlphanumerics(math);
         return PrepareMathForMathType(math)
             .ToString(SaveOptions.DisableFormatting);
     }
@@ -3478,8 +3482,11 @@ internal static partial class MathTypeMtefCodec
     private static void MaterializeExplicitCharacterStyles(
         XElement math, byte[] sourceMtef, List<byte> output, int definitionsStart)
     {
+        // FUNCTION APPLICATION (U+2061) is stored as no CHAR at all, so a style
+        // on it has nothing to bind to and no visible effect.
         var tokens = math.DescendantsAndSelf().Where(e => (e.Name.LocalName is "mo" or "mi")
             && e.Value.Length == 1
+            && e.Value[0] != (char)0x2061
             && (((string?)e.Attribute("mathvariant") ?? string.Empty) is "bold" or "italic" or "bold-italic"
                 || TryGetBasicStyledLegacyIdentifierGlyph(e, out _, out _, out _))).ToArray();
         if (tokens.Length == 0) return;
@@ -6457,6 +6464,117 @@ internal static partial class MathTypeMtefCodec
                 IsFarEastTextScalar(scalar) || typeface == TypefaceText && NeedsFarEastCodePage(scalar)
                     ? TypefaceFarEastText : typeface,
                 output);
+        }
+    }
+
+    // Unicode Mathematical Alphanumeric Symbols (U+1D400-U+1D7FF) are base
+    // letters, Greek letters and digits in a mathematical alphabet. MTEF v5
+    // stores 16-bit MTCode with the alphabet as typeface or character style,
+    // so they are written as their base character with that mathvariant.
+    private static readonly string[] LatinMathAlphabets =
+    {
+        "bold", "italic", "bold-italic", "script", "bold-script", "fraktur", "double-struck",
+        "bold-fraktur", "sans-serif", "bold-sans-serif", "sans-serif-italic", "sans-serif-bold-italic",
+        "monospace",
+    };
+
+    private static readonly string[] GreekMathAlphabets =
+        { "bold", "italic", "bold-italic", "bold-sans-serif", "sans-serif-bold-italic" };
+
+    private static readonly string[] DigitMathAlphabets =
+        { "bold", "double-struck", "sans-serif", "bold-sans-serif", "monospace" };
+
+    // The 58 letters of each Greek mathematical alphabet, in Unicode order.
+    private static readonly int[] GreekMathAlphabetLetters = Enumerable.Range(0x0391, 17)
+        .Concat(new[] { 0x03F4 })
+        .Concat(Enumerable.Range(0x03A3, 7))
+        .Concat(new[] { 0x2207 })
+        .Concat(Enumerable.Range(0x03B1, 25))
+        .Concat(new[] { 0x2202, 0x03F5, 0x03D1, 0x03F0, 0x03D5, 0x03F1, 0x03D6 })
+        .ToArray();
+
+    internal static bool TryDecomposeMathAlphanumeric(int scalar, out int baseScalar, out string variant)
+    {
+        if (scalar >= 0x1D400 && scalar < 0x1D400 + 13 * 52)
+        {
+            var index = scalar - 0x1D400;
+            variant = LatinMathAlphabets[index / 52];
+            var letter = index % 52;
+            baseScalar = letter < 26 ? 'A' + letter : 'a' + letter - 26;
+            return true;
+        }
+        if (scalar is 0x1D6A4 or 0x1D6A5)
+        {
+            variant = "italic";
+            baseScalar = scalar == 0x1D6A4 ? 0x0131 : 0x0237;
+            return true;
+        }
+        if (scalar >= 0x1D6A8 && scalar < 0x1D6A8 + 5 * 58)
+        {
+            var index = scalar - 0x1D6A8;
+            variant = GreekMathAlphabets[index / 58];
+            baseScalar = GreekMathAlphabetLetters[index % 58];
+            return true;
+        }
+        if (scalar is 0x1D7CA or 0x1D7CB)
+        {
+            variant = "bold";
+            baseScalar = scalar == 0x1D7CA ? 0x03DC : 0x03DD;
+            return true;
+        }
+        if (scalar >= 0x1D7CE && scalar < 0x1D7CE + 5 * 10)
+        {
+            var index = scalar - 0x1D7CE;
+            variant = DigitMathAlphabets[index / 10];
+            baseScalar = '0' + index % 10;
+            return true;
+        }
+        baseScalar = scalar;
+        variant = string.Empty;
+        return false;
+    }
+
+    private static void DecomposeMathematicalAlphanumerics(XElement math)
+    {
+        var tokens = math.DescendantsAndSelf()
+            .Where(element => element.Name.LocalName is "mi" or "mn" or "mo" or "mtext" or "ms"
+                && !element.HasElements
+                && element.Value.IndexOf((char)0xD835) >= 0)
+            .ToList();
+        foreach (var token in tokens)
+        {
+            var text = token.Value;
+            var segments = new List<(StringBuilder Text, string? Variant)>();
+            for (var index = 0; index < text.Length;)
+            {
+                var pair = char.IsHighSurrogate(text[index]) && index + 1 < text.Length
+                    && char.IsLowSurrogate(text[index + 1]);
+                var scalar = pair ? char.ConvertToUtf32(text, index) : text[index];
+                string? variant = null;
+                var written = text.Substring(index, pair ? 2 : 1);
+                if (TryDecomposeMathAlphanumeric(scalar, out var baseScalar, out var alphabet))
+                {
+                    variant = alphabet;
+                    written = char.ConvertFromUtf32(baseScalar);
+                }
+                if (segments.Count > 0 && segments[segments.Count - 1].Variant == variant)
+                    segments[segments.Count - 1].Text.Append(written);
+                else
+                    segments.Add((new StringBuilder(written), variant));
+                index += pair ? 2 : 1;
+            }
+            if (segments.All(segment => segment.Variant is null)) continue;
+
+            var replacements = segments.Select(segment =>
+            {
+                var replacement = new XElement(token.Name, token.Attributes(), segment.Text.ToString());
+                if (segment.Variant is not null) replacement.SetAttributeValue("mathvariant", segment.Variant);
+                return replacement;
+            }).ToList();
+            if (replacements.Count == 1) token.ReplaceWith(replacements[0]);
+            else if (token.Parent?.Name.LocalName is "mrow" or "math" or "mstyle" or "mtd" or "msqrt")
+                token.ReplaceWith(replacements);
+            else token.ReplaceWith(new XElement(token.Name.Namespace + "mrow", replacements));
         }
     }
 

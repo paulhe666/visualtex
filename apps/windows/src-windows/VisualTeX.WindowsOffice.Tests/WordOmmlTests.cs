@@ -368,8 +368,6 @@ public sealed class WordOmmlTests
     [Fact]
     public void OfficeMathMlTransformProducesNativeFractionAndSuperscript()
     {
-        var transformPath = WordOmmlConverter.ResolveTransformPath();
-        Assert.True(File.Exists(transformPath));
         const string mathMl =
             "<math xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\">"
             + "<mfrac><mi>a</mi><mi>b</mi></mfrac><mo>+</mo>"
