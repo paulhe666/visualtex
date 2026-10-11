@@ -89,6 +89,7 @@ import {
   type UpdateCheckResult,
 } from "./update/updateService";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
+import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollapse";
 import { configureOfficeHotkeys } from "./runtime/officeHotkeys";
 import { useOfficeHotkeyStore } from "./stores/officeHotkeyStore";
 import {
@@ -119,6 +120,7 @@ const MAC_OFFICE_FIRST_RUN_STORAGE_KEY =
   "visualtex.office.macos.native-first-run.v1.2.0.completed";
 const MAC_OFFICE_STATUS_CHECK_ATTEMPTS = 4;
 const MAC_OFFICE_STATUS_RETRY_MS = 15_000;
+const APP_HEADER_COLLAPSE_LEVELS = 8;
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);
@@ -158,6 +160,7 @@ function App() {
   const [savedPulse, setSavedPulse] = useState(false);
   const [desktopTopToolsMount, setDesktopTopToolsMount] =
     useState<HTMLDivElement | null>(null);
+  const [appHeader, setAppHeader] = useState<HTMLElement | null>(null);
   const [sourceDocumentRevision, setSourceDocumentRevision] = useState(0);
   const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
     const stored = readLocalStorage(OCR_MODEL_STORAGE_KEY);
@@ -354,6 +357,16 @@ function App() {
   useEffect(() => {
     document.documentElement.lang = isEn ? "en" : "zh-CN";
   }, [isEn]);
+
+  // The header hides its least important items first, and only when the row
+  // has no room left (levels are listed in styles-macos-responsive.css).
+  useEffect(() => {
+    if (!appHeader) return;
+    return trackPriorityCollapse(appHeader, {
+      maxLevel: APP_HEADER_COLLAPSE_LEVELS,
+      fits: childrenFitRow,
+    });
+  }, [appHeader]);
 
   useEffect(() => {
     const compactWindow = window.matchMedia("(max-width: 1040px)");
@@ -1478,9 +1491,11 @@ function App() {
 
       {!keypadMode && (
       <header
+        ref={setAppHeader}
         className={
           "app-header" + (menuOpen || copyMenuOpen ? " has-open-menu" : "")
         }
+        data-vt-app-header
       >
         <div className="brand-area">
           <button

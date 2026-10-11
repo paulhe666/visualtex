@@ -69,6 +69,21 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
     }
     throw new Error(`Timed out waiting for ${label}`);
   };
+  const headerReport = `(() => {
+    const header = document.querySelector('.app-header');
+    const shown = (element) => { const box = element.getBoundingClientRect(); return box.width > 1 && box.height > 1 && getComputedStyle(element).visibility !== 'hidden'; };
+    const items = [...header.querySelectorAll('button, input, label.silent-ocr-toggle, label.canvas-ocr-model')].filter((element) => !element.closest('[role=menu], .app-menu-popover') && shown(element) && !element.querySelector('button'));
+    const overlaps = [];
+    for (let a = 0; a < items.length; a += 1) for (let b = a + 1; b < items.length; b += 1) {
+      if (items[a].contains(items[b]) || items[b].contains(items[a])) continue;
+      const one = items[a].getBoundingClientRect(); const two = items[b].getBoundingClientRect();
+      if (Math.min(one.right, two.right) - Math.max(one.left, two.left) > 1.5 && Math.min(one.bottom, two.bottom) - Math.max(one.top, two.top) > 1.5) overlaps.push((items[a].getAttribute('aria-label') || items[a].className) + ' x ' + (items[b].getAttribute('aria-label') || items[b].className));
+    }
+    const title = header.querySelector('.document-title-area'); const actions = header.querySelector('.header-actions').getBoundingClientRect();
+    const leftEnd = title && shown(title) ? title.getBoundingClientRect().right : header.querySelector('.brand-area').getBoundingClientRect().right;
+    return { level: (header.dataset.vtCollapse || '').split(' ').filter(Boolean).length, free: Math.round(actions.left - leftEnd), right: Math.max(...items.map((element) => element.getBoundingClientRect().right)),
+      settings: shown(header.querySelector('.settings-toggle')), format: shown(header.querySelector('.code-format-primary svg')), overlaps };
+  })()`;
   const { identifier: firstRunScript } = await send("Page.addScriptToEvaluateOnNewDocument", { source: firstRunDone });
 
   // Desktop window.
@@ -80,8 +95,42 @@ await withBrowserTest(async ({ baseUrl, send, evaluate }) => {
     await viewport(width, 820);
     const report = await evaluate(dockReport);
     assert.deepEqual(report.overlaps, [], `desktop ${width}px: dock buttons overlap`);
-    assert.equal(report.labelVisible, report.dockWidth >= 940, `desktop ${width}px: tab labels should collapse below a 940px dock (dock ${report.dockWidth}px)`);
+    const header = await evaluate(headerReport);
+    assert.equal(header.settings && header.format, true, `desktop ${width}px: Settings and the LaTeX format selector must stay visible`);
+    assert.deepEqual(header.overlaps, [], `desktop ${width}px: header buttons overlap`);
+    assert.ok(header.right <= width + 0.5, `desktop ${width}px: header content leaves the window (${header.right})`);
+    // Nothing may be hidden while the row still has room for it.
+    if (header.level > 0) assert.ok(header.free < 240, `desktop ${width}px: header hides items with ${header.free}px free`);
   }
+
+  // Standard layout: one row above the formula area, formatting in the source
+  // bar, and the tile panel beside the editor at every width.
+  await evaluate("document.querySelector('.settings-toggle').click(), true");
+  await waitFor("Boolean(document.querySelector('[data-editor-layout-choice=\"standard\"]'))", "layout choice");
+  await evaluate("document.querySelector('[data-editor-layout-choice=\"standard\"]').click(), true");
+  await waitFor("Boolean(document.querySelector('.workspace.is-standard-layout .standard-source-bar'))", "standard layout");
+  await evaluate("document.querySelector('[aria-label=\"关闭设置\"], [aria-label=\"Close settings\"]')?.click(), true");
+  for (const width of [1280, 900, 700, 500]) {
+    await viewport(width, 820);
+    await evaluate("document.querySelector('.workspace.has-sidebar') || document.querySelector('.sidebar-toggle').click(), true");
+    await sleep(250);
+    const standard = await evaluate(`(() => {
+      const box = (selector) => document.querySelector(selector)?.getBoundingClientRect();
+      const paneHeader = box('.workspace > .editor-pane > .editor-pane-header');
+      const tiles = box('.workspace > .formula-toolbar'); const editor = box('.editor-pane-scroll'); const bar = box('.standard-source-bar');
+      return { paneHeaderHeight: paneHeader?.height ?? 0, editorTop: Math.round(editor.top - box('.app-header').bottom),
+        formattingInBar: Boolean(document.querySelector('.standard-source-bar .formula-alignment-controls')),
+        toolsInHeader: Boolean(document.querySelector('.app-header .canvas-controls')),
+        tilesBesideEditor: tiles.right <= editor.left + 1 && tiles.right <= bar.left + 1, editorWidth: Math.round(editor.width) };
+    })()`);
+    assert.deepEqual({ ...standard, editorWidth: 0 }, { paneHeaderHeight: 0, editorTop: 0, formattingInBar: true, toolsInHeader: true, tilesBesideEditor: true, editorWidth: 0 }, `standard ${width}px: ${JSON.stringify(standard)}`);
+    assert.ok(standard.editorWidth >= 240, `standard ${width}px: editor only ${standard.editorWidth}px wide`);
+  }
+  await evaluate("document.querySelector('.settings-toggle').click(), true");
+  await waitFor("Boolean(document.querySelector('[data-editor-layout-choice=\"classic\"]'))", "layout choice");
+  await evaluate("document.querySelector('[data-editor-layout-choice=\"classic\"]').click(), true");
+  await evaluate("document.querySelector('[aria-label=\"关闭设置\"], [aria-label=\"Close settings\"]')?.click(), true");
+  await waitFor("Boolean(document.querySelector('.classic-bottom-tabs'))", "classic layout");
 
   // Main menu: the left edge must not move while it opens.
   for (const width of [1280, 600]) {

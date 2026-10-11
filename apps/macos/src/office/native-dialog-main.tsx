@@ -6,6 +6,7 @@ import "../styles.css";
 import "../styles-editor-parity.css";
 import "../styles-windows-shared-latest.css";
 import "../styles-macos-platform-overrides.css";
+import "../styles-formula-tiles.css";
 import "../styles-macos-responsive.css";
 import { configureOcrTransport } from "../ocr/ocrService";
 import { desktopOcrTransport } from "../ocr/ocrTransport";
