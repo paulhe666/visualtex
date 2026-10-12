@@ -36,14 +36,6 @@ pub struct ScriptSlot {
     pub argument: Arc<Node>,
 }
 
-/// Editing order of script slots: lower before upper, independent of the
-/// author's spelling (x^a_b and x_b^a look identical). Shared by ordinary
-/// scripts and operator limits; source order is preserved separately.
-pub fn script_navigation_order<'a>(slots: impl Iterator<Item = &'a ScriptSlot> + Clone) -> Vec<&'a ScriptSlot> {
-    [ScriptKind::Subscript, ScriptKind::Superscript].into_iter()
-        .flat_map(|kind| slots.clone().filter(move |slot| slot.script == kind)).collect()
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum NodeKind {

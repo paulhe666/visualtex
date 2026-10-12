@@ -36,8 +36,7 @@ const report=await withOwnedBrowser(assets,html,async({send,evaluate,browserVers
    const view=new SvgSceneView(document.getElementById('mount'),{onPointer:e=>window.pointerEvents.push(e)});
    view.setSnapshot(rendered.snapshot,'分式：分子为 x 下标 1 加速度；分母为 y 上标 2。');
    const caret=rendered.snapshot.carets.find(c=>c.position.kind==='text'&&c.position.grapheme===1);
-   const geometry=call({op:'queryScene',handle,expectedRevision:0,sceneToken:rendered.sceneToken,query:{kind:'selection',selection:{kind:'range',anchor:caret.position,focus:caret.position}}}).result.caretGeometry;
-   view.setOverlay({...view.snapshotIdentity,caret:caret.position,caretGeometry:geometry,rectangles:[]});
+   view.setOverlay({...view.snapshotIdentity,caret:caret.position,rectangles:[]});
    window.probe={rt,call,handle,opts,rendered,view,caret,SvgSceneView};
    return {width:rendered.snapshot.width,height:rendered.snapshot.height,glyphs:rendered.snapshot.glyphs.length,
      domGlyphs:view.svg.querySelectorAll('use').length,stats:view.stats,fonts:rendered.snapshot.fonts};
@@ -64,7 +63,7 @@ const report=await withOwnedBrowser(assets,html,async({send,evaluate,browserVers
    const old=p.rendered.snapshot;const changed=p.call({op:'replaceSource',handle:p.handle,expectedRevision:0,source:'x+y'});
    const next=p.call({op:'layout',handle:p.handle,expectedRevision:1,options:p.opts,includeSvg:true});p.view.setSnapshot(next.snapshot);
    let staleLayout=false,staleOverlay=false;try{p.view.setSnapshot(old);}catch{staleLayout=true;}
-   try{p.view.setOverlay({documentId:old.documentId,revision:old.revision,sourceId:old.sourceId,caret:p.caret.position,caretGeometry:null,rectangles:[]});}catch{staleOverlay=true;}
+   try{p.view.setOverlay({documentId:old.documentId,revision:old.revision,sourceId:old.sourceId,caret:p.caret.position,rectangles:[]});}catch{staleOverlay=true;}
    const beforeBad=p.view.svg.outerHTML;const bad=structuredClone(next.snapshot);bad.resources[0].shape.path.push({op:'line',points:[NaN,0]});
    let rejectedBad=false;try{p.view.setSnapshot(bad);}catch{rejectedBad=true;}
    if(beforeBad!==p.view.svg.outerHTML)throw Error('Bad snapshot partially changed DOM');
@@ -85,8 +84,7 @@ const report=await withOwnedBrowser(assets,html,async({send,evaluate,browserVers
    const a=await pixels(r.svg),b=await pixels(new XMLSerializer().serializeToString(clone));let sum=0,max=0,bigPixels=0;
    for(let i=0;i<a.length;i+=4){let biggest=0;for(let c=0;c<4;c++){const d=Math.abs(a[i+c]-b[i+c]);sum+=d;max=Math.max(max,d);biggest=Math.max(biggest,d);}if(biggest>10)bigPixels++;}
    const caret=r.snapshot.carets.find(c=>c.position.kind==='text'&&c.position.grapheme===1);
-   const geometry=p.call({op:'queryScene',handle:p.handle,expectedRevision:2,sceneToken:r.sceneToken,query:{kind:'selection',selection:{kind:'range',anchor:caret.position,focus:caret.position}}}).result.caretGeometry;
-   p.view.setOverlay({...p.view.snapshotIdentity,caret:caret.position,caretGeometry:geometry,rectangles:[]});p.view.setZoom(2);
+   p.view.setOverlay({...p.view.snapshotIdentity,caret:caret.position,rectangles:[]});p.view.setZoom(2);
    return {width,height,meanAbsoluteChannelDifference:sum/a.length,maxChannelDifference:max,pixelsAbove10:bigPixels/(width*height)};
  })()`);
  assert.ok(raster.meanAbsoluteChannelDifference<0.5,JSON.stringify(raster));

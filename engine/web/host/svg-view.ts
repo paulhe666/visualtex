@@ -1,4 +1,4 @@
-import type { LayoutSnapshot, PathOp, Rect, CaretGeometry } from './layout';
+import type { LayoutSnapshot, PathOp, Rect, CaretStop } from './layout';
 import type { Position } from './editing';
 import { rgbHex } from './paint.js';
 import { validateGridGeometry } from './grid-geometry.js';
@@ -36,8 +36,6 @@ function pathData(path: PathOp[]): string {
 export interface SceneIdentity {documentId: string; revision: number; sourceId: number}
 export interface ViewOverlay extends SceneIdentity {
   caret: Position | null;
-  /** Required with a caret: the core's paint geometry for it. */
-  caretGeometry: CaretGeometry | null;
   rectangles: Rect[];
 }
 export interface ViewPointer extends SceneIdentity {
@@ -62,8 +60,7 @@ export class SvgSceneView {
   readonly svg: SVGSVGElement;
   private scene: LayoutSnapshot | null = null;
   private overlayLayer: SVGGElement;
-  private caretElement: SVGGElement | null = null;
-  private caretGeometry: CaretGeometry | null = null;
+  private caretElement: SVGRectElement | null = null;
   private zoom = 1;
   private disposed = false;
   private readonly abort = new AbortController();
@@ -161,14 +158,24 @@ export class SvgSceneView {
     }
     if(artworks.length)glyphs.replaceChildren(...next.paintOrder!.flatMap(item=>item.kind==='glyph'?[glyphNodes[item.index]]:item.kind==='rule'?[ruleNodes[item.index]]:groupedArtworkNodes[item.index]?[groupedArtworkNodes[item.index]!]:[]));
     if(this.options.showEmptySlots){
-      for(const empty of next.emptySlots){
-        const slot=rectPath(empty.rect);
-        slot.classList.add('vt-core-empty-slot');slot.dataset.nodeId=String(empty.nodeId);slot.setAttribute('rx','0.055');
+      for(const region of next.regions){
+        if(region.role!=='emptySlot'&&region.role!=='emptyRow')continue;
+        const logical=region.logical;
+        const logicalWidth=Math.max(0.34,logical.xMax-logical.xMin);
+        const logicalHeight=Math.max(0.58,logical.yMax-logical.yMin);
+        const width=Math.max(0.28,logicalWidth-0.10);
+        const height=Math.max(0.46,Math.min(0.82,logicalHeight*0.72));
+        const x=logical.xMin+(logicalWidth-width)/2;
+        const centerY=(logical.yMin+logical.yMax)/2;
+        const slot=element('rect');
+        slot.classList.add('vt-core-empty-slot');slot.dataset.nodeId=String(region.nodeId);
+        slot.setAttribute('x',number(x));slot.setAttribute('y',number(centerY-height/2));
+        slot.setAttribute('width',number(width));slot.setAttribute('height',number(height));slot.setAttribute('rx','0.055');
         decorations.append(slot);
       }
     }
     this.svg.setAttribute('viewBox',`0 0 ${number(next.widthEm)} ${number(next.heightEm)}`);
-    this.svg.replaceChildren(defs,glyphs,decorations,overlay);this.scene=next;this.overlayLayer=overlay;this.caretElement=null;this.caretGeometry=null;
+    this.svg.replaceChildren(defs,glyphs,decorations,overlay);this.scene=next;this.overlayLayer=overlay;this.caretElement=null;
     this.resize();this.sceneBuilds++;
     if(accessibleLabel!==undefined) this.container.setAttribute('aria-label',accessibleLabel);
   }
@@ -182,30 +189,23 @@ export class SvgSceneView {
       const selection=rectPath(rect);selection.classList.add('vt-core-selection');
       selection.setAttribute('fill','Highlight');selection.setAttribute('fill-opacity','0.25');fragment.append(selection);
     }
-    let caret: SVGGElement | null=null;
+    let caret: SVGRectElement | null=null;
     if(overlay.caret) {
-      if(!this.scene.carets.some(c=>samePosition(c.position,overlay.caret!)))
-        throw new Error('Selection position is absent from the current layout');
-      if(!overlay.caretGeometry) throw new Error('Caret requires core paint geometry');
-      caret=element('g');caret.classList.add('vt-core-caret');caret.setAttribute('fill','currentColor');
-      fragment.append(caret);
+      const stop=this.scene.carets.find(c=>samePosition(c.position,overlay.caret!));
+      if(!stop) throw new Error('Selection position is absent from the current layout');
+      caret=this.drawCaret(stop);fragment.append(caret);
     }
-    this.overlayLayer.replaceChildren(fragment);this.caretElement=caret;
-    this.caretGeometry=caret?overlay.caretGeometry:null;this.paintCaret();this.overlayBuilds++;
+    this.overlayLayer.replaceChildren(fragment);this.caretElement=caret;this.overlayBuilds++;
   }
-  /** Hairlines along core geometry; only their device-pixel width is chosen here. */
-  private paintCaret(): void {
-    const caret=this.caretElement,geometry=this.caretGeometry;if(!caret||!geometry)return;
-    const hairline=1/(this.scene!.fontSizePx*this.zoom);const {bar,slot}=geometry;
-    const parts=[rectPath({xMin:bar.xMin,yMin:bar.yMin,xMax:bar.xMin+hairline,yMax:bar.yMax})];
-    if(slot){const mark=rectPath({xMin:slot.xMin,yMin:slot.yMax,xMax:Math.max(slot.xMax,slot.xMin+hairline),yMax:slot.yMax+hairline});mark.classList.add('vt-core-caret-slot');parts.push(mark);}
-    caret.replaceChildren(...parts);
+  private drawCaret(stop: CaretStop): SVGRectElement {
+    const caret=rectPath({xMin:stop.x,yMin:stop.top,xMax:stop.x+1/(this.scene!.fontSizePx*this.zoom),yMax:stop.bottom});
+    caret.classList.add('vt-core-caret');caret.setAttribute('fill','currentColor');return caret;
   }
   setCaretVisible(visible: boolean): void {this.active();if(this.caretElement)this.caretElement.style.visibility=visible?'visible':'hidden';}
   setZoom(zoom: number): void {
     this.active();if(!Number.isFinite(zoom)||zoom<0.1||zoom>8)throw new Error('Invalid display zoom');
     this.zoom=zoom;if(this.scene)this.resize();
-    this.paintCaret();
+    if(this.caretElement)this.caretElement.setAttribute('width',number(1/(this.scene!.fontSizePx*zoom)));
   }
   private resize(): void {
     this.svg.setAttribute('width',number(this.scene!.width*this.zoom));

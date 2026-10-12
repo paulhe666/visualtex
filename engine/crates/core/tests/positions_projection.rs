@@ -48,34 +48,6 @@ fn scripts_have_a_real_editable_base_row() {
     assert_eq!(model::latex(&root, LatexMode::Canonical), r"x_{1}^{2}");
 }
 
-/// Rows visited by repeated Right from the start, deduplicated.
-fn right_walk(root: &Node) -> Vec<NodeId> {
-    let index = TreeIndex::new(root).unwrap();
-    let mut selection = Selection::caret(Position::row(root.id, 0));
-    let mut rows = vec![root.id];
-    loop {
-        let next = index.move_horizontal(&selection, Horizontal::Right, false).unwrap();
-        if next == selection { return rows; }
-        selection = next;
-        let Selection::Range { focus, .. } = &selection else { panic!() };
-        if rows.last() != Some(&focus.node_id()) { rows.push(focus.node_id()); }
-    }
-}
-fn script_rows(root: &Node) -> (NodeId, NodeId, NodeId) {
-    let NodeKind::Scripts { base, slots } = &child(root, 0).kind else { panic!() };
-    let of = |kind: model::ScriptKind| slots.iter().find(|s| s.script == kind).unwrap().argument.id;
-    (base.id, of(model::ScriptKind::Subscript), of(model::ScriptKind::Superscript))
-}
-#[test]
-fn script_slots_are_visited_lower_then_upper_whatever_the_source_spelling() {
-    // Same rule as large-operator limits; the visual result of x^a_b and
-    // x_b^a is identical, so editing order must be too.
-    for source in [r"x^{a}_{b}+y", r"x_{b}^{a}+y"] {
-        let root = tree(source);
-        let (base, sub, sup) = script_rows(&root);
-        assert_eq!(right_walk(&root), vec![root.id, base, sub, sup, root.id], "{source}");
-    }
-}
 #[test]
 fn text_movement_is_by_grapheme_and_skips_equivalent_outer_boundaries() {
     let root = tree("\\text{A😀e\u{301}}");

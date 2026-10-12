@@ -20,8 +20,7 @@ use crate::custom_symbols::ArtworkFontStyle;
 use crate::fonts::{FontAsset,FontRegistry, MathMetrics};
 use crate::model::{Node, NodeKind, MAX_DEPTH};
 use crate::positions::TreeIndex;
-use crate::positions::Position;
-use crate::scene::{EmptySlotBox, LayoutSnapshot, Rect, SceneBuilder};
+use crate::scene::{LayoutSnapshot, Rect, SceneBuilder};
 use crate::session::{EngineSession, NodeId};
 use boxes::{Builder, Fragment, flatten};
 
@@ -145,24 +144,11 @@ impl LayoutEngine {
         let snapshot=LayoutSnapshot {document_id:session.document_id().to_owned(),revision:session.revision,source_id:document.source.id(),
             font_size_px:font_size,width:width_em*font_size,height:height_em*font_size,baseline:baseline_em*font_size,
             width_em,height_em,baseline_em,advance_em:fragment.advance,ink:fragment.ink.map(|r|r.translated(x,baseline_em)),
-            fonts:font_ids,resources:Vec::new(),glyphs:Vec::new(),rules:Vec::new(),artworks:Vec::new(),paint_order:Vec::new(),carets:Vec::new(),regions:Vec::new(),grid_columns:Vec::new(),empty_slots:Vec::new(),
+            fonts:font_ids,resources:Vec::new(),glyphs:Vec::new(),rules:Vec::new(),artworks:Vec::new(),paint_order:Vec::new(),carets:Vec::new(),regions:Vec::new(),grid_columns:Vec::new(),
             export_ready:document.exportable,rebuilt_fragments:rebuilt,reused_fragments:reused};
         let mut scene=SceneBuilder {snapshot,resource_index:BTreeMap::new(),artwork_ops:0};
         flatten(&fragment,x,baseline_em,0,&mut scene)?;
         if scene.snapshot.artworks.is_empty(){scene.snapshot.paint_order.clear();}
-        // Unfilled slots: an empty argument row is entered at its start; an
-        // explicit \placeholder is entered just before it in its owning row.
-        let mut empty_slots=Vec::new();
-        for region in &scene.snapshot.regions {
-            let position=match region.role.as_str() {
-                "emptyRow"=>Position::row(region.node_id,0),
-                "emptySlot"=>{let (row,offset)=index.row_owner(region.node_id)?;Position::row(row,offset)}
-                _=>continue,
-            };
-            let rect=EmptySlotBox::placeholder(region.logical);
-            empty_slots.push(EmptySlotBox {node_id:region.node_id,position,rect,hit:rect.union(region.logical)});
-        }
-        scene.snapshot.empty_slots=empty_slots;
         scene.snapshot.validate()?;
         for caret in &scene.snapshot.carets {index.validate_position(caret.position)?;}
         Ok(scene.snapshot)

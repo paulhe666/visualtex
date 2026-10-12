@@ -1,7 +1,7 @@
 //! Authored n-ary operators. The ordered tail retains scripts and placement
 //! directives exactly; effective placement is derived, never written over source.
 use serde::{Deserialize,Serialize};
-use crate::model::{Node,NodeKind,ScriptSlot};
+use crate::model::{Node,NodeKind,ScriptKind,ScriptSlot};
 
 pub const MAX_OPERATOR_PARTS:usize=128;
 #[derive(Debug,Clone,Copy,PartialEq,Eq,Serialize,Deserialize)]
@@ -21,15 +21,17 @@ pub enum OperatorPart {
     Script {slot:ScriptSlot},
     Limits {before:String,command:String},
 }
-pub fn slots(parts:&[OperatorPart])->impl Iterator<Item=&ScriptSlot>+Clone{
+pub fn slots(parts:&[OperatorPart])->impl Iterator<Item=&ScriptSlot>{
     parts.iter().filter_map(|part|if let OperatorPart::Script{slot}=part{Some(slot)}else{None})
 }
 pub fn slots_mut(parts:&mut [OperatorPart])->impl Iterator<Item=&mut ScriptSlot>{
     parts.iter_mut().filter_map(|part|if let OperatorPart::Script{slot}=part{Some(slot)}else{None})
 }
 pub fn navigation_slots(parts:&[OperatorPart])->Vec<&ScriptSlot>{
-    // Product default: lower -> upper -> following expression.
-    crate::model::script_navigation_order(slots(parts))
+    // Product default: lower -> upper -> following expression, independent of
+    // the author's script spelling order. Source order is preserved separately.
+    [ScriptKind::Subscript,ScriptKind::Superscript].into_iter()
+        .flat_map(|kind|slots(parts).filter(move |slot|slot.script==kind)).collect()
 }
 /// Both fixed glyph operators and editable operator bodies use one ordered tail.
 pub fn parts(node:&Node)->Option<&[OperatorPart]>{match &node.kind {

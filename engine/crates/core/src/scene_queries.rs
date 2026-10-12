@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{EngineError, EngineResult, ErrorCode};
 use crate::model::{Node, NodeKind, ScriptKind};
 use crate::positions::{NormalizedRange, Position, Selection, TreeIndex};
-use crate::scene::{CaretGeometry, LayoutSnapshot, Rect};
+use crate::scene::{LayoutSnapshot, Rect};
 use crate::session::NodeId;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -31,7 +31,7 @@ pub enum SceneQueryResult {
     HitTest { position: Position },
     Vertical { position: Position, origin: Position, desired_x: f64 },
     Boundary { position: Position, origin: Position },
-    Selection { caret: Option<Position>, caret_geometry: Option<CaretGeometry>, rectangles: Vec<Rect>, description: PositionDescription },
+    Selection { caret: Option<Position>, rectangles: Vec<Rect>, description: PositionDescription },
     Svg { svg: String, width: f64, height: f64, baseline: f64 },
 }
 fn missing()->EngineError {EngineError::new(ErrorCode::InvalidPosition,"Selection is not covered by the current scene")}
@@ -119,8 +119,8 @@ fn selection_geometry(scene:&LayoutSnapshot,tree:&Node,selection:&Selection)->En
             }
         }
     }
-    let caret_geometry=match caret {Some(position)=>Some(scene.caret_geometry(position).ok_or_else(missing)?),None=>None};
-    Ok(SceneQueryResult::Selection {caret,caret_geometry,rectangles,description})
+    if let Some(position)=caret {scene.caret(position).ok_or_else(missing)?;}
+    Ok(SceneQueryResult::Selection {caret,rectangles,description})
 }
 fn node_rectangle(scene:&LayoutSnapshot,id:NodeId)->EngineResult<Rect> {
     let region=scene.regions.iter().find(|region|region.node_id==id).ok_or_else(missing)?;

@@ -432,7 +432,7 @@ export class EngineEditorHost {
       if(overlay.kind!=='selection')throw new Error('Invalid selection geometry response');
       this.view.container.hidden=false;this.view.container.removeAttribute('aria-disabled');
       this.input.setEnabled(true);
-      this.view.setOverlay({...this.view.snapshotIdentity!,caret:overlay.caret,caretGeometry:overlay.caretGeometry,rectangles:overlay.rectangles});
+      this.view.setOverlay({...this.view.snapshotIdentity!,caret:overlay.caret,rectangles:overlay.rectangles});
       this.view.setCaretVisible(this.focused);
       const d=overlay.description;
       const label=`${d.path.map(p=>/^gridRow:\d+$/u.test(p)?`第 ${p.split(':')[1]} 行`:/^gridCell:\d+$/u.test(p)?`第 ${p.split(':')[1]} 列`:roles[p]??p).join('，')}，位置 ${d.offset}/${d.length}${d.text?`，${d.text}`:''}`;

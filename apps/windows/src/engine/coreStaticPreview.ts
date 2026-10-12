@@ -92,13 +92,15 @@ export function renderCoreStaticPreview(
         const view = new SvgSceneView(detached, { accessibleLabel: "" });
         try {
           view.setSnapshot(result.snapshot);
-          // Placeholder geometry is owned by the core, as in the editor view.
-          for (const empty of result.snapshot.emptySlots) {
+          for (const region of result.snapshot.regions) {
+            if (region.role !== "emptySlot" && region.role !== "emptyRow") continue;
             const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-            rect.setAttribute("x", String(empty.rect.xMin));
-            rect.setAttribute("y", String(empty.rect.yMin));
-            rect.setAttribute("width", String(empty.rect.xMax - empty.rect.xMin));
-            rect.setAttribute("height", String(empty.rect.yMax - empty.rect.yMin));
+            const width = Math.max(0.22, region.logical.xMax - region.logical.xMin);
+            const height = Math.max(0.5, region.logical.yMax - region.logical.yMin);
+            rect.setAttribute("x", String(region.logical.xMin));
+            rect.setAttribute("y", String(region.logical.yMin));
+            rect.setAttribute("width", String(width));
+            rect.setAttribute("height", String(height));
             rect.setAttribute("rx", "0.06");
             rect.setAttribute("fill", "none");
             rect.setAttribute("stroke", "currentColor");

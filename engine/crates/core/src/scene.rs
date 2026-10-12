@@ -33,39 +33,10 @@ pub struct Rule { pub node_id: NodeId, pub rect: Rect,
     #[serde(skip_serializing_if="Option::is_none")] pub color:Option<crate::paint::RgbColor> }
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CaretStop { pub position: Position, pub x: f64, pub baseline: f64, pub top: f64, pub bottom: f64, pub depth: usize,
-    /// Laid-out box of the editable row or text run that owns this stop: the
-    /// whole slot (numerator, script, cell, group...), not just the font line.
-    pub slot: Rect }
-/// What a host paints for a collapsed selection. The bar is a zero-width
-/// vertical edge spanning the owning slot; `slot`, when present, is the box
-/// whose bottom edge marks which slot the caret is in. Hosts only add a
-/// device-pixel hairline width; they never derive this geometry themselves.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CaretGeometry { pub bar: Rect, pub slot: Option<Rect> }
+pub struct CaretStop { pub position: Position, pub x: f64, pub baseline: f64, pub top: f64, pub bottom: f64, pub depth: usize }
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeRegion { pub node_id: NodeId, pub role: String, pub logical: Rect, pub ink: Option<Rect>, pub depth: usize }
-/// An unfilled slot. `rect` is the placeholder box editors draw; `hit` is
-/// where a click enters the slot (the box plus the slot's logical extent);
-/// `position` is the caret a click there lands on.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EmptySlotBox { pub node_id: NodeId, pub position: Position, pub rect: Rect, pub hit: Rect }
-impl EmptySlotBox {
-    /// Placeholder box for an empty slot's logical extent (em): a rounded box
-    /// slightly inset horizontally and kept legible in script sizes.
-    pub fn placeholder(logical: Rect) -> Rect {
-        let logical_width = logical.width().max(0.34);
-        let logical_height = logical.height().max(0.58);
-        let width = (logical_width-0.10).max(0.28);
-        let height = (logical_height*0.72).clamp(0.46, 0.82);
-        let x = logical.x_min+(logical_width-width)/2.0;
-        let center = (logical.y_min+logical.y_max)/2.0;
-        Rect::new(x, center-height/2.0, x+width, center+height/2.0)
-    }
-}
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GridColumnAnchor {
@@ -87,7 +58,6 @@ pub struct LayoutSnapshot {
     pub carets: Vec<CaretStop>, pub regions: Vec<NodeRegion>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub grid_columns: Vec<GridColumnAnchor>,
-    pub empty_slots: Vec<EmptySlotBox>,
     pub export_ready: bool,
     pub rebuilt_fragments: usize, pub reused_fragments: usize,
 }
@@ -100,21 +70,13 @@ impl LayoutSnapshot {
             || self.ink.is_some_and(|r| !r.valid())
             || self.rules.iter().any(|r| !r.rect.valid())
             || self.glyphs.iter().any(|g| g.resource >= self.resources.len() || ![g.x,g.y,g.scale].into_iter().all(f64::is_finite) || g.scale <= 0.0)
-            || self.carets.iter().any(|c| ![c.x,c.baseline,c.top,c.bottom].into_iter().all(f64::is_finite) || c.top>c.bottom || !c.slot.valid())
+            || self.carets.iter().any(|c| ![c.x,c.baseline,c.top,c.bottom].into_iter().all(f64::is_finite) || c.top>c.bottom)
             || self.regions.iter().any(|r| !r.logical.valid() || r.ink.is_some_and(|i| !i.valid()))
-            || self.empty_slots.iter().any(|e| !e.rect.valid() || !e.hit.valid() || self.caret(e.position).is_none())
         { return Err(EngineError::new(ErrorCode::InvalidInput, "Layout contains invalid geometry")); }
         Ok(())
     }
     pub fn hit_test(&self, x_em: f64, y_em: f64) -> EngineResult<Position> {
         if !x_em.is_finite() || !y_em.is_finite() { return Err(EngineError::new(ErrorCode::InvalidInput, "Hit-test coordinates must be finite")); }
-        // A click on an unfilled slot's box enters that slot. Nearest-caret
-        // scoring cannot guarantee this: the slot has a single stop at its
-        // left edge, so neighbouring stops win over most of the box.
-        if let Some(slot) = self.empty_slots.iter().filter(|e| e.hit.contains(x_em, y_em))
-            .min_by(|a,b| (a.hit.width()*a.hit.height()).total_cmp(&(b.hit.width()*b.hit.height()))) {
-            return Ok(slot.position);
-        }
         // Inside a multi-line grid a click belongs to the line under it, even
         // in the blank space beside a short line; the grid's outer edges are
         // not closer candidates than that line's own end.
@@ -134,21 +96,6 @@ impl LayoutSnapshot {
             (Position::Text {node_id:a,grapheme:x,..},Position::Text {node_id:b,grapheme:y,..}) => a==b && x==y,
             _=>false,
         })
-    }
-    /// Caret paint geometry. The bar covers the full height of the slot the
-    /// caret is in (never less than the font line), so a caret inside a tall
-    /// numerator or a small script shows that slot's real extent. The slot
-    /// underline is omitted for the document root row, where it would only
-    /// underline the whole formula, and for an empty slot, whose placeholder
-    /// box already marks it.
-    pub fn caret_geometry(&self, position: Position) -> Option<CaretGeometry> {
-        let stop = self.caret(position)?;
-        let bar = Rect::new(stop.x, stop.top.min(stop.slot.y_min), stop.x, stop.bottom.max(stop.slot.y_max));
-        let empty = self.regions.iter().any(|r| r.node_id == position.node_id() && matches!(r.role.as_str(), "emptyRow"|"emptySlot"));
-        // The marked slot shares the bar's vertical span, so its bottom edge
-        // meets the bar's foot instead of crossing an ink-tight row box.
-        let slot = (stop.depth > 0 && !empty).then_some(Rect::new(stop.slot.x_min, bar.y_min, stop.slot.x_max, bar.y_max));
-        Some(CaretGeometry { bar, slot })
     }
     pub fn vertical(&self, from: Position, down: bool, desired_x: Option<f64>) -> EngineResult<Position> {
         let start = self.caret(from).ok_or_else(|| EngineError::new(ErrorCode::InvalidPosition, "Caret is absent from this layout"))?;
