@@ -131,6 +131,21 @@ internal static class MathMlToLatexConverter
             ["∡"] = @"\measuredangle ",
             ["∢"] = @"\sphericalangle ",
             ["∴"] = @"\therefore ",
+            ["∵"] = @"\because ",
+            // Geometry shapes, including the small/medium forms MathJax emits.
+            ["△"] = @"\triangle ",
+            ["▵"] = @"\triangle ",
+            ["▲"] = @"\blacktriangle ",
+            ["▴"] = @"\blacktriangle ",
+            ["▽"] = @"\triangledown ",
+            ["▿"] = @"\triangledown ",
+            ["▼"] = @"\blacktriangledown ",
+            ["▾"] = @"\blacktriangledown ",
+            ["□"] = @"\square ",
+            ["◻"] = @"\square ",
+            ["■"] = @"\blacksquare ",
+            ["◼"] = @"\blacksquare ",
+            ["★"] = @"\bigstar ",
             ["∖"] = @"\setminus ",
             ["∝"] = @"\propto ",
             ["∼"] = @"\sim ",
@@ -704,8 +719,19 @@ internal static class MathMlToLatexConverter
         // prose and multi-character annotations as \text{...}.
         if (value.Length == 1 && value[0] <= '\u024F' && char.IsLetter(value[0]))
             return @"\mathrm{" + EscapeMathIdentifier(value) + "}";
+        // A lone geometry symbol stored as text (older VisualTeX equations put
+        // \triangle in MathType's Text face) is the math symbol; inside \text{}
+        // the editor's text font has no glyph for it.
+        if (value.Length == 1 && GeometryTextSymbols.Contains(value[0]))
+            return ConvertToken(value);
         return @"\text{" + EscapeText(element.Value) + "}";
     }
+
+    private static readonly HashSet<char> GeometryTextSymbols = new()
+    {
+        '△', '▵', '▲', '▴', '▽', '▿', '▼', '▾', '□', '◻', '■', '◼', '★',
+        '∠', '∡', '∵', '∴', '⊥', '∥', '≅',
+    };
 
     private static string ConvertTokenElement(XElement element)
     {

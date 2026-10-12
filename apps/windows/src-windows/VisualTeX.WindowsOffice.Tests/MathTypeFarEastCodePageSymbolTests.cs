@@ -128,6 +128,26 @@ public sealed class MathTypeFarEastCodePageSymbolTests
         Assert.True(failures.Count == 0, string.Join(" ", failures));
     }
 
+    [Theory]
+    // MathJax's \triangle is an explicitly upright mi; \blacktriangle, \square,
+    // \blacksquare and \blacktriangledown are small/medium shapes SimSun lacks.
+    // MathType draws its missing-glyph diamond for either unless the CHAR is a
+    // SimSun-covered shape in the SimSun style.
+    [InlineData("<mi mathvariant=\"normal\">△</mi>", '△')]
+    [InlineData("<mi mathvariant=\"normal\">▽</mi>", '▽')]
+    [InlineData("<mi>▴</mi>", '▲')]
+    [InlineData("<mi>▾</mi>", '▼')]
+    [InlineData("<mi>◻</mi>", '□')]
+    [InlineData("<mi>◼</mi>", '■')]
+    public void MathJaxGeometryShapesUseACoveredSimSunGlyph(string token, char written)
+    {
+        var native = MathTypeMtefCodec.CreateEquationNative($"<math>{token}<mi>A</mi></math>", false);
+        var face = Assert.Single(CharTypefaces(native, written));
+        Assert.True(face < 128, $"U+{(int)written:X4} typeface byte {face:X2}");
+        var gbk = Encoding.GetEncoding(936, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+        Assert.Equal(written.ToString(), gbk.GetString(gbk.GetBytes(written.ToString())));
+    }
+
     // CHAR records [2][options][typeface][MTCode lo][MTCode hi] for one scalar.
     private static byte[] CharTypefaces(MathTypeMtefCodec.RewriteResult native, char scalar)
     {

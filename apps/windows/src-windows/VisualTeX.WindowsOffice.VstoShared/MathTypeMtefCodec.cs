@@ -3315,6 +3315,12 @@ internal static partial class MathTypeMtefCodec
         var definitionsStart = output.Count;
         var existing = CountAvailableDefinitions(sourceMtef);
         var nativeStyles = ReadNativeCharacterStyleBindings(sourceMtef);
+        foreach (var token in math.DescendantsAndSelf().Where(e => !e.HasElements
+                     && e.Name.LocalName is "mi" or "mo" or "mtext"
+                     && e.Attribute("data-mtef-mtcode") is null
+                     && e.Value.Any(FarEastGlyphSubstitutes.ContainsKey)).ToArray())
+            token.Value = new string(token.Value
+                .Select(c => FarEastGlyphSubstitutes.TryGetValue(c, out var covered) ? covered : c).ToArray());
         // MTEF persists scalar CHARs. Split only the already-canonical equivalent
         // operator runs before binding fonts, so every glyph receives its style.
         foreach (var token in math.DescendantsAndSelf().Where(e => e.Name.LocalName == "mo"
@@ -3323,16 +3329,21 @@ internal static partial class MathTypeMtefCodec
                 new XElement(token.Name, token.Attributes(), char.ConvertFromUtf32(scalar))));
         // An operator outside Times New Roman's code pages (e.g. U+25B3) has no
         // styled identifier form; bind it to SimSun/WinAllCodePages below.
+        // An explicit normal variant (MathJax's \triangle is
+        // <mi mathvariant="normal">) is the same upright SimSun glyph; in the
+        // Times binding MathType draws its missing-glyph diamond instead.
         foreach (var token in math.DescendantsAndSelf().Where(e => e.Value.Trim().Length == 1
                      && (e.Name.LocalName == "mo"
                          || e.Name.LocalName == "mi" && IsMathematicalSymbolScalar(e.Value.Trim()[0]))
                      && IsFarEastCodePageOperator(e.Value.Trim()[0])
-                     && MathMlTokenStyleContract.ResolveDeclaredVariant(e) is null
+                     && MathMlTokenStyleContract.ResolveDeclaredVariant(e) is null or "normal"
                      && ResolveNativeGlyphAuthority(e) is null
                      && !HasValidPreservedExplicitTypeface(e, existing.FontStyleDefinitions, nativeStyles)).ToArray())
         {
             // A symbol mi keeps its implicit italic, as SemanticSignature does.
-            token.SetAttributeValue(FarEastOperatorMarker, token.Name.LocalName == "mi" ? "italic" : "normal");
+            var upright = token.Name.LocalName == "mo"
+                || MathMlTokenStyleContract.ResolveDeclaredVariant(token) == "normal";
+            token.SetAttributeValue(FarEastOperatorMarker, upright ? "normal" : "italic");
             token.Name = token.Name.Namespace + "mo";
             token.Attribute("mathvariant")?.Remove();
         }
@@ -5939,6 +5950,17 @@ internal static partial class MathTypeMtefCodec
     // U+2312, U+224C, U+2235, U+2460 and U+2103. Text goes to typeface 12
     // (the prefix's SimSun slot, read back as mtext); operators get an
     // explicit SimSun style so they read back as mo.
+    // SimSun has the large geometric shapes but not the small/medium forms
+    // MathJax uses for \blacktriangle (U+25B4), \square (U+25FB) and
+    // \blacksquare (U+25FC); MathType draws those as its missing-glyph
+    // diamond. Write the covered shape instead; it reads back as the same command.
+    private static readonly IReadOnlyDictionary<char, char> FarEastGlyphSubstitutes =
+        new Dictionary<char, char>
+        {
+            ['\u25B4'] = '\u25B2', ['\u25B5'] = '\u25B3', ['\u25BE'] = '\u25BC', ['\u25BF'] = '\u25BD',
+            ['\u25FB'] = '\u25A1', ['\u25FD'] = '\u25A1', ['\u25FC'] = '\u25A0', ['\u25FE'] = '\u25A0',
+        };
+
     private static bool NeedsFarEastCodePage(int scalar) =>
         scalar >= 0x80 && scalar <= char.MaxValue && !IsWinAllBasicCodePageScalar(scalar);
 

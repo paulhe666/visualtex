@@ -31,6 +31,19 @@ public sealed class MathMlToLatexConverterTests
         Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
     }
 
+    [Theory]
+    [InlineData("<mo>△</mo><mi>A</mi>", @"\triangle A")]
+    [InlineData("<mo>▲</mo><mi>A</mi>", @"\blacktriangle A")]
+    [InlineData("<mo>∵</mo>", @"\because")]
+    // Older VisualTeX equations stored \triangle in MathType's Text face.
+    [InlineData("<mtext>△</mtext><mi>A</mi>", @"\triangle A")]
+    [InlineData("<mtext>∠</mtext><mi>A</mi>", @"\angle A")]
+    public void GeometrySymbolsBecomeTheirCommands(string body, string expected)
+    {
+        var mathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">" + body + "</math>";
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
     [Fact]
     public void ConvertsMathTypeGreekVariantsAndDotOperatorBackToExactLatex()
     {

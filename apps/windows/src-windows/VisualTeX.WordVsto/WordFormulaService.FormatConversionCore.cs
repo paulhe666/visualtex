@@ -146,6 +146,7 @@ internal sealed partial class WordFormulaService
         var resolvedSources = new Dictionary<string, WordFormulaHostDescriptor>(StringComparer.Ordinal);
         var nativeSources = new Dictionary<string, WordNativeConversionSource>(StringComparer.Ordinal);
         var nativeNumberReferences = new Dictionary<string, IReadOnlyDictionary<string, int>>(StringComparer.Ordinal);
+        WordEquationReferenceFields.NativeOmmlReferenceIndex? nativeReferenceIndex = null;
         WordNativeOmmlFieldRefresh? nativeNumberRefresh = null;
         WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? visualTeXNumbers = null;
         Document? document = null;
@@ -307,7 +308,8 @@ internal sealed partial class WordFormulaService
                     && target.Numbered)
                 {
                     // Word's _Ref target lives inside the OMath being deleted.
-                    var references = WordEquationReferenceFields.CaptureNativeOmmlNumberReferences(document, source);
+                    nativeReferenceIndex ??= WordEquationReferenceFields.NativeOmmlReferenceIndex.Capture(document);
+                    var references = nativeReferenceIndex.CountInside(source);
                     if (references.Count > 0)
                         nativeNumberReferences.Add(target.Id, references);
                 }
