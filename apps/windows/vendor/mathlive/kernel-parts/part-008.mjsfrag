@@ -566,7 +566,10 @@ var mathfield_default = `@keyframes ML__caret-blink {
   visibility: hidden;
   width: 0;
   display: inline-block;
-  height: 0.76em;
+  /* VisualTeX kernel: stretched over the caret's slot by visualTexRenderCaretSlot.
+     The negative top margin keeps the line box at the native 0.76em. */
+  height: var(--visualtex-caret-height, 0.76em);
+  margin-top: calc(0.76em - var(--visualtex-caret-height, 0.76em));
   --_caret-width: clamp(2px, 0.08em, 10px);
   border: none;
   border-radius: calc(var(--_caret-width) / 2);
@@ -574,7 +577,7 @@ var mathfield_default = `@keyframes ML__caret-blink {
   margin-right: calc(-1 * var(--_caret-width));
   position: relative;
   left: -0.045em;
-  bottom: -0.05em;
+  bottom: calc(-1 * var(--visualtex-caret-drop, 0.05em));
   animation: ML__caret-blink 1.05s step-end forwards infinite;
 }
 .ML__text-caret::after {

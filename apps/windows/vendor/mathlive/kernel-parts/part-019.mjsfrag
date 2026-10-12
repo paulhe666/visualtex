@@ -1063,13 +1063,14 @@ function onDelete(model, direction, atom, branch) {
     if (!branch && direction === "forward") return false;
     if (!branch) {
       if (atom.subscript || atom.superscript) {
-        const pos = direction === "forward" ? (_c2 = (_a3 = atom.superscript) == null ? void 0 : _a3[0]) != null ? _c2 : (_b3 = atom.subscript) == null ? void 0 : _b3[0] : (_f = (_d2 = atom.subscript) == null ? void 0 : _d2[0].lastSibling) != null ? _f : (_e = atom.superscript) == null ? void 0 : _e[0].lastSibling;
+        // Lower branch first (VISUALTEX_NAVIGATION_BRANCHES).
+        const pos = direction === "forward" ? (_c2 = (_a3 = atom.subscript) == null ? void 0 : _a3[0]) != null ? _c2 : (_b3 = atom.superscript) == null ? void 0 : _b3[0] : (_f = (_d2 = atom.superscript) == null ? void 0 : _d2[0].lastSibling) != null ? _f : (_e = atom.subscript) == null ? void 0 : _e[0].lastSibling;
         if (pos) model.position = model.offsetOf(pos);
         return true;
       }
       return false;
     }
-    if (direction === "backward" && visualTexOwnsScriptStructure(atom) && (branch === "superscript" || branch === "subscript" && !atom.superscript)) {
+    if (direction === "backward" && visualTexOwnsScriptStructure(atom) && (branch === "subscript" || branch === "superscript" && !atom.subscript)) {
       // Backspace at the start of the operator's first limit must not leave
       // the structure: a blank operator is removed, a filled one is selected.
       if (visualTexScriptStructureIsBlank(atom)) return visualTexRemoveScriptStructure(model, atom);
@@ -1090,26 +1091,26 @@ function onDelete(model, direction, atom, branch) {
         model.position = pos;
         return true;
       }
-      if (branch === "superscript" && direction === "backward")
+      if (branch === "subscript" && direction === "backward")
         model.position = model.offsetOf(atom.firstChild) - 1;
-      else if (branch === "subscript" && direction === "backward") {
-        if (atom.superscript)
-          model.position = model.offsetOf(atom.superscript[0].lastSibling);
+      else if (branch === "superscript" && direction === "backward") {
+        if (atom.subscript)
+          model.position = model.offsetOf(atom.subscript[0].lastSibling);
         else model.position = model.offsetOf(atom.firstChild) - 1;
       } else model.position = model.offsetOf(atom);
       return true;
     }
-    if (branch === "superscript") {
+    if (branch === "subscript") {
       if (direction === "backward") {
         const pos = model.offsetOf(atom.firstChild) - 1;
         console.assert(pos >= 0);
         model.position = pos;
-      } else if (atom.subscript)
-        model.position = model.offsetOf(atom.subscript[0]);
+      } else if (atom.superscript)
+        model.position = model.offsetOf(atom.superscript[0]);
       else model.position = model.offsetOf(atom);
-    } else if (branch === "subscript") {
-      if (direction === "backward" && atom.superscript) {
-        model.position = model.offsetOf(atom.superscript[0].lastSibling);
+    } else if (branch === "superscript") {
+      if (direction === "backward" && atom.subscript) {
+        model.position = model.offsetOf(atom.subscript[0].lastSibling);
       } else if (direction === "backward") {
         model.position = model.offsetOf(atom.firstChild) - 1;
       } else {
@@ -1226,6 +1227,38 @@ function visualTexShouldRetainStructuralPlaceholder(parent, branch) {
   if (branch === "above" || branch === "below")
     return parent.type === "genfrac" || parent.type === "overunder" || parent.type === "surd";
   return false;
+}
+// An editable structural slot holding nothing but its "first" atom (the
+// counterpart of a Kernel 2.7061 slot head with no next node), e.g. x^{} or
+// \frac{}{}. Matrix and alignment cells are excluded: an empty alignment
+// column is layout, not a missing argument.
+function visualTexIsEmptyStructuralSlot(first) {
+  const parent = first.parent;
+  const branch = first.parentBranch;
+  if (Array.isArray(branch)) return false;
+  if (!visualTexShouldRetainStructuralPlaceholder(parent, branch)) return false;
+  const atoms = parent.branch(branch);
+  return Boolean(atoms) && atoms.length === 1;
+}
+// Draw an empty slot as the structural placeholder box, bound to the slot's
+// first atom: the slot is visible, and a pointer hit inside the box resolves
+// to the slot's own start offset. The caret stays at the slot's start.
+function visualTexRenderEmptyStructuralSlot(first, parentContext) {
+  const context = new Context({ parent: parentContext }, first.style);
+  const box = new Box("x", {
+    type: "ord",
+    mode: "math",
+    maxFontSize: context.scalingFactor,
+    style: {
+      variant: "normal",
+      fontSize: Math.max(1, context.size + context.mathstyle.sizeDelta)
+    },
+    letterShapeStyle: context.letterShapeStyle,
+    classes: "visualtex-structural-placeholder visualtex-empty-slot"
+  });
+  first.bind(context, box);
+  if (!first.caret) return box.wrap(context);
+  return new Box([new Box(null, { caret: first.caret }), box], { type: "ord" }).wrap(context);
 }
 function visualTexSameStructuralBranch(left, right) {
   if (Array.isArray(left) || Array.isArray(right))

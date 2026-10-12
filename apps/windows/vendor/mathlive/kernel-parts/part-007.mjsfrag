@@ -96,7 +96,7 @@
     if (this._children) return this._children;
     if (!this._branches) return [];
     const result = [];
-    for (const branchName of NAMED_BRANCHES) {
+    for (const branchName of VISUALTEX_NAVIGATION_BRANCHES) {
       if (this._branches[branchName]) {
         for (const x of this._branches[branchName]) {
           result.push(...x.children);
@@ -116,6 +116,8 @@
    */
   render(parentContext) {
     if (this.type === "first" && !parentContext.atomIdsSettings) return null;
+    if (this.type === "first" && visualTexIsEmptyStructuralSlot(this))
+      return visualTexRenderEmptyStructuralSlot(this, parentContext);
     const def = getDefinition(this.command, this.mode);
     if (def == null ? void 0 : def.render) return def.render(this, parentContext);
     const context = new Context({ parent: parentContext }, this.style);

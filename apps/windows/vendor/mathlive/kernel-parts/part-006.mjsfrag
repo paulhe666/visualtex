@@ -1063,6 +1063,16 @@ var NAMED_BRANCHES = [
   "superscript",
   "subscript"
 ];
+// VisualTeX kernel: keyboard order through an atom's branches. A lower script
+// or limit comes before the upper one for every structure, the order
+// SubsupAtom already uses, so \sum, \int and x^{a}_{b} all navigate alike.
+var VISUALTEX_NAVIGATION_BRANCHES = [
+  "body",
+  "above",
+  "below",
+  "subscript",
+  "superscript"
+];
 function isNamedBranch(branch) {
   return typeof branch === "string" && NAMED_BRANCHES.includes(branch);
 }

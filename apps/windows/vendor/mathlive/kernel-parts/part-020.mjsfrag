@@ -1033,8 +1033,8 @@ register2(
       if (parent) {
         if (parent.type === "leftright" || parent.type === "surd")
           return select(model, parent);
-        if (atom.parentBranch === "superscript" && parent.subscript)
-          return select(model, parent.subscript);
+        if (atom.parentBranch === "subscript" && parent.superscript)
+          return select(model, parent.superscript);
         if (atom.parentBranch === "above" && parent.below)
           return select(model, parent.below);
         if (atom.parentBranch === "superscript" || atom.parentBranch === "subscript")
@@ -1087,8 +1087,8 @@ register2(
         if (parent) {
           if (parent.type === "leftright" || parent.type === "surd")
             return select(model, parent);
-          if (atom.parentBranch === "subscript" && parent.superscript)
-            return select(model, parent.superscript);
+          if (atom.parentBranch === "superscript" && parent.subscript)
+            return select(model, parent.subscript);
           if (atom.parentBranch === "below" && parent.above)
             return select(model, parent.above);
           if (atom.parentBranch === "superscript" || atom.parentBranch === "subscript")
