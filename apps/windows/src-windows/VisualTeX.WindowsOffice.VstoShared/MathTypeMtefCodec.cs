@@ -430,6 +430,7 @@ internal static partial class MathTypeMtefCodec
         var normalized = new XElement(math);
         NormalizeMathMlPrescripts(normalized);
         DecomposeMathematicalAlphanumerics(normalized);
+        NormalizeMathTypeStoredGlyphs(normalized);
         NormalizeMathTypeExportedTabPiles(normalized);
         MaterializeLooseFenceGroups(normalized);
         var structure = CanonicalizeMathMl(normalized, inheritedMathVariant: null);
@@ -444,6 +445,59 @@ internal static partial class MathTypeMtefCodec
         return tokenColors.Any(color => color is not null)
             ? structure + "|colors(" + string.Join(",", tokenColors.Select(color => color ?? "-")) + ")"
             : structure;
+    }
+
+    // Glyphs whose MathType form differs from the MathML token but not in
+    // meaning: a SimSun substitute shape (U+25B4 is stored as U+25B2), and CJK
+    // or full-width characters, which MathType keeps only in its text face
+    // (typeface 12) whatever their MathML token class.
+    private static void NormalizeMathTypeStoredGlyphs(XElement root)
+    {
+        foreach (var token in root.DescendantsAndSelf().Where(e => !e.HasElements
+                     && e.Name.LocalName is "mi" or "mo" or "mtext").ToArray())
+        {
+            if (token.Value.Any(FarEastGlyphSubstitutes.ContainsKey))
+                token.Value = new string(token.Value
+                    .Select(c => FarEastGlyphSubstitutes.TryGetValue(c, out var covered) ? covered : c).ToArray());
+            var value = token.Value.Trim();
+            if (token.Name.LocalName != "mtext" && value.Length == 1 && IsFarEastTextScalar(value[0]))
+            {
+                token.Name = token.Name.Namespace + "mtext";
+                token.Attribute("mathvariant")?.Remove();
+            }
+            else if (token.Name.LocalName == "mo" && value.Length == 1 && char.IsLetter(value[0]))
+            {
+                // A letter is an identifier whichever token carries it; MathType
+                // reads it back as an upright mi.
+                token.Name = token.Name.Namespace + "mi";
+                if (token.Attribute("mathvariant") is null) token.SetAttributeValue("mathvariant", "normal");
+            }
+            else if (token.Name.LocalName == "mtext" && value.Length == 1
+                && value[0] is '∋' or '◯' or '♡')
+                token.Name = token.Name.Namespace + "mo";
+        }
+        // MathType keeps consecutive text characters as one run, so CJK
+        // punctuation written as separate tokens reads back as one mtext.
+        // Merge equally attributed neighbours within a sequence only; fraction
+        // and script arguments stay separate.
+        foreach (var sequence in root.DescendantsAndSelf().Where(e => e.Name.LocalName
+                     is "math" or "mrow" or "mstyle" or "mtd" or "msqrt" or "mphantom" or "mpadded" or "menclose").ToArray())
+        {
+            XElement? previous = null;
+            foreach (var child in sequence.Elements().ToArray())
+            {
+                if (previous is not null && child.Name.LocalName == "mtext" && previous.Name.LocalName == "mtext"
+                    && !child.HasElements && !previous.HasElements
+                    && string.Join("|", child.Attributes().Select(a => a.ToString()).OrderBy(a => a, StringComparer.Ordinal))
+                        == string.Join("|", previous.Attributes().Select(a => a.ToString()).OrderBy(a => a, StringComparer.Ordinal)))
+                {
+                    previous.Value += child.Value;
+                    child.Remove();
+                    continue;
+                }
+                previous = child;
+            }
+        }
     }
 
     internal static void NormalizeMathMlPrescripts(XElement root)
@@ -886,10 +940,11 @@ internal static partial class MathTypeMtefCodec
                         MathMlTokenStyleContract.ResolveEffectiveVariant(element, variant));
                 // Intrinsic Unicode alphabet variants fold before MathML's
                 // implicit single-mi default; a declaration remains authoritative.
-                var intrinsicVariant = string.IsNullOrWhiteSpace(variant) && value.Length == 1
-                    && TryNormalizeLetterlikeForWrite(value[0], out _, out _);
-                return CanonicalToken("mi", value, intrinsicVariant ? null
-                    : MathMlTokenStyleContract.ResolveEffectiveVariant(element, variant));
+                if (string.IsNullOrWhiteSpace(variant) && value.Length == 1
+                    && TryNormalizeLetterlikeForWrite(value[0], out var letter, out var letterVariant))
+                    return CanonicalToken("mi", ((char)letter).ToString(), letterVariant);
+                return CanonicalToken("mi", value,
+                    MathMlTokenStyleContract.ResolveEffectiveVariant(element, variant));
             }
             case "mn":
             {
@@ -3321,6 +3376,28 @@ internal static partial class MathTypeMtefCodec
                      && e.Value.Any(FarEastGlyphSubstitutes.ContainsKey)).ToArray())
             token.Value = new string(token.Value
                 .Select(c => FarEastGlyphSubstitutes.TryGetValue(c, out var covered) ? covered : c).ToArray());
+        // A letterlike character (U+210B script H, U+212D fraktur C, ...) is its
+        // base letter in that alphabet. Without the declared variant no alphabet
+        // font binds below and MathType shows the plain letter.
+        foreach (var token in math.DescendantsAndSelf().Where(e => e.Name.LocalName == "mi"
+                     && e.Value.Trim().Length == 1
+                     && e.Attribute("data-mtef-mtcode") is null
+                     && MathMlTokenStyleContract.ResolveDeclaredVariant(e) is null
+                     && TryNormalizeLetterlikeForWrite(e.Value.Trim()[0], out _, out _)).ToArray())
+        {
+            TryNormalizeLetterlikeForWrite(token.Value.Trim()[0], out var letter, out var letterVariant);
+            token.Value = ((char)letter).ToString();
+            token.SetAttributeValue("mathvariant", letterVariant);
+        }
+        // A bare hbar (Word's OMML gives <mi>ℏ</mi>) is MathJax's \hbar: the same
+        // implicit-italic MT Extra glyph. Without MathJax's alternate marker it
+        // was written in the upright built-in MT Extra face and read back upright.
+        foreach (var token in math.DescendantsAndSelf().Where(e => e.Name.LocalName == "mi"
+                     && e.Value.Trim() == "ℏ"
+                     && e.Attribute("data-mtef-mtcode") is null
+                     && e.Attribute("data-mjx-alternate") is null
+                     && MathMlTokenStyleContract.ResolveDeclaredVariant(e) is null).ToArray())
+            token.SetAttributeValue("data-mjx-alternate", "1");
         // MTEF persists scalar CHARs. Split only the already-canonical equivalent
         // operator runs before binding fonts, so every glyph receives its style.
         foreach (var token in math.DescendantsAndSelf().Where(e => e.Name.LocalName == "mo"
@@ -5598,6 +5675,21 @@ internal static partial class MathTypeMtefCodec
             }
 
             if (explicitTypeface is null
+                && scalars.Length == 1
+                && embellishments is null or { Count: 0 }
+                && IsMathematicalSymbolToken(((char)scalar).ToString())
+                && (IsMathematicalSymbolScalar(scalar)
+                    || ResolveTokenTypeface(element, scalar, effectiveVariant, isFunction) == TypefaceText))
+            {
+                // A symbol identifier (\diamondsuit, \heartsuit, \$, currency
+                // signs) in the Text face reads back as text. The operator path
+                // has MathType's own form for these glyphs (MT Extra, SimSun,
+                // Function), which reads back as the same operator.
+                EmitOperator(((char)scalar).ToString(), output);
+                continue;
+            }
+
+            if (explicitTypeface is null
                 && IsMathematicalSymbolScalar(scalar))
             {
                 // MathType's built-in Symbol style is an 8-bit Adobe Symbol
@@ -5680,6 +5772,7 @@ internal static partial class MathTypeMtefCodec
             case 0x211B: normalizedScalar = 'R'; mathVariant = "script"; return true;
             case 0x211D: normalizedScalar = 'R'; mathVariant = "double-struck"; return true;
             case 0x2124: normalizedScalar = 'Z'; mathVariant = "double-struck"; return true;
+            case 0x2128: normalizedScalar = 'Z'; mathVariant = "fraktur"; return true;
             case 0x212C: normalizedScalar = 'B'; mathVariant = "script"; return true;
             case 0x212D: normalizedScalar = 'C'; mathVariant = "fraktur"; return true;
             case 0x212F: normalizedScalar = 'e'; mathVariant = "script"; return true;
@@ -6454,10 +6547,12 @@ internal static partial class MathTypeMtefCodec
             // Do not pretend every Unicode operator lives in Adobe Symbol.
             // Times New Roman/MathType Text is Unicode-capable and is the safe
             // fallback for symbols not present in the legacy Symbol encoding.
+            // Non-letters use its Function face so they read back as operators.
             EmitScalar(
                 NormalizeMathTypeMtCode(scalar),
                 IsFarEastTextScalar(scalar) ? TypefaceFarEastText
-                    : IsMathematicalSymbolScalar(scalar) ? TypefaceFunction : TypefaceText,
+                    : IsMathematicalSymbolScalar(scalar) || !IsLetterScalar(scalar)
+                        && char.GetUnicodeCategory((char)scalar) != UnicodeCategory.Format ? TypefaceFunction : TypefaceText,
                 output);
         }
     }

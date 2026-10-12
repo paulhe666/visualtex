@@ -94,7 +94,8 @@ public sealed class MathTypeFarEastCodePageSymbolTests
     {
         // U+2030 per mille and U+2116 numero are in Windows-1252/1251.
         var perMille = MathTypeMtefCodec.CreateEquationNative("<math><mo>‰</mo></math>", false);
-        Assert.Equal(new byte[] { 1 + 128 }, CharTypefaces(perMille, '‰'));
+        // An operator takes the Function face (also Times New Roman) so it reads back as mo.
+        Assert.Equal(new byte[] { 2 + 128 }, CharTypefaces(perMille, '‰'));
         var cyrillic = MathTypeMtefCodec.CreateEquationNative("<math><mtext>д№</mtext></math>", false);
         Assert.Equal(new byte[] { 1 + 128 }, CharTypefaces(cyrillic, 'д'));
         Assert.Equal(new byte[] { 1 + 128 }, CharTypefaces(cyrillic, '№'));
@@ -146,6 +147,35 @@ public sealed class MathTypeFarEastCodePageSymbolTests
         Assert.True(face < 128, $"U+{(int)written:X4} typeface byte {face:X2}");
         var gbk = Encoding.GetEncoding(936, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
         Assert.Equal(written.ToString(), gbk.GetString(gbk.GetBytes(written.ToString())));
+    }
+
+    [Theory]
+    // One token per failure class found by sweeping every MathJax symbol command
+    // and the math/geometry Unicode blocks through MathType: each used to fail
+    // the standalone round-trip gate, so Word refused the whole conversion.
+    [InlineData("<mi>ℏ</mi><mi>k</mi>")]                       // bare hbar (Word OMML)
+    [InlineData("<mi>ℋ</mi><mi>ℌ</mi><mi>ℨ</mi><mi>ℯ</mi>")]   // letterlike alphabets
+    [InlineData("<mi>▴</mi><mi>◻</mi><mi>◼</mi><mi>▾</mi>")]    // SimSun substitute shapes
+    [InlineData("<mtext>▴◻</mtext>")]
+    [InlineData("<mi>a</mi><mo>·</mo><mi>b</mi><mo>–</mo><mo>‰</mo><mo>«</mo><mo>½</mo>")] // Latin-1/punctuation operators
+    [InlineData("<mi>x</mi><mo>，</mo><mi>y</mi><mo>（</mo><mn>1</mn><mo>）</mo><mo>、</mo><mo>。</mo>")] // CJK and full-width
+    [InlineData("<mi>♢</mi><mi>♡</mi><mi>$</mi><mi>¥</mi><mi>©</mi>")] // symbol identifiers
+    [InlineData("<mo>ª</mo><mo>º</mo>")]                       // letters as operators
+    [InlineData("<mtext>∋</mtext><mtext>◯</mtext><mtext>♡</mtext>")] // SimSun-only operator glyphs as text
+    public void SweptSymbolClassesSurviveTheStandaloneRoundTrip(string body)
+    {
+        var source = $"<math>{body}</math>";
+        var native = MathTypeMtefCodec.CreateEquationNative(source, false);
+        var readBack = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
+        Assert.Equal(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(readBack));
+    }
+
+    [Fact]
+    public void LetterlikeCharactersAreWrittenInTheirAlphabet()
+    {
+        var native = MathTypeMtefCodec.CreateEquationNative("<math><mi>ℋ</mi></math>", false);
+        var readBack = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
+        Assert.Contains("mi[script](H)", MathTypeMtefCodec.SemanticSignature(readBack));
     }
 
     // CHAR records [2][options][typeface][MTCode lo][MTCode hi] for one scalar.

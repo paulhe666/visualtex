@@ -44,6 +44,23 @@ public sealed class MathMlToLatexConverterTests
         Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
     }
 
+    [Theory]
+    // Generated reverse table: symbols read back from MathType or Word come back
+    // as the command the editor knows, not as raw Unicode.
+    [InlineData("<mo>⟶</mo>", @"\longrightarrow")]
+    [InlineData("<mo>⩽</mo>", @"\leqslant")]
+    [InlineData("<mo>⇌</mo>", @"\rightleftharpoons")]
+    [InlineData("<mo>⨁</mo>", @"\bigoplus")]
+    [InlineData("<mo>≲</mo>", @"\lesssim")]
+    [InlineData("<mo>⊊</mo>", @"\subsetneq")]
+    [InlineData("<mo>∤</mo>", @"\nmid")]
+    [InlineData("<mo>↠</mo>", @"\twoheadrightarrow")]
+    public void SymbolsReadBackAsTheirCommands(string body, string expected)
+    {
+        var mathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\">" + body + "</math>";
+        Assert.Equal(expected, MathMlToLatexConverter.Convert(mathMl));
+    }
+
     [Fact]
     public void ConvertsMathTypeGreekVariantsAndDotOperatorBackToExactLatex()
     {
