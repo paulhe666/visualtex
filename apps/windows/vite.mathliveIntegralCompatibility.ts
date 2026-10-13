@@ -111,9 +111,18 @@ export function visualTexMathLiveContourIntegralCompatibility(): Plugin {
     height: variant.height,
     depth: variant.depth,
   });
+  // esint spellings with no STIX glyph of their own draw the matching STIX
+  // operator in the editor (export keeps its esint outline).
+  const editorGlyphAliases: Record<string, string[]> = {
+    ointctrclockwise: ["varointctrclockwise"],
+  };
   const rareIntegralGlyphs = Object.fromEntries(
     rareIntegralPayload.glyphs.flatMap((definition) =>
-      [definition.command, ...definition.aliases].map((command) => [
+      [
+        definition.command,
+        ...definition.aliases,
+        ...(editorGlyphAliases[definition.command] ?? []),
+      ].map((command) => [
         command,
         {
           character: definition.character,

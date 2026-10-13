@@ -143,6 +143,15 @@ registerPreviews("arguments", [
   ["\\raise", "\\raise{0.4em}{x}"],
   ["\\lower", "\\lower{0.4em}{x}"],
   ["\\rule", "\\rule{1em}{0.08em}"],
+  // physics-package commands draw nothing without their argument.
+  // \qq{...} is \quad\text{...}\quad; the static preview renderer has no
+  // \qq, so draw what it inserts.
+  ["\\qq", "a\\quad\\text{if}\\quad b"],
+  ["\\qqtext", "a\\quad\\text{and}\\quad b"],
+  ["\\mqty", "\\mqty{a & b \\\\ c & d}"],
+  ["\\smqty", "\\smqty{a & b \\\\ c & d}"],
+  ["\\smallmatrixquantity", "\\smallmatrixquantity{a & b \\\\ c & d}"],
+  ["\\displaylines", "\\displaylines{a=b \\\\ c=d}"],
 ]);
 
 for (const command of [
@@ -379,5 +388,7 @@ export function resolveNativeSuggestionPreview(
   if (delimiter) return delimiter;
 
   if (nativeSuggestionPreviewHasVisibleInk(preview)) return null;
-  return { latex: "\\boxed{?}", kind: "fallback" };
+  // The panel decorator turns an inkless preview into a contextual sample or
+  // a "no preview" label.
+  return { latex: command, kind: "fallback" };
 }

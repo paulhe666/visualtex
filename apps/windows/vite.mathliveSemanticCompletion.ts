@@ -1,4 +1,5 @@
 import { commandRegistry } from "./src/autocomplete/commandRegistry";
+import { latestSharedCommands } from "./src/autocomplete/latestSharedCommands";
 
 /** Compile discovery, preview and completion into MathLive's own command UI. */
 export function patchVisualTexMathLiveSemanticCompletion(source: string) {
@@ -12,7 +13,12 @@ export function patchVisualTexMathLiveSemanticCompletion(source: string) {
       "\\begin{cases}\\placeholder{} & \\placeholder{}\\end{cases}",
     ],
   ]);
+  // Shared variants (\bigcap with limits, three-row cases, ...) are found by
+  // their command but never claim an exactly typed command: \bigcap + Space
+  // still inserts the bare operator, the variant follows it.
+  const variantIds = new Set(latestSharedCommands.map((c) => c.id));
   const records = commandRegistry.map(c => ({
+    exact: !variantIds.has(c.id),
     id: c.id,
     command: c.command,
     latex: nativeCompletionTemplateOverrides.get(c.command) ?? c.insertTemplate,
@@ -107,7 +113,7 @@ function suggest(mf, s) {
     /^(frac|fraction|divide)/.test(query) ? ["frac", "dfrac", "tfrac"] : [];
   const parameterizedCatalogCommands = new Set(
     visualTexCompletionCatalog
-      .filter((record) => record.latex.includes("\\placeholder{}"))
+      .filter((record) => record.exact && record.latex.includes("\\placeholder{}"))
       .map((record) => record.command),
   );
   const bareOperatorCommands = new Set([
@@ -144,7 +150,7 @@ function suggest(mf, s) {
       (exactAtomicNative && record.command === s && record.latex !== s)
     ) continue;
     let score = -Infinity;
-    if (name === rawQuery) score = 5000;
+    if (name === rawQuery && record.exact) score = 5000;
     else if (normalizedName === query) score = 760;
     else if (normalizedName.startsWith(query))
       score = 470 - Math.min(100, normalizedName.length - query.length);
@@ -165,6 +171,8 @@ function suggest(mf, s) {
   // discovery (del -> delta AND Delta) and case-sensitive exact preference.
   for (const command of [...Object.keys(LATEX_COMMANDS), ...Object.keys(MATH_SYMBOLS), ...Object.keys(mf.options.macros).map(x => "\\" + x)]) {
     if (!command.toLowerCase().startsWith(s.toLowerCase()) || LATEX_COMMANDS[command]?.infix) continue;
+    // Text-mode or diagnostic commands that draw nothing inside a formula.
+    if (command === "\\emph" || command === "\\error" || command === "\\the") continue;
     // Parameterized commands such as \\ket, \\sqrt, \\vec, \\abs and
     // \\norm must never compete with their editable VisualTeX template as a
     // bare command. Large operators are the intentional exception: \\int,
@@ -180,9 +188,42 @@ function suggest(mf, s) {
       (exact ? 0 : visualTexPersonalScore(preferences, usageId, query));
     add({ id: usageId, command, latex: command, preview: command, label: "" }, score);
   }
-  const ranked = [...results.values()].sort((a,b) => b.score-a.score || a.command.localeCompare(b.command));
+  let ranked = [...results.values()].sort((a,b) => b.score-a.score || a.command.localeCompare(b.command));
+  // Keep case-insensitive discovery for the first two letters (\be), but once
+  // the query is refined (\bet) follow the literal typed prefix so a stale
+  // sibling such as \Beta drops out. The panel shows exactly this list, so
+  // the controller index, the arrow keys and the number keys all agree.
+  if (s.length >= 4) {
+    const literal = ranked.filter((r) => r.command.startsWith(s));
+    if (literal.length) ranked = literal;
+  }
   mf.visualTexCompletionRecords = new Map(ranked.map(r => [r.latex, r]));
   return ranked.slice(0, Math.max(6, Math.min(24, preferences?.count || 12))).map(r => r.latex);
+}
+// Input-method style selection: the candidates are paged by nine and the
+// page holding the current candidate is numbered 1-9.
+var VISUALTEX_CANDIDATE_PAGE_SIZE = 9;
+function visualTexCandidatePageStart(mf) {
+  const index = Math.max(0, mf.suggestionIndex || 0);
+  return index - (index % VISUALTEX_CANDIDATE_PAGE_SIZE);
+}
+function visualTexCandidateNumberMarkup(mf, index) {
+  const start = visualTexCandidatePageStart(mf);
+  const number = index >= start && index < start + VISUALTEX_CANDIDATE_PAGE_SIZE ? String(index - start + 1) : "";
+  return '<span class="ML__popover__index" aria-hidden="true">' + number + "</span>";
+}
+// -1: the key is not a candidate pick. Otherwise the index of the picked
+// candidate, or -2 when the digit has no candidate on the current page (the
+// key is swallowed, as an input method does).
+function visualTexCandidateIndexForDigit(mf, evt) {
+  if (mf.model.mode !== "latex" || evt.ctrlKey || evt.metaKey || evt.altKey || evt.isComposing) return -1;
+  if (!/^[1-9]$/.test(evt.key || "")) return -1;
+  const panel = document.getElementById("mathlive-suggestion-popover");
+  if (!panel || panel.visualTexMathfield !== mf || panel.getAttribute("aria-hidden") === "true") return -1;
+  const suggestions = mf.visualTexCompletion?.suggestions || [];
+  if (!suggestions.length) return -1;
+  const index = visualTexCandidatePageStart(mf) + Number(evt.key) - 1;
+  return index < suggestions.length ? index : -2;
 }
 ` + source.slice(end);
   const ghostStart = source.indexOf("  const suggestion = suggestions[mathfield.suggestionIndex];", source.indexOf("function updateAutocomplete("));
@@ -290,6 +331,23 @@ function suggest(mf, s) {
     const commandMarkup = latexToMarkup(mf, suggestion);`, `    const info = visualTexCompletionInfo(mf, suggestion);
     const command = suggestion;
     const commandMarkup = latexToMarkup(mf, info.preview);`);
+  replace(`"class=ML__popover__current" : ""}><span class="ML__popover__latex">`, `"class=ML__popover__current" : ""}>\${visualTexCandidateNumberMarkup(mf, i)}<span class="ML__popover__latex">`);
+  // Number keys pick from the current page, then commit exactly like Space.
+  replace(`  const keystroke = keyboardEventToString(evt);
+  if (evt.isTrusted) {
+    validateKeyboardLayout(evt);`, `  let keystroke = keyboardEventToString(evt);
+  if (evt.isTrusted) {
+    validateKeyboardLayout(evt);`);
+  replace(`    if (keystroke === "[Space]" && model.mode === "latex" && mathfield.visualTexSourceWrapper) {`, `    const visualTexPickedCandidate = visualTexCandidateIndexForDigit(mathfield, evt);
+    if (visualTexPickedCandidate === -2) {
+      if (evt.preventDefault) { evt.preventDefault(); evt.stopPropagation(); }
+      return false;
+    }
+    if (visualTexPickedCandidate >= 0) {
+      mathfield.suggestionIndex = visualTexPickedCandidate;
+      keystroke = "[Space]";
+    }
+    if (keystroke === "[Space]" && model.mode === "latex" && mathfield.visualTexSourceWrapper) {`);
   replace('${escapeHtmlAttr(command)}</span><span class="ML__popover__command">', '${escapeHtmlAttr(info.command)}${info.label ? " · " + escapeHtmlAttr(info.label) : ""}</span><span class="ML__popover__command">');
   replace(`const keybinding = getKeybindingsForCommand(mf.keybindings, command).join(`, `const keybinding = getKeybindingsForCommand(mf.keybindings, info.command).join(`);
   // Commands are literal LaTeX, including brackets and repeated backslashes.

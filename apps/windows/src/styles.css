@@ -5965,6 +5965,49 @@ html body #mathlive-suggestion-popover li + li {
   margin-top: 3px !important;
 }
 
+/* The list is a height-capped flex column: shrinkable rows would all be
+   squeezed to min-height once the list scrolls, and tall previews (\sum with
+   limits, matrices, cases) would paint over their neighbours. */
+html body #mathlive-suggestion-popover li,
+html body #visualtex-native-input-suggestion-popover li {
+  flex: 0 0 auto;
+}
+
+html body #mathlive-suggestion-popover .ML__popover__index,
+html body #visualtex-native-input-suggestion-popover .ML__popover__index {
+  flex: 0 0 1.1em;
+  align-self: center;
+  color: var(--text-faint);
+  font: 600 12px/1 system-ui, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+html body #mathlive-suggestion-popover li.ML__popover__current .ML__popover__index,
+html body #visualtex-native-input-suggestion-popover li.ML__popover__current .ML__popover__index {
+  color: var(--accent);
+}
+
+html body #mathlive-suggestion-popover .ML__popover__latex,
+html body #visualtex-native-input-suggestion-popover .ML__popover__latex {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html body #mathlive-suggestion-popover .ML__popover__command,
+html body #visualtex-native-input-suggestion-popover .ML__popover__command {
+  flex: 0 0 auto;
+}
+
+html body #mathlive-suggestion-popover .visualtex-native-preview-unavailable,
+html body #visualtex-native-input-suggestion-popover .visualtex-native-preview-unavailable {
+  color: var(--text-faint);
+  font: 12px/1.2 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
 html body #mathlive-suggestion-popover li:hover,
 html body #mathlive-suggestion-popover li.is-pressed,
 html body #mathlive-suggestion-popover li.is-active {

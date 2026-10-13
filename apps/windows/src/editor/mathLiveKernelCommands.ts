@@ -58,32 +58,36 @@ function nativeInputPopoverOwner(source: HTMLElement | null) {
   )?.visualTexMathfield;
 }
 
+// The kernel's suggest() already narrows refined queries to the literal typed
+// prefix, so the visible frame shows MathLive's list one-to-one and the
+// controller index, arrow keys and number keys address the same rows.
 function stableNativeInputPopoverCommands(source: HTMLElement) {
-  const sourceItems = Array.from(
-    source.querySelectorAll<HTMLElement>("li[data-command]"),
+  return Array.from(source.querySelectorAll<HTMLElement>("li[data-command]"));
+}
+
+const CANDIDATE_PAGE_SIZE = 9;
+
+// Mirrors the kernel's numbering: the page holding the selected candidate is
+// numbered 1-9 (arrow keys can move the selection onto the next page without
+// MathLive re-rendering the list).
+function numberCandidatePage(panel: HTMLElement, selectedCommand: string) {
+  const items = Array.from(panel.querySelectorAll<HTMLElement>("li[data-command]"));
+  const selected = Math.max(
+    0,
+    items.findIndex(
+      (item) => nativeInputPopoverInsertionLatex(item) === selectedCommand,
+    ),
   );
-  const owner = nativeInputPopoverOwner(source);
-  const query = owner?.visualTexCompletion?.command ?? "";
-  // data-command stores the insertion LaTeX. For compatibility aliases such
-  // as \Bbb, that insertion is canonicalized to \mathbb{...}; filter using
-  // the completion record's typed command instead or the exact alias vanishes
-  // from its own candidate list.
-  const typedCommand = (item: HTMLElement) =>
-    item.dataset.command ??
-    owner?.visualTexCompletionRecords?.get(
-      nativeInputPopoverInsertionLatex(item),
-    )?.command ??
-    "";
-  // Keep MathLive's broad case-insensitive discovery for the first two typed
-  // letters (e.g. \be), but once the user refines the query (\bet) the
-  // visible candidate frame follows the literal typed prefix. This prevents a
-  // stale uppercase sibling such as \Beta from surviving a lowercase refined
-  // query while leaving MathLive's underlying catalog untouched.
-  const filtered =
-    query.length >= 4
-      ? sourceItems.filter((item) => typedCommand(item).startsWith(query))
-      : sourceItems;
-  return filtered.length ? filtered : sourceItems;
+  const start = selected - (selected % CANDIDATE_PAGE_SIZE);
+  items.forEach((item, index) => {
+    const badge = item.querySelector<HTMLElement>(".ML__popover__index");
+    if (!badge) return;
+    const number =
+      index >= start && index < start + CANDIDATE_PAGE_SIZE
+        ? String(index - start + 1)
+        : "";
+    if (badge.textContent !== number) badge.textContent = number;
+  });
 }
 
 function setStableNativeInputPopoverSelection(
@@ -117,6 +121,8 @@ function setStableNativeInputPopoverSelection(
       nativeInputPopoverInsertionLatex(item) === command,
     );
   }
+  numberCandidatePage(source, command);
+  numberCandidatePage(stable, command);
 }
 
 function ensureStableNativeInputPopover() {
@@ -137,7 +143,10 @@ function ensureStableNativeInputPopover() {
       nativeInputPopoverSource()?.querySelectorAll<HTMLElement>(
         "li[data-command]",
       ) ?? [],
-    ).find((candidate) => candidate.dataset.command === insertionLatex);
+    ).find(
+      (candidate) =>
+        nativeInputPopoverInsertionLatex(candidate) === insertionLatex,
+    );
     sourceItem?.dispatchEvent(
       new MouseEvent("click", {
         bubbles: true,

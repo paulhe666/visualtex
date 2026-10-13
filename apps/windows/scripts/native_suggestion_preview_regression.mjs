@@ -83,6 +83,9 @@ async function main() {
       "--port",
       String(previewPort),
       "--strictPort",
+      ...(process.env.VISUALTEX_PREVIEW_OUTDIR
+        ? ["--outDir", process.env.VISUALTEX_PREVIEW_OUTDIR]
+        : []),
     ],
     { cwd: process.cwd(), stdio: "ignore" },
   );
@@ -462,9 +465,10 @@ async function main() {
         },
       },
       {
-        query: "\\the",
+        // Inkless punctuation is shown in context (a.b), never as "?".
+        query: "\\ldotp",
         expected: {
-          "\\the": "fallback",
+          "\\ldotp": "fallback",
         },
       },
     ];

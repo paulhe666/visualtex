@@ -1465,6 +1465,34 @@ function markVisualTexFormulaGlyphFonts(field: MathfieldElement) {
   markVisualTexFormulaFontGlyphs(field.shadowRoot);
 }
 
+const contextualSuggestionPreviewCache = new Map<string, string | null>();
+
+// "a<command>b" when the command visibly changes the line between two
+// letters, otherwise null.
+function contextualSuggestionPreview(command: string, preview: HTMLElement) {
+  if (contextualSuggestionPreviewCache.has(command)) {
+    return contextualSuggestionPreviewCache.get(command) ?? null;
+  }
+  const width = (latex: string) => {
+    preview.innerHTML = safeConvertVisualTexLatexToMarkup(latex, {
+      defaultMode: "math",
+    });
+    const rendered = preview.querySelector<HTMLElement>(".ML__latex");
+    if (!rendered || rendered.querySelector(".ML__error")) return Number.NaN;
+    return rendered.getBoundingClientRect().width;
+  };
+  const latex = `a${command} b`;
+  const withCommand = width(latex);
+  const without = width("ab");
+  const result =
+    Number.isFinite(withCommand) && withCommand - without > 1.5 ? latex : null;
+  // Only cache measurements taken while the panel is laid out.
+  if (preview.isConnected && without > 0) {
+    contextualSuggestionPreviewCache.set(command, result);
+  }
+  return result;
+}
+
 function decorateNativeSuggestionPanel(panel: HTMLElement | null) {
   if (!panel) return;
 
@@ -1501,11 +1529,25 @@ function decorateNativeSuggestionPanel(panel: HTMLElement | null) {
       defaultMode: "math",
     });
     if (!nativeSuggestionPreviewHasVisibleInk(preview)) {
-      preview.innerHTML = safeConvertVisualTexLatexToMarkup("\\boxed{?}", {
-        defaultMode: "math",
-      });
-      previewLatex = "\\boxed{?}";
+      // Punctuation and spacing commands (\ldotp, \colon, \,) draw nothing
+      // on their own; show them between two letters when they visibly change
+      // the line. Commands with no visible effect at all get a plain label
+      // rather than a "?" box.
+      const contextual = contextualSuggestionPreview(command, preview);
       previewKind = "fallback";
+      if (contextual) {
+        previewLatex = contextual;
+        preview.innerHTML = safeConvertVisualTexLatexToMarkup(contextual, {
+          defaultMode: "math",
+        });
+      } else {
+        previewLatex = "unavailable";
+        const label = document.createElement("span");
+        label.className = "visualtex-native-preview-unavailable";
+        label.textContent =
+          useEditorStore.getState().language === "en" ? "no preview" : "无预览";
+        preview.replaceChildren(label);
+      }
     }
 
     preview.querySelectorAll<HTMLElement>(".ML__cmr").forEach((node) => {
