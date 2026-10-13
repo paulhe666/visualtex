@@ -364,6 +364,15 @@ internal sealed partial class WordFormulaService
                     plan.Targets.Where(item => item.Numbered).Min(item => item.SourceStart));
             }
 
+            // A visible Print Layout window re-lays out the unconverted OMML of
+            // the page on screen after every host write, even with
+            // ScreenUpdating off: ~1-5 s per formula on page 1 of a long paper.
+            // A minimized window lays out nothing; geometry stays Print Layout
+            // exact (Draft/Web views round inline objects to 0.5 pt).
+            using var screenUpdating = NativeOmmlScreenUpdatingScope.Suspend(_application);
+            using var minimized = plan.Targets.Count >= MinimizeWindowFormulaThreshold
+                ? MinimizedWindowScope.Enter(document, OperationWindowMinimized)
+                : null;
             return WordFormulaMutationTransaction.Execute(
                 _application,
                 document,

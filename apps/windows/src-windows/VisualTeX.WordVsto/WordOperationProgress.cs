@@ -36,11 +36,14 @@ internal sealed class WordOperationProgress : IDisposable
     private Snapshot _snapshot = new("正在准备…", 0, 0);
     private readonly Stopwatch _elapsed = Stopwatch.StartNew();
     private readonly Action _onDispose;
+    private readonly IntPtr _owner;
+    private Form? _form;
     private int _closed;
 
     internal WordOperationProgress(string title, Action onDispose, IntPtr owner)
     {
         _onDispose = onDispose;
+        _owner = owner;
         Owner = new NativeWindowOwner(owner);
         var thread = new Thread(() => Run(title, owner)) { IsBackground = true, Name = "VisualTeX operation progress" };
         thread.SetApartmentState(ApartmentState.STA);
@@ -54,6 +57,44 @@ internal sealed class WordOperationProgress : IDisposable
     }
 
     internal IWin32Window Owner { get; }
+
+    // Windows hides owned windows with a minimized owner. While a batch keeps
+    // Word minimized, show the progress as an unowned topmost window instead.
+    // Runs synchronously on the progress thread (a cross-thread SetWindowPos
+    // from inside WINWORD did not stick). Word's STA blocks here briefly; the
+    // progress thread never calls back into Word, so this cannot deadlock.
+    internal void SetOwnerMinimized(bool minimized)
+    {
+        var form = Volatile.Read(ref _form);
+        if (form is null || _owner == IntPtr.Zero) return;
+        try
+        {
+            form.Invoke(new Action(() =>
+            {
+                SetWindowLongPtr(form.Handle, GwlpHwndParent, minimized ? IntPtr.Zero : _owner);
+                form.TopMost = minimized;
+                WordDoubleClickHook.TraceMessage(
+                    $"operation-progress-topmost requested={minimized} actual={IsTopmost(form.Handle)} visible={form.Visible}");
+            }));
+        }
+        catch (Exception error) when (error is InvalidOperationException or ObjectDisposedException)
+        {
+            // The progress window already closed.
+        }
+    }
+
+    private static bool IsTopmost(IntPtr window) =>
+        (GetWindowLong(window, GwlExStyle) & WsExTopmost) != 0;
+
+    private const int GwlpHwndParent = -8;
+    private const int GwlExStyle = -20;
+    private const int WsExTopmost = 0x00000008;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
     private void Run(string title, IntPtr owner)
     {
@@ -92,7 +133,9 @@ internal sealed class WordOperationProgress : IDisposable
             // covering unrelated applications or pumping the Office STA.
             if (Volatile.Read(ref _closed) != 0) return;
             if (owner != IntPtr.Zero) form.Show(Owner);
+            Volatile.Write(ref _form, form);
             Application.Run(form);
+            Volatile.Write(ref _form, null);
         }
         catch (Exception error)
         {
@@ -130,11 +173,13 @@ public sealed partial class ThisAddIn
             if (ReferenceEquals(_operationProgress, progress))
             {
                 service.OperationProgress = null;
+                service.OperationWindowMinimized = null;
                 _operationProgress = null;
             }
         }, owner);
         _operationProgress = progress;
         service.OperationProgress = progress.Report;
+        service.OperationWindowMinimized = progress.SetOwnerMinimized;
         progress.Report(initialStage);
         return progress;
     }

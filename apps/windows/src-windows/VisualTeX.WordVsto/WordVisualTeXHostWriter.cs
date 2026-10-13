@@ -130,7 +130,12 @@ internal static class WordVisualTeXHostWriter
             {
                 shapeRange = shape.Range.Duplicate;
             }
-            var withinTable = IsWithinTable(shapeRange);
+            bool withinTable;
+            using (WordOperationMetrics.Measure(
+                       "FormatConversion.VisualTeXHostWriter.WithinTable"))
+            {
+                withinTable = IsWithinTable(shapeRange);
+            }
             if (request.BatchMutation && metadata.Numbered
                 && string.Equals(metadata.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
                 && !withinTable && request.PreparedVisualTeXNumbering is not null)
@@ -740,15 +745,10 @@ internal static class WordVisualTeXHostWriter
                 "The inserted VisualTeX OLE returned a different display mode.");
     }
 
-    private static bool IsWithinTable(Range range)
-    {
-        try
-        {
-            return Convert.ToBoolean(
-                range.get_Information(WdInformation.wdWithInTable));
-        }
-        catch { return false; }
-    }
+    // Table ownership is structural. Word's Information getter is backed by
+    // pagination and can lay out the whole rest of the document per host.
+    private static bool IsWithinTable(Range range) =>
+        WordFormulaHostLookup.IsWhollyInsideTable(range);
 
     private static void Release(object? value)
     {

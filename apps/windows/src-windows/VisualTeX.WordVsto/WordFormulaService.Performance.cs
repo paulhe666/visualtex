@@ -105,4 +105,93 @@ internal sealed partial class WordFormulaService
             catch { }
         }
     }
+
+    private const int MinimizeWindowFormulaThreshold = 10;
+
+    /// <summary>
+    /// Raised with true when a batch minimizes the document window and false
+    /// when it restores it, so the progress window can stay on screen.
+    /// </summary>
+    internal Action<bool>? OperationWindowMinimized { get; set; }
+
+    /// <summary>
+    /// Minimizes the document window for a batch of host writes and restores
+    /// its previous state (normal or maximized) afterwards.
+    /// </summary>
+    private sealed class MinimizedWindowScope : IDisposable
+    {
+        private Window? _window;
+        private readonly Document _document;
+        private readonly WdWindowState _previous;
+        private readonly Action<bool>? _notify;
+
+        private MinimizedWindowScope(Document document, Action<bool>? notify)
+        {
+            _document = document;
+            _notify = notify;
+            try
+            {
+                _window = document.ActiveWindow;
+                _previous = _window.WindowState;
+                if (_previous == WdWindowState.wdWindowStateMinimize || !_window.Visible)
+                {
+                    Marshal.ReleaseComObject(_window);
+                    _window = null;
+                    return;
+                }
+                _notify?.Invoke(true);
+                _window.WindowState = WdWindowState.wdWindowStateMinimize;
+                // With other documents open, Word activates one of them when this
+                // window minimizes and then keeps laying out this (background)
+                // document after every write. Re-activating it keeps the window
+                // minimized and the layout suspended.
+                var reactivated = false;
+                if (!IsActiveDocument(document))
+                {
+                    document.Activate();
+                    reactivated = true;
+                }
+                WordDoubleClickHook.TraceMessage(
+                    $"format-conversion-window-minimized previous={_previous} reactivated={reactivated} state={_window.WindowState}");
+            }
+            catch
+            {
+                if (_window is not null) Marshal.ReleaseComObject(_window);
+                _window = null;
+                _notify?.Invoke(false);
+            }
+        }
+
+        internal static MinimizedWindowScope Enter(Document document, Action<bool>? notify) =>
+            new(document, notify);
+
+        // Not released: when the target is active, ActiveDocument is the same
+        // runtime-callable wrapper the conversion is still using.
+        private static bool IsActiveDocument(Document document)
+        {
+            try
+            {
+                return string.Equals(
+                    document.Application.ActiveDocument.FullName,
+                    document.FullName,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
+        public void Dispose()
+        {
+            var window = _window;
+            _window = null;
+            if (window is null) return;
+            // Reverse of Enter: the progress window gives up topmost and returns
+            // to its owner before Word restores and activates the document.
+            _notify?.Invoke(false);
+            try { window.WindowState = _previous; } catch { }
+            try { _document.Activate(); } catch { }
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-window-restored state={_previous} active={IsActiveDocument(_document)}");
+            Marshal.ReleaseComObject(window);
+        }
+    }
 }

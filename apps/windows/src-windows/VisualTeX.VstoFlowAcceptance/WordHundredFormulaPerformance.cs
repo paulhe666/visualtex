@@ -27,7 +27,8 @@ internal static partial class Program
             if (AttachActiveWord || string.IsNullOrWhiteSpace(
                     Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_OWNED_WORD_ROOT")))
                 throw new InvalidOperationException("Performance hosts require an explicit owned Word root.");
-            Application = CreateWordApplication(visible: false);
+            Application = CreateWordApplication(visible: string.Equals(
+                Environment.GetEnvironmentVariable("VISUALTEX_PERF_VISIBLE"), "1", StringComparison.Ordinal));
             // The acceptance environment suppresses the installed add-in in this
             // new process. Never toggle COMAddIn.Connect or user LoadBehavior.
             Document = string.IsNullOrWhiteSpace(documentPath)
@@ -36,7 +37,7 @@ internal static partial class Program
                     documentPath,
                     ReadOnly: false,
                     AddToRecentFiles: false,
-                    Visible: false);
+                    Visible: Application.Visible);
             try { Document.Activate(); }
             catch (COMException error) when (
                 error.HResult == unchecked((int)0x80010001)
