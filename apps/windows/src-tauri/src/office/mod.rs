@@ -5,6 +5,7 @@ pub mod formula_cache;
 #[path = "platform/non_macos_installer.rs"]
 pub mod installer;
 pub mod lifecycle;
+pub mod mathtype_fonts;
 #[path = "platform/non_macos_manifest.rs"]
 pub mod manifest;
 pub mod platform;

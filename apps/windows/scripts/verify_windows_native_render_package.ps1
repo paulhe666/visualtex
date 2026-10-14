@@ -15,7 +15,7 @@ if ((Get-FileHash -LiteralPath $build -Algorithm SHA256).Hash -ine $manifest.pac
     throw 'Bundled native-render MSI is not the current build.'
 }
 $paths=@($manifest.files | ForEach-Object { [string]$_.path })
-foreach($required in @('VisualTeX.NativeRenderService.exe','VisualTeX.NativeRenderWorker.exe','runtime\MathType.exe','runtime\Language\MT7chs.dll','runtime\MathPage\64\MathPage.wll')) {
+foreach($required in @('VisualTeX.NativeRenderService.exe','VisualTeX.NativeRenderWorker.exe','runtime\MathType.exe','runtime\Language\MT7chs.dll','runtime\MathPage\64\MathPage.wll','runtime\Fonts\TrueType\mtextra.ttf','runtime\Fonts\TrueType\eumat1.ttf','runtime\Fonts\TrueType\eumat2.ttf')) {
     if ($required -notin $paths) { throw "Native-render manifest is missing $required" }
 }
 $config=Get-Content -LiteralPath (Join-Path $root 'src-tauri\tauri.windows.conf.json') -Raw | ConvertFrom-Json
@@ -52,6 +52,20 @@ try {
     }
     foreach($row in @(Read-Rows 'SELECT `Key` FROM `Registry`' 1)) {
         if ($row[0] -cne 'Software\VisualTeX\NativeRender') { throw 'Renderer MSI must not change public MathType/COM or user preferences.' }
+    }
+    # MathType's own fonts: added only where missing, never overwritten, never
+    # removed, so an installed MathType (or its later install) is not affected.
+    $fonts=@(Read-Rows 'SELECT `File_` FROM `Font`' 1)
+    if ($fonts.Count -ne 23) { throw "Renderer MSI must carry MathType's 23 TrueType fonts; found $($fonts.Count)." }
+    $components=@(Read-Rows 'SELECT `Component`, `Attributes`, `Condition`, `Directory_` FROM `Component`' 4)
+    foreach($font in $fonts) {
+        $file=@(Read-Rows ('SELECT `Component_` FROM `File` WHERE `File`=''' + $font[0] + '''') 1)
+        $component=@($components | Where-Object { $_[0] -ceq $file[0][0] })
+        if ($component.Count -ne 1 -or $component[0][3] -cne 'FontsFolder' -or
+            ([int]$component[0][1] -band 0x10) -eq 0 -or ([int]$component[0][1] -band 0x80) -eq 0 -or
+            $component[0][2] -notmatch '^NOT FONT_[A-Z0-9]+$') {
+            throw "Font component $($file[0][0]) must be conditional, permanent and never overwrite."
+        }
     }
 } finally {
     foreach($value in @($database,$installer)) { if ($null -ne $value) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($value) } }

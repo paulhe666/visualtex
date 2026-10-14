@@ -43,7 +43,8 @@ if ([string]::IsNullOrWhiteSpace($InstallerPath) -and [string]::IsNullOrWhiteSpa
                 'MathType.exe','MT7.dsc','System\MathTypeLib.exe','System\MT6.dll','System\64\MT6.dll',
                 'Language\MT7chs.dll',
                 'MathPage\64\MathPage.wll','System\rt\lib\rt.jar','System\rt\lib\charsets.jar',
-                'System\rt\lib\jce.jar','System\rt\lib\jsse.jar','System\rt\lib\security\java.security'
+                'System\rt\lib\jce.jar','System\rt\lib\jsse.jar','System\rt\lib\security\java.security',
+                'Fonts\TrueType\mtextra.ttf','Fonts\TrueType\eumat1.ttf','Fonts\TrueType\eumat2.ttf','Fonts\TrueType\eufrak.ttf'
             )) {
                 if (!(Test-Path -LiteralPath (Join-Path $output $relative) -PathType Leaf)) {
                     throw "Existing staged private MathType runtime is incomplete: $relative"
@@ -170,11 +171,27 @@ foreach ($line in Get-Content -LiteralPath $setupLibInf -Encoding Default) {
     Copy-Exact $sourceName $relative
 }
 
+# MathType's own TrueType fonts, exactly the list its installer installs
+# ([ttfonts_tasks] install_tt_font). Its previews draw symbols from MT Extra and
+# the Euclid fonts; a machine that never had MathType has none of them, so the
+# native renderer and Office would substitute other fonts and show wrong glyphs.
+$fontNames = @(foreach ($line in Get-Content -LiteralPath $setupInf -Encoding Default) {
+    if ($line -match '^\s*\$install_tt_font\s*=\s*<TTAppDir>\\([^,]+?)\s*,\s*<TTSysDir>\\') { $matches[1].Trim() }
+})
+if ($fontNames.Count -eq 0) { throw 'MathType setup.inf lists no TrueType fonts.' }
+foreach ($fontName in $fontNames) {
+    if (!(Test-Path -LiteralPath (Join-Path $payload $fontName) -PathType Leaf)) {
+        throw "MathType payload is missing font $fontName"
+    }
+    Copy-Exact $fontName ('Fonts\TrueType\' + $fontName)
+}
+
 $mustExist = @(
     'MathType.exe','MT7.dsc','System\MathTypeLib.exe','System\MT6.dll','System\64\MT6.dll',
     'Language\MT7chs.dll',
     'MathPage\64\MathPage.wll','System\rt\lib\rt.jar','System\rt\lib\charsets.jar',
-    'System\rt\lib\jce.jar','System\rt\lib\jsse.jar','System\rt\lib\security\java.security'
+    'System\rt\lib\jce.jar','System\rt\lib\jsse.jar','System\rt\lib\security\java.security',
+    'Fonts\TrueType\mtextra.ttf','Fonts\TrueType\eumat1.ttf','Fonts\TrueType\eumat2.ttf','Fonts\TrueType\eufrak.ttf'
 )
 foreach ($relative in $mustExist) {
     if (!(Test-Path -LiteralPath (Join-Path $output $relative) -PathType Leaf)) {

@@ -163,6 +163,9 @@ public interface IWordRibbonCallbacks
     [DispId(50)]
     void OnFormatConversionScopeChanged(Office.IRibbonControl control, bool pressed);
 
+    [DispId(51)]
+    void OnRepairMathTypeDisplays(object control);
+
 }
 
 [ComVisible(true)]
@@ -314,6 +317,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         </group>
         <group id="VisualTeX.WordVsto.CompatibilityRepairGroup" label="兼容修复">
           <button id="VisualTeX.WordVsto.RepairInlineBaselines" label="修复公式偏移" size="large" screentip="扫描并修复行内公式垂直偏移" supertip="扫描全文中的 MathType / VisualTeX 行内 OLE；VisualTeX 公式优先按自身保存的渲染基线校准，MathType 公式按文档稳定基线检测上浮或下沉。确认后仅修复垂直偏移，不修改公式内容、字号、编号或引用。" tag="repairBaseline" getImage="GetRibbonImage" onAction="OnRepairInlineFormulaBaselines" />
+          <button id="VisualTeX.WordVsto.RepairMathTypeDisplays" label="修复公式显示" size="large" screentip="用 MathType 自身排版重新生成公式图像" supertip="扫描全文 MathType 公式，用 VisualTeX 内置的 MathType 排版服务按公式原有数据重新生成显示图像，修复缺少 MathType 字体时生成的错误符号。只替换显示图像并按 MathType 基线重新对齐，公式数据、编号和引用保持不变。" tag="repairBaseline" getImage="GetRibbonImage" onAction="OnRepairMathTypeDisplays" />
         </group>
       </tab>
     </tabs>
@@ -676,6 +680,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             conversionOnly: true);
     public void OnUpdateEquationNumbers(object control) => _ = UpdateEquationNumbersAsync();
     public void OnRepairInlineFormulaBaselines(object control) => _ = RepairInlineFormulaBaselinesAsync();
+    public void OnRepairMathTypeDisplays(object control) => _ = RepairMathTypeDisplaysAsync();
     public bool GetEquationNumberFormatPressed(Office.IRibbonControl control)
     {
         try
@@ -3647,7 +3652,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
-                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.IncompleteMessage);
+                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.FailureMessage);
                     }
                     else
                     {
@@ -4341,7 +4346,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
-                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.IncompleteMessage);
+                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.FailureMessage);
                     }
                     else
                     {
@@ -5030,6 +5035,128 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
         finally
         {
+            _operationGate.Release();
+        }
+    }
+
+    private async Task RepairMathTypeDisplaysAsync()
+    {
+        var dispatcher = _dispatcher;
+        var service = _formulaService;
+        var lifetime = _lifetime;
+        if (dispatcher is null
+            || service is null
+            || lifetime is null
+            || lifetime.IsCancellationRequested)
+            return;
+
+        if (!await _operationGate.WaitAsync(
+                TimeSpan.FromSeconds(2),
+                lifetime.Token).ConfigureAwait(false))
+        {
+            SetStatus(T(
+                "VisualTeX 正在执行其他 Word 操作，请稍候再试。",
+                "VisualTeX is busy with another Word operation. Please try again shortly."));
+            return;
+        }
+
+        WordOperationProgress? progress = null;
+        try
+        {
+            SetStatus(T("正在扫描 MathType 公式的显示图像…", "Scanning MathType equation pictures…"));
+            progress = await dispatcher.InvokeAsync(() => BeginOperationProgress(
+                    T("VisualTeX 修复公式显示", "VisualTeX Formula Display Repair"), service,
+                    T("正在读取 MathType 公式…", "Reading MathType equations…")))
+                .ConfigureAwait(false);
+            var report = await dispatcher.InvokeAsync(service.ScanMathTypeDisplayRepairs)
+                .ConfigureAwait(false);
+            // The confirmation must not compete with the progress window.
+            progress.Dispose();
+            progress = null;
+            var skipped = report.UnreadableCount + report.UnrenderableCount;
+            var unreadable = skipped == 0
+                ? string.Empty
+                : T(
+                    $"\r\n\r\n{skipped} 个 MathType 公式无法读取或无法由 MathType 重新排版，保持不变。",
+                    $"\r\n\r\n{skipped} MathType equations could not be read or laid out again by MathType and were left unchanged.");
+            var decision = await dispatcher.InvokeAsync(() =>
+            {
+                if (report.Targets.Count == 0)
+                {
+                    System.Windows.Forms.MessageBox.Show(
+                        T(
+                            $"扫描完成。已检查 {report.MathTypeCount} 个 MathType 公式，它们的显示图像与 MathType 自身的排版一致，无需修复。" + unreadable,
+                            $"Scan complete. {report.MathTypeCount} MathType equations were checked; their pictures already match MathType's own layout." + unreadable),
+                        T("VisualTeX 修复公式显示", "VisualTeX Formula Display Repair"),
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Information);
+                    return 0;
+                }
+
+                var answer = System.Windows.Forms.MessageBox.Show(
+                    T(
+                        $"{report.Targets.Count} 个 MathType 公式的显示图像与 MathType 自身的排版不一致（例如缺少 MathType 字体时生成的错误符号）。\r\n\r\n"
+                        + "将用 VisualTeX 内置的 MathType 排版服务按公式原有数据重新生成这些图像。只替换显示图像并按 MathType 基线重新对齐，公式数据、编号和引用保持不变；每个公式可单独撤销。"
+                        + unreadable + "\r\n\r\n是否继续？",
+                        $"The pictures of {report.Targets.Count} MathType equations differ from MathType's own layout (for example, wrong symbols drawn while MathType's fonts were missing).\r\n\r\n"
+                        + "VisualTeX's built-in MathType renderer will redraw these pictures from each equation's stored data. Only the pictures are replaced and realigned on MathType's baseline; equation data, numbering and references stay unchanged, and each equation can be undone separately."
+                        + unreadable + "\r\n\r\nContinue?"),
+                    T("VisualTeX 修复公式显示", "VisualTeX Formula Display Repair"),
+                    System.Windows.Forms.MessageBoxButtons.YesNo,
+                    System.Windows.Forms.MessageBoxIcon.Question,
+                    System.Windows.Forms.MessageBoxDefaultButton.Button2);
+                return answer == System.Windows.Forms.DialogResult.Yes ? 1 : -1;
+            }).ConfigureAwait(false);
+
+            if (decision <= 0)
+            {
+                SetStatus(decision == -1
+                    ? T("已取消公式显示修复，Word 文档未修改。", "Formula display repair was cancelled; the Word document was not changed.")
+                    : T("公式显示扫描完成，无需修复。", "Formula display scan complete; no repair was needed."));
+                return;
+            }
+
+            SetStatus(T("正在用 MathType 排版重新生成公式图像…", "Redrawing MathType equation pictures…"));
+            progress = await dispatcher.InvokeAsync(() => BeginOperationProgress(
+                    T("VisualTeX 修复公式显示", "VisualTeX Formula Display Repair"), service,
+                    T("正在重新生成公式图像…", "Redrawing equation pictures…")))
+                .ConfigureAwait(false);
+            BeginFormulaFormatMutation();
+            int repaired;
+            try
+            {
+                repaired = await dispatcher.InvokeAsync(
+                        () => service.RepairMathTypeDisplays(report))
+                    .ConfigureAwait(false);
+            }
+            finally { EndFormulaFormatMutation(); }
+            progress.Dispose();
+            progress = null;
+
+            SetStatus(T(
+                $"已用 MathType 排版重新生成 {repaired} 个公式的显示图像，公式数据未修改。",
+                $"Redrew the pictures of {repaired} MathType equations; equation data was not changed."));
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus(T("VisualTeX 公式显示修复已取消。", "VisualTeX formula display repair was cancelled."));
+        }
+        catch (Exception error)
+        {
+            progress?.Dispose();
+            progress = null;
+            SetStatus(T(
+                $"修复公式显示失败：{error.Message}",
+                $"Formula display repair failed: {error.Message}"));
+            await ShowWordOperationErrorAsync(
+                    dispatcher,
+                    T("修复公式显示", "Formula Display Repair"),
+                    error)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            progress?.Dispose();
             _operationGate.Release();
         }
     }

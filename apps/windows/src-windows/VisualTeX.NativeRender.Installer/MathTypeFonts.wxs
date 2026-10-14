@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MathType's own TrueType fonts, the 23 files its installer adds to the system
+     ([ttfonts_tasks] in MathType's setup.inf). MathType equations, native or from
+     VisualTeX, draw many symbols from MT Extra and the Euclid fonts; a machine that
+     never had MathType has none of them, so Word and the renderer would substitute
+     other fonts and show wrong glyphs.
+
+     Coexistence with an installed MathType (or anything else that already provides
+     a font): each font is added only when its name is not registered yet, an
+     existing file is never overwritten, and nothing is removed on uninstall
+     (MathType keeps its fonts the same way), so another product that relies on the
+     font is never left without it. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <?define FontKey = "SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts" ?>
+    <?define FontSource = "$(var.PayloadRoot)\runtime\Fonts\TrueType" ?>
+
+    <Property Id="FONT_MTEXTRA"><RegistrySearch Id="FontRegMtExtra" Root="HKLM" Key="$(var.FontKey)" Name="MT Extra (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUCLID"><RegistrySearch Id="FontRegEuclid" Root="HKLM" Key="$(var.FontKey)" Name="Euclid (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUCLIDB"><RegistrySearch Id="FontRegEuclidB" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Bold (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUCLIDBI"><RegistrySearch Id="FontRegEuclidBI" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Bold Italic (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUCLIDI"><RegistrySearch Id="FontRegEuclidI" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Italic (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUCSYM"><RegistrySearch Id="FontRegEucSym" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Symbol (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUCSYMB"><RegistrySearch Id="FontRegEucSymB" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Symbol Bold (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUCSYMBI"><RegistrySearch Id="FontRegEucSymBI" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Symbol Bold Italic (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUCSYMI"><RegistrySearch Id="FontRegEucSymI" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Symbol Italic (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUEXTRA"><RegistrySearch Id="FontRegEuExtra" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Extra (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUEXTRAB"><RegistrySearch Id="FontRegEuExtraB" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Extra Bold (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUFRAK"><RegistrySearch Id="FontRegEuFrak" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Fraktur (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUFRAKB"><RegistrySearch Id="FontRegEuFrakB" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Fraktur Bold (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUMAT1"><RegistrySearch Id="FontRegEuMat1" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Math One (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUMAT1B"><RegistrySearch Id="FontRegEuMat1B" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Math One Bold (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUMAT2"><RegistrySearch Id="FontRegEuMat2" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Math Two (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_EUMAT2B"><RegistrySearch Id="FontRegEuMat2B" Root="HKLM" Key="$(var.FontKey)" Name="Euclid Math Two Bold (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_FENCES"><RegistrySearch Id="FontRegFences" Root="HKLM" Key="$(var.FontKey)" Name="Fences Plain (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_TIGER"><RegistrySearch Id="FontRegTiger" Root="HKLM" Key="$(var.FontKey)" Name="Tiger (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_MTEXTRATIGER"><RegistrySearch Id="FontRegMtExtraTiger" Root="HKLM" Key="$(var.FontKey)" Name="MT Extra Tiger (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_SYMBOLTIGER"><RegistrySearch Id="FontRegSymbolTiger" Root="HKLM" Key="$(var.FontKey)" Name="Symbol Tiger (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_TIGEREXPERT"><RegistrySearch Id="FontRegTigerExpert" Root="HKLM" Key="$(var.FontKey)" Name="Tiger Expert (TrueType)" Type="raw" Bitness="always64" /></Property>
+    <Property Id="FONT_SYMBOLTIGEREXPERT"><RegistrySearch Id="FontRegSymbolTigerExpert" Root="HKLM" Key="$(var.FontKey)" Name="Symbol Tiger Expert (TrueType)" Type="raw" Bitness="always64" /></Property>
+
+    <StandardDirectory Id="FontsFolder" />
+    <ComponentGroup Id="MathTypeFonts" Directory="FontsFolder">
+      <Component Id="FontMtExtra" Guid="5EF5FD0A-0024-402E-9B58-A81325124EC3" Condition="NOT FONT_MTEXTRA" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontMtExtraFile" Source="$(var.FontSource)\mtextra.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuclid" Guid="842F3B43-FBEC-4ECA-BDA1-755DA42C0E42" Condition="NOT FONT_EUCLID" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuclidFile" Source="$(var.FontSource)\euclid.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuclidB" Guid="4F8DAB69-7286-48FD-8EDB-4995C39D53E0" Condition="NOT FONT_EUCLIDB" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuclidBFile" Source="$(var.FontSource)\euclidb.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuclidBI" Guid="D3B57D5B-1AF0-4ECE-A6B2-99BBABDD2C51" Condition="NOT FONT_EUCLIDBI" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuclidBIFile" Source="$(var.FontSource)\euclidbi.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuclidI" Guid="5C476F21-1F7E-452D-B3FC-C927DAF08EC0" Condition="NOT FONT_EUCLIDI" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuclidIFile" Source="$(var.FontSource)\euclidi.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEucSym" Guid="FC7BA659-3280-4959-8F57-CBADAB8B604B" Condition="NOT FONT_EUCSYM" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEucSymFile" Source="$(var.FontSource)\eucsym.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEucSymB" Guid="6CAA8ACB-8A83-4CCE-B9F8-4ECE57BB5A69" Condition="NOT FONT_EUCSYMB" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEucSymBFile" Source="$(var.FontSource)\eucsymb.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEucSymBI" Guid="E6A78678-20C8-4FE3-9C8B-C297EB349287" Condition="NOT FONT_EUCSYMBI" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEucSymBIFile" Source="$(var.FontSource)\eucsymbi.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEucSymI" Guid="C8AFA80D-6229-4444-8063-EDBDEF6535BA" Condition="NOT FONT_EUCSYMI" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEucSymIFile" Source="$(var.FontSource)\eucsymi.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuExtra" Guid="6402AAE8-38D2-4EFF-9EAF-4D8633233D60" Condition="NOT FONT_EUEXTRA" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuExtraFile" Source="$(var.FontSource)\euextra.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuExtraB" Guid="42288C54-2074-4603-9DEC-FAADB8A0B0C4" Condition="NOT FONT_EUEXTRAB" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuExtraBFile" Source="$(var.FontSource)\euextrab.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuFrak" Guid="DCB0A332-ABD7-4DD0-8FF2-0F6EB59F463D" Condition="NOT FONT_EUFRAK" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuFrakFile" Source="$(var.FontSource)\eufrak.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuFrakB" Guid="41EA33C8-C88B-4C45-9D63-823E4F4E603D" Condition="NOT FONT_EUFRAKB" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuFrakBFile" Source="$(var.FontSource)\eufrakb.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuMat1" Guid="F89FA906-59D4-4ABA-82A9-04B20CB6C5DA" Condition="NOT FONT_EUMAT1" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuMat1File" Source="$(var.FontSource)\eumat1.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuMat1B" Guid="B8C725A5-3157-4514-9F4A-D95BFCE4482E" Condition="NOT FONT_EUMAT1B" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuMat1BFile" Source="$(var.FontSource)\eumat1b.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuMat2" Guid="AB2C53DA-48FD-4815-8050-411B2BDD3717" Condition="NOT FONT_EUMAT2" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuMat2File" Source="$(var.FontSource)\eumat2.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontEuMat2B" Guid="A1583D8F-9FAE-4723-A441-6176FC73E9D8" Condition="NOT FONT_EUMAT2B" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontEuMat2BFile" Source="$(var.FontSource)\eumat2b.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontFences" Guid="977A3A2B-6DCB-4928-8A9D-C4A4B0E0FE0C" Condition="NOT FONT_FENCES" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontFencesFile" Source="$(var.FontSource)\fences.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontTiger" Guid="3D745B3A-C9D2-45EA-B8D6-4BEBF765B6CC" Condition="NOT FONT_TIGER" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontTigerFile" Source="$(var.FontSource)\Tiger.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontMtExtraTiger" Guid="D800F94B-3FD5-450A-9852-9A026DE7A418" Condition="NOT FONT_MTEXTRATIGER" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontMtExtraTigerFile" Source="$(var.FontSource)\Mt Extra Tiger.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontSymbolTiger" Guid="F677DA2B-D3AB-413E-AED9-6BDEC9954C30" Condition="NOT FONT_SYMBOLTIGER" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontSymbolTigerFile" Source="$(var.FontSource)\Symbol Tiger.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontTigerExpert" Guid="FBB04351-C73F-4D43-87E3-B85E63D6145A" Condition="NOT FONT_TIGEREXPERT" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontTigerExpertFile" Source="$(var.FontSource)\Tiger Expert.ttf" TrueType="yes" KeyPath="yes" /></Component>
+      <Component Id="FontSymbolTigerExpert" Guid="826625FC-CE94-4C97-B500-E8126FC35015" Condition="NOT FONT_SYMBOLTIGEREXPERT" Permanent="yes" NeverOverwrite="yes" Bitness="always64"><File Id="FontSymbolTigerExpertFile" Source="$(var.FontSource)\Symbol Tiger Expert.ttf" TrueType="yes" KeyPath="yes" /></Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

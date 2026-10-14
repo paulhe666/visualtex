@@ -18,6 +18,7 @@
       <ComponentRef Id="NativeRenderService" />
       <ComponentRef Id="NativeRenderPrivateData" />
       <ComponentGroupRef Id="NativeRenderPayload" />
+      <ComponentGroupRef Id="MathTypeFonts" />
     </Feature>
     <Component Id="NativeRenderService" Directory="NATIVERENDERFOLDER"
                Guid="B4C55B96-6833-4563-9DB7-94D6354349D0" Bitness="always64">

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$true)][ValidateSet('Install','Verify','Uninstall')][string]$Action,
+    [Parameter(Mandatory=$true)][ValidateSet('Install','Verify','Uninstall','EnsureFonts')][string]$Action,
     [string]$PackageDirectory='', [string]$LogPath=''
 )
 $ErrorActionPreference='Stop'
@@ -57,6 +57,177 @@ function Assert-Payload($Manifest) {
     }
     if (!$seen.Contains('VisualTeX.NativeRenderService.exe') -or !$seen.Contains('VisualTeX.NativeRenderWorker.exe') -or !$seen.Contains('runtime\MathType.exe')) { throw 'Incomplete native-render manifest.' }
 }
+# MathType draws many symbols from its own fonts (MT Extra, the Euclid fonts).
+# Office installs a 1992 MT Extra (46 glyphs, version 3.1) under the same name
+# "MT Extra (TrueType)", so an install-if-missing rule leaves Office's copy in
+# charge and symbols such as a triangle, bowtie or parallel bars show as boxes.
+# Make Windows resolve every MathType font to a copy that has all of MathType's
+# glyphs. Files are only added, never overwritten or deleted, and nothing is
+# removed on uninstall. A registration of an older copy (one missing glyphs that
+# MathType's copy has) is pointed at MathType's copy instead; MathType's MT Extra
+# keeps every code and width of Office's copy, so nothing that used it moves.
+function Get-FontApi {
+    if (-not ('VisualTeX.MathTypeFontApi' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+namespace VisualTeX {
+public static class MathTypeFontApi {
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern int AddFontResourceW(string file);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern bool RemoveFontResourceW(string file);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeoutW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+    [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr value);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr value);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateFontW(int height, int width, int escapement, int orientation, int weight, uint italic, uint underline, uint strikeOut, uint charSet, uint outPrecision, uint clipPrecision, uint quality, uint pitchAndFamily, string face);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern int GetTextFaceW(IntPtr dc, int count, [Out] char[] face);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern uint GetGlyphIndicesW(IntPtr dc, string text, int count, [Out] ushort[] indices, uint flags);
+    public static void BroadcastFontChange() {
+        IntPtr ignored;
+        SendMessageTimeoutW(new IntPtr(0xFFFF), 0x001D, IntPtr.Zero, IntPtr.Zero, 2, 5000, out ignored);
+    }
+    // Codes this session cannot draw with the font Windows picks for the
+    // family and style (as MathType's pictures request it); null when Windows
+    // picks a different family altogether.
+    public static int[] MissingCodes(string family, int weight, bool italic, int[] codes) {
+        IntPtr dc = CreateCompatibleDC(IntPtr.Zero);
+        IntPtr font = CreateFontW(-1000, 0, 0, 0, weight, italic ? 1u : 0u, 0, 0, 1, 7, 0, 0, 0, family);
+        IntPtr old = SelectObject(dc, font);
+        try {
+            char[] face = new char[64];
+            int length = GetTextFaceW(dc, face.Length, face);
+            string actual = length > 0 ? new string(face, 0, length - 1).TrimEnd('\0') : "";
+            if (!string.Equals(actual, family, StringComparison.OrdinalIgnoreCase)) return null;
+            List<int> missing = new List<int>();
+            ushort[] index = new ushort[1];
+            foreach (int code in codes) {
+                if (GetGlyphIndicesW(dc, ((char)code).ToString(), 1, index, 1) == 0xFFFFFFFF || index[0] == 0xFFFF) missing.Add(code);
+            }
+            return missing.ToArray();
+        } finally { SelectObject(dc, old); DeleteObject(font); DeleteDC(dc); }
+    }
+}
+}
+'@
+    }
+}
+function Read-FontInfo([string]$Path) {
+    if (!(Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    try {
+        $face=New-Object System.Windows.Media.GlyphTypeface (New-Object Uri ([IO.Path]::GetFullPath($Path)))
+        $family=$face.Win32FamilyNames[[Globalization.CultureInfo]::GetCultureInfo('en-us')]
+        if (!$family) { $family=@($face.Win32FamilyNames.Values)[0] }
+        $style=$face.Win32FaceNames[[Globalization.CultureInfo]::GetCultureInfo('en-us')]
+        if (!$style) { $style=@($face.Win32FaceNames.Values)[0] }
+        $codes=New-Object 'Collections.Generic.HashSet[int]'
+        foreach($code in $face.CharacterToGlyphMap.Keys) { [void]$codes.Add([int]$code) }
+        return [pscustomobject]@{
+            Path=[IO.Path]::GetFullPath($Path); Family=[string]$family; Style=[string]$style
+            Weight=$face.Weight.ToOpenTypeWeight(); Italic=($face.Style -ne [System.Windows.FontStyles]::Normal)
+            Codes=$codes; Hash=(Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+        }
+    } catch { return $null }
+}
+function Get-StemKey([string]$Path) {
+    $stem=[IO.Path]::GetFileNameWithoutExtension($Path).Replace(' ','').ToLowerInvariant()
+    return ($stem -replace '_(\d+|visualtex(_\d+)?)$','')
+}
+function Ensure-MathTypeFonts {
+    Add-Type -AssemblyName PresentationCore
+    Get-FontApi
+    $sourceRoot=Join-Path $installRoot 'runtime\Fonts\TrueType'
+    if (!(Test-Path -LiteralPath $sourceRoot -PathType Container)) { throw 'The native renderer does not carry MathType fonts.' }
+    $fontsRoot=Join-Path $env:windir 'Fonts'
+    $keyPath='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
+    $bundled=@(Get-ChildItem -LiteralPath $sourceRoot -Filter *.ttf | ForEach-Object { Read-FontInfo $_.FullName })
+    if ($bundled.Count -eq 0 -or @($bundled | Where-Object { $null -eq $_ }).Count) { throw 'A bundled MathType font cannot be read.' }
+    $stems=@($bundled | ForEach-Object { Get-StemKey $_.Path })
+    $families=@($bundled | ForEach-Object { $_.Family } | Sort-Object -Unique)
+    # Registered entries that can be one of MathType's fonts (by name or file).
+    $entries=@()
+    $values=(Get-ItemProperty -LiteralPath $keyPath).PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' }
+    foreach($value in $values) {
+        $data=[string]$value.Value
+        if (!$data) { continue }
+        $path=if ([IO.Path]::IsPathRooted($data)) { $data } else { Join-Path $fontsRoot $data }
+        $related=$false
+        foreach($family in $families) { if ($value.Name.IndexOf($family,[StringComparison]::OrdinalIgnoreCase) -ge 0) { $related=$true } }
+        if (!$related -and ($stems -notcontains (Get-StemKey $path))) { continue }
+        $entries+=[pscustomobject]@{ Name=$value.Name; Data=$data; Info=(Read-FontInfo $path); Path=$path }
+    }
+    $changed=$false
+    $report=@()
+    foreach($font in $bundled) {
+        $same=@($entries | Where-Object { $_.Info -and $_.Info.Family -ieq $font.Family -and $_.Info.Style -ieq $font.Style })
+        $older=@($same | Where-Object { -not $_.Info.Codes.IsSupersetOf($font.Codes) })
+        $complete=@($same | Where-Object { $_.Info.Codes.IsSupersetOf($font.Codes) })
+        if ($complete.Count -gt 0 -and $older.Count -eq 0) { continue }
+        $target=$null
+        if ($complete.Count -gt 0) {
+            $target=$complete[0]
+        } else {
+            # Reuse an identical copy this script installed before; otherwise add
+            # a new file under a name nothing else uses.
+            $stem=[IO.Path]::GetFileNameWithoutExtension($font.Path)
+            $fileName=$null
+            for ($n=1; $n -lt 100 -and !$fileName; $n++) {
+                $candidate=if ($n -eq 1) { "${stem}_visualtex.ttf" } else { "${stem}_visualtex_$n.ttf" }
+                $candidatePath=Join-Path $fontsRoot $candidate
+                if (!(Test-Path -LiteralPath $candidatePath)) { Copy-Item -LiteralPath $font.Path -Destination $candidatePath; $fileName=$candidate }
+                elseif ((Get-FileHash -LiteralPath $candidatePath -Algorithm SHA256).Hash -ieq $font.Hash) { $fileName=$candidate }
+            }
+            if (!$fileName) { throw "No free file name for $($font.Family) $($font.Style)." }
+            $valueName=if ($font.Style -ieq 'Regular') { "$($font.Family) (TrueType)" } else { "$($font.Family) $($font.Style) (TrueType)" }
+            Set-ItemProperty -LiteralPath $keyPath -Name $valueName -Value $fileName
+            $target=[pscustomobject]@{ Name=$valueName; Data=$fileName; Path=(Join-Path $fontsRoot $fileName) }
+            [void][VisualTeX.MathTypeFontApi]::AddFontResourceW($target.Path)
+            $report+="$($font.Family) $($font.Style): registered $fileName as '$valueName'"
+        }
+        foreach($entry in $older) {
+            # The older file stays on disk; only its registration and this
+            # session's copy go, so Windows stops picking it first.
+            if ($entry.Name -ne $target.Name) { Remove-ItemProperty -LiteralPath $keyPath -Name $entry.Name -ErrorAction SilentlyContinue }
+            for ($i=0; $i -lt 16 -and [VisualTeX.MathTypeFontApi]::RemoveFontResourceW($entry.Path); $i++) { }
+            $report+="$($font.Family) $($font.Style): replaced older $($entry.Data) ($($entry.Info.Codes.Count) codes)"
+        }
+        $changed=$true
+    }
+    if ($changed) { [VisualTeX.MathTypeFontApi]::BroadcastFontChange() }
+    # What Word in this session now gets for every MathType font. MathType's
+    # pictures draw symbol fonts with 8-bit codes, which Windows maps to
+    # U+F020-U+F0FF; other cmap entries of those fonts are never drawn.
+    $problems=@()
+    foreach($font in $bundled) {
+        $codes=[int[]]@($font.Codes | Where-Object { $_ -ge 0xF020 -and $_ -le 0xF0FF })
+        if ($codes.Count -eq 0) { $codes=[int[]]@($font.Codes | Where-Object { $_ -le 0xFFFF }) }
+        $missing=[VisualTeX.MathTypeFontApi]::MissingCodes($font.Family,$font.Weight,[bool]$font.Italic,$codes)
+        if ($null -eq $missing -or $missing.Count) {
+            # Registered but not loaded in this session yet: load it and look again.
+            $registered=@((Get-ItemProperty -LiteralPath $keyPath).PSObject.Properties | Where-Object {
+                $_.Name -notlike 'PS*' -and [string]$_.Value -and (Get-StemKey ([string]$_.Value)) -eq (Get-StemKey $font.Path) })
+            foreach($value in $registered) {
+                $path=if ([IO.Path]::IsPathRooted([string]$value.Value)) { [string]$value.Value } else { Join-Path $fontsRoot ([string]$value.Value) }
+                $info=Read-FontInfo $path
+                if ($info -and $info.Family -ieq $font.Family -and $info.Style -ieq $font.Style -and $info.Codes.IsSupersetOf($font.Codes)) {
+                    [void][VisualTeX.MathTypeFontApi]::AddFontResourceW($path)
+                }
+            }
+            [VisualTeX.MathTypeFontApi]::BroadcastFontChange()
+            $missing=[VisualTeX.MathTypeFontApi]::MissingCodes($font.Family,$font.Weight,[bool]$font.Italic,$codes)
+        }
+        # MathType's default styles (and VisualTeX's equations) draw from MT Extra
+        # and the Euclid fonts; Fences and the Tiger fonts are optional.
+        $required=($font.Family -ieq 'MT Extra' -or $font.Family -like 'Euclid*')
+        $problem=if ($null -eq $missing) { "$($font.Family) $($font.Style) is not available" } elseif ($missing.Count) { "$($font.Family) $($font.Style) lacks $($missing.Count) glyphs" } else { $null }
+        if ($problem -and $required) { $problems+=$problem } elseif ($problem) { Write-Warning "MathType fonts: optional $problem" }
+    }
+    foreach($line in $report) { Write-Output "MathType fonts: $line" }
+    if ($problems.Count) { throw ('MathType fonts are still incomplete: '+($problems -join '; ')) }
+    Write-Output "MathType fonts verified: $($bundled.Count) fonts."
+}
+
 $service=Get-OwnedService
 $product=Get-OwnedProduct
 $manifest=$null
@@ -96,6 +267,14 @@ if ($Action -eq 'Install') {
         }
         $service=Get-OwnedService
     }
+    # A font problem must not undo a working renderer install; the app reports
+    # it and its Repair action runs this step again.
+    try { Ensure-MathTypeFonts } catch { Write-Warning $_.Exception.Message }
+}
+if ($Action -eq 'EnsureFonts') {
+    if (!$product) { throw 'The native renderer is not installed.' }
+    Ensure-MathTypeFonts
+    return
 }
 if ($Action -in @('Install','Verify')) {
     if (!$product -or !$service -or $service.State -ne 'Running') { throw 'The private native-render service is not installed and running.' }

@@ -26,6 +26,9 @@ export interface OfficePlatformStatus {
   officeRuntimeVerified: boolean;
   currentUserCertificateTrusted: boolean;
   backgroundStartEnabled: boolean;
+  // Word draws MathType's pictures with MathType's own fonts on this PC.
+  mathtypeFontsHealthy: boolean;
+  mathtypeFontsProblem: string | null;
   lastError: string | null;
 }
 
@@ -110,10 +113,12 @@ export function decodeOfficePlatformStatus(value: unknown): OfficePlatformStatus
     "officeRuntimeVerified",
     "currentUserCertificateTrusted",
     "backgroundStartEnabled",
+    "mathtypeFontsHealthy",
   ] as const;
   for (const key of booleanKeys) {
     booleanValue(status[key], `officePlatformStatus.${key}`);
   }
+  nullableString(status.mathtypeFontsProblem, "officePlatformStatus.mathtypeFontsProblem");
   nullableString(status.lastError, "officePlatformStatus.lastError");
   return status as unknown as OfficePlatformStatus;
 }

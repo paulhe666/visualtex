@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace VisualTeX.WordVsto;
 
 internal sealed partial class WordFormulaService
@@ -130,6 +132,89 @@ internal sealed partial class WordFormulaService
             previewWmf.Length - insertionOffset);
         WriteMathTypeUInt32(result, 28, checked(declaredWords + 10));
         return result;
+    }
+
+    // What a placeable WMF draws: its frame and every record except MathType's
+    // comments (escapes) and the window records Word's copy adds.
+    internal static string MathTypePictureDrawing(byte[] picture)
+    {
+        const uint placeableKey = 0x9ac6cdd7;
+        using var hash = SHA256.Create();
+        if (picture is null || picture.Length < 22 + 18 || BitConverter.ToUInt32(picture, 0) != placeableKey)
+            return "not-a-placeable-wmf:"
+                + Convert.ToBase64String(hash.ComputeHash(picture ?? Array.Empty<byte>()));
+        hash.TransformBlock(picture, 6, 10, null, 0); // bounding box and units per inch
+        var headerWords = BitConverter.ToUInt16(picture, 22 + 2);
+        var position = 22 + headerWords * 2;
+        while (position + 6 <= picture.Length)
+        {
+            var words = BitConverter.ToUInt32(picture, position);
+            var function = BitConverter.ToUInt16(picture, position + 4);
+            if (words < 3 || position + (long)words * 2 > picture.Length) break;
+            if (function != 0x0626 && function != 0x020B && function != 0x020C)
+            {
+                var record = new byte[(int)words * 2 - 4];
+                Buffer.BlockCopy(picture, position + 4, record, 0, record.Length);
+                ClearMathTypeRecordPadding(function, record);
+                hash.TransformBlock(record, 0, record.Length, null, 0);
+            }
+            if (function == 0) break;
+            position += (int)words * 2;
+        }
+        hash.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+        return Convert.ToBase64String(hash.Hash);
+    }
+
+    // MathType leaves uninitialized bytes where a record is padded, so two
+    // renders of one equation differ there: the pad after an odd-length string,
+    // the rest of a font's face name, a pen's unused width.y, a solid brush's
+    // hatch and the reserved word of a mode record. None of them draws.
+    // The record starts at its function word; parameters follow at offset 2.
+    private static void ClearMathTypeRecordPadding(ushort function, byte[] record)
+    {
+        const int parameters = 2;
+        switch (function)
+        {
+            case 0x0521: // TEXTOUT: length, string padded to a word, y, x
+            {
+                if (record.Length < parameters + 2) break;
+                var length = BitConverter.ToInt16(record, parameters);
+                var pad = parameters + 2 + length;
+                if (length > 0 && (length & 1) == 1 && pad < record.Length) record[pad] = 0;
+                break;
+            }
+            case 0x0A32: // EXTTEXTOUT: y, x, length, options, [rectangle], string padded to a word, [dx]
+            {
+                if (record.Length < parameters + 8) break;
+                var length = BitConverter.ToInt16(record, parameters + 4);
+                var options = BitConverter.ToUInt16(record, parameters + 6);
+                var pad = parameters + 8 + ((options & 0x0006) != 0 ? 8 : 0) + length;
+                if (length > 0 && (length & 1) == 1 && pad < record.Length) record[pad] = 0;
+                break;
+            }
+            case 0x02FB: // CREATEFONTINDIRECT: 18-byte LOGFONT, then a NUL-terminated face name
+            {
+                if (record.Length <= parameters + 18) break;
+                var end = Array.IndexOf(record, (byte)0, parameters + 18);
+                if (end >= 0) Array.Clear(record, end, record.Length - end);
+                break;
+            }
+            case 0x02FA: // CREATEPENINDIRECT: style, width (x, unused y), color
+                if (record.Length >= parameters + 6) record[parameters + 4] = record[parameters + 5] = 0;
+                break;
+            case 0x02FC: // CREATEBRUSHINDIRECT: style, color, hatch (used only by BS_HATCHED)
+                if (record.Length >= parameters + 8 && BitConverter.ToUInt16(record, parameters) != 2)
+                    record[parameters + 6] = record[parameters + 7] = 0;
+                break;
+            case 0x0102: // SETBKMODE
+            case 0x0104: // SETROP2
+            case 0x0106: // SETPOLYFILLMODE
+            case 0x0107: // SETSTRETCHBLTMODE
+            case 0x012E: // SETTEXTALIGN: one mode word, then an optional reserved word
+                if (record.Length > parameters + 2)
+                    Array.Clear(record, parameters + 2, record.Length - parameters - 2);
+                break;
+        }
     }
 
     private static void WriteMathTypeWmfRecord(

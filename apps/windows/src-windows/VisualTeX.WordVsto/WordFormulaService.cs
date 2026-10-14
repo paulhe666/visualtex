@@ -1891,7 +1891,7 @@ internal sealed partial class WordFormulaService
         }
         else
         {
-            throw new InvalidOperationException(MathTypeNativePreviewRenderer.IncompleteMessage);
+            throw new InvalidOperationException(MathTypeNativePreviewRenderer.FailureMessage);
         }
 
         // Keep genuine MathType storage free of OlePres. Word owns the external
@@ -7168,7 +7168,7 @@ internal sealed partial class WordFormulaService
             }
             else
             {
-                throw new InvalidOperationException(MathTypeNativePreviewRenderer.IncompleteMessage);
+                throw new InvalidOperationException(MathTypeNativePreviewRenderer.FailureMessage);
             }
 
 

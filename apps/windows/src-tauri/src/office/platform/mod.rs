@@ -47,6 +47,11 @@ pub struct OfficePlatformStatus {
     pub office_runtime_verified: bool,
     pub current_user_certificate_trusted: bool,
     pub background_start_enabled: bool,
+    /// Word in this user session draws MathType's pictures with MathType's own
+    /// fonts (MT Extra, the Euclid fonts); false when they are missing or an
+    /// older copy such as Office's MT Extra takes their place.
+    pub mathtype_fonts_healthy: bool,
+    pub mathtype_fonts_problem: Option<String>,
     pub last_error: Option<String>,
 }
 

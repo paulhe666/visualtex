@@ -139,6 +139,93 @@ public sealed class MathTypePresentationScaleTests
         Assert.Equal(1f, WordFormulaService.CalculateMathTypeNativePresentationScale(wordExtent, nativeExtent));
     }
 
+    [Fact]
+    public void PictureDrawingIgnoresMathTypeUninitializedPadding()
+    {
+        // Two renders of one equation by MathType differ only in bytes that
+        // never draw: a string's pad byte, the rest of a face name, pen width.y.
+        var first = CreateMathTypeTextWmf(padding: 0x6D, faceTail: 0xA3, penTail: 0x11);
+        var second = CreateMathTypeTextWmf(padding: 0xFF, faceTail: 0x06, penTail: 0x77);
+
+        Assert.NotEqual(first, second);
+        Assert.Equal(
+            WordFormulaService.MathTypePictureDrawing(first),
+            WordFormulaService.MathTypePictureDrawing(second));
+        Assert.Equal(
+            WordFormulaService.MathTypePictureDrawing(first),
+            WordFormulaService.MathTypePictureDrawing(
+                WordFormulaService.EnsureMathTypePlaceableWmfWindowRecords(first)));
+    }
+
+    [Fact]
+    public void PictureDrawingSeesADifferentGlyphOrFont()
+    {
+        var expected = WordFormulaService.MathTypePictureDrawing(
+            CreateMathTypeTextWmf(padding: 0, faceTail: 0, penTail: 0));
+
+        Assert.NotEqual(expected, WordFormulaService.MathTypePictureDrawing(
+            CreateMathTypeTextWmf(padding: 0, faceTail: 0, penTail: 0, glyph: 0x6E)));
+        Assert.NotEqual(expected, WordFormulaService.MathTypePictureDrawing(
+            CreateMathTypeTextWmf(padding: 0, faceTail: 0, penTail: 0, face: "Arial")));
+    }
+
+    // Font, pen, select, a three-glyph EXTTEXTOUT and EOF, as MathType writes them.
+    private static byte[] CreateMathTypeTextWmf(
+        byte padding, byte faceTail, byte penTail, byte glyph = 0x56, string face = "MT Extra")
+    {
+        var font = new byte[6 + 18 + 32];
+        WriteUInt32(font, 0, (uint)(font.Length / 2));
+        WriteUInt16(font, 4, 0x02FB);
+        WriteInt16(font, 6, -384);
+        WriteUInt16(font, 14, 400);
+        font[19] = 2;
+        var name = System.Text.Encoding.ASCII.GetBytes(face);
+        Buffer.BlockCopy(name, 0, font, 24, name.Length);
+        for (var index = 24 + name.Length + 1; index < font.Length; index++) font[index] = faceTail;
+
+        var pen = new byte[6 + 10];
+        WriteUInt32(pen, 0, (uint)(pen.Length / 2));
+        WriteUInt16(pen, 4, 0x02FA);
+        WriteInt16(pen, 8, 10);
+        pen[10] = pen[11] = penTail;
+
+        var select = new byte[8];
+        WriteUInt32(select, 0, 4);
+        WriteUInt16(select, 4, 0x012D);
+
+        var text = new byte[6 + 8 + 4 + 6];
+        WriteUInt32(text, 0, (uint)(text.Length / 2));
+        WriteUInt16(text, 4, 0x0A32);
+        WriteInt16(text, 6, 100);
+        WriteInt16(text, 8, 50);
+        WriteInt16(text, 10, 3);
+        text[14] = glyph;
+        text[15] = 0x56;
+        text[16] = 0x6F;
+        text[17] = padding;
+        WriteInt16(text, 18, 120);
+        WriteInt16(text, 20, 120);
+        WriteInt16(text, 22, 80);
+
+        var end = new byte[6];
+        WriteUInt32(end, 0, 3);
+
+        var body = font.Concat(pen).Concat(select).Concat(text).Concat(end).ToArray();
+        var bytes = new byte[40 + body.Length];
+        WriteUInt32(bytes, 0, 0x9ac6cdd7);
+        WriteInt16(bytes, 10, 400);
+        WriteInt16(bytes, 12, 200);
+        WriteUInt16(bytes, 14, 1440);
+        WriteUInt16(bytes, 22, 1);
+        WriteUInt16(bytes, 24, 9);
+        WriteUInt16(bytes, 26, 0x0300);
+        WriteUInt32(bytes, 28, (uint)((18 + body.Length) / 2));
+        WriteUInt16(bytes, 32, 2);
+        WriteUInt32(bytes, 34, (uint)(font.Length / 2));
+        Buffer.BlockCopy(body, 0, bytes, 40, body.Length);
+        return bytes;
+    }
+
     private static byte[] CreateMinimalPlaceableWmf()
     {
         var bytes = new byte[46];

@@ -31,9 +31,19 @@ const platform = {
   officeRuntimeVerified: true,
   currentUserCertificateTrusted: true,
   backgroundStartEnabled: true,
+  mathtypeFontsHealthy: false,
+  mathtypeFontsProblem: "MT Extra lacks 103 of MathType's 147 symbols",
   lastError: null,
 };
 assert.equal(decodeOfficePlatformStatus(platform), platform);
+assert.throws(
+  () => decodeOfficePlatformStatus({ ...platform, mathtypeFontsHealthy: undefined }),
+  /mathtypeFontsHealthy/,
+);
+assert.throws(
+  () => decodeOfficePlatformStatus({ ...platform, mathtypeFontsProblem: 3 }),
+  /mathtypeFontsProblem/,
+);
 assert.throws(
   () => decodeOfficePlatformStatus({ ...platform, wordConnected: "yes" }),
   /wordConnected/,

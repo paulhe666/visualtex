@@ -18,6 +18,9 @@ internal static class MathTypeNativePreviewCommand
     private const short MtXfmPict = 6;
     private const int MtOk = 0;
     private const int MtError = -9999;
+    // Worker exit status for a session that cannot resolve MathType's fonts.
+    // NativeWorkerBackend maps it to NativeRenderProtocol.FontsUnavailableError.
+    internal const int FontsUnavailableExitCode = 6;
 
     [StructLayout(LayoutKind.Sequential, Pack = 2)]
     private struct RectNative
@@ -138,6 +141,14 @@ internal static class MathTypeNativePreviewCommand
             {
                 response.Error = "MathType MathPage.wll is not installed.";
                 return WriteResponse(request.ResultPath, response, 3);
+            }
+
+            // MathType must find its own fonts before it starts. Otherwise it
+            // writes placeholders into pictures that Office then saves.
+            if (!MathTypeFontGuard.Ensure(Path.GetFullPath(requiredPrivateRuntimeRoot), out var fontError))
+            {
+                response.Error = fontError;
+                return WriteResponse(request.ResultPath, response, FontsUnavailableExitCode);
             }
 
             // Discovery is confined to this exact bundled dependency tree.

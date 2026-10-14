@@ -132,6 +132,7 @@ public sealed partial class ThisAddIn
         </group>
         <group id="VisualTeX.WordVsto.CompatibilityRepairGroup" label="Compatibility Repair">
           <button id="VisualTeX.WordVsto.RepairInlineBaselines" label="Repair Formula Baselines" size="large" screentip="Scan and repair inline equation offsets" supertip="Scan inline MathType / VisualTeX OLE equations across the document. VisualTeX formulas are calibrated from their own saved render baseline; MathType formulas use a stable document baseline profile. After confirmation, only vertical offsets are repaired; formula content, font size, numbering and references are not changed." tag="repairBaseline" getImage="GetRibbonImage" onAction="OnRepairInlineFormulaBaselines" />
+          <button id="VisualTeX.WordVsto.RepairMathTypeDisplays" label="Repair Formula Display" size="large" screentip="Redraw equation pictures with MathType's own layout" supertip="Scan the MathType equations in the document and redraw their display pictures from their stored data with VisualTeX's built-in MathType renderer. This fixes wrong symbols drawn while MathType's fonts were missing. Only the pictures are replaced and realigned on MathType's baseline; equation data, numbering and references are not changed." tag="repairBaseline" getImage="GetRibbonImage" onAction="OnRepairMathTypeDisplays" />
         </group>
       </tab>
     </tabs>

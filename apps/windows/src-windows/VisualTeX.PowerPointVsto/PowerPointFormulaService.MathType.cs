@@ -189,7 +189,9 @@ public sealed partial class PowerPointFormulaService
             {
                 if (!previews.ContainsKey("target")
                     || (result.SourceCompoundFile is not null && !previews.ContainsKey("source")))
-                    throw new InvalidOperationException("MathType's native preview could not be rendered. The original equation has not been changed.");
+                    throw new InvalidOperationException(MathTypeNativePreviewRenderer.LastFailureWasFonts
+                        ? MathTypeNativePreviewRenderer.FontsUnavailableMessage
+                        : "MathType's native preview could not be rendered. The original equation has not been changed.");
                 if (previews.TryGetValue("source", out var sourcePreview))
                 {
                     result.SourceWidth = sourcePreview.WidthPt;

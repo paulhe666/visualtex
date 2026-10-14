@@ -60,7 +60,9 @@ internal sealed class NativeWorkerBackend : IDisposable
                     writer.Write(manifest);
                     writer.Flush();
                     int status = reader.ReadInt32();
-                    if (status != 0) error = "Native worker failed (" + status + ").";
+                    if (status == NativeRenderProtocol.WorkerFontsUnavailableExitCode)
+                        error = NativeRenderProtocol.FontsUnavailableError;
+                    else if (status != 0) error = "Native worker failed (" + status + ").";
                 }
                 catch (IOException) { error = "Native worker disconnected."; }
                 catch (ObjectDisposedException) { error = "Native worker request was cancelled."; }
@@ -79,7 +81,8 @@ internal sealed class NativeWorkerBackend : IDisposable
                 throw new InvalidDataException("Worker response exceeds its limit.");
             var response = JsonSerializer.Deserialize<WorkerResponse>(File.ReadAllText(request.ResultPath));
             if (response?.Items == null) return result;
-            if (!string.IsNullOrEmpty(response.Error)) result.Error = "Native engine could not render the request.";
+            if (!string.IsNullOrEmpty(response.Error) && result.Error != NativeRenderProtocol.FontsUnavailableError)
+                result.Error = "Native engine could not render the request.";
             var seen = new HashSet<int>();
             long total = 0;
             foreach (var item in response.Items)

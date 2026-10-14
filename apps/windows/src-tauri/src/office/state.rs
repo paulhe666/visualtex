@@ -280,6 +280,8 @@ impl OfficePlatformBackend for IsolatedConversionBackend {
             office_runtime_verified: false,
             current_user_certificate_trusted: false,
             background_start_enabled: false,
+            mathtype_fonts_healthy: true,
+            mathtype_fonts_problem: None,
             last_error: Some("Global Office integration is disabled for isolated conversion acceptance".to_string()),
         }
     }

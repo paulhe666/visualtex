@@ -127,7 +127,7 @@ export function WindowsOfficeIntegrationSettings() {
     [isEn, refresh],
   );
 
-  const installHealthy = Boolean(
+  const componentsHealthy = Boolean(
     status?.staticInstallVerified &&
       status.wordFilesPresent &&
       status.wordRegistryComplete &&
@@ -137,6 +137,10 @@ export function WindowsOfficeIntegrationSettings() {
       status.powerpointLoadEnabled &&
       status.oleLocalServerHealthy,
   );
+  // MathType's pictures name MT Extra and the Euclid fonts; without them (or
+  // with Office's older MT Extra) Word shows wrong symbols. Repair installs them.
+  const mathTypeFontsHealthy = Boolean(status?.mathtypeFontsHealthy);
+  const installHealthy = componentsHealthy && mathTypeFontsHealthy;
   const runtimeHealthy = Boolean(status?.officeRuntimeVerified);
   const officeConnectionsVerified = Boolean(
     status?.wordConnected && status?.powerpointConnected,
@@ -189,6 +193,14 @@ export function WindowsOfficeIntegrationSettings() {
           : "启动一次 Word 和 PowerPoint 验证加载项连接后，即可完成全部检查。",
       };
     }
+    if (installationNeedsRepair && componentsHealthy && !mathTypeFontsHealthy) {
+      return {
+        title: isEn ? "MathType fonts need repair" : "MathType 字体需要修复",
+        description: isEn
+          ? "On this PC, some symbols in MathType-format formulas (such as △ or ⩽) would display wrongly. Repair installs MathType's own fonts."
+          : "此电脑上的 MathType 字体不完整，MathType 格式公式中的部分符号（如 △、⩽）会显示错误。修复后会安装 MathType 自带的字体。",
+      };
+    }
     if (hasInstalledComponents) {
       return {
         title: installationNeedsRepair
@@ -214,10 +226,12 @@ export function WindowsOfficeIntegrationSettings() {
         : "安装后即可在 Word 和 PowerPoint 中直接使用 VisualTeX。",
     };
   }, [
+    componentsHealthy,
     hasInstalledComponents,
     installationNeedsRepair,
     integrationReady,
     isEn,
+    mathTypeFontsHealthy,
     status,
     verificationPending,
   ]);
@@ -225,6 +239,7 @@ export function WindowsOfficeIntegrationSettings() {
   const diagnosticMessage =
     message ||
     (!verificationPending ? status?.lastError : null) ||
+    (status && !status.mathtypeFontsHealthy ? status.mathtypeFontsProblem : null) ||
     companion?.lastError;
 
   const openRuntimeVerification = () => {
@@ -479,6 +494,9 @@ export function WindowsOfficeIntegrationSettings() {
               </StatusLine>
               <StatusLine ok={Boolean(status?.oleLocalServerHealthy)}>
                 {isEn ? "Formula OLE service" : "公式 OLE 服务"}
+              </StatusLine>
+              <StatusLine ok={mathTypeFontsHealthy}>
+                {isEn ? "MathType fonts" : "MathType 字体"}
               </StatusLine>
             </article>
 

@@ -49,6 +49,11 @@ public static class NativeRenderProtocol
     public const int MaxResponseBytes = 32 * 1024 * 1024;
     public const int MaxWmfBytes = 4 * 1024 * 1024;
     public const int RequestTimeoutMs = 180_000;
+    // The renderer refused because MathType's fonts are unavailable to it;
+    // rendering anyway would save placeholder glyphs into the document.
+    public const string FontsUnavailableError = "MathType fonts are unavailable to the VisualTeX renderer.";
+    // Worker exit status reported for FontsUnavailableError.
+    public const int WorkerFontsUnavailableExitCode = 6;
 
     public static void Validate(NativeRenderRequest request)
     {

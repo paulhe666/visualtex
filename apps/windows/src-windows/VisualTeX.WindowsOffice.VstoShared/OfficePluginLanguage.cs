@@ -213,6 +213,8 @@ internal static class OfficePluginLanguage
         ("没有生成导出结果。", "did not produce an export result."),
         ("没有生成 MathML。", "did not produce MathML."),
         ("OLE 公式预览生成失败：", "OLE equation preview generation failed: "),
+        ("VisualTeX 排版服务找不到 MathType 字体，为避免公式显示错误，文档尚未修改。请在 VisualTeX 设置中点击“修复 Office 集成”后重试；如仍失败，请重启电脑。",
+            "VisualTeX's renderer cannot find MathType's fonts, so the document was not changed (its symbols would display wrongly). In VisualTeX settings, click “Repair integration” and try again; if it still fails, restart Windows."),
         ("缺少 MathML。", "is missing MathML."),
         ("缺少公式“", "Missing the redraw result for equation “"),
         ("”的重绘结果。", "”."),

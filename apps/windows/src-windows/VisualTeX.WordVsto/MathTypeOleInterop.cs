@@ -117,6 +117,17 @@ internal static partial class MathTypeOleInterop
         finally { Release(format); }
     }
 
+    internal static bool IsInlineEquation(InlineShape shape)
+    {
+        Range? range = null;
+        try
+        {
+            range = shape.Range;
+            return string.Equals(InferDisplayMode(range, out _), "inline", StringComparison.Ordinal);
+        }
+        finally { Release(range); }
+    }
+
     internal static FormulaMetadata ReadMetadata(
         Microsoft.Office.Interop.Word.Application application,
         InlineShape shape,

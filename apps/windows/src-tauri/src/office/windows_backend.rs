@@ -54,6 +54,7 @@ impl RegistryView {
         }
     }
 }
+const NATIVE_RENDER_KEY: &str = r"HKLM\Software\VisualTeX\NativeRender";
 const WINDOWS_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const WINDOWS_RUN_VALUE: &str = "VisualTeXOffice";
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -160,6 +161,11 @@ impl WindowsOfficeBackend {
             && companion_certificate_matches
             && companion_protocol_matches;
         let ole_bridge_healthy = self.pipe.as_ref().is_some_and(WindowsPipeClient::is_healthy);
+        // Only meaningful once the private renderer (which carries MathType's
+        // fonts) is installed; its absence is reported by the install checks.
+        let mathtype_fonts_problem = registry_string_value(NATIVE_RENDER_KEY, "InstallPath")
+            .filter(|root| !root.trim().is_empty())
+            .and_then(|root| crate::office::mathtype_fonts::check(Path::new(root.trim())).err());
         let active_backend = if static_install_verified {
             "vsto"
         } else {
@@ -220,6 +226,8 @@ impl WindowsOfficeBackend {
             office_runtime_verified,
             current_user_certificate_trusted: windows_certificate_trusted(&self.paths),
             background_start_enabled: registry_value_exists(WINDOWS_RUN_KEY, WINDOWS_RUN_VALUE),
+            mathtype_fonts_healthy: mathtype_fonts_problem.is_none(),
+            mathtype_fonts_problem,
             last_error,
         }
     }

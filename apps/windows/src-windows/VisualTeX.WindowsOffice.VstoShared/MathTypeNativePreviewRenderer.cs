@@ -12,6 +12,17 @@ internal static class MathTypeNativePreviewRenderer
         "VisualTeX 原生公式排版服务不可用，请修复安装后重试。";
     internal const string IncompleteMessage =
         "原生公式排版未完整完成，文档尚未修改；请重试或检查 VisualTeX 排版服务。";
+    internal const string FontsUnavailableMessage =
+        "VisualTeX 排版服务找不到 MathType 字体，为避免公式显示错误，文档尚未修改。请在 VisualTeX 设置中点击“修复 Office 集成”后重试；如仍失败，请重启电脑。";
+
+    // The renderer refuses (rather than saving placeholder glyphs) when it
+    // cannot find MathType's fonts; callers report that case specifically.
+    [ThreadStatic] private static bool lastFailureWasFonts;
+
+    internal static bool LastFailureWasFonts => lastFailureWasFonts;
+
+    internal static string FailureMessage =>
+        lastFailureWasFonts ? FontsUnavailableMessage : IncompleteMessage;
 
     internal sealed class Result : IDisposable
     {
@@ -36,6 +47,7 @@ internal static class MathTypeNativePreviewRenderer
         out Dictionary<string, Result> results)
     {
         results = new Dictionary<string, Result>(StringComparer.Ordinal);
+        lastFailureWasFonts = false;
         if (mtefs is null || mtefs.Count == 0 || !IsAvailable) return false;
         if (mtefs.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 256
             || pair.Value is null || pair.Value.Length == 0
@@ -75,6 +87,11 @@ internal static class MathTypeNativePreviewRenderer
     {
         var response = NativeRenderClient.RenderAsync(request, CancellationToken.None)
             .GetAwaiter().GetResult();
+        if (response.Error == NativeRenderProtocol.FontsUnavailableError)
+        {
+            lastFailureWasFonts = true;
+            throw new InvalidDataException(FontsUnavailableMessage);
+        }
         foreach (var item in response.Items)
         {
             string path = Path.Combine(directory, "visualtex-native-" + Guid.NewGuid().ToString("N") + ".wmf");
@@ -92,7 +109,7 @@ internal static class MathTypeNativePreviewRenderer
             });
         }
         if (response.Items.Count != request.Items.Count)
-            throw new InvalidDataException(IncompleteMessage);
+            throw new InvalidDataException(FailureMessage);
     }
 
     internal static bool TryRender(byte[] mtef, string outputDirectory, out Result result)

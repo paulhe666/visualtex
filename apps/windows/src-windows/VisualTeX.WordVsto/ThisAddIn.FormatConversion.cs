@@ -608,7 +608,7 @@ public sealed partial class ThisAddIn
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
-                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.IncompleteMessage);
+                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.FailureMessage);
                     }
                     else
                     {
