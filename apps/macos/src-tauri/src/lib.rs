@@ -17,6 +17,7 @@ mod ocr_offline;
 mod ocr_provider;
 mod office;
 mod quick_ocr;
+mod svg_font_stabilizer;
 mod system_math_glyphs;
 
 const PADDLE_VERSION: &str = "3.3.1";
@@ -330,6 +331,21 @@ fn switch_main_window_mode(
     }
 
     Ok(target)
+}
+
+#[tauri::command]
+fn set_main_window_keypad_mode(app: AppHandle, enabled: bool) -> Result<(), String> {
+    switch_main_window_mode(app, enabled).map(|_| ())
+}
+
+#[tauri::command]
+fn minimize_visualtex_main_window(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "VisualTeX main window is unavailable".to_string())?;
+    window
+        .minimize()
+        .map_err(|error| format!("Unable to minimize VisualTeX: {error}"))
 }
 
 #[tauri::command]
@@ -1771,11 +1787,14 @@ fn write_export_file(path: String, data_base64: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_ocr_provider_configuration(
+async fn get_ocr_provider_configuration(
     app: AppHandle,
     state: State<'_, OcrState>,
 ) -> Result<ocr_provider::OcrProviderConfigurationView, String> {
-    state.provider_configuration(&app)
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.provider_configuration(&app))
+        .await
+        .map_err(|error| format!("Unable to finish OCR provider configuration lookup: {error}"))?
 }
 
 #[tauri::command]
@@ -1930,6 +1949,9 @@ fn report_office_open_failure(app: &AppHandle, error: &str) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Some(status) = office::word_image_alignment::run_cli_if_requested() {
+        std::process::exit(status);
+    }
     if let Some(status) = office::omml_batch::run_cli_if_requested() {
         std::process::exit(status);
     }
@@ -2026,6 +2048,9 @@ pub fn run() {
                     if let Err(error) = quick_ocr::initialize(app.handle()) {
                         eprintln!("VisualTeX quick OCR initialization warning: {error}");
                     }
+                    if let Err(error) = office::hotkeys::initialize(app.handle()) {
+                        eprintln!("VisualTeX Office hotkey initialization warning: {error}");
+                    }
                     let office_state = office::initialize(app.handle(), office_ocr_state.clone())
                         .map_err(std::io::Error::other)?;
                     if let Err(error) = office::powerpoint_native::start_double_click_monitor(
@@ -2042,6 +2067,8 @@ pub fn run() {
                         office::background::hide_main_window(app.handle())
                             .map_err(std::io::Error::other)?;
                     }
+                    #[cfg(target_os = "macos")]
+                    office::macos_offline::start_fast_open_inbox_watcher(app.handle().clone());
                     if let Err(error) =
                         office::macos_offline::prewarm_office_editor_windows(app.handle())
                     {
@@ -2049,8 +2076,6 @@ pub fn run() {
                         // the fixed host window lazily if WebKit was unavailable here.
                         eprintln!("Unable to prewarm VisualTeX Office editors: {error}");
                     }
-                    #[cfg(target_os = "macos")]
-                    office::macos_offline::start_fast_open_inbox_watcher(app.handle().clone());
                     #[cfg(not(target_os = "macos"))]
                     office::lifecycle::start(office_state);
                     if let Some(url) = initial_office_url.as_deref() {
@@ -2085,10 +2110,13 @@ pub fn run() {
             quick_ocr::capture_quick_ocr_screenshot,
             quick_ocr::wait_for_quick_ocr_system_screenshot,
             quick_ocr::configure_silent_ocr,
+            office::hotkeys::configure_office_hotkeys,
             set_app_theme,
             get_app_window_configuration,
             apply_app_window_configuration,
             switch_main_window_mode,
+            set_main_window_keypad_mode,
+            minimize_visualtex_main_window,
             system_math_glyphs::probe_macos_math_fonts,
             system_math_glyphs::extract_macos_math_glyph,
             get_ocr_provider_configuration,
@@ -2133,6 +2161,7 @@ pub fn run() {
             office::macos_offline_installer::repair_macos_offline_office_addins,
             office::macos_offline_installer::uninstall_macos_offline_office_addins,
             office::macos_offline_installer::request_quit_macos_office_hosts_for_addin_update,
+            office::macos_offline_installer::open_macos_office_addin_maintenance_log,
             office::macos_offline_installer::reveal_macos_powerpoint_addin,
             office::macos_offline_installer::open_macos_powerpoint_addin_tutorial
         ])

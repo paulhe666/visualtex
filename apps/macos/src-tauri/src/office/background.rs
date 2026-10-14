@@ -3,7 +3,9 @@ use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
@@ -198,12 +200,41 @@ fn launchctl_target() -> String {
 }
 
 #[cfg(target_os = "macos")]
+fn bounded_command_output(mut command: Command, label: &str) -> Result<Output, String> {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("{label}: {error}"))?;
+    let deadline = Instant::now() + Duration::from_millis(1500);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                return child
+                    .wait_with_output()
+                    .map_err(|error| format!("{label}: {error}"));
+            }
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("{label}: timed out"));
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn set_launch_agent_enabled(enabled: bool) -> Result<(), String> {
     let action = if enabled { "enable" } else { "disable" };
-    let output = Command::new("/bin/launchctl")
-        .args([action, &launchctl_target()])
-        .output()
-        .map_err(|error| format!("Unable to {action} VisualTeX LaunchAgent: {error}"))?;
+    let mut command = Command::new("/bin/launchctl");
+    command.args([action, &launchctl_target()]);
+    let output = bounded_command_output(
+        command,
+        &format!("Unable to {action} VisualTeX LaunchAgent"),
+    )?;
     if output.status.success() {
         return Ok(());
     }
@@ -216,10 +247,9 @@ fn set_launch_agent_enabled(enabled: bool) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn launch_agent_loaded() -> Result<bool, String> {
-    let output = Command::new("/bin/launchctl")
-        .args(["print", &launchctl_target()])
-        .output()
-        .map_err(|error| format!("Unable to inspect VisualTeX LaunchAgent: {error}"))?;
+    let mut command = Command::new("/bin/launchctl");
+    command.args(["print", &launchctl_target()]);
+    let output = bounded_command_output(command, "Unable to inspect VisualTeX LaunchAgent")?;
     if output.status.success() {
         return Ok(true);
     }
@@ -241,10 +271,9 @@ fn launch_agent_loaded() -> Result<bool, String> {
 
 #[cfg(target_os = "macos")]
 fn launch_agent_pid() -> Result<Option<u32>, String> {
-    let output = Command::new("/bin/launchctl")
-        .args(["print", &launchctl_target()])
-        .output()
-        .map_err(|error| format!("Unable to inspect VisualTeX LaunchAgent: {error}"))?;
+    let mut command = Command::new("/bin/launchctl");
+    command.args(["print", &launchctl_target()]);
+    let output = bounded_command_output(command, "Unable to inspect VisualTeX LaunchAgent")?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if stderr.contains("Could not find service") || stderr.contains("service not found") {
@@ -266,12 +295,12 @@ fn launch_agent_pid() -> Result<Option<u32>, String> {
 
 #[cfg(target_os = "macos")]
 fn bootstrap_launch_agent(plist: &Path) -> Result<(), String> {
-    let output = Command::new("/bin/launchctl")
+    let mut command = Command::new("/bin/launchctl");
+    command
         .arg("bootstrap")
         .arg(launchctl_domain())
-        .arg(plist)
-        .output()
-        .map_err(|error| format!("Unable to load VisualTeX LaunchAgent: {error}"))?;
+        .arg(plist);
+    let output = bounded_command_output(command, "Unable to load VisualTeX LaunchAgent")?;
     if output.status.success() {
         return Ok(());
     }
@@ -288,10 +317,9 @@ fn bootstrap_launch_agent(plist: &Path) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn bootout_launch_agent() -> Result<(), String> {
-    let output = Command::new("/bin/launchctl")
-        .args(["bootout", &launchctl_target()])
-        .output()
-        .map_err(|error| format!("Unable to unload VisualTeX LaunchAgent: {error}"))?;
+    let mut command = Command::new("/bin/launchctl");
+    command.args(["bootout", &launchctl_target()]);
+    let output = bounded_command_output(command, "Unable to unload VisualTeX LaunchAgent")?;
     if output.status.success() {
         return Ok(());
     }
@@ -465,55 +493,6 @@ pub(crate) fn activate_foreground_app(_app: &AppHandle) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn activate_foreground_app_via_launch_services(
-    app: &AppHandle,
-) -> Result<(), String> {
-    prepare_foreground_app(app)?;
-    let identifier = &app.config().identifier;
-    let status = Command::new("/usr/bin/open")
-        .arg("-b")
-        .arg(identifier)
-        .status()
-        .map_err(|error| {
-            format!(
-                "Unable to ask LaunchServices to activate {identifier}: {error}"
-            )
-        })?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "LaunchServices could not activate {identifier}: open exited with {status}"
-        ))
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn activate_foreground_app_via_launch_services(
-    _app: &AppHandle,
-) -> Result<(), String> {
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn activate_application_by_bundle_identifier(bundle_identifier: &str) -> bool {
-    let identifier = NSString::from_str(bundle_identifier);
-    let applications = NSRunningApplication::runningApplicationsWithBundleIdentifier(&identifier);
-    applications.firstObject().is_some_and(|application| {
-        if let Some(main_thread) = MainThreadMarker::new() {
-            let current = NSApplication::sharedApplication(main_thread);
-            current.yieldActivationToApplication(&application);
-        }
-        application.activateWithOptions(NSApplicationActivationOptions::empty())
-    })
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn activate_application_by_bundle_identifier(_bundle_identifier: &str) -> bool {
-    false
-}
-
-#[cfg(target_os = "macos")]
 pub(crate) fn install_application_icon(app: &AppHandle) -> Result<(), String> {
     if APPLICATION_ICON_INSTALLED.load(Ordering::Acquire) {
         return Ok(());
@@ -582,6 +561,17 @@ fn refresh_dock_after_icon_migration() -> Result<(), String> {
 }
 
 pub fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    if MainThreadMarker::new().is_none() {
+        let main_app = app.clone();
+        return app
+            .run_on_main_thread(move || {
+                if let Err(error) = reveal_main_window(&main_app) {
+                    eprintln!("Unable to restore the VisualTeX workspace: {error}");
+                }
+            })
+            .map_err(|error| format!("Unable to schedule VisualTeX window restoration: {error}"));
+    }
     // Install the bundle icon before changing activation policy. A process
     // launched by the Office background agent has no Dock tile until it becomes
     // Regular; setting the icon first prevents macOS from creating a generic or
@@ -591,6 +581,26 @@ pub fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "VisualTeX main window is unavailable".to_string())?;
+    #[cfg(target_os = "macos")]
+    {
+        let trace_app = app.clone();
+        window
+            .with_webview(move |webview| unsafe {
+                let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
+                trace_main_window_visibility(&trace_app, native_window, "before-restore");
+                // Office operations temporarily place the workspace below normal
+                // windows. show/set_focus alone cannot undo that native level,
+                // including when an Office operation failed before its cleanup.
+                native_window.setLevel(objc2_app_kit::NSNormalWindowLevel);
+                native_window.setAlphaValue(1.0);
+                native_window.setIgnoresMouseEvents(false);
+                native_window.setExcludedFromWindowsMenu(false);
+                if let Some(main_thread) = MainThreadMarker::new() {
+                    NSApplication::sharedApplication(main_thread).unhideWithoutActivation();
+                }
+            })
+            .map_err(|error| format!("Unable to restore the VisualTeX native window: {error}"))?;
+    }
     window
         .show()
         .map_err(|error| format!("Unable to show VisualTeX: {error}"))?;
@@ -601,10 +611,50 @@ pub fn reveal_main_window(app: &AppHandle) -> Result<(), String> {
     window
         .set_focus()
         .map_err(|error| format!("Unable to focus VisualTeX: {error}"))?;
+    #[cfg(target_os = "macos")]
+    {
+        let trace_app = app.clone();
+        window
+            .with_webview(move |webview| unsafe {
+                let native_window: &objc2_app_kit::NSWindow = &*webview.ns_window().cast();
+                native_window.makeKeyAndOrderFront(None);
+                native_window.orderFrontRegardless();
+                trace_main_window_visibility(&trace_app, native_window, "after-restore");
+            })
+            .map_err(|error| format!("Unable to bring VisualTeX to the front: {error}"))?;
+    }
     if let Err(error) = refresh_dock_after_icon_migration() {
         eprintln!("{error}");
     }
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn trace_main_window_visibility(app: &AppHandle, window: &objc2_app_kit::NSWindow, stage: &str) {
+    let Ok(directory) = app.path().app_data_dir() else {
+        return;
+    };
+    if !directory.join("window-visibility-trace.enabled").is_file() {
+        return;
+    }
+    let frame = window.frame();
+    let state = serde_json::json!({
+        "stage": stage,
+        "pid": std::process::id(),
+        "level": window.level(),
+        "alpha": window.alphaValue(),
+        "visible": window.isVisible(),
+        "onActiveSpace": window.isOnActiveSpace(),
+        "occlusionVisible": window.occlusionState().contains(objc2_app_kit::NSWindowOcclusionState::Visible),
+        "key": window.isKeyWindow(),
+        "main": window.isMainWindow(),
+        "appActive": MainThreadMarker::new().map(|main_thread| NSApplication::sharedApplication(main_thread).isActive()),
+        "screen": window.screen().map(|screen| screen.localizedName().to_string()),
+        "frame": [frame.origin.x, frame.origin.y, frame.size.width, frame.size.height],
+    });
+    if let Ok(bytes) = serde_json::to_vec_pretty(&state) {
+        let _ = write_atomic(&directory.join(format!("window-visibility-{stage}.json")), &bytes);
+    }
 }
 
 pub fn hide_main_window(app: &AppHandle) -> Result<(), String> {

@@ -153,75 +153,46 @@ async function main() {
     })()`);
     assert.equal(initial.value, "");
 
+    // Drive the browser's native composition path, then replay an orphan
+    // backslash directly at MathLive's hidden keyboard sink. This verifies the
+    // kernel-owned composition transaction instead of the React host listeners.
+    await client.send("Input.imeSetComposition", {
+      text: "中",
+      selectionStart: 1,
+      selectionEnd: 1,
+    });
+    await sleep(80);
+    await client.send("Input.imeSetComposition", {
+      text: "",
+      selectionStart: 0,
+      selectionEnd: 0,
+    });
+    await sleep(80);
     const composition = await evaluate(`(() => {
       const field = document.querySelector("math-field");
-      const dispatchBeforeInput = (inputType, data, isComposing) => {
-        const event = new InputEvent("beforeinput", {
-          inputType,
-          data,
-          isComposing,
-          bubbles: true,
-          composed: true,
-          cancelable: true,
-        });
-        const allowed = field.dispatchEvent(event);
-        return { allowed, defaultPrevented: event.defaultPrevented };
-      };
-      const dispatchInput = (inputType, data, isComposing) => {
-        field.dispatchEvent(new InputEvent("input", {
-          inputType,
-          data,
-          isComposing,
+      const sink = field?.shadowRoot?.querySelector('[part="keyboard-sink"]');
+      if (!field || !sink) throw new Error("MathLive keyboard sink missing");
+      const staleEvent = new InputEvent("beforeinput", {
+        inputType: "insertText",
+        data: "\\\\",
+        isComposing: false,
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+      });
+      const allowed = sink.dispatchEvent(staleEvent);
+      if (allowed) {
+        sink.dispatchEvent(new InputEvent("input", {
+          inputType: "insertText",
+          data: "\\\\",
+          isComposing: false,
           bubbles: true,
           composed: true,
         }));
-      };
-
-      field.dispatchEvent(new CompositionEvent("compositionstart", {
-        data: "",
-        bubbles: true,
-        composed: true,
-      }));
-      const insert = dispatchBeforeInput("insertCompositionText", "中", true);
-      if (insert.allowed) {
-        field.insert("中", {
-          mode: "math",
-          format: "latex",
-          insertionMode: "replaceSelection",
-          selectionMode: "after",
-          focus: true,
-          scrollIntoView: false,
-        });
-      }
-      dispatchInput("insertCompositionText", "中", true);
-
-      const remove = dispatchBeforeInput("deleteCompositionText", "", true);
-      // WebKit reports the composition deletion before its model cleanup has
-      // fully settled. Dispatch the input notification while the guard is
-      // unquestionably composing, then remove the temporary model content.
-      dispatchInput("deleteCompositionText", "", true);
-      if (remove.allowed) field.executeCommand("deleteBackward");
-      field.dispatchEvent(new CompositionEvent("compositionend", {
-        data: "",
-        bubbles: true,
-        composed: true,
-      }));
-
-      const stale = dispatchBeforeInput("insertText", "\\\\", false);
-      if (stale.allowed) {
-        field.insert("\\\\", {
-          mode: "math",
-          format: "latex",
-          insertionMode: "replaceSelection",
-          selectionMode: "after",
-          focus: true,
-          scrollIntoView: false,
-        });
-        dispatchInput("insertText", "\\\\", false);
       }
       return {
         value: field.value,
-        stale,
+        stale: { allowed, defaultPrevented: staleEvent.defaultPrevented },
         raw: Array.from(field.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])
           .filter((node) => !node.classList.contains("ML__suggestion"))
           .map((node) => node.textContent ?? "")
@@ -255,6 +226,113 @@ async function main() {
       windowsVirtualKeyCode: 220,
       nativeVirtualKeyCode: 220,
     };
+
+    // WKWebView Chinese punctuation can expose the physical Backslash key as
+    // key="\\" first, then commit the actual ideographic comma through the
+    // keyboard sink input event. The committed text must own the transaction:
+    // it must not inherit a raw-LaTeX backslash inserted during keydown.
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      ...backslashCommon,
+    });
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      ...backslashCommon,
+    });
+    await client.send("Input.insertText", { text: "、" });
+    await sleep(100);
+    const chinesePunctuationProbe = await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      return {
+        value: field?.value ?? "",
+        mode: field?.mode ?? "",
+        raw: Array.from(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])
+          .filter((node) => !node.classList.contains("ML__suggestion"))
+          .map((node) => node.textContent ?? "")
+          .join(""),
+      };
+    })()`);
+    assert.equal(
+      chinesePunctuationProbe.value,
+      "、",
+      `Chinese ideographic comma must be committed without a synthetic backslash: ${JSON.stringify(chinesePunctuationProbe)}`,
+    );
+    assert.equal(chinesePunctuationProbe.raw, "", JSON.stringify(chinesePunctuationProbe));
+
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.setValue("", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.mode = "math";
+      field.position = field.lastOffset;
+      field.focus();
+      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+      return true;
+    })()`);
+    // Real WKWebView evidence on macOS Pinyin uses a different order from the
+    // conventional keydown-first transaction above: keyup arrives first, the
+    // ideographic comma is committed through beforeinput/input, and only then
+    // does a delayed keydown(key="、", code="Backslash", keyCode=229) reach
+    // MathLive. That semantic IME key must not be reinterpreted as a LaTeX
+    // command prefix after the text commit already owns the transaction.
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "、",
+      code: "Backslash",
+      windowsVirtualKeyCode: 220,
+      nativeVirtualKeyCode: 220,
+    });
+    await client.send("Input.insertText", { text: "、" });
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "、",
+      code: "Backslash",
+      windowsVirtualKeyCode: 229,
+      nativeVirtualKeyCode: 229,
+    });
+    await client.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "、",
+      code: "Backslash",
+      windowsVirtualKeyCode: 220,
+      nativeVirtualKeyCode: 220,
+    });
+    await sleep(80);
+    const delayedPinyinKeydownProbe = await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      return {
+        value: field?.value ?? "",
+        mode: field?.mode ?? "",
+        raw: Array.from(field?.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])
+          .filter((node) => !node.classList.contains("ML__suggestion"))
+          .map((node) => node.textContent ?? "")
+          .join(""),
+      };
+    })()`);
+    assert.equal(delayedPinyinKeydownProbe.value, "、", JSON.stringify(delayedPinyinKeydownProbe));
+    assert.equal(delayedPinyinKeydownProbe.mode, "math", JSON.stringify(delayedPinyinKeydownProbe));
+    assert.equal(delayedPinyinKeydownProbe.raw, "", JSON.stringify(delayedPinyinKeydownProbe));
+
+    await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      field.setValue("", {
+        mode: "math",
+        format: "latex",
+        insertionMode: "replaceAll",
+        selectionMode: "after",
+        silenceNotifications: true,
+      });
+      field.mode = "math";
+      field.position = field.lastOffset;
+      field.focus();
+      field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+      return true;
+    })()`);
     await client.send("Input.dispatchKeyEvent", {
       type: "keyDown",
       ...backslashCommon,

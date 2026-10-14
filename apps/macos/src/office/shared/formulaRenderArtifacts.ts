@@ -1,3 +1,4 @@
+import { alignWordInlineSvg } from "./wordImageGeometry";
 import { latexToSvg } from "../../export/latexToSvg";
 import type { LatexCodeFormat } from "../../types/formula";
 import type {
@@ -14,6 +15,7 @@ import {
   serializeFormulaEditorDocument,
   type FormulaEditorLine,
 } from "./formulaEditorDocument";
+import type { InlineImageMathStyle } from "./formulaMetadata";
 
 export const OFFICE_FORMULA_REFERENCE_FONT_SIZE_PT = 14;
 
@@ -21,8 +23,11 @@ export interface RenderOfficeFormulaArtifactsInput {
   lines: FormulaEditorLine[];
   codeFormat: LatexCodeFormat;
   displayMode: "inline" | "block";
+  inlineImageMathStyle?: InlineImageMathStyle;
   host?: "word" | "powerpoint";
   includeWordOmml?: boolean;
+  numbered?: boolean;
+  fontSizePt?: number;
   formulaLetterFont?: FormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
 }
@@ -44,8 +49,11 @@ export function renderOfficeFormulaArtifacts({
   lines,
   codeFormat,
   displayMode,
+  inlineImageMathStyle = "text",
   host,
   includeWordOmml = true,
+  numbered = false,
+  fontSizePt,
   formulaLetterFont,
   formulaChineseFont,
 }: RenderOfficeFormulaArtifactsInput): OfficeFormulaRenderArtifacts {
@@ -65,10 +73,15 @@ export function renderOfficeFormulaArtifacts({
     document.codeFormat === "raw" && document.lines.length === 1
       ? canonicalLatex.replace(/[ \t]*\n[ \t]*/g, " ")
       : canonicalLatex;
+  const svgDisplayMode =
+    displayMode === "block" ||
+    (host === "word" &&
+      displayMode === "inline" &&
+      inlineImageMathStyle === "display");
   let svg: ReturnType<typeof latexToSvg>;
   try {
     svg = latexToSvg(svgLatex, {
-      displayMode: displayMode === "block",
+      displayMode: svgDisplayMode,
       fontSizePt: OFFICE_FORMULA_REFERENCE_FONT_SIZE_PT,
       // Word uses the imported image bounds as part of its line box. A 10 px
       // display margin nearly doubled the apparent box height at 14 pt even
@@ -87,6 +100,9 @@ export function renderOfficeFormulaArtifacts({
       { cause: reason },
     );
   }
+  if (host === "word" && displayMode === "inline" && fontSizePt !== undefined) {
+    svg = alignWordInlineSvg(svg, fontSizePt, formulaLetterFont);
+  }
   let omml: OmmlArtifacts | null = null;
   if (includeWordOmml) {
     try {
@@ -95,6 +111,7 @@ export function renderOfficeFormulaArtifacts({
         displayMode,
         document.codeFormat,
         { formulaLetterFont, formulaChineseFont },
+        numbered,
       );
     } catch (reason) {
       throw new Error(

@@ -1,3 +1,4 @@
+import { isVisualTeXFormulaMetadata } from "../shared/formulaMetadata";
 import type {
   MacosDocumentImportProgress,
   MacosDocumentImportRequest,
@@ -135,6 +136,21 @@ export function decodeMacosDocumentImportRequest(
       displayMode(target.displayMode, `${path}.displayMode`);
       fontSize(target.fontSizePt, `${path}.fontSizePt`);
       sourceKind(target.sourceKind, `${path}.sourceKind`);
+      if (target.formulaId !== undefined) {
+        const formulaId = nonEmptyString(target.formulaId, `${path}.formulaId`);
+        if (!SESSION_ID_PATTERN.test(formulaId)) {
+          invalid(`${path}.formulaId`, "a VisualTeX UUID v4 formula id");
+        }
+      }
+      if (target.numbered !== undefined && typeof target.numbered !== "boolean") {
+        invalid(`${path}.numbered`, "a boolean");
+      }
+      if (
+        target.metadata !== undefined &&
+        !isVisualTeXFormulaMetadata(target.metadata)
+      ) {
+        invalid(`${path}.metadata`, "valid VisualTeX formula metadata");
+      }
       optionalString(target.mathMl, `${path}.mathMl`);
       optionalString(target.latex, `${path}.latex`);
     });

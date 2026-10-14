@@ -20,6 +20,7 @@ const SYSTEM_SCREENSHOT_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_SILENT_OCR_COPY_FORMAT: &str = "display-dollar";
 const ALLOWED_SILENT_OCR_COPY_FORMATS: &[&str] = &[
     "raw",
+    "mixed-inline-display",
     "inline-dollar",
     "inline-text-double-dollar",
     "inline-paren",
@@ -722,6 +723,14 @@ fn format_silent_ocr_latex(lines: &[String], format: &str) -> String {
     }
     match format {
         "raw" => lines.join("\n"),
+        // Silent OCR captures a formula without an editor-row mode. For the
+        // mixed profile, use the profile's display representation so the
+        // result remains unambiguous when pasted outside VisualTeX.
+        "mixed-inline-display" => lines
+            .iter()
+            .map(|line| format!("$$\n{line}\n$$"))
+            .collect::<Vec<_>>()
+            .join("\n\n"),
         "inline-dollar" => lines
             .iter()
             .map(|line| format!("${line}$"))
@@ -934,6 +943,15 @@ mod mac_hotkey {
             user_data: *mut c_void,
             handler_ref: *mut EventHandlerRef,
         ) -> OSStatus;
+        fn GetEventParameter(
+            event: EventRef,
+            name: u32,
+            desired_type: u32,
+            actual_type: *mut u32,
+            buffer_size: usize,
+            actual_size: *mut usize,
+            data: *mut c_void,
+        ) -> OSStatus;
         fn RegisterEventHotKey(
             key_code: u32,
             modifiers: u32,
@@ -947,6 +965,9 @@ mod mac_hotkey {
 
     const EVENT_CLASS_KEYBOARD: u32 = u32::from_be_bytes(*b"keyb");
     const EVENT_HOT_KEY_PRESSED: u32 = 5;
+    const EVENT_PARAM_DIRECT_OBJECT: u32 = u32::from_be_bytes(*b"----");
+    const TYPE_EVENT_HOT_KEY_ID: u32 = u32::from_be_bytes(*b"hkid");
+    const EVENT_NOT_HANDLED: OSStatus = -9874;
     const CMD_KEY: u32 = 1 << 8;
     const SHIFT_KEY: u32 = 1 << 9;
     const KEY_CODE_O: u32 = 0x1f;
@@ -958,9 +979,27 @@ mod mac_hotkey {
 
     unsafe extern "C" fn hotkey_handler(
         _call: EventHandlerCallRef,
-        _event: EventRef,
+        event: EventRef,
         _user_data: *mut c_void,
     ) -> OSStatus {
+        let mut hotkey_id = EventHotKeyId {
+            signature: 0,
+            id: 0,
+        };
+        let status = unsafe {
+            GetEventParameter(
+                event,
+                EVENT_PARAM_DIRECT_OBJECT,
+                TYPE_EVENT_HOT_KEY_ID,
+                ptr::null_mut(),
+                std::mem::size_of::<EventHotKeyId>(),
+                ptr::null_mut(),
+                (&mut hotkey_id as *mut EventHotKeyId).cast(),
+            )
+        };
+        if status != 0 || hotkey_id.signature != HOTKEY_SIGNATURE || hotkey_id.id != 1 {
+            return EVENT_NOT_HANDLED;
+        }
         if let Some(app) = HOTKEY_APP.get() {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
@@ -1166,6 +1205,10 @@ mod tests {
         );
         assert_eq!(
             format_silent_ocr_latex(&lines, "display-dollar"),
+            "$$\nx=y\n$$\n\n$$\na>b\n$$"
+        );
+        assert_eq!(
+            format_silent_ocr_latex(&lines, "mixed-inline-display"),
             "$$\nx=y\n$$\n\n$$\na>b\n$$"
         );
         assert_eq!(

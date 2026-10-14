@@ -225,6 +225,8 @@ export function useOfficeSession() {
     [sessionId],
   );
 
+  const flushSaves = useCallback(() => saveQueueRef.current, []);
+
   return {
     sessionId,
     generation,
@@ -233,6 +235,7 @@ export function useOfficeSession() {
     error,
     reload,
     save,
+    flushSaves,
     activationPerformanceMs,
     sessionLoadedPerformanceMs,
   };

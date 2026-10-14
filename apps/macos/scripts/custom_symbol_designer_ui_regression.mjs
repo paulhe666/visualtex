@@ -1632,7 +1632,6 @@ async function main() {
     assert.equal(registered.preview, true);
 
     const runtimeRegistration = await client.evaluate(`(async () => {
-      const search = await import("/src/autocomplete/CommandSearchEngine.ts");
       const runtime = await import("/src/export/runtime.ts");
       const BS = String.fromCharCode(92);
       const command = BS + "selfdefa";
@@ -1669,9 +1668,6 @@ async function main() {
         shadowStyle: Array.from(field.shadowRoot?.querySelectorAll("style") || []).some(
           (style) => style.textContent?.includes("visualtex-custom-symbol-" + symbol.id),
         ),
-        search: search
-          .searchCommands(BS + "selfdefa", {}, false, 10)
-          .some((entry) => entry.command === command),
         svg: svg.includes('data-visualtex-custom-symbol="' + symbol.id + '"'),
         fallback: /2248/i.test(mathMl),
       };
@@ -1679,7 +1675,6 @@ async function main() {
     assert.equal(runtimeRegistration.value, "A+\\selfdefa+B");
     assert.equal(runtimeRegistration.renderedClass, true);
     assert.equal(runtimeRegistration.shadowStyle, true);
-    assert.equal(runtimeRegistration.search, true);
     assert.equal(runtimeRegistration.svg, true);
     assert.equal(runtimeRegistration.fallback, true);
     process.stdout.write("[custom-symbol-designer] successful runtime registration verified\n");

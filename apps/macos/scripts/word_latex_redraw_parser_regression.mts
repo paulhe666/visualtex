@@ -45,8 +45,8 @@ assert.equal(
 const displayWhitespace = "before $$\n  x +\n y  \n$$ after";
 assert.equal(
   findWindowsWordLatexRedrawSpans(displayWhitespace)[0].latex,
-  "x + y",
-  "Windows redraw treats source newlines inside display delimiters as TeX whitespace",
+  "x +\n y",
+  "The shared scanner preserves newlines until TeX comments have been processed",
 );
 
 const environmentSource = [
@@ -63,32 +63,32 @@ assert.deepEqual(
     span.displayMode,
   ]),
   [
-    [String.raw`\begin{equation}E=mc^2\end{equation}`, "E=mc^2", "block"],
+    [String.raw`\begin{equation}E=mc^2\end{equation}`, String.raw`\begin{equation}E=mc^2\end{equation}`, "block"],
     [
       String.raw`\begin{align*}a&=b\\c&=d\end{align*}`,
-      String.raw`\begin{aligned}a&=b\\c&=d\end{aligned}`,
+      String.raw`\begin{align*}a&=b\\c&=d\end{align*}`,
       "block",
     ],
     [
       String.raw`\begin{gather}x\\y\end{gather}`,
-      String.raw`\begin{gathered}x\\y\end{gathered}`,
+      String.raw`\begin{gather}x\\y\end{gather}`,
       "block",
     ],
     [
       String.raw`\begin{multline*}p\\q\end{multline*}`,
-      String.raw`\begin{gathered}p\\q\end{gathered}`,
+      String.raw`\begin{multline*}p\\q\end{multline*}`,
       "block",
     ],
-    [String.raw`\begin{displaymath}r+s\end{displaymath}`, "r+s", "block"],
+    [String.raw`\begin{displaymath}r+s\end{displaymath}`, String.raw`\begin{displaymath}r+s\end{displaymath}`, "block"],
   ],
 );
 
 assert.deepEqual(
   findWindowsWordLatexRedrawSpans(
-    String.raw`\begin{alignat}ignored\end{alignat} \begin{math}ignored\end{math}`,
-  ),
-  [],
-  "macOS redraw must keep the exact mature Windows environment allow-list",
+    String.raw`\begin{alignat}{2}x&=1&y&=2\end{alignat} \begin{math}z\end{math}`,
+  ).map((span) => span.displayMode),
+  ["block", "inline"],
+  "Every import-supported math environment is also available to redraw",
 );
 
 assert.equal(
@@ -123,11 +123,11 @@ const exactlyOneThousand = Array.from(
 assert.equal(findWindowsWordLatexRedrawSpans(exactlyOneThousand).length, 1000);
 assert.throws(
   () => findWindowsWordLatexRedrawSpans(`${exactlyOneThousand} $overflow$`),
-  /maximum 1000/,
+  /at most 1000/,
 );
 assert.throws(
-  () => findWindowsWordLatexRedrawSpans("x".repeat(5_000_001)),
+  () => findWindowsWordLatexRedrawSpans("x".repeat(5 * 1024 * 1024 + 1)),
   /5 MB/,
 );
 
-console.log("VisualTeX Windows-parity Word LaTeX redraw parser regression: PASS");
+console.log("VisualTeX shared Word LaTeX redraw parser regression: PASS");

@@ -58,6 +58,11 @@ function booleanValue(value: unknown, path: string) {
   return value;
 }
 
+function nullableBoolean(value: unknown, path: string) {
+  if (value === null) return null;
+  return booleanValue(value, path);
+}
+
 function finiteNumber(value: unknown, path: string) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     invalid(path, "a finite number");
@@ -100,7 +105,7 @@ export function decodeOcrProviderConfiguration(
   stringValue(openAi.baseUrl, "ocrProviderConfiguration.openAiCompatible.baseUrl");
   stringValue(openAi.model, "ocrProviderConfiguration.openAiCompatible.model");
   stringValue(openAi.prompt, "ocrProviderConfiguration.openAiCompatible.prompt");
-  booleanValue(openAi.hasApiKey, "ocrProviderConfiguration.openAiCompatible.hasApiKey");
+  nullableBoolean(openAi.hasApiKey, "ocrProviderConfiguration.openAiCompatible.hasApiKey");
 
   const ollama = record(config.ollama, "ocrProviderConfiguration.ollama");
   stringValue(ollama.baseUrl, "ocrProviderConfiguration.ollama.baseUrl");
@@ -110,7 +115,7 @@ export function decodeOcrProviderConfiguration(
   const mathpix = record(config.mathpix, "ocrProviderConfiguration.mathpix");
   stringValue(mathpix.baseUrl, "ocrProviderConfiguration.mathpix.baseUrl");
   stringValue(mathpix.appId, "ocrProviderConfiguration.mathpix.appId");
-  booleanValue(mathpix.hasAppKey, "ocrProviderConfiguration.mathpix.hasAppKey");
+  nullableBoolean(mathpix.hasAppKey, "ocrProviderConfiguration.mathpix.hasAppKey");
 
   const paddleOcr = record(config.paddleOcr, "ocrProviderConfiguration.paddleOcr");
   if (
@@ -122,7 +127,7 @@ export function decodeOcrProviderConfiguration(
       "a supported PaddleOCR AI Studio model",
     );
   }
-  booleanValue(
+  nullableBoolean(
     paddleOcr.hasAccessToken,
     "ocrProviderConfiguration.paddleOcr.hasAccessToken",
   );
@@ -139,7 +144,7 @@ export function decodeOcrProviderConfiguration(
       "a supported SimpleTex formula model",
     );
   }
-  booleanValue(
+  nullableBoolean(
     simpleTex.hasAccessToken,
     "ocrProviderConfiguration.simpleTex.hasAccessToken",
   );

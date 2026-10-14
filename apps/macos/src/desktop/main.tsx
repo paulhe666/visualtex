@@ -1,8 +1,11 @@
+import { EditorSessionProvider } from "../history/EditorSession";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "mathlive/static.css";
 import "../styles.css";
 import "../styles-editor-parity.css";
+import "../styles-windows-shared-latest.css";
+import "../styles-macos-platform-overrides.css";
 import { configureOcrTransport } from "../ocr/ocrService";
 import { desktopOcrTransport } from "../ocr/ocrTransport";
 import { OfficeDialogApp } from "../office/dialog/OfficeDialogApp";
@@ -34,18 +37,20 @@ if (quickOcrHudView) {
 
 createRoot(root).render(
   <StrictMode>
-    <VisualTexErrorBoundary>
-      {quickOcrHudView ? (
-        <QuickOcrHud />
-      ) : officeFormulaView ? (
-        <OfficeDialogApp />
-      ) : officeDocumentImportView ? (
-        <OfficeDocumentImportApp />
-      ) : officeWordLatexRedrawView ? (
-        <WordLatexRedrawApp />
-      ) : (
-        <DesktopApp />
-      )}
-    </VisualTexErrorBoundary>
+    <EditorSessionProvider>
+      <VisualTexErrorBoundary>
+        {quickOcrHudView ? (
+          <QuickOcrHud />
+        ) : officeFormulaView ? (
+          <OfficeDialogApp />
+        ) : officeDocumentImportView ? (
+          <OfficeDocumentImportApp />
+        ) : officeWordLatexRedrawView ? (
+          <WordLatexRedrawApp />
+        ) : (
+          <DesktopApp />
+        )}
+      </VisualTexErrorBoundary>
+    </EditorSessionProvider>
   </StrictMode>,
 );

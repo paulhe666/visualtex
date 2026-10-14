@@ -35,6 +35,22 @@ function wait(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
+async function invokeWithTimeout<T>(command: string, timeoutMs = 6_000): Promise<T> {
+  let timeoutId: number | undefined;
+  try {
+    return await Promise.race([
+      invoke<T>(command),
+      new Promise<T>((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error("Office status request timed out"));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
+}
+
 export function MacOfficeFirstRunPrompt({
   open,
   language,
@@ -50,7 +66,7 @@ export function MacOfficeFirstRunPrompt({
 
   const refresh = async () => {
     const next = decodeMacOfflineOfficeStatus(
-      await invoke<unknown>("get_macos_offline_office_install_status"),
+      await invokeWithTimeout<unknown>("get_macos_offline_office_install_status"),
     );
     setStatus(next);
     return next;
@@ -62,13 +78,18 @@ export function MacOfficeFirstRunPrompt({
     setBusy("refresh");
     void refresh()
       .catch((reason) => {
+        const raw = messageFrom(
+          reason,
+          isEn
+            ? "Unable to inspect the native Office add-ins on this Mac."
+            : "无法检测这台 Mac 上的原生 Office 加载项。",
+        );
         setError(
-          messageFrom(
-            reason,
-            isEn
-              ? "Unable to inspect the native Office add-ins on this Mac."
-              : "无法检测这台 Mac 上的原生 Office 加载项。",
-          ),
+          raw === "Office status request timed out"
+            ? isEn
+              ? "Office status checking timed out. Quit Word and PowerPoint, then retry."
+              : "Office 状态读取超时。请退出 Word 和 PowerPoint 后重试。"
+            : raw,
         );
       })
       .finally(() => setBusy(null));
@@ -314,13 +335,18 @@ export function MacOfficeFirstRunPrompt({
                   setBusy("refresh");
                   void refresh()
                     .catch((reason) => {
+                      const raw = messageFrom(
+                        reason,
+                        isEn
+                          ? "Unable to refresh the native Office add-in status."
+                          : "无法刷新原生 Office 加载项状态。",
+                      );
                       setError(
-                        messageFrom(
-                          reason,
-                          isEn
-                            ? "Unable to refresh the native Office add-in status."
-                            : "无法刷新原生 Office 加载项状态。",
-                        ),
+                        raw === "Office status request timed out"
+                          ? isEn
+                            ? "Office status checking timed out. Quit Word and PowerPoint, then retry."
+                            : "Office 状态读取超时。请退出 Word 和 PowerPoint 后重试。"
+                          : raw,
                       );
                     })
                     .finally(() => setBusy(null));

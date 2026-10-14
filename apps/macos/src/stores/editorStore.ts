@@ -1,15 +1,17 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
 import type { CommandSource, CommandUsage } from "../types/command";
 import type {
   FormulaDocument,
   FormulaAlignment,
+  FormulaDisplayStyle,
   FormulaHistoryItem,
   FormulaLine,
   FormulaLineMode,
   InputBehaviorSettingKey,
   InputBehaviorSettings,
   LatexCodeFormat,
+  LatexFormatProfile,
   Theme,
 } from "../types/formula";
 import type { DocumentSnapshot } from "../history/historyTypes";
@@ -17,10 +19,18 @@ import {
   DEFAULT_LATEX_CODE_FORMAT,
   isLatexCodeFormat,
 } from "../clipboard/LatexCopyService";
+import {
+  DEFAULT_LATEX_FORMAT_PROFILE,
+  legacyCodeFormatToProfile,
+  normalizeLatexFormatProfile,
+} from "../clipboard/latexFormatProfile";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
 import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
+import { normalizeFormulaLinePhysicalWhitespace } from "../math/formulaLineLatex";
+import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
 import { createUuid } from "../runtime/browserCompatibility";
 import { safeStorage } from "../runtime/safeStorage";
+import { editorPersistenceStorage } from "../runtime/editorPersistenceStorage";
 import {
   DEFAULT_PNG_EXPORT_BACKGROUND,
   normalizePngExportBackground,
@@ -47,114 +57,33 @@ export const DEFAULT_THEME: Theme = "light";
 export const MIN_EDITOR_ZOOM = 0.2;
 export const MAX_EDITOR_ZOOM = 1.6;
 export const EDITOR_ZOOM_STEP = 0.05;
-export const DEFAULT_EDITOR_ZOOM = 0.45;
-export const DEFAULT_FORMULA_INSET = 6;
+export const DEFAULT_SOURCE_EDITOR_FONT_SIZE = 12;
+export const MIN_SOURCE_EDITOR_FONT_SIZE = 9;
+export const MAX_SOURCE_EDITOR_FONT_SIZE = 28;
+export const DEFAULT_FORMULA_INSET = 34;
 export const MIN_FORMULA_INSET = 0;
 export const MAX_FORMULA_INSET = 96;
-export const DEFAULT_FORMULA_TOOL_BUTTON_SIZE = 38;
+export const DEFAULT_FORMULA_TOOL_BUTTON_SIZE = 52;
 export const MIN_FORMULA_TOOL_BUTTON_SIZE = 38;
 export const MAX_FORMULA_TOOL_BUTTON_SIZE = 72;
 export const DEFAULT_FORMULA_TOOL_BUTTON_PADDING = 2;
 export const MIN_FORMULA_TOOL_BUTTON_PADDING = 0;
 export const MAX_FORMULA_TOOL_BUTTON_PADDING = 12;
-export const DEFAULT_FORMULA_ROW_VERTICAL_INSET = 2;
+export const DEFAULT_FORMULA_ROW_VERTICAL_INSET = 5;
 export const MIN_FORMULA_ROW_VERTICAL_INSET = 0;
 export const MAX_FORMULA_ROW_VERTICAL_INSET = 24;
-export const DEFAULT_CLASSIC_TILE_WIDTH = 220;
+export const DEFAULT_CLASSIC_TILE_WIDTH = 300;
 export const MIN_CLASSIC_TILE_WIDTH = 220;
 export const MAX_CLASSIC_TILE_WIDTH = 2000;
-export const DEFAULT_CLASSIC_DOCK_HEIGHT = 245;
+export const DEFAULT_CLASSIC_DOCK_HEIGHT = 240;
 export const MIN_CLASSIC_DOCK_HEIGHT = 132;
 export const MAX_CLASSIC_DOCK_HEIGHT = 2000;
 
 const legacyClassicTileWidthStorageKey = "visualtex-classic-tile-width";
 const legacyClassicDockHeightStorageKey = "visualtex-classic-dock-height";
 
-const officeFormulaPersistenceIsolatedKeys = new Set([
-  "title",
-  "lines",
-  "activeLineId",
-  "formulaAlignment",
-  "latexCodeFormat",
-  "formulaLetterFont",
-  "formulaChineseFont",
-  "history",
-]);
-
-function isOfficeFormulaPersistenceScope() {
-  if (typeof window === "undefined") return false;
-  try {
-    return (
-      new URLSearchParams(window.location.search).get("view") === "office-formula" ||
-      window.location.pathname.endsWith("/office-native-dialog.html")
-    );
-  } catch {
-    return false;
-  }
-}
-
-function parsePersistedEditorEnvelope(raw: string | null) {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as {
-      state?: Record<string, unknown>;
-      version?: unknown;
-      [key: string]: unknown;
-    };
-    if (!parsed || typeof parsed !== "object" || !parsed.state || typeof parsed.state !== "object") {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-const editorPersistenceStorage = {
-  getItem(key: string): string | null {
-    const raw = safeStorage.getItem(key);
-    if (!isOfficeFormulaPersistenceScope()) return raw;
-    const parsed = parsePersistedEditorEnvelope(raw);
-    if (!parsed) return raw;
-    const state = { ...parsed.state };
-    for (const isolatedKey of officeFormulaPersistenceIsolatedKeys) {
-      delete state[isolatedKey];
-    }
-    return JSON.stringify({ ...parsed, state });
-  },
-
-  setItem(key: string, value: string): void {
-    if (!isOfficeFormulaPersistenceScope()) {
-      safeStorage.setItem(key, value);
-      return;
-    }
-    const incoming = parsePersistedEditorEnvelope(value);
-    if (!incoming) return;
-    const existing = parsePersistedEditorEnvelope(safeStorage.getItem(key));
-    const mergedState = { ...incoming.state };
-    for (const isolatedKey of officeFormulaPersistenceIsolatedKeys) {
-      if (existing?.state && Object.prototype.hasOwnProperty.call(existing.state, isolatedKey)) {
-        mergedState[isolatedKey] = existing.state[isolatedKey];
-      } else {
-        delete mergedState[isolatedKey];
-      }
-    }
-    safeStorage.setItem(
-      key,
-      JSON.stringify({
-        ...incoming,
-        state: mergedState,
-      }),
-    );
-  },
-
-  removeItem(key: string): void {
-    if (!isOfficeFormulaPersistenceScope()) safeStorage.removeItem(key);
-  },
-};
-
 export const DEFAULT_INPUT_BEHAVIOR_SETTINGS: InputBehaviorSettings = {
-  autoEscapeShortcuts: false,
+  autoEscapeShortcuts: true,
   autoExitSuperscript: true,
   autoExitSubscript: true,
   autoExitAccent: true,
@@ -174,7 +103,7 @@ function normalizeInputBehaviorSettings(
     autoEscapeShortcuts:
       typeof candidate.autoEscapeShortcuts === "boolean"
         ? candidate.autoEscapeShortcuts
-        : DEFAULT_INPUT_BEHAVIOR_SETTINGS.autoEscapeShortcuts,
+        : true,
     autoExitSuperscript:
       typeof candidate.autoExitSuperscript === "boolean"
         ? candidate.autoExitSuperscript
@@ -215,15 +144,23 @@ function normalizeTheme(value: unknown): Theme {
 }
 
 function normalizeEditorZoom(value: unknown) {
-  const zoom =
-    typeof value === "number" && Number.isFinite(value)
-      ? value
-      : DEFAULT_EDITOR_ZOOM;
+  const zoom = typeof value === "number" && Number.isFinite(value) ? value : 1;
   const steppedZoom =
     Math.round(
       Math.round(zoom / EDITOR_ZOOM_STEP) * EDITOR_ZOOM_STEP * 100,
     ) / 100;
   return Math.min(MAX_EDITOR_ZOOM, Math.max(MIN_EDITOR_ZOOM, steppedZoom));
+}
+
+function normalizeSourceEditorFontSize(value: unknown) {
+  const size =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.round(value)
+      : DEFAULT_SOURCE_EDITOR_FONT_SIZE;
+  return Math.min(
+    MAX_SOURCE_EDITOR_FONT_SIZE,
+    Math.max(MIN_SOURCE_EDITOR_FONT_SIZE, size),
+  );
 }
 
 function normalizeFormulaInset(value: unknown) {
@@ -313,15 +250,36 @@ function normalizeClassicDockHeight(value: unknown) {
   );
 }
 
+function normalizeFormulaDisplayStyle(value: unknown): FormulaDisplayStyle {
+  return value === "double-dollar" ||
+    value === "bracket" ||
+    value === "equation" ||
+    value === "equation-star"
+    ? value
+    : "default";
+}
+
+function normalizeFormulaLineLatex(latex: string) {
+  const normalized = latex.replace(/\r\n?/g, "\n");
+  const trimmed = normalized.trim();
+  return normalizeChineseLatex(
+    isSingleCompleteLatexEnvironment(trimmed)
+      ? trimmed
+      : normalizeFormulaLinePhysicalWhitespace(normalized),
+  );
+}
+
 export function createFormulaLine(
   latex = "",
   id: string = createUuid(),
   mode: FormulaLineMode = "display",
+  displayStyle: FormulaDisplayStyle = "default",
 ): FormulaLine {
   return {
     id,
-    latex: normalizeMultilineLatex(latex.replace(/\r\n?/g, "\n")),
+    latex: normalizeFormulaLineLatex(latex.replace(/\r\n?/g, "\n")),
     mode: mode === "inline" ? "inline" : "display",
+    displayStyle: normalizeFormulaDisplayStyle(displayStyle),
   };
 }
 
@@ -349,12 +307,13 @@ export function normalizeFormulaLines(
         const candidate = item as Partial<FormulaLine>;
         return {
           id: uniqueLineId(candidate.id, usedIds),
-          latex: normalizeMultilineLatex(
+          latex: normalizeFormulaLineLatex(
             typeof candidate.latex === "string"
               ? candidate.latex.replace(/\r\n?/g, "\n")
               : "",
           ),
           mode: candidate.mode === "inline" ? "inline" : "display",
+          displayStyle: normalizeFormulaDisplayStyle(candidate.displayStyle),
         } satisfies FormulaLine;
       })
       .filter((line): line is NonNullable<typeof line> => line !== null);
@@ -401,7 +360,9 @@ interface EditorState {
   language: Language;
   zoom: number;
   sourceOpen: boolean;
+  sourceEditorFontSize: number;
   latexCodeFormat: LatexCodeFormat;
+  latexFormatProfile: LatexFormatProfile;
   autoPairDelimiters: boolean;
   showLineNumbers: boolean;
   highlightActiveLine: boolean;
@@ -425,17 +386,21 @@ interface EditorState {
   history: FormulaHistoryItem[];
   setTitle: (title: string) => void;
   setActiveLineId: (lineId: string | null) => void;
-  replaceFormulaLine: (lineId: string, latex: string) => void;
+  replaceFormulaLine: (lineId: string, latex: string, activeLineId?: string | null) => void;
   setFormulaAlignment: (alignment: FormulaAlignment) => void;
   setEditorLayout: (layout: EditorLayout) => void;
-  insertFormulaLine: (line: FormulaLine, index: number) => void;
-  removeFormulaLine: (lineId: string) => void;
   replaceDocumentState: (snapshot: DocumentSnapshot) => void;
   setTheme: (theme: Theme) => void;
   setLanguage: (language: Language) => void;
   setZoom: (zoom: number) => void;
   setSourceOpen: (open: boolean) => void;
+  setSourceEditorFontSize: (size: number) => void;
   setLatexCodeFormat: (format: LatexCodeFormat) => void;
+  setLatexFormatProfile: (
+    update:
+      | Partial<LatexFormatProfile>
+      | ((current: LatexFormatProfile) => Partial<LatexFormatProfile>),
+  ) => void;
   setAutoPairDelimiters: (enabled: boolean) => void;
   setShowLineNumbers: (enabled: boolean) => void;
   setHighlightActiveLine: (enabled: boolean) => void;
@@ -479,9 +444,11 @@ export const useEditorStore = create<EditorState>()(
       editorLayout: DEFAULT_EDITOR_LAYOUT,
       theme: DEFAULT_THEME,
       language: "cn",
-      zoom: DEFAULT_EDITOR_ZOOM,
+      zoom: 0.6,
       sourceOpen: false,
-      latexCodeFormat: DEFAULT_LATEX_CODE_FORMAT,
+      sourceEditorFontSize: DEFAULT_SOURCE_EDITOR_FONT_SIZE,
+      latexCodeFormat: "mixed-inline-display",
+      latexFormatProfile: { ...DEFAULT_LATEX_FORMAT_PROFILE },
       autoPairDelimiters: true,
       showLineNumbers: false,
       highlightActiveLine: false,
@@ -518,41 +485,24 @@ export const useEditorStore = create<EditorState>()(
         set((state) => ({
           activeLineId: validActiveLineId(state.lines, activeLineId),
         })),
-      replaceFormulaLine: (lineId, latex) =>
-        set((state) => ({
-          lines: state.lines.map((line) =>
-            line.id === lineId
-              ? { ...line, latex: normalizeChineseLatex(latex) }
-              : line,
-          ),
-        })),
+      replaceFormulaLine: (lineId, latex, activeLineId) =>
+        set((state) => {
+          const normalized = normalizeFormulaLineLatex(latex);
+          const nextActive = validActiveLineId(
+            state.lines, activeLineId === undefined ? state.activeLineId : activeLineId,
+          );
+          const line = state.lines.find(item => item.id === lineId);
+          if (!line || (line.latex === normalized && state.activeLineId === nextActive)) return state;
+          return {
+            activeLineId: nextActive,
+            lines: line.latex === normalized ? state.lines : state.lines.map(item =>
+              item.id === lineId ? { ...item, latex: normalized } : item),
+          };
+        }),
       setFormulaAlignment: (formulaAlignment) =>
         set({ formulaAlignment: normalizeFormulaAlignment(formulaAlignment) }),
       setEditorLayout: (editorLayout) =>
         set({ editorLayout: normalizeEditorLayout(editorLayout) }),
-      insertFormulaLine: (line, index) =>
-        set((state) => {
-          const nextLines = state.lines.filter((item) => item.id !== line.id);
-          const targetIndex = Math.max(0, Math.min(index, nextLines.length));
-          nextLines.splice(targetIndex, 0, {
-            id: line.id,
-            latex: normalizeChineseLatex(line.latex),
-            mode: line.mode === "inline" ? "inline" : "display",
-          });
-          return {
-            lines: nextLines,
-            activeLineId: validActiveLineId(nextLines, state.activeLineId),
-          };
-        }),
-      removeFormulaLine: (lineId) =>
-        set((state) => {
-          const nextLines = state.lines.filter((line) => line.id !== lineId);
-          const safeLines = nextLines.length ? nextLines : [createFormulaLine("")];
-          return {
-            lines: safeLines,
-            activeLineId: validActiveLineId(safeLines, state.activeLineId),
-          };
-        }),
       replaceDocumentState: (snapshot) =>
         set(() => {
           const lines = normalizeFormulaLines(snapshot.lines);
@@ -569,11 +519,30 @@ export const useEditorStore = create<EditorState>()(
       setLanguage: (language) => set({ language }),
       setZoom: (zoom) => set({ zoom: normalizeEditorZoom(zoom) }),
       setSourceOpen: (sourceOpen) => set({ sourceOpen }),
+      setSourceEditorFontSize: (sourceEditorFontSize) =>
+        set({
+          sourceEditorFontSize: normalizeSourceEditorFontSize(
+            sourceEditorFontSize,
+          ),
+        }),
       setLatexCodeFormat: (latexCodeFormat) =>
         set({
           latexCodeFormat: isLatexCodeFormat(latexCodeFormat)
             ? latexCodeFormat
             : DEFAULT_LATEX_CODE_FORMAT,
+        }),
+      setLatexFormatProfile: (update) =>
+        set((state) => {
+          const patch =
+            typeof update === "function"
+              ? update(state.latexFormatProfile)
+              : update;
+          return {
+            latexFormatProfile: normalizeLatexFormatProfile({
+              ...state.latexFormatProfile,
+              ...patch,
+            }),
+          };
         }),
       setAutoPairDelimiters: (autoPairDelimiters) =>
         set({ autoPairDelimiters }),
@@ -704,6 +673,7 @@ export const useEditorStore = create<EditorState>()(
               id: formula.id,
               latex: formula.latex,
               mode: formula.displayMode === "inline" ? "inline" : "display",
+              displayStyle: normalizeFormulaDisplayStyle(formula.displayStyle),
             })),
           );
           const settings = document.settings ?? {};
@@ -749,13 +719,21 @@ export const useEditorStore = create<EditorState>()(
               settings.zoom === undefined
                 ? state.zoom
                 : normalizeEditorZoom(settings.zoom),
-            sourceOpen:
-              typeof settings.sourceOpen === "boolean"
-                ? settings.sourceOpen
-                : state.sourceOpen,
-            latexCodeFormat: isLatexCodeFormat(settings.latexCodeFormat)
-              ? settings.latexCodeFormat
-              : state.latexCodeFormat,
+            // Tools/source is workspace UI state, not formula-document state.
+            // Keep the user's current workspace choice when opening old files
+            // that still carry the legacy settings.sourceOpen field.
+            sourceOpen: state.sourceOpen,
+            sourceEditorFontSize:
+              settings.sourceEditorFontSize === undefined
+                ? state.sourceEditorFontSize
+                : normalizeSourceEditorFontSize(
+                    settings.sourceEditorFontSize,
+                  ),
+            latexCodeFormat: "mixed-inline-display",
+            latexFormatProfile:
+              settings.latexFormatProfile === undefined
+                ? state.latexFormatProfile
+                : normalizeLatexFormatProfile(settings.latexFormatProfile),
             autoPairDelimiters:
               typeof settings.autoPairDelimiters === "boolean"
                 ? settings.autoPairDelimiters
@@ -849,6 +827,7 @@ export const useEditorStore = create<EditorState>()(
             id: line.id,
             latex: line.latex,
             displayMode: line.mode === "inline" ? "inline" : "block",
+            displayStyle: line.displayStyle,
             alignment: state.formulaAlignment,
             fontSize: Math.round(36 * state.zoom),
             createdAt: now,
@@ -859,10 +838,12 @@ export const useEditorStore = create<EditorState>()(
             theme: state.theme,
             zoom: state.zoom,
             formulaAlignment: state.formulaAlignment,
-            latexCodeFormat: state.latexCodeFormat,
+            latexCodeFormat: "mixed-inline-display",
+            latexFormatProfile: { ...state.latexFormatProfile },
             editorLayout: state.editorLayout,
             language: state.language,
             sourceOpen: state.sourceOpen,
+            sourceEditorFontSize: state.sourceEditorFontSize,
             autoPairDelimiters: state.autoPairDelimiters,
             showLineNumbers: state.showLineNumbers,
             highlightActiveLine: state.highlightActiveLine,
@@ -888,7 +869,7 @@ export const useEditorStore = create<EditorState>()(
     }),
     {
       name: "visualtex-editor",
-      storage: createJSONStorage(() => editorPersistenceStorage),
+      storage: editorPersistenceStorage,
       partialize: (state) => ({
         title: state.title,
         lines: state.lines,
@@ -899,7 +880,9 @@ export const useEditorStore = create<EditorState>()(
         language: state.language,
         zoom: state.zoom,
         sourceOpen: state.sourceOpen,
-        latexCodeFormat: state.latexCodeFormat,
+        sourceEditorFontSize: state.sourceEditorFontSize,
+        latexCodeFormat: "mixed-inline-display",
+        latexFormatProfile: state.latexFormatProfile,
         autoPairDelimiters: state.autoPairDelimiters,
         showLineNumbers: state.showLineNumbers,
         highlightActiveLine: state.highlightActiveLine,
@@ -943,9 +926,18 @@ export const useEditorStore = create<EditorState>()(
           editorLayout: normalizeEditorLayout(persisted.editorLayout),
           theme: normalizeTheme(persisted.theme),
           zoom: normalizeEditorZoom(persisted.zoom),
-          latexCodeFormat: isLatexCodeFormat(persisted.latexCodeFormat)
-            ? persisted.latexCodeFormat
-            : DEFAULT_LATEX_CODE_FORMAT,
+          sourceEditorFontSize: normalizeSourceEditorFontSize(
+            persisted.sourceEditorFontSize,
+          ),
+          latexCodeFormat: "mixed-inline-display",
+          latexFormatProfile:
+            persisted.latexFormatProfile === undefined
+              ? legacyCodeFormatToProfile(
+                  isLatexCodeFormat(persisted.latexCodeFormat)
+                    ? persisted.latexCodeFormat
+                    : undefined,
+                )
+              : normalizeLatexFormatProfile(persisted.latexFormatProfile),
           autoPairDelimiters:
             typeof persisted.autoPairDelimiters === "boolean"
               ? persisted.autoPairDelimiters

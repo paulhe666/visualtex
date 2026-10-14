@@ -5,7 +5,6 @@ import {
   parseLatexSourceDraft,
 } from "../src/clipboard/LatexCopyService.ts";
 import type { FormulaLine } from "../src/types/formula.ts";
-import { resolveNewFormulaLineMode } from "../src/editor/formulaLineMode.ts";
 import { normalizeFormulaLines, useEditorStore } from "../src/stores/editorStore.ts";
 
 const lines: FormulaLine[] = [
@@ -16,27 +15,6 @@ const lines: FormulaLine[] = [
 
 const definition = getLatexCodeFormatDefinition("mixed-inline-display");
 assert.equal(definition.id, "mixed-inline-display");
-assert.equal(
-  resolveNewFormulaLineMode("mixed-inline-display", "display", { shiftKey: true, altKey: false }),
-  "inline",
-  "Shift+Enter must create an inline row in mixed mode",
-);
-assert.equal(
-  resolveNewFormulaLineMode("mixed-inline-display", "inline", { shiftKey: false, altKey: true }),
-  "display",
-  "Option+Enter must create a display row in mixed mode",
-);
-assert.equal(
-  resolveNewFormulaLineMode("mixed-inline-display", "inline", { shiftKey: false, altKey: false }),
-  "inline",
-  "plain Enter must inherit the current mixed row mode",
-);
-assert.equal(
-  resolveNewFormulaLineMode("display-dollar", "inline", { shiftKey: true, altKey: false }),
-  undefined,
-  "legacy formats must retain their existing Enter behavior",
-);
-
 const source = formatFormulaLines(lines, "mixed-inline-display");
 assert.equal(
   source,

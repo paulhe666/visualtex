@@ -2,28 +2,30 @@ import { useEffect, useMemo, useRef } from "react";
 import {
   CheckCircle2,
   Download,
+  Github,
   LoaderCircle,
   RefreshCw,
   Sparkles,
+  Star,
+  UserRound,
   UsersRound,
   WifiOff,
   Wrench,
   X,
 } from "lucide-react";
 import type { Language } from "../stores/editorStore";
+import { RELEASE_WELCOME_VERSION } from "../update/releaseWelcome";
 import { localizeReleaseNotes } from "../update/releaseNotes";
 import type { UpdateCheckResult } from "../update/updateService";
+import wechatPayImageUrl from "../../../../docs/images/wechat-pay.jpg";
+import alipayImageUrl from "../../../../docs/images/alipay.jpg";
+import {
+  VISUALTEX_QQ_GROUP_NUMBER,
+  VISUALTEX_QQ_GROUP_QR_DATA_URL,
+} from "../../../windows/src/assets/visualtexQqGroup";
 
-const QQ_GROUP_NUMBER = "1045801770";
-const QQ_GROUP_IMAGE_URL = "/qq-group-card.svg";
-const WECHAT_PAY_IMAGE_URL = new URL(
-  "../../../../docs/images/wechat-pay.jpg",
-  import.meta.url,
-).href;
-const ALIPAY_IMAGE_URL = new URL(
-  "../../../../docs/images/alipay.jpg",
-  import.meta.url,
-).href;
+const QQ_GROUP_NUMBER = VISUALTEX_QQ_GROUP_NUMBER;
+const QQ_GROUP_IMAGE_URL = VISUALTEX_QQ_GROUP_QR_DATA_URL;
 
 interface Props {
   open: boolean;
@@ -33,9 +35,11 @@ interface Props {
   result: UpdateCheckResult | null;
   checkOnStartup: boolean;
   automaticPrompt: boolean;
+  releaseWelcome?: boolean;
   onCheckOnStartupChange: (enabled: boolean) => void;
   onRetry: () => void;
   onOpenRelease: () => void;
+  onOpenProject: () => void;
   onClose: () => void;
 }
 
@@ -47,9 +51,11 @@ export function UpdateDialog({
   result,
   checkOnStartup,
   automaticPrompt,
+  releaseWelcome = false,
   onCheckOnStartupChange,
   onRetry,
   onOpenRelease,
+  onOpenProject,
   onClose,
 }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -111,21 +117,25 @@ export function UpdateDialog({
         day: "numeric",
       }).format(new Date(result.publishedAt))
     : "";
-  const title = checking
+  const title = releaseWelcome
     ? isEn
-      ? "Checking for updates"
-      : "正在检查更新"
-    : error
+      ? `What's new in VisualTeX ${result?.latestVersion ?? RELEASE_WELCOME_VERSION}`
+      : `VisualTeX ${result?.latestVersion ?? RELEASE_WELCOME_VERSION} 更新内容`
+    : checking
       ? isEn
-        ? "Unable to check"
-        : "暂时无法检查更新"
-      : updateAvailable
+        ? "Checking for updates"
+        : "正在检查更新"
+      : error
         ? isEn
-          ? "A new version is available"
-          : "发现新版本"
-        : isEn
-          ? "VisualTeX is up to date"
-          : "VisualTeX 已是最新版本";
+          ? "Unable to check"
+          : "暂时无法检查更新"
+        : updateAvailable
+          ? isEn
+            ? "A new version is available"
+            : "发现新版本"
+          : isEn
+            ? "VisualTeX is up to date"
+            : "VisualTeX 已是最新版本";
 
   return (
     <div className="modal-backdrop update-backdrop" role="presentation">
@@ -187,19 +197,21 @@ export function UpdateDialog({
             </>
           ) : result ? (
             <>
-              <div className="update-version-row">
-                <span>
-                  <small>{isEn ? "Installed" : "当前版本"}</small>
-                  <strong>v{result.currentVersion}</strong>
-                </span>
-                <RefreshCw size={16} aria-hidden="true" />
-                <span>
-                  <small>{isEn ? "Latest" : "最新版本"}</small>
-                  <strong>v{result.latestVersion}</strong>
-                </span>
-              </div>
+              {!releaseWelcome && (
+                <div className="update-version-row">
+                  <span>
+                    <small>{isEn ? "Installed" : "当前版本"}</small>
+                    <strong>v{result.currentVersion}</strong>
+                  </span>
+                  <RefreshCw size={16} aria-hidden="true" />
+                  <span>
+                    <small>{isEn ? "Latest" : "最新版本"}</small>
+                    <strong>v{result.latestVersion}</strong>
+                  </span>
+                </div>
+              )}
 
-              {updateAvailable ? (
+              {updateAvailable || releaseWelcome ? (
                 <>
                   <div className="update-release-heading">
                     <strong>{result.releaseName}</strong>
@@ -257,53 +269,6 @@ export function UpdateDialog({
                     </p>
                   )}
 
-                  <section
-                    className="update-community-card"
-                    aria-label={isEn ? "VisualTeX support and community" : "VisualTeX 支持与交流"}
-                  >
-                    <div className="update-community-copy">
-                      <span className="update-community-icon" aria-hidden="true">
-                        <UsersRound size={18} />
-                      </span>
-                      <div>
-                        <strong>{isEn ? "Support & community" : "支持与交流"}</strong>
-                        <p>
-                          {isEn
-                            ? "WeChat Pay and Alipay are optional tip channels. Tipping is entirely voluntary and never affects access to any VisualTeX feature. The QQ code is for community discussion."
-                            : "微信和支付宝为自愿打赏通道，是否打赏完全不影响 VisualTeX 的任何功能和正常使用；QQ群二维码用于交流讨论。"}
-                        </p>
-                        <span className="update-community-number">
-                          {isEn ? "QQ group: " : "QQ群号："}<b>{QQ_GROUP_NUMBER}</b>
-                        </span>
-                      </div>
-                    </div>
-                    <div className="update-community-qr-row">
-                      <figure>
-                        <img
-                          src={WECHAT_PAY_IMAGE_URL}
-                          alt={isEn ? "VisualTeX WeChat Pay QR code" : "VisualTeX 微信收款二维码"}
-                          loading="lazy"
-                        />
-                        <figcaption>{isEn ? "WeChat tip" : "微信打赏"}</figcaption>
-                      </figure>
-                      <figure>
-                        <img
-                          src={ALIPAY_IMAGE_URL}
-                          alt={isEn ? "VisualTeX Alipay QR code" : "VisualTeX 支付宝收款二维码"}
-                          loading="lazy"
-                        />
-                        <figcaption>{isEn ? "Alipay tip" : "支付宝打赏"}</figcaption>
-                      </figure>
-                      <figure>
-                        <img
-                          src={QQ_GROUP_IMAGE_URL}
-                          alt={`VisualTeX QQ ${isEn ? "group" : "群"} ${QQ_GROUP_NUMBER} QR code`}
-                          loading="lazy"
-                        />
-                        <figcaption>{isEn ? "QQ group" : "QQ群"}</figcaption>
-                      </figure>
-                    </div>
-                  </section>
                 </>
               ) : (
                 <p>
@@ -312,38 +277,124 @@ export function UpdateDialog({
                     : "你正在使用最新的稳定版本。"}
                 </p>
               )}
+
+              <section className="update-project-card" aria-label={isEn ? "Project information" : "项目信息"}>
+                <div className="update-project-author">
+                  <UserRound size={15} aria-hidden="true" />
+                  <span>
+                    <small>{isEn ? "Author" : "作者"}</small>
+                    <strong>paulhe666</strong>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="update-project-link"
+                  onClick={onOpenProject}
+                  title="https://github.com/paulhe666/visualtex"
+                >
+                  <Github size={15} aria-hidden="true" />
+                  <span>github.com/paulhe666/visualtex</span>
+                </button>
+                <p>
+                  <Star size={14} aria-hidden="true" />
+                  {isEn
+                    ? "If you like the project, please give it a Star!"
+                    : "如果觉得项目不错请点个 Star 噢！"}
+                </p>
+              </section>
+
+              <section
+                className="update-community-card"
+                aria-label={isEn ? "VisualTeX support and community" : "VisualTeX 支持与交流"}
+              >
+                <div className="update-community-copy">
+                  <span className="update-community-icon" aria-hidden="true">
+                    <UsersRound size={18} />
+                  </span>
+                  <div>
+                    <strong>{isEn ? "Support & community" : "支持与交流"}</strong>
+                    <p className="update-community-disclaimer">
+                      {isEn
+                        ? "If you are financially comfortable and enjoy VisualTeX, you are welcome to support the author. Tipping is completely optional and never affects any feature or normal use."
+                        : "有经济能力并且觉得产品不错的可以支持一下作者呀！打赏完全自愿，不影响 VisualTeX 的任何功能和正常使用。"}
+                    </p>
+                    <p className="update-community-hint">
+                      {isEn
+                        ? "Use WeChat Pay or Alipay only if you would like to support development. Scan the QQ code to join the community."
+                        : "如愿意支持开发，可使用微信或支付宝打赏；QQ群二维码用于加入交流群。"}
+                    </p>
+                    <span className="update-community-number">
+                      {isEn ? "QQ group: " : "QQ群号："}<b>{QQ_GROUP_NUMBER}</b>
+                    </span>
+                  </div>
+                </div>
+                <div className="update-community-qr-row">
+                  <figure className="update-community-qr-card">
+                    <figcaption>{isEn ? "WeChat tip" : "微信打赏"}</figcaption>
+                    <img
+                      src={wechatPayImageUrl}
+                      alt={isEn ? "VisualTeX WeChat Pay QR code" : "VisualTeX 微信收款二维码"}
+                      loading="eager"
+                    />
+                  </figure>
+                  <figure className="update-community-qr-card">
+                    <figcaption>{isEn ? "Alipay tip" : "支付宝打赏"}</figcaption>
+                    <img
+                      src={alipayImageUrl}
+                      alt={isEn ? "VisualTeX Alipay QR code" : "VisualTeX 支付宝收款二维码"}
+                      loading="eager"
+                    />
+                  </figure>
+                  <figure className="update-community-qr-card">
+                    <figcaption>{isEn ? "QQ group" : "QQ群"}</figcaption>
+                    <img
+                      src={QQ_GROUP_IMAGE_URL}
+                      alt={`VisualTeX QQ ${isEn ? "group" : "群"} ${QQ_GROUP_NUMBER} QR code`}
+                      loading="eager"
+                    />
+                  </figure>
+                </div>
+              </section>
             </>
           ) : null}
 
-          <label className="update-preference-row">
-            <input
-              type="checkbox"
-              checked={automaticPrompt ? !checkOnStartup : checkOnStartup}
-              onChange={(event) =>
-                onCheckOnStartupChange(
-                  automaticPrompt ? !event.target.checked : event.target.checked,
-                )
-              }
-            />
-            <span>
-              <strong>
-                {automaticPrompt
-                  ? isEn
-                    ? "Do not remind me again"
-                    : "以后不再提醒"
-                  : isEn
-                    ? "Check automatically on startup"
-                    : "启动时自动检查更新"}
-              </strong>
-            </span>
-          </label>
+          {!releaseWelcome && (
+            <label className="update-preference-row">
+              <input
+                type="checkbox"
+                checked={automaticPrompt ? !checkOnStartup : checkOnStartup}
+                onChange={(event) =>
+                  onCheckOnStartupChange(
+                    automaticPrompt ? !event.target.checked : event.target.checked,
+                  )
+                }
+              />
+              <span>
+                <strong>
+                  {automaticPrompt
+                    ? isEn
+                      ? "Do not remind me again"
+                      : "以后不再提醒"
+                    : isEn
+                      ? "Check automatically on startup"
+                      : "启动时自动检查更新"}
+                </strong>
+              </span>
+            </label>
+          )}
         </div>
 
         <footer className="dialog-footer update-dialog-footer">
-          <button type="button" className="secondary-button" onClick={onClose}>
-            {isEn ? "Later" : "稍后"}
-          </button>
-          {checking ? (
+          {!releaseWelcome && (
+            <button type="button" className="secondary-button" onClick={onClose}>
+              {isEn ? "Later" : "稍后"}
+            </button>
+          )}
+          {releaseWelcome ? (
+            <button type="button" className="primary-button" onClick={onClose}>
+              {isEn ? "Got it" : "知道了"}
+            </button>
+          ) : checking ? (
             <button type="button" className="primary-button" disabled>
               <LoaderCircle size={15} className="is-spinning" />
               {isEn ? "Checking…" : "检查中…"}

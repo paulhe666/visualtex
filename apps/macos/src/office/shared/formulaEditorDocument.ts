@@ -5,6 +5,7 @@ import {
 } from "../../clipboard/LatexCopyService";
 import { createUuid } from "../../runtime/browserCompatibility";
 import { unwrapSingleLatexDisplayMath } from "../../math/latexEnvironment";
+import { stripMathSourceComments } from "../../math/mathModeSource";
 import {
   ensureVisualTexAlignmentMarkers,
   usesExplicitAlignmentPoints,
@@ -33,7 +34,7 @@ function normalizeAlignmentLines(
 }
 
 function normalizeLogicalFormulaLineWhitespace(value: string) {
-  const source = value.replace(/\r\n?/g, "\n");
+  const source = stripMathSourceComments(value.replace(/\r\n?/g, "\n"));
   return source
     .replace(/[ \t]*\n[ \t]*/g, (match, offset: number) => {
       const before = source.slice(0, offset);
@@ -161,11 +162,14 @@ function detectFormulaEnvironment(source: string): DetectedFormulaEnvironment | 
         source: replaceEnvironment(normalized, environment, "align*"),
       };
     case "aligned":
-      return { codeFormat: "aligned", source: normalized };
+      // The strict source parser's aligned format includes display delimiters.
+      // Native OMML imports legitimately supply the bare environment. Without
+      // completing that wrapper it falls back to ordinary-text interpretation.
+      return { codeFormat: "aligned", source: `\\[\n${normalized}\n\\]` };
     case "alignedat":
       return {
         codeFormat: "aligned",
-        source: replaceEnvironment(normalized, "alignedat", "aligned"),
+        source: `\\[\n${replaceEnvironment(normalized, "alignedat", "aligned")}\n\\]`,
       };
     case "gather":
       return { codeFormat: "gather", source: normalized };

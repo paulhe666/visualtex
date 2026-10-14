@@ -1,4 +1,3 @@
-import { commandRegistry } from "./commandRegistry";
 import type { LatexCommand } from "../types/command";
 import { readCustomSymbolLibrary } from "../math/customSymbolRegistry";
 
@@ -16,20 +15,4 @@ export function customSymbolCommands(): LatexCommand[] {
     defaultPriority: Math.max(55, 84 - index),
     supportedInMathMode: true,
   }));
-}
-
-export function getRuntimeCommandRegistry() {
-  const custom = customSymbolCommands();
-  return custom.length ? [...commandRegistry, ...custom] : commandRegistry;
-}
-
-export function findRuntimeCommandByCommand(command: string) {
-  const normalized = command.trim();
-  return (
-    getRuntimeCommandRegistry().find(
-      (candidate) =>
-        candidate.command === normalized ||
-        candidate.insertTemplate === normalized,
-    ) ?? null
-  );
 }

@@ -1,71 +1,57 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import {
-  DEFAULT_ONBOARDING_STORAGE_KEY,
-  MACOS_DESKTOP_ONBOARDING_STORAGE_KEY,
-  detectDesktopPlatformFrom,
-  onboardingStorageKey,
-  shouldOpenOnboardingInitially,
-  shouldShowMacOfficeFirstRun,
-} from "../src/platform.ts";
-import { tutorialSteps } from "../src/components/OnboardingTour.tsx";
+import { resolveMacOfficeOnboarding } from "../src/components/macOfficeOnboarding.ts";
 
-assert.equal(detectDesktopPlatformFrom("MacIntel", "Mozilla/5.0 (Macintosh)"), "macos");
-assert.equal(shouldShowMacOfficeFirstRun("macos", true, false), true);
-assert.equal(shouldShowMacOfficeFirstRun("macos", true, true), false);
-assert.equal(shouldShowMacOfficeFirstRun("macos", false, false), false);
-assert.equal(onboardingStorageKey("macos", true), MACOS_DESKTOP_ONBOARDING_STORAGE_KEY);
-assert.equal(onboardingStorageKey("macos", false), DEFAULT_ONBOARDING_STORAGE_KEY);
-assert.equal(shouldOpenOnboardingInitially(false, true), false);
-assert.equal(shouldOpenOnboardingInitially(false, false), true);
-assert.equal(shouldOpenOnboardingInitially(true, false), false);
+const absentHost = {
+  applicationInstalled: false,
+  applicationRunning: false,
+  filesPresent: false,
+  filesInstalled: false,
+  healthReported: false,
+  loaded: false,
+  pluginVersion: null,
+  installPaths: [],
+  healthPath: "",
+  lastError: null,
+};
+const missingAddin = { ...absentHost, applicationInstalled: true };
+const staleAddin = { ...missingAddin, filesPresent: true };
+const currentAddin = { ...staleAddin, filesInstalled: true };
 
-const macSteps = tutorialSteps("cn", "macos");
-const macIds = macSteps.map((step) => step.id);
-assert(macIds.includes("hotkeys-tiles"));
-assert(macIds.includes("layouts-themes"));
-assert(macIds.includes("export"));
-assert(macIds.includes("input-behavior"));
-assert(macIds.includes("mac-word-plugin"));
-assert(macIds.includes("mac-powerpoint-load"));
-assert(macIds.includes("mac-powerpoint-use"));
-assert(!macIds.includes("windows-office-manage"));
-assert(macSteps.find((step) => step.id === "hotkeys-tiles")?.description.includes("快捷键"));
-assert(macSteps.find((step) => step.id === "hotkeys-tiles")?.description.includes("分区"));
-assert(macSteps.find((step) => step.id === "layouts-themes")?.description.includes("经典布局"));
-assert(macSteps.find((step) => step.id === "layouts-themes")?.description.includes("Office"));
-assert(macSteps.find((step) => step.id === "export")?.description.includes("Markdown"));
-assert(macSteps.find((step) => step.id === "input-behavior")?.description.includes("Enter"));
-assert(macSteps.find((step) => step.id === "mac-word-plugin")?.description.includes("OMML"));
-assert(macSteps.find((step) => step.id === "mac-powerpoint-load")?.description.includes("PowerPoint 加载项"));
-assert(macSteps.find((step) => step.id === "mac-powerpoint-use")?.description.includes("双击"));
-
-const appSource = await readFile("src/App.tsx", "utf8");
-const firstRunSource = await readFile("src/components/MacOfficeFirstRunPrompt.tsx", "utf8");
-const macSettingsSource = await readFile("src/components/MacOfficeIntegrationSettings.tsx", "utf8");
-const lifecycleSource = await readFile("src-tauri/src/office/lifecycle.rs", "utf8");
-
-assert(appSource.includes("<MacOfficeFirstRunPrompt"));
-assert(appSource.includes("onboardingStorageKey("));
-assert(appSource.indexOf("<MacOfficeFirstRunPrompt") < appSource.indexOf("<OnboardingTour"));
-assert(firstRunSource.includes('"install_macos_offline_office_addins"'));
-assert(firstRunSource.includes("<PowerPointAddinGuide"));
-assert(firstRunSource.includes("onComplete(false)"));
-assert(macSettingsSource.includes('"install_macos_offline_office_addins"'));
-assert(macSettingsSource.includes("<PowerPointAddinGuide"));
-for (const obsolete of [
-  "install_office_integration",
-  "repair_office_integration",
-  "uninstall_office_integration",
-  "regenerate_office_certificate",
-]) {
-  assert(!firstRunSource.includes(obsolete));
-  assert(!macSettingsSource.includes(obsolete));
-  assert(!lifecycleSource.includes(obsolete));
+function status(word = absentHost, powerpoint = absentHost) {
+  return {
+    word,
+    powerpoint,
+    compiledArtifactsAvailable: true,
+    resourceRoot: "",
+    powerpointAddinPath: "",
+    wordScriptPath: "",
+    powerpointScriptPath: "",
+    tutorialPath: "",
+  };
 }
-assert(lifecycleSource.includes("pub fn set_office_background_start"));
-assert(lifecycleSource.includes("background::install_launch_agent"));
-assert(lifecycleSource.includes('open_office_application("Microsoft Word")'));
-assert(lifecycleSource.includes('open_office_application("Microsoft PowerPoint")'));
 
-console.log("macOS onboarding and native Office controls passed.");
+assert.equal(resolveMacOfficeOnboarding(status(), false), null, "no Office installation needs no prompt");
+assert.equal(resolveMacOfficeOnboarding(status(currentAddin, currentAddin), false), null, "current add-ins need no prompt even on a fresh profile");
+assert.equal(resolveMacOfficeOnboarding(status(currentAddin), true), null, "an absent PowerPoint must not require installation");
+assert.equal(resolveMacOfficeOnboarding({ ...status(missingAddin), compiledArtifactsAvailable: false }, false), null, "do not offer installation without packaged add-ins");
+assert.deepEqual(resolveMacOfficeOnboarding(status(missingAddin), false), {
+  mode: "setup", powerpointRegistrationRequired: false,
+});
+assert.deepEqual(resolveMacOfficeOnboarding(status(absentHost, missingAddin), false), {
+  mode: "setup", powerpointRegistrationRequired: true,
+});
+assert.deepEqual(resolveMacOfficeOnboarding(status(missingAddin), true), {
+  mode: "repair", powerpointRegistrationRequired: false,
+});
+assert.deepEqual(resolveMacOfficeOnboarding(status(currentAddin, missingAddin), false), {
+  mode: "repair", powerpointRegistrationRequired: true,
+});
+assert.deepEqual(resolveMacOfficeOnboarding(status(staleAddin), false), {
+  mode: "update", powerpointRegistrationRequired: false,
+});
+assert.deepEqual(resolveMacOfficeOnboarding(status(missingAddin, staleAddin), true), {
+  mode: "update", powerpointRegistrationRequired: false,
+});
+assert.equal(resolveMacOfficeOnboarding(status({ ...currentAddin, loaded: false, healthReported: false }), true), null, "a closed Office host does not make its current files stale");
+
+console.log("macOS Office onboarding decisions passed.");

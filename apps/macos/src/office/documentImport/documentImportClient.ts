@@ -20,6 +20,9 @@ export interface MacosFormulaRestoreTarget {
   displayMode: DocumentFormulaDisplayMode;
   fontSizePt: number;
   sourceKind: "omml" | "image";
+  formulaId?: string;
+  numbered?: boolean;
+  metadata?: VisualTeXFormulaMetadata;
   mathMl?: string;
   latex?: string;
 }

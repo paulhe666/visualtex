@@ -1,5 +1,8 @@
 import { responseErrorMessage } from "../../runtime/errorMessage.ts";
-import type { VisualTeXFormulaMetadata } from "./formulaMetadata";
+import type {
+  InlineImageMathStyle,
+  VisualTeXFormulaMetadata,
+} from "./formulaMetadata";
 import type {
   FormulaChineseFont,
   FormulaLetterFont,
@@ -55,6 +58,7 @@ export interface PreparedPowerPointCommit {
 }
 
 export interface OfficeFormulaSession {
+  nativeEquation?: boolean;
   id: string;
   mode: OfficeSessionMode;
   host: OfficeHost;
@@ -67,6 +71,7 @@ export interface OfficeFormulaSession {
   activeLineId: string | null;
   codeFormat: string;
   displayMode: "inline" | "block";
+  inlineImageMathStyle: InlineImageMathStyle;
   numbered: boolean;
   fontSizePt?: number;
   formulaLetterFont?: FormulaLetterFont;
@@ -96,6 +101,7 @@ export interface CreateOfficeSessionInput {
   activeLineId?: string | null;
   codeFormat?: string;
   displayMode?: "inline" | "block";
+  inlineImageMathStyle?: InlineImageMathStyle;
   numbered?: boolean;
   fontSizePt?: number;
   formulaLetterFont?: FormulaLetterFont;

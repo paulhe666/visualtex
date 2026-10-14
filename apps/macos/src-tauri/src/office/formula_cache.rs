@@ -65,6 +65,15 @@ fn validate_metadata(metadata: &VisualTeXFormulaMetadata) -> Result<(), SessionE
             "Formula metadata contains an invalid line collection".to_string(),
         ));
     }
+    if metadata
+        .inline_image_math_style
+        .as_deref()
+        .is_some_and(|value| !matches!(value, "text" | "display"))
+    {
+        return Err(SessionError::Invalid(
+            "Formula metadata inlineImageMathStyle must be text or display".to_string(),
+        ));
+    }
     if metadata.numbered && metadata.display_mode != "block" {
         return Err(SessionError::Invalid(
             "Only display formulas can use equation numbering".to_string(),
@@ -228,6 +237,7 @@ mod tests {
             }],
             code_format: "raw".to_string(),
             display_mode: "inline".to_string(),
+            inline_image_math_style: Some("text".to_string()),
             numbered: false,
             render_width_px: Some(80.0),
             render_height_px: Some(20.0),

@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import process from "node:process";
 
+const casesDeleteAudit = process.argv.includes("--cases-delete-only");
 const portOffset = process.pid % 800;
 const previewPort = 7600 + portOffset;
 const debugPort = 12600 + portOffset;
@@ -124,7 +125,17 @@ async function main() {
 
     const typeKey = async (key, code, text = key, modifiers = 0) => {
       const specialVirtualKey =
-        key === "Enter" ? 13 : key === "Tab" ? 9 : key === "Escape" ? 27 : 0;
+        key === "Enter"
+          ? 13
+          : key === "Tab"
+            ? 9
+            : key === "Escape"
+              ? 27
+              : key === "Backspace"
+                ? 8
+                : key === "Delete"
+                  ? 46
+                  : 0;
       const virtualKey =
         specialVirtualKey ||
         (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
@@ -149,6 +160,120 @@ async function main() {
       const done = () => document.querySelector("math-field") ? resolve(true) : setTimeout(done, 30);
       done();
     })`);
+
+    const runShiftEnterBackspaceDowngrade = async (multilineEnvironment) => {
+      await evaluate(`(() => {
+        const key = "visualtex-editor";
+        const persisted = JSON.parse(localStorage.getItem(key) || "{}");
+        persisted.state = {
+          ...(persisted.state || {}),
+          lines: [{ id: "shift-enter-backspace", latex: "x", mode: "display" }],
+          activeLineId: "shift-enter-backspace",
+          sourceOpen: false,
+          latexFormatProfile: {
+            ...(persisted.state?.latexFormatProfile || {}),
+            multilineEnvironment: ${JSON.stringify(multilineEnvironment)},
+          },
+        };
+        localStorage.setItem(key, JSON.stringify(persisted));
+      })()`);
+      await client.send("Page.reload", { ignoreCache: true });
+      await sleep(500);
+      await evaluate(`new Promise((resolve) => {
+        const done = () => document.querySelector("math-field") ? resolve(true) : setTimeout(done, 30);
+        done();
+      })`);
+      const prepared = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        if (!field) return { ready: false };
+        field.focus();
+        field.position = field.lastOffset;
+        field.selection = {
+          ranges: [[field.lastOffset, field.lastOffset]],
+          direction: "none",
+        };
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus();
+        return { ready: true, value: field.value };
+      })()`);
+      assert.equal(prepared.ready, true, `${multilineEnvironment}: formula field missing`);
+
+      await typeKey("Enter", "Enter", "\r", 8);
+      await sleep(100);
+      const upgraded = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const array = model?.root?.body?.find((atom) => atom.type === "array");
+        return {
+          value: field?.value ?? "",
+          rowCount: array?.rowCount ?? 0,
+          environment: array?.environmentName ?? null,
+          formulaLineCount: document.querySelectorAll(".formula-line").length,
+        };
+      })()`);
+      const expectedEnvironment =
+        multilineEnvironment === "align" ? "aligned" : "gathered";
+      assert.equal(
+        upgraded.environment,
+        expectedEnvironment,
+        `${multilineEnvironment}: Shift+Enter did not upgrade the formula: ${JSON.stringify(upgraded)}`,
+      );
+      assert.equal(
+        upgraded.rowCount,
+        2,
+        `${multilineEnvironment}: Shift+Enter did not create an empty second row: ${JSON.stringify(upgraded)}`,
+      );
+      assert.equal(upgraded.formulaLineCount, 1);
+
+      await typeKey("Backspace", "Backspace", "");
+      await sleep(120);
+      const downgraded = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field?._mathfield?.model;
+        const array = model?.root?.body?.find((atom) => atom.type === "array");
+        const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
+        return {
+          value: field?.value ?? "",
+          environment: array?.environmentName ?? null,
+          formulaLineCount: document.querySelectorAll(".formula-line").length,
+          storedLatex: persisted.state?.lines?.[0]?.latex ?? null,
+        };
+      })()`);
+      assert.equal(
+        downgraded.environment,
+        null,
+        `${multilineEnvironment}: Backspace left a one-row multiline wrapper: ${JSON.stringify(downgraded)}`,
+      );
+      assert.equal(
+        downgraded.formulaLineCount,
+        1,
+        `${multilineEnvironment}: Backspace removed the outer VisualTeX formula line`,
+      );
+      assert.match(
+        downgraded.value,
+        /x/,
+        `${multilineEnvironment}: Backspace damaged the remaining formula: ${JSON.stringify(downgraded)}`,
+      );
+      assert.doesNotMatch(
+        downgraded.value,
+        /\\begin\{(?:aligned|gathered)\}/,
+        `${multilineEnvironment}: formula did not downgrade to an ordinary display formula`,
+      );
+      assert.doesNotMatch(
+        downgraded.storedLatex ?? "",
+        /\\begin\{(?:aligned|gathered)\}/,
+        `${multilineEnvironment}: persisted formula kept the multiline wrapper`,
+      );
+      return { upgraded, downgraded };
+    };
+
+    const shiftEnterBackspaceResults = [
+      await runShiftEnterBackspaceDowngrade("gather"),
+      await runShiftEnterBackspaceDowngrade("align"),
+    ];
+    console.log(
+      "Shift+Enter multiline Backspace downgrade regression passed (gather + align).",
+      JSON.stringify(shiftEnterBackspaceResults),
+    );
 
     const casesLatex = String.raw`\begin{cases}x & x>0 \\ 0 & x\le 0\end{cases}`;
     const casesProbe = await evaluate(`(() => {
@@ -178,6 +303,120 @@ async function main() {
       `MathLive did not expose the active cases environment: ${JSON.stringify(casesProbe.positions)}`,
     );
 
+    if (casesDeleteAudit) {
+      const casesDeleteLatex = String.raw`\begin{cases}x & x>0 \\ \placeholder{} & \placeholder{}\end{cases}`;
+      const prepared = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const latex = ${JSON.stringify(casesDeleteLatex)};
+        field.setValue(latex, {
+          mode: "math",
+          format: "latex",
+          insertionMode: "replaceAll",
+          selectionMode: "after",
+        });
+        field.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          composed: true,
+          inputType: "insertText",
+        }));
+        const model = field._mathfield?.model;
+        const array = model?.root?.body?.find((atom) => atom.type === "array");
+        const cell = array?.getCell?.(1, 0);
+        const target = cell?.[cell.length - 1];
+        if (!model || !array || !target) return { ready: false, value: field.value };
+        field.position = model.offsetOf(target);
+        field.selection = {
+          ranges: [[field.position, field.position]],
+          direction: "none",
+        };
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus();
+        return {
+          ready: true,
+          value: field.value,
+          rowCount: array.rowCount,
+          environment: model.parentEnvironment?.environmentName ?? null,
+        };
+      })()`);
+      assert.equal(prepared.ready, true, `cases delete setup failed: ${JSON.stringify(prepared)}`);
+      assert.equal(prepared.rowCount, 2, "cases delete setup did not create two rows");
+      assert.equal(prepared.environment, "cases", "caret is not inside the second cases row");
+
+      await typeKey("Backspace", "Backspace", "");
+      await sleep(120);
+      const deleted = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field._mathfield?.model;
+        const array = model?.root?.body?.find((atom) => atom.type === "array");
+        return {
+          value: field.value,
+          rowCount: array?.rowCount ?? 0,
+          environment: model?.parentEnvironment?.environmentName ?? null,
+        };
+      })()`);
+      assert.equal(
+        deleted.rowCount,
+        1,
+        `Backspace did not remove the empty cases row: ${deleted.value}`,
+      );
+      assert.match(deleted.value, /x/, "deleting the empty cases row damaged the populated row");
+      assert.equal(
+        deleted.environment,
+        "cases",
+        "deleting the empty cases row moved the caret outside cases",
+      );
+
+      const preparedForwardDelete = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const inserted = field.executeCommand("addRowAfter");
+        const model = field._mathfield?.model;
+        const array = model?.parentEnvironment;
+        field.focus();
+        field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus();
+        const cursor = model?.at(model.position);
+        return {
+          inserted,
+          rowCount: array?.rowCount ?? 0,
+          environment: array?.environmentName ?? null,
+          position: model?.position ?? -1,
+          cursorType: cursor?.type ?? null,
+          cursorBranch: cursor?.parentBranch ?? null,
+          leftType: cursor?.leftSibling?.type ?? null,
+          leftBranch: cursor?.leftSibling?.parentBranch ?? null,
+          rightType: cursor?.rightSibling?.type ?? null,
+          rightBranch: cursor?.rightSibling?.parentBranch ?? null,
+        };
+      })()`);
+      assert.equal(preparedForwardDelete.inserted, true, "could not recreate an empty cases row");
+      assert.equal(preparedForwardDelete.rowCount, 2, "forward-delete setup did not create two rows");
+      assert.equal(preparedForwardDelete.environment, "cases");
+
+      await typeKey("Delete", "Delete", "");
+      await sleep(120);
+      const forwardDeleted = await evaluate(`(() => {
+        const field = document.querySelector("math-field");
+        const model = field._mathfield?.model;
+        const array = model?.root?.body?.find((atom) => atom.type === "array");
+        return {
+          value: field.value,
+          rowCount: array?.rowCount ?? 0,
+          environment: model?.parentEnvironment?.environmentName ?? null,
+        };
+      })()`);
+      assert.equal(
+        forwardDeleted.rowCount,
+        1,
+        `Delete did not remove the empty cases row: ${forwardDeleted.value}; setup=${JSON.stringify(preparedForwardDelete)}`,
+      );
+      assert.equal(
+        forwardDeleted.environment,
+        "cases",
+        "Delete moved the caret outside cases",
+      );
+      console.log("Cases row delete regression passed (Backspace + Delete).");
+      return;
+    }
+
     await evaluate(`(() => {
       const field = document.querySelector("math-field");
       field.setValue("", { insertionMode: "replaceAll" });
@@ -189,22 +428,24 @@ async function main() {
     await typeKey("b", "KeyB", "b");
     await sleep(120);
     const shortCasesSuggestion = await evaluate(`(() => {
-      const panel = document.querySelector('#visualtex-native-input-suggestion-popover');
+      const panel = document.querySelector('#mathlive-suggestion-popover');
       return {
         visible: panel?.classList.contains('is-visible') ?? false,
         commands: Array.from(panel?.querySelectorAll('li[data-command]') ?? [])
           .map((item) => item.dataset.command ?? ''),
       };
     })()`);
-    assert.equal(
-      shortCasesSuggestion.visible,
-      true,
-      "\\b did not show the native-style suggestion popover",
-    );
-    assert.ok(
-      shortCasesSuggestion.commands.includes("\\begin{cases}"),
-      `\\b did not include the cases environment: ${JSON.stringify(shortCasesSuggestion.commands)}`,
-    );
+    if (!casesDeleteAudit) {
+      assert.equal(
+        shortCasesSuggestion.visible,
+        true,
+        "\\b did not show the native-style suggestion popover",
+      );
+      assert.ok(
+        shortCasesSuggestion.commands.includes("\\begin{cases}"),
+        `\\b did not include the cases environment: ${JSON.stringify(shortCasesSuggestion.commands)}`,
+      );
+    }
 
     await client.send("Page.reload", { ignoreCache: true });
     await sleep(500);
@@ -227,7 +468,7 @@ async function main() {
     await sleep(120);
     const casesSuggestion = await evaluate(`(() => {
       const field = document.querySelector("math-field");
-      const panel = document.querySelector('#visualtex-native-input-suggestion-popover');
+      const panel = document.querySelector('#mathlive-suggestion-popover');
       return {
         value: field.value,
         raw: Array.from(field.shadowRoot?.querySelectorAll('.ML__raw-latex') ?? [])
@@ -301,6 +542,32 @@ async function main() {
       afterCasesEnter.lines,
       1,
       `Enter inside cases did not add exactly one case row: ${afterCasesEnter.value}`,
+    );
+
+    await typeKey("Backspace", "Backspace", "");
+    await sleep(80);
+    const afterCasesBackspace = await evaluate(`(() => {
+      const field = document.querySelector("math-field");
+      return {
+        value: field.value,
+        lines: (field.value.match(/\\\\\\\\/g) ?? []).length,
+        environment: field._mathfield?.model?.parentEnvironment?.environmentName ?? null,
+      };
+    })()`);
+    assert.equal(
+      afterCasesBackspace.lines,
+      0,
+      `Backspace on the empty cases row did not remove that row: ${afterCasesBackspace.value}`,
+    );
+    assert.match(
+      afterCasesBackspace.value,
+      /\\frac/,
+      "deleting the empty cases row damaged the populated case",
+    );
+    assert.equal(
+      afterCasesBackspace.environment,
+      "cases",
+      "deleting the empty cases row moved the caret out of cases",
     );
 
     const lineCountBeforeOuterEnter = await evaluate(

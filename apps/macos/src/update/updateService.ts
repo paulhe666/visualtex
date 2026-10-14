@@ -7,6 +7,7 @@ const LATEST_RELEASE_API =
 const VISUALTEX_GITHUB_HOST = "github.com";
 const VISUALTEX_GITHUB_PATH = "/paulhe666/visualtex";
 
+export const PROJECT_URL = "https://github.com/paulhe666/visualtex";
 export const CURRENT_VERSION = packageInfo.version;
 
 export interface UpdateCheckResult {

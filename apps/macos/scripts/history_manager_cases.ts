@@ -580,6 +580,36 @@ async function run() {
     assert.equal(manager.getState().isReplaying, false, "safe undo must leave replay mode");
   }
 
+  {
+    const { manager, document } = createHarness([{ id: "line-1", latex: "x", mode: "display", displayStyle: "bracket" }]);
+    const before = cloneDocument(document);
+    const after = cloneDocument(document);
+    after.lines[0].displayStyle = "double-dollar";
+    manager.recordSourceDocumentEdit({ type: "replace-document", before, after, source: "source-apply", timestamp: 0 });
+    manager.commitPendingTransaction();
+    assert.equal(manager.getState().undoStack.length, 1, "display wrapper changes are real document edits");
+    document.lines = after.lines;
+    await manager.undo();
+    assert.equal(document.lines[0].displayStyle, "bracket");
+    await manager.redo();
+    assert.equal(document.lines[0].displayStyle, "double-dollar");
+  }
+
+  {
+    const { manager, document } = createHarness();
+    let finish!: () => void;
+    manager.configure({ getDocumentSnapshot: () => cloneDocument(document),
+      applyEntry: () => new Promise<void>(resolve => { finish = resolve; }),
+    });
+    manager.push({ type: "change-title", beforeTitle: "A", afterTitle: "B", timestamp: 0 });
+    const replay = manager.undo();
+    manager.clear();
+    finish();
+    assert.equal(await replay, false, "a previous session's replay is cancelled");
+    assert.equal(manager.getState().redoStack.length, 0, "old history must not leak into a new Office session");
+    assert.equal(manager.getState().isReplaying, false);
+  }
+
   console.log("HistoryManager smoke test passed");
 }
 

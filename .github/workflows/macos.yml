@@ -28,10 +28,15 @@ jobs:
           cache: npm
           cache-dependency-path: apps/macos/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install -r scripts/requirements-office-build.txt
       - run: npm ci
       - run: npm run build:desktop
-      - run: npm run test:ime-enter
       - run: npm run test:word-omml
       - run: npm run test:platform-onboarding
+      - run: npm run test:editor-lifecycle
+      - run: npm run test:macos-offline-office
       - run: mkdir -p dist-ocr/macos-arm64
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib

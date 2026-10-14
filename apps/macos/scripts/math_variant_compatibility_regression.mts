@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import {
   compatibilityCommandNames,
-  compatibilityRawPlaceholderTemplates,
   compatibilityRequiredArgumentCounts,
-  compatibilityWrapperCanonicalTargets,
-  compatibilityWrapperPreviews,
 } from "../src/autocomplete/compatibilityCommands.ts";
 import { commandRegistry } from "../src/autocomplete/commandRegistry.ts";
 import {
@@ -50,9 +47,7 @@ for (const command of wrapperCommands) {
     `${command} is missing from the command registry`,
   );
   assert.ok(
-    compatibilityWrapperPreviews.has(command) ||
-      command === "\\bm" ||
-      command === "\\mathbfit",
+    commandRegistry.some(entry => entry.command === command && entry.insertTemplate.includes("\\placeholder{}")),
     `${command} is missing wrapper-input registration`,
   );
 }
@@ -79,25 +74,25 @@ for (const command of [
     `${command} is missing from the command registry`,
   );
   assert.ok(
-    compatibilityRawPlaceholderTemplates.has(command),
+    commandRegistry.some(entry => entry.command === command && entry.insertTemplate.includes("\\placeholder{}")),
     `${command} is missing structural placeholder registration`,
   );
 }
 
 assert.equal(
-  compatibilityWrapperCanonicalTargets.get("\\boldmath"),
+  commandRegistry.find(entry => entry.command === "\\boldmath")?.insertTemplate.split("{")[0],
   "\\mathbfit",
 );
 assert.equal(
-  compatibilityWrapperCanonicalTargets.get("\\simbfit"),
+  commandRegistry.find(entry => entry.command === "\\simbfit")?.insertTemplate.split("{")[0],
   "\\symbfit",
 );
 assert.equal(
-  compatibilityWrapperCanonicalTargets.get("\\Bbb"),
+  commandRegistry.find(entry => entry.command === "\\Bbb")?.insertTemplate.split("{")[0],
   "\\mathbb",
 );
 assert.equal(
-  compatibilityWrapperCanonicalTargets.get("\\frak"),
+  commandRegistry.find(entry => entry.command === "\\frak")?.insertTemplate.split("{")[0],
   "\\mathfrak",
 );
 assert.ok(compatibilityCommandNames.has("symbfit"));

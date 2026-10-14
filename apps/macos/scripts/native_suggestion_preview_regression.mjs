@@ -5,6 +5,7 @@ import process from "node:process";
 
 const fullAudit = process.argv.includes("--audit");
 const sqIntegralAudit = process.argv.includes("--sq-integrals");
+const dotsAudit = process.argv.includes("--dots-only");
 const offset = process.pid % 1000;
 const previewPort = 18400 + offset;
 const debugPort = 23400 + offset;
@@ -170,6 +171,29 @@ async function main() {
       };
       persisted.state.activeLineId = persisted.state.lines[0].id;
       delete persisted.state.inputBehavior;
+      const now = Date.now();
+      persisted.state.personalize = true;
+      persisted.state.usage = {
+        ...(persisted.state.usage || {}),
+        "legacy-bold": {
+          commandId: "legacy-bold",
+          useCount: 90,
+          lastUsedAt: now - 1_000,
+          recentUses: [now - 1_000],
+          acceptedPrefixes: { b: 1 },
+          contextCounts: {},
+          pinned: false,
+        },
+        "bm-bold-symbol": {
+          commandId: "bm-bold-symbol",
+          useCount: 10,
+          lastUsedAt: now - 2_000,
+          recentUses: [now - 2_000],
+          acceptedPrefixes: { b: 8 },
+          contextCounts: {},
+          pinned: false,
+        },
+      };
       localStorage.setItem(storageKey, JSON.stringify(persisted));
     })()`);
     await client.send("Page.reload", { ignoreCache: true });
@@ -254,7 +278,7 @@ async function main() {
         state = await evaluate(`(() => {
           const expected = ${JSON.stringify(expectedCommands)};
           const stablePanel = document.getElementById(
-            "visualtex-native-input-suggestion-popover",
+            "mathlive-suggestion-popover",
           );
           const sourcePanel = document.getElementById("mathlive-suggestion-popover");
           const panel = stablePanel?.querySelector("li[data-command]")
@@ -310,7 +334,7 @@ async function main() {
         await evaluate(`(() => {
           const expected = ${JSON.stringify(expectedCommands)};
           const stablePanel = document.getElementById(
-            "visualtex-native-input-suggestion-popover",
+            "mathlive-suggestion-popover",
           );
           const sourcePanel = document.getElementById("mathlive-suggestion-popover");
           const panel = stablePanel?.querySelector("li[data-command]")
@@ -412,6 +436,17 @@ async function main() {
         },
       },
       {
+        query: "\\dots",
+        expected: {
+          "\\dots": "native",
+          "\\dotsb": "native",
+          "\\dotsc": "native",
+          "\\dotsi": "native",
+          "\\dotsm": "native",
+          "\\dotso": "native",
+        },
+      },
+      {
         query: "\\q",
         expected: {
           "\\quad": "spacing",
@@ -433,9 +468,11 @@ async function main() {
         },
       },
     ];
-    const cases = sqIntegralAudit
-      ? allCases.filter((testCase) => testCase.query === "\\sq")
-      : allCases;
+    const cases = dotsAudit
+      ? allCases.filter((testCase) => testCase.query === "\\dots")
+      : sqIntegralAudit
+        ? allCases.filter((testCase) => testCase.query === "\\sq")
+        : allCases;
 
     const results = {};
     for (const testCase of cases) {
@@ -488,6 +525,44 @@ async function main() {
           );
         }
       }
+      if (testCase.query === "\\b") {
+        const rankedCommands = await evaluate(`(() => {
+          const stablePanel = document.getElementById(
+            "mathlive-suggestion-popover",
+          );
+          return [...(stablePanel?.querySelectorAll("li[data-command]") ?? [])]
+            .map((item) => item.dataset.command ?? "");
+        })()`);
+        const bmIndex = rankedCommands.indexOf("\\bm");
+        const boldIndex = rankedCommands.indexOf("\\bold");
+        assert.ok(bmIndex >= 0 && boldIndex >= 0, "\\b ranking candidates exist");
+        assert.ok(
+          bmIndex < boldIndex,
+          `prefix-frequency ranking puts \\bm before globally-more-used \\bold: ${JSON.stringify(rankedCommands)}`,
+        );
+      }
+      if (testCase.query === "\\dots") {
+        await key(" ", "Space", 32);
+        await sleep(100);
+        const acceptedDots = await evaluate(`(() => {
+          const field = document.querySelector("math-field.visual-mathfield");
+          const rendered = field?.shadowRoot?.querySelector(".ML__mathlive");
+          return {
+            value: field?.value ?? "",
+            error: Boolean(rendered?.querySelector(".ML__error")),
+          };
+        })()`);
+        assert.match(
+          acceptedDots.value,
+          /\\dots/,
+          "accepting \\dots did not preserve the supported source command",
+        );
+        assert.equal(
+          acceptedDots.error,
+          false,
+          "accepted \\dots rendered as a MathLive error",
+        );
+      }
       if (testCase.query === "\\sq") {
         const sqint = entries.find((entry) => entry.command === "\\sqint");
         const sqiint = entries.find((entry) => entry.command === "\\sqiint");
@@ -522,6 +597,81 @@ async function main() {
       }
     }
 
+    if (dotsAudit) {
+      await client.send("Emulation.setDeviceMetricsOverride", {
+        width: 800,
+        height: 230,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await sleep(100);
+      await clearAndFocus();
+      await evaluate(`(() => {
+        const field = document.querySelector("math-field.visual-mathfield");
+        field.style.position = "fixed";
+        field.style.left = "240px";
+        field.style.top = "184px";
+        field.style.width = "320px";
+        field.style.zIndex = "200";
+        field.focus();
+        field.position = field.lastOffset;
+        field.shadowRoot
+          ?.querySelector('[part="keyboard-sink"]')
+          ?.focus({ preventScroll: true });
+        return true;
+      })()`);
+      await typeText("\\b");
+      const clampStarted = Date.now();
+      let clamped;
+      while (Date.now() - clampStarted < 5_000) {
+        clamped = await evaluate(`(() => {
+          const panel = document.getElementById(
+            "mathlive-suggestion-popover",
+          );
+          const list = panel?.querySelector("ul");
+          const rect = panel?.getBoundingClientRect();
+          return {
+            visible: panel?.classList.contains("is-visible") ?? false,
+            top: rect?.top ?? -1,
+            bottom: rect?.bottom ?? -1,
+            height: rect?.height ?? 0,
+            viewportHeight: window.innerHeight,
+            maxHeight:
+              panel?.style.getPropertyValue(
+                "--visualtex-suggestion-max-height",
+              ) ?? "",
+            listClientHeight: list?.clientHeight ?? 0,
+            listScrollHeight: list?.scrollHeight ?? 0,
+          };
+        })()`);
+        if (clamped?.visible && clamped.height > 0) break;
+        await sleep(50);
+      }
+      assert.equal(
+        clamped?.visible,
+        true,
+        `viewport-clamped candidate panel was not visible: ${JSON.stringify(clamped)}`,
+      );
+      assert.ok(
+        clamped.top >= 7,
+        `candidate panel escaped above the viewport: ${JSON.stringify(clamped)}`,
+      );
+      assert.ok(
+        clamped.bottom <= clamped.viewportHeight - 7,
+        `candidate panel escaped below the viewport: ${JSON.stringify(clamped)}`,
+      );
+      assert.match(
+        clamped.maxHeight,
+        /px$/,
+        `candidate panel did not receive a viewport height budget: ${JSON.stringify(clamped)}`,
+      );
+      assert.ok(
+        clamped.listClientHeight <= Number.parseFloat(clamped.maxHeight) + 1,
+        `candidate list ignored the viewport height budget: ${JSON.stringify(clamped)}`,
+      );
+      await client.send("Emulation.clearDeviceMetricsOverride");
+    }
+
     if (fullAudit) {
       const commands = new Map();
       const prefixes =
@@ -537,7 +687,7 @@ async function main() {
             const query = ${JSON.stringify(`\\${prefix}`)};
             const field = document.querySelector("math-field.visual-mathfield");
             const stablePanel = document.getElementById(
-              "visualtex-native-input-suggestion-popover",
+              "mathlive-suggestion-popover",
             );
             const sourcePanel = document.getElementById("mathlive-suggestion-popover");
             const panel = stablePanel?.querySelector("li[data-command]")
@@ -580,7 +730,7 @@ async function main() {
         const entries = await evaluate(`(() => {
           const query = ${JSON.stringify(`\\${prefix}`)};
           const stablePanel = document.getElementById(
-            "visualtex-native-input-suggestion-popover",
+            "mathlive-suggestion-popover",
           );
           const sourcePanel = document.getElementById("mathlive-suggestion-popover");
           const panel = stablePanel?.querySelector("li[data-command]")

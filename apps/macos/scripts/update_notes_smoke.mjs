@@ -68,10 +68,12 @@ assert.equal(
 );
 
 const updateDialogSource = await readFile("src/components/UpdateDialog.tsx", "utf8");
+const releaseWelcomeSource = await readFile("src/update/releaseWelcome.ts", "utf8");
 const updateDialogStyles = await readFile("src/styles.css", "utf8");
-const qqGroupCard = await readFile("public/qq-group-card.svg", "utf8");
-assert(updateDialogSource.includes('const QQ_GROUP_NUMBER = "1045801770"'));
-assert(updateDialogSource.includes('const QQ_GROUP_IMAGE_URL = "/qq-group-card.svg"'));
+const windowsQqSource = await readFile("../windows/src/assets/visualtexQqGroup.ts", "utf8");
+assert(updateDialogSource.includes("../../../windows/src/assets/visualtexQqGroup"));
+assert(updateDialogSource.includes("VISUALTEX_QQ_GROUP_NUMBER"));
+assert(updateDialogSource.includes("VISUALTEX_QQ_GROUP_QR_DATA_URL"));
 assert(updateDialogSource.includes("docs/images/wechat-pay.jpg"));
 assert(updateDialogSource.includes("docs/images/alipay.jpg"));
 assert(updateDialogSource.includes('className="update-community-card"'));
@@ -79,10 +81,26 @@ assert(updateDialogSource.includes('className="update-community-qr-row"'));
 assert(updateDialogSource.includes("支持与交流"));
 assert(updateDialogSource.includes("微信打赏"));
 assert(updateDialogSource.includes("支付宝打赏"));
-assert(updateDialogSource.includes("自愿打赏通道"));
-assert(updateDialogSource.includes("是否打赏完全不影响 VisualTeX 的任何功能和正常使用"));
+assert(updateDialogSource.includes("有经济能力并且觉得产品不错的可以支持一下作者呀！"));
+assert(updateDialogSource.includes("打赏完全自愿，不影响 VisualTeX 的任何功能和正常使用"));
+assert(updateDialogSource.includes("QQ群二维码用于加入交流群"));
+assert(updateDialogSource.includes("loading=\"eager\""));
+assert(updateDialogSource.includes("wechatPayImageUrl"));
+assert(updateDialogSource.includes("alipayImageUrl"));
 assert(updateDialogSource.includes("QQ群"));
+assert(updateDialogSource.includes("updateAvailable || releaseWelcome"));
+assert(updateDialogSource.includes("releaseWelcome ?"));
+assert(releaseWelcomeSource.includes('RELEASE_WELCOME_VERSION = "1.2.7"'));
+assert(releaseWelcomeSource.includes("visualtex.release-welcome.${RELEASE_WELCOME_VERSION}.seen"));
+assert(releaseWelcomeSource.includes("VisualTeX ${RELEASE_WELCOME_VERSION}"));
+assert(releaseWelcomeSource.includes("Office 公式复制工作流"));
+assert(releaseWelcomeSource.includes("移动复制件后编辑，不再影响原公式的位置或内容"));
+assert(releaseWelcomeSource.includes("化学反应箭头与可逆反应箭头结构"));
+assert(releaseWelcomeSource.includes("\\\\dagger"));
+assert(releaseWelcomeSource.includes("\\\\ket{}"));
+assert(updateDialogSource.includes("更新内容"));
 assert(updateDialogStyles.includes(".update-community-qr-row"));
+assert(updateDialogStyles.includes(".update-community-qr-card"));
 assert(updateDialogStyles.includes("grid-template-columns: repeat(3, minmax(0, 1fr))"));
 assert(!updateDialogSource.includes(privateChineseName));
 assert(
@@ -91,8 +109,8 @@ assert(
     .includes(privateEnglishName.toLocaleLowerCase()),
 );
 assert(!updateDialogSource.includes("Join the VisualTeX QQ community"));
-assert(qqGroupCard.includes("https://qm.qq.com/q/TppXdoOO8Q") === false);
-assert(qqGroupCard.includes("1045801770"));
-assert(qqGroupCard.includes("VisualTeX 交流群"));
+assert(windowsQqSource.includes('VISUALTEX_QQ_GROUP_NUMBER = "1045801770"'));
+assert(windowsQqSource.includes("VISUALTEX_QQ_GROUP_QR_DATA_URL"));
+assert(windowsQqSource.includes("data:image/png;base64"));
 
 console.log("Localized update notes and QQ community card smoke test passed");

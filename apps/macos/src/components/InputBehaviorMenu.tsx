@@ -7,7 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
-import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
+import { MathPreview } from "./MathPreview";
 import {
   ArrowLeft,
   ArrowRight,
@@ -78,8 +78,8 @@ const COMMAND_SUGGESTION_OPTIONS: InputBehaviorOption[] = [
     key: "showStructuredCommandSuggestions",
     titleZh: "求和、积分等结构候选框",
     titleEn: "Structured command suggestions",
-    descriptionZh: "控制 VisualTeX 的大型候选框，默认开启；不影响 MathLive 原生命令提示框",
-    descriptionEn: "Controls the large VisualTeX panel for sums, integrals and similar structures; does not affect MathLive's native command panel",
+    descriptionZh: "控制 VisualTeX 的大型候选框，默认开启",
+    descriptionEn: "Controls the large VisualTeX panel for sums, integrals and similar structures",
   },
   {
     key: "showOtherCommandSuggestions",
@@ -103,17 +103,6 @@ function previewLatex(definition: VisualTexInlineShortcutDefinition) {
 }
 
 function readActiveInlineShortcuts(): VisualTexInlineShortcutDefinitions {
-  try {
-    const field = document.querySelector("math-field") as
-      | (HTMLElement & {
-          inlineShortcuts?: Readonly<VisualTexInlineShortcutDefinitions>;
-        })
-      | null;
-    const active = field?.inlineShortcuts;
-    if (active && Object.keys(active).length > 0) return { ...active };
-  } catch {
-    // Fall back to the explicit VisualTeX table while the mathfield mounts.
-  }
   return { ...visualTexAutoEscapeInlineShortcuts };
 }
 
@@ -127,20 +116,10 @@ interface InputBehaviorPopoverLayout {
 
 function ShortcutOutput({ definition }: { definition: VisualTexInlineShortcutDefinition }) {
   const latex = previewLatex(definition);
-  const markup = useMemo(() => {
-    try {
-      return convertVisualTexLatexToMarkup(latex, { defaultMode: "math" });
-    } catch {
-      return "";
-    }
-  }, [latex]);
-
-  if (!markup) return <code>{shortcutLatex(definition)}</code>;
   return (
-    <span
-      className="auto-escape-map-output-formula"
-      dangerouslySetInnerHTML={{ __html: markup }}
-    />
+    <span className="auto-escape-map-output-formula">
+      <MathPreview latex={latex} staticLayout />
+    </span>
   );
 }
 
@@ -175,16 +154,16 @@ export function InputBehaviorMenu() {
       entries.forEach(([shortcut]) => seen.add(shortcut));
       return { ...group, entries };
     });
-    const mathLiveEntries = Object.entries(activeShortcutDefinitions).filter(
+    const otherEntries = Object.entries(activeShortcutDefinitions).filter(
       ([shortcut]) => !seen.has(shortcut),
     );
-    if (mathLiveEntries.length > 0) {
+    if (otherEntries.length > 0) {
       groups.push({
-        id: "mathlive",
-        titleZh: "MathLive 内置",
-        titleEn: "MathLive built-ins",
+        id: "other",
+        titleZh: "其他内置映射",
+        titleEn: "Other built-in mappings",
         shortcuts: {},
-        entries: mathLiveEntries,
+        entries: otherEntries,
       });
     }
     return groups
@@ -260,6 +239,18 @@ export function InputBehaviorMenu() {
         const popoverGap = 6;
         const viewportRight = Math.max(viewportMargin, window.innerWidth - viewportMargin);
         const viewportBottom = Math.max(viewportMargin, window.innerHeight - viewportMargin);
+        const bottomTabs = workspace?.querySelector<HTMLElement>(".classic-bottom-tabs");
+        const bottomTabsRect = bottomTabs?.getBoundingClientRect();
+        const bottomTabsBlockPopover = Boolean(
+          bottomTabsRect &&
+            bottomTabsRect.width > 0 &&
+            bottomTabsRect.height > 0 &&
+            bottomTabsRect.top > triggerRect.bottom + popoverGap &&
+            bottomTabsRect.top < viewportBottom,
+        );
+        const verticalBottomBound = bottomTabsBlockPopover
+          ? Math.max(viewportMargin, bottomTabsRect!.top - popoverGap)
+          : viewportBottom;
         const editorIsUsable = Boolean(
           editorRect && editorRect.width >= 140 && editorRect.height >= 100,
         );
@@ -281,12 +272,12 @@ export function InputBehaviorMenu() {
           : viewportMargin;
         const top = Math.min(
           Math.max(triggerRect.bottom + popoverGap, minimumTop),
-          Math.max(viewportMargin, viewportBottom - 96),
+          Math.max(viewportMargin, verticalBottomBound - 72),
         );
         const preferredMaxHeight = page === "mappings" ? 620 : 560;
         const maxHeight = Math.max(
-          96,
-          Math.min(preferredMaxHeight, viewportBottom - top),
+          72,
+          Math.min(preferredMaxHeight, verticalBottomBound - top),
         );
         const next = {
           left,
@@ -312,6 +303,8 @@ export function InputBehaviorMenu() {
     resizeObserver.observe(trigger);
     const workspace = trigger.closest<HTMLElement>(".workspace");
     if (workspace) resizeObserver.observe(workspace);
+    const bottomDock = workspace?.querySelector<HTMLElement>(".classic-bottom-dock");
+    if (bottomDock) resizeObserver.observe(bottomDock);
     window.addEventListener("resize", updateLayout);
     window.addEventListener("scroll", updateLayout, true);
     updateLayout();
@@ -344,7 +337,7 @@ export function InputBehaviorMenu() {
         onClick={() => setOpen((value) => !value)}
         title={isEn ? "Input behavior" : "操作逻辑"}
       >
-        <MousePointerClick size={14} />
+        <MousePointerClick size={16} />
         <span>{isEn ? "Input behavior" : "操作逻辑"}</span>
         <ChevronDown size={13} aria-hidden="true" />
       </button>

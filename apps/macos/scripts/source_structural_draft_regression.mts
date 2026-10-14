@@ -1,7 +1,7 @@
 #!/usr/bin/env -S npx tsx
 
 import assert from "node:assert/strict";
-import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
+import { parseLatexSourceDraft, parseUniversalLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
 import { convertVisualTexLatexToMarkup } from "../src/editor/mathLiveIntegralCompatibility.ts";
 import { compatibilityRequiredArgumentCounts } from "../src/autocomplete/compatibilityCommands.ts";
 import { latexCompletions } from "codemirror-lang-latex";
@@ -192,6 +192,78 @@ const fractionDraft = parseLatexSourceDraft(String.raw`\frac`, "raw");
 assert.equal(
   fractionDraft.previewValues?.[0],
   String.raw`\frac{\placeholder{}}{\placeholder{}}`,
+);
+
+const reportedMixedSource = String.raw`$\textit{\text{密度矩阵}}\mathit{\text{：}}bloch\mathit{\ }vector\mathit{:}\vec{n}\mathit{=}\left(\mathit{\sin}\theta\mathit{\cos}\varphi\mathit{,\sin}\theta\mathit{\sin}\varphi\mathit{,\cos}\theta\right)\mathit{=}\mathnormal{\left\lbrack\left\langle\sigma_{x}\right\rangle\mathit{,}\left\langle\sigma_{y}\right\rangle\mathit{,}\left\langle\sigma_{z}\right\rangle\right\rbrack}_{\psi}$
+
+\begin{align*}
+& \left(\vec{n}\mathit{\cdot}\vec{\sigma}\right)\ket{\psi}\mathit{=}\ket{\psi} \\
+& N\left(\theta\mathit{\rightarrow}\theta\mathit{+}d\theta\mathit{,}\varphi\mathit{\rightarrow}\varphi\mathit{+}d\varphi\right)/N\mathit{=}P\left(\theta\mathit{,}\varphi\right)\sin\theta d\theta d\varphi \\
+& \ket{\psi}=\cos\frac{\theta}{2}\ket{+}+\sin\frac{\theta}{2}\ket{\mathit{-}}
+\end{align*}
+
+$\textit{\text{区分相干和非相干叠加}}$
+
+\begin{align*}
+& H=g\left\lbrack Z_1+I_1\right\rbrack\left\lbrack Z_2+I_2\right\rbrack \\
+&
+\end{align*}`;
+const reportedMixedParsed = parseUniversalLatexSourceDraft(
+  reportedMixedSource,
+  {
+    inlineTextPolicy: "text-command",
+    inlineWrapper: "dollar",
+    displayWrapper: "equation",
+    numbered: false,
+    multilineEnvironment: "align",
+  },
+);
+assert.equal(
+  reportedMixedParsed.valid,
+  true,
+  `reported mixed inline/align source must validate: ${reportedMixedParsed.error}`,
+);
+
+const reportedMixedWithoutOneRow = reportedMixedSource.replace(
+  String.raw`& N\left(\theta\mathit{\rightarrow}\theta\mathit{+}d\theta\mathit{,}\varphi\mathit{\rightarrow}\varphi\mathit{+}d\varphi\right)/N\mathit{=}P\left(\theta\mathit{,}\varphi\right)\sin\theta d\theta d\varphi \\
+`,
+  "",
+);
+const reportedMixedWithoutOneRowParsed = parseUniversalLatexSourceDraft(
+  reportedMixedWithoutOneRow,
+  {
+    inlineTextPolicy: "text-command",
+    inlineWrapper: "dollar",
+    displayWrapper: "equation",
+    numbered: false,
+    multilineEnvironment: "align",
+  },
+);
+assert.equal(
+  reportedMixedWithoutOneRowParsed.valid,
+  true,
+  `deleting one complete align row must remain valid: ${reportedMixedWithoutOneRowParsed.error}`,
+);
+
+const reportedMixedWithAddedRow = reportedMixedSource.replace(
+  String.raw`& \ket{\psi}=\cos\frac{\theta}{2}\ket{+}+\sin\frac{\theta}{2}\ket{\mathit{-}}`,
+  String.raw`& \ket{\psi}=\cos\frac{\theta}{2}\ket{+}+\sin\frac{\theta}{2}\ket{\mathit{-}} \\
+& \rho=\frac{1}{2}\left(I+\vec{n}\mathit{\cdot}\vec{\sigma}\right)`,
+);
+const reportedMixedWithAddedRowParsed = parseUniversalLatexSourceDraft(
+  reportedMixedWithAddedRow,
+  {
+    inlineTextPolicy: "text-command",
+    inlineWrapper: "dollar",
+    displayWrapper: "equation",
+    numbered: false,
+    multilineEnvironment: "align",
+  },
+);
+assert.equal(
+  reportedMixedWithAddedRowParsed.valid,
+  true,
+  `adding one complete align row must remain valid: ${reportedMixedWithAddedRowParsed.error}`,
 );
 
 const validStructures = [

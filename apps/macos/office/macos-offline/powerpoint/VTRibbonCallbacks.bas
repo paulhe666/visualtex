@@ -1,6 +1,14 @@
 Attribute VB_Name = "VTRibbonCallbacks"
 Option Explicit
 
+Public Sub VTPowerPointRibbonInlineOmml(ByVal control As IRibbonControl)
+    VisualTeX_NewInlineNativeEquation
+End Sub
+
+Public Sub VTPowerPointRibbonDisplayOmml(ByVal control As IRibbonControl)
+    VisualTeX_NewDisplayNativeEquation
+End Sub
+
 Public Sub VTPowerPointRibbonNew(ByVal control As IRibbonControl)
     VisualTeX_NewFormula
 End Sub

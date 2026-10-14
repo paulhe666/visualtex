@@ -1,25 +1,51 @@
 import CoreGraphics
 import Foundation
+import AppKit
 
 func usage() -> Never {
     FileHandle.standardError.write(
-        Data("Usage: swift macos_physical_double_click.swift <screen-x> <screen-y> [--appkit-y]\n".utf8)
+        Data("Usage: swift macos_physical_double_click.swift <screen-x> <screen-y> [--appkit-y] [--activate-powerpoint]\n".utf8)
     )
     exit(2)
 }
 
-guard (CommandLine.arguments.count == 3 || CommandLine.arguments.count == 4),
+guard CommandLine.arguments.count >= 3,
       let x = Double(CommandLine.arguments[1]),
       let sourceY = Double(CommandLine.arguments[2]),
       x.isFinite,
       sourceY.isFinite else {
     usage()
 }
-let appKitY = CommandLine.arguments.count == 4
-    ? CommandLine.arguments[3] == "--appkit-y"
-    : false
-if CommandLine.arguments.count == 4 && !appKitY {
+let options = Set(CommandLine.arguments.dropFirst(3))
+if options.count != CommandLine.arguments.count - 3 ||
+    !options.isSubset(of: ["--appkit-y", "--activate-powerpoint"]) {
     usage()
+}
+let appKitY = options.contains("--appkit-y")
+if options.contains("--activate-powerpoint") {
+    guard let powerpoint = NSRunningApplication.runningApplications(
+        withBundleIdentifier: "com.microsoft.Powerpoint"
+    ).first else {
+        FileHandle.standardError.write(Data("PowerPoint is not running\n".utf8))
+        exit(1)
+    }
+    guard powerpoint.activate() else {
+        FileHandle.standardError.write(Data("Unable to activate PowerPoint\n".utf8))
+        exit(1)
+    }
+    var activationError: NSDictionary?
+    NSAppleScript(source: "tell application \"Microsoft PowerPoint\" to activate")?
+        .executeAndReturnError(&activationError)
+    for _ in 0..<20 {
+        if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.microsoft.Powerpoint" {
+            break
+        }
+        usleep(50_000)
+    }
+    guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.microsoft.Powerpoint" else {
+        FileHandle.standardError.write(Data("PowerPoint did not become frontmost\n".utf8))
+        exit(1)
+    }
 }
 let mainDisplayBounds = CGDisplayBounds(CGMainDisplayID())
 let y = appKitY

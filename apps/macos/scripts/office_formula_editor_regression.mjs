@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { safeStorage } from "../src/runtime/safeStorage.ts";
+import {
+  readWordFormulaFontSize,
+  writeWordFormulaFontSize,
+} from "../src/office/shared/wordFormulaPreferences.ts";
 import { DOMParser } from "@xmldom/xmldom";
 import {
   normalizeFormulaEditorDocument,
@@ -702,20 +707,76 @@ const officeDialogSource = readFileSync(
   new URL("../src/office/dialog/OfficeDialogApp.tsx", import.meta.url),
   "utf8",
 );
+const editorWorkspaceSource = readFileSync(
+  new URL("../src/workspace/EditorWorkspace.tsx", import.meta.url),
+  "utf8",
+);
+// The preference moved to a shared module and now separates image / OMML.
+// Exercise the real storage behavior rather than requiring its key literal
+// and old helper name to remain inside OfficeDialogApp.tsx.
+assert.equal(typeof window, "undefined", "Font preference regression must use process-local memory only");
+const fontSizeKey = "visualtex.office.word.create.font-size-pt";
+const fontSizeKeys = [fontSizeKey, `${fontSizeKey}.image`, `${fontSizeKey}.omml`];
+const originalFontPreferences = fontSizeKeys.map((key) => [key, safeStorage.getItem(key)]);
+try {
+  fontSizeKeys.forEach((key) => safeStorage.removeItem(key));
+  assert.equal(readWordFormulaFontSize("image"), null);
+  assert.equal(readWordFormulaFontSize("omml"), null);
+  safeStorage.setItem(fontSizeKey, "14");
+  assert.equal(readWordFormulaFontSize("image"), 14, "Legacy preference must survive migration");
+  assert.equal(readWordFormulaFontSize("omml"), 14);
+  writeWordFormulaFontSize("image", 12);
+  writeWordFormulaFontSize("omml", 18);
+  assert.equal(readWordFormulaFontSize("image"), 12, "OMML size changes must not overwrite image size");
+  assert.equal(readWordFormulaFontSize("omml"), 18);
+  writeWordFormulaFontSize("image", Number.NaN);
+  assert.equal(readWordFormulaFontSize("image"), 12, "Invalid sizes must not destroy a valid preference");
+  writeWordFormulaFontSize("image", 0);
+  writeWordFormulaFontSize("omml", 1000);
+  assert.equal(readWordFormulaFontSize("image"), 5);
+  assert.equal(readWordFormulaFontSize("omml"), 200);
+  safeStorage.setItem(`${fontSizeKey}.image`, "invalid");
+  assert.equal(readWordFormulaFontSize("image"), null);
+} finally {
+  for (const [key, value] of originalFontPreferences) {
+    if (value === null) safeStorage.removeItem(key);
+    else safeStorage.setItem(key, value);
+  }
+}
 assert.match(
   officeDialogSource,
-  /visualtex\.office\.word\.create\.font-size-pt/,
-  "new Word formulas must have a persistent font-size preference",
+  /session\.host === "word" && session\.mode === "create"\s*\?\s*\(readWordFormulaFontSize\(session\.nativeEquation \? "omml" : "image"\) \?\? requestedFontSizePt\)/,
+  "Word create sessions must restore the preference for their actual output type",
 );
 assert.match(
   officeDialogSource,
-  /session\.host === "word" && session\.mode === "create"\s*\? readOfficeWordCreateFontSizePreference/,
-  "Word create sessions must restore the last explicitly selected size",
+  /if \(session\.host === "word" && session\.mode === "create"\) \{\s*writeWordFormulaFontSize\(session\.nativeEquation \? "omml" : "image", nextFontSizePt\)/,
+  "Only explicit size changes in Word create mode should update the matching preference",
 );
 assert.match(
   officeDialogSource,
-  /if \(session\.host === "word" && session\.mode === "create"\) \{\s*writeOfficeWordCreateFontSizePreference\(nextFontSizePt\)/,
-  "only explicit size changes in Word create mode should update the preference",
+  /session\?\.nativeEquation && session\?\.mode === "edit"/,
+  "Native Office edits must be allowed to hydrate the live formula font from the Session",
+);
+assert.match(
+  editorWorkspaceSource,
+  /event\.code !== "Backslash"/,
+  "The editor must reserve Command+Backslash for formula/source focus switching",
+);
+assert.match(
+  editorWorkspaceSource,
+  /sourceFocusedRef\.current[\s\S]*editorRef\.current\?\.focus\(\)/,
+  "Command+Backslash must return focus from LaTeX source to the visual formula editor",
+);
+assert.match(
+  editorWorkspaceSource,
+  /setSourceOpen\(true\)[\s\S]*\.source-panel \.cm-content/,
+  "Command+Backslash must open and focus the LaTeX source editor from the formula editor",
+);
+assert.match(
+  editorWorkspaceSource,
+  /aria-keyshortcuts="Meta\+Backslash"/,
+  "The LaTeX source control must expose the formula/source focus shortcut",
 );
 
 console.log("Office formula editor regression passed");

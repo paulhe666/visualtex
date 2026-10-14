@@ -8,6 +8,8 @@ import {
   type FormulaLetterFont,
 } from "../../editor/formulaFontPreferences";
 
+export type InlineImageMathStyle = "text" | "display";
+
 export interface VisualTeXFormulaMetadata {
   schema: "visualtex-formula";
   schemaVersion: 1;
@@ -17,6 +19,13 @@ export interface VisualTeXFormulaMetadata {
   lines: Array<{ id: string; latex: string }>;
   codeFormat: string;
   displayMode: "inline" | "block";
+  /**
+   * Mathematical layout used by Word inline image formulas. This is separate
+   * from displayMode: the picture can remain inline while MathJax renders it
+   * with display-style operators/fractions. Missing means the historical text
+   * style so old documents keep their appearance.
+   */
+  inlineImageMathStyle?: InlineImageMathStyle;
   /** Whether a Word display formula participates in document equation numbering. */
   numbered?: boolean;
   /** Natural MathJax export bounds used to preserve PowerPoint's visual scale
@@ -48,6 +57,7 @@ export interface CreateFormulaMetadataInput {
   /** Canonical serialized source for formats whose editable lines omit wrappers. */
   sourceLatex?: string;
   displayMode?: "inline" | "block";
+  inlineImageMathStyle?: InlineImageMathStyle;
   numbered?: boolean;
   renderWidthPx?: number;
   renderHeightPx?: number;
@@ -66,7 +76,7 @@ export const VISUALTEX_FORMULA_SCHEMA = "visualtex-formula" as const;
 export const VISUALTEX_FORMULA_SCHEMA_VERSION = 1 as const;
 export const VISUALTEX_FORMULA_XML_NAMESPACE = "urn:visualtex:formula:1";
 export const VISUALTEX_METADATA_PREFIX = "visualtex:v1:deflate:";
-export const CURRENT_VISUALTEX_VERSION = "1.2.6";
+export const CURRENT_VISUALTEX_VERSION = "1.2.8";
 
 function bytesToBase64Url(bytes: Uint8Array) {
   let binary = "";
@@ -131,6 +141,9 @@ export function isVisualTeXFormulaMetadata(
     ) &&
     typeof candidate.codeFormat === "string" &&
     (candidate.displayMode === "inline" || candidate.displayMode === "block") &&
+    (candidate.inlineImageMathStyle === undefined ||
+      candidate.inlineImageMathStyle === "text" ||
+      candidate.inlineImageMathStyle === "display") &&
     (candidate.numbered === undefined || typeof candidate.numbered === "boolean") &&
     (candidate.renderWidthPx === undefined ||
       (typeof candidate.renderWidthPx === "number" &&
@@ -184,6 +197,7 @@ export function createFormulaMetadata({
   codeFormat,
   sourceLatex,
   displayMode = "block",
+  inlineImageMathStyle,
   numbered = false,
   renderWidthPx,
   renderHeightPx,
@@ -255,6 +269,8 @@ export function createFormulaMetadata({
     lines: lines.map((line) => ({ ...line })),
     codeFormat,
     displayMode,
+    inlineImageMathStyle:
+      inlineImageMathStyle ?? original?.inlineImageMathStyle ?? "text",
     numbered,
     ...(resolvedRenderWidth ? { renderWidthPx: resolvedRenderWidth } : {}),
     ...(resolvedRenderHeight ? { renderHeightPx: resolvedRenderHeight } : {}),

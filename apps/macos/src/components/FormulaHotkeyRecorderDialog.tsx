@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
 import { AlertTriangle, Check, Keyboard, X } from "lucide-react";
 import { MathPreview } from "./MathPreview";
 import {
@@ -13,7 +14,13 @@ import {
   type FormulaHotkeyTarget,
 } from "../shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
+import {
+  officeHotkeyAction,
+  officeHotkeyActionLabel,
+} from "../shortcuts/officeHotkeys";
+import { configureOfficeHotkeys } from "../runtime/officeHotkeys";
 
 interface Props {
   target: FormulaHotkeyTarget | null;
@@ -24,6 +31,10 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
   const bindings = useFormulaHotkeyStore((state) => state.bindings);
   const setBinding = useFormulaHotkeyStore((state) => state.setBinding);
+  const officeBindings = useOfficeHotkeyStore((state) => state.bindings);
+  const removeOfficeBinding = useOfficeHotkeyStore(
+    (state) => state.removeBinding,
+  );
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
   const existingBinding = target
@@ -32,9 +43,12 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   const [capturedChord, setCapturedChord] = useState<FormulaHotkeyChord | null>(
     null,
   );
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
     setCapturedChord(existingBinding?.chord ?? null);
+    setSaveError("");
   }, [target?.id, existingBinding?.id]);
 
   useEffect(() => {
@@ -68,17 +82,22 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
     };
   }, [target, onClose]);
 
-  const conflict = useMemo(() => {
-    if (!target || !capturedChord) return null;
+  const conflicts = useMemo(() => {
+    if (!target || !capturedChord) return { formula: null, office: null };
     const chordId = formulaHotkeyChordId(capturedChord);
-    return (
-      bindings.find(
+    return {
+      formula:
+        bindings.find(
         (binding) =>
           binding.target.id !== target.id &&
           formulaHotkeyChordId(binding.chord) === chordId,
-      ) ?? null
-    );
-  }, [bindings, capturedChord, target]);
+        ) ?? null,
+      office:
+        officeBindings.find(
+          (binding) => formulaHotkeyChordId(binding.chord) === chordId,
+        ) ?? null,
+    };
+  }, [bindings, capturedChord, officeBindings, target]);
 
   if (!target) return null;
 
@@ -88,13 +107,48 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   const hasModifier = capturedChord
     ? formulaHotkeyHasModifier(capturedChord)
     : false;
-  const canSave = Boolean(capturedChord && hasModifier && !protectedAction);
+  const canSave = Boolean(
+    capturedChord && hasModifier && !protectedAction && !saving,
+  );
   const targetLabel = formulaHotkeyTargetLabel(target, language);
+  const conflictLabel = conflicts.formula
+    ? formulaHotkeyTargetLabel(conflicts.formula.target, language)
+    : conflicts.office
+      ? officeHotkeyActionLabel(
+          officeHotkeyAction(conflicts.office.actionId),
+          language,
+        )
+      : null;
 
-  const saveBinding = () => {
+  const saveBinding = async () => {
     if (!capturedChord || !canSave) return;
-    setBinding(target, capturedChord);
-    onClose();
+    setSaving(true);
+    setSaveError("");
+    try {
+      if (conflicts.office && isTauri()) {
+        await configureOfficeHotkeys(
+          officeBindings.filter(
+            (binding) => binding.actionId !== conflicts.office?.actionId,
+          ),
+        );
+      }
+      if (conflicts.office) removeOfficeBinding(conflicts.office.actionId);
+      setBinding(target, capturedChord);
+      onClose();
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : String(
+              error ||
+                (isEn
+                  ? "Unable to replace the Office global hotkey."
+                  : "无法替换 Office 全局快捷键。"),
+            ),
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -175,18 +229,18 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
             </div>
           )}
 
-          {conflict && !protectedAction && hasModifier && (
+          {conflictLabel && !protectedAction && hasModifier && (
             <div className="formula-hotkey-message is-warning" role="alert">
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? `Currently assigned to “${formulaHotkeyTargetLabel(conflict.target, language)}”. Saving will replace that assignment.`
-                  : `当前已分配给“${formulaHotkeyTargetLabel(conflict.target, language)}”，保存后将替换原绑定。`}
+                  ? `Currently assigned to “${conflictLabel}”. Saving will replace that assignment.`
+                  : `当前已分配给“${conflictLabel}”，保存后将替换原绑定。`}
               </span>
             </div>
           )}
 
-          {capturedChord && canSave && !conflict && (
+          {capturedChord && canSave && !conflictLabel && (
             <div className="formula-hotkey-message is-success">
               <Check size={16} />
               <span>
@@ -194,6 +248,12 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
                   ? "Available in the visual formula editor."
                   : "该快捷键可在可视化公式编辑区使用。"}
               </span>
+            </div>
+          )}
+          {saveError && (
+            <div className="formula-hotkey-message is-danger" role="alert">
+              <AlertTriangle size={16} />
+              <span>{saveError}</span>
             </div>
           )}
         </div>
@@ -216,9 +276,13 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               type="button"
               className="primary-button"
               disabled={!canSave}
-              onClick={saveBinding}
+              onClick={() => void saveBinding()}
             >
-              {conflict
+              {saving
+                ? isEn
+                  ? "Registering…"
+                  : "正在注册…"
+                : conflictLabel
                 ? isEn
                   ? "Replace and assign"
                   : "替换并绑定"

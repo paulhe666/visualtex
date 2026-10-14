@@ -33,6 +33,51 @@ for (const id of ["power", "scripts", "subscript"]) {
   assert.ok(byId.has(id), `existing right-side script template disappeared: ${id}`);
 }
 
+for (const id of [
+  "double-vertical-bar",
+  "vert-double",
+  "left-vert-double",
+  "right-vert-double",
+]) {
+  const command = byId.get(id);
+  assert.ok(command, `missing double-vertical-bar completion command: ${id}`);
+  assert.deepEqual(
+    validateLatex(command.previewLatex),
+    [],
+    `${id} preview is not valid MathLive LaTeX: ${command.previewLatex}`,
+  );
+}
+for (const [id, category] of [
+  ["vector", "structure"],
+  ["plusminus", "relation"],
+  ["minusplus", "relation"],
+  ["circ", "relation"],
+  ["bullet", "relation"],
+  ["star", "relation"],
+  ["diamond", "relation"],
+  ["angle", "relation"],
+  ["measuredangle", "relation"],
+  ["sphericalangle", "relation"],
+  ["triangle", "relation"],
+  ["therefore", "relation"],
+  ["because", "relation"],
+  ["ni", "set"],
+  ["varnothing", "set"],
+  ["subsetneq", "set"],
+  ["supsetneq", "set"],
+  ["top", "set"],
+  ["bot", "set"],
+] as const) {
+  const command = byId.get(id);
+  assert.ok(command, `missing common toolbar symbol: ${id}`);
+  assert.equal(command.category, category, `${id} is in the wrong toolbar category`);
+  assert.deepEqual(
+    validateLatex(command.previewLatex),
+    [],
+    `${id} preview is not valid MathLive LaTeX: ${command.previewLatex}`,
+  );
+}
+
 const bareIntegralIds = [
   "int-bare",
   "iint-bare",
