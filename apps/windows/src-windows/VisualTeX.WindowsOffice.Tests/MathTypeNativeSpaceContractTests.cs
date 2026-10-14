@@ -11,6 +11,11 @@ public sealed class MathTypeNativeSpaceContractTests
     [InlineData("1.00em", "1em", 0xEF05)]
     [InlineData(" 2em ", "2em", 0xEF06)]
     [InlineData("2.000em", "2em", 0xEF06)]
+    // TeX's \, \: \; \! as MathType's own importers store them.
+    [InlineData("0.167em", "0.167em", 0xEF07)]
+    [InlineData("0.222em", "0.222em", 0xEF03)]
+    [InlineData("0.278em", "0.278em", 0xEF04)]
+    [InlineData("-0.167em", "-0.167em", 0xEF01)]
     public void KnownNativeSpaceRetainsWidthAndIdentity(string width, string expected, int code)
     {
         var native = MathTypeMtefCodec.CreateEquationNative($"<math><mi>x</mi><mspace width='{width}'/><mi>y</mi></math>", false);
@@ -24,8 +29,6 @@ public sealed class MathTypeNativeSpaceContractTests
     }
 
     [Theory]
-    [InlineData("0.167em")]
-    [InlineData("-0.167em")]
     [InlineData("0.2778em")]
     [InlineData("0.333em")]
     [InlineData("1.01em")]

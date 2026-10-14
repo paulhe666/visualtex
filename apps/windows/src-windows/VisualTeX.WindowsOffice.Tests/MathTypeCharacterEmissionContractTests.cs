@@ -25,8 +25,9 @@ public sealed class MathTypeCharacterEmissionContractTests
             var bare=Native(token).Mtef;
             foreach(var mark in decorations)
             {
+                // Fixed decorations: a bare ~ ^ → ¯ is wide by the MathML dictionary.
                 var decorated=Native(new XElement("mover",new XAttribute("accent","true"),
-                    new XElement(token),new XElement("mo",mark.Item1))).Mtef;
+                    new XElement(token),new XElement("mo",new XAttribute("stretchy","false"),mark.Item1))).Mtef;
                 Assert.True(bare.Length+4 == decorated.Length,
                     $"{glyph}/{variant}/{mark.Item1}: bare {bare.Length}, decorated {decorated.Length}");
                 Assert.Equal(new byte[]{6,0,(byte)mark.Item2,0,0,0},decorated.Skip(decorated.Length-6).ToArray());

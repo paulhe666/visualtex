@@ -17,6 +17,14 @@ internal static class MathSpaceContract
     {
         new(0xEF05, "1em", @"\quad ", "Native WMF character-origin spacing verified for MTCode EF05."),
         new(0xEF06, "2em", @"\qquad ", "Native WMF character-origin spacing verified for MTCode EF06."),
+        // MathType's own spaces for TeX's thin, medium, thick and negative thin
+        // space: what MathType 7.9's TeX and MathML importers store for \, \: \;
+        // and \! (the MathML importer uses EF03 for \; as well). MathType's
+        // renderer gives them their width, which depends on the neighbours.
+        new(0xEF07, "0.167em", @"\,", "MathType 7.9 TeX and MathML import store \\, (0.167em) as MTCode EF07."),
+        new(0xEF03, "0.222em", @"\:", "MathType 7.9 TeX and MathML import store \\: (0.222em) as MTCode EF03."),
+        new(0xEF04, "0.278em", @"\;", "MathType 7.9 TeX import stores \\; (0.278em) as MTCode EF04."),
+        new(0xEF01, "-0.167em", @"\!", "MathType 7.9 TeX and MathML import store \\! (-0.167em) as MTCode EF01."),
     };
 
 

@@ -74,13 +74,18 @@ internal sealed class RenderService : ServiceBase
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
             catch (ObjectDisposedException) when (token.IsCancellationRequested) { break; }
-            catch (Exception error) { LogFailure(error); }
+            catch (Exception error)
+            {
+                LogFailure(error);
+                // Never spin: a persistent failure is retried at a bounded rate.
+                try { await Task.Delay(50, token).ConfigureAwait(false); }
+                catch (OperationCanceledException) { break; }
+            }
             finally
             {
                 // Reuse the first instance so another process cannot acquire the
                 // name between requests. Rendering is serialized across Office apps.
-                try { if (endpoint.IsConnected) endpoint.Disconnect(); } catch (IOException) { }
-                catch (ObjectDisposedException) { }
+                PipeInstance.Reset(endpoint);
             }
         }
     }

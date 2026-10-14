@@ -71,8 +71,10 @@ public sealed class MathTypeRealDocumentRegressionTests
     {
         AssertRoundTrip(source);
         var actual = XElement.Parse(RoundTrip(source));
+        // Under/over limits are MathType's limit template, whose empty main
+        // slot cannot take a neighbour either.
         var script = actual.Descendants().First(element =>
-            element.Name.LocalName is "msub" or "msup" or "msubsup");
+            element.Name.LocalName is "msub" or "msup" or "msubsup" or "munder" or "mover" or "munderover");
         Assert.Empty(script.Elements().First().Value);
     }
 

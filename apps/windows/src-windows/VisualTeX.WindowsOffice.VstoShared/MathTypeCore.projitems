@@ -7,6 +7,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)MathMlExplicitFenceContract.cs" Link="MathTypeCore\MathMlExplicitFenceContract.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefCodec.cs" Link="MathTypeCore\MathTypeMtefCodec.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefCodec.FontSize.cs" Link="MathTypeCore\MathTypeMtefCodec.FontSize.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MathTypeMtefCodec.Canonical.cs" Link="MathTypeCore\MathTypeMtefCodec.Canonical.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleInterop.cs" Link="MathTypeCore\MathTypeOleInterop.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleStorage.cs" Link="MathTypeCore\MathTypeOleStorage.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleClipboardProxy.cs" Link="MathTypeCore\MathTypeOleClipboardProxy.cs" />

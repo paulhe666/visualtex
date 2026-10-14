@@ -47,7 +47,10 @@ internal static class MathMlTokenStyleContract
         // Embedded glyphs/foreign content are outside this text-token contract.
         // Do not invent an italic/normal result from their flattened Value.
         if (token.HasElements) return null;
+        // Primes are never slanted: MathML's italic mapping has none, and TeX's
+        // \prime (MathJax's <mi>′</mi>) is upright, as MathType draws it.
         return token.Name.LocalName == "mi" && IsSingleMathMlCharacter(token.Value.Trim())
+            && token.Value.Trim() is not ("′" or "″" or "‴" or "⁗" or "‵" or "‶" or "‷")
             ? "italic"
             : "normal";
     }

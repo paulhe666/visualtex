@@ -95,6 +95,13 @@ public sealed class MathSpaceContractTests
             Assert.Same(native, MathSpaceContract.ParseWidth(native.MathMlWidth).NativeSpace);
             Assert.Contains("verified", native.SupportEvidence);
         }
-        Assert.Null(MathSpaceContract.FindNativeSpace(0xEF04));
+        // TeX's spacing commands carry the code MathType's own importers store.
+        foreach (var mtCode in new[] { 0xEF07, 0xEF03, 0xEF04, 0xEF01 })
+        {
+            var native = MathSpaceContract.FindNativeSpace(mtCode)!;
+            Assert.Same(native, MathSpaceContract.ParseWidth(native.MathMlWidth).NativeSpace);
+            Assert.Contains("MathType 7.9", native.SupportEvidence);
+        }
+        Assert.Null(MathSpaceContract.FindNativeSpace(0xEF02));
     }
 }

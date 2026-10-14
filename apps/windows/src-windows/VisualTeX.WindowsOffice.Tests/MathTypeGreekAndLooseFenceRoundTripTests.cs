@@ -28,8 +28,13 @@ public sealed class MathTypeGreekAndLooseFenceRoundTripTests
         Assert.Equal("normal", (string?)token.Attribute("mathvariant"));
         Assert.True((int?)token.Attribute("data-mtef-explicit-typeface") < 0);
         Assert.Equal((int)letter[0], (int?)token.Attribute("data-mtef-mtcode"));
-        // A Unicode text-font character must not reuse a Symbol/Euclid encoded8 slot.
-        Assert.Null(token.Attribute("data-mtef-encoded8"));
+        // Upright capitals take MathType's own Symbol position (its TeX
+        // importer's choice); other letters stay Unicode text-font characters
+        // and must not reuse a Symbol/Euclid encoded8 slot.
+        if (letter[0] is >= (char)0x0391 and <= (char)0x03A9)
+            Assert.NotNull(token.Attribute("data-mtef-encoded8"));
+        else
+            Assert.Null(token.Attribute("data-mtef-encoded8"));
         Assert.Equal(MathTypeMtefCodec.SemanticSignature(xml), MathTypeMtefCodec.SemanticSignature(output));
         var implicitNative = MathTypeMtefCodec.CreateEquationNativeAtFontSize(
             $"<math><mi>{letter}</mi></math>", true, 12);

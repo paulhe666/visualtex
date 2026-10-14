@@ -39,8 +39,10 @@ public sealed class MathTypeEmbellishmentTests
         Assert.Equal("y", script.Elements().First().Value);
         Assert.Equal(mark, script.Elements().Last().Value);
         Assert.DoesNotContain(math.Descendants(), e => e.Name.LocalName == "mover");
+        // TeX's own prime notation, which MathJax reads back as the same prime.
         var latex = MathMlToLatexConverter.Convert(math.ToString());
-        Assert.Contains("prime", latex);
+        var primes = new string('\'', mark[0] - 0x2031);
+        Assert.EndsWith("}" + primes, latex);
         Assert.NotEqual(MathTypeMtefCodec.SemanticSignature("<math><mi>y</mi></math>"),
             MathTypeMtefCodec.SemanticSignature(math.ToString()));
     }

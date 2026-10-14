@@ -13,7 +13,6 @@ public sealed class MathTypeAlternateGlyphAuthorityTests
         foreach (var item in new[] {
             (0x2223, 0xE92E, 0x88, "Euclid Math One", "EuclidMath1"),
             (0x2224, 0xEA2E, 0x8A, "Euclid Math One", "EuclidMath1"),
-            (0x2216, 0x2216, 0x80, "Euclid Math One", "EuclidMath1"),
             (0x228A, 0xEA42, 0xD8, "Euclid Math Two", "EuclidMath2"),
             (0x228B, 0xEA43, 0xD9, "Euclid Math Two", "EuclidMath2")
         })

@@ -47,6 +47,68 @@ public sealed class MathTypeImporterGlyphAuthorityTests
         Assert.Equal(native.Mtef, MathTypeMtefCodec.RewriteEquationNative(native.EquationNative, xml, false).Mtef);
     }
 
+    // TeX-importer positions: upright capitals, Hebrew letters and MathType's
+    // private codes for negated relations (MTCode differs from the character).
+    [Theory]
+    [InlineData("mi", 0x0393, 0x0393, 0x47, "Symbol")]           // \Gamma
+    [InlineData("mi", 0x03A9, 0x03A9, 0x57, "Symbol")]           // \Omega
+    [InlineData("mi", 0x2136, 0x2136, 0xFB, "Euclid Math One")]  // \beth
+    [InlineData("mo", 0x2A85, 0xE932, 0x8A, "Euclid Math Two")]  // \lessapprox
+    [InlineData("mo", 0x2AC5, 0xE90C, 0xD4, "Euclid Math Two")]  // \subseteqq
+    public void TexImporterPositionsRoundTrip(string element, int scalar, int mtCode, int slot, string font)
+    {
+        var source = $"<math><{element} mathvariant='normal'>&#x{scalar:X};</{element}></math>";
+        var native = MathTypeMtefCodec.CreateEquationNative(source, false);
+        var xml = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
+        var token = XDocument.Parse(xml).Descendants().Single(e => e.Name.LocalName is "mi" or "mo");
+        Assert.Equal(char.ConvertFromUtf32(scalar), token.Value);
+        Assert.Equal(mtCode, (int?)token.Attribute("data-mtef-mtcode"));
+        Assert.Equal(slot, (int?)token.Attribute("data-mtef-encoded8"));
+        Assert.Equal((font, (byte)0), NativeBinding(native.Mtef, token));
+        Assert.Equal(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(xml));
+    }
+
+    // MathType stores these variants as another command's glyph, so they
+    // are written, and read back, as that command.
+    [Theory]
+    [InlineData(0x25B3, 0x25B3, false)] // \vartriangle -> \triangle
+    [InlineData(0x223C, 0x223C, false)] // \thicksim -> \sim
+    [InlineData(0x2216, 0x2216, false)] // \smallsetminus -> \setminus
+    [InlineData(0x2A87, 0x2270, true)]  // \nleqslant -> \nleqq
+    public void MergedVariantIsWrittenAsMathTypesCommand(int scalar, int merged, bool alternate)
+    {
+        var source = $"<math><mo data-mjx-alternate='1'>&#x{scalar:X};</mo></math>";
+        var expected = $"<math><mo{(alternate ? " data-mjx-alternate='1'" : "")}>&#x{merged:X};</mo></math>";
+        var native = MathTypeMtefCodec.CreateEquationNative(source, false);
+        Assert.Equal(MathTypeMtefCodec.CreateEquationNative(expected, false).Mtef, native.Mtef);
+        var xml = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
+        Assert.Equal(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(xml));
+    }
+
+    // MathType keeps ASCII punctuation in its Function face (Times New Roman)
+    // and \mid in its built-in typeface 12; both read back as operators.
+    [Theory]
+    [InlineData("(", 2)][InlineData(")", 2)][InlineData(",", 2)][InlineData(":", 2)]
+    [InlineData("|", 2)][InlineData("!", 2)][InlineData("&#x2223;", 12)]
+    [InlineData("+", 6)][InlineData("=", 6)]
+    public void OperatorUsesMathTypesFace(string value, int face)
+    {
+        var source = $"<math><mo>{value}</mo></math>";
+        var native = MathTypeMtefCodec.CreateEquationNative(source, false);
+        var xml = MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative);
+        var token = XDocument.Parse(xml).Descendants().Single(e => e.Name.LocalName is "mi" or "mo" or "mtext");
+        Assert.Equal("mo", token.Name.LocalName);
+        Assert.Equal(face, NativeFace(native.Mtef));
+        Assert.Equal(MathTypeMtefCodec.SemanticSignature(source), MathTypeMtefCodec.SemanticSignature(xml));
+    }
+
+    private static int NativeFace(byte[] mtef)
+    {
+        // The single CHAR record of the root line: [2][options][typeface+128]...
+        var position = Array.IndexOf(mtef, (byte)2, MathTypeMtefCodec.FindRootStructureOffset(mtef));
+        return mtef[position + 2] - 128;
+    }
+
     [Fact]
     public void MathJaxTriangleIdentifierUsesMtExtra()
     {

@@ -9,7 +9,7 @@ public sealed class MathMlVerifiedAlternateSourceTests
     {
         foreach (var pair in new[]
         {
-            ("∣", @"\shortmid"), ("∤", @"\nshortmid"), ("∖", @"\smallsetminus"),
+            ("∣", @"\shortmid"), ("∤", @"\nshortmid"),
             ("⊊", @"\varsubsetneq"), ("⊋", @"\varsupsetneq"),
             ("⫋", @"\varsubsetneqq"), ("⫌", @"\varsupsetneqq"),
             ("⊈", @"\nsubseteqq"), ("⊉", @"\nsupseteqq"),

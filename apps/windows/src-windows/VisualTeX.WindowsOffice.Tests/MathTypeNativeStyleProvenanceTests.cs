@@ -27,7 +27,9 @@ public sealed class MathTypeNativeStyleProvenanceTests
         Assert.Equal(((char)scalar).ToString(), token.Value);
         Assert.Equal("italic", (string?)token.Attribute("mathvariant"));
         Assert.True((int?)token.Attribute("data-mtef-explicit-typeface") < 0);
-        Assert.Null(token.Attribute("data-mtef-encoded8"));
+        // Greek capitals keep MathType's Symbol position in every style.
+        var styledPosition = scalar is >= 0x0391 and <= 0x03A9 ? (int?)position : null;
+        Assert.Equal(styledPosition, (int?)token.Attribute("data-mtef-encoded8"));
         Assert.Equal(scalar, (int?)token.Attribute("data-mtef-mtcode"));
         Assert.Equal(italic.Mtef, MathTypeMtefCodec.RewriteEquationNative(italic.EquationNative, italicXml, false).Mtef);
 
@@ -38,7 +40,7 @@ public sealed class MathTypeNativeStyleProvenanceTests
         token = Token(normalXml);
         Assert.Equal(((char)scalar).ToString(), token.Value);
         Assert.Equal("normal", (string?)token.Attribute("mathvariant"));
-        Assert.Null(token.Attribute("data-mtef-encoded8"));
+        Assert.Equal(styledPosition, (int?)token.Attribute("data-mtef-encoded8"));
         Assert.NotEqual(MathTypeMtefCodec.SemanticSignature(normalXml), MathTypeMtefCodec.SemanticSignature(italicXml));
         Assert.Equal(normal.Mtef, MathTypeMtefCodec.RewriteEquationNative(normal.EquationNative, normalXml, false).Mtef);
     }

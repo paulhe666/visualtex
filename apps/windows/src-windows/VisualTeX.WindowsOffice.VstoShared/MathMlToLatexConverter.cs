@@ -24,6 +24,8 @@ internal static class MathMlToLatexConverter
             ["⫌"] = @"\varsupsetneqq ",
             ["⊈"] = @"\nsubseteqq ",
             ["⊉"] = @"\nsupseteqq ",
+            ["≰"] = @"\nleqq ",
+            ["≱"] = @"\ngeqq ",
         };
 
     // Defaults of the canonical named token commands below, as authored by
@@ -328,6 +330,16 @@ internal static class MathMlToLatexConverter
             ["⪌"] = @"\gtreqqless ",
             ["⪕"] = @"\eqslantless ",
             ["⪖"] = @"\eqslantgtr ",
+            // Characters MathType stores for these commands (the codec's
+            // MathTypeStoredCharacters); read back as the same commands.
+            ["⋜"] = @"\eqslantless ",
+            ["⋝"] = @"\eqslantgtr ",
+            ["⌆"] = @"\doublebarwedge ",
+            ["◀"] = @"\blacktriangleleft ",
+            ["▶"] = @"\blacktriangleright ",
+            ["♦"] = @"\blacklozenge ",
+            ["Ϝ"] = @"\digamma ",
+            ["ϝ"] = @"\digamma ",
             ["⪵"] = @"\precneqq ",
             ["⪶"] = @"\succneqq ",
             ["⪷"] = @"\precapprox ",
@@ -593,7 +605,15 @@ internal static class MathMlToLatexConverter
         var thickness = ((string?)element.Attribute("linethickness") ?? string.Empty).Trim();
         if (thickness.StartsWith("0", StringComparison.Ordinal))
             return @"\genfrac{}{}{0pt}{}{" + ConvertElement(children[0]) + "}{" + ConvertElement(children[1]) + "}";
-        return @"\frac{" + ConvertElement(children[0]) + "}{" + ConvertElement(children[1]) + "}";
+        // \tfrac and \dfrac: the fraction alone in an mstyle setting displaystyle.
+        var command = @"\frac";
+        if (element.Parent is { } style && style.Name.LocalName == "mstyle" && style.Elements().Count() == 1)
+        {
+            var displayStyle = ((string?)style.Attribute("displaystyle"))?.Trim();
+            if (displayStyle == "false") command = @"\tfrac";
+            else if (displayStyle == "true") command = @"\dfrac";
+        }
+        return command + "{" + ConvertElement(children[0]) + "}{" + ConvertElement(children[1]) + "}";
     }
 
     private static string ConvertRoot(XElement element)
@@ -608,6 +628,12 @@ internal static class MathMlToLatexConverter
         var children = element.Elements().ToList();
         if (children.Count < 2) return ConvertChildren(element);
         var result = GroupBase(ConvertElement(children[0]));
+        // A bare prime superscript is TeX's f' (MathJax reads it back as the
+        // same bare prime, MathType's prime embellishment); f^{\prime} is an mi.
+        if (superscript && children[1].Name.LocalName == "mo"
+            && children[1].Value.Trim() is { Length: > 0 } primes
+            && primes.All(prime => prime is '′' or '″' or '‴'))
+            return result + new string('\'', primes.Sum(prime => prime - 0x2031)); // ′ is one prime
         if (subscript) result += "_{" + ScriptArgument(children[1]) + "}";
         if (superscript) result += "^{" + ScriptArgument(children[1]) + "}";
         return result;
@@ -662,6 +688,13 @@ internal static class MathMlToLatexConverter
             "~" or "˜" => (stretchy ? @"\widetilde{" : @"\tilde{") + body + "}",
             "." or "˙" => @"\dot{" + body + "}",
             "¨" => @"\ddot{" + body + "}",
+            "⃛" => @"\dddot{" + body + "}",
+            "⃜" => @"\ddddot{" + body + "}",
+            "ˇ" => @"\check{" + body + "}",
+            "´" => @"\acute{" + body + "}",
+            "`" => @"\grave{" + body + "}",
+            "˘" => @"\breve{" + body + "}",
+            "˚" => @"\mathring{" + body + "}",
             "⏞" or "\uFE37" => @"\overbrace{" + body + "}",
             _ => @"\overset{" + ConvertElement(children[1]) + "}{" + body + "}",
         };

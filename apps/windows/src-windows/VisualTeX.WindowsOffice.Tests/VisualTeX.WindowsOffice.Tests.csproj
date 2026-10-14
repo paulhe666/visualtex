@@ -57,6 +57,7 @@
     <Compile Include="..\VisualTeX.WordVsto\MathTypeLocalFragment.cs" Link="MathTypeLocalFragment.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefCodec.cs" Link="MathTypeMtefCodec.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefCodec.FontSize.cs" Link="MathTypeMtefCodec.FontSize.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathTypeMtefCodec.Canonical.cs" Link="MathTypeMtefCodec.Canonical.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordNativeOmmlSemanticComparer.cs" Link="WordNativeOmmlSemanticComparer.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordFormulaService.MathTypePresentation.cs" Link="WordFormulaService.MathTypePresentation.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordUndoHistorySnapshot.cs" Link="WordUndoHistorySnapshot.cs" />
