@@ -329,6 +329,13 @@ function delimiterPreview(command: string): NativeSuggestionPreview | null {
   return { latex, kind: "delimiter" };
 }
 
+/** The sample LaTeX shown for a command whose bare form draws nothing useful. */
+export function nativeSuggestionPreviewLatex(command: string) {
+  return (
+    previewRegistry.get(command)?.latex ?? delimiterPreview(command)?.latex ?? null
+  );
+}
+
 export function nativeSuggestionPreviewHasVisibleInk(preview: HTMLElement) {
   const rendered =
     preview.querySelector<HTMLElement>(".ML__latex") ?? preview;

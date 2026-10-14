@@ -317,6 +317,202 @@ async function runDigitChecks({ evaluate, key, typeText, clearAndFocus }) {
   if (results.some((result) => !result.ok)) process.exitCode = 1;
 }
 
+// LaTeX source panel (CodeMirror): candidate panel geometry while typing,
+// snippet insertion with {} fields, Tab between fields, row-break guard.
+async function runSourceChecks({ evaluate, key, typeText, client }) {
+  const results = [];
+  const check = (name, ok, detail) => {
+    results.push({ name, ok });
+    console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : " " + JSON.stringify(detail)}`);
+  };
+  const ready = await (async () => {
+    for (let i = 0; i < 100; i++) {
+      if (await evaluate(`Boolean(document.querySelector(".source-panel .cm-content"))`)) return true;
+      await evaluate(`(() => {
+        const toggle = document.querySelector('[data-classic-bottom-view="source"]:not(.is-active), .standard-source-toggle:not(.is-active)');
+        toggle?.click();
+        return Boolean(toggle);
+      })()`);
+      await sleep(100);
+    }
+    return false;
+  })();
+  check("source panel mounted", ready, null);
+  if (!ready) {
+    process.exitCode = 1;
+    return;
+  }
+  const sourceText = () =>
+    evaluate(`[...document.querySelectorAll(".source-panel .cm-content .cm-line")].map((line) => line.textContent).join("\\n")`);
+  const reset = async () => {
+    await evaluate(`(() => {
+      const content = document.querySelector(".source-panel .cm-content");
+      content.focus();
+      document.execCommand("selectAll");
+      document.execCommand("delete");
+      return true;
+    })()`);
+    await key("Escape", "Escape", 27);
+    await sleep(150);
+  };
+  const panel = () =>
+    evaluate(`(() => {
+      const tooltip = document.querySelector(".cm-tooltip-autocomplete");
+      if (!tooltip) return null;
+      const list = tooltip.querySelector("ul");
+      // The visible box is the list; the tooltip is an invisible frame.
+      const rect = (list ?? tooltip).getBoundingClientRect();
+      const selection = window.getSelection();
+      const range = selection.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+      const caret = range ? (range.getClientRects()[0] ?? range.getBoundingClientRect()) : null;
+      const line = document.querySelector(".source-panel .cm-activeLine")?.getBoundingClientRect();
+      return {
+        custom: tooltip.classList.contains("cm-vt-completion"),
+        above: tooltip.classList.contains("cm-tooltip-above"),
+        // Empty space inside the box: above the first row, or below the last.
+        blankAbove: (() => {
+          const first = tooltip.querySelector("li");
+          return first && list.scrollTop === 0 ? first.getBoundingClientRect().top - rect.top : 0;
+        })(),
+        blankBelow: (() => {
+          const rows = [...tooltip.querySelectorAll("li")];
+          const lastRow = rows[rows.length - 1];
+          const scrolledToEnd = list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
+          return lastRow && scrolledToEnd ? rect.bottom - lastRow.getBoundingClientRect().bottom : 0;
+        })(),
+        top: rect.top, bottom: rect.bottom, left: rect.left, height: rect.height, listHeight: list?.getBoundingClientRect().height ?? 0,
+        caretTop: caret?.top ?? null, caretBottom: caret?.bottom ?? null,
+        lineTop: line?.top ?? null, lineBottom: line?.bottom ?? null,
+        labels: [...tooltip.querySelectorAll("li")].map((li) => li.querySelector(".cm-completionLabel")?.textContent ?? ""),
+        previews: [...tooltip.querySelectorAll("li .cm-vt-completion-preview")].map((p) => p.getBoundingClientRect().width > 2),
+        rowHeights: [...new Set([...tooltip.querySelectorAll("li")].map((li) => Math.round(li.getBoundingClientRect().height)))],
+      };
+    })()`);
+
+  // 1. Panel while typing \fr -> \frac: own styling, previews, steady height,
+  // never over the line being typed.
+  await reset();
+  // --push-lines=N moves the caret N lines down (towards the window bottom,
+  // where the panel has to open above the line).
+  for (let i = Number(argument("push-lines") ?? 0); i > 0; i--) await key("Enter", "Enter", 13);
+  const heights = [];
+  let last = null;
+  for (const part of ["\\f", "r", "a", "c"]) {
+    await typeText(part);
+    await sleep(220);
+    last = await panel();
+    heights.push(last?.height ?? 0);
+  }
+  check("source panel uses the VisualTeX candidate list", Boolean(last?.custom), last);
+  check("candidates show a rendered preview", Boolean(last?.previews.length) && last.previews.every(Boolean), last?.previews);
+  check("rows have one fixed height", last?.rowHeights.length === 1, last?.rowHeights);
+  check("no blank space in the box while typing", last && last.blankAbove <= 12 && last.blankBelow <= 12, { blankAbove: last?.blankAbove, blankBelow: last?.blankBelow, heights });
+  const lineTop = last?.lineTop ?? last?.caretTop;
+  const lineBottom = last?.lineBottom ?? last?.caretBottom;
+  check(`panel does not cover the line being typed (${last?.above ? "above" : "below"} the line)`, last && (last.top >= lineBottom - 0.5 || last.bottom <= lineTop + 0.5), last);
+  check("\\frac ranks first for \\frac", last?.labels[0] === "\\frac", last?.labels.slice(0, 6));
+
+  // 1b. Narrowing a long list (\a) to a short one (\al) leaves no empty
+  // space inside the box.
+  await reset();
+  for (let i = Number(argument("push-lines") ?? 0); i > 0; i--) await key("Enter", "Enter", 13);
+  await typeText("\\a");
+  await sleep(250);
+  const wide = await panel();
+  await typeText("l");
+  await sleep(250);
+  const narrow = await panel();
+  if (argument("shot")) {
+    const clip = await evaluate(`(() => {
+      const rect = document.querySelector(".cm-tooltip-autocomplete > ul").getBoundingClientRect();
+      return { x: Math.max(0, rect.left - 30), y: Math.max(0, rect.top - 40), width: rect.width + 60, height: rect.height + 100, scale: 1 };
+    })()`);
+    const shot = await client.send("Page.captureScreenshot", { format: "jpeg", quality: 60, clip });
+    await writeFile(argument("shot"), Buffer.from(shot.data, "base64"));
+  }
+  if (process.argv.includes("--verbose")) {
+    console.log(JSON.stringify(await evaluate(`(() => {
+      const tooltip = document.querySelector(".cm-tooltip-autocomplete");
+      const list = tooltip.querySelector("ul");
+      const describe = (node) => {
+        const style = getComputedStyle(node), rect = node.getBoundingClientRect();
+        return { cls: node.className, inline: node.getAttribute("style"), top: rect.top, height: rect.height, display: style.display, position: style.position,
+          minHeight: style.minHeight, maxHeight: style.maxHeight, cssHeight: style.height, overflow: style.overflowY, marginTop: style.marginTop, padding: style.padding, boxSizing: style.boxSizing };
+      };
+      return { tooltip: describe(tooltip), list: describe(list), scrollTop: list.scrollTop, scrollHeight: list.scrollHeight, first: describe(list.querySelector("li")), children: [...tooltip.children].map((c) => c.tagName + "." + c.className) };
+    })()`), null, 1));
+  }
+  check(
+    `no blank space in the box after narrowing (${wide?.labels.length} -> ${narrow?.labels.length} rows, ${narrow?.above ? "above" : "below"})`,
+    narrow && narrow.blankAbove <= 12 && narrow.blankBelow <= 12,
+    { blankAbove: narrow?.blankAbove, blankBelow: narrow?.blankBelow, height: narrow?.height, listHeight: narrow?.listHeight, rows: narrow?.labels.length, wideHeight: wide?.height },
+  );
+  await reset();
+  await typeText("\\frac");
+  await sleep(220);
+
+  // 2. Enter inserts \frac{}{} with the caret in the first field; Tab moves on.
+  await key("Enter", "Enter", 13);
+  await sleep(150);
+  await typeText("a");
+  await key("Tab", "Tab", 9);
+  await sleep(100);
+  await typeText("b");
+  await sleep(150);
+  const frac = await sourceText();
+  check("Enter inserts \\frac with {} fields and Tab reaches the second", frac.trim() === "\\frac{a}{b}", frac);
+
+  // 3. Tab accepts too; one-argument command.
+  await reset();
+  await typeText("\\sqr");
+  await sleep(220);
+  await key("Tab", "Tab", 9);
+  await sleep(120);
+  await typeText("x");
+  await sleep(150);
+  const sqrt = await sourceText();
+  check("Tab accepts \\sqrt into \\sqrt{x}", sqrt.trim() === "\\sqrt{x}", sqrt);
+
+  // 4. Native command with arguments gets its fields as well.
+  await reset();
+  await typeText("\\overset");
+  await sleep(220);
+  await key("Enter", "Enter", 13);
+  await sleep(120);
+  await typeText("a");
+  await key("Tab", "Tab", 9);
+  await typeText("b");
+  await sleep(150);
+  const overset = await sourceText();
+  check("\\overset inserts two fields", overset.trim() === "\\overset{a}{b}", overset);
+
+  // 5. Zero-argument symbol inserts as is.
+  await reset();
+  await typeText("\\alph");
+  await sleep(220);
+  await key("Enter", "Enter", 13);
+  await sleep(150);
+  const alpha = await sourceText();
+  check("\\alpha inserts bare", alpha.trim() === "\\alpha", alpha);
+
+  // 6. A row break \\ does not open the panel.
+  await reset();
+  await typeText("a\\\\");
+  await sleep(250);
+  const rowBreak = await panel();
+  check("row break does not open candidates", rowBreak === null, rowBreak);
+
+  // 7. Ranking matches the visual editor's top candidates.
+  await reset();
+  await typeText("\\s");
+  await sleep(250);
+  const ranked = await panel();
+  check("\\s ranks \\sum first", ranked?.labels[0] === "\\sum", ranked?.labels.slice(0, 8));
+  await key("Escape", "Escape", 27);
+
+  if (results.some((result) => !result.ok)) process.exitCode = 1;
+}
+
 async function main() {
   if (shotDir) await mkdir(shotDir, { recursive: true });
   const preview = spawn(
@@ -375,7 +571,8 @@ async function main() {
         localStorage.setItem(key, "true");
       const persisted = JSON.parse(localStorage.getItem("visualtex-editor") || "{}");
       const id = crypto.randomUUID();
-      persisted.state = { ...(persisted.state || {}), lines: [{ id, latex: "" }], activeLineId: id, usage: {}, personalize: false, suggestionCount: 24 };
+      persisted.state = { ...(persisted.state || {}), lines: [{ id, latex: "" }], activeLineId: id, usage: {}, personalize: false, suggestionCount: 24,
+        sourceOpen: ${process.argv.includes("--source")} };
       localStorage.setItem("visualtex-editor", JSON.stringify(persisted));
     })()`);
     await client.send("Page.reload", { ignoreCache: true });
@@ -404,6 +601,16 @@ async function main() {
       })()`);
       await sleep(60);
     };
+
+    if (process.argv.includes("--source")) {
+      const viewportHeight = Number(argument("viewport-height") ?? 0);
+      if (viewportHeight) {
+        await client.send("Emulation.setDeviceMetricsOverride", { width: 1400, height: viewportHeight, deviceScaleFactor: 1, mobile: false });
+        await sleep(300);
+      }
+      await runSourceChecks({ evaluate, key, typeText, client });
+      return;
+    }
 
     if (process.argv.includes("--digits")) {
       await runDigitChecks({ evaluate, key, typeText, clearAndFocus });

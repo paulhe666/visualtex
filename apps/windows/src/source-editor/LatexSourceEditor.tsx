@@ -13,6 +13,7 @@ import {
   highlightSpecialChars,
   keymap,
   lineNumbers,
+  tooltips,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import {
@@ -33,6 +34,10 @@ import { useEditorStore } from "../stores/editorStore";
 import type { LatexSourceDraftResult } from "../clipboard/LatexCopyService";
 import type { LatexCodeFormat, Theme } from "../types/formula";
 import { visualTeXLatexEditingExtensions } from "./latexSourceEditorSupport";
+import {
+  latexSourceCompletion,
+  latexSourceCompletionTheme,
+} from "./latexSourceCompletion";
 
 const visualTeXLatexHighlightStyle = HighlightStyle.define([
   {
@@ -218,17 +223,6 @@ export function LatexSourceEditor({
         color:
           "color-mix(in srgb, var(--syntax-bracket) 55%, var(--syntax-string))",
       },
-      ".cm-tooltip-autocomplete": {
-        border: "1px solid var(--border-strong)",
-        borderRadius: "7px",
-        backgroundColor: "var(--bg-elevated)",
-        boxShadow: "var(--shadow-md)",
-        overflow: "hidden",
-      },
-      ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
-        backgroundColor: "var(--accent-soft)",
-        color: "var(--text)",
-      },
     });
 
     const editorHistoryExtensions = externalHistoryOwner
@@ -279,7 +273,17 @@ export function LatexSourceEditor({
         highlightActiveLine(),
         highlightSpecialChars(),
         ...editorHistoryExtensions,
-        latexLanguageSupport({ enableLinting: false, enableTooltips: false }),
+        // The package's own completion is a generic document list (\section,
+        // \cite, ...) that inserts bare commands; VisualTeX supplies its own.
+        latexLanguageSupport({
+          enableLinting: false,
+          enableTooltips: false,
+          enableAutocomplete: false,
+        }),
+        latexSourceCompletion,
+        latexSourceCompletionTheme,
+        // Fixed tooltips are not clipped by the source panel's scroll box.
+        tooltips({ position: "fixed" }),
         visualTeXLatexEditingExtensions,
         syntaxHighlighting(visualTeXLatexHighlightStyle),
         EditorView.contentAttributes.of({

@@ -5,6 +5,11 @@ const FLOATING_LAYER_SELECTOR = [
   '#mathlive-suggestion-popover',
 ].join(',');
 
+// CodeMirror places and sizes its own tooltips (and its completion list is a
+// role="listbox" child of one). Fitting that list as if it floated on its
+// own pushed it down inside the tooltip, leaving the top of the box empty.
+const SELF_POSITIONED_OWNER_SELECTOR = '.cm-tooltip';
+
 const VIEWPORT_PADDING = 10;
 const MIN_FLOATING_LAYER_SIZE = 96;
 // Sub-pixel differences are rounding noise, not a new position. Ignoring them
@@ -198,6 +203,7 @@ function visibleFloatingLayers() {
   return Array.from(
     document.querySelectorAll<HTMLElement>(FLOATING_LAYER_SELECTOR),
   ).filter((layer) => {
+    if (layer.closest(SELF_POSITIONED_OWNER_SELECTOR)) return false;
     const style = window.getComputedStyle(layer);
     return style.display !== 'none' && style.visibility !== 'hidden';
   });

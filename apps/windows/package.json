@@ -98,6 +98,7 @@
     "test:windows-cases": "npm run build:desktop && node scripts/windows_cases_regression.mjs"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.8.1",
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.5.2",
