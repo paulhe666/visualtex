@@ -4,6 +4,13 @@ import { compatibilityCommands } from "./compatibilityCommands.ts";
 import { latestSharedCommands } from "./latestSharedCommands.ts";
 import { physicsToolbarCommands } from "./physicsToolbarCommands.ts";
 
+// Accents with no other registry entry; the rest live in additionalCommands.
+const accentSemanticCommands: LatexCommand[] = [
+  { id: "dddot-accent", command: "\\dddot", insertTemplate: "\\dddot{\\placeholder{}}", previewLatex: "\\dddot{x}", labelZh: "三点重音", labelEn: "Triple dot accent", aliases: ["triple dot"], keywords: ["三点", "重音"], category: "structure", defaultPriority: 77, supportedInMathMode: true },
+  { id: "ddddot-accent", command: "\\ddddot", insertTemplate: "\\ddddot{\\placeholder{}}", previewLatex: "\\ddddot{x}", labelZh: "四点重音", labelEn: "Quadruple dot accent", aliases: ["quadruple dot"], keywords: ["四点", "重音"], category: "structure", defaultPriority: 76, supportedInMathMode: true },
+  { id: "bar-accent", command: "\\bar", insertTemplate: "\\bar{\\placeholder{}}", previewLatex: "\\bar{x}", labelZh: "短横重音", labelEn: "Bar accent", aliases: ["bar accent"], keywords: ["横线", "重音"], category: "structure", defaultPriority: 75, supportedInMathMode: true },
+];
+
 const baseCommandRegistry: LatexCommand[] = [
   { id: "frac", command: "\\frac", insertTemplate: "\\frac{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\frac{a}{b}", labelZh: "分式", labelEn: "Fraction", aliases: ["divide", "fraction"], keywords: ["分数", "除法"], category: "structure", defaultPriority: 100, supportedInMathMode: true },
   { id: "sqrt", command: "\\sqrt", insertTemplate: "\\sqrt{\\placeholder{}}", previewLatex: "\\sqrt{x}", labelZh: "平方根", labelEn: "Square root", aliases: ["root", "square root"], keywords: ["根号", "开方"], category: "structure", defaultPriority: 98, supportedInMathMode: true },
@@ -15,7 +22,7 @@ const baseCommandRegistry: LatexCommand[] = [
   { id: "binom", command: "\\binom", insertTemplate: "\\binom{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\binom{n}{k}", labelZh: "二项式", labelEn: "Binomial", aliases: ["choose", "binomial"], keywords: ["组合数"], category: "structure", defaultPriority: 72, supportedInMathMode: true },
   { id: "overset", command: "\\overset", insertTemplate: "\\overset{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\overset{a}{b}", labelZh: "上方标注", labelEn: "Overset", aliases: ["over set", "upper annotation"], keywords: ["上方标注", "上置符号"], category: "structure", defaultPriority: 70, supportedInMathMode: true },
   { id: "underset", command: "\\underset", insertTemplate: "\\underset{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\underset{a}{b}", labelZh: "下方标注", labelEn: "Underset", aliases: ["under set", "lower annotation"], keywords: ["下方标注", "下置符号"], category: "structure", defaultPriority: 69, supportedInMathMode: true },
-  { id: "overunderset", command: "\\overunderset", insertTemplate: "\\overset{\\placeholder{}}{\\underset{\\placeholder{}}{\\placeholder{}}}", previewLatex: "\\overunderset{a}{c}{b}", labelZh: "上下标注", labelEn: "Over-underset", aliases: ["over under set", "upper lower annotation"], keywords: ["上下标注", "上下置符号"], category: "structure", defaultPriority: 68, supportedInMathMode: true },
+  { id: "overunderset", command: "\\overunderset", insertTemplate: "\\overset{\\placeholder{}}{\\underset{\\placeholder{}}{\\placeholder{}}}", previewLatex: "\\overset{a}{\\underset{c}{b}}", labelZh: "上下标注", labelEn: "Over-underset", aliases: ["over under set", "upper lower annotation"], keywords: ["上下标注", "上下置符号"], category: "structure", defaultPriority: 68, supportedInMathMode: true },
   { id: "stackrel", command: "\\stackrel", insertTemplate: "\\stackrel{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\stackrel{a}{b}", labelZh: "叠加关系", labelEn: "Stacked relation", aliases: ["stack relation"], keywords: ["叠加关系", "上方关系"], category: "structure", defaultPriority: 67, supportedInMathMode: true },
   { id: "stackbin", command: "\\stackbin", insertTemplate: "\\stackbin{\\placeholder{}}{\\placeholder{}}", previewLatex: "\\stackbin{a}{b}", labelZh: "叠加二元符号", labelEn: "Stacked binary", aliases: ["stack binary"], keywords: ["叠加符号", "二元符号"], category: "structure", defaultPriority: 66, supportedInMathMode: true },
   { id: "overarc", command: "\\overarc", insertTemplate: "\\overarc{\\placeholder{}}", previewLatex: "\\overarc{AB}", labelZh: "上弧线", labelEn: "Over arc", aliases: ["over arc"], keywords: ["上弧线", "圆弧"], category: "structure", defaultPriority: 65, supportedInMathMode: true },
@@ -45,7 +52,7 @@ const baseCommandRegistry: LatexCommand[] = [
   { id: "sum", command: "\\sum", insertTemplate: "\\sum_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", previewLatex: "\\sum_{i=1}^{n} a_i", labelZh: "求和", labelEn: "Summation", aliases: ["summation"], keywords: ["求和", "西格玛"], category: "calculus", defaultPriority: 96, supportedInMathMode: true },
   { id: "prod", command: "\\prod", insertTemplate: "\\prod_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", previewLatex: "\\prod_{i=1}^{n} a_i", labelZh: "连乘", labelEn: "Product", aliases: ["product"], keywords: ["乘积", "连乘"], category: "calculus", defaultPriority: 79, supportedInMathMode: true },
   { id: "lim", command: "\\lim", insertTemplate: "\\lim_{\\placeholder{}\\to\\placeholder{}} \\placeholder{}", previewLatex: "\\lim_{x\\to 0} f(x)", labelZh: "极限", labelEn: "Limit", aliases: ["limit"], keywords: ["极限"], category: "calculus", defaultPriority: 92, supportedInMathMode: true },
-  { id: "partial", command: "\\partial", insertTemplate: "\\frac{\\partial \\placeholder{}}{\\partial \\placeholder{}}", previewLatex: "\\frac{\\partial f}{\\partial x}", labelZh: "偏导数", labelEn: "Partial derivative", aliases: ["partial", "derivative"], keywords: ["偏导", "偏微分"], category: "calculus", defaultPriority: 86, supportedInMathMode: true },
+  { id: "partial", command: "\\partial", insertTemplate: "\\partial", previewLatex: "\\partial", labelZh: "偏导符号", labelEn: "Partial derivative symbol", aliases: ["partial"], keywords: ["偏导", "偏微分", "偏导符号"], category: "calculus", defaultPriority: 86, supportedInMathMode: true },
   { id: "nabla", command: "\\nabla", insertTemplate: "\\nabla", previewLatex: "\\nabla f", labelZh: "Nabla 算子", labelEn: "Nabla", aliases: ["gradient", "del"], keywords: ["梯度", "哈密顿算子"], category: "calculus", defaultPriority: 74, supportedInMathMode: true },
   { id: "infty", command: "\\infty", insertTemplate: "\\infty", previewLatex: "\\infty", labelZh: "无穷", labelEn: "Infinity", aliases: ["infinity"], keywords: ["无穷大"], category: "calculus", defaultPriority: 88, supportedInMathMode: true },
 
@@ -128,6 +135,7 @@ const baseCommandRegistry: LatexCommand[] = [
 ];
 
 export const commandRegistry: LatexCommand[] = [
+  ...accentSemanticCommands,
   ...baseCommandRegistry,
   ...compatibilityCommands,
   ...additionalCommands,
@@ -240,9 +248,13 @@ export const calculusCommandIds = [
   "sum",
   "sum-finite",
   "series",
+  "sum-lower",
+  "sum-upper",
   "prod",
   "prod-finite",
   "productseries",
+  "prod-lower",
+  "prod-upper",
   "coproduct",
   "lim",
   "lim-infty",

@@ -130,7 +130,9 @@ async function main() {
       latex: document.querySelector('math-field').value,
       focused: document.activeElement.tagName,
       primaryPresent: Boolean(document.querySelector('[data-office-primary-action]')),
-      sourceCopyPresent: Boolean(document.querySelector('.source-copy-button')),
+      // The standard layout's source bar carries the copy action; the classic
+      // layout keeps it in the source panel header.
+      sourceCopyPresent: Boolean(document.querySelector('.source-copy-button, [data-standard-source-copy]')),
       inputBehaviorLabel: document.querySelector('.canvas-input-behavior-trigger > span')?.textContent,
       inputBehaviorLabelVisible: (() => {
         const label = document.querySelector('.canvas-input-behavior-trigger > span');
@@ -142,7 +144,7 @@ async function main() {
     assert.equal(before.inputBehaviorLabel, "Input behavior", "The input-behavior trigger must retain its visible label");
     assert.equal(before.inputBehaviorLabelVisible, true);
     const copy = async () => {
-      await office.evaluate(`(() => { window.__copiedLatex = null; document.querySelector('.source-copy-button').click(); })()`);
+      await office.evaluate(`(() => { window.__copiedLatex = null; document.querySelector('.source-copy-button, [data-standard-source-copy]').click(); })()`);
       return waitFor("source-copy clipboard callback", () => office.evaluate("window.__copiedLatex"));
     };
     const initialCopy = await copy();

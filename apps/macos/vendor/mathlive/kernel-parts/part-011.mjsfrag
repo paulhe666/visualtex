@@ -1283,7 +1283,10 @@ var Parser = class {
           const atoms = this.scanArgument(deferredArg);
           this.style = saveStyle;
           this.parseMode = savedMode2;
-          return argAtoms(atoms);
+          const resultAtoms = argAtoms(atoms);
+          return typeof info.applyStyleToArgument === "function"
+            ? info.applyStyleToArgument(resultAtoms)
+            : resultAtoms;
         }
         this.style = style;
       } else {

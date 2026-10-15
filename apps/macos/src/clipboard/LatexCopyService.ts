@@ -335,12 +335,44 @@ function encodeTopLevelAlignmentMarkers(latex: string): string {
   return result.trim();
 }
 
+// gather/multline have a single column: a top-level '&' (for example the empty
+// left cell of a row typed in align mode) is a LaTeX error there.
+function stripTopLevelAlignmentTabs(latex: string): string {
+  let result = "";
+  let braceDepth = 0;
+  const environments: string[] = [];
+  for (let index = 0; index < latex.length; index += 1) {
+    const token = readEnvironmentToken(latex, index);
+    if (token) {
+      result += latex.slice(index, token.end);
+      updateEnvironmentStack(environments, token);
+      index = token.end - 1;
+      continue;
+    }
+    const character = latex[index];
+    if (character === "{" && !isEscaped(latex, index)) braceDepth += 1;
+    else if (character === "}" && !isEscaped(latex, index)) {
+      braceDepth = Math.max(0, braceDepth - 1);
+    }
+    if (
+      character === "&" &&
+      !isEscaped(latex, index) &&
+      braceDepth === 0 &&
+      environments.length === 0
+    ) {
+      continue;
+    }
+    result += character;
+  }
+  return result.replace(/\s{2,}/g, " ").trim();
+}
+
 function formatRows(lines: string[], preserveAlignmentMarkers: boolean): string {
   return lines
     .map((line, index) => {
       const content = preserveAlignmentMarkers
         ? restoreLatexAlignmentMarkers(line)
-        : stripVisualTexAlignmentMarkers(line);
+        : stripTopLevelAlignmentTabs(stripVisualTexAlignmentMarkers(line));
       return index < lines.length - 1 ? `${content} \\\\` : content;
     })
     .join("\n");
@@ -1096,6 +1128,14 @@ function parseByFormatStrict(
     case "multline-star":
       return parseSingleMultilineEnvironmentStrict(source, "multline*");
     case "aligned": {
+      // Internally VisualTeX renders `aligned` as a bare math-mode environment,
+      // while the canonical clipboard/source format wraps it in \[...\]. Both
+      // spellings describe the same structured formula document. Requiring only
+      // the outer display wrapper here made a directly imported genuine aligned
+      // environment fall through to raw text, which later became
+      // \text{\begin{aligned}...} and failed MathJax in text mode.
+      const direct = parseSingleMultilineEnvironmentStrict(source, "aligned");
+      if (direct?.length) return direct;
       const outer = parseCoveredBlocksStrict(source, /\\\[([\s\S]*?)\\\]/g);
       if (!outer || outer.length !== 1) return null;
       return parseSingleMultilineEnvironmentStrict(outer[0], "aligned");

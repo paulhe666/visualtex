@@ -6,6 +6,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -28,7 +29,7 @@ const LEGACY_WORD_MANIFEST_ID: &str = "d6fcb260-4c37-4f73-a173-cf24674f81f2";
 const LEGACY_POWERPOINT_MANIFEST_ID: &str = "a6d13cf2-54e8-4dfa-a20c-15de864ab3c5";
 const WORD_VBA_ENTRY: &str = "word/vbaProject.bin";
 const POWERPOINT_VBA_ENTRY: &str = "ppt/vbaProject.bin";
-const WORD_VBA_SOURCE_REVISION: &str = "word-office-performance-20260801-r109";
+const WORD_VBA_SOURCE_REVISION: &str = "word-office-performance-20260801-r111";
 const POWERPOINT_VBA_SOURCE_REVISION: &str = "powerpoint-native-omml-edit-20260926-r1";
 const CUSTOM_UI_ENTRY: &str = "customUI/customUI14.xml";
 const CONTENT_TYPES_ENTRY: &str = "[Content_Types].xml";
@@ -507,6 +508,20 @@ fn discover_legacy_visualtex_wef_files() -> Result<Vec<PathBuf>, String> {
     Ok(files)
 }
 
+/// Returned by `status` when an Office path probe timed out. A timed-out probe
+/// says nothing about whether the add-in is installed: macOS may be holding the
+/// read behind its "access data from other apps" prompt, or Office may still be
+/// coordinating its containers. Reporting "not installed" then would open a
+/// false repair prompt.
+pub const OFFICE_STATUS_UNAVAILABLE_ERROR: &str =
+    "Office add-in status is temporarily unavailable: macOS did not let VisualTeX read the Office folders in time.";
+
+static OFFICE_PATH_PROBE_TIMEOUTS: AtomicU64 = AtomicU64::new(0);
+
+fn note_office_path_probe_timeout() {
+    OFFICE_PATH_PROBE_TIMEOUTS.fetch_add(1, Ordering::Relaxed);
+}
+
 #[cfg(target_os = "macos")]
 fn bounded_path_test(path: &Path, flag: &str) -> bool {
     let mut child = match Command::new("/bin/test")
@@ -529,6 +544,7 @@ fn bounded_path_test(path: &Path, flag: &str) -> bool {
             Ok(None) | Err(_) => {
                 let _ = child.kill();
                 let _ = child.wait();
+                note_office_path_probe_timeout();
                 return false;
             }
         }
@@ -662,6 +678,7 @@ fn bounded_directory_entries(
             Ok(None) | Err(_) => {
                 let _ = child.kill();
                 let _ = child.wait();
+                note_office_path_probe_timeout();
                 return Ok(Vec::new());
             }
         }
@@ -966,6 +983,7 @@ fn verify_copy(source: &Path, destination: &Path) -> Result<(), String> {
                 // Never fall back to synchronous metadata on a coordinated Office
                 // container: the metadata call itself can hang. A timed-out compare
                 // is an unknown/mismatched state; the UI can retry without blocking.
+                note_office_path_probe_timeout();
                 return Err(format!(
                     "Timed out verifying installed VisualTeX file {}",
                     destination.display()
@@ -1485,6 +1503,15 @@ fn host_status(
 }
 
 pub fn status(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> {
+    let probe_timeouts_before = OFFICE_PATH_PROBE_TIMEOUTS.load(Ordering::Relaxed);
+    let status = status_snapshot(app)?;
+    if OFFICE_PATH_PROBE_TIMEOUTS.load(Ordering::Relaxed) != probe_timeouts_before {
+        return Err(OFFICE_STATUS_UNAVAILABLE_ERROR.to_string());
+    }
+    Ok(status)
+}
+
+fn status_snapshot(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> {
     let root = resource_root(app)?;
     let (word_source, powerpoint_source) = source_artifacts(&root);
     let word_destinations = discover_word_startup_paths()?

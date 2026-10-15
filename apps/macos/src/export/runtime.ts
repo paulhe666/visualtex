@@ -5,10 +5,14 @@ import { liteAdaptor } from "mathjax-full/js/adaptors/liteAdaptor.js";
 import { RegisterHTMLHandler } from "mathjax-full/js/handlers/html.js";
 import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
 import { STATE } from "mathjax-full/js/core/MathItem.js";
-import { SerializedMmlVisitor } from "mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js";
+import { EXPLICIT_MATH_FONT_PACKAGE } from "./explicit-math-font.ts";
+import { createExplicitMathFontSvgFactory } from "./explicit-math-font-svg.ts";
+import { RolePreservingMmlVisitor } from "./role-preserving-mml-visitor.ts";
+import { materializeEffectiveOperatorVariants } from "./effectiveMathMlGlyphVariants.ts";
 import type { MmlNode } from "mathjax-full/js/core/MmlTree/MmlNode.js";
 import { normalizeMathLiveCanonicalUprightCommands } from "../editor/normalizeChineseLatex.ts";
 import { normalizeExtendedIntegralLatexCommands } from "../math/extendedIntegralCompatibility.ts";
+import { normalizeFlexiblePackageLatexCommands } from "../math/flexibleBraket.ts";
 import {
   isSingleCompleteLatexEnvironment,
   unwrapSingleLatexDisplayMath,
@@ -20,6 +24,7 @@ import {
   expandCustomSymbolsForSvg,
 } from "../math/customSymbolRendering.ts";
 import {
+  assertNoUnfilledStructuralPlaceholders,
   assertResolvedMathJaxSvg,
   assertResolvedPresentationMathMl,
   VISUALTEX_MATHML_MACROS,
@@ -54,7 +59,9 @@ RegisterHTMLHandler(adaptor);
 
 function createTexInput(macros: Record<string, VisualTexMathJaxMacro>) {
   return new TeX({
-    packages: AllPackages,
+    // The explicit-font package records \mathrm/{\rm ...}/\bm scopes as the
+    // editor kernel resolves them, so exports keep the editor's glyph styles.
+    packages: [...AllPackages, EXPLICIT_MATH_FONT_PACKAGE],
     macros,
     formatError: (_jax: unknown, error: unknown) => {
       throw new Error(
@@ -72,6 +79,7 @@ const mathMlOutput = new SVG({
   internalSpeechTitles: false,
 });
 const svgOutput = new SVG({
+  wrapperFactory: createExplicitMathFontSvgFactory(),
   fontCache: "local",
   internalSpeechTitles: false,
 });
@@ -83,7 +91,7 @@ const mathDocument = mathjax.document("", {
   InputJax: svgTexInput,
   OutputJax: svgOutput,
 });
-const serializedMmlVisitor = new SerializedMmlVisitor(
+const serializedMmlVisitor = new RolePreservingMmlVisitor(
   mathMlDocument.mmlFactory,
 );
 
@@ -97,9 +105,12 @@ function nonNegativeFinite(value: number, fallback: number) {
 
 function prepareLatex(latex: string) {
   let normalized = normalizeMathLiveCanonicalUprightCommands(
-    normalizeExtendedIntegralLatexCommands(latex.replace(/\r\n?/g, "\n")),
+    normalizeExtendedIntegralLatexCommands(
+      normalizeFlexiblePackageLatexCommands(latex.replace(/\r\n?/g, "\n")),
+    ),
   ).trim();
   if (!normalized) throw new Error("Cannot export an empty formula.");
+  assertNoUnfilledStructuralPlaceholders(normalized);
 
   // VisualTeX source formats legitimately serialize display formulas as
   // `\\[ ... \\]`. MathJax's direct conversion API is already invoked in
@@ -337,6 +348,7 @@ export function latexToMathMl(latex: string, displayMode = true) {
     display: displayMode,
     end: STATE.COMPILED,
   }) as unknown as MmlNode;
+  materializeEffectiveOperatorVariants(root, mathMlOutput.font);
   const mathMl = serializedMmlVisitor.visitTree(root).trim();
   if (!mathMl.startsWith("<math") || !mathMl.includes("MathML")) {
     throw new Error("MathJax did not produce valid Presentation MathML.");

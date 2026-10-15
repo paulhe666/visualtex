@@ -258,6 +258,7 @@ function renderSelection(mathfield, interactive) {
   };
   if (model.selectionIsCollapsed) {
     updateSuggestionPopoverPosition(mathfield, { deferred: true });
+    visualTexRenderCaretSlot(mathfield, scaleFactor());
     let atom = model.at(model.position);
     while (atom && atom.type !== "prompt" && !(atom.containsCaret && atom.displayContainsHighlight))
       atom = atom.parent;
@@ -303,6 +304,50 @@ function renderSelection(mathfield, interactive) {
     selectionElement.style.height = `${Math.max(1, Math.ceil(x.bottom - x.top - 1))}px`;
     field.insertBefore(selectionElement, field.childNodes[0]);
   }
+}
+// Kernel 2.7061 shows which slot holds the caret: the caret bar spans the
+// slot's height. The main row keeps the native bar, as do matrix and
+// alignment cells and an empty slot, whose placeholder box already marks it.
+// The bar stays the native .ML__caret::after, stretched through CSS custom
+// properties, so blinking and caret offsets keep applying to it.
+function visualTexRenderCaretSlot(mathfield, scaleFactor) {
+  const field = mathfield.field;
+  const model = mathfield.model;
+  const atom = model.at(model.position);
+  const parent = atom == null ? void 0 : atom.parent;
+  const branch = atom == null ? void 0 : atom.parentBranch;
+  if (!atom || atom.caret !== "math" || !parent || parent.type === "root") return;
+  if (branch == null || Array.isArray(branch)) return;
+  const slotAtoms = (parent.branch(branch) ?? []).filter((x) => x.type !== "first");
+  if (slotAtoms.every((x) => x.type === "placeholder" || x.type === "prompt")) return;
+  const caret = field.querySelector(".ML__caret");
+  if (!caret) return;
+  let slot = null;
+  for (const x of slotAtoms) {
+    const bounds = getAtomBounds(mathfield, x);
+    if (!bounds) continue;
+    if (!slot) slot = __spreadValues({}, bounds);
+    else {
+      slot.left = Math.min(slot.left, bounds.left);
+      slot.right = Math.max(slot.right, bounds.right);
+      slot.top = Math.min(slot.top, bounds.top);
+      slot.bottom = Math.max(slot.bottom, bounds.bottom);
+    }
+  }
+  if (!slot) return;
+  // The native bar's foot sits 0.05em below the caret's baseline and the bar
+  // is 0.76em tall (see .ML__caret::after).
+  const em = parseFloat(getComputedStyle(caret).fontSize) * scaleFactor;
+  const probe = document.createElement("span");
+  probe.style.cssText = "display:inline-block;width:0;height:0";
+  caret.appendChild(probe);
+  const baseline = probe.getBoundingClientRect().top;
+  probe.remove();
+  if (!Number.isFinite(em) || !Number.isFinite(baseline)) return;
+  const top = Math.min(slot.top, baseline + 0.05 * em - 0.76 * em);
+  const bottom = Math.max(slot.bottom, baseline + 0.05 * em);
+  caret.style.setProperty("--visualtex-caret-height", `${(bottom - top) / scaleFactor}px`);
+  caret.style.setProperty("--visualtex-caret-drop", `${(bottom - baseline) / scaleFactor}px`);
 }
 function unionRects(rects) {
   let result = [];

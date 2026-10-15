@@ -610,9 +610,17 @@ async function main() {
       true,
       JSON.stringify(initialCompactTileResize),
     );
+    // The Office tile rail may take at most 45% of the workspace, so a narrow
+    // editor grows it only up to that share.
+    const compactTileCap = await client.evaluate(
+      `Math.floor((document.querySelector('.workspace')?.getBoundingClientRect().width ?? 0) * 0.45)`,
+    );
     assert.ok(
-      resizedCompactTile.tileWidth >= initialCompactTileResize.tileWidth + 60,
-      JSON.stringify({ initialCompactTileResize, resizedCompactTile }),
+      resizedCompactTile.tileWidth >=
+        Math.min(initialCompactTileResize.tileWidth + 60, compactTileCap - 1) &&
+        resizedCompactTile.tileWidth > initialCompactTileResize.tileWidth &&
+        resizedCompactTile.tileWidth <= compactTileCap + 1,
+      JSON.stringify({ initialCompactTileResize, resizedCompactTile, compactTileCap }),
     );
     assert.ok(
       Math.abs(resizedCompactTile.handleLeft - resizedCompactTile.tileLeft) <= 8,

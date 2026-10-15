@@ -9,6 +9,7 @@
     "core:window:allow-minimize",
     "dialog:allow-open",
     "dialog:allow-save",
+    "dialog:allow-message",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

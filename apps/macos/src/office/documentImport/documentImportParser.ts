@@ -1765,6 +1765,17 @@ function resolvedSourceKind(source: string, requested: DocumentImportSourceKind)
     (range) => /^\\begin\s*\{/.test(source.slice(range.start, range.end).trim()),
   );
   if (hasLiteralEnvironmentOutsideMath) return "latex";
+  // `\[…\]`, `\(…\)` and `\textbf{}` also occur in Markdown notes. Headings,
+  // lists and quotes decide for Markdown unless the source has LaTeX document
+  // structure outside dollar math.
+  const outsideMath = source
+    .replace(/\$\$[\s\S]*?\$\$/g, " ")
+    .replace(/\$[^$\n]*\$/g, " ");
+  const markdownBlocks = /^(?:#{1,6}[ \t]|>|[ \t]*(?:[-*+]|\d+[.)])[ \t]|```|~~~)/m.test(outsideMath);
+  const latexStructure = /\\(?:documentclass|usepackage|begin\{[A-Za-z@*]+\}|(?:part|chapter|section|subsection|subsubsection)\*?\{|item\b)/.test(
+    outsideMath,
+  );
+  if (markdownBlocks && !latexStructure) return "markdown";
   // LaTeX fragments pasted from notes often omit both \documentclass and the
   // document environment. Structural commands and environments must still
   // select the LaTeX parser. Do not end this pattern with \b: environment

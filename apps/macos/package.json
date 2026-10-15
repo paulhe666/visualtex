@@ -51,6 +51,7 @@
     "test:native-suggestion-previews": "npm run build:desktop && node scripts/native_suggestion_preview_regression.mjs --audit",
     "test:word-omml": "node scripts/word_omml_regression.mjs",
     "test:word-image-fonts": "tsx scripts/word_image_font_regression.mjs",
+    "test:word-idle": "node scripts/word_idle_noninterference_regression.mjs",
     "verify:ocr-offline": "python3 scripts/verify_offline_ocr_bundle.py",
     "verify:ocr-offline:full": "python3 scripts/verify_offline_ocr_bundle.py --full",
     "verify:ocr-model-packs": "python3 scripts/verify_offline_ocr_bundle.py --model-packs dist-ocr/model-packs/macos-arm64",
@@ -77,9 +78,12 @@
     "test:startup-browser": "node scripts/startup_browser_regression.mjs",
     "verify:mac-dmg": "bash scripts/verify_macos_dmg.sh",
     "verify:mac-dmg:no-ocr": "bash scripts/verify_macos_api_only_dmg.sh",
+    "test:ported-editor": "node scripts/ported_editor_regression.mjs",
+    "test:candidate-panel": "npm run build:desktop && node scripts/candidate_panel_audit.mjs --digits",
     "test:editor-refactor": "node scripts/history_manager_smoke.mjs && tsx scripts/editor_persistence_isolation_regression.mjs && node scripts/editor_session_regression.mjs && node scripts/editor_lifecycle_regression.mjs && node scripts/editor_cleanup_regression.mjs"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.8.1",
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.5.2",

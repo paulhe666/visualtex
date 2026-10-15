@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 // Read-only source comparison against the pinned Windows migration target.
 // Prints differences without changing source, the index, history, or branches.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const reference = "7e9c8050e5b47405a4f7e5ad214375451bfa28be";
+const reference = "cb910e4bf22bbcb568a798a12744fb735e38033f";
 const paths = [
   "src/editor/MathEditor.tsx",
   "src/editor/mathLiveKernelCommands.ts",

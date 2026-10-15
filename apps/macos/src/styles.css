@@ -3236,18 +3236,8 @@ button:disabled {
     grid-template-columns: auto 1fr auto;
   }
 
-  .action-group:first-of-type,
-  .header-actions > .icon-button:nth-of-type(1),
-  .header-actions > .icon-button:nth-of-type(2) {
-    display: none;
-  }
-
   .copy-primary {
     padding: 0 10px;
-  }
-
-  .copy-primary svg {
-    display: none;
   }
 
   .template-button {
@@ -4097,10 +4087,6 @@ button:disabled {
     grid-template-columns: minmax(150px, 1fr) minmax(120px, auto) minmax(330px, 1fr);
   }
 
-  .file-actions {
-    display: none;
-  }
-
   .workspace.has-sidebar {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -4146,8 +4132,7 @@ button:disabled {
     padding: 0 8px;
   }
 
-  .brand-copy,
-  .workspace-action {
+  .brand-copy {
     display: none;
   }
 
@@ -4157,13 +4142,6 @@ button:disabled {
 
   .canvas-ocr-model select {
     width: 116px;
-  }
-}
-
-@media (max-width: 760px) {
-  .edit-actions,
-  .settings-toggle {
-    display: none;
   }
 }
 
@@ -5795,6 +5773,45 @@ html body #mathlive-suggestion-popover li {
 
 html body #mathlive-suggestion-popover li + li {
   margin-top: 3px !important;
+}
+
+/* The list is a height-capped flex column: shrinkable rows would all be
+   squeezed to min-height once the list scrolls, and tall previews (\sum with
+   limits, matrices, cases) would paint over their neighbours. */
+html body #mathlive-suggestion-popover li {
+  flex: 0 0 auto;
+}
+
+/* Candidates are paged by nine; the page holding the current row is
+   numbered 1-9 and a digit key commits that row like Space. */
+html body #mathlive-suggestion-popover .ML__popover__index {
+  flex: 0 0 1.1em;
+  align-self: center;
+  color: var(--text-faint);
+  font: 600 12px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+html body #mathlive-suggestion-popover li.ML__popover__current .ML__popover__index {
+  color: var(--accent);
+}
+
+html body #mathlive-suggestion-popover .ML__popover__latex {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html body #mathlive-suggestion-popover .ML__popover__command {
+  flex: 0 0 auto;
+}
+
+html body #mathlive-suggestion-popover .visualtex-native-preview-unavailable {
+  color: var(--text-faint);
+  font: 12px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", system-ui, sans-serif;
 }
 
 html body #mathlive-suggestion-popover li:hover,

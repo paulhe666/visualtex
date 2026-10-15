@@ -66,10 +66,16 @@ export function decodeNativeSystemMathFontProbes(
     if (!isRecord(entry)) {
       throw new Error(`VisualTeX system math font probe[${index}] is invalid.`);
     }
+    const available = requiredBoolean(entry, "available", `system math font probe[${index}]`);
     return {
       requestedFamily: requiredString(entry, "requestedFamily", `system math font probe[${index}]`),
-      resolvedFamily: requiredString(entry, "resolvedFamily", `system math font probe[${index}]`),
-      available: requiredBoolean(entry, "available", `system math font probe[${index}]`),
+      resolvedFamily: requiredString(
+        entry,
+        "resolvedFamily",
+        `system math font probe[${index}]`,
+        !available,
+      ),
+      available,
     };
   });
 }

@@ -4,6 +4,8 @@ import {
   integralCharacters as visualTexIntegralCharacters,
   integralGlyphs as VISUALTEX_RARE_INTEGRAL_GLYPHS,
   integralUnitsPerEm as VISUALTEX_RARE_INTEGRAL_UNITS_PER_EM,
+  commandFrequency as VISUALTEX_COMMAND_FREQUENCY,
+  nativePreviews as VISUALTEX_NATIVE_PREVIEWS,
 } from "virtual:visualtex-mathlive-data";
 /** MathLive 0.109.2 */
 var __defProp = Object.defineProperty;

@@ -32,7 +32,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc, Mutex, OnceLock,
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -130,6 +130,7 @@ static POWERPOINT_DISPATCH_LOCK: Mutex<()> = Mutex::new(());
 static OFFICE_EDITOR_SIZE_WRITE_GENERATION: AtomicU64 = AtomicU64::new(0);
 static FAST_OPEN_ACCESS_BACKOFF_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
 static FAST_OPEN_WATCHER_STARTED: OnceLock<()> = OnceLock::new();
+static FAST_OPEN_KICK_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 const FAST_OPEN_ACCESS_BACKOFF_MS: u64 = 2_000;
 
 #[derive(Debug, Clone, Copy)]
@@ -922,6 +923,46 @@ pub(crate) fn consume_fast_open_request(app: &AppHandle) -> Result<bool, String>
         return Ok(true);
     }
     Ok(false)
+}
+
+/// Runs `consume_fast_open_request` on a worker thread and waits at most
+/// `wait` for it. The first read of an Office sandbox can block inside
+/// `open()` until the user answers macOS's "access data from other apps"
+/// prompt; the AppKit thread must never wait on that, or every later editor
+/// request and the main window freeze with it. `Ok(None)` means the read is
+/// still pending; the worker finishes the request on its own once macOS lets
+/// it through.
+pub(crate) fn consume_fast_open_request_off_main(
+    app: &AppHandle,
+    wait: Duration,
+) -> Result<Option<bool>, String> {
+    if FAST_OPEN_KICK_IN_FLIGHT.swap(true, Ordering::AcqRel) {
+        return Ok(None);
+    }
+    let (sender, receiver) = mpsc::channel();
+    let worker_app = app.clone();
+    struct KickInFlight;
+    impl Drop for KickInFlight {
+        fn drop(&mut self) {
+            FAST_OPEN_KICK_IN_FLIGHT.store(false, Ordering::Release);
+        }
+    }
+    let spawned = crate::spawn_background_task("visualtex-office-fast-open-kick", move || {
+        let in_flight = KickInFlight;
+        let result = consume_fast_open_request(&worker_app);
+        drop(in_flight);
+        if let Err(mpsc::SendError(Err(error))) = sender.send(result) {
+            eprintln!("Unable to consume VisualTeX Office fast-open request: {error}");
+        }
+    });
+    if !spawned {
+        FAST_OPEN_KICK_IN_FLIGHT.store(false, Ordering::Release);
+        return Err("Unable to start the Office fast-open worker".to_string());
+    }
+    match receiver.recv_timeout(wait) {
+        Ok(result) => result.map(Some),
+        Err(_) => Ok(None),
+    }
 }
 
 fn fast_open_ready_heartbeat() -> Result<String, String> {
