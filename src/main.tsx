@@ -14,6 +14,8 @@ import "./styles.css";
 import "./styles-editor-parity.css";
 import "./styles-windows-shared-latest.css";
 import "./styles-macos-platform-overrides.css";
+import "./styles-formula-tiles.css";
+import "./styles-macos-responsive.css";
 import "./landing/landing.css";
 import "./tutorial/tutorial.css";
 
@@ -113,7 +115,7 @@ function renderBootError(value: unknown) {
       window.location.reload();
     } catch (reason) {
       console.error("VisualTeX boot safe restart preparation failed", reason);
-      window.alert("无法准备安全启动，原有数据未被清除。请把错误信息发送给开发者。");
+      window.alert(`无法准备安全启动，原有数据未被清除。${reason instanceof Error ? reason.message : String(reason)}`);
     }
   });
   actions.append(reload, safeRestart);

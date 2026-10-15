@@ -36,6 +36,9 @@ import {
   type MathEditorSelectionTarget,
 } from "../editor/MathEditor";
 import { InputBehaviorMenu } from "../components/InputBehaviorMenu";
+import { trackHorizontalOverflow } from "../runtime/horizontalOverflowState";
+import { trackPriorityCollapse } from "../runtime/priorityCollapse";
+import { readLocalStorage, writeLocalStorage } from "../runtime/safeStorage";
 import { FormulaToolbar } from "../toolbar/FormulaToolbar";
 import { LatexSourceEditor } from "../source-editor/LatexSourceEditor";
 import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
@@ -99,6 +102,87 @@ type ClassicResizeTarget = "tiles" | "dock";
 
 const compactOfficeTileBreakpoint = 760;
 const compactOfficeEditorReserve = 220;
+const compactOfficeTileShare = 0.45;
+
+// The formula canvas is the primary surface. In a compact Office editor the
+// tile rail may take at most 45% of the workspace (never less than its
+// minimum width), so the canvas is not squeezed narrower than the rail.
+function classicTileWidthMaximum(
+  workspaceWidth: number,
+  isOfficeWorkspace: boolean,
+) {
+  const compactOffice =
+    isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint;
+  const byReserve =
+    workspaceWidth - (compactOffice ? compactOfficeEditorReserve : 360);
+  const limit = compactOffice
+    ? Math.min(byReserve, Math.floor(workspaceWidth * compactOfficeTileShare))
+    : byReserve;
+  return Math.max(MIN_CLASSIC_TILE_WIDTH, limit);
+}
+
+// Bottom bar (formatting strip | panel tabs | actions). Level 0 keeps the
+// labelled tabs (centred in the desktop classic layout), level 1 puts the
+// labelled tabs next to the actions, level 2 turns them into icons; after
+// that the formatting strip scrolls sideways.
+const BOTTOM_BAR_COLLAPSE_LEVELS = 2;
+const bottomBarGap = 10;
+
+function bottomBarFits(bar: HTMLElement, level: number) {
+  const width = (element: Element | null | undefined) =>
+    element?.getBoundingClientRect().width ?? 0;
+  const style = window.getComputedStyle(bar);
+  const inner =
+    bar.clientWidth -
+    (Number.parseFloat(style.paddingLeft) || 0) -
+    (Number.parseFloat(style.paddingRight) || 0);
+  const strip = width(bar.querySelector("[data-vt-bar-strip]")?.firstElementChild);
+  const tabs = width(bar.querySelector("[data-vt-bar-tabs]"));
+  const actions = width(bar.querySelector("[data-vt-bar-actions]"));
+  if (level === 0 && bar.dataset.vtBarCentred === "true") {
+    const side = (inner - tabs) / 2 - bottomBarGap;
+    return strip <= side && actions <= side;
+  }
+  return strip + tabs + actions + bottomBarGap * 2 <= inner;
+}
+
+// Standard layout: width of the formula tools / tiles panel, set by dragging
+// the divider beside it. The editor always keeps standardEditorReserve.
+const DEFAULT_STANDARD_PANEL_WIDTH = 252;
+const MIN_STANDARD_PANEL_WIDTH = 200;
+const standardEditorReserve = 300;
+const standardPanelWidthStorageKey = (mode: string) =>
+  `visualtex.standard-panel-width.${mode}`;
+
+function readStandardPanelWidth(mode: string) {
+  const stored = Number(readLocalStorage(standardPanelWidthStorageKey(mode)));
+  return Number.isFinite(stored) && stored >= MIN_STANDARD_PANEL_WIDTH
+    ? Math.round(stored)
+    : DEFAULT_STANDARD_PANEL_WIDTH;
+}
+
+// Office editor header (font size | tools | undo, cancel, apply). Its groups
+// stretch, so the needed width is the sum of the individual controls.
+const OFFICE_HEADER_COLLAPSE_LEVELS = 5;
+const officeHeaderItems =
+  ".pane-title-group > *, .canvas-tool-group > *, .office-inline-actions";
+
+function officeHeaderFits(header: HTMLElement) {
+  const style = window.getComputedStyle(header);
+  const gap = Number.parseFloat(style.columnGap) || 0;
+  let required =
+    (Number.parseFloat(style.paddingLeft) || 0) +
+    (Number.parseFloat(style.paddingRight) || 0);
+  let count = 0;
+  header.querySelectorAll<HTMLElement>(officeHeaderItems).forEach((item) => {
+    const width = item.getBoundingClientRect().width;
+    if (width <= 0) return;
+    required += width;
+    count += 1;
+  });
+  required += gap * Math.max(0, count - 1);
+  return required <= header.clientWidth + 0.5;
+}
 
 const customFormulaTextColorsStorageKey = "visualtex-custom-formula-text-colors";
 const customFormulaBackgroundColorsStorageKey =
@@ -190,9 +274,17 @@ export function EditorWorkspace({
     useState<HTMLDivElement | null>(null);
   const [desktopClassicControlsMount, setDesktopClassicControlsMount] =
     useState<HTMLDivElement | null>(null);
+  const [bottomBar, setBottomBar] = useState<HTMLElement | null>(null);
+  const [officeHeader, setOfficeHeader] = useState<HTMLElement | null>(null);
+  const [standardPanelWidth, setStandardPanelWidth] = useState(() =>
+    readStandardPanelWidth(mode),
+  );
   const [formulaColorMenu, setFormulaColorMenu] =
     useState<FormulaColorMenu | null>(null);
   const formulaColorMenuRef = useRef<HTMLDivElement>(null);
+  const formulaColorPopoverRef = useRef<HTMLDivElement>(null);
+  const [formulaColorPopoverStyle, setFormulaColorPopoverStyle] =
+    useState<CSSProperties>();
   const formulaSelectionTargetRef = useRef<MathEditorSelectionTarget | null>(null);
   const customFormulaColorDraftRef = useRef<
     Record<FormulaColorMenu, string | null>
@@ -424,7 +516,8 @@ export function EditorWorkspace({
     const close = (event: PointerEvent) => {
       if (
         event.target instanceof Node &&
-        formulaColorMenuRef.current?.contains(event.target)
+        (formulaColorMenuRef.current?.contains(event.target) ||
+          formulaColorPopoverRef.current?.contains(event.target))
       ) {
         return;
       }
@@ -433,6 +526,8 @@ export function EditorWorkspace({
     };
     const closeFromKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
         setFormulaColorMenu(null);
         formulaSelectionTargetRef.current = null;
       }
@@ -442,6 +537,70 @@ export function EditorWorkspace({
     return () => {
       document.removeEventListener("pointerdown", close, true);
       document.removeEventListener("keydown", closeFromKey, true);
+    };
+  }, [formulaColorMenu]);
+
+  useEffect(() => {
+    const strip = isOfficeWorkspace
+      ? officeFormattingMount
+      : desktopClassicControlsMount;
+    return strip ? trackHorizontalOverflow(strip) : undefined;
+  }, [desktopClassicControlsMount, isOfficeWorkspace, officeFormattingMount]);
+
+  useEffect(() => {
+    if (!officeHeader) return;
+    return trackPriorityCollapse(officeHeader, {
+      maxLevel: OFFICE_HEADER_COLLAPSE_LEVELS,
+      fits: officeHeaderFits,
+    });
+  }, [officeHeader]);
+
+  useEffect(() => {
+    if (!bottomBar) return;
+    return trackPriorityCollapse(bottomBar, {
+      maxLevel: BOTTOM_BAR_COLLAPSE_LEVELS,
+      fits: bottomBarFits,
+    });
+  }, [bottomBar]);
+
+  // The color picker is rendered on <body> with fixed coordinates taken from
+  // its trigger. Its toolbar strip scrolls horizontally on narrow windows, and
+  // an absolutely positioned child would be clipped by that strip.
+  useLayoutEffect(() => {
+    if (!formulaColorMenu) {
+      setFormulaColorPopoverStyle(undefined);
+      return;
+    }
+    const place = () => {
+      const trigger = formulaColorMenuRef.current?.querySelector<HTMLElement>(
+        formulaColorMenu === "color"
+          ? "[data-formula-selection-color]"
+          : "[data-formula-selection-background]",
+      );
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const width = formulaColorPopoverRef.current?.offsetWidth ?? 196;
+      const left = Math.round(
+        Math.max(10, Math.min(rect.left, window.innerWidth - width - 10)),
+      );
+      const opensUpward = rect.top + rect.height / 2 > window.innerHeight / 2;
+      const next: CSSProperties = opensUpward
+        ? { left, bottom: Math.round(window.innerHeight - rect.top + 7) }
+        : { left, top: Math.round(rect.bottom + 7) };
+      setFormulaColorPopoverStyle((current) =>
+        current?.left === next.left &&
+        current?.top === next.top &&
+        current?.bottom === next.bottom
+          ? current
+          : next,
+      );
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
     };
   }, [formulaColorMenu]);
 
@@ -459,11 +618,7 @@ export function EditorWorkspace({
   const classicTileWidthLimit = () => {
     const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width;
     if (!workspaceWidth) return MAX_CLASSIC_TILE_WIDTH;
-    const editorReserve =
-      isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
-        ? compactOfficeEditorReserve
-        : 360;
-    return Math.max(MIN_CLASSIC_TILE_WIDTH, workspaceWidth - editorReserve);
+    return classicTileWidthMaximum(workspaceWidth, isOfficeWorkspace);
   };
 
   const classicDockHeightLimit = () => {
@@ -600,13 +755,9 @@ export function EditorWorkspace({
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         const workspaceWidth = workspace.getBoundingClientRect().width;
-        const editorReserve =
-          isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint
-            ? compactOfficeEditorReserve
-            : 360;
-        const tileMaximum = Math.max(
-          MIN_CLASSIC_TILE_WIDTH,
-          workspaceWidth - editorReserve,
+        const tileMaximum = classicTileWidthMaximum(
+          workspaceWidth,
+          isOfficeWorkspace,
         );
         setClassicTileWidth((current) => {
           const next = clampPanelSize(
@@ -644,6 +795,89 @@ export function EditorWorkspace({
       observer.disconnect();
     };
   }, [editorLayout, isOfficeWorkspace]);
+
+  const standardPanelWidthLimit = () => {
+    const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width;
+    return Math.max(
+      MIN_STANDARD_PANEL_WIDTH,
+      (workspaceWidth ?? 1200) - standardEditorReserve,
+    );
+  };
+
+  const commitStandardPanelWidth = (value: number, persist = false) => {
+    const next = clampPanelSize(
+      value,
+      MIN_STANDARD_PANEL_WIDTH,
+      standardPanelWidthLimit(),
+    );
+    workspaceRef.current?.style.setProperty(
+      "--standard-panel-width",
+      `${next}px`,
+    );
+    setStandardPanelWidth(next);
+    if (persist) {
+      writeLocalStorage(standardPanelWidthStorageKey(mode), String(next));
+    }
+    return next;
+  };
+
+  // The panel is on the left in the desktop window and on the right in the
+  // Office editor, so the width is measured from the matching workspace edge.
+  const startStandardPanelResize = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    activeResizeCleanupRef.current?.();
+
+    const handle = event.currentTarget;
+    const pointerId = event.pointerId;
+    let latestValue = standardPanelWidth;
+    let finished = false;
+
+    const move = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) return;
+      const bounds = workspaceRef.current?.getBoundingClientRect();
+      if (!bounds) return;
+      latestValue = isOfficeWorkspace
+        ? bounds.right - pointerEvent.clientX
+        : pointerEvent.clientX - bounds.left;
+      if (resizeFrameRef.current === null) {
+        resizeFrameRef.current = window.requestAnimationFrame(() => {
+          resizeFrameRef.current = null;
+          commitStandardPanelWidth(latestValue);
+        });
+      }
+      pointerEvent.preventDefault();
+    };
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", finish);
+      document.removeEventListener("pointercancel", finish);
+      window.removeEventListener("blur", finish);
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+      commitStandardPanelWidth(latestValue, true);
+      if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+      delete document.body.dataset.workspaceResize;
+      if (activeResizeCleanupRef.current === finish) {
+        activeResizeCleanupRef.current = null;
+      }
+    };
+
+    document.body.dataset.workspaceResize = "tiles";
+    handle.setPointerCapture(pointerId);
+    document.addEventListener("pointermove", move, { passive: false });
+    document.addEventListener("pointerup", finish);
+    document.addEventListener("pointercancel", finish);
+    window.addEventListener("blur", finish);
+    activeResizeCleanupRef.current = finish;
+  };
 
   const preserveFormulaFocus = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -944,16 +1178,54 @@ export function EditorWorkspace({
         style={
           {
             "--classic-tile-width": `${classicTileWidth}px`,
+            "--standard-panel-width": `${standardPanelWidth}px`,
           } as CSSProperties
         }
         data-editor-layout={editorLayout}
         data-office-actions={showOfficeActions ? "true" : undefined}
       >
         {!keypadMode && editorLayout === "standard" && sidebarOpen && (
-          <FormulaToolbar
-            stabilizeTileLayout
-            onInsert={(command) => editorRef.current?.insertCommand(command)}
-          />
+          <>
+            <FormulaToolbar
+              stabilizeTileLayout
+              onInsert={(command) => editorRef.current?.insertCommand(command)}
+            />
+            <div
+              className="workspace-panel-resizer standard-panel-resizer"
+              role="separator"
+              tabIndex={0}
+              aria-orientation="vertical"
+              aria-valuemin={MIN_STANDARD_PANEL_WIDTH}
+              aria-valuemax={Math.round(standardPanelWidthLimit())}
+              aria-valuenow={Math.round(standardPanelWidth)}
+              aria-label={
+                isEn
+                  ? "Resize formula tools and tiles"
+                  : "调整公式工具与磁贴区宽度"
+              }
+              title={
+                isEn
+                  ? "Drag to resize · Double-click to reset"
+                  : "拖动调整宽度 · 双击恢复默认"
+              }
+              data-standard-panel-resizer
+              onPointerDown={startStandardPanelResize}
+              onDoubleClick={() =>
+                commitStandardPanelWidth(DEFAULT_STANDARD_PANEL_WIDTH, true)
+              }
+              onKeyDown={(event) => {
+                const grow = isOfficeWorkspace ? "ArrowLeft" : "ArrowRight";
+                const shrink = isOfficeWorkspace ? "ArrowRight" : "ArrowLeft";
+                if (event.key === grow) {
+                  event.preventDefault();
+                  commitStandardPanelWidth(standardPanelWidth + 16, true);
+                } else if (event.key === shrink) {
+                  event.preventDefault();
+                  commitStandardPanelWidth(standardPanelWidth - 16, true);
+                }
+              }}
+            />
+          </>
         )}
 
         {!keypadMode && editorLayout === "classic" && !sidebarOpen && (
@@ -971,6 +1243,7 @@ export function EditorWorkspace({
 
         <section className="formula-workspace editor-pane">
           <header
+            ref={isOfficeWorkspace ? setOfficeHeader : undefined}
             className={
               "workspace-heading pane-header editor-pane-header" +
               (isOfficeWorkspace ? " is-office-editor-header" : "")
@@ -978,23 +1251,13 @@ export function EditorWorkspace({
           >
             <div className="editor-pane-header-controls">
               <PortalOrInline
-                target={
-                  !isOfficeWorkspace && editorLayout === "classic"
-                    ? desktopClassicControlsMount
-                    : null
-                }
+                target={!isOfficeWorkspace ? desktopClassicControlsMount : null}
               >
                 <div className="pane-title-group">
               {isOfficeWorkspace && officeHeaderLeadingControls ? (
                 <div className="office-inline-options">
                   {officeHeaderLeadingControls}
                 </div>
-              ) : null}
-              {isOfficeWorkspace && editorLayout !== "classic" ? (
-                <div
-                  className="office-formatting-mount"
-                  ref={setOfficeFormattingMount}
-                />
               ) : null}
               {!isOfficeWorkspace || officeFormattingMount ? (
                 <PortalOrInline
@@ -1285,9 +1548,11 @@ export function EditorWorkspace({
                         <Highlighter size={15} strokeWidth={2} />
                       </button>
 
-                      {formulaColorMenu && (
+                      {formulaColorMenu && createPortal(
                         <div
-                          className="formula-color-popover"
+                          ref={formulaColorPopoverRef}
+                          className="formula-color-popover is-anchored"
+                          style={formulaColorPopoverStyle}
                           data-formula-color-popover={formulaColorMenu}
                           data-visualtex-floating-layer
                           role="dialog"
@@ -1459,7 +1724,8 @@ export function EditorWorkspace({
                               )}
                             </section>
                           </div>
-                        </div>
+                        </div>,
+                        document.body,
                       )}
                     </div>
                   </div>
@@ -1469,7 +1735,7 @@ export function EditorWorkspace({
               </PortalOrInline>
               <PortalOrInline
                 target={
-                  !isOfficeWorkspace && !keypadMode && editorLayout === "classic"
+                  !isOfficeWorkspace && !keypadMode
                     ? desktopTopToolsMount ?? null
                     : null
                 }
@@ -1762,13 +2028,16 @@ export function EditorWorkspace({
                 }
               >
                 <nav
+                  ref={setBottomBar}
                   className="classic-bottom-tabs"
+                  data-vt-bar-centred={isOfficeWorkspace ? undefined : "true"}
                   aria-label={isEn ? "Bottom editor panel" : "底部编辑面板"}
                 >
                   {isOfficeWorkspace ? (
                     <div
                       ref={setOfficeFormattingMount}
                       className="classic-bottom-formatting-slot"
+                      data-vt-bar-strip
                       aria-label={
                         isEn
                           ? "Formula alignment and formatting"
@@ -1779,6 +2048,7 @@ export function EditorWorkspace({
                     <div
                       ref={setDesktopClassicControlsMount}
                       className="classic-bottom-workspace-controls"
+                      data-vt-bar-strip
                       aria-label={
                         isEn
                           ? "Formula controls"
@@ -1788,6 +2058,7 @@ export function EditorWorkspace({
                   )}
                   <div
                     className="classic-bottom-tab-group"
+                    data-vt-bar-tabs
                     role="tablist"
                     aria-label={isEn ? "Bottom editor panel" : "底部编辑面板"}
                   >
@@ -1830,7 +2101,7 @@ export function EditorWorkspace({
                       </span>
                     </button>
                   </div>
-                  <div className="classic-bottom-actions">
+                  <div className="classic-bottom-actions" data-vt-bar-actions>
                     <button
                       type="button"
                       className="icon-button compact classic-bottom-copy"
@@ -1900,34 +2171,111 @@ export function EditorWorkspace({
               </section>
             </div>
           ) : (
-            <div className={`editor-pane-body${sourceOpen ? " has-source" : ""}`}>
+            <div
+              className={
+                "editor-pane-body standard-editor-pane-body" +
+                (sourceOpen ? " has-source" : "")
+              }
+            >
               <div className="editor-pane-scroll">
                 {renderVisualEditor()}
               </div>
 
-              {sourceOpen ? (
-                <div className="source-pane-slot">{renderSourceEditor()}</div>
-              ) : (
-                <div className="source-toggle-row">
-                  <span className="source-toggle-label" aria-hidden="true">
-                    <Code2 size={15} />
-                  </span>
-                  <button
-                    type="button"
-                    className="source-toggle"
-                    onClick={() => setSourceOpen(true)}
-                    aria-label={isEn ? "Show LaTeX source" : "展开 LaTeX 源码"}
-                    aria-keyshortcuts={isMacKeyboardPlatform() ? "Meta+Backslash" : "Control+Backslash"}
-                    title={
-                      isEn
-                        ? `Show LaTeX source (${sourceShortcutLabel})`
-                        : `展开 LaTeX 源码（${sourceShortcutLabel}）`
+              <section
+                className={"standard-source-dock" + (sourceOpen ? " is-open" : "")}
+                aria-label={
+                  isEn ? "Formatting and LaTeX source" : "公式格式与 LaTeX 源码"
+                }
+              >
+                <nav
+                  ref={setBottomBar}
+                  className="standard-source-bar"
+                  aria-label={isEn ? "Source bar" : "源码栏"}
+                >
+                  <div
+                    ref={
+                      isOfficeWorkspace
+                        ? setOfficeFormattingMount
+                        : setDesktopClassicControlsMount
                     }
+                    className="standard-source-bar-controls"
+                    data-vt-bar-strip
+                    aria-label={isEn ? "Formula controls" : "公式控制"}
+                  />
+                  <div
+                    className="classic-bottom-tab-group standard-source-bar-tabs"
+                    data-vt-bar-tabs
                   >
-                    <PanelBottomOpen size={15} />
-                  </button>
-                </div>
-              )}
+                    <button
+                      type="button"
+                      className={
+                        "standard-source-toggle" + (sourceOpen ? " is-active" : "")
+                      }
+                      data-source-toggle
+                      aria-expanded={sourceOpen}
+                      aria-keyshortcuts={isMacKeyboardPlatform() ? "Meta+Backslash" : "Control+Backslash"}
+                      title={
+                        sourceOpen
+                          ? isEn
+                            ? `Hide LaTeX source (${sourceShortcutLabel})`
+                            : `收起 LaTeX 源码（${sourceShortcutLabel}）`
+                          : isEn
+                            ? `Show LaTeX source (${sourceShortcutLabel})`
+                            : `展开 LaTeX 源码（${sourceShortcutLabel}）`
+                      }
+                      onClick={() => setSourceOpen(!sourceOpen)}
+                    >
+                      <Code2 size={16} />
+                      <span className="classic-bottom-tab-label">
+                        {isEn ? "LaTeX source" : "LaTeX 源码"}
+                      </span>
+                    </button>
+                  </div>
+                  <div className="standard-source-bar-actions" data-vt-bar-actions>
+                    <button
+                      type="button"
+                      className="icon-button compact classic-bottom-copy"
+                      data-standard-source-copy
+                      onClick={() => void onCopy()}
+                      aria-label={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                      title={isEn ? "Copy LaTeX source" : "复制 LaTeX 源码"}
+                    >
+                      <Copy size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button compact classic-bottom-collapse"
+                      data-standard-source-collapse
+                      aria-expanded={sourceOpen}
+                      aria-label={
+                        sourceOpen
+                          ? isEn
+                            ? "Hide LaTeX source"
+                            : "收起 LaTeX 源码"
+                          : isEn
+                            ? "Show LaTeX source"
+                            : "展开 LaTeX 源码"
+                      }
+                      onClick={() => setSourceOpen(!sourceOpen)}
+                    >
+                      {sourceOpen ? (
+                        <PanelBottomClose size={14} />
+                      ) : (
+                        <PanelBottomOpen size={14} />
+                      )}
+                    </button>
+                  </div>
+                </nav>
+                {sourceOpen && (
+                  <div className="source-pane-slot standard-source-pane-slot">
+                    {renderSourceEditor({
+                      showCollapseAction: false,
+                      showCopyAction: false,
+                      compact: true,
+                    })}
+                  </div>
+                )}
+              </section>
             </div>
           )}
         </section>

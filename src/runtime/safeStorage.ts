@@ -1,82 +1,54 @@
-const memoryStorage = new Map<string, string>();
-
+// Only failed preference writes live here; successful storage remains authoritative.
 function browserStorage(): Storage | null {
-  try {
-    return typeof window === "undefined" ? null : window.localStorage;
-  } catch {
-    return null;
-  }
+  return typeof window === "undefined" ? null : window.localStorage;
 }
 
-export const safeStorage = {
-  getItem(key: string): string | null {
-    const storage = browserStorage();
-    if (storage) {
+export function createSafeStorage(getStorage: () => Storage | null = browserStorage) {
+  const pending = new Map<string, string | null>();
+  const requiredStorage = () => {
+    const storage = getStorage();
+    if (!storage) throw new Error("Persistent storage is unavailable.");
+    return storage;
+  };
+  return {
+    getItem(key: string): string | null {
+      if (pending.has(key)) return pending.get(key) ?? null;
+      try { return getStorage()?.getItem(key) ?? null; }
+      catch { return null; }
+    },
+    setItem(key: string, value: string): void {
       try {
-        const value = storage.getItem(key);
-        if (value !== null) {
-          memoryStorage.set(key, value);
-          return value;
-        }
-        memoryStorage.delete(key);
-        return null;
+        requiredStorage().setItem(key, value);
+        pending.delete(key);
       } catch {
-        // Fall back to memory for this session.
+        pending.set(key, value);
       }
-    }
-    return memoryStorage.get(key) ?? null;
-  },
+    },
+    removeItem(key: string): void {
+      try {
+        requiredStorage().removeItem(key);
+        pending.delete(key);
+      } catch {
+        pending.set(key, null);
+      }
+    },
+    // User-authored content must succeed on the backing store before reporting success.
+    setItemStrict(key: string, value: string): void {
+      requiredStorage().setItem(key, value);
+      pending.delete(key);
+    },
+    removeItemStrict(key: string): void {
+      requiredStorage().removeItem(key);
+      pending.delete(key);
+    },
+  };
+}
 
-  setItem(key: string, value: string): void {
-    memoryStorage.set(key, value);
-    const storage = browserStorage();
-    if (!storage) return;
-    try {
-      storage.setItem(key, value);
-    } catch {
-      // The application remains usable when WebKit storage is unavailable.
-    }
-  },
-
-  /**
-   * Persist a value without swallowing a real browser storage failure. This is
-   * used for user-authored assets where silently falling back to process memory
-   * would make data appear saved until the application restarts.
-   */
-  setItemStrict(key: string, value: string): void {
-    const storage = browserStorage();
-    if (!storage) {
-      memoryStorage.set(key, value);
-      return;
-    }
-    try {
-      storage.setItem(key, value);
-      memoryStorage.set(key, value);
-    } catch (error) {
-      throw new Error(
-        `VisualTeX could not persist ${key}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  },
-
-  removeItem(key: string): void {
-    memoryStorage.delete(key);
-    const storage = browserStorage();
-    if (!storage) return;
-    try {
-      storage.removeItem(key);
-    } catch {
-      // The in-memory fallback has already been cleared.
-    }
-  },
-};
+export const safeStorage = createSafeStorage();
 
 export function readLocalStorage(key: string): string | null {
   return safeStorage.getItem(key);
 }
-
 export function writeLocalStorage(key: string, value: string): void {
   safeStorage.setItem(key, value);
 }

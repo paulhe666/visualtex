@@ -276,10 +276,10 @@ function visualTexCanonicalVariantInputCommand(command) {
 }
 function visualTexIsVariantInputCommand(command) {
   const canonical = visualTexCanonicalVariantInputCommand(command);
-  return ["\\mathbf", "\\mathbb", "\\mathit", "\\mathrm", "\\mathsf", "\\mathtt", "\\mathcal", "\\mathscr", "\\mathfrak", "\\boldsymbol", "\\bm", "\\mathbfit", "\\mathnormal", "\\symup", "\\symit", "\\symbf", "\\symbfup", "\\symbfit", "\\symbb", "\\symcal", "\\symbfcal", "\\symscr", "\\symbfscr", "\\symfrak", "\\symbffrak", "\\symsfup", "\\symsfit", "\\symbfsfup", "\\symbfsfit", "\\symtt"].includes(canonical);
+  return ["\\mathbf", "\\mathbb", "\\mathit", "\\mathrm", "\\mathsf", "\\mathtt", "\\mathcal", "\\mathscr", "\\mathfrak", "\\boldsymbol", "\\bm", "\\mathbfit", "\\mathnormal", "\\symup", "\\symit", "\\symbf", "\\symbfup", "\\symbfit", "\\symbb", "\\symcal", "\\symbfcal", "\\symscr", "\\symbfscr", "\\symfrak", "\\symbffrak", "\\symsfup", "\\symsfit", "\\symbfsfup", "\\symbfsfit", "\\symtt", "\\vb"].includes(canonical);
 }
 function visualTexIsAccentSourceCommand(command) {
-  return ["\\acute", "\\grave", "\\dot", "\\ddot", "\\dddot", "\\ddddot", "\\tilde", "\\bar", "\\breve", "\\check", "\\hat", "\\vec", "\\widehat", "\\widetilde", "\\overline", "\\overrightarrow", "\\overleftarrow", "\\overleftrightarrow", "\\mathring"].includes(command);
+  return ["\\acute", "\\grave", "\\dot", "\\ddot", "\\dddot", "\\ddddot", "\\tilde", "\\bar", "\\breve", "\\check", "\\hat", "\\vec", "\\widehat", "\\widetilde", "\\overline", "\\overrightarrow", "\\overleftarrow", "\\overleftrightarrow", "\\mathring", "\\c", "\\va", "\\vu"].includes(command);
 }
 function visualTexSourceWrapperKind(command) {
   const canonical = visualTexCanonicalVariantInputCommand(command);
@@ -539,7 +539,7 @@ function visualTexAcceptSourceWrapperCompletion(mathfield) {
 function visualTexAutoExitAccentAfterDirectInput(mathfield, atom) {
   if (mathfield.visualTexCompositionCommit) return false;
   if ((mathfield.host == null ? void 0 : mathfield.host.dataset.visualtexAutoExitAccent) !== "true") return false;
-  const visualTexAutoExitAccentCommands = ["\\acute", "\\grave", "\\dot", "\\ddot", "\\dddot", "\\ddddot", "\\tilde", "\\bar", "\\breve", "\\check", "\\hat", "\\vec", "\\widehat", "\\widetilde", "\\overline", "\\overrightarrow", "\\overleftarrow", "\\overleftrightarrow", "\\mathring"];
+  const visualTexAutoExitAccentCommands = ["\\acute", "\\grave", "\\dot", "\\ddot", "\\dddot", "\\ddddot", "\\tilde", "\\bar", "\\breve", "\\check", "\\hat", "\\vec", "\\widehat", "\\widetilde", "\\overline", "\\overrightarrow", "\\overleftarrow", "\\overleftrightarrow", "\\mathring", "\\c", "\\va", "\\vu"];
   if (atom?.type === "accent" && visualTexAutoExitAccentCommands.includes(atom.command)) {
     const previousPosition = mathfield.model.position;
     const target = mathfield.model.offsetOf(atom);
@@ -572,7 +572,7 @@ function visualTexAutoExitAfterComposition(mathfield, slot) {
   const model = mathfield.model;
   const parent = slot.parent;
   const branch = slot.branch;
-  const accentCommands = ["\\acute", "\\grave", "\\dot", "\\ddot", "\\dddot", "\\ddddot", "\\tilde", "\\bar", "\\breve", "\\check", "\\hat", "\\vec", "\\widehat", "\\widetilde", "\\overline", "\\overrightarrow", "\\overleftarrow", "\\overleftrightarrow", "\\mathring"];
+  const accentCommands = ["\\acute", "\\grave", "\\dot", "\\ddot", "\\dddot", "\\ddddot", "\\tilde", "\\bar", "\\breve", "\\check", "\\hat", "\\vec", "\\widehat", "\\widetilde", "\\overline", "\\overrightarrow", "\\overleftarrow", "\\overleftrightarrow", "\\mathring", "\\c", "\\va", "\\vu"];
   if (parent.type === "accent" && branch === "body" &&
       (mathfield.host == null ? void 0 : mathfield.host.dataset.visualtexAutoExitAccent) === "true" &&
       accentCommands.includes(parent.command)) {
@@ -627,6 +627,17 @@ function visualTexAutoExitScriptAfterDirectInput(mathfield, atom) {
   if (!parent || !parent.parent) return false;
   const model = mathfield.model;
   const previousPosition = model.position;
+  // Ctrl+J builds base_{#?}^{#?}: fill the still-empty sibling script
+  // first, like the bounded-operator limits above, instead of leaving it.
+  const siblingBranch = atom.parentBranch === "subscript" ? "superscript" : "subscript";
+  const siblingAtoms = (parent.branch(siblingBranch) || []).filter((item) => item.type !== "first");
+  if (siblingAtoms.length === 1 && siblingAtoms[0].type === "placeholder") {
+    const placeholderOffset = model.offsetOf(siblingAtoms[0]);
+    model.setSelection(placeholderOffset - 1, placeholderOffset);
+    model.mathfield.stopCoalescingUndo();
+    model.announce("move", previousPosition);
+    return true;
+  }
   const targetPosition = model.offsetOf(parent);
   if (targetPosition < 0 || targetPosition === previousPosition) return false;
   model.position = targetPosition;
@@ -708,7 +719,11 @@ function insertMathModeChar(mathfield, c) {
     visualTexInsertedAtom.visualTexStructuralSlot = pendingPlaceholder?.slot || visualTexInheritedStructuralSlot;
   }
   mathfield.snapshot(`insert-${visualTexInsertedAtom.type}`);
-  if (!visualTexAutoExitAccentAfterDirectInput(mathfield, visualTexInsertedAtom))
+  // The structural-slot insert may already have moved on to an empty sibling
+  // slot (Cmd+J's still-empty superscript): that selected placeholder waits
+  // for input and must not be auto-exited as if it had just been filled.
+  if (!model.selectionIsPlaceholder &&
+      !visualTexAutoExitAccentAfterDirectInput(mathfield, visualTexInsertedAtom))
     visualTexAutoExitScriptAfterDirectInput(mathfield, visualTexInsertedAtom);
   if (/\d/.test(c)) {
     const timeoutValue = mathfield.options.inlineShortcutTimeout > 0 ? mathfield.options.inlineShortcutTimeout : 1e3;

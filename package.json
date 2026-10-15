@@ -43,9 +43,12 @@
     "test:startup-compatibility": "tsx scripts/startup_compatibility_smoke.mjs",
     "test:startup-browser": "node scripts/startup_browser_regression.mjs",
     "test:editor-refactor": "node scripts/history_manager_smoke.mjs && tsx scripts/editor_persistence_isolation_regression.mjs && node scripts/editor_session_regression.mjs && node scripts/editor_lifecycle_regression.mjs && node scripts/editor_cleanup_regression.mjs",
-    "test:web-editor": "npm run build:test && node scripts/web_editor_migration_smoke.mjs"
+    "test:web-editor": "npm run build:test && node scripts/web_editor_migration_smoke.mjs",
+    "test:ported-editor": "node scripts/ported_editor_regression.mjs",
+    "test:candidate-panel": "npm run build:test && node scripts/candidate_panel_audit.mjs --digits"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.8.1",
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.5.2",

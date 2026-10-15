@@ -342,6 +342,16 @@ async function main() {
 
     await client.send("Page.navigate", { url: baseUrl });
     await sleep(650);
+    // A larger bundle can still be loading after the fixed delay; evaluating
+    // during that navigation fails with "Inspected target navigated or closed".
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        if (await evaluate("document.readyState") === "complete") break;
+      } catch {
+        // The previous document is still being replaced.
+      }
+      await sleep(100);
+    }
     await evaluate(`(() => {
       localStorage.setItem("visualtex.onboarding.v3.completed", "true");
       localStorage.setItem("visualtex.office.macos.first-run.v1.completed", "true");
@@ -8008,7 +8018,7 @@ async function main() {
             "mathlive-suggestion-popover",
           );
           const item = [...(stable?.querySelectorAll("li[data-command]") ?? [])]
-            .find((candidate) => stable.visualTexMathfield.visualTexCompletionRecords.get(candidate.dataset.command)?.command === ${JSON.stringify(command)});
+            .find((candidate) => stable.visualTexMathfield.visualTexCompletionRecords.get(candidate.dataset.visualtexInsertionLatex ?? candidate.dataset.command)?.command === ${JSON.stringify(command)});
           const layers = [...(item?.querySelectorAll(
             ".ML__popover__command .ML__center",
           ) ?? [])]
@@ -8434,7 +8444,7 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
         const previewState = preview
           ? await waitForEvaluation(`(() => {
               const item = [...document.querySelectorAll('#mathlive-suggestion-popover li[data-command]')]
-                .find((candidate) => stable.visualTexMathfield.visualTexCompletionRecords.get(candidate.dataset.command)?.command === ${JSON.stringify(command)});
+                .find((candidate) => stable.visualTexMathfield.visualTexCompletionRecords.get(candidate.dataset.visualtexInsertionLatex ?? candidate.dataset.command)?.command === ${JSON.stringify(command)});
               const previewNode = item?.querySelector('[data-visualtex-preview]');
               return {
                 ready: Boolean(item && previewNode?.dataset.visualtexPreview === ${JSON.stringify(preview)}),
@@ -8445,7 +8455,7 @@ p_1 &\leftarrow \operatorname{umulhi}(a,b)=\left\lfloor\frac{ab}{\beta}\right\rf
             })()`, `${command} visual preview`)
           : await evaluate(`(() => {
               const item = [...document.querySelectorAll('#mathlive-suggestion-popover li[data-command]')]
-                .find((candidate) => stable.visualTexMathfield.visualTexCompletionRecords.get(candidate.dataset.command)?.command === ${JSON.stringify(command)});
+                .find((candidate) => stable.visualTexMathfield.visualTexCompletionRecords.get(candidate.dataset.visualtexInsertionLatex ?? candidate.dataset.command)?.command === ${JSON.stringify(command)});
               const custom = [...document.querySelectorAll('.suggestion-item .suggestion-command')]
                 .find((candidate) => candidate.textContent?.trim() === ${JSON.stringify(command)});
               return {

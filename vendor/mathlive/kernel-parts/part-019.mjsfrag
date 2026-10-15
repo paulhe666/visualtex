@@ -1117,6 +1117,35 @@ function visualTexToggleSelectionStyle(model, kind, requestedSelection) {
   });
   return true;
 }
+function visualTexPaintDetachedScripts(model, requestedSelection) {
+  const selection = requestedSelection ? model.normalizeSelection(requestedSelection) : model.selection;
+  if (!selection || selection.ranges.every(([start, end]) => start === end)) return false;
+  const atoms = [...new Set(model.getAtoms(selection, { includeChildren: true }))];
+  // A keyboard selection can cover only the ^/_ attachment of c^2. MathLive
+  // then paints that glyph-less container, which serializes as
+  // \textcolor{..}{^2}: invisible, and dropped by the next LaTeX round trip.
+  // Paint the script content instead, giving c^{\textcolor{..}{2}}.
+  const detached = atoms.filter(atom => atom.type === "subsup" &&
+    !atoms.includes(atom.leftSibling) &&
+    (atom.style?.color !== undefined || atom.style?.backgroundColor !== undefined));
+  if (!detached.length) return false;
+  model.deferNotifications({ content: true, type: "formatFontColor" }, () => {
+    for (const script of detached) {
+      const paint = {};
+      for (const key of ["color", "backgroundColor"]) {
+        if (script.style[key] !== undefined) paint[key] = script.style[key];
+      }
+      for (const child of script.children) {
+        if (child.type === "first") continue;
+        child.style = { ...child.style, ...paint };
+        child.isDirty = true;
+      }
+      script.style = { ...script.style, color: undefined, backgroundColor: undefined };
+      script.isDirty = true;
+    }
+  });
+  return true;
+}
 function visualTexAlignedCellIsEmpty(cell) {
   return !cell || cell.every(atom => atom.type === "first");
 }
@@ -1295,6 +1324,30 @@ function visualTexInsertAlignmentPoint(model) {
   });
   return true;
 }
+// Ctrl+J creates base_{#?}^{#?}. Auto-exit after the first script must enter
+// the still-empty sibling script instead of leaving the whole structure.
+function visualTexMoveToEmptySiblingScript(model) {
+  let atom = model.at(model.position);
+  while (atom && atom.parentBranch !== "subscript" && atom.parentBranch !== "superscript") {
+    atom = atom.parent;
+  }
+  if (!atom?.parent) return false;
+  const sibling = atom.parentBranch === "subscript" ? "superscript" : "subscript";
+  const content = (atom.parent.branch(sibling) ?? []).filter(item => item.type !== "first");
+  if (content.length !== 1 || content[0].type !== "placeholder") return false;
+  const offset = model.offsetOf(content[0]);
+  model.setSelection(offset - 1, offset);
+  return true;
+}
+function visualTexIsAlignmentMarker(atom) {
+  return atom?.command === "\\class" && atom.args?.[0] === "visualtex-align-marker";
+}
+// A top-level '&' typed before the first Shift+Enter is a zero-width marker.
+// When the row becomes an aligned row, that marker is its column split.
+function visualTexSplitAtAlignmentMarker(atoms) {
+  const index = atoms.findIndex(visualTexIsAlignmentMarker);
+  return index < 0 ? null : [atoms.slice(0, index), atoms.slice(index + 1)];
+}
 function visualTexInsertRowBreak(model, environment = "gathered") {
   if (environment !== "aligned" && environment !== "gathered") return false;
   if (!model.contentWillChange({ inputType: "insertLineBreak" })) return false;
@@ -1332,13 +1385,20 @@ function visualTexInsertRowBreak(model, environment = "gathered") {
         for (let column = 0; column < parent.colCount; column += 1) {
           parent.setCell(row + 1, column, []);
         }
-        // Put a newly-created align row into the left-aligned second cell.
-        // This keeps normal typing direction intuitive until the user enters
-        // an explicit '&', which visualTexInsertAlignmentPoint then commits
-        // into the standard right/left TeX column pair.
-        visualTexProvisionalAlignRows(parent).add(row + 1);
-        parent.setCell(row + 1, 1, after);
-        model.position = model.offsetOf(parent.getCell(row + 1, 1)[0]);
+        const afterCells = visualTexSplitAtAlignmentMarker(after);
+        if (afterCells) {
+          parent.setCell(row + 1, 0, afterCells[0]);
+          parent.setCell(row + 1, 1, afterCells[1]);
+          model.position = model.offsetOf(parent.getCell(row + 1, 0)[0]);
+        } else {
+          // Put a newly-created align row into the left-aligned second cell.
+          // This keeps normal typing direction intuitive until the user enters
+          // an explicit '&', which visualTexInsertAlignmentPoint then commits
+          // into the standard right/left TeX column pair.
+          visualTexProvisionalAlignRows(parent).add(row + 1);
+          parent.setCell(row + 1, 1, after);
+          model.position = model.offsetOf(parent.getCell(row + 1, 1)[0]);
+        }
       } else {
         parent.setCell(row + 1, col, after);
         model.position = model.offsetOf(parent.getCell(row + 1, col)[0]);
@@ -1349,31 +1409,20 @@ function visualTexInsertRowBreak(model, environment = "gathered") {
       const before = siblings.slice(1, split);
       const after = siblings.slice(split);
       parent.removeBranch(branch);
-      // A '&' typed before the first line break is stored as a VisualTeX
-      // alignment marker. Split that row at the marker into the standard
-      // right/left column pair, exactly as typing '&' inside the row would.
-      const isAlignmentMarker = (atom) =>
-        atom.command === "\\class" && atom.args?.[0] === "visualtex-align-marker";
-      const alignedRow = (atoms) => {
-        const marker = atoms.findIndex(isAlignmentMarker);
-        return marker < 0
-          ? { cells: [[], atoms], provisional: true }
-          : { cells: [atoms.slice(0, marker), atoms.slice(marker + 1)], provisional: false };
-      };
-      const rows = environment === "aligned" ? [alignedRow(before), alignedRow(after)] : null;
+      const beforeCells = environment === "aligned" ? visualTexSplitAtAlignmentMarker(before) : null;
+      const afterCells = environment === "aligned" ? visualTexSplitAtAlignmentMarker(after) : null;
       const array =
-        rows
-          ? makeEnvironment(environment, rows.map((row) => row.cells))
+        environment === "aligned"
+          ? makeEnvironment(environment, [beforeCells ?? [[], before], afterCells ?? [[], after]])
           : makeEnvironment(environment, [[before], [after]]);
-      if (rows) {
+      if (environment === "aligned") {
         const provisionalRows = visualTexProvisionalAlignRows(array);
-        rows.forEach((row, index) => {
-          if (row.provisional) provisionalRows.add(index);
-        });
+        if (!beforeCells) provisionalRows.add(0);
+        if (!afterCells) provisionalRows.add(1);
       }
       parent.setChildren([array], branch);
       model.position = model.offsetOf(
-        array.getCell(1, rows?.[1].provisional ? 1 : 0)[0],
+        array.getCell(1, environment === "aligned" && !afterCells ? 1 : 0)[0],
       );
     }
     mathfield.snapshot();
@@ -1382,10 +1431,16 @@ function visualTexInsertRowBreak(model, environment = "gathered") {
 }
 register2({
   visualTexToggleSelectionStyle,
+  visualTexPaintDetachedScripts,
   visualTexInsertAlignmentPoint,
   visualTexInsertRowBreak,
 }, {
   target: "model", canUndo: true, changeContent: true, changeSelection: true
+});
+register2({
+  visualTexMoveToEmptySiblingScript,
+}, {
+  target: "model", changeSelection: true
 });
 
 // src/editor/undo.ts
@@ -1561,11 +1616,19 @@ function onDelete(model, direction, atom, branch) {
     if (!branch && direction === "forward") return false;
     if (!branch) {
       if (atom.subscript || atom.superscript) {
-        const pos = direction === "forward" ? (_c2 = (_a3 = atom.superscript) == null ? void 0 : _a3[0]) != null ? _c2 : (_b3 = atom.subscript) == null ? void 0 : _b3[0] : (_f = (_d2 = atom.subscript) == null ? void 0 : _d2[0].lastSibling) != null ? _f : (_e = atom.superscript) == null ? void 0 : _e[0].lastSibling;
+        // Lower branch first (VISUALTEX_NAVIGATION_BRANCHES).
+        const pos = direction === "forward" ? (_c2 = (_a3 = atom.subscript) == null ? void 0 : _a3[0]) != null ? _c2 : (_b3 = atom.superscript) == null ? void 0 : _b3[0] : (_f = (_d2 = atom.superscript) == null ? void 0 : _d2[0].lastSibling) != null ? _f : (_e = atom.subscript) == null ? void 0 : _e[0].lastSibling;
         if (pos) model.position = model.offsetOf(pos);
         return true;
       }
       return false;
+    }
+    if (direction === "backward" && visualTexOwnsScriptStructure(atom) && (branch === "subscript" || branch === "superscript" && !atom.subscript)) {
+      // Backspace at the start of the operator's first limit must not leave
+      // the structure: a blank operator is removed, a filled one is selected.
+      if (visualTexScriptStructureIsBlank(atom)) return visualTexRemoveScriptStructure(model, atom);
+      model.setSelection(model.offsetOf(atom.leftSibling), model.offsetOf(atom));
+      return true;
     }
     if (!atom.hasChildren && atom.type === "subsup") {
       const pos = direction === "forward" ? model.offsetOf(atom) : Math.max(0, model.offsetOf(atom) - 1);
@@ -1581,26 +1644,26 @@ function onDelete(model, direction, atom, branch) {
         model.position = pos;
         return true;
       }
-      if (branch === "superscript" && direction === "backward")
+      if (branch === "subscript" && direction === "backward")
         model.position = model.offsetOf(atom.firstChild) - 1;
-      else if (branch === "subscript" && direction === "backward") {
-        if (atom.superscript)
-          model.position = model.offsetOf(atom.superscript[0].lastSibling);
+      else if (branch === "superscript" && direction === "backward") {
+        if (atom.subscript)
+          model.position = model.offsetOf(atom.subscript[0].lastSibling);
         else model.position = model.offsetOf(atom.firstChild) - 1;
       } else model.position = model.offsetOf(atom);
       return true;
     }
-    if (branch === "superscript") {
+    if (branch === "subscript") {
       if (direction === "backward") {
         const pos = model.offsetOf(atom.firstChild) - 1;
         console.assert(pos >= 0);
         model.position = pos;
-      } else if (atom.subscript)
-        model.position = model.offsetOf(atom.subscript[0]);
+      } else if (atom.superscript)
+        model.position = model.offsetOf(atom.superscript[0]);
       else model.position = model.offsetOf(atom);
-    } else if (branch === "subscript") {
-      if (direction === "backward" && atom.superscript) {
-        model.position = model.offsetOf(atom.superscript[0].lastSibling);
+    } else if (branch === "superscript") {
+      if (direction === "backward" && atom.subscript) {
+        model.position = model.offsetOf(atom.subscript[0].lastSibling);
       } else if (direction === "backward") {
         model.position = model.offsetOf(atom.firstChild) - 1;
       } else {
@@ -1641,6 +1704,73 @@ function onDelete(model, direction, atom, branch) {
   }
   return false;
 }
+function visualTexOwnsScriptStructure(atom) {
+  if (!atom?.parent) return false;
+  if (atom.type === "extensible-symbol") return true;
+  return atom.type === "operator" && atom.subsupPlacement !== "adjacent";
+}
+function visualTexScriptBranchIsBlank(atom, branch) {
+  const atoms = atom.branch(branch);
+  // A template relation such as the "=" in \sum_{\placeholder{}=\placeholder{}}
+  // is not user content.
+  return !atoms || atoms.every((child) => child.type === "first" || child.type === "placeholder" || child.type === "mrel" && child.value === "=");
+}
+function visualTexScriptStructureIsBlank(atom) {
+  return visualTexScriptBranchIsBlank(atom, "subscript") && visualTexScriptBranchIsBlank(atom, "superscript");
+}
+function visualTexRemoveScriptStructure(model, atom) {
+  const parent = atom.parent;
+  const branch = atom.parentBranch;
+  const previous = atom.leftSibling;
+  const body = atom.rightSibling;
+  parent.removeChild(atom);
+  if (body?.type === "placeholder") parent.removeChild(body);
+  model.position = model.offsetOf(previous);
+  model.announce("delete", void 0, [atom]);
+  visualTexRestoreStructuralPlaceholder(model, parent, branch);
+  return true;
+}
+// The big operator (\sum, \int, \lim...) Backspace removes at once: one that
+// is selected as a whole, or a blank one whose limit holds the caret or a
+// selected limit placeholder.
+function visualTexScriptStructureToRemove(model) {
+  const [start, end] = range(model.selection);
+  const selected = model.at(end);
+  if (end !== start && visualTexOwnsScriptStructure(selected) && model.offsetOf(selected.leftSibling) === start) return selected;
+  if (end !== start && !(end === start + 1 && selected?.type === "placeholder")) return null;
+  const node = model.at(end);
+  const owner = node?.parent;
+  if (node?.parentBranch !== "subscript" && node?.parentBranch !== "superscript") return null;
+  if (!visualTexOwnsScriptStructure(owner) || !visualTexScriptStructureIsBlank(owner)) return null;
+  return owner;
+}
+// A filled big operator whose first slot of a limit holds the selected
+// placeholder, e.g. \prod_{\placeholder{}=1}^{\infty}: Backspace selects the
+// whole operator instead of deleting the placeholder and leaving "_{=1}".
+function visualTexScriptStructureToSelect(model) {
+  const [start, end] = range(model.selection);
+  const node = model.at(end);
+  if (end !== start + 1 || node?.type !== "placeholder" || node.leftSibling?.type !== "first") return null;
+  if (node.parentBranch !== "subscript" && node.parentBranch !== "superscript") return null;
+  return visualTexOwnsScriptStructure(node.parent) ? node.parent : null;
+}
+// Selected-range half of the check above. The collapsed half runs inside the
+// regular backward-delete transaction so its source-wrapper refresh applies.
+function visualTexDeleteSelectedScriptStructure(model) {
+  const structure = visualTexScriptStructureToRemove(model);
+  const filled = structure ? null : visualTexScriptStructureToSelect(model);
+  if (filled) {
+    model.setSelection(model.offsetOf(filled.leftSibling), model.offsetOf(filled));
+    return true;
+  }
+  if (!structure) return false;
+  model.deferNotifications(
+    { content: true, selection: true, type: "deleteContentBackward" },
+    () => visualTexRemoveScriptStructure(model, structure),
+  );
+  if (model.mathfield.visualTexSourceWrapper) visualTexSyncSourceWrapper(model.mathfield);
+  return true;
+}
 function visualTexShouldRetainStructuralPlaceholder(parent, branch) {
   if (!parent || branch == null || parent.type === "root") return false;
   if (Array.isArray(branch)) return parent.type === "array";
@@ -1650,6 +1780,38 @@ function visualTexShouldRetainStructuralPlaceholder(parent, branch) {
   if (branch === "above" || branch === "below")
     return parent.type === "genfrac" || parent.type === "overunder" || parent.type === "surd";
   return false;
+}
+// An editable structural slot holding nothing but its "first" atom (the
+// counterpart of a Kernel 2.7061 slot head with no next node), e.g. x^{} or
+// \frac{}{}. Matrix and alignment cells are excluded: an empty alignment
+// column is layout, not a missing argument.
+function visualTexIsEmptyStructuralSlot(first) {
+  const parent = first.parent;
+  const branch = first.parentBranch;
+  if (Array.isArray(branch)) return false;
+  if (!visualTexShouldRetainStructuralPlaceholder(parent, branch)) return false;
+  const atoms = parent.branch(branch);
+  return Boolean(atoms) && atoms.length === 1;
+}
+// Draw an empty slot as the structural placeholder box, bound to the slot's
+// first atom: the slot is visible, and a pointer hit inside the box resolves
+// to the slot's own start offset. The caret stays at the slot's start.
+function visualTexRenderEmptyStructuralSlot(first, parentContext) {
+  const context = new Context({ parent: parentContext }, first.style);
+  const box = new Box("x", {
+    type: "ord",
+    mode: "math",
+    maxFontSize: context.scalingFactor,
+    style: {
+      variant: "normal",
+      fontSize: Math.max(1, context.size + context.mathstyle.sizeDelta)
+    },
+    letterShapeStyle: context.letterShapeStyle,
+    classes: "visualtex-structural-placeholder visualtex-empty-slot"
+  });
+  first.bind(context, box);
+  if (!first.caret) return box.wrap(context);
+  return new Box([new Box(null, { caret: first.caret }), box], { type: "ord" }).wrap(context);
 }
 function visualTexSameStructuralBranch(left, right) {
   if (Array.isArray(left) || Array.isArray(right))
@@ -1705,11 +1867,16 @@ function deleteBackward(model) {
     );
   }
   if (!model.selectionIsCollapsed)
-    return deleteRange(model, range(model.selection), "deleteContentBackward");
+    return visualTexDeleteSelectedScriptStructure(model) || deleteRange(model, range(model.selection), "deleteContentBackward");
   const visualTexDeleteResult = model.deferNotifications(
     { content: true, selection: true, type: "deleteContentBackward" },
     () => {
       var _a3;
+      const visualTexStructure = visualTexScriptStructureToRemove(model);
+      if (visualTexStructure) {
+        visualTexRemoveScriptStructure(model, visualTexStructure);
+        return;
+      }
       let target = model.at(model.position);
       if (target && onDelete(model, "backward", target)) return;
       if (target == null ? void 0 : target.isFirstSibling) {

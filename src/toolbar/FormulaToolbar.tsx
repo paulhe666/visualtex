@@ -30,6 +30,11 @@ import {
   commonCommandIds,
 } from "../autocomplete/commandRegistry";
 import { MathPreview } from "../components/MathPreview";
+import { FormulaTileLibraryDialog } from "./FormulaTileLibraryDialog";
+import {
+  defaultCommonFormulaTileIds,
+  formulaTileLibraryById,
+} from "./formulaTileLibrary";
 import { FormulaHotkeyRecorderDialog } from "../components/FormulaHotkeyRecorderDialog";
 import { customSymbolCommands } from "../autocomplete/runtimeCommandRegistry";
 import {
@@ -47,6 +52,7 @@ import {
 } from "../shortcuts/formulaHotkeys";
 import { useEditorStore } from "../stores/editorStore";
 import { writeLocalStorage } from "../runtime/safeStorage";
+import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 
 const LazyCustomSymbolDesignerDialog = lazy(async () => {
@@ -107,6 +113,7 @@ interface CustomFormulaTileLibrary {
 interface FormulaContextMenuState {
   target: FormulaHotkeyTarget;
   customTileId?: string;
+  commonTileId?: string;
   x: number;
   y: number;
 }
@@ -121,6 +128,7 @@ const customFormulaTilesStorageKey = "visualtex-custom-formula-tiles";
 const commonToolbarCommandsStorageKey = "visualtex-common-toolbar-command-ids-v2";
 const legacyCommonToolbarCommandsStorageKey = "visualtex-common-toolbar-command-ids-v1";
 const commonToolbarCommandLimit = 45;
+const commonFormulaTileIdsStorageKey = "visualtex-common-formula-tile-ids-v1";
 const defaultCustomSectionId = "default";
 const defaultCustomSectionName = "未命名分区";
 const maxCustomFormulaTiles = 30;
@@ -406,68 +414,35 @@ function validCustomTileColor(value: unknown): string | null {
     : null;
 }
 
-const commonFormulaTiles: FormulaTileDefinition[] = [
-  {
-    id: "quadratic-formula",
-    latex: "x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}",
-    labelZh: "一元二次方程求根公式",
-    labelEn: "Quadratic formula",
-  },
-  {
-    id: "euler-identity",
-    latex: "e^{i\\pi}+1=0",
-    labelZh: "欧拉恒等式",
-    labelEn: "Euler identity",
-  },
-  {
-    id: "pythagorean-theorem",
-    latex: "a^2+b^2=c^2",
-    labelZh: "勾股定理",
-    labelEn: "Pythagorean theorem",
-  },
-  {
-    id: "binomial-theorem",
-    latex: "(a+b)^n=\\sum_{k=0}^{n}\\binom{n}{k}a^{n-k}b^k",
-    labelZh: "二项式定理",
-    labelEn: "Binomial theorem",
-  },
-  {
-    id: "gaussian-integral",
-    latex: "\\int_{-\\infty}^{\\infty}e^{-x^2}\\,\\mathrm{d}x=\\sqrt{\\pi}",
-    labelZh: "高斯积分",
-    labelEn: "Gaussian integral",
-  },
-  {
-    id: "taylor-series",
-    latex: "f(x)=\\sum_{n=0}^{\\infty}\\frac{f^{(n)}(a)}{n!}(x-a)^n",
-    labelZh: "泰勒展开",
-    labelEn: "Taylor series",
-  },
-  {
-    id: "mass-energy",
-    latex: "E=mc^2",
-    labelZh: "质能方程",
-    labelEn: "Mass-energy equivalence",
-  },
-  {
-    id: "schrodinger-equation",
-    latex: "i\\hbar\\frac{\\partial}{\\partial t}\\Psi=\\hat{H}\\Psi",
-    labelZh: "含时薛定谔方程",
-    labelEn: "Time-dependent Schrödinger equation",
-  },
-  {
-    id: "gauss-law",
-    latex: "\\nabla\\cdot\\mathbf{E}=\\frac{\\rho}{\\varepsilon_0}",
-    labelZh: "高斯定律",
-    labelEn: "Gauss's law",
-  },
-  {
-    id: "characteristic-equation",
-    latex: "\\det(A-\\lambda I)=0",
-    labelZh: "矩阵特征方程",
-    labelEn: "Matrix characteristic equation",
-  },
-];
+// The Common tab shows built-in library tiles picked by the user, in the order
+// they were added. Unknown ids (from a newer or older build) are dropped.
+function normalizeCommonFormulaTileIds(value: unknown) {
+  if (!Array.isArray(value)) return null;
+  const ids: string[] = [];
+  for (const item of value) {
+    if (
+      typeof item === "string" &&
+      formulaTileLibraryById.has(item) &&
+      !ids.includes(item)
+    ) {
+      ids.push(item);
+    }
+  }
+  return ids;
+}
+
+function loadCommonFormulaTileIds() {
+  try {
+    const stored = localStorage.getItem(commonFormulaTileIdsStorageKey);
+    if (stored !== null) {
+      const ids = normalizeCommonFormulaTileIds(JSON.parse(stored));
+      if (ids) return ids;
+    }
+  } catch {
+    // Fall back to the defaults below.
+  }
+  return [...defaultCommonFormulaTileIds];
+}
 
 function emptyCustomFormulaTileLibrary(): CustomFormulaTileLibrary {
   return {
@@ -865,6 +840,10 @@ export function FormulaToolbar({
     useState<TileCategory>("common");
   const [customTileLibrary, setCustomTileLibrary] =
     useState<CustomFormulaTileLibrary>(loadCustomFormulaTiles);
+  const [commonFormulaTileIds, setCommonFormulaTileIds] = useState(
+    loadCommonFormulaTileIds,
+  );
+  const [tileLibraryOpen, setTileLibraryOpen] = useState(false);
   const [commonToolbarCommandIds, setCommonToolbarCommandIds] = useState(
     loadCommonToolbarCommandIds,
   );
@@ -875,6 +854,8 @@ export function FormulaToolbar({
     useState<SectionEditorState | null>(null);
   const [pendingSectionDeleteId, setPendingSectionDeleteId] =
     useState<string | null>(null);
+  // Result of the last "save as tile" click, shown in place of the hint.
+  const [tileSaveNotice, setTileSaveNotice] = useState<string | null>(null);
   const [pendingCustomSymbolDeleteId, setPendingCustomSymbolDeleteId] =
     useState<string | null>(null);
   const [contextMenu, setContextMenu] =
@@ -965,6 +946,13 @@ export function FormulaToolbar({
 
   useEffect(() => {
     writeLocalStorage(
+      commonFormulaTileIdsStorageKey,
+      JSON.stringify(commonFormulaTileIds),
+    );
+  }, [commonFormulaTileIds]);
+
+  useEffect(() => {
+    writeLocalStorage(
       commonToolbarCommandsStorageKey,
       JSON.stringify(commonToolbarCommandIds),
     );
@@ -1000,7 +988,19 @@ export function FormulaToolbar({
     let frame = 0;
     const quantizeWidth = (width: number) =>
       Math.max(120, Math.floor(width / 2) * 2);
-    const commitWidths = (entries: Array<[string, number]>) => {
+    // Re-packing custom tile rows changes the list height; when that toggles
+    // a classic scroll bar the measured width flips with it. One guard per
+    // section settles such a flip-flop.
+    const widthGuards = new Map<string, (width: number) => number>();
+    const commitWidths = (rawEntries: Array<[string, number]>) => {
+      const entries = rawEntries.map(([sectionId, width]): [string, number] => {
+        let guard = widthGuards.get(sectionId);
+        if (!guard) {
+          guard = createLayoutOscillationGuard();
+          widthGuards.set(sectionId, guard);
+        }
+        return [sectionId, guard(width)];
+      });
       if (!entries.length) return;
       setCustomTileGridWidths((current) => {
         let changed = false;
@@ -1342,6 +1342,9 @@ export function FormulaToolbar({
     if (!root || !tabs || !strip) return;
 
     let frame = 0;
+    // The row count changes how wide the strip's content is, which can show
+    // or hide its horizontal scroll bar and so change clientHeight.
+    const stableStripHeight = createLayoutOscillationGuard();
     const measureRows = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
@@ -1351,7 +1354,7 @@ export function FormulaToolbar({
         const rowGap = Number.parseFloat(styles.rowGap) || 0;
         const availableHeight = Math.max(
           0,
-          strip.clientHeight - paddingTop - paddingBottom,
+          stableStripHeight(strip.clientHeight) - paddingTop - paddingBottom,
         );
         const targetRowHeight = Math.max(26, effectiveFormulaToolButtonSize - 8);
         const nextRowCount = Math.max(
@@ -1402,6 +1405,9 @@ export function FormulaToolbar({
     if (!root || !strip) return;
 
     let frame = 0;
+    // The matrix picker size feeds back into the strip's scroll bars.
+    const stableStripHeight = createLayoutOscillationGuard();
+    const stableStripWidth = createLayoutOscillationGuard();
     const measureMatrix = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
@@ -1412,11 +1418,11 @@ export function FormulaToolbar({
         const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
         const availableHeight = Math.max(
           0,
-          strip.clientHeight - paddingTop - paddingBottom,
+          stableStripHeight(strip.clientHeight) - paddingTop - paddingBottom,
         );
         const availableWidth = Math.max(
           0,
-          strip.clientWidth - paddingLeft - paddingRight,
+          stableStripWidth(strip.clientWidth) - paddingLeft - paddingRight,
         );
         const railWidth = 32;
         const builderGap = 6;
@@ -1576,13 +1582,30 @@ export function FormulaToolbar({
       })),
     [customTileLibrary.tiles],
   );
-  const visibleFormulaTiles = useMemo(
+  const commonFormulaTiles = useMemo<FormulaTileDefinition[]>(
     () =>
-      activeTileCategory === "common"
-        ? commonFormulaTiles
-        : customTileDefinitions,
-    [activeTileCategory, customTileDefinitions],
+      commonFormulaTileIds.flatMap((id) => {
+        const tile = formulaTileLibraryById.get(id);
+        return tile ? [tile] : [];
+      }),
+    [commonFormulaTileIds],
   );
+  const visibleFormulaTiles =
+    activeTileCategory === "common"
+      ? commonFormulaTiles
+      : customTileDefinitions;
+  const toggleCommonFormulaTile = (tileId: string) =>
+    setCommonFormulaTileIds((current) =>
+      current.includes(tileId)
+        ? current.filter((id) => id !== tileId)
+        : [...current, tileId],
+    );
+  const removeCommonFormulaTile = (tileId: string) => {
+    setCommonFormulaTileIds((current) =>
+      current.filter((id) => id !== tileId),
+    );
+    setContextMenu(null);
+  };
 
   const recordCustomTileNaturalWidth = (tileId: string, width: number) => {
     const stableWidth = Math.max(1, Math.round(width));
@@ -1639,8 +1662,31 @@ export function FormulaToolbar({
     updater: (current: CustomFormulaTileLibrary) => CustomFormulaTileLibrary,
   ) => setCustomTileLibrary((current) => updater(current));
 
+  useEffect(() => {
+    if (!tileSaveNotice) return;
+    const timeout = window.setTimeout(() => setTileSaveNotice(null), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [tileSaveNotice]);
+
   const saveActiveFormulaAsTile = () => {
     if (!activeLineLatex || !activeCustomSection) return;
+    const duplicate = customTileLibrary.tiles.find(
+      (tile) => tile.latex === activeLineLatex,
+    );
+    const sectionName = activeCustomSection.name;
+    setTileSaveNotice(
+      !duplicate
+        ? isEn
+          ? `Saved to “${sectionName}”.`
+          : `已保存到「${sectionName}」。`
+        : duplicate.sectionId === activeCustomSection.id
+          ? isEn
+            ? "This formula is already a tile; moved it to the front."
+            : "这个公式已经是磁贴了，已把它移到最前面。"
+          : isEn
+            ? `This formula is already a tile; moved it to “${sectionName}”.`
+            : `这个公式已经是磁贴了，已把它移到「${sectionName}」。`,
+    );
     updateCustomTileLibrary((current) => {
       const existing = current.tiles.find(
         (tile) => tile.latex === activeLineLatex,
@@ -1755,6 +1801,7 @@ export function FormulaToolbar({
     event: MouseEvent<HTMLButtonElement>,
     target: FormulaHotkeyTarget,
     customTileId?: string,
+    commonTileId?: string,
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1762,10 +1809,13 @@ export function FormulaToolbar({
     const canAddToCommon =
       target.kind === "command" &&
       !commonToolbarCommandIds.includes(target.command.id);
-    const menuHeight = customTileId ? 330 : 132 + (canAddToCommon ? 38 : 0);
+    const menuHeight = customTileId
+      ? 330
+      : 132 + (canAddToCommon || commonTileId ? 38 : 0);
     setContextMenu({
       target,
       customTileId,
+      commonTileId,
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
       y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
     });
@@ -2197,8 +2247,8 @@ export function FormulaToolbar({
                   {isEn ? "Symbol designer" : "字符设计器"}
                 </button>
               </div>
-              <span>
-                {!activeCustomSection
+              <span role="status" data-tile-save-notice={tileSaveNotice ? "" : undefined}>
+                {tileSaveNotice ?? (!activeCustomSection
                   ? isEn
                     ? "Create a section before saving formula tiles."
                     : "请先新建一个分区，再保存公式磁贴。"
@@ -2206,7 +2256,7 @@ export function FormulaToolbar({
                     ? ""
                     : isEn
                       ? "Select a non-empty formula line first."
-                      : "请先选择一个非空公式行。"}
+                      : "请先选择一个非空公式行。")}
               </span>
               {sectionEditor && (
                 <div className="custom-formula-section-editor">
@@ -2250,36 +2300,70 @@ export function FormulaToolbar({
           )}
 
           {activeTileCategory === "common" ? (
-            <div className="formula-tile-list">
+            <div className="formula-tile-list is-common">
               {visibleFormulaTiles.map((tile) => (
-                <button
-                  type="button"
-                  className="formula-tile-button"
-                  key={tile.id}
-                  data-formula-tile-id={tile.id}
-                  data-formula-tile-latex={tile.latex}
-                  onClick={() => insertFormulaTile(tile)}
-                  onContextMenu={(event) =>
-                    openFormulaContextMenu(
-                      event,
-                      tileHotkeyTarget(tile, "common-tile"),
-                    )
-                  }
-                  aria-label={isEn ? tile.labelEn : tile.labelZh}
-                  title={
-                    isEn
-                      ? `${tile.labelEn} · Right-click for hotkey settings`
-                      : `${tile.labelZh} · 右键设置快捷键`
-                  }
-                >
-                  <MathPreview
-                    latex={tile.latex}
-                    className="formula-tile-preview"
-                    fit
-                    fluidHeight
-                  />
-                </button>
+                <div className="formula-tile-item" key={tile.id}>
+                  <button
+                    type="button"
+                    className="formula-tile-button"
+                    data-formula-tile-id={tile.id}
+                    data-formula-tile-latex={tile.latex}
+                    onClick={() => insertFormulaTile(tile)}
+                    onContextMenu={(event) =>
+                      openFormulaContextMenu(
+                        event,
+                        tileHotkeyTarget(tile, "common-tile"),
+                        undefined,
+                        tile.id,
+                      )
+                    }
+                    aria-label={isEn ? tile.labelEn : tile.labelZh}
+                    title={
+                      isEn
+                        ? `${tile.labelEn} · Right-click for more`
+                        : `${tile.labelZh} · 右键查看更多操作`
+                    }
+                  >
+                    <MathPreview
+                      latex={tile.latex}
+                      className="formula-tile-preview"
+                      fit
+                      fluidHeight
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    className="formula-tile-remove"
+                    data-formula-tile-remove={tile.id}
+                    aria-label={
+                      isEn
+                        ? `Remove ${tile.labelEn} from Common`
+                        : `从常用中移除${tile.labelZh}`
+                    }
+                    title={isEn ? "Remove from Common" : "从常用中移除"}
+                    onClick={() => removeCommonFormulaTile(tile.id)}
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
               ))}
+              <button
+                type="button"
+                className="formula-tile-add"
+                data-formula-tile-add
+                onClick={() => {
+                  setContextMenu(null);
+                  setTileLibraryOpen(true);
+                }}
+                title={
+                  isEn
+                    ? "Add tiles from the formula library"
+                    : "从公式库添加磁贴"
+                }
+              >
+                <Plus size={13} />
+                {isEn ? "Add tile" : "添加磁贴"}
+              </button>
             </div>
           ) : (
             <div className="formula-tile-list is-custom">
@@ -2639,6 +2723,20 @@ export function FormulaToolbar({
               {isEn ? "Clear hotkey" : "清除快捷键"}
             </button>
           )}
+          {contextMenu.commonTileId && (
+            <button
+              type="button"
+              role="menuitem"
+              className="formula-hotkey-context-action"
+              data-remove-common-tile={contextMenu.commonTileId}
+              onClick={() =>
+                removeCommonFormulaTile(contextMenu.commonTileId as string)
+              }
+            >
+              <Trash2 size={14} />
+              {isEn ? "Remove from Common" : "从常用中移除"}
+            </button>
+          )}
           {contextCustomTile && (
             <>
               <div className="formula-hotkey-context-divider" />
@@ -2748,6 +2846,13 @@ export function FormulaToolbar({
           />
         </Suspense>
       ) : null}
+      <FormulaTileLibraryDialog
+        open={tileLibraryOpen}
+        language={language}
+        selectedIds={commonFormulaTileIds}
+        onToggle={toggleCommonFormulaTile}
+        onClose={() => setTileLibraryOpen(false)}
+      />
       <FormulaHotkeyRecorderDialog
         target={hotkeyTarget}
         onClose={() => setHotkeyTarget(null)}

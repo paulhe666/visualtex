@@ -50,6 +50,33 @@ function stripXmlMarkup(value: string) {
   return value.replace(/<[^>]*>/g, "").replace(/&#x5c;|&#92;|&bsol;/gi, "\\");
 }
 
+const structuralPlaceholder = /\\placeholder\s*\{\s*\}/;
+
+/** Lets the main window say "empty box" in the user's language. */
+export class UnfilledPlaceholderError extends Error {
+  constructor() {
+    super(
+      "The formula still contains empty VisualTeX placeholders. Fill or remove them before inserting.",
+    );
+    this.name = "UnfilledPlaceholderError";
+  }
+}
+
+export function assertNoUnfilledStructuralPlaceholders(source: string) {
+  if (structuralPlaceholder.test(source)) {
+    throw new UnfilledPlaceholderError();
+  }
+}
+
+export function formulaExportErrorMessage(cause: unknown, isEn: boolean) {
+  if (cause instanceof UnfilledPlaceholderError) {
+    return isEn
+      ? "The formula still has empty boxes. Fill or delete them first."
+      : "公式里还有空白占位框，请先填写或删除。";
+  }
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
 /** Reject MathJax's permissive unknown-command fallback before it reaches Word. */
 export function assertResolvedPresentationMathMl(mathMl: string) {
   mathText.lastIndex = 0;

@@ -10,6 +10,12 @@ export interface MathLivePersistentTypingStyle {
 }
 
 declare module "mathlive" {
+  /**
+   * Every command the kernel understands as [name, required args, optional
+   * args]. The LaTeX source panel completes from this list.
+   */
+  export function visualTexLatexCommandSignatures(): Array<[string, number, number]>;
+
   interface MathfieldElement {
     visualTexCompletionPreferences?: {
       usage: Record<string, CommandUsage>;

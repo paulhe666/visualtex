@@ -770,7 +770,18 @@ async function main() {
     assertDeepEqual(await values(), ["r=s"], "history restore should undo as one document operation");
 
     await resetDocument({ lines: [{ id: "new-before", latex: "u=v" }] });
+    await evaluate(`(() => {
+      window.__confirmAnswer = false;
+      window.__confirmCount = 0;
+      window.confirm = () => { window.__confirmCount += 1; return window.__confirmAnswer; };
+    })()`);
     await click('button[aria-label="新建"]');
+    await sleep(100);
+    assertDeepEqual(await values(), ["u=v"], "cancelling the unsaved prompt should keep the document");
+    await evaluate("window.__confirmAnswer = true");
+    await click('button[aria-label="新建"]');
+    await sleep(100);
+    assertEqual(await evaluate("window.__confirmCount"), 2, "new should ask before discarding unsaved formulas");
     assertDeepEqual(await values(), [""], "new document should create blank line");
     await undo();
     assertDeepEqual(await values(), ["u=v"], "new document should be undoable");

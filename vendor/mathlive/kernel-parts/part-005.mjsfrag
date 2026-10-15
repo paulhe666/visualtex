@@ -1178,6 +1178,8 @@ function getPropertyRuns(atoms, property) {
     let value;
     if (property === "variant") value = variantString(atom);
     else if (property === "bold") value = weightString(atom);
+    else if (property === "visualTexBoldScope")
+      value = weightString(atom) + ":" + (atom.style.variant === "normal" && atom.style.variantStyle === "bold" ? "basic-font" : "other");
     else value = atom.style[property];
     if (value === currentValue) {
       run.push(atom);

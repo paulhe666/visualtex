@@ -3,6 +3,7 @@ import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompati
 import { inspectMathLiveSourceSafety } from "../editor/mathLiveSourceSafety";
 import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
+import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 
 interface MathPreviewProps {
   latex: string;
@@ -42,16 +43,17 @@ function cachedPreviewMarkup(latex: string, customSymbolRevision: number) {
       sourceLength: latex.length,
       safetyIssue,
     });
-  } else try {
-    markup = convertVisualTexLatexToMarkup(latex, { defaultMode: "math" });
-  } catch (error) {
-    // MathPreview is used by persisted custom toolbar tiles and other auxiliary
-    // UI. A pathological formula must not be able to crash the whole app while
-    // React is rendering those previews at startup.
-    console.warn("VisualTeX skipped a MathPreview render after an exception.", {
-      sourceLength: latex.length,
-      error,
-    });
+  } else {
+    try {
+      markup = convertVisualTexLatexToMarkup(latex, { defaultMode: "math" });
+    } catch (error) {
+      // Persisted custom tiles and auxiliary previews must not be able to crash
+      // the whole application during startup.
+      console.warn(
+        "VisualTeX skipped a MathPreview render after an exception.",
+        { sourceLength: latex.length, error },
+      );
+    }
   }
   if (mathPreviewMarkupCache.size >= mathPreviewMarkupCacheLimit) {
     const oldestKey = mathPreviewMarkupCache.keys().next().value;
@@ -152,19 +154,110 @@ function MathPreviewComponent({
     markVisualTexFormulaFontGlyphs(content);
 
     if (staticLayout) {
-      content.style.setProperty("--math-preview-fit-scale", "1");
       host.style.removeProperty("--math-preview-fluid-height");
       host.style.removeProperty("--math-preview-intrinsic-width");
-      host.dataset.fitReady = "static";
-      host.dataset.fitScale = "1";
-      return;
+      let staticAnimationFrame = 0;
+      let disposed = false;
+      const measureStatic = () => {
+        staticAnimationFrame = 0;
+        content.style.setProperty("--math-preview-fit-scale", "1");
+        let scale = 1;
+        if (fit) {
+          const visualRoot =
+            content.querySelector<HTMLElement>(".ML__latex") ?? content;
+          const visualRect = visualRoot.getBoundingClientRect();
+          const contentRect = content.getBoundingClientRect();
+          const naturalWidth = Math.max(
+            1,
+            content.scrollWidth,
+            contentRect.width,
+            visualRect.width,
+          );
+          const naturalHeight = Math.max(
+            1,
+            content.offsetHeight,
+            contentRect.height,
+            visualRect.height,
+          );
+          const containedScale = Math.min(
+            Math.max(1, host.clientWidth * fitInsetRatio) / naturalWidth,
+            Math.max(1, host.clientHeight * fitInsetRatio) / naturalHeight,
+          );
+          // Static toolbar previews must obey the same visual sizing contract as
+          // measured previews. Static mode exists only to avoid continuous
+          // ResizeObserver work while scrolling; it must not make whole
+          // categories (arrows/physics/set) permanently smaller than their tiles.
+          scale = Math.max(
+            Number.EPSILON,
+            Math.min(maximumFitScale, containedScale),
+          );
+        }
+        content.style.setProperty(
+          "--math-preview-fit-scale",
+          scale.toFixed(4),
+        );
+        host.dataset.fitReady = "static";
+        host.dataset.fitScale = scale.toFixed(4);
+      };
+      const scheduleStaticMeasure = () => {
+        if (disposed) return;
+        if (staticAnimationFrame) cancelAnimationFrame(staticAnimationFrame);
+        staticAnimationFrame = requestAnimationFrame(measureStatic);
+      };
+      measureStatic();
+      scheduleStaticMeasure();
+      void document.fonts?.ready.then(scheduleStaticMeasure);
+      return () => {
+        disposed = true;
+        if (staticAnimationFrame) cancelAnimationFrame(staticAnimationFrame);
+      };
     }
 
     let animationFrame = 0;
+    // Fit-to-width previews change their own height, which can toggle a
+    // tile list's classic scroll bar and hand the width back; the guard
+    // settles that loop on the narrower width instead of re-scaling every
+    // frame.
+    const stableHostWidth = createLayoutOscillationGuard();
+    let lastInputs = "";
+    let lastScale = "";
     const measure = () => {
       animationFrame = 0;
-      const naturalWidth = Math.max(1, content.offsetWidth);
-      const naturalHeight = Math.max(1, content.offsetHeight);
+      // Always measure the unscaled MathLive formula itself. WebView2 can report
+      // a zero/near-zero outer inline-flex box during the first toolbar layout
+      // pass; feeding that value back into the fit scale makes the preview appear
+      // blank even though MathLive already produced valid markup.
+      content.style.setProperty("--math-preview-fit-scale", "1");
+      const visualRoot =
+        content.querySelector<HTMLElement>(".ML__latex") ?? content;
+      const visualRect = visualRoot.getBoundingClientRect();
+      // WebView2 can give the MathLive subtree narrower metrics than the
+      // surrounding max-content flex box (notably for multi-integral glyphs).
+      // Include the unscaled fit-content box itself so the containment scale
+      // is based on what is actually painted, rather than an inner estimate.
+      const contentRect = content.getBoundingClientRect();
+      const naturalWidth = Math.max(
+        1,
+        content.scrollWidth,
+        contentRect.width,
+        visualRect.width,
+      );
+      const naturalHeight = Math.max(
+        1,
+        content.offsetHeight,
+        contentRect.height,
+        visualRect.height,
+      );
+      const hostWidth = stableHostWidth(host.clientWidth);
+      // Writing the fluid row height resizes the host and re-triggers the
+      // observer; with unchanged inputs there is nothing to recompute, only
+      // the scale removed for measuring has to be put back.
+      const inputs = `${hostWidth}|${fluidHeight ? "" : host.clientHeight}|${naturalWidth}|${naturalHeight}`;
+      if (inputs === lastInputs && lastScale) {
+        content.style.setProperty("--math-preview-fit-scale", lastScale);
+        return;
+      }
+      lastInputs = inputs;
       onMeasureRef.current?.({ width: naturalWidth, height: naturalHeight });
       if (intrinsicWidth) {
         const desiredWidth = Math.min(
@@ -184,10 +277,11 @@ function MathPreviewComponent({
         host.style.removeProperty("--math-preview-fluid-height");
         host.dataset.fitReady = "false";
         host.dataset.fitScale = "1";
+        lastScale = "1";
         return;
       }
 
-      const availableWidth = Math.max(1, host.clientWidth * fitInsetRatio);
+      const availableWidth = Math.max(1, hostWidth * fitInsetRatio);
       let scale = 1;
 
       if (fluidHeight) {
@@ -227,10 +321,8 @@ function MathPreviewComponent({
         );
       }
 
-      content.style.setProperty(
-        "--math-preview-fit-scale",
-        scale.toFixed(4),
-      );
+      lastScale = scale.toFixed(4);
+      content.style.setProperty("--math-preview-fit-scale", lastScale);
       host.dataset.fitReady = "true";
       host.dataset.fitScale = scale.toFixed(4);
     };
@@ -239,10 +331,33 @@ function MathPreviewComponent({
       animationFrame = requestAnimationFrame(measure);
     };
 
+    // Establish a usable fit state in the same layout phase so large toolbar
+    // batches never expose an unmeasured preview for a full animation frame.
+    // Keep the scheduled pass as a geometry/font refinement after paint.
+    measure();
     scheduleMeasure();
     void document.fonts?.ready.then(scheduleMeasure);
-    const resizeObserver = new ResizeObserver(scheduleMeasure);
+    let observedHostWidth = host.clientWidth;
+    const resizeObserver = new ResizeObserver(() => {
+      if (fluidHeight) {
+        // A fluid tile writes its own measured height back to the host. Watching
+        // that height creates a feedback loop on fractional-DPI WebView2 setups:
+        // ResizeObserver -> temporarily unscale -> measure -> resize -> repeat,
+        // which makes the formula appear to breathe by a fraction of a pixel.
+        // Fluid previews only need a new fit calculation when their width changes;
+        // markup changes and font loading already schedule their own measurements.
+        const nextWidth = host.clientWidth;
+        if (nextWidth === observedHostWidth) return;
+        observedHostWidth = nextWidth;
+      }
+      scheduleMeasure();
+    });
     resizeObserver.observe(host);
+    if (!fluidHeight) {
+      resizeObserver.observe(content);
+      const observedVisualRoot = content.querySelector<HTMLElement>(".ML__latex");
+      if (observedVisualRoot) resizeObserver.observe(observedVisualRoot);
+    }
 
     return () => {
       if (animationFrame) cancelAnimationFrame(animationFrame);

@@ -57,7 +57,11 @@ import type {
 } from "./types/formula";
 import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
 import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
+import { formulaExportErrorMessage } from "./math/latexCompatibility";
+import { formatOcrError } from "./ocr/ocrService";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
+import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollapse";
+import { isMacKeyboardPlatform } from "./shortcuts/formulaHotkeys";
 import { isLandingPreview, LANDING_PREVIEW_ZOOM, tutorialLanguage, tutorialLessonId } from "./runtime/landingPreview";
 import { findTutorialLesson, type TutorialSnapshot } from "./tutorial/lessons";
 import { useFormulaHotkeyStore } from "./stores/formulaHotkeyStore";
@@ -75,6 +79,7 @@ interface InlineOcrState {
 }
 
 const WEB_DEFAULT_ZOOM = 0.45;
+const APP_HEADER_COLLAPSE_LEVELS = 8;
 const TUTORIAL_ZOOM = 0.6;
 const WEB_DEFAULT_ZOOM_MIGRATION_KEY = "visualtex.web.default-zoom.45.v1";
 const LANDING_PREVIEW_LINES = [
@@ -83,6 +88,14 @@ const LANDING_PREVIEW_LINES = [
   String.raw`\mathrm{d}s^2=-\left(1-\frac{2GMr}{c^2\Sigma}\right)c^2\mathrm{d}t^2-\frac{4GMar\sin^2\theta}{c^2\Sigma}c\mathrm{d}t\mathrm{d}\phi+\frac{\Sigma}{\Delta}\mathrm{d}r^2+\Sigma\mathrm{d}\theta^2+\left(r^2+a^2+\frac{2GMa^2r\sin^2\theta}{c^2\Sigma}\right)\sin^2\theta\mathrm{d}\phi^2`,
   String.raw`\mathcal{L}_{\mathrm{SM}}=-\frac{1}{4}F^a_{\mu\nu}F^{a\mu\nu}+i\bar{\psi}\gamma^\mu D_\mu\psi+(D_\mu\Phi)^\dagger(D^\mu\Phi)-V(\Phi)-\left(y_{ij}\bar{\psi}_{Li}\Phi\psi_{Rj}+\mathrm{h.c.}\right)`,
 ] as const;
+
+function documentContentKey() {
+  const { title, lines } = useEditorStore.getState();
+  return JSON.stringify([
+    title,
+    lines.map((line) => [line.latex, line.mode, line.displayStyle]),
+  ]);
+}
 
 // Custom tiles live in localStorage (in-memory inside the tutorial sandbox).
 function readTutorialCustomTiles() {
@@ -104,6 +117,10 @@ function App() {
     replaceDocumentWithHistory: replaceDocumentTransaction } = useDocumentSession(editorRef);
   const ocrInsertionTargetRef = useRef<MathEditorInsertionTarget | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Formula content as last saved, opened or newly created; New asks before
+  // discarding anything else.
+  const savedContentRef = useRef<string | null>(null);
+  const [appHeader, setAppHeader] = useState<HTMLElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const appMenuRef = useRef<HTMLDivElement>(null);
   const copyMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -298,6 +315,14 @@ function App() {
   }, [isEn]);
 
   useEffect(() => {
+    if (!appHeader) return;
+    return trackPriorityCollapse(appHeader, {
+      maxLevel: APP_HEADER_COLLAPSE_LEVELS,
+      fits: childrenFitRow,
+    });
+  }, [appHeader]);
+
+  useEffect(() => {
     const compactWindow = window.matchMedia("(max-width: 1040px)");
     const handleCompactWindow = (event: MediaQueryListEvent) => {
       if (event.matches) setSidebarOpen(false);
@@ -314,7 +339,11 @@ function App() {
 
   useEffect(() => {
     if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(""), 1800);
+    // Error toasts carry a reason; give longer text time to be read.
+    const timeout = window.setTimeout(
+      () => setToast(""),
+      Math.min(6000, Math.max(1800, toast.length * 100)),
+    );
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
@@ -448,9 +477,10 @@ function App() {
       setToast(isEn ? "Image recognized" : "图片已识别");
       scheduleInlineOcrClear(1800);
     } catch (error) {
-      const message =
-        (error instanceof Error ? error.message : typeof error === "string" ? error : "") ||
-        (isEn ? "Image OCR failed" : "图片 OCR 失败");
+      const message = formatOcrError(
+        error,
+        isEn ? "Image OCR failed" : "图片 OCR 失败",
+      );
       setInlineOcr((current) => ({
         status: "error",
         message,
@@ -545,7 +575,7 @@ function App() {
       );
       setToast(isEn ? "PNG copied to Clipboard" : "PNG 已复制到剪贴板");
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = formulaExportErrorMessage(cause, isEn);
       setToast(
         isEn
           ? `Unable to copy PNG: ${message}`
@@ -572,6 +602,7 @@ function App() {
     link.download = safeTitle + ".visualtex.json";
     link.click();
     URL.revokeObjectURL(url);
+    savedContentRef.current = documentContentKey();
     setSavedPulse(true);
     setToast(isEn ? "Formula document saved" : "公式文档已保存");
     window.setTimeout(() => setSavedPulse(false), 900);
@@ -587,6 +618,7 @@ function App() {
       }
       openDocumentWithHistory(parsed);
       setSourceDocumentRevision((revision) => revision + 1);
+      savedContentRef.current = documentContentKey();
       setToast(isEn ? "Formula document opened" : "公式文档已打开");
     } catch {
       setToast(
@@ -599,12 +631,29 @@ function App() {
     }
   };
 
+  // The landing showcase and tutorial run in a sandbox; only the real editor
+  // asks before discarding unsaved work.
+  const confirmDiscardUnsaved = () => {
+    if (isLandingPreview || tutorialLessonId) return true;
+    const { lines: currentLines } = useEditorStore.getState();
+    if (!currentLines.some((line) => line.latex.trim())) return true;
+    if (documentContentKey() === savedContentRef.current) return true;
+    const undoKey = isMacKeyboardPlatform() ? "⌘Z" : "Ctrl+Z";
+    return window.confirm(
+      isEn
+        ? `The current formula document has not been saved. Create a new one anyway? (${undoKey} brings it back.)`
+        : `当前公式文档还没有保存。仍要新建吗？（新建后可以按 ${undoKey} 找回）`,
+    );
+  };
+
   const newFormula = () => {
+    if (!confirmDiscardUnsaved()) return;
     addHistory(latex);
     const after = createBlankDocumentSnapshot(
       isEn ? "Untitled Formula" : "未命名公式",
     );
     replaceDocumentWithHistory(after, "new-document");
+    savedContentRef.current = documentContentKey();
     setToast(isEn ? "Created a blank formula" : "已新建空白公式");
   };
 
@@ -946,6 +995,7 @@ function App() {
       />
 
       <header
+        ref={setAppHeader}
         className={
           "app-header" + (menuOpen || copyMenuOpen ? " has-open-menu" : "")
         }

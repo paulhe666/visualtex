@@ -190,7 +190,20 @@ function renderMathInElement(element, options) {
 var version = {
   mathlive: "0.109.2"
 };
+function visualTexLatexCommandSignatures() {
+  const hidden = new Set(["\\emph", "\\error", "\\the"]);
+  const signatures = [];
+  for (const [name, definition] of Object.entries(LATEX_COMMANDS)) {
+    if (definition.infix || hidden.has(name)) continue;
+    const params = definition.params || [];
+    signatures.push([name, params.filter((p) => !p.isOptional).length, params.filter((p) => p.isOptional).length]);
+  }
+  for (const name of Object.keys(MATH_SYMBOLS)) signatures.push([name, 0, 0]);
+  for (const [name, definition] of Object.entries(getMacros())) signatures.push(["\\" + name, definition?.args || 0, 0]);
+  return signatures;
+}
 export {
+  visualTexLatexCommandSignatures,
   MathDivElement,
   MathSpanElement,
   MathfieldElement,

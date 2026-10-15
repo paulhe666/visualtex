@@ -1,5 +1,17 @@
 import type { LatexCommand } from "../types/command";
 
+// The typed trigger is the leading control sequence (\fint, \begin{cases});
+// the whole template is only what gets inserted. Using the template as the
+// command would make it the candidate label and match it against queries.
+function trigger(template: string) {
+  const source = template.replace(/^\\left[[(|]/, "");
+  return (
+    source.match(/^\\begin\{[A-Za-z*]+\}/)?.[0] ??
+    source.match(/^\\[A-Za-z]+/)?.[0] ??
+    template
+  );
+}
+
 function command(
   id: string,
   value: string,
@@ -7,10 +19,11 @@ function command(
   labelZh: string,
   labelEn: string,
   priority = 70,
+  typed = trigger(value),
 ): LatexCommand {
   return {
     id,
-    command: value,
+    command: typed,
     insertTemplate: value,
     previewLatex: value,
     labelZh,
@@ -32,21 +45,26 @@ export const latestSharedCommands: LatexCommand[] = [
     "Average integral",
     84,
   ),
+  // esint's \dashint / \ddashint are the same operators as \intbar (⨍) and
+  // \intBar (⨎), which the editor glyphs, MathML, OMML and SVG export all
+  // know; the esint spellings are only accepted as the typed trigger.
   command(
     "dashint",
-    "\\dashint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}",
+    "\\intbar_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}",
     "calculus",
     "单划线平均积分",
     "Dashed integral",
     83,
+    "\\dashint",
   ),
   command(
     "ddashint",
-    "\\ddashint_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}",
+    "\\intBar_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}",
     "calculus",
     "双划线平均积分",
     "Double-dashed integral",
     82,
+    "\\ddashint",
   ),
   command(
     "oiint",

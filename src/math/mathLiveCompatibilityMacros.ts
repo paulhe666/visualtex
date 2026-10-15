@@ -3,6 +3,7 @@ import {
   VISUALTEX_CORE_MATHLIVE_COMPATIBILITY_MACROS,
   VISUALTEX_MATHLIVE_PACKAGE_MACROS,
 } from "./packageMacroCompatibility";
+import { normalizeFlexiblePackageLatexCommands } from "./flexibleBraket";
 
 const macro = (def: string): MacroDictionary[string] => ({
   def,
@@ -250,5 +251,9 @@ export function expandVisualTexMathLiveCompatibilityMacros(
   source: string,
   excludedCommands: ReadonlySet<string> = new Set(),
 ) {
-  return expandCompatibilityMacros(source, excludedCommands, 0);
+  return expandCompatibilityMacros(
+    normalizeFlexiblePackageLatexCommands(source, excludedCommands),
+    excludedCommands,
+    0,
+  );
 }

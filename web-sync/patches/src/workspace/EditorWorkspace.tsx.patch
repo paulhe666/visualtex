@@ -1,8 +1,8 @@
 diff --git a/src/workspace/EditorWorkspace.tsx b/src/workspace/EditorWorkspace.tsx
-index 1060107..05d30dc 100644
+index fb98972..6103276 100644
 --- a/src/workspace/EditorWorkspace.tsx
 +++ b/src/workspace/EditorWorkspace.tsx
-@@ -66,6 +66,9 @@ import {
+@@ -69,6 +69,9 @@ import {
    readWorkspacePanelOpen,
    writeWorkspacePanelOpen,
  } from "./workspacePanelPreferences";
@@ -12,7 +12,7 @@ index 1060107..05d30dc 100644
  
  const formulaTextColorPresets = [
    "#111827",
-@@ -327,8 +330,7 @@ export function EditorWorkspace({
+@@ -419,8 +422,7 @@ export function EditorWorkspace({
      const toggleFormulaSourceFocus = (event: KeyboardEvent) => {
        if (
          event.isComposing ||
@@ -22,7 +22,7 @@ index 1060107..05d30dc 100644
          event.altKey ||
          event.shiftKey ||
          event.code !== "Backslash"
-@@ -1039,13 +1041,13 @@ export function EditorWorkspace({
+@@ -1302,13 +1304,13 @@ export function EditorWorkspace({
                          className="icon-button compact formula-formatting-button is-selection-action"
                          aria-label={
                            isEn
@@ -40,7 +40,7 @@ index 1060107..05d30dc 100644
                          }
                          data-formula-selection-bold
                          onPointerEnter={rememberFormulaSelection}
-@@ -1063,13 +1065,13 @@ export function EditorWorkspace({
+@@ -1326,13 +1328,13 @@ export function EditorWorkspace({
                          className="icon-button compact formula-formatting-button is-selection-action"
                          aria-label={
                            isEn
@@ -58,7 +58,7 @@ index 1060107..05d30dc 100644
                          }
                          data-formula-selection-italic
                          onPointerEnter={rememberFormulaSelection}
-@@ -1093,11 +1095,11 @@ export function EditorWorkspace({
+@@ -1356,11 +1358,11 @@ export function EditorWorkspace({
                              "--formula-format-color": formulaTextColor,
                            } as CSSProperties
                          }
@@ -73,7 +73,7 @@ index 1060107..05d30dc 100644
                          }
                          aria-pressed={formulaColorMenu === "color"}
                          data-formula-selection-color
-@@ -1123,13 +1125,13 @@ export function EditorWorkspace({
+@@ -1386,13 +1388,13 @@ export function EditorWorkspace({
                          }
                          aria-label={
                            isEn
@@ -91,7 +91,7 @@ index 1060107..05d30dc 100644
                          }
                          aria-pressed={formulaColorMenu === "backgroundColor"}
                          data-formula-selection-background
-@@ -1153,12 +1155,12 @@ export function EditorWorkspace({
+@@ -1416,12 +1418,12 @@ export function EditorWorkspace({
                            (persistentFormulaBold ? " is-active" : "")
                          }
                          aria-label={
@@ -107,7 +107,7 @@ index 1060107..05d30dc 100644
                          }
                          aria-pressed={persistentFormulaBold}
                          data-formula-persistent-bold
-@@ -1179,20 +1181,20 @@ export function EditorWorkspace({
+@@ -1442,20 +1444,20 @@ export function EditorWorkspace({
                          aria-label={
                            isEn
                              ? `Persistent input shape: ${persistentFormulaShape}`
@@ -135,7 +135,7 @@ index 1060107..05d30dc 100644
                          }
                          aria-pressed={persistentFormulaShape !== "auto"}
                          data-formula-persistent-italic
-@@ -1228,13 +1230,13 @@ export function EditorWorkspace({
+@@ -1491,13 +1493,13 @@ export function EditorWorkspace({
                          }
                          aria-label={
                            isEn
@@ -153,7 +153,7 @@ index 1060107..05d30dc 100644
                          }
                          aria-pressed={persistentFormulaTextColorEnabled}
                          data-formula-persistent-color
-@@ -1263,13 +1265,13 @@ export function EditorWorkspace({
+@@ -1526,13 +1528,13 @@ export function EditorWorkspace({
                          }
                          aria-label={
                            isEn
@@ -171,7 +171,7 @@ index 1060107..05d30dc 100644
                          }
                          aria-pressed={persistentFormulaBackgroundColorEnabled}
                          data-formula-persistent-background
-@@ -1451,8 +1453,8 @@ export function EditorWorkspace({
+@@ -1716,8 +1718,8 @@ export function EditorWorkspace({
                                ) : (
                                  <span className="formula-custom-colors-empty">
                                    {isEn
@@ -182,7 +182,7 @@ index 1060107..05d30dc 100644
                                  </span>
                                )}
                              </section>
-@@ -1485,7 +1487,7 @@ export function EditorWorkspace({
+@@ -1751,7 +1753,7 @@ export function EditorWorkspace({
                    className="export-trigger-button workspace-export-trigger"
                    onClick={onOpenExport}
                    aria-label={isEn ? "Export" : "导出"}
@@ -191,7 +191,7 @@ index 1060107..05d30dc 100644
                  >
                    <FileDown size={16} />
                    <span>{isEn ? "Export" : "导出"}</span>
-@@ -1815,11 +1817,11 @@ export function EditorWorkspace({
+@@ -2086,11 +2088,11 @@ export function EditorWorkspace({
                          setSourceOpen(true);
                          setClassicDockOpen(true);
                        }}
@@ -206,18 +206,24 @@ index 1060107..05d30dc 100644
                        }
                      >
                        <Code2 size={16} />
-@@ -1915,11 +1917,11 @@ export function EditorWorkspace({
-                     className="source-toggle"
-                     onClick={() => setSourceOpen(true)}
-                     aria-label={isEn ? "Show LaTeX source" : "展开 LaTeX 源码"}
--                    aria-keyshortcuts="Meta+Backslash"
-+                    aria-keyshortcuts={isMacKeyboardPlatform() ? "Meta+Backslash" : "Control+Backslash"}
-                     title={
-                       isEn
--                        ? "Show LaTeX source (⌘\\)"
--                        : "展开 LaTeX 源码（⌘\\）"
-+                        ? `Show LaTeX source (${sourceShortcutLabel})`
-+                        : `展开 LaTeX 源码（${sourceShortcutLabel}）`
-                     }
-                   >
-                     <PanelBottomOpen size={15} />
+@@ -2211,15 +2213,15 @@ export function EditorWorkspace({
+                       }
+                       data-source-toggle
+                       aria-expanded={sourceOpen}
+-                      aria-keyshortcuts="Meta+Backslash"
++                      aria-keyshortcuts={isMacKeyboardPlatform() ? "Meta+Backslash" : "Control+Backslash"}
+                       title={
+                         sourceOpen
+                           ? isEn
+-                            ? "Hide LaTeX source (⌘\\)"
+-                            : "收起 LaTeX 源码（⌘\\）"
++                            ? `Hide LaTeX source (${sourceShortcutLabel})`
++                            : `收起 LaTeX 源码（${sourceShortcutLabel}）`
+                           : isEn
+-                            ? "Show LaTeX source (⌘\\)"
+-                            : "展开 LaTeX 源码（⌘\\）"
++                            ? `Show LaTeX source (${sourceShortcutLabel})`
++                            : `展开 LaTeX 源码（${sourceShortcutLabel}）`
+                       }
+                       onClick={() => setSourceOpen(!sourceOpen)}
+                     >

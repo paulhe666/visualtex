@@ -14,7 +14,7 @@ export interface VisualTexCoreLatexAlias {
 }
 
 /**
- * Common LaTeX/AMS spellings that MathLive 0.109.2 does not parse natively.
+ * Curated LaTeX/package spellings that MathLive 0.109.2 does not parse natively.
  *
  * Keep these aliases atomic: they should preserve the user's source command
  * while rendering/editing through an equivalent primitive already supported by
@@ -29,6 +29,49 @@ export interface VisualTexCoreMathLiveMacro {
 
 export const VISUALTEX_CORE_LATEX_ALIASES: readonly VisualTexCoreLatexAlias[] =
   Object.freeze([
+    // Verified package relations: txfonts \\varparallel and Fourier
+    // \\parallelslant map to U+2AFD with relation spacing in lwarp's source.
+    // https://tug.ctan.org/macros/latex/contrib/lwarp/lwarp.pdf
+    // unicode-math assigns \\sslash the same scalar with binary spacing.
+    // https://github.com/latex3/unicode-math/blob/master/unicode-math-table.tex
+    // Keep literal Unicode in these expansions: no renderer-specific command
+    // or italic transformation is needed, and the source spelling is retained.
+    {
+      id: "varparallel",
+      name: "varparallel",
+      replacement: "\\mathrel{⫽}",
+      previewLatex: "a\\varparallel b",
+      labelZh: "斜平行关系",
+      labelEn: "Slanted parallel relation",
+      aliases: ["varparallel"],
+      keywords: ["平行", "斜平行", "parallel", "txfonts", "pxfonts"],
+      category: "relation",
+      priority: 74,
+    },
+    {
+      id: "parallelslant",
+      name: "parallelslant",
+      replacement: "\\mathrel{⫽}",
+      previewLatex: "a\\parallelslant b",
+      labelZh: "斜平行关系",
+      labelEn: "Slanted parallel relation",
+      aliases: ["parallelslant"],
+      keywords: ["平行", "斜平行", "parallel", "fourier"],
+      category: "relation",
+      priority: 72,
+    },
+    {
+      id: "sslash",
+      name: "sslash",
+      replacement: "\\mathbin{⫽}",
+      previewLatex: "a\\sslash b",
+      labelZh: "双斜线运算符",
+      labelEn: "Double solidus operator",
+      aliases: ["sslash"],
+      keywords: ["双斜线", "double solidus", "unicode-math"],
+      category: "common",
+      priority: 66,
+    },
     {
       id: "dots",
       name: "dots",

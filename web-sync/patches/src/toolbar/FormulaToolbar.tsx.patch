@@ -1,8 +1,8 @@
 diff --git a/src/toolbar/FormulaToolbar.tsx b/src/toolbar/FormulaToolbar.tsx
-index 7904f65..0a16e63 100644
+index fcf52e7..8eb6a8d 100644
 --- a/src/toolbar/FormulaToolbar.tsx
 +++ b/src/toolbar/FormulaToolbar.tsx
-@@ -2203,9 +2203,7 @@ export function FormulaToolbar({
+@@ -2253,9 +2253,7 @@ export function FormulaToolbar({
                      ? "Create a section before saving formula tiles."
                      : "请先新建一个分区，再保存公式磁贴。"
                    : activeLineLatex
@@ -12,8 +12,8 @@ index 7904f65..0a16e63 100644
 +                    ? ""
                      : isEn
                        ? "Select a non-empty formula line first."
-                       : "请先选择一个非空公式行。"}
-@@ -2495,9 +2493,7 @@ export function FormulaToolbar({
+                       : "请先选择一个非空公式行。")}
+@@ -2579,9 +2577,7 @@ export function FormulaToolbar({
                              className="custom-formula-section-empty"
                              onClick={() => setActiveCustomSectionId(section.id)}
                            >

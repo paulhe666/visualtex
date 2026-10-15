@@ -1072,8 +1072,8 @@ register2(
       if (parent) {
         if (parent.type === "leftright" || parent.type === "surd")
           return select(model, parent);
-        if (atom.parentBranch === "superscript" && parent.subscript)
-          return select(model, parent.subscript);
+        if (atom.parentBranch === "subscript" && parent.superscript)
+          return select(model, parent.superscript);
         if (atom.parentBranch === "above" && parent.below)
           return select(model, parent.below);
         if (atom.parentBranch === "superscript" || atom.parentBranch === "subscript")
@@ -1126,8 +1126,8 @@ register2(
         if (parent) {
           if (parent.type === "leftright" || parent.type === "surd")
             return select(model, parent);
-          if (atom.parentBranch === "subscript" && parent.superscript)
-            return select(model, parent.superscript);
+          if (atom.parentBranch === "superscript" && parent.subscript)
+            return select(model, parent.subscript);
           if (atom.parentBranch === "below" && parent.above)
             return select(model, parent.above);
           if (atom.parentBranch === "superscript" || atom.parentBranch === "subscript")
@@ -1427,7 +1427,7 @@ function onKeystroke(mathfield, evt) {
   var _a3, _b3, _c2, _d2;
   const { model } = mathfield;
   visualTexNormalizeTextBoundaryMode(mathfield);
-  const keystroke = keyboardEventToString(evt);
+  let keystroke = keyboardEventToString(evt);
   if (evt.isTrusted) {
     validateKeyboardLayout(evt);
     const activeLayout = getActiveKeyboardLayout();
@@ -1557,6 +1557,15 @@ function onKeystroke(mathfield, evt) {
         }
       }
       return success;
+    }
+    const visualTexPickedCandidate = visualTexCandidateIndexForDigit(mathfield, evt);
+    if (visualTexPickedCandidate === -2) {
+      if (evt.preventDefault) { evt.preventDefault(); evt.stopPropagation(); }
+      return false;
+    }
+    if (visualTexPickedCandidate >= 0) {
+      mathfield.suggestionIndex = visualTexPickedCandidate;
+      keystroke = "[Space]";
     }
     if (keystroke === "[Space]" && model.mode === "latex" && mathfield.visualTexSourceWrapper) {
       const visualTexState = mathfield.visualTexSourceWrapper;
