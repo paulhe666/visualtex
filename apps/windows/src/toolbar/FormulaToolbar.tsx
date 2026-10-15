@@ -621,10 +621,20 @@ function sameToolbarCategoryList(
   );
 }
 
-const matrixGridCells = Array.from({ length: 100 }, (_, index) => ({
-  row: Math.floor(index / 10) + 1,
-  column: (index % 10) + 1,
-}));
+const matrixGridSize = 5;
+// Horizontal-dock matrix builder geometry used to wrap the delimiter rail;
+// keep in sync with styles-windows-responsive.css.
+const matrixBuilderVerticalPadding = 8;
+const matrixDelimiterLabelBlockHeight = 15;
+const matrixDelimiterMinButtonHeight = 28;
+const matrixDelimiterGap = 1;
+const matrixGridCells = Array.from(
+  { length: matrixGridSize * matrixGridSize },
+  (_, index) => ({
+    row: Math.floor(index / matrixGridSize) + 1,
+    column: (index % matrixGridSize) + 1,
+  }),
+);
 const matrixDelimiterOptions: Array<{
   id: MatrixDelimiter;
   preview: string;
@@ -868,6 +878,14 @@ export function FormulaToolbar({
   const [matrixDelimiter, setMatrixDelimiter] =
     useState<MatrixDelimiter>("bmatrix");
   const toolbarRef = useRef<HTMLElement>(null);
+  // The category the user picked from a tab, and the scroll offset that pick
+  // produced. Until the strip scrolls away from that offset, the pick wins over
+  // the scroll-position heuristic, which cannot tell the first/last categories
+  // apart from their neighbours on very wide strips.
+  const pickedToolbarCategoryRef = useRef<{
+    category: ToolbarCategory;
+    scrollLeft: number;
+  } | null>(null);
   const [horizontalRowCount, setHorizontalRowCount] = useState(3);
   const [customTileGridWidths, setCustomTileGridWidths] = useState<
     Record<string, number>
@@ -1076,6 +1094,10 @@ export function FormulaToolbar({
       section.offsetLeft + section.offsetWidth - strip.clientWidth,
     );
     strip.scrollLeft = edge === "end" ? sectionEnd : sectionStart;
+    pickedToolbarCategoryRef.current = {
+      category,
+      scrollLeft: strip.scrollLeft,
+    };
     setActiveCategory(category);
     root
       .querySelector<HTMLElement>(`.toolbar-tab[data-category="${category}"]`)
@@ -1119,6 +1141,10 @@ export function FormulaToolbar({
     );
     if (Math.abs(strip.scrollLeft - targetLeft) > 1) {
       strip.scrollTo({ left: targetLeft, top: 0, behavior: "auto" });
+    }
+    const picked = pickedToolbarCategoryRef.current;
+    if (picked?.category === activeCategory) {
+      picked.scrollLeft = strip.scrollLeft;
     }
   }, [activeCategory, activeView, horizontalRowCount, layout]);
 
@@ -1164,6 +1190,13 @@ export function FormulaToolbar({
     };
 
     const resolveCategory = () => {
+      const picked = pickedToolbarCategoryRef.current;
+      if (picked) {
+        if (Math.abs(strip.scrollLeft - picked.scrollLeft) <= 2) {
+          return picked.category;
+        }
+        pickedToolbarCategoryRef.current = null;
+      }
       const viewportWidth = Math.max(1, strip.clientWidth);
       const maxScrollLeft = Math.max(0, strip.scrollWidth - viewportWidth);
       // The first/last category cannot always be aligned with the viewport
@@ -1364,8 +1397,36 @@ export function FormulaToolbar({
           ),
         );
 
+        // The delimiter previews need ~28px of height each. Stacking all six in
+        // one column squeezed them to a few pixels in short docks, so wrap them
+        // into as many columns as the dock height requires.
+        const delimiterHeight = availableHeight -
+          matrixBuilderVerticalPadding -
+          matrixDelimiterLabelBlockHeight;
+        const delimiterRowsThatFit = Math.max(
+          1,
+          Math.min(
+            matrixDelimiterOptions.length,
+            Math.floor(
+              (delimiterHeight + matrixDelimiterGap) /
+                (matrixDelimiterMinButtonHeight + matrixDelimiterGap),
+            ),
+          ),
+        );
+        const delimiterColumns = Math.ceil(
+          matrixDelimiterOptions.length / delimiterRowsThatFit,
+        );
+        const delimiterRows = Math.ceil(
+          matrixDelimiterOptions.length / delimiterColumns,
+        );
+
         root.style.setProperty("--toolbar-row-count", String(nextRowCount));
         root.style.setProperty("--matrix-picker-size", `${matrixPickerSize}px`);
+        root.style.setProperty(
+          "--matrix-delimiter-columns",
+          String(delimiterColumns),
+        );
+        root.style.setProperty("--matrix-delimiter-rows", String(delimiterRows));
         root.style.setProperty(
           "--matrix-panel-height",
           `${Math.max(56, Math.floor(availableHeight))}px`,
@@ -1864,8 +1925,8 @@ export function FormulaToolbar({
                 ? "Select matrix rows and columns"
                 : "选择矩阵行数和列数"
             }
-            aria-rowcount={10}
-            aria-colcount={10}
+            aria-rowcount={matrixGridSize}
+            aria-colcount={matrixGridSize}
             onPointerLeave={() => setMatrixHover(null)}
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {

@@ -506,3 +506,27 @@ body[data-workspace-resize="tiles"] .standard-panel-resizer {
     overflow-y: scroll;
   }
 }
+
+/* ---- Horizontal dock: matrix delimiter rail ------------------------------- */
+
+/* FormulaToolbar measures the dock and sets --matrix-delimiter-columns/rows so
+   each delimiter button keeps at least 28px of height; short docks wrap the six
+   options into 2, 3 or 6 columns instead of squeezing one column. */
+.formula-toolbar.is-horizontal[data-toolbar-row-count] .template-strip .matrix-builder {
+  grid-template-columns:
+    minmax(0, 1fr)
+    calc(var(--matrix-delimiter-columns, 1) * 26px + 3px);
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count] .template-strip .matrix-compact-options {
+  width: calc(var(--matrix-delimiter-columns, 1) * 26px + 3px);
+  min-width: calc(var(--matrix-delimiter-columns, 1) * 26px + 3px);
+}
+
+.formula-toolbar.is-horizontal[data-toolbar-row-count] .matrix-compact-options .matrix-delimiter-options {
+  width: auto;
+  min-width: 0;
+  grid-template-columns: repeat(var(--matrix-delimiter-columns, 1), 25px);
+  grid-template-rows: repeat(var(--matrix-delimiter-rows, 6), minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+}

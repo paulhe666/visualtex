@@ -6466,7 +6466,7 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
 .matrix-size-grid {
   width: min(100%, 226px);
   display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 3px;
   margin-inline: auto;
   padding: 6px;
@@ -8835,7 +8835,7 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
 .matrix-size-grid {
   width: min(100%, 212px);
   display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 2px;
   margin-inline: auto;
   padding: 5px;
