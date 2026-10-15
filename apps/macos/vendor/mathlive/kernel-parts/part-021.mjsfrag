@@ -710,16 +710,8 @@ function visualTexAutoExitAfterComposition(mathfield, slot) {
     }
   }
   if (branch !== "superscript" && branch !== "subscript") return false;
-  if (visualTexIsBoundedOperatorParent(parent)) {
-    if (branch === "subscript") {
-      const upper = visualTexBoundedOperatorBranchPlaceholders(model, parent, "superscript");
-      return upper[0] ? leapTo(model, upper[0]) : false;
-    }
-    const operatorOffset = model.offsetOf(parent);
-    const target = leapTarget(model, operatorOffset + 1, "forward");
-    if (target && model.offsetOf(target) > operatorOffset) return leapTo(model, target);
-    return leapTo(model, parent);
-  }
+  // Operator limits hold the caret like Windows: Tab or the arrows move on.
+  if (visualTexIsBoundedOperatorParent(parent)) return false;
   return visualTexAutoExitScriptAfterDirectInput(mathfield, parent.branch(branch)?.[0]);
 }
 function visualTexScriptAutoExitBranch(mathfield, atom) {
