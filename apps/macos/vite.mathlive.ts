@@ -78,6 +78,15 @@ const resolvedMathLiveBrowserEntry = "\0visualtex-mathlive-kernel";
 const mathLiveKernelPartsDirectory = fileURLToPath(
   new URL("./vendor/mathlive/kernel-parts/", import.meta.url),
 );
+// The kernel decides typed words and upright typography with the editor's
+// one input judgment (src/editor/inputJudgment.ts).
+const inputJudgmentModule = fileURLToPath(
+  new URL("./src/editor/inputJudgment.ts", import.meta.url),
+).replace(/\\/g, "/");
+const kernelImports =
+  "import { VISUALTEX_SYMBOL_SEQUENCES, applyInputJudgment as visualTexApplyInputJudgment } from " +
+  JSON.stringify(inputJudgmentModule) +
+  ";\n";
 
 export function loadVisualTexMathLiveKernel() {
   const parts = readdirSync(mathLiveKernelPartsDirectory)
@@ -176,7 +185,7 @@ export function visualTexMathLiveKernel(): Plugin {
       for (const name of readdirSync(mathLiveKernelPartsDirectory)) {
         this.addWatchFile(fileURLToPath(new URL("./vendor/mathlive/kernel-parts/" + name, import.meta.url)));
       }
-      return loadVisualTexMathLiveKernel();
+      return kernelImports + loadVisualTexMathLiveKernel();
     },
   };
 }

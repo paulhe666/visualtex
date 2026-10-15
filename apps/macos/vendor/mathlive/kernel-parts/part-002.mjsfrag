@@ -1412,13 +1412,16 @@ function visualTexCandidateNumberMarkup(mf, index) {
 // -1: the key is not a candidate pick. Otherwise the index of the picked
 // candidate, or -2 when the digit has no candidate on the current page (the
 // key is swallowed, as an input method does).
+function visualTexCandidatePanelOpen(mf) {
+  const panel = document.getElementById("mathlive-suggestion-popover");
+  if (!panel || panel.visualTexMathfield !== mf || panel.getAttribute("aria-hidden") === "true") return false;
+  return (mf.visualTexCompletion?.suggestions || []).length > 0;
+}
 function visualTexCandidateIndexForDigit(mf, evt) {
   if (mf.model.mode !== "latex" || evt.ctrlKey || evt.metaKey || evt.altKey || evt.isComposing) return -1;
   if (!/^[1-9]$/.test(evt.key || "")) return -1;
-  const panel = document.getElementById("mathlive-suggestion-popover");
-  if (!panel || panel.visualTexMathfield !== mf || panel.getAttribute("aria-hidden") === "true") return -1;
-  const suggestions = mf.visualTexCompletion?.suggestions || [];
-  if (!suggestions.length) return -1;
+  if (!visualTexCandidatePanelOpen(mf)) return -1;
+  const suggestions = mf.visualTexCompletion.suggestions;
   const index = visualTexCandidatePageStart(mf) + Number(evt.key) - 1;
   return index < suggestions.length ? index : -2;
 }

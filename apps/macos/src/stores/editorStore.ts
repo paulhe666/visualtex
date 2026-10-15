@@ -25,6 +25,7 @@ import {
   normalizeLatexFormatProfile,
 } from "../clipboard/latexFormatProfile";
 import { normalizeChineseLatex } from "../editor/normalizeChineseLatex";
+import { setUprightJudgmentEnabled } from "../editor/inputJudgment";
 import { normalizeMultilineLatex } from "../editor/normalizeChineseLatex";
 import { normalizeFormulaLinePhysicalWhitespace } from "../math/formulaLineLatex";
 import { isSingleCompleteLatexEnvironment } from "../math/latexEnvironment";
@@ -84,6 +85,7 @@ const legacyClassicDockHeightStorageKey = "visualtex-classic-dock-height";
 
 export const DEFAULT_INPUT_BEHAVIOR_SETTINGS: InputBehaviorSettings = {
   autoEscapeShortcuts: true,
+  autoUprightTypography: true,
   autoExitSuperscript: true,
   autoExitSubscript: true,
   autoExitAccent: true,
@@ -103,6 +105,10 @@ function normalizeInputBehaviorSettings(
     autoEscapeShortcuts:
       typeof candidate.autoEscapeShortcuts === "boolean"
         ? candidate.autoEscapeShortcuts
+        : true,
+    autoUprightTypography:
+      typeof candidate.autoUprightTypography === "boolean"
+        ? candidate.autoUprightTypography
         : true,
     autoExitSuperscript:
       typeof candidate.autoExitSuperscript === "boolean"
@@ -1007,4 +1013,13 @@ export const useEditorStore = create<EditorState>()(
       },
     },
   ),
+);
+
+// The upright switch also governs normalization outside the formula fields
+// (stored, pasted and imported LaTeX).
+setUprightJudgmentEnabled(
+  useEditorStore.getState().inputBehavior.autoUprightTypography,
+);
+useEditorStore.subscribe((state) =>
+  setUprightJudgmentEnabled(state.inputBehavior.autoUprightTypography),
 );

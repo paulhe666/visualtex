@@ -1169,6 +1169,149 @@ register2(
   },
   { target: "model", changeSelection: true, audioFeedback: "return" }
 );
+// VisualTeX kernel: local Tab. Each press moves one stop forward (Shift+Tab:
+// backward) within the structure that holds the caret: an empty slot still
+// ahead in the current branch, then the next branch of that structure in
+// keyboard order, then the position right after the structure, one level per
+// press. It never selects a structure (moveToNextGroup selected brackets,
+// roots and fractions, so the next keystroke replaced them) and never moves
+// focus out of the field. In the last cell of a matrix-like environment Tab
+// adds a row, as in a word-processor table.
+function visualTexSameBranch(a, b) {
+  if (isCellBranch(a) && isCellBranch(b)) return a[0] === b[0] && a[1] === b[1];
+  return a === b;
+}
+function visualTexBranchAtoms(atom, branch) {
+  var _a3;
+  if (isCellBranch(branch)) return atom.branch(branch);
+  return (_a3 = atom._branches) == null ? void 0 : _a3[branch];
+}
+function visualTexTabBranches(atom, current) {
+  const result = [];
+  if (atom instanceof ArrayAtom) {
+    for (let row = 0; row < atom.rowCount; row++)
+      for (let col = 0; col < atom.colCount; col++)
+        if (atom.getCell(row, col)) result.push([row, col]);
+  }
+  for (const name of VISUALTEX_NAVIGATION_BRANCHES) {
+    const atoms = visualTexBranchAtoms(atom, name);
+    if (!atoms) continue;
+    // A script branch with nothing in it is not a slot of its own.
+    if ((name === "subscript" || name === "superscript") && atoms.length <= 1 && name !== current) continue;
+    result.push(name);
+  }
+  return result;
+}
+function visualTexIsEmptySlot(atom) {
+  if (atom.type === "placeholder") return true;
+  return atom.type === "first" && atom.isLastSibling && Boolean(atom.parent && atom.parent.parent);
+}
+// The empty slots among `atoms` and everything nested in them, in keyboard
+// order. A branch holding nothing is itself a slot (its first atom).
+function visualTexEmptySlots(atoms) {
+  const result = [];
+  for (const atom of atoms)
+    for (const candidate of [...atom.children, atom])
+      if (visualTexIsEmptySlot(candidate)) result.push(candidate);
+  return result;
+}
+function visualTexEnterBranch(model, atoms, dir) {
+  const slots = visualTexEmptySlots(atoms.length > 1 ? atoms.slice(1) : atoms);
+  const slot = dir === "forward" ? slots[0] : slots[slots.length - 1];
+  return leapTo(model, slot != null ? slot : atoms[atoms.length - 1]);
+}
+function visualTexTab(model, dir) {
+  // A command being typed is committed by Tab before it gets here.
+  if (model.mode === "latex") return false;
+  if (model.at(model.anchor).parentPrompt)
+    return COMMANDS[dir === "forward" ? "moveToNextGroup" : "moveToPreviousGroup"].fn(model);
+  const [start, end] = range(model.selection);
+  let atom = model.at(dir === "forward" ? end : start);
+  if (!atom) return false;
+  // Text inside a formula is a run of siblings, not a structure: first go to
+  // the end of the run (start, backward), then continue as math.
+  if (atom.mode === "text") {
+    let edge = atom;
+    if (dir === "forward") {
+      while (edge.rightSibling && edge.rightSibling.mode === "text") edge = edge.rightSibling;
+    } else {
+      while (edge.mode === "text" && edge.leftSibling) edge = edge.leftSibling;
+    }
+    if (edge !== atom || !model.selectionIsCollapsed) {
+      leapTo(model, edge);
+      model.mathfield.switchMode("math");
+      return true;
+    }
+    model.mathfield.switchMode("math");
+  }
+  const parent = atom.parent;
+  if (!parent) return false;
+  const branch = atom.parentBranch;
+  const siblings = visualTexBranchAtoms(parent, branch);
+  const index = siblings.indexOf(atom);
+  // 1. An empty slot still ahead (behind, backward) in the current branch.
+  const ahead = dir === "forward" ? siblings.slice(index + 1) : siblings.slice(1, index + 1);
+  const slots = visualTexEmptySlots(ahead);
+  const slot = dir === "forward" ? slots[0] : slots[slots.length - 1];
+  if (slot) return leapTo(model, slot);
+  // 2. The next (previous) branch of the same structure.
+  const branches = visualTexTabBranches(parent, branch);
+  const at = branches.findIndex((candidate) => visualTexSameBranch(candidate, branch));
+  const next = at < 0 ? void 0 : branches[at + (dir === "forward" ? 1 : -1)];
+  const inLastCell = parent instanceof ArrayAtom && isCellBranch(branch) && !isCellBranch(next);
+  if (next !== void 0 && !(dir === "forward" && inLastCell))
+    return visualTexEnterBranch(model, visualTexBranchAtoms(parent, next), dir);
+  // 3. Last cell of a matrix, cases or aligned block: a new row.
+  if (dir === "forward" && inLastCell && parent.environmentName !== "lines") {
+    const row = branch[0];
+    model.position = model.offsetOf(siblings[siblings.length - 1]);
+    model.mathfield.flushInlineShortcutBuffer();
+    model.mathfield.snapshot("addRowAfter");
+    if (!addRowAfter(model)) return false;
+    const cell = parent.getCell(row + 1, 0);
+    if (cell) model.setPositionHandlingPlaceholder(model.offsetOf(cell[cell.length - 1]));
+    return true;
+  }
+  // 4. Out of the structure, one level. The top level has nowhere to go.
+  if (!parent.parent) {
+    model.announce("plonk");
+    return false;
+  }
+  if (dir === "forward") {
+    const after = parent.rightSibling;
+    return leapTo(model, (after == null ? void 0 : after.type) === "placeholder" ? after : parent);
+  }
+  return leapTo(model, parent.leftSibling);
+}
+// VisualTeX kernel: & in a matrix, cases or array is LaTeX's column
+// separator. It moves to the cell on the right, and at the end of the row it
+// adds a column (Alt+Tab, MathLive's key for that, is Windows' window
+// switcher). Returns false outside a cell, where & stays a character.
+function visualTexNextColumn(model) {
+  const atom = model.at(range(model.selection)[1]);
+  const array = atom == null ? void 0 : atom.parent;
+  if (!(array instanceof ArrayAtom) || !isCellBranch(atom.parentBranch) || array.environmentName === "lines")
+    return false;
+  const [row, col] = atom.parentBranch;
+  const right = col + 1 < array.colCount ? array.getCell(row, col + 1) : void 0;
+  if (right) return visualTexEnterBranch(model, right, "forward");
+  if (array.maxColumns <= array.colCount) {
+    model.announce("plonk");
+    return false;
+  }
+  model.position = model.offsetOf(atom.lastSibling);
+  model.mathfield.flushInlineShortcutBuffer();
+  model.mathfield.snapshot("addColumnAfter");
+  return addColumnAfter(model);
+}
+register2(
+  {
+    visualTexTabForward: (model) => visualTexTab(model, "forward"),
+    visualTexTabBackward: (model) => visualTexTab(model, "backward"),
+    visualTexNextColumn
+  },
+  { target: "model", changeSelection: true }
+);
 function findSibling(model, atom, pred, dir) {
   if (dir === "forward") {
     let result2 = atom.rightSibling;
@@ -1428,6 +1571,11 @@ function onKeystroke(mathfield, evt) {
   const { model } = mathfield;
   visualTexNormalizeTextBoundaryMode(mathfield);
   let keystroke = keyboardEventToString(evt);
+  // Tab while typing a command commits the highlighted candidate like Space;
+  // in a font scope (\mathbb{...}) with no candidate list it confirms the
+  // scope like Enter.
+  if (keystroke === "[Tab]" && model.mode === "latex")
+    keystroke = mathfield.visualTexSourceWrapper && !visualTexCandidatePanelOpen(mathfield) ? "[Enter]" : "[Space]";
   if (evt.isTrusted) {
     validateKeyboardLayout(evt);
     const activeLayout = getActiveKeyboardLayout();
@@ -1441,6 +1589,17 @@ function onKeystroke(mathfield, evt) {
   showKeystroke(mathfield, keystroke);
   if (evt.isTrusted && evt.defaultPrevented) {
     mathfield.flushInlineShortcutBuffer();
+    return false;
+  }
+  // VisualTeX kernel: a key that finishes a typed word runs the input
+  // judgment first (part-021); the Space that finished a converted word and
+  // the Backspace that reverted one are used up here.
+  if (visualTexJudgeKeystroke(mathfield, evt, keystroke)) {
+    mathfield.flushInlineShortcutBuffer();
+    if (evt.preventDefault) {
+      evt.preventDefault();
+      evt.stopPropagation();
+    }
     return false;
   }
   let shortcut;
