@@ -246,8 +246,12 @@ public sealed partial class PowerPointFormulaService
                     throw new InvalidOperationException("PowerPoint does not support rotated or flipped MathType OLE objects. Reset the rotation and flip before converting.");
                 if (prepared.SourceCompoundFile is not null)
                 {
+                    // The header changes on every MathType save, including one
+                    // PowerPoint requests while MathType's window has the equation
+                    // open; only the MTEF payload is the equation.
                     var current = PowerPointMathTypePackage.Read(presentation, slide.SlideID, source.Id);
-                    if (!MathTypeOleStorage.ReadEquationNative(current.CompoundFile).SequenceEqual(
+                    if (!MathTypeMtefCodec.EquationNativeContentEquals(
+                            MathTypeOleStorage.ReadEquationNative(current.CompoundFile),
                             MathTypeOleStorage.ReadEquationNative(prepared.SourceCompoundFile)))
                         throw new InvalidOperationException("MathType changed this equation while VisualTeX was editing it. Reopen it before saving.");
                 }
@@ -298,7 +302,8 @@ public sealed partial class PowerPointFormulaService
 
             // Verify serialized content before deleting the user's original.
             var saved = PowerPointMathTypePackage.Read(presentation, slide.SlideID, replacement.Id);
-            if (!MathTypeOleStorage.ReadEquationNative(saved.CompoundFile).SequenceEqual(
+            if (!MathTypeMtefCodec.EquationNativeContentEquals(
+                    MathTypeOleStorage.ReadEquationNative(saved.CompoundFile),
                     MathTypeOleStorage.ReadEquationNative(prepared.CompoundFile)))
                 throw new InvalidDataException("PowerPoint did not preserve the MathType equation storage.");
             if (source is not null)
@@ -500,7 +505,8 @@ public sealed partial class PowerPointFormulaService
             || source.ObjectId != session.SourceObjectId || source.FormulaId != session.FormulaId)
             throw new InvalidOperationException("Reopen the MathType equation before saving it.");
         var current = PowerPointMathTypePackage.Read(presentation, slide.SlideID, shape.Id);
-        if (!MathTypeOleStorage.ReadEquationNative(current.CompoundFile).SequenceEqual(
+        if (!MathTypeMtefCodec.EquationNativeContentEquals(
+                MathTypeOleStorage.ReadEquationNative(current.CompoundFile),
                 MathTypeOleStorage.ReadEquationNative(source.CompoundFile)))
             throw new InvalidOperationException("MathType changed this equation while VisualTeX was editing it. Reopen it before saving.");
     }

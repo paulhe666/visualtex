@@ -155,6 +155,43 @@ internal static partial class MathTypeMtefCodec
         return mtef;
     }
 
+    // Whether two Equation Native streams hold the same equation. MathType
+    // fills EQNOLEFILEHDR.cf and reserved2..reserved4 from memory it never
+    // initializes, so each save of an unchanged equation writes a different
+    // header. Office asks MathType to save whenever it serializes an object
+    // that is open in MathType's own window (PowerPoint SaveCopyAs, Word
+    // WordOpenXML). Identity is the MTEF payload the header describes.
+    // Streams whose header cannot be read are compared byte for byte.
+    internal static bool EquationNativeContentEquals(byte[] left, byte[] right)
+    {
+        if (left is null || right is null) return ReferenceEquals(left, right);
+        if (!TryLocateNativeMtef(left, out var leftOffset, out var leftLength)
+            || !TryLocateNativeMtef(right, out var rightOffset, out var rightLength))
+            return BytesEqual(left, 0, right, 0, left.Length, right.Length);
+        return BytesEqual(left, leftOffset, right, rightOffset, leftLength, rightLength);
+    }
+
+    private static bool TryLocateNativeMtef(byte[] equationNative, out int offset, out int length)
+    {
+        offset = length = 0;
+        if (equationNative.Length < 12) return false;
+        var headerLength = BitConverter.ToUInt16(equationNative, 0);
+        if (headerLength < 12 || headerLength >= equationNative.Length) return false;
+        var objectLength = BitConverter.ToUInt32(equationNative, 8);
+        if (objectLength == 0 || objectLength > (uint)(equationNative.Length - headerLength)) return false;
+        offset = headerLength;
+        length = (int)objectLength;
+        return true;
+    }
+
+    private static bool BytesEqual(byte[] left, int leftOffset, byte[] right, int rightOffset, int leftLength, int rightLength)
+    {
+        if (leftLength != rightLength) return false;
+        for (var index = 0; index < leftLength; index++)
+            if (left[leftOffset + index] != right[rightOffset + index]) return false;
+        return true;
+    }
+
     private static string ReadMtefMathMl(byte[] mtef)
     {
         var structureOffset = FindRootStructureOffset(mtef);

@@ -140,6 +140,34 @@ internal static partial class Program
             }
             Console.WriteLine("PASS stale document rejection leaves the original object intact");
 
+            // While MathType's own window has the equation open, every PowerPoint
+            // serialization makes MathType save it again, and MathType fills the
+            // Equation Native header's reserved fields from uninitialized memory.
+            // The unchanged equation must not read as a concurrent MathType edit.
+            if (Type.GetTypeFromProgID("Equation.DSMT4") is not null)
+            {
+                shape.Select(MsoTriState.msoTrue);
+                shape.OLEFormat.DoVerb(0);
+                System.Threading.Thread.Sleep(3000);
+                shape.Select(MsoTriState.msoTrue);
+                var openInMathType = service.LoadMathTypeSelection(service.ReadSelection());
+                session.FormulaId = openInMathType.FormulaId!;
+                session.SourceDocumentId = openInMathType.DocumentId;
+                session.SourceObjectId = openInMathType.ObjectId;
+                session.OriginalMetadata = openInMathType.Metadata;
+                session.Lines[0].Latex = @"\frac{x}{2}";
+                session.ExportResult!.MathMl = "<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><mfrac><mi>x</mi><mn>2</mn></mfrac></math>";
+                using (var prepared = service.PrepareMathType(session))
+                    service.ApplyMathType(session, prepared);
+                Release(shape); shape = slide.Shapes[1];
+                if (slide.Shapes.Count != 1) throw new Exception("Editing an equation open in MathType left extra shapes.");
+                shape.Select(MsoTriState.msoTrue);
+                var savedWhileOpen = service.LoadMathTypeSelection(service.ReadSelection());
+                if (!savedWhileOpen.Metadata!.Latex.Contains("frac")) throw new Exception("The edit made while MathType had the equation open was not written.");
+                Console.WriteLine("PASS edit while the equation is open in MathType's own window");
+            }
+            else Console.WriteLine("SKIP edit while open in MathType: MathType is not installed.");
+
             // Read an existing real-world MathType storage without modifying
             // the fixture or manufacturing its MTEF with VisualTeX's encoder.
             var nativeFixture = Environment.GetEnvironmentVariable("VISUALTEX_ACCEPTANCE_MATHTYPE_SOURCE_DOCX");
