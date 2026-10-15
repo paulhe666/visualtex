@@ -2,13 +2,17 @@
 import {
   acceptCompletion,
   autocompletion,
+  completionStatus,
+  currentCompletions,
+  selectedCompletionIndex,
+  setSelectedCompletion,
   snippet,
   type Completion,
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
-import { Prec, type Extension } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { Prec, type EditorState, type Extension } from "@codemirror/state";
+import { EditorView, ViewPlugin, keymap, type KeyBinding } from "@codemirror/view";
 import { visualTexLatexCommandSignatures } from "mathlive";
 import { commandRegistry } from "../autocomplete/commandRegistry";
 import { COMMAND_FREQUENCY } from "../autocomplete/commandFrequency.generated";
@@ -155,6 +159,74 @@ function renderPreview(completion: Completion) {
   return element;
 }
 
+// Input-method style selection, as in the visual editor's candidate panel:
+// the candidates are paged by nine and the page holding the current
+// candidate is numbered 1-9.
+const CANDIDATE_PAGE_SIZE = 9;
+
+function candidatePageStart(state: EditorState) {
+  const selected = Math.max(0, selectedCompletionIndex(state) ?? 0);
+  return selected - (selected % CANDIDATE_PAGE_SIZE);
+}
+
+function renderNumber() {
+  const element = document.createElement("span");
+  element.className = "cm-vt-completion-index";
+  element.setAttribute("aria-hidden", "true");
+  return element;
+}
+
+// CodeMirror renders a row once and only moves aria-selected afterwards, so
+// the numbers are written after every update, once the list DOM is current.
+const candidateNumbers = ViewPlugin.fromClass(
+  class {
+    constructor(readonly view: EditorView) {}
+
+    update() {
+      if (completionStatus(this.view.state) !== "active") return;
+      this.view.requestMeasure({ key: this, read: () => null, write: () => this.renumber() });
+    }
+
+    renumber() {
+      const id = this.view.contentDOM.getAttribute("aria-controls");
+      const list = id ? this.view.dom.ownerDocument.getElementById(id) : null;
+      if (!list) return;
+      const start = candidatePageStart(this.view.state);
+      for (const row of list.querySelectorAll<HTMLElement>(":scope > li[id]")) {
+        const index = Number(/-(\d+)$/.exec(row.id)?.[1] ?? -1);
+        const number =
+          index >= start && index < start + CANDIDATE_PAGE_SIZE ? String(index - start + 1) : "";
+        const label = row.querySelector(".cm-vt-completion-index");
+        if (label && label.textContent !== number) label.textContent = number;
+      }
+    }
+  },
+);
+
+// A digit commits that row of the current page exactly like Enter. A digit
+// with no row on the page is swallowed; with the list closed digits type.
+function pickCandidate(digit: number) {
+  return (view: EditorView) => {
+    if (completionStatus(view.state) !== "active") return false;
+    const options = currentCompletions(view.state);
+    if (!options.length) return false;
+    const index = candidatePageStart(view.state) + digit - 1;
+    if (index >= options.length) return true;
+    const previous = selectedCompletionIndex(view.state);
+    view.dispatch({ effects: setSelectedCompletion(index) });
+    if (acceptCompletion(view)) return true;
+    // Within CodeMirror's interaction delay right after the list opened the
+    // pick is refused; the digit is then typed as usual.
+    if (previous !== null) view.dispatch({ effects: setSelectedCompletion(previous) });
+    return false;
+  };
+}
+
+const digitKeys: KeyBinding[] = Array.from({ length: 9 }, (_, i) => ({
+  key: String(i + 1),
+  run: pickCandidate(i + 1),
+}));
+
 export const latexSourceCompletion: Extension = [
   autocompletion({
     override: [latexSourceCompletions],
@@ -163,11 +235,15 @@ export const latexSourceCompletion: Extension = [
     maxRenderedOptions: 60,
     tooltipClass: () => "cm-vt-completion",
     optionClass: () => "cm-vt-completion-option",
-    addToOptions: [{ render: renderPreview, position: 60 }],
+    addToOptions: [
+      { render: renderNumber, position: 10 },
+      { render: renderPreview, position: 60 },
+    ],
   }),
+  candidateNumbers,
   // Tab also accepts while the list is open; otherwise it moves between
   // snippet fields or indents as before.
-  Prec.highest(keymap.of([{ key: "Tab", run: acceptCompletion }])),
+  Prec.highest(keymap.of([{ key: "Tab", run: acceptCompletion }, ...digitKeys])),
 ];
 
 export const latexSourceCompletionTheme = EditorView.theme({
@@ -221,6 +297,17 @@ export const latexSourceCompletionTheme = EditorView.theme({
   ".cm-tooltip-autocomplete.cm-vt-completion > ul > li[aria-selected]": {
     backgroundColor: "var(--accent-soft)",
     color: "var(--text)",
+  },
+  ".cm-vt-completion .cm-vt-completion-index": {
+    flex: "0 0 1.1em",
+    marginRight: "-4px",
+    color: "var(--text-faint)",
+    font: "600 12px/1 system-ui, 'Segoe UI', sans-serif",
+    fontVariantNumeric: "tabular-nums",
+    textAlign: "center",
+  },
+  ".cm-tooltip-autocomplete.cm-vt-completion > ul > li[aria-selected] .cm-vt-completion-index": {
+    color: "var(--accent)",
   },
   ".cm-vt-completion .cm-completionLabel": {
     flex: "1 1 auto",
