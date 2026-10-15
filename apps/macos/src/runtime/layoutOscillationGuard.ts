@@ -2,15 +2,14 @@
  * Breaks two-value layout oscillations.
  *
  * A component that sizes its content from its own measured width can change
- * the height of a scroll container; when that toggles a classic (non-overlay)
- * scroll bar the width changes back, and the next measurement undoes the
- * previous one. Windows shows classic scroll bars by default, and
- * `scrollbar-gutter: stable` covers only the containers that declare it. Feed
- * every measured value through the guard: when it sees A -> B -> A within
- * `windowMs`, with A and B no further apart than `tolerance` (a scroll bar is
- * 15-17px), it settles on the smaller value and keeps returning it while
- * measurements stay on that pair. Any other value means a real resize and
- * clears the lock.
+ * the height of a scroll container; when that toggles a non-overlay scroll bar
+ * the width changes back, and the next measurement undoes the previous one.
+ * `scrollbar-gutter: stable` prevents that, but older macOS WebKit does not
+ * support it. Feed every measured value through the guard: when it sees
+ * A -> B -> A within `windowMs`, with A and B no further apart than
+ * `tolerance` (a scroll bar is about 15px), it settles on the smaller value
+ * and keeps returning it while measurements stay on that pair. Any other value
+ * means a real resize and clears the lock.
  */
 export function createLayoutOscillationGuard(
   tolerance = 24,

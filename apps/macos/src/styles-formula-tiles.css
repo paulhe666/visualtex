@@ -1,5 +1,5 @@
 /* Common formula tiles: quiet add / remove affordances and the library dialog.
-   Loaded after the shared editor styles. */
+   Loaded before styles-macos-responsive.css. */
 
 /* ---- Common tab ---------------------------------------------------------- */
 

@@ -34,7 +34,10 @@ import { HelpManualDialog } from "./components/HelpManualDialog";
 import { OcrDialog } from "./components/OcrDialog";
 import { ExportDialog } from "./components/ExportDialog";
 import { MacOfficeFirstRunPrompt } from "./components/MacOfficeFirstRunPrompt";
-import { decodeMacOfflineOfficeStatus } from "./components/macOfficeStatusValidation";
+import {
+  decodeMacOfflineOfficeStatus,
+  isMacOfficeStatusUnavailable,
+} from "./components/macOfficeStatusValidation";
 import { resolveMacOfficeOnboarding } from "./components/macOfficeOnboarding";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
@@ -89,9 +92,9 @@ import {
   type UpdateCheckResult,
 } from "./update/updateService";
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
+import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollapse";
 import { configureOfficeHotkeys } from "./runtime/officeHotkeys";
 import { useOfficeHotkeyStore } from "./stores/officeHotkeyStore";
-import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollapse";
 import {
   captureQuickOcrScreenshot,
   configureSilentOcr,
@@ -116,6 +119,10 @@ interface InlineOcrState {
 }
 
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
+const MAC_OFFICE_FIRST_RUN_STORAGE_KEY =
+  "visualtex.office.macos.native-first-run.v1.2.0.completed";
+const MAC_OFFICE_STATUS_CHECK_ATTEMPTS = 4;
+const MAC_OFFICE_STATUS_RETRY_MS = 15_000;
 const APP_HEADER_COLLAPSE_LEVELS = 8;
 
 function documentContentKey() {
@@ -125,8 +132,6 @@ function documentContentKey() {
     lines.map((line) => [line.latex, line.mode, line.displayStyle]),
   ]);
 }
-const MAC_OFFICE_FIRST_RUN_STORAGE_KEY =
-  "visualtex.office.macos.native-first-run.v1.2.0.completed";
 
 function App() {
   const editorRef = useRef<MathEditorHandle>(null);
@@ -291,31 +296,47 @@ function App() {
     }
     macOfficeInstallStatusCheckedRef.current = true;
     let cancelled = false;
+    let retryTimer: number | undefined;
+    let attempt = 0;
 
-    void invoke<unknown>("get_macos_offline_office_install_status")
-      .then(decodeMacOfflineOfficeStatus)
-      .then((status) => {
-        if (cancelled || !status.compiledArtifactsAvailable) return;
+    const check = () => {
+      attempt += 1;
+      void invoke<unknown>("get_macos_offline_office_install_status")
+        .then(decodeMacOfflineOfficeStatus)
+        .then((status) => {
+          if (cancelled || !status.compiledArtifactsAvailable) return;
 
-        const prompt = resolveMacOfficeOnboarding(
-          status,
-          readLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true",
-        );
-        setPowerpointRegistrationRequired(
-          prompt?.powerpointRegistrationRequired ?? false,
-        );
-        if (prompt) setMacOfficePromptMode(prompt.mode);
-        setMacOfficeFirstRunOpen(prompt !== null);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setPowerpointRegistrationRequired(false);
-        setMacOfficePromptMode("repair");
-        setMacOfficeFirstRunOpen(true);
-      });
+          const prompt = resolveMacOfficeOnboarding(
+            status,
+            readLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true",
+          );
+          setPowerpointRegistrationRequired(
+            prompt?.powerpointRegistrationRequired ?? false,
+          );
+          if (prompt) setMacOfficePromptMode(prompt.mode);
+          setMacOfficeFirstRunOpen(prompt !== null);
+        })
+        .catch((reason) => {
+          if (cancelled) return;
+          // An unfinished check (macOS privacy prompt, Office still holding its
+          // containers) is not evidence of missing files: retry quietly instead
+          // of opening a false repair prompt.
+          if (isMacOfficeStatusUnavailable(reason)) {
+            if (attempt < MAC_OFFICE_STATUS_CHECK_ATTEMPTS) {
+              retryTimer = window.setTimeout(check, MAC_OFFICE_STATUS_RETRY_MS);
+            }
+            return;
+          }
+          setPowerpointRegistrationRequired(false);
+          setMacOfficePromptMode("repair");
+          setMacOfficeFirstRunOpen(true);
+        });
+    };
+    check();
 
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
   }, []);
 
@@ -353,7 +374,7 @@ function App() {
   }, [isEn]);
 
   // The header hides its least important items first, and only when the row
-  // has no room left (levels are listed in styles-windows-responsive.css).
+  // has no room left (levels are listed in styles-macos-responsive.css).
   useEffect(() => {
     if (!appHeader) return;
     return trackPriorityCollapse(appHeader, {

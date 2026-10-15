@@ -69,23 +69,29 @@ inspectAddin("VisualTeX.dotm", "word/vbaProject.bin", [
   "App_WindowBeforeDoubleClick",
   "App_WindowSelectionChange",
   "VisualTeX_StabilizeImageEquationNumberSelection",
-  "word-office-performance-20260801-r109",
+  "word-office-performance-20260801-r111",
   "VTNativeMathRoot",
   "VTJoinNativeMathAtBoundary",
   "VTRetireLegacyNativeBoundary",
-  "VisualTeX_RunNativeParityRegression",
   "VTTraceWordDoubleClick",
   "VTWordRibbonApplyImageFontSizePreset",
   "VisualTeX_EditImageField",
   "VisualTeX_EditSelectedImageFromNativeMonitor",
   "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
-  "VisualTeX_RunWordNumberedCopyIdentityRegression",
-  "VisualTeX_RunNumberedNativeComplexStructureRegression",
+  "VTCachedWordImageCropTop",
+  "VTResetWordImageObservationCache",
+  "VTScheduleWordIdleTasks",
   "VTEnsureVisualTeXImageMacroButton",
   "VTAppendText",
   "VTWriteAndLaunchSession",
   "VTPrewarmApplication",
 ]);
+// Regression macros belong to diagnostic templates. Check decompressed source
+// against the production profile so stale binary symbols cannot satisfy it.
+execFileSync("python3", [
+  join(appRoot, "scripts", "verify_word_vba_source.py"),
+  join(resourcesRoot, "VisualTeX.dotm"),
+], { stdio: "inherit" });
 inspectAddin("VisualTeX.ppam", "ppt/vbaProject.bin", [
   packageVersion,
   "VTPowerPointAdapter",

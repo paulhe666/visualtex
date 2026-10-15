@@ -95,3 +95,22 @@ export function decodeMacOfflineOfficeStatus(value: unknown): MacOfflineOfficeSt
   stringValue(status.tutorialPath, "macOfflineOfficeStatus.tutorialPath");
   return status as unknown as MacOfflineOfficeStatus;
 }
+
+/**
+ * True when the status check could not finish rather than finding a problem:
+ * the frontend wait expired, or the backend could not read the Office folders
+ * in time (macOS may be waiting on its "access data from other apps" prompt).
+ * Such a result says nothing about the add-in files, so it must not open the
+ * repair prompt.
+ */
+export function isMacOfficeStatusUnavailable(reason: unknown): boolean {
+  const message =
+    reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "";
+  return /timed out|temporarily unavailable/i.test(message);
+}
+
+export function macOfficeStatusUnavailableText(isEn: boolean): string {
+  return isEn
+    ? "VisualTeX could not read the Office folders in time. If macOS asks whether VisualTeX may access data from other apps, click Allow, then refresh."
+    : "暂时读不到 Office 文件夹。如果 macOS 弹出「VisualTeX 想访问其他 App 的数据」，请点「允许」，然后刷新状态。";
+}

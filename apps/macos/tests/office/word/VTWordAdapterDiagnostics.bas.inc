@@ -1,6 +1,8 @@
 ' Test-only declarations and procedures. See scripts/word_vba_source.mjs.
 Private VT_NATIVE_PARITY_DIAGNOSTIC As Boolean
 Private VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING As Boolean
+Private VT_WORD_REGRESSION_MUTATION_COUNT As Long
+Private VT_WORD_REGRESSION_ALIGNMENT_BRIDGE_COUNT As Long
 Private VT_WORD_COPY_CONVERSION_REGRESSION_DOCUMENT As Document
 
 Public Sub VisualTeX_RunEditOpenAndTabsRegression()
@@ -14401,6 +14403,11 @@ RegressionFailed:
         vbLf & CStr(failureNumber) & ":" & failureDescription
 End Sub
 
+Public Sub VisualTeX_RunWordChineseImageAlignmentFromBuildTemplate()
+    Documents("word-chinese-image-alignment-fixture.docx").Activate
+    VisualTeX_RunWordChineseImageAlignmentRegression
+End Sub
+
 Public Sub VisualTeX_RunWordUnnumberedImageParagraphMarkRegression()
     Const formulaId As String = _
         "73737373-7373-4737-8737-737373737373"
@@ -15982,5 +15989,243 @@ Finished:
 Failed:
     failureNumber = Err.Number
     failureDescription = Err.Description
+    Resume Finished
+End Sub
+
+
+Public Sub VisualTeX_RunWordIdleNoninterferenceRegression()
+    Const formulaId As String = "90909090-9090-4090-8090-909090909090"
+    Dim sourceDocument As Document
+    Dim doc As Document
+    Dim shape As InlineShape
+    Dim target As Range
+    Dim referenceField As Field
+    Dim modes As Variant
+    Dim mode As Variant
+    Dim metadata As String
+    Dim canvasBefore As String
+    Dim canvasAfter As String
+    Dim titleBefore As String
+    Dim alternativeBefore As String
+    Dim mutationBefore As Long
+    Dim bridgeBefore As Long
+    Dim observedNumber As Double
+    Dim observedText As String
+    Dim paddedFrameHeight As Single
+    Dim variablesBefore As Long
+    Dim index As Long
+    Dim fontSize As Double
+    Dim formulaCount As Long
+    Dim mixedSizes As Boolean
+    Dim report As String
+    Dim stage As String
+    Dim failure As Long
+    Dim description As String
+    Dim root As String
+
+    On Error GoTo Failed
+    root = VTApplicationSupportRoot() & "/Tests"
+    If Documents.Count > 0 Then Set sourceDocument = ActiveDocument
+    VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING = True
+    stage = "create-owned-fixture"
+    VTBeginWordInternalMutation
+    Set doc = Documents.Add(Visible:=True)
+    doc.Content.Text = "x " & vbCr
+    doc.Styles(wdStyleNormal).Font.Size = 48!
+    doc.Content.Font.Size = 48!
+    Set target = doc.Range(2, 2)
+    Set shape = doc.InlineShapes.AddPicture( _
+        FileName:=root & "/word-idle-noninterference-fixture.png", LinkToFile:=False, _
+        SaveWithDocument:=True, Range:=target)
+    shape.LockAspectRatio = msoFalse
+    shape.Width = 20!
+    shape.Height = 10!
+    shape.LockAspectRatio = msoTrue
+    shape.Range.Font.Size = 14!
+    metadata = VT_METADATA_PREFIX & "e30"
+    shape.Title = VTFormulaReference(formulaId, "inline", False)
+    shape.AlternativeText = metadata
+    VTSetWordMetadataPayload doc, formulaId, metadata
+    VTSetWordFormulaFormat doc, formulaId, "inline", False
+    VTSetWordImageScaleState doc, formulaId, 14#, 20#, 10#, -2#, 14#
+    VTSetWordImageInkCenterYRatio doc, formulaId, 0.5
+    VTEndWordInternalMutation
+    doc.Activate
+    shape.Select
+
+    modes = Array(wdBaselineAlignTop, wdBaselineAlignCenter, _
+        wdBaselineAlignBaseline, wdBaselineAlignFarEast50, wdBaselineAlignAuto)
+    For Each mode In modes
+        stage = "baseline-mode-" & CStr(mode)
+        shape.Range.ParagraphFormat.BaseLineAlignment = CLng(mode)
+        stage = stage & "/initial-apply"
+        VTApplyWordInlineImageBaseline shape, 10#, -2#
+        If mode = wdBaselineAlignTop And shape.PictureFormat.CropTop >= 0# Then _
+            Err.Raise 5, , "The fixture did not exercise transparent canvas padding."
+        If mode = wdBaselineAlignTop Then paddedFrameHeight = shape.Height
+        If Abs(VTWordImageGlyphHeight(shape) - 10#) > 0.1 Or Abs(shape.Width - 20#) > 0.1 Then _
+            Err.Raise 5, , "Typography mode changes altered painted image dimensions."
+        canvasBefore = ""
+        VTTryGetDocumentVariable doc, VTWordImageCanvasVariableName(formulaId), canvasBefore
+        mutationBefore = VT_WORD_REGRESSION_MUTATION_COUNT
+        bridgeBefore = VT_WORD_REGRESSION_ALIGNMENT_BRIDGE_COUNT
+        report = report & stage & "; height=" & CStr(shape.Height) & _
+            "; glyph=" & CStr(VTWordImageGlyphHeight(shape)) & _
+            "; crop=" & CStr(shape.PictureFormat.CropTop) & _
+            "; position=" & CStr(shape.Range.Font.Position) & _
+            "; unpaddedPosition=" & CStr(VTExpectedWordInlineImageBaseline(shape, 10#, -2#, 10#)) & _
+            "; canvas=" & canvasBefore & vbLf
+        stage = "baseline-mode-" & CStr(mode) & "/clean-state"
+        If mode = wdBaselineAlignTop Then
+            doc.Saved = True
+            observedNumber = shape.Height
+            report = report & "read-height-saved=" & CStr(doc.Saved) & vbLf
+            doc.Saved = True
+            observedNumber = shape.PictureFormat.CropTop
+            report = report & "read-crop-saved=" & CStr(doc.Saved) & vbLf
+            doc.Saved = True
+            observedNumber = shape.Range.Font.Position
+            report = report & "read-position-saved=" & CStr(doc.Saved) & vbLf
+            doc.Saved = True
+            observedNumber = shape.Range.ParagraphFormat.BaseLineAlignment
+            report = report & "read-typography-saved=" & CStr(doc.Saved) & vbLf
+            doc.Saved = True
+            observedText = shape.Title
+            report = report & "read-title-saved=" & CStr(doc.Saved) & vbLf
+            doc.Saved = True
+            VTTryGetDocumentVariable doc, VTWordImageCanvasVariableName(formulaId), observedText
+            report = report & "read-variable-saved=" & CStr(doc.Saved) & vbLf
+            doc.Saved = True
+            observedNumber = VTWordImageGlyphHeight(shape)
+            report = report & "read-glyph-saved=" & CStr(doc.Saved) & vbLf
+            doc.Saved = True
+            observedNumber = VTExpectedWordInlineImageBaseline(shape, 10#, -2#, 10#)
+            report = report & "read-expected-saved=" & CStr(doc.Saved) & vbLf
+        End If
+        doc.Saved = True
+        If Not doc.Saved Then Err.Raise 5, , "Word did not accept the clean fixture state."
+        stage = "baseline-mode-" & CStr(mode) & "/repeat-apply"
+        For index = 1 To 20
+            VTApplyWordInlineImageBaseline shape, 10#, -2#
+        Next index
+        canvasAfter = ""
+        VTTryGetDocumentVariable doc, VTWordImageCanvasVariableName(formulaId), canvasAfter
+        If Not doc.Saved Or canvasBefore <> canvasAfter Or mutationBefore <> VT_WORD_REGRESSION_MUTATION_COUNT Or _
+           bridgeBefore <> VT_WORD_REGRESSION_ALIGNMENT_BRIDGE_COUNT Then _
+            Err.Raise 5, , "A stable baseline check mutated Word or rebuilt its canvas" & _
+                " [saved=" & CStr(doc.Saved) & "; mutations=" & CStr(VT_WORD_REGRESSION_MUTATION_COUNT - mutationBefore) & _
+                "; bridgeCalls=" & CStr(VT_WORD_REGRESSION_ALIGNMENT_BRIDGE_COUNT - bridgeBefore) & _
+                "; canvas=" & canvasAfter & "; height=" & CStr(shape.Height) & "]."
+        report = report & stage & "=PASS" & vbLf
+    Next mode
+
+    stage = "crop-cache-frame-history"
+    VTBeginWordInternalMutation
+    shape.LockAspectRatio = msoFalse
+    shape.Height = paddedFrameHeight
+    shape.LockAspectRatio = msoTrue
+    shape.Range.ParagraphFormat.BaseLineAlignment = wdBaselineAlignTop
+    VTApplyWordInlineImageBaseline shape, 10#, -2#
+    If VTCachedWordImageCropTop(shape) >= 0# Or _
+       Abs(VTWordImageGlyphHeight(shape) - paddedFrameHeight) > 0.1 Then _
+        Err.Raise 5, , "A resized plain frame reused a previous padded frame's crop."
+    mutationBefore = VT_WORD_REGRESSION_MUTATION_COUNT
+    doc.Saved = True
+    For index = 1 To 20
+        VTApplyWordInlineImageBaseline shape, 10#, -2#
+    Next index
+    If Not doc.Saved Or mutationBefore <> VT_WORD_REGRESSION_MUTATION_COUNT Then _
+        Err.Raise 5, , "A resized frame did not converge to a read-only baseline check."
+    VTResetWordImageAlignmentCanvas shape
+    shape.LockAspectRatio = msoFalse
+    shape.Width = 20!
+    shape.Height = 10!
+    shape.LockAspectRatio = msoTrue
+    shape.Range.ParagraphFormat.BaseLineAlignment = wdBaselineAlignAuto
+    VTApplyWordInlineImageBaseline shape, 10#, -2#
+    VTEndWordInternalMutation
+    report = report & stage & "=PASS" & vbLf
+
+    stage = "ribbon-read-only-recovery"
+    VTBeginWordInternalMutation
+    shape.Title = metadata
+    shape.AlternativeText = VTFormulaReference(formulaId, "inline", False)
+    VTDeleteDocumentVariable doc, VTWordImageScaleVariableName(formulaId)
+    VTEndWordInternalMutation
+    titleBefore = shape.Title
+    alternativeBefore = shape.AlternativeText
+    variablesBefore = doc.Variables.Count
+    doc.Saved = True
+    For index = 1 To 20
+        VTWordSelectedImageFormulaState formulaCount, mixedSizes, fontSize
+        If formulaCount <> 1 Or Abs(fontSize - 14#) > 0.1 Then _
+            Err.Raise 5, , "Read-only Ribbon recovery lost a legacy formula's size."
+    Next index
+    If Not doc.Saved Or doc.Variables.Count <> variablesBefore Or _
+       shape.Title <> titleBefore Or shape.AlternativeText <> alternativeBefore Then _
+        Err.Raise 5, , "A Ribbon getter repaired identity or wrote missing scale metadata."
+    report = report & stage & "=PASS" & vbLf
+    VTBeginWordInternalMutation
+    shape.Title = VTFormulaReference(formulaId, "block", False)
+    shape.AlternativeText = metadata
+    VTSetWordFormulaFormat doc, formulaId, "block", False
+    VTSetWordImageScaleState doc, formulaId, 14#, 20#, 10#, -2#, 14#
+    VTEndWordInternalMutation
+
+    stage = "display-paragraph-mark"
+    VTApplyUnnumberedImageFormulaVerticalAlignment shape.Range
+    doc.Saved = True
+    For index = 1 To 20
+        VTApplyUnnumberedImageFormulaVerticalAlignment shape.Range
+    Next index
+    If Not doc.Saved Then Err.Raise 5, , "Stable display alignment rewrote the paragraph mark."
+    report = report & stage & "=PASS" & vbLf
+
+    stage = "body-reference"
+    VTBeginWordInternalMutation
+    doc.Bookmarks.Add "VisualTeXIdleNumber", doc.Range(0, 1)
+    Set target = doc.Range(doc.Content.End - 1, doc.Content.End - 1)
+    Set referenceField = doc.Fields.Add( _
+        Range:=target, Type:=wdFieldRef, Text:="VisualTeXIdleNumber", PreserveFormatting:=False)
+    VTFormatBodyEquationReference doc, referenceField, referenceField.Result.Duplicate
+    VTEndWordInternalMutation
+    doc.Saved = True
+    For index = 1 To 20
+        VTFormatBodyEquationReference doc, referenceField, referenceField.Result.Duplicate
+    Next index
+    If Not doc.Saved Then Err.Raise 5, , "Stable cross-reference formatting rewrote Word fields."
+    referenceField.Result.Font.Hidden = True
+    VTFormatBodyEquationReference doc, referenceField, referenceField.Result.Duplicate
+    If referenceField.Result.Font.Hidden <> False Then Err.Raise 5, , "Changed reference formatting was not repaired."
+    report = report & stage & "=PASS" & vbLf
+
+    stage = "idle-dispatch"
+    shape.Select
+    VisualTeX_WatchSelectedImageFormulaSize
+    VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING = False
+    VisualTeX_WatchSelectedImageFormulaSize
+    doc.Saved = True
+    mutationBefore = VT_WORD_REGRESSION_MUTATION_COUNT
+    For index = 1 To 20
+        VisualTeX_WatchSelectedImageFormulaSize
+        VTNormalizeSelectedEquationReferences
+        VTInvalidateWordImageFontSizeControl
+    Next index
+    If Not doc.Saved Or mutationBefore <> VT_WORD_REGRESSION_MUTATION_COUNT Then _
+        Err.Raise 5, , "Stable idle dispatch entered a mutation or dirtied the document."
+    report = "PASS" & vbLf & report & stage & "=PASS" & vbLf
+Finished:
+    On Error Resume Next
+    If Not doc Is Nothing Then doc.Close SaveChanges:=wdDoNotSaveChanges
+    If Not sourceDocument Is Nothing Then sourceDocument.Activate
+    VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING = False
+    VTEndWordInternalMutation
+    VTWriteTextAtomic root & "/word-idle-noninterference-result.txt", _
+        report & "stage=" & stage & vbLf & "error=" & CStr(failure) & ":" & description
+    Exit Sub
+Failed:
+    failure = Err.Number
+    description = Err.Description
+    report = "FAIL" & vbLf & report
     Resume Finished
 End Sub

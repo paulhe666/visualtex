@@ -62,6 +62,20 @@ python3 scripts/verify_word_vba_source.py /path/to/diagnostic.dotm --diagnostics
 python3 scripts/verify_word_vba_source.py /path/to/production.dotm
 ```
 
+The idle noninterference regression checks all five typography modes, repeated
+transparent-canvas alignment, read-only Ribbon queries, reference formatting,
+and unchanged document state during repeated idle checks. Close all documents
+before compiling with the normal restart/import/Debug → Compile workflow:
+
+```bash
+node scripts/rebuild_macos_word_addin.mjs --diagnostics
+npm run test:word-idle -- --template "/Users/you/Library/Group Containers/UBF8T346G9.Office/VisualTeX/Scratch/VisualTeXWordBuild.dotm"
+```
+
+The test uses an isolated temporary document and restores the previous document
+snapshot and installed add-in state. Rebuild without `--diagnostics` before
+packaging the production template.
+
 ## PowerPoint: compile a PPTM, then package VisualTeX.ppam
 
 PowerPoint for Mac loads `.ppam` files as add-ins and does not provide a reliable direct **Save As PPAM** workflow. Compile the VBA project in a temporary macro-enabled presentation, then inject that compiled VBA project into the reviewed PPAM shell with the repository packager.

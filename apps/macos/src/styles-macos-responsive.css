@@ -1,4 +1,4 @@
-/* Responsive layout for the desktop and Office editors (shared with Windows).
+/* Responsive layout for the macOS desktop and Office editors.
    Loaded after every other stylesheet.
 
    Rules here follow four principles:
@@ -205,8 +205,126 @@ body[data-workspace-resize="tiles"] .standard-panel-resizer {
   border-radius: 0;
 }
 
-/* ---- Office standard layout ----------------------------------------------
-   The tile panel keeps a column of its own beside the editor. */
+/* ---- Office editor header: font size | tools | undo, cancel, apply --------
+   One fixed row across the editor window. The first block restores the full
+   presentation at every window width (the older rules compacted it by window
+   breakpoints); the levels below then compact it only when the row is full. */
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse] {
+  gap: 6px;
+  padding-inline: 8px;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse] .pane-title-group > *,
+.editor-pane-header.is-office-editor-header[data-vt-collapse] .canvas-tool-group > *,
+.editor-pane-header.is-office-editor-header[data-vt-collapse] .office-inline-actions {
+  flex: 0 0 auto;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse] .office-font-size-setting {
+  width: auto;
+  min-width: max-content;
+  padding-inline: 5px;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse]
+  .office-font-size-setting
+  > span {
+  display: block;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse]
+  .office-font-size-setting
+  select {
+  width: 104px;
+  padding-right: 0;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse]
+  .canvas-input-behavior-trigger {
+  width: 92px;
+  min-width: 92px;
+  padding: 0 7px;
+  justify-content: normal;
+  gap: 4px;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse]
+  .canvas-input-behavior-trigger
+  > span,
+.editor-pane-header.is-office-editor-header[data-vt-collapse]
+  .canvas-input-behavior-trigger
+  > svg:last-child,
+.editor-pane-header.is-office-editor-header[data-vt-collapse] .canvas-controls > span {
+  display: block;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse] .canvas-ocr-model {
+  display: flex;
+  width: 136px;
+  min-width: 136px;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse] .canvas-ocr-model select {
+  width: 112px;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse] .canvas-controls {
+  width: 92px;
+  min-width: 92px;
+}
+
+/* 1: the input-behavior button keeps only its icon. */
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="1"]
+  .canvas-input-behavior-trigger {
+  width: 30px;
+  min-width: 30px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="1"]
+  .canvas-input-behavior-trigger
+  > span,
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="1"]
+  .canvas-input-behavior-trigger
+  > svg:last-child,
+/* 2: zoom keeps its two buttons, without the percentage. */
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="2"] .canvas-controls > span,
+/* 3: the font size keeps its value, without the caption. */
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="3"]
+  .office-font-size-setting
+  > span,
+/* 4: the OCR model selector leaves; 5: undo and redo leave (⌘Z still works). */
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="4"] .canvas-ocr-model,
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="5"]
+  .office-inline-actions
+  > .icon-button,
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="5"]
+  .office-dialog-action-divider {
+  display: none;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="2"] .canvas-controls {
+  width: 56px;
+  min-width: 56px;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="3"] .office-font-size-setting {
+  min-width: 72px;
+  padding-inline: 3px;
+}
+
+.editor-pane-header.is-office-editor-header[data-vt-collapse~="3"]
+  .office-font-size-setting
+  select {
+  width: 64px;
+  padding-right: 16px;
+}
+
+/* Office standard layout: the tile panel keeps a column of its own, at most
+   42% of a narrow editor window. */
 .office-dialog-shell .workspace.is-office-workspace.is-standard-layout.has-sidebar {
   grid-template-columns:
     minmax(0, 1fr)
@@ -287,22 +405,19 @@ body[data-workspace-resize="tiles"] .standard-panel-resizer {
 
 /* Fade whichever edge hides buttons (flags set by trackHorizontalOverflow). */
 .classic-bottom-tabs [data-overflow-end="true"]:not([data-overflow-start="true"]),
-.standard-source-bar [data-overflow-end="true"]:not([data-overflow-start="true"]),
-.is-office-editor-header [data-overflow-end="true"]:not([data-overflow-start="true"]) {
+.standard-source-bar [data-overflow-end="true"]:not([data-overflow-start="true"]) {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
 }
 
 .classic-bottom-tabs [data-overflow-start="true"]:not([data-overflow-end="true"]),
-.standard-source-bar [data-overflow-start="true"]:not([data-overflow-end="true"]),
-.is-office-editor-header [data-overflow-start="true"]:not([data-overflow-end="true"]) {
+.standard-source-bar [data-overflow-start="true"]:not([data-overflow-end="true"]) {
   -webkit-mask-image: linear-gradient(to right, transparent, #000 22px);
   mask-image: linear-gradient(to right, transparent, #000 22px);
 }
 
 .classic-bottom-tabs [data-overflow-start="true"][data-overflow-end="true"],
-.standard-source-bar [data-overflow-start="true"][data-overflow-end="true"],
-.is-office-editor-header [data-overflow-start="true"][data-overflow-end="true"] {
+.standard-source-bar [data-overflow-start="true"][data-overflow-end="true"] {
   -webkit-mask-image: linear-gradient(
     to right,
     transparent,
@@ -439,67 +554,36 @@ body[data-workspace-resize="tiles"] .standard-panel-resizer {
   gap: 0;
 }
 
-/* ---- Office editor header: options | canvas tools | actions ------------
-   The tools and the Cancel/Insert actions keep their size; the leading
-   options (object format, font size) take what is left and scroll sideways
-   with an edge fade when that is not enough. The alignment and formatting
-   buttons are not in this row: they live in the bottom bar in both layouts. */
-.editor-pane-header.is-office-editor-header .pane-title-group {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-}
-
-.editor-pane-header.is-office-editor-header .pane-title-group::-webkit-scrollbar {
-  display: none;
-}
-
-.editor-pane-header.is-office-editor-header .office-inline-options,
-.editor-pane-header.is-office-editor-header .office-inline-options > *,
-.editor-pane-header.is-office-editor-header .canvas-tool-group > * {
-  flex-shrink: 0;
-}
-
-.editor-pane-header.is-office-editor-header .editor-pane-header-trailing,
-.editor-pane-header.is-office-editor-header .canvas-tool-group {
-  min-width: max-content;
+/* Portalled color picker: fixed to its trigger, never clipped by the strip. */
+.formula-color-popover.is-anchored {
+  position: fixed;
+  right: auto;
+  z-index: var(--z-popover, 190);
+  max-width: calc(100vw - 20px);
 }
 
 /* ---- Header menus ------------------------------------------------------ */
 
 /* The main menu sits inside the 10px safe inset that floating layers keep
    from the window edge, so the auto-avoidance never has to nudge it; the
-   entry animation only fades and scales from the anchored corner (no slide),
-   so the menu's anchored edges stay put while it appears. */
+   entry animation scales from the anchored corner so the menu's edges stay
+   put while it fades in. */
 .app-menu-popover {
   left: 2px;
   transform-origin: top left;
-  animation-name: vt-anchored-menu-in;
 }
 
 .copy-menu {
   transform-origin: top right;
-  animation-name: vt-anchored-menu-in;
-}
-
-@keyframes vt-anchored-menu-in {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: none; }
 }
 
 /* ---- Width-dependent scroll containers ----------------------------------
    Tile previews scale to the list's width and custom tile rows are packed by
-   it, so the list's height depends on its width. Windows shows classic scroll
-   bars by default: if one appears or disappears, the width changes and the
-   layout can flip back and forth. scrollbar-gutter keeps the width fixed;
-   where it is unsupported the tile list keeps a permanent scroll track. */
-.formula-tile-list {
-  scrollbar-gutter: stable;
-}
-
+   it, so the list's height depends on its width. If a classic (non-overlay)
+   scroll bar then appears or disappears, the width changes and the layout can
+   flip back and forth. scrollbar-gutter keeps the width fixed where WebKit
+   supports it; older macOS WebKit (the app supports macOS 11) gets a permanent
+   scroll track instead. */
 @supports not (scrollbar-gutter: stable) {
   .formula-tile-list,
   .classic-tile-toolbar .formula-tile-list {

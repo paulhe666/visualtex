@@ -99,12 +99,11 @@ type ClassicResizeTarget = "tiles" | "dock";
 
 const compactOfficeTileBreakpoint = 760;
 const compactOfficeEditorReserve = 220;
-const officeTileShare = 0.45;
+const compactOfficeTileShare = 0.45;
 
-// The formula canvas is the primary surface. In the Office editor the tile
-// rail may take at most 45% of the workspace (never less than its minimum
-// width), so the canvas is not squeezed narrower than the rail; a rail
-// widened in a large window is narrowed again when the window shrinks.
+// The formula canvas is the primary surface. In a compact Office editor the
+// tile rail may take at most 45% of the workspace (never less than its
+// minimum width), so the canvas is not squeezed narrower than the rail.
 function classicTileWidthMaximum(
   workspaceWidth: number,
   isOfficeWorkspace: boolean,
@@ -113,8 +112,8 @@ function classicTileWidthMaximum(
     isOfficeWorkspace && window.innerWidth <= compactOfficeTileBreakpoint;
   const byReserve =
     workspaceWidth - (compactOffice ? compactOfficeEditorReserve : 360);
-  const limit = isOfficeWorkspace
-    ? Math.min(byReserve, Math.floor(workspaceWidth * officeTileShare))
+  const limit = compactOffice
+    ? Math.min(byReserve, Math.floor(workspaceWidth * compactOfficeTileShare))
     : byReserve;
   return Math.max(MIN_CLASSIC_TILE_WIDTH, limit);
 }
@@ -157,6 +156,29 @@ function readStandardPanelWidth(mode: string) {
   return Number.isFinite(stored) && stored >= MIN_STANDARD_PANEL_WIDTH
     ? Math.round(stored)
     : DEFAULT_STANDARD_PANEL_WIDTH;
+}
+
+// Office editor header (font size | tools | undo, cancel, apply). Its groups
+// stretch, so the needed width is the sum of the individual controls.
+const OFFICE_HEADER_COLLAPSE_LEVELS = 5;
+const officeHeaderItems =
+  ".pane-title-group > *, .canvas-tool-group > *, .office-inline-actions";
+
+function officeHeaderFits(header: HTMLElement) {
+  const style = window.getComputedStyle(header);
+  const gap = Number.parseFloat(style.columnGap) || 0;
+  let required =
+    (Number.parseFloat(style.paddingLeft) || 0) +
+    (Number.parseFloat(style.paddingRight) || 0);
+  let count = 0;
+  header.querySelectorAll<HTMLElement>(officeHeaderItems).forEach((item) => {
+    const width = item.getBoundingClientRect().width;
+    if (width <= 0) return;
+    required += width;
+    count += 1;
+  });
+  required += gap * Math.max(0, count - 1);
+  return required <= header.clientWidth + 0.5;
 }
 
 const customFormulaTextColorsStorageKey = "visualtex-custom-formula-text-colors";
@@ -250,6 +272,7 @@ export function EditorWorkspace({
   const [desktopClassicControlsMount, setDesktopClassicControlsMount] =
     useState<HTMLDivElement | null>(null);
   const [bottomBar, setBottomBar] = useState<HTMLElement | null>(null);
+  const [officeHeader, setOfficeHeader] = useState<HTMLElement | null>(null);
   const [standardPanelWidth, setStandardPanelWidth] = useState(() =>
     readStandardPanelWidth(mode),
   );
@@ -257,6 +280,8 @@ export function EditorWorkspace({
     useState<FormulaColorMenu | null>(null);
   const formulaColorMenuRef = useRef<HTMLDivElement>(null);
   const formulaColorPopoverRef = useRef<HTMLDivElement>(null);
+  const [formulaColorPopoverStyle, setFormulaColorPopoverStyle] =
+    useState<CSSProperties>();
   const formulaSelectionTargetRef = useRef<MathEditorSelectionTarget | null>(null);
   const customFormulaColorDraftRef = useRef<
     Record<FormulaColorMenu, string | null>
@@ -484,45 +509,6 @@ export function EditorWorkspace({
     };
   }, [quickOcrModeMenuOpen]);
 
-  // Desktop toolbars, the classic dock and the Office header clip their
-  // children (the formatting strip and the Office header options scroll
-  // sideways on narrow windows). Keep the palette outside those boundaries,
-  // anchored beside the formatting tools.
-  const portalFormulaColorMenu = true;
-  const classicFormulaColorMenu = portalFormulaColorMenu && editorLayout === "classic";
-  useLayoutEffect(() => {
-    if (!formulaColorMenu || !portalFormulaColorMenu) return;
-    const position = () => {
-      const anchor = formulaColorMenuRef.current;
-      const popup = formulaColorPopoverRef.current;
-      if (!anchor || !popup) return;
-      const bounds = anchor.getBoundingClientRect();
-      popup.style.top = classicFormulaColorMenu ? "auto" : `${bounds.bottom + 7}px`;
-      popup.style.bottom = classicFormulaColorMenu
-        ? `${window.innerHeight - bounds.top + 7}px`
-        : "auto";
-      popup.style.left = classicFormulaColorMenu ? `${bounds.left}px` : "auto";
-      popup.style.right = classicFormulaColorMenu
-        ? "auto"
-        : `${window.innerWidth - bounds.right}px`;
-      if (classicFormulaColorMenu) {
-        // Preserve the trigger row even when the window is too short for
-        // the entire palette. The existing viewport fitter still handles X.
-        popup.style.setProperty(
-          "--formula-color-available-height",
-          `${Math.max(0, bounds.top - 17)}px`,
-        );
-      }
-    };
-    position();
-    window.addEventListener("resize", position);
-    window.addEventListener("scroll", position, true);
-    return () => {
-      window.removeEventListener("resize", position);
-      window.removeEventListener("scroll", position, true);
-    };
-  }, [formulaColorMenu, portalFormulaColorMenu, classicFormulaColorMenu]);
-
   useEffect(() => {
     if (!formulaColorMenu) return;
     const close = (event: PointerEvent) => {
@@ -560,6 +546,14 @@ export function EditorWorkspace({
   }, [desktopClassicControlsMount, isOfficeWorkspace, officeFormattingMount]);
 
   useEffect(() => {
+    if (!officeHeader) return;
+    return trackPriorityCollapse(officeHeader, {
+      maxLevel: OFFICE_HEADER_COLLAPSE_LEVELS,
+      fits: officeHeaderFits,
+    });
+  }, [officeHeader]);
+
+  useEffect(() => {
     if (!bottomBar) return;
     return trackPriorityCollapse(bottomBar, {
       maxLevel: BOTTOM_BAR_COLLAPSE_LEVELS,
@@ -567,15 +561,46 @@ export function EditorWorkspace({
     });
   }, [bottomBar]);
 
-  // The Office header's leading options scroll sideways when the window is
-  // narrow (styles-windows-responsive.css); fade the clipped edge.
-  useEffect(() => {
-    if (!isOfficeWorkspace) return;
-    const options = workspaceRef.current?.querySelector<HTMLElement>(
-      ".is-office-editor-header .pane-title-group",
-    );
-    return options ? trackHorizontalOverflow(options) : undefined;
-  }, [editorLayout, isOfficeWorkspace]);
+  // The color picker is rendered on <body> with fixed coordinates taken from
+  // its trigger. Its toolbar strip scrolls horizontally on narrow windows, and
+  // an absolutely positioned child would be clipped by that strip.
+  useLayoutEffect(() => {
+    if (!formulaColorMenu) {
+      setFormulaColorPopoverStyle(undefined);
+      return;
+    }
+    const place = () => {
+      const trigger = formulaColorMenuRef.current?.querySelector<HTMLElement>(
+        formulaColorMenu === "color"
+          ? "[data-formula-selection-color]"
+          : "[data-formula-selection-background]",
+      );
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const width = formulaColorPopoverRef.current?.offsetWidth ?? 196;
+      const left = Math.round(
+        Math.max(10, Math.min(rect.left, window.innerWidth - width - 10)),
+      );
+      const opensUpward = rect.top + rect.height / 2 > window.innerHeight / 2;
+      const next: CSSProperties = opensUpward
+        ? { left, bottom: Math.round(window.innerHeight - rect.top + 7) }
+        : { left, top: Math.round(rect.bottom + 7) };
+      setFormulaColorPopoverStyle((current) =>
+        current?.left === next.left &&
+        current?.top === next.top &&
+        current?.bottom === next.bottom
+          ? current
+          : next,
+      );
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [formulaColorMenu]);
 
   useEffect(
     () => () => {
@@ -1216,6 +1241,7 @@ export function EditorWorkspace({
 
         <section className="formula-workspace editor-pane">
           <header
+            ref={isOfficeWorkspace ? setOfficeHeader : undefined}
             className={
               "workspace-heading pane-header editor-pane-header" +
               (isOfficeWorkspace ? " is-office-editor-header" : "")
@@ -1520,19 +1546,11 @@ export function EditorWorkspace({
                         <Highlighter size={15} strokeWidth={2} />
                       </button>
 
-                      {formulaColorMenu && (
-                        <PortalOrInline target={portalFormulaColorMenu ? document.body : null}>
+                      {formulaColorMenu && createPortal(
                         <div
                           ref={formulaColorPopoverRef}
-                          style={portalFormulaColorMenu ? {
-                            position: "fixed",
-                            ...(classicFormulaColorMenu ? {
-                              maxHeight: "var(--formula-color-available-height)",
-                              overflowY: "auto",
-                              boxSizing: "border-box",
-                            } as CSSProperties : {}),
-                          } : undefined}
-                          className="formula-color-popover"
+                          className="formula-color-popover is-anchored"
+                          style={formulaColorPopoverStyle}
                           data-formula-color-popover={formulaColorMenu}
                           data-visualtex-floating-layer
                           role="dialog"
@@ -1569,10 +1587,7 @@ export function EditorWorkspace({
                                   data-formula-background-none
                                   onMouseDown={(event) => event.preventDefault()}
                                   onClick={() =>
-                                    applySelectedFormulaColor(
-                                      "backgroundColor",
-                                      "none",
-                                    )
+                                    applySelectedFormulaColor("backgroundColor", "none")
                                   }
                                 >
                                   <span
@@ -1707,8 +1722,8 @@ export function EditorWorkspace({
                               )}
                             </section>
                           </div>
-                        </div>
-                        </PortalOrInline>
+                        </div>,
+                        document.body,
                       )}
                     </div>
                   </div>
