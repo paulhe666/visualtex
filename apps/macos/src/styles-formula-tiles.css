@@ -1,0 +1,382 @@
+/* Common formula tiles: quiet add / remove affordances and the library dialog.
+   Loaded after the shared editor styles. */
+
+/* ---- Common tab ---------------------------------------------------------- */
+
+.formula-tile-item {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+}
+
+/* Tints follow the item, which is now the list child. */
+.formula-tile-item > .formula-tile-button {
+  background: var(--surface);
+}
+
+.formula-tile-item:nth-child(4n + 1) > .formula-tile-button {
+  background: color-mix(in srgb, var(--surface) 94%, var(--accent) 6%);
+}
+
+.formula-tile-item:nth-child(4n + 2) > .formula-tile-button {
+  background: color-mix(in srgb, var(--surface) 95%, var(--success) 5%);
+}
+
+.formula-tile-item:nth-child(4n + 3) > .formula-tile-button {
+  background: color-mix(in srgb, var(--surface) 95%, var(--warning) 5%);
+}
+
+.formula-tile-item > .formula-tile-button:hover,
+.formula-tile-item > .formula-tile-button:focus-visible {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+/* Remove: a small corner button that only appears while the pointer is on
+   the tile (or the button has keyboard focus), so the tile reads as before. */
+.formula-tile-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.formula-tile-item:hover > .formula-tile-remove,
+.formula-tile-remove:focus-visible {
+  opacity: 0.85;
+}
+
+.formula-tile-remove:hover,
+.formula-tile-remove:focus-visible {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--danger, #c0392b) 55%, var(--border));
+  color: var(--danger, #c0392b);
+  outline: none;
+}
+
+/* Add: a low-contrast dashed row after the last tile. */
+.formula-tile-add {
+  flex: 0 0 auto;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.formula-tile-add:hover,
+.formula-tile-add:focus-visible {
+  opacity: 1;
+  border-color: var(--accent-border);
+  color: var(--accent);
+  outline: none;
+}
+
+/* ---- Library dialog ------------------------------------------------------ */
+
+.formula-tile-library-dialog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(860px, calc(100vw - 36px));
+  height: min(620px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  animation: dialog-in 170ms ease-out;
+}
+
+.formula-tile-library-dialog > .dialog-header {
+  gap: 12px;
+}
+
+.formula-tile-library-dialog > .dialog-header > div:first-child {
+  margin-right: auto;
+}
+
+.formula-tile-library-search {
+  flex: 0 1 240px;
+  min-width: 120px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
+.formula-tile-library-search:focus-within {
+  border-color: var(--focus-ring, var(--accent));
+}
+
+.formula-tile-library-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.formula-tile-library-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 196px minmax(0, 1fr);
+  border-top: 1px solid var(--border);
+}
+
+.formula-tile-library-nav {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.formula-tile-library-subjects {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+}
+
+.formula-tile-library-subjects button {
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.formula-tile-library-subjects button:hover {
+  color: var(--text);
+}
+
+.formula-tile-library-subjects button.is-active {
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.formula-tile-library-groups {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.formula-tile-library-groups button {
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.formula-tile-library-groups button:hover {
+  background: var(--surface-hover);
+}
+
+.formula-tile-library-groups button.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.formula-tile-library-group-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.formula-tile-library-group-meta {
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+
+.formula-tile-library-content {
+  min-width: 0;
+  min-height: 0;
+  padding: 12px 14px 16px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.formula-tile-library-empty {
+  margin: 40px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.formula-tile-library-section + .formula-tile-library-section {
+  margin-top: 18px;
+}
+
+.formula-tile-library-section h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.formula-tile-library-section h3 span {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.formula-tile-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-auto-flow: dense;
+  gap: 8px;
+}
+
+.formula-tile-library-item {
+  position: relative;
+  min-width: 0;
+  height: 92px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 4px;
+  padding: 8px 10px 6px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.formula-tile-library-item.is-wide {
+  grid-column: span 2;
+}
+
+.formula-tile-library-item:hover,
+.formula-tile-library-item:focus-visible {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.formula-tile-library-item.is-added {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--surface) 90%, var(--accent) 10%);
+}
+
+.formula-tile-library-preview.math-preview {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  font-size: 17px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.formula-tile-library-item-label {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.3;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.formula-tile-library-item-state {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  opacity: 0;
+}
+
+.formula-tile-library-item:hover .formula-tile-library-item-state,
+.formula-tile-library-item:focus-visible .formula-tile-library-item-state {
+  opacity: 1;
+}
+
+.formula-tile-library-item.is-added .formula-tile-library-item-state {
+  background: var(--accent);
+  color: var(--primary-foreground, #fff);
+  opacity: 1;
+}
+
+.formula-tile-library-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+@media (max-width: 620px) {
+  .formula-tile-library-body {
+    grid-template-columns: 148px minmax(0, 1fr);
+  }
+
+  .formula-tile-library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
+  .formula-tile-library-item.is-wide {
+    grid-column: 1 / -1;
+  }
+}

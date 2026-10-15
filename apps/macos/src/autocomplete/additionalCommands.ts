@@ -99,7 +99,11 @@ const complexCommands: LatexCommand[] = [
   makeCommand("mixedpartial", "\\partial^2", "\\frac{\\partial^{2}\\placeholder{}}{\\partial\\placeholder{}\\partial\\placeholder{}}", "\\frac{\\partial^{2}f}{\\partial x\\partial y}", "混合偏导", "Mixed partial", "calculus", 81, ["mixed partial"], ["混合偏导"]),
   makeCommand("evalbar", "\\left.", "\\left.\\placeholder{}\\right|_{\\placeholder{}}^{\\placeholder{}}", "\\left.F(x)\\right|_a^b", "代入上下限", "Evaluation", "calculus", 80, ["evaluate"], ["代入", "上下限"]),
   makeCommand("series", "\\sum", "\\sum_{\\placeholder{}=0}^{\\infty} \\placeholder{}", "\\sum_{n=0}^{\\infty}a_n", "无穷级数", "Infinite series", "calculus", 97, ["series", "summation"], ["级数", "无穷求和"]),
+  makeCommand("sum-lower", "\\sum", "\\sum_{\\placeholder{}} \\placeholder{}", "\\sum_{i}a_i", "只有下限的求和", "Sum with lower limit", "calculus", 95, ["sum lower limit", "summation subscript"], ["求和", "下限", "下标"]),
+  makeCommand("sum-upper", "\\sum", "\\sum^{\\placeholder{}} \\placeholder{}", "\\sum^{n}a_i", "只有上限的求和", "Sum with upper limit", "calculus", 94, ["sum upper limit", "summation superscript"], ["求和", "上限", "上标"]),
   makeCommand("productseries", "\\prod", "\\prod_{\\placeholder{}=1}^{\\infty} \\placeholder{}", "\\prod_{n=1}^{\\infty}a_n", "无穷乘积", "Infinite product", "calculus", 94, ["infinite product", "product"], ["无穷乘积", "连乘"]),
+  makeCommand("prod-lower", "\\prod", "\\prod_{\\placeholder{}} \\placeholder{}", "\\prod_{i}a_i", "只有下限的连乘", "Product with lower limit", "calculus", 91, ["product lower limit"], ["连乘", "下限", "下标"]),
+  makeCommand("prod-upper", "\\prod", "\\prod^{\\placeholder{}} \\placeholder{}", "\\prod^{n}a_i", "只有上限的连乘", "Product with upper limit", "calculus", 90, ["product upper limit"], ["连乘", "上限", "上标"]),
   makeCommand("coproduct", "\\coprod", "\\coprod_{\\placeholder{}}^{\\placeholder{}} \\placeholder{}", "\\coprod_{i=1}^{n} A_i", "余积", "Coproduct", "calculus", 84, ["coproduct"], ["余积"]),
   makeCommand("lim-infty", "\\lim", "\\lim_{\\placeholder{}\\to\\infty} \\placeholder{}", "\\lim_{x\\to\\infty}f(x)", "无穷远极限", "Limit at infinity", "calculus", 95, ["limit infinity"], ["无穷远极限"]),
   makeCommand("lim-left", "\\lim", "\\lim_{\\placeholder{}\\to\\placeholder{}^{-}} \\placeholder{}", "\\lim_{x\\to a^-}f(x)", "左极限", "Left-hand limit", "calculus", 93, ["left limit"], ["左极限"]),
@@ -134,14 +138,14 @@ const complexCommands: LatexCommand[] = [
 
   // 物理常用结构
   makeCommand("expectation", "\\langle", "\\left\\langle\\placeholder{}\\right\\rangle", "\\langle A\\rangle", "期望值", "Expectation value", "physics", 90, ["expectation"], ["期望值"]),
-  makeCommand("braket", "\\langle", "\\left\\langle\\placeholder{}\\middle|\\placeholder{}\\right\\rangle", "\\langle\\phi|\\psi\\rangle", "内积", "Bra-ket", "physics", 92, ["braket", "inner product"], ["内积", "狄拉克"]),
+  makeCommand("braket", "\\langle", "\\braket{\\placeholder{}}{\\placeholder{}}", "\\braket{\\phi}{\\psi}", "内积", "Bra-ket", "physics", 92, ["braket", "inner product"], ["内积", "狄拉克"]),
   makeCommand("commutator", "[", "\\left[\\placeholder{},\\placeholder{}\\right]", "[A,B]", "对易子", "Commutator", "physics", 88, ["commutator"], ["对易子"]),
   makeCommand("anticommutator", "\\{", "\\left\\{\\placeholder{},\\placeholder{}\\right\\}", "\\{A,B\\}", "反对易子", "Anticommutator", "physics", 82, ["anticommutator"], ["反对易子"]),
   makeCommand("timederivative", "\\dot", "\\dot{\\placeholder{}}", "\\dot{x}", "时间一阶导", "Time derivative", "physics", 86, ["dot derivative"], ["时间导数"]),
   makeCommand("timesecond", "\\ddot", "\\ddot{\\placeholder{}}", "\\ddot{x}", "时间二阶导", "Second time derivative", "physics", 84, ["double dot"], ["二阶时间导数"]),
-  makeCommand("outerproduct", "|\\psi\\rangle\\langle\\phi|", "|\\placeholder{}\\rangle\\langle\\placeholder{}|", "|\\psi\\rangle\\langle\\phi|", "外积", "Outer product", "physics", 91, ["outer product", "ket bra"], ["外积", "狄拉克"]),
-  makeCommand("matrixelement", "\\langle\\phi|\\hat A|\\psi\\rangle", "\\left\\langle\\placeholder{}\\middle|\\placeholder{}\\middle|\\placeholder{}\\right\\rangle", "\\langle\\phi|\\hat A|\\psi\\rangle", "矩阵元", "Matrix element", "physics", 90, ["matrix element"], ["矩阵元", "量子力学"]),
-  makeCommand("expectation-operator", "\\langle\\psi|\\hat A|\\psi\\rangle", "\\left\\langle\\placeholder{}\\middle|\\placeholder{}\\middle|\\placeholder{}\\right\\rangle", "\\langle\\psi|\\hat A|\\psi\\rangle", "算符期望值", "Operator expectation", "physics", 89, ["operator expectation"], ["期望值", "算符"]),
+  makeCommand("outerproduct", "|\\psi\\rangle\\langle\\phi|", "\\ketbra{\\placeholder{}}{\\placeholder{}}", "\\ketbra{\\psi}{\\phi}", "外积", "Outer product", "physics", 91, ["outer product", "ket bra"], ["外积", "狄拉克"]),
+  makeCommand("matrixelement", "\\langle\\phi|\\hat A|\\psi\\rangle", "\\mel{\\placeholder{}}{\\placeholder{}}{\\placeholder{}}", "\\mel{\\phi}{\\hat A}{\\psi}", "矩阵元", "Matrix element", "physics", 90, ["matrix element"], ["矩阵元", "量子力学"]),
+  makeCommand("expectation-operator", "\\langle\\psi|\\hat A|\\psi\\rangle", "\\mel{\\placeholder{}}{\\placeholder{}}{\\placeholder{}}", "\\mel{\\psi}{\\hat A}{\\psi}", "算符期望值", "Operator expectation", "physics", 89, ["operator expectation"], ["期望值", "算符"]),
   makeCommand("time-ordering", "\\mathcal{T}", "\\mathcal{T}\\left\\{\\placeholder{}\\right\\}", "\\mathcal{T}\\{A(t)B(t')\\}", "时间序算符", "Time ordering", "physics", 75, ["time ordering"], ["时间序", "量子场论"]),
 ];
 

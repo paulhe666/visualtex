@@ -47,6 +47,7 @@ import {
   type OcrRecognitionResult,
   type OcrRuntimeStatus,
   fileToOcrRequest,
+  formatOcrError,
   getOcrProviderConfiguration,
   getOcrRuntimeStatus,
   installOcrRuntime,
@@ -89,13 +90,7 @@ function readableBytes(bytes: number) {
 }
 
 function readError(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return "Unknown OCR error";
-  }
+  return formatOcrError(error);
 }
 
 function credentialStatusLabel(status: boolean | null, isEn: boolean, clearing: boolean) {

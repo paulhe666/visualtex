@@ -52,7 +52,7 @@ function renderBootError(value: unknown) {
       window.location.reload();
     } catch (reason) {
       console.error("VisualTeX boot safe restart preparation failed", reason);
-      window.alert("无法准备安全启动，原有数据未被清除。请把错误信息发送给开发者。");
+      window.alert(`无法准备安全启动，原有数据未被清除。${reason instanceof Error ? reason.message : String(reason)}`);
     }
   });
   actions.append(reload, safeRestart);

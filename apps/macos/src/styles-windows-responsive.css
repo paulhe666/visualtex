@@ -1,0 +1,508 @@
+/* Responsive layout for the desktop and Office editors (shared with Windows).
+   Loaded after every other stylesheet.
+
+   Rules here follow four principles:
+   1. A row adapts to its own free space, never to the window width. Rows that
+      collapse carry `data-vt-collapse="1 2 … n"` (runtime/priorityCollapse):
+      level n is only reached when the row really has no room at level n-1.
+   2. Items leave in priority order. Settings, the LaTeX format selector, the
+      menu and the tile toggle never leave.
+   3. Nothing shrinks by transform: buttons keep their hit size; text labels
+      collapse to icons first, then the formatting strip scrolls sideways.
+   4. No region paints over its neighbour: panels sit side by side at every
+      width, and a strip that does not fit clips and scrolls, with a fade on
+      the clipped edge. */
+
+/* ---- App header: one row above the formula area ------------------------- */
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header > .brand-area,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header > .document-title-area,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header > .header-actions {
+  flex: 0 0 auto;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header > .document-title-area {
+  width: 230px;
+  min-width: 0;
+  max-width: none;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell)
+  > .app-header
+  > .document-title-area
+  input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding-inline: 9px;
+  font-size: 13px;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header > .header-actions {
+  width: max-content;
+  min-width: max-content;
+  margin-left: auto;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header > .header-actions > *,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .desktop-top-tools-mount,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .editor-pane-header-trailing,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .editor-pane-header-trailing > *,
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .canvas-tool-group > * {
+  flex: 0 0 auto;
+  min-width: max-content;
+}
+
+.app-shell:not(.is-keypad-mode):not(.office-dialog-shell) > .app-header .desktop-top-tools-mount:empty {
+  display: none;
+}
+
+/* Priority levels, least important first. Everything hidden here is also
+   reachable from the main menu or a keyboard shortcut. */
+.app-header[data-vt-collapse~="1"] > .document-title-area,
+.app-header[data-vt-collapse~="2"] .file-actions,
+.app-header[data-vt-collapse~="3"] .canvas-ocr-model,
+.app-header[data-vt-collapse~="3"] .silent-ocr-toggle,
+.app-header[data-vt-collapse~="4"] .header-actions > .workspace-action,
+.app-header[data-vt-collapse~="5"] .edit-actions,
+.app-header[data-vt-collapse~="6"] .workspace-export-trigger,
+.app-header[data-vt-collapse~="6"] .input-behavior-menu,
+.app-header[data-vt-collapse~="7"] .canvas-controls,
+.app-header[data-vt-collapse~="8"] .quick-ocr-controls,
+.app-header[data-vt-collapse~="8"] .desktop-editor-header-controls {
+  display: none !important;
+}
+
+/* ---- Standard layout ----------------------------------------------------
+   The editor's own header row is only a portal source: its tools live in the
+   app header and the formatting controls in the source bar, so there is
+   exactly one row above the formula area. */
+
+.workspace.is-standard-layout:not(.is-office-workspace):not(.is-keypad-mode)
+  > .formula-workspace.editor-pane {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.workspace.is-standard-layout:not(.is-office-workspace):not(.is-keypad-mode)
+  > .formula-workspace.editor-pane
+  > .editor-pane-header {
+  display: none;
+}
+
+/* The tools / tiles panel always has its own column; it never floats over
+   the editor. Its width is the user's (dragged) --standard-panel-width, as
+   long as the editor keeps 300px; it never goes below 200px. */
+.workspace.is-standard-layout.has-sidebar:not(.is-office-workspace) {
+  grid-template-columns:
+    minmax(0, min(var(--standard-panel-width, 252px), max(200px, 100% - 307px)))
+    7px
+    minmax(0, 1fr);
+}
+
+.workspace.is-standard-layout > .standard-panel-resizer {
+  width: 7px;
+  cursor: col-resize;
+}
+
+.workspace.is-standard-layout > .standard-panel-resizer:hover,
+.workspace.is-standard-layout > .standard-panel-resizer:focus-visible,
+body[data-workspace-resize="tiles"] .standard-panel-resizer {
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-elevated));
+}
+
+.workspace.is-standard-layout.has-sidebar:not(.is-office-workspace) > .formula-toolbar {
+  position: relative;
+  inset: auto;
+  width: auto;
+  box-shadow: none;
+}
+
+/* The formula area reaches the pane edges, as in the classic layout: no
+   inset between it and the header, the tile panel or the window border. */
+.editor-pane-body.standard-editor-pane-body,
+.editor-pane-body.standard-editor-pane-body.has-source {
+  --editor-pane-inset: 0px;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.standard-source-dock {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 36px;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.standard-source-dock.is-open {
+  grid-template-rows: 36px var(--source-pane-height, clamp(148px, 30vh, 280px));
+}
+
+.standard-source-bar {
+  min-width: 0;
+  height: 36px;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding-inline: 6px;
+}
+
+.standard-source-bar-controls {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.standard-source-bar-controls::-webkit-scrollbar {
+  display: none;
+}
+
+.standard-source-bar-controls > * {
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: max-content;
+}
+
+.standard-source-bar-tabs,
+.standard-source-bar-actions {
+  flex: 0 0 auto;
+  display: flex;
+}
+
+.standard-source-bar-actions {
+  align-items: center;
+}
+
+.standard-source-bar[data-vt-collapse~="1"] .classic-bottom-tab-label {
+  display: none;
+}
+
+/* The icon tab already toggles the source panel; drop the duplicate. */
+.standard-source-bar[data-vt-collapse~="1"] .classic-bottom-collapse {
+  display: none;
+}
+
+.standard-source-bar[data-vt-collapse~="1"] .classic-bottom-tab-group button {
+  width: 36px;
+  min-width: 36px;
+  padding-inline: 0;
+  gap: 0;
+}
+
+.source-pane-slot.standard-source-pane-slot {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+
+.standard-source-pane-slot .source-panel {
+  border-radius: 0;
+}
+
+/* ---- Office standard layout ----------------------------------------------
+   The tile panel keeps a column of its own beside the editor. */
+.office-dialog-shell .workspace.is-office-workspace.is-standard-layout.has-sidebar {
+  grid-template-columns:
+    minmax(0, 1fr)
+    7px
+    minmax(0, min(var(--standard-panel-width, 252px), max(200px, 100% - 307px)));
+}
+
+.office-dialog-shell
+  .workspace.is-office-workspace.is-standard-layout
+  > .standard-panel-resizer {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.office-dialog-shell
+  .workspace.is-office-workspace.is-standard-layout
+  > .formula-toolbar {
+  grid-column: 3;
+}
+
+/* ---- Classic layout: tile panel ------------------------------------------
+   Side by side at every width. The panel gives way to the editor (which
+   keeps 360px) down to its own 220px minimum. */
+
+.workspace.is-classic-layout.has-sidebar:not(.is-office-workspace):not(.is-keypad-mode) {
+  grid-template-columns:
+    minmax(0, 1fr)
+    7px
+    minmax(0, min(var(--classic-tile-width, 300px), max(220px, 100% - 367px)));
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace) > .classic-tile-resizer {
+  display: block;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace) > .classic-tile-toolbar {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  width: auto;
+  box-shadow: none;
+}
+
+/* ---- Bottom bar: formatting strip | panel tabs | actions ---------------- */
+
+/* Formatting strip (desktop: workspace controls; Office: formatting slot).
+   It scrolls inside the space it is given. The color picker is rendered on
+   <body>, so clipping here is safe. */
+.workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-workspace-controls,
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-formatting-slot {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  transform: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls::-webkit-scrollbar,
+.office-dialog-shell
+  .workspace.is-classic-layout
+  .classic-bottom-formatting-slot::-webkit-scrollbar {
+  display: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls
+  .pane-title-group,
+.office-dialog-shell
+  .workspace.is-classic-layout
+  .classic-bottom-formatting-slot
+  .formula-alignment-controls {
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: max-content;
+}
+
+/* Fade whichever edge hides buttons (flags set by trackHorizontalOverflow). */
+.classic-bottom-tabs [data-overflow-end="true"]:not([data-overflow-start="true"]),
+.standard-source-bar [data-overflow-end="true"]:not([data-overflow-start="true"]),
+.is-office-editor-header [data-overflow-end="true"]:not([data-overflow-start="true"]) {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+}
+
+.classic-bottom-tabs [data-overflow-start="true"]:not([data-overflow-end="true"]),
+.standard-source-bar [data-overflow-start="true"]:not([data-overflow-end="true"]),
+.is-office-editor-header [data-overflow-start="true"]:not([data-overflow-end="true"]) {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 22px);
+  mask-image: linear-gradient(to right, transparent, #000 22px);
+}
+
+.classic-bottom-tabs [data-overflow-start="true"][data-overflow-end="true"],
+.standard-source-bar [data-overflow-start="true"][data-overflow-end="true"],
+.is-office-editor-header [data-overflow-start="true"][data-overflow-end="true"] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 22px,
+    #000 calc(100% - 22px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 22px,
+    #000 calc(100% - 22px),
+    transparent
+  );
+}
+
+/* Desktop level 0: the tabs are centred; the strip may use the left half
+   minus half of the tab group. */
+.workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tabs {
+  --vt-bottom-tabs-half: 122px;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls {
+  max-width: calc(50% - var(--vt-bottom-tabs-half));
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls
+  .formula-alignment-button,
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-workspace-controls
+  .formula-formatting-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace) .classic-bottom-tab-label,
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-tab-label {
+  display: inline;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tab-group
+  button {
+  width: auto;
+  min-width: 112px;
+  padding-inline: 14px;
+}
+
+/* Office: one compact row, strip in the flexible first column. */
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-tabs {
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  overflow: hidden;
+}
+
+.office-dialog-shell .workspace.is-classic-layout .classic-bottom-formatting-slot {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Desktop level 1: the strip no longer fits beside centred tabs. The tabs
+   move next to the right-hand actions and the strip takes the rest. */
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tabs[data-vt-collapse~="1"] {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tabs[data-vt-collapse~="1"]
+  .classic-bottom-workspace-controls,
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tabs[data-vt-collapse~="1"]
+  .classic-bottom-tab-group,
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tabs[data-vt-collapse~="1"]
+  .classic-bottom-actions {
+  position: static;
+  inset: auto;
+  transform: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tabs[data-vt-collapse~="1"]
+  .classic-bottom-workspace-controls {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tabs[data-vt-collapse~="1"]
+  .classic-bottom-tab-group,
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tabs[data-vt-collapse~="1"]
+  .classic-bottom-actions {
+  flex: 0 0 auto;
+}
+
+/* Level 2: the panel tabs become icon buttons (their names stay in the
+   accessible label and the tooltip). */
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tabs[data-vt-collapse~="2"]
+  .classic-bottom-tab-label,
+.office-dialog-shell
+  .workspace.is-classic-layout
+  .classic-bottom-tabs[data-vt-collapse~="2"]
+  .classic-bottom-tab-label {
+  display: none;
+}
+
+.workspace.is-classic-layout:not(.is-office-workspace)
+  .classic-bottom-tabs[data-vt-collapse~="2"]
+  .classic-bottom-tab-group
+  button {
+  width: 36px;
+  min-width: 36px;
+  padding-inline: 0;
+  gap: 0;
+}
+
+.office-dialog-shell
+  .workspace.is-classic-layout
+  .classic-bottom-tabs[data-vt-collapse~="2"]
+  .classic-bottom-tab-group
+  button {
+  width: 32px;
+  min-width: 32px;
+  padding-inline: 0;
+  gap: 0;
+}
+
+/* ---- Office editor header: options | canvas tools | actions ------------
+   The tools and the Cancel/Insert actions keep their size; the leading
+   options (object format, font size) take what is left and scroll sideways
+   with an edge fade when that is not enough. The alignment and formatting
+   buttons are not in this row: they live in the bottom bar in both layouts. */
+.editor-pane-header.is-office-editor-header .pane-title-group {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.editor-pane-header.is-office-editor-header .pane-title-group::-webkit-scrollbar {
+  display: none;
+}
+
+.editor-pane-header.is-office-editor-header .office-inline-options,
+.editor-pane-header.is-office-editor-header .office-inline-options > *,
+.editor-pane-header.is-office-editor-header .canvas-tool-group > * {
+  flex-shrink: 0;
+}
+
+.editor-pane-header.is-office-editor-header .editor-pane-header-trailing,
+.editor-pane-header.is-office-editor-header .canvas-tool-group {
+  min-width: max-content;
+}
+
+/* ---- Header menus ------------------------------------------------------ */
+
+/* The main menu sits inside the 10px safe inset that floating layers keep
+   from the window edge, so the auto-avoidance never has to nudge it; the
+   entry animation only fades and scales from the anchored corner (no slide),
+   so the menu's anchored edges stay put while it appears. */
+.app-menu-popover {
+  left: 2px;
+  transform-origin: top left;
+  animation-name: vt-anchored-menu-in;
+}
+
+.copy-menu {
+  transform-origin: top right;
+  animation-name: vt-anchored-menu-in;
+}
+
+@keyframes vt-anchored-menu-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---- Width-dependent scroll containers ----------------------------------
+   Tile previews scale to the list's width and custom tile rows are packed by
+   it, so the list's height depends on its width. Windows shows classic scroll
+   bars by default: if one appears or disappears, the width changes and the
+   layout can flip back and forth. scrollbar-gutter keeps the width fixed;
+   where it is unsupported the tile list keeps a permanent scroll track. */
+.formula-tile-list {
+  scrollbar-gutter: stable;
+}
+
+@supports not (scrollbar-gutter: stable) {
+  .formula-tile-list,
+  .classic-tile-toolbar .formula-tile-list {
+    overflow-y: scroll;
+  }
+}

@@ -56,6 +56,7 @@ export const VISUALTEX_PHYSICS_KERNEL_MACROS: readonly VisualTexPhysicsKernelMac
     entry("commutator", "\\left[#1,#2\\right]", 2),
     entry("anticommutator", "\\left\\{#1,#2\\right\\}", 2),
     entry("acommutator", "\\left\\{#1,#2\\right\\}", 2),
+    entry("anticomm", "\\left\\{#1,#2\\right\\}", 2),
 
     // Vector and differential operators. The existing \div retains ÷.
     entry("vectorbold", "\\mathbf{#1}", 1),

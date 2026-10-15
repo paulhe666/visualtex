@@ -16,6 +16,7 @@ import {
   copyFormulaDocumentPngToClipboard,
   renderFormulaDocumentPng,
 } from "../export/pngClipboard";
+import { formulaExportErrorMessage } from "../math/latexCompatibility";
 import { useEditorStore } from "../stores/editorStore";
 
 export type ExportFormat = "markdown" | "svg" | "png";
@@ -229,7 +230,7 @@ export function ExportDialog({
       );
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(formulaExportErrorMessage(cause, isEn));
     } finally {
       setBusy(false);
     }
@@ -252,7 +253,7 @@ export function ExportDialog({
       });
       onNotify(isEn ? "PNG copied to Clipboard" : "PNG 已复制到剪贴板");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(formulaExportErrorMessage(cause, isEn));
     } finally {
       setCopyBusy(false);
     }

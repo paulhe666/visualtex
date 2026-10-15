@@ -3,7 +3,11 @@ import {
   prepareEditorCrashSafeRestart,
   VISUALTEX_EDITOR_CRASH_BACKUP_STORAGE_KEY,
 } from "../src/runtime/editorCrashRecovery.ts";
-import { safeStorage } from "../src/runtime/safeStorage.ts";
+import { createSafeStorage, safeStorage } from "../src/runtime/safeStorage.ts";
+import { memoryStorage } from "./memory_storage.ts";
+
+const storage = memoryStorage();
+Object.assign(safeStorage, createSafeStorage(() => storage));
 
 const editorKey = "visualtex-editor";
 
@@ -74,6 +78,33 @@ assert.deepEqual(recovered.state.inputBehavior, {
   autoExitSuperscript: true,
 });
 assert.ok(recovered.state.usage, "recommendation preferences must be retained");
+
+assert.deepEqual(prepareEditorCrashSafeRestart(), {
+  hadPersistedEditor: true, backupCreated: false,
+});
+assert.equal(storage.getItem(VISUALTEX_EDITOR_CRASH_BACKUP_STORAGE_KEY), original);
+const newDocument = JSON.stringify({ state: { lines: [{ latex: "new work" }] } });
+storage.setItem(editorKey, newDocument);
+assert.throws(() => prepareEditorCrashSafeRestart(), /已有待恢复/);
+assert.equal(storage.getItem(editorKey), newDocument);
+assert.equal(storage.getItem(VISUALTEX_EDITOR_CRASH_BACKUP_STORAGE_KEY), original);
+
+reset();
+storage.setItem(editorKey, original);
+const storeWrite = storage.setItem;
+storage.setItem = (key, value) => {
+  if (key === editorKey) throw new Error("write failed");
+  storeWrite(key, value);
+};
+assert.throws(() => prepareEditorCrashSafeRestart(), /write failed/);
+assert.equal(storage.getItem(editorKey), original, "failed write must not delete active content");
+assert.equal(storage.getItem(VISUALTEX_EDITOR_CRASH_BACKUP_STORAGE_KEY), original);
+storage.setItem = storeWrite;
+assert.deepEqual(prepareEditorCrashSafeRestart(), {
+  hadPersistedEditor: true, backupCreated: false,
+}, "retry can reuse the identical original backup after a failed active write");
+assert.equal(storage.getItem(VISUALTEX_EDITOR_CRASH_BACKUP_STORAGE_KEY), original);
+assert.equal(storage.getItem(editorKey), recoveredRaw);
 
 reset();
 safeStorage.setItem(editorKey, "{corrupt persistence");

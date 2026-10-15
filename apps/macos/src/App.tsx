@@ -60,12 +60,15 @@ import type {
 } from "./types/formula";
 import { applyDocumentTheme, publishSynchronizedTheme } from "./themeSync";
 import { copyFormulaDocumentPngToClipboard } from "./export/pngClipboard";
+import { formulaExportErrorMessage } from "./math/latexCompatibility";
+import { ask } from "@tauri-apps/plugin-dialog";
 import {
   DEFAULT_OCR_MODEL,
   OCR_MODELS,
   OCR_RECOGNIZER_OPTIONS,
   cancelOcrRecognition,
   fileToOcrRequest,
+  formatOcrError,
   getOcrProviderConfiguration,
   isTauriEnvironment,
   listenOcrRecognitionProgress,
@@ -88,6 +91,7 @@ import {
 import { readLocalStorage, writeLocalStorage } from "./runtime/safeStorage";
 import { configureOfficeHotkeys } from "./runtime/officeHotkeys";
 import { useOfficeHotkeyStore } from "./stores/officeHotkeyStore";
+import { childrenFitRow, trackPriorityCollapse } from "./runtime/priorityCollapse";
 import {
   captureQuickOcrScreenshot,
   configureSilentOcr,
@@ -112,6 +116,15 @@ interface InlineOcrState {
 }
 
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
+const APP_HEADER_COLLAPSE_LEVELS = 8;
+
+function documentContentKey() {
+  const { title, lines } = useEditorStore.getState();
+  return JSON.stringify([
+    title,
+    lines.map((line) => [line.latex, line.mode, line.displayStyle]),
+  ]);
+}
 const MAC_OFFICE_FIRST_RUN_STORAGE_KEY =
   "visualtex.office.macos.native-first-run.v1.2.0.completed";
 
@@ -121,6 +134,10 @@ function App() {
   const { openDocumentWithHistory,
     replaceDocumentWithHistory: replaceDocumentTransaction } = useDocumentSession(editorRef);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Formula content as last saved, opened or newly created; New asks before
+  // discarding anything else.
+  const savedContentRef = useRef<string | null>(null);
+  const newFormulaPendingRef = useRef(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const appMenuRef = useRef<HTMLDivElement>(null);
   const copyMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -153,6 +170,7 @@ function App() {
   const [savedPulse, setSavedPulse] = useState(false);
   const [desktopTopToolsMount, setDesktopTopToolsMount] =
     useState<HTMLDivElement | null>(null);
+  const [appHeader, setAppHeader] = useState<HTMLElement | null>(null);
   const [sourceDocumentRevision, setSourceDocumentRevision] = useState(0);
   const [ocrModel, setOcrModel] = useState<OcrModelName>(() => {
     const stored = readLocalStorage(OCR_MODEL_STORAGE_KEY);
@@ -334,6 +352,16 @@ function App() {
     document.documentElement.lang = isEn ? "en" : "zh-CN";
   }, [isEn]);
 
+  // The header hides its least important items first, and only when the row
+  // has no room left (levels are listed in styles-windows-responsive.css).
+  useEffect(() => {
+    if (!appHeader) return;
+    return trackPriorityCollapse(appHeader, {
+      maxLevel: APP_HEADER_COLLAPSE_LEVELS,
+      fits: childrenFitRow,
+    });
+  }, [appHeader]);
+
   useEffect(() => {
     const compactWindow = window.matchMedia("(max-width: 1040px)");
     const handleCompactWindow = (event: MediaQueryListEvent) => {
@@ -351,7 +379,11 @@ function App() {
 
   useEffect(() => {
     if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(""), 1800);
+    // Error toasts carry a reason; give longer text time to be read.
+    const timeout = window.setTimeout(
+      () => setToast(""),
+      Math.min(6000, Math.max(1800, toast.length * 100)),
+    );
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
@@ -696,8 +728,10 @@ function App() {
       );
       scheduleInlineOcrClear(1800);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : typeof error === "string" ? error : "";
+      const errorMessage = formatOcrError(
+        error,
+        isEn ? "Image OCR failed" : "图片 OCR 失败",
+      );
       const cancelled =
         inlineOcrCancelRequestedRef.current || errorMessage.includes("OCR_CANCELLED");
       if (cancelled) {
@@ -794,11 +828,10 @@ function App() {
       );
     } catch (error) {
       setToast(
-        error instanceof Error
-          ? error.message
-          : isEn
-            ? "Quick OCR failed"
-            : "快捷 OCR 失败",
+        formatOcrError(
+          error,
+          isEn ? "Quick OCR failed" : "快捷 OCR 失败",
+        ),
       );
     } finally {
       setQuickOcrCaptureBusy(false);
@@ -918,7 +951,7 @@ function App() {
       );
       setToast(isEn ? "PNG copied to Clipboard" : "PNG 已复制到剪贴板");
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = formulaExportErrorMessage(cause, isEn);
       setToast(
         isEn
           ? `Unable to copy PNG: ${message}`
@@ -945,6 +978,7 @@ function App() {
     link.download = safeTitle + ".visualtex.json";
     link.click();
     URL.revokeObjectURL(url);
+    savedContentRef.current = documentContentKey();
     setSavedPulse(true);
     setToast(isEn ? "Formula document saved" : "公式文档已保存");
     window.setTimeout(() => setSavedPulse(false), 900);
@@ -960,6 +994,7 @@ function App() {
       }
       openDocumentWithHistory(parsed);
       setSourceDocumentRevision((revision) => revision + 1);
+      savedContentRef.current = documentContentKey();
       setToast(isEn ? "Formula document opened" : "公式文档已打开");
     } catch {
       setToast(
@@ -972,12 +1007,36 @@ function App() {
     }
   };
 
-  const newFormula = () => {
+  const confirmDiscardUnsaved = async () => {
+    const { lines: currentLines } = useEditorStore.getState();
+    if (!currentLines.some((line) => line.latex.trim())) return true;
+    if (documentContentKey() === savedContentRef.current) return true;
+    const message = isEn
+      ? "The current formula document has not been saved. Create a new one anyway? (Cmd+Z brings it back.)"
+      : "当前公式文档还没有保存。仍要新建吗？（新建后可以按 ⌘Z 找回）";
+    if (!isTauriEnvironment()) return window.confirm(message);
+    return ask(message, {
+      title: "VisualTeX",
+      kind: "warning",
+      okLabel: isEn ? "New" : "新建",
+      cancelLabel: isEn ? "Cancel" : "取消",
+    });
+  };
+
+  const newFormula = async () => {
+    if (newFormulaPendingRef.current) return;
+    newFormulaPendingRef.current = true;
+    try {
+      if (!(await confirmDiscardUnsaved())) return;
+    } finally {
+      newFormulaPendingRef.current = false;
+    }
     addHistory(latex);
     const after = createBlankDocumentSnapshot(
       isEn ? "Untitled Formula" : "未命名公式",
     );
     replaceDocumentWithHistory(after, "new-document");
+    savedContentRef.current = documentContentKey();
     setToast(isEn ? "Created a blank formula" : "已新建空白公式");
   };
 
@@ -1124,7 +1183,7 @@ function App() {
         void handleKeypadModeToggle();
       } else if (key === "n") {
         event.preventDefault();
-        newFormula();
+        void newFormula();
       } else if (key === "o") {
         event.preventDefault();
         fileInputRef.current?.click();
@@ -1457,9 +1516,11 @@ function App() {
 
       {!keypadMode && (
       <header
+        ref={setAppHeader}
         className={
           "app-header" + (menuOpen || copyMenuOpen ? " has-open-menu" : "")
         }
+        data-vt-app-header
       >
         <div className="brand-area">
           <button
@@ -1513,7 +1574,7 @@ function App() {
                 <strong>VisualTeX</strong>
                 <span>{isEn ? "Formula workspace" : "公式工作区"}</span>
               </div>
-              <button type="button" role="menuitem" onClick={() => runMenuAction(newFormula)}>
+              <button type="button" role="menuitem" onClick={() => runMenuAction(() => void newFormula())}>
                 <FilePlus2 size={16} />
                 <span>{isEn ? "New formula" : "新建公式"}</span>
                 <kbd>Ctrl+N</kbd>
@@ -1633,7 +1694,7 @@ function App() {
 
         <div className="header-actions">
           <div className="action-group file-actions">
-            <button type="button" className="icon-button" onClick={newFormula} aria-label={isEn ? "New" : "新建"} title={isEn ? "New · Ctrl+N" : "新建 · Ctrl+N"}>
+            <button type="button" className="icon-button" onClick={() => void newFormula()} aria-label={isEn ? "New" : "新建"} title={isEn ? "New · Ctrl+N" : "新建 · Ctrl+N"}>
               <FilePlus2 size={17} />
             </button>
             <button type="button" className="icon-button" onClick={() => fileInputRef.current?.click()} aria-label={isEn ? "Open" : "打开"} title={isEn ? "Open · Ctrl+O" : "打开 · Ctrl+O"}>

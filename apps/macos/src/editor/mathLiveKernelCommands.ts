@@ -26,6 +26,15 @@ export function toggleMathLiveSelectionStyle(
   return field.executeCommand("visualTexToggleSelectionStyle" as Selector, kind, selection);
 }
 
+// A selection that covers only the ^/_ attachment of c^2 paints a glyph-less
+// container; move that paint onto the script content (c^{\textcolor{..}{2}}).
+export function paintMathLiveDetachedScripts(
+  field: MathfieldElement,
+  selection: Selection,
+) {
+  return field.executeCommand("visualTexPaintDetachedScripts" as Selector, selection);
+}
+
 export function insertMathLiveAlignmentPoint(field: MathfieldElement) {
   return field.executeCommand("visualTexInsertAlignmentPoint" as Selector);
 }

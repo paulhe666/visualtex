@@ -10,15 +10,30 @@ the sequence and concatenates it verbatim. It does not rewrite behavior.
 Preserve fragment boundaries when editing; some boundaries split functions.
 
 The only generated module, `virtual:visualtex-mathlive-data`, supplies shared
-command catalog, macro definitions and checked integral glyph data. Their
-sources remain under `src/autocomplete` and `src/math`, so toolbar, validator,
-export and browser kernel do not acquire separate copies of product data.
+command catalog, macro definitions, checked integral glyph data, the command
+frequency table (`src/autocomplete/commandFrequency.generated.ts`, built from
+public im2latex formulas by `scripts/build_command_frequency.mts`) and the
+sample previews for native commands (`src/editor/nativeSuggestionPreviews.ts`).
+Their sources remain under `src/autocomplete`, `src/math` and `src/editor`, so
+toolbar, validator, export, the LaTeX source panel and browser kernel do not
+acquire separate copies of product data.
 
 Key extension locations:
 
-- `part-002`: command search and personalized completion data.
+- `part-002`: command search. Ranking follows Overleaf: CodeMirror's fuzzy
+  match tier first, corpus frequency within a tier, a capped personal boost;
+  candidates are paged by nine and a digit key commits that row.
+  `visualTexLatexCommandSignatures()` (end of `part-029`) feeds the LaTeX
+  source panel's completion.
 - `part-005`, `part-013`, `part-014`: integral glyphs, rendering and command mappings.
-- `part-019`: selection styling and persistent typing styles.
+- `part-006`/`part-007`: navigation order (`VISUALTEX_NAVIGATION_BRANCHES`, a
+  lower script or limit before the upper one) and the box drawn for an empty
+  structural slot, so a click on it enters the slot.
+- `part-017`: caret rendering; `visualTexRenderCaretSlot` stretches the caret
+  over the slot that holds it (numerator, script, limit).
+- `part-019`: selection styling and persistent typing styles, colour moved
+  from a detached script onto its content, Backspace inside big-operator
+  limits, the first Shift+Enter row split at its typed align marker.
 - `part-020`–`part-023`: editing, structural placeholders, raw LaTeX wrappers,
   completion, script/accent navigation and input safety.
 - `part-026`–`part-028`: field lifecycle, composition and custom element API.

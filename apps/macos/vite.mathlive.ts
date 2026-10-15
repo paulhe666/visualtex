@@ -4,6 +4,9 @@ import { gunzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { type Plugin } from "vite";
 import { commandRegistry } from "./src/autocomplete/commandRegistry";
+import { latestSharedCommands } from "./src/autocomplete/latestSharedCommands";
+import { COMMAND_FREQUENCY } from "./src/autocomplete/commandFrequency.generated";
+import { nativeSuggestionPreviewTable } from "./src/editor/nativeSuggestionPreviews";
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "./src/math/coreLatexAliases";
 import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "./src/math/physicsKernelMacros";
 import {
@@ -104,9 +107,18 @@ export function mathLiveKernelData() {
     height: variant.height,
     depth: variant.depth,
   });
+  // esint spellings with no STIX glyph of their own draw the matching STIX
+  // operator in the editor (export keeps its esint outline).
+  const editorGlyphAliases: Record<string, string[]> = {
+    ointctrclockwise: ["varointctrclockwise"],
+  };
   const rareIntegralGlyphs = Object.fromEntries(
     rareIntegralPayload.glyphs.flatMap((definition) =>
-      [definition.command, ...definition.aliases].map((command) => [
+      [
+        definition.command,
+        ...definition.aliases,
+        ...(editorGlyphAliases[definition.command] ?? []),
+      ].map((command) => [
         command,
         {
           character: definition.character,
@@ -121,8 +133,19 @@ export function mathLiveKernelData() {
     [...VISUALTEX_CORE_MATHLIVE_MACROS, ...VISUALTEX_PHYSICS_KERNEL_MACROS]
       .map(({ name, def, args }) => [name, { def, args, expand: false, captureSelection: false }]),
   );
+  // A typed \begin{cases} completes to one editable row; the toolbar keeps
+  // the two-row template.
+  const completionTemplateOverrides = new Map<string, string>([
+    ["\\begin{cases}", "\\begin{cases}\\placeholder{} & \\placeholder{}\\end{cases}"],
+  ]);
+  // Shared variants (\bigcap with limits, three-row cases, ...) are found by
+  // their command but never claim an exactly typed command: \bigcap + Space
+  // still inserts the bare operator, the variant follows it.
+  const variantIds = new Set(latestSharedCommands.map((command) => command.id));
   const completionCatalog = commandRegistry.map(command => ({
-    id: command.id, command: command.command, latex: command.insertTemplate,
+    exact: !variantIds.has(command.id),
+    id: command.id, command: command.command,
+    latex: completionTemplateOverrides.get(command.command) ?? command.insertTemplate,
     preview: command.previewLatex, label: "",
     words: [command.labelEn, ...command.aliases, ...command.keywords],
     priority: command.defaultPriority,
@@ -131,7 +154,8 @@ export function mathLiveKernelData() {
     .filter(([name]) => !["intclockwise", "varointclockwise", "ointctrclockwise", "intctrclockwise"].includes(name))
     .map(([name, glyph]) => [name, glyph.character]));
   return { macros, completionCatalog, integralCharacters, integralGlyphs: rareIntegralGlyphs,
-    integralUnitsPerEm: rareIntegralPayload.unitsPerEm };
+    integralUnitsPerEm: rareIntegralPayload.unitsPerEm, commandFrequency: COMMAND_FREQUENCY,
+    nativePreviews: nativeSuggestionPreviewTable() };
 }
 
 export function visualTexMathLiveKernel(): Plugin {

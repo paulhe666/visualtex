@@ -95,12 +95,15 @@ import {
   insertMathLiveRowBreak,
   setMathLivePersistentTypingStyle,
   toggleMathLiveSelectionStyle,
+  paintMathLiveDetachedScripts,
   type MathLivePersistentTypingStyle,
 } from "./mathLiveKernelCommands";
 import { isSafeFormulaStyleColor } from "../workspace/formulaColor";
 import { copyFormulaDocumentPngToClipboard } from "../export/pngClipboard";
 import {
+  formulaChineseFallbackFamily,
   formulaChineseFontFamily,
+  installFormulaChineseFallbackFontFaces,
   formulaLetterFontFamilies,
   markVisualTexFormulaFontGlyphs,
   VISUALTEX_FORMULA_CHINESE_GLYPH_CLASS,
@@ -670,6 +673,10 @@ const visualTexFormulaItalicFontProperty =
   "--visualtex-formula-italic-font-family";
 const visualTexFormulaChineseFontProperty =
   "--visualtex-formula-chinese-font-family";
+const visualTexFormulaChineseFallbackProperty =
+  "--visualtex-formula-chinese-fallback-family";
+const visualTexFormulaInheritedFontProperty =
+  "--visualtex-formula-inherited-font-family";
 const visualTexPlaceholderClass = "visualtex-structural-placeholder";
 const visualTexPlaceholderCaretClass =
   "visualtex-structural-placeholder-caret";
@@ -785,7 +792,49 @@ function installVisualTexFormulaFontStyle(field: MathfieldElement) {
 
   const style = document.createElement("style");
   style.id = visualTexFormulaFontStyleId;
+  const chineseFallback = `var(${visualTexFormulaChineseFallbackProperty}, ${formulaChineseFallbackFamily("system")})`;
   style.textContent = `
+    /*
+     * Chinese can sit in any MathLive font class, e.g. a raw math-mode glyph
+     * left by input that arrives without IME composition events. Mirror
+     * MathLive's KaTeX families and append a face that covers only CJK code
+     * points, so the formula Chinese font no longer depends on the JS glyph
+     * marker below. KaTeX glyphs and the fallback for other missing glyphs
+     * are unchanged. Marked glyphs still get the full family list below.
+     */
+    .ML__cmr,
+    .ML__mathbf,
+    .ML__accent-body {
+      font-family: KaTeX_Main, ${chineseFallback} !important;
+    }
+
+    .ML__mathit,
+    .lcGreek.ML__mathbf,
+    .ML__mathbfit {
+      font-family: KaTeX_Math, ${chineseFallback} !important;
+    }
+
+    .ML__ams,
+    .ML__bb {
+      font-family: KaTeX_AMS, ${chineseFallback} !important;
+    }
+
+    .ML__cal { font-family: KaTeX_Caligraphic, ${chineseFallback} !important; }
+    .ML__frak { font-family: KaTeX_Fraktur, ${chineseFallback} !important; }
+    .ML__tt { font-family: KaTeX_Typewriter, ${chineseFallback} !important; }
+    .ML__script { font-family: KaTeX_Script, ${chineseFallback} !important; }
+    .ML__sans { font-family: KaTeX_SansSerif, ${chineseFallback} !important; }
+
+    /*
+     * When the requested variant (\\mathsf, \\mathtt, \\mathbb, ...) has no face
+     * for a character, MathLive emits a class-less atom span that inherits the
+     * page font. Keep that font for everything else and send only CJK code
+     * points through the formula Chinese font.
+     */
+    [data-atom-id]:not([class]) {
+      font-family: ${chineseFallback}, var(${visualTexFormulaInheritedFontProperty}, sans-serif) !important;
+    }
+
     .ML__cmr.${VISUALTEX_FORMULA_LETTER_GLYPH_CLASS}:not(.ML__it) {
       font-family: var(${visualTexFormulaUprightFontProperty}, KaTeX_Main, serif) !important;
       font-style: normal !important;
@@ -834,6 +883,7 @@ function applyVisualTexFormulaFonts(
   letterFont: FormulaLetterFont,
   chineseFont: FormulaChineseFont,
 ) {
+  installFormulaChineseFallbackFontFaces();
   installVisualTexFormulaFontStyle(field);
   markVisualTexFormulaGlyphFonts(field);
   const letterFamilies = formulaLetterFontFamilies(letterFont);
@@ -849,6 +899,15 @@ function applyVisualTexFormulaFonts(
     visualTexFormulaChineseFontProperty,
     formulaChineseFontFamily(chineseFont),
   );
+  field.style.setProperty(
+    visualTexFormulaChineseFallbackProperty,
+    formulaChineseFallbackFamily(chineseFont),
+  );
+  // The field's own font is what class-less atom spans would inherit.
+  const inheritedFont = field.isConnected ? getComputedStyle(field).fontFamily : "";
+  if (inheritedFont) {
+    field.style.setProperty(visualTexFormulaInheritedFontProperty, inheritedFont);
+  }
 }
 
 function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
@@ -1762,6 +1821,16 @@ function FormulaField(props: FormulaFieldProps) {
     lastSnapshotRef.current = captureFieldSnapshot(field);
     fieldRef.current = field;
     propsRef.current.register(initialLineId, field);
+    // MathLive's Tab with no next placeholder fires move-out and then moves
+    // browser focus to the next control, so the following keystrokes are lost.
+    // Tab stays inside the formula; arrow-key move-out keeps its behavior.
+    let tabKeyPending = false;
+    const trackTabKey = (event: KeyboardEvent) => {
+      tabKeyPending = event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey;
+    };
+    const keepTabFocusInFormula = (event: Event) => {
+      if (tabKeyPending) event.preventDefault();
+    };
     // Capture before MathLive's keyboard sink replaces a selected placeholder;
     // the bubble phase is already too late because the parent structure is gone.
     field.addEventListener("compositionstart", handleCompositionStart, true);
@@ -1772,6 +1841,8 @@ function FormulaField(props: FormulaFieldProps) {
     field.addEventListener("focus", handleFocus);
     field.addEventListener("blur", handleBlur);
     field.addEventListener("keydown", handleKeyDown, true);
+    field.addEventListener("keydown", trackTabKey, true);
+    field.addEventListener("move-out", keepTabFocusInFormula);
 
     const keyboardSink =
       field.shadowRoot?.querySelector<HTMLElement>('[part="keyboard-sink"]') ??
@@ -1867,6 +1938,8 @@ function FormulaField(props: FormulaFieldProps) {
       field.removeEventListener("focus", handleFocus);
       field.removeEventListener("blur", handleBlur);
       field.removeEventListener("keydown", handleKeyDown, true);
+      field.removeEventListener("keydown", trackTabKey, true);
+      field.removeEventListener("move-out", keepTabFocusInFormula);
 
       if (VISUALTEX_IME_DIAGNOSTICS_ENABLED) {
         for (const type of imeDiagnosticEventTypes) {
@@ -3660,6 +3733,26 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         }
       }
 
+      if (
+        event.key === "Escape" &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        !rawLatexInputActive &&
+        field.mode !== "latex" &&
+        selectionHasContent(captureSelection(field))
+      ) {
+        // MathLive's Escape turns a selection into a raw LaTeX group whose
+        // characters are excluded from field.value, so the synced formula
+        // silently loses them. Escape only dismisses the selection here.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const end = Math.max(...field.selection.ranges.flat());
+        field.selection = { ranges: [[end, end]], direction: "none" };
+        return;
+      }
+
       const forcedNewLineMode =
         showLineModeControls &&
         event.key === "Enter" &&
@@ -4184,6 +4277,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
               operation: "set",
             });
           }
+          paintMathLiveDetachedScripts(field, entry.selection);
           // MathLive normally derives the implicit style for future input from
           // the atom immediately before the caret. If the formatted selection
           // includes the last atom, typing at the end would otherwise inherit
