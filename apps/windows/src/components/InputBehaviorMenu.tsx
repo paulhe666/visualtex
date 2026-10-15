@@ -37,8 +37,15 @@ const AUTO_ESCAPE_OPTIONS: InputBehaviorOption[] = [
     key: "autoEscapeShortcuts",
     titleZh: "常用数学快捷转义",
     titleEn: "Common math shortcuts",
-    descriptionZh: "控制 alpha、>=、hat 等快捷映射；微分元、函数名等正体自动检测独立运行，不受此开关影响",
-    descriptionEn: "Controls shortcuts such as alpha, >= and hat; upright detection for differentials and function names remains independent",
+    descriptionZh: "输入完一个词后转换：alpha→α、frac→分式、sintheta→sin θ；>=、-> 等符号组合即时转换。词中间的字母不会被转换（spin、point 保持原样）",
+    descriptionEn: "Converts a word once finished: alpha → α, frac → fraction, sintheta → sin θ; symbol sequences such as >= and -> convert as typed. Letters inside a word never convert (spin, point stay as typed)",
+  },
+  {
+    key: "autoUprightTypography",
+    titleZh: "自动正体排版",
+    titleEn: "Automatic upright typography",
+    descriptionZh: "按 SI/ISO 规则把单位（km/h）、函数名（sin、lg(x)）、常数 e 和 i、微分 d、描述性下标（v_max）排成正体。关闭后完全不做正体判断；工具栏和候选框插入的内容不受影响",
+    descriptionEn: "Sets units (km/h), function names (sin, lg(x)), the constants e and i, the differential d and descriptive subscripts (v_max) upright, following SI/ISO. Off: no upright judgment at all; toolbar and candidate insertions are unaffected",
   },
 ];
 

@@ -1547,6 +1547,17 @@ function onKeystroke(mathfield, evt) {
     mathfield.flushInlineShortcutBuffer();
     return false;
   }
+  // VisualTeX kernel: a key that finishes a typed word runs the input
+  // judgment first (part-021); the Space that finished a converted word and
+  // the Backspace that reverted one are used up here.
+  if (visualTexJudgeKeystroke(mathfield, evt, keystroke)) {
+    mathfield.flushInlineShortcutBuffer();
+    if (evt.preventDefault) {
+      evt.preventDefault();
+      evt.stopPropagation();
+    }
+    return false;
+  }
   let shortcut;
   let shortcutLength = 0;
   let selector = "";

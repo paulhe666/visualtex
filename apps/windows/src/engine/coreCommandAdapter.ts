@@ -4,7 +4,7 @@ import type { EditCommand } from "../../../../engine/web/host/editing.ts";
 import { compileLegacyCommand } from "../../../../engine/web/host/product-compat.ts";
 import { getRuntimeCommandRegistry } from "../autocomplete/runtimeCommandRegistry";
 import type { InputBehaviorSettings } from "../types/formula";
-import { resolveVisualTexInlineShortcuts } from "../editor/normalizeChineseLatex";
+import { visualTexAutoEscapeInlineShortcuts } from "../editor/normalizeChineseLatex";
 
 const structuralDescriptors: readonly CommandDescriptor[] = [
   { id: "frac", trigger: "frac", action: { kind: "insertStructure", structure: "fraction" } },
@@ -94,7 +94,8 @@ export function coreCommandUsage(
 }
 
 export function coreInlineShortcuts(autoEscapeShortcuts:boolean):Readonly<Record<string,string>> {
-  const definitions=resolveVisualTexInlineShortcuts({},autoEscapeShortcuts);
+  // The core engine takes the whole dictionary as as-you-type triggers.
+  const definitions=autoEscapeShortcuts?visualTexAutoEscapeInlineShortcuts:{};
   return Object.fromEntries(Object.entries(definitions).flatMap(([key,value])=>{
     const latex=(typeof value==='string'?value:value.value).replaceAll('#?','\\placeholder{}');
     return key&&latex?[[key,latex] as const]:[];

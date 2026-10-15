@@ -155,6 +155,8 @@ export interface FormulaHistoryItem {
 
 export interface InputBehaviorSettings {
   autoEscapeShortcuts: boolean;
+  /** Automatic upright typography: units, function names, d, e, i, labels. */
+  autoUprightTypography: boolean;
   autoExitSuperscript: boolean;
   autoExitSubscript: boolean;
   autoExitAccent: boolean;
@@ -165,6 +167,7 @@ export interface InputBehaviorSettings {
 
 export type InputBehaviorSettingKey =
   | "autoEscapeShortcuts"
+  | "autoUprightTypography"
   | "autoExitSuperscript"
   | "autoExitSubscript"
   | "autoExitAccent"

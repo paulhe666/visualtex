@@ -255,6 +255,130 @@ function onInput(mathfield, text, options) {
   mathfield.dirty = true;
   mathfield.scrollIntoView();
 }
+// VisualTeX kernel: the input judgment. One routine and one dictionary
+// (src/editor/inputJudgment.ts) decide what a typed word turns into (quick
+// escapes: alpha -> \alpha, sintheta -> \sin\theta) and what is set upright
+// (units, function names, constants, labels, the differential d). A word is
+// judged once finished: by a key that is not a letter, a caret move, or
+// leaving the field. The host sets visualTexJudgmentSettings = { upright,
+// escapes } from the editor's two switches.
+function visualTexJudgmentSettings(mathfield) {
+  var _a3;
+  const settings = (_a3 = mathfield.host) == null ? void 0 : _a3.visualTexJudgmentSettings;
+  return {
+    upright: (settings == null ? void 0 : settings.upright) !== false,
+    escapes: (settings == null ? void 0 : settings.escapes) !== false
+  };
+}
+// A Latin letter typed in the default math style. Letters typed after the
+// first carry variant "normal", which is still the default (italic);
+// \mathrm letters add an upright variantStyle.
+function visualTexIsPlainLetter(atom) {
+  return Boolean(atom) && atom.type === "mord" && atom.mode === "math" && /^[A-Za-z]$/.test(atom.value || "") && (!atom.style.variant || atom.style.variant === "normal") && !atom.style.variantStyle;
+}
+// The plain (italic) Latin letters right before the caret.
+function visualTexWordBeforeCaret(model) {
+  let text = "";
+  let atom = model.at(model.position);
+  while (visualTexIsPlainLetter(atom)) {
+    text = atom.value + text;
+    atom = atom.leftSibling;
+  }
+  return text;
+}
+// The Latin letters right before the caret in any style (km stays km when
+// it only turns upright).
+function visualTexLettersBeforeCaret(model) {
+  let text = "";
+  let atom = model.at(model.position);
+  while (atom && atom.type === "mord" && /^[A-Za-z]$/.test(atom.value || "")) {
+    text = atom.value + text;
+    atom = atom.leftSibling;
+  }
+  return text;
+}
+function visualTexSetJudgedValue(mathfield, latex) {
+  const model = mathfield.model;
+  const distanceFromEnd = Math.max(0, model.lastOffset - model.position);
+  mathfield.setValue(latex, {
+    mode: "math",
+    format: "latex",
+    insertionMode: "replaceAll",
+    selectionMode: "after"
+  });
+  model.position = Math.max(0, model.lastOffset - distanceFromEnd);
+}
+/**
+ * Applies the input judgment to the whole formula. `finishing`: the word at
+ * the caret is finished too. `typed: false` judges like stored LaTeX: upright
+ * typography only, no quick escapes. Returns whether the formula changed.
+ */
+function visualTexJudgeInput(mathfield, options) {
+  const model = mathfield.model;
+  if (model.mode !== "math" || !model.selectionIsCollapsed || !mathfield.isSelectionEditable) return false;
+  const settings = visualTexJudgmentSettings(mathfield);
+  const typed = (options == null ? void 0 : options.typed) !== false;
+  const judgment = {
+    upright: settings.upright,
+    escapes: typed && settings.escapes,
+    typed,
+    deferLetterRuns: !(options == null ? void 0 : options.finishing) && visualTexWordBeforeCaret(model) !== ""
+  };
+  const before = model.getValue();
+  const after = visualTexApplyInputJudgment(before, judgment);
+  if (after === before) return false;
+  const revert = visualTexApplyInputJudgment(before, __spreadProps(__spreadValues({}, judgment), { revert: true }));
+  visualTexSetJudgedValue(mathfield, after);
+  mathfield.visualTexLastJudgment = {
+    after: model.getValue(),
+    revert,
+    distanceFromEnd: model.lastOffset - model.position
+  };
+  return true;
+}
+// Backspace right after a conversion restores the typed word, marked
+// explicit (\mathit) so the judgment leaves it alone from then on.
+function visualTexRevertLastJudgment(mathfield) {
+  const last = mathfield.visualTexLastJudgment;
+  mathfield.visualTexLastJudgment = void 0;
+  const model = mathfield.model;
+  if (!last || !model.selectionIsCollapsed || model.getValue() !== last.after || model.lastOffset - model.position !== last.distanceFromEnd)
+    return false;
+  visualTexSetJudgedValue(mathfield, last.revert);
+  return true;
+}
+/**
+ * Called for every keystroke before MathLive handles it. Returns true when
+ * the keystroke was used up: the Space that finished a converted word, or
+ * the Backspace that reverted a conversion.
+ */
+function visualTexJudgeKeystroke(mathfield, evt, keystroke) {
+  var _a3;
+  const model = mathfield.model;
+  if (model.mode !== "math" || evt.isComposing) return false;
+  if (keystroke === "[Backspace]") return visualTexRevertLastJudgment(mathfield);
+  mathfield.visualTexLastJudgment = void 0;
+  if (evt.ctrlKey || evt.metaKey || evt.altKey) return false;
+  const key = (_a3 = evt.key) != null ? _a3 : "";
+  if (/^[A-Za-z]$/.test(key) || /^(?:Shift|Control|Alt|Meta|CapsLock|Delete|Process|Dead|Unidentified)$/.test(key))
+    return false;
+  const wordBefore = visualTexWordBeforeCaret(model);
+  if (!visualTexJudgeInput(mathfield, { finishing: true })) return false;
+  // The word at the caret became something else (not just upright, as a
+  // unit stays the same letters): step into a template's first slot, and
+  // the Space that finished it is not inserted.
+  if (!wordBefore || visualTexLettersBeforeCaret(model).endsWith(wordBefore)) return false;
+  const left = model.at(model.position);
+  const placeholder = left ? [...left.children, left].find((atom) => atom.type === "placeholder") : void 0;
+  if (placeholder) leapTo(model, placeholder);
+  return keystroke === "[Space]";
+}
+register2(
+  {
+    visualTexJudgeInput: (mathfield, options) => visualTexJudgeInput(mathfield, options)
+  },
+  { target: "mathfield" }
+);
 function getLeftSiblings(mf) {
   const model = mf.model;
   const result = [];

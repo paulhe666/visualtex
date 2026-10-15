@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   normalizeChineseLatex,
+  normalizeContextualUprightSymbols,
 } from "../src/editor/normalizeChineseLatex.ts";
 import { latexToMathMl } from "../src/export/runtime.ts";
 
@@ -197,6 +198,43 @@ const cases = [
     expectedFragments: [String.raw`\text{sin dx e i}`],
     normalMathMlTokens: [],
   },
+  // The one upright rule (docs/upright-typography-plan-20261015.md).
+  ...[
+    // A unit group is upright as a whole: a certain member (km, kg), a
+    // number and a space before it, or the whole formula (decision A1).
+    ["unit group with a certain member", "km/h", String.raw`\mathrm{km}/\mathrm{h}`],
+    ["unit group as the whole formula", "m/s", String.raw`\mathrm{m}/\mathrm{s}`],
+    ["single-letter unit joined to a certain unit", "J/kg", String.raw`\mathrm{J}/\mathrm{kg}`],
+    ["unit exponent stays with its unit", "kg/m^3", String.raw`\mathrm{kg}/\mathrm{m}^3`],
+    ["units after a number and a space", String.raw`a=9.8\ m/s^2`, String.raw`a=9.8\ \mathrm{m}/\mathrm{s}^2`],
+    ["units after scientific notation", String.raw`c=3\times10^8\ m/s`, String.raw`c=3\times10^8\ \mathrm{m}/\mathrm{s}`],
+    ["product of units", String.raw`N\cdot m`, String.raw`\mathrm{N}\cdot \mathrm{m}`],
+    ["minute after a number", String.raw`5\ min`, String.raw`5\ \mathrm{min}`],
+    ["old minimum shortcut after a number", String.raw`5\ \min`, String.raw`5\ \mathrm{min}`],
+    ["old operator units become upright symbols", String.raw`\operatorname{\mathrm{kg}}/m^3`, String.raw`\mathrm{kg}/\mathrm{m}^3`],
+    ["pH is a fixed name", "pH=7", String.raw`\mathrm{pH}=7`],
+    ["descriptive subscript word", "v_{max}", String.raw`v_{\mathrm{max}}`],
+    ["ambiguous function with an argument", String.raw`lg\ x`, String.raw`\lg\ x`],
+    ["exponential with a variable exponent", String.raw`e^{-t/\tau}`, String.raw`\mathrm{e}^{-t/\tau}`],
+    ["imaginary unit in a complex number", "z=3+4i", String.raw`z=3+4\mathrm{i}`],
+    // Values stay italic.
+    ["products of variables stay italic", "F=mg+E-3t+2h", "F=mg+E-3t+2h"],
+    ["variable ratio stays italic", "v=s/t", "v=s/t"],
+    ["lg without an argument is l times g", "l=lg", "l=lg"],
+    ["explicit italic is kept", String.raw`\mathit{lg}`, String.raw`\mathit{lg}`],
+    ["elementary charge squared stays italic", "q=e^2", "q=e^2"],
+    ["Reynolds number stays italic", String.raw`Re=\rho vL/\mu`, String.raw`Re=\rho vL/\mu`],
+    ["single-letter subscripts stay italic", "T_{c}+x_{i}+a_{2i}", "T_{c}+x_{i}+a_{2i}"],
+    ["a lone unit letter stays italic", "m^2", "m^2"],
+    ["deci-prefixed spelling is still a differential", String.raw`\frac{dB}{dt}`, String.raw`\frac{\mathrm{d}B}{\mathrm{d}t}`],
+    ["dimensions are not math", String.raw`x\hspace{1cm}y`, String.raw`x\hspace{1cm}y`],
+  ].map(([name, input, expected]) => ({
+    name,
+    input,
+    expectedNormalized: expected,
+    expectedFragments: [expected],
+    normalMathMlTokens: [],
+  })),
 ];
 
 function assertNoInternalCommands(value, stage, caseName) {
@@ -270,7 +308,7 @@ for (const item of cases) {
   }
   assertNoInternalCommands(normalized, "normalized LaTeX", item.name);
 
-  const mathMl = latexToMathMl(normalized, true);
+  const mathMl = await latexToMathMl(normalized, true);
   assert.match(mathMl, /^<math\b/);
   assertNoInternalCommands(mathMl, "MathML", item.name);
   for (const token of item.normalMathMlTokens) {
@@ -289,6 +327,11 @@ for (const item of cases) {
   console.log(`       input      = ${item.input}`);
   console.log(`       normalized = ${normalized}`);
 }
+
+// While the caret follows a letter, the run may still grow (cm -> cmax).
+assert.equal(normalizeContextualUprightSymbols("cm", { deferLetterRuns: true }), "cm");
+assert.equal(normalizeContextualUprightSymbols("cm"), String.raw`\mathrm{cm}`);
+console.log("  PASS an unfinished letter run waits");
 
 console.log("[Upright 2/3] Verifying all configured common upright operators...");
 const operatorCaseNames = reportCases
