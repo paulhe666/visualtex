@@ -98,6 +98,7 @@ import {
   configureMathLiveCompletion,
   dismissMathLiveSuggestions,
   insertMathLiveAlignmentPoint,
+  moveMathLiveToNextColumn,
   insertMathLiveRowBreak,
   moveMathLiveToEmptySiblingScript,
   paintMathLiveDetachedScripts,
@@ -381,6 +382,39 @@ function rawLatexInput(field: MathfieldElement) {
     .filter((node) => !node.classList.contains("ML__suggestion"))
     .map((node) => node.textContent ?? "")
     .join("");
+}
+
+const FOCUSABLE_CONTROL_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+// Moves keyboard focus to the next (previous) control after the formula
+// lines, skipping the other formula fields, wrapping like the browser does.
+function focusControlOutsideFormulas(field: HTMLElement, direction: 1 | -1) {
+  const controls = Array.from(
+    document.querySelectorAll<HTMLElement>(FOCUSABLE_CONTROL_SELECTOR),
+  ).filter(
+    (element) =>
+      !element.closest("math-field") && element.getClientRects().length > 0,
+  );
+  const side =
+    direction > 0
+      ? Node.DOCUMENT_POSITION_FOLLOWING
+      : Node.DOCUMENT_POSITION_PRECEDING;
+  const onSide = controls.filter(
+    (element) => field.compareDocumentPosition(element) & side,
+  );
+  const target =
+    direction > 0
+      ? onSide[0] ?? controls[0]
+      : onSide.at(-1) ?? controls.at(-1);
+  target?.focus();
+  return Boolean(target);
 }
 
 type MathLiveInternalField = {
@@ -3836,6 +3870,16 @@ function FormulaField(props: FormulaFieldProps) {
     let tabKeyPending = false;
     const trackTabKey = (event: KeyboardEvent) => {
       tabKeyPending = event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey;
+      // The way out for keyboard users: Escape opens an empty LaTeX box, and
+      // Tab (Shift+Tab) from that still-empty box closes it and moves focus
+      // to the next (previous) control after the formula lines.
+      if (tabKeyPending && field.mode === "latex" && rawLatexInput(field) === "") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        tabKeyPending = false;
+        field.executeCommand(["complete", "reject"]);
+        focusControlOutsideFormulas(field, event.shiftKey ? -1 : 1);
+      }
     };
     const keepTabFocusInFormula = (event: Event) => {
       if (tabKeyPending) event.preventDefault();
@@ -6532,6 +6576,36 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           });
         }
         return;
+      }
+
+      // In a matrix, cases or array, & is LaTeX's column separator: it moves
+      // to the cell on the right, or adds a column at the end of the row.
+      // Where it does neither (not directly in a cell), & stays a character.
+      if (
+        requestsAlignmentPoint &&
+        activeEnvironment !== null &&
+        !insertsInternalAlignmentPoint
+      ) {
+        let moved = false;
+        applyDiscreteFormulaMutation(lineId, field, "keyboard", () => {
+          const before = JSON.stringify([field.value, captureSelection(field)]);
+          moveMathLiveToNextColumn(field);
+          moved =
+            JSON.stringify([field.value, captureSelection(field)]) !== before;
+          return moved;
+        });
+        if (moved) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          suppressedSuggestionRef.current = null;
+          queryRef.current = "";
+          setQuery("");
+          focusLine(lineId, {
+            latex: normalizeChineseLatex(field.value),
+            selection: captureSelection(field),
+          });
+          return;
+        }
       }
 
       const insertsVisibleMathSpace =

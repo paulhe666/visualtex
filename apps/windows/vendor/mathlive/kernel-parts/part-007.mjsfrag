@@ -1347,10 +1347,10 @@ var DEFAULT_KEYBINDINGS = [
   { key: "shift+cmd+[ArrowRight]", command: "extendToMathFieldEnd" },
   { key: "[Pageup]", command: "moveToGroupStart" },
   { key: "[Pagedown]", command: "moveToGroupEnd" },
-  { key: "[Tab]", command: "moveToNextGroup" },
+  { key: "[Tab]", command: "visualTexTabForward" },
   {
     key: "shift+[Tab]",
-    command: "moveToPreviousGroup"
+    command: "visualTexTabBackward"
   },
   { key: "[Escape]", ifMode: "math", command: ["switchMode", "latex"] },
   { key: "[Escape]", ifMode: "text", command: ["switchMode", "latex"] },

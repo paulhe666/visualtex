@@ -403,6 +403,11 @@ export function insertMathLiveAlignmentPoint(field: MathfieldElement) {
   return field.executeCommand("visualTexInsertAlignmentPoint" as Selector);
 }
 
+/** & in a matrix cell: the cell on the right, or a new column at row end. */
+export function moveMathLiveToNextColumn(field: MathfieldElement) {
+  return field.executeCommand("visualTexNextColumn" as Selector);
+}
+
 export function insertMathLiveRowBreak(
   field: MathfieldElement,
   environment: "aligned" | "gathered",

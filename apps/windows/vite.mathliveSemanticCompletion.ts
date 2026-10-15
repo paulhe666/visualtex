@@ -255,13 +255,16 @@ function visualTexCandidateNumberMarkup(mf, index) {
 // -1: the key is not a candidate pick. Otherwise the index of the picked
 // candidate, or -2 when the digit has no candidate on the current page (the
 // key is swallowed, as an input method does).
+function visualTexCandidatePanelOpen(mf) {
+  const panel = document.getElementById("mathlive-suggestion-popover");
+  if (!panel || panel.visualTexMathfield !== mf || panel.getAttribute("aria-hidden") === "true") return false;
+  return (mf.visualTexCompletion?.suggestions || []).length > 0;
+}
 function visualTexCandidateIndexForDigit(mf, evt) {
   if (mf.model.mode !== "latex" || evt.ctrlKey || evt.metaKey || evt.altKey || evt.isComposing) return -1;
   if (!/^[1-9]$/.test(evt.key || "")) return -1;
-  const panel = document.getElementById("mathlive-suggestion-popover");
-  if (!panel || panel.visualTexMathfield !== mf || panel.getAttribute("aria-hidden") === "true") return -1;
-  const suggestions = mf.visualTexCompletion?.suggestions || [];
-  if (!suggestions.length) return -1;
+  if (!visualTexCandidatePanelOpen(mf)) return -1;
+  const suggestions = mf.visualTexCompletion.suggestions;
   const index = visualTexCandidatePageStart(mf) + Number(evt.key) - 1;
   return index < suggestions.length ? index : -2;
 }
@@ -373,9 +376,14 @@ function visualTexCandidateIndexForDigit(mf, evt) {
     const commandMarkup = latexToMarkup(mf, info.preview);`);
   replace(`"class=ML__popover__current" : ""}><span class="ML__popover__latex">`, `"class=ML__popover__current" : ""}>\${visualTexCandidateNumberMarkup(mf, i)}<span class="ML__popover__latex">`);
   // Number keys pick from the current page, then commit exactly like Space.
+  // Tab while typing a command commits the highlighted candidate like Space;
+  // in a font scope (\mathbb{...}) with no candidate list it confirms the
+  // scope like Enter.
   replace(`  const keystroke = keyboardEventToString(evt);
   if (evt.isTrusted) {
     validateKeyboardLayout(evt);`, `  let keystroke = keyboardEventToString(evt);
+  if (keystroke === "[Tab]" && model.mode === "latex")
+    keystroke = mathfield.visualTexSourceWrapper && !visualTexCandidatePanelOpen(mathfield) ? "[Enter]" : "[Space]";
   if (evt.isTrusted) {
     validateKeyboardLayout(evt);`);
   replace(`    if (keystroke === "[Space]" && model.mode === "latex" && mathfield.visualTexSourceWrapper) {`, `    const visualTexPickedCandidate = visualTexCandidateIndexForDigit(mathfield, evt);
