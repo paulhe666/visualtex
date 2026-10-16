@@ -285,27 +285,8 @@ internal static partial class WordEquationNumbering
     {
         if (hosts.Count == 0) return true;
 
-        Variables? variables = null;
-        Variable? formatVariable = null;
-        var formatId = string.Empty;
-        try
-        {
-            variables = document.Variables;
-            try
-            {
-                formatVariable = variables[EquationNumberFormatVariableName];
-                formatId = formatVariable.Value ?? string.Empty;
-            }
-            catch
-            {
-                formatId = string.Empty;
-            }
-        }
-        finally
-        {
-            PerformanceReleaseComObject(formatVariable);
-            PerformanceReleaseComObject(variables);
-        }
+        var chosenFormat = CaptureEquationNumberFormatVariable(document);
+        var formatId = chosenFormat.Exists ? chosenFormat.Value : string.Empty;
 
         var resetLevel =
             string.Equals(formatId, EquationNumberFormat.Heading1DotId, StringComparison.OrdinalIgnoreCase)

@@ -144,7 +144,10 @@ internal static partial class WordEquationNumbering
     private const float NativeDisplayAnchorLineSpacingPoints = 1f;
     private const float NativeDisplayNumberShapeWidthPoints = 72f;
     private const float NativeDisplayNumberShapeDefaultHeightPoints = 30f;
-    private const string EquationNumberFormatVariableName = "VisualTeXEquationNumberFormat";
+    // Earlier versions stored the chosen style in this document variable. It is
+    // still honoured when read and is removed when VisualTeX next numbers the
+    // document; nothing writes it any more.
+    private const string LegacyEquationNumberFormatVariableName = "VisualTeXEquationNumberFormat";
     private const string EquationNumberTailFormulaVariableName = "VisualTeXEquationNumberTailFormulaId";
     private const string CompactTypingTailBookmarkName = "VTNumberedTypingTail";
     private const float CompactTypingTailFontSizePoints = 1f;
@@ -281,34 +284,53 @@ internal static partial class WordEquationNumbering
         internal string Value { get; }
     }
 
+    // Word documents stay purely native: the chosen numbering style is never
+    // written into the document. The style chosen (or worked out) for a
+    // document in this Word session is kept here; otherwise it is read from the
+    // document's own equation numbers, and a document without numbers uses the
+    // user's default.
+    private static readonly Dictionary<string, string> SessionEquationNumberFormats =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    [ThreadStatic]
+    private static bool inferringEquationNumberFormat;
+
+    // The style the document's own equation numbers show (WordVsto:
+    // WordEquationNumberFormatAuthority); null when it has none.
+    static partial void InferDocumentEquationNumberFormat(
+        Document document,
+        ref string? formatId);
+
+    private static string SessionEquationNumberFormatKey(Document document)
+    {
+        try { return document.FullName ?? string.Empty; }
+        catch { return string.Empty; }
+    }
+
+    private static void RememberEquationNumberFormat(Document document, string formatId)
+    {
+        var key = SessionEquationNumberFormatKey(document);
+        if (key.Length == 0) return;
+        lock (SessionEquationNumberFormats)
+            SessionEquationNumberFormats[key] = EquationNumberFormat.Resolve(formatId).Id;
+    }
+
+    // The style chosen for this document, without looking at its numbers.
     internal static EquationNumberFormatVariableSnapshot CaptureEquationNumberFormatVariable(
         Document document)
     {
-        Variables? variables = null;
-        Variable? variable = null;
-        try
+        var key = SessionEquationNumberFormatKey(document);
+        if (key.Length > 0)
         {
-            variables = document.Variables;
-            object index = EquationNumberFormatVariableName;
-            try
+            lock (SessionEquationNumberFormats)
             {
-                variable = variables.get_Item(ref index);
-                return new EquationNumberFormatVariableSnapshot(
-                    exists: true,
-                    variable.Value ?? string.Empty);
-            }
-            catch (COMException)
-            {
-                return new EquationNumberFormatVariableSnapshot(
-                    exists: false,
-                    string.Empty);
+                if (SessionEquationNumberFormats.TryGetValue(key, out var chosen))
+                    return new EquationNumberFormatVariableSnapshot(exists: true, chosen);
             }
         }
-        finally
-        {
-            Release(variable);
-            Release(variables);
-        }
+        return TryReadLegacyEquationNumberFormat(document, out var legacy)
+            ? new EquationNumberFormatVariableSnapshot(exists: true, legacy)
+            : new EquationNumberFormatVariableSnapshot(exists: false, string.Empty);
     }
 
     internal static void RestoreEquationNumberFormatVariable(
@@ -317,16 +339,73 @@ internal static partial class WordEquationNumbering
     {
         if (snapshot.Exists)
         {
-            WriteEquationNumberFormat(document, snapshot.Value);
+            RememberEquationNumberFormat(document, snapshot.Value);
             return;
         }
+        var key = SessionEquationNumberFormatKey(document);
+        if (key.Length == 0) return;
+        lock (SessionEquationNumberFormats)
+            SessionEquationNumberFormats.Remove(key);
+    }
 
+    private static bool TryReadLegacyEquationNumberFormat(Document document, out string formatId)
+    {
+        formatId = string.Empty;
         Variables? variables = null;
         Variable? variable = null;
         try
         {
             variables = document.Variables;
-            object index = EquationNumberFormatVariableName;
+            if (variables.Count == 0) return false;
+            object index = LegacyEquationNumberFormatVariableName;
+            try
+            {
+                variable = variables.get_Item(ref index);
+                formatId = variable.Value ?? string.Empty;
+                return true;
+            }
+            catch (COMException)
+            {
+                return false;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            Release(variable);
+            Release(variables);
+        }
+    }
+
+    // An earlier version's variable goes as soon as VisualTeX changes the
+    // document; the style it recorded stays chosen for this session.
+    internal static void RetireLegacyEquationNumberFormat(Document document)
+    {
+        if (!TryReadLegacyEquationNumberFormat(document, out var legacy)) return;
+        var key = SessionEquationNumberFormatKey(document);
+        if (key.Length > 0)
+        {
+            lock (SessionEquationNumberFormats)
+            {
+                if (!SessionEquationNumberFormats.ContainsKey(key))
+                    SessionEquationNumberFormats[key] = EquationNumberFormat.Resolve(legacy).Id;
+            }
+        }
+        DeleteLegacyEquationNumberFormat(document);
+    }
+
+    private static void DeleteLegacyEquationNumberFormat(Document document)
+    {
+        Variables? variables = null;
+        Variable? variable = null;
+        try
+        {
+            variables = document.Variables;
+            if (variables.Count == 0) return;
+            object index = LegacyEquationNumberFormatVariableName;
             try
             {
                 variable = variables.get_Item(ref index);
@@ -334,7 +413,7 @@ internal static partial class WordEquationNumbering
             }
             catch (COMException)
             {
-                // The absent pre-edit state has already been restored.
+                // Absent: nothing to remove.
             }
         }
         finally
@@ -2396,28 +2475,19 @@ internal static partial class WordEquationNumbering
         out string formatId)
     {
         formatId = EquationNumberFormat.ContinuousId;
-        Variables? variables = null;
-        Variable? variable = null;
-        try
+        var stored = CaptureEquationNumberFormatVariable(document);
+        var found = stored.Exists ? stored.Value : null;
+        if (found is null && !inferringEquationNumberFormat)
         {
-            variables = document.Variables;
-            object index = EquationNumberFormatVariableName;
-            try
-            {
-                variable = variables.get_Item(ref index);
-                formatId = EquationNumberFormat.Resolve(variable.Value).Id;
-                return true;
-            }
-            catch (COMException)
-            {
-                return false;
-            }
+            inferringEquationNumberFormat = true;
+            try { InferDocumentEquationNumberFormat(document, ref found); }
+            catch { found = null; }
+            finally { inferringEquationNumberFormat = false; }
         }
-        finally
-        {
-            Release(variable);
-            Release(variables);
-        }
+        if (found is null) return false;
+        formatId = EquationNumberFormat.Resolve(found).Id;
+        RememberEquationNumberFormat(document, formatId);
+        return true;
     }
 
     private static void EnsureDocumentEquationNumberFormatPreference(Document document)
@@ -2472,30 +2542,12 @@ internal static partial class WordEquationNumbering
         }
     }
 
+    // Called only while VisualTeX numbers the document, so removing an old
+    // version's variable here never marks an untouched document as changed.
     private static void WriteEquationNumberFormat(Document document, string formatId)
     {
-        Variables? variables = null;
-        Variable? variable = null;
-        try
-        {
-            variables = document.Variables;
-            object index = EquationNumberFormatVariableName;
-            try
-            {
-                variable = variables.get_Item(ref index);
-                variable.Value = formatId;
-            }
-            catch (COMException)
-            {
-                object value = formatId;
-                variable = variables.Add(EquationNumberFormatVariableName, ref value);
-            }
-        }
-        finally
-        {
-            Release(variable);
-            Release(variables);
-        }
+        RememberEquationNumberFormat(document, formatId);
+        DeleteLegacyEquationNumberFormat(document);
     }
 
     private static bool TryReadNativeEquationTailFormulaId(
