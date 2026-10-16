@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using VisualTeX.WindowsOffice.VstoShared;
 
 namespace VisualTeX.PowerPointVsto;
 
@@ -20,6 +21,7 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
     private const int WmLButtonDblClk = 0x0203;
     private const int WmNcLButtonDown = 0x00A1;
     private const int WmNcLButtonDblClk = 0x00A3;
+    private const uint HtClient = 1;
     private const int SmCxDoubleClick = 36;
     private const int SmCyDoubleClick = 37;
     private const long TraceLimitBytes = 512 * 1024;
@@ -27,12 +29,9 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
     private static readonly int OwnerProcessId = Process.GetCurrentProcess().Id;
     private readonly Func<int, int, bool> _claimSecondClick;
     private readonly Action<bool, int, int> _callbackAction;
+    private readonly OfficeDoubleClickPairing _pairing = new();
     private HookProc? _hookCallback;
     private IntPtr _hook;
-    private uint _lastClickTime;
-    private bool _hasLastClick;
-    private int _lastClickX;
-    private int _lastClickY;
 
     // Both callbacks run on the Office UI thread inside the hook. When
     // claimSecondClick returns true the second click is swallowed, so PowerPoint
@@ -95,31 +94,51 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
         var message = wParam.ToInt32();
         if (message is WmNcLButtonDown or WmNcLButtonDblClk)
         {
-            _hasLastClick = false;
+            _pairing.Reset();
             return CallNextHookEx(_hook, code, wParam, lParam);
         }
         if (message is not (WmLButtonDown or WmLButtonDblClk))
             return CallNextHookEx(_hook, code, wParam, lParam);
 
         var input = Marshal.PtrToStructure<MouseHookInput>(lParam);
-        var now = unchecked((uint)Environment.TickCount);
-        // Windows reports the second click as WM_LBUTTONDBLCLK only for windows
-        // whose class asks for it; otherwise compare with the previous click.
-        var isDouble = message == WmLButtonDblClk
-            || _hasLastClick
-                && unchecked(now - _lastClickTime) <= GetDoubleClickTime()
-                && Math.Abs((long)input.Pt.X - _lastClickX) <= Math.Max(1, GetSystemMetrics(SmCxDoubleClick))
-                && Math.Abs((long)input.Pt.Y - _lastClickY) <= Math.Max(1, GetSystemMetrics(SmCyDoubleClick));
+        // Dialogs, galleries, menus and task panes run on this same thread and
+        // may lie over a formula. Only presses that reach the document window
+        // itself (thumbnails, slide, notes) can form a formula double-click.
+        var onPage = input.HitTestCode == HtClient
+            && OfficeDocumentSurface.IsPage(
+                input.Window,
+                OfficeDocumentSurface.PowerPointPageClasses,
+                OwnerProcessId,
+                input.Pt.X,
+                input.Pt.Y);
+        bool isDouble;
+        if (message == WmLButtonDblClk)
+        {
+            // Windows already paired both presses on this one window.
+            _pairing.Reset();
+            isDouble = onPage;
+        }
+        else
+        {
+            // Windows reports the second press as WM_LBUTTONDBLCLK only for
+            // window classes that ask for it; otherwise pair the presses here.
+            isDouble = _pairing.Register(
+                input.Window,
+                onPage,
+                input.Pt.X,
+                input.Pt.Y,
+                OfficeDoubleClickPairing.NowMilliseconds(),
+                GetDoubleClickTime(),
+                GetSystemMetrics(SmCxDoubleClick),
+                GetSystemMetrics(SmCyDoubleClick));
+        }
         if (!isDouble)
         {
-            _hasLastClick = true;
-            _lastClickTime = now;
-            _lastClickX = input.Pt.X;
-            _lastClickY = input.Pt.Y;
+            if (message == WmLButtonDblClk)
+                TraceMessage($"double-click-ignored off-page x={input.Pt.X} y={input.Pt.Y} hitTest={input.HitTestCode}");
             return CallNextHookEx(_hook, code, wParam, lParam);
         }
 
-        _hasLastClick = false;
         var started = Stopwatch.GetTimestamp();
         bool claimed;
         try { claimed = _claimSecondClick(input.Pt.X, input.Pt.Y); }

@@ -48,13 +48,11 @@ internal sealed class WordDoubleClickHook : IDisposable
     private readonly Action<bool, int, int> _callbackAction;
     private readonly Thread _thread;
     private readonly ManualResetEventSlim _ready = new(false);
+    private readonly OfficeDoubleClickPairing _pairing = new();
     private HookProc? _hookCallback;
     private IntPtr _hook;
     private uint _threadId;
     private int _ownerProcessId = Process.GetCurrentProcess().Id;
-    private long _lastClickTimestamp;
-    private int _lastClickX = int.MinValue;
-    private int _lastClickY = int.MinValue;
 
     public WordDoubleClickHook(
         Func<int, int, NativeOleDecision> shouldHandle,
@@ -76,7 +74,7 @@ internal sealed class WordDoubleClickHook : IDisposable
         if (processId == 0) return;
         var previous = Interlocked.Exchange(ref _ownerProcessId, unchecked((int)processId));
         if (previous != unchecked((int)processId))
-            Interlocked.Exchange(ref _lastClickTimestamp, 0);
+            _pairing.Reset();
     }
 
     public void Start()
@@ -110,6 +108,7 @@ internal sealed class WordDoubleClickHook : IDisposable
     private void Run()
     {
         _threadId = GetCurrentThreadId();
+        OfficeDocumentSurface.UsePhysicalCoordinatesOnThisThread();
         _hookCallback = HookCallback;
         _hook = SetWindowsHookEx(WhMouseLl, _hookCallback, IntPtr.Zero, 0);
         _ready.Set();
@@ -129,42 +128,36 @@ internal sealed class WordDoubleClickHook : IDisposable
             return CallNextHookEx(_hook, code, wParam, lParam);
 
         var input = Marshal.PtrToStructure<LowLevelMouseInput>(lParam);
+        // Never pair clicks separated by a switch to another application or
+        // another Word process, even when both windows are named WINWORD.
         var wordForeground = IsWordForeground();
-        TraceMessage($"left-down x={input.Pt.X} y={input.Pt.Y} wordForeground={wordForeground}");
-        if (!wordForeground)
-        {
-            // Never pair clicks separated by a switch to another application or
-            // another Word process, even when both windows are named WINWORD.
-            Interlocked.Exchange(ref _lastClickTimestamp, 0);
-            return CallNextHookEx(_hook, code, wParam, lParam);
-        }
-        var now = Stopwatch.GetTimestamp();
-        var previous = Interlocked.Read(ref _lastClickTimestamp);
-        var hasPreviousClick = previous != 0;
-        var elapsedMilliseconds = !hasPreviousClick
-            ? double.PositiveInfinity
-            : (now - previous) * 1000d / Stopwatch.Frequency;
-        var withinTime = hasPreviousClick
-            && elapsedMilliseconds <= GetDoubleClickTime();
-        // The sentinel coordinates begin at int.MinValue. Never subtract them in
-        // 32-bit arithmetic on the first click: e.g. x - int.MinValue can overflow
-        // before Math.Abs even runs, terminating the hook thread and leaving every
-        // later MathType/VisualTeX double-click inert. Only compare coordinates when
-        // a real previous click exists, and widen the subtraction to Int64.
-        var withinX = hasPreviousClick
-            && Math.Abs((long)input.Pt.X - _lastClickX)
-                <= Math.Max(1, GetSystemMetrics(SmCxDoubleClick));
-        var withinY = hasPreviousClick
-            && Math.Abs((long)input.Pt.Y - _lastClickY)
-                <= Math.Max(1, GetSystemMetrics(SmCyDoubleClick));
-
-        _lastClickX = input.Pt.X;
-        _lastClickY = input.Pt.Y;
-        Interlocked.Exchange(ref _lastClickTimestamp, now);
-        if (!withinTime || !withinX || !withinY)
+        // Word's own dialogs, galleries, menus and task panes belong to the same
+        // process and may lie over a formula. Only presses that reach the page
+        // window itself can form a formula double-click.
+        var target = wordForeground
+            ? OfficeDocumentSurface.WindowAt(input.Pt.X, input.Pt.Y)
+            : IntPtr.Zero;
+        var onPage = wordForeground && OfficeDocumentSurface.IsPage(
+            target,
+            OfficeDocumentSurface.WordPageClasses,
+            Volatile.Read(ref _ownerProcessId),
+            input.Pt.X,
+            input.Pt.Y);
+        TraceMessage(
+            $"left-down x={input.Pt.X} y={input.Pt.Y} wordForeground={wordForeground} "
+            + $"onPage={onPage} target=0x{target.ToInt64():X}");
+        var paired = _pairing.Register(
+            target,
+            onPage,
+            input.Pt.X,
+            input.Pt.Y,
+            OfficeDoubleClickPairing.NowMilliseconds(),
+            GetDoubleClickTime(),
+            GetSystemMetrics(SmCxDoubleClick),
+            GetSystemMetrics(SmCyDoubleClick));
+        if (!paired)
             return CallNextHookEx(_hook, code, wParam, lParam);
 
-        Interlocked.Exchange(ref _lastClickTimestamp, 0);
         NativeOleDecision decision;
         try { decision = _shouldHandle(input.Pt.X, input.Pt.Y); }
         catch (Exception error)
@@ -173,8 +166,8 @@ internal sealed class WordDoubleClickHook : IDisposable
             decision = NativeOleDecision.PassThrough;
         }
         TraceMessage(
-            $"double-click elapsedMs={elapsedMilliseconds:0.###} withinX={withinX} withinY={withinY} "
-            + $"nativeOleTarget={decision.NativeOleTarget} suppressSecondDown={decision.SuppressSecondButtonDown} "
+            $"double-click nativeOleTarget={decision.NativeOleTarget} "
+            + $"suppressSecondDown={decision.SuppressSecondButtonDown} "
             + $"dispatchCallback={decision.DispatchCallback}");
 
         if (decision.DispatchCallback)

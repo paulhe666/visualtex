@@ -27,6 +27,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlToLatexConverter.cs" Link="MathMlToLatexConverter.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\FormulaXml.cs" Link="FormulaXml.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeOperationProgress.cs" Link="OfficeOperationProgress.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeDoubleClickGesture.cs" Link="OfficeDoubleClickGesture.cs" />
     <Compile Include="..\VisualTeX.WordVsto\MathTypeDoubleClickPreference.cs" Link="MathTypeDoubleClickPreference.cs" />
     <ProjectReference Include="..\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj" />
     <Reference Include="Microsoft.CSharp" />
