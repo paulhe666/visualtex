@@ -152,7 +152,7 @@ public sealed partial class PowerPointFormulaService
             var shapeXml = PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, shapeId);
             var omml = PowerPointNativeOmmlPackage.ReadEquation(shapeXml, zone.Ordinal, zone.Count);
             var mathMl = PowerPointNativeOmmlKernel.ReadNativeMathMl(omml);
-            var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
+            var latex = MathMlToLatexConverter.ConvertWordEquation(mathMl).Trim();
             if (string.IsNullOrWhiteSpace(latex)) throw new InvalidDataException("The selected native equation has no recoverable source.");
             var size = PowerPointOmmlBridge.ReadFontSize(shape) ?? 20f;
             var now = DateTimeOffset.UtcNow.ToString("O");

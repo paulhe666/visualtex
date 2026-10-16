@@ -117,7 +117,7 @@ internal static class PowerPointOmmlBridge
     {
         var mathMl = TryReadMathMl(shape);
         if (string.IsNullOrWhiteSpace(mathMl)) return null;
-        try { return MathMlToLatexConverter.Convert(mathMl!); }
+        try { return MathMlToLatexConverter.ConvertWordEquation(mathMl!); }
         catch { return null; }
     }
 

@@ -5002,6 +5002,7 @@ internal static partial class WordOmmlConverter
         RestoreMathSymbolTextTokens(canonicalRoot);
         RestoreWordCanonicalAsteriskOperators(canonicalRoot);
         RestoreOmmlNoBarFractionSemantics(omml, canonicalRoot);
+        RestoreOmmlMatrixColumnAlignment(omml, canonicalRoot);
         RestoreOmmlAccentSemantics(omml, canonicalRoot);
         RestoreOmmlLimitBaseSemantics(omml, canonicalRoot);
         RestoreOmmlScriptBaseRunSemantics(omml, canonicalRoot);
@@ -5064,6 +5065,44 @@ internal static partial class WordOmmlConverter
             var color = MathMlColorContract.Normalize("#" + (string?)controlRun?.Element(word + "color")?.Attribute(word + "val"));
             if (color is not null) restoredMark.SetAttributeValue("mathcolor", color);
             children[1].ReplaceWith(restoredMark);
+        }
+    }
+
+    // The stylesheet keeps only the first column's justification of an m:m.
+    // Record every column (mcJc, repeated by m:count) so the LaTeX reader can
+    // tell `aligned` (right, left, right, …) from a matrix. m:m and m:eqArr
+    // are the only sources of mtable, so the two pre-order lists line up.
+    private static void RestoreOmmlMatrixColumnAlignment(string omml, XElement mathMlRoot)
+    {
+        XNamespace officeMath = MathNamespace;
+        XNamespace mathMl = "http://www.w3.org/1998/Math/MathML";
+        var source = XDocument.Parse(omml, LoadOptions.PreserveWhitespace);
+        var sourceTables = source.Descendants()
+            .Where(element => element.Name == officeMath + "m" || element.Name == officeMath + "eqArr")
+            .ToArray();
+        var targetTables = mathMlRoot.DescendantsAndSelf(mathMl + "mtable").ToArray();
+        if (sourceTables.Length == 0 || sourceTables.Length != targetTables.Length)
+            return;
+
+        for (var index = 0; index < sourceTables.Length; index++)
+        {
+            if (sourceTables[index].Name != officeMath + "m") continue;
+            var columns = (sourceTables[index].Element(officeMath + "mPr")?
+                    .Elements(officeMath + "mcs") ?? Enumerable.Empty<XElement>())
+                .SelectMany(group => group.Elements(officeMath + "mc"))
+                .SelectMany(column =>
+                {
+                    var properties = column.Element(officeMath + "mcPr");
+                    var count = int.TryParse(
+                        (string?)properties?.Element(officeMath + "count")?.Attribute(officeMath + "val"),
+                        out var parsed) && parsed > 0 ? Math.Min(parsed, 64) : 1;
+                    var justification = ((string?)properties?.Element(officeMath + "mcJc")?
+                        .Attribute(officeMath + "val") ?? "center").Trim().ToLowerInvariant();
+                    return Enumerable.Repeat(justification, count);
+                })
+                .ToArray();
+            if (columns.Length > 1)
+                targetTables[index].SetAttributeValue("data-vt-columnalign", string.Join(" ", columns));
         }
     }
 

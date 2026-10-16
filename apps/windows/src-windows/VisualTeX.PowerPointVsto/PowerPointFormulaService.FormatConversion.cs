@@ -547,7 +547,7 @@ public sealed partial class PowerPointFormulaService
                 if (plan.Request.TargetMode != FormulaOleContract.WordOmmlMode
                     && PowerPointConversionColors.NeedsExplicit(baseColor, PowerPointConversionColors.Black))
                     mathMl = PowerPointConversionColors.ApplyBaseColor(mathMl, baseColor);
-                var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
+                var latex = MathMlToLatexConverter.ConvertWordEquation(mathMl).Trim();
                 if (string.IsNullOrWhiteSpace(latex))
                     throw new InvalidDataException(Text("原生公式为空或无法识别。", "The native equation is empty or unsupported."));
                 var zone = zones[ordinal];

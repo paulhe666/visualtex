@@ -4,7 +4,7 @@ public sealed class MathMlFunctionTokenRecoveryTests
 {
  [Theory]
  [InlineData("<mi>sin</mi><mi>x</mi>","\\operatorname{sin}x")]
- [InlineData("<mi>sin</mi><mo>⁡</mo><mi>x</mi>","\\operatorname{sin}⁡x")]
+ [InlineData("<mi>sin</mi><mo>⁡</mo><mi>x</mi>","\\sin x")]
  [InlineData("<mi>foo</mi><mi>x</mi>","\\operatorname{foo}x")]
  [InlineData("<mi data-mjx-auto-op='false'>foo</mi><mi>x</mi>","\\mathrm{foo}x")]
  [InlineData("<mi data-mjx-texclass='OP' data-mjx-auto-op='false'>sin</mi><mi>x</mi>","\\operatorname{sin}x")]

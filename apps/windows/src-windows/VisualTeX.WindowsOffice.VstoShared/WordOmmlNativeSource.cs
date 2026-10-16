@@ -906,7 +906,7 @@ internal static class WordOmmlNativeSource
             semanticWordOpenXml,
             display: string.Equals(displayMode, "block", StringComparison.Ordinal));
         var latex = SanitizeFormulaBoundaryArtifacts(
-            MathMlToLatexConverter.Convert(mathMl));
+            MathMlToLatexConverter.ConvertWordEquation(mathMl));
         if (string.IsNullOrWhiteSpace(latex))
             throw new InvalidDataException(
                 "The Word-native OMML equation could not be converted back to editable LaTeX.");
@@ -983,7 +983,7 @@ internal static class WordOmmlNativeSource
                 "block",
                 StringComparison.Ordinal));
         var latex = SanitizeFormulaBoundaryArtifacts(
-            MathMlToLatexConverter.Convert(mathMl));
+            MathMlToLatexConverter.ConvertWordEquation(mathMl));
         if (string.IsNullOrWhiteSpace(latex))
             throw new InvalidDataException(
                 "The Word-native OMML equation could not be converted back to editable LaTeX.");

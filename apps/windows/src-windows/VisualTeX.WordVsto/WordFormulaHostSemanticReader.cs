@@ -68,7 +68,7 @@ internal static class WordFormulaHostSemanticReader
             var mathMl = WordOmmlConverter.TransformOmmlToMathMl(
                 semanticXml,
                 display);
-            var latex = MathMlToLatexConverter.Convert(mathMl);
+            var latex = MathMlToLatexConverter.ConvertWordEquation(mathMl);
             return new WordFormulaSemanticPayload
             {
                 Latex = latex,

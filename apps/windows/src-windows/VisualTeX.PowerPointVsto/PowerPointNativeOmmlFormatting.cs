@@ -13,7 +13,10 @@ internal static class PowerPointNativeOmmlFormatting
         XNamespace a = "http://schemas.openxmlformats.org/drawingml/2006/main";
         XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
         var root = XElement.Parse(omml, LoadOptions.PreserveWhitespace);
-        foreach (var owner in root.DescendantsAndSelf().Where(e => e.Name == m + "r" || e.Name == m + "ctrlPr"))
+        // Only the characters' own colors count: PowerPoint also leaves colors on
+        // a structure's control properties (m:ctrlPr), which would color the
+        // whole fraction or accent with its letters.
+        foreach (var owner in root.DescendantsAndSelf().Where(e => e.Name == m + "r"))
         {
             var drawing = owner.Element(a + "rPr");
             var rgb = drawing?.Element(a + "solidFill")?.Element(a + "srgbClr");

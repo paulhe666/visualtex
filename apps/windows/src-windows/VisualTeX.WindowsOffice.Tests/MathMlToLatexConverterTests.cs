@@ -151,14 +151,17 @@ public sealed class MathMlToLatexConverterTests
     }
 
     [Theory]
-    [InlineData("lim", @"\underset{x\to 0}{\operatorname{lim}}")]
-    [InlineData("max", @"\underset{x\in A}{\operatorname{max}}")]
-    [InlineData("min", @"\underset{x\in A}{\operatorname{min}}")]
-    [InlineData("sup", @"\underset{x\in A}{\operatorname{sup}}")]
-    [InlineData("inf", @"\underset{x\in A}{\operatorname{inf}}")]
-    [InlineData("limsup", @"\underset{n\to \mathrm{\infty}}{\operatorname{limsup}}")]
-    [InlineData("liminf", @"\underset{n\to \mathrm{\infty}}{\operatorname{liminf}}")]
-    public void PreservesIdentifierRoleInUnderScriptsWithoutInventingLimitOperatorTokens(
+    // Word's limit object (an upright lim/max/… identifier with its limit
+    // underneath) is TeX's \lim\limits: the operator itself, with the limit
+    // kept underneath even inline, as Word draws it.
+    [InlineData("lim", @"\lim\limits_{x\to 0}")]
+    [InlineData("max", @"\max\limits_{x\in A}")]
+    [InlineData("min", @"\min\limits_{x\in A}")]
+    [InlineData("sup", @"\sup\limits_{x\in A}")]
+    [InlineData("inf", @"\inf\limits_{x\in A}")]
+    [InlineData("limsup", @"\limsup\limits_{n\to \mathrm{\infty}}")]
+    [InlineData("liminf", @"\liminf\limits_{n\to \mathrm{\infty}}")]
+    public void WritesUprightLimitIdentifiersAsLimitOperatorsWithLimitsUnderneath(
         string operatorName,
         string expected)
     {

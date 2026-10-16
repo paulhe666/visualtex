@@ -463,6 +463,368 @@ internal static class MathMlToLatexConverter
         return Normalize(ConvertElement(root));
     }
 
+    // Word and PowerPoint equations stay pure Office objects with no VisualTeX
+    // source stored in them, so the LaTeX read back from one is all the user
+    // gets. Write it the way people type it, without changing its meaning.
+    internal static string ConvertWordEquation(string mathMl) =>
+        WordEquationSourceStyle(Convert(mathMl));
+
+    private static readonly HashSet<string> SourceStyleTextCommands = new(StringComparer.Ordinal)
+    {
+        @"\text", @"\textrm", @"\textit", @"\textbf", @"\textsf", @"\texttt",
+        @"\textup", @"\textnormal", @"\mbox", @"\operatorname",
+    };
+
+    private static readonly Dictionary<string, (string Environment, string Close)> SourceStyleMatrixFences =
+        new(StringComparer.Ordinal)
+        {
+            ["("] = ("pmatrix", ")"),
+            ["["] = ("bmatrix", "]"),
+            ["|"] = ("vmatrix", "|"),
+            [@"\|"] = ("Vmatrix", @"\|"),
+            [@"\{"] = ("Bmatrix", @"\}"),
+        };
+
+    // 𝑎 -> a (the mathematical alphanumerics PowerPoint stores), x^{2} -> x^2,
+    // {x}^2 -> x^2, f^{\prime} -> f', \left(\begin{matrix}..\end{matrix}\right)
+    // -> pmatrix (bmatrix, vmatrix, Vmatrix, Bmatrix), \left\{ matrix \right.
+    // -> cases, and drops the spaces TeX ignores. Text groups are left alone.
+    // The macOS port (omml_latex/source_style.rs) must match this exactly.
+    internal static string WordEquationSourceStyle(string latex)
+    {
+        if (string.IsNullOrEmpty(latex)) return latex;
+        var tokens = SourceStyleTokens(latex);
+        tokens = SourceStyleAlphanumerics(tokens);
+        tokens = SourceStyleMatrices(tokens);
+        tokens = SourceStyleScripts(tokens);
+        return SourceStyleSpacing(tokens);
+    }
+
+    private static bool IsAsciiLetter(char value) =>
+        value is >= 'a' and <= 'z' or >= 'A' and <= 'Z';
+
+    private static bool IsAsciiLetterOrDigit(char value) =>
+        IsAsciiLetter(value) || value is >= '0' and <= '9';
+
+    private static bool IsSourceSpace(char value) => value is ' ' or '\t' or '\r' or '\n';
+
+    // Control words, control symbols, runs of ASCII letters, runs of spaces
+    // (as one " "), and every other character (a whole surrogate pair) on its own.
+    private static List<string> SourceStyleTokens(string latex)
+    {
+        var tokens = new List<string>();
+        var index = 0;
+        while (index < latex.Length)
+        {
+            var start = index;
+            var current = latex[index];
+            if (current == '\\' && index + 1 < latex.Length)
+            {
+                index++;
+                if (IsAsciiLetter(latex[index]))
+                    while (index < latex.Length && IsAsciiLetter(latex[index])) index++;
+                else
+                    index += SourceCharLength(latex, index);
+                tokens.Add(latex.Substring(start, index - start));
+            }
+            else if (IsSourceSpace(current))
+            {
+                while (index < latex.Length && IsSourceSpace(latex[index])) index++;
+                tokens.Add(" ");
+            }
+            else if (IsAsciiLetter(current))
+            {
+                while (index < latex.Length && IsAsciiLetter(latex[index])) index++;
+                tokens.Add(latex.Substring(start, index - start));
+            }
+            else
+            {
+                index += SourceCharLength(latex, index);
+                tokens.Add(latex.Substring(start, index - start));
+            }
+        }
+        return tokens;
+    }
+
+    private static int SourceCharLength(string text, int index) =>
+        index + 1 < text.Length && char.IsSurrogatePair(text[index], text[index + 1]) ? 2 : 1;
+
+    // Unicode mathematical alphanumerics (U+1D400-U+1D7FF), which PowerPoint
+    // stores for math letters (𝑎 for an italic a), as LaTeX tokens.
+    private static readonly (int Start, string Style)[] SourceStyleLatinBlocks =
+    {
+        (0x1D400, @"\mathbf"), (0x1D434, ""), (0x1D468, @"\boldsymbol"), (0x1D49C, @"\mathcal"),
+        (0x1D4D0, @"\boldsymbol\mathcal"), (0x1D504, @"\mathfrak"), (0x1D538, @"\mathbb"),
+        (0x1D56C, @"\boldsymbol\mathfrak"), (0x1D5A0, @"\mathsf"), (0x1D5D4, @"\boldsymbol\mathsf"),
+        (0x1D608, @"\mathsf"), (0x1D63C, @"\boldsymbol\mathsf"), (0x1D670, @"\mathtt"),
+    };
+    private static readonly (int Start, string Style)[] SourceStyleGreekBlocks =
+    {
+        (0x1D6A8, @"\boldsymbol"), (0x1D6E2, ""), (0x1D71C, @"\boldsymbol"),
+        (0x1D756, @"\boldsymbol"), (0x1D790, @"\boldsymbol"),
+    };
+    private const string SourceStyleGreek =
+        "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡϴΣΤΥΦΧΨΩ∇αβγδεζηθικλμνξοπρςστυφχψω∂ϵϑϰϕϱϖ";
+    private static readonly (int Start, string Style)[] SourceStyleDigitBlocks =
+    {
+        (0x1D7CE, @"\mathbf"), (0x1D7D8, @"\mathbb"), (0x1D7E2, @"\mathsf"),
+        (0x1D7EC, @"\boldsymbol\mathsf"), (0x1D7F6, @"\mathtt"),
+    };
+
+    private static List<string>? SourceStyleMathAlphanumeric(int code)
+    {
+        static List<string> Styled(string style, List<string> inner)
+        {
+            var commands = style.Split(new[] { '\\' }, StringSplitOptions.RemoveEmptyEntries);
+            var output = new List<string>();
+            foreach (var command in commands) { output.Add("\\" + command); output.Add("{"); }
+            output.AddRange(inner);
+            foreach (var _ in commands) output.Add("}");
+            return output;
+        }
+        if (code == 0x210E) return new List<string> { "h" };
+        if (code is 0x1D6A4 or 0x1D6A5) return new List<string> { code == 0x1D6A4 ? @"\imath" : @"\jmath" };
+        foreach (var (start, style) in SourceStyleLatinBlocks)
+            if (code >= start && code < start + 52)
+            {
+                var offset = code - start;
+                var letter = offset < 26 ? (char)('A' + offset) : (char)('a' + offset - 26);
+                return Styled(style, new List<string> { letter.ToString() });
+            }
+        foreach (var (start, style) in SourceStyleGreekBlocks)
+            if (code >= start && code < start + 58)
+            {
+                var inner = SourceStyleTokens(ConvertToken(SourceStyleGreek[code - start].ToString()).Trim())
+                    .Where(token => token != " ").ToList();
+                return Styled(style, inner);
+            }
+        foreach (var (start, style) in SourceStyleDigitBlocks)
+            if (code >= start && code < start + 10)
+                return Styled(style, new List<string> { ((char)('0' + code - start)).ToString() });
+        return null;
+    }
+
+    private static List<string> SourceStyleAlphanumerics(List<string> tokens)
+    {
+        var output = new List<string>();
+        for (var index = 0; index < tokens.Count; index++)
+        {
+            var textEnd = SourceTextGroupEnd(tokens, index);
+            if (textEnd >= 0)
+            {
+                output.AddRange(tokens.GetRange(index, textEnd - index + 1));
+                index = textEnd;
+                continue;
+            }
+            var token = tokens[index];
+            var single = token.Length == 1 && !char.IsSurrogate(token[0])
+                || token.Length == 2 && char.IsSurrogatePair(token[0], token[1]);
+            var mapped = single ? SourceStyleMathAlphanumeric(char.ConvertToUtf32(token, 0)) : null;
+            if (mapped is not null) output.AddRange(mapped);
+            else output.Add(token);
+        }
+        return output;
+    }
+
+    private static bool IsControlWord(string token) =>
+        token.Length > 1 && token[0] == '\\' && IsAsciiLetter(token[1]);
+
+    private static int SkipSourceSpaces(List<string> tokens, int index)
+    {
+        while (index < tokens.Count && tokens[index] == " ") index++;
+        return index;
+    }
+
+    private static int MatchingSourceBrace(List<string> tokens, int open)
+    {
+        var depth = 0;
+        for (var index = open; index < tokens.Count; index++)
+        {
+            if (tokens[index] == "{") depth++;
+            else if (tokens[index] == "}" && --depth == 0) return index;
+        }
+        return -1;
+    }
+
+    // The last token of a text-mode group (\text{..}) starting at index, or -1.
+    private static int SourceTextGroupEnd(List<string> tokens, int index)
+    {
+        if (!SourceStyleTextCommands.Contains(tokens[index])) return -1;
+        var open = SkipSourceSpaces(tokens, index + 1);
+        if (open < tokens.Count && tokens[open] == "*") open = SkipSourceSpaces(tokens, open + 1);
+        return open < tokens.Count && tokens[open] == "{" ? MatchingSourceBrace(tokens, open) : -1;
+    }
+
+    private static bool IsSourceEnvironment(List<string> tokens, int index, string command, string name) =>
+        index + 3 < tokens.Count && tokens[index] == command && tokens[index + 1] == "{"
+        && tokens[index + 2] == name && tokens[index + 3] == "}";
+
+    private static List<string> SourceStyleMatrices(List<string> tokens)
+    {
+        var output = new List<string>();
+        for (var index = 0; index < tokens.Count; index++)
+        {
+            var textEnd = SourceTextGroupEnd(tokens, index);
+            if (textEnd >= 0)
+            {
+                output.AddRange(tokens.GetRange(index, textEnd - index + 1));
+                index = textEnd;
+                continue;
+            }
+            if (tokens[index] == @"\left" && TrySourceNamedMatrix(tokens, index, out var named, out var last))
+            {
+                output.AddRange(named);
+                index = last;
+                continue;
+            }
+            output.Add(tokens[index]);
+        }
+        return output;
+    }
+
+    private static bool TrySourceNamedMatrix(
+        List<string> tokens, int left, out List<string> named, out int last)
+    {
+        named = new List<string>();
+        last = left;
+        var fence = SkipSourceSpaces(tokens, left + 1);
+        if (fence >= tokens.Count || !SourceStyleMatrixFences.TryGetValue(tokens[fence], out var kind))
+            return false;
+        var begin = SkipSourceSpaces(tokens, fence + 1);
+        if (!IsSourceEnvironment(tokens, begin, @"\begin", "matrix")) return false;
+        var depth = 0;
+        var end = -1;
+        for (var index = begin; index < tokens.Count; index++)
+        {
+            if (IsSourceEnvironment(tokens, index, @"\begin", "matrix")) depth++;
+            else if (IsSourceEnvironment(tokens, index, @"\end", "matrix") && --depth == 0)
+            {
+                end = index;
+                break;
+            }
+        }
+        if (end < 0) return false;
+        var right = SkipSourceSpaces(tokens, end + 4);
+        if (right >= tokens.Count || tokens[right] != @"\right") return false;
+        var close = SkipSourceSpaces(tokens, right + 1);
+        if (close >= tokens.Count) return false;
+        string environment;
+        if (tokens[close] == kind.Close) environment = kind.Environment;
+        else if (tokens[fence] == @"\{" && tokens[close] == ".") environment = "cases";
+        else return false;
+        named.AddRange(new[] { @"\begin", "{", environment, "}" });
+        named.AddRange(SourceStyleMatrices(tokens.GetRange(begin + 4, end - begin - 4)));
+        named.AddRange(new[] { @"\end", "{", environment, "}" });
+        last = close;
+        return true;
+    }
+
+    private static List<string> SourceStyleScripts(List<string> tokens)
+    {
+        var output = new List<string>();
+        for (var index = 0; index < tokens.Count; index++)
+        {
+            var textEnd = SourceTextGroupEnd(tokens, index);
+            if (textEnd >= 0)
+            {
+                output.AddRange(tokens.GetRange(index, textEnd - index + 1));
+                index = textEnd;
+                continue;
+            }
+            var token = tokens[index];
+            // {x}^2 -> x^2 (PowerPoint letters arrive braced); a command's own
+            // argument (\mathrm{x}^2, \frac{a}{x}^2) keeps its braces.
+            if (token == "{" && index + 3 < tokens.Count && tokens[index + 2] == "}"
+                && tokens[index + 3] is "^" or "_"
+                && tokens[index + 1].Length == 1 && IsAsciiLetterOrDigit(tokens[index + 1][0]))
+            {
+                var before = output.LastOrDefault(item => item != " ");
+                if (before is null || !IsControlWord(before) && before is not ("}" or "]" or "^" or "_"))
+                {
+                    output.Add(tokens[index + 1]);
+                    index += 2;
+                    continue;
+                }
+            }
+            if (token is "^" or "_" && index + 1 < tokens.Count && tokens[index + 1] == "{")
+            {
+                var close = MatchingSourceBrace(tokens, index + 1);
+                var inner = close < 0
+                    ? new List<string>()
+                    : tokens.GetRange(index + 2, close - index - 2).Where(item => item != " ").ToList();
+                // x^{2} -> x^2, keeping a space before a following letter or digit.
+                if (inner.Count == 1 && inner[0].Length == 1 && IsAsciiLetterOrDigit(inner[0][0]))
+                {
+                    output.Add(token);
+                    output.Add(inner[0]);
+                    if (close + 1 < tokens.Count && IsAsciiLetterOrDigit(tokens[close + 1][0]))
+                        output.Add(" ");
+                    index = close;
+                    continue;
+                }
+                // f^{\prime} -> f', the same thing in TeX.
+                var previous = output.LastOrDefault(item => item != " ");
+                if (token == "^" && inner.Count > 0 && inner.All(item => item == @"\prime")
+                    && previous is not null and not ("{" or "&" or "^" or "_" or @"\\"))
+                {
+                    output.Add(new string('\'', inner.Count));
+                    index = close;
+                    continue;
+                }
+            }
+            output.Add(token);
+        }
+        return output;
+    }
+
+    private static string SourceStyleSpacing(List<string> tokens)
+    {
+        var builder = new StringBuilder();
+        string? previous = null;
+        string? beforePrevious = null;
+        for (var index = 0; index < tokens.Count; index++)
+        {
+            var textEnd = SourceTextGroupEnd(tokens, index);
+            if (textEnd >= 0)
+            {
+                for (var item = index; item <= textEnd; item++) builder.Append(tokens[item]);
+                beforePrevious = previous;
+                previous = "}";
+                index = textEnd;
+                continue;
+            }
+            var token = tokens[index];
+            if (token != " ")
+            {
+                // A control word or a bare script needs a space before a letter
+                // that a mapped PowerPoint letter put right after it (\sin x).
+                if (previous is not null && (builder.Length == 0 || builder[builder.Length - 1] != ' ')
+                    && SourceNeedsSpace(previous, beforePrevious, token))
+                    builder.Append(' ');
+                builder.Append(token);
+                beforePrevious = previous;
+                previous = token;
+                continue;
+            }
+            var next = index + 1 < tokens.Count ? tokens[index + 1] : null;
+            if (previous is null || next is null) continue;
+            // A space ends a control word before a letter (\sin x) and a bare
+            // script before one (\int_0^1 x); around & and \\ it keeps
+            // matrices and aligned rows readable.
+            var keep = IsControlWord(previous) && (IsAsciiLetterOrDigit(next[0]) || next == "*")
+                || beforePrevious is "^" or "_" && previous.Length == 1
+                    && IsAsciiLetterOrDigit(previous[0]) && IsAsciiLetterOrDigit(next[0])
+                || previous is "&" or @"\\" || next is "&" or @"\\";
+            if (keep) builder.Append(' ');
+        }
+        return builder.ToString();
+    }
+
+    private static bool SourceNeedsSpace(string previous, string? beforePrevious, string next) =>
+        IsControlWord(previous) && IsAsciiLetter(next[0])
+        || beforePrevious is "^" or "_" && previous.Length == 1
+            && IsAsciiLetterOrDigit(previous[0]) && IsAsciiLetterOrDigit(next[0]);
+
     private static string ConvertElement(XElement element) =>
         MathMlColorContract.Wrap(ConvertElementContent(element), MathMlColorContract.Explicit(element));
 
@@ -494,6 +856,7 @@ internal static class MathMlToLatexConverter
             "menclose" => ConvertEnclose(element),
             "mphantom" => @"\phantom{" + ConvertChildren(element) + "}",
             "mmultiscripts" => ConvertMultiScripts(element),
+            "malignmark" or "maligngroup" => alignmentMarkDepth > 0 ? "&" : string.Empty,
             "none" => string.Empty,
             _ => ConvertChildren(element),
         };
@@ -531,9 +894,6 @@ internal static class MathMlToLatexConverter
     private static string ConvertChildren(XElement element)
     {
         var children = element.Elements().ToArray();
-        if (children.Length < 3)
-            return string.Concat(children.Select(ConvertElement));
-
         var builder = new StringBuilder();
         for (var index = 0; index < children.Length;)
         {
@@ -546,10 +906,94 @@ internal static class MathMlToLatexConverter
                 index += 3;
                 continue;
             }
+            // A known function name in a real application slot (U+2061, Word's
+            // m:func) is TeX's \sin: MathJax emits the U+2061 again for the
+            // command, so the slot survives without an invisible character in
+            // the source. Unknown names keep U+2061 as their only carrier.
+            if (index + 1 < children.Length
+                && IsFunctionApplication(children[index + 1])
+                && TryConvertAppliedNamedFunction(children[index], out var applied))
+            {
+                builder.Append(applied);
+                index += 2;
+                continue;
+            }
             builder.Append(ConvertElement(children[index]));
             index++;
         }
         return builder.ToString();
+    }
+
+    private static bool IsFunctionApplication(XElement element)
+    {
+        element = UnwrapSingleTransparentMathMlContainer(element);
+        return element.Name.LocalName == "mo"
+            && element.Value.Trim() == "⁡"
+            && MathMlColorContract.Explicit(element) is null;
+    }
+
+    private static bool TryConvertAppliedNamedFunction(XElement head, out string latex)
+    {
+        latex = string.Empty;
+        var unwrapped = UnwrapSingleTransparentMathMlContainer(head);
+        if (head.DescendantsAndSelf().Any(item => MathMlColorContract.Explicit(item) is not null))
+            return false;
+        if (TryGetNamedFunctionIdentifier(unwrapped, out var command))
+        {
+            latex = command;
+            return true;
+        }
+        var kind = unwrapped.Name.LocalName;
+        // Word writes a limit function as m:func around m:limLow.
+        if (kind is "munder" or "munderover"
+            && unwrapped.Elements().FirstOrDefault() is { } limitBase
+            && TryGetNamedFunctionIdentifier(UnwrapSingleTransparentMathMlContainer(limitBase), out command)
+            && IsLimitLikeOperatorLatex(command))
+        {
+            latex = ConvertElement(unwrapped) + " ";
+            return true;
+        }
+        // A function name slot may hold more than the name (e.g. a sum before
+        // it); the name applied to the argument is the slot's last item.
+        if (kind == "mrow" && ExplicitAtomClassCommand(unwrapped) is null)
+        {
+            var items = unwrapped.Elements().ToArray();
+            if (items.Length >= 2 && TryConvertAppliedNamedFunction(items[items.Length - 1], out var tail))
+            {
+                latex = string.Concat(items.Take(items.Length - 1).Select(ConvertElement)) + tail;
+                return true;
+            }
+            return false;
+        }
+        if (kind is not ("msup" or "msub" or "msubsup")) return false;
+        var parts = unwrapped.Elements().ToArray();
+        if (parts.Length < (kind == "msubsup" ? 3 : 2)
+            || !TryGetNamedFunctionIdentifier(UnwrapSingleTransparentMathMlContainer(parts[0]), out command))
+            return false;
+        latex = command.TrimEnd() + kind switch
+        {
+            "msub" => "_{" + ScriptArgument(parts[1]) + "}",
+            "msup" => "^{" + ScriptArgument(parts[1]) + "}",
+            _ => "_{" + ScriptArgument(parts[1]) + "}^{" + ScriptArgument(parts[2]) + "}",
+        } + " ";
+        return true;
+    }
+
+    // An upright multi-letter operator identifier whose name TeX has a command
+    // for (sin, log, lim, …). Explicit ORD/non-operator roles never qualify.
+    private static bool TryGetNamedFunctionIdentifier(XElement element, out string command)
+    {
+        command = string.Empty;
+        if (element.Name.LocalName != "mi") return false;
+        var token = element.Value.Trim();
+        if (token.Length < 2 || !token.All(c => c is >= 'a' and <= 'z')) return false;
+        var declared = MathMlTokenStyleContract.ResolveDeclaredVariant(element);
+        if (MathMlTokenStyleContract.ResolveEffectiveVariant(element, declared) is not ("normal" or "upright"))
+            return false;
+        var atomClass = ((string?)element.Attribute("data-mjx-texclass"))?.Trim().ToUpperInvariant();
+        var isOperator = atomClass == "OP" || (atomClass is null
+            && (string?)element.Attribute("data-mjx-auto-op") != "false");
+        return isOperator && TryConvertNamedOperator(token, out command);
     }
 
     private static bool TryConvertLooseBinomialBody(XElement body, out string latex)
@@ -678,14 +1122,15 @@ internal static class MathMlToLatexConverter
         var independentColor = markColor is not null && markColor != parentColor;
         if (independentColor)
             body = MathMlColorContract.Wrap(body, MathMlColorContract.Effective(children[0]) ?? "#000000");
+        var fixedAccent = IsFixedAccentOverOneCharacter(element, children[0], children[1]);
         var result = over switch
         {
-            "¯" or "‾" or "―" => @"\overline{" + body + "}",
-            "→" => (stretchy ? @"\overrightarrow{" : @"\vec{") + body + "}",
+            "¯" or "‾" or "―" => (fixedAccent ? @"\bar{" : @"\overline{") + body + "}",
+            "→" => (stretchy && !fixedAccent ? @"\overrightarrow{" : @"\vec{") + body + "}",
             "←" => @"\overleftarrow{" + body + "}",
             "↔" => @"\overleftrightarrow{" + body + "}",
-            "^" or "ˆ" => (stretchy ? @"\widehat{" : @"\hat{") + body + "}",
-            "~" or "˜" => (stretchy ? @"\widetilde{" : @"\tilde{") + body + "}",
+            "^" or "ˆ" => (stretchy && !fixedAccent ? @"\widehat{" : @"\hat{") + body + "}",
+            "~" or "˜" => (stretchy && !fixedAccent ? @"\widetilde{" : @"\tilde{") + body + "}",
             "." or "˙" => @"\dot{" + body + "}",
             "¨" => @"\ddot{" + body + "}",
             "⃛" => @"\dddot{" + body + "}",
@@ -702,12 +1147,36 @@ internal static class MathMlToLatexConverter
         return MathMlColorContract.Wrap(result, independentColor ? markColor : null);
     }
 
+    // Word's accent object (m:acc, MathML accent="true") over one character is
+    // the fixed accent (\vec, \hat, \tilde, \bar). A declared stretchy mark,
+    // or a wider base, keeps the stretched form (\overrightarrow, \widehat, …).
+    private static bool IsFixedAccentOverOneCharacter(XElement over, XElement baseElement, XElement mark)
+    {
+        if (!string.Equals(((string?)over.Attribute("accent"))?.Trim(), "true", StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (mark.Attribute("stretchy") is not null) return false;
+        var token = UnwrapSingleTransparentMathMlContainer(baseElement);
+        return token.Name.LocalName is "mi" or "mn" or "mo"
+            && new System.Globalization.StringInfo(token.Value.Trim()).LengthInTextElements == 1;
+    }
+
     private static string ConvertUnder(XElement element)
     {
         var children = element.Elements().ToList();
         if (children.Count < 2) return ConvertChildren(element);
         if (TryConvertAnnotatedHorizontalBrace(children[0], children[1], top: false, out var brace))
             return brace;
+        // Word's limit (m:limLow over an upright lim, max, …) keeps its limit
+        // underneath even inline; \limits states that while staying a real
+        // \lim. MathJax's own \lim_{} (an mo) keeps the movable form below.
+        var limitBase = UnwrapSingleTransparentMathMlContainer(children[0]);
+        if (MathMlColorContract.Explicit(limitBase) is null
+            && (TryGetNamedFunctionIdentifier(limitBase, out var limitCommand)
+                || (limitBase.Name.LocalName == "mo"
+                    && string.Equals(((string?)limitBase.Attribute("movablelimits"))?.Trim(), "false", StringComparison.OrdinalIgnoreCase)
+                    && TryConvertNamedOperator(limitBase.Value.Trim(), out limitCommand)))
+            && IsLimitLikeOperatorLatex(limitCommand))
+            return limitCommand.TrimEnd() + @"\limits_{" + ScriptArgument(children[1]) + "}";
         var body = ConvertElement(children[0]);
         var under = children[1].Value.Trim();
         if (IsLimitLikeOperatorLatex(body))
@@ -859,8 +1328,49 @@ internal static class MathMlToLatexConverter
         return true;
     }
 
+    [ThreadStatic] private static int alignmentMarkDepth;
+
+    private static IEnumerable<XElement> TableRows(XElement table) =>
+        table.Elements().Where(row => row.Name.LocalName is "mtr" or "mlabeledtr");
+
+    // `aligned` reaches Word as a matrix whose columns alternate right/left
+    // (mcJc); OmmlMathMlProjection records every column in data-vt-columnalign.
+    private static bool IsAlignedColumnPattern(XElement table)
+    {
+        var columns = ((string?)table.Attribute("data-vt-columnalign") ?? string.Empty)
+            .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+        if (columns.Length < 2) return false;
+        for (var index = 0; index < columns.Length; index++)
+            if (columns[index] != (index % 2 == 0 ? "right" : "left")) return false;
+        return true;
+    }
+
     private static string ConvertTable(XElement element)
     {
+        if (IsAlignedColumnPattern(element))
+        {
+            var alignedRows = TableRows(element)
+                .Select(row => string.Join(" & ", row.Elements().Select(ConvertElement)).Trim());
+            return @"\begin{aligned}" + string.Join(@" \\ ", alignedRows) + @"\end{aligned}";
+        }
+        // Word's equation array (m:eqArr) marks its alignment points with '&'
+        // in the text, which arrives as malignmark/maligngroup. Each row starts
+        // with a group of its own; the following marks are the `&` of `aligned`.
+        if (element.Descendants().Any(item => item.Name.LocalName == "malignmark"))
+        {
+            alignmentMarkDepth++;
+            try
+            {
+                var markedRows = TableRows(element)
+                    .Select(row => string.Join(" & ", row.Elements().Select(ConvertElement)).Trim())
+                    .Select(row => row.StartsWith("&", StringComparison.Ordinal) ? row.Substring(1).TrimStart() : row);
+                return @"\begin{aligned}" + string.Join(@" \\ ", markedRows) + @"\end{aligned}";
+            }
+            finally
+            {
+                alignmentMarkDepth--;
+            }
+        }
         var rows = element.Elements()
             .Where(row => row.Name.LocalName is "mtr" or "mlabeledtr")
             .Select(row => string.Join(" & ", row.Elements().Select(ConvertElement)))
@@ -1064,6 +1574,10 @@ internal static class MathMlToLatexConverter
                 return @"\mathbf{" + plain.Trim() + "}";
             if (variant.IndexOf("italic", StringComparison.OrdinalIgnoreCase) >= 0)
                 return @"\mathit{" + plain.Trim() + "}";
+            // A prime has no upright form; VisualTeX for Mac writes f' as an
+            // upright apostrophe, which is f^{\prime}, not f^{\mathrm{\prime}}.
+            if (token.Length > 0 && token.All(character => character is '\'' or '′' or '″' or '‴' or '⁗'))
+                return plain;
             if ((explicitlyUpright && element.Name.LocalName == "mi")
                 || ((explicitlyUpright || variant.Length == 0)
                     && TokenDefaultMathVariants.TryGetValue(token, out var intrinsicVariant)
