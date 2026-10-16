@@ -8,6 +8,8 @@
   onBlur(options) {
     var _a3, _b3, _c2, _d2;
     if (this.focusBlurInProgress || this.blurred) return;
+    // VisualTeX kernel: leaving the field finishes the word at the caret.
+    visualTexJudgeInput(this, { finishing: true });
     this.focusBlurInProgress = true;
     this.stopCoalescingUndo();
     if (!this.visualTexCompositionSourceWrapper)
@@ -1248,6 +1250,15 @@ var _MathfieldElement = class _MathfieldElement extends HTMLElement {
     throw new Error(
       "The `mathVirtualKeyboard` property is not available on the MathfieldElement. Use `window.mathVirtualKeyboard` instead."
     );
+  }
+  /**
+   * VisualTeX kernel: runs the input judgment for a keystroke the host
+   * handles before the kernel sees it (Space). Returns true when the
+   * keystroke is used up (it finished a converted word).
+   */
+  visualTexJudgeKeystroke(evt) {
+    const mf = this._mathfield;
+    return mf ? visualTexJudgeKeystroke(mf, evt, keyboardEventToString(evt)) : false;
   }
   /** @internal */
   onPointerDown() {

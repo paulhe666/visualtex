@@ -17,6 +17,7 @@ import {
 } from "react";
 import {
   MathfieldElement,
+  type Selector,
   type Style,
 } from "mathlive";
 import { flushSync } from "react-dom";
@@ -92,6 +93,7 @@ import {
   configureMathLiveCompletion,
   dismissMathLiveSuggestions,
   insertMathLiveAlignmentPoint,
+  moveMathLiveToNextColumn,
   insertMathLiveRowBreak,
   setMathLivePersistentTypingStyle,
   toggleMathLiveSelectionStyle,
@@ -368,6 +370,39 @@ function rawLatexInput(field: MathfieldElement) {
     .filter((node) => !node.classList.contains("ML__suggestion"))
     .map((node) => node.textContent ?? "")
     .join("");
+}
+
+const FOCUSABLE_CONTROL_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+// Moves keyboard focus to the next (previous) control after the formula
+// lines, skipping the other formula fields, wrapping like the browser does.
+function focusControlOutsideFormulas(field: HTMLElement, direction: 1 | -1) {
+  const controls = Array.from(
+    document.querySelectorAll<HTMLElement>(FOCUSABLE_CONTROL_SELECTOR),
+  ).filter(
+    (element) =>
+      !element.closest("math-field") && element.getClientRects().length > 0,
+  );
+  const side =
+    direction > 0
+      ? Node.DOCUMENT_POSITION_FOLLOWING
+      : Node.DOCUMENT_POSITION_PRECEDING;
+  const onSide = controls.filter(
+    (element) => field.compareDocumentPosition(element) & side,
+  );
+  const target =
+    direction > 0
+      ? onSide[0] ?? controls[0]
+      : onSide.at(-1) ?? controls.at(-1);
+  target?.focus();
+  return Boolean(target);
 }
 
 // Opt-in diagnostics for real WKWebView input transactions. Keep the trace in
@@ -1083,7 +1118,45 @@ function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
   }
 }
 
-function normalizeCompletedDifferentialDisplay(field: MathfieldElement) {
+// The kernel's input judgment (part-021) reads the editor's two switches.
+function applyInputJudgmentSettings(
+  field: MathfieldElement,
+  behavior: InputBehaviorSettings,
+) {
+  (field as unknown as {
+    visualTexJudgmentSettings?: { upright: boolean; escapes: boolean };
+  }).visualTexJudgmentSettings = {
+    upright: behavior.autoUprightTypography,
+    escapes: behavior.autoEscapeShortcuts,
+  };
+}
+
+// Runs the kernel's input judgment for a key the editor handles before the
+// kernel (Space, Backspace). True when the kernel used the key up.
+function kernelJudgeKeystroke(field: MathfieldElement, event: KeyboardEvent) {
+  const judge = (field as unknown as {
+    visualTexJudgeKeystroke?: (event: KeyboardEvent) => boolean;
+  }).visualTexJudgeKeystroke;
+  return Boolean(judge?.call(field, event));
+}
+
+// The caret right after a letter: that letter run may still grow (cm -> cmax).
+function caretFollowsLetter(field: MathfieldElement) {
+  if (field.position <= 0) return false;
+  return /^[A-Za-z]$/.test(
+    field.getValue(field.position - 1, field.position, "latex"),
+  );
+}
+
+/**
+ * Applies the upright rule to the displayed formula. Letter runs (units,
+ * function names, labels) are decided once finished: not while the caret
+ * follows a letter, unless `finished` (the field is being left).
+ */
+function normalizeCompletedUprightDisplay(
+  field: MathfieldElement,
+  finished = false,
+) {
   if (field.mode === "latex" || !field.selectionIsCollapsed) return false;
 
   const originalValue = field.value;
@@ -1091,7 +1164,9 @@ function normalizeCompletedDifferentialDisplay(field: MathfieldElement) {
   // Contextual upright typography is a semantic normalization pass, not an
   // inline-shortcut preference. It must remain active even when the user turns
   // off "common math input auto-convert".
-  const contextualValue = normalizeContextualUprightSymbols(portableValue);
+  const contextualValue = normalizeContextualUprightSymbols(portableValue, {
+    deferLetterRuns: !finished && caretFollowsLetter(field),
+  });
   if (contextualValue === originalValue) return false;
 
   const distanceFromEnd = Math.max(0, field.lastOffset - field.position);
@@ -1605,7 +1680,7 @@ function FormulaField(props: FormulaFieldProps) {
         return;
       }
       const before = lastSnapshotRef.current ?? captureFieldSnapshot(field);
-      normalizeCompletedDifferentialDisplay(field);
+      normalizeCompletedUprightDisplay(field);
       const inputType =
         event instanceof InputEvent ? event.inputType || "insertText" : "insertText";
       const after = captureFieldSnapshot(field);
@@ -1621,7 +1696,7 @@ function FormulaField(props: FormulaFieldProps) {
         const deferredBefore =
           lastSnapshotRef.current ?? captureFieldSnapshot(field);
         if (
-          normalizeCompletedDifferentialDisplay(field)
+          normalizeCompletedUprightDisplay(field)
         ) {
           emitEdit(
             deferredBefore,
@@ -1648,7 +1723,22 @@ function FormulaField(props: FormulaFieldProps) {
         ...lastSnapshotRef.current,
         selection,
       };
+      // A caret move (a click) finishes the word it leaves: the kernel's
+      // input judgment decides it now (keys finish words in the kernel).
+      if (field.selectionIsCollapsed && !uprightCaretFrame) {
+        uprightCaretFrame = window.requestAnimationFrame(() => {
+          uprightCaretFrame = 0;
+          if (!field.isConnected || imeGuard.isComposing()) return;
+          const beforeUpright = lastSnapshotRef.current ?? captureFieldSnapshot(field);
+          const valueBefore = field.value;
+          field.executeCommand(["visualTexJudgeInput", {}] as unknown as Selector);
+          if (field.value !== valueBefore) {
+            emitEdit(beforeUpright, captureFieldSnapshot(field), "replace", "keyboard");
+          }
+        });
+      }
     };
+    let uprightCaretFrame = 0;
     const handleFocus = () => {
       if (field.classList.contains(visualTexSourcePreviewClass)) {
         field.blur();
@@ -1800,6 +1890,7 @@ function FormulaField(props: FormulaFieldProps) {
       defaultInlineShortcutsRef.current,
       propsRef.current.inputBehavior.autoEscapeShortcuts,
     );
+    applyInputJudgmentSettings(field, propsRef.current.inputBehavior);
     field.menuItems = [];
     installMathLiveContourIntegralShadowStyle(field);
     installCustomSymbolShadowStyle(field);
@@ -1827,6 +1918,16 @@ function FormulaField(props: FormulaFieldProps) {
     let tabKeyPending = false;
     const trackTabKey = (event: KeyboardEvent) => {
       tabKeyPending = event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey;
+      // The way out for keyboard users: Escape opens an empty LaTeX box, and
+      // Tab (Shift+Tab) from that still-empty box closes it and moves focus
+      // to the next (previous) control after the formula lines.
+      if (tabKeyPending && field.mode === "latex" && rawLatexInput(field) === "") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        tabKeyPending = false;
+        field.executeCommand(["complete", "reject"]);
+        focusControlOutsideFormulas(field, event.shiftKey ? -1 : 1);
+      }
     };
     const keepTabFocusInFormula = (event: Event) => {
       if (tabKeyPending) event.preventDefault();
@@ -1935,6 +2036,7 @@ function FormulaField(props: FormulaFieldProps) {
       field.removeEventListener("beforeinput", handleBeforeInput, true);
       field.removeEventListener("input", handleInput);
       field.removeEventListener("selection-change", handleSelectionChange);
+      window.cancelAnimationFrame(uprightCaretFrame);
       field.removeEventListener("focus", handleFocus);
       field.removeEventListener("blur", handleBlur);
       field.removeEventListener("keydown", handleKeyDown, true);
@@ -2011,7 +2113,7 @@ function FormulaField(props: FormulaFieldProps) {
     sizingZoomRef.current = props.zoom;
     sizingRowVerticalInsetRef.current = props.formulaRowVerticalInset;
 
-    normalizeCompletedDifferentialDisplay(field);
+    normalizeCompletedUprightDisplay(field);
     installCustomSymbolShadowStyle(field);
 
     // 本地输入仅因中文规范化而与 store 等值时，不重建 MathLive 模型；
@@ -2080,7 +2182,11 @@ function FormulaField(props: FormulaFieldProps) {
       defaults,
       props.inputBehavior.autoEscapeShortcuts,
     );
-  }, [props.inputBehavior.autoEscapeShortcuts]);
+    applyInputJudgmentSettings(field, props.inputBehavior);
+  }, [
+    props.inputBehavior.autoEscapeShortcuts,
+    props.inputBehavior.autoUprightTypography,
+  ]);
 
   useEffect(() => {
     const field = fieldRef.current;
@@ -2978,7 +3084,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
       if (!changed) return false;
 
-      normalizeCompletedDifferentialDisplay(field);
+      normalizeCompletedUprightDisplay(field);
       const after = captureFieldSnapshot(field);
       if (documentBefore) {
         field.resetUndo();
@@ -3036,7 +3142,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
       if (!changed) return false;
 
-      normalizeCompletedDifferentialDisplay(field);
+      normalizeCompletedUprightDisplay(field);
       const afterLatex = normalizeChineseLatex(field.value);
       const afterSelection = captureSelection(field);
       field.resetUndo();
@@ -3904,6 +4010,33 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         return;
       }
 
+      // In a matrix, cases or array, & is LaTeX's column separator: it moves
+      // to the cell on the right, or adds a column at the end of the row.
+      // Where it does neither (not directly in a cell), & stays a character.
+      if (
+        requestsAlignmentPoint &&
+        activeEnvironment !== null &&
+        !insertsInternalAlignmentPoint
+      ) {
+        let moved = false;
+        applyDiscreteFormulaMutation(lineId, field, "keyboard", () => {
+          const before = JSON.stringify([field.value, captureSelection(field)]);
+          moveMathLiveToNextColumn(field);
+          moved =
+            JSON.stringify([field.value, captureSelection(field)]) !== before;
+          return moved;
+        });
+        if (moved) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          focusLine(lineId, {
+            latex: normalizeChineseLatex(field.value),
+            selection: captureSelection(field),
+          });
+          return;
+        }
+      }
+
       const insertsVisibleMathSpace =
         !event.isComposing &&
         !event.altKey &&
@@ -3913,6 +4046,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         (event.key === " " || event.code === "Space") &&
         !rawCommandActive;
       if (insertsVisibleMathSpace) {
+        // The kernel's input judgment goes first: a Space that finished a
+        // converted word (pi -> \pi, frac -> fraction) is used up there.
+        if (kernelJudgeKeystroke(field, event)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         scheduleUnconsumedMathSpace(lineId, field);
         return;
       }
@@ -3949,6 +4089,20 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
 
       if (event.key === "Backspace" || event.key === "Delete") {
+        // Backspace right after an automatic conversion restores what was
+        // typed; the kernel's input judgment keeps that last conversion.
+        if (
+          event.key === "Backspace" &&
+          !event.altKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.shiftKey &&
+          kernelJudgeKeystroke(field, event)
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         const visibleLatex = field
           .getValue("latex-without-placeholders")
           .trim();
