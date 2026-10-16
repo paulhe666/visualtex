@@ -232,9 +232,9 @@ try {
     $powerPointScreenshot = Join-Path $artifactPath "VisualTeX-PowerPoint-Ribbon.png"
     Save-WindowRibbonScreenshot $powerPointRoot $powerPointScreenshot
     $powerPointResults = Measure-ButtonArtwork $powerPointRoot $powerPointScreenshot @(
-        "新建公式",
+        "新建 SVG",
         "编辑所选公式",
-        "转为原生 OLE"
+        "新建 OLE"
     )
 
     if (-not $PowerPointOnly) {

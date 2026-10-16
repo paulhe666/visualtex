@@ -32,4 +32,16 @@ public sealed class VisualTeXSessionClientBatchingTests
         Assert.Equal(new[] { 256, 256, 256, 232 }, chunks.Select(chunk => chunk.Count).ToArray());
         Assert.Equal(sessions, chunks.SelectMany(chunk => chunk).ToArray());
     }
+
+    // A Stop pressed before the companion check must surface as cancellation;
+    // it used to be treated as a missing companion, start a VisualTeX process
+    // and report "companion validation failed".
+    [Fact]
+    public async System.Threading.Tasks.Task EnsureHealthyAsync_CancelledCallerIsCancellationNotACompanionFailure()
+    {
+        using var client = new VisualTeXSessionClient();
+        using var cancellation = new System.Threading.CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.EnsureHealthyAsync(cancellation.Token));
+    }
 }

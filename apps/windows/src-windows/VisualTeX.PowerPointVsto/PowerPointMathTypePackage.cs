@@ -77,6 +77,29 @@ internal static class PowerPointMathTypePackage
         };
     }
 
+    // One MathType equation to stage: the placeholder rectangle it replaces and
+    // the name its graphic frame receives in the staging package.
+    internal sealed class StagedEquation
+    {
+        internal StagedEquation(string placeholderName, string frameName, byte[] compoundFile, byte[] previewEmf,
+            float naturalWidthPt, float naturalHeightPt)
+        {
+            PlaceholderName = placeholderName;
+            FrameName = frameName;
+            CompoundFile = compoundFile;
+            PreviewEmf = previewEmf;
+            NaturalWidthPt = naturalWidthPt;
+            NaturalHeightPt = naturalHeightPt;
+        }
+
+        internal string PlaceholderName { get; }
+        internal string FrameName { get; }
+        internal byte[] CompoundFile { get; }
+        internal byte[] PreviewEmf { get; }
+        internal float NaturalWidthPt { get; }
+        internal float NaturalHeightPt { get; }
+    }
+
     // Replace the staging placeholder on the package's first slide with an
     // embedded Equation.DSMT4 object and its preview picture. This is the same
     // markup PowerPoint saves for a MathType equation; loading it needs no OLE
@@ -86,12 +109,26 @@ internal static class PowerPointMathTypePackage
         byte[] compoundFile,
         byte[] previewEmf,
         float naturalWidthPt,
-        float naturalHeightPt)
+        float naturalHeightPt) =>
+        WriteEquations(packagePath, new[]
+        {
+            new StagedEquation(StagingPlaceholderName, "Equation", compoundFile, previewEmf, naturalWidthPt, naturalHeightPt),
+        });
+
+    // Batch form: every equation replaces its own named placeholder on the first
+    // slide, so one staging presentation serves a whole conversion.
+    internal static void WriteEquations(string packagePath, IReadOnlyList<StagedEquation> equations)
     {
-        if (!MathTypeOleStorage.LooksLikeMathTypeCompoundFile(compoundFile))
-            throw new InvalidDataException("The MathType storage to embed is not valid.");
-        if (previewEmf.Length < 88 || BitConverter.ToUInt32(previewEmf, 0) != 1 || BitConverter.ToUInt32(previewEmf, 40) != 0x464D4520)
-            throw new InvalidDataException("The MathType preview is not an enhanced metafile.");
+        if (equations is null || equations.Count == 0)
+            throw new ArgumentException("At least one MathType equation must be staged.", nameof(equations));
+        foreach (var equation in equations)
+        {
+            if (!MathTypeOleStorage.LooksLikeMathTypeCompoundFile(equation.CompoundFile))
+                throw new InvalidDataException("The MathType storage to embed is not valid.");
+            var previewEmf = equation.PreviewEmf;
+            if (previewEmf.Length < 88 || BitConverter.ToUInt32(previewEmf, 0) != 1 || BitConverter.ToUInt32(previewEmf, 40) != 0x464D4520)
+                throw new InvalidDataException("The MathType preview is not an enhanced metafile.");
+        }
         using var file = File.Open(packagePath, FileMode.Open, FileAccess.ReadWrite);
         using var archive = new ZipArchive(file, ZipArchiveMode.Update);
         const string presentationPart = "ppt/presentation.xml";
@@ -102,58 +139,69 @@ internal static class PowerPointMathTypePackage
         var relsPart = slidePart.Substring(0, slash + 1) + "_rels/" + slidePart.Substring(slash + 1) + ".rels";
 
         var slide = ReadXml(archive, slidePart);
-        var placeholder = slide.Descendants(P + "sp").SingleOrDefault(shape =>
-                (string?)shape.Element(P + "nvSpPr")?.Element(P + "cNvPr")?.Attribute("name") == StagingPlaceholderName)
-            ?? throw new InvalidDataException("The staging placeholder is missing.");
-        var id = (string?)placeholder.Element(P + "nvSpPr")!.Element(P + "cNvPr")!.Attribute("id")
-            ?? throw new InvalidDataException("The staging placeholder has no shape id.");
-        var transform = placeholder.Element(P + "spPr")?.Element(A + "xfrm")
-            ?? throw new InvalidDataException("The staging placeholder has no geometry.");
-
         var relationships = ReadXml(archive, relsPart);
         var usedIds = new HashSet<string>(relationships.Root!.Elements(Rel + "Relationship")
             .Select(item => (string?)item.Attribute("Id") ?? string.Empty), StringComparer.Ordinal);
+        var reservedParts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         string NewId(string stem) { var n = 1; while (usedIds.Contains(stem + n)) n++; usedIds.Add(stem + n); return stem + n; }
         string NewPart(string folder, string stem, string extension)
         {
             var n = 1;
-            while (archive.GetEntry($"ppt/{folder}/{stem}{n}.{extension}") is not null) n++;
-            return $"ppt/{folder}/{stem}{n}.{extension}";
+            while (archive.GetEntry($"ppt/{folder}/{stem}{n}.{extension}") is not null
+                   || reservedParts.Contains($"ppt/{folder}/{stem}{n}.{extension}")) n++;
+            var part = $"ppt/{folder}/{stem}{n}.{extension}";
+            reservedParts.Add(part);
+            return part;
         }
-        var storagePart = NewPart("embeddings", "oleObjectVisualTeX", "bin");
-        var previewPart = NewPart("media", "imageVisualTeX", "emf");
-        var storageId = NewId("rIdVisualTeXOle");
-        var previewId = NewId("rIdVisualTeXPreview");
-        relationships.Root.Add(
-            new XElement(Rel + "Relationship", new XAttribute("Id", storageId),
-                new XAttribute("Type", OleObjectRelationship), new XAttribute("Target", "../" + storagePart.Substring(4))),
-            new XElement(Rel + "Relationship", new XAttribute("Id", previewId),
-                new XAttribute("Type", ImageRelationship), new XAttribute("Target", "../" + previewPart.Substring(4))));
-
         string Emu(float points) => Math.Max(1L, (long)Math.Round(points * 12700d)).ToString(System.Globalization.CultureInfo.InvariantCulture);
-        placeholder.ReplaceWith(new XElement(P + "graphicFrame",
-            new XElement(P + "nvGraphicFramePr",
-                new XElement(P + "cNvPr", new XAttribute("id", id), new XAttribute("name", "Equation")),
-                new XElement(P + "cNvGraphicFramePr", new XElement(A + "graphicFrameLocks", new XAttribute("noChangeAspect", "1"))),
-                new XElement(P + "nvPr")),
-            new XElement(P + "xfrm", transform.Elements()),
-            new XElement(A + "graphic",
-                new XElement(A + "graphicData", new XAttribute("uri", "http://schemas.openxmlformats.org/presentationml/2006/ole"),
-                    new XElement(P + "oleObj",
-                        new XAttribute("name", "Equation"), new XAttribute(R + "id", storageId),
-                        new XAttribute("imgW", Emu(naturalWidthPt)), new XAttribute("imgH", Emu(naturalHeightPt)),
-                        new XAttribute("progId", MathTypeOleInterop.CanonicalProgId),
-                        new XElement(P + "embed"),
-                        new XElement(P + "pic",
-                            new XElement(P + "nvPicPr",
-                                new XElement(P + "cNvPr", new XAttribute("id", "0"), new XAttribute("name", "")),
-                                new XElement(P + "cNvPicPr"), new XElement(P + "nvPr")),
-                            new XElement(P + "blipFill",
-                                new XElement(A + "blip", new XAttribute(R + "embed", previewId)),
-                                new XElement(A + "stretch", new XElement(A + "fillRect"))),
-                            new XElement(P + "spPr",
-                                new XElement(transform),
-                                new XElement(A + "prstGeom", new XAttribute("prst", "rect"), new XElement(A + "avLst")))))))));
+        var parts = new List<(string Part, byte[] Bytes)>();
+
+        foreach (var equation in equations)
+        {
+            var placeholder = slide.Descendants(P + "sp").SingleOrDefault(shape =>
+                    (string?)shape.Element(P + "nvSpPr")?.Element(P + "cNvPr")?.Attribute("name") == equation.PlaceholderName)
+                ?? throw new InvalidDataException("The staging placeholder is missing.");
+            var id = (string?)placeholder.Element(P + "nvSpPr")!.Element(P + "cNvPr")!.Attribute("id")
+                ?? throw new InvalidDataException("The staging placeholder has no shape id.");
+            var transform = placeholder.Element(P + "spPr")?.Element(A + "xfrm")
+                ?? throw new InvalidDataException("The staging placeholder has no geometry.");
+
+            var storagePart = NewPart("embeddings", "oleObjectVisualTeX", "bin");
+            var previewPart = NewPart("media", "imageVisualTeX", "emf");
+            var storageId = NewId("rIdVisualTeXOle");
+            var previewId = NewId("rIdVisualTeXPreview");
+            relationships.Root.Add(
+                new XElement(Rel + "Relationship", new XAttribute("Id", storageId),
+                    new XAttribute("Type", OleObjectRelationship), new XAttribute("Target", "../" + storagePart.Substring(4))),
+                new XElement(Rel + "Relationship", new XAttribute("Id", previewId),
+                    new XAttribute("Type", ImageRelationship), new XAttribute("Target", "../" + previewPart.Substring(4))));
+
+            placeholder.ReplaceWith(new XElement(P + "graphicFrame",
+                new XElement(P + "nvGraphicFramePr",
+                    new XElement(P + "cNvPr", new XAttribute("id", id), new XAttribute("name", equation.FrameName)),
+                    new XElement(P + "cNvGraphicFramePr", new XElement(A + "graphicFrameLocks", new XAttribute("noChangeAspect", "1"))),
+                    new XElement(P + "nvPr")),
+                new XElement(P + "xfrm", transform.Elements()),
+                new XElement(A + "graphic",
+                    new XElement(A + "graphicData", new XAttribute("uri", "http://schemas.openxmlformats.org/presentationml/2006/ole"),
+                        new XElement(P + "oleObj",
+                            new XAttribute("name", "Equation"), new XAttribute(R + "id", storageId),
+                            new XAttribute("imgW", Emu(equation.NaturalWidthPt)), new XAttribute("imgH", Emu(equation.NaturalHeightPt)),
+                            new XAttribute("progId", MathTypeOleInterop.CanonicalProgId),
+                            new XElement(P + "embed"),
+                            new XElement(P + "pic",
+                                new XElement(P + "nvPicPr",
+                                    new XElement(P + "cNvPr", new XAttribute("id", "0"), new XAttribute("name", "")),
+                                    new XElement(P + "cNvPicPr"), new XElement(P + "nvPr")),
+                                new XElement(P + "blipFill",
+                                    new XElement(A + "blip", new XAttribute(R + "embed", previewId)),
+                                    new XElement(A + "stretch", new XElement(A + "fillRect"))),
+                                new XElement(P + "spPr",
+                                    new XElement(transform),
+                                    new XElement(A + "prstGeom", new XAttribute("prst", "rect"), new XElement(A + "avLst")))))))));
+            parts.Add((storagePart, equation.CompoundFile));
+            parts.Add((previewPart, equation.PreviewEmf));
+        }
 
         var types = ReadXml(archive, "[Content_Types].xml");
         void EnsureDefault(string extension, string contentType)
@@ -170,8 +218,7 @@ internal static class PowerPointMathTypePackage
         WriteXml(archive, slidePart, slide);
         WriteXml(archive, relsPart, relationships);
         WriteXml(archive, "[Content_Types].xml", types);
-        WriteBytes(archive, storagePart, compoundFile);
-        WriteBytes(archive, previewPart, previewEmf);
+        foreach (var (part, bytes) in parts) WriteBytes(archive, part, bytes);
     }
 
     private static void WriteXml(ZipArchive archive, string part, XDocument document)

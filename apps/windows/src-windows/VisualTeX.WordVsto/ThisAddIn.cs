@@ -154,14 +154,9 @@ public interface IWordRibbonCallbacks
     [DispId(47)]
     void OnRepairInlineFormulaBaselines(object control);
 
-    [DispId(48)]
-    void OnConvertFormulaFormatDefault(object control);
-
-    [DispId(49)]
-    bool GetFormatConversionScopePressed(Office.IRibbonControl control);
-
-    [DispId(50)]
-    void OnFormatConversionScopeChanged(Office.IRibbonControl control, bool pressed);
+    // DispIds 48-50 belonged to the retired split-button default-scope
+    // callbacks. Each conversion row now has explicit selection and document
+    // buttons; the ids stay unused so no callback is ever renumbered.
 
     [DispId(51)]
     void OnRepairMathTypeDisplays(object control);
@@ -201,50 +196,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
           <button id="VisualTeX.WordVsto.InlineOmml" label="OMML 行内公式" size="large" screentip="插入 Word 原生公式" supertip="插入可由 Word 原生公式工具直接编辑、同时保留 VisualTeX LaTeX 元数据的 OMML 行内公式。" tag="ommlInline" getImage="GetRibbonImage" onAction="OnInsertInlineOmml" />
           <button id="VisualTeX.WordVsto.DisplayOmml" label="OMML 行间公式" size="large" screentip="插入 Word 原生公式" supertip="插入可由 Word 原生公式工具直接编辑、同时保留 VisualTeX LaTeX 元数据的 OMML 行间公式。" tag="ommlDisplay" getImage="GetRibbonImage" onAction="OnInsertDisplayOmml" />
           <button id="VisualTeX.WordVsto.Edit" label="编辑所选公式" size="large" tag="editSelected" getImage="GetRibbonImage" onAction="OnEditSelected" />
-          <box id="VisualTeX.WordVsto.FormatConversionBox" boxStyle="vertical">
-            <splitButton id="VisualTeX.WordVsto.VisualTeXToMathType" size="normal">
-              <button id="VisualTeX.WordVsto.VisualTeXToMathTypeDefault" label="VisualTeX → MathType" screentip="重新绘制为 MathType OLE" supertip="直接按当前默认范围转换；点击右侧箭头可将默认范围切换为“转换所选”或“转换全文”。" tag="nativeOle|mathTypeOle" onAction="OnConvertFormulaFormatDefault" />
-              <menu id="VisualTeX.WordVsto.VisualTeXToMathTypeScopeMenu">
-                <toggleButton id="VisualTeX.WordVsto.VisualTeXToMathTypeScopeSelection" label="默认：转换所选" tag="nativeOle|mathTypeOle|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-                <toggleButton id="VisualTeX.WordVsto.VisualTeXToMathTypeScopeDocument" label="默认：转换全文" tag="nativeOle|mathTypeOle|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-              </menu>
-            </splitButton>
-            <splitButton id="VisualTeX.WordVsto.MathTypeToVisualTeX" size="normal">
-              <button id="VisualTeX.WordVsto.MathTypeToVisualTeXDefault" label="MathType → VisualTeX" screentip="重新绘制为 VisualTeX OLE" supertip="直接按当前默认范围转换；点击右侧箭头可将默认范围切换为“转换所选”或“转换全文”。" tag="mathTypeOle|nativeOle" onAction="OnConvertFormulaFormatDefault" />
-              <menu id="VisualTeX.WordVsto.MathTypeToVisualTeXScopeMenu">
-                <toggleButton id="VisualTeX.WordVsto.MathTypeToVisualTeXScopeSelection" label="默认：转换所选" tag="mathTypeOle|nativeOle|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-                <toggleButton id="VisualTeX.WordVsto.MathTypeToVisualTeXScopeDocument" label="默认：转换全文" tag="mathTypeOle|nativeOle|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-              </menu>
-            </splitButton>
-            <splitButton id="VisualTeX.WordVsto.OmmlToMathType" size="normal">
-              <button id="VisualTeX.WordVsto.OmmlToMathTypeDefault" label="OMML → MathType" screentip="将 Word 原生公式转换为 MathType OLE" supertip="直接按当前默认范围转换；点击右侧箭头可将默认范围切换为“转换所选”或“转换全文”。" tag="wordOmml|mathTypeOle" onAction="OnConvertFormulaFormatDefault" />
-              <menu id="VisualTeX.WordVsto.OmmlToMathTypeScopeMenu">
-                <toggleButton id="VisualTeX.WordVsto.OmmlToMathTypeScopeSelection" label="默认：转换所选" tag="wordOmml|mathTypeOle|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-                <toggleButton id="VisualTeX.WordVsto.OmmlToMathTypeScopeDocument" label="默认：转换全文" tag="wordOmml|mathTypeOle|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-              </menu>
-            </splitButton>
-            <splitButton id="VisualTeX.WordVsto.MathTypeToOmml" size="normal">
-              <button id="VisualTeX.WordVsto.MathTypeToOmmlDefault" label="MathType → OMML" screentip="将 MathType OLE 转换为 Word 原生公式" supertip="直接按当前默认范围转换；点击右侧箭头可将默认范围切换为“转换所选”或“转换全文”。" tag="mathTypeOle|wordOmml" onAction="OnConvertFormulaFormatDefault" />
-              <menu id="VisualTeX.WordVsto.MathTypeToOmmlScopeMenu">
-                <toggleButton id="VisualTeX.WordVsto.MathTypeToOmmlScopeSelection" label="默认：转换所选" tag="mathTypeOle|wordOmml|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-                <toggleButton id="VisualTeX.WordVsto.MathTypeToOmmlScopeDocument" label="默认：转换全文" tag="mathTypeOle|wordOmml|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-              </menu>
-            </splitButton>
-            <splitButton id="VisualTeX.WordVsto.VisualTeXToOmml" size="normal">
-              <button id="VisualTeX.WordVsto.VisualTeXToOmmlDefault" label="VisualTeX → OMML" screentip="将 VisualTeX OLE 转换为 Word OMML" supertip="直接按当前默认范围转换；点击右侧箭头可将默认范围切换为“转换所选”或“转换全文”。" tag="nativeOle|wordOmml" onAction="OnConvertFormulaFormatDefault" />
-              <menu id="VisualTeX.WordVsto.VisualTeXToOmmlScopeMenu">
-                <toggleButton id="VisualTeX.WordVsto.VisualTeXToOmmlScopeSelection" label="默认：转换所选" tag="nativeOle|wordOmml|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-                <toggleButton id="VisualTeX.WordVsto.VisualTeXToOmmlScopeDocument" label="默认：转换全文" tag="nativeOle|wordOmml|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-              </menu>
-            </splitButton>
-            <splitButton id="VisualTeX.WordVsto.OmmlToVisualTeX" size="normal">
-              <button id="VisualTeX.WordVsto.OmmlToVisualTeXDefault" label="OMML → VisualTeX" screentip="将 Word OMML 转换为 VisualTeX OLE" supertip="直接按当前默认范围转换；点击右侧箭头可将默认范围切换为“转换所选”或“转换全文”。" tag="wordOmml|nativeOle" onAction="OnConvertFormulaFormatDefault" />
-              <menu id="VisualTeX.WordVsto.OmmlToVisualTeXScopeMenu">
-                <toggleButton id="VisualTeX.WordVsto.OmmlToVisualTeXScopeSelection" label="默认：转换所选" tag="wordOmml|nativeOle|selection" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-                <toggleButton id="VisualTeX.WordVsto.OmmlToVisualTeXScopeDocument" label="默认：转换全文" tag="wordOmml|nativeOle|document" getPressed="GetFormatConversionScopePressed" onAction="OnFormatConversionScopeChanged" />
-              </menu>
-            </splitButton>
-          </box>
           <box id="VisualTeX.WordVsto.NumberingBox" boxStyle="vertical">
             <button id="VisualTeX.WordVsto.UpdateNumbers" label="更新公式编号" screentip="更新 VisualTeX 与 MathType 公式编号" supertip="刷新当前文档中的 VisualTeX 编号，以及 MathType 原生 MTChap/MTSec/MTEqn 编号和对应公式引用。" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationNumbers" />
             <menu id="VisualTeX.WordVsto.NumberFormat" label="编号格式" screentip="设置当前文档的公式编号格式" supertip="选择后同步更新当前文档已有的 VisualTeX 编号和 MathType 原生 MTPlaceRef 编号，并应用于后续新插入的带编号公式。">
@@ -257,6 +208,39 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             <button id="VisualTeX.WordVsto.InsertReference" label="插入公式引用" screentip="引用带编号公式" supertip="分别从当前文档的 VisualTeX、Word OMML 或 MathType 带编号公式中选择目标；各格式沿用各自的原生编号与引用结构。" imageMso="HyperlinkInsert" onAction="OnInsertEquationReference" />
           </box>
           <button id="VisualTeX.WordVsto.BulkImport" label="批量导入" size="large" screentip="批量导入 LaTeX / Markdown" supertip="将 Markdown 或 LaTeX 文档解析为 Word 原生文字，以及可单独编辑和调整字号的行内/行间公式。" tag="batchImport" getImage="GetRibbonImage" onAction="OnBulkImport" />
+        </group>
+        <group id="VisualTeX.WordVsto.FormatConversionGroup" label="公式格式转换">
+          <box id="VisualTeX.WordVsto.FormatConversionLabelsA" boxStyle="vertical">
+            <labelControl id="VisualTeX.WordVsto.VisualTeXToMathTypeLabel" label="VisualTeX → MathType" />
+            <labelControl id="VisualTeX.WordVsto.MathTypeToVisualTeXLabel" label="MathType → VisualTeX" />
+            <labelControl id="VisualTeX.WordVsto.OmmlToMathTypeLabel" label="OMML → MathType" />
+          </box>
+          <box id="VisualTeX.WordVsto.FormatConversionSelectionA" boxStyle="vertical">
+            <button id="VisualTeX.WordVsto.VisualTeXToMathTypeSelection" label="所选" screentip="所选 VisualTeX → MathType" supertip="把所选范围中的 VisualTeX OLE 公式重新绘制为 MathType OLE。" onAction="OnConvertVisualTeXToMathTypeSelection" />
+            <button id="VisualTeX.WordVsto.MathTypeToVisualTeXSelection" label="所选" screentip="所选 MathType → VisualTeX" supertip="把所选范围中的 MathType 公式重新绘制为 VisualTeX OLE。" onAction="OnConvertMathTypeToVisualTeXSelection" />
+            <button id="VisualTeX.WordVsto.OmmlToMathTypeSelection" label="所选" screentip="所选 OMML → MathType" supertip="把所选范围中的 Word 原生公式转换为 MathType OLE。" onAction="OnConvertOmmlToMathTypeSelection" />
+          </box>
+          <box id="VisualTeX.WordVsto.FormatConversionDocumentA" boxStyle="vertical">
+            <button id="VisualTeX.WordVsto.VisualTeXToMathTypeDocument" label="全文" screentip="全文 VisualTeX → MathType" supertip="把全文所有 VisualTeX OLE 公式重新绘制为 MathType OLE；开始前会再次确认。" onAction="OnConvertVisualTeXToMathTypeDocument" />
+            <button id="VisualTeX.WordVsto.MathTypeToVisualTeXDocument" label="全文" screentip="全文 MathType → VisualTeX" supertip="把全文所有 MathType 公式重新绘制为 VisualTeX OLE；开始前会再次确认。" onAction="OnConvertMathTypeToVisualTeXDocument" />
+            <button id="VisualTeX.WordVsto.OmmlToMathTypeDocument" label="全文" screentip="全文 OMML → MathType" supertip="把全文所有 Word 原生公式转换为 MathType OLE；开始前会再次确认。" onAction="OnConvertOmmlToMathTypeDocument" />
+          </box>
+          <separator id="VisualTeX.WordVsto.FormatConversionSeparator" />
+          <box id="VisualTeX.WordVsto.FormatConversionLabelsB" boxStyle="vertical">
+            <labelControl id="VisualTeX.WordVsto.MathTypeToOmmlLabel" label="MathType → OMML" />
+            <labelControl id="VisualTeX.WordVsto.VisualTeXToOmmlLabel" label="VisualTeX → OMML" />
+            <labelControl id="VisualTeX.WordVsto.OmmlToVisualTeXLabel" label="OMML → VisualTeX" />
+          </box>
+          <box id="VisualTeX.WordVsto.FormatConversionSelectionB" boxStyle="vertical">
+            <button id="VisualTeX.WordVsto.MathTypeToOmmlSelection" label="所选" screentip="所选 MathType → OMML" supertip="把所选范围中的 MathType 公式转换为 Word 原生公式。" onAction="OnConvertMathTypeToOmmlSelection" />
+            <button id="VisualTeX.WordVsto.VisualTeXToOmmlSelection" label="所选" screentip="所选 VisualTeX → OMML" supertip="把所选范围中的 VisualTeX OLE 公式转换为 Word 原生公式。" onAction="OnConvertVisualTeXToOmmlSelection" />
+            <button id="VisualTeX.WordVsto.OmmlToVisualTeXSelection" label="所选" screentip="所选 OMML → VisualTeX" supertip="把所选范围中的 Word 原生公式转换为 VisualTeX OLE。" onAction="OnConvertOmmlToVisualTeXSelection" />
+          </box>
+          <box id="VisualTeX.WordVsto.FormatConversionDocumentB" boxStyle="vertical">
+            <button id="VisualTeX.WordVsto.MathTypeToOmmlDocument" label="全文" screentip="全文 MathType → OMML" supertip="把全文所有 MathType 公式转换为 Word 原生公式；开始前会再次确认。" onAction="OnConvertMathTypeToOmmlDocument" />
+            <button id="VisualTeX.WordVsto.VisualTeXToOmmlDocument" label="全文" screentip="全文 VisualTeX → OMML" supertip="把全文所有 VisualTeX OLE 公式转换为 Word 原生公式；开始前会再次确认。" onAction="OnConvertVisualTeXToOmmlDocument" />
+            <button id="VisualTeX.WordVsto.OmmlToVisualTeXDocument" label="全文" screentip="全文 OMML → VisualTeX" supertip="把全文所有 Word 原生公式转换为 VisualTeX OLE；开始前会再次确认。" onAction="OnConvertOmmlToVisualTeXDocument" />
+          </box>
         </group>
         <group id="VisualTeX.WordVsto.RedrawGroup" label="LaTeX 重绘">
           <menu id="VisualTeX.WordVsto.RedrawSelection" label="重绘所选" size="large" screentip="重绘所选公式或 LaTeX 代码" supertip="可将所选 LaTeX 代码原位重绘为 VisualTeX OLE、Word OMML 或 MathType，也可将这三种公式恢复为 LaTeX 代码。" tag="batchImport" getImage="GetRibbonImage">

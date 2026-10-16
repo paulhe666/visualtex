@@ -308,10 +308,12 @@ public sealed partial class PowerPointFormulaService
                 throw new InvalidDataException("PowerPoint did not preserve the MathType equation storage.");
             if (source is not null)
             {
+                var placeholder = PlaceholderCleanup.Capture(slide, source);
                 references = TransferMathTypeShapeReferences(slide, source, replacement);
                 replacement.Name = source.Name;
                 source.Delete();
                 references.Commit();
+                placeholder?.RemoveRecreatedEmptyPlaceholder(slide);
             }
             else replacement.Name = $"MathType_{session.FormulaId}";
             committed = true;
@@ -518,11 +520,16 @@ public sealed partial class PowerPointFormulaService
         if (!string.IsNullOrWhiteSpace(alternativeText)
             && FormulaMetadataCodec.Decode(alternativeText) is null)
             target.AlternativeText = alternativeText;
+        // A formula hidden in the Selection Pane (for example one revealed by an
+        // animation trigger) stays hidden after conversion.
+        try { target.Visible = source.Visible; } catch { }
         CopyMathTypeShapeTags(source, target);
         CopyMathTypeShapeActions(source, target);
+        var placeholder = PlaceholderCleanup.Capture(slide, source);
         using var references = TransferMathTypeShapeReferences(slide, source, target);
         source.Delete();
         references.Commit();
+        placeholder?.RemoveRecreatedEmptyPlaceholder(slide);
     }
 
     private static void CopyMathTypeShapeActions(Shape source, Shape target)
@@ -577,47 +584,148 @@ public sealed partial class PowerPointFormulaService
         }
     }
 
+    // Moves the source's animations, animation triggers and connector ends onto
+    // its replacement before the source is deleted. Pointing an existing effect
+    // at another shape (Effect.Shape = target) does not survive: PowerPoint
+    // still deletes that effect with the original shape. Animation Painter
+    // (PickupAnimation/ApplyAnimation) copies every effect setting exactly but
+    // appends the copies to the main sequence, so each copy is moved back next
+    // to its original (which disappears with the source); an effect that ran
+    // from a trigger sequence is re-created in that sequence. Nothing is lost
+    // if the conversion is abandoned: rollback removes the copies.
     private static ShapeReferenceTransfer TransferMathTypeShapeReferences(Slide slide, Shape source, Shape target)
     {
-        // Retarget existing effects in place, preserving timeline order/timing.
         TimeLine? timeline = null;
+        Sequence? main = null;
         Sequences? interactive = null;
         var transfer = new ShapeReferenceTransfer();
         try
         {
             timeline = slide.TimeLine;
-            void Retarget(Sequence sequence)
+            main = timeline.MainSequence;
+            interactive = timeline.InteractiveSequences;
+            var sourceId = source.Id;
+            var targetId = target.Id;
+
+            int AnimatedId(Effect effect)
             {
+                Shape? animated = null;
+                try { animated = effect.Shape; return animated.Id; }
+                catch { return 0; }
+                finally { Release(animated); }
+            }
+            List<int> Positions(Sequence sequence, int shapeId)
+            {
+                var positions = new List<int>();
+                for (var i = 1; i <= sequence.Count; i++)
+                {
+                    var effect = sequence[i];
+                    try { if (AnimatedId(effect) == shapeId) positions.Add(i); }
+                    finally { Release(effect); }
+                }
+                return positions;
+            }
+
+            var mainOriginals = Positions(main, sourceId).Count;
+            var triggered = new List<(int Sequence, int Position)>();
+            for (var s = 1; s <= interactive.Count; s++)
+            {
+                var sequence = interactive[s];
+                try { foreach (var position in Positions(sequence, sourceId)) triggered.Add((s, position)); }
+                finally { Release(sequence); }
+            }
+
+            if (mainOriginals + triggered.Count > 0)
+            {
+                source.PickupAnimation();
+                target.ApplyAnimation();
+                var copies = new List<Effect>();
+                for (var i = 1; i <= main.Count; i++)
+                {
+                    var effect = main[i];
+                    if (AnimatedId(effect) == targetId) { copies.Add(effect); transfer.Owned.Add(effect); }
+                    else Release(effect);
+                }
+                foreach (var copy in copies)
+                {
+                    var painted = copy;
+                    transfer.Rollback.Push(() => painted.Delete());
+                }
+                if (copies.Count != mainOriginals + triggered.Count)
+                    throw new InvalidOperationException("PowerPoint did not copy every animation of the formula.");
+
+                // Main-sequence copies: k-th copy goes right after the k-th original.
+                for (var k = 0; k < mainOriginals; k++)
+                {
+                    var originals = Positions(main, sourceId);
+                    copies[k].MoveTo(originals[k] + 1);
+                }
+
+                // Trigger-sequence effects: re-create in the original sequence with
+                // the same trigger and timing, then drop the misplaced copy.
+                for (var j = 0; j < triggered.Count; j++)
+                {
+                    var (sequenceIndex, position) = triggered[j];
+                    Sequence? sequence = null;
+                    Effect? original = null;
+                    Timing? timing = null;
+                    Shape? trigger = null;
+                    try
+                    {
+                        sequence = interactive[sequenceIndex];
+                        original = sequence[position];
+                        timing = original.Timing;
+                        trigger = timing.TriggerShape;
+                        var recreated = sequence.AddTriggerEffect(target, original.EffectType, timing.TriggerType, trigger);
+                        transfer.Owned.Add(recreated);
+                        transfer.Rollback.Push(() => recreated.Delete());
+                        var recreatedTiming = recreated.Timing;
+                        transfer.Owned.Add(recreatedTiming);
+                        try { recreated.Exit = original.Exit; } catch { }
+                        try { recreatedTiming.Duration = timing.Duration; } catch { }
+                        try { recreatedTiming.TriggerDelayTime = timing.TriggerDelayTime; } catch { }
+                        try { recreatedTiming.RepeatCount = timing.RepeatCount; } catch { }
+                        try { recreatedTiming.RewindAtEnd = timing.RewindAtEnd; } catch { }
+                        try { recreated.MoveTo(position + 1); } catch { }
+                        copies[mainOriginals + j].Delete();
+                    }
+                    finally { Release(trigger); Release(timing); Release(original); Release(sequence); }
+                }
+            }
+
+            // Effects that the source triggers (click the formula to run them).
+            for (var s = 1; s <= interactive.Count; s++)
+            {
+                var sequence = interactive[s];
                 try
                 {
                     for (var i = 1; i <= sequence.Count; i++)
                     {
                         var effect = sequence[i];
-                        transfer.Owned.Add(effect);
-                        var animated = effect.Shape;
-                        if (animated.Id == source.Id)
-                        {
-                            effect.Shape = target;
-                            transfer.Rollback.Push(() => effect.Shape = source);
-                        }
                         var timing = effect.Timing;
-                        transfer.Owned.Add(timing);
                         Shape? trigger = null;
                         try { trigger = timing.TriggerShape; } catch { }
-                        if (trigger?.Id == source.Id)
+                        try
                         {
+                            if (trigger?.Id != sourceId) continue;
+                            transfer.Owned.Add(effect);
+                            transfer.Owned.Add(timing);
                             timing.TriggerShape = target;
-                            transfer.Rollback.Push(() => timing.TriggerShape = source);
+                            var retargeted = timing;
+                            transfer.Rollback.Push(() => retargeted.TriggerShape = source);
+                            effect = null!;
+                            timing = null!;
                         }
-                        Release(trigger); Release(animated);
-                        // Keep changed RCWs alive until all retargets succeed.
+                        finally
+                        {
+                            Release(trigger);
+                            if (timing is not null) Release(timing);
+                            if (effect is not null) Release(effect);
+                        }
                     }
                 }
                 finally { Release(sequence); }
             }
-            Retarget(timeline.MainSequence);
-            interactive = timeline.InteractiveSequences;
-            for (var i = 1; i <= interactive.Count; i++) Retarget(interactive[i]);
             Shapes? shapes = null;
             try
             {
@@ -670,6 +778,6 @@ public sealed partial class PowerPointFormulaService
             transfer.Dispose();
             throw;
         }
-        finally { Release(interactive); Release(timeline); }
+        finally { Release(interactive); Release(main); Release(timeline); }
     }
 }

@@ -233,6 +233,10 @@ public sealed class VisualTeXSessionClient : IDisposable
 
     public async Task EnsureHealthyAsync(CancellationToken cancellationToken)
     {
+        // A cancelled caller (e.g. a Stop button) is not a missing companion:
+        // a check cut short by cancellation must never start a VisualTeX
+        // process or be reported as a companion failure.
+        cancellationToken.ThrowIfCancellationRequested();
         if (_configurationException != null)
         {
             LastHealthDiagnostic = _configurationException.Diagnostic;
@@ -271,6 +275,7 @@ public sealed class VisualTeXSessionClient : IDisposable
                 AppendClientLog("health-passed", diagnostic, null);
                 return;
             }
+            cancellationToken.ThrowIfCancellationRequested();
             if (diagnostic.PortListening)
             {
                 if (!string.IsNullOrWhiteSpace(diagnostic.PortOwnerProcessPath)
@@ -327,6 +332,11 @@ public sealed class VisualTeXSessionClient : IDisposable
         {
             InvalidateHealth();
             AppendClientLog("health-failed", error.Diagnostic, error);
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            AppendClientLog("health-cancelled", diagnostic, null);
             throw;
         }
         catch (Exception error)

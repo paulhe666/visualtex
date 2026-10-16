@@ -67,7 +67,12 @@ internal static class PowerPointNativeOmmlPackage
         return equations[ordinal - 1].ToString(SaveOptions.DisableFormatting);
     }
 
-    private static XElement ReadTextShape(ZipArchive archive, int slideId, int shapeId)
+    private static XElement ReadTextShape(ZipArchive archive, int slideId, int shapeId) =>
+        SelectTextShape(ReadSlide(archive, slideId), shapeId);
+
+    // The saved slide part for a slide id (batch conversion reads each scoped
+    // slide once from a single snapshot).
+    internal static XDocument ReadSlide(ZipArchive archive, int slideId)
     {
         var slide = ReadXml(archive, "ppt/presentation.xml").Descendants(P + "sldId")
             .SingleOrDefault(element => (int?)element.Attribute("id") == slideId)
@@ -82,8 +87,7 @@ internal static class PowerPointNativeOmmlPackage
             ?? throw new InvalidDataException("The native equation slide has no target.");
         var uri = new Uri(new Uri("https://package.invalid/ppt/presentation.xml"), target);
         if (uri.Host != "package.invalid") throw new InvalidDataException("Invalid native equation slide target.");
-        var slideXml = ReadXml(archive, Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/')));
-        return SelectTextShape(slideXml, shapeId);
+        return ReadXml(archive, Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/')));
     }
 
     internal static XElement SelectTextShape(XDocument slideXml, int shapeId)

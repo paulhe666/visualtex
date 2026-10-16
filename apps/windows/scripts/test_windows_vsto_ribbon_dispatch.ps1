@@ -119,28 +119,30 @@ function Test-RibbonComDispatch(
                 $ribbonXml -match 'OnExportSelectedAsPicture') {
                 throw "$ClassName Ribbon XML still exposes the removed picture export command."
             }
-            foreach ($requiredFormatControl in @(
-                'VisualTeX.WordVsto.VisualTeXToMathType',
-                'VisualTeX.WordVsto.MathTypeToVisualTeX',
-                'VisualTeX.WordVsto.OmmlToMathType',
-                'VisualTeX.WordVsto.MathTypeToOmml',
-                'VisualTeX.WordVsto.VisualTeXToOmml',
-                'VisualTeX.WordVsto.OmmlToVisualTeX'
+            # Every conversion row has its own Selection and Document buttons.
+            foreach ($row in @(
+                'VisualTeXToMathType',
+                'MathTypeToVisualTeX',
+                'OmmlToMathType',
+                'MathTypeToOmml',
+                'VisualTeXToOmml',
+                'OmmlToVisualTeX'
             )) {
-                $splitMarker = '<splitButton id="{0}"' -f $requiredFormatControl
-                if ($ribbonXml -notmatch [regex]::Escape($splitMarker)) {
-                    throw "$ClassName Ribbon XML format conversion control $requiredFormatControl is not a splitButton."
+                foreach ($scope in @('Selection', 'Document')) {
+                    $wired = '<button id="VisualTeX.WordVsto.{0}{1}"[^>]*onAction="OnConvert{0}{1}"' -f $row, $scope
+                    if ($ribbonXml -notmatch $wired) {
+                        throw "$ClassName Ribbon XML has no $scope button for $row wired to OnConvert$row$scope."
+                    }
                 }
             }
-            foreach ($requiredScopeMarker in @(
-                'onAction="OnConvertFormulaFormatDefault"',
-                'getPressed="GetFormatConversionScopePressed"',
-                'onAction="OnFormatConversionScopeChanged"',
-                'tag="nativeOle|mathTypeOle|selection"',
-                'tag="nativeOle|mathTypeOle|document"'
+            foreach ($retired in @(
+                'OnConvertFormulaFormatDefault',
+                'GetFormatConversionScopePressed',
+                'OnFormatConversionScopeChanged',
+                '<splitButton id="VisualTeX.WordVsto.VisualTeXToMathType"'
             )) {
-                if ($ribbonXml -notmatch [regex]::Escape($requiredScopeMarker)) {
-                    throw "$ClassName Ribbon XML is missing split-button scope behavior $requiredScopeMarker."
+                if ($ribbonXml -match [regex]::Escape($retired)) {
+                    throw "$ClassName Ribbon XML still exposes the retired default-scope control $retired."
                 }
             }
 
@@ -167,6 +169,68 @@ function Test-RibbonComDispatch(
                     throw "$ClassName rejects supported format conversion $($pair[0]) -> $($pair[1]): $($_.Exception.InnerException.Message)"
                 }
             }
+        }
+
+        # Both language variants: every callback the XML names must be a
+        # DispId member of the callback interface, ids must be unique, and the
+        # two languages must expose the same controls.
+        $languageIds = @{}
+        foreach ($constName in @('RibbonXml', 'RibbonXmlEnglish')) {
+            $constField = $classType.GetField($constName, [Reflection.BindingFlags]'Static,NonPublic,Public')
+            if ($null -eq $constField) {
+                throw "$ClassName is missing its $constName Ribbon definition."
+            }
+            $parsed = New-Object Xml.XmlDocument
+            $parsed.LoadXml([string]$constField.GetRawConstantValue())
+            foreach ($node in @($parsed.SelectNodes('//*'))) {
+                foreach ($attribute in @('onLoad', 'onAction', 'getImage', 'getPressed', 'getEnabled', 'getText', 'onChange', 'getLabel')) {
+                    $callback = $node.GetAttribute($attribute)
+                    if ([string]::IsNullOrEmpty($callback)) { continue }
+                    $method = $callbackInterface.GetMethod($callback)
+                    if ($null -eq $method -or @($method.GetCustomAttributes(
+                            [Runtime.InteropServices.DispIdAttribute], $false)).Count -ne 1) {
+                        throw "$ClassName $constName names Ribbon callback $callback, which $InterfaceName does not expose with a DispId."
+                    }
+                }
+            }
+            $ids = @($parsed.SelectNodes('//*[@id]') | ForEach-Object { $_.GetAttribute('id') })
+            $duplicate = @($ids | Group-Object | Where-Object { $_.Count -gt 1 }) | Select-Object -First 1
+            if ($duplicate) {
+                throw "$ClassName $constName repeats Ribbon id $($duplicate.Name)."
+            }
+            $languageIds[$constName] = ($ids | Sort-Object) -join '|'
+
+            if ($ClassName -eq 'VisualTeX.PowerPointVsto.ThisAddIn') {
+                $requestType = $assembly.GetType('VisualTeX.PowerPointVsto.PowerPointConversionRequest', $true)
+                $tryParse = $requestType.GetMethod('TryParse', [Reflection.BindingFlags]'Static,NonPublic,Public')
+                $conversionButtons = @($parsed.SelectNodes('//*[@onAction="OnConvertFormulaFormat"]'))
+                if ($conversionButtons.Count -ne 24) {
+                    throw "$ClassName $constName exposes $($conversionButtons.Count) format conversion buttons; expected 18 directional and 6 unify buttons."
+                }
+                foreach ($button in $conversionButtons) {
+                    $parseArguments = @($button.GetAttribute('tag'), 'nativeOle', $null)
+                    if (-not $tryParse.Invoke($null, $parseArguments)) {
+                        throw "$ClassName $constName conversion button $($button.GetAttribute('id')) has an invalid tag '$($button.GetAttribute('tag'))'."
+                    }
+                }
+                foreach ($row in @('VisualTeXToMathType', 'MathTypeToVisualTeX', 'OmmlToMathType', 'MathTypeToOmml', 'VisualTeXToOmml', 'OmmlToVisualTeX')) {
+                    foreach ($scope in @('Selection', 'Slide', 'All')) {
+                        if ($null -eq $parsed.SelectSingleNode("//*[@id='VisualTeX.PowerPointVsto.$row$scope']")) {
+                            throw "$ClassName $constName has no $scope button for $row."
+                        }
+                    }
+                }
+                # Retired single-object buttons: the conversion group, the editor's
+                # object-format choice and PowerPoint's Delete key replace them.
+                foreach ($retired in @('ConvertOmml', 'ConvertSelected', 'ExportPicture', 'Delete', 'OpenDesktop')) {
+                    if ($null -ne $parsed.SelectSingleNode("//*[@id='VisualTeX.PowerPointVsto.$retired']")) {
+                        throw "$ClassName $constName still exposes the retired $retired button."
+                    }
+                }
+            }
+        }
+        if ($languageIds['RibbonXml'] -ne $languageIds['RibbonXmlEnglish']) {
+            throw "$ClassName Chinese and English Ribbon definitions expose different controls."
         }
 
         $unknown = [Runtime.InteropServices.Marshal]::GetIUnknownForObject($instance)
@@ -230,10 +294,7 @@ Test-RibbonComDispatch `
         "OnConvertVisualTeXToOmmlSelection",
         "OnConvertVisualTeXToOmmlDocument",
         "OnConvertOmmlToVisualTeXSelection",
-        "OnConvertOmmlToVisualTeXDocument",
-        "OnConvertFormulaFormatDefault",
-        "GetFormatConversionScopePressed",
-        "OnFormatConversionScopeChanged"
+        "OnConvertOmmlToVisualTeXDocument"
     )
 
 Test-RibbonComDispatch `
@@ -254,5 +315,9 @@ Test-RibbonComDispatch `
         "OnNewOmmlFormula",
         "OnNewOleFormula",
         "OnInsertInlineOmml",
-        "OnInsertDisplayOmml"
+        "OnInsertDisplayOmml",
+        "OnConvertFormulaFormat",
+        "GetVisualTeXTargetFormPressed",
+        "OnVisualTeXTargetFormChanged",
+        "GetVisualTeXTargetFormLabel"
     )

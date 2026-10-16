@@ -394,6 +394,7 @@ internal static partial class Program
         Console.WriteLine($"Acceptance mode: {mode}");
 
         if (string.Equals(mode, "word-owned-six-way-performance", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-ribbon-scope", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, "word-owned-installed-outgoing", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, "word-owned-progress-focus", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, "word-owned-mathtype-outgoing", StringComparison.OrdinalIgnoreCase)
@@ -449,6 +450,11 @@ internal static partial class Program
                 if (string.Equals(mode, "word-owned-mathtype-outgoing", StringComparison.OrdinalIgnoreCase))
                 {
                     RunOwnedMathTypeOutgoing(artifactRoot);
+                    return 0;
+                }
+                if (string.Equals(mode, "word-owned-ribbon-scope", StringComparison.OrdinalIgnoreCase))
+                {
+                    RunWordOwnedRibbonScopeAcceptance(artifactRoot);
                     return 0;
                 }
                 if (string.Equals(mode, "word-owned-feedback", StringComparison.OrdinalIgnoreCase))
@@ -585,6 +591,29 @@ internal static partial class Program
             catch (Exception error)
             {
                 Console.Error.WriteLine(error);
+                return 1;
+            }
+        }
+
+        if (string.Equals(mode, "powerpoint-format-conversion", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "powerpoint-format-conversion-color", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "powerpoint-format-conversion-scale", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var messageFilter = OfficeComMessageFilter.Register();
+                if (string.Equals(mode, "powerpoint-format-conversion-color", StringComparison.OrdinalIgnoreCase))
+                    RunPowerPointFormatConversionColorAcceptance(artifactRoot);
+                else if (string.Equals(mode, "powerpoint-format-conversion-scale", StringComparison.OrdinalIgnoreCase))
+                    RunPowerPointFormatConversionScaleAcceptance(artifactRoot);
+                else
+                    RunPowerPointFormatConversionAcceptance(artifactRoot);
+                return 0;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine(error);
+                Console.Error.WriteLine($"Acceptance artifacts retained: {artifactRoot}");
                 return 1;
             }
         }

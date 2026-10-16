@@ -73,6 +73,18 @@ public interface IPowerPointRibbonCallbacks
 
     [DispId(20)]
     void OnNewMathTypeFormula(object control);
+
+    [DispId(21)]
+    void OnConvertFormulaFormat(object control);
+
+    [DispId(22)]
+    bool GetVisualTeXTargetFormPressed(Office.IRibbonControl control);
+
+    [DispId(23)]
+    void OnVisualTeXTargetFormChanged(Office.IRibbonControl control, bool pressed);
+
+    [DispId(24)]
+    string GetVisualTeXTargetFormLabel(Office.IRibbonControl control);
 }
 
 [ComVisible(true)]
@@ -108,11 +120,64 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
           <button id="VisualTeX.PowerPointVsto.InsertInlineOmml" label="插入行内 OMML 公式" size="large" screentip="插入行内 PowerPoint 原生公式" supertip="在当前文本框的光标或文本选区处插入行内原生 Office Math。" imageMso="EquationInsertNew" onAction="OnInsertInlineOmml" />
           <button id="VisualTeX.PowerPointVsto.InsertDisplayOmml" label="插入行间 OMML 公式" size="large" screentip="插入行间 PowerPoint 原生公式" supertip="若正在编辑文本框，则在当前光标或文本选区处插入独立公式段落；否则在当前幻灯片创建独立原生 Office Math。" imageMso="EquationInsertNew" onAction="OnInsertDisplayOmml" />
           <button id="VisualTeX.PowerPointVsto.Edit" label="编辑所选公式" size="large" tag="editSelected" getImage="GetRibbonImage" onAction="OnEditSelected" />
-          <button id="VisualTeX.PowerPointVsto.ConvertOmml" label="转为 OMML" screentip="转为 PowerPoint 原生公式" supertip="转换为 PowerPoint 原生 Office Math（PPTX 内部以 OMML 保存），可继续使用 PowerPoint 公式工具编辑。" imageMso="EquationInsertNew" onAction="OnConvertSelectedOmml" />
-          <button id="VisualTeX.PowerPointVsto.ConvertSelected" label="转为原生 OLE" screentip="转为可嵌入编辑的原生 OLE" supertip="转换后外观应保持不变，但对象会嵌入 PowerPoint 文件，并可通过 VisualTeX 双击重新编辑。" tag="convertToOle" getImage="GetRibbonImage" onAction="OnConvertSelected" />
-          <button id="VisualTeX.PowerPointVsto.ExportPicture" label="转为 SVG 图片" imageMso="PictureInsertFromFile" onAction="OnExportSelectedAsPicture" />
-          <button id="VisualTeX.PowerPointVsto.Delete" label="删除所选公式" imageMso="Delete" onAction="OnDeleteSelected" />
-          <button id="VisualTeX.PowerPointVsto.OpenDesktop" label="打开 VisualTeX" imageMso="FileOpen" onAction="OnOpenDesktop" />
+        </group>
+        <group id="VisualTeX.PowerPointVsto.FormatConversionGroup" label="公式格式转换">
+          <box id="VisualTeX.PowerPointVsto.FormatConversionLabelsA" boxStyle="vertical">
+            <labelControl id="VisualTeX.PowerPointVsto.VisualTeXToMathTypeLabel" label="VisualTeX → MathType" />
+            <labelControl id="VisualTeX.PowerPointVsto.MathTypeToVisualTeXLabel" label="MathType → VisualTeX" />
+            <labelControl id="VisualTeX.PowerPointVsto.OmmlToMathTypeLabel" label="OMML → MathType" />
+          </box>
+          <box id="VisualTeX.PowerPointVsto.FormatConversionSelectionA" boxStyle="vertical">
+            <button id="VisualTeX.PowerPointVsto.VisualTeXToMathTypeSelection" label="所选" screentip="VisualTeX → MathType（所选）" supertip="转换所选对象中的 VisualTeX 公式；若在左侧缩略图中选中了幻灯片，则转换这些幻灯片上的全部 VisualTeX 公式，结果为 MathType。" tag="visualtex|mathTypeOle|selection" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.MathTypeToVisualTeXSelection" label="所选" screentip="MathType → VisualTeX（所选）" supertip="转换所选对象中的 MathType 公式；若在左侧缩略图中选中了幻灯片，则转换这些幻灯片上的全部 MathType 公式，结果为 VisualTeX。" tag="mathTypeOle|visualtex|selection" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.OmmlToMathTypeSelection" label="所选" screentip="OMML → MathType（所选）" supertip="转换所选对象中的 PowerPoint 原生（OMML） 公式；若在左侧缩略图中选中了幻灯片，则转换这些幻灯片上的全部 PowerPoint 原生（OMML） 公式，结果为 MathType。" tag="wordOmml|mathTypeOle|selection" onAction="OnConvertFormulaFormat" />
+          </box>
+          <box id="VisualTeX.PowerPointVsto.FormatConversionSlideA" boxStyle="vertical">
+            <button id="VisualTeX.PowerPointVsto.VisualTeXToMathTypeSlide" label="本页" screentip="VisualTeX → MathType（本页）" supertip="把当前幻灯片上的全部 VisualTeX 公式转换为 MathType。" tag="visualtex|mathTypeOle|slide" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.MathTypeToVisualTeXSlide" label="本页" screentip="MathType → VisualTeX（本页）" supertip="把当前幻灯片上的全部 MathType 公式转换为 VisualTeX。" tag="mathTypeOle|visualtex|slide" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.OmmlToMathTypeSlide" label="本页" screentip="OMML → MathType（本页）" supertip="把当前幻灯片上的全部 PowerPoint 原生（OMML） 公式转换为 MathType。" tag="wordOmml|mathTypeOle|slide" onAction="OnConvertFormulaFormat" />
+          </box>
+          <box id="VisualTeX.PowerPointVsto.FormatConversionAllA" boxStyle="vertical">
+            <button id="VisualTeX.PowerPointVsto.VisualTeXToMathTypeAll" label="全部" screentip="VisualTeX → MathType（全部）" supertip="把整个演示文稿中的全部 VisualTeX 公式转换为 MathType；开始前会确认。" tag="visualtex|mathTypeOle|presentation" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.MathTypeToVisualTeXAll" label="全部" screentip="MathType → VisualTeX（全部）" supertip="把整个演示文稿中的全部 MathType 公式转换为 VisualTeX；开始前会确认。" tag="mathTypeOle|visualtex|presentation" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.OmmlToMathTypeAll" label="全部" screentip="OMML → MathType（全部）" supertip="把整个演示文稿中的全部 PowerPoint 原生（OMML） 公式转换为 MathType；开始前会确认。" tag="wordOmml|mathTypeOle|presentation" onAction="OnConvertFormulaFormat" />
+          </box>
+          <separator id="VisualTeX.PowerPointVsto.FormatConversionSeparator1" />
+          <box id="VisualTeX.PowerPointVsto.FormatConversionLabelsB" boxStyle="vertical">
+            <labelControl id="VisualTeX.PowerPointVsto.MathTypeToOmmlLabel" label="MathType → OMML" />
+            <labelControl id="VisualTeX.PowerPointVsto.VisualTeXToOmmlLabel" label="VisualTeX → OMML" />
+            <labelControl id="VisualTeX.PowerPointVsto.OmmlToVisualTeXLabel" label="OMML → VisualTeX" />
+          </box>
+          <box id="VisualTeX.PowerPointVsto.FormatConversionSelectionB" boxStyle="vertical">
+            <button id="VisualTeX.PowerPointVsto.MathTypeToOmmlSelection" label="所选" screentip="MathType → OMML（所选）" supertip="转换所选对象中的 MathType 公式；若在左侧缩略图中选中了幻灯片，则转换这些幻灯片上的全部 MathType 公式，结果为 OMML。" tag="mathTypeOle|wordOmml|selection" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.VisualTeXToOmmlSelection" label="所选" screentip="VisualTeX → OMML（所选）" supertip="转换所选对象中的 VisualTeX 公式；若在左侧缩略图中选中了幻灯片，则转换这些幻灯片上的全部 VisualTeX 公式，结果为 OMML。" tag="visualtex|wordOmml|selection" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.OmmlToVisualTeXSelection" label="所选" screentip="OMML → VisualTeX（所选）" supertip="转换所选对象中的 PowerPoint 原生（OMML） 公式；若在左侧缩略图中选中了幻灯片，则转换这些幻灯片上的全部 PowerPoint 原生（OMML） 公式，结果为 VisualTeX。" tag="wordOmml|visualtex|selection" onAction="OnConvertFormulaFormat" />
+          </box>
+          <box id="VisualTeX.PowerPointVsto.FormatConversionSlideB" boxStyle="vertical">
+            <button id="VisualTeX.PowerPointVsto.MathTypeToOmmlSlide" label="本页" screentip="MathType → OMML（本页）" supertip="把当前幻灯片上的全部 MathType 公式转换为 OMML。" tag="mathTypeOle|wordOmml|slide" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.VisualTeXToOmmlSlide" label="本页" screentip="VisualTeX → OMML（本页）" supertip="把当前幻灯片上的全部 VisualTeX 公式转换为 OMML。" tag="visualtex|wordOmml|slide" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.OmmlToVisualTeXSlide" label="本页" screentip="OMML → VisualTeX（本页）" supertip="把当前幻灯片上的全部 PowerPoint 原生（OMML） 公式转换为 VisualTeX。" tag="wordOmml|visualtex|slide" onAction="OnConvertFormulaFormat" />
+          </box>
+          <box id="VisualTeX.PowerPointVsto.FormatConversionAllB" boxStyle="vertical">
+            <button id="VisualTeX.PowerPointVsto.MathTypeToOmmlAll" label="全部" screentip="MathType → OMML（全部）" supertip="把整个演示文稿中的全部 MathType 公式转换为 OMML；开始前会确认。" tag="mathTypeOle|wordOmml|presentation" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.VisualTeXToOmmlAll" label="全部" screentip="VisualTeX → OMML（全部）" supertip="把整个演示文稿中的全部 VisualTeX 公式转换为 OMML；开始前会确认。" tag="visualtex|wordOmml|presentation" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.OmmlToVisualTeXAll" label="全部" screentip="OMML → VisualTeX（全部）" supertip="把整个演示文稿中的全部 PowerPoint 原生（OMML） 公式转换为 VisualTeX；开始前会确认。" tag="wordOmml|visualtex|presentation" onAction="OnConvertFormulaFormat" />
+          </box>
+          <separator id="VisualTeX.PowerPointVsto.FormatConversionSeparator2" />
+          <menu id="VisualTeX.PowerPointVsto.UnifyFormat" label="一键 统一" size="large" screentip="把所有公式统一为同一种格式" supertip="把当前幻灯片或整个演示文稿中其他格式的公式全部转换为所选格式，已是该格式的公式保持不变。" tag="batchImport" getImage="GetRibbonImage">
+            <menuSeparator id="VisualTeX.PowerPointVsto.UnifySlideHeader" title="当前幻灯片" />
+            <button id="VisualTeX.PowerPointVsto.UnifySlideMathType" label="本页公式全部转为 MathType" tag="any|mathTypeOle|slide" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.UnifySlideOMML" label="本页公式全部转为 OMML" tag="any|wordOmml|slide" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.UnifySlideVisualTeX" label="本页公式全部转为 VisualTeX" tag="any|visualtex|slide" onAction="OnConvertFormulaFormat" />
+            <menuSeparator id="VisualTeX.PowerPointVsto.UnifyAllHeader" title="整个演示文稿" />
+            <button id="VisualTeX.PowerPointVsto.UnifyAllMathType" label="全部公式转为 MathType" tag="any|mathTypeOle|presentation" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.UnifyAllOMML" label="全部公式转为 OMML" tag="any|wordOmml|presentation" onAction="OnConvertFormulaFormat" />
+            <button id="VisualTeX.PowerPointVsto.UnifyAllVisualTeX" label="全部公式转为 VisualTeX" tag="any|visualtex|presentation" onAction="OnConvertFormulaFormat" />
+          </menu>
+          <menu id="VisualTeX.PowerPointVsto.VisualTeXTargetForm" getLabel="GetVisualTeXTargetFormLabel" size="large" screentip="转为 VisualTeX 时使用的形式" supertip="选择“→ VisualTeX”和“统一为 VisualTeX”生成的对象：OLE 对象可双击编辑并嵌入文件；SVG 图片在任何设备上都能清晰显示，同样可双击编辑。" tag="convertToOle" getImage="GetRibbonImage">
+            <toggleButton id="VisualTeX.PowerPointVsto.VisualTeXTargetOle" label="OLE 对象（双击编辑，嵌入文件）" tag="nativeOle" getPressed="GetVisualTeXTargetFormPressed" onAction="OnVisualTeXTargetFormChanged" />
+            <toggleButton id="VisualTeX.PowerPointVsto.VisualTeXTargetSvg" label="SVG 图片（任何设备都能显示）" tag="crossPlatformPicture" getPressed="GetVisualTeXTargetFormPressed" onAction="OnVisualTeXTargetFormChanged" />
+          </menu>
         </group>
         <group id="VisualTeX.PowerPointVsto.FontSizeGroup" label="公式字号">
           <button id="VisualTeX.PowerPointVsto.FontSizeDecrease" label="减小" imageMso="FontSizeDecrease" getEnabled="GetFormulaFontSizeEnabled" onAction="OnDecreaseFormulaFontSize" />
@@ -986,6 +1051,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     private void Dispose()
     {
         _lifetime?.Cancel();
+        // Never leave PowerPoint without input if it shuts down mid-batch.
+        try { _activeModalGuard?.Dispose(); } catch { }
+        _activeModalGuard = null;
         if (_application is not null)
         {
             try { _application.WindowSelectionChange -= OnWindowSelectionChange; } catch { }

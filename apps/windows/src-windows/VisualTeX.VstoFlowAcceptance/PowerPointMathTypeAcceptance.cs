@@ -77,6 +77,15 @@ internal static partial class Program
             if (slide.Shapes.Count != 1 || Math.Abs(shape.Left - 113) > 0.05 || Math.Abs(shape.Top - 87) > 0.05
                 || Math.Abs(shape.Rotation) > 0.05 || shape.Tags["AcceptanceTag"] != "preserved")
                 throw new Exception("Edit changed PowerPoint geometry, tags or object count.");
+            // Read the effect from the slide again: the replaced object carries a
+            // copy of the animation (an effect retargeted to it was lost as soon
+            // as the old object was deleted, even though the held effect object
+            // still answered with the new shape).
+            Release(effect);
+            var sequence = slide.TimeLine.MainSequence;
+            if (sequence.Count != 1) throw new Exception("Edit lost or duplicated the animation effect.");
+            effect = sequence[1];
+            Release(sequence);
             if (effect.Shape.Id != shape.Id || Math.Abs(effect.Timing.Duration - 1.75f) > 0.001)
                 throw new Exception("Edit lost animation target or timing.");
             action = shape.ActionSettings[PowerPoint.PpMouseActivation.ppMouseClick];
@@ -95,6 +104,11 @@ internal static partial class Program
             shape.Select(MsoTriState.msoTrue);
             var reopened = service.LoadMathTypeSelection(service.ReadSelection());
             if (!reopened.Metadata!.Latex.Contains("frac")) throw new Exception("Saved MathType object did not reopen.");
+            var savedSequence = slide.TimeLine.MainSequence;
+            var savedEffect = savedSequence.Count == 1 ? savedSequence[1] : null;
+            if (savedEffect is null || savedEffect.Shape.Id != shape.Id || Math.Abs(savedEffect.Timing.Duration - 1.75f) > 0.001)
+                throw new Exception("The saved presentation lost the edited equation's animation.");
+            Release(savedEffect); Release(savedSequence);
             slide.Export(Path.Combine(artifactRoot, "PowerPoint-MathType-Acceptance.png"), "PNG", 1280, 720);
             using (var bitmap = new System.Drawing.Bitmap(Path.Combine(artifactRoot, "PowerPoint-MathType-Acceptance.png")))
             {

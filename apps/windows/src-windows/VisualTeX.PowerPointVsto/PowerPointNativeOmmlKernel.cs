@@ -50,7 +50,8 @@ internal static class PowerPointNativeOmmlKernel
         float left,
         float top,
         float width,
-        float height)
+        float height,
+        string? baseColor = null)
     {
         Shape? shape = null;
         try
@@ -78,6 +79,13 @@ internal static class PowerPointNativeOmmlKernel
                 Release(frame);
             }
             catch { }
+
+            // A new text box shows uncolored text in the slide's text color
+            // (white on a dark theme). A converted equation keeps the color its
+            // source showed for those parts (black for MathType/VisualTeX).
+            if (baseColor is not null
+                && PowerPointConversionColors.NeedsExplicit(baseColor, ReadDefaultTextColor(shape)))
+                mathMl = PowerPointConversionColors.ApplyBaseColor(mathMl, baseColor);
 
             InsertStandalone(
                 application,
@@ -110,6 +118,23 @@ internal static class PowerPointNativeOmmlKernel
         {
             Release(shape);
         }
+    }
+
+    // The color PowerPoint gives text typed into this (empty) text box.
+    private static string? ReadDefaultTextColor(Shape shape)
+    {
+        object? frame = null, range = null, font = null, fill = null, fore = null;
+        try
+        {
+            frame = shape.TextFrame2;
+            range = ((dynamic)frame).TextRange;
+            font = ((dynamic)range).Font;
+            fill = ((dynamic)font).Fill;
+            fore = ((dynamic)fill).ForeColor;
+            return PowerPointConversionColors.FromOfficeRgb(Convert.ToInt32(((dynamic)fore).RGB));
+        }
+        catch { return null; }
+        finally { Release(fore); Release(fill); Release(font); Release(range); Release(frame); }
     }
 
     internal static void InsertStandalone(
