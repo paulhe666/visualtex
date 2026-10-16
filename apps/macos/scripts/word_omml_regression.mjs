@@ -195,6 +195,9 @@ async function main() {
       String.raw`\overline{x}+\hat{y}`,
       String.raw`\vec{r}+\hat{L}_z+x\hat{p}_y-y\hat{p}_x`,
       String.raw`\overrightarrow{e_{\varphi}}+\overrightarrow{e_{\theta}}`,
+      String.raw`\sin x`,
+      String.raw`\sin^2\theta+\cos(x+y)`,
+      String.raw`\log_2 x`,
     ];
     const expression = `
       (async () => {
@@ -246,6 +249,9 @@ async function main() {
       accents,
       shortVectorAndHats,
       longVectorArrows,
+      appliedSine,
+      appliedPowersAndBrackets,
+      appliedLogarithm,
     ] = results;
     expectIncludes(fraction, "<m:f>", "Fraction must use a structural OMML fraction node.");
     expectIncludes(fraction, "<m:num>", "Fraction must preserve its numerator.");
@@ -344,6 +350,23 @@ async function main() {
       "Multi-character operator names must default to upright roman OMML runs.",
     );
 
+    // A function applied to its argument is Word's own function object, as
+    // Windows writes it and as Word's equation editor does.
+    expect(
+      /<m:func><m:fName>.*?<m:t>sin<\/m:t>.*?<\/m:fName><m:e>.*?<m:t>x<\/m:t>.*?<\/m:e><\/m:func>/.test(appliedSine),
+      `\\sin x must be an OMML function of x.\nActual: ${appliedSine}`,
+    );
+    expect(
+      (appliedPowersAndBrackets.match(/<m:func>/g) ?? []).length === 2 &&
+        /<m:func><m:fName><m:sSup>.*?<m:t>sin<\/m:t>/.test(appliedPowersAndBrackets) &&
+        /<m:t>cos<\/m:t>.*?<\/m:fName><m:e>.*?\(.*?x.*?y.*?\).*?<\/m:e><\/m:func>/.test(appliedPowersAndBrackets),
+      `\\sin^2 and \\cos(...) must be OMML functions with their whole argument.\nActual: ${appliedPowersAndBrackets}`,
+    );
+    expect(
+      /<m:func><m:fName><m:sSub>.*?<m:t>log<\/m:t>/.test(appliedLogarithm),
+      `\\log_2 x must be an OMML function.\nActual: ${appliedLogarithm}`,
+    );
+
     expectIncludes(sum, '<m:chr m:val="∑"/>', "Summation must use an OMML n-ary operator.");
     expectIncludes(sum, '<m:limLoc m:val="undOvr"/>', "Summation limits must use above-and-below placement.");
     for (const [formula, label] of [
@@ -372,6 +395,10 @@ async function main() {
     expect((matrix.match(/<m:mr>/g) ?? []).length === 2, "Matrix must preserve both rows.");
 
     expectIncludes(limit, "<m:limLow>", "Limit notation must use an OMML lower-limit node.");
+    expect(
+      /<m:func><m:fName><m:limLow>.*?<m:t>lim<\/m:t>.*?<\/m:limLow><\/m:fName><m:e>.*?<m:t>f<\/m:t>.*?<\/m:e><\/m:func>/.test(limit),
+      `\\lim_{x\\to0}f(x) must be Word's function object around the limit, applied to f.\nActual: ${limit}`,
+    );
     expectIncludes(binomial, '<m:type m:val="noBar"/>', "Binomial coefficients must use a no-bar fraction.");
     expectIncludes(binomial, "<m:d>", "Binomial coefficients must retain their scalable parentheses.");
     expectIncludes(cases, '<m:begChr m:val="{"/>', "Cases must retain their opening brace.");
@@ -387,15 +414,12 @@ async function main() {
       !accents.includes('<m:chr m:val="^"/>'),
       "Hat accents must not use a caret that touches the base glyph.",
     );
+    // Arrows are Word's own accent object with the combining arrow, as the
+    // Windows writer produces them (WordOmmlConverter.NormalizeMathMlAccents).
     expectIncludes(
       shortVectorAndHats,
-      "<m:groupChr>",
-      "Short vector arrows must use a separated OMML group character.",
-    );
-    expectIncludes(
-      shortVectorAndHats,
-      '<m:chr m:val="→"/>',
-      "Short vectors must preserve the right-arrow group character.",
+      '<m:chr m:val="\u20d7"/>',
+      "Short vectors must be Word accents with the combining right arrow.",
     );
     expectIncludes(
       shortVectorAndHats,
@@ -403,34 +427,24 @@ async function main() {
       "Operator hats must remain distinct after subscript conversion.",
     );
     expect(
-      (shortVectorAndHats.match(/<m:acc>/g) ?? []).length === 3,
-      "The three hatted operators must each retain one accent node.",
+      (shortVectorAndHats.match(/<m:acc>/g) ?? []).length === 4,
+      "The vector and the three hatted operators must each be one accent node.",
     );
     expect(
-      (shortVectorAndHats.match(/<m:groupChr>/g) ?? []).length === 1,
-      "The short vector must produce exactly one arrow group character.",
+      !shortVectorAndHats.includes("<m:groupChr>"),
+      "A short vector must not be a group character.",
     );
     expect(
       (shortVectorAndHats.match(/<m:sSub>/g) ?? []).length >= 3,
       "Hatted L/p operators must keep their subscripts outside the accent base.",
     );
-    expectIncludes(
-      longVectorArrows,
-      "<m:groupChr>",
-      "Overrightarrow must use a stretchable OMML group character.",
-    );
-    expectIncludes(
-      longVectorArrows,
-      '<m:chr m:val="→"/>',
-      "Overrightarrow must preserve its right-arrow group character.",
+    expect(
+      (longVectorArrows.match(/<m:chr m:val="\u20d7"\/>/g) ?? []).length === 2,
+      "Both spherical-basis vectors must be Word accents with the combining right arrow.",
     );
     expect(
-      (longVectorArrows.match(/<m:groupChr>/g) ?? []).length === 2,
-      "Both spherical-basis vectors must receive independent stretched arrows.",
-    );
-    expect(
-      !longVectorArrows.includes("<m:acc>"),
-      "Stretchable overrightarrow arrows must not degrade to short accent nodes.",
+      !longVectorArrows.includes("<m:groupChr>"),
+      "Overrightarrow is Word's accent object, as on Windows.",
     );
 
     const multiLineExpression = `

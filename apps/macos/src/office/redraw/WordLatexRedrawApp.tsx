@@ -173,6 +173,9 @@ export function WordLatexRedrawApp() {
         await reportStage("latex-redraw-commit-complete", items.length);
         await closeMacosDocumentImportWindow();
       } catch (reason) {
+        // The operation is over: end the session now so Word drops its
+        // temporary VT_D_ anchor, even while this message stays open.
+        await cancelMacosDocumentImport(sessionId).catch(() => undefined);
         setError(documentImportErrorMessage(reason, "Word formula operation failed."));
         setStatus("");
         await restoreMacosDocumentImportWindow().catch(() => undefined);

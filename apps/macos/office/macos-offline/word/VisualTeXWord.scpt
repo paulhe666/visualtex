@@ -382,14 +382,22 @@ on launchVisualTeXURL(visualTeXURL)
     on error processMessage number processNumber
         set diagnosticText to diagnosticText & "pgrep=fail:" & processNumber & ":" & processMessage & linefeed
     end try
+    -- /bin/sh skips a backgrounded command whose redirect target cannot be
+    -- opened, yet still exits 0. The diagnostics folder only exists after a
+    -- test run, so create it here and fall back to /dev/null if that fails.
+    set launchStderrPath to "/dev/null"
     try
-        do shell script "/usr/bin/nohup " & quoted form of executablePath & space & quoted form of safeURL & " >/dev/null 2>" & quoted form of diagnosticPath & ".stderr &"
+        my ensureDirectory(my absoluteRuntimePath("Tests"))
+        set launchStderrPath to diagnosticPath & ".stderr"
+    end try
+    try
+        do shell script "/usr/bin/nohup " & quoted form of executablePath & space & quoted form of safeURL & " >/dev/null 2>" & quoted form of launchStderrPath & " &"
         set diagnosticText to diagnosticText & "launchShell=ok" & linefeed
         my writeDiagnosticText(diagnosticPath, diagnosticText)
     on error launchMessage number launchNumber
         set launchStderr to ""
         try
-            set launchStderr to do shell script "/bin/cat " & quoted form of (diagnosticPath & ".stderr")
+            set launchStderr to do shell script "/bin/cat " & quoted form of launchStderrPath
         end try
         set diagnosticText to diagnosticText & "launchShell=fail:" & launchNumber & ":" & launchMessage & linefeed & "stderr=" & launchStderr & linefeed
         my writeDiagnosticText(diagnosticPath, diagnosticText)

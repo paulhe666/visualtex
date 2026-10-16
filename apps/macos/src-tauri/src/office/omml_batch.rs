@@ -26,13 +26,6 @@ impl XmlNode {
         self.attributes.get(name).map(String::as_str)
     }
 
-    fn all_text(&self) -> String {
-        let mut result = self.text.clone();
-        for child in &self.children {
-            result.push_str(&child.all_text());
-        }
-        result
-    }
 }
 
 pub fn run_cli_if_requested() -> Option<i32> {
@@ -137,7 +130,7 @@ fn convert_manifest(input: &Path, output: &Path) -> Result<(), String> {
             required(&values, &format!("{prefix}payloadBase64"))?,
             &format!("formula {index} OMML"),
         )?;
-        let math_ml = word_omml_to_mathml(&omml)?;
+        let math_ml = word_omml_to_mathml(&omml, display_mode == "block")?;
         let latex = mathml_to_latex(&math_ml)?;
         let wrapped = if display_mode == "block" {
             format!("$${latex}$$")
@@ -290,266 +283,16 @@ fn parse_xml(value: &str) -> Result<XmlNode, String> {
     root.ok_or_else(|| "Word MathML has no root element".to_string())
 }
 
-fn escape_latex(value: &str, text_mode: bool) -> String {
-    let mut result = String::new();
-    for character in value.chars() {
-        match character {
-            '\\' if text_mode => result.push_str("\\textbackslash{}"),
-            '\\' => result.push_str("\\backslash "),
-            '^' if text_mode => result.push_str("\\textasciicircum{}"),
-            '~' if text_mode => result.push_str("\\textasciitilde{}"),
-            '$' | '{' | '}' | '#' | '%' | '&' | '_' => {
-                result.push('\\');
-                result.push(character);
-            }
-            _ => result.push(character),
-        }
-    }
-    result
-}
-
-fn token(value: &str) -> String {
-    let value = value.trim();
-    let mapped = match value {
-        "\u{2061}" | "\u{2062}" | "\u{2064}" => "", "\u{2063}" => ",",
-        "−" => "-", "×" => "\\times ", "÷" => "\\div ", "±" => "\\pm ",
-        "∓" => "\\mp ", "·" => "\\cdot ", "∗" => "\\ast ", "∘" => "\\circ ",
-        "∞" => "\\infty ", "∂" => "\\partial ", "∇" => "\\nabla ",
-        "∑" => "\\sum ", "∏" => "\\prod ", "∫" => "\\int ",
-        "∬" => "\\iint ", "∭" => "\\iiint ", "∮" => "\\oint ",
-        "√" => "\\sqrt{}", "≈" => "\\approx ", "≃" => "\\simeq ",
-        "≅" => "\\cong ", "≠" => "\\ne ", "≤" => "\\le ", "≥" => "\\ge ",
-        "≪" => "\\ll ", "≫" => "\\gg ", "≡" => "\\equiv ", "∝" => "\\propto ",
-        "∈" => "\\in ", "∉" => "\\notin ", "∋" => "\\ni ",
-        "⊂" => "\\subset ", "⊃" => "\\supset ", "⊆" => "\\subseteq ",
-        "⊇" => "\\supseteq ", "∪" => "\\cup ", "∩" => "\\cap ",
-        "∧" => "\\land ", "∨" => "\\lor ", "¬" => "\\neg ",
-        "∀" => "\\forall ", "∃" => "\\exists ", "∄" => "\\nexists ",
-        "∅" => "\\varnothing ", "⊥" => "\\perp ", "∥" => "\\parallel ",
-        "←" => "\\leftarrow ", "→" => "\\rightarrow ", "↔" => "\\leftrightarrow ",
-        "⇐" => "\\Leftarrow ", "⇒" => "\\Rightarrow ", "⇔" => "\\Leftrightarrow ",
-        "↦" => "\\mapsto ", "α" => "\\alpha ", "β" => "\\beta ",
-        "γ" => "\\gamma ", "δ" => "\\delta ", "ε" => "\\epsilon ",
-        "ϵ" => "\\varepsilon ", "ζ" => "\\zeta ", "η" => "\\eta ",
-        "θ" => "\\theta ", "ϑ" => "\\vartheta ", "ι" => "\\iota ",
-        "κ" => "\\kappa ", "λ" => "\\lambda ", "μ" => "\\mu ",
-        "ν" => "\\nu ", "ξ" => "\\xi ", "π" => "\\pi ",
-        "ϖ" => "\\varpi ", "ρ" => "\\rho ", "ϱ" => "\\varrho ",
-        "σ" => "\\sigma ", "ς" => "\\varsigma ", "τ" => "\\tau ",
-        "υ" => "\\upsilon ", "φ" => "\\phi ", "ϕ" => "\\varphi ",
-        "χ" => "\\chi ", "ψ" => "\\psi ", "ω" => "\\omega ",
-        "Γ" => "\\Gamma ", "Δ" => "\\Delta ", "Θ" => "\\Theta ",
-        "Λ" => "\\Lambda ", "Ξ" => "\\Xi ", "Π" => "\\Pi ",
-        "Σ" => "\\Sigma ", "Υ" => "\\Upsilon ", "Φ" => "\\Phi ",
-        "Ψ" => "\\Psi ", "Ω" => "\\Omega ", _ => return escape_latex(value, false),
-    };
-    mapped.to_string()
-}
-
-pub(super) fn native_math_token(value: &str) -> String { token(value) }
-
-fn children(node: &XmlNode) -> String {
-    node.children.iter().map(convert_node).collect::<String>()
-}
-
-fn group(value: String) -> String {
-    let value = value.trim().to_string();
-    if value.chars().count() == 1 || (value.starts_with('\\') && value[1..].chars().all(|c| c.is_ascii_alphabetic())) {
-        value
-    } else {
-        format!("{{{value}}}")
-    }
-}
-
-fn delimiter(value: &str, left: bool) -> String {
-    let value = match value {
-        "{" => "\\{".to_string(), "}" => "\\}".to_string(),
-        "|" => if left { "\\lvert" } else { "\\rvert" }.to_string(),
-        "‖" => if left { "\\lVert" } else { "\\rVert" }.to_string(),
-        "〈" | "⟨" => "\\langle".to_string(), "〉" | "⟩" => "\\rangle".to_string(),
-        "" => ".".to_string(), other => other.to_string(),
-    };
-    format!("{}{} ", if left { "\\left" } else { "\\right" }, value)
-}
-
-fn child(node: &XmlNode, index: usize) -> String {
-    node.children.get(index).map(convert_node).unwrap_or_default()
-}
-
-fn styled_latex(node: &XmlNode, body: String) -> String {
-    let variant=node.attribute("mathvariant").unwrap_or_default();
-    match variant {
-        "bold" => format!("\\mathbf{{{body}}}"),
-        "bold-italic" => format!("\\boldsymbol{{{body}}}"),
-        "double-struck" => format!("\\mathbb{{{body}}}"),
-        "script" => format!("\\mathcal{{{body}}}"),
-        "bold-script" => format!("\\boldsymbol{{\\mathcal{{{body}}}}}"),
-        "fraktur" => format!("\\mathfrak{{{body}}}"),
-        "bold-fraktur" => format!("\\boldsymbol{{\\mathfrak{{{body}}}}}"),
-        "sans-serif" => format!("\\mathsf{{{body}}}"),
-        "bold-sans-serif" => format!("\\boldsymbol{{\\mathsf{{{body}}}}}"),
-        "sans-serif-italic" => format!("\\mathsf{{\\mathit{{{body}}}}}"),
-        "sans-serif-bold-italic" => format!("\\boldsymbol{{\\mathsf{{\\mathit{{{body}}}}}}}"),
-        "monospace" => format!("\\mathtt{{{body}}}"),
-        "italic" if node.name == "mstyle" => format!("\\mathit{{{body}}}"),
-        "normal" if node.name == "mstyle" => format!("\\mathrm{{{body}}}"),
-        _ => body,
-    }
-}
-
-fn large_operator(node: &XmlNode) -> bool {
-    let symbol=node.children.first().map(XmlNode::all_text).unwrap_or_default();
-    matches!(symbol.trim(), "∑"|"∏"|"∐"|"∫"|"∬"|"∭"|"∮"|"⋃"|"⋂"|"⋁"|"⋀")
-}
-
-fn convert_node(node: &XmlNode) -> String {
-    let body=convert_node_unstyled(node);
-    if matches!(node.name.as_str(), "mi"|"mn"|"mo"|"mtext"|"mstyle") { styled_latex(node,body) } else { body }
-}
-fn convert_node_unstyled(node: &XmlNode) -> String {
-    match node.name.as_str() {
-        "math" | "mrow" | "mstyle" | "semantics" | "mtd" => children(node),
-        "annotation" | "annotation-xml" | "none" | "mprescripts" => String::new(),
-        "mspace" => {
-            let width=node.attribute("width").unwrap_or("0em");
-            if width=="0em" || width=="0" { String::new() } else { format!("\\hspace{{{width}}}") }
-        },
-        "mi" => {
-            let value = node.all_text().trim().to_string();
-            let variant = node.attribute("mathvariant").unwrap_or_default().to_ascii_lowercase();
-            if (variant.contains("normal") || variant.contains("upright"))
-                && value.chars().all(|value| value.is_alphanumeric() || ".,".contains(value))
-            {
-                format!("\\mathrm{{{}}}", escape_latex(&value, false))
-            } else {
-                token(&value)
-            }
-        }
-        "mn" | "mo" => token(&node.all_text()),
-        "mtext" => {
-            let value = node.all_text();
-            let trimmed = value.trim();
-            if trimmed.chars().count() == 1 && trimmed.chars().all(char::is_alphabetic) {
-                format!("\\mathrm{{{}}}", escape_latex(trimmed, false))
-            } else {
-                format!("\\text{{{}}}", escape_latex(&value, true))
-            }
-        }
-        "mfrac" if matches!(node.attribute("linethickness"), Some("0"|"0pt"|"0px")) => format!("{{{}\\atop {}}}",child(node,0),child(node,1)),
-        "mfrac" => format!("\\frac{{{}}}{{{}}}", child(node, 0), child(node, 1)),
-        "msqrt" => format!("\\sqrt{{{}}}", children(node)),
-        "mroot" => format!("\\sqrt[{}]{{{}}}", child(node, 1), child(node, 0)),
-        "msub" => format!("{}_{{{}}}", group(child(node, 0)), child(node, 1)),
-        "munder" if large_operator(node) => format!("{}\\limits_{{{}}}",child(node,0),child(node,1)),
-        "munder" => convert_accent(node,true),
-        "msup" => format!("{}^{{{}}}", group(child(node, 0)), child(node, 1)),
-        "munderover" if large_operator(node) => format!("{}\\limits_{{{}}}^{{{}}}",child(node,0),child(node,1),child(node,2)),
-        "munderover" => format!("\\overset{{{}}}{{\\underset{{{}}}{{{}}}}}",child(node,2),child(node,1),child(node,0)),
-        "msubsup" => format!(
-            "{}_{{{}}}^{{{}}}",
-            group(child(node, 0)), child(node, 1), child(node, 2)
-        ),
-        "mover" if large_operator(node) => format!("{}\\limits^{{{}}}",child(node,0),child(node,1)),
-        "mover" => convert_accent(node, false),
-        "mfenced" => {
-            let open = node.attribute("open").unwrap_or("(");
-            let close = node.attribute("close").unwrap_or(")");
-            let separator = node.attribute("separators").unwrap_or(",");
-            format!(
-                "{}{}{}",
-                delimiter(open, true),
-                node.children.iter().map(convert_node).collect::<Vec<_>>().join(separator),
-                delimiter(close, false)
-            )
-        }
-        "mtable" => {
-            let rows = node
-                .children
-                .iter()
-                .filter(|row| matches!(row.name.as_str(), "mtr" | "mlabeledtr"))
-                .map(|row| row.children.iter().map(convert_node).collect::<Vec<_>>().join(" & "))
-                .collect::<Vec<_>>();
-            format!("\\begin{{matrix}}{}\\end{{matrix}}", rows.join(" \\\\ "))
-        }
-        "menclose" => {
-            let body = children(node);
-            let notation = node.attribute("notation").unwrap_or_default().to_ascii_lowercase();
-            if notation.contains("box") {
-                format!("\\boxed{{{body}}}")
-            } else if notation.contains("radical") {
-                format!("\\sqrt{{{body}}}")
-            } else {
-                body
-            }
-        }
-        "mphantom" => format!("\\phantom{{{}}}", children(node)),
-        "mmultiscripts" => convert_multiscripts(node),
-        _ => {
-            let nested = children(node);
-            if nested.is_empty() { token(&node.all_text()) } else { nested }
-        }
-    }
-}
-
-fn convert_multiscripts(node: &XmlNode) -> String {
-    let Some(base) = node.children.first() else { return String::new(); };
-    let split=node.children.iter().position(|n| n.name=="mprescripts").unwrap_or(node.children.len());
-    let pairs=|values:&[XmlNode]| values.chunks(2).map(|pair| {
-        let sub=convert_node(&pair[0]);
-        let sup=pair.get(1).map(convert_node).unwrap_or_default();
-        format!("{}{}",if sub.is_empty(){String::new()}else{format!("_{{{sub}}}")},if sup.is_empty(){String::new()}else{format!("^{{{sup}}}")})
-    }).collect::<Vec<_>>();
-    let mut result=String::new();
-    if split<node.children.len() { for pair in pairs(&node.children[split+1..]) { result.push_str(&format!("{{}}{pair}")); } }
-    result.push_str(&group(convert_node(base)));
-    for (i,pair) in pairs(&node.children[1..split]).iter().enumerate() { if i>0 {result.push_str("{}");} result.push_str(pair); }
-    result
-}
-
-fn convert_accent(node: &XmlNode, under: bool) -> String {
-    let body = child(node, 0);
-    let mark = node.children.get(1).map(XmlNode::all_text).unwrap_or_default();
-    let accent = node.attribute(if under {"accentunder"} else {"accent"}) != Some("false");
-    let command = match mark.trim() {
-        "¯" | "̄" | "_" if under && accent => "\\underline",
-        "¯" | "̄" if accent => "\\overline", "̂" => "\\hat", "˜" | "̃" => "\\tilde",
-        "˙" | "̇" => "\\dot", "¨" | "̈" => "\\ddot", "→" | "⃗" => "\\vec",
-        "⌢" => "\\widehat", "⏞" => "\\overbrace", "⏟" => "\\underbrace",
-        _ if under => "\\underset", _ => "\\overset",
-    };
-    if matches!(command, "\\underset" | "\\overset") {
-        format!("{command}{{{}}}{{{body}}}", token(mark.trim()))
-    } else {
-        format!("{command}{{{body}}}")
-    }
-}
-
-fn collapse_repeated_spaces(value: &str) -> String {
-    let mut result = String::with_capacity(value.len());
-    let mut previous_space = false;
-    for character in value.chars() {
-        if character == ' ' {
-            if !previous_space {
-                result.push(character);
-            }
-            previous_space = true;
-        } else {
-            result.push(character);
-            previous_space = false;
-        }
-    }
-    result
-}
-
-/// Native editing must not silently flatten unhandled MathML structures. The
-/// permissive batch converter remains available for the existing import path.
+/// Native editing must not silently flatten unhandled MathML structures: the
+/// equation is checked before it is converted with the shared Word reader.
 pub fn mathml_to_latex_checked(value: &str) -> Result<String,String> {
     let root=parse_xml(value)?;
     if root.name!="math" { return Err("The native equation did not export a MathML root".into()); }
     fn validate(node:&XmlNode)->Result<(),String> {
         let arity=match node.name.as_str() {
-            "math"|"mrow"|"mstyle"|"semantics"|"mtd"|"mtr"|"mlabeledtr"|"mtable"|"msqrt"|"mfenced"|"menclose"|"mphantom"|"mmultiscripts" => None,
-            "mi"|"mn"|"mo"|"mtext"|"mspace"|"none"|"mprescripts"=>Some(0),
+            "math"|"mrow"|"mstyle"|"mpadded"|"semantics"|"mtd"|"mtr"|"mlabeledtr"|"mtable"|"msqrt"|"mfenced"|"menclose"|"mphantom"|"mmultiscripts" => None,
+            // Equation-array alignment points read back as the `&` of `aligned`.
+            "mi"|"mn"|"mo"|"mtext"|"mspace"|"none"|"mprescripts"|"maligngroup"|"malignmark"=>Some(0),
             "msub"|"msup"|"munder"|"mover"|"mfrac"|"mroot"=>Some(2),
             "msubsup"|"munderover"=>Some(3),
             "annotation"|"annotation-xml"=>return Ok(()),
@@ -565,15 +308,13 @@ pub fn mathml_to_latex_checked(value: &str) -> Result<String,String> {
         for child in &node.children {validate(child)?;} Ok(())
     }
     validate(&root)?;
-    let result=convert_node(&root).trim().to_string();
+    let result=super::omml_latex::mathml_to_word_equation_latex(value)?.trim().to_string();
     if result.is_empty() {Err("The native equation is empty".into())} else {Ok(result)}
 }
 
+/// Word MathML as LaTeX, read the same way as on Windows.
 pub fn mathml_to_latex(value: &str) -> Result<String, String> {
-    let root = parse_xml(value)?;
-    let result = collapse_repeated_spaces(&convert_node(&root))
-        .trim()
-        .to_string();
+    let result = super::omml_latex::mathml_to_word_equation_latex(value)?.trim().to_string();
     if result.is_empty() {
         Err("Word MathML did not contain a recoverable formula".to_string())
     } else {
@@ -586,21 +327,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_round_trip_preserves_styles_entities_and_grouping() {
-        let styled=r#"<math><mstyle mathvariant="bold"><mi>x</mi><mi>y</mi></mstyle><mi mathvariant="double-struck">R</mi><mtext>A &amp; B</mtext></math>"#;
-        assert_eq!(mathml_to_latex_checked(styled).unwrap(), r"\mathbf{xy}\mathbb{R}\text{A & B}".replace('&',r"\&"));
-        assert_eq!(mathml_to_latex_checked(r"<math><msup><mrow><mi>α</mi><mo>+</mo><mi>x</mi></mrow><mn>2</mn></msup></math>").unwrap(), r"{\alpha +x}^{2}");
+    fn native_edit_checks_the_structure_before_converting() {
         assert!(mathml_to_latex_checked("<math><unknown><mi>x</mi></unknown></math>").is_err());
-    }
-    #[test]
-    fn native_round_trip_preserves_under_accents_and_prescripts() {
+        assert!(mathml_to_latex_checked("<math><mfrac bevelled=\"true\"><mi>a</mi><mi>b</mi></mfrac></math>").is_err());
+        assert!(mathml_to_latex_checked("<math><msub><mi>a</mi></msub></math>").is_err());
         assert_eq!(mathml_to_latex_checked("<math><munder accentunder=\"true\"><mi>x</mi><mo>¯</mo></munder></math>").unwrap(),r"\underline{x}");
-        assert_eq!(mathml_to_latex_checked("<math><mmultiscripts><mi>X</mi><mi>i</mi><none/><mprescripts/><mi>j</mi><mn>2</mn></mmultiscripts></math>").unwrap(),r"{}_{j}^{2}X_{i}");
-        assert_eq!(mathml_to_latex_checked("<math><mover accent=\"false\"><mi>x</mi><mi>n</mi></mover></math>").unwrap(),r"\overset{n}{x}");
+        assert_eq!(
+            mathml_to_latex_checked("<math><mtable><mtr><mtd><mrow><maligngroup/><mi>a</mi><malignmark/><mo>=</mo><mi>b</mi></mrow></mtd></mtr></mtable></math>").unwrap(),
+            r"\begin{aligned}a&=b\end{aligned}"
+        );
     }
     #[test]
     fn converts_structured_mathml() {
         let value = r#"<math xmlns="http://www.w3.org/1998/Math/MathML"><mfrac><mi>a</mi><msup><mi>b</mi><mn>2</mn></msup></mfrac></math>"#;
-        assert_eq!(mathml_to_latex(value).unwrap(), "\\frac{a}{b^{2}}");
+        assert_eq!(mathml_to_latex(value).unwrap(), "\\frac{a}{b^2}");
     }
 }

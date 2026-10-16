@@ -164,6 +164,14 @@ const ACCENT_CHARACTERS = new Set([
   "̈",
 ]);
 const STRETCHY_ARROW_CHARACTERS = new Set(["→", "←", "↔"]);
+// Windows' Word writer (WordOmmlConverter.NormalizeMathMlAccents) makes every
+// arrow mark Word's own accent object with the combining arrow: \vec{F},
+// \vec{AB} and \overrightarrow{AB} alike, unless MathML says accent="false".
+const WORD_ARROW_ACCENTS = new Map([
+  ["→", "\u20D7"],
+  ["←", "\u20D6"],
+  ["↔", "\u20E1"],
+]);
 const OMML_ACCENT_CHARACTER_OVERRIDES = new Map([
   // A spacing ASCII caret touches the top-left edge of italic letters in Word.
   // The modifier circumflex remains a distinct, centred hat without the wide
@@ -604,10 +612,80 @@ function convertNary(element: Element, bodyElements: Element[]) {
   );
 }
 
+// MathJax marks a function applied to its argument (\sin x, \log_2 x, \lim f)
+// with an invisible U+2061 operator between them.
+function isFunctionApplication(element: Element | undefined) {
+  return (
+    element !== undefined &&
+    elementName(element) === "mo" &&
+    (element.textContent ?? "").trim() === "⁡"
+  );
+}
+
+const FUNCTION_ARGUMENT_FENCES = new Map([
+  ["(", ")"],
+  ["[", "]"],
+  ["{", "}"],
+]);
+
+// The argument of an applied function is the next item, or a whole bracketed
+// group when it opens with a bracket, as in Windows' Word writer.
+function functionArgumentEnd(elements: Element[], start: number) {
+  const first = elements[start];
+  const open = elementName(first) === "mo" ? (first.textContent ?? "").trim() : "";
+  const close = FUNCTION_ARGUMENT_FENCES.get(open);
+  if (!close) return start + 1;
+  let depth = 0;
+  for (let index = start; index < elements.length; index += 1) {
+    const element = elements[index];
+    if (elementName(element) !== "mo") continue;
+    const text = (element.textContent ?? "").trim();
+    if (text === open) depth += 1;
+    else if (text === close) {
+      depth -= 1;
+      if (depth === 0) return index + 1;
+    }
+  }
+  return start + 1;
+}
+
+// MathJax writes \lim_{x\to 0} f as an munder over the named operator with no
+// U+2061 after it; Word's own limit is that m:limLow inside an m:func.
+function isNamedLimitApplication(element: Element, next: Element | undefined) {
+  if (elementName(element) !== "munder" || next === undefined) return false;
+  const base = elementChildren(element)[0];
+  if (!base || !operatorLooksLikeLimit(base)) return false;
+  if (!/^[A-Za-z][A-Za-z ]*$/.test(normalizedTokenText(base).trim())) return false;
+  if (elementName(next) !== "mo") return true;
+  return FUNCTION_ARGUMENT_FENCES.has((next.textContent ?? "").trim());
+}
+
 function convertSequence(elements: Element[]) {
   let output = "";
   for (let index = 0; index < elements.length; index += 1) {
     const element = elements[index];
+    // Word's own function object (m:func) keeps sin, log, lim … a function of
+    // its argument; Word and the LaTeX reader both rely on that structure.
+    if (
+      !naryParts(element) &&
+      isFunctionApplication(elements[index + 1]) &&
+      index + 2 < elements.length
+    ) {
+      const argumentEnd = functionArgumentEnd(elements, index + 2);
+      output +=
+        `<m:func><m:fName>${convertElement(element)}</m:fName>` +
+        `<m:e>${convertSequence(elements.slice(index + 2, argumentEnd))}</m:e></m:func>`;
+      index = argumentEnd - 1;
+      continue;
+    }
+    if (isNamedLimitApplication(element, elements[index + 1])) {
+      const argumentEnd = functionArgumentEnd(elements, index + 1);
+      output +=
+        `<m:func><m:fName>${convertElement(element)}</m:fName>` +
+        `<m:e>${convertSequence(elements.slice(index + 1, argumentEnd))}</m:e></m:func>`;
+      index = argumentEnd - 1;
+      continue;
+    }
     if (naryParts(element)) {
       let bodyEnd = index + 1;
       while (
@@ -760,13 +838,18 @@ function convertUnderOver(element: Element) {
     const upper = upperElement ? convertElement(upperElement) : "";
     const character = accentCharacter(upperElement);
     if (OVER_BAR_CHARACTERS.has(character)) return convertBar(base, "top");
+    const arrowAccent =
+      upperElement &&
+      elementName(upperElement) === "mo" &&
+      upperElement.getAttribute("accent")?.toLowerCase() !== "false" &&
+      element.getAttribute("accent")?.toLowerCase() !== "false"
+        ? WORD_ARROW_ACCENTS.get(upperElement.textContent ?? "")
+        : undefined;
+    if (arrowAccent) return convertAccent(base, arrowAccent);
     if (
       OVER_GROUP_CHARACTERS.has(character) ||
       STRETCHY_ARROW_CHARACTERS.has(character)
     ) {
-      // Word's m:acc arrow touches or overlaps the base at normal document
-      // sizes. A top group character keeps both short \\vec accents and long
-      // \\overrightarrow arrows separate, stretchable and centred.
       return convertGroupCharacter(base, character, "top");
     }
     if (

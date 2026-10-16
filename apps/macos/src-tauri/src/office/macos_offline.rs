@@ -1415,8 +1415,31 @@ fn is_untagged_word_edit(request: &MacOfflineSessionRequest) -> bool {
             || request.operation.as_deref() == Some("nativeToImage"))
 }
 
-fn word_native_edit_latex(xml: &str) -> Result<super::powerpoint_omml::to_latex::NativeLatex, String> {
-    let math_ml = word_omml_to_mathml(xml)?;
+// A Word session converts between an image and a Word equation when its
+// source and its result differ in kind. The source is a Word equation when it
+// carries a VisualTeX OMML anchor (VT_F_) or is an untagged Word equation,
+// opened through its session-only edit anchor.
+fn word_format_conversion_requested(request: &MacOfflineSessionRequest) -> bool {
+    let source_is_word_equation = request
+        .source_object_id
+        .as_deref()
+        .is_some_and(|value| value.starts_with("VT_F_"))
+        || is_untagged_word_edit(request);
+    request.host == "word" && source_is_word_equation != request.native_equation
+}
+
+// Ending a session without applying it must remove what the add-in put in the
+// document for it: a new formula's placeholder, a Word edit's session-only
+// anchor (VT_E_), or PowerPoint's native edit state.
+fn cancel_needs_host_callback(request: &MacOfflineSessionRequest) -> bool {
+    request.mode == "create"
+        || (request.host == "powerpoint" && request.native_equation)
+        || (request.host == "word"
+            && request.source_object_id.as_deref().is_some_and(|value| value.starts_with("VT_E_")))
+}
+
+fn word_native_edit_latex(xml: &str, display: bool) -> Result<super::powerpoint_omml::to_latex::NativeLatex, String> {
+    let math_ml = word_omml_to_mathml(xml, display)?;
     Ok(super::powerpoint_omml::to_latex::NativeLatex {
         latex: super::omml_batch::mathml_to_latex_checked(&math_ml)?,
         letter_font: "cambria".to_string(),
@@ -1427,14 +1450,15 @@ fn word_native_edit_source(request: &MacOfflineSessionRequest) -> Result<super::
     // Small live OMath snapshots travel in the same atomic inbox request as
     // the edit target. Older templates and oversized snapshots retain the
     // session-file transport, with the same parser and no metadata cache.
+    let display = request.display_mode == "block";
     if let Some(xml) = request.native_edit_xml.as_deref() {
-        return word_native_edit_latex(xml);
+        return word_native_edit_latex(xml, display);
     }
     let path = session_directory(OfficeHost::Word, &request.session_id)?.join("native-edit-original.omml");
     let size = fs::metadata(&path).map_err(|e| format!("Native Word equation snapshot is missing: {e}"))?.len();
     if size == 0 || size > MAX_OMML_BYTES as u64 { return Err("Native Word equation snapshot has invalid size".into()); }
     let xml = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    word_native_edit_latex(&xml)
+    word_native_edit_latex(&xml, display)
 }
 
 fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Result<(), String> {
@@ -5592,7 +5616,7 @@ fn cancel_host(request: &MacOfflineSessionRequest) -> Result<(), String> {
         dispatch.as_bytes(),
         0o600,
     )?;
-    if request.mode == "create" || (request.host == "powerpoint" && request.native_equation) {
+    if cancel_needs_host_callback(request) {
         with_dispatch_pointer(host, &request.session_id, || run_vba_callback(host))?;
     }
     Ok(())
@@ -5739,13 +5763,11 @@ fn parse_formula_restore_manifest(
                     }
                     None
                 };
-                (
-                    formula_id,
-                    numbered,
-                    metadata,
-                    Some(word_omml_to_mathml(&payload)?),
-                    None,
-                )
+                // The restore reads the equation with the same Word reader as
+                // Windows; the editor no longer re-derives LaTeX from MathML.
+                let math_ml = word_omml_to_mathml(&payload, display_mode == "block")?;
+                let latex = super::omml_batch::mathml_to_latex(&math_ml)?;
+                (formula_id, numbered, metadata, Some(math_ml), Some(latex))
             } else {
                 let metadata = decode_metadata(&payload)?;
                 let latex = canonical_document_formula_latex(&metadata)?;
@@ -5999,68 +6021,15 @@ fn strip_visualtex_numbered_equation_array(fragment: &str) -> Option<String> {
     ))
 }
 
-fn decode_xslt_output(bytes: &[u8]) -> Result<String, String> {
-    if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff]) {
-        let little_endian = bytes.starts_with(&[0xff, 0xfe]);
-        let body = &bytes[2..];
-        if body.len() % 2 != 0 {
-            return Err("Word MathML output contains invalid UTF-16".to_string());
-        }
-        let units = body
-            .chunks_exact(2)
-            .map(|pair| {
-                if little_endian {
-                    u16::from_le_bytes([pair[0], pair[1]])
-                } else {
-                    u16::from_be_bytes([pair[0], pair[1]])
-                }
-            })
-            .collect::<Vec<_>>();
-        return String::from_utf16(&units)
-            .map_err(|_| "Word MathML output is not valid UTF-16".to_string());
-    }
-    String::from_utf8(bytes.to_vec())
-        .map_err(|_| "Word MathML output is not valid UTF-8".to_string())
-}
-
-pub(crate) fn word_omml_to_mathml(word_open_xml: &str) -> Result<String, String> {
+/// One Word equation as MathML. VisualTeX's own OMML reader (shared with the
+/// Windows add-in) replaces Word's omml2mathml.xsl, whose output changes with
+/// Office updates.
+pub(crate) fn word_omml_to_mathml(word_open_xml: &str, display: bool) -> Result<String, String> {
     let fragment = extract_omath_fragment(word_open_xml)?;
     let fragment = strip_visualtex_numbered_equation_array(&fragment).unwrap_or(fragment);
-    let stylesheet = Path::new(
-        "/Applications/Microsoft Word.app/Contents/Resources/omml2mathml.xsl",
-    );
-    if !stylesheet.is_file() {
-        return Err("Microsoft Word OMML conversion stylesheet is missing".to_string());
-    }
-    let mut child = Command::new("/usr/bin/xsltproc")
-        .args(["--nonet"])
-        .arg(stylesheet)
-        .arg("-")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("Unable to start the Word OMML converter: {error}"))?;
-    child
-        .stdin
-        .take()
-        .ok_or_else(|| "Word OMML converter stdin is unavailable".to_string())?
-        .write_all(fragment.as_bytes())
-        .map_err(|error| format!("Unable to send OMML to the Word converter: {error}"))?;
-    let output = child
-        .wait_with_output()
-        .map_err(|error| format!("Unable to wait for the Word OMML converter: {error}"))?;
-    if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if detail.is_empty() {
-            "Microsoft Word could not convert the native formula to MathML".to_string()
-        } else {
-            format!("Microsoft Word could not convert the native formula to MathML: {detail}")
-        });
-    }
-    let math_ml = decode_xslt_output(&output.stdout)?;
+    let math_ml = super::omml_latex::omml_to_mathml(&fragment, display)?;
     if math_ml.trim().is_empty() || math_ml.len() > MAX_OMML_BYTES {
-        return Err("Microsoft Word returned empty or excessive MathML".to_string());
+        return Err("The Word equation produced empty or excessive MathML".to_string());
     }
     Ok(math_ml)
 }
@@ -7292,19 +7261,22 @@ fn commit_session_blocking(
         && request.native_equation && session.mode == OfficeSessionMode::Edit {
         native_powerpoint_edit_source_changed(&session)?
     } else { false };
-    let source_is_native_word_equation = session.host == OfficeHost::Word
-        && request
-            .source_object_id
-            .as_deref()
-            .is_some_and(|value| value.starts_with("VT_F_"));
-    let word_format_conversion_requested = session.host == OfficeHost::Word
-        && source_is_native_word_equation != request.native_equation;
+    // An untagged Word equation sent to "convert to image" is unchanged in the
+    // editor but still has to become an image.
+    let word_format_conversion_requested =
+        session.host == OfficeHost::Word && word_format_conversion_requested(&request);
     if session.mode == OfficeSessionMode::Edit
         && !session.dirty
         && !word_format_conversion_requested
         && !native_powerpoint_source_changed
     {
-        if request.host == "powerpoint" && request.native_equation { cancel_host(&request)?; }
+        // Nothing to apply: release the host's session state (PowerPoint's
+        // native edit, Word's session-only anchor) the way Cancel does.
+        if (request.host == "powerpoint" && request.native_equation)
+            || (request.host == "word" && cancel_needs_host_callback(&request))
+        {
+            cancel_host(&request)?;
+        }
         let completed = complete_session(&state, &session_id)?;
         queue_editor_performance(
             session.host,
@@ -7920,8 +7892,8 @@ mod tests {
             "<m:r><w:fldChar w:fldCharType=\"end\"/></m:r></m:e></m:d>",
             "</m:e></m:eqArr></m:oMath>"
         );
-        let math_ml = word_omml_to_mathml(numbered)
-            .expect("Word should convert the stripped formula body to MathML");
+        let math_ml = word_omml_to_mathml(numbered, true)
+            .expect("the stripped formula body should convert to MathML");
         assert!(!math_ml.contains("VT_N_"));
         assert!(!math_ml.contains("REF"));
         let latex = crate::office::omml_batch::mathml_to_latex(&math_ml)
@@ -8687,11 +8659,37 @@ mod tests {
         assert!(validate_request(&request, &request.session_id).is_err());
     }
 
+    #[test]
+    fn untagged_word_equation_to_image_is_a_conversion_and_its_anchor_is_released() {
+        let mut request: MacOfflineSessionRequest = serde_json::from_value(json!({
+            "protocolVersion": OFFLINE_PROTOCOL_VERSION,
+            "sessionId": "32345678-1234-4234-9234-123456789abc",
+            "host": "word", "mode": "edit", "displayMode": "inline",
+            "formulaId": "42345678-1234-4234-9234-123456789abc",
+            "numbered": false, "nativeEquation": false, "operation": "nativeToImage",
+            "sourceDocumentId": "native-word-test",
+            "sourceObjectId": "VT_E_32345678123442349234"
+        })).unwrap();
+        // Selected Word equation -> image: unchanged in the editor, still applied.
+        assert!(word_format_conversion_requested(&request));
+        assert!(cancel_needs_host_callback(&request));
+        // Editing the same Word equation and keeping it one is not a conversion.
+        request.operation = None;
+        request.native_equation = true;
+        assert!(!word_format_conversion_requested(&request));
+        assert!(cancel_needs_host_callback(&request));
+        // VisualTeX-made OMML (VT_F_) to an image was already a conversion.
+        request.source_object_id = Some("VT_F_41345678-1234-4234-9234-123456789abc".into());
+        request.native_equation = false;
+        assert!(word_format_conversion_requested(&request));
+        assert!(!cancel_needs_host_callback(&request));
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn untagged_word_edit_reads_current_math_without_metadata() {
         let xml = r#"<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:rad><m:radPr><m:degHide m:val="1"/></m:radPr><m:deg/><m:e><m:r><m:t>x</m:t></m:r></m:e></m:rad></m:oMath>"#;
-        let source = word_native_edit_latex(xml).unwrap();
+        let source = word_native_edit_latex(xml, false).unwrap();
         assert!(source.latex.contains(r"\sqrt{x}"), "{}", source.latex);
         assert!(!source.latex.contains("VisualTeX"));
     }
@@ -8712,7 +8710,7 @@ mod tests {
         })).unwrap();
         validate_request(&request, &request.session_id).unwrap();
         let source = word_native_edit_source(&request).unwrap();
-        assert_eq!(source.latex, word_native_edit_latex(xml).unwrap().latex);
+        assert_eq!(source.latex, word_native_edit_latex(xml, false).unwrap().latex);
         assert!(source.latex.contains(r"\sqrt{x}"));
         let round_trip: MacOfflineSessionRequest = serde_json::from_slice(&serde_json::to_vec(&request).unwrap()).unwrap();
         assert_eq!(round_trip.native_edit_xml.as_deref(), Some(xml));

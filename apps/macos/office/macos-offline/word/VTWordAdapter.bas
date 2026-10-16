@@ -6,7 +6,7 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-office-performance-20260801-r111"
+    "word-office-performance-20260801-r115"
 Private Const VT_WORD_IDLE_WATCH_SECONDS As Long = 5
 Private Const VT_WORD_LATEX_REDRAW_REVISION As String = _
     "word-latex-redraw-20260802-r1"
@@ -102,6 +102,9 @@ Private VT_WORD_APPLICATION_PREWARM_RUNNING As Boolean
 Private VT_WORD_APPLICATION_PREWARM_ATTEMPTED As Boolean
 Private VT_WORD_NUMBER_UPDATE_RUNNING As Boolean
 Private VT_WORD_MUTATION_SMART_CUT_PASTE As Boolean
+' Equation numbering style chosen or worked out per document in this Word
+' session ("mode|separator", keyed by FullName). Never stored in the document.
+Private VT_WORD_SESSION_NUMBERING As Collection
 Private VT_WORD_DOUBLE_CLICK_TRACE_CONTEXT_DEPTH As Long
 Private VT_WORD_DOUBLE_CLICK_TRACE_BUFFER As String
 Private VT_WORD_DOUBLE_CLICK_TRACE_STARTED_AT As Single
@@ -3571,6 +3574,27 @@ CommitFailed:
         commitErrorDescription
 End Function
 
+Private Function VTFormulaRestoreNothingFoundMessage( _
+    ByVal restoreScope As String, _
+    ByVal sourceKind As String) As String
+
+    Dim message As String
+
+    ' The Windows add-in's English wording. Word's MsgBox on the Mac cannot
+    ' display Chinese characters, so the Mac add-in's messages stay English.
+    If restoreScope = "document" Then
+        message = "The current Word document contains no convertible "
+    Else
+        message = "The current selection contains no convertible "
+    End If
+    If sourceKind = "omml" Then
+        message = message & "Word OMML formulas."
+    Else
+        message = message & "VisualTeX image formulas."
+    End If
+    VTFormulaRestoreNothingFoundMessage = message
+End Function
+
 Private Sub VTStartWordFormulaRestore( _
     ByVal restoreScope As String, _
     ByVal sourceKind As String, _
@@ -3650,13 +3674,10 @@ Private Sub VTStartWordFormulaRestore( _
     Set targets = VTCollectFormulaRestoreTargets(targetRange, sourceKind)
     VTWordPerformanceMark "formulas-collected"
     If targets.Count = 0 Then
-        If sourceKind = "omml" Then
-            Err.Raise vbObjectError + 7595, "VisualTeX", _
-                "No Word native equations were found in the target range."
-        Else
-            Err.Raise vbObjectError + 7595, "VisualTeX", _
-                "No recoverable VisualTeX image formulas were found in the target range."
-        End If
+        ' Nothing to convert is information, not a failure (as on Windows).
+        VTShowInformation VTFormulaRestoreNothingFoundMessage( _
+            restoreScope, sourceKind)
+        Exit Sub
     End If
     If targets.Count > VT_WORD_LATEX_REDRAW_MAX_FORMULAS Then
         Err.Raise vbObjectError + 7595, "VisualTeX", _
@@ -9815,6 +9836,11 @@ Private Sub VTCommitWordLatexRedrawDispatch( _
     End If
 
     VTWordPerformanceMark "redraw-staging-documents-open"
+    ' Remove the temporary anchor before the Undo record starts: deleted
+    ' inside it, an Undo of the redraw would put the VT_D_ Bookmark back into
+    ' the user's document for good.
+    transactionStage = "redraw-remove-anchor"
+    anchorBookmark.Delete
     transactionStage = "redraw-start-undo"
     Set undoRecord = CallByName(Application, "UndoRecord", VbGet)
     If operationName = "formulaRestore" Then
@@ -9828,7 +9854,6 @@ Private Sub VTCommitWordLatexRedrawDispatch( _
     Set numberedRestoreRanges = New Collection
     VTBeginWordInternalMutation
     internalMutationStarted = True
-    anchorBookmark.Delete
     VTUpdateDocumentImportProgress sessionId, 0, itemCount, "inserting"
     progressInterval = itemCount \ 10
     If progressInterval < 1 Then progressInterval = 1
@@ -17044,6 +17069,7 @@ Private Sub VTReconcileEquationNumbers( _
     Optional ByVal changedFrom As Long = -1, _
     Optional ByVal forceFlowingSequenceReplay As Boolean = False)
     If documentObject Is Nothing Then Exit Sub
+    VTPinEquationNumbering documentObject
     VTUpdateCurrentWordNumberFields documentObject
 End Sub
 
@@ -20002,54 +20028,246 @@ End Sub
 Private Function VTEquationNumberingMode( _
     ByVal documentObject As Document) As String
 
-    Dim storedMode As String
-    Dim preferredMode As String
-    Dim preferredSeparator As String
+    Dim numberingMode As String
+    Dim separatorText As String
 
-    VTEquationNumberingMode = VT_WORD_NUMBERING_MODE_SEQUENCE
-    If Not documentObject Is Nothing Then
-        If VTTryGetDocumentVariable( _
-           documentObject, VT_WORD_NUMBERING_MODE_VARIABLE, storedMode) Then
-            storedMode = LCase$(Trim$(storedMode))
-            Select Case storedMode
-                Case VT_WORD_NUMBERING_MODE_SEQUENCE, _
-                     VT_WORD_NUMBERING_MODE_CHAPTER, _
-                     VT_WORD_NUMBERING_MODE_SECTION
-                    VTEquationNumberingMode = storedMode
-                    Exit Function
-            End Select
-        End If
-    End If
-    If VTTryReadEquationNumberingPreference( _
-       preferredMode, preferredSeparator) Then
-        VTEquationNumberingMode = preferredMode
-    End If
+    VTResolveEquationNumbering documentObject, numberingMode, separatorText
+    VTEquationNumberingMode = numberingMode
 End Function
 
 Private Function VTEquationNumberingSeparator( _
     ByVal documentObject As Document) As String
 
-    Dim storedSeparator As String
+    Dim numberingMode As String
+    Dim separatorText As String
+
+    VTResolveEquationNumbering documentObject, numberingMode, separatorText
+    VTEquationNumberingSeparator = separatorText
+End Function
+
+' Word documents stay purely native: the numbering style is never written into
+' the document. The style chosen (or worked out) for a document in this Word
+' session wins; otherwise the document's own equation numbers show it, and a
+' document without numbers uses the user's default. Earlier versions stored it
+' in two document variables; they are still honoured when read and removed
+' when VisualTeX next numbers the document (VTPinEquationNumbering).
+Private Sub VTResolveEquationNumbering( _
+    ByVal documentObject As Document, _
+    ByRef numberingMode As String, _
+    ByRef separatorText As String)
+
     Dim preferredMode As String
     Dim preferredSeparator As String
 
-    VTEquationNumberingSeparator = "."
+    numberingMode = VT_WORD_NUMBERING_MODE_SEQUENCE
+    separatorText = "."
     If Not documentObject Is Nothing Then
-        If VTTryGetDocumentVariable( _
-           documentObject, VT_WORD_NUMBERING_SEPARATOR_VARIABLE, _
-           storedSeparator) Then
-            storedSeparator = Trim$(storedSeparator)
-            If storedSeparator = "." Or storedSeparator = "-" Then
-                VTEquationNumberingSeparator = storedSeparator
-                Exit Function
-            End If
+        If VTTryChosenEquationNumbering( _
+           documentObject, numberingMode, separatorText) Then Exit Sub
+        If VTTryInferEquationNumbering( _
+           documentObject, numberingMode, separatorText) Then
+            VTRememberEquationNumbering _
+                documentObject, numberingMode, separatorText
+            Exit Sub
         End If
     End If
+    numberingMode = VT_WORD_NUMBERING_MODE_SEQUENCE
+    separatorText = "."
     If VTTryReadEquationNumberingPreference( _
        preferredMode, preferredSeparator) Then
-        VTEquationNumberingSeparator = preferredSeparator
+        numberingMode = preferredMode
+        separatorText = preferredSeparator
+    End If
+End Sub
+
+Private Function VTSessionNumberingKey(ByVal documentObject As Document) As String
+    On Error Resume Next
+    VTSessionNumberingKey = documentObject.FullName
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Sub VTRememberEquationNumbering( _
+    ByVal documentObject As Document, _
+    ByVal numberingMode As String, _
+    ByVal separatorText As String)
+
+    Dim sessionKey As String
+
+    sessionKey = VTSessionNumberingKey(documentObject)
+    If Len(sessionKey) = 0 Then Exit Sub
+    If VT_WORD_SESSION_NUMBERING Is Nothing Then _
+        Set VT_WORD_SESSION_NUMBERING = New Collection
+    On Error Resume Next
+    VT_WORD_SESSION_NUMBERING.Remove sessionKey
+    Err.Clear
+    On Error GoTo 0
+    VT_WORD_SESSION_NUMBERING.Add numberingMode & "|" & separatorText, sessionKey
+End Sub
+
+' The style chosen for this document (this session, or an earlier version's
+' document variables), without looking at its numbers.
+Private Function VTTryChosenEquationNumbering( _
+    ByVal documentObject As Document, _
+    ByRef numberingMode As String, _
+    ByRef separatorText As String) As Boolean
+
+    Dim sessionKey As String
+    Dim chosen As String
+    Dim parts() As String
+    Dim storedMode As String
+    Dim storedSeparator As String
+
+    sessionKey = VTSessionNumberingKey(documentObject)
+    If Len(sessionKey) > 0 And Not VT_WORD_SESSION_NUMBERING Is Nothing Then
+        On Error Resume Next
+        chosen = VT_WORD_SESSION_NUMBERING(sessionKey)
+        Err.Clear
+        On Error GoTo 0
+        If Len(chosen) > 0 Then
+            parts = Split(chosen, "|")
+            numberingMode = parts(0)
+            separatorText = parts(1)
+            VTTryChosenEquationNumbering = True
+            Exit Function
+        End If
+    End If
+    If VTTryGetDocumentVariable( _
+       documentObject, VT_WORD_NUMBERING_MODE_VARIABLE, storedMode) Then
+        storedMode = LCase$(Trim$(storedMode))
+        Select Case storedMode
+            Case VT_WORD_NUMBERING_MODE_SEQUENCE, _
+                 VT_WORD_NUMBERING_MODE_CHAPTER, _
+                 VT_WORD_NUMBERING_MODE_SECTION
+                numberingMode = storedMode
+                separatorText = "."
+                If VTTryGetDocumentVariable( _
+                   documentObject, VT_WORD_NUMBERING_SEPARATOR_VARIABLE, _
+                   storedSeparator) Then
+                    If Trim$(storedSeparator) = "-" Then separatorText = "-"
+                End If
+                If numberingMode = VT_WORD_NUMBERING_MODE_SEQUENCE Then _
+                    separatorText = "."
+                VTTryChosenEquationNumbering = True
+        End Select
     End If
 End Function
+
+' The style the first equation number in the document shows: a Word equation
+' (#(...) with its SEQ field) or a numbered image formula, whichever comes
+' first. Read from the visible prefix, so numbers made on Windows count too:
+' none -> sequence, "2." -> chapter, "2.1-" -> section with a dash.
+Private Function VTTryInferEquationNumbering( _
+    ByVal documentObject As Document, _
+    ByRef numberingMode As String, _
+    ByRef separatorText As String) As Boolean
+
+    Dim math As OMath
+    Dim numberField As Field
+    Dim exact As Range
+    Dim marker As Range
+    Dim candidate As Bookmark
+    Dim index As Long
+    Dim firstStart As Long
+    Dim firstPrefix As String
+    Dim found As Boolean
+    Dim numberText As String
+    Dim ordinalStart As Long
+
+    On Error GoTo InferFailed
+    For index = 1 To documentObject.OMaths.Count
+        Set math = documentObject.OMaths(index)
+        Set numberField = VTPureNativeNumberField(math.Range)
+        If Not numberField Is Nothing Then
+            Set exact = VTNativeMathRoot(math).Range.Duplicate
+            Set marker = VTNativeEquationArrayMarkerRange(exact)
+            If Not marker Is Nothing Then
+                firstStart = exact.Start
+                firstPrefix = documentObject.Range( _
+                    marker.End, VTEquationFieldStart(numberField)).Text
+                found = True
+                Exit For
+            End If
+        End If
+    Next index
+    For Each candidate In documentObject.Bookmarks
+        If Left$(candidate.Name, Len(VT_WORD_NUMBER_BOOKMARK_PREFIX)) = _
+           VT_WORD_NUMBER_BOOKMARK_PREFIX Then
+            If Not found Or candidate.Range.Start < firstStart Then
+                numberText = Trim$(candidate.Range.Text)
+                ordinalStart = Len(numberText)
+                Do While ordinalStart > 0
+                    If Mid$(numberText, ordinalStart, 1) Like "[0-9]" Then
+                        ordinalStart = ordinalStart - 1
+                    Else
+                        Exit Do
+                    End If
+                Loop
+                If ordinalStart < Len(numberText) Then
+                    firstStart = candidate.Range.Start
+                    firstPrefix = Left$(numberText, ordinalStart)
+                    found = True
+                End If
+            End If
+        End If
+    Next candidate
+    If Not found Then Exit Function
+    VTTryInferEquationNumbering = VTParseEquationNumberPrefix( _
+        firstPrefix, numberingMode, separatorText)
+    Exit Function
+
+InferFailed:
+    VTTryInferEquationNumbering = False
+End Function
+
+Private Function VTParseEquationNumberPrefix( _
+    ByVal prefixText As String, _
+    ByRef numberingMode As String, _
+    ByRef separatorText As String) As Boolean
+
+    Dim cleaned As String
+    Dim body As String
+    Dim position As Long
+
+    For position = 1 To Len(prefixText)
+        Select Case AscW(Mid$(prefixText, position, 1))
+            Case 48 To 57, 46
+                cleaned = cleaned & Mid$(prefixText, position, 1)
+            Case 45, 8208, 8209, 8211, 8722
+                cleaned = cleaned & "-"
+        End Select
+    Next position
+    If Len(cleaned) = 0 Then
+        numberingMode = VT_WORD_NUMBERING_MODE_SEQUENCE
+        separatorText = "."
+        VTParseEquationNumberPrefix = True
+        Exit Function
+    End If
+    separatorText = Right$(cleaned, 1)
+    If separatorText <> "." And separatorText <> "-" Then Exit Function
+    body = Left$(cleaned, Len(cleaned) - 1)
+    If Len(body) = 0 Or InStr(1, body, "-") > 0 Then Exit Function
+    If InStr(1, body, ".") = 0 Then
+        numberingMode = VT_WORD_NUMBERING_MODE_CHAPTER
+    Else
+        numberingMode = VT_WORD_NUMBERING_MODE_SECTION
+    End If
+    VTParseEquationNumberPrefix = True
+End Function
+
+' Numbering the document now: keep its style for the session and remove an
+' earlier version's document variables. Only called while VisualTeX changes
+' numbers, so an untouched document is never marked as changed.
+Private Sub VTPinEquationNumbering(ByVal documentObject As Document)
+    Dim numberingMode As String
+    Dim separatorText As String
+
+    If documentObject Is Nothing Then Exit Sub
+    VTResolveEquationNumbering documentObject, numberingMode, separatorText
+    VTRememberEquationNumbering documentObject, numberingMode, separatorText
+    VTDeleteDocumentVariable documentObject, VT_WORD_NUMBERING_MODE_VARIABLE
+    VTDeleteDocumentVariable documentObject, VT_WORD_NUMBERING_SEPARATOR_VARIABLE
+End Sub
 
 Private Function VTEquationNumberingDisplaySeparator( _
     ByVal documentObject As Document) As String
@@ -20101,10 +20319,9 @@ Private Sub VTSetEquationNumberingFormat( _
                 "The Equation numbering mode is invalid."
     End Select
     VTWriteEquationNumberingPreference numberingMode, separatorText
-    VTSetDocumentVariable _
-        documentObject, VT_WORD_NUMBERING_MODE_VARIABLE, numberingMode
-    VTSetDocumentVariable _
-        documentObject, VT_WORD_NUMBERING_SEPARATOR_VARIABLE, separatorText
+    VTRememberEquationNumbering documentObject, numberingMode, separatorText
+    VTDeleteDocumentVariable documentObject, VT_WORD_NUMBERING_MODE_VARIABLE
+    VTDeleteDocumentVariable documentObject, VT_WORD_NUMBERING_SEPARATOR_VARIABLE
 End Sub
 
 Private Function VTEquationNumberingRestartLevel( _
@@ -24441,6 +24658,7 @@ Private Function VTEnsurePureNativeNumberFormat( _
     If marker Is Nothing Then Exit Function
     Set numberField = VTPureNativeNumberField(exact)
     If numberField Is Nothing Then Exit Function
+    VTPinEquationNumbering documentObject
 
     desiredLevel = VTNativeHeadingLevelAtRange(exact)
     If desiredLevel > 0 Then
@@ -24634,6 +24852,7 @@ Private Sub VTUpgradeWordNumberFormats(ByVal doc As Document)
     Dim imageOrdinals() As Long
     Dim nativeOrdinals() As Long
 
+    VTPinEquationNumbering doc
     numberingMode = VTEquationNumberingMode(doc)
     For index = 1 To doc.InlineShapes.Count
         Set shape = doc.InlineShapes(index)
