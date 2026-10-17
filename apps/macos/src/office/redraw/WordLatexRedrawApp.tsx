@@ -1,4 +1,3 @@
-import { readWordFormulaFontSize } from "../shared/wordFormulaPreferences";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, LoaderCircle, X } from "lucide-react";
 import {
@@ -159,7 +158,7 @@ export function WordLatexRedrawApp() {
         await reportStage("latex-redraw-font-preflight-complete", spans.length);
         const targets = spans.map((span, index) => ({
           ...span,
-          fontSizePt: readWordFormulaFontSize(outputKind) ?? fontSizes[index],
+          fontSizePt: fontSizes[index],
         }));
         setStatus(`Rendering 0/${targets.length} formulas…`);
         const items = await prepareWindowsStyleWordLatexRedrawItems(

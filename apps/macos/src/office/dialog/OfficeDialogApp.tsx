@@ -1,4 +1,3 @@
-import { readWordFormulaFontSize, writeWordFormulaFontSize } from "../shared/wordFormulaPreferences";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { MathfieldElement } from "mathlive";
@@ -234,6 +233,7 @@ function officeExportResultFromArtifacts(
           ommlDocxBase64: wordArtifacts.ommlDocxBase64,
         }
       : {}),
+    ...(artifacts.wordMathMl ? { wordMathMl: artifacts.wordMathMl } : {}),
     width: svg.width,
     height: svg.height,
     baseline: svg.baseline,
@@ -827,9 +827,7 @@ export function OfficeDialogApp() {
       session.status === "created" &&
       !session.dirty
         ? powerPointDefaultFontSizePt
-        : session.host === "word" && session.mode === "create"
-          ? (readWordFormulaFontSize(session.nativeEquation ? "omml" : "image") ?? requestedFontSizePt)
-          : requestedFontSizePt;
+        : requestedFontSizePt;
     setOfficeFontSizePt(loadedFontSizePt);
     const loadedFingerprint = documentFingerprint(
       session.title,
@@ -2128,8 +2126,8 @@ export function OfficeDialogApp() {
         title={
           session.host === "word" && session.mode === "create"
             ? isEn
-              ? "New Word formulas reuse the last size you selected; the current paragraph size is used before your first choice"
-              : "新建 Word 公式会沿用上次手动选择的字号；首次选择前使用当前段落字号"
+              ? "Starts from the current Word paragraph font size"
+              : "默认读取当前 Word 段落正文的字号"
             : isEn
               ? "Formula font size"
               : "公式字号"
@@ -2142,16 +2140,11 @@ export function OfficeDialogApp() {
           disabled={Boolean(session.host === "powerpoint" && session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:"))}
           title={session.host === "powerpoint" && session.nativeEquation && session.sourceObjectId?.startsWith("visualtex-ppt-native-text:") ? (isEn ? "Inherited from the PowerPoint text insertion position" : "使用 PowerPoint 文本插入位置的字号") : undefined}
           aria-label={isEn ? "Formula font size" : "公式字号"}
-          onChange={(event) => {
-            const nextFontSizePt = normalizeOfficeFontSizePt(
-              event.target.value,
-              officeFontSizePt,
-            );
-            setOfficeFontSizePt(nextFontSizePt);
-            if (session.host === "word" && session.mode === "create") {
-              writeWordFormulaFontSize(session.nativeEquation ? "omml" : "image", nextFontSizePt);
-            }
-          }}
+          onChange={(event) =>
+            setOfficeFontSizePt(
+              normalizeOfficeFontSizePt(event.target.value, officeFontSizePt),
+            )
+          }
         >
           <optgroup label={isEn ? "Chinese sizes" : "中文字号"}>
             {OFFICE_CHINESE_FONT_SIZE_OPTIONS.map((option) => (

@@ -105,6 +105,10 @@ pub struct OfficeExportResult {
     pub omml_base64: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub omml_docx_base64: Option<String>,
+    /// Word: MathML for the shared Word OMML writer (office::omml_write). When
+    /// present, the app writes the equation from it instead of any OMML above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_math_ml: Option<String>,
     pub width: f64,
     pub height: f64,
     pub baseline: Option<f64>,

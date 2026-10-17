@@ -6,7 +6,7 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-office-performance-20260801-r115"
+    "word-office-performance-20260801-r116"
 Private Const VT_WORD_IDLE_WATCH_SECONDS As Long = 5
 Private Const VT_WORD_LATEX_REDRAW_REVISION As String = _
     "word-latex-redraw-20260802-r1"
@@ -3699,6 +3699,7 @@ Private Sub VTStartWordFormulaRestore( _
     requestJson = VTFormulaRestoreRequestJson( _
         sessionId, sourceDocumentId, bookmarkName, defaultFontSizePt, _
         restoreScope, sourceKind, outputKind)
+    requestJson = VTV2WithDocumentMathFont(requestJson, ActiveDocument)
     VTWordPerformanceMark "request-serialized"
     manifest = VTFormulaRestoreManifest( _
         sessionId, sourceDocumentId, bookmarkName, targetRange, _
@@ -4434,6 +4435,7 @@ Private Sub VTStartWordLatexRedraw( _
     requestJson = VTLatexRedrawRequestJson( _
         sessionId, sourceDocumentId, bookmarkName, defaultFontSizePt, _
         redrawScope, outputKind)
+    requestJson = VTV2WithDocumentMathFont(requestJson, ActiveDocument)
     operationStage = "write-request"
     VTWriteRequest sessionId, requestJson
     operationStage = "write-source"
@@ -4499,8 +4501,7 @@ Public Sub VisualTeX_InsertLatexMarkdownDocument()
     sessionId = VTNewUuidV4()
     bookmarkName = VTDocumentImportBookmarkName(sessionId)
     sourceDocumentId = VTWordDocumentIdentity()
-    defaultFontSizePt = _
-        VTPreferredWordFormulaFontSize(Selection.Range.Duplicate)
+    defaultFontSizePt = VTV2CurrentTypingFontSize()
     Set insertionRange = Selection.Range.Duplicate
     insertionRange.Collapse wdCollapseStart
     If ActiveDocument.Bookmarks.Exists(bookmarkName) Then
@@ -4511,6 +4512,7 @@ Public Sub VisualTeX_InsertLatexMarkdownDocument()
     operationStage = "serialize-request"
     requestJson = VTDocumentImportRequestJson( _
         sessionId, sourceDocumentId, bookmarkName, defaultFontSizePt)
+    requestJson = VTV2WithDocumentMathFont(requestJson, ActiveDocument)
     operationStage = "write-and-launch"
     launchTiming = _
         VTWriteAndLaunchSession(VT_WORD_HOST, sessionId, requestJson)
@@ -4648,6 +4650,10 @@ End Sub
 
 Public Sub VTWordRibbonNumbering(ByVal control As IRibbonControl)
     VisualTeX_UpdateEquationNumbers
+End Sub
+
+Public Sub VTWordRibbonUpdateEquationFormat(ByVal control As IRibbonControl)
+    VisualTeX_UpdateEquationFormat
 End Sub
 
 Public Sub VTWordRibbonGetNumberingFormatItemCount( _
@@ -7076,6 +7082,7 @@ Private Sub VTWordOpenResolvedInlineShape( _
         " forkCopied=" & CStr(forkCopiedFormula) & _
         " displayMode=" & displayMode & _
         " numbered=" & CStr(numbered)
+    requestJson = VTV2WithDocumentMathFont(requestJson, documentObject)
     openStage = "launch-session"
     If displayMode = "block" Then VTPrepareNativeRollbackDocument documentObject
     launchTiming = _
@@ -7225,6 +7232,7 @@ Private Function VTWordOpenCopiedNativeSession( _
         VTWordEditBookmarkName(sessionId), "", "", "", keepNativeEquation, _
         fontSizePt, 0#, 0#, operationName, False, _
         formulaLetterFont, wordMathFontName)
+    requestJson = VTV2WithDocumentMathFont(requestJson, targetDocument)
     ' Publish ordinary native edits as one atomic sandbox-inbox request. A
     ' separate snapshot write adds a slow AppleScriptTask before every click.
     ' Large equations keep the established file transport instead of exceeding
@@ -7404,6 +7412,7 @@ Private Sub VTWordOpenNativeSession( _
         False, _
         formulaLetterFont, _
         wordMathFontName)
+    requestJson = VTV2WithDocumentMathFont(requestJson, documentObject)
     ' Creating Word's hidden rollback document costs roughly 0.15 s on macOS.
     ' Prepare only its empty container while the editor opens; Apply still
     ' captures and validates the current OMath immediately before replacement.
@@ -8482,6 +8491,14 @@ Private Sub VTDocumentImportInsertFormula( _
     Dim numbered As Boolean
     Dim metadata As String
     Dim imagePath As String
+    Dim v2SequenceName As String
+    Dim v2HeadingLevel As Long
+    Dim v2Separator As String
+    Dim v2LiteralPrefix As String
+    Dim v2Automatic As Boolean
+    Dim v2Restart As Long
+    Dim v2Initial As Long
+    Dim v2TransferEquation As Range
     Dim vectorDocumentPath As String
     Dim vectorDocumentIndex As Long
     Dim fallbackImagePath As String
@@ -8607,9 +8624,22 @@ Private Sub VTDocumentImportInsertFormula( _
                 targetRange, displayMode)
         End If
     End If
+    If outputKind = "omml" And numbered And displayMode = "block" Then
+        ' Equation format v2: the app builds the complete numbered equation
+        ' (as for an editor commit); it is inserted from its own package.
+        formulaStage = "v2-plan-number"
+        VTV2PlanInsertion targetRange.Document, targetRange.Start, v2SequenceName, _
+            v2HeadingLevel, v2Separator, v2LiteralPrefix, v2Automatic, v2Restart, _
+            v2Initial, v2TransferEquation
+        formulaStage = "v2-build-number"
+        nativeDocumentPath = VTV2RequestNumberDocx(CStr(manifest("sessionId")), _
+            targetRange.Document, ommlBase64, 1, VTV2NumberItemManifest(1, _
+                v2SequenceName, v2HeadingLevel, v2Separator, v2LiteralPrefix, _
+                v2Automatic, v2Restart, v2Initial))
+    End If
     If outputKind = "omml" Then
         formulaStage = "insert-native"
-        If IsObject(sharedNativeDocument) Then
+        If IsObject(sharedNativeDocument) And Not (numbered And displayMode = "block") Then
             nativeBatchDocumentIndex = CLng(Val(VTDispatchOptional( _
                 manifest, _
                 VTDocumentImportItemKey(itemIndex, "nativeBatchDocumentIndex"))))
@@ -8642,10 +8672,8 @@ Private Sub VTDocumentImportInsertFormula( _
         ' display type. Only numbered display equations need extra layout here.
         If displayMode = "block" And numbered Then
             formulaStage = "number-native"
-            numberCreated = False
-            Set numberLayoutRange = VTEnsureNativeEquationNumber( _
-                formulaRange, heightPoints, formulaId, captionText, _
-                numberCreated)
+            VTV2FinishInsertedNumber formulaRange.Document, formulaRange, _
+                v2TransferEquation
             Set nativeMath = VTNativeMathForBookmark( _
                 targetDocument.Bookmarks( _
                     VTNativeFormulaBookmarkName(formulaId)))
@@ -8656,7 +8684,7 @@ Private Sub VTDocumentImportInsertFormula( _
             Set formulaRange = nativeMath.Range.Duplicate
         End If
         formulaStage = "apply-native-font"
-        If Not joinedNative Then formulaRange.Font.Size = CSng(fontSizePt)
+        If Not joinedNative Then VTV2ApplyEquationTypography formulaRange, fontSizePt
         formulaStage = "bookmark-native-final"
         VTSetNativeFormulaBookmark targetDocument, formulaRange, formulaId
         VTDeleteWordImageOwnerBookmark targetDocument, formulaId
@@ -10584,7 +10612,8 @@ End Function
 
 Private Function VTPrepareWordCreateInsertionRange( _
     ByVal requestedRange As Range, _
-    ByVal displayMode As String) As Range
+    ByVal displayMode As String, _
+    Optional ByVal nativeEquation As Boolean = False) As Range
 
     Dim documentObject As Document
     Dim insertionRange As Range
@@ -10697,6 +10726,8 @@ Private Function VTPrepareWordCreateInsertionRange( _
         ' caret boundary instead of rejecting that visually empty position.
         Set insertionRange = VTCreateDedicatedPlainParagraphAt( _
             documentObject, targetStart)
+    ElseIf nativeEquation And Not (beforeOccupied Or afterOccupied) Then
+        ' Equation format v2: the user's empty paragraph is reused as is.
     Else
         VTNormalizePlainWordParagraph targetParagraph
     End If
@@ -10867,6 +10898,7 @@ Private Function VTEnsurePlainContinuationParagraph( _
     Dim continuationParagraph As Range
     Dim continuationStart As Long
     Dim markerStart As Long
+    Dim created As Boolean
 
     If sourceParagraph Is Nothing Then
         Err.Raise vbObjectError + 7553, "VisualTeX", _
@@ -10888,34 +10920,30 @@ Private Function VTEnsurePlainContinuationParagraph( _
     End If
 
     If continuationParagraph Is Nothing Then
-        markerStart = sourceParagraph.End - 1
-        Set insertionRange = documentObject.Range( _
-            Start:=markerStart, End:=markerStart)
-        insertionRange.Text = vbCr & ChrW(8288)
-        Set markerRange = documentObject.Range( _
-            Start:=markerStart + 1, End:=markerStart + 2)
-        Set continuationParagraph = _
-            markerRange.Paragraphs(1).Range.Duplicate
-        markerRange.Delete
-        Set probeRange = documentObject.Range( _
-            Start:=markerStart + 1, End:=markerStart + 2)
-        Set continuationParagraph = probeRange.Paragraphs(1).Range.Duplicate
+        created = True
     ElseIf continuationParagraph.Information(wdWithInTable) Or _
            continuationParagraph.Fields.Count > 0 Or _
            continuationParagraph.InlineShapes.Count > 0 Or _
            continuationParagraph.OMaths.Count > 0 Then
-        markerStart = sourceParagraph.End - 1
-        Set insertionRange = documentObject.Range( _
-            Start:=markerStart, End:=markerStart)
-        insertionRange.Text = vbCr & ChrW(8288)
-        Set markerRange = documentObject.Range( _
-            Start:=markerStart + 1, End:=markerStart + 2)
-        Set continuationParagraph = _
-            markerRange.Paragraphs(1).Range.Duplicate
-        markerRange.Delete
-        Set probeRange = documentObject.Range( _
-            Start:=markerStart + 1, End:=markerStart + 2)
-        Set continuationParagraph = probeRange.Paragraphs(1).Range.Duplicate
+        created = True
+    End If
+    If created Then
+        ' Equation format v2: created as Windows creates it.
+        Set continuationParagraph = VTV2InsertParagraphAfter(sourceParagraph)
+        If continuationParagraph Is Nothing Then
+            markerStart = sourceParagraph.End - 1
+            Set insertionRange = documentObject.Range( _
+                Start:=markerStart, End:=markerStart)
+            insertionRange.Text = vbCr & ChrW(8288)
+            Set markerRange = documentObject.Range( _
+                Start:=markerStart + 1, End:=markerStart + 2)
+            Set continuationParagraph = _
+                markerRange.Paragraphs(1).Range.Duplicate
+            markerRange.Delete
+            Set probeRange = documentObject.Range( _
+                Start:=markerStart + 1, End:=markerStart + 2)
+            Set continuationParagraph = probeRange.Paragraphs(1).Range.Duplicate
+        End If
     End If
 
     If continuationParagraph.Start < continuationStart Or _
@@ -10930,13 +10958,18 @@ Private Function VTEnsurePlainContinuationParagraph( _
             "; continuation=" & CStr(continuationParagraph.Start) & "-" & _
                 CStr(continuationParagraph.End) & "]."
     End If
-    VTNormalizePlainWordParagraph continuationParagraph
+    ' Equation format v2: Windows leaves the user's following paragraph as it
+    ' is (WordFormulaService caret placement after a display formula).
+    If created Then
+        VTV2ApplyBodyFormatToTypingParagraph sourceParagraph, continuationParagraph
+    End If
     Set VTEnsurePlainContinuationParagraph = continuationParagraph
 End Function
 
 Private Function VTContinuationRangeAfterDisplayFormula( _
     ByVal formulaRange As Range, _
-    ByVal formulaId As String) As Range
+    ByVal formulaId As String, _
+    Optional ByVal resetTypingFont As Boolean = True) As Range
 
     Dim documentObject As Document
     Dim sourceParagraph As Range
@@ -10983,9 +11016,11 @@ Private Function VTContinuationRangeAfterDisplayFormula( _
         VTEnsurePlainContinuationParagraph(sourceParagraph)
     Set caretRange = continuationParagraph.Duplicate
     caretRange.Collapse wdCollapseStart
-    caretRange.Font.Position = 0
-    caretRange.Font.Hidden = False
-    caretRange.Font.Color = wdColorAutomatic
+    If resetTypingFont Then
+        caretRange.Font.Position = 0
+        caretRange.Font.Hidden = False
+        caretRange.Font.Color = wdColorAutomatic
+    End If
     Set VTContinuationRangeAfterDisplayFormula = caretRange.Duplicate
 End Function
 
@@ -11075,12 +11110,13 @@ End Function
 
 Private Sub VTPlaceCaretAfterDisplayFormula( _
     ByVal formulaRange As Range, _
-    ByVal formulaId As String)
+    ByVal formulaId As String, _
+    Optional ByVal resetTypingFont As Boolean = True)
 
     Dim caretRange As Range
 
     Set caretRange = VTContinuationRangeAfterDisplayFormula( _
-        formulaRange, formulaId)
+        formulaRange, formulaId, resetTypingFont)
     caretRange.Select
 End Sub
 
@@ -11108,11 +11144,10 @@ Private Sub VTWordCreate( _
     formulaId = VTNewUuidV4()
     pendingMarker = VTPendingMarker(sessionId, formulaId)
     VTWordPerformanceMark "identities-ready"
-    requestedFontSizePt = _
-        VTPreferredWordFormulaFontSize(Selection.Range.Duplicate)
+    requestedFontSizePt = VTV2CurrentTypingFontSize()
     VTWordPerformanceMark "font-size-ready"
     Set insertionRange = VTPrepareWordCreateInsertionRange( _
-        Selection.Range.Duplicate, displayMode)
+        Selection.Range.Duplicate, displayMode, nativeEquation)
     VTWordPerformanceMark "insertion-range-ready"
     ' Keep create lightweight. The commit/cancel transaction already supports a
     ' pending Bookmark with no InlineShape and resolves the final insertion Range
@@ -11137,6 +11172,7 @@ Private Sub VTWordCreate( _
         "", _
         nativeEquation, _
         requestedFontSizePt)
+    requestJson = VTV2WithDocumentMathFont(requestJson, ActiveDocument)
     VTWordPerformanceMark "request-serialized"
     launchTiming = _
         VTWriteAndLaunchSession(VT_WORD_HOST, sessionId, requestJson)
@@ -11712,6 +11748,15 @@ Private Sub VTCommitWordDispatch( _
     Dim previousScreenUpdating As Boolean
     Dim screenUpdatingCaptured As Boolean
     Dim internalMutationStarted As Boolean
+    Dim v2SequenceName As String
+    Dim v2HeadingLevel As Long
+    Dim v2Separator As String
+    Dim v2LiteralPrefix As String
+    Dim v2Automatic As Boolean
+    Dim v2Restart As Long
+    Dim v2Initial As Long
+    Dim v2TransferEquation As Range
+    Dim v2NumberBookmarks As Collection
     transactionStage = "validate-document"
     VTWordPerformanceMark "commit-enter"
     committedImageStart = -1
@@ -11920,7 +11965,7 @@ Private Sub VTCommitWordDispatch( _
                     targetDocument.Bookmarks( _
                         VTNativeFormulaBookmarkName(formulaId)))
                 If Not originalNativeMath Is Nothing Then
-                    originalNativeMath.Range.Font.Size = CSng(fontSizePt)
+                    VTV2ApplyEquationTypography originalNativeMath.Range, fontSizePt
                 End If
                 VTDeletePendingBookmark targetDocument, sessionId
                 GoTo CommitSucceeded
@@ -12115,6 +12160,27 @@ Private Sub VTCommitWordDispatch( _
             End If
         End If
 
+        If numbered And displayMode = "block" Then
+            ' Equation format v2: the app builds the complete numbered equation
+            ' with the shared writer (Windows BuildWordNativeNumberedOmml); the
+            ' add-in decides only its numbering context and adds no field later.
+            transactionStage = "v2-plan-number"
+            VTV2PlanCommitNumber targetDocument, targetRange, targetIsNative, _
+                v2SequenceName, v2HeadingLevel, v2Separator, v2LiteralPrefix, _
+                v2Automatic, v2Restart, v2Initial, v2TransferEquation
+            If targetIsNative Then
+                If targetRange.OMaths.Count >= 1 Then _
+                    Set v2NumberBookmarks = VTCaptureNativeNumberBookmarks( _
+                        VTNativeMathRoot(targetRange.OMaths(1)).Range.Duplicate)
+            End If
+            transactionStage = "v2-build-number"
+            nativeDocumentPath = VTV2RequestNumberDocx(sessionId, targetDocument, _
+                ommlBase64, 1, VTV2NumberItemManifest(1, v2SequenceName, _
+                    v2HeadingLevel, v2Separator, v2LiteralPrefix, v2Automatic, _
+                    v2Restart, v2Initial))
+            VTWordPerformanceMark "v2-number-built"
+        End If
+
         transactionStage = "insert-native-equation"
         Set nativeEquationRange = VTInsertNativeEquationAtRange( _
             targetRange, _
@@ -12179,48 +12245,37 @@ Private Sub VTCommitWordDispatch( _
         Set nativeEquationRange = originalNativeMath.Range.Duplicate
 
         If displayMode = "block" Then
+            ' Equation format v2: display type, typography and paragraph exactly
+            ' as VisualTeX for Windows lays out a display equation.
+            transactionStage = "v2-finish-display"
+            VTWordPerformanceMark "native-display-promote-start"
+            Set nativeEquationRange = _
+                VTV2FinishDisplayEquation(nativeEquationRange, fontSizePt)
+            VTWordPerformanceMark "native-display-promote-complete"
             If numbered Then
-                transactionStage = "normalize-native-number-layout"
-                numberCreated = False
-                VTWordPerformanceMark "native-number-call-start"
-                Set numberLayoutRange = VTEnsureNativeEquationNumber( _
-                    nativeEquationRange, heightPoints, formulaId, captionText, _
-                    numberCreated)
-                VTWordPerformanceMark "native-number-call-complete"
-                If numberCreated Then Set insertedNumber = numberLayoutRange
-                Set nativeEquationRange = VTNumberedFormulaRangeForId( _
-                    targetDocument, formulaId)
-                If nativeEquationRange Is Nothing Then
-                    Set nativeEquationRange = VTResolveNativeEquationRange( _
-                        targetDocument, nativeEquationStart, 64)
-                End If
-            Else
-                transactionStage = "promote-native-display"
-                VTWordPerformanceMark "native-display-promote-start"
-                Set nativeEquationRange = _
-                    VTPromoteNativeEquationToDisplay(nativeEquationRange)
-                VTWordPerformanceMark "native-display-promote-complete"
+                transactionStage = "v2-finish-number"
+                VTV2FinishInsertedNumber targetDocument, nativeEquationRange, _
+                    v2TransferEquation
+                Set nativeEquationRange = VTResolveNativeEquationRange( _
+                    targetDocument, nativeEquationRange.Start, 16)
+                VTV2RestoreNumberBookmarks nativeEquationRange, v2NumberBookmarks
             End If
         Else
             transactionStage = "finalize-native-inline"
             Set nativeEquationRange = _
                 VTFinalizeInlineNativeEquation(nativeEquationRange)
+            transactionStage = "apply-native-font-size"
+            If Not joinedNative Then _
+                VTV2ApplyEquationTypography nativeEquationRange, fontSizePt
+            If Not joinedNative Then _
+                VTV2ConfigurePromotedInlineEquation nativeEquationRange
         End If
-
-        transactionStage = "apply-native-font-size"
-        VTWordPerformanceMark "native-font-start"
-        If Not joinedNative And Abs(nativeEquationRange.Font.Size - fontSizePt) > 0.01 Then _
-            nativeEquationRange.Font.Size = CSng(fontSizePt)
         VTWordPerformanceMark "native-font-complete"
         Set nativeEquationRange = VTResolveNativeEquationRange( _
             targetDocument, nativeEquationRange.Start, 16)
-        If Not joinedNative And Len(wordMathFontName) > 0 And _
-           StrComp(VTWordMathFontNameFromRange(nativeEquationRange), wordMathFontName, vbTextCompare) <> 0 Then
-            transactionStage = "restore-native-math-font"
-            VTApplyWordNativeMathFontName nativeEquationRange, wordMathFontName
-            Set nativeEquationRange = VTResolveNativeEquationRange( _
-                targetDocument, nativeEquationRange.Start, 16)
-        End If
+        ' Equation format v2: the equation is in the document's math font
+        ' (ApplyExplicitTransferMathFont in the shared writer); no
+        ' per-equation font is applied, as on Windows.
         VTWordPerformanceMark "native-final-resolve-complete"
 
         If numberingChanged Then
@@ -12230,7 +12285,7 @@ Private Sub VTCommitWordDispatch( _
                 numberingPrefix.Collapse wdCollapseEnd
                 VTRetireExternalSequenceHelper targetDocument, formulaId, numberingPrefix
             End If
-            VTReconcileNumberingAfterEdit targetDocument, nativeEquationRange.Start, False
+            VTV2UpdateNumbersFrom targetDocument, nativeEquationRange.Start
         End If
 
         transactionStage = "bookmark-native-equation"
@@ -12267,7 +12322,7 @@ Private Sub VTCommitWordDispatch( _
         If displayMode = "inline" And mode = "create" Then
             VTPlaceCaretAfterInlineNativeEquation nativeEquationRange
         ElseIf displayMode = "block" And mode = "create" Then
-            VTPlaceCaretAfterDisplayFormula nativeEquationRange, formulaId
+            VTPlaceCaretAfterDisplayFormula nativeEquationRange, formulaId, False
         Else
             ' Editing or direct conversion must not manufacture a U+2060 caret
             ' anchor after an existing formula. Keep the converted formula
@@ -17571,16 +17626,13 @@ Private Function VTInsertNativeEquationFromSharedDocument( _
 
     Set candidateRange = nativeEquation.Range.Duplicate
     resolvedEquationStart = candidateRange.Start
-    candidateRange.Font.Position = 0
-    candidateRange.Font.Size = preferredSize
+    VTV2ApplyEquationTypography candidateRange, preferredSize
     If displayMode = "inline" Then
         Set candidateRange = VTFinalizeInlineNativeEquation(candidateRange)
     Else
-        nativeEquation.Type = wdOMathDisplay
-        nativeEquation.Justification = wdOMathJcCenter
-        Set candidateRange = VTResolveNativeEquationRange( _
-            targetDocument, resolvedEquationStart, 16)
-        VTNormalizeUnnumberedDisplayParagraph candidateRange
+        ' Equation format v2: Windows' display layout (WordFormulaHostLayout);
+        ' no OMath justification, paragraph style or tab-stop change.
+        Set candidateRange = VTV2FinishDisplayEquation(candidateRange, preferredSize)
         Set candidateRange = VTResolveNativeEquationRange( _
             targetDocument, resolvedEquationStart, 16)
     End If
@@ -17881,17 +17933,13 @@ Private Function VTTryInsertNativeEquationFileFast( _
     diagnosticStage = operationStage
     phaseStartedAt = Timer
     Set equationRange = nativeEquation.Range.Duplicate
-    equationRange.Font.Position = 0
-    equationRange.Font.Size = preferredSize
+    VTV2ApplyEquationTypography equationRange, preferredSize
     If displayMode = "inline" Then
         Set equationRange = _
             VTFinalizeInlineNativeEquation(equationRange)
     Else
-        nativeEquation.Type = wdOMathDisplay
-        nativeEquation.Justification = wdOMathJcCenter
-        Set equationRange = nativeEquation.Range.Duplicate
-        VTNormalizeUnnumberedDisplayParagraph equationRange
-        Set equationRange = nativeEquation.Range.Duplicate
+        ' Equation format v2: Windows' display layout (WordFormulaHostLayout).
+        Set equationRange = VTV2FinishDisplayEquation(equationRange, preferredSize)
     End If
     finalizeSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
 
@@ -18271,19 +18319,13 @@ Private Function VTInsertNativeEquationAtRange( _
 
     Set equationRange = nativeEquation.Range.Duplicate
     resolvedEquationStart = equationRange.Start
-    equationRange.Font.Position = 0
-    equationRange.Font.Size = preferredSize
+    VTV2ApplyEquationTypography equationRange, preferredSize
     If displayMode = "inline" Then
         Set equationRange = _
             VTFinalizeInlineNativeEquation(equationRange)
     Else
-        If nativeEquation.Type <> wdOMathDisplay Then
-            nativeEquation.Type = wdOMathDisplay
-        End If
-        nativeEquation.Justification = wdOMathJcCenter
-        Set equationRange = VTResolveNativeEquationRange( _
-            targetDocument, resolvedEquationStart, 16)
-        VTNormalizeUnnumberedDisplayParagraph equationRange
+        ' Equation format v2: Windows' display layout (WordFormulaHostLayout).
+        Set equationRange = VTV2FinishDisplayEquation(equationRange, preferredSize)
         Set equationRange = VTResolveNativeEquationRange( _
             targetDocument, resolvedEquationStart, 16)
     End If
@@ -18375,22 +18417,17 @@ Private Function VTPromoteNativeEquationToDisplay( _
             "VisualTeX cannot promote a missing native equation to display mode."
     End If
     Set nativeEquation = equationRange.OMaths(1)
-    VTWordPerformanceMark "native-promote-type-start"
-    If nativeEquation.Type <> wdOMathDisplay Then
-        nativeEquation.Type = wdOMathDisplay
-        VTWordPerformanceMark "native-promote-type-assigned"
-    Else
-        VTWordPerformanceMark "native-promote-type-already-display"
-    End If
-    VTWordPerformanceMark "native-promote-type-complete"
-    nativeEquation.Justification = wdOMathJcCenter
-    VTWordPerformanceMark "native-promote-justification-complete"
+    ' Equation format v2: Windows' display layout at the equation's own size.
     Set exactRange = nativeEquation.Range.Duplicate
-    exactRange.Font.Position = 0
-    VTWordPerformanceMark "native-promote-position-complete"
-    VTNormalizeUnnumberedDisplayParagraph exactRange
+    VTWordPerformanceMark "native-promote-type-start"
+    If exactRange.Font.Size > 0! And exactRange.Font.Size <= 1638! Then
+        Set VTPromoteNativeEquationToDisplay = _
+            VTV2FinishDisplayEquation(exactRange, exactRange.Font.Size)
+    Else
+        Set VTPromoteNativeEquationToDisplay = _
+            VTV2FinishDisplayEquation(exactRange, 0#)
+    End If
     VTWordPerformanceMark "native-promote-paragraph-complete"
-    Set VTPromoteNativeEquationToDisplay = nativeEquation.Range.Duplicate
 End Function
 
 Private Function VTFinalizeInlineNativeEquation( _
@@ -18703,8 +18740,7 @@ Private Function VTInsertCachedNativeEquationFast( _
             "The cached native equation is empty."
     End If
     Set equationRange = nativeMath.Range.Duplicate
-    equationRange.Font.Position = 0
-    equationRange.Font.Size = CSng(fontSizePt)
+    VTV2ApplyEquationTypography equationRange, fontSizePt
     Set VTInsertCachedNativeEquationFast = equationRange
     Exit Function
 
@@ -19100,7 +19136,7 @@ Private Function VTWordConvertInlineShapeToNativeFast( _
     End If
     numberSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
     phaseStartedAt = Timer
-    equationRange.Font.Size = CSng(sourceFontSizePt)
+    VTV2ApplyEquationTypography equationRange, sourceFontSizePt
     VTSetWordMetadataPayload targetDocument, formulaId, encodedMetadata
     VTSetWordFormulaFormat targetDocument, formulaId, displayMode, numbered
     VTSetWordImageScaleState _
@@ -19120,6 +19156,12 @@ Private Function VTWordConvertInlineShapeToNativeFast( _
     If nativeMath Is Nothing Then
         Err.Raise vbObjectError + 7430, "VisualTeX", _
             "Word lost the native equation after number finalization."
+    End If
+    ' Equation format v2: the converted number takes the shared format.
+    If numbered And displayMode = "block" Then
+        VTV2RestyleNumbers targetDocument
+        Set equationRange = VTResolveNativeEquationRange( _
+            targetDocument, equationRange.Start, 16)
     End If
     equationRange.Select
 
@@ -19505,7 +19547,7 @@ Private Sub VTWordConvertInlineShapeToNativeEquation( _
             End If
         End If
     End If
-    finalFormulaRange.Font.Size = CSng(sourceFontSizePt)
+    VTV2ApplyEquationTypography finalFormulaRange, sourceFontSizePt
     VTSetWordImageScaleState _
         targetDocument, formulaId, sourceFontSizePt, referenceWidthPt, _
         referenceHeightPt, referenceBaselinePt, sourceFontSizePt
@@ -19524,6 +19566,11 @@ Private Sub VTWordConvertInlineShapeToNativeEquation( _
     VTFinishPureNativeEquation finalFormulaRange, formulaId
     Set finalFormulaRange = VTNativeMathRootRange(finalFormulaRange)
     Set equationRange = finalFormulaRange.Duplicate
+    ' Equation format v2: the converted number takes the shared format.
+    If numbered And displayMode = "block" Then
+        conversionStage = "v2-restyle-number"
+        VTV2RestyleNumbers targetDocument
+    End If
     sourceBackupDocument.Close SaveChanges:=wdDoNotSaveChanges
     Set sourceBackupDocument = Nothing
     If internalMutationStarted Then
@@ -24610,6 +24657,1374 @@ Private Function VTCurrentNumberTargets( _
     Set VTCurrentNumberTargets = result
 End Function
 
+' =====================================================================
+' Word equation format v2 (docs/equation-format-v2.md)
+'
+' A numbered Word equation is written exactly as VisualTeX for Windows writes
+' it: #( prefix {SEQ label [\r N] [\s L] \* ARABIC \* MERGEFORMAT} ). The app
+' builds it with omml_write, the port of Windows' WordOmmlConverter
+' BuildWordNativeNumberedOmml. This add-in decides the numbering context from
+' the document with the rules of Windows' WordNativeNumberingAdoptionPlan and
+' WordEquationNumbering, so both platforms number the same document the same
+' way. No VisualTeX bookmark, variable or field stays in the document.
+' =====================================================================
+
+' --- small text helpers (Mac VBA has no regular expressions) ----------------
+
+Private Function VTV2CodeUnit(ByVal character As String) As Long
+    VTV2CodeUnit = AscW(character)
+    If VTV2CodeUnit < 0 Then VTV2CodeUnit = VTV2CodeUnit + 65536
+End Function
+
+Private Function VTV2IsDigit(ByVal character As String) As Boolean
+    Dim code As Long
+    If Len(character) = 0 Then Exit Function
+    code = VTV2CodeUnit(character)
+    ' .NET \d (Windows) accepts ASCII and fullwidth digits in these labels.
+    VTV2IsDigit = (code >= 48 And code <= 57) Or _
+        (code >= &HFF10& And code <= &HFF19&)
+End Function
+
+Private Function VTV2IsSpace(ByVal character As String) As Boolean
+    Dim code As Long
+    If Len(character) = 0 Then Exit Function
+    code = VTV2CodeUnit(character)
+    ' .NET char.IsWhiteSpace.
+    Select Case code
+        Case 9 To 13, 32, 133, 160, 5760, 8192 To 8202, 8232, 8233, 8239, 8287, 12288
+            VTV2IsSpace = True
+    End Select
+End Function
+
+Private Function VTV2TrimSpaces(ByVal value As String) As String
+    Do While Len(value) > 0
+        If Not VTV2IsSpace(Left$(value, 1)) Then Exit Do
+        value = Mid$(value, 2)
+    Loop
+    Do While Len(value) > 0
+        If Not VTV2IsSpace(Right$(value, 1)) Then Exit Do
+        value = Left$(value, Len(value) - 1)
+    Loop
+    VTV2TrimSpaces = value
+End Function
+
+Private Function VTV2IsWordCharacter(ByVal character As String) As Boolean
+    Dim code As Long
+    If Len(character) = 0 Then Exit Function
+    code = VTV2CodeUnit(character)
+    VTV2IsWordCharacter = (code >= 48 And code <= 57) Or _
+        (code >= 65 And code <= 90) Or (code >= 97 And code <= 122) Or _
+        code = 95 Or code > 127
+End Function
+
+Private Function VTV2RemoveWholeWord( _
+    ByVal text As String, ByVal word As String) As String
+
+    Dim lowered As String
+    Dim position As Long
+    Dim before As String
+    Dim after As String
+
+    Do
+        lowered = LCase$(text)
+        position = InStr(1, lowered, word, vbBinaryCompare)
+        Do While position > 0
+            before = ""
+            If position > 1 Then before = Mid$(text, position - 1, 1)
+            after = Mid$(text, position + Len(word), 1)
+            If Not VTV2IsWordCharacter(before) And _
+               Not VTV2IsWordCharacter(after) Then Exit Do
+            position = InStr(position + 1, lowered, word, vbBinaryCompare)
+        Loop
+        If position = 0 Then Exit Do
+        text = Left$(text, position - 1) & Mid$(text, position + Len(word))
+    Loop
+    VTV2RemoveWholeWord = text
+End Function
+
+' Text sets of Windows' heading-number rules, spelled with ChrW so this module
+' stays ASCII like the rest of the add-in source.
+Private Function VTV2HeadingDecorations() As String
+    ' The CJK chapter words U+7B2C U+7AE0 U+8282 U+7BC7 U+90E8 U+5377 and
+    ' ASCII/fullwidth punctuation, dashes and brackets.
+    VTV2HeadingDecorations = ChrW(&H7B2C&) & ChrW(&H7AE0&) & ChrW(&H8282&) & _
+        ChrW(&H7BC7&) & ChrW(&H90E8&) & ChrW(&H5377&) & "." & ChrW(&HFF0E&) & _
+        ChrW(&H3001&) & ",:" & ChrW(&HFF1A&) & ";" & ChrW(&HFF1B&) & "-" & _
+        ChrW(&H2013&) & ChrW(&H2014&) & "()" & ChrW(&HFF08&) & ChrW(&HFF09&) & _
+        "[]" & ChrW(&H3010&) & ChrW(&H3011&) & "{}"
+End Function
+
+Private Function VTV2HeadingNumberSeparators() As String
+    ' Full stop, fullwidth full stop, hyphen, en dash, em dash.
+    VTV2HeadingNumberSeparators = "." & ChrW(&HFF0E&) & "-" & ChrW(&H2013&) & ChrW(&H2014&)
+End Function
+
+Private Function VTV2HeadingNumberTerminators() As String
+    ' U+7AE0 U+8282 U+7BC7 U+90E8, full stops, ideographic comma, colons,
+    ' closing parentheses and dashes.
+    VTV2HeadingNumberTerminators = ChrW(&H7AE0&) & ChrW(&H8282&) & ChrW(&H7BC7&) & _
+        ChrW(&H90E8&) & "." & ChrW(&HFF0E&) & ChrW(&H3001&) & ":" & ChrW(&HFF1A&) & _
+        ")" & ChrW(&HFF09&) & "-" & ChrW(&H2013&) & ChrW(&H2014&)
+End Function
+
+' Windows WordEquationNumbering.NormalizeHeadingNumberText: a list label such
+' such as "3.2", "Chapter 3" or the CJK "chapter 3" form becomes "3" / "3.2";
+' any other text fails.
+Private Function VTV2HeadingListNumber( _
+    ByVal value As String, ByVal outlineLevel As Long) As String
+
+    Dim text As String
+    Dim remainder As String
+    Dim numbers As String
+    Dim current As String
+    Dim character As String
+    Dim word As Variant
+    Dim count As Long
+    Dim index As Long
+
+    text = Replace$(Replace$(Replace$(Replace$(value, vbTab, ""), vbCr, ""), vbLf, ""), Chr$(7), "")
+    text = VTV2TrimSpaces(text)
+    If Len(text) = 0 Then Exit Function
+    For index = 1 To Len(text)
+        character = Mid$(text, index, 1)
+        If VTV2IsDigit(character) Then
+            If VTV2CodeUnit(character) >= &HFF10& Then _
+                character = ChrW(VTV2CodeUnit(character) - &HFF10& + 48)
+            current = current & character
+        Else
+            If Len(current) > 0 Then
+                numbers = numbers & IIf(Len(numbers) > 0, ".", "") & current
+                count = count + 1
+                current = ""
+            End If
+            remainder = remainder & character
+        End If
+    Next index
+    If Len(current) > 0 Then
+        numbers = numbers & IIf(Len(numbers) > 0, ".", "") & current
+        count = count + 1
+    End If
+    If count = 0 Or count > IIf(outlineLevel > 1, outlineLevel, 1) Then Exit Function
+
+    ' (?i:\b(?:chapter|section|part)\b) after the digits are gone.
+    For Each word In Array("chapter", "section", "part")
+        remainder = VTV2RemoveWholeWord(remainder, CStr(word))
+    Next word
+    For index = Len(remainder) To 1 Step -1
+        character = Mid$(remainder, index, 1)
+        If InStr(1, VTV2HeadingDecorations(), character, vbBinaryCompare) > 0 Or _
+           VTV2IsSpace(character) Then
+            remainder = Left$(remainder, index - 1) & Mid$(remainder, index + 1)
+        End If
+    Next index
+    If Len(remainder) > 0 Then Exit Function
+    VTV2HeadingListNumber = numbers
+End Function
+
+' Windows WordEquationNumbering.ParseHeadingNumberFromText: typed headings such
+' such as "8. Title", "8-1 Title" or the CJK "chapter 8" form.
+Private Function VTV2HeadingTextNumber( _
+    ByVal value As String, ByVal outlineLevel As Long) As String
+
+    Dim text As String
+    Dim position As Long
+    Dim afterNumber As Long
+    Dim digitsEnd As Long
+    Dim probe As Long
+    Dim spaces As Long
+    Dim character As String
+    Dim number As String
+    Dim component As String
+    Dim boundaries As New Collection
+    Dim numbers As New Collection
+    Dim index As Long
+    Dim parts() As String
+    Dim count As Long
+
+    text = Replace$(Replace$(Replace$(value, vbCr, ""), vbLf, ""), Chr$(7), "")
+    text = VTV2TrimSpaces(text)
+    If Len(text) = 0 Then Exit Function
+    position = 1
+    If Mid$(text, 1, 1) = ChrW(&H7B2C&) Then
+        position = 2
+        Do While position <= Len(text)
+            If Not VTV2IsSpace(Mid$(text, position, 1)) Then Exit Do
+            position = position + 1
+        Loop
+    End If
+    ' (?<number>\d+(?:\s*[separator]\s*\d+)*): collect every component boundary
+    ' so the regex backtracking can be replayed from the longest match down.
+    digitsEnd = position
+    Do While digitsEnd <= Len(text)
+        If Not VTV2IsDigit(Mid$(text, digitsEnd, 1)) Then Exit Do
+        digitsEnd = digitsEnd + 1
+    Loop
+    If digitsEnd = position Then Exit Function
+    number = Mid$(text, position, digitsEnd - position)
+    boundaries.Add digitsEnd
+    numbers.Add number
+    probe = digitsEnd
+    Do
+        afterNumber = probe
+        Do While afterNumber <= Len(text)
+            If Not VTV2IsSpace(Mid$(text, afterNumber, 1)) Then Exit Do
+            afterNumber = afterNumber + 1
+        Loop
+        If afterNumber > Len(text) Then Exit Do
+        If InStr(1, VTV2HeadingNumberSeparators(), Mid$(text, afterNumber, 1), vbBinaryCompare) = 0 Then Exit Do
+        afterNumber = afterNumber + 1
+        Do While afterNumber <= Len(text)
+            If Not VTV2IsSpace(Mid$(text, afterNumber, 1)) Then Exit Do
+            afterNumber = afterNumber + 1
+        Loop
+        digitsEnd = afterNumber
+        Do While digitsEnd <= Len(text)
+            If Not VTV2IsDigit(Mid$(text, digitsEnd, 1)) Then Exit Do
+            digitsEnd = digitsEnd + 1
+        Loop
+        If digitsEnd = afterNumber Then Exit Do
+        component = Mid$(text, afterNumber, digitsEnd - afterNumber)
+        number = number & "." & component
+        boundaries.Add digitsEnd
+        numbers.Add number
+        probe = digitsEnd
+    Loop
+    ' (?:\s*[CJK unit]|\s*[terminator]|\s+) after the number.
+    For index = boundaries.Count To 1 Step -1
+        probe = boundaries(index)
+        spaces = 0
+        Do While probe <= Len(text)
+            If Not VTV2IsSpace(Mid$(text, probe, 1)) Then Exit Do
+            probe = probe + 1
+            spaces = spaces + 1
+        Loop
+        character = ""
+        If probe <= Len(text) Then character = Mid$(text, probe, 1)
+        If (Len(character) > 0 And InStr(1, VTV2HeadingNumberTerminators(), character, vbBinaryCompare) > 0) Or _
+           spaces > 0 Then
+            parts = Split(numbers(index), ".")
+            count = UBound(parts) + 1
+            If count = 0 Or count > IIf(outlineLevel > 1, outlineLevel, 1) Then Exit Function
+            VTV2HeadingTextNumber = numbers(index)
+            Exit Function
+        End If
+    Next index
+End Function
+
+' --- heading scope (Windows ResolveHeadingScopeAtPosition) -------------------
+
+' Every heading paragraph of outline level 1..targetLevel outside tables and
+' frames, in document order (Windows heading candidates): each item is
+' Array(start, outline level, explicit number, has Word list numbering).
+Private Function VTV2CollectHeadings( _
+    ByVal doc As Document, ByVal targetLevel As Long) As Collection
+
+    Dim result As New Collection
+    Dim paragraph As Paragraph
+    Dim paragraphRange As Range
+    Dim outlineLevel As Long
+    Dim explicitNumber As String
+
+    If targetLevel >= 1 Then
+        For Each paragraph In doc.Paragraphs
+            outlineLevel = paragraph.OutlineLevel
+            If outlineLevel >= 1 And outlineLevel <= targetLevel Then
+                Set paragraphRange = paragraph.Range
+                If Not paragraphRange.Information(wdWithInTable) Then
+                    If paragraphRange.Frames.Count = 0 Then
+                        explicitNumber = ""
+                        On Error Resume Next
+                        explicitNumber = VTV2HeadingListNumber( _
+                            paragraphRange.ListFormat.ListString, outlineLevel)
+                        On Error GoTo 0
+                        If Len(explicitNumber) = 0 Then
+                            explicitNumber = VTV2HeadingTextNumber( _
+                                paragraphRange.Text, outlineLevel)
+                        End If
+                        result.Add Array(paragraphRange.Start, outlineLevel, explicitNumber, _
+                            paragraphRange.ListFormat.ListType <> wdListNoNumbering)
+                    End If
+                End If
+            End If
+        Next paragraph
+    End If
+    Set VTV2CollectHeadings = result
+End Function
+
+' The chapter/section number of the formula at position for a heading level of
+' 1 or 2 (Windows ResolveHeadingScopeAtPosition): "3", "3.2", or "0" / "0.0"
+' before any heading. scopeStart is the heading paragraph's start, or -1 when
+' no heading applies. automatic is True when that heading carries Word list
+' numbering; its prefix is then read live with STYLEREF, otherwise written as
+' text (Windows ResolveLiteralHeadingPrefix).
+Private Function VTV2HeadingScope( _
+    ByVal headings As Collection, _
+    ByVal position As Long, _
+    ByVal targetLevel As Long, _
+    ByRef scopeStart As Long, _
+    ByRef automatic As Boolean) As String
+
+    Dim usesExplicit As Boolean
+    Dim index As Long
+    Dim level As Long
+    Dim chosen As Long
+    Dim counters(1 To 9) As Long
+    Dim deeper As Long
+    Dim numberText As String
+    Dim anchorNumber As String
+    Dim anchorIndex As Long
+
+    scopeStart = -1
+    automatic = False
+    If targetLevel < 1 Then Exit Function
+
+    ' Explicit scope (Windows TryResolveExplicitHeadingScopeAtPosition): the
+    ' last numbered heading of each level up to the formula, each deeper level
+    ' only inside the scope chosen for the level above it.
+    For level = 1 To targetLevel
+        For index = headings.Count To 1 Step -1
+            If headings(index)(1) = level And headings(index)(0) <= position Then
+                If chosen > 0 Then
+                    If headings(index)(0) <= headings(chosen)(0) Then Exit For
+                End If
+                If Len(headings(index)(2)) > 0 Then
+                    chosen = index
+                    numberText = headings(index)(2)
+                    If level < targetLevel Then _
+                        numberText = numberText & Replace$(String$(targetLevel - level, "x"), "x", ".0")
+                    Exit For
+                End If
+            End If
+        Next index
+    Next level
+    If chosen > 0 Then
+        scopeStart = headings(chosen)(0)
+        automatic = headings(chosen)(3)
+        VTV2HeadingScope = numberText
+        Exit Function
+    End If
+
+    ' Fallback (Windows GetHeadingNumberAnchors + ResolveEquationNumberScope):
+    ' count unnumbered headings only in a document without explicit numbers.
+    For index = 1 To headings.Count
+        If Len(headings(index)(2)) > 0 Then usesExplicit = True
+    Next index
+    For index = 1 To headings.Count
+        numberText = headings(index)(2)
+        If Len(numberText) = 0 Then
+            If usesExplicit Then GoTo NextAnchor
+            level = headings(index)(1)
+            counters(level) = counters(level) + 1
+            For deeper = level + 1 To 9
+                counters(deeper) = 0
+            Next deeper
+            For deeper = 1 To level
+                numberText = numberText & IIf(deeper > 1, ".", "") & _
+                    CStr(IIf(counters(deeper) > 1, counters(deeper), 1))
+            Next deeper
+        End If
+        If headings(index)(1) < targetLevel Then _
+            numberText = numberText & Replace$(String$(targetLevel - headings(index)(1), "x"), "x", ".0")
+        If headings(index)(0) > position Then Exit For
+        anchorIndex = index
+        anchorNumber = numberText
+NextAnchor:
+    Next index
+    If anchorIndex > 0 Then
+        scopeStart = headings(anchorIndex)(0)
+        automatic = headings(anchorIndex)(3)
+        VTV2HeadingScope = anchorNumber
+    Else
+        VTV2HeadingScope = IIf(targetLevel = 1, "0", "0.0")
+    End If
+End Function
+
+' --- numbered equations in the document ---------------------------------------
+
+' The content of the #( ... ) number argument of a native numbered equation.
+Private Function VTV2NumberContentRange(ByVal exact As Range) As Range
+    Dim arrayFunction As OMathFunction
+    Dim slotFunction As OMathFunction
+    Dim marker As Range
+
+    If exact Is Nothing Then Exit Function
+    If exact.OMaths.Count <> 1 Then Exit Function
+    Set marker = VTNativeEquationArrayMarkerRange(exact)
+    If marker Is Nothing Then Exit Function
+    For Each arrayFunction In exact.OMaths(1).Functions
+        If arrayFunction.Type = wdOMathFunctionEqArray Then
+            For Each slotFunction In arrayFunction.EqArray.E(1).Functions
+                If slotFunction.Type = wdOMathFunctionDelim Then
+                    If slotFunction.Range.Start > marker.Start Then
+                        Set VTV2NumberContentRange = slotFunction.Delim.E(1).Range.Duplicate
+                        Exit Function
+                    End If
+                End If
+            Next slotFunction
+        End If
+    Next arrayFunction
+End Function
+
+' "SEQ Equation \r 1 \s 1 ..." -> Equation; SEQ "My Eq" -> My Eq.
+Private Function VTV2SequenceName(ByVal instruction As String) As String
+    Dim text As String
+    Dim closing As Long
+    Dim position As Long
+
+    text = VTV2TrimSpaces(instruction)
+    If UCase$(Left$(text, 4)) <> "SEQ " Then Exit Function
+    text = VTV2TrimSpaces(Mid$(text, 5))
+    If Left$(text, 1) = """" Then
+        closing = InStr(2, text, """", vbBinaryCompare)
+        If closing > 2 Then VTV2SequenceName = Mid$(text, 2, closing - 2)
+        Exit Function
+    End If
+    For position = 1 To Len(text)
+        If VTV2IsSpace(Mid$(text, position, 1)) Or Mid$(text, position, 1) = "\" Then Exit For
+    Next position
+    VTV2SequenceName = Left$(text, position - 1)
+End Function
+
+' The N of a "\r N" switch, or 0.
+Private Function VTV2RestartValue(ByVal instruction As String) As Long
+    Dim position As Long
+    Dim digits As String
+    position = InStr(1, instruction, "\r ", vbTextCompare)
+    If position = 0 Then Exit Function
+    position = position + 3
+    Do While position <= Len(instruction)
+        If Mid$(instruction, position, 1) <> " " Then Exit Do
+        position = position + 1
+    Loop
+    Do While position <= Len(instruction)
+        If Mid$(instruction, position, 1) < "0" Or Mid$(instruction, position, 1) > "9" Then Exit Do
+        digits = digits & Mid$(instruction, position, 1)
+        position = position + 1
+    Loop
+    If Len(digits) > 0 And Len(digits) < 9 Then VTV2RestartValue = CLng(digits)
+End Function
+
+' Windows WordNativeNumberingAdoptionPlan.TryParseLabel: "2.3-12" ->
+' prefix "2.3", separator "-", ordinal 12; "7" -> ordinal 7.
+Private Function VTV2ParseNumberLabel( _
+    ByVal text As String, _
+    ByRef prefix As String, _
+    ByRef separator As String, _
+    ByRef ordinal As Long) As Boolean
+
+    Dim index As Long
+    Dim character As String
+    Dim ordinalText As String
+    Dim candidate As String
+    Dim part As Variant
+    Dim parts() As String
+    Dim first As String
+    Dim position As Long
+
+    prefix = ""
+    separator = ""
+    ordinal = 0
+    index = Len(text)
+    Do While index >= 1
+        character = Mid$(text, index, 1)
+        If character < "0" Or character > "9" Then Exit Do
+        index = index - 1
+    Loop
+    ordinalText = Mid$(text, index + 1)
+    If Len(ordinalText) = 0 Or Len(ordinalText) > 9 Then Exit Function
+    If Len(ordinalText) > 1 And Left$(ordinalText, 1) = "0" Then Exit Function
+    If CLng(ordinalText) < 1 Then Exit Function
+    If index > 0 Then
+        separator = Mid$(text, index, 1)
+        If InStr(1, ".-" & ChrW(8208) & ChrW(8209) & ChrW(8210) & ChrW(8211) & ChrW(8722), _
+           separator, vbBinaryCompare) = 0 Then Exit Function
+        candidate = Left$(text, index - 1)
+        If Len(candidate) = 0 Then Exit Function
+        parts = Split(candidate, ".")
+        first = parts(0)
+        If Len(first) = 0 Then Exit Function
+        For index = 1 To Len(first)
+            character = Mid$(first, index, 1)
+            If Not ((character >= "0" And character <= "9")) Then Exit For
+        Next index
+        If index <= Len(first) Then
+            For index = 1 To Len(first)
+                character = Mid$(first, index, 1)
+                If Not ((character >= "A" And character <= "Z") Or (character >= "a" And character <= "z")) Then Exit Function
+            Next index
+        End If
+        For index = 1 To UBound(parts)
+            part = parts(index)
+            If Len(part) = 0 Then Exit Function
+            For position = 1 To Len(part)
+                If Mid$(part, position, 1) < "0" Or Mid$(part, position, 1) > "9" Then Exit Function
+            Next position
+        Next index
+        prefix = candidate
+    End If
+    ordinal = CLng(ordinalText)
+    VTV2ParseNumberLabel = True
+End Function
+
+' Every numbered display equation with a native #(SEQ) number, in document
+' order (Windows adoption plan Capture). Each item: Array(start, sequence
+' name, sequence code, prefix, separator, ordinal, restart, automatic, end).
+Private Function VTV2NumberedEquations( _
+    ByVal doc As Document, Optional ByVal excludeStart As Long = -1) As Collection
+    Dim result As New Collection
+    Dim math As OMath
+    Dim exact As Range
+    Dim numberField As Field
+    Dim candidate As Field
+    Dim number As Range
+    Dim visible As String
+    Dim prefix As String
+    Dim separator As String
+    Dim ordinal As Long
+    Dim automatic As Boolean
+    Dim instruction As String
+    Dim lastStart As Long
+
+    lastStart = -1
+    For Each math In doc.OMaths
+        Set exact = VTNativeMathRoot(math).Range.Duplicate
+        If exact.Start <= lastStart Or exact.Start = excludeStart Then GoTo NextMath
+        If exact.OMaths(1).Type <> wdOMathDisplay Then GoTo NextMath
+        Set numberField = VTPureNativeNumberField(exact)
+        If numberField Is Nothing Then GoTo NextMath
+        Set number = VTV2NumberContentRange(exact)
+        If number Is Nothing Then GoTo NextMath
+        automatic = False
+        For Each candidate In number.Fields
+            If candidate.Type = wdFieldStyleRef Then automatic = True
+        Next candidate
+        number.TextRetrievalMode.IncludeFieldCodes = False
+        visible = Trim$(number.Text)
+        If Not VTV2ParseNumberLabel(visible, prefix, separator, ordinal) Then GoTo NextMath
+        instruction = numberField.Code.Text
+        result.Add Array(exact.Start, VTV2SequenceName(instruction), instruction, _
+            prefix, separator, ordinal, VTV2RestartValue(instruction), automatic, exact.End)
+        lastStart = exact.Start
+NextMath:
+    Next math
+    Set VTV2NumberedEquations = result
+End Function
+
+' --- numbering context for a new number (Windows PlanInsertion) --------------
+
+' The document's numbering style: level 0 (continuous), 1 (chapter) or 2
+' (section) and the separator "." or "-".
+Private Sub VTV2DocumentFormat( _
+    ByVal doc As Document, ByRef level As Long, ByRef separator As String)
+
+    Dim numberingMode As String
+    Dim separatorText As String
+
+    VTResolveEquationNumbering doc, numberingMode, separatorText
+    level = 0
+    separator = ""
+    If numberingMode = VT_WORD_NUMBERING_MODE_CHAPTER Then level = 1
+    If numberingMode = VT_WORD_NUMBERING_MODE_SECTION Then level = 2
+    If level > 0 Then
+        separator = IIf(separatorText = ".", ".", "-")
+    End If
+End Sub
+
+' The number a new display equation at position takes. transferEquation is
+' the existing equation whose \r switch moves to the new number (inserting
+' before the first number of a series), or Nothing. It is a live Range, so it
+' follows the equation when the new one is inserted before it.
+Private Sub VTV2PlanInsertion( _
+    ByVal doc As Document, _
+    ByVal position As Long, _
+    ByRef sequenceName As String, _
+    ByRef headingLevel As Long, _
+    ByRef separator As String, _
+    ByRef literalPrefix As String, _
+    ByRef automatic As Boolean, _
+    ByRef restart As Long, _
+    ByRef initial As Long, _
+    ByRef transferEquation As Range, _
+    Optional ByVal excludeStart As Long = -1)
+
+    Dim entries As Collection
+    Dim nearest As Long
+    Dim first As Long
+    Dim index As Long
+    Dim scopeStart As Long
+    Dim numberText As String
+
+    Set transferEquation = Nothing
+    restart = 0
+    initial = 1
+    literalPrefix = ""
+    automatic = False
+    VTV2DocumentFormat doc, headingLevel, separator
+    Set entries = VTV2NumberedEquations(doc, excludeStart)
+    If entries.Count = 0 Then
+        sequenceName = VTNativeEquationLabelName()
+    Else
+        nearest = 0
+        For index = 1 To entries.Count
+            If entries(index)(0) < position Then nearest = index
+        Next index
+        If nearest = 0 Then nearest = 1
+        first = nearest
+        Do While first > 1
+            If entries(first - 1)(3) <> entries(nearest)(3) Or _
+               StrComp(entries(first - 1)(1), entries(nearest)(1), vbTextCompare) <> 0 Then Exit Do
+            first = first - 1
+        Loop
+        sequenceName = entries(first)(1)
+        If position <= entries(first)(0) Then
+            restart = entries(first)(5)
+            If entries(first)(6) > 0 Then _
+                Set transferEquation = doc.Range(entries(first)(0), entries(first)(8))
+            initial = restart
+        Else
+            initial = entries(first)(5) + 1
+        End If
+    End If
+    If headingLevel > 0 Then
+        numberText = VTV2HeadingScope(VTV2CollectHeadings(doc, headingLevel), _
+            position, headingLevel, scopeStart, automatic)
+        If scopeStart < 0 Then automatic = False
+        If Not automatic Then literalPrefix = numberText
+    End If
+End Sub
+
+' The number of an equation written by an editor commit. An existing v2 number
+' is kept exactly as it is (Windows keeps a numbered equation's number host
+' verbatim when its body is edited); anything else, including an older Mac
+' number, is numbered as a new insertion (Windows PlanInsertion) that leaves
+' the edited equation itself out of the series.
+Private Sub VTV2PlanCommitNumber( _
+    ByVal doc As Document, _
+    ByVal targetRange As Range, _
+    ByVal targetIsNative As Boolean, _
+    ByRef sequenceName As String, _
+    ByRef headingLevel As Long, _
+    ByRef separator As String, _
+    ByRef literalPrefix As String, _
+    ByRef automatic As Boolean, _
+    ByRef restart As Long, _
+    ByRef initial As Long, _
+    ByRef transferEquation As Range)
+
+    Dim exact As Range
+    Dim entries As Collection
+    Dim index As Long
+    Dim excludeStart As Long
+    Dim instruction As String
+    Dim levelPosition As Long
+
+    excludeStart = -1
+    Set transferEquation = Nothing
+    If targetIsNative Then
+        If targetRange.OMaths.Count >= 1 Then
+            Set exact = VTNativeMathRoot(targetRange.OMaths(1)).Range.Duplicate
+            excludeStart = exact.Start
+            Set entries = VTV2NumberedEquations(doc)
+            For index = 1 To entries.Count
+                If entries(index)(0) = exact.Start Then
+                    instruction = entries(index)(2)
+                    headingLevel = 0
+                    levelPosition = InStr(1, instruction, "\s ", vbTextCompare)
+                    If levelPosition > 0 Then _
+                        headingLevel = CLng(Val(Mid$(instruction, levelPosition + 3, 2)))
+                    separator = entries(index)(4)
+                    automatic = entries(index)(7)
+                    literalPrefix = ""
+                    If headingLevel > 0 And Not automatic Then literalPrefix = entries(index)(3)
+                    restart = entries(index)(6)
+                    If (headingLevel = 0 Or separator = "." Or separator = "-") And _
+                       VTV2NumberHasStyle(exact, entries(index), headingLevel, separator, _
+                           literalPrefix, automatic, restart) Then
+                        sequenceName = entries(index)(1)
+                        initial = entries(index)(5)
+                        Exit Sub
+                    End If
+                    Exit For
+                End If
+            Next index
+        End If
+    End If
+    VTV2PlanInsertion doc, targetRange.Start, sequenceName, headingLevel, separator, _
+        literalPrefix, automatic, restart, initial, transferEquation, excludeStart
+End Sub
+
+' --- the app builds the number (omml_write) ----------------------------------
+
+Private Function VTV2NumberItemManifest( _
+    ByVal index As Long, _
+    ByVal sequenceName As String, _
+    ByVal headingLevel As Long, _
+    ByVal separator As String, _
+    ByVal literalPrefix As String, _
+    ByVal automatic As Boolean, _
+    ByVal restart As Long, _
+    ByVal initial As Long) As String
+
+    Dim key As String
+    key = "item" & CStr(index)
+    VTV2NumberItemManifest = _
+        key & "SequenceName=" & VTBase64UrlEncodeUtf8(sequenceName) & vbLf & _
+        key & "HeadingLevel=" & CStr(headingLevel) & vbLf & _
+        key & "Separator=" & VTBase64UrlEncodeUtf8(separator) & vbLf & _
+        IIf(headingLevel > 0 And Not automatic, _
+            key & "LiteralPrefix=" & VTBase64UrlEncodeUtf8(literalPrefix) & vbLf, "") & _
+        IIf(restart > 0, key & "Restart=" & CStr(restart) & vbLf, "") & _
+        key & "Initial=" & CStr(IIf(initial > 0, initial, 1)) & vbLf
+End Function
+
+' Sends one nativeNumber request (several numbered equations; one body or
+' VisualTeX's x placeholder) and returns the .docx the app wrote.
+Private Function VTV2RequestNumberDocx( _
+    ByVal sessionId As String, _
+    ByVal doc As Document, _
+    ByVal ommlBase64 As String, _
+    ByVal itemCount As Long, _
+    ByVal items As String) As String
+
+    Dim manifest As String
+    Dim timingDetail As String
+    Dim encodedResult As String
+    Dim separatorPosition As Long
+    Dim result As Object
+    Dim docxPath As String
+
+    manifest = "protocolVersion=" & CStr(VT_PROTOCOL_VERSION) & vbLf & _
+        "sessionId=" & sessionId & vbLf & _
+        "sourceKind=nativeNumber" & vbLf & _
+        "sourceDocumentId=" & VTBase64UrlEncodeUtf8(doc.FullName) & vbLf & _
+        "bookmarkName=-" & vbLf & _
+        "itemCount=" & CStr(itemCount) & vbLf & _
+        "mathFont=" & VTBase64UrlEncodeUtf8(doc.OMathFontName) & vbLf & _
+        IIf(Len(ommlBase64) > 0, "ommlBase64=" & ommlBase64 & vbLf, "") & items
+    If VTTryWriteOmmlBatchManifestDirect(sessionId, manifest) Then
+        timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId)
+    Else
+        timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId, manifest)
+    End If
+    separatorPosition = InStrRev(timingDetail, "|", -1, vbBinaryCompare)
+    If separatorPosition <= 1 Or separatorPosition >= Len(timingDetail) Then
+        Err.Raise vbObjectError + 7611, "VisualTeX", _
+            "VisualTeX did not return the Word equation number."
+    End If
+    encodedResult = Mid$(timingDetail, separatorPosition + 1)
+    Set result = VTParseDocumentImportManifestText( _
+        VTBase64UrlDecodeUtf8(encodedResult), sessionId)
+    VTRequireDispatchValue result, "docxPath"
+    If CStr(result("operation")) <> "nativeNumber" Or _
+       CLng(result("itemCount")) <> itemCount Then
+        Err.Raise vbObjectError + 7611, "VisualTeX", _
+            "VisualTeX returned a Word equation number for another request."
+    End If
+    docxPath = CStr(result("docxPath"))
+    VTValidateAbsoluteVisualTeXPath docxPath
+    If Not VTPathFileExists(docxPath) Then
+        Err.Raise vbObjectError + 7611, "VisualTeX", _
+            "The Word equation number package is missing."
+    End If
+    VTV2RequestNumberDocx = docxPath
+End Function
+
+' --- after a numbered equation is inserted -----------------------------------
+
+' Moves the \r switch of the series' former first number to the new number
+' (Windows ChangeKind.TransferReset) and lets Word recount: STYLEREF before
+' SEQ inside every equation from the new one on, then the references.
+Private Sub VTV2FinishInsertedNumber( _
+    ByVal doc As Document, _
+    ByVal exact As Range, _
+    ByVal transferEquation As Range)
+
+    Dim math As OMath
+    Dim owner As Range
+    Dim candidate As Field
+    Dim code As Range
+    Dim instruction As String
+    Dim switchStart As Long
+    Dim switchText As String
+
+    If Not transferEquation Is Nothing Then
+        If transferEquation.OMaths.Count >= 1 Then
+            Set owner = VTNativeMathRoot(transferEquation.OMaths(1)).Range.Duplicate
+            Set candidate = VTPureNativeNumberField(owner)
+            If Not candidate Is Nothing Then
+                instruction = candidate.Code.Text
+                switchStart = InStr(1, instruction, "\r ", vbTextCompare)
+                If switchStart > 0 And VTV2RestartValue(instruction) > 0 Then
+                    ' Windows replaces exactly the switch with one space and
+                    ' never rewrites the rest of the instruction.
+                    switchText = Mid$(instruction, switchStart, _
+                        InStr(switchStart + 3, instruction & " ", " ", vbBinaryCompare) - switchStart)
+                    If Len(switchText) <= 3 Then switchText = "\r " & CStr(VTV2RestartValue(instruction))
+                    Set code = candidate.Code.Duplicate
+                    code.SetRange code.Start + switchStart - 1, _
+                        code.Start + switchStart - 1 + Len(switchText)
+                    If code.Text = switchText Then code.Text = " "
+                End If
+            End If
+        End If
+    End If
+    VTV2UpdateNumbersFrom doc, exact.Start
+End Sub
+
+' STYLEREF before SEQ in every numbered equation from position on (Windows
+' WordNativeOmmlFieldRefresh), then every cross-reference.
+Private Sub VTV2UpdateNumbersFrom(ByVal doc As Document, ByVal fromPosition As Long)
+    Dim math As OMath
+    Dim owner As Range
+    Dim candidate As Field
+    Dim lastStart As Long
+
+    lastStart = -1
+    For Each math In doc.OMaths
+        Set owner = VTNativeMathRoot(math).Range.Duplicate
+        If owner.End >= fromPosition And owner.Start > lastStart Then
+            lastStart = owner.Start
+            For Each candidate In owner.Fields
+                If candidate.Type = wdFieldStyleRef Then candidate.Update
+            Next candidate
+            For Each candidate In owner.Fields
+                If candidate.Type = wdFieldSequence Then candidate.Update
+            Next candidate
+        End If
+    Next math
+    For Each candidate In doc.Fields
+        If candidate.Type = wdFieldRef Then candidate.Update
+    Next candidate
+End Sub
+
+' --- restyle and renumber (Windows PlanFormat) ---------------------------------
+
+' The tokens of a SEQ instruction: name, \r value, \s level, and whether the
+' ARABIC and MERGEFORMAT switches of the shared format are present.
+Private Function VTV2SequenceMatches( _
+    ByVal instruction As String, _
+    ByVal sequenceName As String, _
+    ByVal restart As Long, _
+    ByVal headingLevel As Long) As Boolean
+
+    Dim levelText As String
+    Dim position As Long
+
+    If StrComp(VTV2SequenceName(instruction), sequenceName, vbTextCompare) <> 0 Then Exit Function
+    If VTV2RestartValue(instruction) <> restart Then Exit Function
+    position = InStr(1, instruction, "\s ", vbTextCompare)
+    If position > 0 Then levelText = Trim$(Mid$(instruction, position + 3, 2))
+    If headingLevel = 0 Then
+        If position > 0 Then Exit Function
+    ElseIf Left$(levelText, 1) <> CStr(headingLevel) Then
+        Exit Function
+    End If
+    If InStr(1, instruction, "\* ARABIC", vbTextCompare) = 0 Then Exit Function
+    If InStr(1, instruction, "\* MERGEFORMAT", vbTextCompare) = 0 Then Exit Function
+    VTV2SequenceMatches = True
+End Function
+
+' True when the equation's number already has exactly the requested form.
+Private Function VTV2NumberHasStyle( _
+    ByVal exact As Range, _
+    ByVal entry As Variant, _
+    ByVal headingLevel As Long, _
+    ByVal separator As String, _
+    ByVal literalPrefix As String, _
+    ByVal automatic As Boolean, _
+    ByVal restart As Long) As Boolean
+
+    Dim number As Range
+    Dim candidate As Field
+    Dim styleRefs As Long
+    Dim others As Long
+
+    If Not VTV2SequenceMatches(entry(2), entry(1), restart, headingLevel) Then Exit Function
+    Set number = VTV2NumberContentRange(exact)
+    If number Is Nothing Then Exit Function
+    For Each candidate In number.Fields
+        Select Case candidate.Type
+            Case wdFieldSequence
+            Case wdFieldStyleRef
+                styleRefs = styleRefs + 1
+                If InStr(1, candidate.Code.Text, "STYLEREF " & CStr(headingLevel) & " ", vbTextCompare) = 0 Then Exit Function
+            Case Else
+                others = others + 1
+        End Select
+    Next candidate
+    If others > 0 Then Exit Function
+    If headingLevel = 0 Then
+        VTV2NumberHasStyle = (styleRefs = 0 And Len(entry(3)) = 0)
+    ElseIf automatic Then
+        VTV2NumberHasStyle = (styleRefs = 1 And entry(4) = separator)
+    Else
+        VTV2NumberHasStyle = (styleRefs = 0 And entry(3) = literalPrefix And entry(4) = separator)
+    End If
+End Function
+
+' Rewrites the number of every numbered equation whose number is not already
+' in the document's numbering style (Windows PlanFormat): its own label, the
+' style's prefix and separator, \s L, and \r 1 on the first number of each
+' chapter/section (or of the document). The app builds all new numbers in one
+' package; each is copied into its equation's number slot, so equation bodies
+' and their run formatting are untouched. Returns how many were rewritten.
+Private Function VTV2RestyleNumbers( _
+    ByVal doc As Document, Optional ByVal dryRun As Boolean = False) As Long
+    Dim entries As Collection
+    Dim headingLevel As Long
+    Dim separator As String
+    Dim index As Long
+    Dim scopeStart As Long
+    Dim automatic As Boolean
+    Dim numberText As String
+    Dim counterKeys() As String
+    Dim counterValues() As Long
+    Dim counterCount As Long
+    Dim key As String
+    Dim slot As Long
+    Dim ordinal As Long
+    Dim restart As Long
+    Dim literalPrefix As String
+    Dim changed() As Long
+    Dim changedCount As Long
+    Dim items As String
+    Dim sessionId As String
+    Dim docxPath As String
+    Dim staging As Document
+    Dim exact As Range
+    Dim target As Range
+    Dim source As Range
+    Dim names As Collection
+    Dim name As Variant
+    Dim firstChange As Long
+    Dim headings As Collection
+
+    Set entries = VTV2NumberedEquations(doc)
+    If entries.Count = 0 Then Exit Function
+    VTV2DocumentFormat doc, headingLevel, separator
+    Set headings = VTV2CollectHeadings(doc, headingLevel)
+    ReDim counterKeys(1 To entries.Count)
+    ReDim counterValues(1 To entries.Count)
+    ReDim changed(1 To entries.Count)
+    firstChange = -1
+    For index = 1 To entries.Count
+        literalPrefix = ""
+        automatic = False
+        scopeStart = -1
+        If headingLevel > 0 Then
+            numberText = VTV2HeadingScope(headings, entries(index)(0), headingLevel, scopeStart, automatic)
+            If scopeStart < 0 Then automatic = False
+            If Not automatic Then literalPrefix = numberText
+        End If
+        key = LCase$(entries(index)(1)) & "|" & _
+            IIf(headingLevel = 0, "continuous", CStr(scopeStart))
+        For slot = 1 To counterCount
+            If counterKeys(slot) = key Then Exit For
+        Next slot
+        If slot > counterCount Then
+            counterCount = counterCount + 1
+            counterKeys(counterCount) = key
+            slot = counterCount
+        End If
+        counterValues(slot) = counterValues(slot) + 1
+        ordinal = counterValues(slot)
+        restart = IIf(ordinal = 1, 1, 0)
+        Set exact = doc.Range(entries(index)(0), entries(index)(8))
+        If Not VTV2NumberHasStyle(exact, entries(index), headingLevel, separator, _
+            literalPrefix, automatic, restart) Then
+            changedCount = changedCount + 1
+            changed(changedCount) = index
+            items = items & VTV2NumberItemManifest(changedCount, entries(index)(1), _
+                headingLevel, separator, literalPrefix, automatic, restart, ordinal)
+            If firstChange < 0 Then firstChange = entries(index)(0)
+        End If
+    Next index
+    If dryRun Then
+        VTV2RestyleNumbers = changedCount
+        Exit Function
+    End If
+    If changedCount = 0 Then
+        VTV2UpdateNumbersFrom doc, 0
+        Exit Function
+    End If
+
+    sessionId = VTNewUuidV4()
+    On Error GoTo Failed
+    docxPath = VTV2RequestNumberDocx(sessionId, doc, "", changedCount, items)
+    Set staging = Documents.Open(FileName:=docxPath, ConfirmConversions:=False, _
+        ReadOnly:=True, AddToRecentFiles:=False, Visible:=False)
+    If staging.OMaths.Count <> changedCount Then
+        Err.Raise vbObjectError + 7612, "VisualTeX", _
+            "Word did not open every prepared equation number."
+    End If
+    doc.Activate
+    ' Last to first: copying a number changes only text after its own start.
+    For index = changedCount To 1 Step -1
+        Set exact = doc.Range(entries(changed(index))(0), entries(changed(index))(8))
+        Set exact = VTNativeMathRoot(exact.OMaths(1)).Range.Duplicate
+        Set names = VTCaptureNativeNumberBookmarks(exact)
+        For Each name In names
+            doc.Bookmarks(CStr(name)).Delete
+        Next name
+        Set target = VTV2NumberContentRange(exact)
+        Set source = VTV2NumberContentRange( _
+            VTNativeMathRoot(staging.OMaths(index)).Range.Duplicate)
+        If target Is Nothing Or source Is Nothing Then
+            Err.Raise vbObjectError + 7612, "VisualTeX", _
+                "An equation number slot could not be resolved."
+        End If
+        target.FormattedText = source.FormattedText
+        Set exact = doc.Range(entries(changed(index))(0), entries(changed(index))(0))
+        Set exact = VTNativeMathRoot(exact.Paragraphs(1).Range.OMaths(1)).Range.Duplicate
+        Set target = VTV2NumberContentRange(exact)
+        For Each name In names
+            doc.Bookmarks.Add Name:=CStr(name), Range:=target
+        Next name
+    Next index
+    staging.Close SaveChanges:=wdDoNotSaveChanges
+    Set staging = Nothing
+    doc.Activate
+    VTDeleteSessionFiles sessionId
+    VTV2UpdateNumbersFrom doc, firstChange
+    VTV2RestyleNumbers = changedCount
+    Exit Function
+
+Failed:
+    Dim failureNumber As Long
+    Dim failureDescription As String
+    failureNumber = Err.Number
+    failureDescription = Err.Description
+    On Error Resume Next
+    If Not staging Is Nothing Then staging.Close SaveChanges:=wdDoNotSaveChanges
+    doc.Activate
+    VTDeleteSessionFiles sessionId
+    On Error GoTo 0
+    Err.Raise failureNumber, "VisualTeX equation numbers", failureDescription
+End Function
+
+' --- equation layout identical to Windows (WordFormulaHostLayout) -------------
+
+' A display equation: Word's display type, ApplyOmmlLocalTypography and
+' ConfigureDisplayParagraph exactly as VisualTeX for Windows applies them.
+Private Function VTV2FinishDisplayEquation( _
+    ByVal equationRange As Range, ByVal fontSizePt As Double) As Range
+
+    Dim nativeEquation As OMath
+    Dim exact As Range
+
+    If equationRange Is Nothing Or equationRange.OMaths.Count < 1 Then
+        Err.Raise vbObjectError + 7473, "VisualTeX", _
+            "VisualTeX cannot lay out a missing display equation."
+    End If
+    Set nativeEquation = VTNativeMathRoot(equationRange.OMaths(1))
+    If nativeEquation.Type <> wdOMathDisplay Then nativeEquation.Type = wdOMathDisplay
+    Set exact = nativeEquation.Range.Duplicate
+    VTV2ApplyEquationTypography exact, fontSizePt
+    VTV2ConfigureDisplayParagraph exact
+    Set VTV2FinishDisplayEquation = VTNativeMathRoot(exact.OMaths(1)).Range.Duplicate
+End Function
+
+' ConfigureDisplayParagraph: the paragraph of a display equation.
+Private Sub VTV2ConfigureDisplayParagraph(ByVal equationRange As Range)
+    With equationRange.Paragraphs(1).Range.ParagraphFormat
+        .Alignment = wdAlignParagraphCenter
+        .SpaceBefore = 0!
+        .SpaceAfter = 0!
+        .LeftIndent = 0!
+        .RightIndent = 0!
+        .FirstLineIndent = 0!
+    End With
+End Sub
+
+' Word shows an inline equation that is alone in its paragraph as a display
+' equation. VisualTeX for Windows then lays that paragraph out as a display
+' paragraph (WordOmmlHostWriter.Insert: a display host gets
+' ConfigureDisplayParagraph).
+Private Sub VTV2ConfigurePromotedInlineEquation(ByVal equationRange As Range)
+    If equationRange Is Nothing Then Exit Sub
+    If equationRange.OMaths.Count < 1 Then Exit Sub
+    If VTNativeMathRoot(equationRange.OMaths(1)).Type = wdOMathDisplay Then _
+        VTV2ConfigureDisplayParagraph equationRange
+End Sub
+
+' Word equations are written in the document's math font (Windows passes
+' Document.OMathFontName to ApplyExplicitTransferMathFont). Every Word editor
+' request carries it; the app builds the equation package with it.
+Private Function VTV2WithDocumentMathFont( _
+    ByVal requestJson As String, ByVal documentObject As Document) As String
+
+    Dim fontName As String
+
+    VTV2WithDocumentMathFont = requestJson
+    If documentObject Is Nothing Or Right$(requestJson, 1) <> "}" Then Exit Function
+    On Error Resume Next
+    fontName = Trim$(CStr(documentObject.OMathFontName))
+    Err.Clear
+    On Error GoTo 0
+    If Len(fontName) = 0 Or Len(fontName) > 128 Or _
+       InStr(fontName, vbCr) > 0 Or InStr(fontName, vbLf) > 0 Or _
+       InStr(fontName, vbTab) > 0 Then Exit Function
+    VTV2WithDocumentMathFont = Left$(requestJson, Len(requestJson) - 1) & _
+        ",""wordDocumentMathFontName"":" & VTJsonString(fontName) & "}"
+End Function
+
+' The typing line after a display formula, created as VisualTeX for Windows
+' creates it (Range.InsertParagraphAfter on the formula's paragraph), so the
+' formula's own paragraph mark keeps its formatting. Nothing when Word
+' inserted nothing (the caller then splits the paragraph itself).
+Private Function VTV2InsertParagraphAfter(ByVal sourceParagraph As Range) As Range
+
+    Dim documentObject As Document
+    Dim work As Range
+    Dim created As Range
+    Dim boundary As Long
+    Dim contentEndBefore As Long
+
+    Set documentObject = sourceParagraph.Document
+    boundary = sourceParagraph.End
+    contentEndBefore = documentObject.Content.End
+    Set work = sourceParagraph.Duplicate
+    On Error Resume Next
+    work.InsertParagraphAfter
+    If Err.Number <> 0 Or documentObject.Content.End = contentEndBefore Then
+        Err.Clear
+        On Error GoTo 0
+        Exit Function
+    End If
+    On Error GoTo 0
+    Set created = documentObject.Range( _
+        Start:=boundary, End:=boundary + 1).Paragraphs(1).Range.Duplicate
+    If created.Start <> boundary Or _
+       documentObject.Content.End <> contentEndBefore + 1 Or _
+       VTWordRangeHasMeaningfulText(created) Then
+        Err.Raise vbObjectError + 7553, "VisualTeX", _
+            "Word did not create the typing paragraph after the display formula."
+    End If
+    Set VTV2InsertParagraphAfter = created
+End Function
+
+' The local name of a paragraph's style, or "" when Word cannot report one.
+Private Function VTV2ParagraphStyleName(ByVal paragraphRange As Range) As String
+    On Error Resume Next
+    VTV2ParagraphStyleName = paragraphRange.Paragraphs(1).Style.NameLocal
+    Err.Clear
+End Function
+
+' WordFormulaService.ApplyBodyFormatToTypingParagraph: a paragraph created
+' after a display formula copies its centered format, so it takes the style and
+' paragraph format of the body paragraph before the formula, or its style's own
+' format. Never fails the formula write.
+Private Sub VTV2ApplyBodyFormatToTypingParagraph( _
+    ByVal displayParagraph As Range, ByVal typingParagraph As Range)
+
+    Dim previousRange As Range
+    Dim bodyFormat As ParagraphFormat
+    Dim bodyStyleName As String
+
+    On Error GoTo Finished
+    If displayParagraph Is Nothing Or typingParagraph Is Nothing Then Exit Sub
+    If displayParagraph.Start > 0 Then
+        Set previousRange = displayParagraph.Document.Range( _
+            Start:=displayParagraph.Start - 1, _
+            End:=displayParagraph.Start).Paragraphs(1).Range.Duplicate
+        If previousRange.End = displayParagraph.Start And _
+           previousRange.Paragraphs(1).OutlineLevel = wdOutlineLevelBodyText And _
+           previousRange.OMaths.Count = 0 And _
+           previousRange.InlineShapes.Count = 0 And _
+           previousRange.Tables.Count = 0 Then
+            Set bodyFormat = previousRange.ParagraphFormat.Duplicate
+            On Error Resume Next
+            bodyStyleName = previousRange.Paragraphs(1).Style.NameLocal
+            If Len(bodyStyleName) = 0 Then
+                bodyStyleName = displayParagraph.Document.Range( _
+                    Start:=previousRange.End - 1, _
+                    End:=previousRange.End).Style.NameLocal
+            End If
+            Err.Clear
+            On Error GoTo Finished
+            ' Word for Mac splits the next paragraph's first run on any style
+            ' assignment, so assign only a different style.
+            If Len(bodyStyleName) > 0 Then
+                If StrComp(VTV2ParagraphStyleName(typingParagraph), bodyStyleName, vbTextCompare) <> 0 Then _
+                    typingParagraph.Style = bodyStyleName
+            End If
+            typingParagraph.ParagraphFormat = bodyFormat
+            Exit Sub
+        End If
+    End If
+    typingParagraph.ParagraphFormat.Reset
+Finished:
+    Err.Clear
+End Sub
+
+' WordFormulaHostLayout.ApplyOmmlLocalTypography: Position 0, the formula's
+' size and the same complex-script size on the whole equation.
+' VisualTeX for Windows' ReadCurrentTypingFontSize: a new formula follows the
+' text where it goes. The size Word reports for the insertion point, else the
+' character before it in its paragraph, else the one after it, else the
+' paragraph's text; 14 pt when none is a single size from 5 to 200 pt.
+Private Function VTV2CurrentTypingFontSize() As Double
+    Dim caret As Range
+    Dim paragraph As Range
+    Dim probe As Range
+    Dim size As Double
+
+    VTV2CurrentTypingFontSize = 14#
+    On Error Resume Next
+    size = Selection.Font.Size
+    If size >= 5# And size <= 200# Then GoTo Found
+    Set caret = Selection.Range.Duplicate
+    If caret Is Nothing Then Exit Function
+    Set paragraph = caret.Paragraphs(1).Range.Duplicate
+    If paragraph Is Nothing Then Exit Function
+    If caret.Start > paragraph.Start Then
+        Set probe = caret.Duplicate
+        probe.SetRange caret.Start - 1, caret.Start
+        size = 0#
+        size = probe.Font.Size
+        If size >= 5# And size <= 200# Then GoTo Found
+    End If
+    If caret.Start < paragraph.End - 1 Then
+        Set probe = caret.Duplicate
+        probe.SetRange caret.Start, caret.Start + 1
+        size = 0#
+        size = probe.Font.Size
+        If size >= 5# And size <= 200# Then GoTo Found
+    End If
+    If paragraph.End > paragraph.Start Then paragraph.End = paragraph.End - 1
+    size = 0#
+    size = paragraph.Font.Size
+    If size >= 5# And size <= 200# Then GoTo Found
+    Exit Function
+Found:
+    VTV2CurrentTypingFontSize = size
+End Function
+
+Private Sub VTV2ApplyEquationTypography( _
+    ByVal exact As Range, ByVal fontSizePt As Double)
+
+    Dim size As Single
+
+    If exact Is Nothing Or fontSizePt <= 0# Then Exit Sub
+    ' FormulaFontSize.NormalizeWordOmmlSize: Word keeps half points.
+    size = CSng(Int(fontSizePt * 2# + 0.5) / 2#)
+    exact.Font.Position = 0
+    exact.Font.Size = size
+    On Error Resume Next
+    exact.Font.SizeBi = size
+    Err.Clear
+End Sub
+
+' Word cross-reference bookmarks (_Ref...) of a number that is rebuilt are put
+' back on the new number content, so body REF fields keep their target.
+Private Sub VTV2RestoreNumberBookmarks( _
+    ByVal equationRange As Range, ByVal names As Collection)
+
+    Dim exact As Range
+    Dim number As Range
+    Dim name As Variant
+
+    If names Is Nothing Or equationRange Is Nothing Then Exit Sub
+    If names.Count = 0 Or equationRange.OMaths.Count < 1 Then Exit Sub
+    Set exact = VTNativeMathRoot(equationRange.OMaths(1)).Range.Duplicate
+    Set number = VTV2NumberContentRange(exact)
+    If number Is Nothing Then Exit Sub
+    For Each name In names
+        If exact.Document.Bookmarks.Exists(CStr(name)) Then _
+            exact.Document.Bookmarks(CStr(name)).Delete
+        exact.Document.Bookmarks.Add Name:=CStr(name), Range:=number
+    Next name
+End Sub
+
+' --- Update Equation Format (one-click upgrade of older Mac formats) ---------
+
+' Older VisualTeX tags this add-in itself wrote around Word equations: the
+' VT_F_ identity of a tagged native equation (with its payload variables) and
+' the retired numbering-style variables.
+Private Function VTV2LegacyTagCount(ByVal doc As Document) As Long
+    Dim mark As Bookmark
+    Dim variable As Variable
+    Dim formulaId As String
+    Dim hidden As Boolean
+
+    hidden = doc.Bookmarks.ShowHidden
+    doc.Bookmarks.ShowHidden = True
+    For Each mark In doc.Bookmarks
+        If VTTryFormulaIdFromNativeBookmark(mark.Name, formulaId) Then _
+            VTV2LegacyTagCount = VTV2LegacyTagCount + 1
+    Next mark
+    doc.Bookmarks.ShowHidden = hidden
+    For Each variable In doc.Variables
+        If variable.Name = VT_WORD_NUMBERING_MODE_VARIABLE Or _
+           variable.Name = VT_WORD_NUMBERING_SEPARATOR_VARIABLE Then _
+            VTV2LegacyTagCount = VTV2LegacyTagCount + 1
+    Next variable
+End Function
+
+Private Function VTV2EquationInventory(ByVal doc As Document) As String
+    VTV2EquationInventory = CStr(doc.OMaths.Count) & "|" & CStr(doc.InlineShapes.Count)
+End Function
+
+' Ribbon: Update Equation Format. Shows what will change, converts every older
+' Mac form into the current one (equation format v2) as one Undo step, checks
+' the result and undoes it if anything is left or anything else changed.
+Public Sub VisualTeX_UpdateEquationFormat()
+    Dim doc As Document
+    Dim numbers As Long
+    Dim tags As Long
+    Dim inventory As String
+    Dim message As String
+    Dim recordStarted As Boolean
+    Dim failureNumber As Long
+    Dim failureDescription As String
+
+    On Error GoTo Failed
+    VTRequireWritableWordDocument
+    Set doc = ActiveDocument
+    numbers = VTV2RestyleNumbers(doc, True)
+    tags = VTV2LegacyTagCount(doc)
+    If numbers + tags = 0 Then
+        VTShowInformation "The equations in this document already use the current format."
+        Exit Sub
+    End If
+    message = "Update this document's equations to the current VisualTeX format?" & vbCr & vbCr
+    If numbers > 0 Then message = message & CStr(numbers) & _
+        " equation number(s) will be rewritten in the current number format." & vbCr
+    If tags > 0 Then message = message & CStr(tags) & _
+        " older VisualTeX tag(s) will be removed." & vbCr
+    message = message & vbCr & "Equation content does not change. Undo reverses the whole update."
+    If MsgBox(message, vbOKCancel + vbQuestion, "VisualTeX") <> vbOK Then Exit Sub
+
+    inventory = VTV2EquationInventory(doc)
+    Application.UndoRecord.StartCustomRecord "VisualTeX Update Equation Format"
+    recordStarted = True
+    VTUpgradeWordNumberFormats doc
+    VTUpdateCurrentWordNumberFields doc
+    Application.UndoRecord.EndCustomRecord
+    recordStarted = False
+
+    If VTV2RestyleNumbers(doc, True) <> 0 Or VTV2LegacyTagCount(doc) <> 0 Or _
+       VTV2EquationInventory(doc) <> inventory Then
+        doc.Undo 1
+        Err.Raise vbObjectError + 7613, "VisualTeX", _
+            "The equation format update could not be verified and was undone."
+    End If
+    VTShowInformation "Updated " & CStr(numbers) & " equation number(s) and removed " & _
+        CStr(tags) & " older tag(s)."
+    Exit Sub
+
+Failed:
+    failureNumber = Err.Number
+    failureDescription = Err.Description
+    On Error Resume Next
+    If recordStarted Then
+        Application.UndoRecord.EndCustomRecord
+        doc.Undo 1
+    End If
+    On Error GoTo 0
+    VTShowError "Update Equation Format", failureNumber, failureDescription
+End Sub
+
 Private Function VTEnsurePureNativeNumberFormat( _
     ByVal equationRange As Range, _
     Optional ByVal headingPrefixOverride As String = "", _
@@ -24895,36 +26310,6 @@ Private Sub VTUpgradeWordNumberFormats(ByVal doc As Document)
         End If
     Next index
 
-    For index = 1 To doc.OMaths.Count
-        Set math = doc.OMaths(index)
-        If Not VTPureNativeNumberField(math.Range) Is Nothing Then
-            nativeCount = nativeCount + 1
-            nativeMaths.Add math
-            If nativeCount = 1 Then
-                ReDim nativeAnchors(1 To 1)
-            Else
-                ReDim Preserve nativeAnchors(1 To nativeCount)
-            End If
-            nativeAnchors(nativeCount) = math.Range.Start
-        End If
-    Next index
-    If nativeCount > 0 And _
-       numberingMode <> VT_WORD_NUMBERING_MODE_SEQUENCE Then
-        VTBuildEquationHeadingPrefixes _
-            doc, nativeAnchors, nativeCount, numberingMode, _
-            nativePrefixes, nativeOrdinals
-    End If
-    For index = nativeCount To 1 Step -1
-        Set math = nativeMaths(index)
-        If numberingMode = VT_WORD_NUMBERING_MODE_SEQUENCE Then
-            Set result = VTEnsurePureNativeNumberFormat( _
-                math.Range, "", True, False, True)
-        Else
-            Set result = VTEnsurePureNativeNumberFormat( _
-                math.Range, nativePrefixes(index), True, _
-                nativeOrdinals(index) = 1, True)
-        End If
-    Next index
     For Each bookmark In doc.Bookmarks
         If VTTryFormulaIdFromNativeBookmark(bookmark.Name, formulaId) Then ids.Add formulaId
     Next bookmark
@@ -24941,6 +26326,9 @@ Private Sub VTUpgradeWordNumberFormats(ByVal doc As Document)
             End If
         End If
     Next item
+    ' Equation format v2: every native number in the document's numbering
+    ' style, written by the shared builder (Windows PlanFormat).
+    VTV2RestyleNumbers doc
 End Sub
 
 Private Function VTCaptureImageNumberBookmarks(ByVal shape As InlineShape, ByVal formulaId As String) As Collection

@@ -7,7 +7,6 @@ import { findLatexFormulaSpans } from '../src/office/documentImport/documentImpo
 import { findWindowsWordLatexRedrawSpans } from '../src/office/redraw/wordLatexRedrawParser.ts';
 import { formatLatexLines, latexCodeFormats } from '../src/clipboard/LatexCopyService.ts';
 import { normalizeChineseLatex } from '../src/editor/normalizeChineseLatex.ts';
-import { readWordFormulaFontSize, writeWordFormulaFontSize } from '../src/office/shared/wordFormulaPreferences.ts';
 globalThis.DOMParser ??= DOMParser;
 const doc = new DOMParser().parseFromString('<root/>', 'application/xml');
 Object.getPrototypeOf(doc).querySelector ??= function(name) { return this.getElementsByTagName(name)?.item(0) ?? null; };
@@ -46,14 +45,7 @@ for(const {id} of latexCodeFormats) {
  const source=formatLatexLines([String.raw`\text{前}$\left(a,$\ $b\right)$\text{后}`],id);
  for(const span of findLatexFormulaSpans(source))renderOfficeFormulaArtifacts({lines:[{id:'x',latex:span.latex}],codeFormat:'raw',displayMode:span.displayMode,host:'word'});
 }
-const values=new Map<string,string>();
-globalThis.window={ localStorage:{getItem:(k)=>values.get(k)??null,setItem:(k,v)=>values.set(k,v)} } as any;
-assert.equal(readWordFormulaFontSize('image'),null);
-values.set('visualtex.office.word.create.font-size-pt','11.5');
-assert.equal(readWordFormulaFontSize('image'),11.5);
-writeWordFormulaFontSize('image',12);writeWordFormulaFontSize('omml',14);
-assert.equal(readWordFormulaFontSize('image'),12);assert.equal(readWordFormulaFontSize('omml'),14);
-console.log(`PASS: ${count} inline geometry cases; unchanged glyph size/baseline; legacy split scopes; editor normalization and font preferences`);
+console.log(`PASS: ${count} inline geometry cases; unchanged glyph size/baseline; legacy split scopes; editor normalization`);
 const out='test-results/source-baseline-20260912';
 writeFileSync(`${out}/baseline-cases.json`,JSON.stringify(cases,null,2));
 writeFileSync(`${out}/baseline-word-source.txt`,cases.map((latex,i)=>`${String(i+1).padStart(2,'0')} 正文Hxy $${latex}$ Hxy正文。`).join('\n\n'));

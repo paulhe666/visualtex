@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run build:desktop",
-    "build:desktop": "tsc --noEmit && vite build",
+    "build:desktop": "node scripts/sync_word_mathml_mirror.mjs --check && tsc --noEmit && vite build",
+    "check:word-mathml-mirror": "node scripts/sync_word_mathml_mirror.mjs --check",
     "prepare:ocr-offline": "python3 scripts/prepare_offline_ocr_runtime.py",
     "prepare:ocr-model-packs": "python3 scripts/prepare_offline_ocr_runtime.py --with-optional-model-packs",
     "build:all": "npm run build:desktop",

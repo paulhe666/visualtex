@@ -100,16 +100,25 @@ fn run_properties(word: Option<&Node>, size: i64) -> String {
     }
     xml.push_str("</a:rPr>"); xml
 }
+/// OMML properties of on/off type (ST_OnOff). PowerPoint's native clipboard
+/// importer drops their numeric values (a radical's degree, an operator's empty
+/// limit and a matrix's placeholders reappear), so they are written in its own
+/// canonical on/off form.
+const ON_OFF: [&str; 30] = [
+    "m:aln", "m:alnScr", "m:degHide", "m:diff", "m:dispDef", "m:grow", "m:hideBot", "m:hideLeft",
+    "m:hideRight", "m:hideTop", "m:lit", "m:maxDist", "m:noBreak", "m:nor", "m:objDist", "m:opEmu",
+    "m:plcHide", "m:show", "m:smallFrac", "m:strikeBLTR", "m:strikeH", "m:strikeTLBR", "m:strikeV",
+    "m:subHide", "m:supHide", "m:transp", "m:wrapRight", "m:zeroAsc", "m:zeroDesc", "m:zeroWid",
+];
 fn serialize(node: &Node, size: i64) -> Result<String, String> {
     if let Some(text) = &node.text { return Ok(escape(text)); }
     if node.name == "w:rPr" { return Ok(run_properties(Some(node), size)); }
     if !node.name.starts_with("m:") { return Err(format!("Unsupported element in native math: {}", node.name)); }
     let mut xml = format!("<{}", node.name);
     for (k,v) in &node.attrs {
-        if k == "xmlns:w" { continue; }
-        // PowerPoint's native clipboard importer drops numeric OMML on/off
-        // values for degree visibility. Match its own canonical on/off output.
-        let value = if node.name == "m:degHide" && k == "m:val" {
+        // The shared writer also declares MathML's namespace; no element uses it.
+        if k == "xmlns:w" || k == "xmlns:mml" { continue; }
+        let value = if k == "m:val" && ON_OFF.contains(&node.name.as_str()) {
             match v.as_str() { "1" | "true" => "on", "0" | "false" => "off", _ => v.as_str() }
         } else { v.as_str() };
         xml.push_str(&format!(" {k}=\"{}\"", escape(value)));
@@ -341,6 +350,42 @@ mod tests {
             assert!(drawing.contains(&format!("<m:degHide m:val=\"{expected}\">")));
             assert!(drawing.contains("<m:t>3</m:t>"));
         }
+    }
+    // PowerPoint equations come from the shared writer (office::omml_write):
+    // every Windows reference equation must package and read back.
+    #[test] fn shared_writer_equations_package_for_powerpoint() {
+        let rows: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("omml_write/fixtures/windows_forward.json")).unwrap();
+        assert!(rows.len() > 200);
+        for row in rows {
+            let omml = row["omml"].as_str().unwrap();
+            let display = row["mathml"].as_str().unwrap().contains("display=\"block\"");
+            let entries = clipboard_entries(omml, 24.0, display, false, false)
+                .unwrap_or_else(|e| panic!("{}: {e}", row["source"]));
+            let drawing = &entries.iter().find(|(name, _)| name == "clipboard/drawings/drawing1.xml").unwrap().1;
+            assert!(!drawing.contains("xmlns:mml") && !drawing.contains("w:rPr"), "{}", row["source"]);
+            let bytes = super::super::macos_offline::build_stored_zip(&entries).unwrap();
+            native_equation_from_clipboard(&bytes).unwrap_or_else(|e| panic!("{}: {e}", row["source"]));
+        }
+    }
+    // VisualTeX for Windows packs the same OMML into the same bytes
+    // (VisualTeX.WindowsOffice.Tests PowerPointMathClipboardTests.PackageMatchesTheMacPackage).
+    // Change both or neither.
+    #[test] fn package_matches_the_windows_package() {
+        use sha2::{Digest, Sha256};
+        let xml = format!("<m:oMath xmlns:m=\"{M}\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/><m:e><m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr><w:rPr><w:rFonts w:ascii=\"Cambria Math\" w:hAnsi=\"Cambria Math\"/><w:color w:val=\"FF0000\"/></w:rPr><m:t>a&lt;b&amp;c</m:t></m:r></m:e></m:rad></m:oMath>");
+        let package = super::super::macos_offline::build_stored_zip(&clipboard_entries(&xml, 24.0, true, false, false).unwrap()).unwrap();
+        assert_eq!(format!("{:x}", Sha256::digest(&package)), "abc0b2da908c1622ccc8c236064955abe2647ddb56c881801837d252fb66f1ec");
+    }
+    #[test] fn on_off_properties_use_powerpoint_canonical_values() {
+        let xml = format!("<m:oMath xmlns:m=\"{M}\"><m:nary><m:naryPr><m:chr m:val=\"∮\"/><m:limLoc m:val=\"subSup\"/><m:grow m:val=\"1\"/><m:supHide m:val=\"1\"/><m:subHide m:val=\"0\"/></m:naryPr><m:sub><m:r><m:t>C</m:t></m:r></m:sub><m:sup/><m:e><m:r><m:t>F</m:t></m:r></m:e></m:nary><m:m><m:mPr><m:plcHide m:val=\"true\"/><m:mcs><m:mc><m:mcPr><m:count m:val=\"1\"/></m:mcPr></m:mc></m:mcs></m:mPr><m:mr><m:e><m:r><m:t>x</m:t></m:r></m:e></m:mr></m:m></m:oMath>");
+        let entries = clipboard_entries(&xml, 24.0, false, false, false).unwrap();
+        let drawing = &entries.iter().find(|(name, _)| name == "clipboard/drawings/drawing1.xml").unwrap().1;
+        for expected in ["<m:supHide m:val=\"on\">", "<m:subHide m:val=\"off\">", "<m:grow m:val=\"on\">", "<m:plcHide m:val=\"on\">"] {
+            assert!(drawing.contains(expected), "{expected}");
+        }
+        // Other numeric and named values are not on/off properties.
+        assert!(drawing.contains("<m:count m:val=\"1\">") && drawing.contains("<m:limLoc m:val=\"subSup\">"));
     }
     #[test] fn native_text_not_a_presentation_or_picture() {
         let e=clipboard_entries(&sample(),24.0,false,false,false).unwrap();

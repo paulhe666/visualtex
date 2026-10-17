@@ -1,10 +1,5 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { safeStorage } from "../src/runtime/safeStorage.ts";
-import {
-  readWordFormulaFontSize,
-  writeWordFormulaFontSize,
-} from "../src/office/shared/wordFormulaPreferences.ts";
 import { DOMParser } from "@xmldom/xmldom";
 import {
   normalizeFormulaEditorDocument,
@@ -711,47 +706,42 @@ const editorWorkspaceSource = readFileSync(
   new URL("../src/workspace/EditorWorkspace.tsx", import.meta.url),
   "utf8",
 );
-// The preference moved to a shared module and now separates image / OMML.
-// Exercise the real storage behavior rather than requiring its key literal
-// and old helper name to remain inside OfficeDialogApp.tsx.
-assert.equal(typeof window, "undefined", "Font preference regression must use process-local memory only");
-const fontSizeKey = "visualtex.office.word.create.font-size-pt";
-const fontSizeKeys = [fontSizeKey, `${fontSizeKey}.image`, `${fontSizeKey}.omml`];
-const originalFontPreferences = fontSizeKeys.map((key) => [key, safeStorage.getItem(key)]);
-try {
-  fontSizeKeys.forEach((key) => safeStorage.removeItem(key));
-  assert.equal(readWordFormulaFontSize("image"), null);
-  assert.equal(readWordFormulaFontSize("omml"), null);
-  safeStorage.setItem(fontSizeKey, "14");
-  assert.equal(readWordFormulaFontSize("image"), 14, "Legacy preference must survive migration");
-  assert.equal(readWordFormulaFontSize("omml"), 14);
-  writeWordFormulaFontSize("image", 12);
-  writeWordFormulaFontSize("omml", 18);
-  assert.equal(readWordFormulaFontSize("image"), 12, "OMML size changes must not overwrite image size");
-  assert.equal(readWordFormulaFontSize("omml"), 18);
-  writeWordFormulaFontSize("image", Number.NaN);
-  assert.equal(readWordFormulaFontSize("image"), 12, "Invalid sizes must not destroy a valid preference");
-  writeWordFormulaFontSize("image", 0);
-  writeWordFormulaFontSize("omml", 1000);
-  assert.equal(readWordFormulaFontSize("image"), 5);
-  assert.equal(readWordFormulaFontSize("omml"), 200);
-  safeStorage.setItem(`${fontSizeKey}.image`, "invalid");
-  assert.equal(readWordFormulaFontSize("image"), null);
-} finally {
-  for (const [key, value] of originalFontPreferences) {
-    if (value === null) safeStorage.removeItem(key);
-    else safeStorage.setItem(key, value);
-  }
+// Word formulas follow the text size Word reports where they go; a size picked
+// in the editor or the import list applies to that formula only (the Windows
+// rule), so no formula size is remembered between sessions.
+const wordLatexRedrawSource = readFileSync(
+  new URL("../src/office/redraw/WordLatexRedrawApp.tsx", import.meta.url),
+  "utf8",
+);
+const documentImportSource = readFileSync(
+  new URL("../src/office/documentImport/OfficeDocumentImportApp.tsx", import.meta.url),
+  "utf8",
+);
+for (const [name, source] of [
+  ["OfficeDialogApp", officeDialogSource],
+  ["WordLatexRedrawApp", wordLatexRedrawSource],
+  ["OfficeDocumentImportApp", documentImportSource],
+]) {
+  assert.doesNotMatch(
+    source,
+    /wordFormulaPreferences|font-size-pt|localStorage/,
+    `${name} must not reuse a remembered formula size`,
+  );
 }
 assert.match(
   officeDialogSource,
-  /session\.host === "word" && session\.mode === "create"\s*\?\s*\(readWordFormulaFontSize\(session\.nativeEquation \? "omml" : "image"\) \?\? requestedFontSizePt\)/,
-  "Word create sessions must restore the preference for their actual output type",
+  /\?\s*powerPointDefaultFontSizePt\s*:\s*requestedFontSizePt;/,
+  "Word sessions must start from the size Word reported for the insertion point or formula",
 );
 assert.match(
-  officeDialogSource,
-  /if \(session\.host === "word" && session\.mode === "create"\) \{\s*writeWordFormulaFontSize\(session\.nativeEquation \? "omml" : "image", nextFontSizePt\)/,
-  "Only explicit size changes in Word create mode should update the matching preference",
+  wordLatexRedrawSource,
+  /fontSizePt: fontSizes\[index\],/,
+  "LaTeX redraw must use each formula's own Word text size",
+);
+assert.match(
+  documentImportSource,
+  /const defaultFontSizePt = request\?\.defaultFontSizePt \?\? 12;/,
+  "Document import must start from the Word insertion-point text size",
 );
 assert.match(
   officeDialogSource,

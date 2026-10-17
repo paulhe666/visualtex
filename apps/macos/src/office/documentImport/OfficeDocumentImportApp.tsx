@@ -1,4 +1,3 @@
-import { readWordFormulaFontSize } from "../shared/wordFormulaPreferences";
 import { wordImageReferenceGeometry } from "../shared/wordImageGeometry";
 import {
   Component,
@@ -114,23 +113,6 @@ function textCharacterCount(blocks: DocumentImportBlock[]) {
   );
 }
 
-function decodeUrlSafeBase64Utf8(value: string) {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-  const binary = atob(padded);
-  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-}
-
-function ommlRetainsLiteralLatexCommand(ommlBase64: string, latex: string) {
-  const commands = [...latex.matchAll(/\\([A-Za-z@]+)\b/g)]
-    .map((match) => match[1])
-    .filter((command, index, values) => values.indexOf(command) === index);
-  if (!commands.length) return false;
-  const omml = decodeUrlSafeBase64Utf8(ommlBase64);
-  return commands.some((command) => omml.includes(`\\${command}`));
-}
-
 async function prepareFormulaArtifactCommitItem(
   block: DocumentFormulaBlock,
   _outputKind: DocumentFormulaOutputKind,
@@ -151,12 +133,10 @@ async function prepareFormulaArtifactCommitItem(
     formulaChineseFont,
   });
   const { canonicalLatex, svg } = artifacts;
-  if (!artifacts.omml) {
+  // Windows' MathML step rejects unknown commands while parsing, so a formula
+  // that reaches this point has no literal LaTeX command left in it.
+  if (!artifacts.wordMathMl) {
     throw new Error("无法生成 Word OMML 公式制品。");
-  }
-  const omml = artifacts.omml;
-  if (ommlRetainsLiteralLatexCommand(omml.ommlBase64, canonicalLatex)) {
-    throw new Error("公式包含未被 Word 公式转换器识别的自定义命令。");
   }
 
   const paragraphMetadata = {
@@ -206,8 +186,7 @@ async function prepareFormulaArtifactCommitItem(
     numbered: block.displayMode === "block" && block.numbered,
     fontSizePt: block.fontSizePt,
     metadata,
-    ommlBase64: omml.ommlBase64,
-    ommlDocxBase64: omml.ommlDocxBase64,
+    wordMathMl: artifacts.wordMathMl,
     svgBase64: svg.base64,
     pngBase64,
     width: svg.width,
@@ -234,11 +213,13 @@ export function OfficeDocumentImportApp() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const explicitFontSizeIds = useRef(new Set<string>());
-  const defaultFontSizePt = readWordFormulaFontSize(outputKind) ?? request?.defaultFontSizePt ?? 12;
+  // Formulas follow the text size at the Word insertion point unless the user
+  // set a size for that formula here.
+  const defaultFontSizePt = request?.defaultFontSizePt ?? 12;
   useEffect(() => {
     setBlocks(current => current.map(block => block.kind === "formula" && !explicitFontSizeIds.current.has(block.id)
       ? { ...block, fontSizePt: defaultFontSizePt } : block));
-  }, [defaultFontSizePt, outputKind]);
+  }, [defaultFontSizePt]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
   const allowNativeCloseRef = useRef(false);
