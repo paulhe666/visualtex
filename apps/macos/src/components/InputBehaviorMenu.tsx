@@ -80,23 +80,6 @@ const CARET_BEHAVIOR_OPTIONS: InputBehaviorOption[] = [
   },
 ];
 
-const COMMAND_SUGGESTION_OPTIONS: InputBehaviorOption[] = [
-  {
-    key: "showStructuredCommandSuggestions",
-    titleZh: "求和、积分等结构候选框",
-    titleEn: "Structured command suggestions",
-    descriptionZh: "控制 VisualTeX 的大型候选框，默认开启",
-    descriptionEn: "Controls the large VisualTeX panel for sums, integrals and similar structures",
-  },
-  {
-    key: "showOtherCommandSuggestions",
-    titleZh: "其他命令候选框",
-    titleEn: "Other command suggestions",
-    descriptionZh: "控制除求和、积分等结构外的 VisualTeX 大型候选框，默认关闭",
-    descriptionEn: "Controls the large VisualTeX panel for commands other than sums, integrals and similar structures; off by default",
-  },
-];
-
 function shortcutLatex(definition: VisualTexInlineShortcutDefinition) {
   return typeof definition === "string" ? definition : definition.value;
 }
@@ -518,25 +501,6 @@ export function InputBehaviorMenu() {
                 ))}
               </div>
 
-              <div className="input-behavior-heading input-behavior-section-heading">
-                <strong>{isEn ? "Command suggestion panels" : "命令候选框"}</strong>
-              </div>
-
-              <div className="input-behavior-options">
-                {COMMAND_SUGGESTION_OPTIONS.map((option) => (
-                  <label className="input-behavior-option" key={option.key}>
-                    <span>
-                      <strong>{isEn ? option.titleEn : option.titleZh}</strong>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={inputBehavior[option.key]}
-                      onChange={(event) => setInputBehavior(option.key, event.target.checked)}
-                    />
-                    <span className="input-behavior-switch" aria-hidden="true" />
-                  </label>
-                ))}
-              </div>
             </>
           )}
         </div>,
