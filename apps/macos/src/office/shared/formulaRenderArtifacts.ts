@@ -10,6 +10,7 @@ import {
   latexLinesToOmmlArtifacts,
   type OmmlArtifacts,
 } from "../omml/latexToOmml";
+import { wordEquationMathMl } from "../wordMathMl/wordEquationMathMl";
 import {
   normalizeFormulaEditorDocument,
   serializeFormulaEditorDocument,
@@ -37,7 +38,14 @@ export interface OfficeFormulaRenderArtifacts {
   codeFormat: LatexCodeFormat;
   canonicalLatex: string;
   svg: ReturnType<typeof latexToSvg>;
+  /** PowerPoint native equations only. */
   omml: OmmlArtifacts | null;
+  /**
+   * Word: the MathML Windows writes its OMML from. VisualTeX's shared Word
+   * writer (src-tauri office/omml_write, the port of Windows' C# writer) turns
+   * it into the equation, so both platforms insert identical OMML.
+   */
+  wordMathMl: string | null;
 }
 
 /**
@@ -104,7 +112,17 @@ export function renderOfficeFormulaArtifacts({
     svg = alignWordInlineSvg(svg, fontSizePt, formulaLetterFont);
   }
   let omml: OmmlArtifacts | null = null;
-  if (includeWordOmml) {
+  let wordMathMl: string | null = null;
+  if (includeWordOmml && host === "word") {
+    try {
+      wordMathMl = wordEquationMathMl(document, displayMode);
+    } catch (reason) {
+      throw new Error(
+        `Word OMML 转换失败：${errorMessage(reason, "未知 OMML 转换错误。")}`,
+        { cause: reason },
+      );
+    }
+  } else if (includeWordOmml) {
     try {
       omml = latexLinesToOmmlArtifacts(
         document.lines.map((line) => line.latex),
@@ -126,6 +144,7 @@ export function renderOfficeFormulaArtifacts({
     canonicalLatex,
     svg,
     omml,
+    wordMathMl,
   };
 }
 

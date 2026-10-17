@@ -244,6 +244,11 @@ struct MacOfflineSessionRequest {
     formula_letter_font: Option<String>,
     #[serde(default)]
     word_math_font_name: Option<String>,
+    /// Equation format v2: the document's math font (Word's
+    /// Document.OMathFontName). Word equations are written in it, as
+    /// VisualTeX for Windows writes them.
+    #[serde(default)]
+    word_document_math_font_name: Option<String>,
     power_point: Option<MacOfflinePowerPointRequest>,
     #[serde(default)]
     document_import: Option<MacOfflineDocumentImportRequest>,
@@ -360,8 +365,13 @@ pub enum MacOfflineDocumentImportCommitItem {
         numbered: bool,
         font_size_pt: f64,
         metadata: VisualTeXFormulaMetadata,
+        #[serde(default)]
         omml_base64: String,
+        #[serde(default)]
         omml_docx_base64: String,
+        /// MathML for the shared Word OMML writer; replaces the two above.
+        #[serde(default)]
+        word_math_ml: Option<String>,
         #[serde(default)]
         svg_base64: Option<String>,
         #[serde(default)]
@@ -1722,6 +1732,12 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
             );
         }
         validate_bounded_text(font_name, 128, "wordMathFontName")?;
+    }
+    if let Some(font_name) = request.word_document_math_font_name.as_deref() {
+        if request.host != "word" {
+            return Err("The document math font is valid only for Word requests".to_string());
+        }
+        validate_bounded_text(font_name, 128, "wordDocumentMathFontName")?;
     }
 
     match (request.host.as_str(), request.power_point.as_ref()) {
@@ -5039,6 +5055,17 @@ fn resolved_word_math_font_name(
     word_math_font_name_for_formula_letter_font(final_formula_font).to_string()
 }
 
+/// The math font of a Word equation (equation format v2): the document's math
+/// font, as Windows writes it; an add-in that predates the field gives the
+/// edited equation's captured font; Cambria Math otherwise.
+fn word_equation_math_font(request: &MacOfflineSessionRequest) -> &str {
+    request
+        .word_document_math_font_name
+        .as_deref()
+        .or(request.word_math_font_name.as_deref())
+        .unwrap_or_default()
+}
+
 fn word_image_numbering_only_edit(
     request: &MacOfflineSessionRequest,
     original: Option<&VisualTeXFormulaMetadata>,
@@ -5080,10 +5107,26 @@ fn commit_word(
         .export_result
         .as_ref()
         .ok_or_else(|| "Word Session has no formula export".to_string())?;
-    let omml_base64 = export
-        .omml_base64
+    // Equation format v2: the editor sends Windows' MathML and the shared
+    // writer (the port of Windows' C# writer) makes the equation, so both
+    // platforms insert identical OMML. A number is added later by the add-in
+    // through the same writer, once it knows the document's numbering.
+    let shared_word_equation = export
+        .word_math_ml
         .as_deref()
-        .ok_or_else(|| "Word formula export has no OMML payload".to_string())?;
+        .map(|mathml| {
+            super::omml_write::word_equation_artifacts(mathml, word_equation_math_font(request))
+        })
+        .transpose()?;
+    let omml_base64: String = match shared_word_equation.as_ref() {
+        Some(artifacts) => artifacts.omml_base64.clone(),
+        None => export
+            .omml_base64
+            .as_deref()
+            .ok_or_else(|| "Word formula export has no OMML payload".to_string())?
+            .to_string(),
+    };
+    let omml_base64 = omml_base64.as_str();
     let omml_bytes = URL_SAFE_NO_PAD
         .decode(omml_base64)
         .map_err(|_| "Word formula OMML payload is not valid Base64URL".to_string())?;
@@ -5102,13 +5145,18 @@ fn commit_word(
     // Keep both Word representations warm for every formula. Image formulas
     // already carry OMML in their editor export, so dropping its DOCX package
     // forced the first image-to-OMML conversion back through the renderer.
-    let omml_docx_base64 = export
-        .omml_docx_base64
-        .as_deref()
-        .ok_or_else(|| "Word formula export has no native DOCX payload".to_string())?;
-    let omml_docx = URL_SAFE_NO_PAD
-        .decode(omml_docx_base64)
-        .map_err(|_| "Word formula native DOCX payload is not valid Base64URL".to_string())?;
+    let omml_docx = match shared_word_equation {
+        Some(artifacts) => artifacts.docx,
+        None => {
+            let omml_docx_base64 = export
+                .omml_docx_base64
+                .as_deref()
+                .ok_or_else(|| "Word formula export has no native DOCX payload".to_string())?;
+            URL_SAFE_NO_PAD
+                .decode(omml_docx_base64)
+                .map_err(|_| "Word formula native DOCX payload is not valid Base64URL".to_string())?
+        }
+    };
     if omml_docx.len() < 128
         || omml_docx.len() > MAX_OMML_BYTES * 8
         || !omml_docx.starts_with(b"PK\x03\x04")
@@ -6760,6 +6808,7 @@ fn commit_document_import_blocking(
                 metadata,
                 omml_base64,
                 omml_docx_base64,
+                word_math_ml,
                 svg_base64,
                 png_base64,
                 width,
@@ -6867,16 +6916,39 @@ fn commit_document_import_blocking(
                         "Document formula font size is outside the supported range".to_string()
                     );
                 }
+                // Equation format v2: the shared writer makes the equation from
+                // Windows' MathML (see commit_word).
+                let shared_word_equation = word_math_ml
+                    .as_deref()
+                    .map(|mathml| {
+                        super::omml_write::word_equation_artifacts(
+                            mathml,
+                            word_equation_math_font(&request),
+                        )
+                    })
+                    .transpose()?;
+                let omml_base64: &String = match shared_word_equation.as_ref() {
+                    Some(artifacts) => &artifacts.omml_base64,
+                    None => omml_base64,
+                };
                 validate_document_omml_payload(omml_base64)?;
-                let native_docx = decode_document_native_docx(omml_docx_base64)?;
+                let native_docx = match shared_word_equation.as_ref() {
+                    Some(artifacts) => artifacts.docx.clone(),
+                    None => decode_document_native_docx(omml_docx_base64)?,
+                };
                 let native_document_path = native_word_document_path(formula_id)?;
                 atomic_write(&native_document_path, &native_docx, 0o600)?;
                 let native_batch_document_index = if native_batch_document_path.is_some() {
-                    let omml_bytes = URL_SAFE_NO_PAD
-                        .decode(omml_base64)
-                        .map_err(|_| "Document formula OMML payload is not valid Base64URL".to_string())?;
-                    let omml_fragment = String::from_utf8(omml_bytes)
-                        .map_err(|_| "Document formula OMML payload is not UTF-8".to_string())?;
+                    let omml_fragment = match shared_word_equation.as_ref() {
+                        Some(artifacts) => artifacts.insertion_omml.clone(),
+                        None => {
+                            let omml_bytes = URL_SAFE_NO_PAD
+                                .decode(omml_base64)
+                                .map_err(|_| "Document formula OMML payload is not valid Base64URL".to_string())?;
+                            String::from_utf8(omml_bytes)
+                                .map_err(|_| "Document formula OMML payload is not UTF-8".to_string())?
+                        }
+                    };
                     native_batch_entries.push(omml_fragment);
                     native_batch_entries.len()
                 } else {
@@ -8315,6 +8387,7 @@ mod tests {
             reference_height_pt: None,
             formula_letter_font: None,
             word_math_font_name: None,
+            word_document_math_font_name: None,
             power_point: None,
             document_import: Some(MacOfflineDocumentImportRequest {
                 bookmark_name: "VT_D_323456781234423492341234".to_string(),
@@ -8828,6 +8901,7 @@ mod tests {
             reference_height_pt: Some(15.0),
             formula_letter_font: None,
             word_math_font_name: None,
+            word_document_math_font_name: None,
             power_point: None,
             document_import: None,
         };
@@ -8915,6 +8989,39 @@ mod tests {
         request.formula_letter_font = Some("times".to_string());
         request.word_math_font_name = Some("x".repeat(129));
         assert!(validate_request(&request, &request.session_id).is_err());
+    }
+
+    #[test]
+    fn word_equations_use_the_document_math_font() {
+        let mut request: MacOfflineSessionRequest = serde_json::from_value(json!({
+            "protocolVersion": OFFLINE_PROTOCOL_VERSION,
+            "sessionId": "31345678-1234-4234-9234-123456789abd",
+            "host": "word",
+            "mode": "create",
+            "formulaId": "41345678-1234-4234-9234-123456789abd",
+            "displayMode": "block",
+            "numbered": true,
+            "sourceDocumentId": "Document1",
+            "sourceObjectId": null,
+            "encodedMetadata": null,
+            "pendingMarker": null,
+            "wordDocumentMathFontName": "STIX Two Math"
+        }))
+        .unwrap();
+        validate_request(&request, &request.session_id)
+            .expect("Word creates carry the document math font");
+        assert_eq!(word_equation_math_font(&request), "STIX Two Math");
+
+        request.word_document_math_font_name = None;
+        assert_eq!(word_equation_math_font(&request), "");
+        request.word_math_font_name = Some("Latin Modern Math".to_string());
+        assert_eq!(word_equation_math_font(&request), "Latin Modern Math");
+
+        request.word_math_font_name = None;
+        request.word_document_math_font_name = Some("x".repeat(129));
+        assert!(validate_request(&request, &request.session_id)
+            .unwrap_err()
+            .contains("wordDocumentMathFontName"));
     }
 
     #[test]
@@ -9105,6 +9212,7 @@ mod tests {
             reference_height_pt: Some(18.0),
             formula_letter_font: None,
             word_math_font_name: None,
+            word_document_math_font_name: None,
             power_point: None,
             document_import: None,
         };
@@ -9151,6 +9259,7 @@ mod tests {
             reference_height_pt: Some(18.0),
             formula_letter_font: None,
             word_math_font_name: None,
+            word_document_math_font_name: None,
             power_point: None,
             document_import: None,
         };
@@ -9461,6 +9570,7 @@ c &= e
                 png_base64: None,
                 omml_base64: None,
                 omml_docx_base64: None,
+                word_math_ml: None,
                 width: 300.0,
                 height: 50.0,
                 baseline: None,
@@ -9566,6 +9676,7 @@ c &= e
             reference_height_pt: Some(15.0),
             formula_letter_font: None,
             word_math_font_name: None,
+            word_document_math_font_name: None,
             power_point: None,
             document_import: None,
         };

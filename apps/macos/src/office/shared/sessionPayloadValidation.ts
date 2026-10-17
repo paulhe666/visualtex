@@ -138,6 +138,7 @@ function validateExportResult(value: unknown, path: string): OfficeExportResult 
   optionalNullableString(result.pngBase64, `${path}.pngBase64`);
   optionalNullableString(result.ommlBase64, `${path}.ommlBase64`);
   optionalNullableString(result.ommlDocxBase64, `${path}.ommlDocxBase64`);
+  optionalNullableString(result.wordMathMl, `${path}.wordMathMl`);
   nonNegativeNumber(result.width, `${path}.width`);
   nonNegativeNumber(result.height, `${path}.height`);
   for (const key of [

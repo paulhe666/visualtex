@@ -410,7 +410,9 @@ export function svgToBase64(svg: string) {
   return encodeUtf8Base64(svg);
 }
 
-export async function latexToMathMl(latex: string, displayMode = true) {
+// Synchronous form for callers that cannot await (macOS builds its Word
+// equations from this exact function through src/office/wordMathMl).
+export function latexToMathMlSync(latex: string, displayMode = true) {
   const source = expandCustomSymbolsForMathMl(prepareLatex(latex));
   const root = mathMlDocument.convert(source, {
     display: displayMode,
@@ -423,6 +425,10 @@ export async function latexToMathMl(latex: string, displayMode = true) {
   }
   assertResolvedPresentationMathMl(mathMl);
   return mathMl;
+}
+
+export async function latexToMathMl(latex: string, displayMode = true) {
+  return latexToMathMlSync(latex, displayMode);
 }
 
 export async function latexToSvg(

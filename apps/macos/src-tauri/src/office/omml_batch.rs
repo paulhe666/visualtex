@@ -93,6 +93,9 @@ fn convert_manifest(input: &Path, output: &Path) -> Result<(), String> {
     if required(&values, "protocolVersion")? != PROTOCOL_VERSION {
         return Err("The OMML batch protocol version is invalid".to_string());
     }
+    if values.get("sourceKind").map(String::as_str) == Some("nativeNumber") {
+        return build_native_numbers(&values, output);
+    }
     if required(&values, "sourceKind")? != "omml" {
         return Err("The OMML batch source kind is invalid".to_string());
     }
@@ -285,6 +288,93 @@ fn parse_xml(value: &str) -> Result<XmlNode, String> {
 
 /// Native editing must not silently flatten unhandled MathML structures: the
 /// equation is checked before it is converted with the shared Word reader.
+// Equation format v2 (docs/equation-format-v2.md): the Word add-in decides a
+// number's context (label, heading prefix, restart) from the document and asks
+// the app for the finished numbered equations, built by the shared writer
+// (WordOmmlConverter.BuildWordNativeNumberedOmml on Windows). One package holds
+// every requested equation, one paragraph each; the add-in inserts it or
+// copies the number slots out of it.
+//
+// Request rows: sessionId, sourceDocumentId, itemCount, mathFont (Base64URL),
+// optional ommlBase64 (the equation body; Windows' x placeholder otherwise),
+// and per item N: itemNSequenceName (Base64URL), itemNHeadingLevel (0-2),
+// itemNSeparator (Base64URL), optional itemNLiteralPrefix (Base64URL; absent =
+// STYLEREF when the level is not 0), optional itemNRestart, itemNInitial.
+const NATIVE_NUMBER_DOCX_FILE: &str = "native-number.docx";
+const NATIVE_NUMBER_PLACEHOLDER_BODY: &str = "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"><m:r><m:t>x</m:t></m:r></m:oMath>";
+
+fn build_native_numbers(values: &HashMap<String, String>, output: &Path) -> Result<(), String> {
+    let session_id = required(values, "sessionId")?;
+    let source_document_id = required(values, "sourceDocumentId")?;
+    let item_count = required(values, "itemCount")?
+        .parse::<usize>()
+        .map_err(|_| "The equation number item count is invalid".to_string())?;
+    if item_count == 0 || item_count > MAX_ITEMS {
+        return Err(format!("The equation number request must contain 1 to {MAX_ITEMS} items"));
+    }
+    let math_font = decode_utf8(required(values, "mathFont")?, "the Word math font")?;
+    let body = match values.get("ommlBase64") {
+        Some(value) => decode_utf8(value, "the equation OMML")?,
+        None => NATIVE_NUMBER_PLACEHOLDER_BODY.to_string(),
+    };
+    let mut equations = Vec::with_capacity(item_count);
+    for index in 1..=item_count {
+        let key = |name: &str| format!("item{index}{name}");
+        let sequence_name = decode_utf8(required(values, &key("SequenceName"))?, "the SEQ label")?;
+        let heading_level = required(values, &key("HeadingLevel"))?
+            .parse::<u32>()
+            .ok()
+            .filter(|level| *level <= 2)
+            .ok_or_else(|| "The equation number heading level is invalid".to_string())?;
+        let separator = decode_utf8(required(values, &key("Separator"))?, "the number separator")?;
+        let literal_prefix = values
+            .get(&key("LiteralPrefix"))
+            .map(|value| decode_utf8(value, "the number prefix"))
+            .transpose()?;
+        let restart = values
+            .get(&key("Restart"))
+            .map(|value| {
+                value
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|restart| *restart >= 1)
+                    .ok_or_else(|| "The equation number restart is invalid".to_string())
+            })
+            .transpose()?;
+        let initial = required(values, &key("Initial"))?;
+        if initial.is_empty() || initial.len() > 9 || !initial.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err("The equation number initial result is invalid".to_string());
+        }
+        let numbered = super::omml_write::build_word_native_numbered_omml(
+            &body,
+            &sequence_name,
+            None,
+            heading_level,
+            &separator,
+            initial,
+            literal_prefix.as_deref(),
+            restart,
+        )?;
+        equations.push(super::omml_write::insertion_omml(&numbered, &math_font)?);
+    }
+    let package = super::omml_write::word_equation_docx(&equations, &math_font)?;
+    let docx_path = output.with_file_name(NATIVE_NUMBER_DOCX_FILE);
+    fs::write(&docx_path, &package)
+        .map_err(|error| format!("Unable to write {}: {error}", docx_path.display()))?;
+    let rows = [
+        format!("protocolVersion={PROTOCOL_VERSION}"),
+        format!("sessionId={session_id}"),
+        "operation=nativeNumber".to_string(),
+        "outputKind=docx".to_string(),
+        format!("sourceDocumentId={source_document_id}"),
+        "bookmarkName=-".to_string(),
+        format!("itemCount={item_count}"),
+        format!("docxPath={}", docx_path.display()),
+    ];
+    fs::write(output, rows.join("\n"))
+        .map_err(|error| format!("Unable to write {}: {error}", output.display()))
+}
+
 pub fn mathml_to_latex_checked(value: &str) -> Result<String,String> {
     let root=parse_xml(value)?;
     if root.name!="math" { return Err("The native equation did not export a MathML root".into()); }

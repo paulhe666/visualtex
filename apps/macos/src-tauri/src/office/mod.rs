@@ -7,6 +7,7 @@ pub mod macos_offline;
 pub mod macos_offline_installer;
 pub mod omml_batch;
 pub(crate) mod omml_latex;
+pub(crate) mod omml_write;
 pub mod powerpoint_native;
 mod powerpoint_omml;
 pub mod server;

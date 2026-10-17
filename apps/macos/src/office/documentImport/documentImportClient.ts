@@ -70,8 +70,8 @@ export interface DocumentImportFormulaCommitItem
   numbered: boolean;
   fontSizePt: number;
   metadata: VisualTeXFormulaMetadata;
-  ommlBase64: string;
-  ommlDocxBase64: string;
+  /** MathML for the shared Word OMML writer (built by the app). */
+  wordMathMl: string;
   svgBase64?: string;
   pngBase64?: string;
   width?: number;

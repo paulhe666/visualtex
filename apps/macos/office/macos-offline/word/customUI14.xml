@@ -83,13 +83,13 @@
                       label="按章编号 (2.1)"
                       onAction="VTWordRibbonNumberingFormatChapterDot"/>
               <button id="VisualTeX.Mac.Word.NumberingFormat.ChapterDash"
-                      label="按章编号 (2‐1)"
+                      label="按章编号 (2-1)"
                       onAction="VTWordRibbonNumberingFormatChapterDash"/>
               <button id="VisualTeX.Mac.Word.NumberingFormat.SectionDot"
                       label="按节编号 (2.3.1)"
                       onAction="VTWordRibbonNumberingFormatSectionDot"/>
               <button id="VisualTeX.Mac.Word.NumberingFormat.SectionDash"
-                      label="按节编号 (2.3‐1)"
+                      label="按节编号 (2.3-1)"
                       onAction="VTWordRibbonNumberingFormatSectionDash"/>
             </menu>
             <dynamicMenu id="VisualTeX.Mac.Word.CrossReference"
@@ -100,6 +100,13 @@
                          screentip="引用带编号公式"
                          supertip="分别展开当前文档中的 Word OMML 与图片公式编号列表；点击目标公式后插入可自动更新的 Word REF 字段。"/>
           </box>
+          <button id="VisualTeX.Mac.Word.UpdateEquationFormat"
+                  label="更新公式格式"
+                  size="large"
+                  image="VisualTeXWordNumberingFormat"
+                  onAction="VTWordRibbonUpdateEquationFormat"
+                  screentip="更新公式格式"
+                  supertip="把本文档中旧版 VisualTeX 写入的公式编号与标记一次升级为当前格式（与 Windows 版相同）。公式内容不变，可一步撤销。"/>
           <button id="VisualTeX.Mac.Word.DocumentImport"
                   label="批量导入"
                   size="large"

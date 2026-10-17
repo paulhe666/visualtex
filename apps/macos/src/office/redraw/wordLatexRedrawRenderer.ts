@@ -9,7 +9,7 @@ import {
   type VisualTeXFormulaMetadata,
 } from "../shared/formulaMetadata";
 import { renderOfficeFormulaArtifacts } from "../shared/formulaRenderArtifacts";
-import { latexLinesToOmmlArtifacts } from "../omml/latexToOmml";
+import { wordEquationMathMl } from "../wordMathMl/wordEquationMathMl";
 import type {
   DocumentImportFormulaCommitItem,
 } from "../documentImport/documentImportClient";
@@ -30,8 +30,8 @@ export type WordLatexRedrawRenderTarget = WordLatexRedrawSpan & {
 
 type RenderTemplate = {
   canonicalLatex: string;
-  ommlBase64: string;
-  ommlDocxBase64: string;
+  /** MathML for the shared Word OMML writer (built by the app). */
+  wordMathMl: string;
   svgBase64?: string;
   pngBase64?: string;
   width?: number;
@@ -44,23 +44,6 @@ type RenderTemplate = {
   referenceHeightPt?: number;
   referenceBaselinePt?: number;
 };
-
-function decodeUrlSafeBase64Utf8(value: string) {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-  const binary = atob(padded);
-  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-}
-
-function ommlRetainsLiteralLatexCommand(ommlBase64: string, latex: string) {
-  const commands = [...latex.matchAll(/\\([A-Za-z@]+)\b/g)]
-    .map((match) => match[1])
-    .filter((command, index, values) => values.indexOf(command) === index);
-  if (!commands.length) return false;
-  const omml = decodeUrlSafeBase64Utf8(ommlBase64);
-  return commands.some((command) => omml.includes(`\\${command}`));
-}
 
 async function renderTemplate(
   span: WordLatexRedrawRenderTarget,
@@ -80,22 +63,13 @@ async function renderTemplate(
     span.metadata?.formulaChineseFont ?? editorPreferences.formulaChineseFont;
 
   if (outputKind === "omml") {
-    const omml = latexLinesToOmmlArtifacts(
-      editorDocument.lines.map((formulaLine) => formulaLine.latex),
-      span.displayMode,
-      editorDocument.codeFormat,
-      { formulaLetterFont, formulaChineseFont },
-      span.displayMode === "block" && Boolean(span.numbered),
-    );
-    if (ommlRetainsLiteralLatexCommand(omml.ommlBase64, canonicalLatex)) {
-      throw new Error("The redraw formula contains a command unsupported by Word OMML.");
-    }
+    // Windows' MathML step rejects commands Word OMML cannot represent.
+    const wordMathMl = wordEquationMathMl(editorDocument, span.displayMode);
     const cachedGeometry = reusableImageGeometry(span.metadata);
     if (cachedGeometry) {
       return {
         canonicalLatex,
-        ommlBase64: omml.ommlBase64,
-        ommlDocxBase64: omml.ommlDocxBase64,
+        wordMathMl,
         ...cachedGeometry,
       };
     }
@@ -118,8 +92,7 @@ async function renderTemplate(
     const geometry = geometryArtifacts.svg;
     return {
       canonicalLatex,
-      ommlBase64: omml.ommlBase64,
-      ommlDocxBase64: omml.ommlDocxBase64,
+      wordMathMl,
       width: geometry.width,
       height: geometry.height,
       baseline: geometry.baseline,
@@ -145,13 +118,10 @@ async function renderTemplate(
     formulaLetterFont,
     formulaChineseFont,
   });
-  if (!artifacts.omml) {
+  if (!artifacts.wordMathMl) {
     throw new Error("Unable to generate Word OMML for the LaTeX redraw formula.");
   }
-  const { omml, svg } = artifacts;
-  if (ommlRetainsLiteralLatexCommand(omml.ommlBase64, canonicalLatex)) {
-    throw new Error("The redraw formula contains a command unsupported by Word OMML.");
-  }
+  const { wordMathMl, svg } = artifacts;
 
   const { svgToPng } = await import("../../export/svgToPng");
   const png = await svgToPng(svg, { scale: 2, background: "transparent" });
@@ -159,8 +129,7 @@ async function renderTemplate(
   const baseline = svg.baseline;
   return {
     canonicalLatex,
-    ommlBase64: omml.ommlBase64,
-    ommlDocxBase64: omml.ommlDocxBase64,
+    wordMathMl,
     svgBase64: svg.base64,
     pngBase64,
     width: svg.width,
@@ -282,8 +251,7 @@ export async function prepareWindowsStyleWordLatexRedrawItems(
       numbered,
       fontSizePt: span.fontSizePt,
       metadata,
-      ommlBase64: template.ommlBase64,
-      ommlDocxBase64: template.ommlDocxBase64,
+      wordMathMl: template.wordMathMl,
       svgBase64: template.svgBase64,
       pngBase64: template.pngBase64,
       width: template.width,

@@ -33,6 +33,8 @@ export interface OfficeExportResult {
   pngBase64?: string;
   ommlBase64?: string;
   ommlDocxBase64?: string;
+  /** Word: MathML for the shared OMML writer (see formulaRenderArtifacts). */
+  wordMathMl?: string;
   width: number;
   height: number;
   baseline?: number;
