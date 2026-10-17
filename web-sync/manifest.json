@@ -1,6 +1,6 @@
 {
   "sourceRoot": "apps/macos",
-  "commit": "1e9a40bcd66a8024d20360262bf893460425a8e3",
+  "commit": "d201252ccb340cf6ce542c74d4468a54800d4501",
   "note": "Byte-for-byte copies of apps/macos/<path>; web-only edits live in web-sync/patches. Run scripts/sync-mac-editor.mjs.",
   "files": [
     "docs/help/VisualTeX_帮助手册.md",
@@ -87,6 +87,7 @@
     "src/autocomplete/physicsToolbarCommands.ts",
     "src/autocomplete/runtimeCommandRegistry.ts",
     "src/clipboard/LatexCopyService.ts",
+    "src/clipboard/portableBoldLatex.ts",
     "src/clipboard/latexFormatProfile.ts",
     "src/components/CustomSymbolDesignerCanvas.tsx",
     "src/components/CustomSymbolDesignerDialog.tsx",
