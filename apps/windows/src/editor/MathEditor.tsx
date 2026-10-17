@@ -18,6 +18,7 @@ import {
 import { flushSync } from "react-dom";
 import { ClipboardCopy } from "lucide-react";
 import { formatLatexLines } from "../clipboard/LatexCopyService";
+import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
 import type {
   CommandSource,
   LatexCommand,
@@ -3001,6 +3002,10 @@ function FormulaField(props: FormulaFieldProps) {
     MathfieldElement.locale = propsRef.current.language === "en" ? "en" : "zh-cn";
     field.value = propsRef.current.latex;
     field.className = "visual-mathfield";
+    // Ctrl+C text leaves the app as portable LaTeX (\mathbfit -> \boldsymbol).
+    const mathLiveExport = field.onExport;
+    field.onExport = (mathfield, latex, range) =>
+      toPortableBoldLatex(mathLiveExport(mathfield, latex, range));
     field.smartMode = false;
     field.smartFence = propsRef.current.autoPairDelimiters;
     field.readOnly = propsRef.current.readOnly;
@@ -7716,7 +7721,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         event.clipboardData.setData("application/x-latex", latex);
         event.clipboardData.setData(
           "text/plain",
-          formatLatexLines(selectedLines, latexCodeFormat),
+          toPortableBoldLatex(formatLatexLines(selectedLines, latexCodeFormat)),
         );
         event.preventDefault();
         event.stopImmediatePropagation();
