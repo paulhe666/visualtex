@@ -25,22 +25,11 @@ try {
     $word=[Reflection.Assembly]::LoadFrom($wordPath)
     $ppt=[Reflection.Assembly]::LoadFrom($pptPath)
     $flags=[Reflection.BindingFlags]'Static,NonPublic'
-    $converter=$word.GetType('VisualTeX.WordVsto.WordOmmlConverter',$true)
-    $replacement=@($converter.GetMethods($flags) | Where-Object Name -eq 'ReplaceWithPreparedOmmlDirect')
-    $result.Checks+=@{Name='Word replacement contract';Signatures=@($replacement | ForEach-Object ToString)}
     $kernel=$ppt.GetType('VisualTeX.PowerPointVsto.PowerPointNativeOmmlKernel',$true)
-    $resolver=$kernel.GetMethod('ResolveConverterMethods',$flags)
-    $arguments=[object[]]@($null,$null)
-    [void]$resolver.Invoke($null,$arguments)
-    $transform=[Reflection.MethodInfo]$arguments[0]
-    $replace=[Reflection.MethodInfo]$arguments[1]
-    if($null -eq $transform -or $null -eq $replace){throw 'Production resolver returned no methods.'}
+    $resolver=$kernel.GetMethod('ResolveTransform',$flags)
+    $transform=[Reflection.MethodInfo]$resolver.Invoke($null,[object[]]@())
+    if($null -eq $transform){throw 'Production resolver returned no method.'}
     $result.Checks+=@{Name='Production method resolution';Passed=$true}
-    $parameters=$replace.GetParameters()
-    if($parameters.Length -ne 6 -or $parameters[5].ParameterType -ne [bool] -or $parameters[5].DefaultValue -ne $false) {
-        throw 'Native inline-promotion contract differs from the PowerPoint call.'
-    }
-    $result.Checks+=@{Name='Native inline-promotion remains disabled';Passed=$true}
     $omml=[string]$transform.Invoke($null,[object[]]@('<math xmlns="http://www.w3.org/1998/Math/MathML"><mfrac><mi>x</mi><mn>2</mn></mfrac></math>'))
     $xml=[xml]$omml
     if($null -eq $xml.SelectSingleNode('//*[local-name()="f"]')) {throw 'Resolved transform did not produce a fraction.'}

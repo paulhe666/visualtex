@@ -1,46 +1,26 @@
-using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text;
 using Microsoft.Office.Core;
 using Microsoft.Office.Interop.PowerPoint;
 using Application = Microsoft.Office.Interop.PowerPoint.Application;
 using PptTextFrame = Microsoft.Office.Interop.PowerPoint.TextFrame;
 using PptTextRange = Microsoft.Office.Interop.PowerPoint.TextRange;
 using Shape = Microsoft.Office.Interop.PowerPoint.Shape;
-using Word = Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
 
 namespace VisualTeX.PowerPointVsto;
 
+// Native PowerPoint equations are written the way VisualTeX for macOS writes
+// them: the shared writer's OMML (WordOmmlConverter.TransformMathMlToOmml, the
+// equation Word receives) as PowerPoint's own mathematical text clipboard
+// package (PowerPointMathClipboard), pasted into the target text. No Word
+// instance and no linear-format round trip is involved.
 internal static class PowerPointNativeOmmlKernel
 {
-    private static readonly object WordHostSync = new();
-    private static Word.Application? _wordHost;
-    private static Word.Document? _wordScratchDocument;
-    private static int _wordHostProcessId;
+    private static readonly object ConverterSync = new();
     private static MethodInfo? _transformMathMlToOmmlMethod;
-    private static MethodInfo? _replaceWithPreparedOmmlDirectMethod;
 
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(
-        IntPtr windowHandle,
-        out uint processId);
-
-    internal static void Shutdown()
-    {
-        lock (WordHostSync)
-            ResetWordHost();
-    }
-
-    internal static void Prewarm()
-    {
-        lock (WordHostSync)
-        {
-            ResolveConverterMethods(out _, out _);
-            EnsureWordHost();
-        }
-    }
+    internal static void Prewarm() => _ = ResolveTransform();
 
     internal static Shape CreateStandalone(
         Application application,
@@ -144,23 +124,26 @@ internal static class PowerPointNativeOmmlKernel
         bool display,
         float fontSize)
     {
-        Insert(
+        InsertPrepared(
             application,
             shape,
             start: 1,
             replacementLength: 0,
-            mathMl,
-            display,
-            fontSize);
+            PowerPointMathClipboard.Build(ConvertMathMlToOmml(mathMl), fontSize, display),
+            display);
     }
 
+    // editedZone: the edited equation's native zone (its a14:m as saved). The
+    // new equation is pasted back inside it, the way VisualTeX for macOS pastes
+    // an edit into the copied original context, so it keeps its justification.
     internal static Action PrepareTextInsertion(
         Application application,
         Shape shape,
         int start,
         int length,
         string mathMl,
-        string displayMode)
+        string displayMode,
+        string? editedZone = null)
     {
         if (shape.HasTextFrame != MsoTriState.msoTrue)
             throw new InvalidOperationException(
@@ -180,10 +163,13 @@ internal static class PowerPointNativeOmmlKernel
                 StringComparison.Ordinal))
             throw new InvalidDataException(
                 "PowerPoint text OMML insertion requires inline or block display mode.");
+        if (display && editedZone is not null)
+            throw new InvalidDataException(
+                "A native equation edit replaces its own zone and adds no paragraphs.");
 
-        // Resolve the native converter and all pure/Word-scratch preparation
-        // before a single character of the PowerPoint source can be replaced.
-        var linear = PrepareLinearMath(mathMl, display);
+        // Resolve the native converter and all pure preparation before a single
+        // character of the PowerPoint source can be replaced.
+        var omml = ConvertMathMlToOmml(mathMl);
 
         object? frame2 = null;
         object? fullRange2 = null;
@@ -208,6 +194,9 @@ internal static class PowerPointNativeOmmlKernel
                 fullRange2,
                 start,
                 length);
+            var package = editedZone is null
+                ? PowerPointMathClipboard.Build(omml, contextFontSize, display)
+                : PowerPointMathClipboard.BuildEdit(omml, contextFontSize, editedZone);
 
             var insertionStart = start;
             var replacementLength = length;
@@ -252,7 +241,7 @@ internal static class PowerPointNativeOmmlKernel
                     }
                     finally { Release(selected); Release(text); Release(frame); }
                 }
-                InsertPrepared(application, shape, insertionStart, replacementLength, linear, display, contextFontSize);
+                InsertPrepared(application, shape, insertionStart, replacementLength, package, display);
             };
         }
         finally
@@ -262,316 +251,221 @@ internal static class PowerPointNativeOmmlKernel
         }
     }
 
-    private static void Insert(
-        Application application,
-        Shape shape,
-        int start,
-        int replacementLength,
-        string mathMl,
-        bool display,
-        float fontSize)
-        => InsertPrepared(application, shape, start, replacementLength, PrepareLinearMath(mathMl, display), display, fontSize);
+    // PowerPoint's paste of an equation also removes a space right next to it:
+    // pasting at the caret in "before |after" gives "before" + equation +
+    // "after". An equation pasted into text goes between two of these instead,
+    // which are removed again afterwards; text around it stays exactly as it was.
+    private const char WordJoiner = '\u2060';
 
-    private static StyledLinearMath PrepareLinearMath(string mathMl, bool display)
-    {
-        var linear = ConvertMathMlToUnicodeMath(mathMl, display);
-        if (string.IsNullOrWhiteSpace(linear.Text))
-            throw new InvalidOperationException(
-                "VisualTeX could not derive a linear Office Math expression for PowerPoint.");
-        return linear;
-    }
-
+    // Pastes the package over [start, start + replacementLength) of the shape's
+    // text as VisualTeX for macOS does (VTApplyPowerPointNativeEquation): the
+    // owner slide in view, the user's clipboard kept, a display equation in its
+    // own centered paragraph without a bullet, and the caret after the equation.
     private static void InsertPrepared(Application application, Shape shape, int start,
-        int replacementLength, StyledLinearMath linear, bool display, float fontSize)
+        int replacementLength, byte[] package, bool display)
     {
-        var linearText = linear.Text;
-        PptTextFrame? legacyFrame = null;
-        PptTextRange? legacyRange = null;
-        PptTextRange? target = null;
-        DocumentWindow? window = null;
-        Selection? selection = null;
-        object? sourceFrame2 = null;
-        object? sourceRange2 = null;
-        object? sourceFont2 = null;
+        PptTextFrame? frame = null;
+        PptTextRange? text = null;
+        PptTextRange? pasted = null;
+        PptTextRange? caret = null;
         try
         {
-            legacyFrame = shape.TextFrame;
-            legacyRange = legacyFrame.TextRange;
+            frame = shape.TextFrame;
+            text = frame.TextRange;
             if (start < 1
-                || start > legacyRange.Length + 1
+                || start > text.Length + 1
                 || replacementLength < 0
                 || start - 1 + replacementLength
-                    > legacyRange.Length)
+                    > text.Length)
                 throw new InvalidOperationException(
                     "The PowerPoint text insertion position is no longer valid.");
-
-            if (legacyRange.Length == 0)
+            // A display equation lands in its own empty paragraph and a new
+            // shape's text is empty: no neighbouring text to protect.
+            var joined = !display && text.Length > 0;
+            if (joined)
             {
-                legacyRange.Text = linearText;
-                start = 1;
+                // Assign, never Delete: Delete also removes a space next to the
+                // deleted text, as cutting a word in PowerPoint does.
+                caret = text.Characters(start, replacementLength);
+                caret.Text = new string(WordJoiner, 2);
+                Release(caret);
+                caret = null;
+                start++;
+                replacementLength = 0;
+                Release(text);
+                text = frame.TextRange;
             }
-            else
-            {
-                target =
-                    legacyRange.Characters(
-                        start,
-                        replacementLength);
-                target.Text = linearText;
-                Release(target);
-                target = null;
-                Release(legacyRange);
-                legacyRange =
-                    legacyFrame.TextRange;
-            }
+            var original = text.Text;
+            Release(text);
+            text = null;
 
-            Release(target);
-            target = null;
-
-            // Apply formula-only formatting while the inserted UnicodeMath is
-            // still an ordinary, exact text range. After EquationProfessional,
-            // PowerPoint may expand Selection.TextRange2 beyond the math zone
-            // and include neighboring prose, so mutating that selection can
-            // change the font/size of text before or after the formula.
-            sourceFrame2 = shape.TextFrame2;
-            sourceRange2 = GetCharacterRange(
-                ((dynamic)sourceFrame2).TextRange,
-                start,
-                linearText.Length);
-            sourceFont2 = ((dynamic)sourceRange2).Font;
-            ((dynamic)sourceFont2).Size =
-                Math.Max(5f, fontSize);
-            // Apply retained colors to exact inserted UnicodeMath spans before
-            // Professional conversion; never format its expanded selection.
-            foreach (var color in linear.Colors)
+            ActivateShapeView(application, shape);
+            using (PowerPointClipboard.Preserve())
+                pasted = PasteEquation(frame, start, replacementLength, original, package);
+            int pastedStart = pasted.Start, pastedLength = pasted.Length;
+            if (joined)
             {
-                object? coloredRange = null;
-                object? coloredFont = null;
-                try
-                {
-                    coloredRange = GetCharacterRange(((dynamic)sourceFrame2).TextRange, start + color.Start, color.Length);
-                    coloredFont = ((dynamic)coloredRange).Font;
-                    ((dynamic)coloredFont).Fill.ForeColor.RGB = color.Rgb;
-                }
-                finally { Release(coloredFont); Release(coloredRange); }
+                Release(pasted);
+                pasted = null;
+                RemoveJoiners(frame, pastedStart, pastedLength);
+                pastedStart--;
+                text = frame.TextRange;
+                pasted = text.Characters(pastedStart, pastedLength);
+                Release(text);
+                text = null;
             }
+            if (!ContainsMath(shape, pastedStart, pastedLength))
+                throw new InvalidOperationException(
+                    "PowerPoint pasted the equation package without creating a native equation.");
             if (display)
             {
                 try
                 {
-                    ((dynamic)sourceRange2)
-                        .ParagraphFormat
-                        .Alignment =
-                        MsoParagraphAlignment
-                            .msoAlignCenter;
+                    var paragraph = pasted.ParagraphFormat;
+                    paragraph.Alignment = PpParagraphAlignment.ppAlignCenter;
+                    paragraph.Bullet.Visible = MsoTriState.msoFalse;
+                    Release(paragraph);
                 }
                 catch { }
             }
 
-            SelectTextRangeForEquation(
-                application,
-                shape,
-                start,
-                linearText.Length);
-
-            window =
-                application.ActiveWindow
-                ?? throw new InvalidOperationException(
-                    "PowerPoint has no active window for native equation insertion.");
-            selection = GetTextSelectionWithRetry(
-                window,
-                "before native equation insertion",
-                350);
-            object? selectedRange = null, existingZone = null;
-            bool alreadyMath;
+            // A caret failure after a successful paste is not a failed insertion.
             try
             {
-                selectedRange = selection.TextRange2;
-                existingZone = PowerPointOmmlBridge.ReadSingleSelectedMathZone(selectedRange);
-                alreadyMath = existingZone is not null;
+                text = frame.TextRange;
+                caret = text.Characters(pastedStart + pastedLength, 0);
+                caret.Select();
             }
-            finally { Release(existingZone); Release(selectedRange); }
-            Release(selection);
-            selection = null;
-            // Replacing the text of an existing native zone keeps that zone.
-            // Invoking Insert Equation again toggles/leaves its native context
-            // instead of editing it. New prose insertion still needs the command.
-            if (!alreadyMath)
-            {
-            var canInsertGallery =
-                application.CommandBars.GetEnabledMso(
-                    "InsertBuildingBlocksEquationsGallery");
-            var canInsertNew =
-                application.CommandBars.GetEnabledMso(
-                    "EquationInsertNew");
-            if (!canInsertGallery
-                && !canInsertNew)
-                throw new InvalidOperationException(
-                    "PowerPoint exposes no native equation insertion command at the target text position.");
-
-            application.CommandBars.ExecuteMso(
-                canInsertGallery
-                    ? "InsertBuildingBlocksEquationsGallery"
-                    : "EquationInsertNew");
-            }
-
-            selection = GetTextSelectionWithRetry(
-                window,
-                "after native equation insertion",
-                700,
-                () =>
-                    application.CommandBars.GetEnabledMso(
-                        "EquationProfessional")
-                    || application.CommandBars.GetEnabledMso(
-                        "EquationLinearFormat"));
-
-            ApplyNativeUprightLetters(selection, linear);
-            if (application.CommandBars.GetEnabledMso(
-                    "EquationProfessional"))
-            {
-                application.CommandBars.ExecuteMso(
-                    "EquationProfessional");
-            }
-            else if (!application.CommandBars.GetEnabledMso(
-                         "EquationLinearFormat"))
-            {
-                throw new InvalidOperationException(
-                    "PowerPoint created a math zone but exposed neither Professional nor Linear equation conversion.");
-            }
-
-            Release(selection);
-            selection = GetTextSelectionWithRetry(
-                window,
-                "after professional equation conversion",
-                500,
-                () => application.CommandBars.GetEnabledMso(
-                    "EquationLinearFormat"));
+            catch { }
         }
         finally
         {
-            Release(sourceFont2);
-            Release(sourceRange2);
-            Release(sourceFrame2);
-            Release(selection);
-            Release(window);
-            Release(target);
-            Release(legacyRange);
-            Release(legacyFrame);
+            Release(caret);
+            Release(pasted);
+            Release(text);
+            Release(frame);
         }
     }
 
-    private sealed class LinearColor
+    // TextRange.Paste reads the clipboard at once, and a clipboard listener
+    // (input method, clipboard history) still reading the new data makes it
+    // paste nothing. Serve those requests first and retry, as CopyShapeInto does
+    // for OLE shapes; a paste that inserted nothing must also have removed
+    // nothing, so the target range stays exact for the next attempt.
+    private static PptTextRange PasteEquation(PptTextFrame frame, int start, int length,
+        string original, byte[] package)
     {
-        internal int Start;
-        internal int Length;
-        internal int Rgb;
+        for (var attempt = 1; ; attempt++)
+        {
+            PptTextRange? text = null;
+            PptTextRange? target = null;
+            PptTextRange? pasted = null;
+            try
+            {
+                PowerPointClipboard.Place(PowerPointMathClipboard.Format, package);
+                PowerPointClipboard.ServeSentMessages(attempt == 1 ? 40 : 150 * attempt);
+                text = frame.TextRange;
+                // An empty text body has no character range to replace.
+                target = text.Length == 0 ? text : text.Characters(start, length);
+                if (ReferenceEquals(target, text)) text = null;
+                pasted = target.Paste();
+                if (pasted is not null && pasted.Length > 0)
+                {
+                    var result = pasted;
+                    pasted = null;
+                    return result;
+                }
+            }
+            catch (COMException) when (attempt < 5) { }
+            catch (COMException error)
+            {
+                throw new InvalidOperationException(
+                    $"{error.Message} (clipboard held by: {PowerPointClipboard.Holder()})", error);
+            }
+            finally
+            {
+                Release(pasted);
+                Release(target);
+                Release(text);
+            }
+
+            if (!string.Equals(ReadText(frame), original, StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    "PowerPoint changed the text without pasting the native equation.");
+            if (attempt >= 5)
+                throw new InvalidOperationException(
+                    $"PowerPoint did not paste the native equation (clipboard held by: {PowerPointClipboard.Holder()}).");
+        }
     }
 
-    private sealed class StyledLinearMath
+    // Removes the joiners on both sides of the pasted equation (trailing first, so
+    // the leading one keeps its position).
+    private static void RemoveJoiners(PptTextFrame frame, int pastedStart, int pastedLength)
     {
-        internal string Text = string.Empty;
-        internal List<LinearColor> Colors = new();
-        internal List<int> UprightLetters = new();
+        var text = ReadText(frame);
+        var before = pastedStart - 2;
+        var after = pastedStart - 1 + pastedLength;
+        if (before < 0 || after >= text.Length || text[before] != WordJoiner || text[after] != WordJoiner)
+            throw new InvalidOperationException(
+                "PowerPoint did not paste the native equation at the expected text position.");
+        foreach (var position in new[] { after + 1, before + 1 })
+        {
+            PptTextRange? all = null;
+            PptTextRange? joiner = null;
+            try
+            {
+                all = frame.TextRange;
+                joiner = all.Characters(position, 1);
+                joiner.Text = string.Empty;
+            }
+            finally { Release(joiner); Release(all); }
+        }
     }
 
-    private static void ApplyNativeUprightLetters(Selection selection, StyledLinearMath linear)
+    private static string ReadText(PptTextFrame frame)
     {
-        if (linear.UprightLetters.Count == 0) return;
-        object? selected = null;
-        object? zone = null;
+        PptTextRange? text = null;
         try
         {
-            selected = selection.TextRange2;
-            zone = PowerPointOmmlBridge.ReadSingleSelectedMathZone(selected);
-            if (zone is null)
-                throw new InvalidOperationException("PowerPoint did not expose one exact native zone for upright-math formatting.");
-            var actual = Convert.ToString(((dynamic)zone).Text) ?? string.Empty;
-            var expectedElements = System.Globalization.StringInfo.ParseCombiningCharacters(linear.Text);
-            var actualElements = System.Globalization.StringInfo.ParseCombiningCharacters(actual);
-            if (expectedElements.Length != actualElements.Length)
-                throw new InvalidOperationException("PowerPoint changed the native linear expression before upright-math formatting; conversion cannot preserve its semantics.");
-            var targets = new List<(int Start, int Length)>();
-            for (var i = 0; i < expectedElements.Length; i++)
-            {
-                var sourceStart = expectedElements[i];
-                var sourceEnd = i + 1 < expectedElements.Length ? expectedElements[i + 1] : linear.Text.Length;
-                var targetStart = actualElements[i];
-                var targetEnd = i + 1 < actualElements.Length ? actualElements[i + 1] : actual.Length;
-                // Comparison only: do not replace either text with normalized
-                // text. Native build-up can encode italic letters as scalars.
-                if (linear.Text.Substring(sourceStart, sourceEnd - sourceStart).Normalize(NormalizationForm.FormKC)
-                    != actual.Substring(targetStart, targetEnd - targetStart).Normalize(NormalizationForm.FormKC))
-                    throw new InvalidOperationException("PowerPoint changed the native linear expression before upright-math formatting; conversion cannot preserve its semantics.");
-                if (linear.UprightLetters.Contains(sourceStart)) targets.Add((targetStart, targetEnd - targetStart));
-            }
-            // Native style assignment may shorten an astral italic scalar.
-            // Work backwards so earlier exact offsets remain unchanged.
-            foreach (var target in targets.AsEnumerable().Reverse())
-            {
-                object? character = null;
-                object? font = null;
-                try
-                {
-                    character = GetCharacterRange(zone, target.Start + 1, target.Length);
-                    font = ((dynamic)character).Font;
-                    ((dynamic)font).Italic = MsoTriState.msoFalse;
-                }
-                finally { Release(font); Release(character); }
-            }
-            ((dynamic)zone).Select();
+            text = frame.TextRange;
+            return text.Text;
         }
-        finally { Release(zone); Release(selected); }
+        finally { Release(text); }
     }
 
-    private static StyledLinearMath ConvertMathMlToUnicodeMath(
-        string mathMl,
-        bool display)
+    private static bool ContainsMath(Shape shape, int start, int length)
+    {
+        object? frame = null, text = null, range = null, zones = null;
+        try
+        {
+            frame = shape.TextFrame2;
+            text = ((dynamic)frame).TextRange;
+            range = GetCharacterRange(text, start, length);
+            zones = ((dynamic)range).MathZones();
+            return Convert.ToInt32(((dynamic)zones).Count) > 0;
+        }
+        catch (COMException) { return false; }
+        finally { Release(zones); Release(range); Release(text); Release(frame); }
+    }
+
+    private static string ConvertMathMlToOmml(string mathMl)
     {
         if (string.IsNullOrWhiteSpace(mathMl))
             throw new InvalidDataException(
                 "PowerPoint OMML conversion requires MathML export data.");
-
-        MethodInfo transform;
-        MethodInfo replace;
-        lock (WordHostSync)
-        {
-            ResolveConverterMethods(out transform, out replace);
-        }
-
-        string omml;
         try
         {
-            omml =
-                transform.Invoke(
-                    null,
-                    new object[] { mathMl })
-                as string
+            return ResolveTransform().Invoke(null, new object[] { mathMl }) as string
                 ?? throw new InvalidOperationException(
                     "VisualTeX Word OMML converter returned no OMML.");
         }
         catch (TargetInvocationException error)
-            when (error.InnerException
-                  is not null)
+            when (error.InnerException is not null)
         {
             throw new InvalidOperationException(
                 "VisualTeX Word MathML-to-OMML conversion failed: "
                     + error.InnerException.Message,
                 error.InnerException);
-        }
-
-        // Word is needed only to ask Office itself for the canonical linear
-        // UnicodeMath representation. Starting WINWORD and creating a scratch
-        // document for every formula dominated insertion time. Keep one private,
-        // hidden Word instance and one scratch document for the lifetime of the
-        // PowerPoint add-in instead. The host is never attached to a user's Word
-        // process and is shut down when the add-in disconnects.
-        lock (WordHostSync)
-        {
-            EnsureWordHost();
-            return LinearizePreparedOmml(
-                _wordScratchDocument!,
-                replace,
-                omml,
-                display);
         }
     }
 
@@ -593,334 +487,28 @@ internal static class PowerPointNativeOmmlKernel
         }
     }
 
-    private static void ResolveConverterMethods(
-        out MethodInfo transform,
-        out MethodInfo replace)
+    // The shared writer lives in the Word add-in's assembly and is reached by
+    // reflection: keep this exact signature in step with WordOmmlConverter
+    // (WordOmmlConverterReflectionContractTests).
+    private static MethodInfo ResolveTransform()
     {
-        if (_transformMathMlToOmmlMethod is null
-            || _replaceWithPreparedOmmlDirectMethod is null)
+        lock (ConverterSync)
         {
-            var converter =
-                ResolveWordOmmlConverterType();
-            _transformMathMlToOmmlMethod =
-                converter.GetMethod(
-                    "TransformMathMlToOmml",
-                    BindingFlags.Static
-                        | BindingFlags.NonPublic)
-                ?? throw new MissingMethodException(
-                    converter.FullName,
-                    "TransformMathMlToOmml");
-            _replaceWithPreparedOmmlDirectMethod =
-                converter.GetMethod(
-                    "ReplaceWithPreparedOmmlDirect",
-                    BindingFlags.Static | BindingFlags.NonPublic,
-                    binder: null,
-                    types: new[]
-                    {
-                        typeof(Word.Document),
-                        typeof(Word.Range),
-                        typeof(string),
-                        typeof(bool),
-                        typeof(string),
-                        typeof(bool),
-                    },
-                    modifiers: null)
-                ?? throw new MissingMethodException(
-                    converter.FullName,
-                    "ReplaceWithPreparedOmmlDirect");
-        }
-
-        transform = _transformMathMlToOmmlMethod;
-        replace = _replaceWithPreparedOmmlDirectMethod;
-    }
-
-    private static void EnsureWordHost()
-    {
-        if (_wordHost is not null
-            && _wordScratchDocument is not null)
-        {
-            try
+            if (_transformMathMlToOmmlMethod is null)
             {
-                _ = _wordHost.Name;
-                _ = _wordScratchDocument.Name;
-                return;
+                var converter = ResolveWordOmmlConverterType();
+                _transformMathMlToOmmlMethod =
+                    converter.GetMethod(
+                        "TransformMathMlToOmml",
+                        BindingFlags.Static | BindingFlags.NonPublic,
+                        binder: null,
+                        types: new[] { typeof(string) },
+                        modifiers: null)
+                    ?? throw new MissingMethodException(
+                        converter.FullName,
+                        "TransformMathMlToOmml");
             }
-            catch
-            {
-                ResetWordHost();
-            }
-        }
-
-        var existingWordProcessIds =
-            Process.GetProcessesByName("WINWORD")
-                .Select(process => process.Id)
-                .ToHashSet();
-        Word.Application? word = null;
-        Word.Document? document = null;
-        var mayQuitWord = existingWordProcessIds.Count == 0;
-        var privateProcessId = 0;
-        try
-        {
-            word = new Word.Application
-            {
-                Visible = false,
-                DisplayAlerts = Word.WdAlertLevel.wdAlertsNone,
-            };
-
-            privateProcessId = TryGetWordProcessId(word);
-            if (privateProcessId <= 0)
-                privateProcessId = WaitForNewWordProcessId(
-                    existingWordProcessIds,
-                    900);
-            if (privateProcessId <= 0)
-                throw new InvalidOperationException(
-                    "PowerPoint OMML conversion could not verify ownership of its private Word process.");
-
-            mayQuitWord =
-                !existingWordProcessIds.Contains(privateProcessId);
-            if (!mayQuitWord)
-                throw new InvalidOperationException(
-                    "PowerPoint OMML conversion refused to reuse an existing user Word process.");
-
-            document = word.Documents.Add();
-            _wordHost = word;
-            _wordScratchDocument = document;
-            _wordHostProcessId = privateProcessId;
-            word = null;
-            document = null;
-        }
-        catch
-        {
-            if (document is not null)
-            {
-                try
-                {
-                    document.Close(
-                        Word.WdSaveOptions.wdDoNotSaveChanges);
-                }
-                catch { }
-            }
-            Release(document);
-            if (word is not null && mayQuitWord)
-            {
-                try
-                {
-                    word.Quit(
-                        Word.WdSaveOptions.wdDoNotSaveChanges);
-                }
-                catch { }
-            }
-            Release(word);
-            if (mayQuitWord && privateProcessId > 0)
-                EnsurePrivateWordProcessExited(privateProcessId);
-            throw;
-        }
-    }
-
-    private static StyledLinearMath LinearizePreparedOmml(
-        Word.Document document,
-        MethodInfo replace,
-        string omml,
-        bool display)
-    {
-        Word.Range? insertionRange = null;
-        Word.Range? formulaRange = null;
-        Word.OMaths? maths = null;
-        Word.OMath? math = null;
-        Word.Range? linearRange = null;
-        try
-        {
-            ClearWordScratchDocument(document);
-            insertionRange =
-                document.Range(0, 0);
-
-            try
-            {
-                formulaRange =
-                    replace.Invoke(
-                        null,
-                        new object?[]
-                        {
-                            document,
-                            insertionRange,
-                            omml,
-                            display,
-                            null,
-                            false, // Do not promote the private Word inline scratch range.
-                        }) as Word.Range
-                    ?? throw new InvalidOperationException(
-                        "VisualTeX Word OMML converter returned no materialized formula range.");
-            }
-            catch (TargetInvocationException error)
-                when (error.InnerException
-                      is not null)
-            {
-                throw new InvalidOperationException(
-                    "VisualTeX Word native OMML materialization failed: "
-                        + error.InnerException.Message,
-                    error.InnerException);
-            }
-
-            maths = formulaRange.OMaths;
-            if (maths.Count <= 0)
-                throw new InvalidOperationException(
-                    "Microsoft Word materialized no native Office Math object.");
-
-            math = maths[1];
-            math.Linearize();
-            linearRange = math.Range;
-            var raw = Convert.ToString(linearRange.Text) ?? string.Empty;
-            var trimChars = new[] { ' ', '\t', '\r', '\n', '\a', '\0' };
-            var text = raw.Trim(trimChars);
-            if (string.IsNullOrWhiteSpace(text))
-                throw new InvalidOperationException(
-                    "Microsoft Word produced an empty linear Office Math expression.");
-            var prefix = raw.Length - raw.TrimStart(trimChars).Length;
-            var result = new StyledLinearMath { Text = text };
-            // Keep Office's UnicodeMath alphabet scalars intact. NFKC collapses
-            // bold/script/double-struck letters and discards their semantics.
-            var elements = System.Globalization.StringInfo.GetTextElementEnumerator(text);
-            while (elements.MoveNext())
-            {
-                var element = elements.GetTextElement();
-                Word.Range? character = null;
-                Word.Font? font = null;
-                try
-                {
-                    character = document.Range(linearRange.Start + prefix + elements.ElementIndex,
-                        linearRange.Start + prefix + elements.ElementIndex + element.Length);
-                    font = character.Font;
-                    // Only plain Latin/Greek letters are mapped here. Do not
-                    // reinterpret letterlike math symbols (for example ℝ) or
-                    // claim combining/supplementary upright support.
-                    if (element.Length == 1 && font.Italic == 0
-                        && ((element[0] >= 'A' && element[0] <= 'Z') || (element[0] >= 'a' && element[0] <= 'z')
-                            || (element[0] >= '\u0370' && element[0] <= '\u03FF' && char.IsLetter(element[0]))))
-                        result.UprightLetters.Add(elements.ElementIndex);
-                    var rgb = (int)font.Color;
-                    if (rgb < 0 || rgb > 0xFFFFFF) continue; // Office automatic/mixed.
-                    var previous = result.Colors.LastOrDefault();
-                    if (previous is not null && previous.Rgb == rgb && previous.Start + previous.Length == elements.ElementIndex)
-                        previous.Length += element.Length;
-                    else result.Colors.Add(new LinearColor { Start = elements.ElementIndex, Length = element.Length, Rgb = rgb });
-                }
-                finally { Release(font); Release(character); }
-            }
-            return result;
-        }
-        finally
-        {
-            Release(linearRange);
-            Release(math);
-            Release(maths);
-            Release(formulaRange);
-            Release(insertionRange);
-            try { ClearWordScratchDocument(document); } catch { }
-        }
-    }
-
-    private static void ClearWordScratchDocument(
-        Word.Document document)
-    {
-        Word.Range? content = null;
-        try
-        {
-            content = document.Content;
-            content.Text = string.Empty;
-        }
-        finally
-        {
-            Release(content);
-        }
-    }
-
-    private static int TryGetWordProcessId(
-        Word.Application word)
-    {
-        try
-        {
-            var handle = new IntPtr(
-                Convert.ToInt32(((dynamic)word).Hwnd));
-            if (handle == IntPtr.Zero)
-                return 0;
-            _ = GetWindowThreadProcessId(
-                handle,
-                out var processId);
-            return unchecked((int)processId);
-        }
-        catch
-        {
-            return 0;
-        }
-    }
-
-    private static void ResetWordHost()
-    {
-        var document = _wordScratchDocument;
-        var word = _wordHost;
-        var processId = _wordHostProcessId;
-        _wordScratchDocument = null;
-        _wordHost = null;
-        _wordHostProcessId = 0;
-
-        if (document is not null)
-        {
-            try
-            {
-                document.Close(
-                    Word.WdSaveOptions.wdDoNotSaveChanges);
-            }
-            catch { }
-        }
-        Release(document);
-        if (word is not null)
-        {
-            try
-            {
-                word.Quit(
-                    Word.WdSaveOptions.wdDoNotSaveChanges);
-            }
-            catch { }
-        }
-        Release(word);
-        if (processId > 0)
-            EnsurePrivateWordProcessExited(processId);
-    }
-
-    private static void EnsurePrivateWordProcessExited(
-        int processId)
-    {
-        Process? process = null;
-        try
-        {
-            process = Process.GetProcessById(processId);
-            if (!string.Equals(
-                    process.ProcessName,
-                    "WINWORD",
-                    StringComparison.OrdinalIgnoreCase))
-                return;
-            if (process.WaitForExit(750))
-                return;
-
-            // This PID is captured from the private Word.Application instance
-            // created by this kernel before it is published as the shared host.
-            // If Word ignores Quit because an Office COM proxy is still alive,
-            // terminate only that owned hidden process; never enumerate/kill a
-            // user's unrelated WINWORD process.
-            process.Kill();
-            process.WaitForExit(750);
-        }
-        catch (ArgumentException)
-        {
-            // The private process has already exited.
-        }
-        catch (InvalidOperationException)
-        {
-            // The private process has already exited or is no longer available.
-        }
-        finally
-        {
-            process?.Dispose();
+            return _transformMathMlToOmmlMethod;
         }
     }
 
@@ -1040,155 +628,6 @@ internal static class PowerPointNativeOmmlKernel
             throwOnError: true)
             ?? throw new InvalidOperationException(
                 "VisualTeX Word OMML converter type is unavailable.");
-    }
-
-    private static int WaitForNewWordProcessId(
-        HashSet<int> existingProcessIds,
-        int timeoutMilliseconds)
-    {
-        var stopwatch =
-            Stopwatch.StartNew();
-        while (stopwatch.ElapsedMilliseconds
-               < timeoutMilliseconds)
-        {
-            var processId = Process
-                .GetProcessesByName("WINWORD")
-                .Select(process => process.Id)
-                .FirstOrDefault(processId =>
-                    !existingProcessIds.Contains(
-                        processId));
-            if (processId > 0)
-                return processId;
-            Thread.Sleep(10);
-        }
-        return 0;
-    }
-
-    private static Selection GetTextSelectionWithRetry(
-        DocumentWindow window,
-        string context,
-        int timeoutMilliseconds,
-        Func<bool>? ready = null)
-    {
-        Exception? lastError = null;
-        var stopwatch = Stopwatch.StartNew();
-        do
-        {
-            Selection? selection = null;
-            try
-            {
-                selection = window.Selection;
-                if (selection is not null
-                    && selection.Type
-                        == PpSelectionType.ppSelectionText)
-                {
-                    var isReady = false;
-                    try { isReady = ready?.Invoke() ?? true; }
-                    catch (COMException error)
-                    {
-                        lastError = error;
-                    }
-                    if (isReady)
-                        return selection;
-                }
-            }
-            catch (COMException error)
-            {
-                lastError = error;
-                const int RpcCallRejected =
-                    unchecked((int)0x80010001);
-                const int RpcRetryLater =
-                    unchecked((int)0x8001010A);
-                if (error.HResult != RpcCallRejected
-                    && error.HResult != RpcRetryLater)
-                    throw;
-            }
-            Release(selection);
-
-            if (stopwatch.ElapsedMilliseconds
-                >= timeoutMilliseconds)
-                break;
-            System.Windows.Forms.Application.DoEvents();
-            Thread.Sleep(8);
-        }
-        while (true);
-
-        throw new InvalidOperationException(
-            $"PowerPoint remained busy while preparing the text selection ({context}).",
-            lastError);
-    }
-
-    private static void SelectTextRangeForEquation(
-        Application application,
-        Shape shape,
-        int start,
-        int length)
-    {
-        Exception? lastError = null;
-        for (var attempt = 0; attempt < 8; attempt++)
-        {
-            PptTextFrame? frame = null;
-            PptTextRange? full = null;
-            PptTextRange? candidate = null;
-            DocumentWindow? window = null;
-            try
-            {
-                // The hidden Word materialization step can leave a
-                // different PowerPoint window/view active. Restore the exact
-                // presentation/slide that owns this shape before selecting it.
-                ActivateShapeView(application, shape);
-
-                // Selecting the shape invalidates some legacy TextRange COM
-                // proxies on Office 2021. Reacquire TextFrame/TextRange on every
-                // attempt instead of reusing the range used to write the text.
-                shape.Select(MsoTriState.msoTrue);
-                frame = shape.TextFrame;
-                full = frame.TextRange;
-                candidate = full.Characters(start, length);
-                candidate.Select();
-
-                window = application.ActiveWindow;
-                if (window is not null)
-                {
-                    Selection? verify = null;
-                    try
-                    {
-                        verify = GetTextSelectionWithRetry(
-                            window,
-                            "selecting the formula source text",
-                            180);
-                        return;
-                    }
-                    finally
-                    {
-                        Release(verify);
-                    }
-                }
-
-                lastError = new InvalidOperationException(
-                    "PowerPoint did not enter text-edit mode for the target formula range.");
-            }
-            catch (Exception error)
-                when (error is COMException
-                      || error is InvalidOperationException)
-            {
-                lastError = error;
-            }
-            finally
-            {
-                Release(window);
-                Release(candidate);
-                Release(full);
-                Release(frame);
-            }
-
-            System.Windows.Forms.Application.DoEvents();
-            Thread.Sleep(8 + attempt * 4);
-        }
-
-        throw new InvalidOperationException(
-            "PowerPoint could not select the target text range for native equation insertion.",
-            lastError);
     }
 
     private static void ActivateShapeView(

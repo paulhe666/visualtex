@@ -5,17 +5,18 @@ using Xunit;
 namespace VisualTeX.WindowsOffice.Tests;
 
 // The PowerPoint add-in reaches the shared Word converter by reflection
-// (PowerPointNativeOmmlKernel.ResolveConverterMethods), so the compiler cannot
-// catch a signature change that breaks native PowerPoint equations. The test
-// host cannot load Office's interop types, so this compares the sources: the
-// exact parameter list the kernel asks for must still be declared.
+// (PowerPointNativeOmmlKernel.ResolveTransform and ReadNativeMathMl), so the
+// compiler cannot catch a signature change that breaks native PowerPoint
+// equations. The test host cannot load Office's interop types, so this compares
+// the sources: the exact parameter lists the kernel asks for must still be
+// declared.
 public sealed class WordOmmlConverterReflectionContractTests
 {
     private static string SourcesRoot([CallerFilePath] string path = "") =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, ".."));
 
     [Fact]
-    public void PowerPointKernelFindsTheDirectOmmlReplacement()
+    public void PowerPointKernelFindsTheSharedWriterAndReader()
     {
         var kernel = File.ReadAllText(Path.Combine(
             SourcesRoot(), "VisualTeX.PowerPointVsto", "PowerPointNativeOmmlKernel.cs"));
@@ -24,13 +25,19 @@ public sealed class WordOmmlConverterReflectionContractTests
 
         Assert.Matches(
             new Regex(
-                @"""ReplaceWithPreparedOmmlDirect"",[^;]*?types: new\[\]\s*\{\s*typeof\(Word\.Document\),\s*typeof\(Word\.Range\),\s*typeof\(string\),\s*typeof\(bool\),\s*typeof\(string\),\s*typeof\(bool\),\s*\}",
+                @"""TransformMathMlToOmml"",[^;]*?types: new\[\]\s*\{\s*typeof\(string\)\s*\}",
                 RegexOptions.Singleline),
             kernel);
         Assert.Matches(
+            new Regex(@"internal static string TransformMathMlToOmml\(string mathMl\)"),
+            converter);
+        Assert.Matches(
             new Regex(
-                @"internal static Range ReplaceWithPreparedOmmlDirect\(\s*Document targetDocument,\s*Range targetRange,\s*string omml,\s*bool display,\s*string\? mathFontName = null,\s*bool allowWordNativeInlinePromotion = false\)",
+                @"""TransformOmmlToMathMl"",[^;]*?types: new\[\]\s*\{\s*typeof\(string\),\s*typeof\(bool\)\s*\}",
                 RegexOptions.Singleline),
+            kernel);
+        Assert.Matches(
+            new Regex(@"internal static string TransformOmmlToMathMl\(string wordOpenXml, bool display\)"),
             converter);
     }
 }

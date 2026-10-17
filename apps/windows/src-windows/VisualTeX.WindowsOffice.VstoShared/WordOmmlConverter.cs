@@ -2747,8 +2747,6 @@ internal static partial class WordOmmlConverter
         }
     }
 
-    // PowerPoint's native equation kernel resolves this exact six-parameter
-    // signature by reflection (PowerPointNativeOmmlKernel.ResolveConverterMethods).
     internal static Range ReplaceWithPreparedOmmlDirect(
         Document targetDocument,
         Range targetRange,

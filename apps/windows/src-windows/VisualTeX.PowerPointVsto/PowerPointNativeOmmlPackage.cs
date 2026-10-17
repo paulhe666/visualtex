@@ -67,6 +67,19 @@ internal static class PowerPointNativeOmmlPackage
         return equations[ordinal - 1].ToString(SaveOptions.DisableFormatting);
     }
 
+    // The native math zone (its a14:m as saved) that holds equation <ordinal>;
+    // an edit pastes the new equation back inside it.
+    internal static string ReadEquationZone(string shapeXml, int ordinal, int expectedCount)
+    {
+        var shape = XElement.Parse(shapeXml, LoadOptions.PreserveWhitespace);
+        var equations = shape.Descendants(M + "oMath").ToArray();
+        if (equations.Length != expectedCount || ordinal < 1 || ordinal > equations.Length)
+            throw new InvalidDataException("The native math ranges do not match the saved PowerPoint equations.");
+        var zone = equations[ordinal - 1].Ancestors(XName.Get("m", Drawing2010)).FirstOrDefault()
+            ?? throw new InvalidDataException("The native equation is not inside a PowerPoint math zone.");
+        return zone.ToString(SaveOptions.DisableFormatting);
+    }
+
     private static XElement ReadTextShape(ZipArchive archive, int slideId, int shapeId) =>
         SelectTextShape(ReadSlide(archive, slideId), shapeId);
 

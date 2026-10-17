@@ -47,8 +47,8 @@ public sealed partial class PowerPointFormulaService : IDisposable
         _windowRedrawProbe = windowRedrawProbe;
     }
 
-    public void Dispose() =>
-        PowerPointNativeOmmlKernel.Shutdown();
+    // The service holds nothing that needs releasing; owners still dispose it.
+    public void Dispose() { }
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern IntPtr SendMessage(

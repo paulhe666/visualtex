@@ -17,6 +17,7 @@ public sealed partial class PowerPointFormulaService
         internal string ObjectId = string.Empty;
         internal string FormulaId = string.Empty;
         internal string Omml = string.Empty;
+        internal string Zone = string.Empty;
         internal int Start, Length;
         internal string? ShapeFingerprint;
     }
@@ -151,6 +152,7 @@ public sealed partial class PowerPointFormulaService
             var zone = ResolveNativeMathZone(shape, selection.ObjectId!);
             var shapeXml = PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, shapeId);
             var omml = PowerPointNativeOmmlPackage.ReadEquation(shapeXml, zone.Ordinal, zone.Count);
+            var nativeZone = PowerPointNativeOmmlPackage.ReadEquationZone(shapeXml, zone.Ordinal, zone.Count);
             var mathMl = PowerPointNativeOmmlKernel.ReadNativeMathMl(omml);
             var latex = MathMlToLatexConverter.ConvertWordEquation(mathMl).Trim();
             if (string.IsNullOrWhiteSpace(latex)) throw new InvalidDataException("The selected native equation has no recoverable source.");
@@ -171,7 +173,7 @@ public sealed partial class PowerPointFormulaService
             _nativeOmmlSource = new NativeOmmlSource
             {
                 DocumentId = selection.DocumentId!, ObjectId = selection.ObjectId!,
-                FormulaId = metadata.FormulaId, Omml = omml,
+                FormulaId = metadata.FormulaId, Omml = omml, Zone = nativeZone,
                 Start = zone.Start, Length = zone.Length,
                 ShapeFingerprint = PowerPointTextEditTransaction.Fingerprint(shapeXml),
             };
@@ -196,7 +198,7 @@ public sealed partial class PowerPointFormulaService
         // Replace exactly the existing math zone. Its paragraph and neighboring
         // content already exist; inserting a new display paragraph would split them.
         var write = PowerPointNativeOmmlKernel.PrepareTextInsertion(
-            _application, shape, source.Start, source.Length, mathMl, "inline");
+            _application, shape, source.Start, source.Length, mathMl, "inline", source.Zone);
         PowerPointTextEditTransaction.Execute(_application, presentation, slide.SlideID, shape.Id,
             source.ShapeFingerprint, write);
         return Result(session, presentation, shape.Name);

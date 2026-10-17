@@ -826,10 +826,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         FormulaOleContract.WordOmmlMode,
                         StringComparison.Ordinal))
                 {
-                    // Hide the one-time Word/OMML cold start behind the time the
-                    // user spends editing the formula. This work is posted to
-                    // the Office UI thread so the private Word COM host is both
-                    // created and later consumed from the same STA.
+                    // Hide loading the shared OMML writer (the Word add-in's
+                    // assembly) behind the time the user spends editing the
+                    // formula.
                     _ = dispatcher.InvokeAsync(() =>
                     {
                         try { PowerPointNativeOmmlKernel.Prewarm(); }

@@ -4,11 +4,11 @@ using System.Text;
 namespace VisualTeX.PowerPointVsto;
 
 /// <summary>
-/// PowerPoint can only move an OLE shape between presentations through the
-/// clipboard. These helpers keep that transport from disturbing the user: the
-/// user's clipboard is saved before VisualTeX copies and put back afterwards, and
-/// waits serve other programs' clipboard requests instead of blocking them.
-/// All members run on the Office UI thread.
+/// PowerPoint can only move an OLE shape between presentations, or receive a
+/// native equation, through the clipboard. These helpers keep that transport
+/// from disturbing the user: the user's clipboard is saved before VisualTeX
+/// copies and put back afterwards, and waits serve other programs' clipboard
+/// requests instead of blocking them. All members run on the Office UI thread.
 /// </summary>
 internal static class PowerPointClipboard
 {
@@ -41,6 +41,36 @@ internal static class PowerPointClipboard
             MsgWaitForMultipleObjectsEx(0, IntPtr.Zero, (uint)remaining, QsSendMessage, 0);
             PeekMessage(out _, IntPtr.Zero, 0, 0, PmQsSendMessage);
         }
+    }
+
+    /// <summary>
+    /// Makes <paramref name="bytes"/> the clipboard's only content, under the
+    /// registered format <paramref name="formatName"/>. The caller preserves the
+    /// user's clipboard around it (<see cref="Preserve"/>).
+    /// </summary>
+    internal static void Place(string formatName, byte[] bytes)
+    {
+        var format = RegisterClipboardFormat(formatName);
+        if (format == 0) throw new InvalidOperationException($"Windows did not register the clipboard format {formatName}.");
+        _owner ??= new OwnerWindow();
+        if (!TryOpen(_owner.Handle))
+            throw new InvalidOperationException($"The clipboard is in use (held by: {Holder()}).");
+        try
+        {
+            if (!EmptyClipboard()) throw new InvalidOperationException("Windows did not clear the clipboard.");
+            var memory = GlobalAlloc(0x0002 /* GMEM_MOVEABLE */, (UIntPtr)bytes.Length);
+            if (memory == IntPtr.Zero) throw new OutOfMemoryException("No memory for the clipboard data.");
+            var pointer = GlobalLock(memory);
+            if (pointer == IntPtr.Zero) { GlobalFree(memory); throw new OutOfMemoryException("The clipboard data could not be written."); }
+            Marshal.Copy(bytes, 0, pointer, bytes.Length);
+            GlobalUnlock(memory);
+            if (SetClipboardData(format, memory) == IntPtr.Zero)
+            {
+                GlobalFree(memory);
+                throw new InvalidOperationException("Windows did not accept the clipboard data.");
+            }
+        }
+        finally { CloseClipboard(); }
     }
 
     internal static string Holder()
@@ -235,6 +265,8 @@ internal static class PowerPointClipboard
     private static extern IntPtr SetClipboardData(uint format, IntPtr memory);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetClipboardFormatName(uint format, StringBuilder name, int capacity);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint RegisterClipboardFormat(string format);
     [DllImport("kernel32.dll")]
     private static extern IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
     [DllImport("kernel32.dll")]

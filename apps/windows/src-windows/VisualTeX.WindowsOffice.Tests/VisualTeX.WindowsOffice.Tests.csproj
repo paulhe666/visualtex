@@ -71,6 +71,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OmmlMathMlProjection.cs" Link="OmmlMathMlProjection.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlOmmlProjection.cs" Link="MathMlOmmlProjection.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlInsertionXml.cs" Link="WordOmmlInsertionXml.cs" />
+    <Compile Include="..\VisualTeX.PowerPointVsto\PowerPointMathClipboard.cs" Link="PowerPointMathClipboard.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlFormulaStore.cs" Link="WordOmmlFormulaStore.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordOmmlNativeSource.cs" Link="WordOmmlNativeSource.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\WordDocumentXml.cs" Link="WordDocumentXml.cs" />

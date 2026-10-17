@@ -299,7 +299,7 @@ internal static partial class Program
                     var source = ShapeXml();
                     var undo = ReadHistory();
                     var write = (Action)prepare.Invoke(null, new object[] { app, shape, 8, 6,
-                        "<math xmlns='http://www.w3.org/1998/Math/MathML'><mi>x</mi><mo>+</mo><mi>y</mi></math>", display })!;
+                        "<math xmlns='http://www.w3.org/1998/Math/MathML'><mi>x</mi><mo>+</mo><mi>y</mi></math>", display, null })!;
                     Exception? observed = null;
                     try { Execute(source, () => { write(); throw new InvalidOperationException("after-native-write"); }); }
                     catch (TargetInvocationException error) { observed = error.InnerException; }
