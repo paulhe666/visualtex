@@ -380,6 +380,9 @@ internal static partial class WordEquationNumbering
         }
     }
 
+    internal static bool HasLegacyEquationNumberFormat(Document document) =>
+        TryReadLegacyEquationNumberFormat(document, out _);
+
     // An earlier version's variable goes as soon as VisualTeX changes the
     // document; the style it recorded stays chosen for this session.
     internal static void RetireLegacyEquationNumberFormat(Document document)

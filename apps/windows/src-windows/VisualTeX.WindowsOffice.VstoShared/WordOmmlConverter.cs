@@ -1582,17 +1582,17 @@ internal static partial class WordOmmlConverter
         Range? exact = null;
         OMath? insertedMath = null;
         Range? result = null;
-        string? followingTableGuardText = null;
+        string? paragraphMarkGuardText = null;
         var guardSearchStart = targetRange.Start;
         try
         {
-            // Same table-boundary guard as ReplaceWithPreparedOmmlInParagraph:
-            // paragraph-level InsertXML would merge this paragraph into a
-            // directly following table.
+            // Same paragraph-mark guard as ReplaceWithPreparedOmmlInParagraph:
+            // paragraph-level InsertXML can drop this paragraph's mark and join
+            // it to the next paragraph or a directly following table.
             var targetStart = targetRange.Start;
             var targetEnd = targetRange.End;
-            followingTableGuardText =
-                TryCreateFollowingTableGuard(
+            paragraphMarkGuardText =
+                TryCreateParagraphMarkGuard(
                     targetDocument,
                     targetRange);
             targetRange.SetRange(
@@ -1702,6 +1702,26 @@ internal static partial class WordOmmlConverter
                 ?? throw new InvalidOperationException(
                     "Word did not materialize the paragraph-local OMath node replacement.");
 
+            // Restore the paragraph's own mark before Word applies the type.
+            if (paragraphMarkGuardText is not null)
+            {
+                RemoveParagraphMarkGuard(
+                    targetDocument,
+                    insertedMath,
+                    paragraphMarkGuardText);
+                paragraphMarkGuardText = null;
+                Release(insertedMath);
+                insertedMath =
+                    FindMathAtPosition(
+                        targetDocument,
+                        insertionStart,
+                        ResolveCurrentParagraphEnd(
+                            targetDocument,
+                            insertionStart))
+                    ?? throw new InvalidOperationException(
+                        "Word lost the OMath while restoring its paragraph mark.");
+            }
+
             var targetType =
                 display
                     ? WdOMathType.wdOMathDisplay
@@ -1712,25 +1732,6 @@ internal static partial class WordOmmlConverter
                     targetType;
             // The imported oMath is already structured. Do not reparse its runs.
 
-            if (followingTableGuardText is not null)
-            {
-                RemoveFollowingTableGuard(
-                    targetDocument,
-                    insertedMath,
-                    followingTableGuardText);
-                followingTableGuardText = null;
-                Release(insertedMath);
-                insertedMath =
-                    FindMathAtPosition(
-                        targetDocument,
-                        insertionStart,
-                        ResolveCurrentParagraphEnd(
-                            targetDocument,
-                            insertionStart))
-                    ?? throw new InvalidOperationException(
-                        "Word lost the OMath while restoring its paragraph before a table.");
-            }
-
             result =
                 insertedMath.Range.Duplicate;
             var returned =
@@ -1740,11 +1741,11 @@ internal static partial class WordOmmlConverter
         }
         finally
         {
-            if (followingTableGuardText is not null)
-                TryDeleteFollowingTableGuardBestEffort(
+            if (paragraphMarkGuardText is not null)
+                TryDeleteParagraphMarkGuardBestEffort(
                     targetDocument,
                     guardSearchStart,
-                    followingTableGuardText);
+                    paragraphMarkGuardText);
             Release(result);
             Release(insertedMath);
             Release(exact);
@@ -2000,7 +2001,7 @@ internal static partial class WordOmmlConverter
         Range? markerRange = null;
         Range? followingEmptyParagraphGuard = null;
         string? followingEmptyParagraphGuardText = null;
-        string? followingTableGuardText = null;
+        string? paragraphMarkGuardText = null;
         Paragraphs? paragraphs = null;
         Paragraph? paragraph = null;
         Range? paragraphRange = null;
@@ -2027,12 +2028,13 @@ internal static partial class WordOmmlConverter
                 insertionStart,
                 insertionStart + markerText.Length);
 
-            // Paragraph-level InsertXML merges the replaced paragraph into the
-            // first cell of a table that directly follows it (and absorbs an
-            // empty paragraph in between). Separate them with a temporary
-            // non-empty paragraph that owns the original paragraph mark.
-            followingTableGuardText =
-                TryCreateFollowingTableGuard(
+            // Paragraph-level InsertXML can drop the replaced paragraph's mark:
+            // it then joins the next paragraph (a Normal style without paragraph
+            // properties) or the first cell of a directly following table.
+            // Separate them with a temporary non-empty paragraph that owns the
+            // original paragraph mark.
+            paragraphMarkGuardText =
+                TryCreateParagraphMarkGuard(
                     targetDocument,
                     markerRange);
             markerRange.SetRange(
@@ -2239,6 +2241,30 @@ internal static partial class WordOmmlConverter
                 ?? throw new InvalidOperationException(
                     "Word did not materialize the paragraph-local OMML replacement.");
 
+            // Restore the paragraph's own mark before Word applies the display
+            // type: if Word joined the import into the guard paragraph, the
+            // equation still shares a paragraph with the guard token here.
+            // The mark guard also sits between the formula paragraph and any
+            // empty-paragraph witness, so it is removed before that witness.
+            if (paragraphMarkGuardText is not null)
+            {
+                RemoveParagraphMarkGuard(
+                    targetDocument,
+                    insertedMath,
+                    paragraphMarkGuardText);
+                paragraphMarkGuardText = null;
+                Release(insertedMath);
+                insertedMath =
+                    FindMathAtPosition(
+                        targetDocument,
+                        insertionStart,
+                        ResolveCurrentParagraphEnd(
+                            targetDocument,
+                            insertionStart))
+                    ?? throw new InvalidOperationException(
+                        "Word lost the OMath while restoring its paragraph mark.");
+            }
+
             if (display)
             {
                 if (insertedMath.Type !=
@@ -2291,25 +2317,6 @@ internal static partial class WordOmmlConverter
                 followingEmptyParagraphGuardText = null;
             }
 
-            if (followingTableGuardText is not null)
-            {
-                RemoveFollowingTableGuard(
-                    targetDocument,
-                    insertedMath,
-                    followingTableGuardText);
-                followingTableGuardText = null;
-                Release(insertedMath);
-                insertedMath =
-                    FindMathAtPosition(
-                        targetDocument,
-                        insertionStart,
-                        ResolveCurrentParagraphEnd(
-                            targetDocument,
-                            insertionStart))
-                    ?? throw new InvalidOperationException(
-                        "Word lost the OMath while restoring its paragraph before a table.");
-            }
-
             result =
                 insertedMath.Range.Duplicate;
             var returned =
@@ -2333,11 +2340,11 @@ internal static partial class WordOmmlConverter
                 }
                 catch { }
             }
-            if (followingTableGuardText is not null)
-                TryDeleteFollowingTableGuardBestEffort(
+            if (paragraphMarkGuardText is not null)
+                TryDeleteParagraphMarkGuardBestEffort(
                     targetDocument,
                     insertionStart,
-                    followingTableGuardText);
+                    paragraphMarkGuardText);
             Release(followingEmptyParagraphGuard);
             Release(result);
             Release(insertedMath);
@@ -2348,11 +2355,15 @@ internal static partial class WordOmmlConverter
         }
     }
 
-    // Splits "\r" + token in front of the target paragraph's mark when that
-    // paragraph is directly followed by a table. The token paragraph keeps the
-    // original mark between the replaced paragraph and the table. Returns the
-    // token, or null when no table follows.
-    private static string? TryCreateFollowingTableGuard(
+    // Splits "\r" + token in front of the target paragraph's mark. Paragraph-level
+    // InsertXML does not reliably keep the replaced paragraph's own mark: when
+    // the document's Normal style carries no paragraph properties (English Word
+    // templates, Pandoc/python-docx documents) Word drops the imported mark and
+    // joins the paragraph to the next one, and a directly following table
+    // absorbs the paragraph into its first cell. The token paragraph keeps the
+    // original mark between the replaced paragraph and whatever follows it.
+    // Returns the token, or null for a table-cell or final paragraph.
+    private static string? TryCreateParagraphMarkGuard(
         Document document,
         Range targetRange)
     {
@@ -2360,8 +2371,6 @@ internal static partial class WordOmmlConverter
         Paragraph? targetParagraph = null;
         Range? targetParagraphRange = null;
         Tables? ownTables = null;
-        Range? nextProbe = null;
-        Tables? nextTables = null;
         Range? insertion = null;
         Range? guardRange = null;
         try
@@ -2380,13 +2389,6 @@ internal static partial class WordOmmlConverter
                 document.Content.End)
                 return null;
 
-            nextProbe = document.Range(
-                targetParagraphRange.End,
-                targetParagraphRange.End + 1);
-            nextTables = nextProbe.Tables;
-            if (nextTables.Count == 0)
-                return null;
-
             var token =
                 "VTOT"
                 + Guid.NewGuid().ToString("N");
@@ -2403,15 +2405,13 @@ internal static partial class WordOmmlConverter
                     "\r" + token,
                     StringComparison.Ordinal))
                 throw new InvalidDataException(
-                    "Word did not retain the temporary paragraph that separates the OMML paragraph from the following table.");
+                    "Word did not retain the temporary paragraph that keeps the OMML paragraph's own mark.");
             return token;
         }
         finally
         {
             Release(guardRange);
             Release(insertion);
-            Release(nextTables);
-            Release(nextProbe);
             Release(ownTables);
             Release(targetParagraphRange);
             Release(targetParagraph);
@@ -2419,10 +2419,12 @@ internal static partial class WordOmmlConverter
         }
     }
 
-    // Deletes the formula paragraph's own mark together with the following
-    // token, so the content rejoins the original paragraph mark that still
-    // precedes the table.
-    private static void RemoveFollowingTableGuard(
+    // Restores the replaced paragraph's original mark. If Word kept the imported
+    // mark, the token paragraph follows the formula paragraph: delete that mark
+    // together with the token. If Word joined the import into the token
+    // paragraph, the token ends the formula paragraph: delete the token only.
+    // Either way the content ends on the original paragraph mark.
+    private static void RemoveParagraphMarkGuard(
         Document document,
         OMath insertedMath,
         string token)
@@ -2440,13 +2442,13 @@ internal static partial class WordOmmlConverter
             mathParagraphs = mathRange.Paragraphs;
             if (mathParagraphs.Count != 1)
                 throw new InvalidDataException(
-                    "The inserted OMML no longer belongs to exactly one Word paragraph while restoring the table boundary.");
+                    "The inserted OMML no longer belongs to exactly one Word paragraph while restoring its paragraph mark.");
             mathParagraph = mathParagraphs[1];
             mathParagraphRange =
                 mathParagraph.Range.Duplicate;
 
             guard = document.Range(
-                mathParagraphRange.End,
+                mathParagraphRange.Start,
                 Math.Min(
                     document.Content.End,
                     mathParagraphRange.End + token.Length + 1));
@@ -2459,21 +2461,34 @@ internal static partial class WordOmmlConverter
                 || !string.Equals(
                     guard.Text,
                     token,
-                    StringComparison.Ordinal)
-                || guard.Start != mathParagraphRange.End)
-                throw new InvalidDataException(
-                    "Word moved or changed the temporary paragraph between the OMML paragraph and the following table.");
-
-            removal = document.Range(
-                mathParagraphRange.End - 1,
-                guard.End);
-            if (!string.Equals(
-                    removal.Text,
-                    "\r" + token,
                     StringComparison.Ordinal))
                 throw new InvalidDataException(
-                    "The OMML paragraph does not end directly before its table-boundary guard.");
-            removal.Text = string.Empty;
+                    "Word moved or changed the temporary paragraph that keeps the OMML paragraph's own mark.");
+
+            if (guard.Start == mathParagraphRange.End)
+            {
+                // Word kept the imported mark.
+                removal = document.Range(
+                    mathParagraphRange.End - 1,
+                    guard.End);
+                if (!string.Equals(
+                        removal.Text,
+                        "\r" + token,
+                        StringComparison.Ordinal))
+                    throw new InvalidDataException(
+                        "The OMML paragraph does not end directly before its paragraph-mark guard.");
+                removal.Text = string.Empty;
+            }
+            else if (guard.End == mathParagraphRange.End - 1)
+            {
+                // Word joined the import into the guard paragraph.
+                guard.Text = string.Empty;
+            }
+            else
+            {
+                throw new InvalidDataException(
+                    "Word moved the OMML paragraph-mark guard away from the paragraph boundary.");
+            }
         }
         finally
         {
@@ -2487,7 +2502,7 @@ internal static partial class WordOmmlConverter
         }
     }
 
-    private static void TryDeleteFollowingTableGuardBestEffort(
+    private static void TryDeleteParagraphMarkGuardBestEffort(
         Document document,
         int searchStart,
         string token)
@@ -2738,7 +2753,8 @@ internal static partial class WordOmmlConverter
         string omml,
         bool display,
         string? mathFontName = null,
-        bool allowWordNativeInlinePromotion = false)
+        bool allowWordNativeInlinePromotion = false,
+        string? paragraphMarkRunProperties = null)
     {
         if (targetDocument is null)
             throw new ArgumentNullException(nameof(targetDocument));
@@ -2759,7 +2775,8 @@ internal static partial class WordOmmlConverter
         var flatOpc =
             CreateSingleEquationFlatOpc(
                 entry,
-                NormalizeMathFontName(mathFontName));
+                NormalizeMathFontName(mathFontName),
+                paragraphMarkRunProperties);
 
         Range? target = null;
         Range? content = null;
@@ -7537,7 +7554,8 @@ internal static partial class WordOmmlConverter
 
     private static string CreateSingleEquationFlatOpc(
         BatchEntry entry,
-        string mathFontName)
+        string mathFontName,
+        string? paragraphMarkRunProperties = null)
     {
         XNamespace package =
             "http://schemas.microsoft.com/office/2006/xmlPackage";
@@ -7559,6 +7577,14 @@ internal static partial class WordOmmlConverter
                 word + "body",
                 new XElement(
                     word + "p",
+                    // Where Word keeps this package's paragraph mark (an import
+                    // into an empty paragraph), it keeps the target mark's own
+                    // character formatting as well.
+                    paragraphMarkRunProperties is null
+                        ? null
+                        : new XElement(
+                            word + "pPr",
+                            XElement.Parse(paragraphMarkRunProperties)),
                     new XElement(
                         word + "bookmarkStart",
                         new XAttribute(word + "id", entry.BookmarkId),

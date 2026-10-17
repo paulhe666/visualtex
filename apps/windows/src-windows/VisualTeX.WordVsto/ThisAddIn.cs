@@ -161,6 +161,9 @@ public interface IWordRibbonCallbacks
     [DispId(51)]
     void OnRepairMathTypeDisplays(object control);
 
+    [DispId(52)]
+    void OnUpdateEquationFormat(object control);
+
 }
 
 [ComVisible(true)]
@@ -207,6 +210,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             </menu>
             <button id="VisualTeX.WordVsto.InsertReference" label="插入公式引用" screentip="引用带编号公式" supertip="分别从当前文档的 VisualTeX、Word OMML 或 MathType 带编号公式中选择目标；各格式沿用各自的原生编号与引用结构。" imageMso="HyperlinkInsert" onAction="OnInsertEquationReference" />
           </box>
+          <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="更新公式格式" size="large" screentip="更新公式格式" supertip="把本文档中旧版 VisualTeX 写入的公式编号结构一次升级为当前格式（与 Mac 版相同）。公式内容与类型不变。" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationFormat" />
           <button id="VisualTeX.WordVsto.BulkImport" label="批量导入" size="large" screentip="批量导入 LaTeX / Markdown" supertip="将 Markdown 或 LaTeX 文档解析为 Word 原生文字，以及可单独编辑和调整字号的行内/行间公式。" tag="batchImport" getImage="GetRibbonImage" onAction="OnBulkImport" />
         </group>
         <group id="VisualTeX.WordVsto.FormatConversionGroup" label="公式格式转换">
@@ -663,6 +667,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             FormulaOleContract.WordOmmlMode,
             conversionOnly: true);
     public void OnUpdateEquationNumbers(object control) => _ = UpdateEquationNumbersAsync();
+    public void OnUpdateEquationFormat(object control) => _ = UpdateEquationFormatAsync();
     public void OnRepairInlineFormulaBaselines(object control) => _ = RepairInlineFormulaBaselinesAsync();
     public void OnRepairMathTypeDisplays(object control) => _ = RepairMathTypeDisplaysAsync();
     public bool GetEquationNumberFormatPressed(Office.IRibbonControl control)
@@ -5164,6 +5169,70 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
     }
 
+    // Update Equation Format: scan (read-only), show what will change, then
+    // bring every older number structure into the current format.
+    private async Task UpdateEquationFormatAsync()
+    {
+        var dispatcher = _dispatcher;
+        var service = _formulaService;
+        if (dispatcher is null || service is null) return;
+        try
+        {
+            var report = await dispatcher.InvokeAsync(service.ScanEquationFormat)
+                .ConfigureAwait(false);
+            var proceed = await dispatcher.InvokeAsync(() =>
+            {
+                var title = T("VisualTeX 更新公式格式", "VisualTeX Update Equation Format");
+                if (report.Total == 0)
+                {
+                    System.Windows.Forms.MessageBox.Show(
+                        T("本文档的公式已经是当前格式，无需更新。",
+                          "The equations in this document already use the current format."),
+                        title,
+                        System.Windows.Forms.MessageBoxButtons.OK,
+                        System.Windows.Forms.MessageBoxIcon.Information);
+                    return false;
+                }
+                var zh = "将本文档的公式更新为当前 VisualTeX 格式：\r\n\r\n";
+                var en = "Update this document's equations to the current VisualTeX format:\r\n\r\n";
+                if (report.RetiredLayouts > 0)
+                {
+                    zh += $"旧版编号版式：{report.RetiredLayouts} 个\r\n";
+                    en += $"Older number layouts: {report.RetiredLayouts}\r\n";
+                }
+                if (report.NonCanonicalNumbers > 0)
+                {
+                    zh += $"需重写的公式编号：{report.NonCanonicalNumbers} 个\r\n";
+                    en += $"Equation numbers to rewrite: {report.NonCanonicalNumbers}\r\n";
+                }
+                if (report.LegacyFormatVariable)
+                {
+                    zh += "旧版编号格式变量：1 个\r\n";
+                    en += "Older numbering-style variable: 1\r\n";
+                }
+                zh += "\r\n公式内容和类型不变。是否继续？";
+                en += "\r\nEquation content and kinds do not change. Continue?";
+                return System.Windows.Forms.MessageBox.Show(
+                    T(zh, en),
+                    title,
+                    System.Windows.Forms.MessageBoxButtons.YesNo,
+                    System.Windows.Forms.MessageBoxIcon.Question,
+                    System.Windows.Forms.MessageBoxDefaultButton.Button2)
+                    == System.Windows.Forms.DialogResult.Yes;
+            }).ConfigureAwait(false);
+            if (!proceed) return;
+            var count = await dispatcher.InvokeAsync(service.UpgradeEquationFormat)
+                .ConfigureAwait(false);
+            SetStatus(T($"公式格式已更新（{count} 个编号）。", $"Equation format updated ({count} numbers)."));
+        }
+        catch (Exception error)
+        {
+            SetStatus(T($"更新公式格式失败：{error.Message}", $"Equation format update failed: {error.Message}"));
+            await ShowWordOperationErrorAsync(dispatcher, "更新公式格式", error).ConfigureAwait(false);
+        }
+        finally { InvalidateEquationNumberFormatControls(); }
+    }
+
     private async Task SetEquationNumberFormatAsync(string? requestedFormatId)
     {
         var dispatcher = _dispatcher;
@@ -5364,6 +5433,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var englishOperation = operation switch
         {
             "更新公式编号" => "equation-number update",
+            "更新公式格式" => "equation-format update",
             "编号格式" => "equation-number format update",
             "插入公式引用" => "equation-reference insertion",
             _ when !OfficePluginLanguage.ContainsCjk(operation) => operation,

@@ -15,8 +15,8 @@ internal sealed class WordNativeOmmlEdit : IDisposable
     private readonly WordFormulaHostDescriptor _source;
     private readonly WordFormulaHostWriteRequest _request;
     private readonly string _omml;
-    private readonly bool _preserveNumberFormatting;
     private readonly bool _refreshNumberInsideApply;
+    private string? _markRunProperties;
     private MathTypeLocalEditScope? _recovery;
     private readonly List<(string Name, bool Full, bool AtEnd)> _boundaryBookmarks = new();
     private readonly List<(string Name, int Start, int End, int Length, string Text)> _numberBookmarks = new();
@@ -28,11 +28,11 @@ internal sealed class WordNativeOmmlEdit : IDisposable
         && string.Equals(source.DisplayMode, request.DisplayMode, StringComparison.OrdinalIgnoreCase);
 
     private WordNativeOmmlEdit(Document document, WordFormulaHostDescriptor source,
-        WordFormulaHostWriteRequest request, string omml, bool preserveNumberFormatting,
+        WordFormulaHostWriteRequest request, string omml,
         bool refreshNumberInsideApply, MathTypeLocalEditScope recovery)
     {
         _document = document; _source = source; _request = request;
-        _omml = omml; _preserveNumberFormatting = preserveNumberFormatting;
+        _omml = omml;
         _refreshNumberInsideApply = refreshNumberInsideApply;
         _recovery = recovery;
     }
@@ -129,10 +129,10 @@ internal sealed class WordNativeOmmlEdit : IDisposable
                 source,
                 request,
                 prepared,
-                preserve,
                 refreshNumberInsideApply: request.Numbered && !allowNumberAttachment,
                 recovery);
             recovery = null;
+            plan._markRunProperties = WordOmmlInsertionXml.ParagraphMarkRunProperties(plan._recovery!.ParagraphXml);
 
             // A clipped equation export can omit existing bookmarks at its outer
             // seam. Number bookmarks also need explicit ownership: under Track
@@ -200,7 +200,8 @@ internal sealed class WordNativeOmmlEdit : IDisposable
             BindBoundaryBookmarks(exact, detach: true);
             BindNumberBookmarks(exact, detach: true);
             var written = WordOmmlHostWriter.InsertPreparedNative(
-                _document, exact, _request, _omml, preserveNumberFormatting: _preserveNumberFormatting).Host;
+                _document, exact, _request, _omml,
+                paragraphMarkRunProperties: _markRunProperties).Host;
             replacement = WordFormulaHostSemanticReader.CreateRange(_document, written.Range);
             BindBoundaryBookmarks(replacement, detach: false);
             BindNumberBookmarks(replacement, detach: false);

@@ -14,6 +14,32 @@ internal static class WordOmmlInsertionXml
     private static readonly XNamespace Word =
         "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
+    // The character formatting of the last paragraph mark in a WordOpenXML
+    // export (a paragraph's own export ends with that paragraph), without
+    // revision marks; null when the mark has none.
+    internal static string? ParagraphMarkRunProperties(string? wordOpenXml)
+    {
+        if (string.IsNullOrWhiteSpace(wordOpenXml)) return null;
+        var body = XDocument.Parse(wordOpenXml!, LoadOptions.PreserveWhitespace)
+            .Descendants(Word + "body")
+            .FirstOrDefault();
+        var properties = body?
+            .Elements(Word + "p")
+            .LastOrDefault()?
+            .Element(Word + "pPr")?
+            .Element(Word + "rPr");
+        if (properties is null) return null;
+        var copy = new XElement(properties);
+        copy.Elements()
+            .Where(element => element.Name == Word + "ins"
+                || element.Name == Word + "del"
+                || element.Name == Word + "moveFrom"
+                || element.Name == Word + "moveTo"
+                || element.Name == Word + "rPrChange")
+            .Remove();
+        return copy.HasElements ? copy.ToString(SaveOptions.DisableFormatting) : null;
+    }
+
     internal static void ReplaceOrdinaryMarkerRun(
         XElement markerNode,
         string markerText,

@@ -404,7 +404,8 @@ internal static partial class Program
             || string.Equals(mode, "word-owned-redraw-progress", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, "word-owned-bulk-text-replace", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, "word-owned-field-read-check", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, "word-owned-document-timing", StringComparison.OrdinalIgnoreCase))
+            || string.Equals(mode, "word-owned-document-timing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-omml-paragraph-boundary", StringComparison.OrdinalIgnoreCase))
         {
             try
             {
@@ -444,6 +445,11 @@ internal static partial class Program
                 if (string.Equals(mode, "word-owned-document-timing", StringComparison.OrdinalIgnoreCase))
                 {
                     RunOwnedDocumentConversionTiming(artifactRoot);
+                    return 0;
+                }
+                if (string.Equals(mode, "word-owned-omml-paragraph-boundary", StringComparison.OrdinalIgnoreCase))
+                {
+                    RunOwnedOmmlParagraphBoundaryAcceptance(artifactRoot);
                     return 0;
                 }
                 using var client = new VisualTeXSessionClient();

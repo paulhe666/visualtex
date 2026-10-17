@@ -135,10 +135,11 @@ internal static class WordOmmlHostWriter
                     display: true,
                     mathFontName: document.OMathFontName);
 
-            // Typography was applied to the replacement mathematical body
-            // before it was merged with the source host. Do not set Range.Font
-            // on the completed OMath: that would also rewrite the preserved
-            // Word-native number payload/fields/bookmarks.
+            // The kept number is part of the equation: it takes the formula's
+            // size, as Word sizes a whole equation, number included.
+            WordFormulaHostLayout.ApplyOmmlLocalTypography(
+                replacement,
+                request.FontSizePoints);
             WordFormulaHostLayout.ConfigureDisplayParagraph(
                 replacement);
 
@@ -338,7 +339,7 @@ internal static class WordOmmlHostWriter
     // paragraph. Location preparation and any heading reads belong to preflight.
     internal static WordFormulaHostWriteResult InsertPreparedNative(
         Document document, Range insertion, WordFormulaHostWriteRequest request,
-        string preparedOmml, bool preserveNumberFormatting = false)
+        string preparedOmml, string? paragraphMarkRunProperties = null)
     {
         if (request.Kind != WordFormulaHostKind.Omml)
             throw new InvalidOperationException("Native OMML creation requires a prepared native target.");
@@ -374,7 +375,8 @@ internal static class WordOmmlHostWriter
             inserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
                 document, insertion, preparedOmml,
                 display: string.Equals(request.DisplayMode, "block", StringComparison.OrdinalIgnoreCase),
-                mathFontName: document.OMathFontName, allowWordNativeInlinePromotion: true);
+                mathFontName: document.OMathFontName, allowWordNativeInlinePromotion: true,
+                paragraphMarkRunProperties: paragraphMarkRunProperties);
             WordFormulaMutationTransaction.TraceBoundary(document.Application, "native-create-after-import");
             if (originalCellParagraphs > 0)
             {
@@ -406,11 +408,9 @@ internal static class WordOmmlHostWriter
                     || !string.Equals(tail.Text ?? string.Empty, originalCellSuffix, StringComparison.Ordinal))
                     throw new InvalidDataException("Native import changed content outside its exact cell insertion boundary.");
             }
-            // Existing native-number edits prepare only their mathematical body
-            // typography before composing the retained number host. Range.Font
-            // here would rewrite the number's preserved formatting as well.
-            if (!preserveNumberFormatting)
-                WordFormulaHostLayout.ApplyOmmlLocalTypography(inserted, request.FontSizePoints);
+            // A number kept by a native edit is part of the equation and takes
+            // the formula's size, as Word sizes a whole equation.
+            WordFormulaHostLayout.ApplyOmmlLocalTypography(inserted, request.FontSizePoints);
             var described = DescribeInsertedOmml(inserted, request.Numbered);
             if (described.Display) WordFormulaHostLayout.ConfigureDisplayParagraph(inserted);
             return new WordFormulaHostWriteResult { Host = described };

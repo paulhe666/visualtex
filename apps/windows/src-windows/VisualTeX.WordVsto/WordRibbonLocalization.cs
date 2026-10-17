@@ -27,6 +27,7 @@ public sealed partial class ThisAddIn
             </menu>
             <button id="VisualTeX.WordVsto.InsertReference" label="Insert Equation Reference" screentip="Reference a numbered equation" supertip="Choose a numbered VisualTeX or MathType equation in the current document. VisualTeX uses Word REF; MathType retains its native ZEqnNum/GOTOBUTTON/REF reference structure." imageMso="HyperlinkInsert" onAction="OnInsertEquationReference" />
           </box>
+          <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="Update Equation Format" size="large" screentip="Update equation format" supertip="Bring every equation number an earlier VisualTeX wrote in this document into the current format (the same as VisualTeX for Mac). Equation content and kinds do not change." tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationFormat" />
           <button id="VisualTeX.WordVsto.BulkImport" label="Bulk Import" size="large" screentip="Import LaTeX / Markdown" supertip="Parse Markdown or LaTeX into native Word text and independently editable inline/display equations." tag="batchImport" getImage="GetRibbonImage" onAction="OnBulkImport" />
         </group>
         <group id="VisualTeX.WordVsto.FormatConversionGroup" label="Format Conversion">

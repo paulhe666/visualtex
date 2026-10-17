@@ -249,6 +249,7 @@ internal static class WordFormulaHostMutationKernel
             evidence = location.EvidenceRange;
             recovery = MathTypeLocalEditScope.Capture(document, evidence);
             location.CaptureBoundaryBookmarks(document, recovery.ParagraphXml);
+            var markRunProperties = WordOmmlInsertionXml.ParagraphMarkRunProperties(recovery.ParagraphXml);
             var omml = WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
             if (string.Equals(request.DisplayMode, "inline", StringComparison.OrdinalIgnoreCase))
             {
@@ -288,7 +289,9 @@ internal static class WordFormulaHostMutationKernel
                         // split or equation import can expand that empty bookmark.
                         location.BindBoundaryBookmarks(document, evidence, detach: true);
                         insertion = preparedTarget?.Duplicate ?? location.Materialize();
-                        var written = WordOmmlHostWriter.InsertPreparedNative(document, insertion, request, omml).Host;
+                        var written = WordOmmlHostWriter.InsertPreparedNative(
+                            document, insertion, request, omml,
+                            paragraphMarkRunProperties: markRunProperties).Host;
                         written = WordFormulaMutationValidator.ValidateInsertedHost(document, request, written);
                         exact = WordFormulaHostSemanticReader.CreateRange(document, written.Range);
                         location.BindBoundaryBookmarks(document, exact, detach: false);
