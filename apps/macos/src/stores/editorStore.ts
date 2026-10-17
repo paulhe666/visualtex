@@ -90,8 +90,6 @@ export const DEFAULT_INPUT_BEHAVIOR_SETTINGS: InputBehaviorSettings = {
   autoExitSubscript: true,
   autoExitAccent: true,
   autoExitWrapperCommand: true,
-  showStructuredCommandSuggestions: true,
-  showOtherCommandSuggestions: false,
 };
 
 function normalizeInputBehaviorSettings(
@@ -126,14 +124,6 @@ function normalizeInputBehaviorSettings(
       typeof candidate.autoExitWrapperCommand === "boolean"
         ? candidate.autoExitWrapperCommand
         : true,
-    showStructuredCommandSuggestions:
-      typeof candidate.showStructuredCommandSuggestions === "boolean"
-        ? candidate.showStructuredCommandSuggestions
-        : true,
-    showOtherCommandSuggestions:
-      typeof candidate.showOtherCommandSuggestions === "boolean"
-        ? candidate.showOtherCommandSuggestions
-        : false,
   };
 }
 

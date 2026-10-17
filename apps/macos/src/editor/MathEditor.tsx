@@ -3,6 +3,7 @@ import {
   formatFormulaLinesUniversal,
   formatFormulaSelectionUniversal,
 } from "../clipboard/LatexCopyService";
+import { toPortableBoldLatex } from "../clipboard/portableBoldLatex";
 import {
   useEffect,
   useLayoutEffect,
@@ -1457,7 +1458,7 @@ function FormulaField(props: FormulaFieldProps) {
         current.latexFormatProfile,
         wholeLine,
       );
-      return formatLatexSourceForEditor(source);
+      return toPortableBoldLatex(formatLatexSourceForEditor(source));
     };
     field.smartMode = false;
     field.smartFence = propsRef.current.autoPairDelimiters;
@@ -4908,10 +4909,12 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         event.clipboardData.setData("application/x-latex", latex);
         event.clipboardData.setData(
           "text/plain",
-          formatLatexSourceForEditor(
-            formatFormulaLinesUniversal(
-              selectedFormulaLines,
-              latexFormatProfile,
+          toPortableBoldLatex(
+            formatLatexSourceForEditor(
+              formatFormulaLinesUniversal(
+                selectedFormulaLines,
+                latexFormatProfile,
+              ),
             ),
           ),
         );
