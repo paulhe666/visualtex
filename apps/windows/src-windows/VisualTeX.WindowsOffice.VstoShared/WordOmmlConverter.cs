@@ -2747,14 +2747,32 @@ internal static partial class WordOmmlConverter
         }
     }
 
+    // PowerPoint's native equation kernel resolves this exact six-parameter
+    // signature by reflection (PowerPointNativeOmmlKernel.ResolveConverterMethods).
     internal static Range ReplaceWithPreparedOmmlDirect(
         Document targetDocument,
         Range targetRange,
         string omml,
         bool display,
         string? mathFontName = null,
-        bool allowWordNativeInlinePromotion = false,
-        string? paragraphMarkRunProperties = null)
+        bool allowWordNativeInlinePromotion = false) =>
+        ReplaceWithPreparedOmmlDirect(
+            targetDocument,
+            targetRange,
+            omml,
+            display,
+            mathFontName,
+            allowWordNativeInlinePromotion,
+            paragraphMarkRunProperties: null);
+
+    internal static Range ReplaceWithPreparedOmmlDirect(
+        Document targetDocument,
+        Range targetRange,
+        string omml,
+        bool display,
+        string? mathFontName,
+        bool allowWordNativeInlinePromotion,
+        string? paragraphMarkRunProperties)
     {
         if (targetDocument is null)
             throw new ArgumentNullException(nameof(targetDocument));
