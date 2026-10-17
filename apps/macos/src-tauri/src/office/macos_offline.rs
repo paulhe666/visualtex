@@ -5463,10 +5463,19 @@ fn commit_powerpoint_native(
         Some(source)
     }else{None};
     let export = session.export_result.as_ref().ok_or("Native PowerPoint equation has no export")?;
-    let encoded = export.omml_base64.as_deref().ok_or("Native PowerPoint equation has no OMML export")?;
-    let bytes = URL_SAFE_NO_PAD.decode(encoded).map_err(|_| "Invalid OMML encoding")?;
-    if bytes.is_empty() || bytes.len() > MAX_OMML_BYTES { return Err("Invalid OMML payload size".into()); }
-    let omml = std::str::from_utf8(&bytes).map_err(|_| "OMML is not UTF-8")?;
+    // The equation comes from the shared writer, as Word's does: Windows'
+    // MathML -> OMML (office::omml_write). The editor's own OMML remains the
+    // fallback for an export that carries no MathML.
+    let omml = match export.word_math_ml.as_deref() {
+        Some(mathml) => super::omml_write::transform_mathml_to_omml(mathml)?,
+        None => {
+            let encoded = export.omml_base64.as_deref().ok_or("Native PowerPoint equation has no OMML export")?;
+            let bytes = URL_SAFE_NO_PAD.decode(encoded).map_err(|_| "Invalid OMML encoding")?;
+            if bytes.is_empty() || bytes.len() > MAX_OMML_BYTES { return Err("Invalid OMML payload size".into()); }
+            String::from_utf8(bytes).map_err(|_| "OMML is not UTF-8")?
+        }
+    };
+    let omml = omml.as_str();
     let ppt = request.power_point.as_ref().ok_or("Missing PowerPoint target")?;
     let in_text = request.source_object_id.as_deref().is_some_and(|id| id.starts_with("visualtex-ppt-native-text:"));
     let font_size = if in_text { ppt.font_size_pt } else { session.font_size_pt.or(ppt.font_size_pt) }.unwrap_or(DEFAULT_POWERPOINT_FONT_SIZE_PT);

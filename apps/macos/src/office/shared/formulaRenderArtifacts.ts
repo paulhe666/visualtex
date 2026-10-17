@@ -38,12 +38,15 @@ export interface OfficeFormulaRenderArtifacts {
   codeFormat: LatexCodeFormat;
   canonicalLatex: string;
   svg: ReturnType<typeof latexToSvg>;
-  /** PowerPoint native equations only. */
+  /**
+   * PowerPoint native equations: the editor's own OMML, used only when the app
+   * receives no wordMathMl.
+   */
   omml: OmmlArtifacts | null;
   /**
-   * Word: the MathML Windows writes its OMML from. VisualTeX's shared Word
-   * writer (src-tauri office/omml_write, the port of Windows' C# writer) turns
-   * it into the equation, so both platforms insert identical OMML.
+   * Word and PowerPoint: the MathML Windows writes its OMML from. VisualTeX's
+   * shared writer (src-tauri office/omml_write, the port of Windows' C# writer)
+   * turns it into the equation, so both platforms start from identical OMML.
    */
   wordMathMl: string | null;
 }
@@ -113,7 +116,7 @@ export function renderOfficeFormulaArtifacts({
   }
   let omml: OmmlArtifacts | null = null;
   let wordMathMl: string | null = null;
-  if (includeWordOmml && host === "word") {
+  if (includeWordOmml) {
     try {
       wordMathMl = wordEquationMathMl(document, displayMode);
     } catch (reason) {
@@ -122,7 +125,8 @@ export function renderOfficeFormulaArtifacts({
         { cause: reason },
       );
     }
-  } else if (includeWordOmml) {
+  }
+  if (includeWordOmml && host !== "word") {
     try {
       omml = latexLinesToOmmlArtifacts(
         document.lines.map((line) => line.latex),
