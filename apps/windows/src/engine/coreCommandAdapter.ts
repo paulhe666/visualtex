@@ -3,7 +3,6 @@ import type { CommandDescriptor, CommandUsage as CoreCommandUsage } from "../../
 import type { EditCommand } from "../../../../engine/web/host/editing.ts";
 import { compileLegacyCommand } from "../../../../engine/web/host/product-compat.ts";
 import { getRuntimeCommandRegistry } from "../autocomplete/runtimeCommandRegistry";
-import type { InputBehaviorSettings } from "../types/formula";
 import { visualTexAutoEscapeInlineShortcuts } from "../editor/normalizeChineseLatex";
 
 const structuralDescriptors: readonly CommandDescriptor[] = [
@@ -39,7 +38,6 @@ function isStructured(command: LatexCommand, action: EditCommand) {
 }
 
 export function buildCoreProductCommandDescriptors(
-  inputBehavior: InputBehaviorSettings,
   language: "cn" | "en",
   registry: readonly LatexCommand[] = getRuntimeCommandRegistry(),
 ): CommandDescriptor[] {
@@ -55,9 +53,8 @@ export function buildCoreProductCommandDescriptors(
     } catch {
       continue;
     }
-    const structured = isStructured(command, action);
-    if (structured && !inputBehavior.showStructuredCommandSuggestions) continue;
-    if (!structured && !inputBehavior.showOtherCommandSuggestions) continue;
+    // The command suggestion panel lists structures (sums, integrals, ...) only.
+    if (!isStructured(command, action)) continue;
     used.add(command.id);
     descriptors.push({
       id: command.id,

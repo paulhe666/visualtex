@@ -13,12 +13,11 @@ function state() {
 
 const expectedInputBehavior = {
   autoEscapeShortcuts: false,
+  autoUprightTypography: false,
   autoExitSuperscript: false,
   autoExitSubscript: true,
   autoExitAccent: false,
   autoExitWrapperCommand: false,
-  showStructuredCommandSuggestions: true,
-  showOtherCommandSuggestions: true,
 } as const;
 
 const configure = () => {

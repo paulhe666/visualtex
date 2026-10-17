@@ -170,8 +170,8 @@ export const CoreMathEditor = forwardRef<MathEditorHandle, Props>(
     const [frozenSymbols] = useState(() => structuredClone(readCustomSymbolLibrary().symbols));
     const [frozenRegistry] = useState(() => structuredClone(getRuntimeCommandRegistry()));
     const commandDescriptors = useMemo(
-      () => buildCoreProductCommandDescriptors(inputBehavior, language, frozenRegistry),
-      [inputBehavior, language, frozenRegistry],
+      () => buildCoreProductCommandDescriptors(language, frozenRegistry),
+      [language, frozenRegistry],
     );
     const commandUsage = useMemo(
       () => coreCommandUsage(usage, personalize),

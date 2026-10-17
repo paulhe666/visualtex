@@ -144,7 +144,7 @@ editor.setClassicDockHeight(372);
 editor.setKeypadMinimizeOnCopy(false);
 editor.setInputBehavior("autoEscapeShortcuts", false);
 editor.setInputBehavior("autoExitSuperscript", false);
-editor.setInputBehavior("showOtherCommandSuggestions", true);
+editor.setInputBehavior("autoUprightTypography", false);
 useEditorStore.setState({
   usage: {
     "mathlive-native:\\begin{cases}": {
@@ -203,7 +203,7 @@ assert.equal(built.editorSettings.classicDockHeight, 372);
 assert.equal(built.editorSettings.keypadMinimizeOnCopy, false);
 assert.equal(built.editorSettings.inputBehavior?.autoEscapeShortcuts, false);
 assert.equal(built.editorSettings.inputBehavior?.autoExitSuperscript, false);
-assert.equal(built.editorSettings.inputBehavior?.showOtherCommandSuggestions, true);
+assert.equal(built.editorSettings.inputBehavior?.autoUprightTypography, false);
 assert.ok(
   built.capturedStorageKeys?.includes("visualtex-custom-formula-text-colors"),
   "current configuration exports must declare the storage keys they understand",
