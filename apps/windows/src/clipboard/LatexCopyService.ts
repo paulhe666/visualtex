@@ -59,9 +59,9 @@ export const latexCodeFormats: readonly LatexCodeFormatDefinition[] = [
     titleEn: "Mixed LaTeX · inline / display",
     hint: "文字$x$  /  $$y$$",
     descriptionZh:
-      "每行独立选择行内/行间；回车继承，Shift+回车行内，Alt+回车行间；行内文字放在 $...$ 外",
+      "每行独立选择行内/行间；回车继承，Ctrl+回车行内，Alt+回车行间，Ctrl+Shift+回车切换当前行；行内文字放在 $...$ 外",
     descriptionEn:
-      "Choose per row; Enter inherits, Shift+Enter is inline, Alt+Enter is display; inline text stays outside $...$",
+      "Choose per row; Enter inherits, Ctrl+Enter is inline, Alt+Enter is display, Ctrl+Shift+Enter switches the row; inline text stays outside $...$",
   },
   {
     id: "inline-dollar",

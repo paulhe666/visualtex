@@ -6482,6 +6482,30 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         return;
       }
 
+      // Ctrl+Shift+Enter switches the current row between inline and display,
+      // like its $ / $$ marker. A multi-line row stays display and no row is
+      // split.
+      if (
+        showLineModeControls &&
+        event.key === "Enter" &&
+        event.ctrlKey &&
+        event.shiftKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.isComposing &&
+        !rawLatexInputActive
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const line = useEditorStore
+          .getState()
+          .lines.find((item) => item.id === lineId);
+        if (line && !/^\\begin\{(?:aligned|gathered)\}/.test(line.latex.trim())) {
+          setFormulaLineMode(lineId, line.mode === "inline" ? "display" : "inline");
+        }
+        return;
+      }
+
       const forcedNewLineMode =
         showLineModeControls &&
         event.key === "Enter" &&
@@ -7898,13 +7922,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                         ? lineHasInternalMultiline
                           ? "Multi-line formulas are always display formulas"
                           : effectiveLineMode === "inline"
-                            ? "Inline · click for display · Alt+Enter creates display"
-                            : "Display · click for inline · Ctrl+Enter creates inline"
+                            ? "Inline · click or Ctrl+Shift+Enter for display · Alt+Enter creates display"
+                            : "Display · click or Ctrl+Shift+Enter for inline · Ctrl+Enter creates inline"
                         : lineHasInternalMultiline
                           ? "多行公式固定为行间公式"
                           : effectiveLineMode === "inline"
-                            ? "行内 · 点击切换行间 · Alt+Enter 新建行间"
-                            : "行间 · 点击切换行内 · Ctrl+Enter 新建行内"
+                            ? "行内 · 点击或 Ctrl+Shift+Enter 切换行间 · Alt+Enter 新建行间"
+                            : "行间 · 点击或 Ctrl+Shift+Enter 切换行内 · Ctrl+Enter 新建行内"
                     }
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() =>

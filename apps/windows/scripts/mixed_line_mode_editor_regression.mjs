@@ -94,16 +94,48 @@ async function waitForEvaluation(client, expression, description, timeoutMs = 12
 }
 
 async function dispatchEnter(client, modifiers) {
+  await dispatchKey(client, "Enter", "Enter", 13, modifiers);
+}
+
+async function dispatchKey(client, key, code, virtualKeyCode, modifiers) {
   const common = {
-    key: "Enter",
-    code: "Enter",
+    key,
+    code,
     modifiers,
-    windowsVirtualKeyCode: 13,
-    nativeVirtualKeyCode: 13,
+    windowsVirtualKeyCode: virtualKeyCode,
+    nativeVirtualKeyCode: virtualKeyCode,
   };
   await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...common });
   await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
   await sleep(120);
+}
+
+function focusRowEnd(client, lineId) {
+  return client.evaluate(`(() => {
+    const field = document.querySelector('.formula-line[data-line-id="${lineId}"] math-field');
+    field.position = field.lastOffset;
+    field.selection = { ranges: [[field.lastOffset, field.lastOffset]], direction: 'none' };
+    field.focus();
+    field.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
+    return true;
+  })()`);
+}
+
+function rowStateExpression(lineId, ready) {
+  return `(() => {
+    const persisted = JSON.parse(localStorage.getItem('visualtex-editor') || '{}');
+    const lines = persisted?.state?.lines ?? [];
+    const row = lines.find((line) => line.id === ${JSON.stringify(lineId)});
+    const state = {
+      count: lines.length,
+      modes: lines.map((line) => line.mode),
+      mode: row?.mode ?? null,
+      latex: row?.latex ?? null,
+      marker:
+        document.querySelector('.formula-line[data-line-id="${lineId}"] [data-formula-line-mode-toggle]')?.getAttribute('data-formula-line-mode') ?? null,
+    };
+    return { ...state, ready: ${ready} };
+  })()`;
 }
 
 async function main() {
@@ -341,6 +373,47 @@ async function main() {
       "display toggle persisted",
     );
 
+    // Ctrl+Shift+Enter switches the focused row in place: same row, same LaTeX,
+    // one undo step; a multi-line row stays display and nothing is split.
+    await focusRowEnd(client, "mixed-display");
+    await dispatchEnter(client, 2 | 8);
+    const shortcutInline = await waitForEvaluation(
+      client,
+      rowStateExpression("mixed-display", "state.mode === 'inline' && state.marker === 'inline'"),
+      "Ctrl+Shift+Enter switches the row to inline",
+    );
+    assert.equal(shortcutInline.count, 4, JSON.stringify(shortcutInline));
+    assert.equal(shortcutInline.latex, "\\frac{x}{y}", JSON.stringify(shortcutInline));
+
+    await dispatchKey(client, "z", "KeyZ", 90, 2);
+    await waitForEvaluation(
+      client,
+      rowStateExpression("mixed-display", "state.mode === 'display' && state.marker === 'display'"),
+      "Ctrl+Z restores the display row",
+    );
+    await dispatchKey(client, "y", "KeyY", 89, 2);
+    await waitForEvaluation(
+      client,
+      rowStateExpression("mixed-display", "state.mode === 'inline' && state.marker === 'inline'"),
+      "Ctrl+Y switches the row to inline again",
+    );
+    await dispatchEnter(client, 2 | 8);
+    const shortcutDisplay = await waitForEvaluation(
+      client,
+      rowStateExpression("mixed-display", "state.mode === 'display' && state.marker === 'display'"),
+      "Ctrl+Shift+Enter switches the row back to display",
+    );
+    assert.deepEqual(shortcutDisplay.modes, ["display", "display", "inline", "display"], JSON.stringify(shortcutDisplay));
+
+    await focusRowEnd(client, "mixed-inline");
+    await dispatchEnter(client, 2 | 8);
+    await sleep(300);
+    const multilineShortcut = await client.evaluate(rowStateExpression("mixed-inline", "true"));
+    assert.equal(multilineShortcut.count, 4, JSON.stringify(multilineShortcut));
+    assert.equal(multilineShortcut.mode, "display", JSON.stringify(multilineShortcut));
+    assert.equal(multilineShortcut.marker, "display", JSON.stringify(multilineShortcut));
+    assert.match(multilineShortcut.latex ?? "", /^\\begin\{gathered\}/, JSON.stringify(multilineShortcut));
+
     await client.send("Page.navigate", { url: baseUrl });
     const reopened = await waitForEvaluation(
       client,
@@ -372,7 +445,7 @@ async function main() {
     );
 
     console.log(
-      "Windows universal row-mode regression passed: single-symbol row toggles, forced Alt+Enter display, Shift+Enter multiline, Enter inheritance and reload persistence",
+      "Windows universal row-mode regression passed: single-symbol row toggles, forced Alt+Enter display, Shift+Enter multiline, Enter inheritance, Ctrl+Shift+Enter row switch with undo/redo and reload persistence",
     );
   } finally {
     client?.close();

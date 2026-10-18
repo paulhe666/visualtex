@@ -95,6 +95,8 @@
 ### 4.2 多行公式
 
 - `Enter`：在光标处拆分并新建一行。
+- `Ctrl+Enter` / `Alt+Enter`：在光标处拆分，新行为行内 / 行间公式。
+- `Ctrl+Shift+Enter`：当前公式行在行内与行间之间切换（多行公式固定为行间）。
 - `Shift+Enter`：在同一个公式内换行（多行对齐用这个）。
 - 空行中按 `Backspace`：删除该行。
 - 行首按 `Backspace`：与上一行合并。
@@ -935,6 +937,8 @@ Windows 原生 Office 集成稳定支持 Microsoft Office 2021 及以上桌面�
 | `Alt+Shift+X` | 下划线 X |
 | `Alt+Shift+Y` | 下划线 Y |
 | `Enter` | 新建公式行；`cases` 内新增一行 |
+| `Ctrl+Enter` / `Alt+Enter` | 新建行内 / 行间公式行 |
+| `Ctrl+Shift+Enter` | 当前公式行在行内与行间之间切换 |
 | `Shift+Enter` | 在同一个公式内换行 |
 | `Backspace` | 删除空行；行首与上一行合并 |
 | `&` | 对齐格式下插入自主对齐点 |
