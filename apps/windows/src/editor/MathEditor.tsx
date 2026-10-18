@@ -1711,7 +1711,16 @@ function installVisualTexFormulaFontStyle(field: MathfieldElement) {
       font-weight: 700 !important;
     }
 
-    .ML__text,
+    /*
+     * \\text{} picks the font per character, as the exported formula does:
+     * Chinese through the CJK-only face of the formula Chinese font, Latin
+     * letters and digits through the upright letter font, never through the
+     * Chinese font's own Latin glyphs.
+     */
+    .ML__text {
+      font-family: ${chineseFallback}, var(${visualTexFormulaUprightFontProperty}, KaTeX_Main, serif) !important;
+    }
+
     .${VISUALTEX_FORMULA_CHINESE_GLYPH_CLASS} {
       font-family: var(${visualTexFormulaChineseFontProperty}, var(--_text-font-family)) !important;
     }

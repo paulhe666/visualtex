@@ -341,6 +341,9 @@ async function main() {
       if (${JSON.stringify(scenario === "formula-chinese-font" ? process.env.VISUALTEX_TEST_FORMULA_CHINESE_FONT ?? "" : "")}) {
         localStorage.setItem("visualtex.formula-chinese-font", ${JSON.stringify(process.env.VISUALTEX_TEST_FORMULA_CHINESE_FONT ?? "")});
       }
+      if (${JSON.stringify(scenario === "formula-chinese-font" ? process.env.VISUALTEX_TEST_FORMULA_LETTER_FONT ?? "" : "")}) {
+        localStorage.setItem("visualtex.formula-letter-font", ${JSON.stringify(process.env.VISUALTEX_TEST_FORMULA_LETTER_FONT ?? "")});
+      }
     })()`);
     await client.send("Page.reload", { ignoreCache: true });
     await waitForEvaluation(
@@ -8376,7 +8379,53 @@ async function main() {
           rendered: fonts.map((font) => font.familyName),
         };
       }
+      // \text{} picks the font per character: Chinese with the formula Chinese
+      // font, Latin letters and digits with the upright letter font, never with
+      // the Chinese font's own Latin glyphs.
+      const latinProbe = await client.send("Runtime.evaluate", {
+        expression: `(() => {
+          const span = document.createElement("span");
+          span.textContent = "Ab12";
+          span.style.fontFamily = getComputedStyle(document.querySelector("math-field")).getPropertyValue("--visualtex-formula-upright-font-family");
+          document.body.append(span);
+          return span;
+        })()`,
+        returnByValue: false,
+      });
+      await client.send("DOM.getDocument", { depth: -1, pierce: true });
+      const { nodeId: latinProbeNodeId } = await client.send("DOM.requestNode", { objectId: latinProbe.result.objectId });
+      const expectedLatinFont = (await client.send("CSS.getPlatformFontsForNode", { nodeId: latinProbeNodeId })).fonts.map((font) => font.familyName)[0];
+      await evaluate(`[...document.body.children].at(-1).remove()`);
+      states.textScripts = { expectedLatinFont };
+      const textScriptCases = { "\\text{Ab12}": { latin: 4, chinese: 0 }, "\\text{Ab中文12}": { latin: 4, chinese: 2 } };
+      for (const latex of Object.keys(textScriptCases)) {
+        await evaluate(`document.querySelector("math-field").setValue(${JSON.stringify(latex)}, { format: "latex", insertionMode: "replaceAll" })`);
+        await sleep(200);
+        const listedText = await client.send("Runtime.evaluate", {
+          expression: `[...document.querySelector("math-field").shadowRoot.querySelectorAll(".ML__text")].filter((span) => [...span.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim()))`,
+          returnByValue: false,
+        });
+        const textProperties = await client.send("Runtime.getProperties", { objectId: listedText.result.objectId, ownProperties: true });
+        await client.send("DOM.getDocument", { depth: -1, pierce: true });
+        const glyphCounts = {};
+        for (const property of textProperties.result) {
+          if (!/^\d+$/.test(property.name) || !property.value?.objectId) continue;
+          const { nodeId } = await client.send("DOM.requestNode", { objectId: property.value.objectId });
+          for (const font of (await client.send("CSS.getPlatformFontsForNode", { nodeId })).fonts) {
+            glyphCounts[font.familyName] = (glyphCounts[font.familyName] ?? 0) + font.glyphCount;
+          }
+        }
+        states.textScripts[latex] = glyphCounts;
+      }
       console.log(JSON.stringify(states, null, 2));
+
+      const textScriptsWrong = Object.entries(textScriptCases).filter(([latex, expected]) =>
+        (states.textScripts[latex][expectedLatinFont] ?? 0) !== expected.latin ||
+        (states.textScripts[latex][expectedFont] ?? 0) !== expected.chinese,
+      );
+      if (!expectedLatinFont || expectedLatinFont === expectedFont || textScriptsWrong.length) {
+        throw new Error(`\\text{} did not draw Latin with ${expectedLatinFont} and Chinese with ${expectedFont}: ${JSON.stringify(states.textScripts)}`);
+      }
 
       const unmarkedWrong = Object.entries(states.unmarkedSpans).filter(
         ([, state]) => state.marked || !state.rendered.includes(expectedFont) ||
