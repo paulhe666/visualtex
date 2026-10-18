@@ -33,10 +33,6 @@ pub(crate) struct StableSvgGlyphOutline {
     pub(crate) path: String,
     pub(crate) advance_units: f64,
     pub(crate) resolved_family: String,
-    pub(crate) ink_top_em: f64,
-    pub(crate) ink_bottom_em: f64,
-    pub(crate) font_ascent_em: f64,
-    pub(crate) font_descent_em: f64,
 }
 
 const DEFAULT_MATH_FONT_FALLBACKS: &[&str] = &[
@@ -187,8 +183,6 @@ mod macos {
             glyph: CGGlyph,
             transform: *const c_void,
         ) -> CGPathRef;
-        fn CTFontGetAscent(font: CTFontRef) -> CGFloat;
-        fn CTFontGetDescent(font: CTFontRef) -> CGFloat;
         fn CTFontGetAdvancesForGlyphs(
             font: CTFontRef,
             orientation: u32,
@@ -510,10 +504,6 @@ mod macos {
                 path: String::new(),
                 advance_units: advance.width,
                 resolved_family: font.resolved_family,
-                ink_top_em: 0.0,
-                ink_bottom_em: 0.0,
-                font_ascent_em: unsafe { CTFontGetAscent(font_reference) } / 1000.0,
-                font_descent_em: unsafe { CTFontGetDescent(font_reference) } / 1000.0,
             });
         }
         let path_reference = unsafe {
@@ -526,7 +516,6 @@ mod macos {
             ));
         }
         let path = OwnedPath(path_reference);
-        let bounds = unsafe { CGPathGetPathBoundingBox(path.0) };
         let mut writer = BaselinePathWriter {
             output: String::with_capacity(2048),
         };
@@ -544,10 +533,6 @@ mod macos {
             path: writer.output,
             advance_units: advance.width,
             resolved_family: font.resolved_family,
-            ink_top_em: (bounds.origin.y + bounds.size.height) / 1000.0,
-            ink_bottom_em: bounds.origin.y / 1000.0,
-            font_ascent_em: unsafe { CTFontGetAscent(font_reference) } / 1000.0,
-            font_descent_em: unsafe { CTFontGetDescent(font_reference) } / 1000.0,
         })
     }
 
