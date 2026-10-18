@@ -488,8 +488,11 @@ internal sealed partial class WordFormulaService
 
     internal WordLatexRedrawResult ApplyLatexRedrawPlanCore(
         WordLatexRedrawPlan plan,
-        IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared)
+        IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared,
+        StreamingLatexRedrawFormulas? streamed = null)
     {
+        using var numberFormatScope =
+            WordEquationNumberFormatAuthority.BeginOperationScope();
         if (plan is null)
             throw new ArgumentNullException(nameof(plan));
         if (prepared is null)
@@ -536,8 +539,9 @@ internal sealed partial class WordFormulaService
 
             applyStageStart = applyWatch.ElapsedMilliseconds;
             var missing = plan.Targets
-                .Where(target =>
-                    !prepared.ContainsKey(target.Id))
+                .Where(target => streamed is null
+                    ? !prepared.ContainsKey(target.Id)
+                    : !streamed.Contains(target.Id))
                 .Select(target => target.Id)
                 .ToArray();
             if (missing.Length > 0)
@@ -549,29 +553,24 @@ internal sealed partial class WordFormulaService
             // and OMML mutate only the target document; freezing their visible
             // window provided little benefit once mutations run in document order
             // and can leave older Word builds without a rebuilt document surface.
-            var usesMathType = plan.Targets.Any(target =>
-                ObjectModeToHostKind(
-                    prepared[target.Id].Session.ObjectMode)
-                == WordFormulaHostKind.MathType);
+            var usesMathType = streamed is null
+                ? plan.Targets.Any(target =>
+                    ObjectModeToHostKind(
+                        prepared[target.Id].Session.ObjectMode)
+                    == WordFormulaHostKind.MathType)
+                : ObjectModeToHostKind(streamed.ObjectMode)
+                    == WordFormulaHostKind.MathType;
             if (usesMathType)
                 screenUpdatingScope =
                     NativeOmmlScreenUpdatingScope.Suspend(
                         _application);
 
-            foreach (var target in plan.Targets)
+            // Streamed formulas get the same per-target session values when the
+            // writer takes them.
+            if (streamed is null)
             {
-                var formula = prepared[target.Id];
-                formula.Session.Numbered =
-                    plan.NumberDisplayFormulas
-                    && string.Equals(
-                        target.DisplayMode,
-                        "block",
-                        StringComparison.Ordinal);
-                formula.Session.DisplayMode =
-                    target.DisplayMode;
-                formula.Session.FontSizePt =
-                    FormulaFontSize.Normalize(
-                        target.FontSizePt);
+                foreach (var target in plan.Targets)
+                    PrepareLatexRedrawTargetSession(plan, target, prepared[target.Id]);
             }
             batchTimings["prepareTargets"] =
                 applyWatch.ElapsedMilliseconds - applyStageStart;
@@ -586,9 +585,12 @@ internal sealed partial class WordFormulaService
                 ApplyLatexRedrawWithIndependentTransactions(
                     document,
                     plan,
-                    prepared);
+                    prepared,
+                    streamed);
             batchTimings["transaction"] =
                 applyWatch.ElapsedMilliseconds - applyStageStart;
+            if (streamed is not null)
+                batchTimings["renderWait"] = streamed.WaitMilliseconds;
 
             applyStageStart = applyWatch.ElapsedMilliseconds;
             try
@@ -619,12 +621,35 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    private static void PrepareLatexRedrawTargetSession(
+        WordLatexRedrawPlan plan,
+        WordLatexRedrawTarget target,
+        PreparedWordBulkFormula formula)
+    {
+        formula.Session.Numbered =
+            plan.NumberDisplayFormulas
+            && string.Equals(
+                target.DisplayMode,
+                "block",
+                StringComparison.Ordinal);
+        formula.Session.DisplayMode =
+            target.DisplayMode;
+        formula.Session.FontSizePt =
+            FormulaFontSize.Normalize(
+                target.FontSizePt);
+    }
+
     private WordLatexRedrawResult
         ApplyLatexRedrawWithIndependentTransactions(
             Document document,
             WordLatexRedrawPlan plan,
-            IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared)
+            IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared,
+            StreamingLatexRedrawFormulas? streamed)
     {
+        // A streamed batch has one object mode and its formulas may still be
+        // rendering, so the target kind comes from the stream, not the formula.
+        WordFormulaHostKind TargetKind(WordLatexRedrawTarget target) =>
+            ObjectModeToHostKind(streamed?.ObjectMode ?? prepared[target.Id].Session.ObjectMode);
         var result = new WordLatexRedrawResult();
         var successfulTargetIds =
             new HashSet<string>(StringComparer.Ordinal);
@@ -639,6 +664,62 @@ internal sealed partial class WordFormulaService
         var mathTypeDisplayWidthsBySection =
             new Dictionary<int, float>();
         var mathTypeNativeStylesPrepared = false;
+        // Numbered VisualTeX redraw: plan every number once (final order,
+        // heading scopes, ordinals) exactly like batch format conversion,
+        // instead of resolving the format and heading scope per formula.
+        WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? visualTeXNumbers = null;
+        var numberedVisualTeXTargets = plan.NumberDisplayFormulas
+            ? plan.Targets
+                .Where(target =>
+                    string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                    && TargetKind(target) == WordFormulaHostKind.VisualTeX)
+                .ToArray()
+            : Array.Empty<WordLatexRedrawTarget>();
+        if (numberedVisualTeXTargets.Length > 0)
+            visualTeXNumbers = WordFormulaNumberingKernel.VisualTeXConversionNumberPlan.Capture(
+                document,
+                numberedVisualTeXTargets.Select(target => (target.Id, target.AbsoluteStart)),
+                WordEquationNumberFormatAuthority.Resolve(document));
+        // Numbered native equations: format, label and heading scopes once.
+        var numberedOmmlTargets = plan.NumberDisplayFormulas
+            ? plan.Targets
+                .Where(target =>
+                    string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                    && TargetKind(target) == WordFormulaHostKind.Omml)
+                .ToArray()
+            : Array.Empty<WordLatexRedrawTarget>();
+        var numberedOmml = numberedOmmlTargets.Length > 0
+            ? WordNativeOmmlNumbering.NumberedOmmlBatch.Capture(
+                document,
+                numberedOmmlTargets.Select(target => target.AbsoluteStart))
+            : null;
+        // As in batch format conversion: prove the existing native numbers after
+        // the first numbered target before any write, retain every newly
+        // inserted numbered OMath, and refresh exactly that ordered set once at
+        // the end instead of re-indexing and re-resolving every equation.
+        WordNativeOmmlFieldRefresh? nativeNumberRefresh = null;
+        var nativeNumbersInserted = 0;
+        if (numberedOmmlTargets.Length > 0)
+        {
+            using var numberingMetric = WordOperationMetrics.Measure("Redraw.OmmlNumbering.Prepare");
+            nativeNumberRefresh = WordNativeOmmlFieldRefresh.Prepare(
+                document,
+                numberedOmmlTargets.Min(target => target.AbsoluteStart));
+        }
+        // A numbered MathType target that opens a chapter/section scope needs
+        // MathType's native section paragraph. Opening or closing the hidden
+        // staging document ends Word's active custom UndoRecord, so prepare one
+        // parameterizable section before any per-target transaction, as the
+        // MathType bulk skeleton does.
+        MathTypeSectionStaging? mathTypeSection = null;
+        try
+        {
+        if (plan.NumberDisplayFormulas
+            && plan.Targets.Any(target =>
+                string.Equals(target.DisplayMode, "block", StringComparison.OrdinalIgnoreCase)
+                && TargetKind(target) == WordFormulaHostKind.MathType)
+            && EquationNumberFormat.Resolve(WordEquationNumberFormatAuthority.Resolve(document)).UsesHeading)
+            mathTypeSection = new MathTypeSectionStaging(document, CreateMathTypeSectionFlatOpc(0, 0));
         var mathTypeInlineFinalizationTotal = 0L;
         var mathTypeInlineIdentityIndexTotal = 0L;
         var mathTypeInlineBoundaryMergeTotal = 0L;
@@ -652,7 +733,28 @@ internal sealed partial class WordFormulaService
                      .OrderBy(item => item.AbsoluteStart))
         {
             ReportOperationProgress("正在原位写入重绘公式…", result.FormulaCount, plan.Targets.Count);
-            var formula = prepared[target.Id];
+            PreparedWordBulkFormula formula;
+            if (streamed is null)
+            {
+                formula = prepared[target.Id];
+            }
+            else
+            {
+                // A formula that failed to render is skipped exactly like a
+                // rolled-back target: Word is untouched and its source remains.
+                if (!streamed.TryTake(target.Id, TimeSpan.FromMinutes(5), out var taken, out var renderError)
+                    || taken is null)
+                {
+                    visualTeXNumbers?.Discard(target.Id);
+                    result.Failures.Add((
+                        target.Id,
+                        target.Latex,
+                        string.IsNullOrWhiteSpace(renderError) ? "公式渲染失败。" : renderError!.Trim()));
+                    continue;
+                }
+                formula = taken;
+                PrepareLatexRedrawTargetSession(plan, target, formula);
+            }
 
             // Source identity and target kind are pure preflight checks. Keep
             // them outside the custom undo record: if the document changed under
@@ -683,10 +785,14 @@ internal sealed partial class WordFormulaService
                             cumulativeCoordinateDelta,
                             displayTabStopsBySection,
                             mathTypeDisplayWidthsBySection,
-                            mathTypeNativeStylesPrepared));
+                            mathTypeNativeStylesPrepared,
+                            visualTeXNumbers,
+                            numberedOmml,
+                            mathTypeSection?.Paragraph));
             }
             catch (Exception error)
             {
+                visualTeXNumbers?.Discard(target.Id);
                 VerifyFailedLatexRedrawTargetRollback(
                     document,
                     plan,
@@ -730,6 +836,13 @@ internal sealed partial class WordFormulaService
             result.FormulaCount++;
             ReportOperationProgress("正在原位写入重绘公式…", result.FormulaCount, plan.Targets.Count);
             successfulTargetIds.Add(target.Id);
+            if (nativeNumberRefresh is not null
+                && targetResult.InsertedHost is { Kind: WordFormulaHostKind.Omml } insertedNative
+                && insertedNative.Numbering.Numbered)
+            {
+                nativeNumberRefresh.AddInserted(insertedNative);
+                nativeNumbersInserted++;
+            }
 
             if (targetResult.MathTypeNativeStylesPrepared)
                 mathTypeNativeStylesPrepared = true;
@@ -761,6 +874,10 @@ internal sealed partial class WordFormulaService
         if (plan.NumberDisplayFormulas
             && result.FormulaCount > 0)
         {
+            var finalizationMetrics = string.IsNullOrWhiteSpace(
+                    Environment.GetEnvironmentVariable("VISUALTEX_VSTO_REDRAW_PERF_LOG"))
+                ? null
+                : new WordOperationMetrics();
             try
             {
                 WordFormulaMutationTransaction.Execute(
@@ -777,11 +894,7 @@ internal sealed partial class WordFormulaService
                                         target.DisplayMode,
                                         "block",
                                         StringComparison.OrdinalIgnoreCase))
-                                .Select(target =>
-                                    ObjectModeToHostKind(
-                                        prepared[target.Id]
-                                            .Session
-                                            .ObjectMode))
+                                .Select(TargetKind)
                                 .Distinct()
                                 .ToArray();
 
@@ -794,10 +907,52 @@ internal sealed partial class WordFormulaService
                                         document);
                         }
 
-                        if (targetKinds.Any(kind =>
+                        var canonicalKinds = targetKinds
+                            .Where(kind =>
                                 kind is
                                     WordFormulaHostKind.Omml
-                                    or WordFormulaHostKind.VisualTeX))
+                                    or WordFormulaHostKind.VisualTeX)
+                            .ToArray();
+                        if (canonicalKinds.Length == 1)
+                        {
+                            // Like batch format conversion: the redraw knows the
+                            // one family it numbered, and OMML and VisualTeX
+                            // count independently. Refresh only that family
+                            // (for VisualTeX one ordered field pass) instead of
+                            // re-indexing and re-resolving every formula host
+                            // of both families in the document.
+                            var numberedTargets = plan.Targets.Count(target =>
+                                successfulTargetIds.Contains(target.Id)
+                                && string.Equals(
+                                    target.DisplayMode,
+                                    "block",
+                                    StringComparison.OrdinalIgnoreCase)
+                                && TargetKind(target) == canonicalKinds[0]);
+                            if (canonicalKinds[0] == WordFormulaHostKind.Omml
+                                && nativeNumberRefresh is not null)
+                            {
+                                using var applyMetric = WordOperationMetrics.Measure("Redraw.OmmlNumbering.Apply");
+                                nativeNumberRefresh.Apply(nativeNumbersInserted);
+                                return true;
+                            }
+                            if (canonicalKinds[0] == WordFormulaHostKind.VisualTeX)
+                                using (WordOperationMetrics.Measure("Redraw.Numbering.ApplyExistingTables"))
+                                    visualTeXNumbers?.ApplyExistingTables(document);
+                            _ =
+                                WordFormulaNumberingKernel
+                                    .RefreshCanonicalNumbers(
+                                        document,
+                                        kindFilter: canonicalKinds[0],
+                                        minimumExpectedNumbered:
+                                            canonicalKinds[0] == WordFormulaHostKind.VisualTeX
+                                                ? numberedTargets
+                                                : 0,
+                                        preparedVisualTeX:
+                                            canonicalKinds[0] == WordFormulaHostKind.VisualTeX
+                                                ? visualTeXNumbers
+                                                : null);
+                        }
+                        else if (canonicalKinds.Length > 1)
                         {
                             _ =
                                 WordFormulaNumberingKernel
@@ -816,10 +971,34 @@ internal sealed partial class WordFormulaService
                 result.Warnings.Add(
                     $"Equation numbering finalization failed and was rolled back: {detail}");
             }
+            finally
+            {
+                if (finalizationMetrics is not null)
+                {
+                    finalizationMetrics.Dispose();
+                    result.FinalizationMetricDetail = string.Join(
+                        " | ",
+                        finalizationMetrics.Entries
+                            .OrderBy(entry => entry.Key)
+                            .Select(entry =>
+                                $"{entry.Key}={entry.Value.Milliseconds:0.0}ms/{entry.Value.Calls}"));
+                }
+            }
         }
 
         result.TotalSourceMutationMilliseconds =
             sourceMutationTotal;
+        }
+        finally
+        {
+            visualTeXNumbers?.Dispose();
+            nativeNumberRefresh?.Dispose();
+            if (mathTypeSection is not null)
+            {
+                mathTypeSection.Dispose();
+                try { document.Activate(); } catch { }
+            }
+        }
         result.BatchTimings["coordinateRebase"] =
             coordinateRebaseTotal;
         result.TotalInsertMilliseconds = total;
@@ -830,6 +1009,7 @@ internal sealed partial class WordFormulaService
     private sealed class LatexRedrawTargetMutationResult
     {
         internal string FormulaId { get; set; } = string.Empty;
+        internal WordFormulaHostDescriptor? InsertedHost { get; set; }
         internal int MainStoryEnd { get; set; }
         internal long CoordinateRebaseMilliseconds { get; set; }
         internal long SourceMutationMilliseconds { get; set; }
@@ -851,7 +1031,10 @@ internal sealed partial class WordFormulaService
             int cumulativeCoordinateDelta,
             Dictionary<int, (float Center, float Right)> displayTabStopsBySection,
             Dictionary<int, float> mathTypeDisplayWidthsBySection,
-            bool mathTypeNativeStylesPrepared)
+            bool mathTypeNativeStylesPrepared,
+            WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? visualTeXNumbers = null,
+            WordNativeOmmlNumbering.NumberedOmmlBatch? numberedOmml = null,
+            Range? preparedMathTypeSection = null)
     {
         Range? source = null;
         Range? isolated = null;
@@ -948,6 +1131,7 @@ internal sealed partial class WordFormulaService
 
             var insertWatch = Stopwatch.StartNew();
             string formulaId;
+            WordFormulaHostDescriptor? insertedHost = null;
             var preparedMathTypeNativeStyles = false;
             if (targetKind is
                 WordFormulaHostKind.Omml
@@ -960,6 +1144,17 @@ internal sealed partial class WordFormulaService
                         formula.PngPath,
                         formula.EmfPath);
                 request.BatchMutation = true;
+                if (visualTeXNumbers is not null
+                    && targetKind == WordFormulaHostKind.VisualTeX
+                    && formula.Session.Numbered)
+                    request.PreparedVisualTeXNumbering = visualTeXNumbers.For(target.Id);
+                if (numberedOmml is not null
+                    && targetKind == WordFormulaHostKind.Omml
+                    && formula.Session.Numbered
+                    && display)
+                    request.PreparedOmml = numberedOmml.Prepare(
+                        target.AbsoluteStart,
+                        WordOmmlConverter.TransformMathMlToOmml(request.MathMl!));
                 if (displayTabStops.HasValue)
                 {
                     request.DisplayCenterTabPoints =
@@ -978,6 +1173,7 @@ internal sealed partial class WordFormulaService
                 formulaId =
                     inserted.FormulaId
                     ?? formula.Session.FormulaId;
+                insertedHost = inserted;
             }
             else if (targetKind == WordFormulaHostKind.MathType)
             {
@@ -1030,7 +1226,9 @@ internal sealed partial class WordFormulaService
                         preparedStandaloneCompoundFile:
                             formula.MathTypeStandaloneCompoundFile,
                         preparedStandaloneSemanticSignature:
-                            formula.MathTypeStandaloneSemanticSignature);
+                            formula.MathTypeStandaloneSemanticSignature,
+                        preparedBatchMathTypeSection:
+                            preparedMathTypeSection);
                     formulaId = session.FormulaId;
                     preparedMathTypeNativeStyles = display;
                 }
@@ -1086,6 +1284,7 @@ internal sealed partial class WordFormulaService
             return new LatexRedrawTargetMutationResult
             {
                 FormulaId = formulaId,
+                InsertedHost = insertedHost,
                 MainStoryEnd = mainStoryEnd,
                 CoordinateRebaseMilliseconds =
                     coordinateRebaseWatch.ElapsedMilliseconds,
@@ -1432,6 +1631,37 @@ internal sealed partial class WordFormulaService
         if (WordFormulaHost.TryGetCellContentWidth(source, out var cellContentWidth))
             return (cellContentWidth / 2f, cellContentWidth);
 
+        // Range.Information(wdActiveEndSectionNumber) costs ~30 ms per display
+        // formula in a long document. A one-section document (the usual case)
+        // has one answer, so resolve it once per batch; the redraw does not add
+        // sections. Real section numbers start at 1, key 0 marks this case.
+        const int SingleSectionKey = 0;
+        if (sectionCache.TryGetValue(SingleSectionKey, out var singleSection))
+            return singleSection;
+        if (sectionCache.Count == 0)
+        {
+            Sections? allSections = null;
+            try
+            {
+                allSections = document.Sections;
+                if (allSections.Count == 1)
+                {
+                    var only = ResolveBatchDisplayTabStopsForSection(document, 1);
+                    if (only is { } positions)
+                        sectionCache[SingleSectionKey] = positions;
+                    return only;
+                }
+            }
+            catch
+            {
+                // Fall through to the per-target section lookup below.
+            }
+            finally
+            {
+                Release(allSections);
+            }
+        }
+
         int sectionNumber;
         try
         {
@@ -1448,6 +1678,16 @@ internal sealed partial class WordFormulaService
         if (sectionCache.TryGetValue(sectionNumber, out var cached))
             return cached;
 
+        var resolved = ResolveBatchDisplayTabStopsForSection(document, sectionNumber);
+        if (resolved is { } sectionPositions)
+            sectionCache[sectionNumber] = sectionPositions;
+        return resolved;
+    }
+
+    private static (float Center, float Right)? ResolveBatchDisplayTabStopsForSection(
+        Document document,
+        int sectionNumber)
+    {
         Sections? sections = null;
         Section? section = null;
         PageSetup? pageSetup = null;
@@ -1458,14 +1698,12 @@ internal sealed partial class WordFormulaService
                 return null;
             section = sections[sectionNumber];
             pageSetup = section.PageSetup;
-            var positions = WordEquationNumbering.CalculateEquationTabStops(
+            return WordEquationNumbering.CalculateEquationTabStops(
                 pageSetup.PageWidth,
                 pageSetup.LeftMargin,
                 pageSetup.RightMargin,
                 0,
                 0);
-            sectionCache[sectionNumber] = positions;
-            return positions;
         }
         catch
         {

@@ -19,6 +19,7 @@ internal static class WordFormulaHost
     internal static Cell? TryGetOwningCell(Range source)
     {
         Range? probe = null;
+        Tables? tables = null;
         Cells? cells = null;
         Cell? cell = null;
         Range? owner = null;
@@ -28,6 +29,15 @@ internal static class WordFormulaHost
             var end = source.End;
             probe = source.Duplicate;
             probe.SetRange(start, end > start ? start + 1 : start);
+            // A position with no intersecting table cannot own a cell. This
+            // structural negative test spares ordinary body formulas Word's
+            // layout-backed wdWithInTable query, which first brings the layout
+            // up to date (hundreds of ms after an edit in a formula-dense
+            // document). A position inside a table keeps the exact proof below.
+            var mayOwnCell = true;
+            try { tables = probe.Tables; mayOwnCell = tables.Count != 0; }
+            catch (COMException) { }
+            if (!mayOwnCell) return null;
             if (!(bool)probe.get_Information(WdInformation.wdWithInTable)) return null;
             cells = probe.Cells;
             if (cells.Count != 1) return null;
@@ -46,7 +56,7 @@ internal static class WordFormulaHost
             // not an error; other COM failures are not silently reclassified.
             return null;
         }
-        finally { Release(owner); Release(cell); Release(cells); Release(probe); }
+        finally { Release(owner); Release(cell); Release(cells); Release(tables); Release(probe); }
     }
 
     internal static bool IsWhollyInsideMath(Range source)

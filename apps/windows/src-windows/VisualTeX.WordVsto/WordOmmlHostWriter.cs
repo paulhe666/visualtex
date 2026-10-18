@@ -372,6 +372,7 @@ internal static class WordOmmlHostWriter
                 originalCellParagraphs = cellParagraphs.Count;
             }
             WordFormulaMutationTransaction.TraceBoundary(document.Application, "native-create-before-import");
+            using (WordOperationMetrics.Measure("FormatConversion.OmmlNative.Import"))
             inserted = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
                 document, insertion, preparedOmml,
                 display: string.Equals(request.DisplayMode, "block", StringComparison.OrdinalIgnoreCase),
@@ -410,9 +411,14 @@ internal static class WordOmmlHostWriter
             }
             // A number kept by a native edit is part of the equation and takes
             // the formula's size, as Word sizes a whole equation.
-            WordFormulaHostLayout.ApplyOmmlLocalTypography(inserted, request.FontSizePoints);
-            var described = DescribeInsertedOmml(inserted, request.Numbered);
-            if (described.Display) WordFormulaHostLayout.ConfigureDisplayParagraph(inserted);
+            using (WordOperationMetrics.Measure("FormatConversion.OmmlNative.Typography"))
+                WordFormulaHostLayout.ApplyOmmlLocalTypography(inserted, request.FontSizePoints);
+            WordFormulaHostDescriptor described;
+            using (WordOperationMetrics.Measure("FormatConversion.OmmlNative.Describe"))
+                described = DescribeInsertedOmml(inserted, request.Numbered);
+            if (described.Display)
+                using (WordOperationMetrics.Measure("FormatConversion.OmmlNative.DisplayParagraph"))
+                    WordFormulaHostLayout.ConfigureDisplayParagraph(inserted);
             return new WordFormulaHostWriteResult { Host = described };
         }
         finally
@@ -453,8 +459,10 @@ internal static class WordOmmlHostWriter
         try
         {
             WordFormulaMutationTransaction.TraceBoundary(application, "omml-writer-enter");
-            var preparedOmml = request.PreparedOmml
-                ?? WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
+            string preparedOmml;
+            using (WordOperationMetrics.Measure("FormatConversion.OmmlHostWriter.Transform"))
+                preparedOmml = request.PreparedOmml
+                    ?? WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
             WordFormulaMutationTransaction.TraceBoundary(application, "omml-writer-transformed");
 
             // Numbered OMML is one native Word host, not an unnumbered OMath
@@ -478,6 +486,8 @@ internal static class WordOmmlHostWriter
             {
                 if (!display)
                 {
+                    using var adjacentMetric = WordOperationMetrics.Measure(
+                        "FormatConversion.OmmlHostWriter.AdjacentMerge");
                     var preparedInline =
                         PrepareAdjacentInlineNativeMerge(
                             document,
@@ -489,6 +499,29 @@ internal static class WordOmmlHostWriter
                 else
                 {
                     target = insertion.Duplicate;
+                }
+
+                if (request.BatchMutation
+                    && target.Start == target.End)
+                {
+                    // A batch writer (LaTeX redraw) has already cleared the
+                    // source text and inserts at that collapsed caret, exactly
+                    // like an interactive create. Import the prepared equation
+                    // atom directly, as InsertPreparedNative does, instead of
+                    // serializing, marking and re-importing the whole owning
+                    // paragraph for every formula. A caret left in an empty
+                    // paragraph keeps that paragraph mark's own formatting.
+                    string? markRunProperties;
+                    using (WordOperationMetrics.Measure("FormatConversion.OmmlHostWriter.MarkRunProperties"))
+                        markRunProperties = ReadEmptyParagraphMarkRunProperties(target);
+                    var written = InsertPreparedNative(
+                        document,
+                        target,
+                        request,
+                        preparedOmml,
+                        paragraphMarkRunProperties: markRunProperties);
+                    WordFormulaMutationTransaction.TraceBoundary(application, "omml-writer-complete");
+                    return written;
                 }
 
                 // New OMML is materialized in the actual target paragraph. No
@@ -536,6 +569,32 @@ internal static class WordOmmlHostWriter
         {
             Release(target);
             Release(inserted);
+        }
+    }
+
+    // Character formatting of the paragraph mark when the caret sits in an
+    // otherwise empty paragraph (only then does Word keep the imported
+    // package's mark). Null for a caret inside text.
+    private static string? ReadEmptyParagraphMarkRunProperties(Range caret)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        try
+        {
+            paragraphs = caret.Paragraphs;
+            if (paragraphs.Count != 1) return null;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            if (paragraphRange.End - paragraphRange.Start != 1) return null;
+            return WordOmmlInsertionXml.ParagraphMarkRunProperties(
+                paragraphRange.WordOpenXML);
+        }
+        finally
+        {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
         }
     }
 

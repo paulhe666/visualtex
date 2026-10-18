@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -64,6 +65,9 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
             new WordNativeNumberingAdoptionPlan(
                 document,
                 position: null);
+        // Only the earliest proven number is needed: stop at it instead of
+        // exporting the XML of every numbered equation in the document.
+        plan._stopAtFirstEntry = true;
         plan.Capture();
         if (plan._entries.Count == 0)
             return false;
@@ -85,7 +89,9 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         var plan = new WordNativeNumberingAdoptionPlan(document, insertionPosition);
         try
         {
-            plan.Capture();
+            using (WordOperationMetrics.Measure("NativeNumbering.Adoption.Capture"))
+                plan.Capture();
+            using var planMetric = WordOperationMetrics.Measure("NativeNumbering.Adoption.Plan");
             if (insertionPosition.HasValue && numberFormat is not null)
                 plan.PlanInsertion(
                     insertionPosition.Value,
@@ -108,6 +114,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
             var changed = new HashSet<int>(plan._changes.Select(c => c.Entry.Start));
             var earliest = insertionPosition ?? 0;
             if (plan._changes.Count != 0) earliest = Math.Min(earliest, plan._changes.Min(c => c.Entry.Start));
+            using var refreshMetric = WordOperationMetrics.Measure("NativeNumbering.Adoption.RefreshPrepare");
             plan._refresh = WordNativeOmmlFieldRefresh.Prepare(document, earliest,
                 refreshLiteralPrefixes: !insertionPosition.HasValue && numberFormat is null,
                 additionalNativeHosts: extra, externallyRewrittenNumberStarts: changed);
@@ -433,8 +440,10 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
     {
         if (_refresh is null) throw new ObjectDisposedException(nameof(WordNativeNumberingAdoptionPlan));
         if (inserted is not null) _refresh.AddInserted(inserted);
-        foreach (var change in _changes.OrderBy(c => c.Entry.Start)) ApplyChange(change);
-        _refresh.Apply(inserted is null ? 0 : 1);
+        using (WordOperationMetrics.Measure("NativeNumbering.Adoption.ApplyChanges"))
+            foreach (var change in _changes.OrderBy(c => c.Entry.Start)) ApplyChange(change);
+        using (WordOperationMetrics.Measure("NativeNumbering.Adoption.RefreshApply"))
+            _refresh.Apply(inserted is null ? 0 : 1);
     }
 
     internal void VerifyRollback()
@@ -646,6 +655,8 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         finally { Release(result); Release(code); Release(field); Release(fields); Release(number); Release(exact); }
     }
 
+    private bool _stopAtFirstEntry;
+
     private void Capture()
     {
         var defaultSequence = WordNativeOmmlNumbering.ResolveEquationSequenceName(_document);
@@ -663,7 +674,10 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                 find = search.Find; find.ClearFormatting(); find.Text = "#"; find.Forward = true;
                 find.Wrap = WdFindWrap.wdFindStop; find.Format = false; find.MatchWildcards = false;
                 find.MatchCase = false; find.MatchWholeWord = false; find.MatchSoundsLike = false; find.MatchAllWordForms = false;
-                if (!find.Execute()) break;
+                bool found;
+                using (WordOperationMetrics.Measure("NativeNumbering.Capture.Find"))
+                    found = find.Execute();
+                if (!found) break;
                 paragraph = WordNumberingFieldCollection.CaptureSearchUnit(search);
                 if (paragraph.End <= cursor || paragraph.Start >= end || !paragraph.InStory(scope))
                     throw new InvalidDataException("Native-number discovery repeated or escaped its bounded paragraph.");
@@ -676,7 +690,9 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                         host = maths[index]; if (host.Type != WdOMathType.wdOMathDisplay) continue;
                         exact = host.Range;
                         if (exact.Start < paragraph.Start || exact.End > paragraph.End || !seen.Add(exact.Start)) continue;
-                        var xml = exact.WordOpenXML;
+                        string xml;
+                        using (WordOperationMetrics.Measure("NativeNumbering.Capture.WordOpenXml"))
+                            xml = exact.WordOpenXML;
                         if (!WordOmmlConverter.HasWordNativeEquationNumberHost(xml)) continue;
                         number = WordNativeOmmlNumbering.ResolveNumberContentRange(exact);
                         var label = WordOmmlConverter.ReadWordNativeEquationNumberText(xml);
@@ -708,6 +724,8 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                         if (sequenceCode is null) style.SequenceName = defaultSequence;
                         _entries.Add(new Entry { Host = host, Start = exact.Start, Xml = xml, Label = label, Style = style, SequenceCode = sequenceCode });
                         host = null;
+                        // Find walks forward, so the first entry is the earliest.
+                        if (_stopAtFirstEntry) return;
                     }
                     finally { Release(fields); Release(number); Release(exact); Release(host); }
                 }

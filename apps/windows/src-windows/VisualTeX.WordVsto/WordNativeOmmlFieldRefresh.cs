@@ -192,6 +192,69 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
 
     private WordNativeOmmlFieldRefresh(Document document) { _document = document; }
 
+    private static bool RangeHasAnyEquation(Document document, int start, int end)
+    {
+        Range? range = null;
+        OMaths? maths = null;
+        try
+        {
+            range = document.Range(start, end);
+            maths = range.OMaths;
+            return maths.Count > 0;
+        }
+        catch
+        {
+            // Unable to tell: keep the exact search.
+            return true;
+        }
+        finally
+        {
+            Release(maths);
+            Release(range);
+        }
+    }
+
+    // Start of the paragraph holding the first equation in [start, end), or end
+    // when there is none. Unable to tell: start, i.e. the exact search goes on.
+    private static int NextEquationParagraphStart(Document document, int start, int end)
+    {
+        if (start >= end) return end;
+        Range? range = null;
+        OMaths? maths = null;
+        OMath? math = null;
+        Range? exact = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? owner = null;
+        try
+        {
+            range = document.Range(start, end);
+            maths = range.OMaths;
+            if (maths.Count == 0) return end;
+            math = maths[1];
+            exact = math.Range;
+            paragraphs = exact.Paragraphs;
+            if (paragraphs.Count == 0) return start;
+            paragraph = paragraphs[1];
+            owner = paragraph.Range;
+            return Math.Min(end, Math.Max(start, owner.Start));
+        }
+        catch
+        {
+            return start;
+        }
+        finally
+        {
+            Release(owner);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(exact);
+            Release(math);
+            Release(maths);
+            Release(range);
+        }
+    }
+
     internal static WordNativeOmmlFieldRefresh Prepare(Document document, int earliestChange, bool refreshLiteralPrefixes = false,
         IReadOnlyList<OMath>? additionalNativeHosts = null, ISet<int>? externallyRewrittenNumberStarts = null)
     {
@@ -210,6 +273,11 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
             var cursor = Math.Max(scope.Start, earliestChange);
             var end = scope.End;
             var captured = new HashSet<int>();
+            // Only equations can be native numbers. When no equation follows the
+            // change, skip the SEQ search: in a document numbered by VisualTeX
+            // OLE every following PlaceRef SEQ would otherwise be one more hit.
+            if (cursor < end && !RangeHasAnyEquation(document, cursor, end))
+                cursor = end;
             while (cursor < end)
             {
                 Release(maths); maths = null;
@@ -239,6 +307,16 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
                 // Inspect every OMath in this found paragraph before moving past
                 // it; restarting inside a field can snap Find to that same field.
                 maths = paragraph.OMaths;
+                if (maths.Count == 0)
+                {
+                    // A SEQ paragraph without an equation (a VisualTeX OLE number,
+                    // a caption) holds no native number. Resume at the paragraph of
+                    // the next equation rather than at the next SEQ: in a document
+                    // numbered by VisualTeX OLE every PlaceRef SEQ was one more hit.
+                    // Every paragraph skipped this way has no equation either.
+                    cursor = NextEquationParagraphStart(document, paragraph.End, end);
+                    continue;
+                }
                 for (var index = 1; index <= maths.Count; index++)
                 {
                     OMath? math = null;

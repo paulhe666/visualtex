@@ -2930,6 +2930,16 @@ internal sealed partial class WordFormulaService
             prepared);
     }
 
+    internal WordLatexRedrawResult ApplyLatexRedrawPlan(
+        WordLatexRedrawPlan plan,
+        StreamingLatexRedrawFormulas streamed)
+    {
+        return ApplyLatexRedrawPlanCore(
+            plan,
+            new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal),
+            streamed ?? throw new ArgumentNullException(nameof(streamed)));
+    }
+
     public int CountFormulaObjectsForLatex(bool wholeDocument, string objectMode)
     {
         return string.Equals(
@@ -3857,7 +3867,7 @@ internal sealed partial class WordFormulaService
 
             var reconstructed = new StringBuilder(sourceText.Length + 16);
             var fontSizes = new List<double?>(sourceText.Length + 16);
-            foreach (var paragraph in body.Descendants(word + "p"))
+            double? AppendParagraph(XElement paragraph, string terminator)
             {
                 var paragraphProperties = paragraph.Element(word + "pPr");
                 var paragraphStyleId =
@@ -3916,9 +3926,80 @@ internal sealed partial class WordFormulaService
                     for (var index = 0; index < tokenText.Length; index++)
                         fontSizes.Add(runFontSize);
                 }
-                reconstructed.Append('\r');
-                fontSizes.Add(paragraphFontSize);
+                reconstructed.Append(terminator);
+                for (var index = 0; index < terminator.Length; index++)
+                    fontSizes.Add(paragraphFontSize);
+                return paragraphFontSize;
             }
+
+            // Range.Text ends every table cell and every table row with CR+BEL
+            // (one story position each, see BuildWordStoryOffsetIndex). Rebuild
+            // that exact sequence so a document with ordinary tables keeps the
+            // bulk XML size index instead of falling back to one COM font read
+            // per formula. Nested tables or unknown block containers are not
+            // modelled: they leave the text unmatched and keep the COM fallback.
+            var modelled = true;
+            void AppendBlocks(IEnumerable<XElement> blocks)
+            {
+                foreach (var block in blocks)
+                {
+                    if (!modelled) return;
+                    if (block.Name == word + "p")
+                    {
+                        AppendParagraph(block, "\r");
+                    }
+                    else if (block.Name == word + "tbl")
+                    {
+                        foreach (var row in block.Elements(word + "tr"))
+                        {
+                            double? lastSize = documentDefaultFontSize;
+                            foreach (var cell in row.Elements(word + "tc"))
+                            {
+                                // Markers such as bookmarks carry no text; any
+                                // other container holding paragraphs (nested
+                                // table, content control) is not modelled.
+                                var children = cell.Elements()
+                                    .Where(element => element.Name == word + "p"
+                                        || element.Descendants(word + "p").Any())
+                                    .ToList();
+                                if (children.Count == 0
+                                    || children.Any(element => element.Name != word + "p"))
+                                {
+                                    modelled = false;
+                                    return;
+                                }
+                                var paragraphs = children;
+                                for (var index = 0; index < paragraphs.Count; index++)
+                                    lastSize = AppendParagraph(
+                                        paragraphs[index],
+                                        index == paragraphs.Count - 1 ? "\r\a" : "\r");
+                            }
+                            reconstructed.Append("\r\a");
+                            fontSizes.Add(lastSize);
+                            fontSizes.Add(lastSize);
+                        }
+                    }
+                    else if (block.Name == word + "sdt")
+                    {
+                        var content = block.Element(word + "sdtContent");
+                        if (content is not null) AppendBlocks(content.Elements());
+                    }
+                    else if (block.Name == word + "customXml")
+                    {
+                        AppendBlocks(block.Elements());
+                    }
+                    else
+                    {
+                        // Anything else keeps the earlier flat rule: each
+                        // contained paragraph ends with one CR (markers such as
+                        // sectPr or bookmarks contain none and add nothing).
+                        foreach (var paragraph in block.Descendants(word + "p"))
+                            AppendParagraph(paragraph, "\r");
+                    }
+                }
+            }
+            AppendBlocks(body.Elements());
+            if (!modelled) return null;
 
             var reconstructedText = reconstructed.ToString();
             reconstructedLength = reconstructedText.Length;
@@ -4540,6 +4621,8 @@ internal sealed partial class WordFormulaService
         string? expectedDocumentId,
         string? sourceObjectId)
     {
+        using var numberFormatScope =
+            WordEquationNumberFormatAuthority.BeginOperationScope();
         var mathTypeOnly = prepared.Count > 0
             && prepared.Values.All(item => string.Equals(
                 item.Session.ObjectMode,
@@ -6776,19 +6859,24 @@ internal sealed partial class WordFormulaService
         }
     }
 
+    // Every Font write is a formatting change Word applies at once; beside OLE
+    // formulas each one costs several ms (bulk import: ~85 ms per reset). Only
+    // properties that do not already read neutral are written, so the result
+    // is the same formatting. Mixed values (wdUndefined) read non-neutral and
+    // are written as before.
     private static void ResetTransientFont(Microsoft.Office.Interop.Word.Font font)
     {
-        font.Bold = 0;
-        font.Italic = 0;
-        font.StrikeThrough = 0;
-        try { font.DoubleStrikeThrough = 0; } catch { }
-        font.Underline = WdUnderline.wdUnderlineNone;
-        font.Hidden = 0;
-        font.Subscript = 0;
-        font.Superscript = 0;
-        font.Position = 0;
-        try { font.AllCaps = 0; } catch { }
-        try { font.SmallCaps = 0; } catch { }
+        if (font.Bold != 0) font.Bold = 0;
+        if (font.Italic != 0) font.Italic = 0;
+        if (font.StrikeThrough != 0) font.StrikeThrough = 0;
+        try { if (font.DoubleStrikeThrough != 0) font.DoubleStrikeThrough = 0; } catch { }
+        if (font.Underline != WdUnderline.wdUnderlineNone) font.Underline = WdUnderline.wdUnderlineNone;
+        if (font.Hidden != 0) font.Hidden = 0;
+        if (font.Subscript != 0) font.Subscript = 0;
+        if (font.Superscript != 0) font.Superscript = 0;
+        if (font.Position != 0) font.Position = 0;
+        try { if (font.AllCaps != 0) font.AllCaps = 0; } catch { }
+        try { if (font.SmallCaps != 0) font.SmallCaps = 0; } catch { }
     }
 
     private static void InsertNativeTextRun(
@@ -6797,28 +6885,34 @@ internal sealed partial class WordFormulaService
         WordBulkRun run)
     {
         if (string.IsNullOrEmpty(run.Text)) return;
-        ResetSelectionTransientFormatting(selection);
+        using (WordOperationMetrics.Measure("Bulk.TextRun.ResetBefore"))
+            ResetSelectionTransientFormatting(selection);
         var start = selection.Start;
-        selection.TypeText(run.Text);
+        using (WordOperationMetrics.Measure("Bulk.TextRun.Type"))
+            selection.TypeText(run.Text);
         Range? inserted = null;
         Microsoft.Office.Interop.Word.Font? font = null;
+        using var fontMetric = WordOperationMetrics.Measure("Bulk.TextRun.Font");
         try
         {
             inserted = document.Range(start, selection.Start);
             font = inserted.Font;
-            font.Bold = run.Bold ? 1 : 0;
-            font.Italic = run.Italic ? 1 : 0;
-            font.StrikeThrough = run.Strike ? 1 : 0;
-            try { font.DoubleStrikeThrough = 0; } catch { }
-            font.Underline = run.Underline
+            // Write only what differs (see ResetTransientFont). Word reads True
+            // back as -1; the value written is unchanged (1 or 0).
+            if (font.Bold != (run.Bold ? -1 : 0)) font.Bold = run.Bold ? 1 : 0;
+            if (font.Italic != (run.Italic ? -1 : 0)) font.Italic = run.Italic ? 1 : 0;
+            if (font.StrikeThrough != (run.Strike ? -1 : 0)) font.StrikeThrough = run.Strike ? 1 : 0;
+            try { if (font.DoubleStrikeThrough != 0) font.DoubleStrikeThrough = 0; } catch { }
+            var underline = run.Underline
                 ? WdUnderline.wdUnderlineSingle
                 : WdUnderline.wdUnderlineNone;
-            font.Hidden = 0;
-            font.Subscript = 0;
-            font.Superscript = 0;
-            font.Position = 0;
-            try { font.AllCaps = 0; } catch { }
-            try { font.SmallCaps = 0; } catch { }
+            if (font.Underline != underline) font.Underline = underline;
+            if (font.Hidden != 0) font.Hidden = 0;
+            if (font.Subscript != 0) font.Subscript = 0;
+            if (font.Superscript != 0) font.Superscript = 0;
+            if (font.Position != 0) font.Position = 0;
+            try { if (font.AllCaps != 0) font.AllCaps = 0; } catch { }
+            try { if (font.SmallCaps != 0) font.SmallCaps = 0; } catch { }
             if (run.Code)
             {
                 font.Name = "Consolas";
@@ -6937,16 +7031,20 @@ internal sealed partial class WordFormulaService
             // An import in the middle of existing text can leave user content in
             // the following paragraph. Only initialize an empty typing paragraph.
             if ((nextParagraph.Text ?? string.Empty).Trim('\r', '\a').Length != 0) return;
+            // As in ResetTransientFont: change only what is not already reset.
             list = nextParagraph.ListFormat;
-            list.RemoveNumbers();
+            if (list.ListType != WdListType.wdListNoNumbering) list.RemoveNumbers();
             format = nextParagraph.ParagraphFormat;
-            format.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
-            format.LeftIndent = 0;
-            format.RightIndent = 0;
-            format.FirstLineIndent = 0;
+            if (format.Alignment != WdParagraphAlignment.wdAlignParagraphLeft)
+                format.Alignment = WdParagraphAlignment.wdAlignParagraphLeft;
+            if (format.LeftIndent != 0) format.LeftIndent = 0;
+            if (format.RightIndent != 0) format.RightIndent = 0;
+            if (format.FirstLineIndent != 0) format.FirstLineIndent = 0;
             object normal = WdBuiltinStyle.wdStyleNormal;
-            nextParagraph.set_Style(ref normal);
-            ResetSelectionTransientFormatting(selection);
+            using (WordOperationMetrics.Measure("Bulk.ResetNextParagraph.Style"))
+                nextParagraph.set_Style(ref normal);
+            using (WordOperationMetrics.Measure("Bulk.ResetNextParagraph.Selection"))
+                ResetSelectionTransientFormatting(selection);
         }
         finally
         {

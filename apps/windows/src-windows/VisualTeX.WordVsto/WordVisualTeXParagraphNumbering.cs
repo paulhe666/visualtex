@@ -82,13 +82,7 @@ internal static partial class WordVisualTeXParagraphNumbering
         internal void Update()
         {
             using var metric = WordOperationMetrics.Measure("FormatConversion.VisualTeXNumbering.UpdateCreatedBodyFields");
-            foreach (var item in _nested)
-                if (item.Instruction.StartsWith("STYLEREF ", StringComparison.OrdinalIgnoreCase))
-                    item.Field.Update();
-            foreach (var item in _nested)
-                if (item.Instruction.StartsWith("SEQ ", StringComparison.OrdinalIgnoreCase))
-                    item.Field.Update();
-            try { _outer!.ShowCodes = false; } catch { }
+            UpdatePlaceRefTree(_outer!);
         }
 
         public void Dispose()
@@ -145,7 +139,7 @@ internal static partial class WordVisualTeXParagraphNumbering
                         "A VisualTeX numbered display host must occupy one Word paragraph.");
                 paragraph = paragraphs[1];
                 paragraphRange = paragraph.Range.Duplicate;
-                if (Convert.ToBoolean(paragraphRange.get_Information(WdInformation.wdWithInTable)))
+                if (WordEquationNumbering.IsWithinTableLayoutFree(paragraphRange))
                     throw new InvalidDataException(
                         "Body paragraph numbering cannot be attached inside a user table.");
                 ValidateDisplayParagraphGeometry(document, hostRange, paragraph, paragraphRange);
@@ -175,12 +169,17 @@ internal static partial class WordVisualTeXParagraphNumbering
                     hostRange.End);
             tabInsertion.Text = "\t";
 
-            var numberPlan = preparedNumberPlan?.BodyNumbering
-                ?? ResolveNumberPlan(document, hostRange.Start);
-            if (writtenLayout is not null)
-                InsertHeadingStateFields(document, hostRange, numberPlan, deferFinalization);
-            else
-                RebuildHeadingStateFields(document, hostRange, numberPlan);
+            ResolvedNumberPlan numberPlan;
+            using (WordOperationMetrics.Measure("Numbering.Attach.ResolvePlan"))
+                numberPlan = preparedNumberPlan?.BodyNumbering
+                    ?? ResolveNumberPlan(document, hostRange.Start);
+            using (WordOperationMetrics.Measure("Numbering.Attach.HeadingStateFields"))
+            {
+                if (writtenLayout is not null)
+                    InsertHeadingStateFields(document, hostRange, numberPlan, deferFinalization);
+                else
+                    RebuildHeadingStateFields(document, hostRange, numberPlan);
+            }
 
             CreatedBodyFields? createdFields = null;
             if (deferFinalization && preparedNumberPlan is not null)
@@ -188,7 +187,8 @@ internal static partial class WordVisualTeXParagraphNumbering
                 createdFields = new CreatedBodyFields();
                 preparedNumberPlan.CreatedBodyFields = createdFields;
             }
-            placeRef = CreatePlaceRef(document, hostRange.End + 1, numberPlan, createdFields);
+            using (WordOperationMetrics.Measure("Numbering.Attach.CreatePlaceRef"))
+                placeRef = CreatePlaceRef(document, hostRange.End + 1, numberPlan, createdFields);
             if (createdFields is not null)
             {
                 createdFields.TakeOuter(placeRef);
@@ -196,15 +196,19 @@ internal static partial class WordVisualTeXParagraphNumbering
             }
             if (!deferFinalization)
             {
-                UpdateHeadingStateFields(
-                    document,
-                    hostRange);
-                UpdatePlaceRefFields(placeRef!);
+                using (WordOperationMetrics.Measure("Numbering.Attach.UpdateFields"))
+                {
+                    UpdateHeadingStateFields(
+                        document,
+                        hostRange);
+                    UpdatePlaceRefFields(placeRef!);
+                }
 
-                return ResolveRequired(
-                    document,
-                    hostRange,
-                    host.FormulaId!);
+                using (WordOperationMetrics.Measure("Numbering.Attach.ResolveRequired"))
+                    return ResolveRequired(
+                        document,
+                        hostRange,
+                        host.FormulaId!);
             }
 
             // Batch conversion materializes the complete target stream before
@@ -426,9 +430,7 @@ internal static partial class WordVisualTeXParagraphNumbering
         Range? visibleNumber = null;
         try
         {
-            if (Convert.ToBoolean(
-                    hostRange.get_Information(
-                        WdInformation.wdWithInTable)))
+            if (WordEquationNumbering.IsWithinTableLayoutFree(hostRange))
                 return false;
             paragraphs = hostRange.Paragraphs;
             if (paragraphs.Count != 1)
@@ -930,18 +932,18 @@ internal static partial class WordVisualTeXParagraphNumbering
         if (!format.UsesHeading)
             return plan;
 
-        var scopes =
-            WordEquationNumbering
-                .CaptureHeadingScopesAtPositions(
-                    document,
-                    format.Id,
-                    new[] { formulaPosition });
-        var numberText =
-            scopes.TryGetValue(
-                    formulaPosition,
-                    out var scope)
-                ? scope.NumberText
-                : string.Empty;
+        // One formula: the nearest explicit heading found by a backward native
+        // Find decides, exactly as the full anchor scan would (that scan remains
+        // the fallback); the whole-document heading scan is for batches.
+        string numberText;
+        using (WordOperationMetrics.Measure("Numbering.Attach.HeadingScope"))
+            numberText =
+                WordEquationNumbering
+                    .ResolveHeadingScopeAtPosition(
+                        document,
+                        formulaPosition,
+                        format.Id)
+                    .NumberText;
         return PrepareNumberPlan(format, numberText);
     }
 
@@ -1266,6 +1268,8 @@ internal static partial class WordVisualTeXParagraphNumbering
         WordNumberingFieldCollection.Entry? entry = null;
         var placeRefCount = 0;
         var hasUserReferenceFields = false;
+        // End of the PlaceRef code whose nested fields were just evaluated.
+        var evaluatedPlaceRefEnd = -1;
         var createdFields = preparedVisualTeX?.CreateBodyFieldCursor();
         try
         {
@@ -1273,7 +1277,8 @@ internal static partial class WordVisualTeXParagraphNumbering
             // document.Fields[index] can enter a long WWLIB enumeration over
             // unrelated historical EMBED fields (CP110). The operation-local
             // snapshot preserves story order and all existing validation below.
-            fields = WordNumberingFieldCollection.Capture(document);
+            using (WordOperationMetrics.Measure("Numbering.BatchFields.Capture"))
+                fields = WordNumberingFieldCollection.Capture(document);
             for (var index = 1;
                  index <= fields.Count;
                  index++)
@@ -1289,10 +1294,18 @@ internal static partial class WordVisualTeXParagraphNumbering
 
                 var instruction = entry.Instruction;
 
+                // The snapshot also lists the fields nested in a PlaceRef. Those
+                // were evaluated together with their PlaceRef just before, so a
+                // second Update of each nested sequence would only repeat it.
+                if (entry.Type == WdFieldType.wdFieldSequence
+                    && code.Start < evaluatedPlaceRefEnd)
+                    continue;
+
                 if (IsHeadingStateRestartCode(
                         instruction))
                 {
-                    field.Update();
+                    using (WordOperationMetrics.Measure("Numbering.BatchFields.HeadingRestartUpdate"))
+                        field.Update();
                     continue;
                 }
 
@@ -1301,8 +1314,13 @@ internal static partial class WordVisualTeXParagraphNumbering
                     && IsPlaceRefCode(
                         instruction))
                 {
-                    if (createdFields?.TryUpdate(code) != true)
-                        UpdatePlaceRefFields(field);
+                    bool updatedFromPlan;
+                    using (WordOperationMetrics.Measure("Numbering.BatchFields.PlannedUpdate"))
+                        updatedFromPlan = createdFields?.TryUpdate(code) == true;
+                    if (!updatedFromPlan)
+                        using (WordOperationMetrics.Measure("Numbering.BatchFields.PlaceRefUpdate"))
+                            UpdatePlaceRefTree(field);
+                    evaluatedPlaceRefEnd = code.End;
                     placeRefCount++;
                     continue;
                 }
@@ -1332,11 +1350,12 @@ internal static partial class WordVisualTeXParagraphNumbering
         // Formula references are uncommon. Do not perform another document-wide
         // field pass when the document contains no REF/GOTOBUTTON at all.
         if (hasUserReferenceFields)
-            _ =
-                WordEquationReferenceFields
-                    .UpdateReferences(
-                        document,
-                        targetBookmarkNames);
+            using (WordOperationMetrics.Measure("Numbering.BatchFields.UpdateReferences"))
+                _ =
+                    WordEquationReferenceFields
+                        .UpdateReferences(
+                            document,
+                            targetBookmarkNames);
 
         return placeRefCount;
     }
@@ -1360,6 +1379,17 @@ internal static partial class WordVisualTeXParagraphNumbering
                    + SequenceName
                    + "\" ",
                    StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Batch finalization: a PlaceRef tree holds only SEQ fields (no STYLEREF, see
+    // the parenthesis acceptance), so one Update of the outer field evaluates
+    // them in code order (counter increment first, then the displayed values),
+    // as Word's own full field update does. Measured on 200 formulas: the same
+    // numbers at less than half the cost of one Update per nested field.
+    private static void UpdatePlaceRefTree(Field placeRef)
+    {
+        placeRef.Update();
+        try { placeRef.ShowCodes = false; } catch { }
     }
 
     private static void UpdatePlaceRefFields(Field placeRef)

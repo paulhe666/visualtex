@@ -3381,12 +3381,6 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             // directly; use the same path for redraw.
             var formulaKeys = new Dictionary<string, string>(StringComparer.Ordinal);
             var pendingKeys = new HashSet<string>(StringComparer.Ordinal);
-            var pendingTemplates = new List<(
-                string Key,
-                WordBulkRun Run,
-                WordLatexRedrawTarget Target,
-                OfficeSessionDocument Session,
-                int Index)>();
             var mathTypePreflightPrepared =
                 new System.Collections.Concurrent.ConcurrentDictionary<
                     string,
@@ -3403,6 +3397,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     Math.Min(4, Math.Max(1, Environment.ProcessorCount)));
 
             phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
+            var pendingRenders = new List<(
+                string Key,
+                WordBulkRun Run,
+                WordLatexRedrawTarget Target,
+                CreateVstoSessionRequest Request,
+                int Index)>();
             for (var index = 0; index < plan.Targets.Count; index++)
             {
                 lifetime.Token.ThrowIfCancellationRequested();
@@ -3425,125 +3425,229 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     || renderFailures.ContainsKey(key)
                     || !pendingKeys.Add(key))
                     continue;
-
-                SetStatus($"正在准备公式 {index + 1}/{plan.Targets.Count}…");
-                try
-                {
-                    var conversionSession = await CreateBulkFormulaConversionSessionAsync(
-                            client,
-                            run,
-                            objectMode,
-                            plan.DocumentId,
-                            target.FontSizePt,
-                            lifetime.Token)
-                        .ConfigureAwait(false);
-                    pendingTemplates.Add((key, run, target, conversionSession, index));
-                    converterSessionIds.Add(conversionSession.Id);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception error)
-                {
-                    var detail = string.IsNullOrWhiteSpace(error.Message)
-                        ? error.GetType().Name
-                        : error.Message.Trim();
-                    renderFailures[key] = detail;
-                    WriteRedrawAcceptanceLog(
-                        $"render-skipped index={index + 1} elapsedMs=0 "
-                        + $"fontSizePt={target.FontSizePt:0.##} display={target.DisplayMode} "
-                        + $"latex={target.Latex} error={detail}");
-                }
+                pendingRenders.Add((
+                    key,
+                    run,
+                    target,
+                    CreateBulkFormulaConversionRequest(
+                        run,
+                        objectMode,
+                        plan.DocumentId,
+                        target.FontSizePt),
+                    index));
             }
             WriteRedrawAcceptanceLog(
                 $"redraw-phase createSessionsMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
-                + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds} sessions={pendingTemplates.Count}");
+                + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds} sessions={pendingRenders.Count}");
 
-            if (pendingTemplates.Count > 0)
+            // VisualTeX and OMML redraws stream: Word writes each formula in
+            // document order as soon as its render is ready while later chunks are
+            // still rendering, instead of first waiting for the whole document.
+            // MathType keeps the two-phase path: its MTEF preflight and native
+            // preview batch validate every formula before Word is mutated.
+            StreamingLatexRedrawFormulas? streamed = null;
+            Task? streamProducer = null;
+            using var streamCancel =
+                CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            if (pendingRenders.Count > 0
+                && !string.Equals(
+                    objectMode,
+                    FormulaOleContract.MathTypeOleMode,
+                    StringComparison.Ordinal))
+            {
+                var stream = streamed = new StreamingLatexRedrawFormulas(
+                    objectMode,
+                    plan.Targets.Select(target => target.Id));
+                var targetsByKey = plan.Targets
+                    .GroupBy(target => formulaKeys[target.Id], StringComparer.Ordinal)
+                    .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
+                PreparedWordBulkFormula PreparedFromTemplate(
+                    WordLatexRedrawTarget target,
+                    RenderedWordBulkFormulaTemplate template)
+                {
+                    var run = new WordBulkRun
+                    {
+                        Id = target.Id,
+                        IsFormula = true,
+                        Latex = target.Latex,
+                        DisplayMode = target.DisplayMode,
+                    };
+                    return new PreparedWordBulkFormula
+                    {
+                        Run = run,
+                        Session = CloneBulkFormulaSession(
+                            template.Session,
+                            run,
+                            plan.DocumentId,
+                            target.FontSizePt,
+                            objectMode,
+                            mathTypeNumberPosition),
+                        MathMl = template.MathMl,
+                        PngPath = template.PngPath,
+                        EmfPath = template.EmfPath,
+                    };
+                }
+                WriteRedrawAcceptanceLog(
+                    $"render-stream-start unique={pendingRenders.Count} total={plan.Targets.Count}");
+                SetStatus($"正在渲染并写入 {plan.Targets.Count} 个公式…");
+                var streamWatch = Stopwatch.StartNew();
+                streamProducer = Task.Run(async () =>
+                {
+                    try
+                    {
+                        const int StreamChunkSize = 20;
+                        Task<RenderBatchResult>? SubmitStreamChunk(int offset) =>
+                            offset >= pendingRenders.Count
+                                ? null
+                                : client.RenderBatchAsync(
+                                    pendingRenders
+                                        .Skip(offset)
+                                        .Take(StreamChunkSize)
+                                        .Select(item => new RenderBatchItemRequest
+                                        {
+                                            Id = item.Run.Id,
+                                            Request = item.Request,
+                                        })
+                                        .ToList(),
+                                    TimeSpan.FromMinutes(3),
+                                    streamCancel.Token);
+                        var nextStreamChunk = SubmitStreamChunk(0);
+                        for (var offset = 0; offset < pendingRenders.Count; offset += StreamChunkSize)
+                        {
+                            streamCancel.Token.ThrowIfCancellationRequested();
+                            var chunk = pendingRenders
+                                .Skip(offset)
+                                .Take(StreamChunkSize)
+                                .ToArray();
+                            var chunkWait = Stopwatch.StartNew();
+                            RenderBatchResult? batch = null;
+                            string? chunkFailure = null;
+                            try
+                            {
+                                batch = await nextStreamChunk!.ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                throw;
+                            }
+                            catch (Exception error)
+                            {
+                                chunkFailure = string.IsNullOrWhiteSpace(error.Message)
+                                    ? error.GetType().Name
+                                    : error.Message.Trim();
+                            }
+                            chunkWait.Stop();
+                            nextStreamChunk = SubmitStreamChunk(offset + StreamChunkSize);
+                            WriteRedrawAcceptanceLog(
+                                $"render-chunk offset={offset} items={chunk.Length} waitMs={chunkWait.ElapsedMilliseconds}"
+                                + (chunkFailure is null ? string.Empty : $" error={chunkFailure}"));
+
+                            var materialized = chunkFailure is null
+                                ? MaterializeBulkFormulaTemplates(
+                                    client,
+                                    chunk
+                                        .Select((item, position) => (item.Run, batch!.Items[position].Session))
+                                        .ToList(),
+                                    objectMode)
+                                : null;
+                            for (var position = 0; position < chunk.Length; position++)
+                            {
+                                var pending = chunk[position];
+                                var itemMilliseconds = materialized?[position].Milliseconds ?? 0L;
+                                var error = materialized?[position].Error;
+                                var detail = chunkFailure
+                                    ?? (error is null
+                                        ? null
+                                        : string.IsNullOrWhiteSpace(error.Message)
+                                            ? error.GetType().Name
+                                            : error.Message.Trim());
+                                if (detail is not null)
+                                {
+                                    WriteRedrawAcceptanceLog(
+                                        $"render-skipped index={pending.Index + 1} elapsedMs={itemMilliseconds} "
+                                        + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
+                                        + $"latex={pending.Target.Latex} error={detail}");
+                                    foreach (var target in targetsByKey[pending.Key])
+                                        stream.Fail(target.Id, detail);
+                                    continue;
+                                }
+                                var template = materialized![position].Template!;
+                                // Only this producer writes these until the writer
+                                // has finished and the producer has been awaited.
+                                rendered[pending.Key] = template;
+                                totalRenderMilliseconds += itemMilliseconds;
+                                maxRenderMilliseconds = Math.Max(
+                                    maxRenderMilliseconds,
+                                    itemMilliseconds);
+                                WriteRedrawAcceptanceLog(
+                                    $"render index={pending.Index + 1} elapsedMs={itemMilliseconds} "
+                                    + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
+                                    + $"latex={pending.Target.Latex}");
+                                foreach (var target in targetsByKey[pending.Key])
+                                    stream.Complete(target.Id, PreparedFromTemplate(target, template));
+                            }
+                        }
+                        WriteRedrawAcceptanceLog(
+                            $"redraw-phase renderStreamMs={streamWatch.ElapsedMilliseconds} "
+                            + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds}");
+                    }
+                    finally
+                    {
+                        // A target the producer never reached (cancellation or an
+                        // unexpected failure) is skipped by the writer, never awaited.
+                        stream.FailRemaining(
+                            streamCancel.IsCancellationRequested ? "已取消。" : "公式渲染未完成。");
+                    }
+                });
+            }
+
+            if (streamed is null && pendingRenders.Count > 0)
             {
                 phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
                 WriteRedrawAcceptanceLog(
-                    $"render-batch-start unique={pendingTemplates.Count} total={plan.Targets.Count}");
-                SetStatus($"正在批量渲染 {pendingTemplates.Count} 个独立公式…");
-                await client.OpenConverterBatchAsync(
-                        pendingTemplates.Select(item => item.Session.Id).ToList(),
-                        lifetime.Token)
-                    .ConfigureAwait(false);
+                    $"render-batch-start unique={pendingRenders.Count} total={plan.Targets.Count}");
+                SetStatus($"正在批量渲染 {pendingRenders.Count} 个独立公式…");
+
+                // Render through ephemeral batch jobs, as format conversion does:
+                // no Session file per formula, no fsync per save and no 16 ms
+                // polling per formula. Each item keeps its own correlation id, so
+                // one hidden converter can never hand a result to the wrong
+                // formula. The next chunk is submitted before this chunk's
+                // previews are materialized, so the companion keeps rendering
+                // while the add-in writes the EMF/PNG files.
+                const int RenderChunkSize = 20;
+                Task<RenderBatchResult>? SubmitChunk(int offset) =>
+                    offset >= pendingRenders.Count
+                        ? null
+                        : client.RenderBatchAsync(
+                            pendingRenders
+                                .Skip(offset)
+                                .Take(RenderChunkSize)
+                                .Select(item => new RenderBatchItemRequest
+                                {
+                                    Id = item.Run.Id,
+                                    Request = item.Request,
+                                })
+                                .ToList(),
+                            TimeSpan.FromMinutes(3),
+                            lifetime.Token);
 
                 var renderCompleted = 0;
-                progress.Report("正在渲染公式…", 0, pendingTemplates.Count);
-                foreach (var pending in pendingTemplates)
+                progress.Report("正在渲染公式…", 0, pendingRenders.Count);
+                var nextChunk = SubmitChunk(0);
+                for (var offset = 0; offset < pendingRenders.Count; offset += RenderChunkSize)
                 {
                     lifetime.Token.ThrowIfCancellationRequested();
-                    var stopwatch = Stopwatch.StartNew();
+                    var chunk = pendingRenders
+                        .Skip(offset)
+                        .Take(RenderChunkSize)
+                        .ToArray();
+                    var chunkWait = Stopwatch.StartNew();
+                    RenderBatchResult? batch = null;
+                    string? chunkFailure = null;
                     try
                     {
-                        var completedSession = await client.WaitForCommitAsync(
-                                pending.Session.Id,
-                                TimeSpan.FromMinutes(3),
-                                lifetime.Token)
-                            .ConfigureAwait(false);
-                        var template = MaterializeBulkFormulaTemplate(
-                            client,
-                            pending.Run,
-                            objectMode,
-                            completedSession);
-                        stopwatch.Stop();
-                        totalRenderMilliseconds += stopwatch.ElapsedMilliseconds;
-                        maxRenderMilliseconds = Math.Max(
-                            maxRenderMilliseconds,
-                            stopwatch.ElapsedMilliseconds);
-                        rendered.Add(pending.Key, template);
-                        if (string.Equals(
-                                objectMode,
-                                FormulaOleContract.MathTypeOleMode,
-                                StringComparison.Ordinal))
-                        {
-                            var preflightKey = pending.Key;
-                            var preflightMathMl = template.MathMl
-                                ?? throw new InvalidDataException(
-                                    $"MathType 重绘模板 {pending.Key} 缺少 MathML。");
-                            var preflightInline = string.Equals(
-                                template.Session.DisplayMode,
-                                "inline",
-                                StringComparison.OrdinalIgnoreCase);
-                            var preflightFontSizePt = template.Session.FontSizePt;
-                            var preflightLatex = template.Session.ToMetadata().Latex;
-                            mathTypePreflightTasks.Add(Task.Run(
-                                async () =>
-                                {
-                                    await mathTypePreflightGate
-                                        .WaitAsync(lifetime.Token)
-                                        .ConfigureAwait(false);
-                                    try
-                                    {
-                                        mathTypePreflightPrepared[preflightKey] =
-                                            WordFormulaService.PrepareStandaloneMathTypeOleData(
-                                                preflightMathMl,
-                                                preflightInline,
-                                                preflightFontSizePt,
-                                                preflightLatex);
-                                    }
-                                    catch (Exception error)
-                                    {
-                                        var detail = string.IsNullOrWhiteSpace(error.Message)
-                                            ? error.GetType().Name
-                                            : error.Message.Trim();
-                                        mathTypePreflightFailures[preflightKey] =
-                                            (preflightLatex, detail);
-                                    }
-                                    finally
-                                    {
-                                        mathTypePreflightGate.Release();
-                                    }
-                                },
-                                lifetime.Token));
-                        }
-                        WriteRedrawAcceptanceLog(
-                            $"render index={pending.Index + 1} elapsedMs={stopwatch.ElapsedMilliseconds} "
-                            + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
-                            + $"latex={pending.Target.Latex}");
+                        batch = await nextChunk!.ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
@@ -3551,17 +3655,107 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     }
                     catch (Exception error)
                     {
-                        stopwatch.Stop();
-                        var detail = string.IsNullOrWhiteSpace(error.Message)
+                        chunkFailure = string.IsNullOrWhiteSpace(error.Message)
                             ? error.GetType().Name
                             : error.Message.Trim();
-                        renderFailures[pending.Key] = detail;
-                        WriteRedrawAcceptanceLog(
-                            $"render-skipped index={pending.Index + 1} elapsedMs={stopwatch.ElapsedMilliseconds} "
-                            + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
-                            + $"latex={pending.Target.Latex} error={detail}");
                     }
-                    progress.Report("正在渲染公式…", ++renderCompleted, pendingTemplates.Count);
+                    chunkWait.Stop();
+                    nextChunk = SubmitChunk(offset + RenderChunkSize);
+                    WriteRedrawAcceptanceLog(
+                        $"render-chunk offset={offset} items={chunk.Length} waitMs={chunkWait.ElapsedMilliseconds}"
+                        + (chunkFailure is null ? string.Empty : $" error={chunkFailure}"));
+
+                    var materialized = chunkFailure is null
+                        ? MaterializeBulkFormulaTemplates(
+                            client,
+                            chunk
+                                .Select((item, position) => (item.Run, batch!.Items[position].Session))
+                                .ToList(),
+                            objectMode)
+                        : null;
+                    for (var position = 0; position < chunk.Length; position++)
+                    {
+                        var pending = chunk[position];
+                        var itemMilliseconds = materialized?[position].Milliseconds ?? 0L;
+                        try
+                        {
+                            if (chunkFailure is not null)
+                                throw new InvalidOperationException(chunkFailure);
+                            if (materialized![position].Error is { } materializeError)
+                                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(materializeError).Throw();
+                            var template = materialized[position].Template!;
+                            totalRenderMilliseconds += itemMilliseconds;
+                            maxRenderMilliseconds = Math.Max(
+                                maxRenderMilliseconds,
+                                itemMilliseconds);
+                            rendered.Add(pending.Key, template);
+                            if (string.Equals(
+                                    objectMode,
+                                    FormulaOleContract.MathTypeOleMode,
+                                    StringComparison.Ordinal))
+                            {
+                                var preflightKey = pending.Key;
+                                var preflightMathMl = template.MathMl
+                                    ?? throw new InvalidDataException(
+                                        $"MathType 重绘模板 {pending.Key} 缺少 MathML。");
+                                var preflightInline = string.Equals(
+                                    template.Session.DisplayMode,
+                                    "inline",
+                                    StringComparison.OrdinalIgnoreCase);
+                                var preflightFontSizePt = template.Session.FontSizePt;
+                                var preflightLatex = template.Session.ToMetadata().Latex;
+                                mathTypePreflightTasks.Add(Task.Run(
+                                    async () =>
+                                    {
+                                        await mathTypePreflightGate
+                                            .WaitAsync(lifetime.Token)
+                                            .ConfigureAwait(false);
+                                        try
+                                        {
+                                            mathTypePreflightPrepared[preflightKey] =
+                                                WordFormulaService.PrepareStandaloneMathTypeOleData(
+                                                    preflightMathMl,
+                                                    preflightInline,
+                                                    preflightFontSizePt,
+                                                    preflightLatex);
+                                        }
+                                        catch (Exception error)
+                                        {
+                                            var detail = string.IsNullOrWhiteSpace(error.Message)
+                                                ? error.GetType().Name
+                                                : error.Message.Trim();
+                                            mathTypePreflightFailures[preflightKey] =
+                                                (preflightLatex, detail);
+                                        }
+                                        finally
+                                        {
+                                            mathTypePreflightGate.Release();
+                                        }
+                                    },
+                                    lifetime.Token));
+                            }
+                            WriteRedrawAcceptanceLog(
+                                $"render index={pending.Index + 1} elapsedMs={itemMilliseconds} "
+                                + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
+                                + $"latex={pending.Target.Latex}");
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception error)
+                        {
+                            var detail = string.IsNullOrWhiteSpace(error.Message)
+                                ? error.GetType().Name
+                                : error.Message.Trim();
+                            renderFailures[pending.Key] = detail;
+                            WriteRedrawAcceptanceLog(
+                                $"render-skipped index={pending.Index + 1} elapsedMs={itemMilliseconds} "
+                                + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
+                                + $"latex={pending.Target.Latex} error={detail}");
+                        }
+                        progress.Report("正在渲染公式…", ++renderCompleted, pendingRenders.Count);
+                    }
                 }
                 WriteRedrawAcceptanceLog(
                     $"redraw-phase renderBatchMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
@@ -3656,7 +3850,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             }
 
             phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
-            for (var index = 0; index < plan.Targets.Count; index++)
+            // Streamed formulas are prepared by the render producer instead.
+            for (var index = 0; streamed is null && index < plan.Targets.Count; index++)
             {
                 var target = plan.Targets[index];
                 var key = formulaKeys[target.Id];
@@ -3719,7 +3914,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 $"redraw-phase prepareTargetsMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
                 + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds} prepared={prepared.Count}");
 
-            if (prepared.Count == 0)
+            if (streamed is null && prepared.Count == 0)
             {
                 WriteRedrawAcceptanceLog(
                     $"redraw-complete formulas=0 unique=0 skipped={skippedTargets.Count} "
@@ -3738,20 +3933,47 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 return;
             }
 
-            plan.Targets = plan.Targets
-                .Where(target => prepared.ContainsKey(target.Id))
-                .ToList();
-            SetStatus("公式渲染完成，正在原位写入 Word…");
+            if (streamed is null)
+            {
+                plan.Targets = plan.Targets
+                    .Where(target => prepared.ContainsKey(target.Id))
+                    .ToList();
+                SetStatus("公式渲染完成，正在原位写入 Word…");
+            }
             BeginFormulaFormatMutation();
             phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
             WordLatexRedrawResult result;
             try
             {
                 result = await dispatcher.InvokeAsync(
-                        () => service.ApplyLatexRedrawPlan(plan, prepared))
+                        () => streamed is null
+                            ? service.ApplyLatexRedrawPlan(plan, prepared)
+                            : service.ApplyLatexRedrawPlan(plan, streamed))
                     .ConfigureAwait(false);
             }
-            finally { EndFormulaFormatMutation(); }
+            finally
+            {
+                EndFormulaFormatMutation();
+                if (streamProducer is not null)
+                {
+                    // After a complete write every target was taken and the
+                    // producer is done; after an aborted write stop rendering
+                    // formulas nobody will take, then observe the outcome.
+                    streamCancel.Cancel();
+                    try
+                    {
+                        await streamProducer.ConfigureAwait(false);
+                    }
+                    catch (Exception error) when (error is not OperationCanceledException)
+                    {
+                        WriteRedrawAcceptanceLog($"render-stream-failed error={error.GetType().Name}: {error.Message}");
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
+                    streamed?.Dispose();
+                }
+            }
             foreach (var failure in result.Failures)
             {
                 var failedTarget = plan.Targets.FirstOrDefault(
@@ -3799,6 +4021,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         + result.InsertMetricDetails[timingIndex]);
                 }
             }
+            if (!string.IsNullOrWhiteSpace(result.FinalizationMetricDetail))
+                WriteRedrawAcceptanceLog("finalization-metrics " + result.FinalizationMetricDetail);
             // Converter sessions are temporary render workspaces. The Word
             // transaction is already committed, so do not serialize one local
             // completion request per formula on the user-visible redraw path.
@@ -4219,7 +4443,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var pendingTemplates = new List<(
                 string Key,
                 WordBulkRun Run,
-                OfficeSessionDocument Session)>();
+                CreateVstoSessionRequest Request)>();
 
             for (var index = 0; index < formulaRuns.Count; index++)
             {
@@ -4239,17 +4463,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 WriteBulkAcceptanceLog(
                     $"render-prepare index={index + 1}/{formulaRuns.Count} "
                     + $"display={run.DisplayMode} latex={run.Latex}");
-                SetStatus($"正在准备公式 {index + 1}/{formulaRuns.Count}…");
-                var conversionSession = await CreateBulkFormulaConversionSessionAsync(
-                        client,
+                pendingTemplates.Add((
+                    key,
+                    run,
+                    CreateBulkFormulaConversionRequest(
                         run,
                         objectMode,
                         sourceDocumentId,
-                        fontSizePt,
-                        lifetime.Token)
-                    .ConfigureAwait(false);
-                pendingTemplates.Add((key, run, conversionSession));
-                ownedSessionIds.Add(conversionSession.Id);
+                        fontSizePt)));
             }
 
             if (pendingTemplates.Count > 0)
@@ -4258,26 +4479,54 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     $"render-batch-start unique={pendingTemplates.Count} total={formulaRuns.Count}");
                 SetStatus($"正在批量渲染 {pendingTemplates.Count} 个独立公式…");
                 var renderStopwatch = Stopwatch.StartNew();
-                await client.OpenConverterBatchAsync(
-                        pendingTemplates.Select(item => item.Session.Id).ToList(),
-                        lifetime.Token)
-                    .ConfigureAwait(false);
-                foreach (var pending in pendingTemplates)
-                {
-                    var completedSession = await client.WaitForCommitAsync(
-                            pending.Session.Id,
+                // Ephemeral render jobs (as format conversion uses): no Session
+                // file, fsync or 16 ms poll per formula. The next chunk renders in
+                // the companion while this chunk's previews are materialized.
+                const int RenderChunkSize = 20;
+                Task<RenderBatchResult>? SubmitChunk(int offset) =>
+                    offset >= pendingTemplates.Count
+                        ? null
+                        : client.RenderBatchAsync(
+                            pendingTemplates
+                                .Skip(offset)
+                                .Take(RenderChunkSize)
+                                .Select(item => new RenderBatchItemRequest
+                                {
+                                    Id = item.Run.Id,
+                                    Request = item.Request,
+                                })
+                                .ToList(),
                             TimeSpan.FromMinutes(3),
-                            lifetime.Token)
-                        .ConfigureAwait(false);
-                    var template = MaterializeBulkFormulaTemplate(
+                            lifetime.Token);
+                var nextChunk = SubmitChunk(0);
+                for (var offset = 0; offset < pendingTemplates.Count; offset += RenderChunkSize)
+                {
+                    lifetime.Token.ThrowIfCancellationRequested();
+                    var chunk = pendingTemplates
+                        .Skip(offset)
+                        .Take(RenderChunkSize)
+                        .ToArray();
+                    var batch = await nextChunk!.ConfigureAwait(false);
+                    nextChunk = SubmitChunk(offset + RenderChunkSize);
+                    var materialized = MaterializeBulkFormulaTemplates(
                         client,
-                        pending.Run,
-                        objectMode,
-                        completedSession);
-                    rendered.Add(pending.Key, template);
-                    WriteBulkAcceptanceLog(
-                        $"render-batch-item sessionId={completedSession.Id} "
-                        + $"status={completedSession.Status} display={pending.Run.DisplayMode}");
+                        chunk
+                            .Select((item, position) => (item.Run, batch.Items[position].Session))
+                            .ToList(),
+                        objectMode);
+                    for (var position = 0; position < chunk.Length; position++)
+                    {
+                        var pending = chunk[position];
+                        var completedSession = batch.Items[position].Session;
+                        if (materialized[position].Error is { } materializeError)
+                            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(materializeError).Throw();
+                        var template = materialized[position].Template!;
+                        rendered.Add(pending.Key, template);
+                        WriteBulkAcceptanceLog(
+                            $"render-batch-item itemId={pending.Run.Id} "
+                            + $"status={completedSession.Status} display={pending.Run.DisplayMode}");
+                    }
+                    SetStatus($"正在批量渲染公式 {Math.Min(offset + RenderChunkSize, pendingTemplates.Count)}/{pendingTemplates.Count}…");
                 }
                 renderStopwatch.Stop();
                 WriteBulkAcceptanceLog(
@@ -4393,13 +4642,26 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
             SetStatus("公式渲染完成，正在写入 Word…");
             var insertStopwatch = Stopwatch.StartNew();
-            var result = await dispatcher.InvokeAsync(() =>
-                    service.InsertBulkDocument(
-                        document,
-                        prepared,
-                        sourceDocumentId,
-                        selection.ObjectId))
-                .ConfigureAwait(false);
+            // Like redraw/conversion/insert: the import's own typing and caret moves
+            // are not user selections. Without the guard every TypeText ran the
+            // full selection-change handler (OLE probes, caret normalization,
+            // paste-repair scheduling): ~500 callbacks for a 200-formula import.
+            BeginFormulaFormatMutation();
+            WordBulkInsertResult result;
+            try
+            {
+                result = await dispatcher.InvokeAsync(() =>
+                        service.InsertBulkDocument(
+                            document,
+                            prepared,
+                            sourceDocumentId,
+                            selection.ObjectId))
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                EndFormulaFormatMutation();
+            }
             insertStopwatch.Stop();
             WriteBulkAcceptanceLog(
                 $"bulk-insert-complete blocks={result.BlockCount} "
@@ -4688,6 +4950,45 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 OriginalMetadata = originalMetadata,
                 AutoCommitOnClose = false,
             };
+    }
+
+    // Builds the previews of several render results concurrently. Each item's
+    // preview is independent CPU work (SVG parse, GDI+ EMF recording and ink
+    // measurement) over its own uniquely named files, so a batch no longer
+    // waits for one formula's measurement bitmaps before starting the next.
+    // Results and failures keep the input order; nothing touches Word here.
+    private static (RenderedWordBulkFormulaTemplate? Template, Exception? Error, long Milliseconds)[]
+        MaterializeBulkFormulaTemplates(
+            VisualTeXSessionClient client,
+            IReadOnlyList<(WordBulkRun Run, OfficeSessionDocument Session)> items,
+            string objectMode,
+            bool materializePreview = true)
+    {
+        var results = new (RenderedWordBulkFormulaTemplate? Template, Exception? Error, long Milliseconds)[items.Count];
+        var degree = Math.Max(1, Math.Min(4, Environment.ProcessorCount - 1));
+        System.Threading.Tasks.Parallel.For(
+            0,
+            items.Count,
+            new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = degree },
+            index =>
+            {
+                var watch = Stopwatch.StartNew();
+                try
+                {
+                    var template = MaterializeBulkFormulaTemplate(
+                        client,
+                        items[index].Run,
+                        objectMode,
+                        items[index].Session,
+                        materializePreview);
+                    results[index] = (template, null, watch.ElapsedMilliseconds);
+                }
+                catch (Exception error)
+                {
+                    results[index] = (null, error, watch.ElapsedMilliseconds);
+                }
+            });
+        return results;
     }
 
     private static RenderedWordBulkFormulaTemplate MaterializeBulkFormulaTemplate(

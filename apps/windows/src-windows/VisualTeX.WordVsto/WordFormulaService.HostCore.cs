@@ -250,6 +250,8 @@ internal sealed partial class WordFormulaService
         string mathMl,
         string emfPath)
     {
+        using var numberFormatScope =
+            WordEquationNumberFormatAuthority.BeginOperationScope();
         if (string.Equals(
                 session.Mode,
                 "create",
@@ -340,6 +342,8 @@ internal sealed partial class WordFormulaService
         string? pngPath,
         string? emfPath)
     {
+        using var numberFormatScope =
+            WordEquationNumberFormatAuthority.BeginOperationScope();
         Document? document = null;
         Range? insertion = null;
         Range? finalRange = null;
@@ -639,10 +643,16 @@ internal sealed partial class WordFormulaService
             $"Unsupported Word formula object mode '{objectMode ?? "<null>"}'.");
     }
 
+    // bodyNumberingPending: a body VisualTeX host whose self-contained number
+    // fields were attached but are evaluated later by one ordered refresh (batch
+    // import). Its paragraph is the canonical tab paragraph by construction, so
+    // the caret takes the ordinary next-paragraph path a finished one takes;
+    // container discovery would misread the not-yet-evaluated number.
     private void RestoreCaretAfterCoreMutation(
         Document document,
         WordFormulaHostDescriptor host,
-        Range hostRange)
+        Range hostRange,
+        bool bodyNumberingPending = false)
     {
         if (string.Equals(
                 host.DisplayMode,
@@ -667,7 +677,7 @@ internal sealed partial class WordFormulaService
             // Pure OMML never owns an external numbering table/cell container:
             // its #(SEQ/STYLEREF) lives inside the OMath itself. Only external
             // OLE hosts need container discovery before restoring the caret.
-            if (host.Kind != WordFormulaHostKind.Omml)
+            if (host.Kind != WordFormulaHostKind.Omml && !bodyNumberingPending)
             {
                 var numbering =
                     WordFormulaNumberingResolver.ResolveLocal(

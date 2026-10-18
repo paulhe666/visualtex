@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -443,6 +444,7 @@ internal static class MathTypeEquationNumbering
 
     internal static bool TryInferDocumentFormat(
         Document document,
+        int searchEnd,
         out int start,
         out string formatId)
     {
@@ -451,39 +453,85 @@ internal static class MathTypeEquationNumbering
 
         start = int.MaxValue;
         formatId = string.Empty;
-        WordNumberingFieldCollection? fields = null;
+        // The earliest MathType number decides. Word's Find over field codes
+        // walks straight to each MTPlaceRef in document order, so only the
+        // paragraphs that contain one are inspected; snapshotting every field of
+        // the document cost tens of seconds beside hundreds of other numbers.
+        // A number found only from searchEnd on (where an earlier number of
+        // another family already starts) could not decide, so it is not sought.
+        Range? scope = null;
+        Range? search = null;
+        Range? unit = null;
+        TextRetrievalMode? retrieval = null;
+        Find? find = null;
+        Fields? fields = null;
         Field? field = null;
         Range? code = null;
         Range? result = null;
         try
         {
-            fields = WordNumberingFieldCollection.Capture(document);
-            for (var index = 1; index <= fields.Count; index++)
+            scope = document.Content;
+            var cursor = scope.Start;
+            var end = Math.Min(scope.End, searchEnd);
+            while (cursor < end)
             {
-                Release(result);
-                result = null;
-                Release(code);
-                code = null;
-                Release(field);
-                field = fields[index];
-                if (field.Type != WdFieldType.wdFieldMacroButton)
-                    continue;
+                Release(fields); fields = null;
+                Release(unit); unit = null;
+                Release(find); find = null;
+                Release(retrieval); retrieval = null;
+                Release(search);
+                search = scope.Duplicate;
+                search.SetRange(cursor, end);
+                retrieval = search.TextRetrievalMode;
+                retrieval.IncludeFieldCodes = true;
+                retrieval.IncludeHiddenText = true;
+                find = search.Find;
+                find.ClearFormatting();
+                find.Text = "MTPlaceRef";
+                find.Forward = true;
+                find.Wrap = WdFindWrap.wdFindStop;
+                find.Format = false;
+                find.MatchWildcards = false;
+                find.MatchCase = false;
+                find.MatchWholeWord = false;
+                find.MatchSoundsLike = false;
+                find.MatchAllWordForms = false;
+                bool found;
+                using (WordOperationMetrics.Measure("Numbering.Authority.InferMathType.Find"))
+                    found = find.Execute();
+                if (!found)
+                    return false;
+                using var hitMetric = WordOperationMetrics.Measure("Numbering.Authority.InferMathType.Hit");
+                unit = WordNumberingFieldCollection.CaptureSearchUnit(search);
+                if (unit.End <= cursor || !unit.InStory(scope))
+                    throw new InvalidDataException("MathType number discovery did not advance its paragraph window.");
+                fields = WordFormulaHost.GetLocalFields(unit);
+                for (var index = 1; index <= fields.Count; index++)
+                {
+                    Release(result); result = null;
+                    Release(code); code = null;
+                    Release(field);
+                    field = fields[index];
+                    if (field.Type != WdFieldType.wdFieldMacroButton)
+                        continue;
+                    if (!WordNumberingFieldCollection.TryCaptureCurrentCode(field, out code, out var instruction)
+                        || !MathTypeEquationReferences.IsMathTypePlaceRefCode(instruction))
+                        continue;
+                    result = field.Result;
+                    // MACROBUTTON has no field result (Result is empty at its
+                    // end): Word displays the instruction after the macro name,
+                    // nested numbers as their results. Read that visible number.
+                    if (!TryInferFormatFromVisiblePlaceRef(
+                            MathTypeEquationReferences.ReadVisibleNumberText(field),
+                            out formatId))
+                        continue;
 
-                code = field.Code;
-                if (!MathTypeEquationReferences.IsMathTypePlaceRefCode(
-                        code.Text))
-                    continue;
-
-                result = field.Result;
-                if (!TryInferFormatFromVisiblePlaceRef(
-                        result.Text,
-                        out formatId))
-                    continue;
-
-                start = Math.Min(
-                    code.Start,
-                    result.Start);
-                return true;
+                    start = Math.Min(
+                        code!.Start,
+                        result.Start);
+                    return true;
+                }
+                cursor = unit.End;
             }
             return false;
         }
@@ -493,6 +541,11 @@ internal static class MathTypeEquationNumbering
             Release(code);
             Release(field);
             Release(fields);
+            Release(unit);
+            Release(find);
+            Release(retrieval);
+            Release(search);
+            Release(scope);
         }
     }
 

@@ -14,6 +14,18 @@ internal static partial class WordFormulaNumberingKernel
         private readonly List<(WordFormulaHostDescriptor Host, Range LiveRange, string OperationId)> _existingTables = new();
         internal NumberPlan For(string operationId) => _plans[operationId];
 
+        // A target whose own transaction was rolled back (independent redraw
+        // records) no longer owns the fields it created; forget them so the
+        // final ordered field pass expects only materialized numbers.
+        internal void Discard(string operationId)
+        {
+            if (!_plans.TryGetValue(operationId, out var plan)) return;
+            plan.WrittenBodyLayout?.Dispose();
+            plan.WrittenBodyLayout = null;
+            plan.CreatedBodyFields?.Dispose();
+            plan.CreatedBodyFields = null;
+        }
+
         internal static VisualTeXConversionNumberPlan Capture(Document document,
             IEnumerable<(string OperationId, int Position)> newTargets, string formatId)
         {

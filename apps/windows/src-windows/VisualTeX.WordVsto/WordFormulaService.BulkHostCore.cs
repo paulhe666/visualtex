@@ -14,6 +14,8 @@ internal sealed partial class WordFormulaService
         string? expectedDocumentId,
         string? sourceObjectId)
     {
+        using var numberFormatScope =
+            WordEquationNumberFormatAuthority.BeginOperationScope();
         if (source is null)
             throw new ArgumentNullException(nameof(source));
         if (prepared is null)
@@ -22,6 +24,12 @@ internal sealed partial class WordFormulaService
         Document? document = null;
         Selection? selection = null;
         Range? captured = null;
+        // Diagnostics only (same switch as the redraw perf log): where the
+        // bulk write spends its time.
+        var bulkMetrics = string.IsNullOrWhiteSpace(
+                Environment.GetEnvironmentVariable("VISUALTEX_VSTO_REDRAW_PERF_LOG"))
+            ? null
+            : new WordOperationMetrics();
         try
         {
             document = _application.ActiveDocument
@@ -54,6 +62,10 @@ internal sealed partial class WordFormulaService
 
                     var insertedIds =
                         new List<string>();
+                    var deferredVisualTeXNumbers = 0;
+                    // As in the redraw: display tab stops once per section.
+                    var displayTabStopsBySection =
+                        new Dictionary<int, (float Center, float Right)>();
 
                     for (var blockIndex = 0;
                          blockIndex < source.Blocks.Count;
@@ -85,17 +97,21 @@ internal sealed partial class WordFormulaService
                                 "block";
                             formula.Session.Numbered =
                                 source.NumberDisplayFormulas;
-                            InsertPreparedHostCore(
-                                document,
-                                selection,
-                                formula,
-                                display: true,
-                                insertedIds);
+                            using (WordOperationMetrics.Measure("Bulk.DisplayFormula"))
+                                if (InsertPreparedHostCore(
+                                        document,
+                                        selection,
+                                        formula,
+                                        display: true,
+                                        insertedIds,
+                                        displayTabStopsBySection))
+                                    deferredVisualTeXNumbers++;
 
-                            ResetNextParagraphFormatting(
-                                selection,
-                                block.Kind,
-                                nextKind);
+                            using (WordOperationMetrics.Measure("Bulk.ResetNextParagraph"))
+                                ResetNextParagraphFormatting(
+                                    selection,
+                                    block.Kind,
+                                    nextKind);
                             continue;
                         }
 
@@ -112,10 +128,11 @@ internal sealed partial class WordFormulaService
                         {
                             if (!run.IsFormula)
                             {
-                                InsertNativeTextRun(
-                                    document,
-                                    selection,
-                                    run);
+                                using (WordOperationMetrics.Measure("Bulk.TextRun"))
+                                    InsertNativeTextRun(
+                                        document,
+                                        selection,
+                                        run);
                                 continue;
                             }
 
@@ -127,21 +144,24 @@ internal sealed partial class WordFormulaService
 
                             var placeholderStart =
                                 selection.Start;
-                            selection.TypeText(
-                                BulkInlineFormulaPlaceholder);
+                            using (WordOperationMetrics.Measure("Bulk.Placeholder"))
+                                selection.TypeText(
+                                    BulkInlineFormulaPlaceholder);
                             pending.Add((
                                 placeholderStart,
                                 formula));
                         }
 
-                        selection.TypeParagraph();
+                        using (WordOperationMetrics.Measure("Bulk.TypeParagraph"))
+                            selection.TypeParagraph();
                         var paragraphEnd =
                             selection.Start;
-                        ApplyBulkParagraphFormatting(
-                            document,
-                            paragraphStart,
-                            paragraphEnd,
-                            block);
+                        using (WordOperationMetrics.Measure("Bulk.ParagraphFormatting"))
+                            ApplyBulkParagraphFormatting(
+                                document,
+                                paragraphStart,
+                                paragraphEnd,
+                                block);
 
                         for (var index =
                                  pending.Count - 1;
@@ -182,13 +202,20 @@ internal sealed partial class WordFormulaService
                                         item.Formula.MathMl,
                                         item.Formula.PngPath,
                                         item.Formula.EmfPath);
-                                var inserted =
-                                    WordFormulaHostMutationKernel
-                                        .InsertInActiveTransaction(
-                                            _application,
-                                            document,
-                                            insertion,
-                                            request);
+                                // Like the LaTeX redraw: a batch writer inserting at a
+                                // collapsed caret imports the prepared equation directly
+                                // and skips the duplicate generic read-back validation
+                                // (the writers prove the host they wrote).
+                                request.BatchMutation = true;
+                                WordFormulaHostDescriptor inserted;
+                                using (WordOperationMetrics.Measure("Bulk.InlineFormula"))
+                                    inserted =
+                                        WordFormulaHostMutationKernel
+                                            .InsertInActiveTransaction(
+                                                _application,
+                                                document,
+                                                insertion,
+                                                request);
                                 insertedIds.Add(
                                     inserted.FormulaId
                                     ?? item.Formula.Session.FormulaId);
@@ -200,15 +227,28 @@ internal sealed partial class WordFormulaService
                             }
                         }
 
-                        MoveSelectionAfterBulkParagraph(
-                            document,
-                            selection,
-                            paragraphStart);
-                        ResetNextParagraphFormatting(
-                            selection,
-                            block.Kind,
-                            nextKind);
+                        using (WordOperationMetrics.Measure("Bulk.MoveSelection"))
+                            MoveSelectionAfterBulkParagraph(
+                                document,
+                                selection,
+                                paragraphStart);
+                        using (WordOperationMetrics.Measure("Bulk.ResetNextParagraph"))
+                            ResetNextParagraphFormatting(
+                                selection,
+                                block.Kind,
+                                nextKind);
                     }
+
+                    // Numbered VisualTeX hosts were written with their field
+                    // trees but without per-formula evaluation: one ordered field
+                    // pass gives every number, as after a batch redraw/conversion.
+                    // Inside the import transaction, so a failure rolls it back.
+                    if (deferredVisualTeXNumbers > 0)
+                        using (WordOperationMetrics.Measure("Bulk.RefreshNumbers"))
+                            _ = WordFormulaNumberingKernel.RefreshCanonicalNumbers(
+                                document,
+                                kindFilter: WordFormulaHostKind.VisualTeX,
+                                minimumExpectedNumbered: deferredVisualTeXNumbers);
 
                     return new WordBulkInsertResult
                     {
@@ -223,18 +263,30 @@ internal sealed partial class WordFormulaService
         }
         finally
         {
+            if (bulkMetrics is not null)
+            {
+                bulkMetrics.Dispose();
+                WordDoubleClickHook.TraceMessage(
+                    "bulk-insert-metrics " + string.Join(" | ", bulkMetrics.Entries
+                        .OrderByDescending(item => item.Value.Milliseconds)
+                        .Take(30)
+                        .Select(item => $"{item.Key}={item.Value.Milliseconds:0}/{item.Value.Calls}")));
+            }
             Release(captured);
             Release(selection);
             Release(document);
         }
     }
 
-    private void InsertPreparedHostCore(
+    // Returns true when the formula is a numbered VisualTeX host whose number
+    // is left to the caller's single ordered refresh.
+    private bool InsertPreparedHostCore(
         Document document,
         Selection selection,
         PreparedWordBulkFormula formula,
         bool display,
-        ICollection<string> insertedIds)
+        ICollection<string> insertedIds,
+        IDictionary<int, (float Center, float Right)> displayTabStopsBySection)
     {
         Range? insertion = null;
         Range? current = null;
@@ -308,6 +360,28 @@ internal sealed partial class WordFormulaService
                     formula.MathMl,
                     formula.PngPath,
                     formula.EmfPath);
+            // Batch write as the redraw does (see the inline case). A numbered
+            // VisualTeX host is attached without evaluation; its number comes
+            // from the caller's ordered refresh after the import. Numbered native
+            // OMML keeps per-formula numbering finalization.
+            var deferVisualTeXNumber = formula.Session.Numbered
+                && request.Kind == WordFormulaHostKind.VisualTeX;
+            request.BatchMutation = !formula.Session.Numbered || deferVisualTeXNumber;
+            if (display && request.Kind == WordFormulaHostKind.VisualTeX)
+            {
+                using (WordOperationMetrics.Measure("Bulk.DisplayTabStops"))
+                {
+                    var tabStops = ResolveBatchDisplayTabStops(
+                        document,
+                        insertion,
+                        displayTabStopsBySection);
+                    if (tabStops.HasValue)
+                    {
+                        request.DisplayCenterTabPoints = tabStops.Value.Center;
+                        request.DisplayRightTabPoints = tabStops.Value.Right;
+                    }
+                }
+            }
             var inserted =
                 WordFormulaHostMutationKernel
                     .InsertInActiveTransaction(
@@ -329,12 +403,14 @@ internal sealed partial class WordFormulaService
                 RestoreCaretAfterCoreMutation(
                     document,
                     inserted,
-                    insertedRange);
+                    insertedRange,
+                    bodyNumberingPending: deferVisualTeXNumber && !inserted.WithinTable);
             }
             finally
             {
                 Release(insertedRange);
             }
+            return deferVisualTeXNumber;
         }
         finally
         {

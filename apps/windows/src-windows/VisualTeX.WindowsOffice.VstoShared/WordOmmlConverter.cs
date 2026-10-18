@@ -2788,11 +2788,13 @@ internal static partial class WordOmmlConverter
             ComputeOmmlFingerprint(omml),
             omml,
             31902);
-        var flatOpc =
-            CreateSingleEquationFlatOpc(
-                entry,
-                NormalizeMathFontName(mathFontName),
-                paragraphMarkRunProperties);
+        string flatOpc;
+        using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("FormatConversion.OmmlDirect.BuildPackage"))
+            flatOpc =
+                CreateSingleEquationFlatOpc(
+                    entry,
+                    NormalizeMathFontName(mathFontName),
+                    paragraphMarkRunProperties);
 
         Range? target = null;
         Range? content = null;
@@ -2830,14 +2832,16 @@ internal static partial class WordOmmlConverter
                 && rightBoundaryBefore[0] != '\r'
                 && rightBoundaryBefore[0] != '\u0007';
 
-            target.InsertXML(flatOpc);
+            using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("FormatConversion.OmmlDirect.InsertXml"))
+                target.InsertXML(flatOpc);
 
-            insertedMath = FindMathAtPosition(
-                    targetDocument,
-                    insertionStart,
-                    target.End)
-                ?? throw new InvalidOperationException(
-                    "Word did not materialize the direct OMML replacement.");
+            using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("FormatConversion.OmmlDirect.FindMath"))
+                insertedMath = FindMathAtPosition(
+                        targetDocument,
+                        insertionStart,
+                        target.End)
+                    ?? throw new InvalidOperationException(
+                        "Word did not materialize the direct OMML replacement.");
             var targetType = display
                 ? WdOMathType.wdOMathDisplay
                 : WdOMathType.wdOMathInline;

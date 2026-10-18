@@ -53,6 +53,8 @@ internal sealed partial class WordFormulaService
         bool wholeDocument,
         string objectMode)
     {
+        using var numberFormatScope =
+            WordEquationNumberFormatAuthority.BeginOperationScope();
         Document? document = null;
         Selection? selection = null;
         Range? scope = null;

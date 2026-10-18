@@ -50,6 +50,7 @@ internal sealed partial class WordFormulaService
     internal int SetEquationNumberFormatCore(
         string formatId)
     {
+        WordEquationNumberFormatAuthority.InvalidateOperationScope();
         Document? document = null;
         Selection? selection = null;
         Range? originalSelection = null;

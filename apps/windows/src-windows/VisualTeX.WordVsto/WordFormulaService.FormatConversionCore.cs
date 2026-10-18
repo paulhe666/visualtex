@@ -28,6 +28,8 @@ internal sealed partial class WordFormulaService
         string sourceMode,
         string targetMode)
     {
+        using var numberFormatScope =
+            WordEquationNumberFormatAuthority.BeginOperationScope();
         ValidateCoreConversionPair(sourceMode, targetMode);
 
         Document? document = null;
@@ -133,6 +135,8 @@ internal sealed partial class WordFormulaService
         WordFormulaFormatConversionPlan plan,
         IReadOnlyDictionary<string, PreparedWordBulkFormula> prepared)
     {
+        using var numberFormatScope =
+            WordEquationNumberFormatAuthority.BeginOperationScope();
         if (plan is null)
             throw new ArgumentNullException(nameof(plan));
         if (prepared is null)
@@ -149,6 +153,7 @@ internal sealed partial class WordFormulaService
         WordEquationReferenceFields.NativeOmmlReferenceIndex? nativeReferenceIndex = null;
         WordNativeOmmlFieldRefresh? nativeNumberRefresh = null;
         WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? visualTeXNumbers = null;
+        WordNativeOmmlNumbering.NumberedOmmlBatch? numberedOmml = null;
         Document? document = null;
         try
         {
@@ -334,8 +339,13 @@ internal sealed partial class WordFormulaService
                     var display = string.Equals(request.DisplayMode, "block", StringComparison.OrdinalIgnoreCase);
                     request.PreparedOmml = WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
                     if (display && request.Numbered)
-                        request.PreparedOmml = WordNativeOmmlNumbering.PrepareNumberedOmml(
-                            document, source.Range.Start, request.PreparedOmml);
+                    {
+                        numberedOmml ??= WordNativeOmmlNumbering.NumberedOmmlBatch.Capture(
+                            document,
+                            plan.Targets.Where(item => item.Numbered).Select(item => item.SourceStart));
+                        request.PreparedOmml = numberedOmml.Prepare(
+                            source.Range.Start, request.PreparedOmml);
+                    }
                     if (sourceKind == WordFormulaHostKind.MathType
                         || (sourceKind == WordFormulaHostKind.VisualTeX && !source.Display))
                     {
@@ -363,6 +373,17 @@ internal sealed partial class WordFormulaService
                 nativeNumberRefresh = WordNativeOmmlFieldRefresh.Prepare(document,
                     plan.Targets.Where(item => item.Numbered).Min(item => item.SourceStart));
             }
+
+            // A numbered MathType target that opens a chapter/section scope needs
+            // MathType's native section paragraph. Opening or closing the hidden
+            // staging document ends Word's active custom UndoRecord, so prepare one
+            // parameterizable section before the conversion transaction, as the
+            // MathType bulk skeleton does. Declared first, it is closed last.
+            using var mathTypeSection = targetKind == WordFormulaHostKind.MathType
+                && plan.Targets.Any(item => item.Numbered)
+                && EquationNumberFormat.Resolve(WordEquationNumberFormatAuthority.Resolve(document)).UsesHeading
+                    ? new MathTypeSectionStaging(document, CreateMathTypeSectionFlatOpc(0, 0))
+                    : null;
 
             // A visible Print Layout window re-lays out the unconverted OMML of
             // the page on screen after every host write, even with
@@ -517,7 +538,9 @@ internal sealed partial class WordFormulaService
                                                     preparedStandaloneCompoundFile:
                                                         preparedFormula.MathTypeStandaloneCompoundFile,
                                                     preparedStandaloneSemanticSignature:
-                                                        preparedFormula.MathTypeStandaloneSemanticSignature);
+                                                        preparedFormula.MathTypeStandaloneSemanticSignature,
+                                                    preparedBatchMathTypeSection:
+                                                        mathTypeSection?.Paragraph);
                                             }
                                             finally
                                             {

@@ -235,22 +235,35 @@ public sealed partial class ThisAddIn
                 WordDoubleClickHook.TraceMessage(
                     $"format-conversion-render-start sourceMode={sourceMode} targetMode={targetMode} formulas={pending.Count}");
                 // Bounded submissions expose actual completed counts and avoid
-                // one opaque multi-minute request for an entire document.
+                // one opaque multi-minute request for an entire document. The
+                // next chunk renders in the companion while this chunk's
+                // previews are built concurrently in the add-in.
+                Task<RenderBatchResult>? SubmitChunk(int offset) =>
+                    offset >= pending.Count
+                        ? null
+                        : client.RenderBatchAsync(
+                            pending.Skip(offset).Take(20).Select(item => new RenderBatchItemRequest
+                            { Id = item.Run.Id, Request = item.Request }).ToList(),
+                            TimeSpan.FromMinutes(3), lifetime.Token);
+                var nextChunk = SubmitChunk(0);
                 for (var offset = 0; offset < pending.Count; offset += 20)
                 {
                     progress.Report("正在渲染公式…", offset, pending.Count);
                     var chunk = pending.Skip(offset).Take(20).ToArray();
-                    var batch = await client.RenderBatchAsync(
-                        chunk.Select(item => new RenderBatchItemRequest
-                        { Id = item.Run.Id, Request = item.Request }).ToList(),
-                        TimeSpan.FromMinutes(3), lifetime.Token).ConfigureAwait(false);
+                    var batch = await nextChunk!.ConfigureAwait(false);
+                    nextChunk = SubmitChunk(offset + 20);
+                    var materialized = MaterializeBulkFormulaTemplates(
+                        client,
+                        chunk.Select((item, index) => (item.Run, batch.Items[index].Session)).ToList(),
+                        targetMode,
+                        materializePreview: targetMode == FormulaOleContract.NativeOleMode);
                     for (var index = 0; index < chunk.Length; index++)
                     {
                         var item = chunk[index];
                         var completed = batch.Items[index].Session;
-                        rendered[item.Key] = MaterializeBulkFormulaTemplate(
-                            client, item.Run, targetMode, completed,
-                            materializePreview: targetMode == FormulaOleContract.NativeOleMode);
+                        if (materialized[index].Error is { } materializeError)
+                            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(materializeError).Throw();
+                        rendered[item.Key] = materialized[index].Template!;
                         WordDoubleClickHook.TraceMessage(
                             $"format-conversion-rendered sourceMode={sourceMode} targetMode={targetMode} itemId={item.Run.Id} status={completed.Status}");
                     }

@@ -824,6 +824,16 @@ internal static class WordFormulaHostResolver
 
     private static bool IsWithinTable(Range range)
     {
+        // No intersecting table proves "not in a table" structurally, without
+        // the layout-backed wdWithInTable query (see WordFormulaHost).
+        Tables? tables = null;
+        try
+        {
+            tables = range.Tables;
+            if (tables.Count == 0) return false;
+        }
+        catch { }
+        finally { Release(tables); }
         try
         {
             return Convert.ToBoolean(

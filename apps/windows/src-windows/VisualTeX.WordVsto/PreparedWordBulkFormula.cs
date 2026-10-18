@@ -75,6 +75,87 @@ internal sealed class WordLatexRedrawPlan
     internal List<DeletedNumberedOmmlResidue> DeletedNumberedOmmlResidues { get; set; } = new();
 }
 
+/// <summary>
+/// Redraw formulas that are still rendering while Word is written. The render
+/// producer completes each target as soon as its preview exists; the Word writer
+/// takes targets in document order and waits only for one that is not ready.
+/// The wait does not pump messages, so Word stays exactly as blocked as during
+/// a non-streamed apply and no user edit can interleave with the batch.
+/// </summary>
+internal sealed class StreamingLatexRedrawFormulas : IDisposable
+{
+    private readonly Dictionary<string, System.Threading.Tasks.TaskCompletionSource<(PreparedWordBulkFormula? Formula, string? Error)>> _targets;
+    private readonly System.Threading.AutoResetEvent _progress = new(false);
+
+    internal StreamingLatexRedrawFormulas(string objectMode, IEnumerable<string> targetIds)
+    {
+        ObjectMode = objectMode;
+        _targets = targetIds.ToDictionary(
+            id => id,
+            _ => new System.Threading.Tasks.TaskCompletionSource<(PreparedWordBulkFormula? Formula, string? Error)>(
+                System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously),
+            StringComparer.Ordinal);
+    }
+
+    internal string ObjectMode { get; }
+
+    // Writer time spent waiting for renders (UI thread only).
+    internal long WaitMilliseconds { get; private set; }
+
+    internal bool Contains(string targetId) => _targets.ContainsKey(targetId);
+
+    internal void Complete(string targetId, PreparedWordBulkFormula formula)
+    {
+        _targets[targetId].TrySetResult((formula, null));
+        _progress.Set();
+    }
+
+    internal void Fail(string targetId, string error)
+    {
+        _targets[targetId].TrySetResult((null, error));
+        _progress.Set();
+    }
+
+    internal void FailRemaining(string error)
+    {
+        foreach (var item in _targets.Values)
+            item.TrySetResult((null, error));
+        _progress.Set();
+    }
+
+    internal bool TryTake(
+        string targetId,
+        TimeSpan timeout,
+        out PreparedWordBulkFormula? formula,
+        out string? error)
+    {
+        var task = _targets[targetId].Task;
+        if (!task.IsCompleted)
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var handle = _progress.SafeWaitHandle.DangerousGetHandle();
+            while (!task.IsCompleted && watch.Elapsed < timeout)
+                _ = WaitForSingleObject(handle, 200);
+            WaitMilliseconds += watch.ElapsedMilliseconds;
+            if (!task.IsCompleted)
+            {
+                formula = null;
+                error = "公式渲染超时。";
+                return false;
+            }
+        }
+        (formula, error) = task.Result;
+        return formula is not null;
+    }
+
+    public void Dispose() => _progress.Dispose();
+
+    // kernel32's wait is used directly: the CLR's managed waits pump COM and
+    // window messages on an STA thread, which the Word UI thread is.
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+}
+
 internal sealed class DeletedNumberedOmmlResidue
 {
     internal string FormulaId { get; set; } = string.Empty;
@@ -94,6 +175,7 @@ internal sealed class WordLatexRedrawResult
     internal List<long> SourceMutationMilliseconds { get; } = new();
     internal List<long> InsertMilliseconds { get; } = new();
     internal List<string> InsertMetricDetails { get; } = new();
+    internal string? FinalizationMetricDetail { get; set; }
     internal Dictionary<string, long> BatchTimings { get; } =
         new(StringComparer.Ordinal);
     internal List<string> FormulaIds { get; set; } = new();

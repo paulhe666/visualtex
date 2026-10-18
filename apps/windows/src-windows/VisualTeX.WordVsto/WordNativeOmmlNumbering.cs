@@ -328,6 +328,76 @@ internal static class WordNativeOmmlNumbering
             literalHeadingPrefix: literalHeadingPrefix);
     }
 
+    // Batch writers (LaTeX redraw, format conversion) number many new equations
+    // in one operation. Resolve the number format, the equation label and the
+    // heading scopes of every target once (CaptureHeadingScopesAtPositions is
+    // the full resolver, run for all positions together) instead of rescanning
+    // the document's headings for each formula; then build each numbered
+    // equation exactly as PrepareNumberedOmml does.
+    internal sealed class NumberedOmmlBatch
+    {
+        private readonly Document _document;
+        private readonly EquationNumberFormat _format;
+        private readonly string _sequenceName;
+        private readonly IReadOnlyDictionary<int, ResolvedEquationHeadingScope> _scopes;
+        private readonly Dictionary<int, string?> _literalPrefixes = new();
+
+        private NumberedOmmlBatch(
+            Document document,
+            EquationNumberFormat format,
+            string sequenceName,
+            IReadOnlyDictionary<int, ResolvedEquationHeadingScope> scopes)
+        {
+            _document = document;
+            _format = format;
+            _sequenceName = sequenceName;
+            _scopes = scopes;
+        }
+
+        internal static NumberedOmmlBatch Capture(Document document, IEnumerable<int> positions)
+        {
+            var format = EquationNumberFormat.Resolve(
+                WordEquationNumberFormatAuthority.Resolve(document));
+            var scopes = format.UsesHeading
+                ? WordEquationNumbering.CaptureHeadingScopesAtPositions(document, format.Id, positions)
+                : new Dictionary<int, ResolvedEquationHeadingScope>();
+            return new NumberedOmmlBatch(
+                document, format, ResolveEquationSequenceName(document), scopes);
+        }
+
+        internal string Prepare(int position, string semanticOmml)
+        {
+            if (string.IsNullOrWhiteSpace(semanticOmml))
+                throw new ArgumentException(
+                    "Numbered OMML preparation requires semantic OMML.",
+                    nameof(semanticOmml));
+            var nativeHeadingLevel = _format.UsesHeading ? _format.HeadingLevel : 0;
+            string? literalHeadingPrefix = null;
+            if (_format.UsesHeading)
+            {
+                var scope = _scopes.TryGetValue(position, out var captured)
+                    ? (captured.ScopeStart, captured.ScopeEnd, captured.NumberText)
+                    : WordEquationNumbering.ResolveHeadingScopeAtPosition(_document, position, _format.Id);
+                var key = scope.ScopeStart;
+                if (!_literalPrefixes.TryGetValue(key, out literalHeadingPrefix)
+                    || key == int.MinValue)
+                {
+                    literalHeadingPrefix = ResolveLiteralHeadingPrefix(_document, scope);
+                    if (key != int.MinValue) _literalPrefixes[key] = literalHeadingPrefix;
+                }
+            }
+            return WordOmmlConverter.BuildWordNativeNumberedOmml(
+                semanticOmml,
+                _sequenceName,
+                numberBookmarkName: null,
+                nativeHeadingLevel,
+                nativeHeadingLevel > 0
+                    ? _format.Separator
+                    : string.Empty,
+                literalHeadingPrefix: literalHeadingPrefix);
+        }
+    }
+
     internal static string? ResolveLiteralHeadingPrefix(
         Document document, (int ScopeStart, int ScopeEnd, string NumberText) scope)
     {

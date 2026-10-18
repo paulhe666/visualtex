@@ -2459,10 +2459,22 @@ internal static partial class WordEquationNumbering
         Document document,
         string formatId)
     {
+        using var metric = WordOperationMetrics.Measure("Numbering.RestoreFormatForConversion");
         var resolved = EquationNumberFormat.Resolve(formatId).Id;
-        if (TryReadDocumentEquationNumberFormatId(document, out var current)
-            && string.Equals(current, resolved, StringComparison.Ordinal))
+        // Only a stored choice can make the write unnecessary. Without one the
+        // end state is the remembered `resolved` format whatever the existing
+        // numbers would suggest, so do not infer it from them: that scan reads
+        // every native and MathType number of a just-numbered document.
+        var stored = CaptureEquationNumberFormatVariable(document);
+        if (stored.Exists
+            && string.Equals(
+                EquationNumberFormat.Resolve(stored.Value).Id,
+                resolved,
+                StringComparison.Ordinal))
+        {
+            RememberEquationNumberFormat(document, resolved);
             return;
+        }
         WriteEquationNumberFormat(document, resolved);
     }
 
@@ -6655,6 +6667,24 @@ internal static partial class WordEquationNumbering
         finally { Release(maths); }
     }
 
+    // Word's wdWithInTable answer, without its layout cost for ordinary body
+    // ranges. Information() first brings the document layout up to date, which
+    // costs hundreds of milliseconds after an edit in a formula-dense document.
+    // A range that intersects no table cannot be in one; a range that does
+    // keeps Word's exact answer.
+    internal static bool IsWithinTableLayoutFree(Range range)
+    {
+        Tables? tables = null;
+        try
+        {
+            tables = range.Tables;
+            if (tables.Count == 0) return false;
+        }
+        catch (COMException) { }
+        finally { Release(tables); }
+        return (bool)range.get_Information(WdInformation.wdWithInTable);
+    }
+
     internal static bool RangeIsWhollyWithinTable(Range range)
     {
         Tables? tables = null;
@@ -8296,7 +8326,8 @@ internal static partial class WordEquationNumbering
             paragraphRange = paragraph.Range.Duplicate;
             format = paragraph.Format;
             tabStops = format.TabStops;
-            tabStops.ClearAll();
+            using (WordOperationMetrics.Measure("Display.TabStops.ClearAll"))
+                tabStops.ClearAll();
 
             (float Center, float Right) positions;
             if (knownCenterTabPoints.HasValue
@@ -8313,21 +8344,36 @@ internal static partial class WordEquationNumbering
                 var pageWidth = 612f;
                 var leftMargin = 72f;
                 var rightMargin = 72f;
-                var hasCellWidth = TryResolveOwningTableCellContentWidth(
-                    formulaRange,
-                    out var cellContentWidth);
+                bool hasCellWidth;
+                float cellContentWidth;
+                using (WordOperationMetrics.Measure("Display.TabStops.CellWidth"))
+                    hasCellWidth = TryResolveOwningTableCellContentWidth(
+                        formulaRange,
+                        out cellContentWidth);
                 if (!hasCellWidth)
                 {
+                    using var pageMetric = WordOperationMetrics.Measure("Display.TabStops.PageSetup");
                     try
                     {
-                        sections = paragraphRange.Sections;
-                        if (sections.Count > 0)
+                        var sectionCount = 0;
+                        using (WordOperationMetrics.Measure("Display.TabStops.PageSetup.Sections"))
                         {
-                            section = sections[1];
-                            pageSetup = section.PageSetup;
-                            pageWidth = pageSetup.PageWidth;
-                            leftMargin = pageSetup.LeftMargin;
-                            rightMargin = pageSetup.RightMargin;
+                            sections = paragraphRange.Sections;
+                            sectionCount = sections.Count;
+                            if (sectionCount > 0)
+                                section = sections[1];
+                        }
+                        if (sectionCount > 0)
+                        {
+                            using (WordOperationMetrics.Measure("Display.TabStops.PageSetup.Object"))
+                                pageSetup = section!.PageSetup;
+                            using (WordOperationMetrics.Measure("Display.TabStops.PageSetup.PageWidth"))
+                                pageWidth = pageSetup.PageWidth;
+                            using (WordOperationMetrics.Measure("Display.TabStops.PageSetup.Margins"))
+                            {
+                                leftMargin = pageSetup.LeftMargin;
+                                rightMargin = pageSetup.RightMargin;
+                            }
                         }
                     }
                     catch
@@ -12797,7 +12843,7 @@ internal static partial class WordEquationNumbering
                     var outlineLevel = (int)paragraph.OutlineLevel;
                     if (outlineLevel < 1 || outlineLevel > format.HeadingLevel) continue;
                     range = paragraph.Range;
-                    if ((bool)range.get_Information(WdInformation.wdWithInTable)) continue;
+                    if (IsWithinTableLayoutFree(range)) continue;
                     try
                     {
                         frames = range.Frames;
@@ -14278,7 +14324,7 @@ internal static partial class WordEquationNumbering
                         cursor = Math.Max(cursor + 1, range.End);
 
                         if (captionPositions.Contains(range.Start)) continue;
-                        if ((bool)range.get_Information(WdInformation.wdWithInTable))
+                        if (IsWithinTableLayoutFree(range))
                             continue;
                         try
                         {
@@ -14388,7 +14434,7 @@ internal static partial class WordEquationNumbering
                     // Numbering tables and clipped native-caption paragraphs can
                     // inherit Heading 1 from the source formula paragraph. They
                     // are implementation scaffolds, never chapter boundaries.
-                    if ((bool)range.get_Information(WdInformation.wdWithInTable))
+                    if (IsWithinTableLayoutFree(range))
                         continue;
                     try
                     {

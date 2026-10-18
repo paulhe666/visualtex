@@ -79,9 +79,12 @@ internal sealed partial class WordFormulaService
             catch { return "<unavailable>"; }
             finally
             {
+                // ActiveDocument is usually the same RCW the running batch holds
+                // for its target. FinalReleaseComObject would invalidate that
+                // shared reference mid-batch, so release only this reference.
                 if (document is not null)
                 {
-                    try { Marshal.FinalReleaseComObject(document); }
+                    try { Marshal.ReleaseComObject(document); }
                     catch { }
                 }
             }

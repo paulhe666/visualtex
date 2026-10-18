@@ -33,10 +33,13 @@ internal static class WordFormulaMutationValidator
                 return inserted;
             }
 
-            var resolved = WordFormulaHostResolver.ResolveLocal(
+            WordFormulaHostDescriptor? resolvedOrNull;
+            using (WordOperationMetrics.Measure("FormatConversion.ValidateInsertedHost.Resolve"))
+                resolvedOrNull = WordFormulaHostResolver.ResolveLocal(
                     document,
                     localRange,
-                    request.Kind)
+                    request.Kind);
+            var resolved = resolvedOrNull
                 ?? throw new InvalidDataException(
                     "The newly inserted formula host cannot be resolved locally.");
 
@@ -53,9 +56,11 @@ internal static class WordFormulaMutationValidator
                 throw new InvalidDataException(
                     "The newly inserted formula host has the wrong inline/display mode.");
 
-            var payload = WordFormulaHostSemanticReader.Read(
-                document,
-                resolved);
+            WordFormulaSemanticPayload payload;
+            using (WordOperationMetrics.Measure("FormatConversion.ValidateInsertedHost.Read"))
+                payload = WordFormulaHostSemanticReader.Read(
+                    document,
+                    resolved);
             switch (request.Kind)
             {
                 case WordFormulaHostKind.VisualTeX:
