@@ -6,7 +6,7 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-office-performance-20260801-r118"
+    "word-office-performance-20260801-r119"
 Private Const VT_WORD_IDLE_WATCH_SECONDS As Long = 5
 Private Const VT_WORD_LATEX_REDRAW_REVISION As String = _
     "word-latex-redraw-20260802-r1"
@@ -18576,10 +18576,28 @@ Private Function VTNativeMathNearStart( _
     Dim candidateDistance As Long
     Dim bestDistance As Long
     Dim matchCount As Long
+    Dim probe As Range
+    Dim probeStart As Long
+    Dim probeEnd As Long
+    Dim contentStart As Long
+    Dim contentEnd As Long
 
     If documentObject Is Nothing Or maximumDistance < 0 Then Exit Function
+    ' Every candidate starts within maximumDistance of expectedStart, so a
+    ' range spanning that window intersects all of them. Enumerating only its
+    ' OMaths keeps the result identical while the cost no longer grows with
+    ' the number of equations in the document (Document.OMaths made batch
+    ' native insertion quadratic: 15 s per formula at 400 equations).
+    contentStart = documentObject.Content.Start
+    contentEnd = documentObject.Content.End
+    probeStart = expectedStart - maximumDistance
+    If probeStart < contentStart Then probeStart = contentStart
+    probeEnd = expectedStart + maximumDistance + 1
+    If probeEnd > contentEnd Then probeEnd = contentEnd
+    If probeEnd <= probeStart Then Exit Function
+    Set probe = documentObject.Range(Start:=probeStart, End:=probeEnd)
     bestDistance = 2147483647
-    For Each candidateMath In documentObject.OMaths
+    For Each candidateMath In probe.OMaths
         candidateDistance = Abs(candidateMath.Range.Start - expectedStart)
         If candidateDistance <= maximumDistance Then
             If candidateDistance < bestDistance Then
