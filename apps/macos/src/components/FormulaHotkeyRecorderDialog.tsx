@@ -21,6 +21,12 @@ import {
   officeHotkeyActionLabel,
 } from "../shortcuts/officeHotkeys";
 import { configureOfficeHotkeys } from "../runtime/officeHotkeys";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import {
+  formulaRowHotkeyAction,
+  formulaRowHotkeyActionLabel,
+  formulaRowHotkeyChordId,
+} from "../shortcuts/formulaRowHotkeys";
 
 interface Props {
   target: FormulaHotkeyTarget | null;
@@ -33,6 +39,10 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   const setBinding = useFormulaHotkeyStore((state) => state.setBinding);
   const officeBindings = useOfficeHotkeyStore((state) => state.bindings);
   const removeOfficeBinding = useOfficeHotkeyStore(
+    (state) => state.removeBinding,
+  );
+  const rowBindings = useFormulaRowHotkeyStore((state) => state.bindings);
+  const removeRowBinding = useFormulaRowHotkeyStore(
     (state) => state.removeBinding,
   );
   const language = useEditorStore((state) => state.language);
@@ -83,9 +93,18 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   }, [target, onClose]);
 
   const conflicts = useMemo(() => {
-    if (!target || !capturedChord) return { formula: null, office: null };
+    if (!target || !capturedChord) return { formula: null, office: null, row: null };
     const chordId = formulaHotkeyChordId(capturedChord);
+    const rowChordId = formulaRowHotkeyChordId(capturedChord);
     return {
+      // A formula-row shortcut is checked first in the editor, so the same
+      // chord can only belong to one of them.
+      row:
+        rowBindings.find(
+          (binding) =>
+            binding.chord !== null &&
+            formulaRowHotkeyChordId(binding.chord) === rowChordId,
+        ) ?? null,
       formula:
         bindings.find(
         (binding) =>
@@ -97,7 +116,7 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
           (binding) => formulaHotkeyChordId(binding.chord) === chordId,
         ) ?? null,
     };
-  }, [bindings, capturedChord, officeBindings, target]);
+  }, [bindings, capturedChord, officeBindings, rowBindings, target]);
 
   if (!target) return null;
 
@@ -111,7 +130,12 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
     capturedChord && hasModifier && !protectedAction && !saving,
   );
   const targetLabel = formulaHotkeyTargetLabel(target, language);
-  const conflictLabel = conflicts.formula
+  const conflictLabel = conflicts.row
+    ? formulaRowHotkeyActionLabel(
+        formulaRowHotkeyAction(conflicts.row.actionId),
+        language,
+      )
+    : conflicts.formula
     ? formulaHotkeyTargetLabel(conflicts.formula.target, language)
     : conflicts.office
       ? officeHotkeyActionLabel(
@@ -133,6 +157,7 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
         );
       }
       if (conflicts.office) removeOfficeBinding(conflicts.office.actionId);
+      if (conflicts.row) removeRowBinding(conflicts.row.actionId);
       setBinding(target, capturedChord);
       onClose();
     } catch (error) {

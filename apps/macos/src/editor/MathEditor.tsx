@@ -56,10 +56,16 @@ import {
 } from "../stores/editorStore";
 import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
 import {
+  formatFormulaHotkeyChord,
   matchFormulaHotkey,
   resolveFormulaHotkeyCommand,
 } from "../shortcuts/formulaHotkeys";
+import {
+  matchFormulaRowHotkey,
+  type FormulaRowHotkeyActionId,
+} from "../shortcuts/formulaRowHotkeys";
 import {
   greekLetterHotkeyCommandFromEvent,
   isGreekLetterHotkeyPrefix,
@@ -906,7 +912,16 @@ function installVisualTexFormulaFontStyle(field: MathfieldElement) {
       font-weight: 700 !important;
     }
 
-    .ML__text,
+    /*
+     * \\text{} picks the font per character, as the exported formula does:
+     * Chinese through the CJK-only face of the formula Chinese font, Latin
+     * letters and digits through the upright letter font, never through the
+     * Chinese font's own Latin glyphs.
+     */
+    .ML__text {
+      font-family: ${chineseFallback}, var(${visualTexFormulaUprightFontProperty}, KaTeX_Main, serif) !important;
+    }
+
     .${VISUALTEX_FORMULA_CHINESE_GLYPH_CLASS} {
       font-family: var(${visualTexFormulaChineseFontProperty}, var(--_text-font-family)) !important;
     }
@@ -2321,6 +2336,18 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const formulaHotkeyBindings = useFormulaHotkeyStore(
       (state) => state.bindings,
     );
+    const formulaRowHotkeyBindings = useFormulaRowHotkeyStore(
+      (state) => state.bindings,
+    );
+    const formulaRowHotkeyLabel = (actionId: FormulaRowHotkeyActionId) => {
+      const chord = formulaRowHotkeyBindings.find(
+        (binding) => binding.actionId === actionId,
+      )?.chord;
+      return chord ? formatFormulaHotkeyChord(chord) : null;
+    };
+    const newInlineRowHotkey = formulaRowHotkeyLabel("row-new-inline");
+    const newDisplayRowHotkey = formulaRowHotkeyLabel("row-new-display");
+    const toggleRowHotkey = formulaRowHotkeyLabel("row-toggle-mode");
     const customSymbolRevision = useCustomSymbolRevision();
     const interactionReadOnly = readOnly || previewOnly;
     const showLineModeMarkers =
@@ -3860,23 +3887,34 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         return;
       }
 
-      const forcedNewLineMode =
-        showLineModeControls &&
-        event.key === "Enter" &&
-        !event.isComposing &&
-        !event.metaKey &&
-        !event.shiftKey &&
-        !rawLatexInputActive
-          ? event.ctrlKey && !event.altKey
-            ? "inline"
-            : event.altKey && !event.ctrlKey
-              ? "display"
-              : null
+      // Formula-row shortcuts (hotkey settings; defaults Ctrl+Enter new inline
+      // row, Option/Alt+Enter new display row, Command+Shift+Enter switch the
+      // row). Switching works like the row's $ / $$ marker: a multi-line row
+      // stays display and no row is split.
+      const rowHotkey =
+        showLineModeControls && !rawLatexInputActive
+          ? matchFormulaRowHotkey(event, formulaRowHotkeyBindings)
           : null;
-      if (forcedNewLineMode) {
+      if (rowHotkey === "row-toggle-mode") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        splitLineAtCaret(index, lineId, field, forcedNewLineMode);
+        const line = useEditorStore
+          .getState()
+          .lines.find((item) => item.id === lineId);
+        if (line && !/^\\begin\{(?:aligned|gathered)\}/.test(line.latex.trim())) {
+          setFormulaLineMode(lineId, line.mode === "inline" ? "display" : "inline");
+        }
+        return;
+      }
+      if (rowHotkey === "row-new-inline" || rowHotkey === "row-new-display") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        splitLineAtCaret(
+          index,
+          lineId,
+          field,
+          rowHotkey === "row-new-inline" ? "inline" : "display",
+        );
         return;
       }
 
@@ -5081,13 +5119,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                         ? lineHasInternalMultiline
                           ? "Multi-line formulas are always display formulas"
                           : effectiveLineMode === "inline"
-                            ? "Inline · click for display · Alt+Enter creates display"
-                            : "Display · click for inline · Ctrl+Enter creates inline"
+                            ? `Inline · click${toggleRowHotkey ? ` or ${toggleRowHotkey}` : ""} for display${newDisplayRowHotkey ? ` · ${newDisplayRowHotkey} creates display` : ""}`
+                            : `Display · click${toggleRowHotkey ? ` or ${toggleRowHotkey}` : ""} for inline${newInlineRowHotkey ? ` · ${newInlineRowHotkey} creates inline` : ""}`
                         : lineHasInternalMultiline
                           ? "多行公式固定为行间公式"
                           : effectiveLineMode === "inline"
-                            ? "行内 · 点击切换行间 · Alt+Enter 新建行间"
-                            : "行间 · 点击切换行内 · Ctrl+Enter 新建行内"
+                            ? `行内 · 点击${toggleRowHotkey ? `或 ${toggleRowHotkey} ` : ""}切换行间${newDisplayRowHotkey ? ` · ${newDisplayRowHotkey} 新建行间` : ""}`
+                            : `行间 · 点击${toggleRowHotkey ? `或 ${toggleRowHotkey} ` : ""}切换行内${newInlineRowHotkey ? ` · ${newInlineRowHotkey} 新建行内` : ""}`
                     }
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() =>

@@ -6,7 +6,7 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-office-performance-20260801-r118"
+    "word-office-performance-20260801-r121"
 Private Const VT_WORD_IDLE_WATCH_SECONDS As Long = 5
 Private Const VT_WORD_LATEX_REDRAW_REVISION As String = _
     "word-latex-redraw-20260802-r1"
@@ -105,6 +105,18 @@ Private VT_WORD_MUTATION_SMART_CUT_PASTE As Boolean
 ' Equation numbering style chosen or worked out per document in this Word
 ' session ("mode|separator", keyed by FullName). Never stored in the document.
 Private VT_WORD_SESSION_NUMBERING As Collection
+Private VT_WORD_NUMBERING_SCOPE_DEPTH As Long
+Private VT_WORD_NUMBERING_SCOPE_CACHED As Boolean
+Private VT_WORD_NUMBERING_SCOPE_KEY As String
+Private VT_WORD_NUMBERING_SCOPE_MODE As String
+Private VT_WORD_NUMBERING_SCOPE_SEPARATOR As String
+Private VT_WORD_V2_IMPORT_CACHE_ACTIVE As Boolean
+Private VT_WORD_V2_IMPORT_CACHE_DOCUMENT As String
+Private VT_WORD_V2_IMPORT_CACHE_POSITION As Long
+Private VT_WORD_V2_IMPORT_ENTRIES As Collection
+Private VT_WORD_V2_IMPORT_HEADINGS As Collection
+Private VT_WORD_V2_IMPORT_HEADINGS_END As Long
+Private VT_WORD_V2_IMPORT_HEADINGS_LEVEL As Long
 Private VT_WORD_DOUBLE_CLICK_TRACE_CONTEXT_DEPTH As Long
 Private VT_WORD_DOUBLE_CLICK_TRACE_BUFFER As String
 Private VT_WORD_DOUBLE_CLICK_TRACE_STARTED_AT As Single
@@ -3078,7 +3090,7 @@ Private Function VTCollectFormulaRestoreTargets( _
 
     Set targets = New Collection
     If sourceKind = "omml" Then
-        For Each formulaMath In targetRange.OMaths
+        For Each formulaMath In VTOMathsInDocumentOrder(targetRange)
             If formulaMath.Range.InlineShapes.Count = 0 Then
                 targets.Add formulaMath
             End If
@@ -3919,7 +3931,7 @@ Private Function VTRestoreCachedNativeFormulasToLatex( _
     ' Preflight every native formula. A Word-native or modified formula has no
     ' matching VisualTeX structure signature and therefore falls back to the
     ' reviewed OMML -> MathML -> LaTeX path without partial document changes.
-    For Each formulaMath In targetRange.OMaths
+    For Each formulaMath In VTOMathsInDocumentOrder(targetRange)
         If formulaMath.Range.InlineShapes.Count <> 0 Then Exit Function
         Set nativeBookmark = VTFindNativeFormulaBookmark( _
             formulaMath.Range, False)
@@ -10118,6 +10130,8 @@ Private Sub VTCommitWordDocumentImportDispatch( _
     Dim errorDescription As String
     Dim transactionStage As String
     Dim internalMutationStarted As Boolean
+    Dim previousScreenUpdating As Boolean
+    Dim screenUpdatingChanged As Boolean
 
     On Error GoTo Failed
     transactionStage = "commit-enter"
@@ -10230,6 +10244,18 @@ Private Sub VTCommitWordDocumentImportDispatch( _
         Start:=insertionStart, End:=insertionStart)
     anchorBookmark.Delete
     Set insertedFormulaIds = New Collection
+    ' Word for Mac lays out and repaints the visible document after every
+    ' paragraph, text run and formula the import writes. The LaTeX redraw
+    ' already writes the same formulas with screen updating off.
+    transactionStage = "import-disable-screen-updating"
+    On Error Resume Next
+    Err.Clear
+    previousScreenUpdating = Application.ScreenUpdating
+    Application.ScreenUpdating = False
+    screenUpdatingChanged = (Err.Number = 0)
+    Err.Clear
+    On Error GoTo Failed
+    VTBeginV2ImportPlanCache
     If outputKind = "omml" Then
         nativeBatchDocumentPath = VTDispatchOptional( _
             manifest, "nativeBatchDocumentPath")
@@ -10453,6 +10479,11 @@ Private Sub VTCommitWordDocumentImportDispatch( _
         Set sharedNativeDocument = Nothing
         targetDocument.Activate
     End If
+    VTEndV2ImportPlanCache
+    If screenUpdatingChanged Then
+        Application.ScreenUpdating = previousScreenUpdating
+        screenUpdatingChanged = False
+    End If
     cursorRange.Collapse wdCollapseStart
     cursorRange.Select
     VTUpdateDocumentImportProgress _
@@ -10464,6 +10495,11 @@ Failed:
     errorNumber = Err.Number
     errorDescription = Err.Description
     On Error Resume Next
+    VTEndV2ImportPlanCache
+    If screenUpdatingChanged Then
+        Application.ScreenUpdating = previousScreenUpdating
+        screenUpdatingChanged = False
+    End If
     VTUpdateDocumentImportProgress sessionId, itemIndex, itemCount, "error"
     ' Range-replacement failures are traced by VTCommitWordLatexRedrawDispatch
     ' with the exact redraw stage. Do not overwrite that useful inner trace with
@@ -10529,6 +10565,7 @@ Public Sub VisualTeX_ApplyPendingResult()
 
     VTWordPerformanceStart
     On Error GoTo Failed
+    VTBeginNumberingResolveScope
     sessionId = VTReadActiveSessionId(VT_WORD_HOST)
     VTTraceWordSession sessionId, "callback-enter", ""
     Set dispatch = VTReadDispatch(sessionId)
@@ -10552,6 +10589,7 @@ Public Sub VisualTeX_ApplyPendingResult()
             Err.Raise vbObjectError + 7403, "VisualTeX", "The VisualTeX Word dispatch action is invalid."
     End Select
     VTWordPerformanceMark "callback-complete"
+    VTEndNumberingResolveScope
     VTWordPerformanceFlush sessionId
     Exit Sub
 
@@ -10559,6 +10597,7 @@ Failed:
     callbackErrorNumber = Err.Number
     callbackErrorDescription = Err.Description
     On Error Resume Next
+    VTEndNumberingResolveScope
     If Len(sessionId) > 0 Then
         ' documentCommit already records the exact inner import/redraw stage.
         ' Preserve that trace instead of replacing it with this callback wrapper.
@@ -10588,7 +10627,7 @@ Private Function VTPrepareBatchUnnumberedDisplayInsertionRange( _
     End If
     Set insertionRange = requestedRange.Duplicate
     insertionRange.Collapse wdCollapseStart
-    If insertionRange.Information(wdWithInTable) Then
+    If VTRangeIsWithinTable(insertionRange) Then
         Set VTPrepareBatchUnnumberedDisplayInsertionRange = _
             VTPrepareWordCreateInsertionRange(insertionRange, "block")
         Exit Function
@@ -10651,7 +10690,7 @@ Private Function VTPrepareWordCreateInsertionRange( _
     ' numbered-layout table. Side cells can look like empty document space, but
     ' they are part of the existing formula scaffold and cannot safely host a
     ' second display formula.
-    If insertionRange.Information(wdWithInTable) Then
+    If VTRangeIsWithinTable(insertionRange) Then
         Set existingLayout = VTNumberedDisplayTableNearRange(insertionRange)
         If Not existingLayout Is Nothing Then
             If Len(VTNumberBookmarkNameForTable(existingLayout)) > 0 Then
@@ -17291,6 +17330,119 @@ Private Function VTNativeInsertionBoundary(ByVal requested As Range) As Range
     Set VTNativeInsertionBoundary = boundary.Duplicate
 End Function
 
+' Word for Mac walks Document.OMaths, and any Range.OMaths that spans many
+' equations, in roughly cubic time: enumerating 406 equations takes about 8 s
+' before a single property is read. A paragraph's own OMaths collection is
+' local, so visiting the paragraphs of a Range and the equations inside each
+' one returns the same equations, clipped to the same Range, in document order
+' at a linear cost.
+Private Function VTOMathsInDocumentOrder(ByVal scanRange As Range) As Collection
+    Dim result As Collection
+    Dim documentObject As Document
+    Dim scanParagraph As Paragraph
+    Dim paragraphRange As Range
+    Dim localRange As Range
+    Dim localStart As Long
+    Dim localEnd As Long
+    Dim candidateMath As OMath
+
+    Set result = New Collection
+    Set VTOMathsInDocumentOrder = result
+    If scanRange Is Nothing Then Exit Function
+    If scanRange.OMaths.Count = 0 Then Exit Function
+    If scanRange.End <= scanRange.Start Then
+        For Each candidateMath In scanRange.OMaths
+            result.Add candidateMath
+        Next candidateMath
+        Exit Function
+    End If
+    Set documentObject = scanRange.Document
+    For Each scanParagraph In scanRange.Paragraphs
+        Set paragraphRange = scanParagraph.Range
+        localStart = paragraphRange.Start
+        localEnd = paragraphRange.End
+        If localStart < scanRange.Start Then localStart = scanRange.Start
+        If localEnd > scanRange.End Then localEnd = scanRange.End
+        If localEnd > localStart Then
+            Set localRange = documentObject.Range( _
+                Start:=localStart, End:=localEnd)
+            If localRange.OMaths.Count > 0 Then
+                For Each candidateMath In localRange.OMaths
+                    result.Add candidateMath
+                Next candidateMath
+            End If
+        End If
+    Next scanParagraph
+End Function
+
+' The root Range of the native equation that contains a field, found through
+' the field's own paragraph, or Nothing when the field is outside equations.
+Private Function VTFieldNativeMathRoot(ByVal candidate As Field) As Range
+    Dim paragraphRange As Range
+    Dim candidateMath As OMath
+    Dim rootRange As Range
+    Dim fieldStart As Long
+
+    If candidate Is Nothing Then Exit Function
+    fieldStart = VTEquationFieldStart(candidate)
+    Set paragraphRange = candidate.Code.Paragraphs(1).Range
+    If paragraphRange.OMaths.Count = 0 Then Exit Function
+    For Each candidateMath In paragraphRange.OMaths
+        Set rootRange = VTNativeMathRoot(candidateMath).Range
+        If rootRange.Start <= fieldStart And rootRange.End > fieldStart Then
+            Set VTFieldNativeMathRoot = rootRange.Duplicate
+            Exit Function
+        End If
+    Next candidateMath
+End Function
+
+' Native Equation numbers are SEQ (and STYLEREF) fields inside their equation.
+' The document's fields are cheap to enumerate on Word for Mac, so the
+' equations that can carry a number are found from them instead of from
+' Document.OMaths. Returns, once each and in document order, the root Range of
+' every native equation holding a SEQ field (or a STYLEREF field when
+' includeStyleRef is True) whose field code starts in [searchStart, searchEnd).
+Private Function VTNumberFieldNativeMathRoots( _
+    ByVal documentObject As Document, _
+    ByVal searchStart As Long, _
+    ByVal searchEnd As Long, _
+    Optional ByVal includeStyleRef As Boolean = False) As Collection
+
+    Dim result As Collection
+    Dim scanRange As Range
+    Dim candidate As Field
+    Dim rootRange As Range
+    Dim fieldType As Long
+    Dim lastStart As Long
+
+    Set result = New Collection
+    Set VTNumberFieldNativeMathRoots = result
+    If documentObject Is Nothing Then Exit Function
+    If searchStart < documentObject.Content.Start Then _
+        searchStart = documentObject.Content.Start
+    If searchEnd > documentObject.Content.End Then _
+        searchEnd = documentObject.Content.End
+    If searchEnd <= searchStart Then Exit Function
+    Set scanRange = documentObject.Range(Start:=searchStart, End:=searchEnd)
+    lastStart = -1
+    For Each candidate In scanRange.Fields
+        fieldType = candidate.Type
+        If fieldType = wdFieldSequence Or _
+           (includeStyleRef And fieldType = wdFieldStyleRef) Then
+            If candidate.Code.Start >= searchStart And _
+               candidate.Code.Start < searchEnd Then
+                Set rootRange = VTFieldNativeMathRoot(candidate)
+                If Not rootRange Is Nothing Then
+                    If rootRange.Start > lastStart Then
+                        result.Add rootRange
+                        lastStart = rootRange.Start
+                    End If
+                End If
+            End If
+        End If
+    Next candidate
+End Function
+
 Private Function VTNativeMathRoot(ByVal scopedMath As OMath) As OMath
     Dim current As OMath
     Dim parentMath As OMath
@@ -18052,6 +18204,7 @@ Private Function VTInsertNativeEquationAtRange( _
     Dim fastInsertPhases As Variant
     Dim fastInsertDiagnostic As String
     Dim adjacent As OMath
+    Dim replacementWindow As Range
 
     fastPathDiagnostic = "not-attempted"
     phaseStartedAt = Timer
@@ -18125,10 +18278,16 @@ Private Function VTInsertNativeEquationAtRange( _
     ' mutates the insertion neighborhood; its pre-existing OMath snapshot is
     ' collected locally after the staging equation length is known.
     If replaceTarget Then
-        For Each candidateMath In targetDocument.OMaths
+        ' The new OMath replaces the target in place, and the resolution probe
+        ' below reaches at most one character before it and eight after it.
+        ' Snapshot whole paragraphs around the target, so every OMath object is
+        ' unclipped and keeps its identity, instead of Document.OMaths, which
+        ' Word for Mac walks in cubic time (8 s at 406 equations).
+        Set replacementWindow = VTParagraphWindow(targetRange, 1)
+        For Each candidateMath In VTOMathsInDocumentOrder(replacementWindow)
             existingMaths.Add candidateMath
         Next candidateMath
-        beforeMathCount = existingMaths.Count
+        beforeMathCount = targetDocument.OMaths.Count
     End If
     Set insertionRange = targetRange.Duplicate
     If Not replaceTarget Then insertionRange.Collapse wdCollapseStart
@@ -18240,7 +18399,7 @@ Private Function VTInsertNativeEquationAtRange( _
     If probeEnd > targetDocument.Content.End Then _
         probeEnd = targetDocument.Content.End
     If replaceTarget Then
-        Set probeRange = targetDocument.Content.Duplicate
+        Set probeRange = replacementWindow.Duplicate
     Else
         Set probeRange = targetDocument.Range( _
             Start:=probeStart, End:=probeEnd)
@@ -18357,7 +18516,11 @@ RollbackConversion:
     If transferStarted Then
         Set probeRange = Nothing
         If replaceTarget Then
-            Set probeRange = targetDocument.Content.Duplicate
+            If replacementWindow Is Nothing Then
+                Set probeRange = targetDocument.Content.Duplicate
+            Else
+                Set probeRange = replacementWindow.Duplicate
+            End If
         ElseIf stagingEquationLength > 0 Then
             probeStart = insertionStart - 1
             If probeStart < 0 Then probeStart = 0
@@ -18576,10 +18739,28 @@ Private Function VTNativeMathNearStart( _
     Dim candidateDistance As Long
     Dim bestDistance As Long
     Dim matchCount As Long
+    Dim probe As Range
+    Dim probeStart As Long
+    Dim probeEnd As Long
+    Dim contentStart As Long
+    Dim contentEnd As Long
 
     If documentObject Is Nothing Or maximumDistance < 0 Then Exit Function
+    ' Every candidate starts within maximumDistance of expectedStart, so a
+    ' range spanning that window intersects all of them. Enumerating only its
+    ' OMaths keeps the result identical while the cost no longer grows with
+    ' the number of equations in the document (Document.OMaths made batch
+    ' native insertion quadratic: 15 s per formula at 400 equations).
+    contentStart = documentObject.Content.Start
+    contentEnd = documentObject.Content.End
+    probeStart = expectedStart - maximumDistance
+    If probeStart < contentStart Then probeStart = contentStart
+    probeEnd = expectedStart + maximumDistance + 1
+    If probeEnd > contentEnd Then probeEnd = contentEnd
+    If probeEnd <= probeStart Then Exit Function
+    Set probe = documentObject.Range(Start:=probeStart, End:=probeEnd)
     bestDistance = 2147483647
-    For Each candidateMath In documentObject.OMaths
+    For Each candidateMath In probe.OMaths
         candidateDistance = Abs(candidateMath.Range.Start - expectedStart)
         If candidateDistance <= maximumDistance Then
             If candidateDistance < bestDistance Then
@@ -18608,6 +18789,37 @@ Private Function VTResolveNativeEquationRange( _
             "Word could not resolve the native equation after the surrounding document changed."
     End If
     Set VTResolveNativeEquationRange = nativeMath.Range.Duplicate
+End Function
+
+' Whole paragraphs around centerRange: its own paragraphs plus extraParagraphs
+' on each side. Equations never cross a paragraph mark, so every OMath of the
+' window is complete.
+Private Function VTParagraphWindow( _
+    ByVal centerRange As Range, _
+    ByVal extraParagraphs As Long) As Range
+
+    Dim documentObject As Document
+    Dim windowRange As Range
+    Dim index As Long
+
+    Set documentObject = centerRange.Document
+    Set windowRange = centerRange.Duplicate
+    windowRange.Start = windowRange.Paragraphs(1).Range.Start
+    windowRange.End = windowRange.Paragraphs( _
+        windowRange.Paragraphs.Count).Range.End
+    For index = 1 To extraParagraphs
+        If windowRange.Start > documentObject.Content.Start Then
+            windowRange.Start = documentObject.Range( _
+                Start:=windowRange.Start - 1, End:=windowRange.Start - 1) _
+                .Paragraphs(1).Range.Start
+        End If
+        If windowRange.End < documentObject.Content.End Then
+            windowRange.End = documentObject.Range( _
+                Start:=windowRange.End, End:=windowRange.End) _
+                .Paragraphs(1).Range.End
+        End If
+    Next index
+    Set VTParagraphWindow = windowRange
 End Function
 
 Private Function VTOMathCollectionContains( _
@@ -19736,6 +19948,7 @@ BookmarkFailed:
 End Sub
 
 Private Function VTNativeMathForBookmark(ByVal nativeBookmark As Bookmark) As OMath
+    Dim nearbyRange As Range
     Dim candidate As OMath
     Dim match As OMath
     Dim matchCount As Long
@@ -19754,7 +19967,16 @@ Private Function VTNativeMathForBookmark(ByVal nativeBookmark As Bookmark) As OM
     bookmarkStart = nativeBookmark.Range.Start
     bookmarkEnd = nativeBookmark.Range.End
     bestDistance = 1E+30
-    For Each candidate In nativeBookmark.Range.Document.OMaths
+    ' Every candidate overlaps [bookmarkStart - 1, bookmarkEnd + 1], so the
+    ' paragraphs around the Bookmark hold all of them.
+    Set nearbyRange = nativeBookmark.Range.Document.Range( _
+        Start:=bookmarkStart, End:=bookmarkEnd)
+    If nearbyRange.Start > 0 Then nearbyRange.Start = nearbyRange.Start - 1
+    If nearbyRange.End < nearbyRange.Document.Content.End Then _
+        nearbyRange.End = nearbyRange.End + 1
+    nearbyRange.Start = nearbyRange.Paragraphs(1).Range.Start
+    nearbyRange.End = nearbyRange.Paragraphs(nearbyRange.Paragraphs.Count).Range.End
+    For Each candidate In VTOMathsInDocumentOrder(nearbyRange)
         If candidate.Range.Start <= bookmarkEnd + 1 And _
            candidate.Range.End >= bookmarkStart - 1 Then
             candidateDistance = _
@@ -20091,13 +20313,60 @@ Private Function VTEquationNumberingSeparator( _
     VTEquationNumberingSeparator = separatorText
 End Function
 
+' One callback resolves the numbering style of its document dozens of times
+' (every chapter prefix, separator and restart check asks again), and an
+' answer that has to be worked out walks the document's equations and
+' Bookmarks. Inside VisualTeX_ApplyPendingResult the answer cannot change
+' except through VTRememberEquationNumbering, which keeps this cache in step.
+Private Sub VTBeginNumberingResolveScope()
+    If VT_WORD_NUMBERING_SCOPE_DEPTH <= 0 Then
+        VT_WORD_NUMBERING_SCOPE_DEPTH = 0
+        VT_WORD_NUMBERING_SCOPE_CACHED = False
+    End If
+    VT_WORD_NUMBERING_SCOPE_DEPTH = VT_WORD_NUMBERING_SCOPE_DEPTH + 1
+End Sub
+
+Private Sub VTEndNumberingResolveScope()
+    If VT_WORD_NUMBERING_SCOPE_DEPTH > 0 Then _
+        VT_WORD_NUMBERING_SCOPE_DEPTH = VT_WORD_NUMBERING_SCOPE_DEPTH - 1
+    If VT_WORD_NUMBERING_SCOPE_DEPTH = 0 Then
+        VT_WORD_NUMBERING_SCOPE_CACHED = False
+        VT_WORD_NUMBERING_SCOPE_KEY = ""
+    End If
+End Sub
+
+Private Sub VTResolveEquationNumbering( _
+    ByVal documentObject As Document, _
+    ByRef numberingMode As String, _
+    ByRef separatorText As String)
+
+    Dim scopeKey As String
+
+    If VT_WORD_NUMBERING_SCOPE_DEPTH > 0 And Not documentObject Is Nothing Then
+        scopeKey = VTSessionNumberingKey(documentObject)
+        If VT_WORD_NUMBERING_SCOPE_CACHED And Len(scopeKey) > 0 And _
+           StrComp(scopeKey, VT_WORD_NUMBERING_SCOPE_KEY, vbBinaryCompare) = 0 Then
+            numberingMode = VT_WORD_NUMBERING_SCOPE_MODE
+            separatorText = VT_WORD_NUMBERING_SCOPE_SEPARATOR
+            Exit Sub
+        End If
+    End If
+    VTResolveEquationNumberingUncached documentObject, numberingMode, separatorText
+    If Len(scopeKey) > 0 Then
+        VT_WORD_NUMBERING_SCOPE_KEY = scopeKey
+        VT_WORD_NUMBERING_SCOPE_MODE = numberingMode
+        VT_WORD_NUMBERING_SCOPE_SEPARATOR = separatorText
+        VT_WORD_NUMBERING_SCOPE_CACHED = True
+    End If
+End Sub
+
 ' Word documents stay purely native: the numbering style is never written into
 ' the document. The style chosen (or worked out) for a document in this Word
 ' session wins; otherwise the document's own equation numbers show it, and a
 ' document without numbers uses the user's default. Earlier versions stored it
 ' in two document variables; they are still honoured when read and removed
 ' when VisualTeX next numbers the document (VTPinEquationNumbering).
-Private Sub VTResolveEquationNumbering( _
+Private Sub VTResolveEquationNumberingUncached( _
     ByVal documentObject As Document, _
     ByRef numberingMode As String, _
     ByRef separatorText As String)
@@ -20149,6 +20418,12 @@ Private Sub VTRememberEquationNumbering( _
     Err.Clear
     On Error GoTo 0
     VT_WORD_SESSION_NUMBERING.Add numberingMode & "|" & separatorText, sessionKey
+    If VT_WORD_NUMBERING_SCOPE_DEPTH > 0 Then
+        VT_WORD_NUMBERING_SCOPE_KEY = sessionKey
+        VT_WORD_NUMBERING_SCOPE_MODE = numberingMode
+        VT_WORD_NUMBERING_SCOPE_SEPARATOR = separatorText
+        VT_WORD_NUMBERING_SCOPE_CACHED = True
+    End If
 End Sub
 
 ' The style chosen for this document (this session, or an earlier version's
@@ -20221,11 +20496,10 @@ Private Function VTTryInferEquationNumbering( _
     Dim ordinalStart As Long
 
     On Error GoTo InferFailed
-    For index = 1 To documentObject.OMaths.Count
-        Set math = documentObject.OMaths(index)
-        Set numberField = VTPureNativeNumberField(math.Range)
+    For Each exact In VTNumberFieldNativeMathRoots( _
+        documentObject, documentObject.Content.Start, documentObject.Content.End)
+        Set numberField = VTPureNativeNumberField(exact)
         If Not numberField Is Nothing Then
-            Set exact = VTNativeMathRoot(math).Range.Duplicate
             Set marker = VTNativeEquationArrayMarkerRange(exact)
             If Not marker Is Nothing Then
                 firstStart = exact.Start
@@ -20235,7 +20509,7 @@ Private Function VTTryInferEquationNumbering( _
                 Exit For
             End If
         End If
-    Next index
+    Next exact
     For Each candidate In documentObject.Bookmarks
         If Left$(candidate.Name, Len(VT_WORD_NUMBER_BOOKMARK_PREFIX)) = _
            VT_WORD_NUMBER_BOOKMARK_PREFIX Then
@@ -20395,6 +20669,116 @@ Private Function VTNormalizeHeadingNumberText( _
     VTNormalizeHeadingNumberText = Trim$(headingNumber)
 End Function
 
+' Heading paragraphs with an outline level from 1 to maxLevel that start before
+' searchEnd, in document order, as Array(start, level). Word's Find visits only
+' the paragraphs with the requested outline level (about 4 ms per hit on Word
+' for Mac), while reading OutlineLevel paragraph by paragraph costs 0.2-0.3 ms
+' for every paragraph of a long document. Find cannot match the end-of-cell
+' mark, so with includeTables the paragraphs of tables are read directly and
+' the result equals a walk over every paragraph.
+Private Function VTOutlineHeadingParagraphs( _
+    ByVal documentObject As Document, _
+    ByVal maxLevel As Long, _
+    ByVal searchEnd As Long, _
+    ByVal includeTables As Boolean, _
+    Optional ByVal searchStart As Long = -1) As Collection
+
+    Dim result As Collection
+    Dim scanRange As Range
+    Dim paragraphRange As Range
+    Dim tableObject As Table
+    Dim tableParagraph As Paragraph
+    Dim level As Long
+    Dim headingStart As Long
+    Dim previousEnd As Long
+    Dim tableLevel As Long
+
+    Set result = New Collection
+    Set VTOutlineHeadingParagraphs = result
+    If documentObject Is Nothing Or maxLevel < 1 Then Exit Function
+    If searchEnd > documentObject.Content.End Then _
+        searchEnd = documentObject.Content.End
+    If searchStart < documentObject.Content.Start Then _
+        searchStart = documentObject.Content.Start
+    If searchEnd <= searchStart Then Exit Function
+    For level = 1 To maxLevel
+        Set scanRange = documentObject.Range( _
+            Start:=searchStart, End:=documentObject.Content.End)
+        With scanRange.Find
+            .ClearFormatting
+            .Text = "^p"
+            .Replacement.Text = ""
+            .Forward = True
+            .Wrap = wdFindStop
+            .Format = True
+            .MatchCase = False
+            .MatchWholeWord = False
+            .MatchWildcards = False
+            .MatchSoundsLike = False
+            .MatchAllWordForms = False
+            .ParagraphFormat.OutlineLevel = level
+        End With
+        previousEnd = -1
+        Do While scanRange.Find.Execute
+            If scanRange.End <= previousEnd Then Exit Do
+            previousEnd = scanRange.End
+            Set paragraphRange = scanRange.Paragraphs(1).Range
+            headingStart = paragraphRange.Start
+            If headingStart >= searchEnd Then Exit Do
+            If headingStart >= searchStart Then _
+                VTAddHeadingParagraphEntry result, headingStart, level
+            scanRange.Collapse wdCollapseEnd
+        Loop
+        scanRange.Find.ClearFormatting
+    Next level
+    If includeTables And searchEnd > documentObject.Content.Start Then
+        For Each tableObject In documentObject.Range( _
+            Start:=searchStart, End:=searchEnd).Tables
+            For Each tableParagraph In tableObject.Range.Paragraphs
+                headingStart = tableParagraph.Range.Start
+                If headingStart >= searchEnd Then Exit For
+                If headingStart < searchStart Then GoTo NextTableParagraph
+                tableLevel = tableParagraph.OutlineLevel
+                If tableLevel >= 1 And tableLevel <= maxLevel Then _
+                    VTAddHeadingParagraphEntry result, headingStart, tableLevel
+NextTableParagraph:
+            Next tableParagraph
+        Next tableObject
+    End If
+End Function
+
+' Range.Information(wdWithInTable) makes Word for Mac lay the document out
+' first, which costs far more than the answer after an edit in a long
+' document. A Range without any Table is outside every table, so only a Range
+' that touches a table asks Word.
+Private Function VTRangeIsWithinTable(ByVal targetRange As Range) As Boolean
+    If targetRange Is Nothing Then Exit Function
+    If targetRange.Tables.Count = 0 Then Exit Function
+    VTRangeIsWithinTable = targetRange.Information(wdWithInTable)
+End Function
+
+' Inserts Array(start, level) into entries ordered by start, once per start.
+Private Sub VTAddHeadingParagraphEntry( _
+    ByVal entries As Collection, _
+    ByVal headingStart As Long, _
+    ByVal level As Long)
+
+    Dim index As Long
+
+    For index = entries.Count To 1 Step -1
+        If entries(index)(0) = headingStart Then Exit Sub
+        If entries(index)(0) < headingStart Then
+            entries.Add Array(headingStart, level), After:=index
+            Exit Sub
+        End If
+    Next index
+    If entries.Count = 0 Then
+        entries.Add Array(headingStart, level)
+    Else
+        entries.Add Array(headingStart, level), Before:=1
+    End If
+End Sub
+
 Private Function VTEquationHeadingPrefix( _
     ByVal formulaRange As Range, _
     ByVal numberingMode As String) As String
@@ -20407,6 +20791,8 @@ Private Function VTEquationHeadingPrefix( _
     Dim sectionCount As Long
     Dim listText As String
     Dim currentChapterPrefix As String
+    Dim headingEntry As Variant
+    Dim headingRange As Range
 
     If formulaRange Is Nothing Then Exit Function
     numberingMode = LCase$(Trim$(numberingMode))
@@ -20419,14 +20805,18 @@ Private Function VTEquationHeadingPrefix( _
     End If
 
     Set documentObject = formulaRange.Document
-    For Each candidateParagraph In documentObject.Paragraphs
-        If candidateParagraph.Range.Start >= formulaRange.Start Then Exit For
-        candidateLevel = candidateParagraph.OutlineLevel
+    ' Only headings change the prefix; visit just them (see
+    ' VTOutlineHeadingParagraphs) instead of every paragraph before the formula.
+    For Each headingEntry In VTOutlineHeadingParagraphs( _
+        documentObject, targetLevel, formulaRange.Start, True)
+        candidateLevel = headingEntry(1)
+        Set headingRange = documentObject.Range( _
+            Start:=headingEntry(0), End:=headingEntry(0)).Paragraphs(1).Range
         If candidateLevel = 1 Then
             chapterCount = chapterCount + 1
             sectionCount = 0
             listText = VTNormalizeHeadingNumberText( _
-                candidateParagraph.Range.ListFormat.ListString)
+                headingRange.ListFormat.ListString)
             If Len(listText) > 0 Then
                 currentChapterPrefix = listText
             Else
@@ -20444,7 +20834,7 @@ Private Function VTEquationHeadingPrefix( _
             sectionCount = sectionCount + 1
             If targetLevel = 2 Then
                 listText = VTNormalizeHeadingNumberText( _
-                    candidateParagraph.Range.ListFormat.ListString)
+                    headingRange.ListFormat.ListString)
                 If Len(listText) > 0 Then
                     VTEquationHeadingPrefix = listText
                 ElseIf Len(currentChapterPrefix) > 0 Then
@@ -20457,7 +20847,7 @@ Private Function VTEquationHeadingPrefix( _
                 End If
             End If
         End If
-    Next candidateParagraph
+    Next headingEntry
 
     If Len(VTEquationHeadingPrefix) = 0 Then
         If targetLevel = 1 Then
@@ -24209,14 +24599,15 @@ Private Sub VTUpdateImageNumberFieldsFrom( _
     ' Re-evaluate only the affected suffix of the private image sequence. The
     ' outer MACROBUTTON result is instruction text, so update its nested hidden
     ' increment and current-value fields in physical document order.
-    For Each paragraph In scan.Paragraphs
-        For Each candidate In paragraph.Range.Fields
-            If VTIsImagePlaceRef(candidate) And _
-               VTEquationFieldStart(candidate) >= startPosition Then
-                VTUpdateImagePlaceRef candidate
-            End If
-        Next candidate
-    Next paragraph
+    ' The suffix's own Fields collection lists the same fields in the same
+    ' physical order as its paragraphs do, without one COM round trip per
+    ' paragraph (about 0.25 ms each on Word for Mac).
+    For Each candidate In scan.Fields
+        If VTIsImagePlaceRef(candidate) And _
+           VTEquationFieldStart(candidate) >= startPosition Then
+            VTUpdateImagePlaceRef candidate
+        End If
+    Next candidate
 
     ' References are cheap compared with rebuilding every formula and Word may
     ' cache their displayed results. Refresh them only after all affected image
@@ -24317,6 +24708,7 @@ Private Sub VTReconcileNumberingAfterEdit( _
     Dim candidate As Field
     Dim sequence As Field
     Dim restartAtOne As Boolean
+    Dim exact As Range
 
     ' Only the next numbered formula can acquire or lose a chapter/section
     ' restart when membership changes. Repair its instruction, then refresh
@@ -24339,19 +24731,20 @@ Private Sub VTReconcileNumberingAfterEdit( _
                 End If
             Next shape
         Else
-            For Each math In doc.OMaths
-                If math.Range.Start > changedFrom Then
-                    If Not VTPureNativeNumberField(math.Range) Is Nothing Then
-                        restartAtOne = VTEquationStartsNumberScope(math.Range, False)
-                        Set sequence = VTPureNativeNumberField(math.Range)
+            For Each exact In VTNumberFieldNativeMathRoots( _
+                doc, changedFrom, doc.Content.End)
+                If exact.Start > changedFrom Then
+                    If Not VTPureNativeNumberField(exact) Is Nothing Then
+                        restartAtOne = VTEquationStartsNumberScope(exact, False)
+                        Set sequence = VTPureNativeNumberField(exact)
                         If Not VTEquationSequenceFieldIsCompatible(sequence, _
                            VTNativeEquationLabelName(), False, False, restartAtOne) Then
-                            Set result = VTEnsurePureNativeNumberFormat(math.Range)
+                            Set result = VTEnsurePureNativeNumberFormat(exact)
                         End If
                         Exit For
                     End If
                 End If
-            Next math
+            Next exact
         End If
     End If
     If imageFormula Then
@@ -24702,18 +25095,34 @@ End Function
 Private Function VTV2CollectHeadings( _
     ByVal doc As Document, ByVal targetLevel As Long) As Collection
 
+    Set VTV2CollectHeadings = VTV2CollectHeadingsBetween( _
+        doc, targetLevel, doc.Content.Start, doc.Content.End)
+End Function
+
+' The headings of VTV2CollectHeadings that start at or after rangeStart and
+' before rangeEnd.
+Private Function VTV2CollectHeadingsBetween( _
+    ByVal doc As Document, _
+    ByVal targetLevel As Long, _
+    ByVal rangeStart As Long, _
+    ByVal rangeEnd As Long) As Collection
+
     Dim result As New Collection
-    Dim paragraph As Paragraph
+    Dim headingEntry As Variant
     Dim paragraphRange As Range
     Dim outlineLevel As Long
     Dim explicitNumber As String
 
     If targetLevel >= 1 Then
-        For Each paragraph In doc.Paragraphs
-            outlineLevel = paragraph.OutlineLevel
+        ' Only headings matter; visit just them (VTOutlineHeadingParagraphs).
+        ' Headings inside tables are excluded below, so Find alone suffices.
+        For Each headingEntry In VTOutlineHeadingParagraphs( _
+            doc, targetLevel, rangeEnd, False, rangeStart)
+            outlineLevel = headingEntry(1)
             If outlineLevel >= 1 And outlineLevel <= targetLevel Then
-                Set paragraphRange = paragraph.Range
-                If Not paragraphRange.Information(wdWithInTable) Then
+                Set paragraphRange = doc.Range( _
+                    Start:=headingEntry(0), End:=headingEntry(0)).Paragraphs(1).Range
+                If Not VTRangeIsWithinTable(paragraphRange) Then
                     If paragraphRange.Frames.Count = 0 Then
                         explicitNumber = ""
                         On Error Resume Next
@@ -24729,9 +25138,9 @@ Private Function VTV2CollectHeadings( _
                     End If
                 End If
             End If
-        Next paragraph
+        Next headingEntry
     End If
-    Set VTV2CollectHeadings = result
+    Set VTV2CollectHeadingsBetween = result
 End Function
 
 ' The chapter/section number of the formula at position for a heading level of
@@ -24955,8 +25364,29 @@ End Function
 Private Function VTV2NumberedEquations( _
     ByVal doc As Document, Optional ByVal excludeStart As Long = -1) As Collection
     Dim result As New Collection
-    Dim math As OMath
     Dim exact As Range
+    Dim entry As Variant
+    Dim lastStart As Long
+
+    lastStart = -1
+    For Each exact In VTNumberFieldNativeMathRoots( _
+        doc, doc.Content.Start, doc.Content.End)
+        If exact.Start > lastStart And exact.Start <> excludeStart Then
+            entry = VTV2NumberedEquationEntry(exact)
+            If Not IsEmpty(entry) Then
+                result.Add entry
+                lastStart = exact.Start
+            End If
+        End If
+    Next exact
+    Set VTV2NumberedEquations = result
+End Function
+
+' The v2 entry of one native equation (its root Range): Array(start, sequence
+' name, SEQ instruction, prefix, separator, ordinal, restart value, automatic
+' heading, end), or Empty when it is not a display equation with a proven
+' #(number).
+Private Function VTV2NumberedEquationEntry(ByVal exact As Range) As Variant
     Dim numberField As Field
     Dim candidate As Field
     Dim number As Range
@@ -24966,31 +25396,202 @@ Private Function VTV2NumberedEquations( _
     Dim ordinal As Long
     Dim automatic As Boolean
     Dim instruction As String
-    Dim lastStart As Long
 
-    lastStart = -1
-    For Each math In doc.OMaths
-        Set exact = VTNativeMathRoot(math).Range.Duplicate
-        If exact.Start <= lastStart Or exact.Start = excludeStart Then GoTo NextMath
-        If exact.OMaths(1).Type <> wdOMathDisplay Then GoTo NextMath
-        Set numberField = VTPureNativeNumberField(exact)
-        If numberField Is Nothing Then GoTo NextMath
-        Set number = VTV2NumberContentRange(exact)
-        If number Is Nothing Then GoTo NextMath
-        automatic = False
-        For Each candidate In number.Fields
-            If candidate.Type = wdFieldStyleRef Then automatic = True
-        Next candidate
-        number.TextRetrievalMode.IncludeFieldCodes = False
-        visible = Trim$(number.Text)
-        If Not VTV2ParseNumberLabel(visible, prefix, separator, ordinal) Then GoTo NextMath
-        instruction = numberField.Code.Text
-        result.Add Array(exact.Start, VTV2SequenceName(instruction), instruction, _
-            prefix, separator, ordinal, VTV2RestartValue(instruction), automatic, exact.End)
-        lastStart = exact.Start
-NextMath:
-    Next math
-    Set VTV2NumberedEquations = result
+    VTV2NumberedEquationEntry = Empty
+    If exact Is Nothing Then Exit Function
+    If exact.OMaths(1).Type <> wdOMathDisplay Then Exit Function
+    Set numberField = VTPureNativeNumberField(exact)
+    If numberField Is Nothing Then Exit Function
+    Set number = VTV2NumberContentRange(exact)
+    If number Is Nothing Then Exit Function
+    For Each candidate In number.Fields
+        If candidate.Type = wdFieldStyleRef Then automatic = True
+    Next candidate
+    number.TextRetrievalMode.IncludeFieldCodes = False
+    visible = Trim$(number.Text)
+    If Not VTV2ParseNumberLabel(visible, prefix, separator, ordinal) Then Exit Function
+    instruction = numberField.Code.Text
+    VTV2NumberedEquationEntry = Array(exact.Start, VTV2SequenceName(instruction), _
+        instruction, prefix, separator, ordinal, VTV2RestartValue(instruction), _
+        automatic, exact.End)
+End Function
+
+' --- numbering context of a running document import -------------------------
+
+' A document import inserts in document order at its cursor and never changes
+' what lies before the cursor, so the numbered equations and headings found
+' there stay exactly what a new search of the document would find. Between
+' VTBeginV2ImportPlanCache and VTEndV2ImportPlanCache, VTV2PlanInsertion reads
+' only what was added since the import's previous plan: Word for Mac takes
+' ~27 ms to read one numbered equation, so the k-th number of an import used
+' to read all k - 1 earlier ones again.
+Private Sub VTBeginV2ImportPlanCache()
+    VTEndV2ImportPlanCache
+    VT_WORD_V2_IMPORT_CACHE_ACTIVE = True
+End Sub
+
+Private Sub VTEndV2ImportPlanCache()
+    VT_WORD_V2_IMPORT_CACHE_ACTIVE = False
+    VT_WORD_V2_IMPORT_CACHE_DOCUMENT = ""
+    VT_WORD_V2_IMPORT_CACHE_POSITION = -1
+    Set VT_WORD_V2_IMPORT_ENTRIES = Nothing
+    Set VT_WORD_V2_IMPORT_HEADINGS = Nothing
+    VT_WORD_V2_IMPORT_HEADINGS_END = -1
+    VT_WORD_V2_IMPORT_HEADINGS_LEVEL = -1
+End Sub
+
+' True when the cache was filled for doc at a position no later than position
+' and its last equation and heading are still exactly where they were found.
+' Anything that moved content before them makes the whole cache unusable.
+Private Function VTV2ImportCacheUsable( _
+    ByVal doc As Document, ByVal position As Long) As Boolean
+
+    Dim entry As Variant
+    Dim probe As Range
+
+    If Not VT_WORD_V2_IMPORT_CACHE_ACTIVE Then Exit Function
+    If Len(VT_WORD_V2_IMPORT_CACHE_DOCUMENT) = 0 Then Exit Function
+    If position < VT_WORD_V2_IMPORT_CACHE_POSITION Then Exit Function
+    On Error GoTo NotUsable
+    If StrComp(doc.FullName, VT_WORD_V2_IMPORT_CACHE_DOCUMENT, vbBinaryCompare) <> 0 Then Exit Function
+    If Not VT_WORD_V2_IMPORT_ENTRIES Is Nothing Then
+        If VT_WORD_V2_IMPORT_ENTRIES.Count > 0 Then
+            entry = VT_WORD_V2_IMPORT_ENTRIES(VT_WORD_V2_IMPORT_ENTRIES.Count)
+            Set probe = doc.Range(entry(0), entry(8))
+            If probe.OMaths.Count < 1 Then Exit Function
+            Set probe = VTNativeMathRoot(probe.OMaths(1)).Range
+            If probe.Start <> entry(0) Or probe.End <> entry(8) Then Exit Function
+        End If
+    End If
+    If Not VT_WORD_V2_IMPORT_HEADINGS Is Nothing Then
+        If VT_WORD_V2_IMPORT_HEADINGS.Count > 0 Then
+            entry = VT_WORD_V2_IMPORT_HEADINGS(VT_WORD_V2_IMPORT_HEADINGS.Count)
+            Set probe = doc.Range(entry(0), entry(0)).Paragraphs(1).Range
+            If probe.Start <> entry(0) Then Exit Function
+            If probe.ParagraphFormat.OutlineLevel <> entry(1) Then Exit Function
+        End If
+    End If
+    VTV2ImportCacheUsable = True
+    Exit Function
+
+NotUsable:
+    Err.Clear
+End Function
+
+Private Sub VTV2RememberImportPosition(ByVal doc As Document, ByVal position As Long)
+    VT_WORD_V2_IMPORT_CACHE_DOCUMENT = doc.FullName
+    VT_WORD_V2_IMPORT_CACHE_POSITION = position
+End Sub
+
+' The numbered equations VTV2PlanInsertion reads for a new number at position:
+' every one of the document (VTV2NumberedEquations), or during a document
+' import only the ones before position whenever there is one, because the plan
+' then looks at nothing after position.
+Private Function VTV2PlanEntries( _
+    ByVal doc As Document, _
+    ByVal position As Long, _
+    ByVal excludeStart As Long) As Collection
+
+    Dim entries As Collection
+    Dim before As Collection
+    Dim exact As Range
+    Dim entry As Variant
+    Dim lastStart As Long
+    Dim searchStart As Long
+
+    If Not VT_WORD_V2_IMPORT_CACHE_ACTIVE Or excludeStart <> -1 Then
+        Set VTV2PlanEntries = VTV2NumberedEquations(doc, excludeStart)
+        Exit Function
+    End If
+    If VTV2ImportCacheUsable(doc, position) Then
+        If Not VT_WORD_V2_IMPORT_ENTRIES Is Nothing Then
+            If VT_WORD_V2_IMPORT_ENTRIES.Count > 0 Then Set before = VT_WORD_V2_IMPORT_ENTRIES
+        End If
+    End If
+    If Not before Is Nothing Then
+        ' Only equations after the last known one can be new.
+        entry = before(before.Count)
+        lastStart = entry(0)
+        searchStart = entry(8)
+        For Each exact In VTNumberFieldNativeMathRoots(doc, searchStart, position)
+            If exact.Start > lastStart And exact.Start < position Then
+                entry = VTV2NumberedEquationEntry(exact)
+                If Not IsEmpty(entry) Then
+                    before.Add entry
+                    lastStart = exact.Start
+                End If
+            End If
+        Next exact
+    Else
+        Set entries = VTV2NumberedEquations(doc)
+        Set before = New Collection
+        For Each entry In entries
+            If entry(0) < position Then before.Add entry
+        Next entry
+        If before.Count = 0 Then
+            ' Nothing before position: the plan uses the first number of
+            ' the whole document.
+            Set VT_WORD_V2_IMPORT_ENTRIES = before
+            VTV2RememberImportPosition doc, position
+            Set VTV2PlanEntries = entries
+            Exit Function
+        End If
+    End If
+    Set VT_WORD_V2_IMPORT_ENTRIES = before
+    VTV2RememberImportPosition doc, position
+    Set VTV2PlanEntries = before
+End Function
+
+' The headings VTV2PlanInsertion reads (VTV2CollectHeadings). During a
+' document import the headings before the paragraph that held the previous
+' position come from the cache; the ones added since and every heading from
+' the current paragraph on are read again.
+Private Function VTV2PlanHeadings( _
+    ByVal doc As Document, _
+    ByVal targetLevel As Long, _
+    ByVal position As Long) As Collection
+
+    Dim cached As Collection
+    Dim result As Collection
+    Dim entry As Variant
+    Dim boundary As Long
+    Dim usable As Boolean
+
+    If Not VT_WORD_V2_IMPORT_CACHE_ACTIVE Or targetLevel < 1 Then
+        Set VTV2PlanHeadings = VTV2CollectHeadings(doc, targetLevel)
+        Exit Function
+    End If
+    boundary = doc.Range(Start:=position, End:=position).Paragraphs(1).Range.Start
+    If VTV2ImportCacheUsable(doc, position) Then
+        If VT_WORD_V2_IMPORT_HEADINGS_LEVEL = targetLevel And _
+           Not VT_WORD_V2_IMPORT_HEADINGS Is Nothing Then
+            usable = (VT_WORD_V2_IMPORT_HEADINGS_END >= 0 And _
+                VT_WORD_V2_IMPORT_HEADINGS_END <= boundary)
+        End If
+    End If
+    If usable Then
+        Set cached = VT_WORD_V2_IMPORT_HEADINGS
+        For Each entry In VTV2CollectHeadingsBetween( _
+            doc, targetLevel, VT_WORD_V2_IMPORT_HEADINGS_END, boundary)
+            cached.Add entry
+        Next entry
+    Else
+        Set cached = VTV2CollectHeadingsBetween( _
+            doc, targetLevel, doc.Content.Start, boundary)
+    End If
+    Set VT_WORD_V2_IMPORT_HEADINGS = cached
+    VT_WORD_V2_IMPORT_HEADINGS_END = boundary
+    VT_WORD_V2_IMPORT_HEADINGS_LEVEL = targetLevel
+    VTV2RememberImportPosition doc, position
+    Set result = New Collection
+    For Each entry In cached
+        result.Add entry
+    Next entry
+    For Each entry In VTV2CollectHeadingsBetween( _
+        doc, targetLevel, boundary, doc.Content.End)
+        result.Add entry
+    Next entry
+    Set VTV2PlanHeadings = result
 End Function
 
 ' --- numbering context for a new number (Windows PlanInsertion) --------------
@@ -25043,7 +25644,7 @@ Private Sub VTV2PlanInsertion( _
     literalPrefix = ""
     automatic = False
     VTV2DocumentFormat doc, headingLevel, separator
-    Set entries = VTV2NumberedEquations(doc, excludeStart)
+    Set entries = VTV2PlanEntries(doc, position, excludeStart)
     If entries.Count = 0 Then
         sequenceName = VTNativeEquationLabelName()
     Else
@@ -25069,7 +25670,7 @@ Private Sub VTV2PlanInsertion( _
         End If
     End If
     If headingLevel > 0 Then
-        numberText = VTV2HeadingScope(VTV2CollectHeadings(doc, headingLevel), _
+        numberText = VTV2HeadingScope(VTV2PlanHeadings(doc, headingLevel, position), _
             position, headingLevel, scopeStart, automatic)
         If scopeStart < 0 Then automatic = False
         If Not automatic Then literalPrefix = numberText
@@ -25095,8 +25696,7 @@ Private Sub VTV2PlanCommitNumber( _
     ByRef transferEquation As Range)
 
     Dim exact As Range
-    Dim entries As Collection
-    Dim index As Long
+    Dim targetEntry As Variant
     Dim excludeStart As Long
     Dim instruction As String
     Dim levelPosition As Long
@@ -25107,29 +25707,26 @@ Private Sub VTV2PlanCommitNumber( _
         If targetRange.OMaths.Count >= 1 Then
             Set exact = VTNativeMathRoot(targetRange.OMaths(1)).Range.Duplicate
             excludeStart = exact.Start
-            Set entries = VTV2NumberedEquations(doc)
-            For index = 1 To entries.Count
-                If entries(index)(0) = exact.Start Then
-                    instruction = entries(index)(2)
-                    headingLevel = 0
-                    levelPosition = InStr(1, instruction, "\s ", vbTextCompare)
-                    If levelPosition > 0 Then _
-                        headingLevel = CLng(Val(Mid$(instruction, levelPosition + 3, 2)))
-                    separator = entries(index)(4)
-                    automatic = entries(index)(7)
-                    literalPrefix = ""
-                    If headingLevel > 0 And Not automatic Then literalPrefix = entries(index)(3)
-                    restart = entries(index)(6)
-                    If (headingLevel = 0 Or separator = "." Or separator = "-") And _
-                       VTV2NumberHasStyle(exact, entries(index), headingLevel, separator, _
-                           literalPrefix, automatic, restart) Then
-                        sequenceName = entries(index)(1)
-                        initial = entries(index)(5)
-                        Exit Sub
-                    End If
-                    Exit For
+            targetEntry = VTV2NumberedEquationEntry(exact)
+            If Not IsEmpty(targetEntry) Then
+                instruction = targetEntry(2)
+                headingLevel = 0
+                levelPosition = InStr(1, instruction, "\s ", vbTextCompare)
+                If levelPosition > 0 Then _
+                    headingLevel = CLng(Val(Mid$(instruction, levelPosition + 3, 2)))
+                separator = targetEntry(4)
+                automatic = targetEntry(7)
+                literalPrefix = ""
+                If headingLevel > 0 And Not automatic Then literalPrefix = targetEntry(3)
+                restart = targetEntry(6)
+                If (headingLevel = 0 Or separator = "." Or separator = "-") And _
+                   VTV2NumberHasStyle(exact, targetEntry, headingLevel, separator, _
+                       literalPrefix, automatic, restart) Then
+                    sequenceName = targetEntry(1)
+                    initial = targetEntry(5)
+                    Exit Sub
                 End If
-            Next index
+            End If
         End If
     End If
     VTV2PlanInsertion doc, targetRange.Start, sequenceName, headingLevel, separator, _
@@ -25257,14 +25854,22 @@ End Sub
 ' STYLEREF before SEQ in every numbered equation from position on (Windows
 ' WordNativeOmmlFieldRefresh), then every cross-reference.
 Private Sub VTV2UpdateNumbersFrom(ByVal doc As Document, ByVal fromPosition As Long)
-    Dim math As OMath
     Dim owner As Range
     Dim candidate As Field
     Dim lastStart As Long
+    Dim searchStart As Long
 
+    ' Only equations holding STYLEREF/SEQ fields have anything to update, and
+    ' an equation ending at or after fromPosition starts no earlier than the
+    ' paragraph that contains fromPosition.
+    searchStart = fromPosition
+    If searchStart < doc.Content.Start Then searchStart = doc.Content.Start
+    If searchStart > doc.Content.End Then searchStart = doc.Content.End
+    searchStart = doc.Range(Start:=searchStart, End:=searchStart) _
+        .Paragraphs(1).Range.Start
     lastStart = -1
-    For Each math In doc.OMaths
-        Set owner = VTNativeMathRoot(math).Range.Duplicate
+    For Each owner In VTNumberFieldNativeMathRoots( _
+        doc, searchStart, doc.Content.End, True)
         If owner.End >= fromPosition And owner.Start > lastStart Then
             lastStart = owner.Start
             For Each candidate In owner.Fields
@@ -25274,7 +25879,7 @@ Private Sub VTV2UpdateNumbersFrom(ByVal doc As Document, ByVal fromPosition As L
                 If candidate.Type = wdFieldSequence Then candidate.Update
             Next candidate
         End If
-    Next math
+    Next owner
     For Each candidate In doc.Fields
         If candidate.Type = wdFieldRef Then candidate.Update
     Next candidate
@@ -26247,6 +26852,9 @@ Private Function VTEquationStartsNumberScope( _
     Dim targetLevel As Long
     Dim candidateLevel As Long
     Dim between As Range
+    Dim exact As Range
+    Dim roots As Collection
+    Dim rootIndex As Long
 
     If target Is Nothing Then Exit Function
     Set documentObject = target.Document
@@ -26265,12 +26873,19 @@ Private Function VTEquationStartsNumberScope( _
             End If
         Next shape
     Else
-        For Each math In documentObject.OMaths
-            If math.Range.Start >= target.Start Then Exit For
-            If Not VTPureNativeNumberField(math.Range) Is Nothing Then
-                previousEnd = math.Range.Paragraphs(1).Range.End
+        ' The last numbered equation before target decides; walk the
+        ' SEQ-bearing equations backwards and stop at the first proven one.
+        Set roots = VTNumberFieldNativeMathRoots( _
+            documentObject, documentObject.Content.Start, target.Start)
+        For rootIndex = roots.Count To 1 Step -1
+            Set exact = roots(rootIndex)
+            If exact.Start < target.Start Then
+                If Not VTPureNativeNumberField(exact) Is Nothing Then
+                    previousEnd = exact.Paragraphs(1).Range.End
+                    Exit For
+                End If
             End If
-        Next math
+        Next rootIndex
     End If
 
     If previousEnd < 0 Then
