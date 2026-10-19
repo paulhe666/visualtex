@@ -6,7 +6,7 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-office-performance-20260801-r125"
+    "word-office-performance-20260801-r126"
 Private Const VT_WORD_IDLE_WATCH_SECONDS As Long = 5
 Private Const VT_WORD_LATEX_REDRAW_REVISION As String = _
     "word-latex-redraw-20260802-r1"
@@ -10038,6 +10038,13 @@ Private Sub VTCommitWordLatexRedrawDispatch( _
         End If
     Next itemIndex
 
+    ' Each image number was written while the formulas before it were still
+    ' unconverted, so its chapter restart could not see them.
+    If atomicFormulaConversion And outputKind = "image" And _
+       numberedFormulaCount > 0 Then
+        transactionStage = "redraw-image-number-restarts"
+        VTRepairImageNumberRestartsFrom targetDocument, targetStart
+    End If
     If deferNumberingReconcile Then
         transactionStage = "redraw-reconcile-numbering"
         VTReconcileEquationNumbers targetDocument, -1, True
@@ -26914,6 +26921,74 @@ Private Sub VTRestoreImageNumberBookmarks( _
         formulaShape.Range.Document.Bookmarks.Add _
             Name:=CStr(item), Range:=source
     Next item
+End Sub
+
+' Sets the chapter restart (\r 1) of every numbered display image from
+' fromPosition on by the rule of VTEquationStartsNumberScope: an image restarts
+' when no numbered image precedes it or a heading at the restart level lies
+' between the two. One walk over the document's images and the paragraphs
+' between numbered images.
+Private Sub VTRepairImageNumberRestartsFrom( _
+    ByVal documentObject As Document, _
+    ByVal fromPosition As Long)
+
+    Dim shape As InlineShape
+    Dim paragraph As Paragraph
+    Dim placeRef As Field
+    Dim hiddenField As Field
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim restartAtOne As Boolean
+    Dim previousEnd As Long
+    Dim targetLevel As Long
+    Dim candidateLevel As Long
+
+    If documentObject Is Nothing Then Exit Sub
+    targetLevel = VTEquationNumberingRestartLevel(documentObject)
+    If targetLevel < 1 Then Exit Sub
+
+    previousEnd = -1
+    For Each shape In documentObject.InlineShapes
+        formulaId = ""
+        displayMode = ""
+        numbered = False
+        If Not VTTryParseFormulaReference( _
+           shape.Title, formulaId, displayMode, numbered) Then GoTo NextShape
+        If Not numbered Or displayMode <> "block" Then GoTo NextShape
+        If shape.Range.Start >= fromPosition Then
+            If previousEnd < 0 Then
+                restartAtOne = True
+            ElseIf previousEnd >= shape.Range.Start Then
+                restartAtOne = False
+            Else
+                restartAtOne = False
+                For Each paragraph In documentObject.Range( _
+                    previousEnd, shape.Range.Start).Paragraphs
+                    candidateLevel = paragraph.OutlineLevel
+                    If candidateLevel >= 1 And candidateLevel <= targetLevel Then
+                        restartAtOne = True
+                        Exit For
+                    End If
+                Next paragraph
+            End If
+            Set placeRef = VTImagePlaceRef(shape.Range)
+            If Not placeRef Is Nothing Then
+                Set hiddenField = VTImageSequenceField(placeRef, True)
+                If hiddenField Is Nothing Then
+                    Err.Raise vbObjectError + 7605, "VisualTeX", _
+                        "A numbered image has no hidden sequence field."
+                End If
+                If VTEquationSequenceFieldHasSwitch(hiddenField, "r") <> _
+                   restartAtOne Then
+                    hiddenField.Code.Text = " " & VTImageSequenceInstruction( _
+                        documentObject, True, False, restartAtOne) & " "
+                End If
+            End If
+        End If
+        previousEnd = shape.Range.Paragraphs(1).Range.End
+NextShape:
+    Next shape
 End Sub
 
 Private Function VTEquationStartsNumberScope( _
