@@ -6,7 +6,7 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-office-performance-20260801-r121"
+    "word-office-performance-20260801-r125"
 Private Const VT_WORD_IDLE_WATCH_SECONDS As Long = 5
 Private Const VT_WORD_LATEX_REDRAW_REVISION As String = _
     "word-latex-redraw-20260802-r1"
@@ -3244,8 +3244,13 @@ Private Function VTFormulaRestoreManifest( _
                 Err.Raise vbObjectError + 7595, "VisualTeX", _
                     "A selected image formula lost its VisualTeX metadata."
             End If
-            fontSizePt = VTPreferredWordFormulaFontSize( _
-                formulaShape.Range.Duplicate)
+            ' The size the image was drawn at. A numbered image paragraph has the
+            ' larger number style, which is not the formula's size.
+            fontSizePt = VTWordImageFormulaFontSize(formulaShape)
+            If Not VTValidWordFormulaFontSize(fontSizePt) Then
+                fontSizePt = VTPreferredWordFormulaFontSize( _
+                    formulaShape.Range.Duplicate)
+            End If
             payload = encodedMetadata
         End If
         manifest = manifest & _
@@ -9579,6 +9584,68 @@ Private Sub VTResolveFormulaRestoreWordOffsets( _
     Next itemIndex
 End Sub
 
+' The Word range a format conversion replaces for one image formula. A
+' numbered image owns its paragraph: a tab, the image, a tab and the
+' MACROBUTTON number. Replacing only the image left that number beside the new
+' formula, so the number and the spacing around it go too. Text, fields or
+' formulas elsewhere in the paragraph stay; paragraphCleared says whether the
+' whole paragraph content was taken.
+Private Function VTNumberedImageReplacementRange( _
+    ByVal sourceRange As Range, _
+    ByRef paragraphCleared As Boolean) As Range
+
+    Dim documentObject As Document
+    Dim placeRef As Field
+    Dim paragraphRange As Range
+    Dim replacementRange As Range
+    Dim contentEnd As Long
+    Dim numberStart As Long
+    Dim numberEnd As Long
+
+    paragraphCleared = False
+    Set VTNumberedImageReplacementRange = sourceRange
+    If sourceRange.InlineShapes.Count <> 1 Then Exit Function
+    If VTRangeIsWithinTable(sourceRange) Then Exit Function
+    Set placeRef = VTImagePlaceRef(sourceRange.InlineShapes(1).Range)
+    If placeRef Is Nothing Then Exit Function
+    Set documentObject = sourceRange.Document
+    Set paragraphRange = sourceRange.Paragraphs(1).Range.Duplicate
+    contentEnd = paragraphRange.End
+    If documentObject.Range(contentEnd - 1, contentEnd).Text = vbCr Then
+        contentEnd = contentEnd - 1
+    End If
+    numberStart = VTEquationFieldStart(placeRef)
+    numberEnd = VTEquationFieldEnd(placeRef)
+    If numberStart < sourceRange.End Or numberEnd > contentEnd Then Exit Function
+    If Not VTRangeIsBlankSpacing( _
+       documentObject.Range(sourceRange.End, numberStart)) Then Exit Function
+
+    Set replacementRange = documentObject.Range(sourceRange.Start, numberEnd)
+    If VTRangeIsBlankSpacing( _
+       documentObject.Range(paragraphRange.Start, sourceRange.Start)) Then
+        replacementRange.Start = paragraphRange.Start
+    End If
+    If VTRangeIsBlankSpacing( _
+       documentObject.Range(numberEnd, contentEnd)) Then
+        replacementRange.End = contentEnd
+    End If
+    paragraphCleared = (replacementRange.Start = paragraphRange.Start And _
+        replacementRange.End = contentEnd)
+    Set VTNumberedImageReplacementRange = replacementRange
+End Function
+
+' True when a range holds nothing but spacing: no text, field, image or equation.
+Private Function VTRangeIsBlankSpacing(ByVal candidateRange As Range) As Boolean
+    If candidateRange.End <= candidateRange.Start Then
+        VTRangeIsBlankSpacing = True
+        Exit Function
+    End If
+    If candidateRange.InlineShapes.Count > 0 Or _
+       candidateRange.OMaths.Count > 0 Or _
+       candidateRange.Fields.Count > 0 Then Exit Function
+    VTRangeIsBlankSpacing = Not VTWordRangeHasMeaningfulText(candidateRange)
+End Function
+
 Private Sub VTCommitWordLatexRedrawDispatch( _
     ByVal sessionId As String, _
     ByVal manifest As Object, _
@@ -9638,6 +9705,8 @@ Private Sub VTCommitWordLatexRedrawDispatch( _
     Dim rollbackVerified As Boolean
     Dim atomicFormulaConversion As Boolean
     Dim deferNumberingReconcile As Boolean
+    Dim numberParagraphCleared As Boolean
+    Dim replacementStart As Long
 
     On Error GoTo Failed
     transactionStage = "redraw-validate-target"
@@ -9912,11 +9981,20 @@ Private Sub VTCommitWordLatexRedrawDispatch( _
                 numberedFormulaIds, numberedRestoreRanges)
             cursorRange.Collapse wdCollapseEnd
         Else
+            numberParagraphCleared = False
+            If sourceKind = "image" Then
+                Set sourceRange = VTNumberedImageReplacementRange( _
+                    sourceRange, numberParagraphCleared)
+            End If
+            replacementStart = sourceRange.Start
             sourceRange.Delete
             mutationOccurred = True
             Set cursorRange = targetDocument.Range( _
-                Start:=targetStart + wordStarts(itemIndex), _
-                End:=targetStart + wordStarts(itemIndex))
+                Start:=replacementStart, End:=replacementStart)
+            If numberParagraphCleared Then
+                VTNormalizePlainWordParagraph _
+                    cursorRange.Paragraphs(1).Range.Duplicate
+            End If
             formulaFailureDescription = ""
             If Not sharedVectorDocument Is Nothing Then
                 If Not VTTryDocumentImportInsertFormula( _

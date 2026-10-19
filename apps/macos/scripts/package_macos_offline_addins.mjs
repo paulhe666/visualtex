@@ -144,7 +144,7 @@ function validateMacroContainer(path, kind, options = {}) {
       packageVersion,
       ...(kind === "Word"
         ? [
-            "word-office-performance-20260801-r121",
+            "word-office-performance-20260801-r125",
             "VTNativeMathRoot",
             "VTJoinNativeMathAtBoundary",
             "VTRetireLegacyNativeBoundary",
