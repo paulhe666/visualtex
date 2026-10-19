@@ -6,7 +6,7 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-office-performance-20260801-r126"
+    "word-office-performance-20260801-r127"
 Private Const VT_WORD_IDLE_WATCH_SECONDS As Long = 5
 Private Const VT_WORD_LATEX_REDRAW_REVISION As String = _
     "word-latex-redraw-20260802-r1"
@@ -20740,20 +20740,6 @@ Private Function VTEquationNumberingRestartLevel( _
     End Select
 End Function
 
-Private Function VTNormalizeHeadingNumberText( _
-    ByVal headingNumber As String) As String
-
-    headingNumber = Trim$(headingNumber)
-    headingNumber = Replace$(headingNumber, vbTab, "")
-    headingNumber = Replace$(headingNumber, ChrW(160), "")
-    Do While Len(headingNumber) > 0 And _
-             InStr(1, ".-、:：", Right$(headingNumber, 1), _
-                 vbBinaryCompare) > 0
-        headingNumber = Left$(headingNumber, Len(headingNumber) - 1)
-    Loop
-    VTNormalizeHeadingNumberText = Trim$(headingNumber)
-End Function
-
 ' Heading paragraphs with an outline level from 1 to maxLevel that start before
 ' searchEnd, in document order, as Array(start, level). Word's Find visits only
 ' the paragraphs with the requested outline level (about 4 ms per hit on Word
@@ -20864,20 +20850,18 @@ Private Sub VTAddHeadingParagraphEntry( _
     End If
 End Sub
 
+' The chapter ("3") or section ("3.2") number of the formula at formulaRange,
+' by the rule of the OMML numbers (VTV2HeadingScope): the number written in the
+' last heading of that level before the formula, from Word's list numbering or
+' the heading text; headings are counted only in a document whose headings
+' carry no number. "0" / "0.0" before any heading.
 Private Function VTEquationHeadingPrefix( _
     ByVal formulaRange As Range, _
     ByVal numberingMode As String) As String
 
-    Dim documentObject As Document
-    Dim candidateParagraph As Paragraph
-    Dim candidateLevel As Long
     Dim targetLevel As Long
-    Dim chapterCount As Long
-    Dim sectionCount As Long
-    Dim listText As String
-    Dim currentChapterPrefix As String
-    Dim headingEntry As Variant
-    Dim headingRange As Range
+    Dim scopeStart As Long
+    Dim automatic As Boolean
 
     If formulaRange Is Nothing Then Exit Function
     numberingMode = LCase$(Trim$(numberingMode))
@@ -20888,71 +20872,9 @@ Private Function VTEquationHeadingPrefix( _
     Else
         Exit Function
     End If
-
-    Set documentObject = formulaRange.Document
-    ' Only headings change the prefix; visit just them (see
-    ' VTOutlineHeadingParagraphs) instead of every paragraph before the formula.
-    For Each headingEntry In VTOutlineHeadingParagraphs( _
-        documentObject, targetLevel, formulaRange.Start, True)
-        candidateLevel = headingEntry(1)
-        Set headingRange = documentObject.Range( _
-            Start:=headingEntry(0), End:=headingEntry(0)).Paragraphs(1).Range
-        If candidateLevel = 1 Then
-            chapterCount = chapterCount + 1
-            sectionCount = 0
-            listText = VTNormalizeHeadingNumberText( _
-                headingRange.ListFormat.ListString)
-            If Len(listText) > 0 Then
-                currentChapterPrefix = listText
-            Else
-                currentChapterPrefix = CStr(chapterCount)
-            End If
-            If targetLevel = 1 Then
-                VTEquationHeadingPrefix = currentChapterPrefix
-            Else
-                ' A new chapter starts a fresh implicit section. Do not leak the
-                ' previous chapter's explicit section prefix into formulas that
-                ' appear before this chapter's first level-2 heading.
-                VTEquationHeadingPrefix = ""
-            End If
-        ElseIf candidateLevel = 2 Then
-            sectionCount = sectionCount + 1
-            If targetLevel = 2 Then
-                listText = VTNormalizeHeadingNumberText( _
-                    headingRange.ListFormat.ListString)
-                If Len(listText) > 0 Then
-                    VTEquationHeadingPrefix = listText
-                ElseIf Len(currentChapterPrefix) > 0 Then
-                    VTEquationHeadingPrefix = currentChapterPrefix & _
-                        "." & CStr(sectionCount)
-                Else
-                    VTEquationHeadingPrefix = _
-                        CStr(IIf(chapterCount > 0, chapterCount, 0)) & _
-                        "." & CStr(sectionCount)
-                End If
-            End If
-        End If
-    Next headingEntry
-
-    If Len(VTEquationHeadingPrefix) = 0 Then
-        If targetLevel = 1 Then
-            If Len(currentChapterPrefix) > 0 Then
-                VTEquationHeadingPrefix = currentChapterPrefix
-            Else
-                ' Formulas before the first chapter belong to chapter 0. Never
-                ' pretend that an unentered heading scope is already chapter 1.
-                VTEquationHeadingPrefix = "0"
-            End If
-        ElseIf Len(currentChapterPrefix) > 0 Then
-            ' A formula after a chapter heading but before its first section is
-            ' explicitly in section 0. This keeps 2.0.1 distinct from the first
-            ' real section's 2.1.1 when a Heading 2 is inserted later.
-            VTEquationHeadingPrefix = currentChapterPrefix & ".0"
-        Else
-            ' Before any chapter or section, use the explicit zero scope.
-            VTEquationHeadingPrefix = "0.0"
-        End If
-    End If
+    VTEquationHeadingPrefix = VTV2HeadingScope( _
+        VTV2PlanHeadings(formulaRange.Document, targetLevel, formulaRange.Start), _
+        formulaRange.Start, targetLevel, scopeStart, automatic)
 End Function
 
 Private Sub VTBuildEquationHeadingPrefixes( _
@@ -20966,14 +20888,12 @@ Private Sub VTBuildEquationHeadingPrefixes( _
     Dim candidateParagraph As Paragraph
     Dim candidateLevel As Long
     Dim targetLevel As Long
-    Dim chapterCount As Long
-    Dim sectionCount As Long
     Dim itemIndex As Long
     Dim paragraphStart As Long
-    Dim listText As String
-    Dim currentPrefix As String
-    Dim currentSectionPrefix As String
     Dim currentLocalOrdinal As Long
+    Dim headings As Collection
+    Dim scopeStart As Long
+    Dim automatic As Boolean
 
     If documentObject Is Nothing Or sequenceCount <= 0 Then Exit Sub
     numberingMode = LCase$(Trim$(numberingMode))
@@ -20987,88 +20907,36 @@ Private Sub VTBuildEquationHeadingPrefixes( _
 
     ReDim headingPrefixes(1 To sequenceCount)
     ReDim localOrdinals(1 To sequenceCount)
+
+    ' Chapter and section numbers follow the OMML numbers (VTV2HeadingScope).
+    Set headings = VTV2CollectHeadings(documentObject, targetLevel)
+    For itemIndex = 1 To sequenceCount
+        headingPrefixes(itemIndex) = VTV2HeadingScope( _
+            headings, sequenceAnchors(itemIndex), targetLevel, _
+            scopeStart, automatic)
+    Next itemIndex
+
+    ' The running number restarts at every heading of the numbering level, as
+    ' SEQ \s does for OMML numbers. sequenceAnchors are sorted, so one forward
+    ' paragraph pass assigns the local ordinals.
     itemIndex = 1
     For Each candidateParagraph In documentObject.Paragraphs
         paragraphStart = candidateParagraph.Range.Start
-
-        ' Every formula whose anchor is before this paragraph sees the heading
-        ' state accumulated so far. Because sequenceAnchors are already sorted,
-        ' one forward paragraph pass resolves both the displayed heading prefix
-        ' and the local ordinal used by the native SEQ field.
         Do While itemIndex <= sequenceCount
             If sequenceAnchors(itemIndex) > paragraphStart Then Exit Do
             currentLocalOrdinal = currentLocalOrdinal + 1
             localOrdinals(itemIndex) = currentLocalOrdinal
-            If targetLevel = 1 Then
-                If Len(currentPrefix) > 0 Then
-                    headingPrefixes(itemIndex) = currentPrefix
-                Else
-                    headingPrefixes(itemIndex) = "0"
-                End If
-            Else
-                If Len(currentSectionPrefix) > 0 Then
-                    headingPrefixes(itemIndex) = currentSectionPrefix
-                ElseIf Len(currentPrefix) > 0 Then
-                    headingPrefixes(itemIndex) = currentPrefix & ".0"
-                Else
-                    headingPrefixes(itemIndex) = "0.0"
-                End If
-            End If
             itemIndex = itemIndex + 1
         Loop
         If itemIndex > sequenceCount Then Exit For
-
         candidateLevel = candidateParagraph.OutlineLevel
-        If candidateLevel = 1 Then
-            chapterCount = chapterCount + 1
-            sectionCount = 0
-            listText = VTNormalizeHeadingNumberText( _
-                candidateParagraph.Range.ListFormat.ListString)
-            If Len(listText) > 0 Then
-                currentPrefix = listText
-            Else
-                currentPrefix = CStr(chapterCount)
-            End If
-            currentSectionPrefix = ""
-            ' A chapter boundary starts a new chapter scope. In section mode the
-            ' area before the next level-2 heading is explicit section 0.
+        If candidateLevel >= 1 And candidateLevel <= targetLevel Then
             currentLocalOrdinal = 0
-        ElseIf candidateLevel = 2 Then
-            sectionCount = sectionCount + 1
-            listText = VTNormalizeHeadingNumberText( _
-                candidateParagraph.Range.ListFormat.ListString)
-            If Len(listText) > 0 Then
-                currentSectionPrefix = listText
-            ElseIf Len(currentPrefix) > 0 Then
-                currentSectionPrefix = currentPrefix & _
-                    "." & CStr(IIf(sectionCount > 0, sectionCount, 1))
-            Else
-                currentSectionPrefix = _
-                    CStr(IIf(chapterCount > 0, chapterCount, 0)) & _
-                    "." & CStr(sectionCount)
-            End If
-            If targetLevel = 2 Then currentLocalOrdinal = 0
         End If
     Next candidateParagraph
-
     Do While itemIndex <= sequenceCount
         currentLocalOrdinal = currentLocalOrdinal + 1
         localOrdinals(itemIndex) = currentLocalOrdinal
-        If targetLevel = 1 Then
-            If Len(currentPrefix) > 0 Then
-                headingPrefixes(itemIndex) = currentPrefix
-            Else
-                headingPrefixes(itemIndex) = "0"
-            End If
-        Else
-            If Len(currentSectionPrefix) > 0 Then
-                headingPrefixes(itemIndex) = currentSectionPrefix
-            ElseIf Len(currentPrefix) > 0 Then
-                headingPrefixes(itemIndex) = currentPrefix & ".0"
-            Else
-                headingPrefixes(itemIndex) = "0.0"
-            End If
-        End If
         itemIndex = itemIndex + 1
     Loop
 End Sub

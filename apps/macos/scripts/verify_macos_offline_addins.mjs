@@ -69,7 +69,7 @@ inspectAddin("VisualTeX.dotm", "word/vbaProject.bin", [
   "App_WindowBeforeDoubleClick",
   "App_WindowSelectionChange",
   "VisualTeX_StabilizeImageEquationNumberSelection",
-  "word-office-performance-20260801-r126",
+  "word-office-performance-20260801-r127",
   "VTNativeMathRoot",
   "VTJoinNativeMathAtBoundary",
   "VTRetireLegacyNativeBoundary",
