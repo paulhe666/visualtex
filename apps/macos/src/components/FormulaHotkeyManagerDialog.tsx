@@ -5,12 +5,15 @@ import {
   Pencil,
   Plus,
   Presentation,
+  RotateCcw,
+  Rows3,
   Trash2,
   X,
 } from "lucide-react";
 import { MathPreview } from "./MathPreview";
 import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
 import { OfficeHotkeyRecorderDialog } from "./OfficeHotkeyRecorderDialog";
+import { FormulaRowHotkeyRecorderDialog } from "./FormulaRowHotkeyRecorderDialog";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyTargetKindLabel,
@@ -19,6 +22,7 @@ import {
 } from "../shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
 import {
   OFFICE_HOTKEY_ACTIONS,
@@ -26,6 +30,12 @@ import {
   type OfficeHotkeyActionDefinition,
   type OfficeHotkeyHost,
 } from "../shortcuts/officeHotkeys";
+import {
+  FORMULA_ROW_HOTKEY_ACTIONS,
+  formulaRowHotkeyActionLabel,
+  isDefaultFormulaRowHotkeyChord,
+  type FormulaRowHotkeyActionDefinition,
+} from "../shortcuts/formulaRowHotkeys";
 
 interface Props {
   open: boolean;
@@ -39,11 +49,20 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
     useState<FormulaHotkeyTarget | null>(null);
   const [editingOfficeAction, setEditingOfficeAction] =
     useState<OfficeHotkeyActionDefinition | null>(null);
+  const [editingRowAction, setEditingRowAction] =
+    useState<FormulaRowHotkeyActionDefinition | null>(null);
   const bindings = useFormulaHotkeyStore((state) => state.bindings);
   const removeBinding = useFormulaHotkeyStore((state) => state.removeBinding);
   const officeBindings = useOfficeHotkeyStore((state) => state.bindings);
   const removeOfficeBinding = useOfficeHotkeyStore(
     (state) => state.removeBinding,
+  );
+  const rowBindings = useFormulaRowHotkeyStore((state) => state.bindings);
+  const removeRowBinding = useFormulaRowHotkeyStore(
+    (state) => state.removeBinding,
+  );
+  const resetRowBinding = useFormulaRowHotkeyStore(
+    (state) => state.resetBinding,
   );
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
@@ -56,12 +75,20 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
     if (!open) {
       setEditingTarget(null);
       setEditingOfficeAction(null);
+      setEditingRowAction(null);
       return;
     }
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     const frame = window.requestAnimationFrame(() => dialogRef.current?.focus());
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || editingTarget || editingOfficeAction) return;
+      if (
+        event.key !== "Escape" ||
+        editingTarget ||
+        editingOfficeAction ||
+        editingRowAction
+      ) {
+        return;
+      }
       event.preventDefault();
       onClose();
     };
@@ -71,7 +98,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
       document.removeEventListener("keydown", handleKeyDown);
       previousFocusRef.current?.focus({ preventScroll: true });
     };
-  }, [open, editingOfficeAction, editingTarget, onClose]);
+  }, [open, editingOfficeAction, editingRowAction, editingTarget, onClose]);
 
   const renderOfficeGroup = (
     host: OfficeHotkeyHost,
@@ -161,7 +188,99 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
     </section>
   );
 
+  const renderRowGroup = () => (
+    <section className="office-hotkey-group formula-row-hotkey-group">
+      <header className="formula-hotkey-section-heading">
+        <Rows3 size={16} />
+        <strong>{isEn ? "Formula rows" : "公式行"}</strong>
+        <span>
+          {isEn
+            ? "Inline and display rows in the formula editor"
+            : "编辑区中的行内 / 行间公式行"}
+        </span>
+      </header>
+      <div className="office-hotkey-action-list">
+        {FORMULA_ROW_HOTKEY_ACTIONS.map((action) => {
+          const chord =
+            rowBindings.find((item) => item.actionId === action.id)?.chord ??
+            null;
+          const label = formulaRowHotkeyActionLabel(action, language);
+          const isDefault = isDefaultFormulaRowHotkeyChord(action.id, chord);
+          return (
+            <article
+              className="office-hotkey-action-row"
+              key={action.id}
+              data-formula-row-hotkey-action={action.id}
+            >
+              <div className="office-hotkey-action-icon" aria-hidden="true">
+                <Rows3 size={18} />
+              </div>
+              <div className="formula-hotkey-binding-copy">
+                <strong>{label}</strong>
+                <span>{isEn ? action.descriptionEn : action.descriptionZh}</span>
+              </div>
+              {chord ? (
+                <kbd>{formatFormulaHotkeyChord(chord)}</kbd>
+              ) : (
+                <span className="office-hotkey-unassigned">
+                  {isEn ? "Off" : "已关闭"}
+                </span>
+              )}
+              <div className="formula-hotkey-binding-actions">
+                <button
+                  type="button"
+                  className="icon-button compact"
+                  onClick={() => setEditingRowAction(action)}
+                  aria-label={
+                    isEn
+                      ? `Change hotkey for ${label}`
+                      : `修改${label}的快捷键`
+                  }
+                  title={isEn ? "Change hotkey" : "修改快捷键"}
+                >
+                  <Pencil size={14} />
+                </button>
+                {!isDefault && (
+                  <button
+                    type="button"
+                    className="icon-button compact"
+                    onClick={() => resetRowBinding(action.id)}
+                    aria-label={
+                      isEn
+                        ? `Restore the default hotkey for ${label}`
+                        : `恢复${label}的默认快捷键`
+                    }
+                    title={isEn ? "Restore default" : "恢复默认"}
+                  >
+                    <RotateCcw size={14} />
+                  </button>
+                )}
+                {chord && (
+                  <button
+                    type="button"
+                    className="icon-button compact is-danger"
+                    onClick={() => removeRowBinding(action.id)}
+                    aria-label={
+                      isEn
+                        ? `Turn off the hotkey for ${label}`
+                        : `关闭${label}的快捷键`
+                    }
+                    title={isEn ? "Turn off" : "关闭快捷键"}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+
   if (!open) return null;
+
+  const assignedRowCount = rowBindings.filter((item) => item.chord).length;
 
   return (
     <>
@@ -197,7 +316,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
               <Keyboard size={18} />
               <span>
                 <strong>
-                  {sortedBindings.length + officeBindings.length}{" "}
+                  {sortedBindings.length + officeBindings.length + assignedRowCount}{" "}
                   {isEn ? "assigned" : "项已设置"}
                 </strong>
                 <small>
@@ -212,6 +331,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
           <div className="formula-hotkey-manager-content">
             {renderOfficeGroup("word", "Microsoft Word")}
             {renderOfficeGroup("powerpoint", "Microsoft PowerPoint")}
+            {renderRowGroup()}
             <section className="formula-editor-hotkey-group">
               <header className="formula-hotkey-section-heading">
                 <Keyboard size={16} />
@@ -305,6 +425,10 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
       <OfficeHotkeyRecorderDialog
         action={editingOfficeAction}
         onClose={() => setEditingOfficeAction(null)}
+      />
+      <FormulaRowHotkeyRecorderDialog
+        action={editingRowAction}
+        onClose={() => setEditingRowAction(null)}
       />
     </>
   );
