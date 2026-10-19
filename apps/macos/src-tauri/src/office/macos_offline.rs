@@ -5796,30 +5796,12 @@ fn parse_formula_restore_manifest(
         }
         let (resolved_formula_id, resolved_numbered, resolved_metadata, math_ml, latex) =
             if source_kind == "omml" {
-                let metadata = if let Some(formula_id) = formula_id.as_deref() {
-                    validate_uuid(formula_id, "Word managed OMML formula id")?;
-                    let encoded = encoded_identity_metadata.ok_or_else(|| {
-                        "Managed Word OMML formula is missing VisualTeX metadata".to_string()
-                    })?;
-                    let metadata = decode_metadata(encoded)?;
-                    if metadata.formula_id != formula_id
-                        || metadata.display_mode != display_mode
-                        || metadata.numbered != numbered
-                    {
-                        return Err(
-                            "Managed Word OMML identity does not match its VisualTeX metadata"
-                                .to_string(),
-                        );
-                    }
-                    Some(metadata)
-                } else {
-                    if numbered || encoded_identity_metadata.is_some() {
-                        return Err(
-                            "Unmanaged Word OMML contains partial VisualTeX identity".to_string(),
-                        );
-                    }
-                    None
-                };
+                let metadata = omml_restore_identity(
+                    formula_id.as_deref(),
+                    encoded_identity_metadata,
+                    &display_mode,
+                    numbered,
+                )?;
                 // The restore reads the equation with the same Word reader as
                 // Windows; the editor no longer re-derives LaTeX from MathML.
                 let math_ml = word_omml_to_mathml(&payload, display_mode == "block")?;
@@ -5870,6 +5852,35 @@ fn parse_formula_restore_manifest(
         });
     }
     Ok((target_text, targets))
+}
+
+/// The VisualTeX identity of one OMML restore item. An equation without a
+/// VisualTeX id can still carry Word's own number (a batch import or a number
+/// made in Word); it is restored as a new numbered formula. Metadata without
+/// an id is a broken identity.
+fn omml_restore_identity(
+    formula_id: Option<&str>,
+    encoded_metadata: Option<&str>,
+    display_mode: &str,
+    numbered: bool,
+) -> Result<Option<VisualTeXFormulaMetadata>, String> {
+    let Some(formula_id) = formula_id else {
+        if encoded_metadata.is_some() {
+            return Err("Unmanaged Word OMML contains partial VisualTeX identity".to_string());
+        }
+        return Ok(None);
+    };
+    validate_uuid(formula_id, "Word managed OMML formula id")?;
+    let encoded = encoded_metadata
+        .ok_or_else(|| "Managed Word OMML formula is missing VisualTeX metadata".to_string())?;
+    let metadata = decode_metadata(encoded)?;
+    if metadata.formula_id != formula_id
+        || metadata.display_mode != display_mode
+        || metadata.numbered != numbered
+    {
+        return Err("Managed Word OMML identity does not match its VisualTeX metadata".to_string());
+    }
+    Ok(Some(metadata))
 }
 
 fn extract_omath_fragment(word_open_xml: &str) -> Result<String, String> {
@@ -7838,6 +7849,30 @@ pub fn get_macos_offline_plugin_health() -> Result<Vec<MacOfflinePluginHealth>, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unmanaged_numbered_omml_restores_as_a_new_numbered_formula() {
+        assert!(omml_restore_identity(None, None, "block", true)
+            .expect("an equation numbered by Word alone is restorable")
+            .is_none());
+        assert!(omml_restore_identity(None, None, "inline", false)
+            .expect("a plain Word equation is restorable")
+            .is_none());
+    }
+
+    #[test]
+    fn omml_restore_rejects_metadata_without_a_formula_id() {
+        let error = omml_restore_identity(None, Some("e30"), "block", true)
+            .expect_err("metadata without an id is a broken identity");
+        assert!(error.contains("partial VisualTeX identity"));
+        assert!(omml_restore_identity(
+            Some("00000000-0000-4000-8000-000000000000"),
+            None,
+            "block",
+            false,
+        )
+        .is_err());
+    }
 
     #[test]
     fn native_powerpoint_edit_detects_changed_source_even_with_stale_dirty_flag() {
