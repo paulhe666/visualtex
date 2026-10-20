@@ -100,6 +100,19 @@
                          screentip="引用带编号公式"
                          supertip="分别展开当前文档中的 Word OMML 与图片公式编号列表；点击目标公式后插入可自动更新的 Word REF 字段。"/>
           </box>
+          <menu id="VisualTeX.Mac.Word.BatchNumbering"
+                label="批量编号"
+                size="large"
+                image="VisualTeXWordBatchNumbering"
+                screentip="为行间公式批量添加编号"
+                supertip="按当前编号格式，为所选内容或全文中所有未编号的行间公式（VisualTeX 图片公式、Word OMML）添加各自的编号；已有编号保持不变并自动顺延，交叉引用同步更新，可一步撤销。">
+            <button id="VisualTeX.Mac.Word.BatchNumberingSelection"
+                    label="为所选行间公式编号"
+                    onAction="VTWordRibbonNumberDisplayFormulasSelection"/>
+            <button id="VisualTeX.Mac.Word.BatchNumberingDocument"
+                    label="为全文行间公式编号"
+                    onAction="VTWordRibbonNumberDisplayFormulasDocument"/>
+          </menu>
           <button id="VisualTeX.Mac.Word.UpdateEquationFormat"
                   label="更新公式格式"
                   size="large"

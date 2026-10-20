@@ -144,7 +144,7 @@ function validateMacroContainer(path, kind, options = {}) {
       packageVersion,
       ...(kind === "Word"
         ? [
-            "word-office-performance-20260801-r127",
+            "word-office-performance-20260801-r128",
             "VTNativeMathRoot",
             "VTJoinNativeMathAtBoundary",
             "VTRetireLegacyNativeBoundary",
@@ -157,6 +157,7 @@ function validateMacroContainer(path, kind, options = {}) {
             "App_WindowSelectionChange",
             "VisualTeX_StabilizeImageEquationNumberSelection",
             "VTWordRibbonApplyImageFontSizePreset",
+            "VTWordRibbonNumberDisplayFormulasDocument",
             "VisualTeX_EditImageField",
             "VisualTeX_EditSelectedImageFromNativeMonitor",
             "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
@@ -251,6 +252,7 @@ const RIBBON_ICON_FILES = {
     VisualTeXWordConvertImage: { svg: "convert-image.svg" },
     VisualTeXWordDocumentImport: { svg: "document-import.svg" },
     VisualTeXWordUpdateNumbers: { svg: "update-numbers.svg" },
+    VisualTeXWordBatchNumbering: { svg: "batch-numbering.svg" },
     VisualTeXWordNumberingFormat: { svg: "numbering-format.svg" },
     VisualTeXWordCrossReference: { svg: "cross-reference.svg" },
     VisualTeXWordOpenApp: { svg: "open-visualtex.svg" },

@@ -96,6 +96,9 @@ fn convert_manifest(input: &Path, output: &Path) -> Result<(), String> {
     if values.get("sourceKind").map(String::as_str) == Some("nativeNumber") {
         return build_native_numbers(&values, output);
     }
+    if values.get("sourceKind").map(String::as_str) == Some("displayNumbering") {
+        return build_display_numbering(&values, output);
+    }
     if required(&values, "sourceKind")? != "omml" {
         return Err("The OMML batch source kind is invalid".to_string());
     }
@@ -319,43 +322,8 @@ fn build_native_numbers(values: &HashMap<String, String>, output: &Path) -> Resu
     };
     let mut equations = Vec::with_capacity(item_count);
     for index in 1..=item_count {
-        let key = |name: &str| format!("item{index}{name}");
-        let sequence_name = decode_utf8(required(values, &key("SequenceName"))?, "the SEQ label")?;
-        let heading_level = required(values, &key("HeadingLevel"))?
-            .parse::<u32>()
-            .ok()
-            .filter(|level| *level <= 2)
-            .ok_or_else(|| "The equation number heading level is invalid".to_string())?;
-        let separator = decode_utf8(required(values, &key("Separator"))?, "the number separator")?;
-        let literal_prefix = values
-            .get(&key("LiteralPrefix"))
-            .map(|value| decode_utf8(value, "the number prefix"))
-            .transpose()?;
-        let restart = values
-            .get(&key("Restart"))
-            .map(|value| {
-                value
-                    .parse::<u32>()
-                    .ok()
-                    .filter(|restart| *restart >= 1)
-                    .ok_or_else(|| "The equation number restart is invalid".to_string())
-            })
-            .transpose()?;
-        let initial = required(values, &key("Initial"))?;
-        if initial.is_empty() || initial.len() > 9 || !initial.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err("The equation number initial result is invalid".to_string());
-        }
-        let numbered = super::omml_write::build_word_native_numbered_omml(
-            &body,
-            &sequence_name,
-            None,
-            heading_level,
-            &separator,
-            initial,
-            literal_prefix.as_deref(),
-            restart,
-        )?;
-        equations.push(super::omml_write::insertion_omml(&numbered, &math_font)?);
+        let context = native_number_context(values, index)?;
+        equations.push(native_number_equation(&body, &context, &math_font)?);
     }
     let package = super::omml_write::word_equation_docx(&equations, &math_font)?;
     let docx_path = output.with_file_name(NATIVE_NUMBER_DOCX_FILE);
@@ -373,6 +341,222 @@ fn build_native_numbers(values: &HashMap<String, String>, output: &Path) -> Resu
     ];
     fs::write(output, rows.join("\n"))
         .map_err(|error| format!("Unable to write {}: {error}", output.display()))
+}
+
+/// The number of request item N: SEQ label, heading level and separator, the
+/// literal heading prefix (None = STYLEREF), the \r value and the initial
+/// result.
+struct NativeNumberContext {
+    sequence_name: String,
+    heading_level: u32,
+    separator: String,
+    literal_prefix: Option<String>,
+    restart: Option<u32>,
+    initial: String,
+}
+
+fn native_number_context(
+    values: &HashMap<String, String>,
+    index: usize,
+) -> Result<NativeNumberContext, String> {
+    let key = |name: &str| format!("item{index}{name}");
+    let sequence_name = decode_utf8(required(values, &key("SequenceName"))?, "the SEQ label")?;
+    let heading_level = required(values, &key("HeadingLevel"))?
+        .parse::<u32>()
+        .ok()
+        .filter(|level| *level <= 2)
+        .ok_or_else(|| "The equation number heading level is invalid".to_string())?;
+    let separator = decode_utf8(required(values, &key("Separator"))?, "the number separator")?;
+    let literal_prefix = values
+        .get(&key("LiteralPrefix"))
+        .map(|value| decode_utf8(value, "the number prefix"))
+        .transpose()?;
+    let restart = values
+        .get(&key("Restart"))
+        .map(|value| {
+            value
+                .parse::<u32>()
+                .ok()
+                .filter(|restart| *restart >= 1)
+                .ok_or_else(|| "The equation number restart is invalid".to_string())
+        })
+        .transpose()?;
+    let initial = required(values, &key("Initial"))?;
+    if initial.is_empty() || initial.len() > 9 || !initial.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("The equation number initial result is invalid".to_string());
+    }
+    Ok(NativeNumberContext {
+        sequence_name,
+        heading_level,
+        separator,
+        literal_prefix,
+        restart,
+        initial: initial.to_string(),
+    })
+}
+
+/// One numbered equation, as Word imports it: the body numbered by the shared
+/// writer, in the document's math font.
+fn native_number_equation(
+    body: &str,
+    context: &NativeNumberContext,
+    math_font: &str,
+) -> Result<String, String> {
+    let numbered = super::omml_write::build_word_native_numbered_omml(
+        body,
+        &context.sequence_name,
+        None,
+        context.heading_level,
+        &context.separator,
+        &context.initial,
+        context.literal_prefix.as_deref(),
+        context.restart,
+    )?;
+    super::omml_write::insertion_omml(&numbered, math_font)
+}
+
+// Batch numbering of display formulas (Windows' Number Display Formulas): one
+// request numbers every display formula the add-in found. Each OMML equation
+// is numbered with its own body, exactly as Windows' batch reads it
+// (ExtractSingleOMath of Word's export) and numbers it
+// (BuildWordNativeNumberedOmml); the package holds one paragraph per item in
+// item order, and an item that cannot be numbered leaves its paragraph empty
+// and reports itemNError. Each VisualTeX image formula's metadata is marked
+// numbered, so a later conversion sees what its title says; the metadata is
+// written to its own file because it can exceed what Word reads back through
+// AppleScriptTask.
+//
+// Request rows: sessionId, sourceDocumentId, itemCount and imageCount (either
+// may be 0). With OMML items: mathFont and ommlRoot (Base64URL; the
+// w:document start tag of Word's export, with its namespace declarations), and
+// per item N the nativeNumber rows plus itemNOmml, the item's m:oMath as Word
+// exported it with "%", CR and LF percent-escaped (and itemNOmmlRoot when that
+// export's root differs from ommlRoot). Per image N: imageNMetadata.
+const DISPLAY_NUMBERING_DOCX_FILE: &str = "display-numbering.docx";
+const DISPLAY_NUMBERING_IMAGES_FILE: &str = "display-numbering-images.txt";
+
+fn build_display_numbering(values: &HashMap<String, String>, output: &Path) -> Result<(), String> {
+    let session_id = required(values, "sessionId")?;
+    let source_document_id = required(values, "sourceDocumentId")?;
+    let count = |key: &str| {
+        required(values, key)?
+            .parse::<usize>()
+            .ok()
+            .filter(|count| *count <= MAX_ITEMS)
+            .ok_or_else(|| format!("The display numbering {key} is invalid"))
+    };
+    let item_count = count("itemCount")?;
+    let image_count = count("imageCount")?;
+    if item_count + image_count == 0 {
+        return Err("The display numbering request contains no formula".to_string());
+    }
+    let mut rows = vec![
+        format!("protocolVersion={PROTOCOL_VERSION}"),
+        format!("sessionId={session_id}"),
+        "operation=displayNumbering".to_string(),
+        "outputKind=displayNumbering".to_string(),
+        format!("sourceDocumentId={source_document_id}"),
+        "bookmarkName=-".to_string(),
+        format!("itemCount={item_count}"),
+        format!("imageCount={image_count}"),
+    ];
+
+    if item_count > 0 {
+        let math_font = decode_utf8(required(values, "mathFont")?, "the Word math font")?;
+        let root = document_root(required(values, "ommlRoot")?)?;
+        let mut equations = Vec::with_capacity(item_count);
+        for index in 1..=item_count {
+            let context = native_number_context(values, index)?;
+            let exported = percent_decode(required(values, &format!("item{index}Omml"))?)?;
+            // An export whose root differs from the first one names its own.
+            let own_root = values
+                .get(&format!("item{index}OmmlRoot"))
+                .map(|value| document_root(value))
+                .transpose()?;
+            let numbered = super::omml_write::extract_single_omath(&format!(
+                "{}<w:body><w:p>{exported}</w:p></w:body></w:document>",
+                own_root.as_deref().unwrap_or(&root)
+            ))
+            .and_then(|body| native_number_equation(&body, &context, &math_font));
+            match numbered {
+                Ok(equation) => equations.push(equation),
+                Err(error) => {
+                    equations.push(String::new());
+                    rows.push(format!(
+                        "item{index}Error={}",
+                        URL_SAFE_NO_PAD.encode(error.as_bytes())
+                    ));
+                }
+            }
+        }
+        let package = super::omml_write::word_equation_docx(&equations, &math_font)?;
+        let docx_path = output.with_file_name(DISPLAY_NUMBERING_DOCX_FILE);
+        fs::write(&docx_path, &package)
+            .map_err(|error| format!("Unable to write {}: {error}", docx_path.display()))?;
+        rows.push(format!("docxPath={}", docx_path.display()));
+    }
+
+    if image_count > 0 {
+        let mut image_rows = vec![
+            format!("protocolVersion={PROTOCOL_VERSION}"),
+            format!("sessionId={session_id}"),
+            "operation=displayNumberingImages".to_string(),
+            "outputKind=metadata".to_string(),
+            format!("sourceDocumentId={source_document_id}"),
+            "bookmarkName=-".to_string(),
+            format!("itemCount={image_count}"),
+            format!("imageCount={image_count}"),
+        ];
+        for index in 1..=image_count {
+            let metadata = required(values, &format!("image{index}Metadata"))?;
+            match super::macos_offline::numbered_formula_metadata(metadata) {
+                Ok(numbered) => image_rows.push(format!("image{index}Metadata={numbered}")),
+                Err(error) => image_rows.push(format!(
+                    "image{index}Error={}",
+                    URL_SAFE_NO_PAD.encode(error.as_bytes())
+                )),
+            }
+        }
+        let images_path = output.with_file_name(DISPLAY_NUMBERING_IMAGES_FILE);
+        write_output_manifest(&images_path, &image_rows)?;
+        rows.push(format!("imagesPath={}", images_path.display()));
+    }
+    write_output_manifest(output, &rows)
+}
+
+/// The w:document start tag of Word's export (Base64URL), with the namespace
+/// declarations its equations use.
+fn document_root(value: &str) -> Result<String, String> {
+    let root = decode_utf8(value, "the Word document element")?;
+    if !root.starts_with("<w:document")
+        || !root.ends_with('>')
+        || root.ends_with("/>")
+        || root[1..].contains('<')
+    {
+        return Err("The Word document element of the equations is invalid".to_string());
+    }
+    Ok(root)
+}
+
+/// Undoes the add-in's escaping of one manifest value: "%XX" is the byte XX.
+fn percent_decode(value: &str) -> Result<String, String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let byte = value
+                .get(index + 1..index + 3)
+                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+                .ok_or_else(|| "An exported equation contains an invalid escape".to_string())?;
+            decoded.push(byte);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).map_err(|_| "An exported equation is not valid UTF-8".to_string())
 }
 
 pub fn mathml_to_latex_checked(value: &str) -> Result<String,String> {
@@ -431,5 +615,170 @@ mod tests {
     fn converts_structured_mathml() {
         let value = r#"<math xmlns="http://www.w3.org/1998/Math/MathML"><mfrac><mi>a</mi><msup><mi>b</mi><mn>2</mn></msup></mfrac></math>"#;
         assert_eq!(mathml_to_latex(value).unwrap(), "\\frac{a}{b^2}");
+    }
+
+    #[test]
+    fn percent_decode_restores_escaped_values() {
+        assert_eq!(percent_decode("a%25b%0D%0Ac").unwrap(), "a%b\r\nc");
+        assert_eq!(percent_decode("x\u{3b1}").unwrap(), "x\u{3b1}");
+        assert!(percent_decode("bad%2").is_err());
+        assert!(percent_decode("bad%zz").is_err());
+    }
+
+    // A Word export (the w:document start tag and one m:oMath) and the
+    // metadata of a VisualTeX image display formula, from a Mac batch import.
+    const WORD_ROOT: &str = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" mc:Ignorable="w14">"#;
+    const WORD_EQUATION: &str = r#"<m:oMath><m:r><w:rPr><w:rFonts w:ascii="Cambria Math" w:hAnsi="Cambria Math"/></w:rPr><m:t>x</m:t></m:r><m:r><m:rPr><m:sty m:val="p"/></m:rPr><w:rPr><w:rFonts w:ascii="Cambria Math" w:hAnsi="Cambria Math"/></w:rPr><m:t>=</m:t></m:r><m:f><m:fPr><m:ctrlPr><w:rPr><w:rFonts w:ascii="Cambria Math" w:hAnsi="Cambria Math"/></w:rPr></m:ctrlPr></m:fPr><m:num><m:r><m:rPr><m:sty m:val="p"/></m:rPr><w:rPr><w:rFonts w:ascii="Cambria Math" w:hAnsi="Cambria Math"/></w:rPr><m:t>7</m:t></m:r></m:num><m:den><m:r><m:rPr><m:sty m:val="p"/></m:rPr><w:rPr><w:rFonts w:ascii="Cambria Math" w:hAnsi="Cambria Math"/></w:rPr><m:t>6</m:t></m:r></m:den></m:f></m:oMath>"#;
+    const IMAGE_METADATA: &str = "visualtex:v1:deflate:pZJNb9QwEIb_SuVzHNlO4k0icYBKFStRqaKICgiLvPGksTZxVo4XtkT574xLdrcXuHQOPvidj2deeyJj3UKvSEl-mvGgOg9H2gyuP3SKRIv4GdxoBktKHpFFW2us0HwlskantFCpomnCt7TQoqZC11qmiZQrnWMTb3wHmL7u94PzoK-0Gfederq6zOkUzsWUqjLW_5jYvJnEfNxMxVxVUVX1yreun_R8fFNVjVP1JDYTZ_McjlBuLIyk_DYRE7iKOuMamKQ5C1wyFXSbCEFXXHHWrLQWUr926Pw9IvWg4QZ3UB67OPULey6r3aKCd9tuqHd4a2wgXPfqEW6x671_ejYEx3tU7aHfggMkb1Q3QkQcWA3uwWjf3iEgT9I4wSXkKbJTynswj60PORmLuUhSeYnwVNbfm99wh3hcxOz8eB_Ae3A3KCPE7tmFs3bdBi_hLBpvSBjXIKGt4S9UaMhZnGcsEy_EBQfVlMdJxnP5QnynRgguBJnyLJZFIiQ7RYomBXvWdncNFum-fFTeDKRkMW5bO0BK_WB8e_6LhMciDt_rsNf_FpfKt2EZwYSknFFefGJZyfIyKeKkEF8vPf6fNv8B";
+
+    fn escape_for_manifest(value: &str) -> String {
+        value.replace('%', "%25").replace('\r', "%0D").replace('\n', "%0A")
+    }
+
+    fn run_manifest(rows: &[String]) -> (PathBuf, HashMap<String, String>) {
+        let directory = std::env::temp_dir().join(format!(
+            "visualtex-display-numbering-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let input = directory.join("formula-restore-source.txt");
+        let output = directory.join("omml-latex-result.txt");
+        fs::write(&input, rows.join("\n")).unwrap();
+        convert_manifest(&input, &output).unwrap();
+        let result = fs::read_to_string(&output)
+            .unwrap()
+            .lines()
+            .filter_map(|row| row.split_once('='))
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect();
+        (directory, result)
+    }
+
+    fn base64(value: &str) -> String {
+        URL_SAFE_NO_PAD.encode(value.as_bytes())
+    }
+
+    fn display_item(index: usize, omml: &str, initial: u32) -> Vec<String> {
+        vec![
+            format!("item{index}SequenceName={}", base64("Equation")),
+            format!("item{index}HeadingLevel=1"),
+            format!("item{index}Separator={}", base64(".")),
+            format!("item{index}LiteralPrefix={}", base64("4")),
+            format!("item{index}Initial={initial}"),
+            format!("item{index}Omml={}", escape_for_manifest(omml)),
+        ]
+    }
+
+    #[test]
+    fn display_numbering_numbers_each_equation_with_its_own_body() {
+        use std::io::Read as _;
+        let second = WORD_EQUATION.replace("<m:t>x</m:t>", "<m:t>y</m:t>");
+        let mut rows = vec![
+            "protocolVersion=1".to_string(),
+            "sessionId=12345678-1234-4234-9234-123456789abc".to_string(),
+            "sourceKind=displayNumbering".to_string(),
+            format!("sourceDocumentId={}", base64("Macintosh HD:test.docx")),
+            "bookmarkName=-".to_string(),
+            "itemCount=3".to_string(),
+            "imageCount=0".to_string(),
+            format!("mathFont={}", base64("Cambria Math")),
+            format!("ommlRoot={}", base64(WORD_ROOT)),
+        ];
+        rows.extend(display_item(1, WORD_EQUATION, 1));
+        rows.extend(display_item(2, &second, 2));
+        // Two equations in one export cannot be numbered as one.
+        rows.extend(display_item(3, &format!("{WORD_EQUATION}{WORD_EQUATION}"), 3));
+        let (directory, result) = run_manifest(&rows);
+        assert_eq!(result["operation"], "displayNumbering");
+        assert_eq!(result["itemCount"], "3");
+        assert!(!result.contains_key("item1Error") && !result.contains_key("item2Error"));
+        let error = URL_SAFE_NO_PAD.decode(&result["item3Error"]).unwrap();
+        assert!(!String::from_utf8(error).unwrap().is_empty());
+        assert!(!result.contains_key("imagesPath"));
+
+        let package = fs::read(&result["docxPath"]).unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(package)).unwrap();
+        let mut document = String::new();
+        archive
+            .by_name("word/document.xml")
+            .unwrap()
+            .read_to_string(&mut document)
+            .unwrap();
+        let paragraphs: Vec<&str> = document.split("<w:p>").skip(1).collect();
+        assert_eq!(paragraphs.len(), 3);
+        for (paragraph, letter, initial) in [(paragraphs[0], "x", "1"), (paragraphs[1], "y", "2")] {
+            // Serialized as Windows' writer serializes it: the math namespace
+            // as the default one.
+            assert!(paragraph.starts_with("<oMath xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/math\">"), "{paragraph}");
+            assert!(paragraph.contains("<eqArr>"), "{paragraph}");
+            assert!(paragraph.contains(&format!("<t>{letter}</t>")));
+            assert!(paragraph.contains("<t>#</t>"));
+            assert!(paragraph.contains(" SEQ Equation \\s 1 \\* ARABIC \\* MERGEFORMAT "));
+            assert!(paragraph.contains(&format!("<t>{initial}</t>")));
+            assert!(paragraph.contains("<t>4</t>") && paragraph.contains("<t>.</t>"));
+            assert!(paragraph.contains("<f>") && paragraph.contains("Cambria Math"));
+        }
+        assert!(!paragraphs[2].contains("oMath"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn display_numbering_marks_image_metadata_numbered() {
+        let rows = vec![
+            "protocolVersion=1".to_string(),
+            "sessionId=12345678-1234-4234-9234-123456789abc".to_string(),
+            "sourceKind=displayNumbering".to_string(),
+            format!("sourceDocumentId={}", base64("Macintosh HD:test.docx")),
+            "bookmarkName=-".to_string(),
+            "itemCount=0".to_string(),
+            "imageCount=2".to_string(),
+            format!("image1Metadata={IMAGE_METADATA}"),
+            "image2Metadata=visualtex:v1:deflate:broken".to_string(),
+        ];
+        let (directory, result) = run_manifest(&rows);
+        assert_eq!(result["imageCount"], "2");
+        assert!(!result.contains_key("docxPath"));
+        let images: HashMap<String, String> = fs::read_to_string(&result["imagesPath"])
+            .unwrap()
+            .lines()
+            .filter_map(|row| row.split_once('='))
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect();
+        assert_eq!(images["imageCount"], "2");
+        assert_eq!(images["operation"], "displayNumberingImages");
+        assert_eq!(images["itemCount"], "2");
+        let before = super::super::macos_offline::decode_metadata(IMAGE_METADATA).unwrap();
+        let after = super::super::macos_offline::decode_metadata(&images["image1Metadata"]).unwrap();
+        assert!(!before.numbered && after.numbered);
+        assert_eq!(after.formula_id, before.formula_id);
+        assert_eq!(after.latex, before.latex);
+        assert_eq!(after.display_mode, "block");
+        assert_eq!(after.reference_width_pt, before.reference_width_pt);
+        assert_eq!(after.updated_at, before.updated_at);
+        assert!(images.contains_key("image2Error") && !images.contains_key("image2Metadata"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn display_numbering_rejects_an_empty_or_oversized_request() {
+        let rows = |items: &str, images: &str| {
+            vec![
+                "protocolVersion=1".to_string(),
+                "sessionId=12345678-1234-4234-9234-123456789abc".to_string(),
+                "sourceKind=displayNumbering".to_string(),
+                format!("sourceDocumentId={}", base64("doc")),
+                "bookmarkName=-".to_string(),
+                format!("itemCount={items}"),
+                format!("imageCount={images}"),
+            ]
+        };
+        for (items, images) in [("0", "0"), ("1001", "0"), ("0", "x")] {
+            let values: HashMap<String, String> = rows(items, images)
+                .iter()
+                .filter_map(|row| row.split_once('='))
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect();
+            assert!(build_display_numbering(&values, Path::new("/nonexistent/out.txt")).is_err());
+        }
     }
 }

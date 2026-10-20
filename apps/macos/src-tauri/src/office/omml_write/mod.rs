@@ -56,6 +56,12 @@ pub(crate) fn build_word_native_numbered_omml(
     )
 }
 
+/// WordOmmlConverter.ExtractSingleOMath: the one m:oMath of Word's export of
+/// an equation, with the namespaces it uses.
+pub(crate) fn extract_single_omath(xml: &str) -> Result<String, String> {
+    proj::extract_single_omath(xml)
+}
+
 /// What Windows imports into the document for an equation:
 /// ApplyExplicitTransferMathFont(ExtractSingleOMath(omml), document math font).
 /// Every mathematical run (not m:nor text) and every control property names the

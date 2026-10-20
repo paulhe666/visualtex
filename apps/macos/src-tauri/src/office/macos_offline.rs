@@ -1874,6 +1874,15 @@ fn read_request(session_id: &str) -> Result<MacOfflineSessionRequest, String> {
 }
 
 pub(super) fn decode_metadata(encoded: &str) -> Result<VisualTeXFormulaMetadata, String> {
+    let json = metadata_json(encoded)?;
+    let metadata: VisualTeXFormulaMetadata = serde_json::from_slice(&json)
+        .map_err(|error| format!("VisualTeX formula metadata JSON is invalid: {error}"))?;
+    validate_metadata(&metadata)?;
+    Ok(metadata)
+}
+
+/// The JSON text inside encoded formula metadata.
+fn metadata_json(encoded: &str) -> Result<Vec<u8>, String> {
     let payload = encoded
         .strip_prefix(METADATA_PREFIX)
         .ok_or_else(|| "VisualTeX formula metadata prefix is invalid".to_string())?;
@@ -1892,10 +1901,7 @@ pub(super) fn decode_metadata(encoded: &str) -> Result<VisualTeXFormulaMetadata,
     if json.len() > MAX_METADATA_BYTES {
         return Err("VisualTeX formula metadata expands beyond the allowed size".to_string());
     }
-    let metadata: VisualTeXFormulaMetadata = serde_json::from_slice(&json)
-        .map_err(|error| format!("VisualTeX formula metadata JSON is invalid: {error}"))?;
-    validate_metadata(&metadata)?;
-    Ok(metadata)
+    Ok(json)
 }
 
 fn validate_metadata(metadata: &VisualTeXFormulaMetadata) -> Result<(), String> {
@@ -2320,9 +2326,13 @@ fn encode_metadata(metadata: &VisualTeXFormulaMetadata) -> Result<String, String
     validate_metadata(metadata)?;
     let json = serde_json::to_vec(metadata)
         .map_err(|error| format!("Unable to encode VisualTeX formula metadata: {error}"))?;
+    encode_metadata_json(&json)
+}
+
+fn encode_metadata_json(json: &[u8]) -> Result<String, String> {
     let mut encoder = DeflateEncoder::new(Vec::new(), Compression::best());
     encoder
-        .write_all(&json)
+        .write_all(json)
         .map_err(|error| format!("Unable to compress VisualTeX formula metadata: {error}"))?;
     let compressed = encoder
         .finish()
@@ -2331,6 +2341,38 @@ fn encode_metadata(metadata: &VisualTeXFormulaMetadata) -> Result<String, String
         "{METADATA_PREFIX}{}",
         URL_SAFE_NO_PAD.encode(compressed)
     ))
+}
+
+/// The metadata of a VisualTeX image display formula after batch numbering
+/// numbered it, so a later restore finds the numbering state that the image's
+/// title and format record. Only the "numbered" member of the JSON text
+/// changes: every other value keeps its exact text (a parse and serialize
+/// round trip would rewrite floating-point values in their last digit).
+pub(super) fn numbered_formula_metadata(encoded: &str) -> Result<String, String> {
+    let metadata = decode_metadata(encoded)?;
+    if metadata.display_mode != "block" {
+        return Err("Only a display formula can be numbered".to_string());
+    }
+    if metadata.numbered {
+        return Ok(encoded.to_string());
+    }
+    let json = String::from_utf8(metadata_json(encoded)?)
+        .map_err(|_| "VisualTeX formula metadata JSON is not UTF-8".to_string())?;
+    // A quote inside a JSON string is escaped, so this text is only ever the
+    // member itself.
+    let updated = match json.matches("\"numbered\":false").count() {
+        1 => json.replacen("\"numbered\":false", "\"numbered\":true", 1),
+        0 if !json.contains("\"numbered\"") && json.ends_with('}') => {
+            format!("{},\"numbered\":true}}", &json[..json.len() - 1])
+        }
+        _ => return Err("VisualTeX formula metadata has an unexpected numbering member".to_string()),
+    };
+    let numbered = encode_metadata_json(updated.as_bytes())?;
+    let check = decode_metadata(&numbered)?;
+    if !check.numbered || check.formula_id != metadata.formula_id {
+        return Err("VisualTeX formula metadata could not be marked numbered".to_string());
+    }
+    Ok(numbered)
 }
 
 fn hex_encode(value: &str) -> String {
@@ -9108,6 +9150,21 @@ mod tests {
         assert_eq!(decoded.reference_height_pt, Some(15.0));
         assert_eq!(decoded.reference_baseline_pt, Some(-3.0));
         assert_eq!(decoded.image_ink_center_y_ratio, Some(0.47826087));
+    }
+
+    #[test]
+    fn numbered_formula_metadata_changes_only_the_numbered_member() {
+        let mut metadata = document_formula_metadata("raw", &["x"], "x", "block", false);
+        metadata.reference_width_pt = Some(221.70280000000002);
+        let encoded = encode_metadata(&metadata).unwrap();
+        let numbered = numbered_formula_metadata(&encoded).unwrap();
+        let before = String::from_utf8(metadata_json(&encoded).unwrap()).unwrap();
+        let after = String::from_utf8(metadata_json(&numbered).unwrap()).unwrap();
+        assert_eq!(after, before.replacen("\"numbered\":false", "\"numbered\":true", 1));
+        assert!(decode_metadata(&numbered).unwrap().numbered);
+        assert_eq!(numbered_formula_metadata(&numbered).unwrap(), numbered);
+        let inline = encode_metadata(&document_formula_metadata("raw", &["x"], "x", "inline", false)).unwrap();
+        assert!(numbered_formula_metadata(&inline).is_err());
     }
 
     fn document_formula_metadata(
