@@ -96,6 +96,9 @@ fn convert_manifest(input: &Path, output: &Path) -> Result<(), String> {
     if values.get("sourceKind").map(String::as_str) == Some("nativeNumber") {
         return build_native_numbers(&values, output);
     }
+    if values.get("sourceKind").map(String::as_str) == Some("imageLetterFonts") {
+        return build_image_letter_fonts(&values, output);
+    }
     if values.get("sourceKind").map(String::as_str) == Some("displayNumbering") {
         return build_display_numbering(&values, output);
     }
@@ -510,7 +513,13 @@ fn build_display_numbering(values: &HashMap<String, String>, output: &Path) -> R
         for index in 1..=image_count {
             let metadata = required(values, &format!("image{index}Metadata"))?;
             match super::macos_offline::numbered_formula_metadata(metadata) {
-                Ok(numbered) => image_rows.push(format!("image{index}Metadata={numbered}")),
+                Ok(numbered) => {
+                    image_rows.push(format!("image{index}Metadata={numbered}"));
+                    // The new number takes the formula's letter font.
+                    if let Some(font) = formula_letter_font(metadata) {
+                        image_rows.push(format!("image{index}LetterFont={font}"));
+                    }
+                }
                 Err(error) => image_rows.push(format!(
                     "image{index}Error={}",
                     URL_SAFE_NO_PAD.encode(error.as_bytes())
@@ -520,6 +529,50 @@ fn build_display_numbering(values: &HashMap<String, String>, output: &Path) -> R
         let images_path = output.with_file_name(DISPLAY_NUMBERING_IMAGES_FILE);
         write_output_manifest(&images_path, &image_rows)?;
         rows.push(format!("imagesPath={}", images_path.display()));
+    }
+    write_output_manifest(output, &rows)
+}
+
+/// The letter font an image formula's metadata records, if it is one Word
+/// numbers can follow.
+fn formula_letter_font(metadata: &str) -> Option<String> {
+    super::macos_offline::decode_metadata(metadata)
+        .ok()?
+        .formula_letter_font
+        .filter(|font| {
+            matches!(
+                font.as_str(),
+                "katex" | "times" | "cambria" | "stix" | "palatino" | "helvetica"
+            )
+        })
+}
+
+/// The letter fonts of image formulas whose numbers are written or resized
+/// (formulas from before the add-in recorded them). An unreadable metadata
+/// string or one without a letter font gets no row.
+fn build_image_letter_fonts(values: &HashMap<String, String>, output: &Path) -> Result<(), String> {
+    let session_id = required(values, "sessionId")?;
+    let source_document_id = required(values, "sourceDocumentId")?;
+    let image_count = required(values, "imageCount")?
+        .parse::<usize>()
+        .ok()
+        .filter(|count| (1..=MAX_ITEMS).contains(count))
+        .ok_or_else(|| "The image letter font imageCount is invalid".to_string())?;
+    let mut rows = vec![
+        format!("protocolVersion={PROTOCOL_VERSION}"),
+        format!("sessionId={session_id}"),
+        "operation=imageLetterFonts".to_string(),
+        "outputKind=imageLetterFonts".to_string(),
+        // The rows every reply the add-in parses carries.
+        format!("sourceDocumentId={source_document_id}"),
+        "bookmarkName=-".to_string(),
+        format!("itemCount={image_count}"),
+        format!("imageCount={image_count}"),
+    ];
+    for index in 1..=image_count {
+        if let Some(font) = formula_letter_font(required(values, &format!("image{index}Metadata"))?) {
+            rows.push(format!("image{index}LetterFont={font}"));
+        }
     }
     write_output_manifest(output, &rows)
 }
@@ -757,6 +810,44 @@ mod tests {
         assert_eq!(after.updated_at, before.updated_at);
         assert!(images.contains_key("image2Error") && !images.contains_key("image2Metadata"));
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn image_letter_fonts_come_from_each_formula_metadata() {
+        let rows = vec![
+            "protocolVersion=1".to_string(),
+            "sessionId=12345678-1234-4234-9234-123456789abc".to_string(),
+            "sourceKind=imageLetterFonts".to_string(),
+            format!("sourceDocumentId={}", base64("Macintosh HD:test.docx")),
+            "bookmarkName=-".to_string(),
+            "imageCount=2".to_string(),
+            format!("image1Metadata={IMAGE_METADATA}"),
+            "image2Metadata=visualtex:v1:deflate:broken".to_string(),
+        ];
+        let (directory, result) = run_manifest(&rows);
+        assert_eq!(result["operation"], "imageLetterFonts");
+        assert_eq!(result["imageCount"], "2");
+        // VTParseDocumentImportManifestText requires these.
+        for key in ["protocolVersion", "sessionId", "outputKind", "sourceDocumentId", "bookmarkName", "itemCount"] {
+            assert!(result.contains_key(key), "reply lacks {key}");
+        }
+        let expected = super::super::macos_offline::decode_metadata(IMAGE_METADATA)
+            .unwrap()
+            .formula_letter_font;
+        assert_eq!(result.get("image1LetterFont").cloned(), expected);
+        assert!(!result.contains_key("image2LetterFont"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn formula_letter_font_accepts_only_known_fonts() {
+        let mut metadata = super::super::macos_offline::decode_metadata(IMAGE_METADATA).unwrap();
+        for (font, expected) in [("times", Some("times")), ("comic", None)] {
+            metadata.formula_letter_font = Some(font.to_string());
+            let encoded = super::super::macos_offline::encode_metadata(&metadata).unwrap();
+            assert_eq!(formula_letter_font(&encoded).as_deref(), expected);
+        }
+        assert_eq!(formula_letter_font("visualtex:v1:deflate:broken"), None);
     }
 
     #[test]

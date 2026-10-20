@@ -6,8 +6,10 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-office-performance-20260801-r128"
+    "word-office-performance-20260801-r129"
 Private Const VT_WORD_IDLE_WATCH_SECONDS As Long = 5
+' A change in Word's font size box reaches a selected image formula this soon.
+Private Const VT_WORD_SELECTED_IMAGE_WATCH_SECONDS As Long = 1
 Private Const VT_WORD_LATEX_REDRAW_REVISION As String = _
     "word-latex-redraw-20260802-r1"
 Private Const VT_WORD_DOCUMENT_IMPORT_REVISION As String = _
@@ -36,6 +38,8 @@ Private Const VT_WORD_IMAGE_SCALE_VARIABLE_PREFIX As String = "VT_ImageScale_"
 Private Const VT_WORD_IMAGE_CANVAS_VARIABLE_PREFIX As String = "VT_ImageCanvas_"
 Private Const VT_WORD_IMAGE_INK_CENTER_VARIABLE_PREFIX As String = _
     "VT_ImageInkCenter_"
+Private Const VT_WORD_IMAGE_LETTER_FONT_VARIABLE_PREFIX As String = _
+    "VT_ImageLetterFont_"
 Private Const VT_WORD_NATIVE_SIGNATURE_VARIABLE_PREFIX As String = _
     "VT_NativeSignature_"
 Private Const VT_WORD_NUMBERING_MODE_VARIABLE As String = _
@@ -149,6 +153,12 @@ Private VT_WORD_PERFORMANCE_OPERATION As String
 Private VT_WORD_IMAGE_MACRO_MIGRATION_SCHEDULED As Boolean
 Private VT_WORD_IMAGE_MACRO_MIGRATION_RUNNING As Boolean
 Private VT_WORD_IMAGE_SIZE_WATCH_SCHEDULED As Boolean
+' True while the caret, the idle watcher or document open re-aligns image
+' formulas: Equation numbers then keep the size, font and colour they have,
+' and only creating, resizing or renumbering a formula sets them.
+Private VT_WORD_KEEP_NUMBER_FORMAT As Boolean
+Private VT_WORD_IMAGE_WATCH_LAST_DELAY As Long
+Private VT_WORD_IMAGE_WATCH_SECONDS_SINCE_SCAN As Long
 Private VT_WORD_IDLE_TASKS_RUNNING As Boolean
 Private VT_WORD_IDLE_TASK_DUE_AT As Date
 Private VT_WORD_IMAGE_SIZE_WATCH_RUNNING As Boolean
@@ -406,8 +416,10 @@ Public Sub VisualTeX_StabilizeImageEquationNumberSelection( _
                                     If Not sequenceField Is Nothing Then
                                         VTBeginWordInternalMutation
                                         mutationStarted = True
+                                        VT_WORD_KEEP_NUMBER_FORMAT = True
                                         VTRefreshParagraphEquationBookmarks _
                                             documentObject, sequenceField, formulaId
+                                        VT_WORD_KEEP_NUMBER_FORMAT = False
                                         VTEndWordInternalMutation
                                         mutationStarted = False
                                     End If
@@ -424,6 +436,7 @@ Public Sub VisualTeX_StabilizeImageEquationNumberSelection( _
 
 StabilizeFailed:
     On Error Resume Next
+    VT_WORD_KEEP_NUMBER_FORMAT = False
     If mutationStarted Then VTEndWordInternalMutation
     On Error GoTo 0
 End Sub
@@ -2089,6 +2102,8 @@ Private Sub VTDeleteEquationNumberScaffold( _
     VTDeleteDocumentVariable documentObject, VTWordImageCanvasVariableName(formulaId)
     VTDeleteDocumentVariable _
         documentObject, VTWordImageInkCenterVariableName(formulaId)
+    VTDeleteDocumentVariable _
+        documentObject, VTWordImageLetterFontVariableName(formulaId)
     VTDeleteDocumentVariable _
         documentObject, VTWordNativeSignatureVariableName(formulaId)
 End Sub
@@ -8495,6 +8510,8 @@ Private Sub VTDeleteDocumentImportedFormulaState( _
     VTDeleteDocumentVariable _
         documentObject, VTWordImageInkCenterVariableName(formulaId)
     VTDeleteDocumentVariable _
+        documentObject, VTWordImageLetterFontVariableName(formulaId)
+    VTDeleteDocumentVariable _
         documentObject, VTWordNativeSignatureVariableName(formulaId)
     bookmarkName = VTNativeFormulaBookmarkName(formulaId)
     If documentObject.Bookmarks.Exists(bookmarkName) Then
@@ -8823,6 +8840,8 @@ Private Sub VTDocumentImportInsertFormula( _
         observedWordFontSizePt
     VTSetWordImageInkCenterYRatio _
         targetDocument, formulaId, inkCenterYRatio
+    VTSetWordImageLetterFont targetDocument, formulaId, VTDispatchOptional( _
+        manifest, VTDocumentImportItemKey(itemIndex, "formulaLetterFont"))
 
     ' Document.Variable updates can invalidate an InlineShape COM wrapper on
     ' Word for Mac even though the drawing remains in the document. Resolve the
@@ -12136,6 +12155,8 @@ Private Sub VTCommitWordDispatch( _
                     observedWordFontSizePt
                 VTSetWordImageInkCenterYRatio _
                     targetDocument, formulaId, inkCenterYRatio
+                VTSetWordImageLetterFont targetDocument, formulaId, _
+                    VTDispatchOptional(dispatch, "formulaLetterFont")
                 VTApplyWordImageFormulaFontSize committed, fontSizePt
                 Set committed = _
                     VTEnsureVisualTeXImageMacroButton(committed)
@@ -12640,6 +12661,8 @@ Private Sub VTCommitWordDispatch( _
         referenceHeightPt, referenceBaselinePt, observedWordFontSizePt
     VTSetWordImageInkCenterYRatio _
         targetDocument, formulaId, inkCenterYRatio
+    VTSetWordImageLetterFont targetDocument, formulaId, _
+        VTDispatchOptional(dispatch, "formulaLetterFont")
     formulaStateStored = True
     VTWordPerformanceMark "image-state-stored"
 
@@ -13687,6 +13710,8 @@ Private Function VTRefreshFormattedSequenceBookmark( _
     Dim sequenceBookmarkName As String
     Dim helperStart As Long
     Dim fieldStart As Long
+    Dim numberFontName As String
+    Dim numberFontSize As Single
     Dim fieldEnd As Long
 
     If documentObject Is Nothing Or sequenceField Is Nothing Or _
@@ -13774,8 +13799,9 @@ Private Function VTRefreshFormattedSequenceBookmark( _
         documentObject.Bookmarks.Add _
             name:=VTEquationCaptionBookmarkName(formulaId), _
             Range:=captionRange
+        VTImageFormulaNumberFormat formulaShape, numberFontName, numberFontSize
         VTApplyStaticImageEquationNumberFormatting _
-            numberRange, VTVisibleEquationNumberFontSize(documentObject)
+            numberRange, numberFontSize, numberFontName
         Set VTRefreshFormattedSequenceBookmark = bookmarkRange.Duplicate
         Exit Function
     End If
@@ -14998,7 +15024,8 @@ End Function
 
 Private Sub VTApplyStaticImageEquationNumberFormatting( _
     ByVal numberRange As Range, _
-    ByVal numberSize As Single)
+    ByVal numberSize As Single, _
+    Optional ByVal fontName As String = "")
 
     If numberRange Is Nothing Then
         Err.Raise vbObjectError + 7564, "VisualTeX", _
@@ -15013,13 +15040,19 @@ Private Sub VTApplyStaticImageEquationNumberFormatting( _
     ' paragraph baseline and move only the formula object for vertical alignment.
     With numberRange.Font
         If .Hidden <> False Then .Hidden = False
-        If .Color <> wdColorAutomatic Then .Color = wdColorAutomatic
-        If .Name <> VT_WORD_EQUATION_NUMBER_FONT_NAME Then .Name = VT_WORD_EQUATION_NUMBER_FONT_NAME
-        If .NameAscii <> VT_WORD_EQUATION_NUMBER_FONT_NAME Then .NameAscii = VT_WORD_EQUATION_NUMBER_FONT_NAME
-        If .NameOther <> VT_WORD_EQUATION_NUMBER_FONT_NAME Then .NameOther = VT_WORD_EQUATION_NUMBER_FONT_NAME
         If .Superscript <> False Then .Superscript = False
         If .Subscript <> False Then .Subscript = False
         If .Position <> 0 Then .Position = 0
+    End With
+    ' A number the user formatted keeps its size, font and colour while the
+    ' caret moves or the document opens.
+    If VT_WORD_KEEP_NUMBER_FORMAT Then Exit Sub
+    If Len(fontName) = 0 Then fontName = VT_WORD_EQUATION_NUMBER_FONT_NAME
+    With numberRange.Font
+        If .Color <> wdColorAutomatic Then .Color = wdColorAutomatic
+        If .Name <> fontName Then .Name = fontName
+        If .NameAscii <> fontName Then .NameAscii = fontName
+        If .NameOther <> fontName Then .NameOther = fontName
         If Abs(.Size - numberSize) > 0.1 Then .Size = numberSize
     End With
 End Sub
@@ -15066,21 +15099,27 @@ Private Function VTExpectedNumberedImageFormulaPosition( _
         numberSize = CDbl(VTVisibleEquationNumberFontSize( _
             formulaShape.Range.Document))
     End If
+    ' Centre on the number as it is drawn: its own size and font.
     VTExpectedNumberedImageFormulaPosition = _
         VTExpectedImageFormulaPosition( _
-            formulaShape, numberSize, valueLabel)
+            formulaShape, numberSize, valueLabel, CStr(numberRange.Font.Name))
 End Function
 
 Private Function VTExpectedImageFormulaPosition( _
     ByVal formulaShape As InlineShape, _
     ByVal baselineTextSize As Double, _
-    ByVal valueLabel As String) As Long
+    ByVal valueLabel As String, _
+    Optional ByVal numberFontName As String = "") As Long
 
     Dim formulaHeight As Double
     Dim inkCenterYRatio As Double
     Dim formulaInkCenterAboveBaseline As Double
     Dim baselineTextInkCenterAboveBaseline As Double
     Dim rawPosition As Double
+    Dim inkTopEm As Double
+    Dim inkBottomEm As Double
+    Dim fontTopEm As Double
+    Dim fontDescentEm As Double
 
     If formulaShape Is Nothing Then
         Err.Raise vbObjectError + 7564, "VisualTeX", _
@@ -15104,9 +15143,11 @@ Private Function VTExpectedImageFormulaPosition( _
 
     inkCenterYRatio = VTNumberedImageInkCenterYRatio(formulaShape)
     formulaInkCenterAboveBaseline = formulaHeight * (1# - inkCenterYRatio)
+    VTEquationNumberFontMetrics numberFontName, _
+        inkTopEm, inkBottomEm, fontTopEm, fontDescentEm
     VTExpectedImageFormulaPosition = VTWordPicturePosition( _
         formulaShape, formulaInkCenterAboveBaseline, baselineTextSize, _
-        0.70556640625#, -0.220703125#, 0.9501953125#, 0.22216796875#)
+        inkTopEm, inkBottomEm, fontTopEm, fontDescentEm)
 End Function
 
 Private Sub VTApplyUnnumberedImageFormulaVerticalAlignment( _
@@ -15149,7 +15190,8 @@ Private Function VTApplyNumberedImageFormulaVerticalAlignment( _
     ByVal formulaShape As InlineShape, _
     ByVal numberRange As Range, _
     ByVal numberSize As Single, _
-    ByVal valueLabel As String) As Long
+    ByVal valueLabel As String, _
+    Optional ByVal fontName As String = "") As Long
 
     Dim formulaPosition As Long
 
@@ -15158,7 +15200,7 @@ Private Function VTApplyNumberedImageFormulaVerticalAlignment( _
             "The numbered image Equation vertical-alignment target is missing."
     End If
 
-    VTNormalizeNumberedImageTextScaffold formulaShape, numberRange, numberSize
+    VTNormalizeNumberedImageTextScaffold formulaShape, numberRange, numberSize, fontName
     formulaPosition = VTExpectedNumberedImageFormulaPosition( _
         formulaShape, numberRange, valueLabel)
     VTApplyWordImagePosition formulaShape, formulaPosition
@@ -15169,7 +15211,8 @@ End Function
 Private Sub VTNormalizeNumberedImageTextScaffold( _
     ByVal formulaShape As InlineShape, _
     ByVal numberRange As Range, _
-    ByVal numberSize As Single)
+    ByVal numberSize As Single, _
+    Optional ByVal fontName As String = "")
 
     Dim paragraphRange As Range
     Dim characterRange As Range
@@ -15177,7 +15220,7 @@ Private Sub VTNormalizeNumberedImageTextScaffold( _
     Dim equationStyle As Style
 
     Set paragraphRange = formulaShape.Range.Paragraphs(1).Range.Duplicate
-    oldStyleName = paragraphRange.Style.NameLocal
+    oldStyleName = VTParagraphStyleName(paragraphRange)
     If oldStyleName = "VisualTeX Numbered Equation" Or _
        oldStyleName = VT_WORD_NUMBERED_IMAGE_STYLE_NAME Then
         ' Historical numbered styles lowered every inherited character by the
@@ -15194,11 +15237,12 @@ Private Sub VTNormalizeNumberedImageTextScaffold( _
             If .Position <> 0 Then .Position = 0
         End With
     End If
-    VTApplyStaticImageEquationNumberFormatting numberRange, numberSize
+    VTApplyStaticImageEquationNumberFormatting numberRange, numberSize, fontName
     For Each characterRange In paragraphRange.Characters
         Select Case characterRange.Text
             Case vbTab, vbCr, Chr$(11)
-                VTApplyStaticImageEquationNumberFormatting characterRange, numberSize
+                VTApplyStaticImageEquationNumberFormatting _
+                    characterRange, numberSize, fontName
         End Select
     Next characterRange
 End Sub
@@ -15245,6 +15289,7 @@ Private Sub VTRefreshNumberedImageFormulaFontLayout( _
     Dim imageFormulaReference As String
     Dim expectedPosition As Long
     Dim numberFontSizePt As Single
+    Dim numberFontName As String
 
     If formulaShape Is Nothing Or _
        Not VTIsCanonicalUuid(formulaId) Or _
@@ -15256,7 +15301,12 @@ Private Sub VTRefreshNumberedImageFormulaFontLayout( _
     formulaStart = formulaShape.Range.Start
     imageMetadata = formulaShape.AlternativeText
     imageFormulaReference = formulaShape.Title
-    numberFontSizePt = VTVisibleEquationNumberFontSize(documentObject)
+    ' The number follows the formula: its size and the font of its letters.
+    numberFontSizePt = CSng(requestedFontSizePt)
+    If numberFontSizePt > CSng(VT_WORD_MAX_FORMULA_FONT_SIZE_PT) Then _
+        numberFontSizePt = CSng(VT_WORD_MAX_FORMULA_FONT_SIZE_PT)
+    VTEnsureWordImageLetterFont formulaShape
+    numberFontName = VTEquationNumberFontNameForFormula(documentObject, formulaId)
     Set paragraphRange = formulaShape.Range.Paragraphs(1).Range.Duplicate
 
     If paragraphRange.Information(wdWithInTable) Then
@@ -15296,14 +15346,14 @@ Private Sub VTRefreshNumberedImageFormulaFontLayout( _
             "The numbered image formula has no complete visible REF range."
     End If
     VTFormatVisibleEquationReference _
-        documentObject, numberField, numberRange
+        documentObject, numberField, numberRange, numberFontName, numberFontSizePt
 
     ' Keep the visible number at Word's ordinary paragraph baseline. Move only
-    ' the formula object, using cached PNG alpha bounds and Cambria Math glyph-path
-    ' bounds so their actual painted bbox centres coincide.
+    ' the formula object, using cached PNG alpha bounds and the number font's
+    ' glyph bounds so their actual painted bbox centres coincide.
     expectedPosition = VTApplyNumberedImageFormulaVerticalAlignment( _
         formulaShape, numberRange, numberFontSizePt, _
-        "The resized image Equation visual-center position")
+        "The resized image Equation visual-center position", numberFontName)
     VTSetEquationNumberBookmarkExact _
         documentObject, formulaId, numberRange
     Set formulaShape = VTResolveImageFormulaByIdentity( _
@@ -15609,6 +15659,7 @@ Private Sub VTRefreshParagraphEquationBookmarks( _
     Dim fieldStart As Long
     Dim fieldEnd As Long
     Dim numberSize As Single
+    Dim numberFontName As String
     Dim numberPosition As Long
     Dim numberStart As Long
     Dim requiresImageNumberRebuild As Boolean
@@ -15709,9 +15760,11 @@ Private Sub VTRefreshParagraphEquationBookmarks( _
                     "Word did not rebuild the visible image Equation REF."
             End If
         End If
-        numberSize = VTVisibleEquationNumberFontSize(documentObject)
+        VTImageFormulaNumberFormat formulaRange.InlineShapes(1), _
+            numberFontName, numberSize
         VTFormatVisibleEquationReference _
-            documentObject, visibleNumberField, numberRange
+            documentObject, visibleNumberField, numberRange, _
+            numberFontName, numberSize
         numberPosition = 0
         VTFormatHiddenEquationParagraph sequenceParagraph
         Set sequenceParagraph = _
@@ -15761,6 +15814,7 @@ Private Sub VTRefreshParagraphEquationBookmarks( _
                 "Word did not expose the native Equation array number range."
         End If
         numberSize = VTVisibleEquationNumberFontSize(documentObject)
+        numberFontName = VT_WORD_EQUATION_NUMBER_FONT_NAME
         numberPosition = 0
         VTFormatHiddenEquationParagraph sequenceParagraph
         Set sequenceParagraph = _
@@ -15789,12 +15843,14 @@ Private Sub VTRefreshParagraphEquationBookmarks( _
         documentObject, formulaId, numberRange
     With numberRange.Font
         .Hidden = False
-        .Color = wdColorAutomatic
-        .Name = VT_WORD_EQUATION_NUMBER_FONT_NAME
-        .NameAscii = VT_WORD_EQUATION_NUMBER_FONT_NAME
-        .NameOther = VT_WORD_EQUATION_NUMBER_FONT_NAME
         .Position = numberPosition
-        .Size = numberSize
+        If Not VT_WORD_KEEP_NUMBER_FORMAT Then
+            .Color = wdColorAutomatic
+            .Name = numberFontName
+            .NameAscii = numberFontName
+            .NameOther = numberFontName
+            .Size = numberSize
+        End If
     End With
     If formulaRange.InlineShapes.Count = 1 Then
         numberPosition = VTCalculateStaticImageEquationNumberPosition( _
@@ -16337,6 +16393,36 @@ StyleFailed:
         "Word could not prepare the VisualTeX numbered Equation paragraph style."
 End Function
 
+' Word for Mac can refuse a paragraph's Style once right after the picture in
+' it was resized ("Method 'Style' of object 'Range' failed") and accept it on
+' the next try.
+Private Sub VTApplyParagraphStyle( _
+    ByVal paragraphRange As Range, _
+    ByVal paragraphStyle As Style)
+
+    Dim attempt As Long
+    On Error Resume Next
+    For attempt = 1 To 3
+        Err.Clear
+        paragraphRange.Style = paragraphStyle
+        If Err.Number = 0 Then Exit Sub
+    Next attempt
+    On Error GoTo 0
+    paragraphRange.Style = paragraphStyle
+End Sub
+
+Private Function VTParagraphStyleName(ByVal paragraphRange As Range) As String
+    Dim attempt As Long
+    On Error Resume Next
+    For attempt = 1 To 3
+        Err.Clear
+        VTParagraphStyleName = paragraphRange.Style.NameLocal
+        If Err.Number = 0 Then Exit Function
+    Next attempt
+    On Error GoTo 0
+    VTParagraphStyleName = paragraphRange.Style.NameLocal
+End Function
+
 Private Sub VTConfigureNumberedEquationParagraph( _
     ByVal paragraphRange As Range)
 
@@ -16354,7 +16440,7 @@ Private Sub VTConfigureNumberedEquationParagraph( _
         ' while NextParagraphStyle makes Return create a clean Normal paragraph.
         Set imageEquationStyle = _
             VTEnsureNumberedImageParagraphStyle(paragraphRange.Document)
-        paragraphRange.Style = imageEquationStyle
+        VTApplyParagraphStyle paragraphRange, imageEquationStyle
     ElseIf paragraphRange.Style = wdStyleCaption Then
         ' Preserve the pre-existing native compatibility behavior.
         paragraphRange.Style = wdStyleNormal
@@ -17154,54 +17240,82 @@ End Sub
 Private Sub VTFormatVisibleEquationReference( _
     ByVal documentObject As Document, _
     ByVal referenceField As Field, _
-    ByVal numberRange As Range)
+    ByVal numberRange As Range, _
+    Optional ByVal fontName As String = "", _
+    Optional ByVal fontSize As Single = 0!)
 
     Dim visibleSize As Single
+    Dim resultRange As Range
 
     If documentObject Is Nothing Or referenceField Is Nothing Or _
        numberRange Is Nothing Then
         Err.Raise vbObjectError + 7549, "VisualTeX", _
             "The visible Equation number formatting target is missing."
     End If
-    visibleSize = VTVisibleEquationNumberFontSize(documentObject)
-    With referenceField.Result.Font
+    With numberRange.ParagraphFormat
+        .LineSpacingRule = wdLineSpaceSingle
+        .SpaceBefore = 0!
+        .SpaceAfter = 0!
+    End With
+    ' An image number in its MACROBUTTON shows the button's display text:
+    ' Word reports the field's Result elsewhere (with the paragraph's own
+    ' font), so the visible number is the range formatted and checked.
+    If VTIsImagePlaceRef(referenceField) Then
+        Set resultRange = numberRange
+    Else
+        Set resultRange = referenceField.Result
+    End If
+    If VT_WORD_KEEP_NUMBER_FORMAT Then
+        ' Caret and open-time repairs keep the number's size, font and colour.
+        resultRange.Font.Hidden = False
+        resultRange.Font.Position = 0
+        numberRange.Font.Hidden = False
+        numberRange.Font.Position = 0
+        If InStr(1, referenceField.Code.Text, "MERGEFORMAT", vbTextCompare) > 0 Or _
+           resultRange.Font.Hidden <> False Then
+            Err.Raise vbObjectError + 7549, "VisualTeX", _
+                "The visible Equation number inherited helper formatting" & _
+                " [code=" & referenceField.Code.Text & "]."
+        End If
+        Exit Sub
+    End If
+    If Len(fontName) = 0 Then fontName = VT_WORD_EQUATION_NUMBER_FONT_NAME
+    visibleSize = fontSize
+    If visibleSize <= 0! Or visibleSize > CSng(VT_WORD_MAX_FORMULA_FONT_SIZE_PT) Then _
+        visibleSize = VTVisibleEquationNumberFontSize(documentObject)
+    With resultRange.Font
         .Hidden = False
         .Color = wdColorAutomatic
-        .Name = VT_WORD_EQUATION_NUMBER_FONT_NAME
-        .NameAscii = VT_WORD_EQUATION_NUMBER_FONT_NAME
-        .NameOther = VT_WORD_EQUATION_NUMBER_FONT_NAME
+        .Name = fontName
+        .NameAscii = fontName
+        .NameOther = fontName
         .Position = 0
         .Size = visibleSize
     End With
     With numberRange.Font
         .Hidden = False
         .Color = wdColorAutomatic
-        .Name = VT_WORD_EQUATION_NUMBER_FONT_NAME
-        .NameAscii = VT_WORD_EQUATION_NUMBER_FONT_NAME
-        .NameOther = VT_WORD_EQUATION_NUMBER_FONT_NAME
+        .Name = fontName
+        .NameAscii = fontName
+        .NameOther = fontName
         .Position = 0
         .Size = visibleSize
     End With
-    With numberRange.ParagraphFormat
-        .LineSpacingRule = wdLineSpaceSingle
-        .SpaceBefore = 0!
-        .SpaceAfter = 0!
-    End With
     If InStr(1, referenceField.Code.Text, "MERGEFORMAT", _
        vbTextCompare) > 0 Or _
-       referenceField.Result.Font.Hidden <> False Or _
-       referenceField.Result.Font.Color <> wdColorAutomatic Or _
-       StrComp(CStr(referenceField.Result.Font.NameAscii), _
-           VT_WORD_EQUATION_NUMBER_FONT_NAME, vbTextCompare) <> 0 Or _
-       StrComp(CStr(referenceField.Result.Font.NameOther), _
-           VT_WORD_EQUATION_NUMBER_FONT_NAME, vbTextCompare) <> 0 Or _
-       Abs(referenceField.Result.Font.Size - visibleSize) > 0.1 Then
+       resultRange.Font.Hidden <> False Or _
+       resultRange.Font.Color <> wdColorAutomatic Or _
+       StrComp(CStr(resultRange.Font.NameAscii), _
+           fontName, vbTextCompare) <> 0 Or _
+       StrComp(CStr(resultRange.Font.NameOther), _
+           fontName, vbTextCompare) <> 0 Or _
+       Abs(resultRange.Font.Size - visibleSize) > 0.1 Then
         Err.Raise vbObjectError + 7549, "VisualTeX", _
             "The visible Equation number inherited helper formatting" & _
             " [code=" & referenceField.Code.Text & _
-            "; ascii=" & CStr(referenceField.Result.Font.NameAscii) & _
-            "; other=" & CStr(referenceField.Result.Font.NameOther) & _
-            "; size=" & CStr(referenceField.Result.Font.Size) & _
+            "; ascii=" & CStr(resultRange.Font.NameAscii) & _
+            "; other=" & CStr(resultRange.Font.NameOther) & _
+            "; size=" & CStr(resultRange.Font.Size) & _
             "; expectedSize=" & CStr(visibleSize) & "]."
     End If
 End Sub
@@ -21835,6 +21949,213 @@ Private Function VTTryReadWordImageInkCenterYRatio( _
     VTTryReadWordImageInkCenterYRatio = True
 End Function
 
+Private Function VTWordImageLetterFontVariableName( _
+    ByVal formulaId As String) As String
+
+    If Not VTIsCanonicalUuid(formulaId) Then
+        Err.Raise vbObjectError + 7490, "VisualTeX", _
+            "VisualTeX cannot address an image letter font for an invalid formula id."
+    End If
+    VTWordImageLetterFontVariableName = _
+        VT_WORD_IMAGE_LETTER_FONT_VARIABLE_PREFIX & _
+        Replace$(formulaId, "-", "_")
+End Function
+
+Private Function VTIsKnownFormulaLetterFont(ByVal letterFont As String) As Boolean
+    Select Case letterFont
+        Case "katex", "times", "cambria", "stix", "palatino", "helvetica"
+            VTIsKnownFormulaLetterFont = True
+    End Select
+End Function
+
+' The formula's letter font as VisualTeX names it (katex, times, cambria,
+' stix, palatino, helvetica), kept so its Equation number can use it too.
+Private Sub VTSetWordImageLetterFont( _
+    ByVal documentObject As Document, _
+    ByVal formulaId As String, _
+    ByVal letterFont As String)
+
+    If documentObject Is Nothing Or Not VTIsCanonicalUuid(formulaId) Then Exit Sub
+    If Not VTIsKnownFormulaLetterFont(letterFont) Then Exit Sub
+    VTSetDocumentVariable documentObject, _
+        VTWordImageLetterFontVariableName(formulaId), letterFont
+End Sub
+
+Private Function VTHasWordImageLetterFont( _
+    ByVal documentObject As Document, _
+    ByVal formulaId As String) As Boolean
+
+    Dim letterFont As String
+    If documentObject Is Nothing Or Not VTIsCanonicalUuid(formulaId) Then Exit Function
+    VTHasWordImageLetterFont = VTTryGetDocumentVariable(documentObject, _
+        VTWordImageLetterFontVariableName(formulaId), letterFont)
+End Function
+
+' The Word font of an image formula's Equation number: the formula's own
+' letter font. KaTeX / Computer Modern has no Word font, and a formula whose
+' letter font is not known yet keeps Cambria Math.
+Private Function VTEquationNumberFontNameForFormula( _
+    ByVal documentObject As Document, _
+    ByVal formulaId As String) As String
+
+    Dim letterFont As String
+    VTEquationNumberFontNameForFormula = VT_WORD_EQUATION_NUMBER_FONT_NAME
+    If documentObject Is Nothing Or Not VTIsCanonicalUuid(formulaId) Then Exit Function
+    If Not VTTryGetDocumentVariable(documentObject, _
+        VTWordImageLetterFontVariableName(formulaId), letterFont) Then Exit Function
+    Select Case letterFont
+        Case "times": VTEquationNumberFontNameForFormula = "Times New Roman"
+        Case "stix": VTEquationNumberFontNameForFormula = "STIX Two Text"
+        Case "palatino": VTEquationNumberFontNameForFormula = "Palatino"
+        Case "helvetica": VTEquationNumberFontNameForFormula = "Helvetica Neue"
+    End Select
+End Function
+
+' Painted top and bottom of "(", ")" and the digits, and the line ascent and
+' descent, in em, for each Equation number font (CoreText; the Cambria Math
+' values are those of Word's own copy of the font).
+Private Sub VTEquationNumberFontMetrics( _
+    ByVal fontName As String, _
+    ByRef inkTopEm As Double, _
+    ByRef inkBottomEm As Double, _
+    ByRef fontTopEm As Double, _
+    ByRef fontDescentEm As Double)
+
+    Select Case LCase$(Trim$(fontName))
+        Case "times new roman"
+            inkTopEm = 0.69434: inkBottomEm = -0.21387
+            fontTopEm = 0.89111: fontDescentEm = 0.21631
+        Case "stix two text"
+            inkTopEm = 0.73: inkBottomEm = -0.186
+            fontTopEm = 0.76199: fontDescentEm = 0.23801
+        Case "palatino"
+            inkTopEm = 0.77051: inkBottomEm = -0.16602
+            fontTopEm = 0.82275: fontDescentEm = 0.27734
+        Case "helvetica neue"
+            inkTopEm = 0.731: inkBottomEm = -0.197
+            fontTopEm = 0.952: fontDescentEm = 0.213
+        Case Else
+            inkTopEm = 0.70556640625#: inkBottomEm = -0.220703125#
+            fontTopEm = 0.9501953125#: fontDescentEm = 0.22216796875#
+    End Select
+End Sub
+
+' Size and font of an image formula's Equation number: the formula's
+' VisualTeX font size and the Word font of its letters.
+Private Sub VTImageFormulaNumberFormat( _
+    ByVal formulaShape As InlineShape, _
+    ByRef fontName As String, _
+    ByRef fontSize As Single)
+
+    Dim documentObject As Document
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim formulaSizePt As Double
+    Dim referenceWidthPt As Double
+    Dim referenceHeightPt As Double
+    Dim referenceBaselinePt As Double
+    Dim observedWordFontSizePt As Double
+
+    Set documentObject = formulaShape.Range.Document
+    fontName = VT_WORD_EQUATION_NUMBER_FONT_NAME
+    fontSize = VTVisibleEquationNumberFontSize(documentObject)
+    If Not VTTryParseFormulaReference( _
+       formulaShape.Title, formulaId, displayMode, numbered) Then Exit Sub
+    fontName = VTEquationNumberFontNameForFormula(documentObject, formulaId)
+    If VTTryReadWordImageScaleState(documentObject, formulaId, formulaSizePt, _
+       referenceWidthPt, referenceHeightPt, referenceBaselinePt, _
+       observedWordFontSizePt) Then
+        If formulaSizePt <= VT_WORD_MAX_FORMULA_FONT_SIZE_PT Then _
+            fontSize = CSng(formulaSizePt)
+    End If
+End Sub
+
+' Records the letter font of every formula in formulaShapes that has none yet,
+' with one request to the app, which reads it from the formula's metadata.
+' Formulas from before letter fonts were recorded have none. A formula the app
+' cannot read keeps none (its number stays in Cambria Math).
+Private Sub VTEnsureWordImageLetterFonts( _
+    ByVal documentObject As Document, _
+    ByVal formulaShapes As Collection)
+
+    Dim shape As Variant
+    Dim formulaShape As InlineShape
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim metadata As String
+    Dim metadataNeedsWrite As Boolean
+    Dim formatNeedsWrite As Boolean
+    Dim formulaIds As New Collection
+    Dim manifest As String
+    Dim sessionId As String
+    Dim timingDetail As String
+    Dim separatorPosition As Long
+    Dim result As Object
+    Dim index As Long
+    Dim key As String
+
+    On Error GoTo LetterFontsUnavailable
+    If documentObject Is Nothing Or formulaShapes Is Nothing Then Exit Sub
+    For Each shape In formulaShapes
+        Set formulaShape = shape
+        ' The metadata as batch numbering reads it (never repairing the shape).
+        If VTTryResolveVisualTeXInlineShapeReference( _
+           formulaShape, formulaId, displayMode, numbered, metadata, _
+           metadataNeedsWrite, formatNeedsWrite, False) Then
+            If Not VTHasWordImageLetterFont(documentObject, formulaId) And _
+               VTIsEncodedMetadata(metadata) Then
+                formulaIds.Add formulaId
+                manifest = manifest & "image" & CStr(formulaIds.Count) & _
+                    "Metadata=" & metadata & vbLf
+            End If
+        End If
+    Next shape
+    If formulaIds.Count = 0 Then Exit Sub
+
+    sessionId = VTNewUuidV4()
+    manifest = "protocolVersion=" & CStr(VT_PROTOCOL_VERSION) & vbLf & _
+        "sessionId=" & sessionId & vbLf & _
+        "sourceKind=imageLetterFonts" & vbLf & _
+        "sourceDocumentId=" & VTBase64UrlEncodeUtf8(documentObject.FullName) & vbLf & _
+        "bookmarkName=-" & vbLf & _
+        "imageCount=" & CStr(formulaIds.Count) & vbLf & manifest
+    If VTTryWriteOmmlBatchManifestDirect(sessionId, manifest) Then
+        timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId)
+    Else
+        timingDetail = VTConvertOmmlBatch(VT_WORD_HOST, sessionId, manifest)
+    End If
+    separatorPosition = InStrRev(timingDetail, "|", -1, vbBinaryCompare)
+    If separatorPosition <= 1 Or separatorPosition >= Len(timingDetail) Then Exit Sub
+    Set result = VTParseDocumentImportManifestText( _
+        VTBase64UrlDecodeUtf8(Mid$(timingDetail, separatorPosition + 1)), sessionId)
+    If CStr(result("operation")) <> "imageLetterFonts" Then Exit Sub
+    For index = 1 To formulaIds.Count
+        key = "image" & CStr(index) & "LetterFont"
+        If VTCollectionHasKey(result, key) Then
+            VTSetWordImageLetterFont documentObject, formulaIds(index), CStr(result(key))
+        Else
+            ' Its metadata names no letter font: remember that, so the app is
+            ' not asked again; the number stays in Cambria Math.
+            VTSetDocumentVariable documentObject, _
+                VTWordImageLetterFontVariableName(CStr(formulaIds(index))), "-"
+        End If
+    Next index
+    Exit Sub
+
+LetterFontsUnavailable:
+    ' The number keeps Cambria Math; nothing else depends on the letter font.
+    Err.Clear
+End Sub
+
+Private Sub VTEnsureWordImageLetterFont(ByVal formulaShape As InlineShape)
+    Dim shapes As New Collection
+    If formulaShape Is Nothing Then Exit Sub
+    shapes.Add formulaShape
+    VTEnsureWordImageLetterFonts formulaShape.Range.Document, shapes
+End Sub
+
 Private Function VTTryReadCachedWordImageInkCenterYRatio( _
     ByVal formulaId As String, _
     ByRef inkCenterYRatio As Double) As Boolean
@@ -22589,12 +22910,16 @@ Public Sub VTSynchronizeWordImageTypography(ByVal contextRange As Range)
     Dim fingerprint As String
     Dim mutationStarted As Boolean
     Dim numberRange As Range
+    Dim keptNumberFormat As Boolean
     On Error GoTo Finished
     If contextRange Is Nothing Or VTWordInternalMutationActive() Then Exit Sub
     If contextRange.Document.ReadOnly Or _
        contextRange.Document.ProtectionType <> wdNoProtection Then Exit Sub
     fingerprint = VTImageTypographyFingerprint(contextRange)
     If fingerprint = VT_WORD_TYPOGRAPHY_FINGERPRINT Then Exit Sub
+    ' Re-align pictures to their numbers as the user formatted them.
+    keptNumberFormat = VT_WORD_KEEP_NUMBER_FORMAT
+    VT_WORD_KEEP_NUMBER_FORMAT = True
     For Each paragraph In contextRange.Paragraphs
         For Each shape In paragraph.Range.InlineShapes
             If VTTryWordImageTypographyReference(shape, formulaId, displayMode, numbered) Then
@@ -22626,8 +22951,17 @@ Public Sub VTSynchronizeWordImageTypography(ByVal contextRange As Range)
     Next paragraph
     VT_WORD_TYPOGRAPHY_FINGERPRINT = VTImageTypographyFingerprint(contextRange)
 Finished:
+    VT_WORD_KEEP_NUMBER_FORMAT = keptNumberFormat
     If mutationStarted Then VTEndWordInternalMutation
 End Sub
+
+' Word for Mac can fail to report the font size of a selection that holds a
+' picture and field codes; the fingerprint then just lacks it.
+Private Function VTSelectionFontSizeText(ByVal selected As Selection) As String
+    On Error Resume Next
+    VTSelectionFontSizeText = CStr(selected.Font.Size)
+    Err.Clear
+End Function
 
 Public Sub VisualTeX_SynchronizeSelectedImageFormulaSize( _
     ByVal selected As Selection)
@@ -22641,8 +22975,10 @@ Public Sub VisualTeX_SynchronizeSelectedImageFormulaSize( _
     If selected Is Nothing Or VTWordInternalMutationActive() Then Exit Sub
     If selected.Range.Document.ReadOnly Or _
        selected.Range.Document.ProtectionType <> wdNoProtection Then Exit Sub
+    ' The selection's font size is part of it: changing it in Word's font size
+    ' box resizes the formula, and changes nothing else this compares.
     fingerprint = CStr(selected.Range.Start) & ":" & CStr(selected.Range.End) & _
-        ":" & VTImageTypographyFingerprint(selected.Range)
+        ":" & VTSelectionFontSizeText(selected) & ":" & VTImageTypographyFingerprint(selected.Range)
     If fingerprint = VT_WORD_SELECTED_IMAGE_FINGERPRINT Then GoTo SynchronizeFinished
     Set formulaShape = VTVisualTeXInlineShapeAtSelection(selected)
     If formulaShape Is Nothing Then GoTo RepairParagraphTypography
@@ -22661,7 +22997,7 @@ RepairParagraphTypography:
     VTSynchronizeWordImageTypography selected.Range
     VT_WORD_SELECTED_IMAGE_FINGERPRINT = _
         CStr(selected.Range.Start) & ":" & CStr(selected.Range.End) & ":" & _
-        VTImageTypographyFingerprint(selected.Range)
+        VTSelectionFontSizeText(selected) & ":" & VTImageTypographyFingerprint(selected.Range)
 SynchronizeFinished:
     If internalMutationStarted Then VTEndWordInternalMutation
     VTEnsureImageSizeWatchScheduled
@@ -22710,7 +23046,10 @@ Private Sub VTEnsureImageSizeWatchScheduled()
     If Not hasImages Then Exit Sub
 
     VT_WORD_IMAGE_SIZE_WATCH_SCHEDULED = True
-    VTScheduleWordIdleTasks VT_WORD_IDLE_WATCH_SECONDS
+    VT_WORD_IMAGE_WATCH_LAST_DELAY = VT_WORD_IDLE_WATCH_SECONDS
+    If Not VTVisualTeXInlineShapeAtSelection(Selection, False) Is Nothing Then _
+        VT_WORD_IMAGE_WATCH_LAST_DELAY = VT_WORD_SELECTED_IMAGE_WATCH_SECONDS
+    VTScheduleWordIdleTasks VT_WORD_IMAGE_WATCH_LAST_DELAY
     Exit Sub
 
 ScheduleFailed:
@@ -22758,6 +23097,12 @@ Public Sub VisualTeX_WatchSelectedImageFormulaSize()
     On Error Resume Next
     If Documents.Count > 0 And Not VTWordInternalMutationActive() Then
         VisualTeX_SynchronizeSelectedImageFormulaSize Selection
+        ' While a formula is selected the watch runs every second; the whole
+        ' document is still compared only every VT_WORD_IDLE_WATCH_SECONDS.
+        VT_WORD_IMAGE_WATCH_SECONDS_SINCE_SCAN = _
+            VT_WORD_IMAGE_WATCH_SECONDS_SINCE_SCAN + VT_WORD_IMAGE_WATCH_LAST_DELAY
+        If VT_WORD_IMAGE_WATCH_SECONDS_SINCE_SCAN >= VT_WORD_IDLE_WATCH_SECONDS Then
+        VT_WORD_IMAGE_WATCH_SECONDS_SINCE_SCAN = 0
 #If VT_WORD_DIAGNOSTICS Then
         If Not VT_WORD_TYPOGRAPHY_REGRESSION_RUNNING Then
 #End If
@@ -22771,6 +23116,7 @@ Public Sub VisualTeX_WatchSelectedImageFormulaSize()
 #If VT_WORD_DIAGNOSTICS Then
         End If
 #End If
+        End If
     End If
     On Error GoTo 0
     VT_WORD_IMAGE_SIZE_WATCH_RUNNING = False
@@ -22888,6 +23234,12 @@ Private Sub VTApplyWordImageFontSizePresetToSelection( _
     End If
 
     If Selection.InlineShapes.Count > 0 Then
+        ' One request for the letter fonts their numbers take.
+        Dim formulaShapes As New Collection
+        For Each candidate In Selection.InlineShapes
+            If VTIsVisualTeXInlineShape(candidate) Then formulaShapes.Add candidate
+        Next candidate
+        VTEnsureWordImageLetterFonts ActiveDocument, formulaShapes
         For Each candidate In Selection.InlineShapes
             If VTIsVisualTeXInlineShape(candidate) Then
                 VTApplyWordImageFormulaFontSize candidate, requestedFontSizePt
@@ -24160,6 +24512,8 @@ Private Function VTWriteSingleParagraphImageNumber( _
     Dim prefixText As String
     Dim restartAtOne As Boolean
     Dim position As Long
+    Dim numberFontName As String
+    Dim numberFontSize As Single
     Dim discardedText As String
     Dim candidate As Field
     Set doc = formulaShape.Range.Document
@@ -24299,10 +24653,11 @@ Private Function VTWriteSingleParagraphImageNumber( _
         doc.Bookmarks(sequenceBookmarkName).Delete
     doc.Bookmarks.Add Name:=sequenceBookmarkName, Range:=numberSource
     VTSetEquationNumberBookmarkExact doc, formulaId, fullNumber
-    VTApplyStaticImageEquationNumberFormatting fullNumber, VTVisibleEquationNumberFontSize(doc)
+    VTImageFormulaNumberFormat formulaShape, numberFontName, numberFontSize
+    VTApplyStaticImageEquationNumberFormatting fullNumber, numberFontSize, numberFontName
     position = VTApplyNumberedImageFormulaVerticalAlignment( _
-        formulaShape, fullNumber, VTVisibleEquationNumberFontSize(doc), _
-        "The same-paragraph image number baseline")
+        formulaShape, fullNumber, numberFontSize, _
+        "The same-paragraph image number baseline", numberFontName)
     Set VTWriteSingleParagraphImageNumber = fullNumber.Duplicate
 End Function
 
@@ -24622,6 +24977,7 @@ Private Sub VTFinishPureNativeIdentity(ByVal exact As Range, ByVal formulaId As 
         VTDeleteDocumentVariable doc, VTWordImageScaleVariableName(formulaId)
         VTDeleteDocumentVariable doc, VTWordImageCanvasVariableName(formulaId)
         VTDeleteDocumentVariable doc, VTWordImageInkCenterVariableName(formulaId)
+        VTDeleteDocumentVariable doc, VTWordImageLetterFontVariableName(formulaId)
         VTDeleteDocumentVariable doc, VTWordNativeSignatureVariableName(formulaId)
 End Sub
 
@@ -27971,7 +28327,7 @@ Private Function VTRequestDisplayNumbering( _
                 equationCount >= VT_WORD_DISPLAY_NUMBERING_MAX_REQUEST_ITEMS) Then
                 VTSendDisplayNumberingRequest doc, requests, rows, rowCount, rootTag, _
                     requestEquations, equationCount, requestImages, 0, sources, _
-                    equationErrors, imageMetadata, imageErrors, stagingDocuments
+                    equationErrors, imageMetadata, imageErrors, stagingDocuments, images
                 equationCount = 0
                 rowCount = 0
                 rowBytes = 0
@@ -27994,7 +28350,7 @@ Private Function VTRequestDisplayNumbering( _
             imageCount >= VT_WORD_DISPLAY_NUMBERING_MAX_REQUEST_ITEMS) Then
             VTSendDisplayNumberingRequest doc, requests, rows, rowCount, rootTag, _
                 requestEquations, equationCount, requestImages, imageCount, sources, _
-                equationErrors, imageMetadata, imageErrors, stagingDocuments
+                equationErrors, imageMetadata, imageErrors, stagingDocuments, images
             equationCount = 0
             imageCount = 0
             rowCount = 0
@@ -28009,7 +28365,7 @@ Private Function VTRequestDisplayNumbering( _
     If equationCount + imageCount > 0 Then
         VTSendDisplayNumberingRequest doc, requests, rows, rowCount, rootTag, _
             requestEquations, equationCount, requestImages, imageCount, sources, _
-            equationErrors, imageMetadata, imageErrors, stagingDocuments
+            equationErrors, imageMetadata, imageErrors, stagingDocuments, images
     End If
     Set VTRequestDisplayNumbering = requests
 End Function
@@ -28062,7 +28418,8 @@ Private Sub VTSendDisplayNumberingRequest( _
     ByRef equationErrors() As String, _
     ByRef imageMetadata() As String, _
     ByRef imageErrors() As String, _
-    ByVal stagingDocuments As Collection)
+    ByVal stagingDocuments As Collection, _
+    ByVal images As Collection)
 
     Dim sessionId As String
     Dim body() As String
@@ -28166,6 +28523,11 @@ Private Sub VTSendDisplayNumberingRequest( _
                         "VisualTeX returned invalid image formula metadata."
                 End If
                 imageMetadata(requestImages(index)) = CStr(imageResult(key))
+                ' The number takes the formula's letter font.
+                key = "image" & CStr(index) & "LetterFont"
+                If VTCollectionHasKey(imageResult, key) Then _
+                    VTSetWordImageLetterFont doc, _
+                        CStr(images(requestImages(index))(1)), CStr(imageResult(key))
             Else
                 key = "image" & CStr(index) & "Error"
                 VTRequireDispatchValue imageResult, key

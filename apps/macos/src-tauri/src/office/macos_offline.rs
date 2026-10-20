@@ -2322,7 +2322,7 @@ fn validate_document_formula_metadata_match(
     Ok(formula_latex)
 }
 
-fn encode_metadata(metadata: &VisualTeXFormulaMetadata) -> Result<String, String> {
+pub(super) fn encode_metadata(metadata: &VisualTeXFormulaMetadata) -> Result<String, String> {
     validate_metadata(metadata)?;
     let json = serde_json::to_vec(metadata)
         .map_err(|error| format!("Unable to encode VisualTeX formula metadata: {error}"))?;
@@ -5338,6 +5338,8 @@ fn commit_word(
             format!("{:.6}", geometry.reference_baseline_pt),
         ),
         ("wordMathFontName", final_word_math_font_name),
+        // An image formula's Equation number takes its letter font.
+        ("formulaLetterFont", session.formula_letter_font.clone()),
         (
             "inkCenterYRatio",
             session
@@ -7090,6 +7092,7 @@ fn commit_document_import_blocking(
                 resolved_metadata.image_ink_center_y_ratio = ink_center_y_ratio
                     .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
                 let encoded_metadata = encode_metadata(&resolved_metadata)?;
+                let item_letter_font = resolved_metadata.formula_letter_font.clone();
                 metadata_to_cache.push(resolved_metadata);
 
                 let preserve_formula_identity = is_formula_restore
@@ -7167,6 +7170,9 @@ fn commit_document_import_blocking(
                         format!("{prefix}inkCenterYRatio"),
                         format!("{value:.8}"),
                     ));
+                }
+                if let Some(font) = item_letter_font {
+                    entries.push((format!("{prefix}formulaLetterFont"), font));
                 }
                 if is_range_replace {
                     let (Some(source_start), Some(source_end), Some(source_text)) =
