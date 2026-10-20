@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { resolveMacOfficeOnboarding } from "../src/components/macOfficeOnboarding.ts";
+import {
+  macOfficeAutoInstallErrorText,
+  macPowerPointRegistrationNeeded,
+  resolveMacOfficeAutoInstall,
+  resolveMacOfficeOnboarding,
+} from "../src/components/macOfficeOnboarding.ts";
 
 const absentHost = {
   applicationInstalled: false,
@@ -53,5 +58,23 @@ assert.deepEqual(resolveMacOfficeOnboarding(status(missingAddin, staleAddin), tr
   mode: "update", powerpointRegistrationRequired: false,
 });
 assert.equal(resolveMacOfficeOnboarding(status({ ...currentAddin, loaded: false, healthReported: false }), true), null, "a closed Office host does not make its current files stale");
+
+const running = (host) => ({ ...host, applicationRunning: true });
+assert.equal(resolveMacOfficeAutoInstall(status(currentAddin, currentAddin), false), null, "current add-ins are left alone");
+assert.equal(resolveMacOfficeAutoInstall(status(missingAddin, missingAddin), false), "install", "a new user gets the add-ins without a prompt");
+assert.equal(resolveMacOfficeAutoInstall(status(staleAddin, currentAddin), false), "install", "an older add-in is replaced without a prompt");
+assert.equal(resolveMacOfficeAutoInstall(status(running(staleAddin), currentAddin), false), "wait-for-office", "loaded VBA is replaced only after Office quits");
+assert.equal(resolveMacOfficeAutoInstall(status(currentAddin, running(staleAddin)), false), "wait-for-office", "PowerPoint running also defers the update");
+assert.equal(resolveMacOfficeAutoInstall(status(missingAddin), true), null, "no automatic install after the user uninstalled");
+assert.equal(resolveMacOfficeAutoInstall({ ...status(missingAddin), compiledArtifactsAvailable: false }, false), null, "nothing to install without packaged add-ins");
+assert.equal(resolveMacOfficeAutoInstall(status(absentHost, absentHost), false), null, "no Office, nothing to install");
+assert.equal(macPowerPointRegistrationNeeded(status(absentHost, running(currentAddin))), true, "open PowerPoint without VisualTeX loaded is registered");
+assert.equal(macPowerPointRegistrationNeeded(status(absentHost, running({ ...currentAddin, loaded: true }))), false, "a loaded add-in needs nothing");
+assert.equal(macPowerPointRegistrationNeeded(status(absentHost, currentAddin)), false, "PowerPoint is never launched to register");
+assert.equal(macPowerPointRegistrationNeeded(status(absentHost, running(staleAddin))), false, "only the current PPAM is registered");
+
+assert.match(macOfficeAutoInstallErrorText(new Error("Unable to create x: Operation not permitted (os error 1)"), true), /denied access/, "permission errors are explained");
+assert.match(macOfficeAutoInstallErrorText("The Office add-in operation timed out: macOS ...", true), /click Allow/, "timeouts are explained");
+assert.match(macOfficeAutoInstallErrorText(new Error("disk full"), true), /disk full/, "other errors are shown as they are");
 
 console.log("macOS Office onboarding decisions passed.");

@@ -1958,6 +1958,9 @@ pub fn run() {
     if let Some(status) = office::macos_offline::run_image_ink_center_cli_if_requested() {
         std::process::exit(status);
     }
+    if let Some(status) = office::macos_offline_installer::run_maintenance_cli_if_requested() {
+        std::process::exit(status);
+    }
     let background_mode = office::background::is_background_mode();
     let application_started_at = std::time::Instant::now();
     let maintenance_install = std::env::args_os().any(|argument| {
@@ -2165,6 +2168,8 @@ pub fn run() {
             office::macos_offline_installer::install_macos_offline_office_addins,
             office::macos_offline_installer::repair_macos_offline_office_addins,
             office::macos_offline_installer::uninstall_macos_offline_office_addins,
+            office::macos_offline_installer::get_macos_office_hosts_running,
+            office::macos_offline_installer::register_macos_powerpoint_addin,
             office::macos_offline_installer::request_quit_macos_office_hosts_for_addin_update,
             office::macos_offline_installer::open_macos_office_addin_maintenance_log,
             office::macos_offline_installer::reveal_macos_powerpoint_addin,

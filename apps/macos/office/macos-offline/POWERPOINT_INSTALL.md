@@ -1,6 +1,8 @@
 # 在 PowerPoint 中登记 VisualTeX.ppam
 
-VisualTeX 不会模拟菜单点击，也不会根据界面语言或窗口坐标操作 PowerPoint。首次安装后需要手动登记一次，之后更新会始终覆盖同一路径，不需要重新登记。
+VisualTeX 安装插件后，第一次打开 PowerPoint 时会通过 PowerPoint 自带的 AppleScript 命令 `register add in` 自动登记并加载 `VisualTeX.ppam`，并停用手动添加的其他 VisualTeX 加载项。它不会模拟菜单点击，也不会为此启动 PowerPoint。macOS 可能询问是否允许 VisualTeX 控制 PowerPoint，PowerPoint 可能询问是否启用宏。之后更新会始终覆盖同一路径，不需要重新登记。
+
+以下手动步骤只在自动登记失败时使用（例如拒绝了自动化权限）：
 
 1. 在 VisualTeX 的“macOS Office 集成”设置中点击“在 Finder 中显示 PPAM”。
 2. 打开 Microsoft PowerPoint。

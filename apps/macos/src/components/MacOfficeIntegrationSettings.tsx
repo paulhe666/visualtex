@@ -13,6 +13,8 @@ import {
   Wrench,
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
+import { writeLocalStorage } from "../runtime/safeStorage";
+import { MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY } from "./macOfficeOnboarding";
 import { PowerPointAddinGuide } from "./PowerPointAddinGuide";
 import {
   decodeMacOfflineOfficeStatus,
@@ -55,6 +57,11 @@ async function invokeWithTimeout<T>(command: string, timeoutMs = 6_000): Promise
 }
 
 function officeErrorSummary(raw: string, isEn: boolean) {
+  if (/add-in operation timed out/i.test(raw)) {
+    return isEn
+      ? "macOS did not let VisualTeX change the Office folders in time. If macOS asks whether VisualTeX may access data from other apps, click Allow, then try again."
+      : "macOS 未及时允许 VisualTeX 修改 Office 文件夹。如果 macOS 弹出「VisualTeX 想访问其他 App 的数据」，请点「允许」，然后重试。";
+  }
   if (/timed out|timeout|temporarily unavailable/i.test(raw)) {
     return isEn
       ? "Office status checking timed out. If macOS asks whether VisualTeX may access data from other apps, click Allow; otherwise quit Office and refresh. You can still uninstall the add-ins."
@@ -161,13 +168,21 @@ export function MacOfficeIntegrationSettings() {
         slowOperationTimer = window.setTimeout(() => {
           setMessage(
             isEn
-              ? "The Office add-in operation is still running after 5 seconds. It may be blocked by Office, macOS permissions, or an Office folder."
-              : "Office 插件操作超过 5 秒仍未完成，可能被 Office 进程、macOS 权限或 Office 目录阻塞。",
+              ? "Still working after 5 seconds. If macOS asks whether VisualTeX may access data from other apps, click Allow. VisualTeX stops waiting after 90 seconds."
+              : "已超过 5 秒仍在处理。如果 macOS 弹出「VisualTeX 想访问其他 App 的数据」，请点「允许」。VisualTeX 最多等待 90 秒。",
           );
         }, 5_000);
       }
       try {
         await invoke(command);
+        if (mutatesAddins) {
+          // Uninstall also stops VisualTeX from installing the add-ins again
+          // on its own; installing or repairing turns that back on.
+          writeLocalStorage(
+            MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY,
+            command === "uninstall_macos_offline_office_addins" ? "true" : "false",
+          );
+        }
         if (slowOperationTimer !== undefined) {
           window.clearTimeout(slowOperationTimer);
           slowOperationTimer = undefined;

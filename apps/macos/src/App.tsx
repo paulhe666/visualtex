@@ -37,8 +37,17 @@ import { MacOfficeFirstRunPrompt } from "./components/MacOfficeFirstRunPrompt";
 import {
   decodeMacOfflineOfficeStatus,
   isMacOfficeStatusUnavailable,
+  type MacOfflineOfficeStatus,
 } from "./components/macOfficeStatusValidation";
-import { resolveMacOfficeOnboarding } from "./components/macOfficeOnboarding";
+import {
+  MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY,
+  macOfficeAutoInstallErrorText,
+  MAC_POWERPOINT_REGISTRATION_RETRIES,
+  MAC_POWERPOINT_REGISTRATION_STORAGE_KEY,
+  macPowerPointRegistrationNeeded,
+  resolveMacOfficeAutoInstall,
+  resolveMacOfficeOnboarding,
+} from "./components/macOfficeOnboarding";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { EditorWorkspace } from "./workspace/EditorWorkspace";
 import {
@@ -123,6 +132,9 @@ const MAC_OFFICE_FIRST_RUN_STORAGE_KEY =
   "visualtex.office.macos.native-first-run.v1.2.0.completed";
 const MAC_OFFICE_STATUS_CHECK_ATTEMPTS = 4;
 const MAC_OFFICE_STATUS_RETRY_MS = 15_000;
+const MAC_OFFICE_QUIT_POLL_MS = 5_000;
+const MAC_POWERPOINT_REGISTRATION_DELAY_MS = 8_000;
+const MAC_POWERPOINT_REGISTRATION_ATTEMPTS = 3;
 const APP_HEADER_COLLAPSE_LEVELS = 8;
 
 function documentContentKey() {
@@ -168,6 +180,7 @@ function App() {
   >("setup");
   const [powerpointRegistrationRequired, setPowerpointRegistrationRequired] =
     useState(false);
+  const [macOfficePromptError, setMacOfficePromptError] = useState("");
   const [toast, setToast] = useState("");
   const officeHotkeyBindings = useOfficeHotkeyStore(
     (state) => state.bindings,
@@ -299,6 +312,86 @@ function App() {
     let retryTimer: number | undefined;
     let attempt = 0;
 
+    let waitTimer: number | undefined;
+    const english = () => useEditorStore.getState().language === "en";
+
+    const showPrompt = (status: MacOfflineOfficeStatus, error = "") => {
+      setMacOfficePromptError(error);
+      const prompt = resolveMacOfficeOnboarding(
+        status,
+        readLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true",
+      );
+      setPowerpointRegistrationRequired(
+        prompt?.powerpointRegistrationRequired ?? false,
+      );
+      if (prompt) setMacOfficePromptMode(prompt.mode);
+      setMacOfficeFirstRunOpen(prompt !== null);
+    };
+
+    // New and updated add-ins are installed without a prompt. The prompt
+    // only appears when the install fails, so the user can see why and retry.
+    const installAutomatically = async (status: MacOfflineOfficeStatus) => {
+      const updating = status.word.filesPresent || status.powerpoint.filesPresent;
+      try {
+        decodeMacOfflineOfficeStatus(
+          await invoke<unknown>("install_macos_offline_office_addins"),
+        );
+        if (cancelled) return;
+        writeLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY, "true");
+        setToast(
+          updating
+            ? english()
+              ? "Office add-ins updated to this VisualTeX version"
+              : "Office 插件已更新到当前 VisualTeX 版本"
+            : english()
+              ? "VisualTeX installed its Word and PowerPoint add-ins. They load the next time you open Word or PowerPoint."
+              : "VisualTeX 已安装 Word 与 PowerPoint 插件，下次打开 Word 或 PowerPoint 时自动加载。",
+        );
+      } catch (reason) {
+        if (!cancelled) showPrompt(status, macOfficeAutoInstallErrorText(reason, english()));
+      }
+    };
+
+    // VBA that Office has loaded cannot be replaced; update once both quit.
+    const installAfterOfficeQuits = (status: MacOfflineOfficeStatus) => {
+      const updating = status.word.filesPresent || status.powerpoint.filesPresent;
+      setToast(
+        english()
+          ? updating
+            ? "VisualTeX will update its Office add-ins after you quit Word and PowerPoint."
+            : "VisualTeX will install its Office add-ins after you quit Word and PowerPoint."
+          : updating
+            ? "退出 Word 和 PowerPoint 后，VisualTeX 会自动更新 Office 插件。"
+            : "退出 Word 和 PowerPoint 后，VisualTeX 会自动安装 Office 插件。",
+      );
+      const poll = () => {
+        void invoke<{ word: boolean; powerpoint: boolean }>("get_macos_office_hosts_running")
+          .then(async (hosts) => {
+            if (cancelled) return;
+            if (hosts.word || hosts.powerpoint) {
+              waitTimer = window.setTimeout(poll, MAC_OFFICE_QUIT_POLL_MS);
+              return;
+            }
+            const current = decodeMacOfflineOfficeStatus(
+              await invoke<unknown>("get_macos_offline_office_install_status"),
+            );
+            if (cancelled) return;
+            const next = resolveMacOfficeAutoInstall(
+              current,
+              readLocalStorage(MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY) === "true",
+            );
+            if (next === "install") void installAutomatically(current);
+            else if (next === "wait-for-office") {
+              waitTimer = window.setTimeout(poll, MAC_OFFICE_QUIT_POLL_MS);
+            }
+          })
+          .catch(() => {
+            if (!cancelled) waitTimer = window.setTimeout(poll, MAC_OFFICE_STATUS_RETRY_MS);
+          });
+      };
+      waitTimer = window.setTimeout(poll, MAC_OFFICE_QUIT_POLL_MS);
+    };
+
     const check = () => {
       attempt += 1;
       void invoke<unknown>("get_macos_offline_office_install_status")
@@ -306,15 +399,17 @@ function App() {
         .then((status) => {
           if (cancelled || !status.compiledArtifactsAvailable) return;
 
-          const prompt = resolveMacOfficeOnboarding(
+          const automatic = resolveMacOfficeAutoInstall(
             status,
-            readLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true",
+            readLocalStorage(MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY) === "true",
           );
-          setPowerpointRegistrationRequired(
-            prompt?.powerpointRegistrationRequired ?? false,
-          );
-          if (prompt) setMacOfficePromptMode(prompt.mode);
-          setMacOfficeFirstRunOpen(prompt !== null);
+          if (automatic === "install") {
+            void installAutomatically(status);
+          } else if (automatic === "wait-for-office") {
+            installAfterOfficeQuits(status);
+          } else {
+            showPrompt(status);
+          }
         })
         .catch((reason) => {
           if (cancelled) return;
@@ -337,6 +432,88 @@ function App() {
     return () => {
       cancelled = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      if (waitTimer !== undefined) window.clearTimeout(waitTimer);
+    };
+  }, []);
+
+  // PowerPoint has no Startup folder: the first time it is open with the
+  // current PPAM installed but not loaded, VisualTeX registers the PPAM through
+  // PowerPoint's own scripting command. Once per PowerPoint session; PowerPoint
+  // is never launched for it.
+  useEffect(() => {
+    if (!isTauriEnvironment()) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    let runningSince: number | null = null;
+    let attempts = 0;
+    const english = () => useEditorStore.getState().language === "en";
+
+    const poll = async () => {
+      try {
+        if (readLocalStorage(MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY) === "true") return;
+        const hosts = await invoke<{ word: boolean; powerpoint: boolean }>(
+          "get_macos_office_hosts_running",
+        );
+        if (!hosts.powerpoint) {
+          runningSince = null;
+          attempts = 0;
+          return;
+        }
+        runningSince ??= Date.now();
+        // Let PowerPoint load its registered add-ins first.
+        if (attempts >= MAC_POWERPOINT_REGISTRATION_ATTEMPTS ||
+            Date.now() - runningSince < MAC_POWERPOINT_REGISTRATION_DELAY_MS) return;
+        attempts += 1;
+        const status = decodeMacOfflineOfficeStatus(
+          await invoke<unknown>("get_macos_offline_office_install_status"),
+        );
+        const registration = readLocalStorage(MAC_POWERPOINT_REGISTRATION_STORAGE_KEY) ?? "";
+        if (!macPowerPointRegistrationNeeded(status)) {
+          if (status.powerpoint.loaded && registration.startsWith("pending")) {
+            writeLocalStorage(MAC_POWERPOINT_REGISTRATION_STORAGE_KEY, "confirmed");
+          }
+          attempts = MAC_POWERPOINT_REGISTRATION_ATTEMPTS;
+          return;
+        }
+        // pending:N counts the PowerPoint sessions in which VisualTeX's own
+        // registration has been retried.
+        const retries = registration.startsWith("pending")
+          ? Number(registration.split(":")[1] ?? "0") || 0
+          : 0;
+        const retry = registration.startsWith("pending") &&
+          retries < MAC_POWERPOINT_REGISTRATION_RETRIES;
+        const result = await invoke<{ outcome: string; disabledCopies: string[] }>(
+          "register_macos_powerpoint_addin",
+          { retry },
+        );
+        if (cancelled) return;
+        if (result.outcome !== "notRunning") attempts = MAC_POWERPOINT_REGISTRATION_ATTEMPTS;
+        if (result.outcome === "registered" || result.outcome === "pending") {
+          writeLocalStorage(
+            MAC_POWERPOINT_REGISTRATION_STORAGE_KEY,
+            `pending:${retry ? retries + 1 : retries}`,
+          );
+        }
+        if (result.outcome === "registered") {
+          setToast(english() ? "VisualTeX was added to PowerPoint" : "已将 VisualTeX 加入 PowerPoint");
+        } else if (result.outcome === "pending") {
+          setToast(
+            english()
+              ? "PowerPoint is asking about the VisualTeX add-in. Enable its macros to finish."
+              : "PowerPoint 正在询问 VisualTeX 加载项，请启用宏以完成加载。",
+          );
+        }
+      } catch {
+        // Status unavailable or registration refused: retry a few times in this
+        // PowerPoint session; Settings keeps the manual steps.
+      } finally {
+        if (!cancelled) timer = window.setTimeout(() => void poll(), MAC_OFFICE_QUIT_POLL_MS);
+      }
+    };
+    timer = window.setTimeout(() => void poll(), MAC_OFFICE_QUIT_POLL_MS);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, []);
 
@@ -1955,6 +2132,7 @@ function App() {
         language={language}
         mode={macOfficePromptMode}
         powerpointRegistrationRequired={powerpointRegistrationRequired}
+        initialError={macOfficePromptError}
         onComplete={finishMacOfficeFirstRun}
       />
       <UpdateDialog

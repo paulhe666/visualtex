@@ -879,7 +879,14 @@ PNG 同时使用当前公式字体设置。
 
 入口：**设置 → Office 集成**。
 
-操作插件前，先使用 `⌘Q` 完全退出 Word 和 PowerPoint。
+VisualTeX 会自动安装和更新 Office 插件：
+
+- 首次启动或升级 VisualTeX 后，如果 Word 和 PowerPoint 都没有运行，VisualTeX 直接安装或更新插件；如果正在运行，会在两者都退出后自动完成（已加载的插件无法在 Office 运行时替换）。
+- PowerPoint 没有自动加载目录。安装后第一次打开 PowerPoint 时，VisualTeX 通过 PowerPoint 自带的脚本命令登记并加载 `VisualTeX.ppam`，手动添加的其他 VisualTeX 加载项会被停用。macOS 可能询问是否允许 VisualTeX 控制 PowerPoint，PowerPoint 可能询问是否启用宏。
+- macOS 询问「VisualTeX 想访问其他 App 的数据」时请点「允许」。安装、修复和卸载最多等待 90 秒，超时后可以重试，界面不会卡住。
+- 在设置中卸载插件后，VisualTeX 不再自动安装，直到再次点击安装或修复。
+
+手动安装、修复或卸载前，先使用 `⌘Q` 完全退出 Word 和 PowerPoint。
 
 ## 17.1 状态
 
@@ -900,7 +907,7 @@ VisualTeX 分别检测：
 - **打开 PowerPoint**：启动 PowerPoint。
 - **卸载插件**：移除 VisualTeX Office 插件。
 
-PowerPoint 首次安装后可能需要在 **工具 → PowerPoint 加载项**中登记 `VisualTeX.ppam`；后续更新复用固定路径。
+自动登记失败时（例如拒绝了自动化权限），可在 PowerPoint 的 **工具 → PowerPoint 加载项**中点击 ＋，选择 `~/Library/Group Containers/UBF8T346G9.Office/VisualTeX/OfficeAddins/VisualTeX.ppam`。后续更新复用这个固定路径，不需要重新登记。
 
 ---
 

@@ -6,7 +6,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -1503,17 +1503,20 @@ fn host_status(
 }
 
 pub fn status(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> {
+    status_at(&resource_root(app)?)
+}
+
+fn status_at(root: &Path) -> Result<MacOfflineOfficeInstallStatus, String> {
     let probe_timeouts_before = OFFICE_PATH_PROBE_TIMEOUTS.load(Ordering::Relaxed);
-    let status = status_snapshot(app)?;
+    let status = status_snapshot(root)?;
     if OFFICE_PATH_PROBE_TIMEOUTS.load(Ordering::Relaxed) != probe_timeouts_before {
         return Err(OFFICE_STATUS_UNAVAILABLE_ERROR.to_string());
     }
     Ok(status)
 }
 
-fn status_snapshot(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> {
-    let root = resource_root(app)?;
-    let (word_source, powerpoint_source) = source_artifacts(&root);
+fn status_snapshot(root: &Path) -> Result<MacOfflineOfficeInstallStatus, String> {
+    let (word_source, powerpoint_source) = source_artifacts(root);
     let word_destinations = discover_word_startup_paths()?
         .into_iter()
         .map(|path| path.join(WORD_ADDIN_NAME))
@@ -1573,7 +1576,7 @@ fn status_snapshot(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, Str
             powerpoint_files_present,
             powerpoint_files_installed,
         )?,
-        compiled_artifacts_available: compiled_artifacts_available(&root),
+        compiled_artifacts_available: compiled_artifacts_available(root),
         resource_root: root.display().to_string(),
         powerpoint_addin_path: powerpoint_path.display().to_string(),
         word_script_path: word_script.display().to_string(),
@@ -1583,17 +1586,16 @@ fn status_snapshot(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, Str
 }
 
 fn install_impl(
-    app: &AppHandle,
+    root: &Path,
     operation: &str,
 ) -> Result<MacOfflineOfficeInstallStatus, String> {
     if !cfg!(target_os = "macos") {
         return Err("The native offline Office add-ins are available only on macOS".to_string());
     }
-    let root = maintenance_step(operation, "resolve-resources", || resource_root(app))?;
     let (word_source, powerpoint_source) = maintenance_step(
         operation,
         "validate-packaged-addins",
-        || validate_compiled_artifacts(&root),
+        || validate_compiled_artifacts(root),
     )?;
     maintenance_step(operation, "office-process-check", ensure_office_hosts_stopped)?;
     maintenance_step(operation, "backup-packaged-addins", || {
@@ -1732,14 +1734,17 @@ fn install_impl(
             )),
         };
     }
-    maintenance_step(operation, "post-install-status", || status(app))
+    maintenance_step(operation, "post-install-status", || status_at(root))
 }
 
 pub fn install(app: &AppHandle) -> Result<MacOfflineOfficeInstallStatus, String> {
-    run_maintenance_operation("install", || install_impl(app, "install"))
+    run_maintenance_operation("install", || {
+        let root = maintenance_step("install", "resolve-resources", || resource_root(app))?;
+        install_impl(&root, "install")
+    })
 }
 
-fn uninstall_impl(_app: &AppHandle) -> Result<(), String> {
+fn uninstall_impl() -> Result<(), String> {
     if !cfg!(target_os = "macos") {
         return Err("The native offline Office add-ins are available only on macOS".to_string());
     }
@@ -1752,9 +1757,6 @@ fn uninstall_impl(_app: &AppHandle) -> Result<(), String> {
     })
 }
 
-pub fn uninstall(app: &AppHandle) -> Result<(), String> {
-    run_maintenance_operation("uninstall", || uninstall_impl(app))
-}
 
 fn remove_if_exists(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -1854,6 +1856,384 @@ pub fn open_powerpoint_tutorial(app: &AppHandle) -> Result<(), String> {
     }
 }
 
+/// The add-in maintenance child: `visualtex --office-addin-maintenance
+/// <install|repair|uninstall> <resource root>`. It runs before the Tauri
+/// builder, so the single-instance plugin never hands it to the running app.
+pub const MAINTENANCE_CHILD_ARGUMENT: &str = "--office-addin-maintenance";
+
+/// How long the app waits for one install, repair or uninstall. A normal run
+/// takes up to about half a minute (24 s measured); a longer one is waiting on
+/// macOS.
+const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(90);
+
+pub const MAINTENANCE_TIMEOUT_ERROR: &str =
+    "The Office add-in operation timed out: macOS did not let VisualTeX change the Office folders in time. If macOS asks whether VisualTeX may access data from other apps, click Allow, then try again.";
+
+static MAINTENANCE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+struct MaintenanceInFlight;
+
+impl MaintenanceInFlight {
+    fn acquire() -> Result<Self, String> {
+        if MAINTENANCE_IN_FLIGHT.swap(true, Ordering::AcqRel) {
+            return Err("Another VisualTeX Office add-in operation is still running.".to_string());
+        }
+        Ok(Self)
+    }
+}
+
+impl Drop for MaintenanceInFlight {
+    fn drop(&mut self) {
+        MAINTENANCE_IN_FLIGHT.store(false, Ordering::Release);
+    }
+}
+
+pub fn run_maintenance_cli_if_requested() -> Option<i32> {
+    let arguments = std::env::args_os().collect::<Vec<_>>();
+    if arguments.get(1).map(|value| value.as_os_str())
+        != Some(std::ffi::OsStr::new(MAINTENANCE_CHILD_ARGUMENT))
+    {
+        return None;
+    }
+    let operation = arguments
+        .get(2)
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_string();
+    let Some(root) = arguments.get(3).map(PathBuf::from) else {
+        eprintln!("{MAINTENANCE_CHILD_ARGUMENT} requires an operation and a resource folder");
+        return Some(2);
+    };
+    let result = match operation.as_str() {
+        "install" | "repair" => {
+            run_maintenance_operation(&operation, || install_impl(&root, &operation)).and_then(
+                |status| {
+                    serde_json::to_string(&status).map_err(|error| {
+                        format!("Unable to report the Office add-in status: {error}")
+                    })
+                },
+            )
+        }
+        "uninstall" => run_maintenance_operation("uninstall", uninstall_impl)
+            .map(|()| "null".to_string()),
+        _ => Err(format!(
+            "Unknown Office add-in maintenance operation: {operation}"
+        )),
+    };
+    match result {
+        Ok(output) => {
+            println!("{output}");
+            Some(0)
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            Some(1)
+        }
+    }
+}
+
+fn spawn_pipe_reader<R: std::io::Read + Send + 'static>(
+    pipe: Option<R>,
+) -> thread::JoinHandle<String> {
+    thread::spawn(move || {
+        let mut text = String::new();
+        if let Some(mut pipe) = pipe {
+            let _ = pipe.read_to_string(&mut text);
+        }
+        text
+    })
+}
+
+struct ChildOutput {
+    status: std::process::ExitStatus,
+    stdout: String,
+    stderr: String,
+}
+
+/// Waits for a child whose stdout and stderr are piped, and kills it once
+/// `timeout` has passed (None). The pipes are drained while it runs.
+fn wait_for_child_output(
+    mut child: std::process::Child,
+    timeout: Duration,
+) -> Result<Option<ChildOutput>, String> {
+    let stdout = spawn_pipe_reader(child.stdout.take());
+    let stderr = spawn_pipe_reader(child.stderr.take());
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Ok(None);
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error.to_string());
+            }
+        }
+    };
+    Ok(Some(ChildOutput {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    }))
+}
+
+/// Runs one maintenance operation in a child process and stops it after
+/// `timeout`. The first write into Microsoft's group container can wait inside
+/// open() until the user answers macOS's "access data from other apps"
+/// prompt, and a thread cannot be taken out of that wait; a process can.
+fn run_maintenance_child(
+    executable: &Path,
+    operation: &str,
+    root: &Path,
+    timeout: Duration,
+) -> Result<String, String> {
+    let child = Command::new(executable)
+        .arg(MAINTENANCE_CHILD_ARGUMENT)
+        .arg(operation)
+        .arg(root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Unable to start the Office add-in {operation}: {error}"))?;
+    let Some(output) = wait_for_child_output(child, timeout)
+        .map_err(|error| format!("Unable to wait for the Office add-in {operation}: {error}"))?
+    else {
+        return Err(MAINTENANCE_TIMEOUT_ERROR.to_string());
+    };
+    if output.status.success() {
+        Ok(output.stdout.trim().to_string())
+    } else if output.stderr.trim().is_empty() {
+        Err(format!("The Office add-in {operation} failed ({})", output.status))
+    } else {
+        Err(output.stderr.trim().to_string())
+    }
+}
+
+async fn run_maintenance_command(
+    app: AppHandle,
+    operation: &'static str,
+) -> Result<serde_json::Value, String> {
+    if !cfg!(target_os = "macos") {
+        return Err("The native offline Office add-ins are available only on macOS".to_string());
+    }
+    let root = resource_root(&app)?;
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("Unable to locate the VisualTeX executable: {error}"))?;
+    let worker = tauri::async_runtime::spawn_blocking(move || {
+        let _in_flight = MaintenanceInFlight::acquire()?;
+        let result = run_maintenance_child(&executable, operation, &root, MAINTENANCE_TIMEOUT);
+        if matches!(&result, Err(error) if error == MAINTENANCE_TIMEOUT_ERROR) {
+            append_office_maintenance_log(
+                operation,
+                "operation",
+                "timeout",
+                &format!("stopped after {} s", MAINTENANCE_TIMEOUT.as_secs()),
+            );
+        }
+        result
+    });
+    let output = worker
+        .await
+        .map_err(|error| format!("Office add-in {operation} worker failed: {error}"))??;
+    serde_json::from_str(&output)
+        .map_err(|error| format!("The Office add-in {operation} returned an unreadable status: {error}"))
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacOfficeHostsRunning {
+    word: bool,
+    powerpoint: bool,
+}
+
+/// Registers VisualTeX.ppam in a running PowerPoint through its own scripting
+/// command (`register add in`), loads it and sets it to load at startup. Other
+/// VisualTeX add-ins in PowerPoint's list (copies added by hand) are switched
+/// off; PowerPoint cannot delete list entries. An entry for the installed path
+/// that is registered but switched off stays so (the user switched it off),
+/// unless argv 2 is "retry": VisualTeX registered it and has not yet seen it
+/// load, because PowerPoint was showing a prompt or a dialog. Never launches
+/// PowerPoint.
+const POWERPOINT_REGISTRATION_SCRIPT: &str = r#"on run argv
+	set targetPath to item 1 of argv
+	set retrying to ((count of argv) > 1 and item 2 of argv is "retry")
+	if not (application id "com.microsoft.Powerpoint" is running) then return "notRunning"
+	set report to ""
+	with timeout of 30 seconds
+		tell application id "com.microsoft.Powerpoint"
+			set targetIndex to 0
+			repeat with candidateIndex from 1 to (count of add ins)
+				if (full name of add in candidateIndex) is targetPath then set targetIndex to candidateIndex
+			end repeat
+			if targetIndex is not 0 then
+				set target to add in targetIndex
+				if (loaded of target) and (auto load of target) then return "alreadyRegistered"
+				if not (loaded of target) and not retrying then return "disabledByUser"
+			end if
+			repeat with candidateIndex from 1 to (count of add ins)
+				set candidate to add in candidateIndex
+				if candidateIndex is not targetIndex and my isVisualTeXName(name of candidate) then
+					if (loaded of candidate) or (auto load of candidate) then
+						set loaded of candidate to false
+						set auto load of candidate to false
+						set report to report & "disabled" & tab & (full name of candidate) & linefeed
+					end if
+				end if
+			end repeat
+			if targetIndex is 0 then
+				register add in targetPath
+				repeat with candidateIndex from 1 to (count of add ins)
+					if (full name of add in candidateIndex) is targetPath then set targetIndex to candidateIndex
+				end repeat
+				if targetIndex is 0 then error "PowerPoint did not register " & targetPath
+			end if
+			set target to add in targetIndex
+			if not (auto load of target) then set auto load of target to true
+			if not (loaded of target) then set loaded of target to true
+		end tell
+	end timeout
+	return "registered" & linefeed & report
+end run
+
+on isVisualTeXName(candidateName)
+	ignoring case
+		if candidateName is "VisualTeX" then return true
+		if candidateName starts with "VisualTeX" then return (character 10 of candidateName) is in {" ", ".", "(", "-", "_"}
+	end ignoring
+	return false
+end isVisualTeXName
+"#;
+
+/// PowerPoint answers within a second; a longer wait is its macro prompt for
+/// the add-in or macOS's Automation prompt, which the user is answering.
+const POWERPOINT_REGISTRATION_TIMEOUT: Duration = Duration::from_secs(45);
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PowerPointRegistrationResult {
+    /// registered, alreadyRegistered, disabledByUser, notRunning, or pending
+    /// (PowerPoint is still showing a prompt; the load finishes when the user
+    /// answers it).
+    outcome: String,
+    disabled_copies: Vec<String>,
+}
+
+fn parse_powerpoint_registration(output: &str) -> Result<PowerPointRegistrationResult, String> {
+    let mut lines = output.lines().map(str::trim_end).filter(|line| !line.is_empty());
+    let outcome = lines.next().unwrap_or_default().trim().to_string();
+    if !matches!(
+        outcome.as_str(),
+        "registered" | "alreadyRegistered" | "disabledByUser" | "notRunning"
+    ) {
+        return Err(format!("PowerPoint returned an unexpected registration result: {outcome}"));
+    }
+    let disabled_copies = lines
+        .filter_map(|line| line.strip_prefix("disabled\t"))
+        .map(str::to_string)
+        .collect();
+    Ok(PowerPointRegistrationResult {
+        outcome,
+        disabled_copies,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn run_powerpoint_registration_script(target: &Path, retry: bool) -> Result<String, String> {
+    let mut child = Command::new("/usr/bin/osascript")
+        .arg("-")
+        .arg(target)
+        .arg(if retry { "retry" } else { "first" })
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Unable to start the PowerPoint registration: {error}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(POWERPOINT_REGISTRATION_SCRIPT.as_bytes())
+            .map_err(|error| format!("Unable to start the PowerPoint registration: {error}"))?;
+    }
+    let Some(output) = wait_for_child_output(child, POWERPOINT_REGISTRATION_TIMEOUT)
+        .map_err(|error| format!("Unable to wait for the PowerPoint registration: {error}"))?
+    else {
+        return Ok("pending".to_string());
+    };
+    let error = output.stderr;
+    if output.status.success() {
+        Ok(output.stdout)
+    } else if error.contains("(-1712)") {
+        // Apple event timeout: PowerPoint is showing a prompt for the add-in.
+        Ok("pending".to_string())
+    } else if error.contains("(-1743)") {
+        Err("macOS did not allow VisualTeX to control PowerPoint. Allow it in System Settings → Privacy & Security → Automation, or add VisualTeX.ppam in PowerPoint's Add-ins dialog.".to_string())
+    } else {
+        Err(format!(
+            "PowerPoint could not register VisualTeX.ppam: {}",
+            error.trim()
+        ))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn run_powerpoint_registration_script(_target: &Path, _retry: bool) -> Result<String, String> {
+    Err("PowerPoint registration is available only on macOS".to_string())
+}
+
+fn register_powerpoint_addin(retry: bool) -> Result<PowerPointRegistrationResult, String> {
+    if !application_running(POWERPOINT_PROCESS_NAME) {
+        return parse_powerpoint_registration("notRunning");
+    }
+    let target = powerpoint_addin_path()?;
+    if !bounded_path_test(&target, "-f") {
+        return Err(
+            "VisualTeX.ppam is not installed. Install or repair the offline add-in first."
+                .to_string(),
+        );
+    }
+    let output = run_powerpoint_registration_script(&target, retry)?;
+    let result = if output.trim() == "pending" {
+        PowerPointRegistrationResult {
+            outcome: "pending".to_string(),
+            disabled_copies: Vec::new(),
+        }
+    } else {
+        parse_powerpoint_registration(&output)?
+    };
+    append_office_maintenance_log(
+        "register-powerpoint",
+        "operation",
+        &result.outcome,
+        &result.disabled_copies.join("\n"),
+    );
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn get_macos_office_hosts_running() -> Result<MacOfficeHostsRunning, String> {
+    tauri::async_runtime::spawn_blocking(|| MacOfficeHostsRunning {
+        word: application_running(WORD_PROCESS_NAME),
+        powerpoint: application_running(POWERPOINT_PROCESS_NAME),
+    })
+    .await
+    .map_err(|error| format!("Office process check failed: {error}"))
+}
+
+#[tauri::command]
+pub async fn register_macos_powerpoint_addin(
+    retry: Option<bool>,
+) -> Result<PowerPointRegistrationResult, String> {
+    let retry = retry.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || register_powerpoint_addin(retry))
+        .await
+        .map_err(|error| format!("PowerPoint registration worker failed: {error}"))?
+}
+
 #[tauri::command]
 pub async fn get_macos_offline_office_install_status(
     app: AppHandle,
@@ -1869,23 +2249,28 @@ pub async fn get_macos_offline_office_install_status(
     }
 }
 
+// Install, repair and uninstall run in a child process with a time limit, so
+// a wait inside macOS never freezes the app (Tauri runs synchronous commands
+// on the main thread).
 #[tauri::command]
-pub fn install_macos_offline_office_addins(
+pub async fn install_macos_offline_office_addins(
     app: AppHandle,
-) -> Result<MacOfflineOfficeInstallStatus, String> {
-    install(&app)
+) -> Result<serde_json::Value, String> {
+    run_maintenance_command(app, "install").await
 }
 
 #[tauri::command]
-pub fn repair_macos_offline_office_addins(
+pub async fn repair_macos_offline_office_addins(
     app: AppHandle,
-) -> Result<MacOfflineOfficeInstallStatus, String> {
-    run_maintenance_operation("repair", || install_impl(&app, "repair"))
+) -> Result<serde_json::Value, String> {
+    run_maintenance_command(app, "repair").await
 }
 
 #[tauri::command]
-pub fn uninstall_macos_offline_office_addins(app: AppHandle) -> Result<(), String> {
-    uninstall(&app)
+pub async fn uninstall_macos_offline_office_addins(
+    app: AppHandle,
+) -> Result<serde_json::Value, String> {
+    run_maintenance_command(app, "uninstall").await
 }
 
 #[tauri::command]
@@ -2077,5 +2462,131 @@ mod tests {
             .join("office/macos-offline");
         validate_compiled_artifacts(&root)
             .expect("Packaged DOTM/PPAM must be installable, including their Ribbon XML");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_wait_stops_a_child_at_its_time_limit() {
+        let child = Command::new("/bin/sleep")
+            .arg("10")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        assert!(wait_for_child_output(child, Duration::from_millis(200))
+            .unwrap()
+            .is_none());
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_wait_returns_status_and_both_outputs() {
+        let child = Command::new("/bin/sh")
+            .args(["-c", "echo status; echo problem >&2; exit 3"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let output = wait_for_child_output(child, Duration::from_secs(10))
+            .unwrap()
+            .expect("the child finishes in time");
+        assert_eq!(output.status.code(), Some(3));
+        assert_eq!(output.stdout.trim(), "status");
+        assert_eq!(output.stderr.trim(), "problem");
+    }
+
+    #[cfg(unix)]
+    fn fake_maintenance_executable(name: &str, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = std::env::temp_dir().join(format!("visualtex-maintenance-{}", Uuid::new_v4()));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(name);
+        fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        path
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn maintenance_child_is_stopped_at_the_time_limit() {
+        let executable = fake_maintenance_executable("hang", "exec /bin/sleep 30");
+        let started = Instant::now();
+        let result = run_maintenance_child(
+            &executable,
+            "install",
+            Path::new("/nonexistent"),
+            Duration::from_millis(300),
+        );
+        assert_eq!(result.unwrap_err(), MAINTENANCE_TIMEOUT_ERROR);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        let _ = fs::remove_dir_all(executable.parent().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn maintenance_child_passes_its_arguments_and_reports_its_result() {
+        let executable = fake_maintenance_executable(
+            "report",
+            "[ \"$1\" = --office-addin-maintenance ] && [ \"$2\" = repair ] && [ \"$3\" = /resources ] || exit 9\necho '{\"ok\":true}'",
+        );
+        assert_eq!(
+            run_maintenance_child(&executable, "repair", Path::new("/resources"), Duration::from_secs(10))
+                .unwrap(),
+            "{\"ok\":true}"
+        );
+        let failing = fake_maintenance_executable("fail", "echo 'Fully quit Microsoft PowerPoint' >&2\nexit 1");
+        assert_eq!(
+            run_maintenance_child(&failing, "install", Path::new("/resources"), Duration::from_secs(10))
+                .unwrap_err(),
+            "Fully quit Microsoft PowerPoint"
+        );
+        let _ = fs::remove_dir_all(executable.parent().unwrap());
+        let _ = fs::remove_dir_all(failing.parent().unwrap());
+    }
+
+    #[test]
+    fn maintenance_commands_never_run_on_the_main_thread() {
+        let source = include_str!("macos_offline_installer.rs");
+        for command in [
+            "install_macos_offline_office_addins",
+            "repair_macos_offline_office_addins",
+            "uninstall_macos_offline_office_addins",
+        ] {
+            assert!(
+                source.contains(&format!("pub async fn {command}(")),
+                "{command} must stay async"
+            );
+        }
+    }
+
+    #[test]
+    fn powerpoint_registration_result_parsing() {
+        assert_eq!(
+            parse_powerpoint_registration("registered\ndisabled\t/Users/a/Downloads/VisualTeX.ppam\n")
+                .unwrap(),
+            PowerPointRegistrationResult {
+                outcome: "registered".to_string(),
+                disabled_copies: vec!["/Users/a/Downloads/VisualTeX.ppam".to_string()],
+            }
+        );
+        assert_eq!(
+            parse_powerpoint_registration("alreadyRegistered\n").unwrap().outcome,
+            "alreadyRegistered"
+        );
+        assert!(parse_powerpoint_registration("").is_err());
+        assert!(parse_powerpoint_registration("PowerPoint got an error").is_err());
+    }
+
+    #[test]
+    fn powerpoint_registration_never_launches_or_deletes() {
+        let script = POWERPOINT_REGISTRATION_SCRIPT;
+        let running_check = script.find("is running").unwrap();
+        let first_tell = script.find("tell application id").unwrap();
+        assert!(running_check < first_tell);
+        assert!(!script.contains("delete"));
+        assert!(script.contains("register add in targetPath"));
+        assert!(script.contains("if not (loaded of target) and not retrying then return \"disabledByUser\""));
     }
 }

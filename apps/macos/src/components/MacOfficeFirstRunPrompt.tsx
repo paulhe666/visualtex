@@ -11,6 +11,8 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import type { Language } from "../stores/editorStore";
+import { writeLocalStorage } from "../runtime/safeStorage";
+import { MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY } from "./macOfficeOnboarding";
 import { PowerPointAddinGuide } from "./PowerPointAddinGuide";
 import {
   decodeMacOfflineOfficeStatus,
@@ -24,6 +26,8 @@ interface Props {
   language: Language;
   mode?: "setup" | "update" | "repair";
   powerpointRegistrationRequired?: boolean;
+  /** Why VisualTeX's own install failed, shown when the prompt opens. */
+  initialError?: string;
   onComplete: (installed: boolean) => void;
 }
 
@@ -58,6 +62,7 @@ export function MacOfficeFirstRunPrompt({
   language,
   mode = "setup",
   powerpointRegistrationRequired = false,
+  initialError = "",
   onComplete,
 }: Props) {
   const [status, setStatus] = useState<MacOfflineOfficeStatus | null>(null);
@@ -76,7 +81,7 @@ export function MacOfficeFirstRunPrompt({
 
   useEffect(() => {
     if (!open) return;
-    setError("");
+    setError(initialError);
     setBusy("refresh");
     void refresh()
       .catch((reason) => {
@@ -97,7 +102,7 @@ export function MacOfficeFirstRunPrompt({
       dialogRef.current?.querySelector<HTMLElement>("button")?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [isEn, open]);
+  }, [initialError, isEn, open]);
 
   if (!open) return null;
 
@@ -132,6 +137,7 @@ export function MacOfficeFirstRunPrompt({
       const next = decodeMacOfflineOfficeStatus(
         await invoke<unknown>("install_macos_offline_office_addins"),
       );
+      writeLocalStorage(MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY, "false");
       setStatus(next);
       if (
         mode !== "setup" &&
