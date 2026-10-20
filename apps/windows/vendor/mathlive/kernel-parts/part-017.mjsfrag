@@ -222,6 +222,75 @@ function render(mathfield, renderOptions) {
   renderSelection(mathfield, renderOptions.interactive);
   mathfield.updateToggleLayout();
   mathfield.dirty = false;
+  if (hasFocus) scheduleCaretInScrollingAncestor(mathfield);
+}
+// VisualTeX kernel: a long formula line grows the math-field to its full
+// width and scrolls inside an outer container (the editor's formula row).
+// MathLive only scrolled its own field, which never overflows, so the caret
+// could leave the visible part of the row. Every render of a focused field
+// and every scrollIntoView keeps the caret (or the moving end of a range
+// selection) inside the nearest horizontally scrolling ancestor. The check
+// runs as a microtask: the editor's mutation observer restyles the new glyphs
+// (formula letter font) first, and only then is the line width final.
+const CARET_SCROLL_MARGIN = 24;
+function horizontalScrollingAncestor(element) {
+  let node = element;
+  while (node) {
+    const parent = node.parentElement;
+    node = parent != null ? parent : node.parentNode instanceof ShadowRoot ? node.parentNode.host : null;
+    if (!node || node === document.body || node === document.documentElement)
+      return null;
+    if (node.scrollWidth > node.clientWidth + 1) {
+      const overflowX = getComputedStyle(node).overflowX;
+      if (overflowX === "auto" || overflowX === "scroll") return node;
+    }
+  }
+  return null;
+}
+function caretHorizontalBounds(mathfield) {
+  const field = mathfield.field;
+  const model = mathfield.model;
+  if (model.selectionIsCollapsed) {
+    const caret = findElementWithCaret(field);
+    if (caret) {
+      const bounds = caret.getBoundingClientRect();
+      if (bounds.height > 0) return { left: bounds.left, right: bounds.right };
+    }
+  }
+  const atom = model.at(model.position);
+  if (!(atom == null ? void 0 : atom.id)) return null;
+  let left = Infinity;
+  let right = -Infinity;
+  for (const node of field.querySelectorAll(`[data-atom-id="${atom.id}"]`)) {
+    const bounds = node.getBoundingClientRect();
+    if (bounds.width === 0 && bounds.height === 0) continue;
+    left = Math.min(left, bounds.left);
+    right = Math.max(right, bounds.right);
+  }
+  if (!Number.isFinite(right)) return null;
+  // The caret sits after the atom at `position`.
+  return { left: right, right };
+}
+function scheduleCaretInScrollingAncestor(mathfield) {
+  if (mathfield.caretScrollPending) return;
+  mathfield.caretScrollPending = true;
+  queueMicrotask(() => {
+    mathfield.caretScrollPending = false;
+    if (isValidMathfield(mathfield)) keepCaretInScrollingAncestor(mathfield);
+  });
+}
+function keepCaretInScrollingAncestor(mathfield) {
+  if (!mathfield.host || !mathfield.field) return;
+  const scroller = horizontalScrollingAncestor(mathfield.host);
+  if (!scroller) return;
+  const caret = caretHorizontalBounds(mathfield);
+  if (!caret) return;
+  const view = scroller.getBoundingClientRect();
+  const margin = Math.min(CARET_SCROLL_MARGIN, view.width / 4);
+  if (caret.right > view.right - margin)
+    scroller.scrollLeft += caret.right - (view.right - margin);
+  else if (caret.left < view.left + margin)
+    scroller.scrollLeft -= view.left + margin - caret.left;
 }
 function renderSelection(mathfield, interactive) {
   var _a3;

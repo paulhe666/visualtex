@@ -367,6 +367,13 @@ If you are using Vue, this may be because you are using the runtime-only build o
     this.resizeObserverStarted = true;
     this.resizeObserver.observe(this.field);
     this.resizeObserver.observe(this.container);
+    // VisualTeX kernel: the editor restyles glyphs after a render (formula
+    // letter font), which can widen the line after render() has already
+    // scrolled the caret into view. Follow the settled width.
+    this.caretScrollObserver = new ResizeObserver(() => {
+      if (this.hasFocus()) keepCaretInScrollingAncestor(this);
+    });
+    this.caretScrollObserver.observe(this.field);
     setTimeout(() => this.updateToggleLayout(), 100);
     window.mathVirtualKeyboard.addEventListener(
       "virtual-keyboard-toggle",
@@ -697,6 +704,7 @@ If you are using Vue, this may be because you are using the runtime-only build o
     this.eventController.abort();
     this.eventController = void 0;
     this.resizeObserver.disconnect();
+    this.caretScrollObserver.disconnect();
     window.mathVirtualKeyboard.removeEventListener(
       "virtual-keyboard-toggle",
       this
@@ -855,6 +863,7 @@ If you are using Vue, this may be because you are using the runtime-only build o
         left = x - fieldBounds.right + this.field.scrollLeft + 20;
       this.field.scroll({ top: this.field.scrollTop, left });
     }
+    scheduleCaretInScrollingAncestor(this);
   }
   insert(s, options) {
     if (typeof s !== "string") return false;
