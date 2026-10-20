@@ -63,11 +63,23 @@ internal static class WordMathTypeHostAdapter
                 // Conversion needs both the host and its source MathML in this
                 // same synchronous capture. Export/decode the object once and
                 // share that evidence only with this operation's target builder.
-                var semantic = capturedSemantics is null
-                    ? null
-                    : ReadShapeSemantic(application, shape);
-                var metadata = semantic?.Metadata
-                    ?? MathTypeOleInterop.ReadMetadata(application, shape);
+                Semantic? semantic;
+                FormulaMetadata metadata;
+                try
+                {
+                    semantic = capturedSemantics is null
+                        ? null
+                        : ReadShapeSemantic(application, shape);
+                    metadata = semantic?.Metadata
+                        ?? MathTypeOleInterop.ReadMetadata(application, shape);
+                }
+                catch (InvalidDataException error) when (MathTypeOleInterop.IsBlankEquationError(error))
+                {
+                    // Nothing to convert or number: leave the empty object as it is.
+                    Release(range); range = null;
+                    Release(shape); shape = null;
+                    continue;
+                }
                 var host = new WordFormulaHostDescriptor
                 {
                     Kind = WordFormulaHostKind.MathType,

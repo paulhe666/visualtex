@@ -169,6 +169,14 @@ internal static partial class WordVisualTeXParagraphNumbering
                     hostRange.End);
             tabInsertion.Text = "\t";
 
+            // Batch numbering copies number fields between formulas whose TAB
+            // before the number is formatted alike.
+            var copies = preparedNumberPlan?.BodyFieldCopies;
+            string? copyFormat = null;
+            if (copies is not null)
+                using (WordOperationMetrics.Measure("Numbering.Attach.CopyFormat"))
+                    copyFormat = BodyFieldCopies.FormatSignature(document, hostRange.End);
+
             ResolvedNumberPlan numberPlan;
             using (WordOperationMetrics.Measure("Numbering.Attach.ResolvePlan"))
                 numberPlan = preparedNumberPlan?.BodyNumbering
@@ -176,9 +184,9 @@ internal static partial class WordVisualTeXParagraphNumbering
             using (WordOperationMetrics.Measure("Numbering.Attach.HeadingStateFields"))
             {
                 if (writtenLayout is not null)
-                    InsertHeadingStateFields(document, hostRange, numberPlan, deferFinalization);
+                    InsertHeadingStateFields(document, hostRange, numberPlan, deferFinalization, copies, copyFormat);
                 else
-                    RebuildHeadingStateFields(document, hostRange, numberPlan);
+                    RebuildHeadingStateFields(document, hostRange, numberPlan, deferFinalization, copies, copyFormat);
             }
 
             CreatedBodyFields? createdFields = null;
@@ -188,7 +196,20 @@ internal static partial class WordVisualTeXParagraphNumbering
                 preparedNumberPlan.CreatedBodyFields = createdFields;
             }
             using (WordOperationMetrics.Measure("Numbering.Attach.CreatePlaceRef"))
-                placeRef = CreatePlaceRef(document, hostRange.End + 1, numberPlan, createdFields);
+            {
+                var copyKey = copies is null ? null : BodyFieldCopies.PlaceRefKey(numberPlan, copyFormat!);
+                placeRef = copies?.TryCopy(document, copyKey!, hostRange.End + 1, IsPlaceRefCode);
+                if (placeRef is null)
+                {
+                    placeRef = CreatePlaceRef(document, hostRange.End + 1, numberPlan, createdFields);
+                    copies?.Remember(document, copyKey!, placeRef);
+                }
+            }
+            if (host.Metadata is not null)
+                ApplyNumberFormat(
+                    document,
+                    hostRange,
+                    host.Metadata);
             if (createdFields is not null)
             {
                 createdFields.TakeOuter(placeRef);
@@ -614,10 +635,72 @@ internal static partial class WordVisualTeXParagraphNumbering
         }
     }
 
+    // The number of a VisualTeX display equation takes its formula's size and
+    // the Word font of its letters, the way Word's own equation numbers follow
+    // their math zone. Creating, editing, redrawing and resizing a formula set
+    // them; refreshing the numbers does not, so a format given to the number by
+    // hand stays.
+    internal static void ApplyNumberFormat(
+        Document document,
+        WordFormulaHostDescriptor host,
+        FormulaMetadata metadata)
+    {
+        Range? hostRange = null;
+        try
+        {
+            hostRange =
+                WordFormulaHostSemanticReader.CreateRange(
+                    document,
+                    host.Range);
+            ApplyNumberFormat(document, hostRange, metadata);
+        }
+        finally { Release(hostRange); }
+    }
+
+    // Everything after the OLE up to the paragraph mark: the TAB, the hidden
+    // heading-state fields and VisualTeXPlaceRef. A field rebuilt later takes
+    // its format from the TAB.
+    private static void ApplyNumberFormat(
+        Document document,
+        Range hostRange,
+        FormulaMetadata metadata)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? number = null;
+        Microsoft.Office.Interop.Word.Font? font = null;
+        try
+        {
+            paragraphs = hostRange.Paragraphs;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            var end = paragraphRange.End - 1;
+            if (end <= hostRange.End) return;
+            number = document.Range(hostRange.End, end);
+            font = number.Font;
+            font.Size = FormulaFontSize.ResolveSemanticFontSize(metadata);
+            var fontName = NumberFontName(metadata.FormulaLetterFont);
+            if (fontName is not null)
+                font.Name = fontName;
+        }
+        finally
+        {
+            Release(font);
+            Release(number);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+        }
+    }
+
+    // includeParentheses: a MathType ZEqnNum name kept from a converted
+    // MathType equation owns the visible "(1)", as MathType's own bookmark did.
     internal static void EnsureReferenceBookmark(
         Document document,
         WordFormulaHostDescriptor host,
-        string bookmarkName)
+        string bookmarkName,
+        bool includeParentheses = false)
     {
         if (document is null)
             throw new ArgumentNullException(nameof(document));
@@ -653,7 +736,7 @@ internal static partial class WordVisualTeXParagraphNumbering
                 || !TryGetVisibleNumberRange(
                     document,
                     placeRef,
-                    includeParentheses: false,
+                    includeParentheses: includeParentheses,
                     out numberRange)
                 || numberRange is null)
                 throw new InvalidDataException(
@@ -995,15 +1078,20 @@ internal static partial class WordVisualTeXParagraphNumbering
     private static void RebuildHeadingStateFields(
         Document document,
         Range hostRange,
-        ResolvedNumberPlan plan)
+        ResolvedNumberPlan plan,
+        bool deferEvaluation = false,
+        BodyFieldCopies? copies = null,
+        string? copyFormat = null)
     {
         RemoveHeadingStateFields(document, hostRange);
-        InsertHeadingStateFields(document, hostRange, plan);
+        InsertHeadingStateFields(document, hostRange, plan, deferEvaluation, copies, copyFormat);
     }
 
     private static void InsertHeadingStateFields(
         Document document, Range hostRange, ResolvedNumberPlan plan,
-        bool deferEvaluation = false)
+        bool deferEvaluation = false,
+        BodyFieldCopies? copies = null,
+        string? copyFormat = null)
     {
         if (plan.Format.HeadingLevel <= 0)
             return;
@@ -1020,10 +1108,16 @@ internal static partial class WordVisualTeXParagraphNumbering
                 // before that TAB. Because hostRange is live, its Start shifts
                 // after each insertion and the next state field naturally lands
                 // after the previous one while remaining before the TAB.
+                var position = hostRange.Start - 1;
+                var copyKey = copies is null ? null : BodyFieldCopies.HeadingStateKey(instruction, copyFormat!);
+                field = copies?.TryCopy(document, copyKey!, position,
+                    code => IsHeadingStateRestartCode(code) && IsSameInstruction(code, instruction));
+                if (field is not null)
+                    return;
                 insertion =
                     document.Range(
-                        hostRange.Start - 1,
-                        hostRange.Start - 1);
+                        position,
+                        position);
                 field =
                     document.Fields.Add(
                         insertion,
@@ -1036,6 +1130,7 @@ internal static partial class WordVisualTeXParagraphNumbering
                 }
                 catch { }
                 if (!deferEvaluation) field.Update();
+                copies?.Remember(document, copyKey!, field);
             }
             finally
             {
@@ -1252,11 +1347,15 @@ internal static partial class WordVisualTeXParagraphNumbering
         return result;
     }
 
+    // fromPosition: renumber only the fields after a change (a removed number);
+    // earlier PlaceRefs keep their values. References are still found anywhere.
     internal static int RefreshBatchFields(
         Document document,
         int minimumExpectedNumbered = 0,
         ISet<string>? targetBookmarkNames = null,
-        WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? preparedVisualTeX = null)
+        WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? preparedVisualTeX = null,
+        int fromPosition = 0,
+        bool bulkUpdate = false)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -1278,7 +1377,9 @@ internal static partial class WordVisualTeXParagraphNumbering
             // unrelated historical EMBED fields (CP110). The operation-local
             // snapshot preserves story order and all existing validation below.
             using (WordOperationMetrics.Measure("Numbering.BatchFields.Capture"))
-                fields = WordNumberingFieldCollection.Capture(document);
+                fields = WordNumberingFieldCollection.Capture(document, fromPosition);
+            if (fromPosition > 0)
+                hasUserReferenceFields = WordNumberingFieldCollection.MayHaveReferenceFields(document);
             for (var index = 1;
                  index <= fields.Count;
                  index++)
@@ -1304,8 +1405,9 @@ internal static partial class WordVisualTeXParagraphNumbering
                 if (IsHeadingStateRestartCode(
                         instruction))
                 {
-                    using (WordOperationMetrics.Measure("Numbering.BatchFields.HeadingRestartUpdate"))
-                        field.Update();
+                    if (!bulkUpdate)
+                        using (WordOperationMetrics.Measure("Numbering.BatchFields.HeadingRestartUpdate"))
+                            field.Update();
                     continue;
                 }
 
@@ -1316,8 +1418,8 @@ internal static partial class WordVisualTeXParagraphNumbering
                 {
                     bool updatedFromPlan;
                     using (WordOperationMetrics.Measure("Numbering.BatchFields.PlannedUpdate"))
-                        updatedFromPlan = createdFields?.TryUpdate(code) == true;
-                    if (!updatedFromPlan)
+                        updatedFromPlan = createdFields?.TryUpdate(code, evaluate: !bulkUpdate) == true;
+                    if (!updatedFromPlan && !bulkUpdate)
                         using (WordOperationMetrics.Measure("Numbering.BatchFields.PlaceRefUpdate"))
                             UpdatePlaceRefTree(field);
                     evaluatedPlaceRefEnd = code.End;
@@ -1331,7 +1433,8 @@ internal static partial class WordVisualTeXParagraphNumbering
                 // coexists with newly converted formulas, without rebuilding or
                 // globally rediscovering that legacy-compatible host.
                 if (IsStandaloneEquationSequenceCode(
-                        instruction))
+                        instruction)
+                    && !bulkUpdate)
                     field.Update();
             }
         }
@@ -1342,6 +1445,10 @@ internal static partial class WordVisualTeXParagraphNumbering
         }
 
         createdFields?.EnsureComplete();
+        // The loop above proved the field stream (every new number in order);
+        // Word now evaluates every VisualTeX number field in one ordered pass.
+        if (bulkUpdate && placeRefCount > 0)
+            WordNumberingFieldCollection.BulkUpdate(document);
         if (placeRefCount <
             minimumExpectedNumbered)
             throw new InvalidDataException(
@@ -1486,6 +1593,11 @@ internal static partial class WordVisualTeXParagraphNumbering
                 document.Range(
                     fieldStart,
                     fieldEnd);
+            // The rebuilt number keeps the size, font and colour of the old one,
+            // including any the user gave it by hand.
+            var numberFormatting =
+                WordCharacterFormatting.Capture(
+                    fullField);
             fullField.Delete();
 
             RemoveHeadingStateFields(
@@ -1505,6 +1617,22 @@ internal static partial class WordVisualTeXParagraphNumbering
                     document,
                     hostRange.End + 1,
                     plan);
+            Release(code);
+            code =
+                rebuilt.Code.Duplicate;
+            Release(result);
+            result =
+                rebuilt.Result.Duplicate;
+            Release(fullField);
+            fullField =
+                document.Range(
+                    code.Start - 1,
+                    ResolveOuterFieldEndExclusive(
+                        document,
+                        code,
+                        result));
+            numberFormatting.Apply(
+                fullField);
             UpdateHeadingStateFields(
                 document,
                 hostRange);

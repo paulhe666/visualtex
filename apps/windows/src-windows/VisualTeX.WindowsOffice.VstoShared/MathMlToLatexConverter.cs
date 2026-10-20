@@ -918,10 +918,32 @@ internal static class MathMlToLatexConverter
                 index += 2;
                 continue;
             }
+            // Word keeps an upright word such as "Tr" in one run, which the
+            // projection splits into letters; write it as one \mathrm group.
+            var run = index;
+            while (run < children.Length && IsPlainUprightLatinLetter(children[run])) run++;
+            if (run - index > 1 && !(run < children.Length && IsFunctionApplication(children[run])))
+            {
+                builder.Append(@"\mathrm{")
+                    .Append(string.Concat(children.Skip(index).Take(run - index).Select(child => child.Value.Trim())))
+                    .Append('}');
+                index = run;
+                continue;
+            }
             builder.Append(ConvertElement(children[index]));
             index++;
         }
         return builder.ToString();
+    }
+
+    private static bool IsPlainUprightLatinLetter(XElement element)
+    {
+        if (element.Name.LocalName != "mi") return false;
+        var token = element.Value.Trim();
+        return token.Length == 1 && token[0] is >= 'A' and <= 'Z' or >= 'a' and <= 'z'
+            && element.Attributes().All(attribute => attribute.Name.LocalName == "mathvariant")
+            && MathMlTokenStyleContract.ResolveEffectiveVariant(
+                element, MathMlTokenStyleContract.ResolveDeclaredVariant(element)) is "normal" or "upright";
     }
 
     private static bool IsFunctionApplication(XElement element)
@@ -1177,6 +1199,11 @@ internal static class MathMlToLatexConverter
                     && TryConvertNamedOperator(limitBase.Value.Trim(), out limitCommand)))
             && IsLimitLikeOperatorLatex(limitCommand))
             return limitCommand.TrimEnd() + @"\limits_{" + ScriptArgument(children[1]) + "}";
+        // Word's n-ary with only a lower limit is TeX's \sum_{k}, the same
+        // spelling as the two-limit form (munderover) below.
+        if (limitBase.Name.LocalName == "mo" && MathMlColorContract.Explicit(limitBase) is null
+            && IsLargeOperatorGlyph(limitBase.Value.Trim()))
+            return GroupBase(LargeOperatorBaseLatex(children[0])) + "_{" + ScriptArgument(children[1]) + "}";
         var body = ConvertElement(children[0]);
         var under = children[1].Value.Trim();
         if (IsLimitLikeOperatorLatex(body))
@@ -1241,18 +1268,26 @@ internal static class MathMlToLatexConverter
     {
         var children = element.Elements().ToList();
         if (children.Count < 3) return ConvertChildren(element);
-        var baseLatex = children[0].Name.LocalName == "mo"
-            ? children[0].Value.Trim() switch
-            {
-                "∪" => @"\bigcup ",
-                "∩" => @"\bigcap ",
-                _ => ConvertElement(children[0]),
-            }
-            : ConvertElement(children[0]);
+        var baseLatex = LargeOperatorBaseLatex(children[0]);
         return GroupBase(baseLatex)
             + "_{" + ScriptArgument(children[1]) + "}"
             + "^{" + ScriptArgument(children[2]) + "}";
     }
+
+    // Word writes an n-ary union/intersection with the binary glyph.
+    private static string LargeOperatorBaseLatex(XElement element) =>
+        element.Name.LocalName == "mo"
+            ? element.Value.Trim() switch
+            {
+                "∪" => @"\bigcup ",
+                "∩" => @"\bigcap ",
+                _ => ConvertElement(element),
+            }
+            : ConvertElement(element);
+
+    private static bool IsLargeOperatorGlyph(string glyph) =>
+        glyph is "∑" or "∏" or "∐" or "⋃" or "⋂" or "∪" or "∩" or "⋁" or "⋀"
+            or "⨀" or "⨁" or "⨂" or "⨄" or "⨆" or "∫" or "∬" or "∭" or "∮" or "∯" or "∰";
 
     private static string ConvertFenced(XElement element)
     {
@@ -1401,6 +1436,8 @@ internal static class MathMlToLatexConverter
         if (up && down) return @"\xcancel{" + body + "}";
         if (up) return @"\cancel{" + body + "}";
         if (down) return @"\bcancel{" + body + "}";
+        // MathType's mid bar and horizontal strike template.
+        if (notation.Contains("horizontalstrike")) return @"\enclose{horizontalstrike}{" + body + "}";
         return body;
     }
 
@@ -1698,6 +1735,19 @@ internal static class MathMlToLatexConverter
             "exp" => @"\exp ",
             "det" => @"\det ",
             "gcd" => @"\gcd ",
+            // The rest of TeX's predefined function names: each is an upright
+            // operator MathJax applies with U+2061, like Word's m:func.
+            "arccos" => @"\arccos ",
+            "arcsin" => @"\arcsin ",
+            "arctan" => @"\arctan ",
+            "arg" => @"\arg ",
+            "coth" => @"\coth ",
+            "deg" => @"\deg ",
+            "dim" => @"\dim ",
+            "hom" => @"\hom ",
+            "ker" => @"\ker ",
+            "lg" => @"\lg ",
+            "Pr" => @"\Pr ",
             _ => string.Empty,
         };
         return latex.Length > 0;

@@ -151,6 +151,8 @@ internal sealed partial class WordFormulaService
         var nativeSources = new Dictionary<string, WordNativeConversionSource>(StringComparer.Ordinal);
         var nativeNumberReferences = new Dictionary<string, IReadOnlyDictionary<string, int>>(StringComparer.Ordinal);
         WordEquationReferenceFields.NativeOmmlReferenceIndex? nativeReferenceIndex = null;
+        var mathTypeNumberAliases = new Dictionary<string, IReadOnlyList<EquationReferenceBookmarkAlias>>(StringComparer.Ordinal);
+        IReadOnlyDictionary<string, int[]>? referencedBookmarks = null;
         WordNativeOmmlFieldRefresh? nativeNumberRefresh = null;
         WordFormulaNumberingKernel.VisualTeXConversionNumberPlan? visualTeXNumbers = null;
         WordNativeOmmlNumbering.NumberedOmmlBatch? numberedOmml = null;
@@ -256,6 +258,19 @@ internal sealed partial class WordFormulaService
                         var binding = WordMathTypeHostAdapter.BindCapturedHost(_application, document, captured);
                         nativeSources.Add(target.Id, binding);
                         source = binding.Host;
+                        if (targetKind == WordFormulaHostKind.VisualTeX && target.Numbered)
+                        {
+                            // MathType's references (GOTOBUTTON/REF) name the
+                            // ZEqnNum bookmark on its number, which is deleted
+                            // with the MathType paragraph. Keep those names.
+                            referencedBookmarks ??= MathTypeEquationReferences.CaptureReferencedBookmarks(document);
+                            var aliases = referencedBookmarks.Count == 0
+                                ? Array.Empty<EquationReferenceBookmarkAlias>()
+                                : MathTypeEquationReferences.CaptureFormatConversionAliasesFromMathType(
+                                    document, binding.MathTypeShape!, referencedBookmarks);
+                            if (aliases.Count > 0)
+                                mathTypeNumberAliases.Add(target.Id, aliases);
+                        }
                         var semanticFont = FormulaFontSize.ResolveSemanticFontSize(source.Metadata!);
                         var currentFont = source.Display
                             ? semanticFont
@@ -624,6 +639,29 @@ internal sealed partial class WordFormulaService
                                 candidate.FormulaId, formulaId, StringComparison.OrdinalIgnoreCase));
                             WordFormulaHostMutationKernel.MigrateConvertedNumberReferences(document, host, pending.Value);
                         }
+                    }
+
+                    if (mathTypeNumberAliases.Count > 0)
+                    {
+                        // Bind each kept MathType name to the converted number:
+                        // ZEqnNum owns "(1)", a number-only alias owns "1".
+                        // The references themselves stay as the user has them.
+                        var convertedHosts = WordFormulaHostResolver.CaptureDocumentIndex(document).VisualTeX;
+                        var aliasNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var pending in mathTypeNumberAliases)
+                        {
+                            var formulaId = preparedWrites[pending.Key].FormulaId;
+                            var host = convertedHosts.Single(candidate => string.Equals(
+                                candidate.FormulaId, formulaId, StringComparison.OrdinalIgnoreCase));
+                            foreach (var alias in pending.Value)
+                            {
+                                WordVisualTeXParagraphNumbering.EnsureReferenceBookmark(
+                                    document, host, alias.Name,
+                                    includeParentheses: alias.Span == EquationReferenceBookmarkSpan.VisibleNumber);
+                                aliasNames.Add(alias.Name);
+                            }
+                        }
+                        _ = WordEquationReferenceFields.UpdateReferences(document, aliasNames);
                     }
 
                     if (referenceTargetReplacements.Count > 0)

@@ -365,7 +365,10 @@ internal static class WordNativeOmmlNumbering
                 document, format, ResolveEquationSequenceName(document), scopes);
         }
 
-        internal string Prepare(int position, string semanticOmml)
+        // A batch numbering plan supplies the series' own sequence name and, for
+        // the one equation that takes over an explicit start, its \r value.
+        internal string Prepare(int position, string semanticOmml,
+            string? sequenceName = null, int? restart = null)
         {
             if (string.IsNullOrWhiteSpace(semanticOmml))
                 throw new ArgumentException(
@@ -388,13 +391,15 @@ internal static class WordNativeOmmlNumbering
             }
             return WordOmmlConverter.BuildWordNativeNumberedOmml(
                 semanticOmml,
-                _sequenceName,
+                sequenceName ?? _sequenceName,
                 numberBookmarkName: null,
                 nativeHeadingLevel,
                 nativeHeadingLevel > 0
                     ? _format.Separator
                     : string.Empty,
-                literalHeadingPrefix: literalHeadingPrefix);
+                restart?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "1",
+                literalHeadingPrefix: literalHeadingPrefix,
+                restartSequenceValue: restart);
         }
     }
 
@@ -490,9 +495,12 @@ internal static class WordNativeOmmlNumbering
     // The batch already retains each exact native owner across preceding edits.
     // Borrow it for the same topology/field checks, rather than resolving its
     // numeric range back into another OMath collection in the same UI turn.
+    // hasRevisions: false when the caller proved the document has no tracked
+    // change (see WordNumberingFieldCollection.TryCaptureCurrentCode).
     internal static WordFormulaHostDescriptor RefreshCanonicalNativeFields(
         OMath math,
-        WordFormulaHostDescriptor host)
+        WordFormulaHostDescriptor host,
+        bool hasRevisions = true)
     {
         Range? exact = null;
         Fields? fields = null;
@@ -525,7 +533,7 @@ internal static class WordNativeOmmlNumbering
                 code = null;
                 Release(field);
                 field = fields[index];
-                if (!WordNumberingFieldCollection.TryCaptureCurrentCode(field, out code, out var instruction))
+                if (!WordNumberingFieldCollection.TryCaptureCurrentCode(field, out code, out var instruction, hasRevisions))
                     continue;
 
                 if (IsReferenceField(instruction))
@@ -828,10 +836,79 @@ internal static class WordNativeOmmlNumbering
         }
     }
 
+    // The semantic OMML of one live equation, read before Undo opens.
+    internal static string ReadSemanticOmml(Range exact) => ExtractSemanticOmml(exact);
+
+    // Batch numbering writer: the numbered OMML was prepared before Undo by a
+    // batch plan; replace exactly this display OMath and leave the field values
+    // to the batch's single ordered refresh.
+    internal static WordFormulaHostDescriptor ReplaceWithPreparedNumbered(
+        Document document,
+        WordFormulaHostDescriptor host,
+        string preparedNumberedOmml)
+    {
+        using var operationMetric =
+            WordOperationMetrics.Measure("DisplayNumbering.Omml.Replace");
+        Range? range = null;
+        OMaths? maths = null;
+        OMath? math = null;
+        Range? exact = null;
+        Range? replacement = null;
+        try
+        {
+            range = WordFormulaHostSemanticReader.CreateRange(document, host.Range);
+            maths = range.OMaths;
+            if (maths.Count != 1)
+                throw new InvalidDataException(
+                    "The equation to number no longer contains exactly one equation.");
+            math = maths[1];
+            exact = math.Range.Duplicate;
+            if (!WordFormulaHostSemanticReader.SameAddress(exact, host.Range))
+                throw new InvalidDataException("The equation to number moved before it was numbered.");
+            if (math.Type != WdOMathType.wdOMathDisplay)
+                throw new InvalidDataException(
+                    "Word-native equation numbering requires wdOMathDisplay.");
+
+            RemoveLegacyOmmlBookmarks(document, exact);
+            replacement = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+                document,
+                exact,
+                preparedNumberedOmml,
+                display: true,
+                mathFontName: document.OMathFontName);
+            WordFormulaHostLayout.ConfigureDisplayParagraph(replacement);
+
+            var numbered = WordFormulaHostLookup.ResolveLocal(
+                    document,
+                    replacement,
+                    WordFormulaHostKind.Omml)
+                ?? throw new InvalidDataException(
+                    "The numbered equation cannot be resolved locally.");
+            numbered.FormulaId = null;
+            numbered.Numbering = new WordFormulaNumberingDescriptor
+            {
+                Numbered = true,
+                FormulaId = null,
+                Position = "right",
+                ContainerKind = WordFormulaNumberingContainerKind.CanonicalNativeOmml,
+                ContainerRange = numbered.Range,
+            };
+            return numbered;
+        }
+        finally
+        {
+            Release(replacement);
+            Release(exact);
+            Release(math);
+            Release(maths);
+            Release(range);
+        }
+    }
+
     private static string ExtractSemanticOmml(
         Range exact)
     {
-        var xml = exact.WordOpenXML ?? string.Empty;
+        var xml = WordOmmlConverter.ReadLocalEquationXml(exact);
         if (WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
                 xml,
                 formulaId: null))

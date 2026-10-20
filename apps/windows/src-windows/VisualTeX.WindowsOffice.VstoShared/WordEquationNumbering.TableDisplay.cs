@@ -410,7 +410,7 @@ internal static partial class WordEquationNumbering
                 // input, but its mathematical number must be stripped before the OMath
                 // is placed in the center cell. The center cell owns formula semantics
                 // only; every number field remains ordinary Word content in cell (1,3).
-                var activeXml = activeRange.WordOpenXML;
+                var activeXml = WordOmmlConverter.ReadLocalEquationXml(activeRange);
                 if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(activeXml))
                 {
                     var semanticOmml = metadata is not null

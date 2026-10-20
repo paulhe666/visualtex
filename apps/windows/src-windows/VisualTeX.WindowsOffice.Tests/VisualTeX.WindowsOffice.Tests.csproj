@@ -50,6 +50,7 @@
     <Compile Include="..\VisualTeX.WordVsto\WordNumberingFieldCollection.cs" Link="WordNumberingFieldCollection.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordVisualTeXParagraphNumbering.FieldCodes.cs" Link="WordVisualTeXParagraphNumbering.FieldCodes.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordVisualTeXParagraphNumbering.FieldLookup.cs" Link="WordVisualTeXParagraphNumbering.FieldLookup.cs" />
+    <Compile Include="..\VisualTeX.WordVsto\WordVisualTeXParagraphNumbering.NumberFont.cs" Link="WordVisualTeXParagraphNumbering.NumberFont.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordNativeNumberingAdoptionPlan.Labels.cs" Link="WordNativeNumberingAdoptionPlan.Labels.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordCharacterFormatting.cs" Link="WordCharacterFormatting.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordFormulaHost.cs" Link="WordFormulaHost.cs" />
@@ -81,6 +82,7 @@
     <Compile Include="..\VisualTeX.WordVsto\WordFormulaShortcutPolicy.cs" Link="WordFormulaShortcutPolicy.cs" />
     <Compile Include="..\VisualTeX.WordVsto\WordShortcutConflictRecord.cs" Link="WordShortcutConflictRecord.cs" />
     <Compile Include="..\VisualTeX.PowerPointVsto\PowerPointFormulaConversionModel.cs" Link="PowerPointFormulaConversionModel.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\NativePreviewRetry.cs" Link="NativePreviewRetry.cs" />
     <ProjectReference Include="..\VisualTeX.WindowsOffice.Contracts\VisualTeX.WindowsOffice.Contracts.csproj" />
     <ProjectReference Include="..\VisualTeX.WindowsOleBridge\VisualTeX.WindowsOleBridge.csproj" />
   </ItemGroup>

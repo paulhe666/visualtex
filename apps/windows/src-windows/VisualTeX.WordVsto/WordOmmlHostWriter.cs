@@ -105,7 +105,7 @@ internal static class WordOmmlHostWriter
             exact = WordFormulaHostSemanticReader.CreateRange(
                 document,
                 source.Range);
-            var sourceXml = exact.WordOpenXML ?? string.Empty;
+            var sourceXml = WordOmmlConverter.ReadLocalEquationXml(exact);
             if (!WordOmmlConverter.HasWordNativeEquationNumberHost(sourceXml))
             {
                 throw new InvalidDataException(

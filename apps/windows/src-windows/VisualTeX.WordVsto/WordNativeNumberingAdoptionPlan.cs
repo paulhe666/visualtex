@@ -312,10 +312,12 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         // Only an insertion before the first member of an existing sequence
         // inherits/transfers that series' explicit starting value. Heading
         // changes are owned by SEQ \s and must not manufacture a chapter-local
-        // \r reset from the legacy local style.
+        // \r reset from the legacy local style, nor from a plain SEQ's cached
+        // ordinal (re-adding the first number after removing it read the stale
+        // "2" of the next equation and froze the chapter at \r 2).
         _insertionRestart =
             position <= _entries[first].Start
-                ? _entries[first].Style.Ordinal
+                ? ExplicitStartingValue(_entries[first].SequenceCode, _entries[first].Style.Ordinal)
                 : null;
     }
 
@@ -350,7 +352,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         var end = RunEnd(first);
         _insertionStyle = _entries[first].Style.Copy();
         if (position <= _entries[first].Start)
-            _insertionRestart = _entries[first].Style.Ordinal;
+            _insertionRestart = ExplicitStartingValue(_entries[first].SequenceCode, _entries[first].Style.Ordinal);
         PlanRun(first, end, position);
     }
 
@@ -692,7 +694,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                         if (exact.Start < paragraph.Start || exact.End > paragraph.End || !seen.Add(exact.Start)) continue;
                         string xml;
                         using (WordOperationMetrics.Measure("NativeNumbering.Capture.WordOpenXml"))
-                            xml = exact.WordOpenXML;
+                            xml = WordOmmlConverter.ReadLocalEquationXml(exact);
                         if (!WordOmmlConverter.HasWordNativeEquationNumberHost(xml)) continue;
                         number = WordNativeOmmlNumbering.ResolveNumberContentRange(exact);
                         var label = WordOmmlConverter.ReadWordNativeEquationNumberText(xml);

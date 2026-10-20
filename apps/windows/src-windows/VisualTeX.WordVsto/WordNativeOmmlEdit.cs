@@ -104,7 +104,7 @@ internal sealed class WordNativeOmmlEdit : IDisposable
         {
             exact = WordFormulaHostSemanticReader.CreateRange(document, source.Range);
             recovery = MathTypeLocalEditScope.Capture(document, exact);
-            var xml = exact.WordOpenXML;
+            var xml = WordOmmlConverter.ReadLocalEquationXml(exact);
             var semantic = WordOmmlHostWriter.ApplySemanticOmmlTypography(
                 WordOmmlConverter.TransformMathMlToOmml(request.MathMl!), request.FontSizePoints);
             var hasNumberHost = WordOmmlConverter.HasWordNativeEquationNumberHost(xml);

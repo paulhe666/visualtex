@@ -28,6 +28,49 @@ public sealed class WordNativeNumberingContextTests
     public void NonNumberSyntaxAndDifferentNumericPicturesCannotBeSilentlyAdopted(string text)
         => Assert.False(WordNativeNumberingAdoptionPlan.TryParseLabel(text, out _));
 
+    // A plain SEQ's visible ordinal is Word's count; after the number above it
+    // was removed it is still the stale old result, never a \r start.
+    [Theory]
+    [InlineData(null, 5, 5)]
+    [InlineData(" SEQ Equation \\r 4 \\* ARABIC ", 2, 4)]
+    [InlineData(" SEQ Equation \\R 3 \\s 1 \\* ARABIC ", 9, 3)]
+    [InlineData(" SEQ Equation \\s 1 \\* ARABIC \\* MERGEFORMAT ", 2, null)]
+    [InlineData(" SEQ \"User Counter\" \\* ARABIC ", 7, null)]
+    public void OnlyAnExplicitStartPassesToANumberInsertedBeforeTheSeries(string? sequenceCode, int visibleOrdinal, int? expected)
+        => Assert.Equal(expected, WordNativeNumberingAdoptionPlan.ExplicitStartingValue(sequenceCode, visibleOrdinal));
+
+    [Fact]
+    public void BatchNumbersWithoutExistingNumbersStartTheirOwnSeries()
+    {
+        var mapping = WordNativeNumberingAdoptionPlan.MapBatchInsertions(
+            Array.Empty<int>(), Array.Empty<string>(), new[] { 40, 10, 40 });
+        Assert.Equal(new[] { 10, 40 }, mapping.Keys.OrderBy(key => key));
+        Assert.All(mapping.Values, value => Assert.Equal((-1, false), value));
+    }
+
+    [Fact]
+    public void OnlyTheEarliestBatchNumberBeforeASeriesTakesItsStart()
+    {
+        // One continuous series at 100 and 200; new numbers at 50, 80 and 150.
+        var mapping = WordNativeNumberingAdoptionPlan.MapBatchInsertions(
+            new[] { 100, 200 }, new[] { "s", "s" }, new[] { 150, 80, 50 });
+        Assert.Equal((0, true), mapping[50]);
+        Assert.Equal((0, false), mapping[80]);
+        Assert.Equal((0, false), mapping[150]);
+    }
+
+    [Fact]
+    public void BatchNumbersJoinTheSeriesOfTheirNearestPrecedingNumber()
+    {
+        // Chapter 1 numbers at 100 and 200, chapter 2 numbers at 300 and 400.
+        var mapping = WordNativeNumberingAdoptionPlan.MapBatchInsertions(
+            new[] { 100, 200, 300, 400 }, new[] { "1", "1", "2", "2" }, new[] { 250, 350, 450, 280 });
+        Assert.Equal((0, false), mapping[250]);
+        Assert.Equal((0, false), mapping[280]);
+        Assert.Equal((2, false), mapping[350]);
+        Assert.Equal((2, false), mapping[450]);
+    }
+
     [Fact]
     public void CurrentLabelIgnoresInstructionTextAndDeletedOrMovedFromNumerals()
     {

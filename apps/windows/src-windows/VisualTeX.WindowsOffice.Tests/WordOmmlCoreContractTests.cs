@@ -115,6 +115,19 @@ public sealed class WordOmmlCoreContractTests
         Assert.Throws<InvalidDataException>(() => WordOmmlConverter.ValidateMaterializedOmml(multiple));
     }
 
+    [Fact]
+    public void LocalEquationExportCountsEquationsNotParagraphWrappers()
+    {
+        // The live-range reader accepts an export only with exactly one m:oMath;
+        // an incomplete Word export has none, a wider range can hold two.
+        var first = Math(Run("x"));
+        var second = Math(Run("y"));
+        Assert.Equal(1, WordOmmlConverter.CountOMathElements($"<m:oMathPara xmlns:m=\"{M}\">{first}</m:oMathPara>"));
+        Assert.Equal(2, WordOmmlConverter.CountOMathElements($"<m:oMathPara xmlns:m=\"{M}\">{first}{second}{first}</m:oMathPara>"));
+        Assert.Equal(0, WordOmmlConverter.CountOMathElements($"<w:p xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:r><w:t>x</w:t></w:r></w:p>"));
+        Assert.Equal(0, WordOmmlConverter.CountOMathElements("<not-closed>"));
+    }
+
     [Theory]
     [InlineData("<m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/>")]
     [InlineData("<m:begChr m:val=\"(\"/>")]

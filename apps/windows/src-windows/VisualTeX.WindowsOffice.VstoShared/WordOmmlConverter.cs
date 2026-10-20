@@ -6778,6 +6778,73 @@ internal static partial class WordOmmlConverter
         return equations[0].ToString(SaveOptions.DisableFormatting);
     }
 
+    /// <summary>
+    /// The WordOpenXML of one live equation, for readers that parse exactly one
+    /// m:oMath from it. Some Word builds serialize an exact OMath range
+    /// incompletely at a field/run boundary (a numbered equation holds SEQ or
+    /// STYLEREF fields), sometimes only on the first export after an edit: the
+    /// package then has no m:oMath. Export the same range once more, then a
+    /// range two characters wider, which still holds only this equation. Only a
+    /// package with exactly one equation is accepted.
+    /// </summary>
+    internal static string ReadLocalEquationXml(Range exactEquation)
+    {
+        if (exactEquation is null) throw new ArgumentNullException(nameof(exactEquation));
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            var exact = TryReadExactlyOneEquationXml(exactEquation);
+            if (exact is not null) return exact;
+            WordDoubleClickHook.TraceMessage(
+                $"omml-xml-incomplete-export range={exactEquation.Start}:{exactEquation.End} attempt={attempt}");
+        }
+
+        Range? probe = null;
+        try
+        {
+            probe = exactEquation.Duplicate;
+            try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch (COMException) { }
+            try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch (COMException) { }
+            var expanded = TryReadExactlyOneEquationXml(probe);
+            if (expanded is not null) return expanded;
+        }
+        finally { Release(probe); }
+
+        throw new InvalidDataException(
+            "Word could not export one local OMML equation from the resolved host.");
+    }
+
+    private static string? TryReadExactlyOneEquationXml(Range range)
+    {
+        string xml;
+        try { xml = range.WordOpenXML ?? string.Empty; }
+        catch (COMException) { return null; }
+        return CountOMathElements(xml) == 1 ? xml : null;
+    }
+
+    // Streams the package and stops at a second equation; callers parse the
+    // accepted XML themselves.
+    internal static int CountOMathElements(string xml)
+    {
+        if (string.IsNullOrWhiteSpace(xml)) return 0;
+        var count = 0;
+        try
+        {
+            using var reader = XmlReader.Create(
+                new StringReader(xml),
+                new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
+            while (reader.Read())
+            {
+                if (reader.NodeType == XmlNodeType.Element
+                    && reader.LocalName == "oMath"
+                    && reader.NamespaceURI == MathNamespace
+                    && ++count > 1)
+                    break;
+            }
+        }
+        catch (XmlException) { return 0; }
+        return count;
+    }
+
     internal static bool HasVisualTeXNativeEquationNumber(string wordOpenXml)
     {
         var equation = XElement.Parse(

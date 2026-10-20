@@ -1,6 +1,7 @@
 using System.Xml.Linq;
 using VisualTeX.PowerPointVsto;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WordVsto;
 using Xunit;
 
 namespace VisualTeX.WindowsOffice.Tests;
@@ -209,7 +210,7 @@ public sealed class PowerPointFormulaConversionModelTests
             return group.ToDictionary(id => id, _ => Calls.Count);
         }
 
-        internal PowerPointPreviewRetryOptions Options() => new()
+        internal NativePreviewRetryOptions Options() => new()
         {
             Now = () => Clock,
             Pause = pause => Clock += pause,
@@ -222,7 +223,7 @@ public sealed class PowerPointFormulaConversionModelTests
     public void PreviewsRenderInGroupsOfTwentyFour()
     {
         var renderer = new FakePreviewRenderer();
-        var rendered = PowerPointPreviewRetry.Render(PreviewIds(30), renderer.Render, renderer.Options());
+        var rendered = NativePreviewRetry.Render(PreviewIds(30), renderer.Render, renderer.Options());
         Assert.Equal(30, rendered.Count);
         Assert.Equal(new[] { 24, 6 }, renderer.Calls.Select(call => call.Count));
     }
@@ -231,7 +232,7 @@ public sealed class PowerPointFormulaConversionModelTests
     public void ACrashedRequestIsRenderedAgainInSmallerGroups()
     {
         var renderer = new FakePreviewRenderer { CallSucceeds = call => call != 1 };
-        var rendered = PowerPointPreviewRetry.Render(PreviewIds(30), renderer.Render, renderer.Options());
+        var rendered = NativePreviewRetry.Render(PreviewIds(30), renderer.Render, renderer.Options());
         Assert.Equal(30, rendered.Count);
         Assert.Equal(new[] { 24, 6, 4, 4, 4, 4, 4, 4 }, renderer.Calls.Select(call => call.Count));
     }
@@ -241,7 +242,7 @@ public sealed class PowerPointFormulaConversionModelTests
     {
         var renderer = new FakePreviewRenderer();
         renderer.NeverRender.Add("e3");
-        var rendered = PowerPointPreviewRetry.Render(PreviewIds(10), renderer.Render, renderer.Options());
+        var rendered = NativePreviewRetry.Render(PreviewIds(10), renderer.Render, renderer.Options());
         Assert.Equal(9, rendered.Count);
         Assert.False(rendered.ContainsKey("e3"));
         // 10 / groups of 4 / one by one / one recovery try for e3, then stop.
@@ -253,7 +254,7 @@ public sealed class PowerPointFormulaConversionModelTests
     {
         // A freshly started service: the first three requests crash, then it works.
         var renderer = new FakePreviewRenderer { CallSucceeds = call => call > 3 };
-        var rendered = PowerPointPreviewRetry.Render(PreviewIds(4), renderer.Render, renderer.Options());
+        var rendered = NativePreviewRetry.Render(PreviewIds(4), renderer.Render, renderer.Options());
         Assert.Equal(4, rendered.Count);
         Assert.Equal(new[] { 4, 4, 1, 1, 1, 1, 1 }, renderer.Calls.Select(call => call.Count));
     }
@@ -262,7 +263,7 @@ public sealed class PowerPointFormulaConversionModelTests
     public void ABrokenRendererIsGivenUpAfterNinetySecondsWithoutProgress()
     {
         var renderer = new FakePreviewRenderer { CallSucceeds = _ => false, CallDuration = TimeSpan.FromSeconds(15) };
-        var rendered = PowerPointPreviewRetry.Render(PreviewIds(60), renderer.Render, renderer.Options());
+        var rendered = NativePreviewRetry.Render(PreviewIds(60), renderer.Render, renderer.Options());
         Assert.Empty(rendered);
         Assert.InRange(renderer.Calls.Count, 5, 7);
     }
@@ -273,7 +274,7 @@ public sealed class PowerPointFormulaConversionModelTests
         var renderer = new FakePreviewRenderer { CallSucceeds = _ => false };
         var options = renderer.Options();
         options.StopNow = () => renderer.Calls.Count > 0;
-        PowerPointPreviewRetry.Render(PreviewIds(60), renderer.Render, options);
+        NativePreviewRetry.Render(PreviewIds(60), renderer.Render, options);
         Assert.Single(renderer.Calls);
     }
 

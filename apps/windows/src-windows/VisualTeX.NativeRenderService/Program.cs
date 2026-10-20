@@ -63,6 +63,12 @@ internal sealed class RenderService : ServiceBase
                     LogFailure(error);
                     response = new NativeRenderResponse { Error = "Private native rendering failed." };
                 }
+                if (response.Failures.Count != 0)
+                {
+                    LogLine($"render-incomplete items={request.Items.Count} failed={response.Failures.Count} reasons="
+                        + string.Join(" | ", response.Failures.GroupBy(failure => failure.Reason)
+                            .Select(group => $"{group.Count()}x {group.Key}")));
+                }
                 using var write = CancellationTokenSource.CreateLinkedTokenSource(token);
                 write.CancelAfter(5000);
                 await NativeRenderProtocol.WriteAsync(endpoint, response,
@@ -90,14 +96,16 @@ internal sealed class RenderService : ServiceBase
         }
     }
 
-    private void LogFailure(Exception error)
+    private void LogFailure(Exception error) => LogLine(error.GetType().Name);
+
+    private void LogLine(string message)
     {
         // Bounded diagnostics, never formula source, document names or profiles.
         try
         {
             string path = Path.Combine(data, "service.log");
             if (File.Exists(path) && new FileInfo(path).Length > 256 * 1024) File.Delete(path);
-            File.AppendAllText(path, DateTime.UtcNow.ToString("O") + " " + error.GetType().Name + Environment.NewLine);
+            File.AppendAllText(path, DateTime.UtcNow.ToString("O") + " " + message + Environment.NewLine);
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }

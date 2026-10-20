@@ -294,7 +294,9 @@ Test-RibbonComDispatch `
         "OnConvertVisualTeXToOmmlSelection",
         "OnConvertVisualTeXToOmmlDocument",
         "OnConvertOmmlToVisualTeXSelection",
-        "OnConvertOmmlToVisualTeXDocument"
+        "OnConvertOmmlToVisualTeXDocument",
+        "OnNumberDisplayFormulasSelection",
+        "OnNumberDisplayFormulasDocument"
     )
 
 Test-RibbonComDispatch `

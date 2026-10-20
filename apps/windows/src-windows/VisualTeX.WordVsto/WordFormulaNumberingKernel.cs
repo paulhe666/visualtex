@@ -32,6 +32,8 @@ internal static partial class WordFormulaNumberingKernel
         internal WordVisualTeXParagraphNumbering.ResolvedNumberPlan? BodyNumbering { get; set; }
         internal WordVisualTeXParagraphNumbering.WrittenBodyLayout? WrittenBodyLayout { get; set; }
         internal WordVisualTeXParagraphNumbering.CreatedBodyFields? CreatedBodyFields { get; set; }
+        // Shared by every plan of one batch; owned by VisualTeXConversionNumberPlan.
+        internal WordVisualTeXParagraphNumbering.BodyFieldCopies? BodyFieldCopies { get; set; }
     }
 
     internal static WordFormulaHostDescriptor RekeyPastedNumbering(
@@ -125,7 +127,9 @@ internal static partial class WordFormulaNumberingKernel
         string? requestedFormatId = null,
         WordFormulaHostKind? kindFilter = null,
         int minimumExpectedNumbered = 0,
-        VisualTeXConversionNumberPlan? preparedVisualTeX = null)
+        VisualTeXConversionNumberPlan? preparedVisualTeX = null,
+        int fromPosition = 0,
+        bool bulkUpdate = false)
     {
         using var operationMetric =
             WordOperationMetrics.Measure(
@@ -158,7 +162,9 @@ internal static partial class WordFormulaNumberingKernel
                 .RefreshBatchFields(
                     document,
                     minimumExpectedNumbered,
-                    preparedVisualTeX: preparedVisualTeX);
+                    preparedVisualTeX: preparedVisualTeX,
+                    fromPosition: fromPosition,
+                    bulkUpdate: bulkUpdate);
         }
 
         WordFormulaHostDescriptor[] hosts;

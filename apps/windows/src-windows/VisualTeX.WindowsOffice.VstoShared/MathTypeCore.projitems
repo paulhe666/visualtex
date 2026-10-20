@@ -12,5 +12,6 @@
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleStorage.cs" Link="MathTypeCore\MathTypeOleStorage.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeOleClipboardProxy.cs" Link="MathTypeCore\MathTypeOleClipboardProxy.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MathTypeNativePreviewRenderer.cs" Link="MathTypeCore\MathTypeNativePreviewRenderer.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)NativePreviewRetry.cs" Link="MathTypeCore\NativePreviewRetry.cs" />
   </ItemGroup>
 </Project>

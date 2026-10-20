@@ -74,8 +74,13 @@ internal static class WordFormulaNumberingResolver
                     : Unnumbered(host);
             }
 
-            tables = hostRange.Tables;
-            if (tables.Count > 0)
+            int tableCount;
+            using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("NumberingResolver.Tables"))
+            {
+                tables = hostRange.Tables;
+                tableCount = tables.Count;
+            }
+            if (tableCount > 0)
             {
                 table = tables[1];
                 if (TryResolveCanonicalBodyTable(
@@ -106,21 +111,28 @@ internal static class WordFormulaNumberingResolver
                 }
             }
 
-            if (host.Kind == WordFormulaHostKind.VisualTeX
-                && TryResolveCanonicalBodyTabParagraph(
-                    document,
-                    hostRange,
-                    host.FormulaId,
-                    retainBody,
-                    out var bodyTab,
-                    out body))
-                return bodyTab;
+            if (host.Kind == WordFormulaHostKind.VisualTeX)
+            {
+                bool resolved;
+                WordFormulaNumberingDescriptor? bodyTab;
+                using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("NumberingResolver.BodyTab"))
+                    resolved = TryResolveCanonicalBodyTabParagraph(
+                        document,
+                        hostRange,
+                        host.FormulaId,
+                        retainBody,
+                        out bodyTab,
+                        out body);
+                if (resolved)
+                    return bodyTab!;
+            }
 
-            return HasLocalLegacyNumberingEvidence(
-                    hostRange,
-                    host.FormulaId)
-                ? Legacy(host)
-                : Unnumbered(host);
+            using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("NumberingResolver.LegacyEvidence"))
+                return HasLocalLegacyNumberingEvidence(
+                        hostRange,
+                        host.FormulaId)
+                    ? Legacy(host)
+                    : Unnumbered(host);
         }
         finally
         {

@@ -18,6 +18,7 @@ $fontRoot = Join-Path $root "src-windows\artifacts\office-fonts"
 $font = Join-Path $fontRoot "latinmodern-math.otf"
 $fontLicense = Join-Path $fontRoot "GUST-FONT-LICENSE.txt"
 $fontReadme = Join-Path $fontRoot "README-Latin-Modern-Math.txt"
+$trueTypeFont = Join-Path $root "src-windows\office-fonts\VisualTeXLatinModernMath.ttf"
 
 $expected = @{
     $x64 = "756C1AA9622234ED91BC789157ADBE97605D646DAD9173600A0A91C0732EF625"
@@ -28,6 +29,7 @@ $expected = @{
     $font = "6075562B771F8B82F0C179E363389684F2DD09DE30038269E2628E504BD7BE0F"
     $fontLicense = "2BD69AFFC3DA00715116F713F57EAB9707E96DAF3562AD0215987B15B9C16F73"
     $fontReadme = "E6FDD5FB44B656146FA988D191F58901C09A347D3F4FBAA3B45B24A6AD7EC30B"
+    $trueTypeFont = "BB3646F9296C10C9B5CCD95BF5680297A4E35B3BC25EA5F4F7593A9C405E0C93"
 }
 
 function Assert-Hash([string]$Path, [string]$ExpectedHash, [string]$Label) {
@@ -72,6 +74,7 @@ foreach ($entry in @(@{data=$x64Data; arch="x64"}, @{data=$x86Data; arch="x86"})
     if (-not [string]::Equals([string]$manifest.officeMathFont.sha256, $expected[$font], [StringComparison]::OrdinalIgnoreCase)) { throw "Office MSI manifest does not pin the accepted Latin Modern Math font." }
     if (-not [string]::Equals([string]$manifest.officeMathFont.licenseSha256, $expected[$fontLicense], [StringComparison]::OrdinalIgnoreCase)) { throw "Office MSI manifest does not pin the accepted GUST license." }
     if (-not [string]::Equals([string]$manifest.officeMathFont.readmeSha256, $expected[$fontReadme], [StringComparison]::OrdinalIgnoreCase)) { throw "Office MSI manifest does not pin the accepted font README." }
+    if (-not [string]::Equals([string]$manifest.officeMathTrueTypeFont.sha256, $expected[$trueTypeFont], [StringComparison]::OrdinalIgnoreCase)) { throw "Office MSI manifest does not pin the accepted VisualTeX Latin Modern Math font." }
 }
 $vstoData = Get-Content -LiteralPath $vstoManifest -Raw | ConvertFrom-Json
 if (-not [string]::Equals([string]$vstoData.package.sha256, $expected[$vsto], [StringComparison]::OrdinalIgnoreCase)) { throw "VSTO Runtime manifest does not pin the accepted executable." }
@@ -134,5 +137,6 @@ Write-Output ([pscustomobject]@{
     privateMathTypeVersion = [string]$runtime.validatedVersion
     privateMathTypeFiles = [int]$runtime.fileCount
     latinModernMathSha256 = $expected[$font]
+    visualTeXLatinModernMathSha256 = $expected[$trueTypeFont]
     fixedInputsOnly = $true
 } | ConvertTo-Json -Depth 4)

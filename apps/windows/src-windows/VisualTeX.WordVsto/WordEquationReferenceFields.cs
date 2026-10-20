@@ -393,7 +393,8 @@ internal static partial class WordEquationReferenceFields
                                 out var directBookmark)
                             || (targetBookmarkNames is not null
                                 && !targetBookmarkNames.Contains(
-                                    directBookmark)))
+                                    directBookmark))
+                            || !BookmarkExists(document, directBookmark))
                             continue;
 
                         directResult =
@@ -445,6 +446,8 @@ internal static partial class WordEquationReferenceFields
                         if (targetBookmarkNames is not null
                             && !targetBookmarkNames.Contains(bookmarkName))
                             continue;
+                        if (!BookmarkExists(document, bookmarkName))
+                            break;
 
                         nestedResult = nestedField.Result;
                         if (HasCurrentReferenceResult(document, bookmarkName, nestedResult))
@@ -1175,6 +1178,7 @@ internal static partial class WordEquationReferenceFields
                     code = field.Code;
                     if (nestedStarts.Contains(code.Start)
                         || !TryReadVisualTeXNumberBookmark(code.Text, out var name)
+                        || !BookmarkExists(document, name)
                         // VTEq_*'s own visible-number REF is an internal numbering
                         // artifact, not a user equation reference. Numbering has
                         // already finalized and verified this field before the
@@ -1200,6 +1204,21 @@ internal static partial class WordEquationReferenceFields
         }
         if (failures.Count > 0) throw new AggregateException("Some formula references could not be refreshed.", failures);
         return updated;
+    }
+
+    // A reference whose bookmark no longer exists (its equation was deleted
+    // or is being converted) cannot be refreshed: Word would replace the
+    // user's text with "Error! Bookmark not defined." Leave it unchanged; a
+    // conversion migrates the references it owns afterwards.
+    private static bool BookmarkExists(Document document, string name)
+    {
+        Bookmarks? bookmarks = null;
+        try
+        {
+            bookmarks = document.Bookmarks;
+            return bookmarks.Exists(name);
+        }
+        finally { Release(bookmarks); }
     }
 
     private static void NormalizeInternalStyle(Range range)

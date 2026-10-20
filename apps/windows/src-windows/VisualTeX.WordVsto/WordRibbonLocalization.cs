@@ -27,6 +27,10 @@ public sealed partial class ThisAddIn
             </menu>
             <button id="VisualTeX.WordVsto.InsertReference" label="Insert Equation Reference" screentip="Reference a numbered equation" supertip="Choose a numbered VisualTeX or MathType equation in the current document. VisualTeX uses Word REF; MathType retains its native ZEqnNum/GOTOBUTTON/REF reference structure." imageMso="HyperlinkInsert" onAction="OnInsertEquationReference" />
           </box>
+          <menu id="VisualTeX.WordVsto.BatchNumbering" label="Number Equations" size="large" screentip="Number display equations in bulk" supertip="Give every unnumbered display equation (VisualTeX OLE, Word OMML, MathType) in the selection or the whole document its own native number in the document's number format. Existing numbers are kept and the following ones follow on; cross-references are updated, and one Ctrl+Z undoes it." tag="updateNumbers" getImage="GetRibbonImage">
+            <button id="VisualTeX.WordVsto.BatchNumberingSelection" label="Number Display Equations in Selection" onAction="OnNumberDisplayFormulasSelection" />
+            <button id="VisualTeX.WordVsto.BatchNumberingDocument" label="Number All Display Equations" onAction="OnNumberDisplayFormulasDocument" />
+          </menu>
           <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="Update Equation Format" size="large" screentip="Update equation format" supertip="Bring every equation number an earlier VisualTeX wrote in this document into the current format (the same as VisualTeX for Mac). Equation content and kinds do not change." tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationFormat" />
           <button id="VisualTeX.WordVsto.BulkImport" label="Bulk Import" size="large" screentip="Import LaTeX / Markdown" supertip="Parse Markdown or LaTeX into native Word text and independently editable inline/display equations." tag="batchImport" getImage="GetRibbonImage" onAction="OnBulkImport" />
         </group>

@@ -9,10 +9,17 @@ namespace VisualTeX.WordVsto;
 
 internal static class WordOfficeMathFontLoader
 {
-    internal const string LatinModernMathFamily = "Latin Modern Math";
-    internal const string LatinModernMathFileName = "latinmodern-math.otf";
+    // VisualTeX Latin Modern Math: Latin Modern Math 1.959 with its outlines
+    // converted to TrueType (office-fonts/README-VisualTeX-Latin-Modern-Math.txt).
+    // Word's PDF export embeds TrueType math; CFF math it rasterizes, dropping
+    // the parentheses of native equation numbers. The original CFF font stays
+    // installed for documents that still name "Latin Modern Math".
+    internal const string LatinModernMathFamily = "VisualTeX Latin Modern Math";
+    internal const string LatinModernMathFileName = "VisualTeXLatinModernMath.ttf";
     internal const string LatinModernMathSha256 =
-        "6075562B771F8B82F0C179E363389684F2DD09DE30038269E2628E504BD7BE0F";
+        "BB3646F9296C10C9B5CCD95BF5680297A4E35B3BC25EA5F4F7593A9C405E0C93";
+    // The CFF original that VisualTeX before 1.2.8 set as the document math font.
+    internal const string LegacyLatinModernMathFamily = "Latin Modern Math";
 
     private const uint WmFontChange = 0x001D;
     private static readonly IntPtr HwndBroadcast = new(0xffff);

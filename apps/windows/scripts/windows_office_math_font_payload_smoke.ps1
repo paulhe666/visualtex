@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $expectedFontHash = "6075562B771F8B82F0C179E363389684F2DD09DE30038269E2628E504BD7BE0F"
 $expectedLicenseHash = "2BD69AFFC3DA00715116F713F57EAB9707E96DAF3562AD0215987B15B9C16F73"
+$expectedTrueTypeFontHash = "BB3646F9296C10C9B5CCD95BF5680297A4E35B3BC25EA5F4F7593A9C405E0C93"
 
 function Read-MsiFontRows([string]$MsiPath) {
     $installer = New-Object -ComObject WindowsInstaller.Installer
@@ -60,6 +61,11 @@ foreach ($architecture in @("x64", "x86")) {
     if ($null -eq $latinModernRow) {
         throw "Office $architecture MSI does not register Latin Modern Math in the Windows Installer Font table."
     }
+    # A TrueType font row has no title; Windows reads it from the file at install.
+    $trueTypeRow = $fontRows | Where-Object { $_.FileId -eq "VisualTeXLatinModernMathSystemFontFile" }
+    if ($null -eq $trueTypeRow) {
+        throw "Office $architecture MSI does not register VisualTeX Latin Modern Math in the Windows Installer Font table."
+    }
 
     $adminRoot = Join-Path $env:TEMP ("visualtex-office-font-msi-$architecture-" + [Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $adminRoot -Force | Out-Null
@@ -80,6 +86,16 @@ foreach ($architecture in @("x64", "x86")) {
             $hash = (Get-FileHash -LiteralPath $font.FullName -Algorithm SHA256).Hash
             if (-not [string]::Equals($hash, $expectedFontHash, [StringComparison]::OrdinalIgnoreCase)) {
                 throw "Office $architecture MSI contains a damaged Latin Modern Math font: $($font.FullName) hash=$hash"
+            }
+        }
+        $trueTypeFonts = @(Get-ChildItem -LiteralPath $adminRoot -Recurse -File -Filter "VisualTeXLatinModernMath.ttf")
+        if ($trueTypeFonts.Count -lt 2) {
+            throw "Office $architecture MSI administrative image contains $($trueTypeFonts.Count) VisualTeX Latin Modern Math copies; expected the system-font and VSTO-private payloads."
+        }
+        foreach ($font in $trueTypeFonts) {
+            $hash = (Get-FileHash -LiteralPath $font.FullName -Algorithm SHA256).Hash
+            if (-not [string]::Equals($hash, $expectedTrueTypeFontHash, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Office $architecture MSI contains a damaged VisualTeX Latin Modern Math font: $($font.FullName) hash=$hash"
             }
         }
         $license = Get-ChildItem -LiteralPath $adminRoot -Recurse -File -Filter "GUST-FONT-LICENSE.txt" | Select-Object -First 1

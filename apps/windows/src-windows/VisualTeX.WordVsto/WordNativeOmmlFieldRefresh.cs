@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.Contracts;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -273,6 +274,10 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
             var cursor = Math.Max(scope.Start, earliestChange);
             var end = scope.End;
             var captured = new HashSet<int>();
+            // Number aliases (bookmarks inside a number) matter only to the REF
+            // fields that display them; reading them costs one more WordOpenXML
+            // export per equation. A document without any REF needs none.
+            var captureAliases = WordNumberingFieldCollection.MayHaveReferenceFields(document);
             // Only equations can be native numbers. When no equation follows the
             // change, skip the SEQ search: in a document numbered by VisualTeX
             // OLE every following PlaceRef SEQ would otherwise be one more hit.
@@ -330,7 +335,7 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
                             || captured.Contains(exact.Start)) continue;
                         if (!WordNativeOmmlNumbering.TryResolveUnownedNativeStructure(document, exact, out _)) continue;
                         captured.Add(exact.Start);
-                        plan.CaptureNumberAliases(exact);
+                        if (captureAliases) plan.CaptureNumberAliases(exact);
                         var prefix = refreshLiteralPrefixes && !(externallyRewrittenNumberStarts?.Contains(exact.Start) ?? false)
                             ? plan.PrepareLiteralPrefix(document, math) : null;
                         if (prefix is not null) plan._literalPrefixes.Add(math, prefix);
@@ -354,12 +359,13 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
                     {
                         exact = source.Range;
                         if (!captured.Add(exact.Start)) continue;
-                        if (!exact.InStory(scope) || !WordOmmlConverter.HasWordNativeEquationNumberHost(exact.WordOpenXML))
+                        if (!exact.InStory(scope) || !WordOmmlConverter.HasWordNativeEquationNumberHost(
+                                WordOmmlConverter.ReadLocalEquationXml(exact)))
                             throw new InvalidDataException("A prepared native number lost its structural ownership.");
                         owners = exact.OMaths;
                         if (owners.Count != 1) throw new InvalidDataException("A prepared native number no longer owns one OMath.");
                         owner = owners[1];
-                        plan.CaptureNumberAliases(exact);
+                        if (captureAliases) plan.CaptureNumberAliases(exact);
                         plan._hosts.Add(owner); owner = null;
                     }
                     finally { Release(owner); Release(owners); Release(exact); }
@@ -445,6 +451,9 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
     {
         if (_insertedCount != expectedInserted)
             throw new InvalidDataException("The native-number update plan is missing converted hosts.");
+        // Without any tracked change no field can be revision-deleted; skip the
+        // two Revisions queries per field (about 26 ms per equation).
+        var hasRevisions = WordNumberingFieldCollection.HasRevisions(_document);
         WordFormulaMutationTransaction.TraceBoundary(_document.Application, "native-number-plan-before-update");
         // A raw range starting exactly where a preceding paragraph replacement
         // ends can expand/collapse through Word's boundary gravity. Reacquire the
@@ -478,7 +487,8 @@ internal sealed class WordNativeOmmlFieldRefresh : IDisposable
                             Numbered = true, ContainerKind = WordFormulaNumberingContainerKind.CanonicalNativeOmml,
                             ContainerRange = address,
                         },
-                    });
+                    },
+                    hasRevisions: hasRevisions);
                 prefix?.RestoreAliases(_document, host);
             }
             finally { Release(range); }

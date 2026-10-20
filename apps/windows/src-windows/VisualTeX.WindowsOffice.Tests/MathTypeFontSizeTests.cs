@@ -39,6 +39,20 @@ public sealed class MathTypeFontSizeTests
         Assert.Equal(18.75, MathTypeMtefCodec.ReadEquationNativeFullFontSize(resized.EquationNative));
     }
 
+    [Fact]
+    public void PreviewScalingChangesOnlyTheSizePreferences()
+    {
+        var source = MathTypeMtefCodec.CreateEquationNativeAtFontSize(MathMl, false, 32);
+        var scaled = MathTypeMtefCodec.ScaleMtefPreferenceSizes(source.Mtef, 0.25);
+        var native = source.EquationNative.Take(28).Concat(scaled).ToArray();
+        BitConverter.GetBytes((uint)scaled.Length).CopyTo(native, 8);
+        Assert.Equal(8, MathTypeMtefCodec.ReadEquationNativeFullFontSize(native));
+        Assert.Equal(source.Mtef.Skip(source.StructureOffset), scaled.Skip(scaled.Length - (source.Mtef.Length - source.StructureOffset)));
+        Assert.Equal(MathTypeMtefCodec.SemanticSignature(MathMl),
+            MathTypeMtefCodec.SemanticSignature(MathTypeMtefCodec.ReadEquationNativeMathMl(native)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => MathTypeMtefCodec.ScaleMtefPreferenceSizes(source.Mtef, 1.5));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]

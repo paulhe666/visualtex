@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using Microsoft.Office.Interop.Word;
 using Range = Microsoft.Office.Interop.Word.Range;
 
@@ -203,9 +204,45 @@ internal static class MathTypeEquationReferences
         }
     }
 
+    // Where each bookmark is referenced from (REF and MathType's GOTOBUTTON
+    // field-code starts), read once for a whole conversion batch.
+    internal static IReadOnlyDictionary<string, int[]> CaptureReferencedBookmarks(Document document)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+        var starts = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+        Fields? fields = null;
+        try
+        {
+            fields = document.Fields;
+            for (var index = 1; index <= fields.Count; index++)
+            {
+                Field? field = null;
+                Range? code = null;
+                try
+                {
+                    field = fields[index];
+                    var type = field.Type;
+                    if (type != WdFieldType.wdFieldRef && type != WdFieldType.wdFieldGoToButton) continue;
+                    code = field.Code;
+                    var match = Regex.Match(code.Text ?? string.Empty,
+                        @"^\s*(?:REF|GOTOBUTTON)\s+(?:""(?<quoted>[^""]+)""|(?<plain>[^\s\\]+))",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    if (!match.Success) continue;
+                    var name = match.Groups["quoted"].Success ? match.Groups["quoted"].Value : match.Groups["plain"].Value;
+                    if (!starts.TryGetValue(name, out var list)) starts[name] = list = new List<int>();
+                    list.Add(code.Start);
+                }
+                finally { Release(code); Release(field); }
+            }
+        }
+        finally { Release(fields); }
+        return starts.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray(), StringComparer.OrdinalIgnoreCase);
+    }
+
     internal static IReadOnlyList<EquationReferenceBookmarkAlias> CaptureFormatConversionAliasesFromMathType(
         Document document,
-        InlineShape equationShape)
+        InlineShape equationShape,
+        IReadOnlyDictionary<string, int[]>? referencedBookmarks = null)
     {
         if (document is null) throw new ArgumentNullException(nameof(document));
         if (equationShape is null) throw new ArgumentNullException(nameof(equationShape));
@@ -248,7 +285,7 @@ internal static class MathTypeEquationReferences
             try
             {
                 numberOnlyRange = NumberInsideVisibleDelimiters(document, visibleRange);
-                return CaptureNumberAliases(document, ownerRange, visibleRange, numberOnlyRange);
+                return CaptureNumberAliases(document, ownerRange, visibleRange, numberOnlyRange, referencedBookmarks);
             }
             finally { Release(numberOnlyRange); }
         }
@@ -323,7 +360,8 @@ internal static class MathTypeEquationReferences
     }
 
     private static IReadOnlyList<EquationReferenceBookmarkAlias> CaptureNumberAliases(
-        Document document, Range ownerRange, Range visibleRange, Range numberOnlyRange)
+        Document document, Range ownerRange, Range visibleRange, Range numberOnlyRange,
+        IReadOnlyDictionary<string, int[]>? referencedBookmarks = null)
     {
         var aliases = new List<EquationReferenceBookmarkAlias>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -354,7 +392,11 @@ internal static class MathTypeEquationReferences
                     if (range.StoryType != expected.StoryType || range.Start < expected.Start
                         || range.End > expected.End || range.Start == range.End)
                         continue;
-                    if (!HasExternalReferenceToBookmark(document, name, ownerRange)) continue;
+                    if (referencedBookmarks is null
+                            ? !HasExternalReferenceToBookmark(document, name, ownerRange)
+                            : !referencedBookmarks.TryGetValue(name, out var referenceStarts)
+                              || !referenceStarts.Any(start => start < ownerRange.Start || start >= ownerRange.End))
+                        continue;
                     if (!string.Equals(range.Text, expected.Text, StringComparison.Ordinal))
                         throw new InvalidDataException($"Reference alias '{name}' does not own its complete equation number.");
                     aliases.Add(new EquationReferenceBookmarkAlias

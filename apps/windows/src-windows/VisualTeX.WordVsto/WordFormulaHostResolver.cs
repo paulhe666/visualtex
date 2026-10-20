@@ -67,17 +67,27 @@ internal static class WordFormulaHostResolver
 
         // One bookmark pass and one REF-result pass for exactly this scope.
         // Per-formula COM scans are forbidden after these snapshots are built.
-        var anchors = CaptureIdentityAnchors(scope);
-        var referenceResults = CaptureReferenceResultRanges(scope);
-        var tableRanges = CaptureTableRanges(scope);
-        var omml = CaptureOmmlIndex(
-            scope,
-            referenceResults,
-            tableRanges);
-        var visualTeX = CaptureVisualTeXIndex(
-            scope,
-            anchors,
-            tableRanges);
+        IReadOnlyList<IdentityAnchor> anchors;
+        using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.IdentityAnchors"))
+            anchors = CaptureIdentityAnchors(scope);
+        IReadOnlyList<WordFormulaRangeAddress> referenceResults;
+        using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.ReferenceResults"))
+            referenceResults = CaptureReferenceResultRanges(scope);
+        IReadOnlyList<WordFormulaRangeAddress> tableRanges;
+        using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.TableRanges"))
+            tableRanges = CaptureTableRanges(scope);
+        IReadOnlyList<WordFormulaHostDescriptor> omml;
+        using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.Omml"))
+            omml = CaptureOmmlIndex(
+                scope,
+                referenceResults,
+                tableRanges);
+        IReadOnlyList<WordFormulaHostDescriptor> visualTeX;
+        using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.VisualTeX"))
+            visualTeX = CaptureVisualTeXIndex(
+                scope,
+                anchors,
+                tableRanges);
         return new WordFormulaDocumentIndex(omml, visualTeX);
     }
 
@@ -379,7 +389,10 @@ internal static class WordFormulaHostResolver
         try
         {
             maths = scope.OMaths;
-            for (var index = 1; index <= maths.Count; index++)
+            // Index access, not the collection enumerator: enumerating OMaths
+            // cost ~70 ms per equation (500 equations: 34 s against 0.7 s).
+            var count = maths.Count;
+            for (var index = 1; index <= count; index++)
             {
                 math = maths[index];
                 range = math.Range;
@@ -632,17 +645,25 @@ internal static class WordFormulaHostResolver
         try
         {
             shapes = scope.InlineShapes;
-            for (var index = 1; index <= shapes.Count; index++)
+            // One enumerator pass: InlineShapes.Count and Item(index) both walk
+            // the collection, which made this loop O(n^2) in long documents.
+            foreach (var current in WordComEnumeration.Each<InlineShape>(shapes))
             {
-                shape = shapes[index];
-                if (!WordFormulaMetadataReader.IsNativeOle(shape))
+                shape = current;
+                bool nativeOle;
+                using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.VisualTeX.IsNativeOle"))
+                    nativeOle = WordFormulaMetadataReader.IsNativeOle(shape);
+                if (!nativeOle)
                 {
                     Release(shape); shape = null;
                     continue;
                 }
 
-                range = shape.Range.Duplicate;
-                var cached = WordFormulaMetadataReader.TryReadCachedPreview(shape);
+                using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.VisualTeX.ShapeRange"))
+                    range = shape.Range.Duplicate;
+                FormulaMetadata? cached;
+                using (VisualTeX.WindowsOffice.Contracts.WordOperationMetrics.Measure("Index.VisualTeX.CachedPreview"))
+                    cached = WordFormulaMetadataReader.TryReadCachedPreview(shape);
                 var indexedId = ResolveIndexedVisualTeXIdentity(Address(range), anchors);
                 var formulaId = indexedId ?? cached?.FormulaId;
                 var displayMode = cached?.DisplayMode;
@@ -690,7 +711,8 @@ internal static class WordFormulaHostResolver
         try
         {
             bookmarks = scope.Bookmarks;
-            for (var index = 1; index <= bookmarks.Count; index++)
+            var count = bookmarks.Count;
+            for (var index = 1; index <= count; index++)
             {
                 bookmark = bookmarks[index];
                 var name = bookmark.Name ?? string.Empty;
@@ -812,8 +834,7 @@ internal static class WordFormulaHostResolver
             // not part of the VisualTeX numbering system.
             return WordOmmlConverter
                 .HasVisualTeXDirectSequenceEquationNumber(
-                    equationRange.WordOpenXML
-                    ?? string.Empty,
+                    WordOmmlConverter.ReadLocalEquationXml(equationRange),
                     formulaId: null);
         }
         catch

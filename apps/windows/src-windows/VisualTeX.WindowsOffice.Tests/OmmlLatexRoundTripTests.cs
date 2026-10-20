@@ -35,6 +35,41 @@ public sealed class OmmlLatexRoundTripTests
         Assert.DoesNotContain("⁡", Latex(Function(Upright("cos"), Run("x"))), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("ker")]
+    [InlineData("dim")]
+    [InlineData("deg")]
+    [InlineData("arg")]
+    [InlineData("hom")]
+    [InlineData("arcsin")]
+    [InlineData("arccos")]
+    [InlineData("arctan")]
+    [InlineData("coth")]
+    [InlineData("lg")]
+    public void AllTeXFunctionNamesComeBackAsTheirCommands(string name)
+    {
+        Assert.Equal($@"\{name} x", Latex(Function(Upright(name), Run("x"))));
+    }
+
+    [Theory]
+    [InlineData("∑", @"\sum_{k}x")]
+    [InlineData("∏", @"\prod_{k}x")]
+    [InlineData("⋃", @"\bigcup_{k}x")]
+    public void WordSumsWithOnlyALowerLimitUseTheScriptForm(string glyph, string expected)
+    {
+        var nary = $"<m:nary><m:naryPr><m:chr m:val=\"{glyph}\"/><m:limLoc m:val=\"undOvr\"/><m:supHide m:val=\"1\"/></m:naryPr>"
+            + $"<m:sub>{Run("k")}</m:sub><m:sup/><m:e>{Run("x")}</m:e></m:nary>";
+        Assert.Equal(expected, Latex(nary, display: true));
+    }
+
+    [Fact]
+    public void AnUprightWordStaysOneGroup()
+    {
+        Assert.Equal(@"\mathrm{Tr}x", Latex(Upright("Tr") + Run("x")));
+        Assert.Equal(@"\mathrm{im}x", Latex(Upright("im") + Run("x")));
+        Assert.Equal(@"H_{\mathrm{d}R}", Latex($"<m:sSub><m:e>{Run("H")}</m:e><m:sub>{Upright("d")}{Run("R")}</m:sub></m:sSub>"));
+    }
+
     [Fact]
     public void UnknownFunctionNamesKeepTheirApplicationMarker()
     {

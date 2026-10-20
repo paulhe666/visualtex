@@ -3284,7 +3284,7 @@ internal static partial class WordEquationNumbering
                             metadata.FormulaId)
                         || (!verifiedFreshBareOmml
                             && WordOmmlConverter.HasVisualTeXNativeEquationNumber(
-                                formulaRange.WordOpenXML));
+                                WordOmmlConverter.ReadLocalEquationXml(formulaRange)));
                 }
                 catch
                 {
@@ -3813,7 +3813,7 @@ internal static partial class WordEquationNumbering
             if (formulaBookmark is null) return null;
             formulaRange = WordOmmlFormulaStore.GetEquationRange(formulaBookmark);
             if (!WordOmmlConverter.HasVisualTeXNativeEquationNumber(
-                    formulaRange.WordOpenXML))
+                    WordOmmlConverter.ReadLocalEquationXml(formulaRange)))
                 return null;
             nativeNumberField = FindNativeOmmlNumberReferenceField(
                 document,
@@ -5719,7 +5719,7 @@ internal static partial class WordEquationNumbering
                     finally { Release(tableRange); Release(table); Release(tables); }
                 }
                 if (WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
-                        formulaRange.WordOpenXML))
+                        WordOmmlConverter.ReadLocalEquationXml(formulaRange)))
                 {
                     // VTEqCap_/VTEqNum_ live inside the professional OMath in the
                     // native #SEQ design. Never delete their bookmarked ranges as
@@ -7654,7 +7654,7 @@ internal static partial class WordEquationNumbering
                     return;
                 }
                 if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(
-                        activeRange.WordOpenXML)
+                        WordOmmlConverter.ReadLocalEquationXml(activeRange))
                     || HasManagedNativeOmmlHashSequenceHost(
                         document,
                         formulaId))
@@ -7662,7 +7662,7 @@ internal static partial class WordEquationNumbering
                     RemoveVisibleEquationNumber(document, formulaId);
                     var semanticOmml = WordOmmlConverter
                         .StripManagedVisualTeXNativeEquationNumber(
-                            activeRange.WordOpenXML);
+                            WordOmmlConverter.ReadLocalEquationXml(activeRange));
                     Microsoft.Office.Interop.Word.Application? application = null;
                     Range? replacementRange = null;
                     try
@@ -11746,7 +11746,7 @@ internal static partial class WordEquationNumbering
                 {
                     containingRange = containingMath.Range;
                     if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(
-                            containingRange.WordOpenXML)
+                            WordOmmlConverter.ReadLocalEquationXml(containingRange))
                         || HasManagedNativeOmmlHashSequenceHost(
                             document,
                             formulaId))

@@ -27,6 +27,15 @@ public sealed class NativeRenderResponse
     public int Version { get; set; } = NativeRenderProtocol.Version;
     public string Error { get; set; } = string.Empty;
     public List<NativeRenderOutput> Items { get; set; } = new();
+    // One entry per requested item that has no output: the engine's own reason
+    // (status code or limit), never formula source. Older services send none.
+    public List<NativeRenderFailure> Failures { get; set; } = new();
+}
+
+public sealed class NativeRenderFailure
+{
+    public string Id { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
 }
 
 public sealed class NativeRenderOutput
@@ -48,6 +57,7 @@ public static class NativeRenderProtocol
     public const int MaxRequestBytes = 8 * 1024 * 1024;
     public const int MaxResponseBytes = 32 * 1024 * 1024;
     public const int MaxWmfBytes = 4 * 1024 * 1024;
+    public const int MaxFailureReasonLength = 200;
     public const int RequestTimeoutMs = 180_000;
     // The renderer refused because MathType's fonts are unavailable to it;
     // rendering anyway would save placeholder glyphs into the document.
@@ -88,6 +98,21 @@ public static class NativeRenderProtocol
                 || item.WordPosition < -1_000_000 || item.WordPosition > 0)
                 throw new InvalidDataException("Invalid render output.");
         }
+        if (response.Failures == null) response.Failures = new List<NativeRenderFailure>();
+        var failed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var failure in response.Failures)
+        {
+            // A failure names an item that was requested and has no output.
+            if (failure == null || !ids.Contains(failure.Id) || !failed.Add(failure.Id)
+                || failure.Reason == null || failure.Reason.Length > MaxFailureReasonLength)
+                throw new InvalidDataException("Invalid render failure.");
+        }
+    }
+
+    public static string BoundFailureReason(string? reason)
+    {
+        var text = string.IsNullOrWhiteSpace(reason) ? "No output." : reason!.Trim();
+        return text.Length <= MaxFailureReasonLength ? text : text.Substring(0, MaxFailureReasonLength);
     }
 
     private static bool FinitePositive(float value) =>

@@ -164,7 +164,7 @@ internal sealed partial class WordFormulaService
         Dictionary<string, MathTypeNativePreviewRenderer.Result> rendered)
     {
         var batch = items.ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
-        var complete = MathTypeNativePreviewRenderer.TryRenderBatch(batch, Path.GetTempPath(), out var results);
+        var complete = MathTypeNativePreviewRenderer.TryRenderBatchWithRetry(batch, Path.GetTempPath(), out var results);
         foreach (var result in results) rendered[result.Key] = result.Value;
         if (complete) return;
         if (MathTypeNativePreviewRenderer.LastFailureWasFonts)

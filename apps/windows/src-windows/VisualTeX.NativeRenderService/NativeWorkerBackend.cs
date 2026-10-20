@@ -24,7 +24,8 @@ internal sealed class NativeWorkerBackend : IDisposable
     {
         NativeRenderProtocol.Validate(input);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-        deadline.CancelAfter(Math.Max(20_000, Math.Min(120_000, input.Items.Count * 1500)));
+        // At least the worker's 30 s MathType launch time-out plus the render.
+        deadline.CancelAfter(Math.Max(60_000, Math.Min(120_000, input.Items.Count * 1500)));
         EnsureRuntimeLifetime(deadline.Token);
         // The worker owns the MathPage API lease across requests. Per-request
         // files are disposable; engine/TEMP/Job live until failure or shutdown.
@@ -76,25 +77,43 @@ internal sealed class NativeWorkerBackend : IDisposable
             }
 
             var result = new NativeRenderResponse { Error = error };
-            if (!File.Exists(request.ResultPath)) return result;
+            if (!File.Exists(request.ResultPath))
+            {
+                AddFailures(result, input, new Dictionary<int, string>(), error);
+                return result;
+            }
             if (new FileInfo(request.ResultPath).Length > 1024 * 1024)
                 throw new InvalidDataException("Worker response exceeds its limit.");
             var response = JsonSerializer.Deserialize<WorkerResponse>(File.ReadAllText(request.ResultPath));
-            if (response?.Items == null) return result;
+            if (response?.Items == null)
+            {
+                AddFailures(result, input, new Dictionary<int, string>(), error);
+                return result;
+            }
             if (!string.IsNullOrEmpty(response.Error) && result.Error != NativeRenderProtocol.FontsUnavailableError)
                 result.Error = "Native engine could not render the request.";
             var seen = new HashSet<int>();
+            var reasons = new Dictionary<int, string>();
             long total = 0;
             foreach (var item in response.Items)
             {
-                if (!item.Success || !int.TryParse(item.Id, out int index) || index < 0
+                if (!int.TryParse(item.Id, out int index) || index < 0
                     || index >= input.Items.Count || !seen.Add(index)) continue;
+                if (!item.Success)
+                {
+                    reasons[index] = item.Error;
+                    continue;
+                }
                 // Ignore the returned path even though the worker is private.
                 string wmf = request.Items[index].WmfPath;
-                if (!File.Exists(wmf)) continue;
+                if (!File.Exists(wmf)) { reasons[index] = "Rendered picture is missing."; continue; }
                 long length = new FileInfo(wmf).Length;
                 if (length <= 22 || length > NativeRenderProtocol.MaxWmfBytes
-                    || total + length > NativeRenderProtocol.MaxResponseBytes / 2) continue;
+                    || total + length > NativeRenderProtocol.MaxResponseBytes / 2)
+                {
+                    reasons[index] = $"Rendered picture size {length} bytes is outside the limit.";
+                    continue;
+                }
                 total += length;
                 result.Items.Add(new NativeRenderOutput
                 {
@@ -102,6 +121,7 @@ internal sealed class NativeWorkerBackend : IDisposable
                     WidthPt = item.WidthPt, HeightPt = item.HeightPt, WordPosition = item.WordPosition,
                 });
             }
+            AddFailures(result, input, reasons, response.Error);
             NativeRenderProtocol.Validate(result, input);
             complete = string.IsNullOrEmpty(result.Error) && result.Items.Count == input.Items.Count;
             return result;
@@ -112,6 +132,27 @@ internal sealed class NativeWorkerBackend : IDisposable
             // write permission for callers. Never touch document/temp user trees.
             DeleteOwnedDirectory(root);
             if (!complete) Dispose();
+        }
+    }
+
+    // Every requested item without output gets the engine's reason. An item the
+    // worker never reached (crash, timeout) carries the request-level error.
+    private static void AddFailures(
+        NativeRenderResponse result, NativeRenderRequest input,
+        IReadOnlyDictionary<int, string> reasons, string requestError)
+    {
+        var rendered = new HashSet<string>(result.Items.Select(item => item.Id), StringComparer.Ordinal);
+        for (int index = 0; index < input.Items.Count; index++)
+        {
+            if (rendered.Contains(input.Items[index].Id)) continue;
+            string reason = reasons.TryGetValue(index, out var itemReason) && !string.IsNullOrWhiteSpace(itemReason)
+                ? itemReason
+                : string.IsNullOrWhiteSpace(requestError) ? "The native worker returned no result for this item." : requestError;
+            result.Failures.Add(new NativeRenderFailure
+            {
+                Id = input.Items[index].Id,
+                Reason = NativeRenderProtocol.BoundFailureReason(reason),
+            });
         }
     }
 
@@ -172,5 +213,5 @@ internal sealed class NativeWorkerBackend : IDisposable
     private sealed class WorkerResponse
     { public string Error { get; set; } = string.Empty; public List<WorkerOutput> Items { get; set; } = new(); }
     private sealed class WorkerOutput
-    { public string Id { get; set; } = string.Empty; public bool Success { get; set; } public float WidthPt { get; set; } public float HeightPt { get; set; } public int WordPosition { get; set; } }
+    { public string Id { get; set; } = string.Empty; public bool Success { get; set; } public string Error { get; set; } = string.Empty; public float WidthPt { get; set; } public float HeightPt { get; set; } public int WordPosition { get; set; } }
 }

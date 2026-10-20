@@ -262,6 +262,10 @@ internal static class WordVisualTeXHostWriter
                 FormulaFontSize.OleSizeAt(
                     metadata,
                     normalized);
+            var display = !string.Equals(
+                metadata.DisplayMode,
+                "inline",
+                StringComparison.OrdinalIgnoreCase);
             WordFormulaHostLayout.ApplyVisualTeXGeometry(
                 shape,
                 metadata,
@@ -270,7 +274,18 @@ internal static class WordVisualTeXHostWriter
                 (float)(metadata.RenderHeightPx ?? 0d),
                 metadata.Baseline.HasValue
                     ? (float?)metadata.Baseline.Value
-                    : null);
+                    : null,
+                deferDisplayPosition: display);
+            // A display OLE is lowered so the formula's own baseline sits on
+            // the line that carries its TABs and number. That offset depends on
+            // the height, so it is recalculated here as insertion does; the
+            // paragraph's tab stops are left as they are.
+            if (display)
+                WordEquationNumbering.AlignVisualTeXDisplayHostBaseline(
+                    document,
+                    shapeRange,
+                    size.Height,
+                    metadata);
             WordFormulaMetadataReader.Write(
                 shape,
                 metadata);
@@ -378,6 +393,7 @@ internal static class WordVisualTeXHostWriter
                     "VisualTeX refused to remove its display tab because user content follows the equation in the same paragraph.");
 
             var insertionStart = paragraphRange.Start;
+            var expectedSuffix = suffix.Text ?? string.Empty;
             deletedAnchor = DeleteExact(
                 document,
                 host,
@@ -387,13 +403,28 @@ internal static class WordVisualTeXHostWriter
             leadingTab = document.Range(
                 insertionStart,
                 insertionStart + 1);
-            if (!string.Equals(
+            if (string.Equals(
                     leadingTab.Text,
                     "\t",
                     StringComparison.Ordinal))
-                throw new InvalidDataException(
-                    "The VisualTeX center tab moved while deleting the external source host.");
-            leadingTab.Delete();
+                leadingTab.Delete();
+            else
+            {
+                // Word's spacing cleanup for InlineShape.Delete can take the tab
+                // as well; then the paragraph body holds only the structural
+                // suffix. Anything else means another object was removed.
+                var body = ReadParagraphBodyFrom(
+                    document,
+                    insertionStart);
+                if (body is null
+                    || !ContainsOnlyStructuralText(
+                        body))
+                    throw new InvalidDataException(
+                        "The VisualTeX center tab moved while deleting the external source host. "
+                        + $"Expected {DescribeText("\t" + expectedSuffix)} at {insertionStart}, found {DescribeText(body)}.");
+                WordDoubleClickHook.TraceMessage(
+                    $"visualtex-display-delete-tab-removed-by-word at={insertionStart} suffix={DescribeText(expectedSuffix)}");
+            }
 
             return document.Range(
                 insertionStart,
@@ -424,14 +455,31 @@ internal static class WordVisualTeXHostWriter
         InlineShape? shape = null;
         Range? shapeRange = null;
         Range? anchor = null;
+        var ownsShape = true;
         try
         {
-            if (preparedSource is not null)
+            // The prepared owner was bound before the batch began. Delete it only
+            // while it still is the OLE at the host's address; otherwise find the
+            // OLE at that address as an unprepared delete does.
+            if (preparedSource?.VisualTeXShape is { } prepared)
             {
-                shape = preparedSource.VisualTeXShape;
-                shapeRange = shape!.Range;
+                var preparedRange = prepared.Range;
+                if (WordFormulaHostSemanticReader.SameAddress(
+                        preparedRange,
+                        host.Range))
+                {
+                    shape = prepared;
+                    ownsShape = false;
+                    shapeRange = preparedRange;
+                }
+                else
+                {
+                    WordDoubleClickHook.TraceMessage(
+                        $"visualtex-delete-prepared-owner-moved owner={preparedRange.Start}-{preparedRange.End} host={host.Range.Start}-{host.Range.End}");
+                    Release(preparedRange);
+                }
             }
-            else
+            if (shape is null)
             {
             range = WordFormulaHostSemanticReader.CreateRange(document, host.Range);
             shapes = range.InlineShapes;
@@ -469,9 +517,9 @@ internal static class WordVisualTeXHostWriter
                 throw new InvalidDataException(
                     "The VisualTeX source host moved before deletion.");
 
-            var embedded = (preparedSource is null
+            var embedded = (ownsShape
                 ? WordFormulaMetadataReader.TryReadEmbeddedNativeOle(shape)
-                : preparedSource.Host.Metadata)
+                : preparedSource!.Host.Metadata)
                 ?? throw new InvalidDataException(
                     "The VisualTeX source host has no authoritative embedded metadata.");
             if (!string.IsNullOrWhiteSpace(host.FormulaId)
@@ -501,10 +549,56 @@ internal static class WordVisualTeXHostWriter
         {
             Release(anchor);
             Release(shapeRange);
-            if (preparedSource is null) Release(shape);
+            if (ownsShape) Release(shape);
             Release(shapes);
             Release(range);
         }
+    }
+
+    // The text from position to the end of its paragraph (paragraph mark
+    // excluded), or null when position no longer starts a paragraph.
+    private static string? ReadParagraphBodyFrom(
+        Document document,
+        int position)
+    {
+        Range? probe = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        Range? body = null;
+        try
+        {
+            probe = document.Range(position, position);
+            paragraphs = probe.Paragraphs;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            if (paragraphRange.Start != position)
+                return null;
+            body = document.Range(
+                position,
+                Math.Max(position, paragraphRange.End - 1));
+            return body.Text ?? string.Empty;
+        }
+        finally
+        {
+            Release(body);
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(probe);
+        }
+    }
+
+    private static string DescribeText(string? text)
+    {
+        if (text is null)
+            return "no paragraph start";
+        if (text.Length == 0)
+            return "an empty paragraph";
+        var shown = text.Length > 12 ? text.Substring(0, 12) : text;
+        return string.Join(" ", shown.Select(character =>
+                $"U+{(int)character:X4}"))
+            + (text.Length > 12 ? $" ... ({text.Length} characters)" : string.Empty);
     }
 
     private static bool ContainsOnlyStructuralText(

@@ -243,6 +243,12 @@ foreach ($architecture in $architectures) {
             readmeFile = "README-Latin-Modern-Math.txt"
             readmeSha256 = (Get-FileHash (Join-Path $wordOutputDirectory "README-Latin-Modern-Math.txt") -Algorithm SHA256).Hash
         }
+        officeMathTrueTypeFont = [ordered]@{
+            file = "VisualTeXLatinModernMath.ttf"
+            sha256 = (Get-FileHash (Join-Path $wordOutputDirectory "VisualTeXLatinModernMath.ttf") -Algorithm SHA256).Hash
+            readmeFile = "README-VisualTeX-Latin-Modern-Math.txt"
+            readmeSha256 = (Get-FileHash (Join-Path $wordOutputDirectory "README-VisualTeX-Latin-Modern-Math.txt") -Algorithm SHA256).Hash
+        }
     }
     $manifestFileName = "VisualTeX-WindowsOffice-VSTO-$packagePlatform.sha256.json"
     $hashManifest | ConvertTo-Json -Depth 4 | Set-Content `

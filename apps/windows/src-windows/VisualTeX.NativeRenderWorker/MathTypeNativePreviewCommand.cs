@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Win32;
 
@@ -17,6 +19,14 @@ internal static class MathTypeNativePreviewCommand
     private const short MtXfmMtef = 4;
     private const short MtXfmPict = 6;
     private const int MtOk = 0;
+    // MathType SDK mtRUN_TIMEOUT: MathPage could not reach the MathType server
+    // it launched within the MTInitAPI timeout.
+    private const int MtRunTimeout = -6;
+    // Seconds MathPage waits for the MathType server to launch. A cold start
+    // takes about 2 s on a fast PC, but MathType and its Java library start
+    // much slower where security software scans them first; 8 s timed out
+    // there on every formula (GitHub issue #34).
+    private const short MathTypeLaunchTimeoutSeconds = 30;
     private const int MtError = -9999;
     // Worker exit status for a session that cannot resolve MathType's fonts.
     // NativeWorkerBackend maps it to NativeRenderProtocol.FontsUnavailableError.
@@ -184,7 +194,7 @@ internal static class MathTypeNativePreviewCommand
                 return WriteResponse(request.ResultPath, response, 3);
             }
 
-            var initStatus = init(MtInitLaunchAsNeeded, 8);
+            var initStatus = init(MtInitLaunchAsNeeded, MathTypeLaunchTimeoutSeconds);
             initialized = initStatus >= 0;
             if (!initialized)
             {
@@ -193,6 +203,9 @@ internal static class MathTypeNativePreviewCommand
             }
             }
 
+            // After a launch time-out every further call waits the full time
+            // again; the rest of the request fails at once with the same reason.
+            string? launchTimeout = null;
             foreach (var item in request.Items)
             {
                 var result = new ResponseItem
@@ -201,6 +214,11 @@ internal static class MathTypeNativePreviewCommand
                     WmfPath = item.WmfPath,
                 };
                 response.Items.Add(result);
+                if (launchTimeout is not null)
+                {
+                    result.Error = launchTimeout;
+                    continue;
+                }
                 try
                 {
                     if (string.IsNullOrWhiteSpace(item.Id)
@@ -223,6 +241,7 @@ internal static class MathTypeNativePreviewCommand
                     try { File.Delete(item.WmfPath); } catch { }
 
                     var dims = new DimsNative();
+                    var watch = Stopwatch.StartNew();
                     var status = transform!(
                         MtXfmLocal,
                         MtXfmMtef,
@@ -234,6 +253,11 @@ internal static class MathTypeNativePreviewCommand
                         0,
                         item.WmfPath,
                         ref dims);
+                    if (status == MtRunTimeout)
+                    {
+                        launchTimeout = result.Error = DescribeLaunchTimeout(watch.Elapsed);
+                        continue;
+                    }
                     if (status != MtOk
                         || !File.Exists(item.WmfPath)
                         || new FileInfo(item.WmfPath).Length <= 22)
@@ -292,6 +316,71 @@ internal static class MathTypeNativePreviewCommand
             if (privateDllDirectoryApplied) { SetDllDirectoryW(null); privateDllDirectoryApplied = false; }
         }
     }
+
+    // What a launch time-out leaves behind: whether VisualTeX's MathType server
+    // and its library are running, and any window they opened in this hidden
+    // session, such as a dialog that waits for an answer nobody can give.
+    private static string DescribeLaunchTimeout(TimeSpan elapsed)
+    {
+        var text = new StringBuilder();
+        // Kept short: the protocol bounds a failure reason to 200 characters.
+        text.Append("MathType start timed out (status -6) after ")
+            .Append((int)elapsed.TotalSeconds)
+            .Append(" s.");
+        var session = Process.GetCurrentProcess().SessionId;
+        foreach (var name in new[] { "MathType", "MathTypeLib" })
+        {
+            var processes = Process.GetProcessesByName(name)
+                .Where(process => process.SessionId == session).ToList();
+            text.Append(' ').Append(name).Append(".exe ")
+                .Append(processes.Count == 0 ? "not running" : "running");
+            var windows = new List<string>();
+            foreach (var process in processes)
+            {
+                windows.AddRange(DescribeWindows(process.Id));
+                process.Dispose();
+            }
+            if (windows.Count != 0)
+                text.Append(", windows ").Append(string.Join(", ", windows.Distinct().Take(3)));
+            text.Append(';');
+        }
+        return text.ToString();
+    }
+
+    private static List<string> DescribeWindows(int processId)
+    {
+        var windows = new List<string>();
+        EnumWindows((window, _) =>
+        {
+            GetWindowThreadProcessId(window, out var owner);
+            if (owner != processId || !IsWindowVisible(window)) return true;
+            var title = new StringBuilder(128);
+            var className = new StringBuilder(64);
+            GetWindowTextW(window, title, title.Capacity);
+            GetClassNameW(window, className, className.Capacity);
+            windows.Add($"\"{title}\" [{className}]");
+            return windows.Count < 8;
+        }, IntPtr.Zero);
+        return windows;
+    }
+
+    private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out int processId);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr window);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowTextW(IntPtr window, StringBuilder text, int capacity);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassNameW(IntPtr window, StringBuilder text, int capacity);
 
     private const string PrivateMathTypeClsid =
         "{0002CE03-0000-0000-C000-000000000046}";

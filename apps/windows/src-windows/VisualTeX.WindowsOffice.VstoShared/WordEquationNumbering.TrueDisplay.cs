@@ -118,7 +118,7 @@ internal static partial class WordEquationNumbering
             }
             else
             {
-                var activeXml = activeRange.WordOpenXML;
+                var activeXml = WordOmmlConverter.ReadLocalEquationXml(activeRange);
                 semanticOmml = metadata is not null
                     ? WordOmmlConverter.StripVisualTeXNativeEquationNumberForManagedRepair(
                         activeXml)
@@ -144,7 +144,7 @@ internal static partial class WordEquationNumbering
                 Release(activeRange);
                 activeRange = ResolveSingleNativeOmmlRange(migratedRange);
                 semanticOmml = WordOmmlConverter.StripVisualTeXNativeEquationNumber(
-                    activeRange.WordOpenXML);
+                    WordOmmlConverter.ReadLocalEquationXml(activeRange));
                 traceStage("migrate-omml-table-to-hash-seq");
             }
 
@@ -789,7 +789,7 @@ internal static partial class WordEquationNumbering
                     formulaId,
                     metadata);
             if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
-                    formulaRange.WordOpenXML))
+                    WordOmmlConverter.ReadLocalEquationXml(formulaRange)))
                 return false;
 
             ConfigureNumberedNativeOmmlDisplay(
@@ -860,7 +860,7 @@ internal static partial class WordEquationNumbering
                     formulaId,
                     metadata);
             return WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
-                formulaRange.WordOpenXML);
+                WordOmmlConverter.ReadLocalEquationXml(formulaRange));
         }
         catch
         {
@@ -984,7 +984,7 @@ internal static partial class WordEquationNumbering
                         || (bool)mathRange.get_Information(
                             WdInformation.wdWithInTable))
                         continue;
-                    var mathXml = mathRange.WordOpenXML ?? string.Empty;
+                    var mathXml = WordOmmlConverter.ReadLocalEquationXml(mathRange);
                     if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
                             mathXml))
                         continue;
@@ -1086,7 +1086,7 @@ internal static partial class WordEquationNumbering
                 math = maths[1];
                 if (math.Type != WdOMathType.wdOMathDisplay) continue;
                 formulaRange = math.Range.Duplicate;
-                var liveXml = formulaRange.WordOpenXML ?? string.Empty;
+                var liveXml = WordOmmlConverter.ReadLocalEquationXml(formulaRange);
                 if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
                         liveXml))
                     continue;
@@ -1190,7 +1190,7 @@ internal static partial class WordEquationNumbering
                 candidateRange = candidateMath.Range.Duplicate;
 
                 string candidateXml;
-                try { candidateXml = candidateRange.WordOpenXML ?? string.Empty; }
+                try { candidateXml = WordOmmlConverter.ReadLocalEquationXml(candidateRange); }
                 catch { continue; }
                 if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
                         candidateXml))
@@ -1305,7 +1305,7 @@ internal static partial class WordEquationNumbering
                     // to still be inside the delimiter, because that missing alias
                     // is exactly what this repair path exists to recover.
                     if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
-                            formulaRange.WordOpenXML))
+                            WordOmmlConverter.ReadLocalEquationXml(formulaRange)))
                         continue;
                     hosts.Add((formulaId, formulaRange.Start, formulaRange.End));
                     if (!IsHealthyNumberedNativeOmmlHashSequenceHost(
@@ -1449,7 +1449,7 @@ internal static partial class WordEquationNumbering
             if (math.Type != WdOMathType.wdOMathDisplay) return null;
             mathRange = math.Range.Duplicate;
             if (!WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
-                    mathRange.WordOpenXML,
+                    WordOmmlConverter.ReadLocalEquationXml(mathRange),
                     formulaId))
                 return null;
 
@@ -1690,7 +1690,7 @@ internal static partial class WordEquationNumbering
                 return false;
             if (!skipWordOpenXmlSequenceProof
                 && !WordOmmlConverter.HasVisualTeXDirectSequenceEquationNumber(
-                    mathRange.WordOpenXML))
+                    WordOmmlConverter.ReadLocalEquationXml(mathRange)))
                 return false;
 
             fields = mathRange.Fields;
@@ -2076,8 +2076,8 @@ internal static partial class WordEquationNumbering
 
             var semanticOmml = WordOmmlConverter
                 .StripManagedVisualTeXNativeEquationNumber(
-                    activeRange.WordOpenXML);
-            if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(activeRange.WordOpenXML))
+                    WordOmmlConverter.ReadLocalEquationXml(activeRange));
+            if (WordOmmlConverter.HasVisualTeXNativeEquationNumber(WordOmmlConverter.ReadLocalEquationXml(activeRange)))
                 traceStage("strip-native-number-wrapper");
 
             if (IsNumberedEquationTable(activeRange))
@@ -5771,7 +5771,7 @@ internal static partial class WordEquationNumbering
             formulaBookmark = WordOmmlFormulaStore.FindByFormulaId(document, formulaId);
             if (formulaBookmark is null) return null;
             formulaRange = WordOmmlFormulaStore.GetEquationRange(formulaBookmark);
-            var openXml = formulaRange.WordOpenXML ?? string.Empty;
+            var openXml = WordOmmlConverter.ReadLocalEquationXml(formulaRange);
             if (!WordOmmlConverter.HasVisualTeXNativeEquationNumber(openXml)
                 || openXml.IndexOf("SEQ VisualTeXEquation", StringComparison.OrdinalIgnoreCase) < 0
                 || openXml.IndexOf("<m:eqArr", StringComparison.OrdinalIgnoreCase) < 0)

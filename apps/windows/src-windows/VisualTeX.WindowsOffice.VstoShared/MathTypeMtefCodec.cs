@@ -120,6 +120,26 @@ internal static partial class MathTypeMtefCodec
     private const byte EmbellBreve = 20;
     private const byte EmbellQuadrupleDot = 24;
     private const byte EmbellUnderbar = 29;
+    // Read-only: MathType's other embellishment palette entries (MTEF v5
+    // emb_NOT, harpoons, mid bar, frown, slashes and the marks below).
+    private const byte EmbellNot = 10;
+    private const byte EmbellRightHarpoon = 14;
+    private const byte EmbellLeftHarpoon = 15;
+    private const byte EmbellMidbar = 16;
+    private const byte EmbellFrown = 19;
+    private const byte EmbellCrossBars = 21;
+    private const byte EmbellUpBar = 22;
+    private const byte EmbellDownBar = 23;
+    private const byte EmbellUnderDot = 25;
+    private const byte EmbellUnderQuadrupleDot = 28;
+    private const byte EmbellUnderTilde = 30;
+    private const byte EmbellUnderFrown = 31;
+    private const byte EmbellUnderSmile = 32;
+    private const byte EmbellUnderRightArrow = 33;
+    private const byte EmbellUnderLeftArrow = 34;
+    private const byte EmbellUnderBothArrow = 35;
+    private const byte EmbellUnderRightHarpoon = 36;
+    private const byte EmbellUnderLeftHarpoon = 37;
 
     internal sealed class RewriteResult
     {
@@ -8336,6 +8356,21 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
                     case EmbellTriplePrime: rightPrimes.Append('‴'); continue;
                     case EmbellBackPrime: leftPrimes.Append('‵'); continue;
                 }
+                var strike = EmbellishmentStrike(embellishment);
+                if (strike.Length > 0)
+                {
+                    token = new XElement("menclose", new XAttribute("notation", strike), token);
+                    continue;
+                }
+                if (embellishment is >= EmbellUnderDot and <= EmbellUnderQuadrupleDot)
+                {
+                    // Dots below the character: one to four centred dots.
+                    var dots = new XElement("mrow");
+                    for (var dot = EmbellUnderDot; dot <= embellishment; dot++)
+                        dots.Add(new XElement("mo", "⋅"));
+                    token = new XElement("munder", new XAttribute("accentunder", "true"), token, dots);
+                    continue;
+                }
                 var mark = EmbellishmentMark(embellishment);
                 if (mark.Length == 0)
                     throw new InvalidDataException(
@@ -8346,6 +8381,12 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
                         new XAttribute("accentunder", "true"),
                         token,
                         new XElement("mo", new XAttribute("accent", "true"), mark))
+                    : embellishment >= EmbellUnderTilde
+                    ? new XElement(
+                        "munder",
+                        new XAttribute("accentunder", "true"),
+                        token,
+                        new XElement("mo", new XAttribute("stretchy", "false"), mark))
                     : new XElement(
                         "mover",
                         new XAttribute("accent", "true"),
@@ -8720,6 +8761,25 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
             EmbellBreve => "˘",
             EmbellQuadrupleDot => "⃜",
             EmbellUnderbar => "―",
+            EmbellRightHarpoon or EmbellUnderRightHarpoon => "⇀",
+            EmbellLeftHarpoon or EmbellUnderLeftHarpoon => "↼",
+            EmbellFrown or EmbellUnderFrown => "⌢",
+            EmbellUnderSmile => "⌣",
+            EmbellUnderTilde => "∼",
+            EmbellUnderRightArrow => "→",
+            EmbellUnderLeftArrow => "←",
+            EmbellUnderBothArrow => "↔",
+            _ => string.Empty,
+        };
+
+        // MathType's slash, cross and mid-bar embellishments strike through
+        // the character, the same marks as its strike-through template.
+        private static string EmbellishmentStrike(byte embellishment) => embellishment switch
+        {
+            EmbellNot or EmbellUpBar => "updiagonalstrike",
+            EmbellDownBar => "downdiagonalstrike",
+            EmbellCrossBars => "updiagonalstrike downdiagonalstrike",
+            EmbellMidbar => "horizontalstrike",
             _ => string.Empty,
         };
 

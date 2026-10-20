@@ -164,6 +164,12 @@ public interface IWordRibbonCallbacks
     [DispId(52)]
     void OnUpdateEquationFormat(object control);
 
+    [DispId(53)]
+    void OnNumberDisplayFormulasSelection(object control);
+
+    [DispId(54)]
+    void OnNumberDisplayFormulasDocument(object control);
+
 }
 
 [ComVisible(true)]
@@ -210,6 +216,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             </menu>
             <button id="VisualTeX.WordVsto.InsertReference" label="插入公式引用" screentip="引用带编号公式" supertip="分别从当前文档的 VisualTeX、Word OMML 或 MathType 带编号公式中选择目标；各格式沿用各自的原生编号与引用结构。" imageMso="HyperlinkInsert" onAction="OnInsertEquationReference" />
           </box>
+          <menu id="VisualTeX.WordVsto.BatchNumbering" label="批量编号" size="large" screentip="为行间公式批量添加编号" supertip="按当前编号格式，为所选内容或全文中所有未编号的行间公式（VisualTeX OLE、Word OMML、MathType）添加各自原生的编号；已有编号保持不变并自动顺延，交叉引用同步更新，可一次 Ctrl+Z 撤销。" tag="updateNumbers" getImage="GetRibbonImage">
+            <button id="VisualTeX.WordVsto.BatchNumberingSelection" label="为所选行间公式编号" onAction="OnNumberDisplayFormulasSelection" />
+            <button id="VisualTeX.WordVsto.BatchNumberingDocument" label="为全文行间公式编号" onAction="OnNumberDisplayFormulasDocument" />
+          </menu>
           <button id="VisualTeX.WordVsto.UpdateEquationFormat" label="更新公式格式" size="large" screentip="更新公式格式" supertip="把本文档中旧版 VisualTeX 写入的公式编号结构一次升级为当前格式（与 Mac 版相同）。公式内容与类型不变。" tag="updateNumbers" getImage="GetRibbonImage" onAction="OnUpdateEquationFormat" />
           <button id="VisualTeX.WordVsto.BulkImport" label="批量导入" size="large" screentip="批量导入 LaTeX / Markdown" supertip="将 Markdown 或 LaTeX 文档解析为 Word 原生文字，以及可单独编辑和调整字号的行内/行间公式。" tag="batchImport" getImage="GetRibbonImage" onAction="OnBulkImport" />
         </group>
@@ -2323,7 +2333,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
                 var selected = interceptedNativeOle
                     ? service.ReadSelection()
-                    : service.ReadVisualTeXOmmlAtScreenPoint(screenX, screenY);
+                    : service.ReadVisualTeXOmmlAtScreenPoint(
+                        screenX,
+                        screenY,
+                        reason => SetStatus($"VisualTeX Word 双击检测失败：{reason}"));
                 WordDoubleClickHook.TraceMessage(
                     $"addin-coordinate-selection formulaId={selected?.FormulaId ?? "<null>"} "
                     + $"objectMode={selected?.ObjectMode ?? "<null>"}");
@@ -3823,7 +3836,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         ?? Path.GetTempPath();
                     var nativePreviewWatch = Stopwatch.StartNew();
                     var renderedAllNativePreviews =
-                        MathTypeNativePreviewRenderer.TryRenderBatch(
+                        MathTypeNativePreviewRenderer.TryRenderBatchWithRetry(
                             nativePreviewInputs,
                             nativePreviewRoot,
                             out var nativePreviews);
@@ -3835,7 +3848,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
-                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.FailureMessage);
+                        string? LatexOf(string key) => plan.Targets.FirstOrDefault(target =>
+                            formulaKeys.TryGetValue(target.Id, out var targetKey) && targetKey == key)?.Latex;
+                        foreach (var failure in MathTypeNativePreviewRenderer.LastFailures)
+                            WriteRedrawAcceptanceLog(
+                                $"mathtype-native-preview-failed reason={failure.Value} latex={LatexOf(failure.Key)}");
+                        throw new InvalidOperationException(
+                            MathTypeNativePreviewRenderer.DescribeFailures(LatexOf));
                     }
                     else
                     {
@@ -4572,7 +4591,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         ?? Path.GetTempPath();
                     var nativePreviewWatch = Stopwatch.StartNew();
                     var renderedAllNativePreviews =
-                        MathTypeNativePreviewRenderer.TryRenderBatch(
+                        MathTypeNativePreviewRenderer.TryRenderBatchWithRetry(
                             nativePreviewInputs,
                             nativePreviewRoot,
                             out var nativePreviews);
@@ -4584,7 +4603,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
-                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.FailureMessage);
+                        string? LatexOf(string key) => rendered.TryGetValue(key, out var template)
+                            ? template.Session.ToMetadata().Latex
+                            : null;
+                        foreach (var failure in MathTypeNativePreviewRenderer.LastFailures)
+                            WriteBulkAcceptanceLog(
+                                $"mathtype-native-preview-failed reason={failure.Value} latex={LatexOf(failure.Key)}");
+                        throw new InvalidOperationException(
+                            MathTypeNativePreviewRenderer.DescribeFailures(LatexOf));
                     }
                     else
                     {
@@ -5486,6 +5512,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 var title = T("VisualTeX 更新公式格式", "VisualTeX Update Equation Format");
                 if (report.Total == 0)
                 {
+                    WriteRedrawAcceptanceLog("equation-format-update-current");
                     System.Windows.Forms.MessageBox.Show(
                         T("本文档的公式已经是当前格式，无需更新。",
                           "The equations in this document already use the current format."),
@@ -5511,6 +5538,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     zh += "旧版编号格式变量：1 个\r\n";
                     en += "Older numbering-style variable: 1\r\n";
                 }
+                if (report.LegacyMathFont)
+                {
+                    zh += "数学字体：Latin Modern Math → VisualTeX Latin Modern Math"
+                        + "（字形相同；Word 另存为 PDF 时公式编号的括号不再丢失）\r\n";
+                    en += "Math font: Latin Modern Math → VisualTeX Latin Modern Math"
+                        + " (same glyphs; Word's Save as PDF keeps the parentheses of equation numbers)\r\n";
+                }
                 zh += "\r\n公式内容和类型不变。是否继续？";
                 en += "\r\nEquation content and kinds do not change. Continue?";
                 return System.Windows.Forms.MessageBox.Show(
@@ -5524,10 +5558,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (!proceed) return;
             var count = await dispatcher.InvokeAsync(service.UpgradeEquationFormat)
                 .ConfigureAwait(false);
+            WriteRedrawAcceptanceLog(
+                $"equation-format-update-complete numbers={count} mathFont={(report.LegacyMathFont ? "migrated" : "unchanged")}");
             SetStatus(T($"公式格式已更新（{count} 个编号）。", $"Equation format updated ({count} numbers)."));
         }
         catch (Exception error)
         {
+            WriteRedrawAcceptanceLog("equation-format-update-failed " + error.Message);
             SetStatus(T($"更新公式格式失败：{error.Message}", $"Equation format update failed: {error.Message}"));
             await ShowWordOperationErrorAsync(dispatcher, "更新公式格式", error).ConfigureAwait(false);
         }

@@ -78,6 +78,14 @@
     <Content Include="$(OfficeMathFontRoot)\README-Latin-Modern-Math.txt" Link="README-Latin-Modern-Math.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Latin Modern Math with TrueType outlines (office-fonts/README-VisualTeX-Latin-Modern-Math.txt):
+         the font Word equations use, because Word's PDF export embeds TrueType math only. -->
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\VisualTeXLatinModernMath.ttf" Link="VisualTeXLatinModernMath.ttf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)..\office-fonts\README-VisualTeX-Latin-Modern-Math.txt" Link="README-VisualTeX-Latin-Modern-Math.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <Import Project="..\VisualTeX.WindowsOffice.VstoShared\MathTypeCore.projitems" />
   <Target Name="EnsureOfficeMathFontPrepared" BeforeTargets="PrepareForBuild">

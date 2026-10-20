@@ -268,7 +268,7 @@ internal static class Program
         Type converterType,
         string artifactRoot)
     {
-        const string expectedMathFont = "Latin Modern Math";
+        const string expectedMathFont = "VisualTeX Latin Modern Math";
         var cases = new List<UprightFixtureCase>
         {
             fixture.Cases.Single(item => string.Equals(

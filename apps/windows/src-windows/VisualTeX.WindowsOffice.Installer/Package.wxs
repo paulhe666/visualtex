@@ -27,11 +27,20 @@
           FontTitle="Latin Modern Math"
           KeyPath="yes" />
       </Component>
+      <!-- The face Word equations use; TrueType so that Word's PDF export embeds it. -->
+      <Component Id="VisualTeXLatinModernMathSystemFont" Guid="4DD2AE06-A5CB-4AD0-9FE1-0AADBBF2B81E">
+        <File
+          Id="VisualTeXLatinModernMathSystemFontFile"
+          Source="$(WordOutput)\VisualTeXLatinModernMath.ttf"
+          TrueType="yes"
+          KeyPath="yes" />
+      </Component>
     </StandardDirectory>
 
     <Feature Id="Complete" Title="VisualTeX Windows Office Integration" Level="1">
       <ComponentRef Id="VstoFiles" />
       <ComponentRef Id="LatinModernMathSystemFont" />
+      <ComponentRef Id="VisualTeXLatinModernMathSystemFont" />
       <ComponentRef Id="NativeOleServerFiles" />
       <ComponentRef Id="NativeOleRegistration" />
       <ComponentRef Id="WordComRegistration" />
@@ -59,6 +68,8 @@
       <File Id="LatinModernMathFont" Source="$(WordOutput)\latinmodern-math.otf" />
       <File Id="LatinModernMathLicense" Source="$(WordOutput)\GUST-FONT-LICENSE.txt" />
       <File Id="LatinModernMathReadme" Source="$(WordOutput)\README-Latin-Modern-Math.txt" />
+      <File Id="VisualTeXLatinModernMathFont" Source="$(WordOutput)\VisualTeXLatinModernMath.ttf" />
+      <File Id="VisualTeXLatinModernMathReadme" Source="$(WordOutput)\README-VisualTeX-Latin-Modern-Math.txt" />
       <RegistryValue
         Root="HKLM"
         Key="Software\VisualTeX\OfficeIntegration"

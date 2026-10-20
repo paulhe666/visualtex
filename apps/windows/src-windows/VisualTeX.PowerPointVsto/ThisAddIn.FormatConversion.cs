@@ -815,7 +815,7 @@ public sealed partial class ThisAddIn
         if (!MathTypeNativePreviewRenderer.IsAvailable)
             throw new InvalidOperationException(MathTypeNativePreviewRenderer.UnavailableMessage);
 
-        var previews = RenderMathTypePreviews(inputs, progress, token, out var fontsMissing);
+        var previews = RenderMathTypePreviews(inputs, progress, token, out var fontsMissing, out var previewFailures);
         try
         {
             if (fontsMissing) throw new InvalidOperationException(MathTypeNativePreviewRenderer.FontsUnavailableMessage);
@@ -825,7 +825,9 @@ public sealed partial class ThisAddIn
                 var formula = prepared[pair.Key];
                 if (!previews.TryGetValue(pair.Key, out var preview))
                 {
-                    formula.Failure = MathTypeNativePreviewRenderer.IncompleteMessage;
+                    formula.Failure = previewFailures.TryGetValue(pair.Key, out var reason)
+                        ? MathTypeNativePreviewRenderer.IncompleteMessage + "（原因：" + reason + "）"
+                        : MathTypeNativePreviewRenderer.IncompleteMessage;
                     continue;
                 }
                 try
@@ -850,17 +852,19 @@ public sealed partial class ThisAddIn
         }
     }
 
-    // Grouped rendering with retries (PowerPointPreviewRetry): a renderer crash
+    // Grouped rendering with retries (NativePreviewRetry): a renderer crash
     // costs time, not the batch, and a broken renderer fails fast.
     private static Dictionary<string, MathTypeNativePreviewRenderer.Result> RenderMathTypePreviews(
         IReadOnlyDictionary<string, byte[]> inputs,
         OfficeOperationProgress progress,
         CancellationToken token,
-        out bool fontsMissing)
+        out bool fontsMissing,
+        out Dictionary<string, string> failures)
     {
         var fonts = false;
+        var reasons = new Dictionary<string, string>(StringComparer.Ordinal);
         var message = T("正在生成 MathType 排版预览…", "Rendering MathType previews…");
-        var rendered = PowerPointPreviewRetry.Render<MathTypeNativePreviewRenderer.Result>(
+        var rendered = NativePreviewRetry.Render<MathTypeNativePreviewRenderer.Result>(
             inputs.Keys.ToList(),
             group =>
             {
@@ -870,9 +874,11 @@ public sealed partial class ThisAddIn
                     Path.GetTempPath(),
                     out var results);
                 fonts |= MathTypeNativePreviewRenderer.LastFailureWasFonts;
+                foreach (var failure in MathTypeNativePreviewRenderer.LastFailures) reasons[failure.Key] = failure.Value;
+                foreach (var key in results.Keys) reasons.Remove(key);
                 return results;
             },
-            new PowerPointPreviewRetryOptions
+            new NativePreviewRetryOptions
             {
                 Pause = pause =>
                 {
@@ -884,6 +890,7 @@ public sealed partial class ThisAddIn
                     $"format-conversion-mathtype-preview-retry pass={pass} missing={missing} group={size}"),
             });
         fontsMissing = fonts;
+        failures = reasons;
         return rendered;
     }
 

@@ -27,6 +27,10 @@ internal static partial class MathTypeOleInterop
                     return true;
                 if (TryResolveCapabilities(progId, out _))
                     return true;
+                // VisualTeX's own formula objects are never MathType; skip the
+                // serialized probe below (one WordOpenXML export per object).
+                if (progId?.StartsWith(FormulaOleContract.VersionIndependentProgId, StringComparison.OrdinalIgnoreCase) == true)
+                    return false;
             }
             catch
             {
@@ -128,6 +132,47 @@ internal static partial class MathTypeOleInterop
         finally { Release(range); }
     }
 
+    // Batch numbering: whether this object is a display equation, whether it
+    // already owns an MTPlaceRef number, and whether its paragraph instead shows
+    // a number typed as text (which the scaffold writer must never overwrite).
+    // Reads only the paragraph's fields and text: no OLE payload or MTEF decode.
+    internal static (bool Display, bool Numbered, bool TypedNumber) ClassifyDisplayNumbering(InlineShape shape)
+    {
+        Range? range = null;
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? paragraphRange = null;
+        try
+        {
+            range = shape.Range;
+            if (!string.Equals(InferDisplayMode(range, out var numbered), "block", StringComparison.Ordinal))
+                return (false, false, false);
+            if (numbered)
+                return (true, true, false);
+            paragraphs = range.Paragraphs;
+            paragraph = paragraphs[1];
+            paragraphRange = paragraph.Range;
+            var text = (paragraphRange.Text ?? string.Empty)
+                .Replace("\r", string.Empty)
+                .Replace("\a", string.Empty)
+                .Replace("\u0001", string.Empty)
+                .Replace("\uFFFC", string.Empty)
+                .Replace("\u0013", string.Empty)
+                .Replace("\u0014", string.Empty)
+                .Replace("\u0015", string.Empty)
+                .Trim();
+            return (true, false, text.Length > 0);
+        }
+        catch { return (false, false, false); }
+        finally
+        {
+            Release(paragraphRange);
+            Release(paragraph);
+            Release(paragraphs);
+            Release(range);
+        }
+    }
+
     internal static FormulaMetadata ReadMetadata(
         Microsoft.Office.Interop.Word.Application application,
         InlineShape shape,
@@ -163,7 +208,16 @@ internal static partial class MathTypeOleInterop
         }
         var latex = MathMlToLatexConverter.Convert(mathMl).Trim();
         if (string.IsNullOrWhiteSpace(latex))
-            throw new InvalidDataException("MathType OLE returned MathML that VisualTeX could not convert to LaTeX.");
+        {
+            if (IsBlankMathMl(mathMl))
+            {
+                var blank = new InvalidDataException("The MathType object is empty.");
+                blank.Data[BlankEquationKey] = true;
+                throw blank;
+            }
+            throw new InvalidDataException(
+                $"The MathType formula{DescribePage(shape)} has content VisualTeX could not convert to LaTeX.");
+        }
 
         Range? range = null;
         var displayMode = "inline";
@@ -207,6 +261,38 @@ internal static partial class MathTypeOleInterop
         };
         metadata.Validate();
         return metadata;
+    }
+
+    private const string BlankEquationKey = "VisualTeX.BlankMathType";
+
+    internal static bool IsBlankEquationError(Exception error) =>
+        error.Data.Contains(BlankEquationKey);
+
+    // An Equation.DSMT4 object with nothing typed in it (an empty slot, or
+    // only spacing): no character, number, operator or text to convert.
+    internal static bool IsBlankMathMl(string mathMl)
+    {
+        try
+        {
+            return !System.Xml.Linq.XElement.Parse(mathMl).DescendantsAndSelf().Any(element =>
+                element.Name.LocalName == "mglyph"
+                || (element.Name.LocalName is "mi" or "mn" or "mo" or "mtext" or "ms"
+                    && !string.IsNullOrWhiteSpace(element.Value)));
+        }
+        catch (System.Xml.XmlException) { return false; }
+    }
+
+    private static string DescribePage(InlineShape shape)
+    {
+        Range? range = null;
+        try
+        {
+            range = shape.Range;
+            return range.get_Information(WdInformation.wdActiveEndAdjustedPageNumber) is int page && page > 0
+                ? $" on page {page}" : string.Empty;
+        }
+        catch { return string.Empty; }
+        finally { Release(range); }
     }
 
     /// <summary>

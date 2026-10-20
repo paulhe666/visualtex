@@ -68,4 +68,38 @@ public sealed class NativeRenderProtocolTests
         response.Items[0].Id = "not-requested";
         Assert.Throws<InvalidDataException>(() => NativeRenderProtocol.Validate(response, request));
     }
+
+    [Fact]
+    public void FailuresNameOnlyRequestedItemsWithoutOutput()
+    {
+        var request = Request();
+        request.Items.Add(new NativeRenderInput { Id = "second", Mtef = new byte[] { 5, 1, 0 } });
+        var response = new NativeRenderResponse
+        {
+            Items = new() { new NativeRenderOutput { Id = "formula", Wmf = new byte[24], WidthPt = 12, HeightPt = 9 } },
+            Failures = new() { new NativeRenderFailure { Id = "second", Reason = "MathType native renderer returned status -4." } },
+        };
+        NativeRenderProtocol.Validate(response, request);
+        response.Failures[0].Id = "formula";
+        Assert.Throws<InvalidDataException>(() => NativeRenderProtocol.Validate(response, request));
+        response.Failures[0].Id = "not-requested";
+        Assert.Throws<InvalidDataException>(() => NativeRenderProtocol.Validate(response, request));
+        response.Failures[0].Id = "second";
+        response.Failures.Add(new NativeRenderFailure { Id = "second", Reason = "again" });
+        Assert.Throws<InvalidDataException>(() => NativeRenderProtocol.Validate(response, request));
+        response.Failures.RemoveAt(1);
+        response.Failures[0].Reason = new string('x', NativeRenderProtocol.MaxFailureReasonLength + 1);
+        Assert.Throws<InvalidDataException>(() => NativeRenderProtocol.Validate(response, request));
+    }
+
+    [Fact]
+    public void ResponseFromAnOlderServiceHasNoFailures()
+    {
+        var response = JsonSerializer.Deserialize<NativeRenderResponse>("{\"Version\":1,\"Error\":\"\",\"Items\":[]}")!;
+        NativeRenderProtocol.Validate(response, Request());
+        Assert.Empty(response.Failures);
+        Assert.Equal("No output.", NativeRenderProtocol.BoundFailureReason("  "));
+        Assert.Equal(NativeRenderProtocol.MaxFailureReasonLength,
+            NativeRenderProtocol.BoundFailureReason(new string('x', 500)).Length);
+    }
 }

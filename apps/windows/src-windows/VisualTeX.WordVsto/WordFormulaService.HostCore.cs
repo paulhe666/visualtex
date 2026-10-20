@@ -174,6 +174,16 @@ internal sealed partial class WordFormulaService
                             && !updated.Numbering.Numbered)
                             throw new InvalidDataException(
                                 "The VisualTeX font-size edit changed its numbering container.");
+                        if (updated.Numbering.ContainerKind ==
+                                WordFormulaNumberingContainerKind.CanonicalBodyTabParagraph
+                            && WordVisualTeXParagraphNumbering.IsSelfContainedHost(
+                                document,
+                                updated)
+                            && updated.Metadata is not null)
+                            WordVisualTeXParagraphNumbering.ApplyNumberFormat(
+                                document,
+                                updated,
+                                updated.Metadata);
                     }
                     return true;
                 });

@@ -120,12 +120,15 @@ internal static class MathTypeEquationNumbering
         internal int Count => PlaceRefPlans.Count;
     }
 
-    internal static int UpdateEquationNumbers(Document document)
+    // bulkUpdate: evaluate every MathType number field in one ordered pass (see
+    // WordNumberingFieldCollection.BulkUpdate) instead of one Update per SEQ.
+    internal static int UpdateEquationNumbers(Document document, bool bulkUpdate = false)
     {
         var count =
             UpdateNumberFields(
                 document,
-                out var hasPotentialEquationReferences);
+                out var hasPotentialEquationReferences,
+                bulkUpdate);
         if (count > 0
             && hasPotentialEquationReferences)
             WordEquationReferenceFields.UpdateReferences(
@@ -144,7 +147,8 @@ internal static class MathTypeEquationNumbering
 
     private static int UpdateNumberFields(
         Document document,
-        out bool hasPotentialEquationReferences)
+        out bool hasPotentialEquationReferences,
+        bool bulkUpdate = false)
     {
         if (document is null)
             throw new ArgumentNullException(
@@ -206,9 +210,12 @@ internal static class MathTypeEquationNumbering
             if (numberedEquationCount == 0)
                 return 0;
 
-            foreach (var sequenceField in
-                     sequenceFields)
-                sequenceField.Update();
+            if (bulkUpdate)
+                WordNumberingFieldCollection.BulkUpdate(document);
+            else
+                foreach (var sequenceField in
+                         sequenceFields)
+                    sequenceField.Update();
 
             return numberedEquationCount;
         }

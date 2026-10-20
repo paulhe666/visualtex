@@ -372,7 +372,7 @@ public sealed partial class ThisAddIn
                     var nativePreviewWatch = System.Diagnostics.Stopwatch.StartNew();
                     progress.Report("正在生成 MathType 原生预览…", 0, plan.Targets.Count);
                     var renderedAllNativePreviews =
-                        MathTypeNativePreviewRenderer.TryRenderBatch(
+                        MathTypeNativePreviewRenderer.TryRenderBatchWithRetry(
                             nativePreviewInputs,
                             nativePreviewRoot,
                             out var nativePreviews);
@@ -387,7 +387,18 @@ public sealed partial class ThisAddIn
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
-                        throw new InvalidOperationException(MathTypeNativePreviewRenderer.FailureMessage);
+                        string? OrdinalOf(string id)
+                        {
+                            var ordinal = 0;
+                            foreach (var target in plan.Targets)
+                            {
+                                ordinal++;
+                                if (target.Id == id) return $"第 {ordinal} 个公式";
+                            }
+                            return null;
+                        }
+                        throw new InvalidOperationException(
+                            MathTypeNativePreviewRenderer.DescribeFailures(OrdinalOf));
                     }
                     else
                     {

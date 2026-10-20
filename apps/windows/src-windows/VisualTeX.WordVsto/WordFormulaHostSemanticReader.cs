@@ -158,45 +158,8 @@ internal static class WordFormulaHostSemanticReader
         }
     }
 
-    private static string ReadLocalEquationXml(Range exactEquation)
-    {
-        var direct = TryReadExactlyOneEquation(exactEquation);
-        if (direct is not null) return direct;
-
-        // A few Word builds serialize an exact OMath range incompletely at a
-        // field/run boundary. Retry only with a tiny live range around the same
-        // equation. This is bounded local work, never a document fallback.
-        Range? probe = null;
-        try
-        {
-            probe = exactEquation.Duplicate;
-            try { probe.MoveStart(WdUnits.wdCharacter, -2); } catch { }
-            try { probe.MoveEnd(WdUnits.wdCharacter, 2); } catch { }
-            var expanded = TryReadExactlyOneEquation(probe);
-            if (expanded is not null) return expanded;
-        }
-        finally { Release(probe); }
-
-        throw new InvalidDataException(
-            "Word could not export one local OMML equation from the resolved host.");
-    }
-
-    private static string? TryReadExactlyOneEquation(Range range)
-    {
-        try
-        {
-            var xml = range.WordOpenXML;
-            var package = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
-            var count = package.Descendants(MathNs + "oMath").Count();
-            if (count != 1) return null;
-            _ = WordOmmlConverter.ExtractSingleOMath(xml);
-            return xml;
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    private static string ReadLocalEquationXml(Range exactEquation) =>
+        WordOmmlConverter.ReadLocalEquationXml(exactEquation);
 
     internal static Range CreateRange(
         Document document,

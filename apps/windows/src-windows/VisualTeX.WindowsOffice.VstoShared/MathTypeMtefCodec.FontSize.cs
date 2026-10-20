@@ -64,6 +64,35 @@ internal static partial class MathTypeMtefCodec
         return new RewriteResult { EquationNative = native, Mtef = mtef, StructureOffset = FindRootStructureOffset(mtef) };
     }
 
+    // Preview only: the same MTEF with every absolute EQN_PREFS size (Full and
+    // any absolute script/symbol size) multiplied by factor; percentage sizes
+    // follow Full. Used to draw an equation too large for MathPage's 16-bit WMF
+    // coordinates at a reduced size; the document keeps the original MTEF.
+    internal static byte[] ScaleMtefPreferenceSizes(byte[] mtef, double factor)
+    {
+        if (factor <= 0 || factor > 1 || double.IsNaN(factor))
+            throw new ArgumentOutOfRangeException(nameof(factor));
+        var preferences = ReadPrefixLayout(mtef).Preferences;
+        if (preferences < 0) throw new InvalidDataException("MathType equation preferences are missing.");
+        var arrayStart = preferences + 2;
+        var sizes = ReadSizeDimensions(mtef, arrayStart, out var arrayEnd);
+        if (sizes.Count == 0) throw new InvalidDataException("MathType Full size is not recorded.");
+        for (var index = 0; index < sizes.Count; index++)
+        {
+            if (sizes[index].Units > 3) continue;
+            if (!double.TryParse(sizes[index].Value, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture, out var value))
+                throw new InvalidDataException("MathType size is not a valid decimal dimension.");
+            sizes[index] = (sizes[index].Units, (value * factor).ToString("0.####", CultureInfo.InvariantCulture));
+        }
+        var packed = WriteSizeDimensions(sizes);
+        var scaled = new byte[mtef.Length - (arrayEnd - arrayStart) + packed.Length];
+        Buffer.BlockCopy(mtef, 0, scaled, 0, arrayStart);
+        Buffer.BlockCopy(packed, 0, scaled, arrayStart, packed.Length);
+        Buffer.BlockCopy(mtef, arrayEnd, scaled, arrayStart + packed.Length, mtef.Length - arrayEnd);
+        return scaled;
+    }
+
     private static List<(byte Units, string Value)> ReadSizeDimensions(byte[] data, int start, out int end)
     {
         Require(data, start, 1);

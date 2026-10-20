@@ -184,14 +184,17 @@ public sealed partial class PowerPointFormulaService
             if (result.SourceCompoundFile is not null)
                 previewsToRender["source"] = MathTypeMtefCodec.ExtractNativeMtef(
                     MathTypeOleStorage.ReadEquationNative(result.SourceCompoundFile));
-            MathTypeNativePreviewRenderer.TryRenderBatch(previewsToRender, Path.GetTempPath(), out var previews);
+            MathTypeNativePreviewRenderer.TryRenderBatchWithRetry(previewsToRender, Path.GetTempPath(), out var previews);
             try
             {
                 if (!previews.ContainsKey("target")
                     || (result.SourceCompoundFile is not null && !previews.ContainsKey("source")))
                     throw new InvalidOperationException(MathTypeNativePreviewRenderer.LastFailureWasFonts
                         ? MathTypeNativePreviewRenderer.FontsUnavailableMessage
-                        : "MathType's native preview could not be rendered. The original equation has not been changed.");
+                        : "MathType's native preview could not be rendered. The original equation has not been changed."
+                            + (MathTypeNativePreviewRenderer.LastFailures.Values.FirstOrDefault() is { } reason
+                                ? " (" + reason + ")"
+                                : string.Empty));
                 if (previews.TryGetValue("source", out var sourcePreview))
                 {
                     result.SourceWidth = sourcePreview.WidthPt;

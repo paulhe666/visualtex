@@ -12,7 +12,16 @@ internal static partial class WordFormulaNumberingKernel
     {
         private readonly Dictionary<string, NumberPlan> _plans = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<(WordFormulaHostDescriptor Host, Range LiveRange, string OperationId)> _existingTables = new();
+        private WordVisualTeXParagraphNumbering.BodyFieldCopies? _bodyFieldCopies;
         internal NumberPlan For(string operationId) => _plans[operationId];
+
+        // Batch numbering: build the first number field of each kind and copy
+        // it to the other formulas (see BodyFieldCopies).
+        internal void EnableBodyFieldCopies()
+        {
+            _bodyFieldCopies ??= new WordVisualTeXParagraphNumbering.BodyFieldCopies();
+            foreach (var plan in _plans.Values) plan.BodyFieldCopies = _bodyFieldCopies;
+        }
 
         // A target whose own transaction was rolled back (independent redraw
         // records) no longer owns the fields it created; forget them so the
@@ -116,7 +125,9 @@ internal static partial class WordFormulaNumberingKernel
                 finally { Release(code); }
             }
 
-            internal bool TryUpdate(Range currentCode)
+            // evaluate: false only proves the order; the caller then evaluates
+            // every number field in one bulk pass.
+            internal bool TryUpdate(Range currentCode, bool evaluate = true)
             {
                 if (_next == _fields.Length) return false;
                 var expected = _fields[_next];
@@ -131,7 +142,7 @@ internal static partial class WordFormulaNumberingKernel
                     if (expectedStart > currentStart) return false; // A genuinely existing body field.
                     if (expectedStart < currentStart)
                         throw new InvalidDataException("The ordered field stream omitted a newly created VisualTeX number.");
-                    expected.Update();
+                    if (evaluate) expected.Update();
                     _next++;
                     return true;
                 }
@@ -149,6 +160,8 @@ internal static partial class WordFormulaNumberingKernel
         {
             foreach (var item in _existingTables) Release(item.LiveRange);
             _existingTables.Clear();
+            _bodyFieldCopies?.Dispose();
+            _bodyFieldCopies = null;
             foreach (var plan in _plans.Values)
             {
                 plan.WrittenBodyLayout?.Dispose();

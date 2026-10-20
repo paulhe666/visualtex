@@ -490,15 +490,19 @@ internal sealed partial class WordFormulaService
         $"{RangeReferencePrefix}{address.Start}:{address.End}";
 
 
+    // reportUnreadableEquation receives the reason when the double-clicked
+    // equation was found but could not be read; every miss is traced.
     public OfficeSelection? ReadVisualTeXOmmlAtScreenPoint(
         int screenX,
-        int screenY)
+        int screenY,
+        Action<string>? reportUnreadableEquation = null)
     {
         Document? document = null;
         Window? window = null;
         object? pointObject = null;
         Range? pointRange = null;
         Range? resolvedRange = null;
+        WordFormulaHostDescriptor? host = null;
         try
         {
             document = _application.ActiveDocument
@@ -506,14 +510,23 @@ internal sealed partial class WordFormulaService
             window = _application.ActiveWindow;
             pointObject = window.RangeFromPoint(screenX, screenY);
             pointRange = pointObject as Range;
-            if (pointRange is null) return null;
+            if (pointRange is null)
+            {
+                WordDoubleClickHook.TraceMessage($"omml-hit-miss no-text-range x={screenX} y={screenY}");
+                return null;
+            }
             pointObject = null;
 
-            var host = WordFormulaHostLookup.ResolveLocal(
+            host = WordFormulaHostLookup.ResolveLocal(
                 document,
                 pointRange,
                 WordFormulaHostKind.Omml);
-            if (host is null) return null;
+            if (host is null)
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"omml-hit-miss no-equation point={pointRange.Start}:{pointRange.End}");
+                return null;
+            }
 
             resolvedRange = WordFormulaHostSemanticReader.CreateRange(
                 document,
@@ -523,7 +536,11 @@ internal sealed partial class WordFormulaService
                     resolvedRange,
                     screenX,
                     screenY))
+            {
+                WordDoubleClickHook.TraceMessage(
+                    $"omml-hit-miss outside-equation x={screenX} y={screenY} equation={host.Range.Start}:{host.Range.End}");
                 return null;
+            }
 
             host.Numbering = WordFormulaNumberingResolver.ResolveLocal(
                 document,
@@ -547,8 +564,11 @@ internal sealed partial class WordFormulaService
                 ObjectMode = FormulaOleContract.WordOmmlMode,
             };
         }
-        catch
+        catch (Exception error)
         {
+            WordDoubleClickHook.TraceMessage(
+                $"omml-hit-read-failed equationFound={host is not null} {error.GetType().Name}: {error.Message}");
+            if (host is not null) reportUnreadableEquation?.Invoke(error.Message);
             return null;
         }
         finally
@@ -7219,7 +7239,7 @@ internal sealed partial class WordFormulaService
                 ["rewritten"] = rewritten.Mtef,
             };
             var renderedAllNativePreviews =
-                MathTypeNativePreviewRenderer.TryRenderBatch(
+                MathTypeNativePreviewRenderer.TryRenderBatchWithRetry(
                     nativePreviewInputs,
                     renderRoot,
                     out var nativePreviews);
@@ -9688,7 +9708,9 @@ internal sealed partial class WordFormulaService
         InlineShape shape,
         bool numbered,
         string mathTypeNumberPosition,
-        MathTypeWordOpenXml.NumberTemplate? numberTemplate)
+        MathTypeWordOpenXml.NumberTemplate? numberTemplate,
+        Range? placeRefSource = null,
+        bool centerTabPresent = false)
     {
         Range? shapeRange = null;
         Range? separator = null;
@@ -9711,7 +9733,7 @@ internal sealed partial class WordFormulaService
                     "A numbered MathType display equation requires an MTPlaceRef template.");
 
             shapeRange = shape.Range;
-            if (!numberOnLeft)
+            if (!numberOnLeft && !centerTabPresent)
             {
                 // MathType's display style centers the equation on its center tab.
                 separator = document.Range(shapeRange.Start, shapeRange.Start);
@@ -9738,20 +9760,26 @@ internal sealed partial class WordFormulaService
                 separator.Text = "\t";
                 Release(separator);
                 separator = null;
-                placeRef = CreateIndependentMathTypePlaceRef(
-                    document,
-                    numberInsertionPosition,
-                    numberTemplate!);
+                using (WordOperationMetrics.Measure("MathType.Display.CreatePlaceRef"))
+                    placeRef = placeRefSource is not null
+                        ? CopyMathTypePlaceRef(document, numberInsertionPosition, placeRefSource)
+                        : CreateIndependentMathTypePlaceRef(
+                            document,
+                            numberInsertionPosition,
+                            numberTemplate!);
             }
             else
             {
                 separator = document.Range(shapeRange.End, shapeRange.End);
                 separator.Text = "\t";
                 var placeRefPosition = separator.End;
-                placeRef = CreateIndependentMathTypePlaceRef(
-                    document,
-                    placeRefPosition,
-                    numberTemplate!);
+                using (WordOperationMetrics.Measure("MathType.Display.CreatePlaceRef"))
+                    placeRef = placeRefSource is not null
+                        ? CopyMathTypePlaceRef(document, placeRefPosition, placeRefSource)
+                        : CreateIndependentMathTypePlaceRef(
+                            document,
+                            placeRefPosition,
+                            numberTemplate!);
             }
             try { placeRef.ShowCodes = false; } catch { }
         }
@@ -9868,7 +9896,11 @@ internal sealed partial class WordFormulaService
         bool numbered,
         string numberPosition,
         MathTypeWordOpenXml.NumberTemplate? numberTemplate,
-        bool updateNumberFields = true)
+        bool updateNumberFields = true,
+        bool nativeStylesAlreadyPrepared = false,
+        float? knownDisplayColumnWidth = null,
+        Range? placeRefSource = null,
+        bool keepExistingCenterTab = false)
     {
         Range? shapeRange = null;
         Paragraphs? paragraphs = null;
@@ -9883,6 +9915,7 @@ internal sealed partial class WordFormulaService
         Range? suffix = null;
         try
         {
+            var locateMetric = WordOperationMetrics.Measure("MathType.Scaffold.Locate");
             shapeRange = shape.Range;
             paragraphs = shapeRange.Paragraphs;
             if (paragraphs.Count != 1)
@@ -9894,9 +9927,11 @@ internal sealed partial class WordFormulaService
             if (paragraphShapes.Count != 1)
                 throw new InvalidOperationException(
                     "MathType numbering cannot be changed in a paragraph containing other inline objects.");
+            locateMetric?.Dispose();
 
             // Remove only the native MathType number field. Nested SEQ fields live
             // inside its code range and disappear with the outer MACROBUTTON.
+            var removeMetric = WordOperationMetrics.Measure("MathType.Scaffold.RemoveOldNumber");
             placeRef = FindMathTypePlaceRefFieldForShape(
                     paragraphRange,
                     shapeRange,
@@ -9918,6 +9953,8 @@ internal sealed partial class WordFormulaService
                 fieldSpan = document.Range(fieldStart, Math.Max(fieldStart, fieldEnd));
                 fieldSpan.Delete();
             }
+            removeMetric?.Dispose();
+            var clearMetric = WordOperationMetrics.Measure("MathType.Scaffold.ClearWhitespace");
 
             Release(shapeRange);
             shapeRange = shape.Range;
@@ -9940,20 +9977,33 @@ internal sealed partial class WordFormulaService
             paragraphRange = paragraph.Range;
             Release(prefix);
             prefix = document.Range(paragraphRange.Start, shapeRange.Start);
-            if (prefix.End > prefix.Start) prefix.Delete();
+            // Batch numbering keeps an unnumbered display's existing center TAB
+            // instead of deleting and re-inserting the same character; next to
+            // an OLE object that delete cost ~95 ms in a 500-equation document.
+            var centerTabPresent = keepExistingCenterTab
+                && !string.Equals(numberPosition, "left", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(prefix.Text, "\t", StringComparison.Ordinal);
+            if (prefix.End > prefix.Start && !centerTabPresent) prefix.Delete();
+            clearMetric?.Dispose();
 
+            using (WordOperationMetrics.Measure("MathType.Scaffold.Build"))
             BuildIndependentMathTypeDisplayScaffold(
                 document,
                 shape,
                 numbered,
                 numberPosition,
-                numberTemplate);
+                numberTemplate,
+                placeRefSource,
+                centerTabPresent);
+            using (WordOperationMetrics.Measure("MathType.Scaffold.Configure"))
             ConfigureNewMathTypeDisplayEquation(
                 document,
                 shape,
                 numbered,
                 numberPosition,
-                updateNestedNumberFields: updateNumberFields);
+                updateNestedNumberFields: updateNumberFields,
+                nativeStylesAlreadyPrepared: nativeStylesAlreadyPrepared,
+                knownDisplayColumnWidth: knownDisplayColumnWidth);
         }
         finally
         {
@@ -9983,6 +10033,47 @@ internal sealed partial class WordFormulaService
             return false;
         }
         return true;
+    }
+
+    // Batch numbering: copy one finished, verified MTPlaceRef instead of building
+    // its nested fields one by one. Fields.Add evaluates each new SEQ at once,
+    // re-counting every earlier number (O(n^2) over a batch); a FormattedText
+    // copy keeps the source's cached results, and the batch evaluates every
+    // number in one pass at the end. source spans exactly one MTPlaceRef field.
+    internal static Field CopyMathTypePlaceRef(Document document, int position, Range source)
+    {
+        Range? insertion = null;
+        Range? inserted = null;
+        Fields? fields = null;
+        Field? field = null;
+        Range? code = null;
+        try
+        {
+            var length = source.End - source.Start;
+            insertion = document.Range(position, position);
+            insertion.FormattedText = source.FormattedText;
+            inserted = document.Range(position, position + length);
+            fields = inserted.Fields;
+            if (fields.Count < 1)
+                throw new InvalidOperationException("Word did not copy the MathType equation number.");
+            field = fields[1];
+            code = field.Code;
+            if (field.Type != WdFieldType.wdFieldMacroButton
+                || code.Start != position + 1
+                || !MathTypeEquationReferences.IsMathTypePlaceRefCode(code.Text))
+                throw new InvalidOperationException("The copied MathType equation number is not one MTPlaceRef field.");
+            var result = field;
+            field = null;
+            return result;
+        }
+        finally
+        {
+            Release(code);
+            Release(field);
+            Release(fields);
+            Release(inserted);
+            Release(insertion);
+        }
     }
 
     internal static Field CreateIndependentMathTypePlaceRef(
@@ -10292,18 +10383,21 @@ internal sealed partial class WordFormulaService
                 throw new InvalidDataException(
                     "MathType equation number position must be left or right.");
 
-            placeRef = FindMathTypePlaceRefFieldForShape(
-                    paragraphRange,
-                    shapeRange,
-                    numberOnLeft)
-                ?? throw new InvalidOperationException(
-                    "The numbered MathType display equation has no MTPlaceRef field on the requested side of its OLE object.");
-            if (!TryReadCompleteMathTypePlaceRefTemplate(
-                    document,
-                    placeRef,
-                    out _))
-                throw new InvalidOperationException(
-                    "The numbered MathType display equation has a detached or incomplete MTPlaceRef field tree.");
+            using (WordOperationMetrics.Measure("MathType.Display.VerifyPlaceRef"))
+            {
+                placeRef = FindMathTypePlaceRefFieldForShape(
+                        paragraphRange,
+                        shapeRange,
+                        numberOnLeft)
+                    ?? throw new InvalidOperationException(
+                        "The numbered MathType display equation has no MTPlaceRef field on the requested side of its OLE object.");
+                if (!TryReadCompleteMathTypePlaceRefTemplate(
+                        document,
+                        placeRef,
+                        out _))
+                    throw new InvalidOperationException(
+                        "The numbered MathType display equation has a detached or incomplete MTPlaceRef field tree.");
+            }
             Range? placeRefCode = null;
             Range? placeRefResult = null;
             Range? separator = null;

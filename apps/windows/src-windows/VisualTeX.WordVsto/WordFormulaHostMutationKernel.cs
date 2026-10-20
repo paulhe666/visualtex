@@ -26,6 +26,7 @@ internal static class WordFormulaHostMutationKernel
         ValidateTargetRequest(target);
 
         WordNativeNumberingAdoptionPlan? nativeNumberInsertion = null;
+        WordNativeOmmlFieldRefresh? followingNativeNumbers = null;
         try
         {
             // Number attachment is an insertion into Word's native SEQ system,
@@ -83,6 +84,29 @@ internal static class WordFormulaHostMutationKernel
                         ? WordNativeOmmlEdit.Prepare(document, source, target)
                         : null;
 
+            // Removing a number (number switched off, or the formula leaves its
+            // numbering family) leaves every later number of that family one too
+            // high. Renumber them in the same Undo step: later native OMML numbers
+            // are discovered before Undo opens, like an insertion's; VisualTeX
+            // renumbers through its ordered field stream inside the transaction.
+            // MathType edits already renumber their own family.
+            if (source.Kind == WordFormulaHostKind.Omml
+                && source.Display
+                && source.Numbering.ContainerKind ==
+                    WordFormulaNumberingContainerKind.CanonicalNativeOmml
+                && !(target.Kind == WordFormulaHostKind.Omml && target.Numbered))
+            {
+                using (WordOperationMetrics.Measure("NativeNumbering.Removal.RefreshPrepare"))
+                    followingNativeNumbers =
+                        WordNativeOmmlFieldRefresh.Prepare(
+                            document,
+                            source.Range.End);
+            }
+            var renumberVisualTeX =
+                source.Kind == WordFormulaHostKind.VisualTeX
+                && source.Numbering.Numbered
+                && !(target.Kind == WordFormulaHostKind.VisualTeX && target.Numbered);
+
             // Read REF targets before Undo opens; the source host and its
             // reference bookmark are removed by the replacement below.
             var convertedNumberReferences =
@@ -94,11 +118,13 @@ internal static class WordFormulaHostMutationKernel
             Action? verifyRollback =
                 nativeEdit is null
                 && nativeNumberInsertion is null
+                && followingNativeNumbers is null
                     ? null
                     : () =>
                     {
                         nativeEdit?.VerifyRollback();
                         nativeNumberInsertion?.VerifyRollback();
+                        followingNativeNumbers?.VerifyRollback();
                     };
 
             return WordFormulaMutationTransaction.Execute(
@@ -164,6 +190,16 @@ internal static class WordFormulaHostMutationKernel
                         }
                     }
 
+                    if (followingNativeNumbers is not null)
+                        using (WordOperationMetrics.Measure("NativeNumbering.Removal.RefreshApply"))
+                            followingNativeNumbers.Apply(0);
+                    if (renumberVisualTeX)
+                        using (WordOperationMetrics.Measure("Numbering.Removal.VisualTeXRefresh"))
+                            _ = WordFormulaNumberingKernel.RefreshCanonicalNumbers(
+                                document,
+                                kindFilter: WordFormulaHostKind.VisualTeX,
+                                fromPosition: source.Range.Start);
+
                     MigrateConvertedNumberReferences(
                         document,
                         result,
@@ -177,6 +213,7 @@ internal static class WordFormulaHostMutationKernel
         finally
         {
             nativeNumberInsertion?.Dispose();
+            followingNativeNumbers?.Dispose();
         }
     }
 
@@ -962,6 +999,16 @@ internal static class WordFormulaHostMutationKernel
                     finally { Release(preservedRange); }
                 }
 
+                // An edit or redraw keeps the number field; its size and font
+                // follow the formula's (possibly new) size and letter font.
+                if (sourceUsesSelfContainedVisualTeXNumbering
+                    && target.Kind == WordFormulaHostKind.VisualTeX
+                    && target.Metadata is not null)
+                    WordVisualTeXParagraphNumbering.ApplyNumberFormat(
+                        document,
+                        validated,
+                        target.Metadata);
+
                 WordFormulaNumberingKernel.ValidatePreservedContainer(
                     document,
                     validated,
@@ -969,6 +1016,9 @@ internal static class WordFormulaHostMutationKernel
             }
             else if (target.Numbered)
             {
+                // The resolved host may not carry the written metadata; the new
+                // number takes the size and font the formula was written with.
+                validated.Metadata ??= target.Metadata;
                 validated =
                     WordFormulaNumberingKernel.AttachCanonical(
                         document,

@@ -108,6 +108,44 @@ public sealed class MathTypeEmbellishmentTests
         Assert.Equal(@"\ddot{\boldsymbol{\eta}}", MathMlToLatexConverter.Convert(readback));
     }
 
+    // MathType's palette marks beyond the TeX accents: the arc over a letter
+    // (embellishment 19), harpoons, strikes and the marks below.
+    [Theory]
+    [InlineData(10, @"\cancel{")]
+    [InlineData(14, @"\overset{\rightharpoonup")]
+    [InlineData(15, @"\overset{\leftharpoonup")]
+    [InlineData(16, @"\enclose{horizontalstrike}{")]
+    [InlineData(19, @"\overset{\frown")]
+    [InlineData(21, @"\xcancel{")]
+    [InlineData(22, @"\cancel{")]
+    [InlineData(23, @"\bcancel{")]
+    [InlineData(25, @"\underset{\cdot")]
+    [InlineData(30, @"\underset{\sim")]
+    [InlineData(31, @"\underset{\frown")]
+    [InlineData(32, @"\underset{\smile")]
+    [InlineData(33, @"\underset{\to")]
+    [InlineData(34, @"\underset{\leftarrow")]
+    [InlineData(35, @"\underset{\leftrightarrow")]
+    [InlineData(36, @"\underset{\rightharpoonup")]
+    [InlineData(37, @"\underset{\leftharpoonup")]
+    public void PaletteEmbellishmentsKeepTheirMark(int code, string expected)
+    {
+        var latex = MathMlToLatexConverter.Convert(Read(Character('B', (byte)code)).ToString());
+        Assert.Contains(expected, latex);
+        Assert.Contains("B", latex);
+    }
+
+    [Theory]
+    [InlineData(25, 1)]
+    [InlineData(26, 2)]
+    [InlineData(27, 3)]
+    [InlineData(28, 4)]
+    public void DotsBelowKeepTheirCount(int code, int dots)
+    {
+        var latex = MathMlToLatexConverter.Convert(Read(Character('x', (byte)code)).ToString());
+        Assert.Equal(dots, System.Text.RegularExpressions.Regex.Matches(latex, @"\\cdot").Count);
+    }
+
     [Fact]
     public void UnknownEmbellishmentMustNotSilentlyLoseContent()
         => Assert.Throws<InvalidDataException>(() => Read(Character('x', 99)));
