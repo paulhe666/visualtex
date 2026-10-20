@@ -57,10 +57,16 @@ import {
   useEditorStore,
 } from "../stores/editorStore";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
 import {
+  formatFormulaHotkeyChord,
   matchFormulaHotkey,
   resolveFormulaHotkeyCommand,
 } from "../shortcuts/formulaHotkeys";
+import {
+  matchFormulaRowHotkey,
+  type FormulaRowHotkeyActionId,
+} from "../shortcuts/formulaRowHotkeys";
 import {
   greekLetterHotkeyCommandFromEvent,
   isGreekLetterHotkeyPrefix,
@@ -4341,6 +4347,18 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
     const formulaHotkeyBindings = useFormulaHotkeyStore(
       (state) => state.bindings,
     );
+    const formulaRowHotkeyBindings = useFormulaRowHotkeyStore(
+      (state) => state.bindings,
+    );
+    const formulaRowHotkeyLabel = (actionId: FormulaRowHotkeyActionId) => {
+      const chord = formulaRowHotkeyBindings.find(
+        (binding) => binding.actionId === actionId,
+      )?.chord;
+      return chord ? formatFormulaHotkeyChord(chord) : null;
+    };
+    const newInlineRowHotkey = formulaRowHotkeyLabel("row-new-inline");
+    const newDisplayRowHotkey = formulaRowHotkeyLabel("row-new-display");
+    const toggleRowHotkey = formulaRowHotkeyLabel("row-toggle-mode");
     const customSymbolRevision = useCustomSymbolRevision();
     const isEn = language === "en";
     const interactionReadOnly = readOnly || previewOnly;
@@ -6482,19 +6500,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         return;
       }
 
-      // Ctrl+Shift+Enter switches the current row between inline and display,
-      // like its $ / $$ marker. A multi-line row stays display and no row is
-      // split.
-      if (
-        showLineModeControls &&
-        event.key === "Enter" &&
-        event.ctrlKey &&
-        event.shiftKey &&
-        !event.altKey &&
-        !event.metaKey &&
-        !event.isComposing &&
-        !rawLatexInputActive
-      ) {
+      // Formula-row shortcuts (hotkey settings; defaults Ctrl+Enter new inline
+      // row, Alt+Enter new display row, Ctrl+Shift+Enter switch the row).
+      // Switching works like the row's $ / $$ marker: a multi-line row stays
+      // display and no row is split.
+      const rowHotkey =
+        showLineModeControls && !rawLatexInputActive
+          ? matchFormulaRowHotkey(event, formulaRowHotkeyBindings)
+          : null;
+      if (rowHotkey === "row-toggle-mode") {
         event.preventDefault();
         event.stopImmediatePropagation();
         const line = useEditorStore
@@ -6505,24 +6519,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         }
         return;
       }
-
-      const forcedNewLineMode =
-        showLineModeControls &&
-        event.key === "Enter" &&
-        !event.isComposing &&
-        !event.metaKey &&
-        !event.shiftKey &&
-        !rawLatexInputActive
-          ? event.ctrlKey && !event.altKey
-            ? "inline"
-            : event.altKey && !event.ctrlKey
-              ? "display"
-              : null
-          : null;
-      if (forcedNewLineMode) {
+      if (rowHotkey === "row-new-inline" || rowHotkey === "row-new-display") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        splitLineAtCaret(index, lineId, field, forcedNewLineMode);
+        splitLineAtCaret(
+          index,
+          lineId,
+          field,
+          rowHotkey === "row-new-inline" ? "inline" : "display",
+        );
         return;
       }
 
@@ -7922,13 +7927,13 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                         ? lineHasInternalMultiline
                           ? "Multi-line formulas are always display formulas"
                           : effectiveLineMode === "inline"
-                            ? "Inline · click or Ctrl+Shift+Enter for display · Alt+Enter creates display"
-                            : "Display · click or Ctrl+Shift+Enter for inline · Ctrl+Enter creates inline"
+                            ? `Inline · click${toggleRowHotkey ? ` or ${toggleRowHotkey}` : ""} for display${newDisplayRowHotkey ? ` · ${newDisplayRowHotkey} creates display` : ""}`
+                            : `Display · click${toggleRowHotkey ? ` or ${toggleRowHotkey}` : ""} for inline${newInlineRowHotkey ? ` · ${newInlineRowHotkey} creates inline` : ""}`
                         : lineHasInternalMultiline
                           ? "多行公式固定为行间公式"
                           : effectiveLineMode === "inline"
-                            ? "行内 · 点击或 Ctrl+Shift+Enter 切换行间 · Alt+Enter 新建行间"
-                            : "行间 · 点击或 Ctrl+Shift+Enter 切换行内 · Ctrl+Enter 新建行内"
+                            ? `行内 · 点击${toggleRowHotkey ? `或 ${toggleRowHotkey} ` : ""}切换行间${newDisplayRowHotkey ? ` · ${newDisplayRowHotkey} 新建行间` : ""}`
+                            : `行间 · 点击${toggleRowHotkey ? `或 ${toggleRowHotkey} ` : ""}切换行内${newInlineRowHotkey ? ` · ${newInlineRowHotkey} 新建行内` : ""}`
                     }
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() =>

@@ -444,8 +444,112 @@ async function main() {
       JSON.stringify(reopened),
     );
 
+    // The three row shortcuts live in Settings -> 快捷键 -> 公式行 and can be
+    // re-recorded there. Switch rows with Alt+Shift+Enter instead, check that
+    // the old chord no longer switches, then restore the default.
+    const openRowHotkeys = async () => {
+      await client.evaluate(`document.querySelector("button.settings-toggle").click()`);
+      await waitForEvaluation(
+        client,
+        `(() => ({ ready: Boolean(document.querySelector("[data-shortcut-settings-trigger]")) }))()`,
+        "settings dialog",
+      );
+      await client.evaluate(`document.querySelector("[data-shortcut-settings-trigger]").click()`);
+      return waitForEvaluation(
+        client,
+        `(() => {
+          const rows = [...document.querySelectorAll("[data-formula-row-hotkey-action]")].map((row) => ({
+            id: row.getAttribute("data-formula-row-hotkey-action"),
+            chord: row.querySelector("kbd")?.textContent ?? null,
+          }));
+          return { ready: rows.length === 3, rows };
+        })()`,
+        "formula row hotkeys in the hotkey manager",
+      );
+    };
+    const closeHotkeyManager = async () => {
+      await client.evaluate(`[...document.querySelectorAll(".formula-hotkey-manager-dialog button")].find((button) => button.textContent.trim() === "完成").click()`);
+      await waitForEvaluation(
+        client,
+        `(() => ({ ready: !document.querySelector(".formula-hotkey-manager-dialog") }))()`,
+        "hotkey manager closed",
+      );
+    };
+    const defaults = await openRowHotkeys();
+    assert.deepEqual(
+      defaults.rows,
+      [
+        { id: "row-new-inline", chord: "Ctrl+Enter" },
+        { id: "row-new-display", chord: "Alt+Enter" },
+        { id: "row-toggle-mode", chord: "Ctrl+Shift+Enter" },
+      ],
+      JSON.stringify(defaults),
+    );
+    await client.evaluate(`document.querySelector('[data-formula-row-hotkey-action="row-toggle-mode"] .formula-hotkey-binding-actions button').click()`);
+    await waitForEvaluation(
+      client,
+      `(() => ({ ready: Boolean(document.querySelector(".formula-row-hotkey-recorder-dialog")) }))()`,
+      "formula row hotkey recorder",
+    );
+    await dispatchEnter(client, 1 | 8);
+    await waitForEvaluation(
+      client,
+      `(() => ({ ready: document.querySelector(".formula-row-hotkey-recorder-dialog kbd")?.textContent === "Alt+Shift+Enter" }))()`,
+      "recorded Alt+Shift+Enter",
+    );
+    await client.evaluate(`[...document.querySelectorAll(".formula-row-hotkey-recorder-dialog button")].find((button) => button.textContent.trim() === "保存").click()`);
+    await waitForEvaluation(
+      client,
+      `(() => {
+        const persisted = JSON.parse(localStorage.getItem("visualtex-formula-row-hotkeys-v1") || "{}");
+        const toggle = persisted?.state?.bindings?.find((binding) => binding.actionId === "row-toggle-mode")?.chord;
+        return {
+          ready: Boolean(toggle && toggle.code === "Enter" && toggle.altKey && toggle.shiftKey && !toggle.ctrlKey && !toggle.metaKey),
+          toggle,
+        };
+      })()`,
+      "custom row switch persisted",
+    );
+    await closeHotkeyManager();
+
+    // Without a row binding, Ctrl+Shift+Enter must no longer switch the row's
+    // mode; undo whatever the unbound chord did otherwise.
+    await focusRowEnd(client, "mixed-display");
+    await dispatchEnter(client, 2 | 8);
+    await sleep(300);
+    const oldChord = await client.evaluate(rowStateExpression("mixed-display", "true"));
+    assert.equal(oldChord.mode, "display", JSON.stringify(oldChord));
+    assert.equal(oldChord.marker, "display", JSON.stringify(oldChord));
+    if (oldChord.count !== 4) {
+      await dispatchKey(client, "z", "KeyZ", 90, 2);
+      await waitForEvaluation(
+        client,
+        rowStateExpression("mixed-display", "state.count === 4 && state.mode === 'display'"),
+        "Ctrl+Z removes the row split by the unbound chord",
+      );
+    }
+    await focusRowEnd(client, "mixed-display");
+    await dispatchEnter(client, 1 | 8);
+    await waitForEvaluation(
+      client,
+      rowStateExpression("mixed-display", "state.mode === 'inline' && state.marker === 'inline' && state.count === 4"),
+      "Alt+Shift+Enter switches the row after re-recording",
+    );
+    const tooltip = await client.evaluate(`document.querySelector('.formula-line[data-line-id="mixed-display"] [data-formula-line-mode-toggle]')?.getAttribute("title") ?? ""`);
+    assert.match(tooltip, /Alt\+Shift\+Enter/, tooltip);
+
+    const restored = await openRowHotkeys();
+    assert.equal(restored.rows[2].chord, "Alt+Shift+Enter", JSON.stringify(restored));
+    await client.evaluate(`document.querySelector('[data-formula-row-hotkey-action="row-toggle-mode"] button[title="恢复默认"]').click()`);
+    await waitForEvaluation(
+      client,
+      `(() => ({ ready: document.querySelector('[data-formula-row-hotkey-action="row-toggle-mode"] kbd')?.textContent === "Ctrl+Shift+Enter" }))()`,
+      "row switch restored to Ctrl+Shift+Enter",
+    );
+    await closeHotkeyManager();
+
     console.log(
-      "Windows universal row-mode regression passed: single-symbol row toggles, forced Alt+Enter display, Shift+Enter multiline, Enter inheritance, Ctrl+Shift+Enter row switch with undo/redo and reload persistence",
+      "Windows universal row-mode regression passed: single-symbol row toggles, forced Alt+Enter display, Shift+Enter multiline, Enter inheritance, Ctrl+Shift+Enter row switch with undo/redo, reload persistence and re-recorded row shortcuts",
     );
   } finally {
     client?.close();

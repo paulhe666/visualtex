@@ -9638,6 +9638,18 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   font-size: 11px;
 }
 
+.formula-row-hotkey-icon {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+}
+
+.formula-row-hotkey-off {
+  justify-self: center;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
 .formula-hotkey-binding-actions {
   display: flex;
   gap: 5px;

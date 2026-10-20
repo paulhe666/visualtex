@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Keyboard, Pencil, Trash2, X } from "lucide-react";
+import { Keyboard, Pencil, RotateCcw, Rows3, Trash2, X } from "lucide-react";
 import { MathPreview } from "./MathPreview";
 import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
+import { FormulaRowHotkeyRecorderDialog } from "./FormulaRowHotkeyRecorderDialog";
 import { OfficeFormulaShortcutSettingsSection } from "./OfficeFormulaShortcutSettings";
 import {
   formatFormulaHotkeyChord,
@@ -10,7 +11,14 @@ import {
   type FormulaHotkeyTarget,
 } from "../shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
+import {
+  FORMULA_ROW_HOTKEY_ACTIONS,
+  formulaRowHotkeyActionLabel,
+  isDefaultFormulaRowHotkeyChord,
+  type FormulaRowHotkeyActionDefinition,
+} from "../shortcuts/formulaRowHotkeys";
 
 interface Props {
   open: boolean;
@@ -22,8 +30,17 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const [editingTarget, setEditingTarget] =
     useState<FormulaHotkeyTarget | null>(null);
+  const [editingRowAction, setEditingRowAction] =
+    useState<FormulaRowHotkeyActionDefinition | null>(null);
   const bindings = useFormulaHotkeyStore((state) => state.bindings);
   const removeBinding = useFormulaHotkeyStore((state) => state.removeBinding);
+  const rowBindings = useFormulaRowHotkeyStore((state) => state.bindings);
+  const removeRowBinding = useFormulaRowHotkeyStore(
+    (state) => state.removeBinding,
+  );
+  const resetRowBinding = useFormulaRowHotkeyStore(
+    (state) => state.resetBinding,
+  );
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
   const sortedBindings = useMemo(
@@ -34,12 +51,13 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) {
       setEditingTarget(null);
+      setEditingRowAction(null);
       return;
     }
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     const frame = window.requestAnimationFrame(() => dialogRef.current?.focus());
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || editingTarget) return;
+      if (event.key !== "Escape" || editingTarget || editingRowAction) return;
       event.preventDefault();
       onClose();
     };
@@ -49,7 +67,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
       document.removeEventListener("keydown", handleKeyDown);
       previousFocusRef.current?.focus({ preventScroll: true });
     };
-  }, [open, editingTarget, onClose]);
+  }, [open, editingRowAction, editingTarget, onClose]);
 
   if (!open) return null;
 
@@ -84,6 +102,100 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
 
           <div className="shortcut-manager-scroll">
             <OfficeFormulaShortcutSettingsSection />
+
+            <section className="shortcut-settings-group" data-formula-row-hotkeys>
+              <div className="settings-section-title">
+                <Rows3 size={18} />
+                <div>
+                  <h3>{isEn ? "Formula rows" : "公式行"}</h3>
+                </div>
+              </div>
+
+              <div className="formula-hotkey-binding-list">
+                {FORMULA_ROW_HOTKEY_ACTIONS.map((action) => {
+                  const chord =
+                    rowBindings.find((item) => item.actionId === action.id)
+                      ?.chord ?? null;
+                  const label = formulaRowHotkeyActionLabel(action, language);
+                  const isDefault = isDefaultFormulaRowHotkeyChord(
+                    action.id,
+                    chord,
+                  );
+                  return (
+                    <article
+                      className="formula-hotkey-binding-row"
+                      key={action.id}
+                      data-formula-row-hotkey-action={action.id}
+                    >
+                      <div
+                        className="formula-hotkey-binding-preview formula-row-hotkey-icon"
+                        aria-hidden="true"
+                      >
+                        <Rows3 size={18} />
+                      </div>
+                      <div className="formula-hotkey-binding-copy">
+                        <strong>{label}</strong>
+                        <span>
+                          {isEn ? action.descriptionEn : action.descriptionZh}
+                        </span>
+                      </div>
+                      {chord ? (
+                        <kbd>{formatFormulaHotkeyChord(chord)}</kbd>
+                      ) : (
+                        <span className="formula-row-hotkey-off">
+                          {isEn ? "Off" : "已关闭"}
+                        </span>
+                      )}
+                      <div className="formula-hotkey-binding-actions">
+                        <button
+                          type="button"
+                          className="icon-button compact"
+                          onClick={() => setEditingRowAction(action)}
+                          aria-label={
+                            isEn
+                              ? `Change hotkey for ${label}`
+                              : `修改${label}的快捷键`
+                          }
+                          title={isEn ? "Change hotkey" : "修改快捷键"}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        {!isDefault && (
+                          <button
+                            type="button"
+                            className="icon-button compact"
+                            onClick={() => resetRowBinding(action.id)}
+                            aria-label={
+                              isEn
+                                ? `Restore the default hotkey for ${label}`
+                                : `恢复${label}的默认快捷键`
+                            }
+                            title={isEn ? "Restore default" : "恢复默认"}
+                          >
+                            <RotateCcw size={14} />
+                          </button>
+                        )}
+                        {chord && (
+                          <button
+                            type="button"
+                            className="icon-button compact is-danger"
+                            onClick={() => removeRowBinding(action.id)}
+                            aria-label={
+                              isEn
+                                ? `Turn off the hotkey for ${label}`
+                                : `关闭${label}的快捷键`
+                            }
+                            title={isEn ? "Turn off" : "关闭快捷键"}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
 
             <section className="shortcut-settings-group" data-editor-formula-hotkeys>
               <div className="settings-section-title">
@@ -177,6 +289,10 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
       <FormulaHotkeyRecorderDialog
         target={editingTarget}
         onClose={() => setEditingTarget(null)}
+      />
+      <FormulaRowHotkeyRecorderDialog
+        action={editingRowAction}
+        onClose={() => setEditingRowAction(null)}
       />
     </>
   );

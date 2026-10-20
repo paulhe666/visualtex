@@ -14,6 +14,12 @@ import {
 } from "../shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import {
+  formulaRowHotkeyAction,
+  formulaRowHotkeyActionLabel,
+  formulaRowHotkeyChordId,
+} from "../shortcuts/formulaRowHotkeys";
 
 interface Props {
   target: FormulaHotkeyTarget | null;
@@ -24,6 +30,10 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
   const bindings = useFormulaHotkeyStore((state) => state.bindings);
   const setBinding = useFormulaHotkeyStore((state) => state.setBinding);
+  const rowBindings = useFormulaRowHotkeyStore((state) => state.bindings);
+  const removeRowBinding = useFormulaRowHotkeyStore(
+    (state) => state.removeBinding,
+  );
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
   const existingBinding = target
@@ -80,6 +90,20 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
     );
   }, [bindings, capturedChord, target]);
 
+  // A formula-row shortcut is checked first in the editor, so the same chord
+  // can only belong to one of them.
+  const rowConflict = useMemo(() => {
+    if (!target || !capturedChord) return null;
+    const chordId = formulaRowHotkeyChordId(capturedChord);
+    return (
+      rowBindings.find(
+        (binding) =>
+          binding.chord !== null &&
+          formulaRowHotkeyChordId(binding.chord) === chordId,
+      ) ?? null
+    );
+  }, [capturedChord, rowBindings, target]);
+
   if (!target) return null;
 
   const protectedAction = capturedChord
@@ -90,9 +114,18 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
     : false;
   const canSave = Boolean(capturedChord && hasModifier && !protectedAction);
   const targetLabel = formulaHotkeyTargetLabel(target, language);
+  const conflictLabel = rowConflict
+    ? formulaRowHotkeyActionLabel(
+        formulaRowHotkeyAction(rowConflict.actionId),
+        language,
+      )
+    : conflict
+      ? formulaHotkeyTargetLabel(conflict.target, language)
+      : null;
 
   const saveBinding = () => {
     if (!capturedChord || !canSave) return;
+    if (rowConflict) removeRowBinding(rowConflict.actionId);
     setBinding(target, capturedChord);
     onClose();
   };
@@ -175,18 +208,18 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
             </div>
           )}
 
-          {conflict && !protectedAction && hasModifier && (
+          {conflictLabel && !protectedAction && hasModifier && (
             <div className="formula-hotkey-message is-warning" role="alert">
               <AlertTriangle size={16} />
               <span>
                 {isEn
-                  ? `Currently assigned to “${formulaHotkeyTargetLabel(conflict.target, language)}”. Saving will replace that assignment.`
-                  : `当前已分配给“${formulaHotkeyTargetLabel(conflict.target, language)}”，保存后将替换原绑定。`}
+                  ? `Currently assigned to “${conflictLabel}”. Saving will replace that assignment.`
+                  : `当前已分配给“${conflictLabel}”，保存后将替换原绑定。`}
               </span>
             </div>
           )}
 
-          {capturedChord && canSave && !conflict && (
+          {capturedChord && canSave && !conflictLabel && (
             <div className="formula-hotkey-message is-success">
               <Check size={16} />
               <span>
@@ -218,7 +251,7 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
               disabled={!canSave}
               onClick={saveBinding}
             >
-              {conflict
+              {conflictLabel
                 ? isEn
                   ? "Replace and assign"
                   : "替换并绑定"
