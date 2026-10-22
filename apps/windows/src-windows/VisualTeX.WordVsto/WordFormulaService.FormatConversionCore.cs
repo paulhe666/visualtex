@@ -270,6 +270,7 @@ internal sealed partial class WordFormulaService
             // target mutation. In Word, exporting that XML can close an active
             // Custom UndoRecord. Resolve and prepare all selected sources in this
             // same synchronous UI turn before starting the one batch record.
+            var preflightFailures = new List<(string TargetId, string Reason)>();
             foreach (var target in plan.Targets.OrderByDescending(item => item.SourceStart))
             {
                 try
@@ -417,10 +418,13 @@ internal sealed partial class WordFormulaService
                 }
                 catch (Exception error) when (error is not OperationCanceledException)
                 {
-                    // Name the formula whose preflight failed (nothing was written yet).
-                    throw ConversionTargetFailure(plan, target, error);
+                    // Nothing was written yet: report every formula whose preflight
+                    // fails, so the caller can convert the others in a new pass.
+                    preflightFailures.Add((target.Id, OfficeErrorText.Describe(error)));
                 }
             }
+            if (preflightFailures.Count > 0)
+                throw new WordFormulaFormatConversionPreflightException(preflightFailures);
 
             if (targetKind == WordFormulaHostKind.Omml && plan.Targets.Any(item => item.Numbered))
             {
