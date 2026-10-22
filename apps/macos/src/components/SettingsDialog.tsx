@@ -41,6 +41,7 @@ import {
   useEditorStore,
 } from "../stores/editorStore";
 import { MathPreview } from "./MathPreview";
+import { FormulaSpacingSettings } from "./FormulaSpacingSettings";
 import { OfficeIntegrationSettings } from "./OfficeIntegrationSettings";
 import { pngExportBackgroundPickerValue } from "../export/pngBackground";
 import {
@@ -1527,6 +1528,8 @@ export function SettingsDialog({
                     />
                   </div>
                 </section>
+
+                <FormulaSpacingSettings isEn={isEn} />
 
                 <section
                   className="png-background-customization"

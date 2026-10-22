@@ -1,9 +1,10 @@
 import { deflateSync, inflateSync, strFromU8, strToU8 } from "fflate";
 import {
   FORMULA_CHINESE_FONT_OPTIONS,
-  FORMULA_LETTER_FONT_OPTIONS,
+  LEGACY_FORMULA_LETTER_FONTS,
   type FormulaChineseFont,
   type FormulaLetterFont,
+  type LegacyFormulaLetterFont,
 } from "../../editor/formulaFontPreferences";
 
 export interface VisualTeXFormulaMetadata {
@@ -30,7 +31,7 @@ export interface VisualTeXFormulaMetadata {
   /** Point size used to create the current cached SVG/EMF/PNG preview. */
   renderFontSizePt?: number;
   /** VisualTeX font preferences used for this formula's rendered/native Office form. */
-  formulaLetterFont?: FormulaLetterFont;
+  formulaLetterFont?: LegacyFormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
   /** Physical Word inline OLE extent retained across OLE/OMML conversions. */
   wordInlineOleWidthPt?: number;
@@ -62,7 +63,7 @@ export interface CreateFormulaMetadataInput {
   baseline?: number;
   fontSizePt?: number;
   renderFontSizePt?: number;
-  formulaLetterFont?: FormulaLetterFont;
+  formulaLetterFont?: LegacyFormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
   wordInlineOleWidthPt?: number;
   wordInlineOleHeightPt?: number;
@@ -172,9 +173,8 @@ export function isVisualTeXFormulaMetadata(
         candidate.renderFontSizePt >= 5 &&
         candidate.renderFontSizePt <= 200)) &&
     (candidate.formulaLetterFont === undefined ||
-      FORMULA_LETTER_FONT_OPTIONS.some(
-        (item) => item.id === candidate.formulaLetterFont,
-      )) &&
+      // formulas saved by earlier versions may name fonts no longer offered
+      LEGACY_FORMULA_LETTER_FONTS.includes(candidate.formulaLetterFont)) &&
     (candidate.formulaChineseFont === undefined ||
       FORMULA_CHINESE_FONT_OPTIONS.some(
         (item) => item.id === candidate.formulaChineseFont,

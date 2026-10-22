@@ -133,6 +133,20 @@ export function installMathLiveContourIntegralShadowStyle(
   shadowRoot.append(style);
 }
 
+/**
+ * The source the kernel parses for a static formula (previews, exported
+ * images): VisualTeX's compatibility macros and the custom symbols expanded
+ * (macros the caller defines itself are left to the caller).
+ */
+export function expandVisualTexLatexForLayout(
+  text: string,
+  callerMacroNames: ReadonlySet<string> = new Set(),
+) {
+  return expandCustomSymbolsForMathLiveMarkup(
+    expandVisualTexMathLiveCompatibilityMacros(text, new Set(callerMacroNames)),
+  );
+}
+
 export function convertVisualTexLatexToMarkup(
   ...args: Parameters<typeof convertLatexToMarkup>
 ) {

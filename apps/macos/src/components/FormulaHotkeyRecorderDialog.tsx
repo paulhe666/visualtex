@@ -14,6 +14,7 @@ import {
   type FormulaHotkeyTarget,
 } from "../shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
+import { buttonShortcutLabel, buttonShortcutWithChord } from "../shortcuts/buttonShortcuts";
 import { useOfficeHotkeyStore } from "../stores/officeHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
 import {
@@ -46,6 +47,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
     (state) => state.removeBinding,
   );
   const language = useEditorStore((state) => state.language);
+  const buttonShortcuts = useEditorStore((state) => state.buttonShortcuts);
+  const setButtonShortcut = useEditorStore((state) => state.setButtonShortcut);
   const isEn = language === "en";
   const existingBinding = target
     ? bindings.find((binding) => binding.target.id === target.id) ?? null
@@ -119,6 +122,7 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   }, [bindings, capturedChord, officeBindings, rowBindings, target]);
 
   if (!target) return null;
+  const buttonConflict = capturedChord ? buttonShortcutWithChord(buttonShortcuts, capturedChord) : null;
 
   const protectedAction = capturedChord
     ? protectedFormulaHotkeyAction(capturedChord, language)
@@ -142,7 +146,9 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
           officeHotkeyAction(conflicts.office.actionId),
           language,
         )
-      : null;
+      : buttonConflict
+        ? buttonShortcutLabel(buttonConflict, language)
+        : null;
 
   const saveBinding = async () => {
     if (!capturedChord || !canSave) return;
@@ -158,6 +164,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
       }
       if (conflicts.office) removeOfficeBinding(conflicts.office.actionId);
       if (conflicts.row) removeRowBinding(conflicts.row.actionId);
+      // a button shortcut is matched first: it gives the chord up
+      if (buttonConflict) setButtonShortcut(buttonConflict, null);
       setBinding(target, capturedChord);
       onClose();
     } catch (error) {

@@ -1031,7 +1031,7 @@ for (const fixture of fixtures) {
       `${label} formula count`,
     );
 
-    fixture.expected.forEach((expected, index) => {
+    for (const [index, expected] of fixture.expected.entries()) {
       const formula = formulas[index];
       assert.equal(formula.displayMode, expected.mode, `${label} formula ${index + 1} mode`);
       if (typeof expected.numbered === "boolean") {
@@ -1060,7 +1060,7 @@ for (const fixture of fixtures) {
       );
       let artifacts;
       try {
-        artifacts = renderOfficeFormulaArtifacts({
+        artifacts = await renderOfficeFormulaArtifacts({
           lines: document.lines,
           codeFormat: document.codeFormat,
           displayMode: formula.displayMode,
@@ -1156,7 +1156,7 @@ for (const fixture of fixtures) {
         );
       }
       renderedFormulas += 1;
-    });
+    }
 
     const allFormulaText = formulas.map((formula) => formula.latex).join("\n");
     for (const forbidden of fixture.forbiddenFormulaText ?? []) {

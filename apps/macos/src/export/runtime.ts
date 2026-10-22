@@ -38,6 +38,7 @@ import type {
   SvgExportResult,
 } from "./exportTypes";
 import { errorMessage } from "../runtime/errorMessage.ts";
+import { splitFormulaEquationTag } from "../office/shared/formulaEquationTag.ts";
 import {
   DEFAULT_FORMULA_CHINESE_FONT,
   DEFAULT_FORMULA_LETTER_FONT,
@@ -45,6 +46,7 @@ import {
   formulaLetterFontFamilies,
   normalizeFormulaChineseFont,
   normalizeFormulaLetterFont,
+  readPersistedFormulaFontPreferences,
 } from "../editor/formulaFontPreferences.ts";
 
 const DEFAULT_OPTIONS: SvgExportOptions = {
@@ -117,7 +119,18 @@ function prepareLatex(latex: string) {
   // display mode, so those source delimiters must not become literal glyphs or
   // be split into extra rows around an inner aligned/align environment.
   normalized = unwrapSingleLatexDisplayMath(normalized) ?? normalized;
+  return joinFormulaRows(normalized);
+}
 
+/** Characters of an equation number as \\text{...} content. */
+function escapeTextModeLatex(value: string) {
+  return value.replace(/[\\{}#$%&_^~]/g, (c) =>
+    c === "\\" ? "\\textbackslash{}" : c === "^" ? "\\textasciicircum{}" : c === "~" ? "\\textasciitilde{}" : `\\${c}`,
+  );
+}
+
+/** Formula rows (one per line) as one image: rows anchored on their left edge, as the editor stacks them. */
+function joinFormulaRows(normalized: string) {
   const lines = normalized
     .split("\n")
     .map((line) => line.trim())
@@ -357,9 +370,116 @@ export function latexToMathMl(latex: string, displayMode = true) {
   return mathMl;
 }
 
-export function latexToSvg(
+export async function latexToSvg(
   latex: string,
   options: SvgExportOptions = DEFAULT_OPTIONS,
+): Promise<SvgExportResult> {
+  return options.renderer === "mathjax"
+    ? latexToMathJaxSvg(latex, options)
+    : latexToEngineSvg(latex, options);
+}
+
+/**
+ * The image drawn by the editor's layout engine: the formula exactly as the
+ * editor shows it (font, spacing configuration, custom symbols), its glyphs
+ * as outlines, so it looks the same in every program and on every computer.
+ */
+async function latexToEngineSvg(
+  latex: string,
+  options: SvgExportOptions,
+): Promise<SvgExportResult> {
+  let normalized = latex.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) throw new Error("Cannot export an empty formula.");
+  assertNoUnfilledStructuralPlaceholders(normalized);
+  // display sources may carry their own `\\[ ... \\]` delimiters
+  normalized = unwrapSingleLatexDisplayMath(normalized) ?? normalized;
+  const fontSizePt = positiveFinite(options.fontSizePt, DEFAULT_OPTIONS.fontSizePt);
+  const paddingPx = nonNegativeFinite(options.paddingPx, DEFAULT_OPTIONS.paddingPx);
+  const paddingXPx = nonNegativeFinite(options.paddingXPx ?? paddingPx, paddingPx);
+  const paddingYPx = nonNegativeFinite(options.paddingYPx ?? paddingPx, paddingPx);
+  // loaded when an image is first drawn: MathML callers (and node scripts) never need the editor engine
+  const { renderEngineSvg } = await import("./engineSvg.ts");
+  const fontSizePx = fontSizePt * (96 / 72);
+  // Word for Mac paints explicit black on the first frame (see forceWordCompatibleBlack)
+  const color = options.forceExplicitBlack ? WORD_EXPLICIT_BLACK : "#111111";
+  // a formula saved with its own fonts is drawn in them, with that letter
+  // font's active spacing configuration (absent: the editor's chosen fonts)
+  const fonts = options.formulaLetterFont || options.formulaChineseFont
+    ? {
+        letter: normalizeFormulaLetterFont(options.formulaLetterFont ?? readPersistedFormulaFontPreferences().formulaLetterFont ?? DEFAULT_FORMULA_LETTER_FONT),
+        chinese: normalizeFormulaChineseFont(options.formulaChineseFont ?? readPersistedFormulaFontPreferences().formulaChineseFont ?? DEFAULT_FORMULA_CHINESE_FONT),
+      }
+    : undefined;
+  // An equation number (\\tag{...}) is set apart from the formula as MathJax
+  // drew it (the same image size): the number at the right, its baseline on
+  // the formula's.
+  const split = splitFormulaEquationTag(normalized);
+  const tagged = split.equationTag !== null && split.latex.length > 0;
+  const body = tagged ? split.latex : normalized;
+  let formula = await renderEngineSvg(joinFormulaRows(body), {
+    displayMode: options.displayMode,
+    fontSizePx,
+    color,
+    fonts,
+  });
+  if (tagged) {
+    const starred = /^\\tag\s*\*/.test(normalized.slice(split.latex.length).trim());
+    const text = escapeTextModeLatex(split.equationTag ?? "");
+    const label = await renderEngineSvg(starred ? `\\text{${text}}` : `\\text{(${text})}`, {
+      displayMode: options.displayMode,
+      fontSizePx,
+      color,
+      idPrefix: "vtx-tag-",
+      fonts,
+    });
+    // MathJax's geometry: the formula centred, 0.8em and the number's width on either side
+    const gap = 0.8 * fontSizePx;
+    const side = gap + label.left + label.right;
+    const labelX = formula.right + gap + label.left;
+    formula = {
+      ...formula,
+      body: `${formula.body}<g transform="translate(${labelX} 0)">${label.body}</g>`,
+      left: formula.left + side,
+      right: formula.right + side,
+      ascent: Math.max(formula.ascent, label.ascent),
+      descent: Math.max(formula.descent, label.descent),
+    };
+  }
+  const width = Math.max(1, formula.left + formula.right + 2 * paddingXPx);
+  const height = Math.max(1, formula.ascent + formula.descent + 2 * paddingYPx);
+  const x = -formula.left - paddingXPx;
+  const y = -formula.ascent - paddingYPx;
+  // PowerPoint otherwise hit-tests only the painted glyph paths of a
+  // transparent SVG. A practically invisible filled rectangle makes the
+  // entire formula bounds selectable and double-clickable at normal zoom.
+  const backdrop = options.background === "white"
+    ? `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="#ffffff"/>`
+    : `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="#000000" fill-opacity="0.001"/>`;
+  // Characters drawn in a system font (Chinese) stay <text>; Word for Mac
+  // turns them into CoreText outlines (src-tauri svg_font_stabilizer.rs),
+  // which reads the marker and the engine's y-down coordinates.
+  const markedBody = formula.body.replace(
+    /<text /g,
+    '<text data-visualtex-output-text-font="engine" data-visualtex-y-down="true" ',
+  );
+  let svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" ` +
+    `role="img" focusable="false" viewBox="${x} ${y} ${width} ${height}">${backdrop}${markedBody}</svg>`;
+  if (options.forceExplicitBlack) svg = forceWordCompatibleBlack(svg);
+  assertSelfContained(svg);
+  return {
+    svg,
+    base64: svgToBase64(svg),
+    width,
+    height,
+    baseline: Math.max(0, Math.min(height, paddingYPx + formula.ascent)),
+  };
+}
+
+/** The image drawn by MathJax (its TeX fonts; letters in the chosen system font). */
+function latexToMathJaxSvg(
+  latex: string,
+  options: SvgExportOptions,
 ): SvgExportResult {
   const source = expandCustomSymbolsForSvg(prepareLatex(latex));
   const fontSizePt = positiveFinite(options.fontSizePt, DEFAULT_OPTIONS.fontSizePt);

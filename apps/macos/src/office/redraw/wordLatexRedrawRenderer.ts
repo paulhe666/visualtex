@@ -16,6 +16,7 @@ import type {
 import type { WordLatexRedrawSpan } from "./wordLatexRedrawParser";
 import { reusableImageGeometry } from "./wordLatexRedrawGeometry";
 import { useEditorStore } from "../../stores/editorStore";
+import { describeConversionFailure } from "../shared/conversionErrors";
 
 const WORD_LATEX_REDRAW_RENDER_CONCURRENCY = 4;
 
@@ -78,7 +79,7 @@ async function renderTemplate(
     // lack the geometry fields that current metadata carries, though, so render
     // only the inexpensive vector bounds for that compatibility case. The
     // backend must never require image bytes for an OMML-only commit.
-    const geometryArtifacts = renderOfficeFormulaArtifacts({
+    const geometryArtifacts = await renderOfficeFormulaArtifacts({
       lines: editorDocument.lines,
       codeFormat: editorDocument.codeFormat,
       displayMode: span.displayMode,
@@ -107,7 +108,7 @@ async function renderTemplate(
     };
   }
 
-  const artifacts = renderOfficeFormulaArtifacts({
+  const artifacts = await renderOfficeFormulaArtifacts({
     lines: editorDocument.lines,
     codeFormat: editorDocument.codeFormat,
     displayMode: span.displayMode,
@@ -196,12 +197,25 @@ function createMetadata(
  * an independent formula identity. No document-import blocks or preview UI are
  * constructed on this path.
  */
+/** A formula the redraw skipped, with its reason (worded for the user). */
+export interface WordLatexRedrawFailure {
+  latex: string;
+  sourceStart: number;
+  reason: string;
+}
+
+/**
+ * Renders every formula. A formula that fails is skipped with its reason (as
+ * on Windows); the others are written.
+ */
 export async function prepareWindowsStyleWordLatexRedrawItems(
   spans: WordLatexRedrawRenderTarget[],
   outputKind: WordLatexRedrawOutputKind,
   onProgress?: (current: number, total: number) => void,
-): Promise<DocumentImportFormulaCommitItem[]> {
+): Promise<{ items: DocumentImportFormulaCommitItem[]; failures: WordLatexRedrawFailure[] }> {
   const templates = new Map<string, RenderTemplate>();
+  const templateFailures = new Map<string, string>();
+  const isEn = useEditorStore.getState().language === "en";
   const spanKeys = spans.map((span) =>
     [
       outputKind,
@@ -232,14 +246,30 @@ export async function prepareWindowsStyleWordLatexRedrawItems(
         nextTemplateIndex += 1;
         if (templateIndex >= pendingTemplates.length) return;
         const [key, span] = pendingTemplates[templateIndex];
-        templates.set(key, await renderTemplate(span, outputKind));
+        try {
+          templates.set(key, await renderTemplate(span, outputKind));
+        } catch (reason) {
+          templateFailures.set(key, describeConversionFailure(reason, isEn));
+        }
       }
     }),
   );
 
-  return spans.map((span, index) => {
+  const items: DocumentImportFormulaCommitItem[] = [];
+  const failures: WordLatexRedrawFailure[] = [];
+  spans.forEach((span, index) => {
     const template = templates.get(spanKeys[index]);
-    if (!template) throw new Error("A cached Word redraw render is missing.");
+    if (!template) {
+      failures.push({
+        latex: span.latex,
+        sourceStart: span.start,
+        reason:
+          templateFailures.get(spanKeys[index]) ??
+          (isEn ? "VisualTeX returned no render result for this formula." : "VisualTeX 没有返回该公式的渲染结果。"),
+      });
+      onProgress?.(index + 1, spans.length);
+      return;
+    }
     const formulaId = span.formulaId ?? createUuid();
     const numbered = span.numbered ?? false;
     const metadata = createMetadata(formulaId, span, template);
@@ -262,6 +292,7 @@ export async function prepareWindowsStyleWordLatexRedrawItems(
       sourceText: span.sourceText,
     };
     onProgress?.(index + 1, spans.length);
-    return item;
+    items.push(item);
   });
+  return { items, failures };
 }

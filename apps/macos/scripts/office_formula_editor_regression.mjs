@@ -92,7 +92,7 @@ registerCustomSymbol({
   updatedAt: customSymbolNow,
 });
 const customSymbolLines = [{ id: "office-custom-symbol-line", latex: "\\selfdefa" }];
-const customSymbolRendered = renderOfficeFormulaArtifacts({
+const customSymbolRendered = await renderOfficeFormulaArtifacts({
   lines: customSymbolLines,
   codeFormat: "raw",
   displayMode: "inline",
@@ -119,7 +119,7 @@ const reopenedCustomSymbolDocument = normalizeFormulaEditorDocument(
   customSymbolXmlMetadata.lines,
   customSymbolXmlMetadata.codeFormat,
 );
-const reopenedCustomSymbolRendered = renderOfficeFormulaArtifacts({
+const reopenedCustomSymbolRendered = await renderOfficeFormulaArtifacts({
   lines: reopenedCustomSymbolDocument.lines,
   codeFormat: reopenedCustomSymbolDocument.codeFormat,
   displayMode: customSymbolXmlMetadata.displayMode,
@@ -136,7 +136,7 @@ assert.match(
   /<mask\b[^>]*id="visualtex-custom-symbol-erase-office-metadata-selfdefa-/,
   "Word SVG must preserve custom-symbol transparent eraser masks after metadata reopen",
 );
-const powerpointErasedCustomSymbol = renderOfficeFormulaArtifacts({
+const powerpointErasedCustomSymbol = await renderOfficeFormulaArtifacts({
   lines: reopenedCustomSymbolDocument.lines,
   codeFormat: reopenedCustomSymbolDocument.codeFormat,
   displayMode: customSymbolXmlMetadata.displayMode,
@@ -228,7 +228,7 @@ for (const source of [
     ),
     "all three alignment separators in each row must survive display-wrapper import",
   );
-  const rendered = renderOfficeFormulaArtifacts({
+  const rendered = await renderOfficeFormulaArtifacts({
     lines: normalized.lines,
     codeFormat: normalized.codeFormat,
     displayMode: "block",
@@ -251,17 +251,17 @@ const placeholderDraftInput = {
   host: "word",
 };
 assert.equal(
-  tryRenderOfficeFormulaDraftArtifacts(placeholderDraftInput),
+  await tryRenderOfficeFormulaDraftArtifacts(placeholderDraftInput),
   null,
   "Office autosave must tolerate MathLive placeholder source without producing an invalid Word artifact",
 );
-assert.throws(
-  () => renderOfficeFormulaArtifacts(placeholderDraftInput),
+await assert.rejects(
+  async () => renderOfficeFormulaArtifacts(placeholderDraftInput),
   /placeholder/,
   "explicit Office apply must remain strict while a placeholder is still present",
 );
 assert.ok(
-  tryRenderOfficeFormulaDraftArtifacts({
+  await tryRenderOfficeFormulaDraftArtifacts({
     ...placeholderDraftInput,
     lines: [{ id: "completed-draft", latex: String.raw`\frac{a}{b}` }],
   }),
@@ -292,7 +292,7 @@ assert.equal(
   String.raw`\frac{\delta \mathbb{E}[L]}{\delta f(\mathbf{x})}=2\int\{f(\mathbf{x})-t\}p(\mathbf{x},t)\,\mathrm{d}t=0`,
   "source-formatting newlines inside one logical formula row must preserve adjacent TeX arguments without inserting parser-breaking spaces",
 );
-assert.doesNotThrow(() =>
+await assert.doesNotReject(async () =>
   renderOfficeFormulaArtifacts({
     lines: sourceFormattedEquation.lines,
     codeFormat: sourceFormattedEquation.codeFormat,
@@ -452,26 +452,26 @@ for (const testCase of multilineCases) {
     `${testCase.name} metadata must store the canonical serialized source`,
   );
   if (testCase.codeFormat === "align" || testCase.codeFormat === "align-star") {
-    const rendered = renderOfficeFormulaArtifacts({
+    const rendered = await renderOfficeFormulaArtifacts({
       lines: normalized.lines,
       codeFormat: normalized.codeFormat,
       displayMode: "block",
       includeWordOmml: false,
     });
-    const wordRendered = renderOfficeFormulaArtifacts({
+    const wordRendered = await renderOfficeFormulaArtifacts({
       lines: normalized.lines,
       codeFormat: normalized.codeFormat,
       displayMode: "block",
       host: "word",
       includeWordOmml: false,
     });
-    const firstImportSvg = latexToSvg(canonicalSource, {
+    const firstImportSvg = await latexToSvg(canonicalSource, {
       displayMode: true,
       fontSizePt: 14,
       paddingPx: 10,
       background: "transparent",
     });
-    const firstWordImportSvg = latexToSvg(canonicalSource, {
+    const firstWordImportSvg = await latexToSvg(canonicalSource, {
       displayMode: true,
       fontSizePt: 14,
       paddingPx: 2,
@@ -551,7 +551,7 @@ f(x,y)=\sum_{n=1}^{+\infty}\sum_{m=1}^{+\infty}d_{nm}\sin\frac{n\pi}{a}x\sin\fra
     `${environment} serialization must create exactly one closing environment`,
   );
   assert.ok(!canonical.includes("&"));
-  const rendered = renderOfficeFormulaArtifacts({
+  const rendered = await renderOfficeFormulaArtifacts({
     lines: normalized.lines,
     codeFormat: normalized.codeFormat,
     displayMode: "block",
@@ -587,7 +587,7 @@ assert.deepEqual(
   equationWithAligned.lines,
   "a normalized outer equation must not be reclassified from its inner aligned environment",
 );
-const equationWithAlignedRendered = renderOfficeFormulaArtifacts({
+const equationWithAlignedRendered = await renderOfficeFormulaArtifacts({
   lines: equationWithAligned.lines,
   codeFormat: equationWithAligned.codeFormat,
   displayMode: "block",
@@ -640,7 +640,7 @@ assert.deepEqual(alreadyNormalized.lines, [
   { id: "line-a", latex: `a${VISUALTEX_ALIGNMENT_MARKER_LATEX}=b` },
   { id: "line-b", latex: `c${VISUALTEX_ALIGNMENT_MARKER_LATEX}=d` },
 ]);
-const recoveredEditedAlignment = renderOfficeFormulaArtifacts({
+const recoveredEditedAlignment = await renderOfficeFormulaArtifacts({
   lines: [
     { id: "edited-line-a", latex: "1 = 22 + 333 + q" },
     { id: "edited-line-b", latex: "44444 = 55 + r" },

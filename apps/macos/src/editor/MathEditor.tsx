@@ -93,10 +93,10 @@ import {
   refreshCustomSymbolMathfield,
 } from "../math/customSymbolRendering";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
-import { ImeCompositionGuard } from "./imeCompositionGuard";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../math/mathLiveCompatibilityMacros";
-import { hasBoundedOperatorPlaceholderOrder } from "./boundedOperatorTemplate";
 import {
+  collapseMathLiveSelectionToEnd,
+  restoreMathLiveCaret,
   configureMathLiveCompletion,
   dismissMathLiveSuggestions,
   insertMathLiveAlignmentPoint,
@@ -107,6 +107,7 @@ import {
   paintMathLiveDetachedScripts,
   type MathLivePersistentTypingStyle,
 } from "./mathLiveKernelCommands";
+import { editingModelOf, placeCaretAtPoint, visualTexEditingCore } from "./visualTexLayoutRuntime";
 import { isSafeFormulaStyleColor } from "../workspace/formulaColor";
 import { copyFormulaDocumentPngToClipboard } from "../export/pngClipboard";
 import {
@@ -332,6 +333,7 @@ interface FormulaFieldProps {
   onFocus: (index: number, field: MathfieldElement) => void;
   onCommitPending: () => void;
   onKeyDown: (index: number, event: KeyboardEvent, field: MathfieldElement) => void;
+  onVerticalExit: (index: number, direction: -1 | 1, field: MathfieldElement) => boolean;
   onPasteImage?: (file: File, target: MathEditorInsertionTarget) => void;
   onCopyPng?: () => Promise<void>;
   onContextMenu?: (clientX: number, clientY: number) => void;
@@ -341,17 +343,6 @@ interface FormulaFieldProps {
     lines: string[],
   ) => void;
 }
-
-interface VisualTexClipboardSelectionRequest {
-  latex: string;
-  wholeLine: boolean;
-}
-
-type VisualTexClipboardMathfield = MathfieldElement & {
-  visualTexClipboardFormatter?: (
-    request: VisualTexClipboardSelectionRequest,
-  ) => string;
-};
 
 interface MultiLineSelectionPoint extends DocumentSelectionPoint {
   lineIndex: number;
@@ -542,66 +533,6 @@ function replaceTextualPlaceholder(
   return replaced ? value : null;
 }
 
-const accentCommandTemplates = new Map<string, string>([
-  ["\\acute", "\\acute{\\placeholder{}}"],
-  ["\\grave", "\\grave{\\placeholder{}}"],
-  ["\\dot", "\\dot{\\placeholder{}}"],
-  ["\\ddot", "\\ddot{\\placeholder{}}"],
-  ["\\dddot", "\\dddot{\\placeholder{}}"],
-  ["\\ddddot", "\\ddddot{\\placeholder{}}"],
-  ["\\tilde", "\\tilde{\\placeholder{}}"],
-  ["\\bar", "\\bar{\\placeholder{}}"],
-  ["\\breve", "\\breve{\\placeholder{}}"],
-  ["\\check", "\\check{\\placeholder{}}"],
-  ["\\hat", "\\hat{\\placeholder{}}"],
-  ["\\vec", "\\vec{\\placeholder{}}"],
-  ["\\widehat", "\\widehat{\\placeholder{}}"],
-  ["\\widetilde", "\\widetilde{\\placeholder{}}"],
-  ["\\overline", "\\overline{\\placeholder{}}"],
-  ["\\overrightarrow", "\\overrightarrow{\\placeholder{}}"],
-  ["\\overleftarrow", "\\overleftarrow{\\placeholder{}}"],
-  ["\\overleftrightarrow", "\\overleftrightarrow{\\placeholder{}}"],
-  ["\\mathring", "\\mathring{\\placeholder{}}"],
-]);
-
-function isAccentContainerLatex(latex: string) {
-  const normalized = latex.trim();
-  return Array.from(accentCommandTemplates.keys()).some((command) =>
-    normalized.startsWith(command + "{"),
-  );
-}
-
-function selectAdjacentAccentPlaceholder(
-  field: MathfieldElement,
-  direction: "left" | "right",
-) {
-  if (!field.selectionIsCollapsed || field.mode === "latex") return false;
-
-  const position = field.position;
-  for (let end = 1; end <= field.lastOffset; end += 1) {
-    if (
-      field.getValue(end - 1, end, "latex").trim() !== "\\placeholder{}"
-    ) {
-      continue;
-    }
-    const containerLatex =
-      field.getElementInfo(Math.min(field.lastOffset, end + 1))?.latex ?? "";
-    if (!isAccentContainerLatex(containerLatex)) continue;
-
-    const start = end - 1;
-    const adjacentBoundary =
-      direction === "left" ? end + 1 : start - 1;
-    if (position !== adjacentBoundary) continue;
-
-    field.selection = {
-      ranges: [[start, end]],
-      direction: "none",
-    };
-    return true;
-  }
-  return false;
-}
-
 const BASE_FORMULA_FONT_SIZE = 54;
 const MIN_FORMULA_FONT_SIZE = BASE_FORMULA_FONT_SIZE * 0.2;
 
@@ -719,66 +650,11 @@ const visualTexFormulaChineseFallbackProperty =
   "--visualtex-formula-chinese-fallback-family";
 const visualTexFormulaInheritedFontProperty =
   "--visualtex-formula-inherited-font-family";
-const visualTexPlaceholderClass = "visualtex-structural-placeholder";
-const visualTexPlaceholderCaretClass =
-  "visualtex-structural-placeholder-caret";
-const visualTexPlaceholderSelectionClass =
-  "has-visualtex-structural-placeholder-selection";
 const visualTexRawLatexClass = "has-visualtex-raw-latex-command";
 const visualTexPointerSelectingClass = "visualtex-pointer-selecting";
 const visualTexSourcePreviewClass = "visualtex-source-preview-only";
 const visualTexCaretRepaintClass = "visualtex-caret-repaint";
-const visualTexPostOperatorCaretClass = "visualtex-post-operator-caret";
-const visualTexPostOperatorCaretShiftProperty =
-  "--visualtex-post-operator-caret-shift";
 const visualTexCaretRepaintFrames = new WeakMap<MathfieldElement, number>();
-
-function isMathLiveInterAtomGlue(node: Element | null): node is HTMLElement {
-  if (!(node instanceof HTMLElement)) return false;
-  if (node.dataset.atomId || node.className || node.textContent) return false;
-  return (
-    node.style.display === "inline-block" &&
-    /^\d*\.?\d+(?:em|ex|px)$/.test(node.style.width)
-  );
-}
-
-function syncPostOperatorCaretSpacing(field: MathfieldElement) {
-  const caret = field.shadowRoot?.querySelector<HTMLElement>(".ML__caret");
-  if (!caret) return;
-
-  const previousAtom = caret.previousElementSibling;
-  const leadingGlue = previousAtom?.previousElementSibling ?? null;
-  const trailingGlue = caret.nextElementSibling;
-  const shouldShift =
-    previousAtom instanceof HTMLElement &&
-    Boolean(previousAtom.dataset.atomId) &&
-    isMathLiveInterAtomGlue(leadingGlue) &&
-    isMathLiveInterAtomGlue(trailingGlue);
-
-  if (!shouldShift) {
-    if (caret.classList.contains(visualTexPostOperatorCaretClass)) {
-      caret.classList.remove(visualTexPostOperatorCaretClass);
-    }
-    caret.style.removeProperty(visualTexPostOperatorCaretShiftProperty);
-    return;
-  }
-
-  const shift = trailingGlue.getBoundingClientRect().width;
-  if (!(shift > 0)) return;
-  const nextShift = `${shift}px`;
-  if (
-    caret.style.getPropertyValue(visualTexPostOperatorCaretShiftProperty) !==
-    nextShift
-  ) {
-    caret.style.setProperty(
-      visualTexPostOperatorCaretShiftProperty,
-      nextShift,
-    );
-  }
-  if (!caret.classList.contains(visualTexPostOperatorCaretClass)) {
-    caret.classList.add(visualTexPostOperatorCaretClass);
-  }
-}
 
 function repaintMathLiveCaret(field: MathfieldElement) {
   const previousFrame = visualTexCaretRepaintFrames.get(field);
@@ -807,24 +683,6 @@ const visualTexPointerSelectingFields = new WeakSet<MathfieldElement>();
 function markVisualTexFormulaGlyphFonts(field: MathfieldElement) {
   if (!field.shadowRoot) return;
   markVisualTexFormulaFontGlyphs(field.shadowRoot);
-}
-
-function syncStructuralPlaceholderSelection(field: MathfieldElement) {
-  const root = field.shadowRoot;
-  const container = root?.querySelector<HTMLElement>(".ML__container");
-  if (!container) return;
-  const [start, end] = field.selection.ranges[0] ?? [-1, -1];
-  const selected =
-    field.selection.ranges.length === 1 &&
-    Math.abs(end - start) === 1 &&
-    field.getValue(Math.min(start, end), Math.max(start, end), "latex").trim() ===
-      "\\placeholder{}" &&
-    Boolean(
-      root?.querySelector(
-        `.${visualTexPlaceholderClass}.ML__selected, .ML__placeholder.ML__selected`,
-      ),
-    );
-  container.classList.toggle(visualTexPlaceholderSelectionClass, selected);
 }
 
 function installVisualTexFormulaFontStyle(field: MathfieldElement) {
@@ -969,39 +827,11 @@ function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
     style.id = visualTexPlaceholderStyleId;
     style.textContent = `
       /*
-       * Structural placeholders must never participate in formula geometry.
-       * Keep MathLive's native placeholder metrics/baseline and paint the blue
-       * marker as an absolutely-positioned overlay. This makes the same marker
-       * work in fractions, scripts, radicals, accents, matrices and nested
-       * structures without per-structure vertical offsets.
+       * Empty-slot markers, the caret and its height are drawn by the layout
+       * engine from the editing core's geometry (docs/editing-core/DESIGN.md);
+       * this sheet only hides MathLive's own highlights and handles the
+       * editor's display modes.
        */
-      .ML__placeholder,
-      .${visualTexPlaceholderClass} {
-        position: relative !important;
-        overflow: visible !important;
-        border: 0 !important;
-        background: transparent !important;
-        color: transparent !important;
-        opacity: 1 !important;
-        box-shadow: none !important;
-      }
-
-      .ML__placeholder::before,
-      .${visualTexPlaceholderClass}::before {
-        content: "" !important;
-        position: absolute !important;
-        z-index: 0 !important;
-        left: 50% !important;
-        top: 50% !important;
-        display: block !important;
-        width: 0.40em !important;
-        height: 0.74em !important;
-        border-radius: 0.075em !important;
-        background: var(--formula-placeholder) !important;
-        transform: translate(-50%, -50%) !important;
-        pointer-events: none !important;
-      }
-
       .ML__contains-highlight,
       .ML__highlight {
         border-color: transparent !important;
@@ -1009,37 +839,6 @@ function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
         background: transparent !important;
         background-color: transparent !important;
         box-shadow: none !important;
-      }
-
-      .ML__container.${visualTexPlaceholderSelectionClass} .ML__selected {
-        border-color: transparent !important;
-        outline: 0 !important;
-        background: transparent !important;
-        background-color: transparent !important;
-        box-shadow: none !important;
-      }
-
-      .ML__container.${visualTexPlaceholderSelectionClass} .ML__placeholder-selected,
-      .ML__container.${visualTexPlaceholderSelectionClass} .ML__selected .ML__placeholder,
-      .ML__container.${visualTexPlaceholderSelectionClass} .${visualTexPlaceholderClass}.ML__selected,
-      .ML__container.${visualTexPlaceholderSelectionClass} .ML__selected .${visualTexPlaceholderClass} {
-        overflow: visible !important;
-        border: 0 !important;
-        background: transparent !important;
-        color: transparent !important;
-        opacity: 1 !important;
-        box-shadow: none !important;
-      }
-
-      .ML__container.${visualTexPlaceholderSelectionClass}
-        .ML__placeholder-selected::before,
-      .ML__container.${visualTexPlaceholderSelectionClass}
-        .ML__selected .ML__placeholder::before,
-      .ML__container.${visualTexPlaceholderSelectionClass}
-        .${visualTexPlaceholderClass}.ML__selected::before,
-      .ML__container.${visualTexPlaceholderSelectionClass}
-        .ML__selected .${visualTexPlaceholderClass}::before {
-        background: var(--formula-placeholder-selected) !important;
       }
 
       :host(.${visualTexCaretRepaintClass})
@@ -1052,33 +851,6 @@ function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
         opacity: 1 !important;
         animation: none !important;
         transform: translateZ(0);
-      }
-
-      .ML__caret.${visualTexPostOperatorCaretClass} {
-        transform: translateX(
-          var(${visualTexPostOperatorCaretShiftProperty}, 0px)
-        ) !important;
-      }
-
-      .${visualTexPlaceholderCaretClass} {
-        pointer-events: none !important;
-      }
-
-      .ML__container.${visualTexPlaceholderSelectionClass} .ML__selection {
-        display: none !important;
-      }
-
-      :host(.${visualTexPointerSelectingClass})
-        .ML__container.${visualTexPlaceholderSelectionClass}
-        .ML__selection {
-        display: block !important;
-        background: var(--_selection-background-color) !important;
-      }
-
-      :host(.${visualTexPointerSelectingClass})
-        .${visualTexPlaceholderCaretClass} {
-        opacity: 0 !important;
-        animation: none !important;
       }
 
       .ML__container.${visualTexRawLatexClass} .ML__latex,
@@ -1108,11 +880,7 @@ function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
 
       :host(.${visualTexSourcePreviewClass}) .ML__selected,
       :host(.${visualTexSourcePreviewClass}) .ML__contains-highlight,
-      :host(.${visualTexSourcePreviewClass}) .ML__highlight,
-      :host(.${visualTexSourcePreviewClass}) .ML__placeholder-selected,
-      :host(.${visualTexSourcePreviewClass}) .ML__selected .ML__placeholder,
-      :host(.${visualTexSourcePreviewClass})
-        .ML__selected .${visualTexPlaceholderClass} {
+      :host(.${visualTexSourcePreviewClass}) .ML__highlight {
         border-color: transparent !important;
         outline: 0 !important;
         background: transparent !important;
@@ -1120,11 +888,13 @@ function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
         box-shadow: none !important;
       }
 
+      :host(.${visualTexSourcePreviewClass}) .ML__vtx-marker--selected {
+        background: var(--formula-placeholder) !important;
+      }
+
       :host(.${visualTexSourcePreviewClass}) .ML__caret,
       :host(.${visualTexSourcePreviewClass}) .ML__text-caret,
-      :host(.${visualTexSourcePreviewClass}) .ML__latex-caret,
-      :host(.${visualTexSourcePreviewClass})
-        .${visualTexPlaceholderCaretClass} {
+      :host(.${visualTexSourcePreviewClass}) .ML__latex-caret {
         display: none !important;
         opacity: 0 !important;
         animation: none !important;
@@ -1145,15 +915,6 @@ function applyInputJudgmentSettings(
     upright: behavior.autoUprightTypography,
     escapes: behavior.autoEscapeShortcuts,
   };
-}
-
-// Runs the kernel's input judgment for a key the editor handles before the
-// kernel (Space, Backspace). True when the kernel used the key up.
-function kernelJudgeKeystroke(field: MathfieldElement, event: KeyboardEvent) {
-  const judge = (field as unknown as {
-    visualTexJudgeKeystroke?: (event: KeyboardEvent) => boolean;
-  }).visualTexJudgeKeystroke;
-  return Boolean(judge?.call(field, event));
 }
 
 // The caret right after a letter: that letter run may still grow (cm -> cmax).
@@ -1185,7 +946,8 @@ function normalizeCompletedUprightDisplay(
   });
   if (contextualValue === originalValue) return false;
 
-  const distanceFromEnd = Math.max(0, field.lastOffset - field.position);
+  const model = editingModelOf(field);
+  const caret = model ? visualTexEditingCore.captureCaret(model) : null;
   field.setValue(contextualValue, {
     mode: "math",
     format: "latex",
@@ -1193,12 +955,7 @@ function normalizeCompletedUprightDisplay(
     selectionMode: "after",
     silenceNotifications: true,
   });
-  const nextPosition = Math.max(0, field.lastOffset - distanceFromEnd);
-  field.selection = {
-    ranges: [[nextPosition, nextPosition]],
-    direction: "none",
-  };
-  field.position = nextPosition;
+  if (caret) restoreMathLiveCaret(field, caret);
   return true;
 }
 
@@ -1225,33 +982,8 @@ function inferEditSource(inputType: string): FormulaEditSource {
 
 const tallFormulaPattern =
   /\\(?:d?frac|tfrac|sqrt|sum|prod|int|iint|iiint|oint|oiint|oiiint|lim|begin|overset|underset|overline|underline)\b|[_^]/;
-const bareStructuredOperatorPattern =
-  /^\\(?:int|iint|iiint|oint|oiint|oiiint|sum|prod|lim|bigcup|bigcap)\s*$/;
-const scriptContainerPattern = /^[_^]\{[\s\S]*\}$/;
-
 function dismissNativeSuggestionPopover(field: MathfieldElement) {
   dismissMathLiveSuggestions(field);
-}
-
-function keepCaretAfterBareStructuredOperator(
-  field: MathfieldElement,
-  previousPosition: number,
-) {
-  if (field.position >= previousPosition || field.position >= field.lastOffset) {
-    return;
-  }
-
-  const operatorOffset = field.position + 1;
-  const operatorLatex =
-    field.getElementInfo(operatorOffset)?.latex?.trim() ||
-    field.getValue(field.position, operatorOffset, "latex").trim();
-  if (!bareStructuredOperatorPattern.test(operatorLatex)) return;
-
-  field.selection = {
-    ranges: [[operatorOffset, operatorOffset]],
-    direction: "none",
-  };
-  field.position = operatorOffset;
 }
 
 const previousTargetToolbarCommandIds = new Set([
@@ -1456,11 +1188,9 @@ function FormulaField(props: FormulaFieldProps) {
     MathfieldElement.locale = propsRef.current.language === "en" ? "en" : "zh-cn";
     field.value = propsRef.current.latex;
     field.className = "visual-mathfield";
-    const visualTexClipboardField = field as VisualTexClipboardMathfield;
-    visualTexClipboardField.visualTexClipboardFormatter = ({
-      latex,
-      wholeLine,
-    }) => {
+    // Copied text leaves the app in the formula's code format (portable bold).
+    field.onExport = (_mathfield, latex, range) => {
+      const wholeLine = range[0] <= 0 && range[1] >= field.lastOffset;
       const current = propsRef.current;
       const source = formatFormulaSelectionUniversal(
         {
@@ -1538,9 +1268,7 @@ function FormulaField(props: FormulaFieldProps) {
     );
 
     let resizeFrame = 0;
-    let measuredLatex: string | null = null;
     const measureFrameSize = () => {
-      measuredLatex = field.value;
       const metrics = formulaRowHeightMetrics(
         field.value,
         propsRef.current.zoom,
@@ -1600,7 +1328,9 @@ function FormulaField(props: FormulaFieldProps) {
       handleLayoutRefresh,
     );
 
-    const imeGuard = new ImeCompositionGuard();
+    // Keys of an open composition belong to the IME; the kernel's key entry
+    // swallows the Enter WebKit replays after a candidate is confirmed.
+    let composing = false;
     let compositionDeleteObserved = false;
     let suppressPostCompositionDeleteUntil = 0;
 
@@ -1631,7 +1361,7 @@ function FormulaField(props: FormulaFieldProps) {
       compositionDeleteObserved = false;
       suppressPostCompositionDeleteUntil = 0;
       propsRef.current.onCommitPending();
-      imeGuard.compositionStart();
+      composing = true;
       const liveCompositionStart = captureFieldSnapshot(field);
       compositionStartRef.current = liveCompositionStart;
     };
@@ -1642,7 +1372,7 @@ function FormulaField(props: FormulaFieldProps) {
         compositionStartRef.current ??
         lastSnapshotRef.current ??
         captureFieldSnapshot(field);
-      imeGuard.compositionEnd(event.timeStamp);
+      composing = false;
       suppressPostCompositionDeleteUntil = cancelledByCompositionDelete
         ? event.timeStamp + 160
         : 0;
@@ -1662,6 +1392,8 @@ function FormulaField(props: FormulaFieldProps) {
         });
         const restored = clampSelection(before.selection, field.lastOffset);
         field.selection = restored;
+        const restoredRange = restored.ranges.at(-1);
+        if (restoredRange) field.position = restoredRange[1];
         field.resetUndo();
         lastSnapshotRef.current = captureFieldSnapshot(field);
         compositionStartRef.current = null;
@@ -1686,7 +1418,7 @@ function FormulaField(props: FormulaFieldProps) {
       }
     };
     const handleInput = (event: Event) => {
-      if (imeGuard.isComposing()) {
+      if (composing) {
         if (
           event instanceof InputEvent &&
           event.inputType === "deleteCompositionText"
@@ -1708,7 +1440,7 @@ function FormulaField(props: FormulaFieldProps) {
       );
       syncFrameSize();
       window.requestAnimationFrame(() => {
-        if (!field.isConnected || imeGuard.isComposing()) return;
+        if (!field.isConnected || composing) return;
         const deferredBefore =
           lastSnapshotRef.current ?? captureFieldSnapshot(field);
         if (
@@ -1724,11 +1456,11 @@ function FormulaField(props: FormulaFieldProps) {
       });
     };
     const handleSelectionChange = () => {
-      syncStructuralPlaceholderSelection(field);
-      syncPostOperatorCaretSpacing(field);
+      // the engine's caret and empty-slot markers can change the drawn extent
+      syncFrameSize();
       const selection = captureSelection(field);
       propsRef.current.onSelectionChange(lineId, selection);
-      if (imeGuard.isComposing() || !lastSnapshotRef.current) return;
+      if (composing || !lastSnapshotRef.current) return;
       // MathLive emits selection-change after mutating the model but before
       // input. Keep the pre-edit selection paired with the pre-edit LaTeX;
       // otherwise Undo restores a post-edit offset (outside an empty cell).
@@ -1744,7 +1476,7 @@ function FormulaField(props: FormulaFieldProps) {
       if (field.selectionIsCollapsed && !uprightCaretFrame) {
         uprightCaretFrame = window.requestAnimationFrame(() => {
           uprightCaretFrame = 0;
-          if (!field.isConnected || imeGuard.isComposing()) return;
+          if (!field.isConnected || composing) return;
           const beforeUpright = lastSnapshotRef.current ?? captureFieldSnapshot(field);
           const valueBefore = field.value;
           field.executeCommand(["visualTexJudgeInput", {}] as unknown as Selector);
@@ -1772,42 +1504,15 @@ function FormulaField(props: FormulaFieldProps) {
       propsRef.current.onCommitPending();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      const imeDecision = imeGuard.keyDown(event, event.timeStamp);
-      if (imeDecision === "composition") return;
-      if (imeDecision === "post-composition-enter") {
-        // macOS WebKit can replay the Enter used to confirm an IME candidate
-        // after compositionend. Consume only that one synthetic follow-up so
-        // VisualTeX does not also create a new formula line.
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
+      // Keys of an open composition belong to the IME (the field's key entry
+      // already used up the Enter WebKit replays after a confirmed candidate).
+      if (event.isComposing || event.keyCode === 229) return;
+      // A genuinely non-composing key ends a composition whose compositionend
+      // was lost.
+      composing = false;
       if (compositionStartRef.current) {
         compositionStartRef.current = null;
         lastSnapshotRef.current = captureFieldSnapshot(field);
-      }
-
-      const accentNavigationDirection =
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.shiftKey &&
-        event.key === "ArrowLeft"
-          ? "left"
-          : !event.metaKey &&
-              !event.ctrlKey &&
-              !event.altKey &&
-              !event.shiftKey &&
-              event.key === "ArrowRight"
-            ? "right"
-            : null;
-      if (
-        accentNavigationDirection &&
-        selectAdjacentAccentPlaceholder(field, accentNavigationDirection)
-      ) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
       }
 
       propsRef.current.onKeyDown(propsRef.current.index, event, field);
@@ -1876,19 +1581,25 @@ function FormulaField(props: FormulaFieldProps) {
         direction: selection.direction ?? "none",
       });
     };
-    const handlePointerSelectionEnd = () => {
-      if (!visualTexPointerSelectingFields.delete(field)) return;
-      field.classList.remove(visualTexPointerSelectingClass);
-    };
     const handlePointerDown = (event: PointerEvent) => {
       const opensContextMenu =
         event.button === 2 || (event.button === 0 && event.ctrlKey);
       if (opensContextMenu) return;
       if (event.button !== 0) return;
-      visualTexPointerSelectingFields.add(field);
-      field.classList.add(visualTexPointerSelectingClass);
       propsRef.current.onCommitPending();
-      if (!event.composedPath().includes(field)) field.visualTexStartPointerSelection(event);
+      // The field handles its own clicks (the editing core's hit test). Row
+      // space beside it focuses the formula at the stop the point means: the
+      // nearest mathematical edge, so centered and right-aligned formulas
+      // remain easy to focus and edit.
+      if (event.composedPath().includes(field)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      field.focus();
+      placeCaretAtPoint(field, event.clientX, event.clientY);
+      field.shadowRoot
+        ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
+        ?.focus({ preventScroll: true });
+      propsRef.current.onFocus(propsRef.current.index, field);
     };
     host.replaceChildren(field);
     // WebView2 exposes a richer mounted macro dictionary than MathLive's
@@ -1928,26 +1639,36 @@ function FormulaField(props: FormulaFieldProps) {
     lastSnapshotRef.current = captureFieldSnapshot(field);
     fieldRef.current = field;
     propsRef.current.register(initialLineId, field);
-    // MathLive's Tab with no next placeholder fires move-out and then moves
-    // browser focus to the next control, so the following keystrokes are lost.
-    // Tab stays inside the formula; arrow-key move-out keeps its behavior.
-    let tabKeyPending = false;
-    const trackTabKey = (event: KeyboardEvent) => {
-      tabKeyPending = event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey;
-      // The way out for keyboard users: Escape opens an empty LaTeX box, and
-      // Tab (Shift+Tab) from that still-empty box closes it and moves focus
-      // to the next (previous) control after the formula lines.
-      if (tabKeyPending && field.mode === "latex" && rawLatexInput(field) === "") {
+    // Tab never leaves the formula (the editing core consumes it). The way out
+    // for keyboard users: Escape opens an empty LaTeX box, and Tab (Shift+Tab)
+    // from that still-empty box closes it and moves focus to the next
+    // (previous) control after the formula lines.
+    const handleLatexBoxTab = (event: KeyboardEvent) => {
+      const tab = event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey;
+      if (tab && field.mode === "latex" && rawLatexInput(field) === "") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        tabKeyPending = false;
         field.executeCommand(["complete", "reject"]);
         focusControlOutsideFormulas(field, event.shiftKey ? -1 : 1);
       }
     };
-    const keepTabFocusInFormula = (event: Event) => {
-      if (tabKeyPending) event.preventDefault();
-    };
+    // Up/Down with nothing above (below) inside the formula moves to another row.
+    // The editor's keys (rows, hotkeys, history, leaving an empty LaTeX box) are
+    // key commands the field's key entry offers each keydown before the kernel.
+    visualTexEditingCore.setHost(field, {
+      verticalExit: (direction) =>
+        propsRef.current.onVerticalExit(propsRef.current.index, direction, field),
+      keyCommands: [
+        (event) => {
+          handleKeyDown(event);
+          return event.cancelBubble;
+        },
+        (event) => {
+          handleLatexBoxTab(event);
+          return event.cancelBubble;
+        },
+      ],
+    });
     // Capture before MathLive's keyboard sink replaces a selected placeholder;
     // the bubble phase is already too late because the parent structure is gone.
     field.addEventListener("compositionstart", handleCompositionStart, true);
@@ -1957,9 +1678,6 @@ function FormulaField(props: FormulaFieldProps) {
     field.addEventListener("selection-change", handleSelectionChange);
     field.addEventListener("focus", handleFocus);
     field.addEventListener("blur", handleBlur);
-    field.addEventListener("keydown", handleKeyDown, true);
-    field.addEventListener("keydown", trackTabKey, true);
-    field.addEventListener("move-out", keepTabFocusInFormula);
 
     const keyboardSink =
       field.shadowRoot?.querySelector<HTMLElement>('[part="keyboard-sink"]') ??
@@ -2000,8 +1718,6 @@ function FormulaField(props: FormulaFieldProps) {
     );
     host.addEventListener("contextmenu", suppressMathLiveContextMenu, true);
     host.addEventListener("pointerdown", handlePointerDown, true);
-    window.addEventListener("pointerup", handlePointerSelectionEnd, true);
-    window.addEventListener("pointercancel", handlePointerSelectionEnd, true);
     const content = field.shadowRoot?.querySelector<HTMLElement>('[part="content"]');
     const resizeObserver = content
       ? new ResizeObserver(() => {
@@ -2011,9 +1727,8 @@ function FormulaField(props: FormulaFieldProps) {
     const inputMutationObserver = field.shadowRoot
       ? new MutationObserver(() => {
           markVisualTexFormulaGlyphFonts(field);
-          syncStructuralPlaceholderSelection(field);
-          syncPostOperatorCaretSpacing(field);
-          if (field.value !== measuredLatex) syncFrameSize();
+          // caret and empty-slot markers change the drawn extent without the value
+          syncFrameSize();
         })
       : null;
     if (content) resizeObserver?.observe(content);
@@ -2031,11 +1746,9 @@ function FormulaField(props: FormulaFieldProps) {
     // a newly inserted line never paints with the CSS fallback or predicted
     // height and then visibly shrinks on the next animation frame.
     measureFrameSize();
-    syncPostOperatorCaretSpacing(field);
     queueMicrotask(() => {
       if (!field.isConnected) return;
       measureFrameSize();
-      syncPostOperatorCaretSpacing(field);
     });
 
     return () => {
@@ -2055,9 +1768,7 @@ function FormulaField(props: FormulaFieldProps) {
       window.cancelAnimationFrame(uprightCaretFrame);
       field.removeEventListener("focus", handleFocus);
       field.removeEventListener("blur", handleBlur);
-      field.removeEventListener("keydown", handleKeyDown, true);
-      field.removeEventListener("keydown", trackTabKey, true);
-      field.removeEventListener("move-out", keepTabFocusInFormula);
+      visualTexEditingCore.setHost(field, null);
 
       if (VISUALTEX_IME_DIAGNOSTICS_ENABLED) {
         for (const type of imeDiagnosticEventTypes) {
@@ -2074,14 +1785,11 @@ function FormulaField(props: FormulaFieldProps) {
       );
       host.removeEventListener("contextmenu", suppressMathLiveContextMenu, true);
       host.removeEventListener("pointerdown", handlePointerDown, true);
-      window.removeEventListener("pointerup", handlePointerSelectionEnd, true);
-      window.removeEventListener("pointercancel", handlePointerSelectionEnd, true);
       visualTexPointerSelectingFields.delete(field);
       field.classList.remove(visualTexPointerSelectingClass);
       host.closest<HTMLElement>(".formula-line")?.style.removeProperty(
         "--formula-row-height",
       );
-      delete (field as VisualTexClipboardMathfield).visualTexClipboardFormatter;
       propsRef.current.register(registeredLineIdRef.current, null, field);
       fieldRef.current = null;
       defaultInlineShortcutsRef.current = null;
@@ -3282,18 +2990,6 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       };
 
       const finishInsertion = () => {
-        if (
-          hasBoundedOperatorPlaceholderOrder(insertionTemplate) &&
-          field.selectionIsCollapsed &&
-          field.position > 0 &&
-          field.getValue(field.position - 1, field.position, "latex").trim() ===
-            "\\placeholder{}"
-        ) {
-          field.selection = {
-            ranges: [[field.position - 1, field.position]],
-            direction: "none",
-          };
-        }
         const normalizedValue = normalizeChineseLatex(field.value);
         recordCommand(command.id, "", source);
         focusLine(targetLineId, {
@@ -3727,42 +3423,35 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       stabilizeEditorScroll(scrollSnapshot, targetLine.id, false);
     };
 
-    const scheduleUnconsumedMathSpace = (
-      lineId: string,
+    // Up/Down with nothing above (below) inside the formula (the editing core
+    // decides): the caret moves to the row above (below), near the same offset.
+    const moveToAdjacentLine = (
+      index: number,
+      direction: -1 | 1,
       field: MathfieldElement,
-    ) => {
-      const beforeNativeSpace = captureFieldSnapshot(field);
-      queueMicrotask(() => {
-        if (!field.isConnected) return;
-        const afterNativeSpace = captureFieldSnapshot(field);
-        if (
-          beforeNativeSpace.latex !== afterNativeSpace.latex ||
-          JSON.stringify(beforeNativeSpace.selection) !==
-            JSON.stringify(afterNativeSpace.selection)
-        ) {
-          return;
-        }
+    ): boolean => {
+      const targetLine = linesRef.current[index + direction];
+      if (!targetLine) return false;
+      historyManager.commitPendingTransaction();
 
-        const inserted = applyDiscreteFormulaMutation(
-          lineId,
-          field,
-          "keyboard",
-          () =>
-            field.insert("\\ ", {
-              mode: "math",
-              format: "latex",
-              insertionMode: "replaceSelection",
-              selectionMode: "after",
-              focus: true,
-              scrollIntoView: false,
-            }),
-        );
-        if (!inserted) return;
-        focusLine(lineId, {
-          latex: normalizeChineseLatex(field.value),
-          selection: captureSelection(field),
-        });
+      const targetField = fieldRefs.current.get(targetLine.id);
+      const targetPosition = Math.max(
+        0,
+        Math.min(
+          field.position,
+          targetField?.lastOffset ?? targetLine.latex.length,
+        ),
+      );
+      const targetSelection: MathSelectionSnapshot = {
+        ranges: [[targetPosition, targetPosition]],
+        direction: "none",
+      };
+      setActiveLine(targetLine.id);
+      focusLine(targetLine.id, {
+        latex: targetField?.isConnected ? null : targetLine.latex,
+        selection: targetSelection,
       });
+      return true;
     };
 
     const handleKeyDown = (
@@ -3867,23 +3556,17 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         }
       }
 
+      // Escape and Enter: the editing core decides (keys.ts); the editor
+      // performs the row commands.
+      const editingModel = editingModelOf(field);
       if (
         event.key === "Escape" &&
-        !event.altKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.shiftKey &&
-        !rawLatexInputActive &&
-        field.mode !== "latex" &&
-        selectionHasContent(captureSelection(field))
+        editingModel &&
+        visualTexEditingCore.escapeAction(editingModel, event, rawLatexInputActive) === "collapse"
       ) {
-        // MathLive's Escape turns a selection into a raw LaTeX group whose
-        // characters are excluded from field.value, so the synced formula
-        // silently loses them. Escape only dismisses the selection here.
         event.preventDefault();
         event.stopImmediatePropagation();
-        const end = Math.max(...field.selection.ranges.flat());
-        field.selection = { ranges: [[end, end]], direction: "none" };
+        collapseMathLiveSelectionToEnd(field);
         return;
       }
 
@@ -3947,26 +3630,33 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         return;
       }
 
-      const requestsInFormulaRowBreak =
-        event.key === "Enter" &&
-        event.shiftKey &&
-        !event.altKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.isComposing &&
-        !rawLatexInputActive;
-      if (requestsInFormulaRowBreak) {
+      const enterAction =
+        event.key === "Enter" && editingModel
+          ? visualTexEditingCore.enterAction(editingModel, event, rawLatexInputActive)
+          : null;
+      if (enterAction && enterAction !== "complete") {
         event.preventDefault();
         event.stopImmediatePropagation();
-
-        const inserted = applyInFormulaRowBreak(
-          lineId,
-          field,
-          latexFormatProfile.multilineEnvironment === "align"
-            ? "aligned"
-            : "gathered",
-        );
-        if (inserted) {
+        if (enterAction === "split-row") {
+          const currentLineMode =
+            useEditorStore.getState().lines.find((line) => line.id === lineId)?.mode ??
+            "display";
+          splitLineAtCaret(index, lineId, field, currentLineMode);
+          return;
+        }
+        const changed =
+          enterAction === "row-break"
+            ? applyInFormulaRowBreak(
+                lineId,
+                field,
+                latexFormatProfile.multilineEnvironment === "align"
+                  ? "aligned"
+                  : "gathered",
+              )
+            : applyDiscreteFormulaMutation(lineId, field, "keyboard", () =>
+                field.executeCommand("addRowAfter"),
+              );
+        if (changed) {
           focusLine(lineId, {
             latex: normalizeChineseLatex(field.value),
             selection: captureSelection(field),
@@ -3976,27 +3666,21 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       }
 
       const rawCommandActive = hasRawLatexInput(field);
-      // Let native completion own keys while a command is actually pending.
-      // Escape can leave MathLive in latex mode with no raw input; that state
-      // must still allow formula-row navigation.
-      if (rawCommandActive || (field.mode === "latex" &&
-          event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
-      const currentState = useEditorStore.getState();
+      // Let native completion own Enter/Tab/arrows while typing a command.
+      if (rawCommandActive || field.mode === "latex") return;
 
-      const activeEnvironment = field.visualTexParentEnvironment;
-      const requestsAlignmentPoint =
-        event.key === "&" &&
-        !event.isComposing &&
-        !event.altKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !rawCommandActive;
-      const insertsInternalAlignmentPoint =
-        requestsAlignmentPoint &&
-        (activeEnvironment === "aligned" ||
-          activeEnvironment === "align" ||
-          activeEnvironment === "align*");
-      if (insertsInternalAlignmentPoint) {
+      // &: the editing core decides (keys.ts); the editor performs it as one
+      // history step.
+      const ampersandAction =
+        event.key === "&" && editingModel
+          ? visualTexEditingCore.ampersandAction(
+              editingModel,
+              event,
+              rawCommandActive,
+              latexFormatProfile.multilineEnvironment === "align",
+            )
+          : null;
+      if (ampersandAction === "alignment-point") {
         const inserted = applyDiscreteFormulaMutation(
           lineId,
           field,
@@ -4014,16 +3698,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         }
       }
 
-      const alignmentCaretDepth =
-        field.getElementInfo(field.position)?.depth ??
-        field.getElementInfo(Math.max(0, field.position - 1))?.depth ??
-        0;
-      const insertsExplicitAlignmentPoint =
-        latexFormatProfile.multilineEnvironment === "align" &&
-        alignmentCaretDepth === 0 &&
-        requestsAlignmentPoint &&
-        activeEnvironment === null;
-      if (insertsExplicitAlignmentPoint) {
+      if (ampersandAction === "alignment-marker") {
         event.preventDefault();
         event.stopImmediatePropagation();
         const inserted = applyDiscreteFormulaMutation(
@@ -4052,11 +3727,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
       // In a matrix, cases or array, & is LaTeX's column separator: it moves
       // to the cell on the right, or adds a column at the end of the row.
       // Where it does neither (not directly in a cell), & stays a character.
-      if (
-        requestsAlignmentPoint &&
-        activeEnvironment !== null &&
-        !insertsInternalAlignmentPoint
-      ) {
+      if (ampersandAction === "next-column") {
         let moved = false;
         applyDiscreteFormulaMutation(lineId, field, "keyboard", () => {
           const before = JSON.stringify([field.value, captureSelection(field)]);
@@ -4076,72 +3747,15 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         }
       }
 
-      const insertsVisibleMathSpace =
-        !event.isComposing &&
-        !event.altKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.shiftKey &&
-        (event.key === " " || event.code === "Space") &&
-        !rawCommandActive;
-      if (insertsVisibleMathSpace) {
-        // The kernel's input judgment goes first: a Space that finished a
-        // converted word (pi -> \pi, frac -> fraction) is used up there.
-        if (kernelJudgeKeystroke(field, event)) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          return;
-        }
-        scheduleUnconsumedMathSpace(lineId, field);
-        return;
-      }
+      // Space belongs to the kernel and the editing core: the input
+      // conversion first, then leaving the structure, or a visible space at
+      // the top level.
 
-      if (
-        event.key === "Enter" &&
-        field.visualTexParentEnvironment === "cases"
-      ) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const insertedRow = applyDiscreteFormulaMutation(
-          lineId,
-          field,
-          "keyboard",
-          () => field.executeCommand("addRowAfter"),
-        );
-        if (insertedRow) {
-          focusLine(lineId, {
-            latex: normalizeChineseLatex(field.value),
-            selection: captureSelection(field),
-          });
-        }
-        return;
-      }
-
-      if (event.key === "Enter") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const currentLineMode =
-          currentState.lines.find((line) => line.id === lineId)?.mode ??
-          "display";
-        splitLineAtCaret(index, lineId, field, currentLineMode);
-        return;
-      }
-
+      // Backspace/Delete inside a formula belong to the kernel's deletion rules
+      // (and its input conversion, which undoes a fresh conversion first); the
+      // edit is recorded from its input event. The editor only handles the
+      // row-level cases below.
       if (event.key === "Backspace" || event.key === "Delete") {
-        // Backspace right after an automatic conversion restores what was
-        // typed; the kernel's input judgment keeps that last conversion.
-        if (
-          event.key === "Backspace" &&
-          !event.altKey &&
-          !event.ctrlKey &&
-          !event.metaKey &&
-          !event.shiftKey &&
-          kernelJudgeKeystroke(field, event)
-        ) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          return;
-        }
         const visibleLatex = field
           .getValue("latex-without-placeholders")
           .trim();
@@ -4198,110 +3812,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           return;
         }
 
-        event.preventDefault();
-        event.stopImmediatePropagation();
-
-        if (!currentLine) return;
-        const before = captureFieldSnapshot(field);
-        const beforePosition = field.position;
-        const command =
-          event.key === "Backspace" ? "deleteBackward" : "deleteForward";
-
-        const trailingStructuredLatex =
-          event.key === "Backspace"
-            ? field.getElementInfo(beforePosition)?.latex?.trim() ?? ""
-            : "";
-        suppressedHistoryLineIdRef.current = lineId;
-        try {
-          field.executeCommand(command);
-          if (
-            event.key === "Backspace" &&
-            field.value === before.latex &&
-            scriptContainerPattern.test(trailingStructuredLatex)
-          ) {
-            // MathLive first moves into a terminal super/subscript container
-            // without deleting anything. Complete the same Backspace action by
-            // deleting its final atom so the editor cannot become stuck there.
-            field.executeCommand("deleteBackward");
-          }
-        } finally {
-          suppressedHistoryLineIdRef.current = null;
-        }
-
-        if (event.key === "Backspace" && field.selectionIsCollapsed) {
-          keepCaretAfterBareStructuredOperator(field, beforePosition);
-        }
-
-        const after = captureFieldSnapshot(field);
-        if (before.latex === after.latex) {
-          field.focus();
-          return;
-        }
-
-        field.resetUndo();
-        commitFormulaEdit(historyManager, {
-          lineId,
-          beforeLatex: currentLine.latex,
-          afterLatex: after.latex,
-          beforeSelection: before.selection,
-          afterSelection: after.selection,
-          beforeActiveLineId: state.activeLineId,
-          afterActiveLineId: lineId,
-          editKind:
-            event.key === "Backspace"
-              ? "delete-backward"
-              : "delete-forward",
-          source: "keyboard",
-        });
-        linesRef.current = useEditorStore.getState().lines;
         return;
-      }
-
-      if (
-        (event.key === "ArrowUp" || event.key === "ArrowDown") &&
-        !event.altKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.shiftKey
-      ) {
-        // Ask the kernel for every formula, regardless of its LaTeX command
-        // spelling. A changed selection means an actual inner branch move;
-        // otherwise the arrow may move to a different formula row below.
-        const beforeSelection = captureSelection(field);
-        field.executeCommand(event.key === "ArrowUp" ? "moveUp" : "moveDown");
-        const afterSelection = captureSelection(field);
-        if (JSON.stringify(beforeSelection) !== JSON.stringify(afterSelection)) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          return;
-        }
-
-        const direction = event.key === "ArrowUp" ? -1 : 1;
-        const targetIndex = index + direction;
-        const targetLine = linesRef.current[targetIndex];
-        if (targetLine) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          historyManager.commitPendingTransaction();
-
-          const targetField = fieldRefs.current.get(targetLine.id);
-          const targetPosition = Math.max(
-            0,
-            Math.min(
-              field.position,
-              targetField?.lastOffset ?? targetLine.latex.length,
-            ),
-          );
-          const targetSelection: MathSelectionSnapshot = {
-            ranges: [[targetPosition, targetPosition]],
-            direction: "none",
-          };
-          setActiveLine(targetLine.id);
-          focusLine(targetLine.id, {
-            selection: targetSelection,
-          });
-          return;
-        }
       }
 
       if (
@@ -4823,15 +4334,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           onPreviewActivate?.();
 
           const [lineId, field] = entry;
-          const offset = Math.max(
-            0,
-            Math.min(
-              field.getOffsetFromPoint(event.clientX, event.clientY, { bias: 0 }),
-              field.lastOffset,
-            ),
-          );
           field.focus();
-          field.position = offset;
+          placeCaretAtPoint(field, event.clientX, event.clientY);
           field.shadowRoot
             ?.querySelector<HTMLElement>('[part="keyboard-sink"]')
             ?.focus({ preventScroll: true });
@@ -5188,6 +4692,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
                   onKeyDown={(lineIndex, event, field) =>
                     handleKeyDown(lineIndex, lineId, event, field)
                   }
+                  onVerticalExit={moveToAdjacentLine}
                   onPasteImage={onPasteImage ? (file, target) => onPasteImage(file, {
                     ...target, documentSelection: captureDocumentSnapshot().documentSelection,
                   }) : undefined}

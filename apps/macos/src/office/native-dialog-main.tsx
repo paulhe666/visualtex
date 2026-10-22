@@ -1,7 +1,8 @@
 import { EditorSessionProvider } from "../history/EditorSession";
 import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import "mathlive/static.css";
+// formulas are laid out by the shared engine; installed before any math field exists
+import "../editor/visualTexLayoutRuntime";
 import "../styles.css";
 import "../styles-editor-parity.css";
 import "../styles-windows-shared-latest.css";

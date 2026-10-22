@@ -518,6 +518,9 @@ export type InsertOptions = {
 
   /** The style applied to the inserted content */
   style?: Style;
+
+  /** VisualTeX: keep the inserted content's own style (no persistent typing style) */
+  visualTexPreserveStyle?: boolean;
 };
 
 /**

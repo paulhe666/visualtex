@@ -14,6 +14,7 @@ import { MathPreview } from "./MathPreview";
 import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
 import { OfficeHotkeyRecorderDialog } from "./OfficeHotkeyRecorderDialog";
 import { FormulaRowHotkeyRecorderDialog } from "./FormulaRowHotkeyRecorderDialog";
+import { ButtonShortcutSettingsSection } from "./ButtonShortcutSettings";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyTargetKindLabel,
@@ -329,6 +330,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
           </div>
 
           <div className="formula-hotkey-manager-content">
+            <ButtonShortcutSettingsSection />
             {renderOfficeGroup("word", "Microsoft Word")}
             {renderOfficeGroup("powerpoint", "Microsoft PowerPoint")}
             {renderRowGroup()}

@@ -307,7 +307,9 @@ export class MathModeEditor extends ModeEditor {
     if (!newAtoms) return false;
     // Persistent typing format is applied only to genuinely new glyphs.
     // A toolbar wrapper that reuses #0 keeps the selected content untouched.
-    if (!usedArg) visualTexApplyPersistentTypingStyle(model.mathfield, newAtoms);
+    // An edge insert (document wrapper) keeps its own style as well.
+    if (!usedArg && !options.visualTexPreserveStyle)
+      visualTexApplyPersistentTypingStyle(model.mathfield, newAtoms);
 
     const insertingFraction =
       newAtoms.length === 1 && newAtoms[0].type === 'genfrac';

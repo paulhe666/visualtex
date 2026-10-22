@@ -191,7 +191,7 @@ export function validateStyle(
 // As an `InsertStyleHook` it is called with the mathfield's controller
 export function defaultInsertStyleHook(
   mathfield: _Mathfield,
-  offset: Offset,
+  _offset: Offset,
   info: { before: Offset; after: Offset; latex?: string }
 ): Readonly<Style> {
   const model = mathfield.model;

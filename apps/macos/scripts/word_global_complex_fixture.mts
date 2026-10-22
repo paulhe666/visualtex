@@ -24,7 +24,7 @@ for (const [index, latex] of sources.entries()) {
   const id = `81818181-8181-4818-8818-${String(index + 1).padStart(12, "0")}`;
   const displayMode = index === 1 ? "inline" : "block";
   const fontSizePt = [14, 11, 14, 11, 18, 14][index];
-  const rendered = latexToSvg(latex, { displayMode: displayMode === "block", fontSizePt: 14,
+  const rendered = await latexToSvg(latex, { displayMode: displayMode === "block", fontSizePt: 14,
     paddingPx: displayMode === "inline" ? 1 : 2, background: "transparent", forceExplicitBlack: true,
     formulaLetterFont: "times", formulaChineseFont: "songti" });
   const fit = Math.min(1, 500 / (rendered.width * 0.75 * 1.067));

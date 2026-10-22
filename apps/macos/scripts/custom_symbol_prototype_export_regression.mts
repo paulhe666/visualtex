@@ -17,7 +17,7 @@ const cases = [
 ] as const;
 
 for (const [name, latex] of cases) {
-  const result = latexToSvg(latex, {
+  const result = await latexToSvg(latex, {
     displayMode: false,
     fontSizePt: 12,
     paddingPx: 2,
@@ -42,7 +42,7 @@ for (const [name, latex] of cases) {
   assert.equal(result.base64, svgToBase64(result.svg), `${name} base64 round trip`);
 }
 
-const ordinary = latexToSvg("x+y", {
+const ordinary = await latexToSvg("x+y", {
   displayMode: false,
   fontSizePt: 12,
   paddingPx: 0,
@@ -54,7 +54,7 @@ assert.doesNotMatch(
   "Ordinary SVG must not enter the custom-symbol post-processor",
 );
 
-const existingIntegral = latexToSvg("\\oiint_C f", {
+const existingIntegral = await latexToSvg("\\oiint_C f", {
   displayMode: true,
   fontSizePt: 12,
   paddingPx: 0,

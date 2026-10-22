@@ -31,8 +31,8 @@ if (process.argv.includes("--run") || process.argv.includes("--verify")) {
   }
 } else {
   const lines = [{ id: "81818181-8181-4181-8181-818181818181", latex: String.raw`x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}` }];
-  const on = renderOfficeFormulaArtifacts({ lines, codeFormat: "raw", displayMode: "block", host: "word", numbered: true, formulaLetterFont: "times", fontSizePt: 14 });
-  const off = renderOfficeFormulaArtifacts({ lines, codeFormat: "raw", displayMode: "block", host: "word", numbered: false, formulaLetterFont: "times", fontSizePt: 14 });
+  const on = await renderOfficeFormulaArtifacts({ lines, codeFormat: "raw", displayMode: "block", host: "word", numbered: true, formulaLetterFont: "times", fontSizePt: 14 });
+  const off = await renderOfficeFormulaArtifacts({ lines, codeFormat: "raw", displayMode: "block", host: "word", numbered: false, formulaLetterFont: "times", fontSizePt: 14 });
   assert.ok(on.omml && off.omml);
   const geometry = wordImageReferenceGeometry(on.svg.width, on.svg.height, on.svg.baseline, "times");
   writeFileSync(join(root, "on.docx"), Buffer.from(on.omml.ommlDocxBase64, "base64url"));

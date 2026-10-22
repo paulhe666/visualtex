@@ -11,6 +11,12 @@ export class PointerTracker {
   private static controller: AbortController | undefined;
   private static pointerId: number | undefined;
   private static element: HTMLElement | undefined;
+  private static onCancel: ((ev: Event) => void) | undefined;
+
+  /** The element whose pointer is being tracked, if any. */
+  static get trackedElement(): HTMLElement | undefined {
+    return PointerTracker.controller ? PointerTracker.element : undefined;
+  }
 
   static start(
     element: HTMLElement,
@@ -19,6 +25,7 @@ export class PointerTracker {
     onCancel: (this: HTMLElement, ev: Event) => any
   ): void {
     PointerTracker.element = element;
+    PointerTracker.onCancel = (ev: Event) => (onCancel as (ev: Event) => void).call(element, ev);
 
     // Have to create a new controller each time, as they can only be used once
     PointerTracker.controller?.abort();
@@ -51,9 +58,18 @@ export class PointerTracker {
     }
   }
 
+  /** Ends the tracking as a cancelled gesture (the host took the drag over). */
+  static cancel(): void {
+    const onCancel = PointerTracker.onCancel;
+    if (!PointerTracker.controller || !onCancel) return;
+    onCancel(new Event('pointercancel'));
+    PointerTracker.stop();
+  }
+
   static stop(): void {
     PointerTracker.controller?.abort();
     PointerTracker.controller = undefined;
+    PointerTracker.onCancel = undefined;
 
     if (typeof PointerTracker.pointerId === 'number') {
       PointerTracker.element!.releasePointerCapture(PointerTracker.pointerId);

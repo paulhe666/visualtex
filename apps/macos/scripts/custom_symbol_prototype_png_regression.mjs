@@ -127,7 +127,7 @@ async function main() {
         const BS = String.fromCharCode(92);
         const runtime = await import("/src/export/runtime.ts");
         const registry = await import("/src/math/customSymbolRegistry.ts");
-        const svg = runtime.latexToSvg(BS + "vtxtestsymbol", {
+        const svg = await runtime.latexToSvg(BS + "vtxtestsymbol", {
           displayMode: false,
           fontSizePt: 18,
           paddingPx: 8,
@@ -153,7 +153,7 @@ async function main() {
           createdAt: now,
           updatedAt: now,
         });
-        const erasedSvg = runtime.latexToSvg(BS + "pngerase", {
+        const erasedSvg = await runtime.latexToSvg(BS + "pngerase", {
           displayMode: false,
           fontSizePt: 18,
           paddingPx: 8,

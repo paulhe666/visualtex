@@ -1,11 +1,13 @@
 import { alignWordInlineSvg } from "./wordImageGeometry";
 import { latexToSvg } from "../../export/latexToSvg";
+import type { SvgExportResult } from "../../export/exportTypes";
 import type { LatexCodeFormat } from "../../types/formula";
 import type {
   FormulaChineseFont,
   FormulaLetterFont,
 } from "../../editor/formulaFontPreferences";
-import { errorMessage } from "../../runtime/errorMessage";
+import { inConversionStage } from "./conversionErrors";
+import { useEditorStore } from "../../stores/editorStore";
 import {
   latexLinesToOmmlArtifacts,
   type OmmlArtifacts,
@@ -37,7 +39,7 @@ export interface OfficeFormulaRenderArtifacts {
   lines: FormulaEditorLine[];
   codeFormat: LatexCodeFormat;
   canonicalLatex: string;
-  svg: ReturnType<typeof latexToSvg>;
+  svg: SvgExportResult;
   /**
    * PowerPoint native equations: the editor's own OMML, used only when the app
    * receives no wordMathMl.
@@ -56,7 +58,7 @@ export interface OfficeFormulaRenderArtifacts {
  * normalized editor document. Document import and edit replacement must use
  * this path so an align/align* formula cannot render differently after edit.
  */
-export function renderOfficeFormulaArtifacts({
+export async function renderOfficeFormulaArtifacts({
   lines,
   codeFormat,
   displayMode,
@@ -67,7 +69,7 @@ export function renderOfficeFormulaArtifacts({
   fontSizePt,
   formulaLetterFont,
   formulaChineseFont,
-}: RenderOfficeFormulaArtifactsInput): OfficeFormulaRenderArtifacts {
+}: RenderOfficeFormulaArtifactsInput): Promise<OfficeFormulaRenderArtifacts> {
   const document = normalizeFormulaEditorDocument(lines, codeFormat);
   const canonicalLatex = serializeFormulaEditorDocument(document);
   if (!canonicalLatex.trim()) {
@@ -89,9 +91,9 @@ export function renderOfficeFormulaArtifacts({
     (host === "word" &&
       displayMode === "inline" &&
       inlineImageMathStyle === "display");
-  let svg: ReturnType<typeof latexToSvg>;
+  let svg: SvgExportResult;
   try {
-    svg = latexToSvg(svgLatex, {
+    svg = await latexToSvg(svgLatex, {
       displayMode: svgDisplayMode,
       fontSizePt: OFFICE_FORMULA_REFERENCE_FONT_SIZE_PT,
       // Word uses the imported image bounds as part of its line box. A 10 px
@@ -106,10 +108,8 @@ export function renderOfficeFormulaArtifacts({
       formulaChineseFont,
     });
   } catch (reason) {
-    throw new Error(
-      `SVG 渲染失败：${errorMessage(reason, "未知 SVG 渲染错误。")}`,
-      { cause: reason },
-    );
+    const isEn = useEditorStore.getState().language === "en";
+    throw inConversionStage(isEn, "无法绘制公式图片", "The formula image could not be drawn", reason);
   }
   if (host === "word" && displayMode === "inline" && fontSizePt !== undefined) {
     svg = alignWordInlineSvg(svg, fontSizePt, formulaLetterFont);
@@ -120,10 +120,8 @@ export function renderOfficeFormulaArtifacts({
     try {
       wordMathMl = wordEquationMathMl(document, displayMode);
     } catch (reason) {
-      throw new Error(
-        `Word OMML 转换失败：${errorMessage(reason, "未知 OMML 转换错误。")}`,
-        { cause: reason },
-      );
+      const isEn = useEditorStore.getState().language === "en";
+      throw inConversionStage(isEn, "无法生成 Word 公式（OMML）", "The Word equation (OMML) could not be generated", reason);
     }
   }
   if (includeWordOmml && host !== "word") {
@@ -136,10 +134,8 @@ export function renderOfficeFormulaArtifacts({
         numbered,
       );
     } catch (reason) {
-      throw new Error(
-        `Word OMML 转换失败：${errorMessage(reason, "未知 OMML 转换错误。")}`,
-        { cause: reason },
-      );
+      const isEn = useEditorStore.getState().language === "en";
+      throw inConversionStage(isEn, "无法生成 Word 公式（OMML）", "The Word equation (OMML) could not be generated", reason);
     }
   }
   return {
@@ -161,11 +157,11 @@ export function renderOfficeFormulaArtifacts({
  * renderOfficeFormulaArtifacts there; only draft persistence uses this
  * best-effort wrapper.
  */
-export function tryRenderOfficeFormulaDraftArtifacts(
+export async function tryRenderOfficeFormulaDraftArtifacts(
   input: RenderOfficeFormulaArtifactsInput,
-): OfficeFormulaRenderArtifacts | null {
+): Promise<OfficeFormulaRenderArtifacts | null> {
   try {
-    return renderOfficeFormulaArtifacts(input);
+    return await renderOfficeFormulaArtifacts(input);
   } catch {
     return null;
   }

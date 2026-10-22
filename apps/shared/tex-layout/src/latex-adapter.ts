@@ -47,7 +47,6 @@ import {
   VCENTER_NOAD,
   boxField,
   charField,
-  emptyField,
   mlistField,
   newNoad,
   type ChoiceItem,

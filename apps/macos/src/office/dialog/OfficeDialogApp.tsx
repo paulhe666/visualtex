@@ -73,10 +73,22 @@ import {
   getOcrRuntimeStatus,
   listenOcrRecognitionProgress,
   normalizeOcrFormulaLines,
+  formatOcrError,
   recognizeFormulaImage,
   type OcrModelName,
 } from "../../ocr/ocrService";
 import { useOcrQuickSelection } from "../../ocr/useOcrQuickSelection";
+import {
+  captureQuickOcrScreenshot,
+  quickOcrCaptureToFile,
+} from "../../ocr/quickOcr";
+import { installButtonShortcuts, onButtonShortcut } from "../../shortcuts/buttonShortcuts";
+import { inConversionStage } from "../shared/conversionErrors";
+import { copyFormulaDocumentPngToClipboard } from "../../export/pngClipboard";
+import {
+  normalizeFormulaSpacingPreferences,
+  readPersistedFormulaSpacing,
+} from "../../editor/formulaSpacingPreferences";
 
 type InlineOcrStatus =
   | "running"
@@ -207,6 +219,11 @@ function syncOfficeEditorSystemSettings(raw?: string | null) {
     }
   }
 
+  if (persisted.buttonShortcuts !== undefined) {
+    // the chords the user gave buttons in the main app (Settings > Keyboard shortcuts)
+    editor.setButtonShortcuts(persisted.buttonShortcuts);
+  }
+
   const persistedInputBehavior = persisted.inputBehavior;
   if (persistedInputBehavior && typeof persistedInputBehavior === "object") {
     const inputBehavior = persistedInputBehavior as Record<string, unknown>;
@@ -302,19 +319,30 @@ async function waitForOfficeCommitResult(
   host: OfficeHost,
 ) {
   const hostLabel = host === "word" ? "Word" : "PowerPoint";
+  const isEn = useEditorStore.getState().language === "en";
   const deadline = Date.now() + OFFICE_COMMIT_RESULT_TIMEOUT_MS;
   while (Date.now() < deadline) {
     const current = await getOfficeSession(sessionId);
     if (current.status === "completed") return;
     if (current.status === "failed") {
-      throw new Error(current.error || `${hostLabel} 公式写入失败。`);
+      throw new Error(
+        current.error ||
+          (isEn
+            ? `${hostLabel} could not write the formula and gave no reason.`
+            : `${hostLabel} 公式写入失败，但没有给出原因。`),
+      );
     }
     if (current.status === "cancelled" || current.explicitCancel) {
-      throw new Error(`${hostLabel} 公式写入已取消。`);
+      throw new Error(isEn ? `Writing the formula to ${hostLabel} was cancelled.` : `${hostLabel} 公式写入已取消。`);
     }
     await delay(100);
   }
-  throw new Error(`等待 ${hostLabel} 确认写入超时，请重试。`);
+  const seconds = Math.round(OFFICE_COMMIT_RESULT_TIMEOUT_MS / 1000);
+  throw new Error(
+    isEn
+      ? `${hostLabel} did not confirm writing the formula within ${seconds} seconds. Try again.`
+      : `${hostLabel} 在 ${seconds} 秒内没有确认写入公式，请重试。`,
+  );
 }
 
 function documentFingerprint(
@@ -370,6 +398,14 @@ export function OfficeDialogApp() {
   const completeExportInFlightRef = useRef<{
     fingerprint: string;
     promise: Promise<OfficeExportResult | null>;
+  } | null>(null);
+  // Why the last PNG could not be made (reported when a commit needs the PNG)
+  const lastPngErrorRef = useRef<{ svgBase64: string; message: string } | null>(null);
+  // The last autosaved SVG export: the synchronous unload path reuses it
+  // (images are drawn asynchronously by the layout engine)
+  const latestDraftExportRef = useRef<{
+    fingerprint: string;
+    exportResult: OfficeExportResult | null;
   } | null>(null);
   const [sidebarOpen, setSidebarOpenState] = useState(() =>
     readWorkspacePanelOpen("office-edit", "tiles"),
@@ -506,10 +542,20 @@ export function OfficeDialogApp() {
   useEffect(() => {
     const sync = (raw?: string | null) => syncOfficeEditorSystemSettings(raw);
     sync();
+    // the main app's spacing configurations (stored on their own)
+    const syncSpacing = () => {
+      const spacing = normalizeFormulaSpacingPreferences(readPersistedFormulaSpacing());
+      const editor = useEditorStore.getState();
+      if (JSON.stringify(spacing) !== JSON.stringify(editor.formulaSpacing)) editor.setFormulaSpacing(spacing);
+    };
     const handleStorage = (event: StorageEvent) => {
       if (event.key === EDITOR_PERSISTENCE_STORAGE_KEY) sync(event.newValue);
+      else if (event.key === null || event.key === "visualtex.formula-spacing") syncSpacing();
     };
-    const handleFocus = () => sync();
+    const handleFocus = () => {
+      sync();
+      syncSpacing();
+    };
     window.addEventListener("storage", handleStorage);
     window.addEventListener("focus", handleFocus);
     return () => {
@@ -531,6 +577,7 @@ export function OfficeDialogApp() {
     exportRunIdRef.current += 1;
     latestCompleteExportRef.current = null;
     completeExportInFlightRef.current = null;
+    latestDraftExportRef.current = null;
     historyManager.clear();
     setHydratedSessionKey("");
     setPresentedSessionKey("");
@@ -1087,10 +1134,10 @@ export function OfficeDialogApp() {
     };
   }, [presentedSessionKey, sessionHydrated, sessionKey, tauriResidentEditor]);
 
-  const generateSvgExportResult = useCallback((): OfficeExportResult | null => {
+  const generateSvgExportResult = useCallback(async (): Promise<OfficeExportResult | null> => {
     if (!latex.trim()) return null;
     return officeExportResultFromArtifacts(
-      renderOfficeFormulaArtifacts({
+      await renderOfficeFormulaArtifacts({
         lines,
         codeFormat: latexCodeFormat,
         displayMode,
@@ -1123,9 +1170,9 @@ export function OfficeDialogApp() {
     formulaChineseFont,
   ]);
 
-  const generateDraftExportResult = useCallback((): OfficeExportResult | null => {
+  const generateDraftExportResult = useCallback(async (): Promise<OfficeExportResult | null> => {
     if (!latex.trim()) return null;
-    const artifacts = tryRenderOfficeFormulaDraftArtifacts({
+    const artifacts = await tryRenderOfficeFormulaDraftArtifacts({
       lines,
       codeFormat: latexCodeFormat,
       displayMode,
@@ -1162,7 +1209,7 @@ export function OfficeDialogApp() {
     preparedBase?: OfficeExportResult | null,
   ): Promise<OfficeExportResult | null> => {
     const base =
-      preparedBase === undefined ? generateSvgExportResult() : preparedBase;
+      preparedBase === undefined ? await generateSvgExportResult() : preparedBase;
     if (!base) return null;
     // Numbering changes the native DOCX shell, not the formula picture.
     // Reuse an identical raster while retaining the freshly exported OMML.
@@ -1195,8 +1242,18 @@ export function OfficeDialogApp() {
       inkTopRatio = png.inkTopRatio;
       inkBottomRatio = png.inkBottomRatio;
       inkCenterYRatio = png.inkCenterYRatio;
-    } catch {
-      // SVG remains a complete Office fallback when PNG rasterization fails.
+    } catch (reason) {
+      // The SVG is still saved; an Office commit that needs the PNG reports this reason.
+      const english = useEditorStore.getState().language === "en";
+      lastPngErrorRef.current = {
+        svgBase64: base.svgBase64,
+        message: inConversionStage(
+          english,
+          `无法生成公式的 PNG 图片（${Math.round(base.width)}×${Math.round(base.height)} 像素）`,
+          `The PNG image of the formula could not be generated (${Math.round(base.width)}×${Math.round(base.height)} px)`,
+          reason,
+        ).message,
+      };
     }
     return {
       ...base,
@@ -1259,12 +1316,16 @@ export function OfficeDialogApp() {
     }
 
     const runId = ++exportRunIdRef.current;
+    const fingerprint = currentFingerprint;
+    void (async () => {
     // Autosave is a source-persistence path, not an explicit Office write.
     // MathLive templates temporarily contain placeholders, unclosed groups or
     // a partially typed command. Save those drafts without artifacts and wait
     // for a later valid edit instead of repeatedly surfacing strict MathJax/
     // OMML errors while the user is still typing.
-    const exportResult = generateDraftExportResult();
+    const exportResult = await generateDraftExportResult();
+    if (runId !== exportRunIdRef.current) return;
+    latestDraftExportRef.current = { fingerprint, exportResult };
     const draftUpdate = {
       title,
       lines,
@@ -1332,6 +1393,7 @@ export function OfficeDialogApp() {
     } else {
       latestCompleteExportRef.current = null;
     }
+    })();
   }, [
     sessionId,
     sessionHydrated,
@@ -1359,13 +1421,16 @@ export function OfficeDialogApp() {
   useEffect(() => {
     if (!sessionId || !sessionHydrated) return;
     const finalDraftUpdate = (status: "editing" | "committing") => {
+      // Unload/keepalive is synchronous: only an export that already
+      // completed for this formula is used (never a fresh render here).
       const cached = latestCompleteExportRef.current;
+      const draft = latestDraftExportRef.current;
       const exportResult =
         cached?.fingerprint === currentFingerprint
           ? cached.exportResult
-          : status === "editing"
-            ? generateDraftExportResult()
-            : generateSvgExportResult();
+          : draft?.fingerprint === currentFingerprint
+            ? draft.exportResult
+            : null;
       return {
         title,
         lines,
@@ -1399,6 +1464,7 @@ export function OfficeDialogApp() {
     };
     const commitFinalDraft = () => {
       const cached = latestCompleteExportRef.current;
+      const draft = latestDraftExportRef.current;
       const nativePowerPoint =
         session?.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT;
       if (
@@ -1407,7 +1473,10 @@ export function OfficeDialogApp() {
         !latex.trim() ||
         (!nativePowerPoint &&
           (cached?.fingerprint !== currentFingerprint ||
-            !cached.exportResult.pngBase64))
+            !cached.exportResult.pngBase64)) ||
+        (nativePowerPoint &&
+          cached?.fingerprint !== currentFingerprint &&
+          !(draft?.fingerprint === currentFingerprint && draft.exportResult))
       ) {
         persistFinalDraft();
         return;
@@ -1710,15 +1779,32 @@ export function OfficeDialogApp() {
     async (
       status: "editing" | "committing" | "cancelled",
     ): Promise<UpdateOfficeSessionInput> => {
-      if (!session) throw new Error("Office Session 尚未加载。");
+      if (!session) throw new Error(isEn ? "The Office session has not loaded yet." : "Office Session 尚未加载。");
       const exportResult =
         status === "cancelled"
           ? session.exportResult
           : session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT
-            ? generateSvgExportResult()
+            ? await generateSvgExportResult()
             : await getCompleteExportResult(currentFingerprint);
       if (status === "committing" && !exportResult) {
         throw new Error(isEn ? "Formula export is empty" : "公式导出结果为空");
+      }
+      // Word and PowerPoint images carry a PNG beside the SVG: without it the
+      // commit would fail later with a generic message
+      if (
+        status === "committing" &&
+        exportResult &&
+        !exportResult.pngBase64 &&
+        !(session.host === "powerpoint" && USE_NATIVE_POWERPOINT_COMMIT)
+      ) {
+        const pngError = lastPngErrorRef.current;
+        throw new Error(
+          pngError?.svgBase64 === exportResult.svgBase64
+            ? pngError.message
+            : isEn
+              ? "The PNG image of the formula is missing (it was not generated)."
+              : "缺少公式的 PNG 图片（没有生成）。",
+        );
       }
       return {
         title,
@@ -2050,6 +2136,73 @@ export function OfficeDialogApp() {
     }
   };
 
+  const [quickOcrCaptureBusy, setQuickOcrCaptureBusy] = useState(false);
+
+  // Quick OCR (the button and its shortcut): this window steps aside for the
+  // screenshot (src-tauri quick_ocr.rs), then the same recognition and
+  // insertion as a pasted image, at the caret.
+  const handleQuickOcr = async () => {
+    if (inlineOcrBusyRef.current || quickOcrCaptureBusy) {
+      setToast(isEn ? "OCR is already running" : "另一个 OCR 任务正在进行");
+      return;
+    }
+    const target = editorRef.current?.captureInsertionTarget();
+    if (!target) {
+      setToast(isEn ? "Click a formula field before quick OCR" : "请先点击一个公式框，再使用快捷 OCR");
+      return;
+    }
+    setQuickOcrCaptureBusy(true);
+    try {
+      setToast(isEn ? "Select a formula area to recognize" : "请框选要识别的公式区域");
+      const capture = await captureQuickOcrScreenshot("immediate");
+      if (!capture) {
+        setToast(isEn ? "Screenshot cancelled" : "已取消截图");
+        return;
+      }
+      await handleEditorImagePaste(quickOcrCaptureToFile(capture), target);
+    } catch (error) {
+      setToast(formatOcrError(error, isEn ? "Quick OCR failed" : "快捷 OCR 失败"));
+    } finally {
+      setQuickOcrCaptureBusy(false);
+    }
+  };
+
+  // the chords the user gave the editor window's buttons in the main app (Settings > Keyboard shortcuts)
+  useEffect(
+    () => installButtonShortcuts("office", () => useEditorStore.getState().buttonShortcuts),
+    [],
+  );
+  useEffect(() =>
+    onButtonShortcut((action) => {
+      switch (action) {
+        case "quick-ocr":
+          if (tauriResidentEditor) void handleQuickOcr();
+          break;
+        case "ocr":
+          if (!inlineOcrBusyRef.current) setOcrOpen(true);
+          break;
+        case "copy-latex":
+          void handleCopy();
+          break;
+        case "copy-image":
+          void copyFormulaDocumentPngToClipboard(
+            useEditorStore.getState().lines.map((line) => line.latex),
+            {
+              background: useEditorStore.getState().pngExportBackground,
+              formulaLetterFont,
+              formulaChineseFont,
+            },
+          )
+            .then(() => setToast(isEn ? "Copied as image" : "已复制为图片"))
+            .catch((error) => setToast(errorMessage(error, isEn ? "Copy as image failed" : "复制图片失败")));
+          break;
+        case "office-cancel":
+          void handleCancel();
+          break;
+      }
+    }),
+  );
+
   const editorAvailable = Boolean(session && sessionHydrated);
   const officeHeaderLeadingControls = editorAvailable && session ? (
     <>
@@ -2278,11 +2431,12 @@ export function OfficeDialogApp() {
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}
         onPasteImage={editorAvailable ? handleEditorImagePaste : undefined}
+        onQuickOcr={editorAvailable && tauriResidentEditor ? () => void handleQuickOcr() : undefined}
         onCopy={handleCopy}
         onReplaceDocument={replaceDocumentWithHistory}
         ocrRecognizer={ocrQuickSelection.selection}
         ocrRecognizers={ocrQuickSelection.options}
-        ocrBusy={ocrQuickSelection.busy}
+        ocrBusy={ocrQuickSelection.busy || quickOcrCaptureBusy}
         onOcrRecognizerChange={(selection: string) =>
           void ocrQuickSelection.handleSelectionChange(selection)
         }

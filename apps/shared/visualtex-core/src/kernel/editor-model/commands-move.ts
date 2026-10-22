@@ -330,7 +330,7 @@ export function visualTexIsBoundedOperatorParent(parent: Atom | undefined): bool
 }
 
 export function visualTexBoundedOperatorBranchPlaceholders(
-  model: _Model,
+  _model: _Model,
   parent: Atom,
   branch: Branch
 ): Atom[] {
@@ -846,7 +846,7 @@ register(
 );
 
 function findSibling(
-  model: _Model,
+  _model: _Model,
   atom: Atom,
   pred: (x: Atom) => boolean,
   dir: 'forward' | 'backward'

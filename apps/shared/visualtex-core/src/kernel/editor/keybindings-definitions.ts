@@ -74,24 +74,31 @@ export const DEFAULT_KEYBINDINGS: Keybinding[] = [
     command: ['switchMode', 'latex', '', '\\'],
   },
   // VisualTeX: the physical Backslash key is a command prefix regardless of
-  // the active Windows IME's reported event.key value.
+  // the active Windows IME's reported event.key value. On macOS the active
+  // text-input system may remap the key (Pinyin commits the ideographic comma
+  // "、"): the keyboard sink defers it until the committed text shows, and only
+  // a literal "\\" reaches the bindings above.
   {
     key: '[Backslash]',
+    ifPlatform: '!macos',
     ifMode: 'math',
     command: ['switchMode', 'latex', '', '\\'],
   },
   {
     key: '[Backslash]',
+    ifPlatform: '!macos',
     ifMode: 'text',
     command: ['switchMode', 'latex', '', '\\'],
   },
   {
     key: '[IntlBackslash]',
+    ifPlatform: '!macos',
     ifMode: 'math',
     command: ['switchMode', 'latex', '', '\\'],
   },
   {
     key: '[IntlBackslash]',
+    ifPlatform: '!macos',
     ifMode: 'text',
     command: ['switchMode', 'latex', '', '\\'],
   }, // On UK QWERTY keyboards

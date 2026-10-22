@@ -143,6 +143,30 @@ export const compatibilityRequiredArgumentCounts = new Map<string, number>([
   }),
 ]);
 
+// The shared editing kernel reads these through the kernel host module
+// (vite.visualtexKernelHost.ts via editor/sourceWrapperRegistry.ts).
+export const compatibilityWrapperCanonicalTargets = new Map<string, string>(
+  specs
+    .filter((spec) => spec.wrapper && spec.canonicalWrapperCommand)
+    .map((spec) => [spec.command, spec.canonicalWrapperCommand!]),
+);
+
+export const compatibilitySourceWrapperKinds = new Map<
+  string,
+  "variant" | "accent"
+>(
+  specs
+    .filter(
+      (spec) =>
+        spec.wrapper &&
+        !spec.directPlaceholderWrapper,
+    )
+    .map((spec) => [
+      spec.command,
+      spec.sourceWrapperKind ?? "variant",
+    ]),
+);
+
 // \\braket supports both physics-style two arguments and braket.sty-style one
 // balanced argument containing one or more | separators. One outer argument is
 // therefore the minimum completeness requirement; the flexible normalizer

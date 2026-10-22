@@ -2840,7 +2840,7 @@ async function assertSinglePhysicalEditSession(before, sessionId, formulaId) {
   }
 }
 
-function formulaItem({
+async function formulaItem({
   formulaId,
   latex,
   metadataLatex = latex,
@@ -2892,7 +2892,7 @@ function formulaItem({
   let svgAlignment;
 
   if (outputKind === "image") {
-    const svg = latexToSvg(canonicalLatex, {
+    const svg = await latexToSvg(canonicalLatex, {
       displayMode: displayMode === "block",
       fontSizePt: referenceFontSizePt,
       paddingPx: displayMode === "inline" ? 1 : wordDisplayPaddingPx,
@@ -2978,7 +2978,7 @@ function formulaItem({
   };
 }
 
-function editedImageFormulaArtifacts(
+async function editedImageFormulaArtifacts(
   formula,
   editSession,
   updatedLineLatex,
@@ -2993,7 +2993,7 @@ function editedImageFormulaArtifacts(
       `Edited ${formula.codeFormat} fixture changed its row count unexpectedly`,
     );
   }
-  const rendered = renderOfficeFormulaArtifacts({
+  const rendered = await renderOfficeFormulaArtifacts({
     lines: updatedLines,
     codeFormat: editSession.normalized.codeFormat,
     displayMode: formula.displayMode,
@@ -3064,7 +3064,7 @@ function editedImageFormulaArtifacts(
   };
 }
 
-function commitEditedImageFormula(
+async function commitEditedImageFormula(
   testDocumentName,
   sessionId,
   formula,
@@ -3072,7 +3072,7 @@ function commitEditedImageFormula(
   updatedLineLatex,
 ) {
   const sessionDirectory = join(sessionsRoot, sessionId);
-  const artifacts = editedImageFormulaArtifacts(
+  const artifacts = await editedImageFormulaArtifacts(
     formula,
     editSession,
     updatedLineLatex,
@@ -3910,7 +3910,7 @@ p(\mathbf{x},t)\,
     );
   }
 
-  const formula = formulaItem({
+  const formula = await formulaItem({
     formulaId: request.formulaId,
     latex: createdLatex,
     expectedCodeFormat: createSourceFormattedEquationRegression
@@ -5322,7 +5322,7 @@ try {
   await stopVisualTeXForManualWordCallback();
 
   const formulas = [
-    formulaItem({
+    await formulaItem({
       formulaId: crypto.randomUUID(),
       latex: "101=202",
       displayMode: "inline",
@@ -5330,7 +5330,7 @@ try {
       fontSizePt: 11,
       artifactDirectory: sessionDirectory,
     }),
-    formulaItem({
+    await formulaItem({
       formulaId: crypto.randomUUID(),
       latex: "12345=67890",
       displayMode: "block",
@@ -5338,7 +5338,7 @@ try {
       fontSizePt: 14,
       artifactDirectory: sessionDirectory,
     }),
-    formulaItem({
+    await formulaItem({
       formulaId: crypto.randomUUID(),
       latex: "24680=13579",
       displayMode: "block",
@@ -5346,7 +5346,7 @@ try {
       fontSizePt: 18,
       artifactDirectory: sessionDirectory,
     }),
-    formulaItem({
+    await formulaItem({
       formulaId: crypto.randomUUID(),
       latex: String.raw`\sum_{i=1}^{\infty}{a_k\left( x-x_0 \right) ^k}`,
       displayMode: "inline",
@@ -5354,7 +5354,7 @@ try {
       fontSizePt: 12,
       artifactDirectory: sessionDirectory,
     }),
-    formulaItem({
+    await formulaItem({
       formulaId: crypto.randomUUID(),
       latex: String.raw`\sum_{i=1}^{\infty}{a_kP_k\left( x \right)}`,
       displayMode: "inline",
@@ -5362,7 +5362,7 @@ try {
       fontSizePt: 12,
       artifactDirectory: sessionDirectory,
     }),
-    formulaItem({
+    await formulaItem({
       formulaId: crypto.randomUUID(),
       latex: legacyAlignLatex,
       expectedCodeFormat: "align",
@@ -5371,7 +5371,7 @@ try {
       fontSizePt: 14,
       artifactDirectory: sessionDirectory,
     }),
-    formulaItem({
+    await formulaItem({
       formulaId: crypto.randomUUID(),
       latex: legacyAlignStarLatex,
       expectedCodeFormat: "align-star",
@@ -6239,7 +6239,7 @@ try {
       };
 
       if (editCase.updatedLines) {
-        const replacement = commitEditedImageFormula(
+        const replacement = await commitEditedImageFormula(
           testDocumentName,
           editSessionId,
           editCase.formula,

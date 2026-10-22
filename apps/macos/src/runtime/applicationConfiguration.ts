@@ -117,6 +117,7 @@ const editorSettingKeys = [
   "pngExportBackground",
   "formulaLetterFont",
   "formulaChineseFont",
+  "formulaSpacing",
   "inputBehavior",
   "personalize",
   "suggestionCount",
@@ -124,6 +125,7 @@ const editorSettingKeys = [
   "powerPointDefaultFontSizePt",
   "classicTileWidth",
   "classicDockHeight",
+  "buttonShortcuts",
   "keypadMinimizeOnCopy",
 ] as const satisfies readonly (keyof FormulaDocument["settings"])[];
 

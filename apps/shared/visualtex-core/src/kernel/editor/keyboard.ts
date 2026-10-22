@@ -29,6 +29,8 @@ import {
   deepActiveElement,
   mightProducePrintableCharacter,
 } from '../ui/events/utils';
+import { osPlatform } from '../ui/utils/capabilities';
+import { MacTextInputGuard } from './macos-text-input';
 
 export interface KeyboardDelegate {
   cancelComposition: () => void;
@@ -104,6 +106,15 @@ export function delegateKeyboardEvents(
   const controller = new AbortController();
   const signal = controller.signal;
 
+  // VisualTeX: macOS text-input guards (Pinyin Backslash, replayed candidate
+  // Space, orphan backslash after a composition)
+  const macTextInput = osPlatform() === 'macos' ? new MacTextInputGuard(delegate) : null;
+  const resetPendingKeys = (): void => {
+    keydownEvent = null;
+    keypressEvent = null;
+    keyboardSink.textContent = '';
+  };
+
   // VisualTeX: WebView2 and some IMEs drop events of a composition (most
   // often compositionend while switching input methods). These keep one
   // composition transaction at a time and end a stale one, so the field is
@@ -125,6 +136,7 @@ export function delegateKeyboardEvents(
   const visualTexEndCompositionTransaction = (data = ''): boolean => {
     if (!compositionInProgress) return false;
     compositionInProgress = false;
+    macTextInput?.compositionEnd(data);
     keydownEvent = null;
     keypressEvent = null;
     keyboardSink.textContent = '';
@@ -155,9 +167,27 @@ export function delegateKeyboardEvents(
     element.dispatchEvent(event);
   };
 
+  if (macTextInput) {
+    // the replayed Space is taken at the window and at the host (capture)
+    // before application handlers on the math-field can queue it
+    const consumeReplayedSpace = (event: KeyboardEvent): void => {
+      if (!macTextInput.isReplayedCandidateSpace(event, compositionInProgress)) return;
+      keydownEvent = null;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener('keydown', consumeReplayedSpace, { capture: true, signal });
+    element.addEventListener('keydown', consumeReplayedSpace, { capture: true, signal });
+    keyboardSink.addEventListener('keyup', (event) => macTextInput.keyup(event), {
+      capture: true,
+      signal,
+    });
+  }
+
   keyboardSink.addEventListener(
     'keydown',
     (event: KeyboardEvent): void => {
+      if (macTextInput?.keydownStart(event, compositionInProgress, resetPendingKeys)) return;
       if (compositionInProgress) {
         if (visualTexCompositionOwnsKeyboardEvent(event)) {
           keydownEvent = null;
@@ -179,6 +209,7 @@ export function delegateKeyboardEvents(
         keydownEvent = null;
         return;
       }
+      if (macTextInput?.keydownDefer(event, compositionInProgress, resetPendingKeys)) return;
 
       keydownEvent = event;
       keypressEvent = null;
@@ -195,6 +226,7 @@ export function delegateKeyboardEvents(
         if (visualTexCompositionOwnsKeyboardEvent(event)) return;
         visualTexEndCompositionTransaction('');
       }
+      if (macTextInput?.keypress(event, () => (keypressEvent = null))) return;
       // If this is not the first keypress after a keydown, that is,
       // if this is a repeated keystroke, call the keystroke handler.
       if (keydownEvent && keypressEvent) delegate.onKeystroke(keydownEvent);
@@ -208,6 +240,7 @@ export function delegateKeyboardEvents(
     'compositionstart',
     (event: CompositionEvent) => {
       keyboardSink.textContent = '';
+      macTextInput?.compositionStart();
       // A second compositionstart without a matching compositionend means the
       // previous IME transaction was abandoned. Roll it back before starting
       // the new one instead of layering two transactions on one model.
@@ -247,7 +280,10 @@ export function delegateKeyboardEvents(
 
   keyboardSink.addEventListener(
     'beforeinput',
-    (ev) => ev.stopImmediatePropagation(),
+    (ev) => {
+      macTextInput?.beforeInput(ev as InputEvent);
+      ev.stopImmediatePropagation();
+    },
     { signal }
   );
 
@@ -290,6 +326,7 @@ export function delegateKeyboardEvents(
         ev.stopPropagation();
         return;
       }
+      if (macTextInput?.input(ev)) return;
 
       delegate.onInput(ev.data ?? '');
 

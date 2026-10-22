@@ -1653,12 +1653,12 @@ async function main() {
       await new Promise((resolve) => setTimeout(resolve, 90));
       const stored = JSON.parse(localStorage.getItem("visualtex.custom-symbols.v1"));
       const symbol = stored.symbols[0];
-      const svg = runtime.latexToSvg(command, {
+      const svg = (await runtime.latexToSvg(command, {
         displayMode: false,
         fontSizePt: 12,
         paddingPx: 0,
         background: "transparent",
-      }).svg;
+      })).svg;
       const mathMl = runtime.latexToMathMl(command, false);
       return {
         value: field.value,

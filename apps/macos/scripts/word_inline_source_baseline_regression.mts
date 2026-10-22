@@ -15,8 +15,8 @@ const cases = [String.raw`N=150`, String.raw`n_{\max}=12`, 'x', 'x_i', 'x^2', St
 let count = 0;
 for(const font of ['times','katex','cambria','stix','palatino','helvetica'] as const) for (const size of [10.5,11,11.5,12,14,18,24]) for(const latex of cases) {
  const input={lines:[{id:'x',latex}],codeFormat:'raw' as const,displayMode:'inline' as const,host:'word' as const,formulaLetterFont:font};
- const original=renderOfficeFormulaArtifacts(input).svg;
- const aligned=renderOfficeFormulaArtifacts({...input,fontSizePt:size}).svg;
+ const original=(await renderOfficeFormulaArtifacts(input)).svg;
+ const aligned=(await renderOfficeFormulaArtifacts({...input,fontSizePt:size})).svg;
  const g=wordImageReferenceGeometry(aligned.width,aligned.height,aligned.baseline,font);
  const actualHeight=Math.round(g.referenceHeightPt*size/14*20)/20; // Word shape quantization
  const raw=g.referenceBaselinePt*actualHeight/g.referenceHeightPt;
@@ -43,7 +43,7 @@ assert.equal(normalizeChineseLatex(String.raw`\text{前}$\left(a,$\ $b\right)$\t
 for(const {id} of latexCodeFormats) {
  if(id==='raw')continue;
  const source=formatLatexLines([String.raw`\text{前}$\left(a,$\ $b\right)$\text{后}`],id);
- for(const span of findLatexFormulaSpans(source))renderOfficeFormulaArtifacts({lines:[{id:'x',latex:span.latex}],codeFormat:'raw',displayMode:span.displayMode,host:'word'});
+ for(const span of findLatexFormulaSpans(source))await renderOfficeFormulaArtifacts({lines:[{id:'x',latex:span.latex}],codeFormat:'raw',displayMode:span.displayMode,host:'word'});
 }
 console.log(`PASS: ${count} inline geometry cases; unchanged glyph size/baseline; legacy split scopes; editor normalization`);
 const out='test-results/source-baseline-20260912';

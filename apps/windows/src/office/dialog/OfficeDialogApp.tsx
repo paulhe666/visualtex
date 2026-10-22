@@ -1073,7 +1073,7 @@ export function OfficeDialogApp() {
       sourceSession.host,
     );
     const sourceFormulaLetterFont =
-      sourceSession.originalMetadata?.formulaLetterFont ?? formulaLetterFont;
+      normalizeFormulaLetterFont(sourceSession.originalMetadata?.formulaLetterFont ?? formulaLetterFont);
     const sourceFormulaChineseFont =
       sourceSession.originalMetadata?.formulaChineseFont ?? formulaChineseFont;
     const isEn = useEditorStore.getState().language === "en";

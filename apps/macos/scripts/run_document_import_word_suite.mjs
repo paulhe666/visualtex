@@ -69,7 +69,8 @@ try {
     const started = Date.now();
     const result = spawnSync(
       join(process.cwd(), "node_modules", ".bin", "tsx"),
-      ["scripts/document_import_word_integration.mjs", ...stage.args],
+      // the script reaches the editing kernel: `mathlive` resolves to its Node build
+      ["--import", "./scripts/kernel-node.mts", "scripts/document_import_word_integration.mjs", ...stage.args],
       {
         cwd: process.cwd(),
         encoding: "utf8",

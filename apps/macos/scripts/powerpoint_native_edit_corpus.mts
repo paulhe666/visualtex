@@ -18,7 +18,7 @@ if(process.argv.includes('--roundtrip')){
  for(const record of records){
   const latex=record.source.latex;
   try {
-   const artifact=renderOfficeFormulaArtifacts({lines:[{id:'roundtrip',latex}],codeFormat:'raw',displayMode:record.source.displayMode,host:'powerpoint',includeWordOmml:true,fontSizePt:24,formulaLetterFont:record.source.font});
+   const artifact=await renderOfficeFormulaArtifacts({lines:[{id:'roundtrip',latex}],codeFormat:'raw',displayMode:record.source.displayMode,host:'powerpoint',includeWordOmml:true,fontSizePt:24,formulaLetterFont:record.source.font});
    exported.push({name:record.name.slice(7),latex,ommlBase64:artifact.omml!.ommlBase64});
    console.log('Roundtrip rendered '+record.name);
   } catch(error){console.error('Roundtrip FAILED '+record.name+': '+String(error));console.error(JSON.stringify(normalizeFormulaEditorDocument([{id:'x',latex}], 'raw')));console.error(serializeFormulaEditorDocument(normalizeFormulaEditorDocument([{id:'x',latex}], 'raw')));process.exitCode=1;}
@@ -41,13 +41,14 @@ const samples=[
  ['relations',String.raw`\alpha+\beta\le\gamma`],
  ['aligned',String.raw`\begin{aligned}a&=b+c\\d&=e\end{aligned}`],
 ] as const;
-const results=samples.map(([name,latex])=>{
+const results=[];
+for(const [name,latex] of samples){
  console.log('Rendering '+name);
  const lines=name==='aligned'?[{id:'row-1',latex:'a=b+c'},{id:'row-2',latex:'d=e'}]:[{id:'fixture-line',latex}];
- const artifacts=renderOfficeFormulaArtifacts({lines,codeFormat:name==='aligned'?'align':'raw',displayMode:name==='aligned'?'block':'inline',host:'powerpoint',includeWordOmml:true,fontSizePt:24});
+ const artifacts=await renderOfficeFormulaArtifacts({lines,codeFormat:name==='aligned'?'align':'raw',displayMode:name==='aligned'?'block':'inline',host:'powerpoint',includeWordOmml:true,fontSizePt:24});
  if(!artifacts.omml)throw Error('Missing OMML for '+name);
- return {name,latex,ommlBase64:artifacts.omml.ommlBase64};
-});
+ results.push({name,latex,ommlBase64:artifacts.omml.ommlBase64});
+}
 const out=resolve(dirname(fileURLToPath(import.meta.url)),'../build-logs/powerpoint-native-omml/edit-corpus');
 mkdirSync(out,{recursive:true});
 writeFileSync(resolve(out,'sources.json'),JSON.stringify(results,null,2));

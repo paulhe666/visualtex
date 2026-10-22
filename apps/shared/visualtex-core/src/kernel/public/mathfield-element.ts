@@ -26,7 +26,7 @@ import {
   update as updateOptions,
 } from '../editor-mathfield/options';
 import { _Mathfield } from '../editor-mathfield/mathfield-private';
-import { offsetFromPoint } from '../editor-mathfield/pointer-input';
+import { offsetFromPoint, PointerTracker } from '../editor-mathfield/pointer-input';
 import { getElementInfo, getHref } from '../editor-mathfield/utils';
 import {
   isBrowser,
@@ -49,7 +49,11 @@ import {
 import { defaultInsertStyleHook } from '../editor-mathfield/styling';
 import { _MathEnvironment } from '../core/math-environment';
 import { keyboardEventToString } from '../editor/keyboard';
-import { visualTexJudgeKeystroke } from '../editor-mathfield/keyboard-input';
+import {
+  visualTexAutoExitAccentAfterDirectInput,
+  visualTexAutoExitScriptAfterDirectInput,
+  visualTexJudgeKeystroke,
+} from '../editor-mathfield/keyboard-input';
 
 if (!isBrowser()) {
   console.error(
@@ -673,6 +677,80 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
   /** VisualTeX kernel: lays the formula out and draws it again (the formula fonts changed). */
   visualTexRender(): void {
     requestUpdate(this._mathfield);
+  }
+
+  /**
+   * VisualTeX kernel: inserts a toolbar template. A template typed straight
+   * into a script or accent (no placeholder left) exits it the way direct
+   * input does.
+   */
+  visualTexInsertToolbarTemplate(latex: string, options?: InsertOptions): boolean {
+    const mathfield = this._mathfield;
+    if (!mathfield) return false;
+    const model = mathfield.model;
+    const before = model.at(Math.max(model.position, model.anchor));
+    const parent = before?.parent;
+    const branch = before?.parentBranch;
+    const inserted = this.insert(latex, options);
+    if (inserted && options?.selectionMode !== 'placeholder') {
+      const atom = model.at(model.position);
+      if (atom?.parent === parent && atom?.parentBranch === branch) {
+        if (
+          visualTexAutoExitAccentAfterDirectInput(mathfield, atom) ||
+          visualTexAutoExitScriptAfterDirectInput(mathfield, atom)
+        )
+          requestUpdate(mathfield);
+      }
+    }
+    return inserted;
+  }
+
+  /** VisualTeX kernel: selects from `anchor` to `focus` (the focus keeps the caret). */
+  visualTexSelectRange(anchor: Offset, focus: Offset): void {
+    const mathfield = this._mathfield;
+    if (!mathfield) return;
+    mathfield.model.extendSelectionTo(anchor, focus);
+    requestUpdate(mathfield);
+  }
+
+  /**
+   * VisualTeX kernel: puts document fragments before and after the formula
+   * (they keep their own style) and keeps the selection on the same content.
+   */
+  visualTexInsertDocumentEdges(prefix: string, suffix: string): void {
+    if (!this._mathfield) return;
+    const selection: Selection = {
+      ranges: this.selection.ranges.map((range) => [...range] as Range),
+      direction: this.selection.direction,
+    };
+    const options: InsertOptions = {
+      mode: 'math',
+      format: 'latex',
+      selectionMode: 'after',
+      style: {},
+      silenceNotifications: true,
+      visualTexPreserveStyle: true,
+    };
+    if (prefix) {
+      const length = this.lastOffset;
+      this.position = 0;
+      this.insert(prefix, { ...options });
+      const shift = this.lastOffset - length;
+      selection.ranges = selection.ranges.map(
+        ([a, b]) => [a + shift, b + shift] as Range
+      );
+    }
+    if (suffix) {
+      this.position = this.lastOffset;
+      this.insert(suffix, { ...options });
+    }
+    this.selection = selection;
+  }
+
+  /** VisualTeX kernel: ends the field's own drag tracking (the host took the drag over). */
+  visualTexStopPointerTracking(): void {
+    const field = this._mathfield?.field;
+    if (field && PointerTracker.trackedElement === field) PointerTracker.cancel();
   }
 
   /** @internal */

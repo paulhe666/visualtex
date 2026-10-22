@@ -1,8 +1,9 @@
-import { memo, useLayoutEffect, useMemo, useRef } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { convertVisualTexLatexToMarkup } from "../editor/mathLiveIntegralCompatibility";
 import { inspectMathLiveSourceSafety } from "../editor/mathLiveSourceSafety";
 import { markVisualTexFormulaFontGlyphs } from "../editor/formulaFontPreferences";
 import { useCustomSymbolRevision } from "../math/customSymbolReact";
+import { getFormulaFontRevision, subscribeFormulaFontRevision } from "../editor/visualTexLayoutRuntime";
 import { createLayoutOscillationGuard } from "../runtime/layoutOscillationGuard";
 
 interface MathPreviewProps {
@@ -32,8 +33,8 @@ const visiblePlaceholderLatex =
 const mathPreviewMarkupCache = new Map<string, string>();
 const mathPreviewMarkupCacheLimit = 1024;
 
-function cachedPreviewMarkup(latex: string, customSymbolRevision: number) {
-  const cacheKey = `${customSymbolRevision}\u0000${latex}`;
+function cachedPreviewMarkup(latex: string, customSymbolRevision: number, fontRevision: number) {
+  const cacheKey = `${customSymbolRevision}\u0000${fontRevision}\u0000${latex}`;
   const cached = mathPreviewMarkupCache.get(cacheKey);
   if (cached !== undefined) return cached;
   let markup = "";
@@ -137,13 +138,15 @@ function MathPreviewComponent({
   const onMeasureRef = useRef(onMeasure);
   onMeasureRef.current = onMeasure;
   const customSymbolRevision = useCustomSymbolRevision();
+  // previews are drawn in the formula fonts: a font change draws them again
+  const fontRevision = useSyncExternalStore(subscribeFormulaFontRevision, getFormulaFontRevision, () => 0);
   const previewLatex = useMemo(
     () => (showPlaceholders ? latexWithVisiblePlaceholders(latex) : latex),
     [latex, showPlaceholders],
   );
   const markup = useMemo(
-    () => cachedPreviewMarkup(previewLatex, customSymbolRevision),
-    [customSymbolRevision, previewLatex],
+    () => cachedPreviewMarkup(previewLatex, customSymbolRevision, fontRevision),
+    [customSymbolRevision, fontRevision, previewLatex],
   );
 
   useLayoutEffect(() => {

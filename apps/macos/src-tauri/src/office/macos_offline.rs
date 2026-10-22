@@ -2215,6 +2215,12 @@ fn canonical_document_formula_latex(metadata: &VisualTeXFormulaMetadata) -> Resu
     let joined = lines.join("\n");
     let formatted = match metadata.code_format.as_str() {
         "raw" => joined,
+        // the main app's default copy format (formatLatexLines: one $$row$$ per line)
+        "mixed-inline-display" => lines
+            .iter()
+            .map(|line| format!("$${line}$$"))
+            .collect::<Vec<_>>()
+            .join("\n"),
         "inline-dollar" => lines
             .iter()
             .map(|line| format!("${line}$"))
@@ -9383,6 +9389,18 @@ mod tests {
         assert!(validate_request(&request, &session_id)
             .unwrap_err()
             .contains("matching Word edit output request"));
+    }
+
+    #[test]
+    fn canonical_latex_of_the_mixed_copy_format() {
+        let metadata = document_formula_metadata(
+            "mixed-inline-display",
+            &["a = b", "c"],
+            "$$a = b$$\n$$c$$",
+            "block",
+            false,
+        );
+        assert_eq!(canonical_document_formula_latex(&metadata).unwrap(), "$$a = b$$\n$$c$$");
     }
 
     #[test]

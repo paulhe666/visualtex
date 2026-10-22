@@ -510,6 +510,35 @@ function exportedArtworkGroup(symbol: CustomSymbolDefinition, occurrence = 0) {
   );
 }
 
+/**
+ * The artwork of the custom symbol whose editor class is `className`, for the
+ * layout engine's SVG images: drawn into the symbol's box (`width` x `height`
+ * px, top-left corner at the origin). Null for other classes.
+ */
+export function customSymbolArtworkForClass(className: string) {
+  const symbol = getActiveCustomSymbols().find((s) => customSymbolCssClass(s) === className);
+  if (!symbol) return null;
+  let occurrence = 0;
+  return (width: number, height: number) => {
+    const w = Math.max(1, symbol.metrics.widthEm * 1000);
+    const h = Math.max(1, (symbol.metrics.ascentEm + symbol.metrics.descentEm) * 1000);
+    let artwork: string;
+    if (artworkHasErase(symbol)) {
+      const safeId = symbol.id.replace(/[^A-Za-z0-9_-]/g, "-");
+      const maskId = `visualtex-custom-symbol-erase-${safeId}-${occurrence++}`;
+      artwork =
+        artworkMaskMarkup(symbol, maskId, w, h) +
+        `<rect x="0" y="0" width="${number(w)}" height="${number(h)}" fill="inherit" mask="url(#${maskId})"></rect>`;
+    } else {
+      artwork = symbol.artwork.shapes.map((shape) => shapeMarkup(shape, "inherit")).join("");
+    }
+    return (
+      `<g data-visualtex-custom-symbol="${escapeAttribute(symbol.id)}" ` +
+      `transform="scale(${number(width / w)} ${number(height / h)})">${artwork}</g>`
+    );
+  };
+}
+
 export function applyCustomSymbolArtworkToSvg(svg: string) {
   let output = svg;
   for (const symbol of getActiveCustomSymbols()) {

@@ -100,6 +100,8 @@ for (const [name, latex] of cases) {
   assert.equal(decoded, result.svg, `${name} UTF-8 base64 round trip`);
 }
 
+const INTEGRAL_OPERATOR_GLYPH = /<path transform="[^"]*" d="|id="vtx-(?:esint10|cmex10)-\d+"/;
+
 for (const {
   command,
   replacement,
@@ -108,7 +110,7 @@ for (const {
 } of extendedIntegralCases) {
   const latex = `\\${command}_{\\Sigma} a\\,\\mathrm{d}S`;
   const mathMl = latexToMathMl(latex, true);
-  const svgResult = latexToSvg(latex, {
+  const svgResult = await latexToSvg(latex, {
     displayMode: true,
     fontSizePt: 14,
     paddingPx: 0,
@@ -138,10 +140,12 @@ for (const {
   assert.doesNotMatch(mathMl, new RegExp(`\\\\${command}(?:<|$)`), `${command} is not literal text`);
   assert.doesNotMatch(svg, /mathcolor|fill="red"|#FF0000/i, `${command} SVG has no error glyph`);
   assert.doesNotMatch(svg, new RegExp(`\\\\${command}`), `${command} SVG has no literal command`);
+  // the editor engine draws the operator from esint10/cmex10, or as a STIX
+  // Two Math outline (rare integrals), never as text
   assert.match(
     svg,
-    /data-visualtex-integral="[A-Za-z]+"/,
-    `${command} OLE SVG uses a VisualTeX vector glyph`,
+    INTEGRAL_OPERATOR_GLYPH,
+    `${command} SVG draws the operator as a vector glyph`,
   );
   if (singleUnicodeCharacter) {
     assert.doesNotMatch(
@@ -159,15 +163,15 @@ for (const {
       /^\\[A-Za-z]+\s*_\{S\}F$/,
       `${command} Unicode serialization is restored to canonical LaTeX`,
     );
-    const reopenedSvg = latexToSvg(normalizedUnicode, {
+    const reopenedSvg = (await latexToSvg(normalizedUnicode, {
       displayMode: true,
       fontSizePt: 14,
       paddingPx: 0,
       background: "transparent",
-    }).svg;
+    })).svg;
     assert.match(
       reopenedSvg,
-      /data-visualtex-integral="[A-Za-z]+"/,
+      INTEGRAL_OPERATOR_GLYPH,
       `${command} remains resolved after Unicode save/reopen normalization`,
     );
   }
@@ -182,8 +186,8 @@ assert.throws(
   /did not resolve LaTeX command/,
 );
 
-assert.throws(
-  () =>
+await assert.rejects(
+  async () =>
     latexToSvg("", {
       displayMode: true,
       fontSizePt: 12,

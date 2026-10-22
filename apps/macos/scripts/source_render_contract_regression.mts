@@ -42,7 +42,7 @@ for (const formula of formulas) {
     for (const span of redraw) {
       assert.equal(source.slice(span.start, span.end), span.sourceText);
       let artifacts;
-      try { artifacts = renderOfficeFormulaArtifacts({ lines: [{ id: "test", latex: span.latex }], codeFormat: "raw", host: "word", displayMode: span.displayMode }); } catch (error) { throw new Error(`${id}: ${span.latex}`, { cause: error }); }
+      try { artifacts = await renderOfficeFormulaArtifacts({ lines: [{ id: "test", latex: span.latex }], codeFormat: "raw", host: "word", displayMode: span.displayMode }); } catch (error) { throw new Error(`${id}: ${span.latex}`, { cause: error }); }
       assert.ok(artifacts.svg.width > 0 && artifacts.svg.height > 0);
       assert.ok(artifacts.omml?.ommlBase64);
       renderCount += 1;

@@ -16,6 +16,7 @@ import {
   type FormulaRowHotkeyActionDefinition,
 } from "../shortcuts/formulaRowHotkeys";
 import { useEditorStore } from "../stores/editorStore";
+import { buttonShortcutLabel, buttonShortcutWithChord } from "../shortcuts/buttonShortcuts";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
 
@@ -27,6 +28,8 @@ interface Props {
 export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
   const dialogRef = useRef<HTMLElement>(null);
   const language = useEditorStore((state) => state.language);
+  const buttonShortcuts = useEditorStore((state) => state.buttonShortcuts);
+  const setButtonShortcut = useEditorStore((state) => state.setButtonShortcut);
   const rowBindings = useFormulaRowHotkeyStore((state) => state.bindings);
   const setRowBinding = useFormulaRowHotkeyStore((state) => state.setBinding);
   const formulaBindings = useFormulaHotkeyStore((state) => state.bindings);
@@ -96,6 +99,7 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
   }, [action, capturedChord, formulaBindings, rowBindings]);
 
   if (!action) return null;
+  const buttonConflict = capturedChord ? buttonShortcutWithChord(buttonShortcuts, capturedChord) : null;
 
   const problem = capturedChord
     ? formulaRowHotkeyChordProblem(capturedChord, language)
@@ -109,10 +113,14 @@ export function FormulaRowHotkeyRecorderDialog({ action, onClose }: Props) {
       )
     : conflicts.formula
       ? formulaHotkeyTargetLabel(conflicts.formula.target, language)
-      : null;
+      : buttonConflict
+        ? buttonShortcutLabel(buttonConflict, language)
+        : null;
 
   const saveBinding = () => {
     if (!capturedChord || !canSave) return;
+    // a button shortcut is matched first: it gives the chord up
+    if (buttonConflict) setButtonShortcut(buttonConflict, null);
     if (conflicts.formula) removeFormulaBinding(conflicts.formula.id);
     setRowBinding(action.id, capturedChord);
     onClose();

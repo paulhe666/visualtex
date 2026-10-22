@@ -54,6 +54,21 @@ import {
 export type Language = "cn" | "en";
 export type EditorLayout = "standard" | "classic";
 export const DEFAULT_EDITOR_LAYOUT: EditorLayout = "classic";
+import {
+  defaultFormulaSpacingPreferences,
+  mergeFormulaSpacingPreferences,
+  normalizeFormulaSpacingPreferences,
+  persistFormulaSpacing,
+  readPersistedFormulaSpacing,
+  type FormulaSpacingPreferences,
+} from "../editor/formulaSpacingPreferences";
+import {
+  normalizeButtonShortcutSettings,
+  withButtonShortcut,
+  type ButtonShortcutId,
+  type ButtonShortcutSettings,
+} from "../shortcuts/buttonShortcuts";
+import type { FormulaHotkeyChord } from "../shortcuts/formulaHotkeys";
 export const DEFAULT_THEME: Theme = "light";
 export const MIN_EDITOR_ZOOM = 0.2;
 export const MAX_EDITOR_ZOOM = 1.6;
@@ -370,6 +385,8 @@ interface EditorState {
   pngExportBackground: PngExportBackground;
   formulaLetterFont: FormulaLetterFont;
   formulaChineseFont: FormulaChineseFont;
+  /** spacing configurations per formula font (stored on their own, not with the editor state) */
+  formulaSpacing: FormulaSpacingPreferences;
   classicTileWidth: number;
   classicDockHeight: number;
   keypadMinimizeOnCopy: boolean;
@@ -380,6 +397,8 @@ interface EditorState {
   powerPointDefaultFontSizePt: number;
   usage: Record<string, CommandUsage>;
   history: FormulaHistoryItem[];
+  /** chords the user gave common buttons (shortcuts/buttonShortcuts.ts); none at first */
+  buttonShortcuts: ButtonShortcutSettings;
   setTitle: (title: string) => void;
   setActiveLineId: (lineId: string | null) => void;
   replaceFormulaLine: (lineId: string, latex: string, activeLineId?: string | null) => void;
@@ -408,6 +427,9 @@ interface EditorState {
   setPngExportBackground: (background: PngExportBackground) => void;
   setFormulaLetterFont: (font: FormulaLetterFont) => void;
   setFormulaChineseFont: (font: FormulaChineseFont) => void;
+  setFormulaSpacing: (spacing: FormulaSpacingPreferences) => void;
+  setButtonShortcut: (id: ButtonShortcutId, chord: FormulaHotkeyChord | null) => void;
+  setButtonShortcuts: (settings: unknown) => void;
   setClassicTileWidth: (width: number) => void;
   setClassicDockHeight: (height: number) => void;
   setKeypadMinimizeOnCopy: (enabled: boolean) => void;
@@ -456,6 +478,8 @@ export const useEditorStore = create<EditorState>()(
       pngExportBackground: DEFAULT_PNG_EXPORT_BACKGROUND,
       formulaLetterFont: DEFAULT_FORMULA_LETTER_FONT,
       formulaChineseFont: DEFAULT_FORMULA_CHINESE_FONT,
+      formulaSpacing: defaultFormulaSpacingPreferences(),
+      buttonShortcuts: {},
       classicTileWidth: legacyClassicPanelSize(
         legacyClassicTileWidthStorageKey,
         DEFAULT_CLASSIC_TILE_WIDTH,
@@ -583,6 +607,18 @@ export const useEditorStore = create<EditorState>()(
         persistFormulaChineseFontPreference(normalized);
         set({ formulaChineseFont: normalized });
       },
+      setButtonShortcut: (id, chord) =>
+        set((state) => ({ buttonShortcuts: withButtonShortcut(state.buttonShortcuts, id, chord) })),
+      setButtonShortcuts: (value) =>
+        set((state) => {
+          const next = normalizeButtonShortcutSettings(value);
+          return JSON.stringify(next) === JSON.stringify(state.buttonShortcuts) ? state : { buttonShortcuts: next };
+        }),
+      setFormulaSpacing: (formulaSpacing) => {
+        const normalized = normalizeFormulaSpacingPreferences(formulaSpacing);
+        persistFormulaSpacing(normalized);
+        set({ formulaSpacing: normalized });
+      },
       setClassicTileWidth: (classicTileWidth) => {
         const normalized = normalizeClassicTileWidth(classicTileWidth);
         safeStorage.setItem(legacyClassicTileWidthStorageKey, String(normalized));
@@ -690,6 +726,13 @@ export const useEditorStore = create<EditorState>()(
               formulaChineseFont,
             );
           }
+          // a document's (or imported configuration's) spacing configurations
+          // join the user's, replacing those with the same id
+          const formulaSpacing =
+            settings.formulaSpacing === undefined
+              ? state.formulaSpacing
+              : mergeFormulaSpacingPreferences(state.formulaSpacing, settings.formulaSpacing);
+          if (settings.formulaSpacing !== undefined) persistFormulaSpacing(formulaSpacing);
           return {
             title: document.title,
             lines,
@@ -772,6 +815,7 @@ export const useEditorStore = create<EditorState>()(
                 : normalizePngExportBackground(settings.pngExportBackground),
             formulaLetterFont,
             formulaChineseFont,
+            formulaSpacing,
             inputBehavior:
               settings.inputBehavior === undefined
                 ? state.inputBehavior
@@ -799,6 +843,10 @@ export const useEditorStore = create<EditorState>()(
                     ) * 2,
                   ) / 2
                 : state.powerPointDefaultFontSizePt,
+            buttonShortcuts:
+              settings.buttonShortcuts === undefined
+                ? state.buttonShortcuts
+                : normalizeButtonShortcutSettings(settings.buttonShortcuts),
             classicTileWidth:
               settings.classicTileWidth === undefined
                 ? state.classicTileWidth
@@ -851,11 +899,13 @@ export const useEditorStore = create<EditorState>()(
             pngExportBackground: state.pngExportBackground,
             formulaLetterFont: state.formulaLetterFont,
             formulaChineseFont: state.formulaChineseFont,
+            formulaSpacing: state.formulaSpacing,
             inputBehavior: { ...state.inputBehavior },
             personalize: state.personalize,
             suggestionCount: state.suggestionCount,
             checkUpdatesOnStartup: state.checkUpdatesOnStartup,
             powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
+            buttonShortcuts: state.buttonShortcuts,
             classicTileWidth: state.classicTileWidth,
             classicDockHeight: state.classicDockHeight,
             keypadMinimizeOnCopy: state.keypadMinimizeOnCopy,
@@ -898,6 +948,7 @@ export const useEditorStore = create<EditorState>()(
         suggestionCount: state.suggestionCount,
         checkUpdatesOnStartup: state.checkUpdatesOnStartup,
         powerPointDefaultFontSizePt: state.powerPointDefaultFontSizePt,
+        buttonShortcuts: state.buttonShortcuts,
         usage: state.usage,
         history: state.history,
       }),
@@ -966,6 +1017,7 @@ export const useEditorStore = create<EditorState>()(
           formulaChineseFont:
             storedFormulaFonts.formulaChineseFont ??
             normalizeFormulaChineseFont(persisted.formulaChineseFont),
+          formulaSpacing: readPersistedFormulaSpacing(),
           classicTileWidth:
             persisted.classicTileWidth === undefined
               ? legacyClassicPanelSize(
@@ -991,6 +1043,7 @@ export const useEditorStore = create<EditorState>()(
           inputBehavior: normalizeInputBehaviorSettings(
             persisted.inputBehavior,
           ),
+          buttonShortcuts: normalizeButtonShortcutSettings(persisted.buttonShortcuts),
           powerPointDefaultFontSizePt:
             typeof persisted.powerPointDefaultFontSizePt === "number" &&
             Number.isFinite(persisted.powerPointDefaultFontSizePt)

@@ -465,6 +465,12 @@
   border-right: 0;
 }
 
+/* Without the capture-mode half (the Office editor window) it is a whole button */
+.quick-ocr-split > .quick-ocr-primary:only-child {
+  border-radius: 9px;
+  border-right: 1px solid var(--border);
+}
+
 .quick-ocr-mode-trigger {
   width: 26px;
   padding: 0;

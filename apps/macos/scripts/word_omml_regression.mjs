@@ -536,7 +536,7 @@ async function main() {
         const preferredArtifacts = module.latexLinesToOmmlArtifacts([
           String.raw\`x+\\alpha+\\mathrm{A}+\\text{中文}+\\mathbb{R}+\\mathcal{L}+\\mathsf{S}\`,
         ], 'inline', 'raw', {
-          formulaLetterFont: 'palatino',
+          formulaLetterFont: 'times',
           formulaChineseFont: 'songti',
         });
         return {
@@ -595,12 +595,12 @@ async function main() {
     expect(typeof fontDocxBase64 === "string" && fontDocxBase64.length > 100, "Font-variant OMML DOCX export is missing.");
     expect(typeof preferredOmml === "string" && preferredOmml.length > 100, "Preferred-font OMML export is missing.");
     expect(typeof preferredOmmlDocxBase64 === "string" && preferredOmmlDocxBase64.length > 100, "Preferred-font OMML DOCX export is missing.");
-    expectIncludes(preferredOmml, 'w:ascii="Palatino"', "Preferred math letters must carry the Palatino Word run font.");
-    expectIncludes(preferredOmml, 'w:hAnsi="Palatino"', "Preferred math letters must carry the Palatino high-ANSI font.");
+    expectIncludes(preferredOmml, 'w:ascii="Times New Roman"', "Preferred math letters must carry the Times New Roman Word run font.");
+    expectIncludes(preferredOmml, 'w:hAnsi="Times New Roman"', "Preferred math letters must carry the Times New Roman high-ANSI font.");
     expectIncludes(preferredOmml, 'w:eastAsia="Songti SC"', "Chinese OMML runs must carry the selected Songti SC East Asia font.");
     expect(
-      !/<m:scr m:val="(?:double-struck|script|sans-serif)"\/>[\s\S]*?<w:rFonts[^>]*Palatino/.test(preferredOmml),
-      "Explicit mathbb/mathcal/mathsf runs must not be overridden with the global Palatino font.",
+      !/<m:scr m:val="(?:double-struck|script|sans-serif)"\/>[\s\S]*?<w:rFonts[^>]*Times New Roman/.test(preferredOmml),
+      "Explicit mathbb/mathcal/mathsf runs must not be overridden with the global Times New Roman font.",
     );
     docxDirectory = await mkdtemp("/tmp/visualtex-omml-docx-");
     const docxPath = join(docxDirectory, "fraction.docx");
@@ -755,7 +755,7 @@ async function main() {
       ["-p", preferredDocxPath, "word/document.xml"],
       { encoding: "utf8" },
     );
-    expectIncludes(preferredDocumentXml, 'w:ascii="Palatino"', "Generated DOCX must preserve the selected math letter font.");
+    expectIncludes(preferredDocumentXml, 'w:ascii="Times New Roman"', "Generated DOCX must preserve the selected math letter font.");
     expectIncludes(preferredDocumentXml, 'w:eastAsia="Songti SC"', "Generated DOCX must preserve the selected Chinese font.");
 
     const roundtripRoot = process.env.VISUALTEX_OMML_ROUNDTRIP_ROOT;

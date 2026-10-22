@@ -21,6 +21,8 @@ declare module 'virtual:visualtex-kernel-host' {
   export const visualTexRareIntegralSymbols: Record<string, string>;
   export const visualTexSourceWrapperKindsData: Record<string, string>;
   export const visualTexSourceWrapperCanonicalTargetsData: Record<string, string>;
+  /** Sample formulas the completion list draws for bare kernel commands (\\left -> \\left( x \\right)) */
+  export const visualTexNativePreviewsData: Record<string, string>;
   export const VISUALTEX_SYMBOL_SEQUENCES: Record<string, any>;
   export function applyInputJudgment(before: string, judgment: any): any;
 }

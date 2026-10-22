@@ -183,7 +183,7 @@ assert.equal(
   `$$\n${exportSource}\n$$`,
   "formatted source copy must preserve compatibility command spellings",
 );
-const svg = latexToSvg(exportSource, { displayMode: false }).svg;
+const svg = (await latexToSvg(exportSource, { displayMode: false })).svg;
 assert.ok(svg.length > 0);
 assert.doesNotMatch(svg, /data-mml-node=["']merror["']|mathcolor=["']?red/i);
 const mathMl = latexToMathMl(exportSource, false);
@@ -226,7 +226,7 @@ for (const formulaLetterFont of [
   "palatino",
   "helvetica",
 ] as const) {
-  const issue15Svg = latexToSvg(issue15Source, {
+  const issue15Svg = await latexToSvg(issue15Source, {
     displayMode: true,
     formulaLetterFont,
   });

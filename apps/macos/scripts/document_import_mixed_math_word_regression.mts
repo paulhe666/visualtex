@@ -257,7 +257,7 @@ async function runCase(label: string, corruptFormulaOrdinal = 0) {
       [{ id: randomUUID(), latex: block.latex.trim() }],
       "raw",
     );
-    const artifacts = renderOfficeFormulaArtifacts({
+    const artifacts = await renderOfficeFormulaArtifacts({
       lines: normalized.lines,
       codeFormat: normalized.codeFormat,
       displayMode,

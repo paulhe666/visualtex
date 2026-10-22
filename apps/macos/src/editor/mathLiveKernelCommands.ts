@@ -1,8 +1,13 @@
 import type { MathfieldElement, Selection, Selector } from "mathlive";
 import type { CommandUsage } from "../types/command";
 
-import type { MathLivePersistentTypingStyle } from "../../vendor/mathlive/types";
-export type { MathLivePersistentTypingStyle } from "../../vendor/mathlive/types";
+export interface MathLivePersistentTypingStyle {
+  bold: boolean;
+  // null follows MathLive's normal math alphabet; false forces upright.
+  italic: boolean | null;
+  color: string | null;
+  backgroundColor: string | null;
+}
 
 export function dismissMathLiveSuggestions(field: MathfieldElement) {
   field.executeCommand("visualTexDismissSuggestions" as Selector);
@@ -13,7 +18,8 @@ export function configureMathLiveCompletion(field: MathfieldElement, preferences
   personalize: boolean;
   count: number;
 }) {
-  field.visualTexCompletionPreferences = preferences;
+  (field as MathfieldElement & { visualTexCompletionPreferences?: typeof preferences })
+    .visualTexCompletionPreferences = preferences;
 }
 
 // These commands are implemented by the owned MathLive kernel.
@@ -35,8 +41,26 @@ export function paintMathLiveDetachedScripts(
   return field.executeCommand("visualTexPaintDetachedScripts" as Selector, selection);
 }
 
+export function moveMathLiveToEmptySiblingScript(field: MathfieldElement) {
+  return field.executeCommand("visualTexMoveToEmptySiblingScript" as Selector);
+}
+
 export function insertMathLiveAlignmentPoint(field: MathfieldElement) {
   return field.executeCommand("visualTexInsertAlignmentPoint" as Selector);
+}
+
+/**
+ * After the formula was replaced: the caret where its atom went, or after the
+ * rewrite that replaced it (the editing core's restore; take the snapshot with
+ * visualTexEditingCore.captureCaret before replacing).
+ */
+export function restoreMathLiveCaret(field: MathfieldElement, snapshot: unknown) {
+  return field.executeCommand(["visualTexRestoreCaret", snapshot] as unknown as Selector);
+}
+
+/** Escape with a selection: collapse it to its end (the editing core). */
+export function collapseMathLiveSelectionToEnd(field: MathfieldElement) {
+  return field.executeCommand("visualTexCollapseToEnd" as Selector);
 }
 
 /** & in a matrix cell: the cell on the right, or a new column at row end. */
@@ -55,5 +79,23 @@ export function setMathLivePersistentTypingStyle(
   field: MathfieldElement,
   style: MathLivePersistentTypingStyle,
 ) {
-  field.visualTexPersistentTypingStyle = { ...style };
+  const next = {
+    bold: style.bold,
+    italic: style.italic,
+    ...(style.color ? { color: style.color } : {}),
+    ...(style.backgroundColor ? { backgroundColor: style.backgroundColor } : {}),
+  };
+  const target = field as unknown as {
+    visualTexPersistentTypingStyle?: typeof next;
+    _mathfield?: {
+      visualTexPersistentTypingStyle?: typeof next;
+    };
+  };
+  // model.mathfield is MathLive's private controller, not the custom element.
+  // Mirror the state on both so the insertion kernel sees it while keeping the
+  // public element inspectable in browser regressions.
+  target.visualTexPersistentTypingStyle = next;
+  if (target._mathfield) {
+    target._mathfield.visualTexPersistentTypingStyle = next;
+  }
 }

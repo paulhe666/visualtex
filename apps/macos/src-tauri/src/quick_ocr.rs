@@ -1081,20 +1081,48 @@ pub(crate) fn initialize(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub(crate) async fn capture_quick_ocr_screenshot(
-    app: AppHandle,
-) -> Result<Option<QuickOcrCapture>, String> {
-    if let Some(window) = app.get_webview_window("main") {
+/// The window that asked for the screenshot steps aside while it is taken:
+/// the main workspace, or an Office formula editor window (which comes back
+/// by itself; the main workspace stays as it was).
+fn quick_ocr_window_aside(
+    app: &AppHandle,
+    caller: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    let target = if caller.label() == "main" {
+        app.get_webview_window("main")
+    } else {
+        Some(caller.clone())
+    };
+    if let Some(window) = target {
         window
             .minimize()
             .map_err(|error| format!("Unable to minimize VisualTeX for quick OCR: {error}"))?;
     }
+    Ok(())
+}
+
+fn quick_ocr_window_back(app: &AppHandle, caller: &tauri::WebviewWindow) -> Result<(), String> {
+    if caller.label() == "main" {
+        return crate::office::background::reveal_main_window(app);
+    }
+    caller
+        .unminimize()
+        .and_then(|_| caller.show())
+        .and_then(|_| caller.set_focus())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn capture_quick_ocr_screenshot(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<Option<QuickOcrCapture>, String> {
+    quick_ocr_window_aside(&app, &window)?;
     tokio::time::sleep(Duration::from_millis(220)).await;
     let capture = tauri::async_runtime::spawn_blocking(capture_selection_png)
         .await
         .map_err(|error| format!("Screenshot task failed: {error}"))?;
-    let reveal_result = crate::office::background::reveal_main_window(&app);
+    let reveal_result = quick_ocr_window_back(&app, &window);
     if let Err(error) = reveal_result {
         return Err(format!("Unable to restore VisualTeX after the screenshot: {error}"));
     }
@@ -1107,18 +1135,15 @@ pub(crate) async fn capture_quick_ocr_screenshot(
 #[tauri::command]
 pub(crate) async fn wait_for_quick_ocr_system_screenshot(
     app: AppHandle,
+    window: tauri::WebviewWindow,
 ) -> Result<Option<QuickOcrCapture>, String> {
     let baseline = create_system_screenshot_baseline();
-    if let Some(window) = app.get_webview_window("main") {
-        window
-            .minimize()
-            .map_err(|error| format!("Unable to minimize VisualTeX while waiting for a system screenshot: {error}"))?;
-    }
+    quick_ocr_window_aside(&app, &window)?;
     tokio::time::sleep(Duration::from_millis(180)).await;
     let capture = tauri::async_runtime::spawn_blocking(move || wait_for_next_system_screenshot(baseline))
         .await
         .map_err(|error| format!("System screenshot watcher failed: {error}"))?;
-    let reveal_result = crate::office::background::reveal_main_window(&app);
+    let reveal_result = quick_ocr_window_back(&app, &window);
     if let Err(error) = reveal_result {
         return Err(format!("Unable to restore VisualTeX after waiting for the system screenshot: {error}"));
     }

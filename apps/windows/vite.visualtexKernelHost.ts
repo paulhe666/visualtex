@@ -112,6 +112,8 @@ export function kernelHostModuleSource(): string {
     `export const visualTexRareIntegralSymbols = {\n${rareIntegralSymbols()}\n};`,
     `export const visualTexSourceWrapperKindsData = ${JSON.stringify(Object.fromEntries(sourceWrapperKinds))};`,
     `export const visualTexSourceWrapperCanonicalTargetsData = ${JSON.stringify(Object.fromEntries(sourceWrapperCanonicalTargets))};`,
+    // Windows previews bare commands in the editor (MathEditor), not in the kernel
+    `export const visualTexNativePreviewsData = {};`,
     "",
   ].join("\n");
 }

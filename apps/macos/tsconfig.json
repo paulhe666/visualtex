@@ -17,8 +17,12 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "paths": {
+      "mathlive": ["../shared/visualtex-core/src/kernel/mathlive.ts"],
+      "mathlive/ssr": ["../shared/visualtex-core/src/kernel/public/mathlive-ssr.ts"]
+    }
   },
-  "include": ["src"],
+  "include": ["src", "../shared/visualtex-core/src/kernel/*.d.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

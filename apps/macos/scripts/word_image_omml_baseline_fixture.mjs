@@ -568,8 +568,8 @@ if (frontmostBefore === "Microsoft Word") {
 
 const renderedOmml = await renderProductionOmml(cases);
 const ommlById = new Map(renderedOmml.map((entry) => [entry.id, entry.omml]));
-const items = cases.map((entry) => {
-  const svg = latexToSvg(entry.latex, {
+const items = await Promise.all(cases.map(async (entry) => {
+  const svg = await latexToSvg(entry.latex, {
     displayMode: false,
     fontSizePt: REFERENCE_FONT_SIZE_PT,
     paddingPx: 1,
@@ -587,7 +587,7 @@ const items = cases.map((entry) => {
     omml,
     geometry: calculateWordGeometry(svg),
   };
-});
+}));
 
 rmSync(docxPath, { force: true });
 rmSync(pdfPath, { force: true });

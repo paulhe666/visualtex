@@ -14,13 +14,13 @@ if (!("children" in Object.getPrototypeOf(xml.documentElement))) Object.definePr
 
 const [sourcePath, resultPath, kind] = process.argv.slice(2);
 assert(sourcePath && resultPath && ["image", "omml"].includes(kind));
-const expected = parseLatexMarkdownDocument(readFileSync(sourcePath, "utf8"), "auto", 11)
+const expected = await Promise.all(parseLatexMarkdownDocument(readFileSync(sourcePath, "utf8"), "auto", 11)
   .filter(block => block.kind === "formula")
-  .map(block => {
+  .map(async block => {
     const document = normalizeFormulaEditorDocument([{ id: "fixture", latex: block.latex }], "raw");
-    const artifact = renderOfficeFormulaArtifacts({ ...document, host: "word", displayMode: block.displayMode, numbered: block.numbered });
+    const artifact = await renderOfficeFormulaArtifacts({ ...document, host: "word", displayMode: block.displayMode, numbered: block.numbered });
     return { latex: artifact.canonicalLatex, numbered: block.numbered };
-  });
+  }));
 const result = JSON.parse(execFileSync("python3", ["-c", String.raw`
 import json, sys, zipfile
 from pathlib import Path

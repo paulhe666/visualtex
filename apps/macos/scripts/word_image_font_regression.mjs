@@ -46,8 +46,8 @@ const MULTI_LETTER_OPERATORS = [
   String.raw`\operatorname{erf}(x)`,
 ];
 
-function render(latex, formulaLetterFont) {
-  return latexToSvg(latex, {
+async function render(latex, formulaLetterFont) {
+  return await latexToSvg(latex, {
     displayMode: false,
     fontSizePt: 14,
     paddingPx: 1,
@@ -57,25 +57,27 @@ function render(latex, formulaLetterFont) {
   });
 }
 
-function collapsedCustomTextGroups(svg) {
-  const collapsed = [];
-  for (const group of svg.matchAll(/<g\b[^>]*>([\s\S]*?)<\/g>/g)) {
-    const texts = [
-      ...group[1].matchAll(
-        /<text\b[^>]*data-visualtex-output-letter-font=["'][^"']+["'][^>]*transform=["']([^"']+)["'][^>]*>([^<]*)<\/text>/g,
-      ),
-    ];
-    if (texts.length <= 1) continue;
-    const misplaced = texts
-      .slice(1)
-      .filter((match) => match[1] === "scale(1,-1)")
-      .map((match) => match[2]);
-    if (misplaced.length > 0) collapsed.push(misplaced.join(""));
-  }
-  return collapsed;
+// Word images are drawn by the editor's layout engine: every glyph is a <use>
+// of an outline whose id names its TeX font (Computer Modern for KaTeX, newtx
+// for "Times New Roman"); Latin letters are never system-font <text>.
+function glyphFonts(svg) {
+  return new Set((svg.match(/id="vtx-([a-z0-9]+?)-\d+"/g) ?? []).map((m) => m.slice(8, m.lastIndexOf("-"))));
 }
 
-const inlineTextStyle = renderOfficeFormulaArtifacts({
+function assertEngineImage(result, label, font) {
+  assert.ok(result.width > 0 && result.height > 0, `${label} has a size`);
+  assert.ok(result.baseline > 0 && result.baseline <= result.height, `${label} baseline inside the image`);
+  assert.ok(!/<text\b/.test(result.svg), `${label} draws no system-font text`);
+  const fonts = [...glyphFonts(result.svg)];
+  assert.ok(fonts.length > 0, `${label} has glyph outlines`);
+  if (font === "times") {
+    assert.ok(fonts.some((f) => f.startsWith("ntx")), `${label} uses the newtx (Times) fonts: ${fonts}`);
+  } else {
+    assert.ok(!fonts.some((f) => f.startsWith("ntx")), `${label} uses Computer Modern only: ${fonts}`);
+  }
+}
+
+const inlineTextStyle = await renderOfficeFormulaArtifacts({
   lines: [{ id: "inline-style-test", latex: String.raw`\sum_{i=1}^{n}\frac{x_i}{y_i}` }],
   codeFormat: "raw",
   displayMode: "inline",
@@ -84,7 +86,7 @@ const inlineTextStyle = renderOfficeFormulaArtifacts({
   includeWordOmml: false,
   fontSizePt: 14,
 });
-const inlineDisplayStyle = renderOfficeFormulaArtifacts({
+const inlineDisplayStyle = await renderOfficeFormulaArtifacts({
   lines: [{ id: "inline-style-test", latex: String.raw`\sum_{i=1}^{n}\frac{x_i}{y_i}` }],
   codeFormat: "raw",
   displayMode: "inline",
@@ -108,60 +110,33 @@ assert.ok(commandIds.has("arcsin"), "arcsin command candidate is missing");
 assert.ok(commandIds.has("arccos"), "arccos command candidate is missing");
 assert.ok(commandIds.has("arctan"), "arctan command candidate is missing");
 
-const reportedReference = render(REPORTED_TIMES_FORMULA, "katex");
-const reportedTimes = render(REPORTED_TIMES_FORMULA, "times");
-assert.equal(reportedTimes.width, reportedReference.width);
-assert.equal(reportedTimes.height, reportedReference.height);
-assert.equal(reportedTimes.baseline, reportedReference.baseline);
-assert.deepEqual(collapsedCustomTextGroups(reportedTimes.svg), []);
-for (const [codePoint, translate] of [
-  ["72", "500"],
-  ["63", "892"],
-  ["6F", "1780"],
-  ["73", "2280"],
-]) {
-  assert.match(
-    reportedTimes.svg,
-    new RegExp(
-      `<text\\b[^>]*data-c=["']${codePoint}["'][^>]*transform=["']translate\\(${translate},0\\) scale\\(1,-1\\)["']`,
-    ),
-    `reported Times \\arccos lost glyph translation ${translate}`,
-  );
-}
+const reportedReference = await render(REPORTED_TIMES_FORMULA, "katex");
+const reportedTimes = await render(REPORTED_TIMES_FORMULA, "times");
+assertEngineImage(reportedReference, "reported \\arccos (KaTeX)", "katex");
+assertEngineImage(reportedTimes, "reported \\arccos (Times)", "times");
 
 for (const [name, latex] of BASELINE_CASES) {
-  const reference = render(latex, "katex");
-  assert.ok(reference.baseline > 0 && reference.baseline <= reference.height, `${name} reference baseline`);
-  for (const font of CUSTOM_LETTER_FONTS) {
-    const result = render(latex, font);
-    assert.equal(result.width, reference.width, `${name}/${font} width geometry changed`);
-    assert.equal(result.height, reference.height, `${name}/${font} height geometry changed`);
-    assert.equal(result.baseline, reference.baseline, `${name}/${font} mathematical baseline changed`);
-    assert.deepEqual(
-      collapsedCustomTextGroups(result.svg),
-      [],
-      `${name}/${font} collapsed custom-font glyph positions`,
-    );
+  const reference = await render(latex, "katex");
+  assertEngineImage(reference, `${name}/katex`, "katex");
+  const times = await render(latex, "times");
+  assertEngineImage(times, `${name}/times`, "times");
+  // fonts of earlier versions (Cambria, STIX, ...) are drawn as KaTeX
+  for (const font of CUSTOM_LETTER_FONTS.filter((f) => f !== "times")) {
+    const result = await render(latex, font);
+    assert.equal(result.svg, reference.svg, `${name}/${font} is drawn as KaTeX`);
   }
 }
 
 for (const latex of MULTI_LETTER_OPERATORS) {
-  const result = render(latex, "times");
-  assert.deepEqual(
-    collapsedCustomTextGroups(result.svg),
-    [],
-    `Times multi-letter operator collapsed: ${latex}`,
-  );
+  assertEngineImage(await render(latex, "times"), `Times ${latex}`, "times");
 }
 
 const commandFailures = [];
-const commandCollapsed = [];
 for (const command of additionalCommands) {
   try {
-    const result = render(command.previewLatex, "times");
-    const collapsed = collapsedCustomTextGroups(result.svg);
-    if (collapsed.length > 0) {
-      commandCollapsed.push({ id: command.id, previewLatex: command.previewLatex, collapsed });
+    const result = await render(command.previewLatex, "times");
+    if (/<text\b/.test(result.svg) && !/[\u3400-\u9fff]/.test(command.previewLatex)) {
+      commandFailures.push({ id: command.id, previewLatex: command.previewLatex, error: "system-font text" });
     }
   } catch (error) {
     commandFailures.push({
@@ -172,7 +147,6 @@ for (const command of additionalCommands) {
   }
 }
 assert.deepEqual(commandFailures, [], `Times command render failures: ${JSON.stringify(commandFailures)}`);
-assert.deepEqual(commandCollapsed, [], `Times command positioning failures: ${JSON.stringify(commandCollapsed)}`);
 
 console.log(
   `VisualTeX Word image font regression: PASS (${additionalCommands.length} Times command previews, ${BASELINE_CASES.length} baseline classes, ${MULTI_LETTER_OPERATORS.length} multi-letter operators)`,

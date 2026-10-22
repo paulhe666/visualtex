@@ -880,12 +880,48 @@ export function visualTexSourceWrapperCaretIsInside(
   const current = mathfield.model.at(mathfield.model.position);
   return Boolean(state?.group?.parent && (current === state.group || current?.parent === state.group));
 }
+/** An atom inside the wrapper's source */
+export function visualTexSourceWrapperOwnsAtom(
+  state: VisualTexSourceWrapperState | null | undefined,
+  atom: Atom | undefined | null
+): boolean {
+  return Boolean(state?.group?.parent && atom?.parent === state.group);
+}
+type VisualTexExitSelection = { anchorAtom: Atom | undefined; positionAtom: Atom | undefined } | null;
+/** The selection outside the wrapper the caret moved to (null when it is in the wrapper) */
+function visualTexCaptureSourceWrapperExitSelection(
+  model: _Model,
+  state: VisualTexSourceWrapperState
+): VisualTexExitSelection {
+  const anchorAtom = model.at(model.anchor);
+  const positionAtom = model.at(model.position);
+  if (anchorAtom === state.group || positionAtom === state.group ||
+      visualTexSourceWrapperOwnsAtom(state, anchorAtom) ||
+      visualTexSourceWrapperOwnsAtom(state, positionAtom)) return null;
+  return { anchorAtom, positionAtom };
+}
+function visualTexRestoreSourceWrapperExitSelection(model: _Model, selection: VisualTexExitSelection): boolean {
+  if (!selection?.anchorAtom || !selection?.positionAtom) return false;
+  const anchor = model.offsetOf(selection.anchorAtom);
+  const position = model.offsetOf(selection.positionAtom);
+  if (anchor < 0 || position < 0) return false;
+  const savedSilence = model.silenceNotifications;
+  model.silenceNotifications = true;
+  model.setSelection(anchor, position);
+  model.silenceNotifications = savedSilence;
+  return true;
+}
 export function visualTexStartSourceWrapper(
   model: _Model,
   input: string,
   structuralSlot: VisualTexStructuralSlot | null = null
 ): boolean {
   const mathfield = model.mathfield;
+  // a wrapper left behind by the caret is finished before a new one starts
+  if (mathfield.visualTexSourceWrapper) {
+    visualTexFinalizeSourceWrapperOnCaretExit(mathfield);
+    if (mathfield.visualTexSourceWrapper) return false;
+  }
   const info = visualTexSourceWrapperTemplate(input);
   if (!info) return false;
   const shell = info.command + "{}";
@@ -923,11 +959,17 @@ export function visualTexClearSourceWrapper(mathfield: _Mathfield): void {
   mathfield.visualTexSourceWrapper = null;
   visualTexSyncSourceWrapper(mathfield);
 }
-export function visualTexCancelSourceWrapper(mathfield: _Mathfield): boolean {
+export function visualTexCancelSourceWrapper(
+  mathfield: _Mathfield,
+  { preserveSelection = false } = {}
+): boolean {
   const state = mathfield.visualTexSourceWrapper;
   const group = state?.group;
   if (!state || !group?.parent) { visualTexClearSourceWrapper(mathfield); return false; }
   const model = mathfield.model;
+  const preservedSelection = preserveSelection
+    ? visualTexCaptureSourceWrapperExitSelection(model, state)
+    : null;
   const parent = group.parent;
   const branch = group.parentBranch;
   const left = group.leftSibling;
@@ -941,7 +983,14 @@ export function visualTexCancelSourceWrapper(mathfield: _Mathfield): boolean {
   } else if (visualTexShouldRetainStructuralPlaceholder(parent, branch) && parent.hasEmptyBranch(branch)) {
     visualTexRestoreStructuralPlaceholder(model, parent, branch, left);
   }
+  visualTexRestoreSourceWrapperExitSelection(model, preservedSelection);
+  mathfield.stopCoalescingUndo();
   requestUpdate(mathfield);
+  // the host hears that the shell went away
+  const visualTexSavedSilence = model.silenceNotifications;
+  model.silenceNotifications = false;
+  model.contentDidChange({ data: "", inputType: "deleteContentBackward" });
+  model.silenceNotifications = visualTexSavedSilence;
   return true;
 }
 export function visualTexSourceWrapperSimpleCommand(mathfield: _Mathfield, content: string): boolean {
@@ -954,7 +1003,7 @@ export function visualTexSourceWrapperSimpleCommand(mathfield: _Mathfield, conte
 }
 export function visualTexCommitSourceWrapper(
   mathfield: _Mathfield,
-  { requireComplete = false, notify = true } = {}
+  { requireComplete = false, notify = true, preserveSelection = false } = {}
 ): boolean {
   const state = mathfield.visualTexSourceWrapper;
   const group = state?.group;
@@ -963,6 +1012,9 @@ export function visualTexCommitSourceWrapper(
   if (!content) return false;
   if (requireComplete && Array.from(content).length !== 1 && !visualTexSourceWrapperSimpleCommand(mathfield, content)) return false;
   const model = mathfield.model;
+  const preservedSelection = preserveSelection
+    ? visualTexCaptureSourceWrapperExitSelection(model, state)
+    : null;
   let command = state.command;
   if (command === "\\mathcal" && /^[a-z]$/.test(content)) command = "\\mathscr";
   const latex = command + "{" + content + "}";
@@ -981,12 +1033,33 @@ export function visualTexCommitSourceWrapper(
   model.position = model.offsetOf(last);
   model.silenceNotifications = visualTexSavedSilence;
   visualTexClearSourceWrapper(mathfield);
+  if (!preserveSelection && state.structuralSlot && !model.selectionIsPlaceholder)
+    visualTexAutoExitAfterComposition(mathfield, state.structuralSlot);
+  visualTexRestoreSourceWrapperExitSelection(model, preservedSelection);
   if (notify && !visualTexSavedSilence)
     mathfield.visualTexDeferredSelectionAfterInput = true;
   mathfield.stopCoalescingUndo();
   requestUpdate(mathfield);
   if (notify) model.contentDidChange({ data: latex, inputType: "insertText" });
   return true;
+}
+/** Commits the wrapper (cancels an empty one) */
+export function visualTexFinalizeSourceWrapper(
+  mathfield: _Mathfield,
+  { preserveSelection = false, notify = false } = {}
+): boolean {
+  const state = mathfield.visualTexSourceWrapper;
+  if (!state?.group?.parent) { visualTexClearSourceWrapper(mathfield); return false; }
+  const content = visualTexSourceWrapperContent(state);
+  if (!content) return visualTexCancelSourceWrapper(mathfield, { preserveSelection });
+  return visualTexCommitSourceWrapper(mathfield, { preserveSelection, notify });
+}
+/** The caret left the wrapper (click, arrow, editing core move): the wrapper is finished where it is */
+export function visualTexFinalizeSourceWrapperOnCaretExit(mathfield: _Mathfield): boolean {
+  const state = mathfield.visualTexSourceWrapper;
+  if (!state || mathfield.visualTexCompositionSourceWrapper === state ||
+      visualTexSourceWrapperCaretIsInside(mathfield, state)) return false;
+  return visualTexFinalizeSourceWrapper(mathfield, { preserveSelection: true, notify: false });
 }
 export function visualTexMaybeAutoCommitSourceWrapper(mathfield: _Mathfield): boolean {
   const state = mathfield.visualTexSourceWrapper;

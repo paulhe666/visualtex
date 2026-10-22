@@ -7,6 +7,16 @@ import { safeStorage } from "../runtime/safeStorage.ts";
 export type FormulaLetterFont = "katex" | "times";
 export type LegacyFormulaLetterFont = FormulaLetterFont | "cambria" | "stix" | "palatino" | "helvetica";
 
+/** Every letter font a saved formula may name (validated as such, shown via normalizeFormulaLetterFont). */
+export const LEGACY_FORMULA_LETTER_FONTS: readonly LegacyFormulaLetterFont[] = [
+  "katex",
+  "times",
+  "cambria",
+  "stix",
+  "palatino",
+  "helvetica",
+];
+
 export type FormulaChineseFont =
   | "system"
   | "pingfang"

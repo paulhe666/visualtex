@@ -84,7 +84,7 @@ try {
   assert.equal(suggestions[0]?.command, "\\selfdefa");
   assert.equal(suggestions[0]?.id, "custom-symbol:regression-selfdefa");
 
-  const svg = latexToSvg("A\\selfdefa B", {
+  const svg = await latexToSvg("A\\selfdefa B", {
     displayMode: false,
     fontSizePt: 12,
     paddingPx: 0,
@@ -140,7 +140,7 @@ try {
     },
     ommlFallback: null,
   });
-  const erasedSvg = latexToSvg("\\selferase", {
+  const erasedSvg = await latexToSvg("\\selferase", {
     displayMode: false,
     fontSizePt: 12,
     paddingPx: 0,
@@ -203,14 +203,14 @@ try {
     ),
     false,
   );
-  assert.throws(
-    () => latexToSvg("\\selfdefa", {
+  await assert.rejects(
+    async () => latexToSvg("\\selfdefa", {
       displayMode: false,
       fontSizePt: 12,
       paddingPx: 0,
       background: "transparent",
     }),
-    /MathJax could not parse|Undefined control sequence|Unknown symbol|unresolved LaTeX command/i,
+    /Unsupported LaTeX|MathJax could not parse|Undefined control sequence|Unknown symbol|unresolved LaTeX command/i,
   );
 
   replaceCustomSymbolLibrary({ version: 1, symbols: [] });
@@ -235,11 +235,11 @@ try {
     });
   }
   const roleSvgs = Object.fromEntries(
-    roleCases.map(([role, command]) => {
+    await Promise.all(roleCases.map(async ([role, command]) => {
       const latex = role === "operator"
         ? `A\\${command}_{i}^{j}B`
         : `A\\${command} B`;
-      const output = latexToSvg(latex, {
+      const output = await latexToSvg(latex, {
         displayMode: role === "operator",
         fontSizePt: 12,
         paddingPx: 0,
@@ -251,7 +251,7 @@ try {
         `${role} custom symbol SVG marker`,
       );
       return [role, output];
-    }),
+    })),
   );
   assert.ok(
     roleSvgs.binary.width > roleSvgs.ordinary.width,

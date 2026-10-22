@@ -160,7 +160,7 @@ async function main() {
       for (let index = 0; index < samples.length; index += 1) {
         const [name, encoded] = samples[index];
         const source = encoded.replaceAll("\\\\", BS);
-        const asset = compiler.compileLatexGlyphAsset(source);
+        const asset = await compiler.compileLatexGlyphAsset(source);
         const command = "vtxcompiler" + String.fromCharCode(97 + index);
         const id = "glyph-compiler-" + name;
         const now = Date.now();
@@ -176,13 +176,13 @@ async function main() {
           createdAt: now,
           updatedAt: now,
         });
-        const original = runtime.latexToSvg(source, {
+        const original = await runtime.latexToSvg(source, {
           displayMode: false,
           fontSizePt: 12,
           paddingPx: 0,
           background: "transparent",
         });
-        const roundTrip = runtime.latexToSvg(BS + command, {
+        const roundTrip = await runtime.latexToSvg(BS + command, {
           displayMode: false,
           fontSizePt: 12,
           paddingPx: 0,
@@ -208,7 +208,7 @@ async function main() {
           },
         });
       }
-      const partialAsset = compiler.compileLatexGlyphAsset(BS + "partial");
+      const partialAsset = await compiler.compileLatexGlyphAsset(BS + "partial");
       const firstSlice = designer.glyphLayerFromAsset(partialAsset, {
         id: "partial-top",
         name: "partial top",
@@ -253,12 +253,12 @@ async function main() {
         { id: "designer-slice-roundtrip" },
       );
       registration.registerCustomSymbolSafely(definition);
-      const designerSvg = runtime.latexToSvg(BS + "vtxdesignerslice", {
+      const designerSvg = (await runtime.latexToSvg(BS + "vtxdesignerslice", {
         displayMode: false,
         fontSizePt: 12,
         paddingPx: 0,
         background: "transparent",
-      }).svg;
+      })).svg;
       const restoredDesigner = designerArchive.restoreCustomSymbolDesignerDocument(definition);
       const restoredArtwork = designer.compileCustomSymbolDesignerArtwork(
         restoredDesigner.document,
@@ -361,7 +361,7 @@ async function main() {
         { id: "designer-geometry-roundtrip" },
       );
       registration.registerCustomSymbolSafely(geometryDefinition);
-      const geometrySvgArtifact = runtime.latexToSvg(BS + "vtxgeometrymix", {
+      const geometrySvgArtifact = await runtime.latexToSvg(BS + "vtxgeometrymix", {
         displayMode: false,
         fontSizePt: 12,
         paddingPx: 0,
@@ -376,14 +376,14 @@ async function main() {
         BS + "vtxgeometrymix",
         "display-bracket",
       );
-      const wordArtifact = officeRender.renderOfficeFormulaArtifacts({
+      const wordArtifact = await officeRender.renderOfficeFormulaArtifacts({
         lines: [{ id: "designer-geometry-word", latex: BS + "vtxgeometrymix" }],
         codeFormat: "raw",
         displayMode: "inline",
         host: "word",
         includeWordOmml: true,
       });
-      const powerpointArtifact = officeRender.renderOfficeFormulaArtifacts({
+      const powerpointArtifact = await officeRender.renderOfficeFormulaArtifacts({
         lines: [{ id: "designer-geometry-powerpoint", latex: BS + "vtxgeometrymix" }],
         codeFormat: "raw",
         displayMode: "inline",
@@ -466,7 +466,7 @@ async function main() {
         { id: "designer-system-glyph-roundtrip" },
       );
       registration.registerCustomSymbolSafely(systemDefinition);
-      const systemArtifact = runtime.latexToSvg(BS + "vtxsystemglyph", {
+      const systemArtifact = await runtime.latexToSvg(BS + "vtxsystemglyph", {
         displayMode: false,
         fontSizePt: 12,
         paddingPx: 0,
@@ -559,12 +559,12 @@ async function main() {
         effectsDefinition,
       );
       registration.registerCustomSymbolSafely(effectsDefinition);
-      const effectsSvg = runtime.latexToSvg(BS + "vtxeffectglyph", {
+      const effectsSvg = (await runtime.latexToSvg(BS + "vtxeffectglyph", {
         displayMode: false,
         fontSizePt: 12,
         paddingPx: 0,
         background: "transparent",
-      }).svg;
+      })).svg;
       const frontEffectShape = localEffectsShapes.at(-1) || null;
       const restoredEffectsLayer = restoredEffects.document.layers[0] || null;
       const effectsProbe = {

@@ -35,6 +35,7 @@ import {
   visualTexCompletionCatalogData,
   visualTexCommandFrequencyData,
   visualTexDefaultMacros,
+  visualTexNativePreviewsData,
 } from 'virtual:visualtex-kernel-host';
 import { visualTexLateFunctions } from '../editor-mathfield/visualtex-hooks';
 
@@ -781,7 +782,7 @@ export function suggest(mf: _Mathfield, s: string): string[] {
     ) continue;
     const usageId = "mathlive-native:" + command;
     add(
-      { id: usageId, command, latex: command, preview: command, label: "" },
+      { id: usageId, command, latex: command, preview: visualTexNativePreviewsData[command] ?? command, label: "" },
       match + frequency(command) + visualTexPersonalBoost(preferences, usageId) + tieBreak("native", 0),
     );
   }

@@ -34,6 +34,7 @@ import { renderOfficeFormulaArtifacts } from "../shared/formulaRenderArtifacts";
 import { createUuid } from "../../runtime/browserCompatibility";
 import { useEditorStore } from "../../stores/editorStore";
 import { documentImportErrorMessage } from "./documentImportErrors";
+import { describeConversionFailure } from "../shared/conversionErrors";
 import {
   cancelMacosDocumentImport,
   closeMacosDocumentImportWindow,
@@ -57,6 +58,9 @@ import {
   type DocumentImportBlock,
   type DocumentImportSourceKind,
 } from "./documentImportParser";
+
+const isEnglish = () => useEditorStore.getState().language === "en";
+const t = (zh: string, en: string) => (isEnglish() ? en : zh);
 
 type ImportedFileState = Pick<
   ImportedDocumentFile,
@@ -119,10 +123,10 @@ async function prepareFormulaArtifactCommitItem(
 ): Promise<DocumentImportCommitItem> {
   const formulaId = createUuid();
   const line = { id: createUuid(), latex: block.latex.trim() };
-  if (!line.latex) throw new Error("存在空公式，请填写或删除后再插入。");
+  if (!line.latex) throw new Error(t("存在空公式，请填写或删除后再插入。", "There is an empty formula. Fill it in or delete it before inserting."));
   const editorDocument = normalizeFormulaEditorDocument([line], "raw");
   const { formulaLetterFont, formulaChineseFont } = useEditorStore.getState();
-  const artifacts = renderOfficeFormulaArtifacts({
+  const artifacts = await renderOfficeFormulaArtifacts({
     lines: editorDocument.lines,
     codeFormat: editorDocument.codeFormat,
     displayMode: block.displayMode,
@@ -136,7 +140,7 @@ async function prepareFormulaArtifactCommitItem(
   // Windows' MathML step rejects unknown commands while parsing, so a formula
   // that reaches this point has no literal LaTeX command left in it.
   if (!artifacts.wordMathMl) {
-    throw new Error("无法生成 Word OMML 公式制品。");
+    throw new Error(t("无法生成 Word OMML 公式制品。", "The Word equation (OMML) could not be generated."));
   }
 
   const paragraphMetadata = {
@@ -212,6 +216,8 @@ export function OfficeDocumentImportApp() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
+  const language = useEditorStore((state) => state.language);
+  const isEn = language === "en";
   const explicitFontSizeIds = useRef(new Set<string>());
   // Formulas follow the text size at the Word insertion point unless the user
   // set a size for that formula here.
@@ -227,14 +233,14 @@ export function OfficeDocumentImportApp() {
 
   useEffect(() => {
     if (!sessionId) {
-      setError("缺少 Word 文档导入会话标识。");
+      setError(t("缺少 Word 文档导入会话标识。", "The Word document import session ID is missing."));
       setLoading(false);
       return;
     }
     void getMacosDocumentImportRequest(sessionId)
       .then((value) => setRequest(value))
       .catch((reason) =>
-        setError(documentImportErrorMessage(reason, "无法读取 Word 文档导入请求。")),
+        setError(documentImportErrorMessage(reason, t("无法读取 Word 文档导入请求。", "Could not read the Word document import request."))),
       )
       .finally(() => setLoading(false));
   }, [sessionId]);
@@ -299,7 +305,7 @@ export function OfficeDocumentImportApp() {
   const handleDocumentFile = async (file: File | null) => {
     if (!file || busy) return;
     setError("");
-    setToast("正在读取文档源码…");
+    setToast(t("正在读取文档源码…", "Reading the source file…"));
     try {
       const imported = await readDocumentImportFile(file);
       setSource(imported.source);
@@ -317,11 +323,14 @@ export function OfficeDocumentImportApp() {
       );
       setBlocks((previous) => mergeDocumentImportBlocks(previous, parsed));
       setToast(
-        `已加载 ${imported.name} · ${imported.encoding} · ${formatFileSize(imported.size)}`,
+        t(
+          `已加载 ${imported.name} · ${imported.encoding} · ${formatFileSize(imported.size)}`,
+          `Loaded ${imported.name} · ${imported.encoding} · ${formatFileSize(imported.size)}`,
+        ),
       );
       window.requestAnimationFrame(() => sourceRef.current?.focus());
     } catch (reason) {
-      setError(documentImportErrorMessage(reason, "无法读取文档源码文件。"));
+      setError(documentImportErrorMessage(reason, t("无法读取文档源码文件。", "Could not read the source file.")));
       setToast("");
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -353,7 +362,7 @@ export function OfficeDocumentImportApp() {
       allowNativeCloseRef.current = true;
       await closeMacosDocumentImportWindow();
     } catch (reason) {
-      setError(documentImportErrorMessage(reason, "无法取消文档导入。"));
+      setError(documentImportErrorMessage(reason, t("无法取消文档导入。", "Could not cancel the import.")));
       setBusy(false);
       nativeCloseInFlightRef.current = false;
     }
@@ -362,20 +371,22 @@ export function OfficeDocumentImportApp() {
   const commit = async () => {
     if (!request || busy) return;
     if (!blocks.length || blocks.every((block) => block.kind === "text" && !block.text.trim())) {
-      setError("请先粘贴包含文字或公式的 LaTeX/Markdown 内容。");
+      setError(t("请先粘贴包含文字或公式的 LaTeX/Markdown 内容。", "Paste LaTeX or Markdown that contains text or formulas first."));
       return;
     }
     const formulas = blocks.filter(
       (block): block is DocumentFormulaBlock => block.kind === "formula",
     );
     if (formulas.some((block) => !block.latex.trim())) {
-      setError("存在空公式，请填写公式内容后再插入。");
+      setError(t("存在空公式，请填写公式内容后再插入。", "There is an empty formula. Fill it in before inserting."));
       return;
     }
 
     setBusy(true);
     setError("");
-    setToast(outputKind === "omml" ? "正在生成 Word 原生公式…" : "正在生成 SVG 图片公式…");
+    setToast(outputKind === "omml"
+      ? t("正在生成 Word 原生公式…", "Generating native Word equations…")
+      : t("正在生成 SVG 图片公式…", "Generating SVG image formulas…"));
     let importerHidden = false;
     let progressTimer: number | undefined;
     let progressRequestInFlight = false;
@@ -387,13 +398,13 @@ export function OfficeDocumentImportApp() {
           try {
             return await prepareFormulaArtifactCommitItem(block, outputKind);
           } catch (reason) {
-            const detail = documentImportErrorMessage(
-              reason,
-              "未知公式转换错误。",
-            );
+            const detail = describeConversionFailure(reason, isEnglish());
             const preview = block.latex.trim().replace(/\s+/g, " ").slice(0, 120);
             throw new Error(
-              `公式 ${index + 1} 生成失败：${detail}${preview ? `（${preview}）` : ""}`,
+              t(
+                `公式 ${index + 1} 生成失败：${detail}${preview ? `（${preview}）` : ""}`,
+                `Formula ${index + 1} could not be generated: ${detail}${preview ? ` (${preview})` : ""}`,
+              ),
               { cause: reason },
             );
           }
@@ -418,14 +429,17 @@ export function OfficeDocumentImportApp() {
         formulaIndex += 1;
         return prepared;
       });
-      setToast(`正在写入 Word：0/${items.length}`);
+      setToast(t(`正在写入 Word：0/${items.length}`, `Writing to Word: 0/${items.length}`));
       progressTimer = window.setInterval(() => {
         if (progressRequestInFlight) return;
         progressRequestInFlight = true;
         void getMacosDocumentImportProgress(sessionId)
           .then((progress) => {
             if (progress.total > 0 && progress.stage === "inserting") {
-              setToast(`正在写入 Word：${progress.current}/${progress.total}`);
+              setToast(t(
+                `正在写入 Word：${progress.current}/${progress.total}`,
+                `Writing to Word: ${progress.current}/${progress.total}`,
+              ));
             }
           })
           .catch(() => undefined)
@@ -435,7 +449,7 @@ export function OfficeDocumentImportApp() {
       }, 120);
       await commitMacosDocumentImport(sessionId, { outputKind, items });
       if (progressTimer !== undefined) window.clearInterval(progressTimer);
-      setToast(`已完成：${items.length}/${items.length}`);
+      setToast(t(`已完成：${items.length}/${items.length}`, `Done: ${items.length}/${items.length}`));
       allowNativeCloseRef.current = true;
       await closeMacosDocumentImportWindow();
     } catch (reason) {
@@ -443,7 +457,7 @@ export function OfficeDocumentImportApp() {
       if (importerHidden) {
         await restoreMacosDocumentImportWindow().catch(() => undefined);
       }
-      setError(documentImportErrorMessage(reason, "无法将内容插入 Word。"));
+      setError(documentImportErrorMessage(reason, t("无法将内容插入 Word。", "Could not insert the content into Word.")));
       setToast("");
       setBusy(false);
     }
@@ -463,7 +477,7 @@ export function OfficeDocumentImportApp() {
         else unlisten = dispose;
       })
       .catch((reason) => {
-        setError(documentImportErrorMessage(reason, "无法注册文档导入窗口关闭处理。"));
+        setError(documentImportErrorMessage(reason, t("无法注册文档导入窗口关闭处理。", "Could not register the import window close handler.")));
       });
     return () => {
       disposed = true;
@@ -475,7 +489,7 @@ export function OfficeDocumentImportApp() {
     return (
       <main className="document-import-state">
         <LoaderCircle className="is-spinning" />
-        <span>正在准备 Word 文档导入器…</span>
+        <span>{t("正在准备 Word 文档导入器…", "Preparing the Word document importer…")}</span>
       </main>
     );
   }
@@ -484,8 +498,8 @@ export function OfficeDocumentImportApp() {
     return (
       <main className="document-import-state is-error" role="alert">
         <AlertCircle />
-        <strong>无法打开文档导入器</strong>
-        <p>{error || "Word 文档导入请求不存在或已经失效。"}</p>
+        <strong>{t("无法打开文档导入器", "Could not open the document importer")}</strong>
+        <p>{error || t("Word 文档导入请求不存在或已经失效。", "The Word document import request does not exist or has expired.")}</p>
       </main>
     );
   }
@@ -512,13 +526,13 @@ export function OfficeDocumentImportApp() {
         <div className="doc-import-title-block">
           <FileText size={20} />
           <div>
-            <strong>Word 文档批量导入</strong>
-            <span>左侧编辑源码，右侧实时查看并调整最终 Word 结构</span>
+            <strong>{t("Word 文档批量导入", "Word document import")}</strong>
+            <span>{t("左侧编辑源码，右侧实时查看并调整最终 Word 结构", "Edit the source on the left; review and adjust the final Word structure on the right")}</span>
           </div>
         </div>
         <div className="doc-import-options">
           <label>
-            <span>源格式</span>
+            <span>{t("源格式", "Source format")}</span>
             <select
               value={sourceKind}
               onChange={(event) =>
@@ -526,13 +540,13 @@ export function OfficeDocumentImportApp() {
               }
               disabled={busy}
             >
-              <option value="auto">自动识别</option>
+              <option value="auto">{t("自动识别", "Auto-detect")}</option>
               <option value="latex">LaTeX</option>
               <option value="markdown">Markdown</option>
             </select>
           </label>
           <label>
-            <span>公式格式</span>
+            <span>{t("公式格式", "Formula format")}</span>
             <select
               value={outputKind}
               onChange={(event) =>
@@ -540,13 +554,13 @@ export function OfficeDocumentImportApp() {
               }
               disabled={busy}
             >
-              <option value="omml">Word 原生 OMML</option>
-              <option value="image">SVG 图片公式</option>
+              <option value="omml">{t("Word 原生 OMML", "Native Word (OMML)")}</option>
+              <option value="image">{t("SVG 图片公式", "SVG image")}</option>
             </select>
           </label>
           <label
             className="doc-import-global-number-toggle"
-            title="统一设置当前所有行间公式的编号"
+            title={t("统一设置当前所有行间公式的编号", "Set numbering for all display formulas at once")}
           >
             <input
               type="checkbox"
@@ -555,25 +569,25 @@ export function OfficeDocumentImportApp() {
                 setAllDisplayFormulaNumbering(event.target.checked)
               }
               disabled={busy || displayFormulaCount === 0}
-              aria-label="所有行间公式添加编号"
+              aria-label={t("所有行间公式添加编号", "Number all display formulas")}
             />
-            <span>行间公式全部编号</span>
+            <span>{t("行间公式全部编号", "Number all display formulas")}</span>
           </label>
           <button
             type="button"
             className="doc-import-secondary doc-import-file-button"
             onClick={() => fileInputRef.current?.click()}
             disabled={busy}
-            title="导入单个 LaTeX 或 Markdown 文件"
+            title={t("导入单个 LaTeX 或 Markdown 文件", "Import a single LaTeX or Markdown file")}
           >
             <Upload size={16} />
-            导入 .tex / .md
+            {t("导入 .tex / .md", "Import .tex / .md")}
           </button>
           <input
             ref={fileInputRef}
             type="file"
             accept=".tex,.md,.markdown,text/x-tex,text/markdown"
-            aria-label="导入 LaTeX 或 Markdown 文件"
+            aria-label={t("导入 LaTeX 或 Markdown 文件", "Import a LaTeX or Markdown file")}
             hidden
             onChange={handleFileInput}
           />
@@ -588,8 +602,8 @@ export function OfficeDocumentImportApp() {
                 <Braces size={16} />
               </span>
               <div>
-                <strong>LaTeX / Markdown 源码</strong>
-                <small>支持正文、标题、列表、定理、引用、代码块和混合公式</small>
+                <strong>{t("LaTeX / Markdown 源码", "LaTeX / Markdown source")}</strong>
+                <small>{t("支持正文、标题、列表、定理、引用、代码块和混合公式", "Supports body text, headings, lists, theorems, quotes, code blocks, and mixed formulas")}</small>
               </div>
             </div>
             <div className="doc-import-source-meta">
@@ -602,12 +616,12 @@ export function OfficeDocumentImportApp() {
                   <span>{importedFile.name}</span>
                   <small>
                     {importedFile.encoding}
-                    {importedFile.modified ? " · 已编辑" : ""}
+                    {importedFile.modified ? t(" · 已编辑", " · edited") : ""}
                   </small>
                 </span>
               ) : null}
               <span className="doc-import-pane-stat">
-                {source.length.toLocaleString()} 字符
+                {source.length.toLocaleString(isEn ? "en-US" : "zh-CN")} {t("字符", "characters")}
               </span>
             </div>
           </div>
@@ -615,7 +629,8 @@ export function OfficeDocumentImportApp() {
             ref={sourceRef}
             value={source}
             onChange={(event) => handleSourceChange(event.target.value)}
-            placeholder={String.raw`在这里粘贴 LaTeX 或 Markdown，例如：
+            placeholder={t(
+              String.raw`在这里粘贴 LaTeX 或 Markdown，例如：
 
 正文中的行内公式 $E=mc^2$。
 
@@ -624,12 +639,23 @@ export function OfficeDocumentImportApp() {
 a&=b\\
 c&=d
 \end{aligned}
-\end{equation}`}
+\end{equation}`,
+              String.raw`Paste LaTeX or Markdown here, for example:
+
+An inline formula in body text: $E=mc^2$.
+
+\begin{equation}
+\begin{aligned}
+a&=b\\
+c&=d
+\end{aligned}
+\end{equation}`,
+            )}
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
             disabled={busy}
-            aria-label="文档源码"
+            aria-label={t("文档源码", "Document source")}
           />
         </article>
 
@@ -640,14 +666,14 @@ c&=d
                 <Eye size={16} />
               </span>
               <div>
-                <strong>Word 结构预览</strong>
-                <small>公式卡片可单独调整行内/行间、编号和字号</small>
+                <strong>{t("Word 结构预览", "Word structure preview")}</strong>
+                <small>{t("公式卡片可单独调整行内/行间、编号和字号", "Adjust inline/display mode, numbering, and font size on each formula card")}</small>
               </div>
             </div>
-            <div className="doc-import-preview-counts" aria-label="预览统计">
-              <span>{blocks.length} 块</span>
-              <span>{textCharacters} 字</span>
-              <span>{formulas} 公式</span>
+            <div className="doc-import-preview-counts" aria-label={t("预览统计", "Preview statistics")}>
+              <span>{blocks.length} {t("块", "blocks")}</span>
+              <span>{textCharacters} {t("字", "characters")}</span>
+              <span>{formulas} {t("公式", "formulas")}</span>
             </div>
           </div>
           <div className="doc-import-preview-scroll">
@@ -655,8 +681,8 @@ c&=d
               {!blocks.length ? (
                 <div className="document-import-empty">
                   <FileText size={34} />
-                  <strong>等待文档内容</strong>
-                  <span>在左侧粘贴内容后，这里会实时生成 Word 结构预览。</span>
+                  <strong>{t("等待文档内容", "Waiting for document content")}</strong>
+                  <span>{t("在左侧粘贴内容后，这里会实时生成 Word 结构预览。", "Paste content on the left and a live Word structure preview appears here.")}</span>
                 </div>
               ) : (
                 blocks.map((block, index) =>
@@ -679,7 +705,7 @@ c&=d
                       className={`document-import-formula-card is-${block.displayMode}`}
                     >
                       <header>
-                        <span>公式 {index + 1}</span>
+                        <span>{t("公式", "Formula")} {index + 1}</span>
                         <div>
                           <select
                             value={block.displayMode}
@@ -691,10 +717,10 @@ c&=d
                               })
                             }
                             disabled={busy}
-                            aria-label="公式显示模式"
+                            aria-label={t("公式显示模式", "Formula display mode")}
                           >
-                            <option value="inline">行内公式</option>
-                            <option value="block">行间公式</option>
+                            <option value="inline">{t("行内公式", "Inline formula")}</option>
+                            <option value="block">{t("行间公式", "Display formula")}</option>
                           </select>
                           {block.displayMode === "block" ? (
                             <label className="document-import-number-toggle">
@@ -706,11 +732,11 @@ c&=d
                                 }
                                 disabled={busy}
                               />
-                              <span>编号</span>
+                              <span>{t("编号", "Numbered")}</span>
                             </label>
                           ) : null}
                           <label>
-                            <span>字号</span>
+                            <span>{t("字号", "Font size")}</span>
                             <input
                               type="number"
                               min="1"
@@ -732,7 +758,7 @@ c&=d
                         </div>
                       </header>
                       <div className="document-import-formula-preview">
-                        <FormulaPreviewBoundary message="公式暂时无法预览，请检查 LaTeX。">
+                        <FormulaPreviewBoundary message={t("公式暂时无法预览，请检查 LaTeX。", "The formula cannot be previewed right now. Check the LaTeX.")}>
                           <MathPreview latex={block.latex || "\\placeholder{}"} />
                         </FormulaPreviewBoundary>
                       </div>
@@ -741,7 +767,7 @@ c&=d
                         onChange={(event) => updateFormula(block.id, { latex: event.target.value })}
                         spellCheck={false}
                         disabled={busy}
-                        aria-label="编辑公式 LaTeX"
+                        aria-label={t("编辑公式 LaTeX", "Edit formula LaTeX")}
                       />
                     </article>
                   ),
@@ -761,13 +787,13 @@ c&=d
           ) : (
             <span className="ok">
               <CheckCircle2 size={15} />
-              预览解析正常；点击导入后将切回 Word 并实时显示插入进度。
+              {t("预览解析正常；点击导入后将切回 Word 并实时显示插入进度。", "Preview looks good. After you click Import, the app switches back to Word and shows insertion progress.")}
             </span>
           )}
         </div>
         <div className="doc-import-actions">
           <button type="button" className="doc-import-secondary" onClick={() => void cancel()} disabled={busy}>
-            <X size={16} />取消
+            <X size={16} />{t("取消", "Cancel")}
           </button>
           <button
             type="button"
@@ -776,7 +802,7 @@ c&=d
             disabled={busy || !blocks.length}
           >
             {busy ? <LoaderCircle size={16} className="is-spinning" /> : <Check size={16} />}
-            {busy ? "正在导入…" : "导入到 Word"}
+            {busy ? t("正在导入…", "Importing…") : t("导入到 Word", "Import to Word")}
           </button>
         </div>
       </footer>

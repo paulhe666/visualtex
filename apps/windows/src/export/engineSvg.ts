@@ -13,8 +13,26 @@ import { customSymbolArtworkForClass } from "../math/customSymbolRendering.ts";
 
 type GlyphModule = () => Promise<unknown>;
 
-const MAIN_GLYPHS = import.meta.glob("../../../shared/tex-layout/data/glyphs/*.json", { import: "default" }) as Record<string, GlyphModule>;
-const NTX_GLYPHS = import.meta.glob("../../../shared/tex-layout/data/profiles/ntx/glyphs/*.json", { import: "default" }) as Record<string, GlyphModule>;
+// Node scripts (no Vite: import.meta.env is absent) read the same files from disk
+const IN_VITE = typeof import.meta.env !== "undefined";
+const MAIN_GLYPHS = (IN_VITE
+  ? import.meta.glob("../../../shared/tex-layout/data/glyphs/*.json", { import: "default" })
+  : nodeGlyphModules("../../../shared/tex-layout/data/glyphs/")) as Record<string, GlyphModule>;
+const NTX_GLYPHS = (IN_VITE
+  ? import.meta.glob("../../../shared/tex-layout/data/profiles/ntx/glyphs/*.json", { import: "default" })
+  : nodeGlyphModules("../../../shared/tex-layout/data/profiles/ntx/glyphs/")) as Record<string, GlyphModule>;
+
+function nodeGlyphModules(relativeDirectory: string): Record<string, GlyphModule> {
+  const fs = (globalThis as { process?: { getBuiltinModule?: (id: string) => any } }).process?.getBuiltinModule?.("node:fs");
+  if (!fs) return {};
+  const directory = new URL(relativeDirectory, import.meta.url);
+  const modules: Record<string, GlyphModule> = {};
+  for (const name of fs.readdirSync(directory) as string[]) {
+    if (!name.endsWith(".json")) continue;
+    modules[relativeDirectory + name] = async () => JSON.parse(fs.readFileSync(new URL(name, directory), "utf8"));
+  }
+  return modules;
+}
 
 function byFont(modules: Record<string, GlyphModule>) {
   return new Map(Object.entries(modules).map(([path, load]) => [path.slice(path.lastIndexOf("/") + 1, -".json".length), load]));

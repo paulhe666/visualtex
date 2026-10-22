@@ -15,6 +15,12 @@ export interface SvgExportOptions {
   forceExplicitBlack?: boolean;
   formulaLetterFont?: FormulaLetterFont;
   formulaChineseFont?: FormulaChineseFont;
+  /**
+   * Who draws the image: the editor's layout engine (default; the image is
+   * the editor's formula exactly) or MathJax (MathType OLE objects, whose
+   * alignment geometry is read from MathJax's table structure).
+   */
+  renderer?: "engine" | "mathjax";
 }
 
 export interface SvgExportResult {

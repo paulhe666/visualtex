@@ -55,6 +55,7 @@ import {
   joinFormulaLines,
   useEditorStore,
 } from "../stores/editorStore";
+import { onButtonShortcut } from "../shortcuts/buttonShortcuts";
 import {
   formatFormulaLinesUniversal,
   parseUniversalLatexSourceDraft,
@@ -361,6 +362,12 @@ export function EditorWorkspace({
     writeWorkspacePanelOpen(mode, "source", open);
     setStoredSourceOpen(open);
   };
+  // the button shortcut "show / hide source" (Settings > Keyboard shortcuts)
+  useEffect(() =>
+    onButtonShortcut((action) => {
+      if (action === "toggle-source") setSourceOpen(!sourceOpen);
+    }),
+  );
   const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
   const latexFormatProfile = useEditorStore((state) => state.latexFormatProfile);
   const isEn = language === "en";

@@ -1,10 +1,10 @@
-import { latexToSvg } from "../export/runtime";
+import { latexToSvg } from "../export/runtime.ts";
 import type {
   CustomSymbolMetrics,
   CustomSymbolVectorMatrix,
   CustomSymbolVectorShape,
-} from "./customSymbolTypes";
-import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes";
+} from "./customSymbolTypes.ts";
+import type { CustomSymbolGlyphAsset } from "./customSymbolDesignerTypes.ts";
 
 type Matrix = CustomSymbolVectorMatrix;
 
@@ -335,13 +335,7 @@ function flattenSvg(
   return result;
 }
 
-/**
- * Compile a LaTeX/VisualTeX symbol or short math fragment into safe vector
- * material for the custom-symbol designer. This is intentionally browser-only:
- * DOMParser is used to inspect MathJax's already-sanitized SVG tree and no raw
- * SVG markup is ever persisted.
- */
-export function compileLatexGlyphAsset(sourceLatex: string): CustomSymbolGlyphAsset {
+export async function compileLatexGlyphAsset(sourceLatex: string): Promise<CustomSymbolGlyphAsset> {
   const source = sourceLatex.trim();
   if (!source || source.length > maximumGlyphSourceLength) {
     throw new Error("LaTeX symbol material is empty or too large.");
@@ -349,7 +343,7 @@ export function compileLatexGlyphAsset(sourceLatex: string): CustomSymbolGlyphAs
   if (typeof DOMParser === "undefined") {
     throw new Error("LaTeX glyph compilation requires the VisualTeX browser runtime.");
   }
-  const rendered = latexToSvg(source, {
+  const rendered = await latexToSvg(source, {
     displayMode: false,
     fontSizePt: 12,
     paddingPx: 0,
@@ -360,11 +354,11 @@ export function compileLatexGlyphAsset(sourceLatex: string): CustomSymbolGlyphAs
     "image/svg+xml",
   );
   if (documentNode.querySelector("parsererror")) {
-    throw new Error("MathJax produced SVG that could not be parsed for editing.");
+    throw new Error("VisualTeX core produced SVG that could not be parsed for editing.");
   }
   const svg = documentNode.documentElement;
   if (svg.tagName.toLowerCase() !== "svg") {
-    throw new Error("MathJax did not produce an SVG glyph.");
+    throw new Error("VisualTeX core did not produce an SVG glyph.");
   }
   const svgElement = svg as unknown as SVGSVGElement;
   const viewBox = parseViewBox(svgElement);

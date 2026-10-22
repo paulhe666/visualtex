@@ -237,6 +237,9 @@ fn replacement_for_text(
     let x = parse_svg_number(attributes.get("x"), 0.0);
     let y = parse_svg_number(attributes.get("y"), 0.0);
     let outer_transform = strip_text_orientation_flip(attributes.get("transform"));
+    // The editor engine draws in y-down coordinates (no outer MathJax flip):
+    // its glyph outlines, which are y-up, are flipped here.
+    let y_down = attributes.contains_key("data-visualtex-y-down");
 
     let mut cursor = 0.0_f64;
     let mut paths = String::new();
@@ -299,7 +302,16 @@ fn replacement_for_text(
             format_number(y)
         ));
     }
-    if (scale - 1.0).abs() >= 0.000_000_5 {
+    if y_down {
+        if !local_transform.is_empty() {
+            local_transform.push(' ');
+        }
+        local_transform.push_str(&format!(
+            "scale({},{})",
+            format_number(scale),
+            format_number(-scale)
+        ));
+    } else if (scale - 1.0).abs() >= 0.000_000_5 {
         if !local_transform.is_empty() {
             local_transform.push(' ');
         }
@@ -399,6 +411,15 @@ mod tests {
         assert!(!text.contains("font-family"));
         assert!(text.contains("<path d=\"M"));
         assert!(text.contains("data-visualtex-resolved-font=\"PingFang SC\""));
+    }
+
+    #[test]
+    fn flips_engine_y_down_text_outlines() {
+        let svg = r##"<svg xmlns="http://www.w3.org/2000/svg"><g fill="#111111"><text data-visualtex-output-text-font="engine" data-visualtex-y-down="true" x="12.5" y="20" font-family="&quot;PingFang SC&quot;, sans-serif" font-size="18.5">速</text></g></svg>"##;
+        let output = stabilize_word_svg_font_outlines(svg.as_bytes()).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(!text.contains("<text"));
+        assert!(text.contains("transform=\"translate(12.5,20) scale(0.0185,-0.0185)\""));
     }
 
     #[test]

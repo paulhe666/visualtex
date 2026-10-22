@@ -792,19 +792,19 @@ async function main() {
     );
     process.stdout.write("[custom-symbol-runtime] live update and crisp erase-mask composition verified\n");
 
-    const exportState = await mainClient.evaluate(`(() => {
+    const exportState = await mainClient.evaluate(`(async () => {
       const runtime = window.__visualtexExportRuntime;
       const officeRender = window.__visualtexOfficeRender;
       const registration = window.__visualtexCustomSymbolRegistration;
       const registry = window.__visualtexCustomSymbolRegistry;
       const BS = String.fromCharCode(92);
-      const svg = runtime.latexToSvg(BS + "selfdefa", {
+      const svg = await runtime.latexToSvg(BS + "selfdefa", {
         displayMode: false,
         fontSizePt: 12,
         paddingPx: 0,
         background: "transparent",
       });
-      const word = officeRender.renderOfficeFormulaArtifacts({
+      const word = await officeRender.renderOfficeFormulaArtifacts({
         lines: [{ id: "selfdefa-word", latex: BS + "selfdefa" }],
         codeFormat: "raw",
         displayMode: "inline",
@@ -832,7 +832,7 @@ async function main() {
       let wordNoFallbackRejected = false;
       let wordNoFallbackMessage = "";
       try {
-        officeRender.renderOfficeFormulaArtifacts({
+        await officeRender.renderOfficeFormulaArtifacts({
           lines: [{ id: "selfdefb-word", latex: BS + "selfdefb" }],
           codeFormat: "raw",
           displayMode: "inline",
@@ -843,7 +843,7 @@ async function main() {
         wordNoFallbackRejected = true;
         wordNoFallbackMessage = error instanceof Error ? error.message : String(error);
       }
-      const powerpoint = officeRender.renderOfficeFormulaArtifacts({
+      const powerpoint = await officeRender.renderOfficeFormulaArtifacts({
         lines: [{ id: "selfdefb-powerpoint", latex: BS + "selfdefb" }],
         codeFormat: "raw",
         displayMode: "inline",

@@ -123,8 +123,12 @@ import {
   visualTexAutoExitAfterComposition,
   visualTexAutoExitScriptAfterDirectInput,
   visualTexCaretIsInsideTextRun,
+  visualTexFinalizeSourceWrapper,
+  visualTexFinalizeSourceWrapperOnCaretExit,
   visualTexJudgeInput,
   visualTexNormalizeTextBoundaryMode,
+  visualTexSourceWrapperOwnsAtom,
+  visualTexSyncSourceWrapper,
 } from './keyboard-input';
 
 /** A style read and written by property name */
@@ -188,6 +192,9 @@ export class _Mathfield implements Mathfield, KeyboardDelegateInterface {
   visualTexCompositionStructuralSlot?: any;
   visualTexCompositionStartedInsideText?: boolean;
   visualTexCompositionCommit?: boolean;
+  /** A composition inside a source wrapper: the wrapper and the atom it types after */
+  visualTexCompositionSourceWrapper?: any;
+  visualTexCompositionSourceAfter?: any;
   /** A selection-change notification held back until the input event went out */
   visualTexDeferredSelectionAfterInput?: boolean;
   /** Pointer: the event already handled (field and host both receive it), drag auto-scroll */
@@ -210,7 +217,7 @@ export class _Mathfield implements Mathfield, KeyboardDelegateInterface {
     keystrokes: string[];
     leftSiblings: Atom[];
   }[];
-  inlineShortcutBufferFlushTimer: ReturnType<typeof setTimeout>;
+  inlineShortcutBufferFlushTimer: ReturnType<typeof setTimeout> | 0;
   scientificNotationTimer: ReturnType<typeof setTimeout>;
 
   private blurred: boolean;
@@ -1324,6 +1331,8 @@ If you are using Vue, this may be because you are using the runtime-only build o
 
   onSelectionDidChange(): void {
     const model = this.model;
+    // VisualTeX: a source wrapper the caret left is finished where it is
+    visualTexFinalizeSourceWrapperOnCaretExit(this);
 
     // Keep the content of the keyboard sink in sync with the selection.
     // Safari will not dispatch cut/copy/paste unless there is a DOM selection.
@@ -1488,6 +1497,10 @@ If you are using Vue, this may be because you are using the runtime-only build o
     this.focusBlurInProgress = true;
 
     this.stopCoalescingUndo();
+    // VisualTeX: leaving the field finishes a source wrapper (not during a
+    // composition inside it: its end finishes the wrapper)
+    if (!this.visualTexCompositionSourceWrapper)
+      visualTexFinalizeSourceWrapper(this, { notify: false });
 
     this.blurred = true;
 
@@ -1588,6 +1601,14 @@ If you are using Vue, this may be because you are using the runtime-only build o
     visualTexNormalizeTextBoundaryMode(this);
     this.visualTexCompositionStartedInsideText =
       this.model.mode === "text" && visualTexCaretIsInsideTextRun(this.model);
+    const visualTexSourceWrapper = this.visualTexSourceWrapper;
+    this.visualTexCompositionSourceWrapper =
+      visualTexSourceWrapper && visualTexSourceWrapperOwnsAtom(visualTexSourceWrapper, this.model.at(this.model.position))
+        ? visualTexSourceWrapper
+        : null;
+    this.visualTexCompositionSourceAfter = this.visualTexCompositionSourceWrapper
+      ? this.model.at(this.model.position)
+      : null;
     this.visualTexCompositionState = this.model.getState();
     const visualTexCompositionPlaceholder = this.model.selectionIsPlaceholder
       ? this.model.at(Math.max(this.model.position, this.model.anchor))
@@ -1628,12 +1649,38 @@ If you are using Vue, this may be because you are using the runtime-only build o
       try {
         const visualTexChineseComposition =
           /^[\u3400-\u9fff\uf900-\ufaff，。；：！？、（）【】《》“”‘’\s]+$/.test(composition);
-        if (visualTexChineseComposition) {
+        // the Space that picked a candidate is not part of the text
+        const visualTexCommittedComposition =
+          visualTexChineseComposition && /[^\s]/.test(composition)
+            ? composition.replace(/\s+$/u, "")
+            : composition;
+        const visualTexSourceWrapper = this.visualTexCompositionSourceWrapper;
+        const visualTexSourceAfter = this.visualTexCompositionSourceAfter;
+        if (
+          visualTexSourceWrapper &&
+          this.visualTexSourceWrapper === visualTexSourceWrapper &&
+          visualTexSourceWrapperOwnsAtom(visualTexSourceWrapper, visualTexSourceAfter)
+        ) {
+          // typed inside a source wrapper: the text joins its source
+          const visualTexSourceComposition = visualTexChineseComposition
+            ? "\\text{" + visualTexCommittedComposition + "}"
+            : visualTexCommittedComposition;
+          this.model.position = this.model.offsetOf(visualTexSourceAfter);
+          ModeEditor.insert(this.model, visualTexSourceComposition, {
+            mode: "latex",
+            insertionMode: "replaceSelection",
+            selectionMode: "after"
+          });
+          this.model.mode = "latex";
+          visualTexSyncSourceWrapper(this);
+          this.snapshot("insert-composition");
+          requestUpdate(this);
+        } else if (visualTexChineseComposition) {
           if (this.visualTexCompositionStructuralSlot)
             this.visualTexPendingStructuralCommandSlot =
               this.visualTexCompositionStructuralSlot;
           if (this.visualTexCompositionStartedInsideText) {
-            ModeEditor.insert(this.model, composition, {
+            ModeEditor.insert(this.model, visualTexCommittedComposition, {
               mode: "text",
               insertionMode: "replaceSelection",
               selectionMode: "after",
@@ -1641,7 +1688,7 @@ If you are using Vue, this may be because you are using the runtime-only build o
             });
             this.model.mode = "text";
           } else {
-            ModeEditor.insert(this.model, "\\text{" + composition + "}", {
+            ModeEditor.insert(this.model, "\\text{" + visualTexCommittedComposition + "}", {
               mode: "math",
               format: "latex",
               insertionMode: "replaceSelection",
@@ -1678,7 +1725,11 @@ If you are using Vue, this may be because you are using the runtime-only build o
     }
     this.visualTexCompositionState = null;
     this.visualTexCompositionStructuralSlot = null;
+    this.visualTexCompositionSourceWrapper = null;
+    this.visualTexCompositionSourceAfter = null;
     this.visualTexCompositionStartedInsideText = false;
+    if (this.blurred)
+      visualTexFinalizeSourceWrapper(this, { notify: false });
   }
 
   onCut(ev: ClipboardEvent): void {
