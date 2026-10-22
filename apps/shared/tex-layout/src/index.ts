@@ -236,7 +236,7 @@ export function createVisualTexLayout(data: LayoutData, options: LayoutOptions =
   if (options.pathGlyphs) {
     // text, script and scriptscript sizes, as for the TeX fonts
     const sizes = [10, 7, 5].map((pt) => new PathFont(options.pathGlyphs!, pt * 65536));
-    adapter.fams.set(15, sizes as [PathFont, PathFont, PathFont]);
+    adapter.fams.set(FAM.paths, sizes as [PathFont, PathFont, PathFont]);
     // LaTeX's own definitions (amsmath, esint) take precedence
     adapter.pathOps = new Map([...sizes[0].codes].filter(([cmd]) => !data.templates[cmd]));
   }
