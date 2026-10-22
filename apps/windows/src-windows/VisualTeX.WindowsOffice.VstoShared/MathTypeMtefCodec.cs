@@ -540,7 +540,9 @@ internal static partial class MathTypeMtefCodec
                 token.Name = token.Name.Namespace + "mtext";
                 token.Attribute("mathvariant")?.Remove();
             }
-            else if (token.Name.LocalName == "mo" && value.Length == 1 && char.IsLetter(value[0]))
+            else if (token.Name.LocalName == "mo" && value.Length == 1 && char.IsLetter(value[0])
+                // a modifier letter (U+02C7 caron of \check) is an accent mark
+                && CharUnicodeInfo.GetUnicodeCategory(value[0]) != UnicodeCategory.ModifierLetter)
             {
                 // A letter is an identifier whichever token carries it; MathType
                 // reads it back as an upright mi.
@@ -1047,6 +1049,12 @@ internal static partial class MathTypeMtefCodec
                 if (primeSignature is not null) return primeSignature;
                 if (value.Length > 1 && value.All(char.IsLetter))
                     return CanonicalToken("mi", value, MathMlTokenStyleContract.ResolveEffectiveVariant(element, variant));
+                // A multi-word name (MathJax's \liminf is "lim inf") is stored as
+                // one function run per word with a native space between them.
+                var words = value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                if (words.Length > 1 && words.All(word => word.All(char.IsLetter)))
+                    return string.Concat(words.Select(word => CanonicalToken("mi",
+                        word, MathMlTokenStyleContract.ResolveEffectiveVariant(element, variant))));
                 // CHAR storage splits a pure operator run into scalar glyphs.
                 // Use the same run grammar as font binding, retaining order,
                 // every glyph's variant and the distinction from prose/functions.
@@ -1134,6 +1142,8 @@ internal static partial class MathTypeMtefCodec
                 }
                 if (children.Length < 2) return Children();
                 var over = NormalizeAccentMark(children[1].Value.Trim());
+                // MathType has no U+23DC arc; it stores \overparen as U+2322.
+                if (over == "⏜") over = "⌢";
                 if (IsHorizontalBraceMarker(over, top: true))
                     return "hbrace-top(" + CanonicalizeMathMl(children[0], variant) + ")";
                 var isAccent = ResolveOverAccent(element, children[1]);
@@ -1149,7 +1159,20 @@ internal static partial class MathTypeMtefCodec
                     : CanonicalBinary("sup", children, variant);
             }
             case "munderover":
+            {
+                // as msubsup: an empty limit is no limit (a big operator with an
+                // upper limit only is written with an empty lower slot)
+                if (children.Length >= 3)
+                {
+                    var underSignature = CanonicalizeMathMl(children[1], variant);
+                    var overSignature = CanonicalizeMathMl(children[2], variant);
+                    if (underSignature.Length == 0 && overSignature.Length > 0)
+                        return "sup(" + CanonicalizeScriptBase(children[0], variant) + "," + overSignature + ")";
+                    if (overSignature.Length == 0 && underSignature.Length > 0)
+                        return "sub(" + CanonicalizeScriptBase(children[0], variant) + "," + underSignature + ")";
+                }
                 return CanonicalTernary("subsup", children, variant);
+            }
             case "mfenced":
             {
                 if (TryCanonicalizeMathTypeBinomialFence(element, variant, out var binomial))
@@ -1241,7 +1264,9 @@ internal static partial class MathTypeMtefCodec
                 return content;
             }
             case "mphantom":
-                return "phantom(" + Children() + ")";
+                // MathType has no invisible content: a phantom is only its room,
+                // which EmitPhantomSpace writes as native spaces (not compared).
+                return string.Empty;
             case "mmultiscripts":
             {
                 if (children.Length == 0) return string.Empty;
@@ -4347,8 +4372,10 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
             case "mrow":
             case "semantics":
             case "mpadded":
-            case "mphantom":
                 EmitContainerChildren(element, output, inheritedMathVariant: null);
+                break;
+            case "mphantom":
+                EmitPhantomSpace(element, output);
                 break;
             case "mstyle":
                 EmitContainerChildren(
@@ -5079,8 +5106,9 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
             "∬" => new NativeIntegral(0x02, 2),
             "∭" => new NativeIntegral(0x03, 3),
             "∮" => new NativeIntegral(0x05, 1),
-            "∲" => new NativeIntegral(0x08, 1),
-            "∳" => new NativeIntegral(0x0C, 1),
+            // ∲ ∳ (clockwise contours) are no MathType integral kind: the
+            // template draws a plain ∫ with limits and crashes MathType's
+            // renderer without them. They are written as operator characters.
             _ => default,
         };
         if (integral.VariationKind != 0
@@ -5306,6 +5334,9 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
         if (main is null && lower is null && upper is null
             && TryEmitLoneBigOperator(bigOperator, output))
             return;
+        // MathType's renderer crashes on an upper limit without a lower one;
+        // its own templates write an empty lower slot for that.
+        if (lower is null && upper is not null) lower = new XElement("mrow");
         var variation = (lower is null ? 0 : 0x10)
             | (upper is null ? 0 : 0x20)
             | (lower is null && upper is null
@@ -5410,7 +5441,9 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
     {
         if (element.Name.LocalName is not ("mi" or "mo")) return false;
         var value = element.Value.Trim();
-        if (value.Length <= 1 || !value.All(char.IsLetter)) return false;
+        // one or more words of letters (MathJax's \liminf is "lim inf")
+        var words = value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (value.Length <= 1 || !words.All(word => word.All(char.IsLetter))) return false;
         var movableLimits = string.Equals(
             (string?)element.Attribute("movablelimits"),
             "true",
@@ -5440,8 +5473,20 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
             return;
         }
         var name = operatorElement.Value.Trim();
-        EmitFunctionRun(name, output);
-        if (lower is null && upper is null) return;
+        if (lower is null && upper is null)
+        {
+            EmitFunctionRun(name, output);
+            return;
+        }
+        // The script binds to the preceding object: a multi-word name
+        // ("lim sup") is one LINE so it does not bind to the last word.
+        if (name.Any(char.IsWhiteSpace))
+        {
+            output.AddRange(new byte[] { RecordLine, 0 });
+            EmitFunctionRun(name, output);
+            output.Add(RecordEnd);
+        }
+        else EmitFunctionRun(name, output);
 
         var selector = lower is not null && upper is not null
             ? TemplateSubSup
@@ -5527,15 +5572,41 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
 
     private static void EmitFunctionRun(string name, List<byte> output)
     {
-        var functionScalars = EnumerateBmpScalars(name).ToArray();
-        for (var index = 0; index < functionScalars.Length; index++)
+        // A multi-word name (MathJax's \liminf is "lim inf") is one function
+        // run per word with a native thin space between them: a space CHAR in
+        // the function face would make MathType read the whole name as text.
+        var words = name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        for (var word = 0; word < words.Length; word++)
         {
-            EmitScalar(
-                functionScalars[index],
-                TypefaceFunction,
-                output,
-                functionStart: index == 0);
+            if (word > 0) EmitMathSpace(new XElement("mspace", new XAttribute("width", "0.167em")), output);
+            var functionScalars = EnumerateBmpScalars(words[word]).ToArray();
+            for (var index = 0; index < functionScalars.Length; index++)
+            {
+                EmitScalar(
+                    functionScalars[index],
+                    TypefaceFunction,
+                    output,
+                    functionStart: index == 0);
+            }
         }
+    }
+
+    // MathType has no invisible content; a phantom keeps only its room. Zero
+    // width (\vphantom, \mathstrut) writes nothing; otherwise native spaces of
+    // roughly the content's width (half an em per visible character).
+    private static void EmitPhantomSpace(XElement element, List<byte> output)
+    {
+        if (element.Parent is { } padded && padded.Name.LocalName == "mpadded"
+            && padded.Attribute("width") is { } width
+            && IsZeroMathMlLength(width.Value))
+            return;
+        var em = 0.5 * element.Descendants()
+            .Where(token => !token.HasElements && token.Name.LocalName is "mi" or "mn" or "mo" or "mtext")
+            .Sum(token => token.Value.Trim().Length);
+        for (; em >= 1; em -= 1)
+            EmitMathSpace(new XElement("mspace", new XAttribute("width", "1em")), output);
+        if (em >= 0.25)
+            EmitMathSpace(new XElement("mspace", new XAttribute("width", "0.278em")), output);
     }
 
     private static void EmitTrailingScript(
@@ -6303,13 +6374,12 @@ new(0x0393, false, "Symbol", "Symbol", 0x0393, 0x47, "mi", "Gamma/varGamma"),
         if ((open is "‖" or "||" || string.IsNullOrEmpty(open))
             && (close is "‖" or "||" || string.IsNullOrEmpty(close))
             && probe is "‖" or "||") return TemplateDoubleBar;
-        if ((open == "⌊" || string.IsNullOrEmpty(open))
-            && (close == "⌋" || string.IsNullOrEmpty(close))
-            && probe is "⌊" or "⌋") return TemplateFloor;
-        if ((open == "⌈" || string.IsNullOrEmpty(open))
-            && (close == "⌉" || string.IsNullOrEmpty(close))
-            && probe is "⌈" or "⌉") return TemplateCeiling;
-        if (IntervalEndpoint(open) >= 0 && IntervalEndpoint(close) >= 0)
+        // MathType's renderer crashes on a one-sided floor or ceiling template
+        // and on every interval template but these five endpoint pairs (MTEF
+        // can encode all sixteen); the others are written as plain characters.
+        if (open == "⌊" && close == "⌋") return TemplateFloor;
+        if (open == "⌈" && close == "⌉") return TemplateCeiling;
+        if ((open, close) is ("(", "]") or ("[", ")") or ("[", "[") or ("]", "[") or ("]", "]"))
             return TemplateInterval;
         return null;
     }

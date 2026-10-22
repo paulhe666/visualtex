@@ -31,8 +31,32 @@ public sealed class MathTypeIntervalAndSeparatorTests
         AssertFence(xml, open, close, "x");
     }
 
+    // The endpoint pairs MathType's renderer draws (the other interval
+    // templates crash it), plus the parenthesis and bracket templates.
+    private static readonly string[] RenderableIntervals = { "(]", "[)", "[[", "][", "]]", "()", "[]" };
+
+    public static IEnumerable<object[]> WrittenIntervals() =>
+        Intervals().Where(row => RenderableIntervals.Contains((string)row[0] + (string)row[1]));
+
+    public static IEnumerable<object[]> UnrenderableIntervals() =>
+        Intervals().Where(row => !RenderableIntervals.Contains((string)row[0] + (string)row[1]));
+
     [Theory]
-    [MemberData(nameof(Intervals))]
+    [MemberData(nameof(UnrenderableIntervals))]
+    public void IntervalTheRendererCannotDrawIsNotWrittenAsAnIntervalTemplate(string open, string close, int variation)
+    {
+        var source = "<math><mrow data-mjx-texclass='INNER'><mo data-mjx-texclass='OPEN'>"
+            + open + "</mo><mi>x</mi><mo data-mjx-texclass='CLOSE'>" + close + "</mo></mrow></math>";
+        var native = MathTypeMtefCodec.CreateEquationNative(source, false);
+        var records = native.Mtef.Skip(native.StructureOffset).ToArray();
+        Assert.False(records[2] == 3 && records[4] == 9 && records[5] == variation);
+        // the fence role is lost, so the strict comparison reports it
+        Assert.NotEqual(MathTypeMtefCodec.SemanticSignature(source),
+            MathTypeMtefCodec.SemanticSignature(MathTypeMtefCodec.ReadEquationNativeMathMl(native.EquationNative)));
+    }
+
+    [Theory]
+    [MemberData(nameof(WrittenIntervals))]
     public void ExplicitIntervalRowWritesNativeFence(string open, string close, int variation)
     {
         var source = "<math><mrow data-mjx-texclass='INNER'><mo data-mjx-texclass='OPEN'>"
