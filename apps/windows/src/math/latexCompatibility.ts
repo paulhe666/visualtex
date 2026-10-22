@@ -3,6 +3,7 @@ import {
   EXTENDED_INTEGRAL_SVG_MACROS,
 } from "./extendedIntegralCompatibility.ts";
 import { VISUALTEX_PACKAGE_COMPATIBILITY_MACROS } from "./packageMacroCompatibility.ts";
+import { KERNEL_PARITY_MACROS } from "./kernelParityMacros.generated.ts";
 
 export type VisualTexCompatibilityMacro = string | readonly [replacement: string, argumentCount: number];
 export type VisualTexMathJaxMacro = VisualTexCompatibilityMacro;
@@ -145,14 +146,45 @@ const STANDARD_COMPATIBILITY_MACROS = {
   pico: "\\mathrm{p}",
   femto: "\\mathrm{f}",
   atto: "\\mathrm{a}",
+
+  // Editor commands with their own layout that MathJax lacks. Symbols, named
+  // functions and macro aliases come from KERNEL_PARITY_MACROS instead.
+  overarc: ["\\overparen{#1}", 1] as const,
+  wideparen: ["\\overparen{#1}", 1] as const,
+  overgroup: ["\\overparen{#1}", 1] as const,
+  underarc: ["\\underparen{#1}", 1] as const,
+  undergroup: ["\\underparen{#1}", 1] as const,
+  widecheck: ["\\check{#1}", 1] as const,
+  utilde: ["\\underset{\\sim}{#1}", 1] as const,
+  overleftharpoon: ["\\overset{\\leftharpoonup}{#1}", 1] as const,
+  overrightharpoon: ["\\overset{\\rightharpoonup}{#1}", 1] as const,
+  overlinesegment: ["\\overline{#1}", 1] as const,
+  underlinesegment: ["\\underline{#1}", 1] as const,
+  Overrightarrow: ["\\overset{\\Rightarrow}{#1}", 1] as const,
+  xleftrightarrows: ["\\overset{#1}{\\leftrightarrows}", 1] as const,
+  pdiff: ["\\frac{\\partial #1}{\\partial #2}", 2] as const,
+  textsc: ["\\text{#1}", 1] as const,
+  textsl: ["\\textit{#1}", 1] as const,
+  textmd: ["\\text{#1}", 1] as const,
+  emph: ["\\textit{#1}", 1] as const,
+  bold: ["\\mathbf{#1}", 1] as const,
+  enskip: "\\enspace",
+  ensuremath: ["#1", 1] as const,
 } satisfies Record<string, VisualTexCompatibilityMacro>;
 
-export const VISUALTEX_MATHML_MACROS = {
+/** The handwritten aliases; scripts/generate_mathjax_kernel_parity.mts adds the rest. */
+export const VISUALTEX_HANDWRITTEN_MATHML_MACROS = {
   ...EXTENDED_INTEGRAL_MATHML_MACROS,
   ...STANDARD_COMPATIBILITY_MACROS,
 } satisfies Record<string, VisualTexCompatibilityMacro>;
 
+export const VISUALTEX_MATHML_MACROS = {
+  ...KERNEL_PARITY_MACROS,
+  ...VISUALTEX_HANDWRITTEN_MATHML_MACROS,
+} satisfies Record<string, VisualTexCompatibilityMacro>;
+
 export const VISUALTEX_SVG_MACROS = {
+  ...KERNEL_PARITY_MACROS,
   ...EXTENDED_INTEGRAL_SVG_MACROS,
   ...STANDARD_COMPATIBILITY_MACROS,
 } satisfies Record<string, VisualTexCompatibilityMacro>;
@@ -655,6 +687,19 @@ function normalizeSiunitxConflictingUnitCommands(source: string) {
   return output;
 }
 
+// MathJax has no extensible form of the semantic brackets ⟦ ⟧ that the editor
+// accepts after \left, \right and \big...: keep them, unscaled, and keep each
+// \left/\right paired with an empty delimiter.
+function normalizeUnscalableDelimiters(source: string) {
+  return source
+    .replace(/\\left\s*\\(llbracket|rrbracket)(?![A-Za-z])/g, (_m, name: string) =>
+      `\\left.\\math${name === "llbracket" ? "open" : "close"}{${name === "llbracket" ? "⟦" : "⟧"}}`)
+    .replace(/\\right\s*\\(llbracket|rrbracket)(?![A-Za-z])/g, (_m, name: string) =>
+      `\\math${name === "llbracket" ? "open" : "close"}{${name === "llbracket" ? "⟦" : "⟧"}}\\right.`)
+    .replace(/\\[Bb]igg?[lrm]?\s*\\(llbracket|rrbracket)(?![A-Za-z])/g, (_m, name: string) =>
+      `\\math${name === "llbracket" ? "open" : "close"}{${name === "llbracket" ? "⟦" : "⟧"}}`);
+}
+
 /** Normalize supported package syntax into standard LaTeX primitives. */
 export function normalizePackageLatexCommands(source: string) {
   return expandFixedCompatibilityMacros(
@@ -662,7 +707,9 @@ export function normalizePackageLatexCommands(source: string) {
       normalizeMatrixQuantityCommands(
         normalizeSiunitxConflictingUnitCommands(
           normalizeQtyCommands(
-            normalizeFlexiblePackageLatexCommands(stripSiunitxOptions(source)),
+            normalizeFlexiblePackageLatexCommands(
+              normalizeUnscalableDelimiters(stripSiunitxOptions(source)),
+            ),
           ),
         ),
       ),

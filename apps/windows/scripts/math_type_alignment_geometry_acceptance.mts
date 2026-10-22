@@ -131,7 +131,7 @@ async function main() {
         const runtime = await import('${baseUrl}/src/export/runtime.ts');
         const geometry = await import('${baseUrl}/src/office/shared/mathTypeAlignmentGeometry.ts');
         const source = ${JSON.stringify(exactUserAligned)};
-        const svg = runtime.latexToSvg(source, {
+        const svg = await runtime.latexToSvg(source, {
           displayMode: true,
           fontSizePt: 12,
           paddingPx: 0,
@@ -139,8 +139,9 @@ async function main() {
           paddingYPx: 6,
           background: 'transparent',
           formulaLetterFont: 'times',
+          renderer: 'mathjax',
         });
-        const rawMathMl = runtime.latexToMathMl(source, true);
+        const rawMathMl = await runtime.latexToMathMl(source, true);
         const annotatedMathMl = geometry.annotateMathTypeAlignmentGeometry(
           rawMathMl,
           svg.svg,
