@@ -146,6 +146,9 @@ public sealed partial class ThisAddIn
         var cancelled = false;
         string? stoppedReason = null;
         Exception? failure = null;
+        // Failures while closing staging / restoring the view: reported with
+        // the outcome, never swallowed.
+        var cleanupProblems = new List<string>();
         PowerPointOperationLog.Write($"format-conversion-start source={request.SourceFamily} target={request.TargetMode} scope={request.Scope}");
         // The outer finally owns the operation gate and the progress window, so
         // every early return (nothing found, confirmation declined) releases them.
@@ -206,12 +209,24 @@ public sealed partial class ThisAddIn
                 var work = new List<PowerPointConversionUnit>();
                 foreach (var unit in plan.Units)
                 {
-                    var preparationFailure = unit.Items
-                        .Select(item => prepared.TryGetValue(item.Id, out var formula) ? formula.Failure : "missing")
-                        .FirstOrDefault(value => value is not null);
-                    if (preparationFailure is null) work.Add(unit);
-                    else plan.Skips.Add(new PowerPointConversionSkip(
-                        PowerPointConversionSkipReason.Failed, unit.SlideIndex, unit.Items.Count, preparationFailure));
+                    var failed = unit.Items
+                        .Select(item => (Item: item, Failure: prepared.TryGetValue(item.Id, out var formula)
+                            ? formula.Failure
+                            : T("VisualTeX 没有为该公式准备转换结果（内部错误：准备阶段遗漏了该公式）。",
+                                "VisualTeX prepared no conversion result for this equation (internal error: the preparation step skipped it).")))
+                        .Where(entry => entry.Failure is not null)
+                        .ToList();
+                    if (failed.Count == 0) work.Add(unit);
+                    else if (failed.Count == 1)
+                        plan.Skips.Add(new PowerPointConversionSkip(
+                            PowerPointConversionSkipReason.Failed, unit.SlideIndex, unit.Items.Count, failed[0].Failure,
+                            failed[0].Item.Latex));
+                    else
+                        // a text box with several equations is converted as a
+                        // whole: name each equation that failed and why
+                        plan.Skips.Add(new PowerPointConversionSkip(
+                            PowerPointConversionSkipReason.Failed, unit.SlideIndex, unit.Items.Count,
+                            string.Join(T("；", "; "), failed.Select(entry => Shorten(entry.Item.Latex) + T("：", ": ") + entry.Failure))));
                 }
                 total = work.Sum(unit => unit.Items.Count);
                 if (token.IsCancellationRequested) throw new OperationCanceledException(token);
@@ -232,7 +247,7 @@ public sealed partial class ThisAddIn
                     staging = await dispatcher.InvokeAsync(() => service.StageMathTypeConversions(formulas)).ConfigureAwait(false);
                 }
 
-                var consecutiveFailures = 0;
+                var consecutiveFailures = new List<PowerPointConversionSkip>();
                 var next = 0;
                 while (next < work.Count)
                 {
@@ -281,29 +296,54 @@ public sealed partial class ThisAddIn
                         if (result.Converted)
                         {
                             converted += unit.Items.Count;
-                            consecutiveFailures = 0;
+                            consecutiveFailures.Clear();
                             foreach (var shapeId in result.ReplacementShapeIds) replacements.Add((result.SlideId, shapeId));
                             continue;
                         }
                         var reason = result.Reason ?? PowerPointConversionSkipReason.Failed;
-                        plan.Skips.Add(new PowerPointConversionSkip(reason, unit.SlideIndex, unit.Items.Count, result.Detail));
+                        var detail = result.Detail;
+                        if (string.IsNullOrWhiteSpace(detail) && reason == PowerPointConversionSkipReason.Failed)
+                            detail = T("写入替换对象失败，但 PowerPoint 没有给出原因。",
+                                "Writing the replacement failed, but PowerPoint gave no reason.");
+                        var skip = new PowerPointConversionSkip(reason, unit.SlideIndex, unit.Items.Count, detail,
+                            PowerPointFormulaService.UnitLatex(unit));
+                        plan.Skips.Add(skip);
                         PowerPointOperationLog.Write(
-                            $"format-conversion-unit-not-converted slide={unit.SlideIndex} shape={unit.ShapeId} reason={reason} detail={result.Detail}");
-                        if (reason == PowerPointConversionSkipReason.Failed) consecutiveFailures++;
+                            $"format-conversion-unit-not-converted slide={unit.SlideIndex} shape={unit.ShapeId} reason={reason} detail={detail}");
+                        if (reason == PowerPointConversionSkipReason.Failed) consecutiveFailures.Add(skip);
                     }
-                    if (consecutiveFailures >= StopAfterConsecutiveFailures)
+                    if (consecutiveFailures.Count >= StopAfterConsecutiveFailures)
                     {
+                        // name the failures that stopped the batch, not just "several"
                         stoppedReason = T(
-                            "连续多个公式转换失败，为避免继续出错已停止。",
-                            "Several equations in a row failed to convert, so the conversion stopped.");
+                                $"连续 {consecutiveFailures.Count} 个公式转换失败，为避免继续出错已停止：",
+                                $"{consecutiveFailures.Count} equations in a row failed to convert, so the conversion stopped:")
+                            + "\r\n" + string.Join("\r\n", consecutiveFailures.Select(failed =>
+                                "  – " + PowerPointConversionRules.FailureLine(failed, OfficePluginLanguage.IsEnglish)));
                         break;
                     }
                 }
                 progress.Report(T("正在完成…", "Finishing…"), attempted, total);
             }
-            catch (OperationCanceledException) when (!lifetimeToken.IsCancellationRequested)
+            // Only the user's Stop (the progress window's button) is "stopped".
+            // Timeouts, failed batches and anything VisualTeX or Office cancelled
+            // on its own are errors with their specific reason.
+            catch (Exception error) when (!lifetimeToken.IsCancellationRequested
+                && progress?.IsCancellationRequested == true
+                && IsCancellation(error))
             {
                 cancelled = true;
+                // a render batch whose release also failed: keep that failure
+                if (error is AggregateException aggregate)
+                    foreach (var other in aggregate.Flatten().InnerExceptions.Where(inner => inner is not OperationCanceledException))
+                        cleanupProblems.Add(OfficeErrorText.Describe(other));
+            }
+            catch (OperationCanceledException error) when (!lifetimeToken.IsCancellationRequested)
+            {
+                PowerPointOperationLog.Write($"format-conversion-cancelled-without-stop error={error}");
+                failure = new InvalidOperationException(T(
+                    "操作在中途被取消，但并没有点击“停止”（VisualTeX 或 Office 中断了正在进行的请求）。请重试；如反复出现，请重启 VisualTeX。",
+                    "The operation was cancelled part-way although Stop was not clicked (VisualTeX or Office interrupted a request in progress). Try again; if this keeps happening, restart VisualTeX."));
             }
             catch (Exception error)
             {
@@ -316,14 +356,24 @@ public sealed partial class ThisAddIn
                 {
                     var closing = staging;
                     try { await dispatcher.InvokeAsync(() => { service.CloseMathTypeStaging(closing); return true; }).ConfigureAwait(false); }
-                    catch { }
+                    catch (Exception error)
+                    {
+                        PowerPointOperationLog.Write($"format-conversion-staging-close-failed error={error}");
+                        cleanupProblems.Add(T("关闭 MathType 临时演示文稿失败：", "Closing the temporary MathType presentation failed: ")
+                            + OfficeErrorText.Describe(error));
+                    }
                 }
                 if (started && plan is not null)
                 {
                     var finishing = plan;
                     var selected = replacements.ToArray();
                     try { await dispatcher.InvokeAsync(() => { service.FinishFormulaConversion(finishing, selected); return true; }).ConfigureAwait(false); }
-                    catch { }
+                    catch (Exception error)
+                    {
+                        PowerPointOperationLog.Write($"format-conversion-finish-failed error={error}");
+                        cleanupProblems.Add(T("恢复原来的幻灯片视图和选择失败：", "Restoring the original slide view and selection failed: ")
+                            + OfficeErrorText.Describe(error));
+                    }
                 }
                 try
                 {
@@ -358,7 +408,7 @@ public sealed partial class ThisAddIn
                 Skips = plan?.Skips.ToArray() ?? Array.Empty<PowerPointConversionSkip>(),
             };
             await ReportConversionOutcomeAsync(dispatcher, progress, owner, title, plan, targetLabel, english,
-                converted, attempted, total, started, cancelled, stoppedReason, failure).ConfigureAwait(false);
+                converted, attempted, total, started, cancelled, stoppedReason, failure, cleanupProblems).ConfigureAwait(false);
         }
         finally
         {
@@ -394,6 +444,12 @@ public sealed partial class ThisAddIn
         else progress.RequestCancel();
     }
 
+    // A cancellation, possibly wrapped with a failed release of the batch.
+    private static bool IsCancellation(Exception error) =>
+        error is OperationCanceledException
+        || error is AggregateException aggregate
+            && aggregate.Flatten().InnerExceptions.FirstOrDefault() is OperationCanceledException;
+
     private static bool IsAcceptanceRun =>
         string.Equals(Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"), "1", StringComparison.Ordinal);
 
@@ -411,10 +467,15 @@ public sealed partial class ThisAddIn
         bool started,
         bool cancelled,
         string? stoppedReason,
-        Exception? failure)
+        Exception? failure,
+        IReadOnlyList<string> cleanupProblems)
     {
         var skips = plan?.Skips ?? new List<PowerPointConversionSkip>();
         var skipText = PowerPointConversionRules.DescribeSkips(skips, english);
+        var cleanupText = cleanupProblems.Count == 0
+            ? string.Empty
+            : "\r\n\r\n" + T("另外，收尾时出错：", "In addition, finishing up failed:") + "\r\n"
+                + string.Join("\r\n", cleanupProblems.Select(problem => "• " + problem));
         if (failure is not null)
         {
             var detail = OfficePluginLanguage.FormatOperationError(failure, "公式格式转换失败", "Equation format conversion failed");
@@ -422,6 +483,11 @@ public sealed partial class ThisAddIn
                 ? detail + "\r\n\r\n" + T($"出错前已转换 {converted} 个公式，其余公式保持原样。",
                     $"{converted} equation(s) were converted before the error; the rest were left unchanged.")
                 : detail + "\r\n\r\n" + T("演示文稿中的公式保持原样。", "The equations in the presentation were left unchanged.");
+            // failures already found before the error keep their own reasons
+            if (skipText.Length > 0)
+                text += "\r\n\r\n" + T("出错前已发现以下公式无法转换：", "Before the error, these equations could not be converted:")
+                    + "\r\n" + skipText;
+            text += cleanupText;
             progress?.Dispose();
             SetStatus(detail);
             await ShowConversionMessageAsync(dispatcher, owner, text, title, MessageBoxIcon.Error).ConfigureAwait(false);
@@ -442,18 +508,19 @@ public sealed partial class ThisAddIn
                 $"{converted} equation(s) were converted; {Math.Max(0, total - attempted)} were not attempted.");
         else
             headline = T($"已将 {converted} 个公式转换为 {targetLabel}。", $"Converted {converted} equation(s) to {targetLabel}.");
-        SetStatus(headline);
+        // the status bar shows one line; the message box below has the rest
+        SetStatus(headline.Split(new[] { "\r\n" }, StringSplitOptions.None)[0]);
 
-        if (!cancelled && stoppedReason is null && skips.Count == 0 && started)
+        if (!cancelled && stoppedReason is null && skips.Count == 0 && cleanupProblems.Count == 0 && started)
         {
             // Nothing needs the user's attention: show the result in place.
             progress?.Complete(headline, 2200);
             return;
         }
         progress?.Dispose();
-        var body = skipText.Length == 0
+        var body = (skipText.Length == 0
             ? headline
-            : headline + "\r\n\r\n" + T("以下公式未转换：", "Not converted:") + "\r\n" + skipText;
+            : headline + "\r\n\r\n" + T("以下公式未转换：", "Not converted:") + "\r\n" + skipText) + cleanupText;
         var icon = converted == 0 && !cancelled ? MessageBoxIcon.Warning : MessageBoxIcon.Information;
         await ShowConversionMessageAsync(dispatcher, owner, body, title, icon).ConfigureAwait(false);
     }
@@ -576,7 +643,7 @@ public sealed partial class ThisAddIn
                 for (var index = 0; index < chunk.Count; index++)
                 {
                     var session = batch.Items.FirstOrDefault(item => item.Id == requests[index].Id)?.Session;
-                    ApplyRenderedTemplate(client, chunk[index], session, target, prepared, temporaryFiles, plan.DocumentId);
+                    ApplyRenderedTemplate(client, chunk[index], session, target, prepared, temporaryFiles, plan.DocumentId, token);
                     rendered += chunk[index].Count;
                 }
                 progress.Report(T("正在渲染公式…", "Rendering equations…"), rendered, toRender.Count);
@@ -666,7 +733,8 @@ public sealed partial class ThisAddIn
         string target,
         Dictionary<string, PreparedPowerPointConversion> prepared,
         List<string> temporaryFiles,
-        string documentId)
+        string documentId,
+        CancellationToken token)
     {
         void FailAll(string reason)
         {
@@ -679,22 +747,37 @@ public sealed partial class ThisAddIn
             return;
         }
         if (session.Status == "cancelled" || session.ExplicitCancel)
-            throw new OperationCanceledException();
+        {
+            // the user's Stop ends the batch; VisualTeX cancelling one formula
+            // on its own is that formula's failure
+            token.ThrowIfCancellationRequested();
+            var reason = T(
+                "VisualTeX 在完成前取消了该公式的渲染（并非点击了“停止”）。",
+                "VisualTeX cancelled rendering this equation before it finished (Stop was not clicked).");
+            if (!string.IsNullOrWhiteSpace(session.Error) && session.Error != "[object Object]")
+                reason += " " + OfficeErrorText.DescribeItemError(session.Error);
+            FailAll(reason);
+            return;
+        }
         if (session.Status == "failed")
         {
-            var detail = string.IsNullOrWhiteSpace(session.Error) || session.Error == "[object Object]"
-                ? T("VisualTeX 无法渲染该公式。", "VisualTeX could not render this equation.")
-                : session.Error!.Trim();
-            FailAll(detail + T("（公式：", " (equation: ") + Shorten(group[0].Latex) + T("）", ")"));
+            FailAll(OfficeErrorText.DescribeItemError(session.Error));
             return;
         }
         var export = session.ExportResult;
-        if (export is null || string.IsNullOrWhiteSpace(export.MathMl))
+        if (export is null)
         {
-            FailAll(T("VisualTeX 没有生成该公式的 MathML。", "VisualTeX produced no MathML for this equation."));
+            FailAll(T($"VisualTeX 没有返回该公式的导出结果（会话状态：{session.Status}）。",
+                $"VisualTeX returned no export result for this equation (session status: {session.Status})."));
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(export.MathMl))
+        {
+            FailAll(T("VisualTeX 为该公式生成的结果缺少 MathML。", "VisualTeX's result for this equation has no MathML."));
             return;
         }
 
+        var stage = T("准备转换结果", "preparing the result");
         try
         {
             switch (target)
@@ -705,10 +788,13 @@ public sealed partial class ThisAddIn
                     return;
                 case FormulaOleContract.NativeOleMode:
                 {
+                    stage = T("保存 PNG 图片", "saving the PNG picture");
                     var png = client.MaterializePng(session);
                     temporaryFiles.Add(png);
+                    stage = T("保存 SVG 图片", "saving the SVG picture");
                     var svg = client.MaterializeSvg(session);
                     temporaryFiles.Add(svg);
+                    stage = T("生成 OLE 矢量预览（EMF）", "creating the OLE vector preview (EMF)");
                     var emf = OfficeOlePreview.CreateVectorEmfFromSvg(svg, export.Width, export.Height, usePowerPointStablePhysicalFrame: true);
                     temporaryFiles.Add(emf);
                     foreach (var item in group)
@@ -722,6 +808,7 @@ public sealed partial class ThisAddIn
                 }
                 default:
                 {
+                    stage = T("保存 SVG 图片", "saving the SVG picture");
                     var svg = client.MaterializeSvg(session);
                     temporaryFiles.Add(svg);
                     foreach (var item in group)
@@ -736,9 +823,12 @@ public sealed partial class ThisAddIn
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
-            FailAll(error.Message);
+            FailAll(T($"{stage}失败：", $"{Capitalize(stage)} failed: ") + OfficeErrorText.Describe(error));
         }
     }
+
+    private static string Capitalize(string text) =>
+        text.Length > 0 && char.IsLower(text[0]) ? char.ToUpperInvariant(text[0]) + text.Substring(1) : text;
 
     private static void AssignVisualTeXSession(
         PowerPointConversionItem item,
@@ -808,10 +898,13 @@ public sealed partial class ThisAddIn
             }
             catch (Exception error)
             {
-                formula.Failure = error.Message + T("（公式：", " (equation: ") + Shorten(item.Latex) + T("）", ")");
+                formula.Failure = T("写成 MathType 公式失败：", "Writing the equation as MathType failed: ")
+                    + OfficeErrorText.Describe(error);
             }
         }
         if (inputs.Count == 0) return;
+        // The whole batch needs the renderer service and MathType's fonts; both
+        // are stated as such. Anything else fails per formula, with its reason.
         if (!MathTypeNativePreviewRenderer.IsAvailable)
             throw new InvalidOperationException(MathTypeNativePreviewRenderer.UnavailableMessage);
 
@@ -819,15 +912,16 @@ public sealed partial class ThisAddIn
         try
         {
             if (fontsMissing) throw new InvalidOperationException(MathTypeNativePreviewRenderer.FontsUnavailableMessage);
-            if (previews.Count == 0) throw new InvalidOperationException(MathTypeNativePreviewRenderer.FailureMessage);
             foreach (var pair in inputs)
             {
                 var formula = prepared[pair.Key];
                 if (!previews.TryGetValue(pair.Key, out var preview))
                 {
-                    formula.Failure = previewFailures.TryGetValue(pair.Key, out var reason)
-                        ? MathTypeNativePreviewRenderer.IncompleteMessage + "（原因：" + reason + "）"
-                        : MathTypeNativePreviewRenderer.IncompleteMessage;
+                    formula.Failure = previewFailures.TryGetValue(pair.Key, out var reason) && !string.IsNullOrWhiteSpace(reason)
+                        ? T("MathType 排版预览生成失败：", "Rendering the MathType preview failed: ")
+                            + OfficePluginLanguage.SafeErrorMessage(reason)
+                        : T("MathType 排版服务没有返回该公式的预览（重试后仍然缺失），也没有说明原因。",
+                            "The MathType renderer returned no preview for this equation (still missing after retrying) and gave no reason.");
                     continue;
                 }
                 try
@@ -842,7 +936,8 @@ public sealed partial class ThisAddIn
                 }
                 catch (Exception error)
                 {
-                    formula.Failure = error.Message;
+                    formula.Failure = T("把 MathType 预览转换为 PowerPoint 图片（EMF）失败：",
+                        "Converting the MathType preview to a PowerPoint picture (EMF) failed: ") + OfficeErrorText.Describe(error);
                 }
             }
         }
@@ -880,6 +975,9 @@ public sealed partial class ThisAddIn
             },
             new NativePreviewRetryOptions
             {
+                // Waits between retry passes. It throws only when the batch token
+                // is cancelled (the user's Stop, or the add-in shutting down);
+                // a pass that ends without progress is never a cancellation.
                 Pause = pause =>
                 {
                     if (token.WaitHandle.WaitOne(pause)) token.ThrowIfCancellationRequested();

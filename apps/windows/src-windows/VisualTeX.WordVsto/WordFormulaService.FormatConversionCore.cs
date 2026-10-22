@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -38,8 +39,7 @@ internal sealed partial class WordFormulaService
         try
         {
             document = _application.ActiveDocument
-                ?? throw new InvalidOperationException(
-                    "No active Word document.");
+                ?? throw new InvalidOperationException(NoActiveDocumentMessage);
             EnsureWritable(document);
 
             scope = wholeDocument
@@ -110,14 +110,29 @@ internal sealed partial class WordFormulaService
             foreach (var host in hosts
                          .OrderBy(item => item.Range.Start))
             {
-                ReportOperationProgress("正在读取源公式…", plan.Targets.Count, hosts.Count);
-                var target = CaptureCoreConversionTarget(
-                    document,
-                    host,
-                    sourceKind,
-                    targetKind,
-                    targetMathTypeNumberPosition,
-                    mathTypeSemantics is null ? null : mathTypeSemantics[host]);
+                ReportOperationProgress(OfficePluginLanguage.Text("正在读取源公式…", "Reading source equations…"), plan.Targets.Count, hosts.Count);
+                WordFormulaFormatConversionTarget target;
+                try
+                {
+                    target = CaptureCoreConversionTarget(
+                        document,
+                        host,
+                        sourceKind,
+                        targetKind,
+                        targetMathTypeNumberPosition,
+                        mathTypeSemantics is null ? null : mathTypeSemantics[host]);
+                }
+                catch (Exception error) when (error is not OperationCanceledException)
+                {
+                    // The LaTeX is not known yet: name the formula by its order
+                    // and its Word character position.
+                    var ordinal = plan.Targets.Count + 1;
+                    throw new InvalidOperationException(
+                        OfficePluginLanguage.Text(
+                            $"无法读取第 {ordinal} 个源公式（Word 字符位置 {host.Range.Start}）：{OfficeErrorText.Describe(error)}",
+                            $"Could not read source equation {ordinal} (Word character position {host.Range.Start}): {OfficeErrorText.Describe(error)}"),
+                        error);
+                }
                 plan.Targets.Add(target);
             }
 
@@ -160,8 +175,7 @@ internal sealed partial class WordFormulaService
         try
         {
             document = _application.ActiveDocument
-                ?? throw new InvalidOperationException(
-                    "No active Word document.");
+                ?? throw new InvalidOperationException(NoActiveDocumentMessage);
             EnsureWritable(document);
             EnsureSourceDocument(
                 document,
@@ -171,12 +185,24 @@ internal sealed partial class WordFormulaService
                 return new WordFormulaFormatConversionResult();
 
             var missing = plan.Targets
-                .Where(target => !prepared.ContainsKey(target.Id))
-                .Select(target => target.Id)
+                .Select((target, index) => (Target: target, Ordinal: index + 1))
+                .Where(item => !prepared.ContainsKey(item.Target.Id))
                 .ToArray();
             if (missing.Length > 0)
-                throw new InvalidDataException(
-                    "Prepared conversion output is missing for one or more formulas.");
+            {
+                var named = string.Join(
+                    OfficePluginLanguage.Text("；", "; "),
+                    missing.Take(10).Select(item => OfficePluginLanguage.Text(
+                        $"第 {item.Ordinal} 个公式（{WordFormulaRenderException.Excerpt(item.Target.Latex, 80)}）",
+                        $"equation {item.Ordinal} ({WordFormulaRenderException.Excerpt(item.Target.Latex, 80)})")));
+                if (missing.Length > 10)
+                    named += OfficePluginLanguage.Text(
+                        $"，另有 {missing.Length - 10} 个",
+                        $", and {missing.Length - 10} more");
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    $"{missing.Length} 个公式缺少已准备好的转换结果：{named}。",
+                    $"{missing.Length} equation(s) have no prepared conversion output: {named}."));
+            }
 
             var sourceKind =
                 ObjectModeToHostKind(plan.SourceMode);
@@ -246,139 +272,153 @@ internal sealed partial class WordFormulaService
             // same synchronous UI turn before starting the one batch record.
             foreach (var target in plan.Targets.OrderByDescending(item => item.SourceStart))
             {
-                ReportOperationProgress("正在核对源公式并准备替换…", resolvedSources.Count, plan.Targets.Count);
-                using var preparationMetric = WordOperationMetrics.Measure("FormatConversion.PrepareBoundSource." + sourceKind + "To" + targetKind);
-                WordFormulaHostDescriptor source;
-                if (sourceKind == WordFormulaHostKind.MathType)
+                try
                 {
-                    Range? captured = null;
-                    try
+                    ReportOperationProgress(OfficePluginLanguage.Text("正在核对源公式并准备替换…", "Checking source equations and preparing replacements…"), resolvedSources.Count, plan.Targets.Count);
+                    using var preparationMetric = WordOperationMetrics.Measure("FormatConversion.PrepareBoundSource." + sourceKind + "To" + targetKind);
+                    WordFormulaHostDescriptor source;
+                    if (sourceKind == WordFormulaHostKind.MathType)
                     {
-                        captured = WordFormulaOperationLocator.ResolveCapturedRange(document, target.SourceObjectId);
-                        var binding = WordMathTypeHostAdapter.BindCapturedHost(_application, document, captured);
-                        nativeSources.Add(target.Id, binding);
-                        source = binding.Host;
-                        if (targetKind == WordFormulaHostKind.VisualTeX && target.Numbered)
-                        {
-                            // MathType's references (GOTOBUTTON/REF) name the
-                            // ZEqnNum bookmark on its number, which is deleted
-                            // with the MathType paragraph. Keep those names.
-                            referencedBookmarks ??= MathTypeEquationReferences.CaptureReferencedBookmarks(document);
-                            var aliases = referencedBookmarks.Count == 0
-                                ? Array.Empty<EquationReferenceBookmarkAlias>()
-                                : MathTypeEquationReferences.CaptureFormatConversionAliasesFromMathType(
-                                    document, binding.MathTypeShape!, referencedBookmarks);
-                            if (aliases.Count > 0)
-                                mathTypeNumberAliases.Add(target.Id, aliases);
-                        }
-                        var semanticFont = FormulaFontSize.ResolveSemanticFontSize(source.Metadata!);
-                        var currentFont = source.Display
-                            ? semanticFont
-                            : ReadMathTypeInlinePresentationFontSize(binding.MathTypeShape!) ?? semanticFont;
-                        // One fresh read proves the input that produced the
-                        // prepared render; it also supplies the physical owner
-                        // consumed below. No second resolver/decoder is needed.
-                        if (!string.Equals(binding.MathMl, target.SourceMathMl, StringComparison.Ordinal)
-                            || !string.Equals(source.DisplayMode, target.DisplayMode, StringComparison.Ordinal)
-                            || source.Numbering.Numbered != target.Numbered
-                            || semanticFont != FormulaFontSize.ResolveSemanticFontSize(target.Metadata)
-                            || currentFont != target.FontSizePt)
-                        {
-                            WordDoubleClickHook.TraceMessage(
-                                $"format-conversion-source-changed start={target.SourceStart} mathMlEqual={string.Equals(binding.MathMl, target.SourceMathMl, StringComparison.Ordinal)} "
-                                + $"display={target.DisplayMode}/{source.DisplayMode} numbered={target.Numbered}/{source.Numbering.Numbered} "
-                                + $"semanticFont={FormulaFontSize.ResolveSemanticFontSize(target.Metadata)}/{semanticFont} presentationFont={target.FontSizePt}/{currentFont}");
-                            throw new InvalidOperationException("The MathType source changed while its conversion was being prepared.");
-                        }
-                    }
-                    finally { Release(captured); }
-                }
-                else if (sourceKind == WordFormulaHostKind.VisualTeX)
-                {
-                    Range? captured = null;
-                    try
-                    {
-                        captured = WordFormulaOperationLocator.ResolveCapturedRange(document, target.SourceObjectId);
-                        var binding = WordNativeConversionSource.BindVisualTeX(document, captured);
-                        nativeSources.Add(target.Id, binding);
-                        source = binding.Host;
-                        var metadata = source.Metadata!;
-                        var numbered = source.Display && (metadata.Numbered || source.Numbering.Numbered);
-                        if (!string.Equals(metadata.FormulaId, target.SourceFormulaId, StringComparison.OrdinalIgnoreCase)
-                            || !string.Equals(metadata.Latex, target.Latex, StringComparison.Ordinal)
-                            || !string.Equals(source.DisplayMode, target.DisplayMode, StringComparison.Ordinal)
-                            || numbered != target.Numbered
-                            || FormulaFontSize.ResolveSemanticFontSize(metadata) != target.FontSizePt
-                            || !string.Equals(metadata.FormulaLetterFont, target.Metadata.FormulaLetterFont, StringComparison.Ordinal)
-                            || !string.Equals(metadata.FormulaChineseFont, target.Metadata.FormulaChineseFont, StringComparison.Ordinal))
-                            throw new InvalidOperationException("The VisualTeX source changed while its conversion was being prepared.");
-                    }
-                    finally { Release(captured); }
-                }
-                else
-                {
-                    source = WordFormulaOperationLocator.ResolveCapturedHost(
-                        _application, document, target.SourceObjectId, sourceKind, target.SourceFormulaId);
-                    if (forwardOrder)
-                        nativeSources.Add(target.Id, new WordNativeConversionSource(document, source));
-                }
-                resolvedSources.Add(target.Id, source);
-                if (sourceKind == WordFormulaHostKind.Omml
-                    && targetKind == WordFormulaHostKind.VisualTeX
-                    && target.Numbered)
-                {
-                    // Word's _Ref target lives inside the OMath being deleted.
-                    nativeReferenceIndex ??= WordEquationReferenceFields.NativeOmmlReferenceIndex.Capture(document);
-                    var references = nativeReferenceIndex.CountInside(source);
-                    if (references.Count > 0)
-                        nativeNumberReferences.Add(target.Id, references);
-                }
-                if (targetKind is not (WordFormulaHostKind.Omml or WordFormulaHostKind.VisualTeX))
-                    continue;
-                var preparedFormula = prepared[target.Id];
-                PrepareCoreTargetSession(preparedFormula.Session, plan, target);
-                var request = BuildHostWriteRequest(preparedFormula.Session,
-                    preparedFormula.MathMl, preparedFormula.PngPath, preparedFormula.EmfPath);
-                request.BatchMutation = true;
-                if (targetKind == WordFormulaHostKind.VisualTeX && target.Numbered)
-                    request.PreparedVisualTeXNumbering = visualTeXNumbers!.For(target.Id);
-                if (targetKind == WordFormulaHostKind.VisualTeX && source.Display && !source.WithinTable)
-                {
-                    var section = displaySectionTabs.First(item => item.Start <= source.Range.Start && item.End > source.Range.Start);
-                    request.DisplayCenterTabPoints = section.Center;
-                    request.DisplayRightTabPoints = section.Right;
-                }
-                preparedWrites.Add(target.Id, request);
-                if (targetKind == WordFormulaHostKind.Omml)
-                {
-                    var display = string.Equals(request.DisplayMode, "block", StringComparison.OrdinalIgnoreCase);
-                    request.PreparedOmml = WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
-                    if (display && request.Numbered)
-                    {
-                        numberedOmml ??= WordNativeOmmlNumbering.NumberedOmmlBatch.Capture(
-                            document,
-                            plan.Targets.Where(item => item.Numbered).Select(item => item.SourceStart));
-                        request.PreparedOmml = numberedOmml.Prepare(
-                            source.Range.Start, request.PreparedOmml);
-                    }
-                    if (sourceKind == WordFormulaHostKind.MathType
-                        || (sourceKind == WordFormulaHostKind.VisualTeX && !source.Display))
-                    {
-                        Range? exact = null;
+                        Range? captured = null;
                         try
                         {
-                            exact = WordFormulaHostSemanticReader.CreateRange(document, source.Range);
-                            request.PreparedOleReplacement = WordOleToOmmlReplacement.Prepare(
-                                document, exact, request.PreparedOmml, display,
-                                retiredIdentityBookmark: !Guid.TryParse(source.FormulaId, out _) ? null
-                                    : sourceKind == WordFormulaHostKind.MathType
-                                        ? WordFormulaIdentityStore.MathTypeBookmarkName(source.FormulaId!)
-                                        : WordFormulaMetadataReader.IdentityBookmarkName(source.FormulaId!),
-                                replaceMathTypeNumber: sourceKind == WordFormulaHostKind.MathType && source.Numbering.Numbered)
-                                ?? throw new InvalidDataException("The conversion preflight does not own an exact external OLE.");
+                            captured = WordFormulaOperationLocator.ResolveCapturedRange(document, target.SourceObjectId);
+                            var binding = WordMathTypeHostAdapter.BindCapturedHost(_application, document, captured);
+                            nativeSources.Add(target.Id, binding);
+                            source = binding.Host;
+                            if (targetKind == WordFormulaHostKind.VisualTeX && target.Numbered)
+                            {
+                                // MathType's references (GOTOBUTTON/REF) name the
+                                // ZEqnNum bookmark on its number, which is deleted
+                                // with the MathType paragraph. Keep those names.
+                                referencedBookmarks ??= MathTypeEquationReferences.CaptureReferencedBookmarks(document);
+                                var aliases = referencedBookmarks.Count == 0
+                                    ? Array.Empty<EquationReferenceBookmarkAlias>()
+                                    : MathTypeEquationReferences.CaptureFormatConversionAliasesFromMathType(
+                                        document, binding.MathTypeShape!, referencedBookmarks);
+                                if (aliases.Count > 0)
+                                    mathTypeNumberAliases.Add(target.Id, aliases);
+                            }
+                            var semanticFont = FormulaFontSize.ResolveSemanticFontSize(source.Metadata!);
+                            var currentFont = source.Display
+                                ? semanticFont
+                                : ReadMathTypeInlinePresentationFontSize(binding.MathTypeShape!) ?? semanticFont;
+                            // One fresh read proves the input that produced the
+                            // prepared render; it also supplies the physical owner
+                            // consumed below. No second resolver/decoder is needed.
+                            if (!string.Equals(binding.MathMl, target.SourceMathMl, StringComparison.Ordinal)
+                                || !string.Equals(source.DisplayMode, target.DisplayMode, StringComparison.Ordinal)
+                                || source.Numbering.Numbered != target.Numbered
+                                || semanticFont != FormulaFontSize.ResolveSemanticFontSize(target.Metadata)
+                                || currentFont != target.FontSizePt)
+                            {
+                                WordDoubleClickHook.TraceMessage(
+                                    $"format-conversion-source-changed start={target.SourceStart} mathMlEqual={string.Equals(binding.MathMl, target.SourceMathMl, StringComparison.Ordinal)} "
+                                    + $"display={target.DisplayMode}/{source.DisplayMode} numbered={target.Numbered}/{source.Numbering.Numbered} "
+                                    + $"semanticFont={FormulaFontSize.ResolveSemanticFontSize(target.Metadata)}/{semanticFont} presentationFont={target.FontSizePt}/{currentFont}");
+                                throw new InvalidOperationException(OfficePluginLanguage.Text(
+                                    "在准备转换期间，这个 MathType 公式被修改了（内容、显示方式、编号或字号与读取时不同）。请重新运行转换。",
+                                    "This MathType equation changed while its conversion was being prepared (its content, display mode, numbering or font size differs from when it was read). Run the conversion again."));
+                            }
                         }
-                        finally { Release(exact); }
+                        finally { Release(captured); }
                     }
+                    else if (sourceKind == WordFormulaHostKind.VisualTeX)
+                    {
+                        Range? captured = null;
+                        try
+                        {
+                            captured = WordFormulaOperationLocator.ResolveCapturedRange(document, target.SourceObjectId);
+                            var binding = WordNativeConversionSource.BindVisualTeX(document, captured);
+                            nativeSources.Add(target.Id, binding);
+                            source = binding.Host;
+                            var metadata = source.Metadata!;
+                            var numbered = source.Display && (metadata.Numbered || source.Numbering.Numbered);
+                            if (!string.Equals(metadata.FormulaId, target.SourceFormulaId, StringComparison.OrdinalIgnoreCase)
+                                || !string.Equals(metadata.Latex, target.Latex, StringComparison.Ordinal)
+                                || !string.Equals(source.DisplayMode, target.DisplayMode, StringComparison.Ordinal)
+                                || numbered != target.Numbered
+                                || FormulaFontSize.ResolveSemanticFontSize(metadata) != target.FontSizePt
+                                || !string.Equals(metadata.FormulaLetterFont, target.Metadata.FormulaLetterFont, StringComparison.Ordinal)
+                                || !string.Equals(metadata.FormulaChineseFont, target.Metadata.FormulaChineseFont, StringComparison.Ordinal))
+                                throw new InvalidOperationException(OfficePluginLanguage.Text(
+                                    "在准备转换期间，这个 VisualTeX 公式被修改了（LaTeX、显示方式、编号、字号或字体与读取时不同）。请重新运行转换。",
+                                    "This VisualTeX equation changed while its conversion was being prepared (its LaTeX, display mode, numbering, font size or fonts differ from when it was read). Run the conversion again."));
+                        }
+                        finally { Release(captured); }
+                    }
+                    else
+                    {
+                        source = WordFormulaOperationLocator.ResolveCapturedHost(
+                            _application, document, target.SourceObjectId, sourceKind, target.SourceFormulaId);
+                        if (forwardOrder)
+                            nativeSources.Add(target.Id, new WordNativeConversionSource(document, source));
+                    }
+                    resolvedSources.Add(target.Id, source);
+                    if (sourceKind == WordFormulaHostKind.Omml
+                        && targetKind == WordFormulaHostKind.VisualTeX
+                        && target.Numbered)
+                    {
+                        // Word's _Ref target lives inside the OMath being deleted.
+                        nativeReferenceIndex ??= WordEquationReferenceFields.NativeOmmlReferenceIndex.Capture(document);
+                        var references = nativeReferenceIndex.CountInside(source);
+                        if (references.Count > 0)
+                            nativeNumberReferences.Add(target.Id, references);
+                    }
+                    if (targetKind is not (WordFormulaHostKind.Omml or WordFormulaHostKind.VisualTeX))
+                        continue;
+                    var preparedFormula = prepared[target.Id];
+                    PrepareCoreTargetSession(preparedFormula.Session, plan, target);
+                    var request = BuildHostWriteRequest(preparedFormula.Session,
+                        preparedFormula.MathMl, preparedFormula.PngPath, preparedFormula.EmfPath);
+                    request.BatchMutation = true;
+                    if (targetKind == WordFormulaHostKind.VisualTeX && target.Numbered)
+                        request.PreparedVisualTeXNumbering = visualTeXNumbers!.For(target.Id);
+                    if (targetKind == WordFormulaHostKind.VisualTeX && source.Display && !source.WithinTable)
+                    {
+                        var section = displaySectionTabs.First(item => item.Start <= source.Range.Start && item.End > source.Range.Start);
+                        request.DisplayCenterTabPoints = section.Center;
+                        request.DisplayRightTabPoints = section.Right;
+                    }
+                    preparedWrites.Add(target.Id, request);
+                    if (targetKind == WordFormulaHostKind.Omml)
+                    {
+                        var display = string.Equals(request.DisplayMode, "block", StringComparison.OrdinalIgnoreCase);
+                        request.PreparedOmml = WordOmmlConverter.TransformMathMlToOmml(request.MathMl!);
+                        if (display && request.Numbered)
+                        {
+                            numberedOmml ??= WordNativeOmmlNumbering.NumberedOmmlBatch.Capture(
+                                document,
+                                plan.Targets.Where(item => item.Numbered).Select(item => item.SourceStart));
+                            request.PreparedOmml = numberedOmml.Prepare(
+                                source.Range.Start, request.PreparedOmml);
+                        }
+                        if (sourceKind == WordFormulaHostKind.MathType
+                            || (sourceKind == WordFormulaHostKind.VisualTeX && !source.Display))
+                        {
+                            Range? exact = null;
+                            try
+                            {
+                                exact = WordFormulaHostSemanticReader.CreateRange(document, source.Range);
+                                request.PreparedOleReplacement = WordOleToOmmlReplacement.Prepare(
+                                    document, exact, request.PreparedOmml, display,
+                                    retiredIdentityBookmark: !Guid.TryParse(source.FormulaId, out _) ? null
+                                        : sourceKind == WordFormulaHostKind.MathType
+                                            ? WordFormulaIdentityStore.MathTypeBookmarkName(source.FormulaId!)
+                                            : WordFormulaMetadataReader.IdentityBookmarkName(source.FormulaId!),
+                                    replaceMathTypeNumber: sourceKind == WordFormulaHostKind.MathType && source.Numbering.Numbered)
+                                    ?? throw new InvalidDataException(OfficePluginLanguage.Text(
+                                        "转换预检无法精确定位该公式的 OLE 对象（公式所在位置的 Word 内容可能已变化）。",
+                                        "The conversion preflight could not locate this equation's exact OLE object (the Word content at its position may have changed)."));
+                            }
+                            finally { Release(exact); }
+                        }
+                    }
+                }
+                catch (Exception error) when (error is not OperationCanceledException)
+                {
+                    // Name the formula whose preflight failed (nothing was written yet).
+                    throw ConversionTargetFailure(plan, target, error);
                 }
             }
 
@@ -426,161 +466,171 @@ internal sealed partial class WordFormulaService
                         : plan.Targets.OrderByDescending(item => item.SourceStart);
                     foreach (var target in mutationOrder)
                     {
-                        ReportOperationProgress("正在写入目标公式…", result.FormulaCount, plan.Targets.Count);
-                        var preparedFormula =
-                            prepared[target.Id];
-                        var source = resolvedSources[target.Id];
-                        nativeSources.TryGetValue(target.Id, out var sourceOwner);
-                        sourceOwner?.RefreshAddresses();
-                        WordFormulaMutationTransaction.TraceBoundary(_application, "conversion-preflight-source");
-
-                        WordFormulaHostDescriptor? replacedHost =
-                            null;
-                        if (targetKind is
-                            WordFormulaHostKind.Omml
-                            or WordFormulaHostKind.VisualTeX)
+                        try
                         {
-                            var request = preparedWrites[target.Id];
-                            replacedHost =
-                                WordFormulaHostMutationKernel
-                                    .ReplaceInActiveTransaction(
-                                        _application,
-                                        document,
-                                        source,
-                                        request,
-                                        sourceAlreadyResolved: true,
-                                        allowDirectCanonicalOmmlRemoval:
-                                            sourceKind ==
-                                            WordFormulaHostKind.Omml,
-                                        deferTargetNumberFinalization: true,
-                                        preparedSource: sourceOwner);
-                            if (targetKind == WordFormulaHostKind.Omml && target.Numbered)
-                                nativeNumberRefresh!.AddInserted(replacedHost);
+                            ReportOperationProgress(WriteTargetsStage, result.FormulaCount, plan.Targets.Count);
+                            var preparedFormula =
+                                prepared[target.Id];
+                            var source = resolvedSources[target.Id];
+                            nativeSources.TryGetValue(target.Id, out var sourceOwner);
+                            sourceOwner?.RefreshAddresses();
+                            WordFormulaMutationTransaction.TraceBoundary(_application, "conversion-preflight-source");
 
-                            if (sourceKind ==
-                                    WordFormulaHostKind.VisualTeX
-                                && targetKind ==
-                                    WordFormulaHostKind.Omml
-                                && target.Numbered
-                                && Guid.TryParse(
-                                    target.SourceFormulaId,
-                                    out var sourceFormulaId))
+                            WordFormulaHostDescriptor? replacedHost =
+                                null;
+                            if (targetKind is
+                                WordFormulaHostKind.Omml
+                                or WordFormulaHostKind.VisualTeX)
                             {
-                                var oldReferenceTarget =
-                                    "VTEqNum_"
-                                    + sourceFormulaId.ToString("N");
-                                if (sourceReferenceCounts.TryGetValue(
-                                        oldReferenceTarget,
-                                        out var referenceCount)
-                                    && referenceCount > 0)
+                                var request = preparedWrites[target.Id];
+                                replacedHost =
+                                    WordFormulaHostMutationKernel
+                                        .ReplaceInActiveTransaction(
+                                            _application,
+                                            document,
+                                            source,
+                                            request,
+                                            sourceAlreadyResolved: true,
+                                            allowDirectCanonicalOmmlRemoval:
+                                                sourceKind ==
+                                                WordFormulaHostKind.Omml,
+                                            deferTargetNumberFinalization: true,
+                                            preparedSource: sourceOwner);
+                                if (targetKind == WordFormulaHostKind.Omml && target.Numbered)
+                                    nativeNumberRefresh!.AddInserted(replacedHost);
+
+                                if (sourceKind ==
+                                        WordFormulaHostKind.VisualTeX
+                                    && targetKind ==
+                                        WordFormulaHostKind.Omml
+                                    && target.Numbered
+                                    && Guid.TryParse(
+                                        target.SourceFormulaId,
+                                        out var sourceFormulaId))
                                 {
-                                    var nativeReferenceTarget =
-                                        WordEquationReferenceFields
-                                            .CreateNativeOmmlNumberReferenceBookmark(
-                                                document,
-                                                replacedHost);
-                                    referenceTargetReplacements.Add(
-                                        oldReferenceTarget,
-                                        nativeReferenceTarget);
+                                    var oldReferenceTarget =
+                                        "VTEqNum_"
+                                        + sourceFormulaId.ToString("N");
+                                    if (sourceReferenceCounts.TryGetValue(
+                                            oldReferenceTarget,
+                                            out var referenceCount)
+                                        && referenceCount > 0)
+                                    {
+                                        var nativeReferenceTarget =
+                                            WordEquationReferenceFields
+                                                .CreateNativeOmmlNumberReferenceBookmark(
+                                                    document,
+                                                    replacedHost);
+                                        referenceTargetReplacements.Add(
+                                            oldReferenceTarget,
+                                            nativeReferenceTarget);
+                                    }
                                 }
                             }
-                        }
-                        else if (targetKind ==
-                                 WordFormulaHostKind.MathType)
-                        {
-                            if (sourceKind ==
-                                WordFormulaHostKind.MathType)
-                                throw new InvalidOperationException(
-                                    "MathType-to-MathType is not a format conversion.");
+                            else if (targetKind ==
+                                     WordFormulaHostKind.MathType)
+                            {
+                                if (sourceKind ==
+                                    WordFormulaHostKind.MathType)
+                                    throw new InvalidOperationException(OfficePluginLanguage.Text(
+                                        "MathType 转 MathType 不是格式转换。",
+                                        "MathType-to-MathType is not a format conversion."));
 
-                            var mathMl =
-                                preparedFormula.MathMl
-                                ?? target.SourceMathMl
-                                ?? throw new InvalidDataException(
-                                    $"MathType target '{target.Latex}' has no MathML.");
+                                var mathMl =
+                                    preparedFormula.MathMl
+                                    ?? target.SourceMathMl
+                                    ?? throw new InvalidDataException(OfficePluginLanguage.Text(
+                                        "该公式没有可写入 MathType 的 MathML。",
+                                        "This equation has no MathML to write as MathType."));
 
-                            PrepareCoreTargetSession(
-                                preparedFormula.Session,
-                                plan,
-                                target);
+                                PrepareCoreTargetSession(
+                                    preparedFormula.Session,
+                                    plan,
+                                    target);
 
-                            _ =
-                                WordFormulaHostMutationKernel
-                                    .ReplaceSourceWithExternalTargetInActiveTransaction(
-                                        _application,
-                                        document,
-                                        source,
-                                        insertion =>
-                                        {
-                                            var session =
-                                                preparedFormula.Session;
-                                            var oldSourceObjectId =
-                                                session.SourceObjectId;
-                                            try
+                                _ =
+                                    WordFormulaHostMutationKernel
+                                        .ReplaceSourceWithExternalTargetInActiveTransaction(
+                                            _application,
+                                            document,
+                                            source,
+                                            insertion =>
                                             {
-                                                session.SourceObjectId =
-                                                    RangeReference(
-                                                        insertion);
-                                                var native =
-                                                    preparedFormula
-                                                        .MathTypeNativePreview;
-                                                return InsertMathTypeOle(
-                                                    session,
-                                                    mathMl,
-                                                    preparedFormula.EmfPath,
-                                                    isolatedNativePreviewWmfPath:
-                                                        native?.WmfPath,
-                                                    isolatedNativePreviewWidthPt:
-                                                        native?.WidthPt ?? 0,
-                                                    isolatedNativePreviewHeightPt:
-                                                        native?.HeightPt ?? 0,
-                                                    isolatedNativePreviewWordPosition:
-                                                        native?.WordPosition ?? 0,
-                                                    isolatedNativePreviewAttempted:
+                                                var session =
+                                                    preparedFormula.Session;
+                                                var oldSourceObjectId =
+                                                    session.SourceObjectId;
+                                                try
+                                                {
+                                                    session.SourceObjectId =
+                                                        RangeReference(
+                                                            insertion);
+                                                    var native =
                                                         preparedFormula
-                                                            .MathTypeNativePreviewAttempted,
-                                                    preserveExistingDisplayParagraphBoundary:
-                                                        string.Equals(
-                                                            target.DisplayMode,
-                                                            "block",
-                                                            StringComparison.OrdinalIgnoreCase),
-                                                    preserveCapturedInsertion:
-                                                        true,
-                                                    boundedBatchMutation:
-                                                        true,
-                                                    preparedStandaloneGenerated:
-                                                        preparedFormula.MathTypeStandaloneGenerated,
-                                                    preparedStandaloneCompoundFile:
-                                                        preparedFormula.MathTypeStandaloneCompoundFile,
-                                                    preparedStandaloneSemanticSignature:
-                                                        preparedFormula.MathTypeStandaloneSemanticSignature,
-                                                    preparedBatchMathTypeSection:
-                                                        mathTypeSection?.Paragraph);
-                                            }
-                                            finally
-                                            {
-                                                session.SourceObjectId =
-                                                    oldSourceObjectId;
-                                            }
-                                        },
-                                        sourceAlreadyResolved: true,
-                                        allowDirectCanonicalOmmlRemoval:
-                                            sourceKind ==
-                                            WordFormulaHostKind.Omml,
-                                        preparedSource: sourceOwner);
-                        }
-                        else
-                        {
-                            throw new NotSupportedException(
-                                $"Unsupported conversion target {targetKind}.");
-                        }
+                                                            .MathTypeNativePreview;
+                                                    return InsertMathTypeOle(
+                                                        session,
+                                                        mathMl,
+                                                        preparedFormula.EmfPath,
+                                                        isolatedNativePreviewWmfPath:
+                                                            native?.WmfPath,
+                                                        isolatedNativePreviewWidthPt:
+                                                            native?.WidthPt ?? 0,
+                                                        isolatedNativePreviewHeightPt:
+                                                            native?.HeightPt ?? 0,
+                                                        isolatedNativePreviewWordPosition:
+                                                            native?.WordPosition ?? 0,
+                                                        isolatedNativePreviewAttempted:
+                                                            preparedFormula
+                                                                .MathTypeNativePreviewAttempted,
+                                                        preserveExistingDisplayParagraphBoundary:
+                                                            string.Equals(
+                                                                target.DisplayMode,
+                                                                "block",
+                                                                StringComparison.OrdinalIgnoreCase),
+                                                        preserveCapturedInsertion:
+                                                            true,
+                                                        boundedBatchMutation:
+                                                            true,
+                                                        preparedStandaloneGenerated:
+                                                            preparedFormula.MathTypeStandaloneGenerated,
+                                                        preparedStandaloneCompoundFile:
+                                                            preparedFormula.MathTypeStandaloneCompoundFile,
+                                                        preparedStandaloneSemanticSignature:
+                                                            preparedFormula.MathTypeStandaloneSemanticSignature,
+                                                        preparedBatchMathTypeSection:
+                                                            mathTypeSection?.Paragraph);
+                                                }
+                                                finally
+                                                {
+                                                    session.SourceObjectId =
+                                                        oldSourceObjectId;
+                                                }
+                                            },
+                                            sourceAlreadyResolved: true,
+                                            allowDirectCanonicalOmmlRemoval:
+                                                sourceKind ==
+                                                WordFormulaHostKind.Omml,
+                                            preparedSource: sourceOwner);
+                            }
+                            else
+                            {
+                                throw new NotSupportedException(
+                                    $"Unsupported conversion target {targetKind}.");
+                            }
 
-                        // A source binding is consumed by this replacement;
-                        // retaining deleted OLE owners until batch finalization
-                        // unnecessarily extends their COM/storage lifetime.
-                        sourceOwner?.Dispose();
-                        result.FormulaCount++;
-                        ReportOperationProgress("正在写入目标公式…", result.FormulaCount, plan.Targets.Count);
+                            // A source binding is consumed by this replacement;
+                            // retaining deleted OLE owners until batch finalization
+                            // unnecessarily extends their COM/storage lifetime.
+                            sourceOwner?.Dispose();
+                            result.FormulaCount++;
+                            ReportOperationProgress(WriteTargetsStage, result.FormulaCount, plan.Targets.Count);
+                        }
+                        catch (Exception error) when (error is not OperationCanceledException)
+                        {
+                            // Name the formula; the transaction rolls the batch back.
+                            throw ConversionTargetFailure(plan, target, error);
+                        }
                     }
 
                     // OMML sources and MathType-to-VisualTeX follow live Word
@@ -771,8 +821,9 @@ internal sealed partial class WordFormulaService
                     host);
             metadata = CloneCoreMetadata(
                 payload.Metadata
-                ?? throw new InvalidDataException(
-                    "A VisualTeX source has no embedded metadata."));
+                ?? throw new InvalidDataException(OfficePluginLanguage.Text(
+                    "该 VisualTeX 公式没有可读取的内嵌公式元数据。",
+                    "This VisualTeX equation has no readable embedded metadata.")));
             metadata.DisplayMode =
                 host.DisplayMode;
 
@@ -817,8 +868,9 @@ internal sealed partial class WordFormulaService
         }
 
         if (string.IsNullOrWhiteSpace(latex))
-            throw new InvalidDataException(
-                "The source formula has no LaTeX representation.");
+            throw new InvalidDataException(OfficePluginLanguage.Text(
+                "该源公式没有 LaTeX 内容，无法转换（公式为空或无法读取其源码）。",
+                "This source equation has no LaTeX representation, so it cannot be converted (it is empty or its source could not be read)."));
 
         var formulaId =
             Guid.TryParse(host.FormulaId, out var owned)
@@ -973,8 +1025,9 @@ internal sealed partial class WordFormulaService
         FormulaMetadataCodec.DeserializeJson(
             FormulaMetadataCodec.SerializeJson(
                 metadata))
-        ?? throw new InvalidDataException(
-            "Unable to clone formula metadata for conversion.");
+        ?? throw new InvalidDataException(OfficePluginLanguage.Text(
+            "无法复制该公式的元数据以进行转换。",
+            "Unable to copy this equation's metadata for conversion."));
 
     private static void ValidateCoreConversionPair(
         string sourceMode,
@@ -986,7 +1039,33 @@ internal sealed partial class WordFormulaService
                 sourceMode,
                 targetMode,
                 StringComparison.Ordinal))
-            throw new InvalidOperationException(
-                "The source and target formula formats are identical.");
+            throw new InvalidOperationException(OfficePluginLanguage.Text(
+                "源公式格式与目标格式相同。",
+                "The source and target equation formats are identical."));
+    }
+
+    private static string NoActiveDocumentMessage =>
+        OfficePluginLanguage.Text("没有打开的 Word 文档。", "No Word document is active.");
+
+    private static string WriteTargetsStage =>
+        OfficePluginLanguage.Text("正在写入目标公式…", "Writing target equations…");
+
+    /// <summary>
+    /// A per-formula conversion failure naming the formula (document-order
+    /// ordinal within the converted scope and a LaTeX excerpt) with its reason.
+    /// </summary>
+    private static InvalidOperationException ConversionTargetFailure(
+        WordFormulaFormatConversionPlan plan,
+        WordFormulaFormatConversionTarget target,
+        Exception error)
+    {
+        var ordinal = plan.Targets.IndexOf(target) + 1;
+        var excerpt = WordFormulaRenderException.Excerpt(target.Latex, 120);
+        var reason = OfficeErrorText.Describe(error);
+        return new InvalidOperationException(
+            OfficePluginLanguage.Text(
+                $"第 {ordinal} 个公式（{excerpt}）：{reason}",
+                $"Equation {ordinal} ({excerpt}): {reason}"),
+            error);
     }
 }

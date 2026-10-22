@@ -294,10 +294,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             keyboardError = error.Message;
         }
         SetStatus(doubleClickError is not null
-            ? $"VisualTeX 已就绪，但双击监听不可用：{doubleClickError}"
+            ? T($"VisualTeX 已就绪，但双击监听不可用：{doubleClickError}",
+                $"VisualTeX is ready, but double-click detection is unavailable: {doubleClickError}")
             : keyboardError is not null
-                ? $"VisualTeX 已就绪，但公式快捷键不可用：{keyboardError}"
-                : "VisualTeX PowerPoint VSTO 已就绪。");
+                ? T($"VisualTeX 已就绪，但公式快捷键不可用：{keyboardError}",
+                    $"VisualTeX is ready, but the formula shortcuts are unavailable: {keyboardError}")
+                : T("VisualTeX PowerPoint VSTO 已就绪。", "VisualTeX for PowerPoint is ready."));
     }
 
     public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom) => Dispose();
@@ -633,8 +635,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     displayMode,
                     "block",
                     StringComparison.Ordinal))
-                throw new InvalidOperationException(
-                    "插入行内 OMML 公式前，请先把文本光标或文本选区放到一个现有文本框中。");
+                throw new InvalidOperationException(T(
+                    "插入行内 OMML 公式前，请先把文本光标或文本选区放到一个现有文本框中。",
+                    "Before inserting an inline OMML equation, place the text caret or a text selection inside an existing text box."));
             BeginSession(
                 "create",
                 "wordOmml",
@@ -669,7 +672,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (selection.Metadata is null
                 && !PowerPointFormulaService.IsNativeOmmlReference(selection.ObjectId)
                 && selection.ObjectMode != FormulaOleContract.MathTypeOleMode)
-                throw new InvalidOperationException("没有选中公式。请先选中一个 VisualTeX 公式、PowerPoint 原生公式或 MathType 公式。");
+                throw new InvalidOperationException(T(
+                    "没有选中公式。请先选中一个 VisualTeX 公式、PowerPoint 原生公式或 MathType 公式。",
+                    "No formula is selected. Select a VisualTeX formula, a native PowerPoint equation or a MathType equation first."));
             BeginSession("edit", requestedObjectMode, selection, conversionOnly);
         }
         catch (Exception error)
@@ -719,16 +724,19 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     GrantVisualTeXForegroundActivation();
                     await _sessionClient.OpenEditorAsync(activeSessionId!, cancellationToken)
                         .ConfigureAwait(false);
-                    SetStatus("已有 VisualTeX 编辑任务，已将编辑窗口切换到前台。");
+                    SetStatus(T("已有 VisualTeX 编辑任务，已将编辑窗口切换到前台。",
+                        "A VisualTeX editor task is already open; its window was brought to the front."));
                 }
                 catch (Exception error)
                 {
-                    SetStatus($"已有编辑任务，但无法置前窗口：{error.Message}");
+                    SetStatus(T("已有编辑任务，但无法置前窗口：", "An editor task is already active, but VisualTeX could not bring its window to the foreground: ")
+                        + OfficeErrorText.Describe(error));
                 }
             }
             else
             {
-                SetStatus("VisualTeX 正在准备编辑窗口，请稍候再试。");
+                SetStatus(T("VisualTeX 正在准备编辑窗口，请稍候再试。",
+                    "VisualTeX is preparing the editor window. Try again in a moment."));
             }
             return;
         }
@@ -741,10 +749,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         PowerPointFormulaService.PreparedMathType? preparedMathType = null;
         try
         {
-            var dispatcher = _dispatcher ?? throw new InvalidOperationException("PowerPoint dispatcher is unavailable.");
-            var service = _formulaService ?? throw new InvalidOperationException("PowerPoint formula service is unavailable.");
-            var client = _sessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable.");
-            SetStatus("正在连接 VisualTeX 本地服务…");
+            var dispatcher = _dispatcher ?? throw new InvalidOperationException(T(
+                "VisualTeX PowerPoint 插件尚未完成初始化（缺少 PowerPoint 调度器）。",
+                "The VisualTeX PowerPoint add-in has not finished starting (no PowerPoint dispatcher)."));
+            var service = _formulaService ?? throw new InvalidOperationException(T(
+                "VisualTeX PowerPoint 插件尚未完成初始化（缺少公式服务）。",
+                "The VisualTeX PowerPoint add-in has not finished starting (no formula service)."));
+            var client = _sessionClient ?? throw new InvalidOperationException(T(
+                "VisualTeX PowerPoint 插件尚未完成初始化（缺少 VisualTeX 会话客户端）。",
+                "The VisualTeX PowerPoint add-in has not finished starting (no VisualTeX session client)."));
+            SetStatus(T("正在连接 VisualTeX 本地服务…", "Connecting to the local VisualTeX service…"));
             await client.EnsureHealthyAsync(cancellationToken).ConfigureAwait(false);
             if (conversionOnly)
                 await client.PrewarmConverterAsync(cancellationToken).ConfigureAwait(false);
@@ -752,7 +766,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 ?? await dispatcher.InvokeAsync(
                     () => mode == "create" ? service.CaptureSlideInsertionTarget() : ResolveFormulaSelection(service)).ConfigureAwait(false);
             if (selection.ReadOnly)
-                throw new UnauthorizedAccessException("当前 PowerPoint 演示文稿为只读状态。");
+                throw new UnauthorizedAccessException(T(
+                    "当前 PowerPoint 演示文稿为只读状态。", "The current PowerPoint presentation is read-only."));
             // Source snapshots belong to the acquired operation, not to a
             // repeated Ribbon click that only refocuses an existing editor.
             if (mode == "edit")
@@ -763,7 +778,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             ? service.LoadMathTypeSelection(selection)
                             : service.PrepareManagedSelectionForEdit(selection)).ConfigureAwait(false);
             if (mode == "edit" && selection.Metadata is null)
-                throw new InvalidOperationException("没有选中公式。请先选中一个 VisualTeX 公式、PowerPoint 原生公式或 MathType 公式。");
+                throw new InvalidOperationException(T(
+                    "没有选中公式。请先选中一个 VisualTeX 公式、PowerPoint 原生公式或 MathType 公式。",
+                    "No formula is selected. Select a VisualTeX formula, a native PowerPoint equation or a MathType equation first."));
 
             // PowerPoint commonly leaves the just-inserted formula selected.
             // Do not treat that selection as initial content for New Formula;
@@ -812,14 +829,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 await client.OpenConverterAsync(session.Id, cancellationToken)
                     .ConfigureAwait(false);
-                SetStatus("正在直接转换 PowerPoint 公式格式…");
+                SetStatus(T("正在直接转换 PowerPoint 公式格式…", "Converting the PowerPoint equation format directly…"));
             }
             else
             {
                 GrantVisualTeXForegroundActivation();
                 await client.OpenEditorAsync(session.Id, cancellationToken)
                     .ConfigureAwait(false);
-                SetStatus("VisualTeX 编辑器已打开。");
+                SetStatus(T("VisualTeX 编辑器已打开。", "The VisualTeX editor is open."));
 
                 if (string.Equals(
                         targetObjectMode,
@@ -843,19 +860,24 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 cancellationToken).ConfigureAwait(false);
             if (session.Status == "cancelled" || session.ExplicitCancel)
             {
-                SetStatus("已取消，PowerPoint 未修改。");
+                SetStatus(T("已取消，PowerPoint 未修改。", "Cancelled. PowerPoint was not changed."));
                 return;
             }
             if (session.Status == "failed")
-                throw new InvalidOperationException(session.Error ?? "VisualTeX Session 失败。");
+                throw new InvalidOperationException(conversionOnly
+                    ? OfficeErrorText.DescribeItemError(session.Error)
+                    : string.IsNullOrWhiteSpace(session.Error) || session.Error == "[object Object]"
+                        ? T("VisualTeX 编辑会话失败，但没有给出原因。", "The VisualTeX editing session failed without giving a reason.")
+                        : session.Error!);
             if (session.Mode == "edit"
                 && !session.Dirty
                 && (!requiresObjectModeChange || session.ExportResult is null))
             {
                 await client.CompleteAsync(session.Id, cancellationToken).ConfigureAwait(false);
                 SetStatus(requiresObjectModeChange
-                    ? "未执行对象格式转换。"
-                    : "公式内容未变化。");
+                    ? T("VisualTeX 没有返回新的结果，未执行对象格式转换。",
+                        "VisualTeX returned no new result, so the object format was not converted.")
+                    : T("公式内容未变化。", "The formula is unchanged."));
                 return;
             }
 
@@ -868,7 +890,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 imagePath = client.MaterializePng(session);
                 var export = session.ExportResult
-                    ?? throw new InvalidOperationException("VisualTeX Session has no vector export result.");
+                    ?? throw new InvalidOperationException(T(
+                        "VisualTeX 会话没有矢量导出结果。", "VisualTeX Session has no vector export result."));
                 svgPath = client.MaterializeSvg(session);
                 emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(
                     svgPath,
@@ -882,7 +905,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             }
             else if (session.ObjectMode != "wordOmml")
             {
-                throw new InvalidOperationException($"Unsupported PowerPoint object mode: {session.ObjectMode}");
+                throw new InvalidOperationException(T(
+                    $"不支持的 PowerPoint 对象格式：{session.ObjectMode}", $"Unsupported PowerPoint object mode: {session.ObjectMode}"));
             }
             await dispatcher.InvokeAsync(() =>
             {
@@ -891,18 +915,22 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         current.DocumentId,
                         session.SourceDocumentId,
                         StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("活动演示文稿已切换，未写入公式。");
+                    throw new InvalidOperationException(T(
+                        "活动演示文稿已切换，未写入公式。",
+                        "The active PowerPoint presentation changed, so the formula was not written."));
                 if (session.ObjectMode == "nativeOle")
                 {
                     if (imagePath is null || emfPath is null)
-                        throw new InvalidOperationException("VisualTeX native OLE preview is unavailable.");
+                        throw new InvalidOperationException(T(
+                            "缺少 VisualTeX 原生 OLE 预览图。", "VisualTeX native OLE preview is unavailable."));
                     return session.Mode == "edit"
                         ? service.ReplaceOle(session, imagePath, emfPath)
                         : service.InsertOle(session, imagePath, emfPath);
                 }
                 if (session.ObjectMode == FormulaOleContract.MathTypeOleMode)
                     return service.ApplyMathType(session, preparedMathType
-                        ?? throw new InvalidOperationException("The MathType equation was not prepared."));
+                        ?? throw new InvalidOperationException(T(
+                            "MathType 公式没有准备好。", "The MathType equation was not prepared.")));
                 if (session.ObjectMode == "wordOmml")
                 {
                     return session.Mode == "edit"
@@ -910,27 +938,34 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         : service.InsertOmml(session);
                 }
                 if (imagePath is null)
-                    throw new InvalidOperationException("VisualTeX picture export is unavailable.");
+                    throw new InvalidOperationException(T(
+                        "缺少 VisualTeX 图片导出结果。", "VisualTeX picture export is unavailable."));
                 return session.Mode == "edit"
                     ? service.Replace(session, imagePath)
                     : service.Insert(session, imagePath);
             }).ConfigureAwait(false);
             await client.CompleteAsync(session.Id, cancellationToken).ConfigureAwait(false);
             SetStatus(requiresObjectModeChange && session.ObjectMode == "nativeOle"
-                ? "已转换为原生 OLE：外观保持不变，可双击编辑，并嵌入 PowerPoint 文件。"
+                ? T("已转换为原生 OLE：外观保持不变，可双击编辑，并嵌入 PowerPoint 文件。",
+                    "Converted to a native OLE object: it looks the same, can be edited by double-clicking and is embedded in the PowerPoint file.")
                 : requiresObjectModeChange && session.ObjectMode == "wordOmml"
-                    ? "已转换为 PowerPoint 原生 Office Math（OMML），可继续使用 PowerPoint 公式工具编辑。"
+                    ? T("已转换为 PowerPoint 原生 Office Math（OMML），可继续使用 PowerPoint 公式工具编辑。",
+                        "Converted to a native PowerPoint Office Math equation (OMML); it can be edited with PowerPoint's equation tools.")
                     : requiresObjectModeChange && session.ObjectMode == "crossPlatformPicture"
-                        ? "已转换为嵌入式 SVG 图片，可跨平台显示并保持矢量清晰度。"
+                        ? T("已转换为嵌入式 SVG 图片，可跨平台显示并保持矢量清晰度。",
+                            "Converted to an embedded SVG picture that displays on every platform and stays sharp.")
                         : session.Mode == "edit"
-                            ? "PowerPoint 公式已更新。"
+                            ? T("PowerPoint 公式已更新。", "The PowerPoint formula was updated.")
                             : session.ObjectMode == FormulaOleContract.WordOmmlMode
-                                ? "已插入 PowerPoint 原生 OMML；未写入 VisualTeX FormulaId 或元数据。"
-                                : "PowerPoint 公式已插入。");
+                                ? T("已插入 PowerPoint 原生 OMML；未写入 VisualTeX FormulaId 或元数据。",
+                                    "Inserted a native PowerPoint OMML equation; no VisualTeX FormulaId or metadata was written.")
+                                : T("PowerPoint 公式已插入。", "The PowerPoint formula was inserted."));
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            SetStatus("VisualTeX 操作已取消。");
+            // only the add-in's own cancellation; a timed-out or interrupted
+            // request is reported as the error it is
+            SetStatus(T("VisualTeX 操作已取消。", "The VisualTeX Office operation was cancelled."));
         }
         catch (Exception error)
         {
@@ -982,7 +1017,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         try
         {
             await dispatcher.InvokeAsync(service.DeleteSelectedFormula).ConfigureAwait(false);
-            SetStatus("PowerPoint 公式已删除。");
+            SetStatus(T("PowerPoint 公式已删除。", "The PowerPoint formula was deleted."));
         }
         catch (Exception error)
         {

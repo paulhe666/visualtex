@@ -73,7 +73,7 @@ internal sealed partial class WordFormulaService
                     {
                         var block =
                             source.Blocks[blockIndex];
-                        ReportOperationProgress("正在写入导入内容…", insertedIds.Count, prepared.Count);
+                        ReportOperationProgress(OfficePluginLanguage.Text("正在写入导入内容…", "Writing the imported content…"), insertedIds.Count, prepared.Count);
                         var nextKind =
                             blockIndex + 1
                                 < source.Blocks.Count
@@ -90,8 +90,9 @@ internal sealed partial class WordFormulaService
                             if (!prepared.TryGetValue(
                                     formulaRun.Id,
                                     out var formula))
-                                throw new InvalidDataException(
-                                    $"缺少行间公式 {formulaRun.Id} 的渲染结果。");
+                                throw new InvalidDataException(OfficePluginLanguage.Text(
+                                    $"行间公式“{WordFormulaRenderException.Excerpt(formulaRun.Latex, 120)}”缺少渲染结果。",
+                                    $"The display formula “{WordFormulaRenderException.Excerpt(formulaRun.Latex, 120)}” is missing its render result."));
 
                             formula.Session.DisplayMode =
                                 "block";
@@ -139,8 +140,9 @@ internal sealed partial class WordFormulaService
                             if (!prepared.TryGetValue(
                                     run.Id,
                                     out var formula))
-                                throw new InvalidDataException(
-                                    $"缺少行内公式 {run.Id} 的渲染结果。");
+                                throw new InvalidDataException(OfficePluginLanguage.Text(
+                                    $"行内公式“{WordFormulaRenderException.Excerpt(run.Latex, 120)}”缺少渲染结果。",
+                                    $"The inline formula “{WordFormulaRenderException.Excerpt(run.Latex, 120)}” is missing its render result."));
 
                             var placeholderStart =
                                 selection.Start;
@@ -183,8 +185,9 @@ internal sealed partial class WordFormulaService
                                         placeholder.Text,
                                         BulkInlineFormulaPlaceholder,
                                         StringComparison.Ordinal))
-                                    throw new InvalidDataException(
-                                        "批量导入的行内公式占位符发生了变化。");
+                                    throw new InvalidDataException(OfficePluginLanguage.Text(
+                                        "批量导入的行内公式占位符发生了变化。",
+                                        "The inline-equation placeholder changed during bulk import."));
                                 placeholder.Text =
                                     string.Empty;
                                 insertion =
@@ -305,8 +308,9 @@ internal sealed partial class WordFormulaService
                 {
                     paragraphs = current.Paragraphs;
                     if (paragraphs.Count != 1)
-                        throw new InvalidDataException(
-                            "批量导入的行间公式插入点不属于唯一段落。");
+                        throw new InvalidDataException(OfficePluginLanguage.Text(
+                            "批量导入的行间公式插入点不属于唯一段落。",
+                            "The display-equation insertion point does not belong to exactly one paragraph during bulk import."));
                     paragraph = paragraphs[1];
                     paragraphRange =
                         paragraph.Range.Duplicate;

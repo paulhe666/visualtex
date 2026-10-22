@@ -11,6 +11,16 @@ import {
   X,
 } from "lucide-react";
 import { OcrDialog } from "../../components/OcrDialog";
+import {
+  OfficeConversionError,
+  conversionText,
+  describeConversionFailure,
+  inConversionStage,
+} from "../shared/conversionErrors";
+import { captureOfficeQuickOcrScreenshot } from "../api/ocrHttpTransport";
+import { quickOcrCaptureToFile } from "../../ocr/quickOcr";
+import { installButtonShortcuts, onButtonShortcut } from "../../shortcuts/buttonShortcuts";
+import { copyFormulaDocumentPngToClipboard } from "../../export/pngClipboard";
 import { EditorWorkspace } from "../../workspace/EditorWorkspace";
 import {
   readWorkspacePanelOpen,
@@ -48,10 +58,12 @@ import type {
 } from "../../editor/MathEditor";
 import { readErrorMessage } from "../../errors/readErrorMessage";
 import {
+  normalizeFormulaLetterFont,
   type FormulaChineseFont,
   type FormulaLetterFont,
 } from "../../editor/formulaFontPreferences";
 import { readLocalStorage, writeLocalStorage } from "../../runtime/safeStorage";
+import { normalizeFormulaSpacingPreferences } from "../../editor/formulaSpacingPreferences";
 import { latexToMathMl, latexToSvg } from "../../export/latexToSvg";
 import { annotateMathTypeAlignmentGeometry } from "../shared/mathTypeAlignmentGeometry";
 import { isIncompleteLatexDraft } from "../../math/latexCompatibility";
@@ -65,6 +77,7 @@ import {
   takeOfficeRenderBatch,
   getOfficeRenderBatch,
   completeOfficeRenderBatch,
+  failOfficeRenderBatch,
   updateOfficeSession,
   type OfficeExportResult,
   type OfficeFormulaSession,
@@ -306,10 +319,19 @@ function applyOfficeEditorPreferences(
     editor.setPngExportBackground(settings.pngExportBackground);
   }
   if (settings.formulaLetterFont !== undefined) {
-    editor.setFormulaLetterFont(settings.formulaLetterFont);
+    // fonts of earlier versions (Cambria, STIX, ...) become KaTeX
+    editor.setFormulaLetterFont(normalizeFormulaLetterFont(settings.formulaLetterFont));
   }
   if (settings.formulaChineseFont !== undefined) {
     editor.setFormulaChineseFont(settings.formulaChineseFont);
+  }
+  if (settings.formulaSpacing !== undefined) {
+    // the main app's spacing configurations, as they are there
+    editor.setFormulaSpacing(normalizeFormulaSpacingPreferences(settings.formulaSpacing));
+  }
+  if (settings.buttonShortcuts !== undefined) {
+    // the chords the user gave buttons in the main app (Settings > Keyboard shortcuts)
+    editor.setButtonShortcuts(settings.buttonShortcuts);
   }
   if (settings.inputBehavior) {
     for (const [key, enabled] of Object.entries(settings.inputBehavior)) {
@@ -326,10 +348,12 @@ function applyOfficeEditorPreferences(
 function requireOfficeSessionFontSizePt(value: unknown, host: OfficeHost) {
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric) || numeric < 5 || numeric > 200) {
-    throw new Error(
+    const isEn = useEditorStore.getState().language === "en";
+    const shown = value === undefined || value === null || value === "" ? (isEn ? "none" : "无") : String(value);
+    throw new OfficeConversionError(
       host === "word"
-        ? "Word 公式 Session 缺少当前正文位置的有效字号。"
-        : "PowerPoint 公式 Session 缺少有效字号。",
+        ? conversionText(isEn, `Word 没有给出该公式所在位置的有效字号（收到：${shown}；需要 5–200 磅）。`, `Word gave no valid font size for this formula's position (received: ${shown}; 5–200 pt needed).`)
+        : conversionText(isEn, `PowerPoint 没有给出该公式的有效字号（收到：${shown}；需要 5–200 磅）。`, `PowerPoint gave no valid font size for this formula (received: ${shown}; 5–200 pt needed).`),
     );
   }
   return Math.round(numeric * 100) / 100;
@@ -957,6 +981,9 @@ export function OfficeDialogApp() {
       background: "transparent",
       formulaLetterFont: outputLetterFont,
       formulaChineseFont: sourceFormulaChineseFont,
+      // a MathType object is MathType's equation (MathType draws it when
+      // opened); its alignment geometry is read from MathJax's table layout
+      renderer: isMathTypeOle ? "mathjax" : "engine",
     });
     const rawMathMl = await latexToMathMl(sourceLatex, outputDisplayMode);
     const mathMl = isMathTypeOle
@@ -1049,13 +1076,22 @@ export function OfficeDialogApp() {
       sourceSession.originalMetadata?.formulaLetterFont ?? formulaLetterFont;
     const sourceFormulaChineseFont =
       sourceSession.originalMetadata?.formulaChineseFont ?? formulaChineseFont;
+    const isEn = useEditorStore.getState().language === "en";
+    if (!conversionLatex.trim()) {
+      throw new OfficeConversionError(conversionText(isEn, "公式为空（没有 LaTeX 源码）。", "The formula is empty (it has no LaTeX source)."));
+    }
     if (sourceSession.objectMode === "wordOmml") {
-      const mathMl = await latexToMathMl(
-        conversionLatex,
-        sourceSession.displayMode === "block",
-      );
+      let mathMl: string;
+      try {
+        mathMl = await latexToMathMl(
+          conversionLatex,
+          sourceSession.displayMode === "block",
+        );
+      } catch (reason) {
+        throw inConversionStage(isEn, "无法生成 Word 公式所需的 MathML", "The MathML for the Word equation could not be generated", reason);
+      }
       if (!mathMl?.trim()) {
-        throw new Error("Unable to generate MathML for Office conversion.");
+        throw new OfficeConversionError(conversionText(isEn, "MathJax 为该公式生成的 MathML 为空。", "MathJax produced empty MathML for this formula."));
       }
       const width =
         sourceSession.originalMetadata?.renderWidthPx ??
@@ -1074,24 +1110,41 @@ export function OfficeDialogApp() {
         formulaChineseFont: sourceFormulaChineseFont,
       };
     }
-    const base = await generateSvgExportResult(
-      conversionLatex,
-      sourceSession.displayMode,
-      conversionFontSizePt,
-      sourceFormulaLetterFont,
-      sourceFormulaChineseFont,
-      sourceSession.objectMode,
-    );
-    if (!base?.mathMl) {
-      throw new Error("Unable to generate MathML for Office conversion.");
+    let base: OfficeExportResult | null;
+    try {
+      base = await generateSvgExportResult(
+        conversionLatex,
+        sourceSession.displayMode,
+        conversionFontSizePt,
+        sourceFormulaLetterFont,
+        sourceFormulaChineseFont,
+        sourceSession.objectMode,
+      );
+    } catch (reason) {
+      throw inConversionStage(isEn, "无法生成该公式", "The formula could not be generated", reason);
+    }
+    if (!base) {
+      throw new OfficeConversionError(conversionText(isEn, "公式为空（没有 LaTeX 源码）。", "The formula is empty (it has no LaTeX source)."));
+    }
+    if (!base.mathMl?.trim()) {
+      throw new OfficeConversionError(conversionText(isEn, "MathJax 为该公式生成的 MathML 为空。", "MathJax produced empty MathML for this formula."));
     }
     // MathType consumes MathML and the vector preview; its writer never reads PNG.
     if (sourceSession.objectMode === "mathTypeOle") return base;
-    const complete = await rasterizeSvgExportResult(base);
-    if (!complete?.mathMl || !complete.pngBase64) {
-      throw new Error("Unable to generate a complete Office formula preview.");
+    // the PNG is required here: its failure is the formula's failure, with its reason
+    let pngBase64: string;
+    try {
+      const { svgToPng } = await import("../../export/svgToPng");
+      pngBase64 = (
+        await svgToPng(
+          { base64: base.svgBase64, width: base.width, height: base.height },
+          { scale: 2, background: "transparent" },
+        )
+      ).base64;
+    } catch (reason) {
+      throw inConversionStage(isEn, `无法生成公式的 PNG 图片（${Math.round(base.width)}×${Math.round(base.height)} 像素）`, `The PNG image of the formula could not be generated (${Math.round(base.width)}×${Math.round(base.height)} px)`, reason);
     }
-    return complete;
+    return { ...base, pngBase64 };
   }, [
     generateSvgExportResult,
     rasterizeSvgExportResult,
@@ -1194,8 +1247,25 @@ export function OfficeDialogApp() {
     if (!IS_VSTO_CONVERT_RUNTIME) return;
     let disposed = false;
     let requestInFlight = false;
+    // A batch this window cannot finish is reported back at once with its
+    // reason (the add-in would otherwise wait for its timeout).
+    const failBatch = async (id: string, zh: string, en: string, reason: unknown) => {
+      const isEn = useEditorStore.getState().language === "en";
+      const message = inConversionStage(isEn, zh, en, reason).message;
+      try {
+        await failOfficeRenderBatch(id, message);
+      } catch (failure) {
+        console.error("Office render batch failure could not be reported", id, message, failure);
+      }
+    };
     const renderBatch = async (id: string) => {
-      const batch = await getOfficeRenderBatch(id);
+      let batch: Awaited<ReturnType<typeof getOfficeRenderBatch>>;
+      try {
+        batch = await getOfficeRenderBatch(id);
+      } catch (reason) {
+        await failBatch(id, "转换窗口无法读取这批公式", "The conversion window could not read this batch of formulas", reason);
+        return;
+      }
       const outputs: import("../shared/renderBatchContract").OfficeRenderBatchOutput[] = [];
       for (const item of batch.items) {
         try {
@@ -1203,11 +1273,15 @@ export function OfficeDialogApp() {
         } catch (reason) {
           outputs.push({
             id: item.id,
-            error: readErrorMessage(reason, "Formula format conversion failed"),
+            error: describeConversionFailure(reason, useEditorStore.getState().language === "en"),
           });
         }
       }
-      await completeOfficeRenderBatch(batch.id, outputs);
+      try {
+        await completeOfficeRenderBatch(batch.id, outputs);
+      } catch (reason) {
+        await failBatch(batch.id, "VisualTeX 没有接受这批公式的转换结果", "VisualTeX did not accept the conversion results of this batch", reason);
+      }
     };
     const drain = async () => {
       if (disposed || requestInFlight) return;
@@ -1841,6 +1915,36 @@ export function OfficeDialogApp() {
     }
   };
 
+  const [quickOcrCaptureBusy, setQuickOcrCaptureBusy] = useState(false);
+
+  // Quick OCR (the button and its shortcut): screenshot, then the same
+  // recognition and insertion as a pasted image, at the caret.
+  const handleQuickOcr = async () => {
+    if (inlineOcrBusyRef.current || quickOcrCaptureBusy) {
+      setToast(isEn ? "OCR is already running" : "另一个 OCR 任务正在进行");
+      return;
+    }
+    const target = editorRef.current?.captureInsertionTarget();
+    if (!target) {
+      setToast(isEn ? "Click a formula field before quick OCR" : "请先点击一个公式框，再使用快捷 OCR");
+      return;
+    }
+    setQuickOcrCaptureBusy(true);
+    try {
+      setToast(isEn ? "Select a formula area to recognize" : "请框选要识别的公式区域");
+      const capture = await captureOfficeQuickOcrScreenshot();
+      if (!capture) {
+        setToast(isEn ? "Screenshot cancelled" : "已取消截图");
+        return;
+      }
+      await handleEditorImagePaste(quickOcrCaptureToFile(capture), target);
+    } catch (error) {
+      setToast(formatOcrError(error, isEn ? "Quick OCR failed" : "快捷 OCR 失败"));
+    } finally {
+      setQuickOcrCaptureBusy(false);
+    }
+  };
+
   const handleEditorImagePaste = async (
     file: File,
     target: MathEditorInsertionTarget,
@@ -2185,6 +2289,42 @@ export function OfficeDialogApp() {
     };
   }, [sessionId]);
 
+  // the chords the user gave the editor window's buttons in the main app (Settings > Keyboard shortcuts)
+  useEffect(
+    () => installButtonShortcuts("office", () => useEditorStore.getState().buttonShortcuts),
+    [],
+  );
+  useEffect(() =>
+    onButtonShortcut((action) => {
+      switch (action) {
+        case "quick-ocr":
+          void handleQuickOcr();
+          break;
+        case "ocr":
+          if (!inlineOcrBusyRef.current) setOcrOpen(true);
+          break;
+        case "copy-latex":
+          void handleCopy();
+          break;
+        case "copy-image":
+          void copyFormulaDocumentPngToClipboard(
+            useEditorStore.getState().lines.map((line) => line.latex),
+            {
+              background: useEditorStore.getState().pngExportBackground,
+              formulaLetterFont,
+              formulaChineseFont,
+            },
+          )
+            .then(() => setToast(isEn ? "Copied as image" : "已复制为图片"))
+            .catch((error) => setToast(readErrorMessage(error, isEn ? "Copy as image failed" : "复制图片失败")));
+          break;
+        case "office-cancel":
+          void handleCancel();
+          break;
+      }
+    }),
+  );
+
   const handleCopy = async () => {
     await copyFormulaLinesUniversal(lines, latexFormatProfile);
     addHistory(latex);
@@ -2475,11 +2615,12 @@ export function OfficeDialogApp() {
         onSidebarOpenChange={handleSidebarOpenChange}
         onHistoryBusyChange={setHistoryBusy}
         onPasteImage={handleEditorImagePaste}
+        onQuickOcr={() => void handleQuickOcr()}
         onCopy={handleCopy}
         onReplaceDocument={replaceDocumentWithHistory}
         ocrRecognizer={selectedOcrRecognizer}
         ocrRecognizers={OCR_RECOGNIZER_OPTIONS}
-        ocrBusy={inlineOcrIsBusy}
+        ocrBusy={inlineOcrIsBusy || quickOcrCaptureBusy}
         onOcrRecognizerChange={(recognizer) =>
           void handleOcrRecognizerChange(recognizer)
         }

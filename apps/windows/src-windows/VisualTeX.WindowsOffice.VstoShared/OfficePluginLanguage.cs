@@ -240,16 +240,16 @@ internal static class OfficePluginLanguage
     {
         var message = value ?? string.Empty;
         if (!IsEnglish || !ContainsCjk(message)) return message;
-        if (message.IndexOf("Localized host detail:", StringComparison.Ordinal) >= 0)
+        if (message.IndexOf("Untranslated detail:", StringComparison.Ordinal) >= 0
+            || message.IndexOf("Localized host detail:", StringComparison.Ordinal) >= 0)
             return message;
 
         var translated = TranslateKnownErrorText(message);
         if (!ContainsCjk(translated)) return translated;
 
-        // Never collapse a specific Office/COM failure to a generic sentence.
-        // Unknown localized host text is retained after an English explanation so
-        // the exact diagnostic remains available to the user and support logs.
-        return $"{englishFallback} Localized host detail: {translated}";
+        // Never collapse a specific failure to a generic sentence: text without a
+        // translation is kept (it may come from Office or from VisualTeX itself).
+        return $"{englishFallback} Untranslated detail: {translated}";
     }
 
     internal static string SafeStatusMessage(string? value)
@@ -278,13 +278,17 @@ internal static class OfficePluginLanguage
             || message.Contains("必须先")
             || message.Contains("不存在"))
             return SafeErrorMessage(message);
+        // last resort for a status without an English text (every VisualTeX
+        // status has one; this keeps an unknown one from being misreported)
         if (message.Contains("取消"))
-            return "VisualTeX Office operation was cancelled.";
+            return SafeUserMessage(message, "VisualTeX Office operation was cancelled.");
+        if (message.Contains("停止"))
+            return SafeUserMessage(message, "VisualTeX Office operation stopped.");
         if (message.Contains("正在") || message.Contains("请稍候"))
-            return "VisualTeX is processing the current Office operation…";
-        if (message.Contains("已") || message.Contains("完成"))
-            return "VisualTeX Office operation completed.";
-        return SafeUserMessage(message, "VisualTeX Office status updated.");
+            return SafeUserMessage(message, "VisualTeX is processing the current Office operation…");
+        if (message.Contains("完成"))
+            return SafeUserMessage(message, "VisualTeX Office operation completed.");
+        return SafeUserMessage(message, "VisualTeX Office status:");
     }
 
     internal static string SafeErrorMessage(string? value) =>
@@ -292,36 +296,16 @@ internal static class OfficePluginLanguage
             value,
             "The VisualTeX Office operation failed.");
 
-    private static string? KnownOfficeComErrorFromHResult(int hresult) =>
-        unchecked((uint)hresult) switch
-        {
-            0x800A16C1u =>
-                "The Word object has been deleted or invalidated.",
-            _ => null,
-        };
-
+    /// <summary>
+    /// "{operation}: {specific reason}" in the VisualTeX language: timeouts,
+    /// unreachable VisualTeX, refused requests, failed render batches, COM codes
+    /// and every cause of an aggregated failure are worded by OfficeErrorText.
+    /// </summary>
     internal static string FormatOperationError(
         Exception error,
         string chineseOperation,
-        string englishOperation)
-    {
-        if (!IsEnglish)
-            return $"{chineseOperation}：{error.Message}";
-
-        var translated = TranslateKnownErrorText(
-            error.Message ?? string.Empty);
-        var hresultDetail = KnownOfficeComErrorFromHResult(
-            error.HResult);
-        var detail = !ContainsCjk(translated)
-            ? translated
-            : hresultDetail
-                ?? SafeUserMessage(
-                    error.Message,
-                    "The Office host returned a localized error.");
-        var exceptionType = error.GetType().Name;
-        var hresult = $"0x{error.HResult:X8}";
-        return $"{englishOperation}: {detail} [{exceptionType}, HRESULT={hresult}]";
-    }
+        string englishOperation) =>
+        OfficeErrorText.Operation(error, chineseOperation, englishOperation);
 
     internal static string UiFontFamily => IsEnglish ? "Segoe UI" : "Microsoft YaHei UI";
 }

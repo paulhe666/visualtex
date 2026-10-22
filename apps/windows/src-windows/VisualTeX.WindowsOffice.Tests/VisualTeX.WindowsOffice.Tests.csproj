@@ -31,6 +31,7 @@
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeOlePreview.cs" Link="OfficeOlePreview.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OlePngPreviewExtractor.cs" Link="OlePngPreviewExtractor.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficePluginLanguage.cs" Link="OfficePluginLanguage.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeErrorText.cs" Link="OfficeErrorText.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonIconData.cs" Link="RibbonIconData.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\RibbonVectorIconRenderer.cs" Link="RibbonVectorIconRenderer.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\MathMlToLatexConverter.cs" Link="MathMlToLatexConverter.cs" />

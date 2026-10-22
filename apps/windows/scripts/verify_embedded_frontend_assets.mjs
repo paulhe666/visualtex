@@ -38,27 +38,34 @@ const executable = await readFile(executablePath).catch((error) => {
   throw new Error(`Release executable is missing: ${executablePath} (${error.message})`);
 });
 
-const formulaFontAssets = (await readdir(assetRoot))
-  .filter((name) => /^KaTeX_.+\.woff2$/u.test(name))
-  .sort();
-const requiredFormulaFontFamilies = [
-  "KaTeX_AMS-Regular-",
-  "KaTeX_Main-Regular-",
-  "KaTeX_Main-Italic-",
-  "KaTeX_Main-Bold-",
-  "KaTeX_Main-BoldItalic-",
-  "KaTeX_Math-Italic-",
-  "KaTeX_Math-BoldItalic-",
-  "KaTeX_Size1-Regular-",
-  "KaTeX_Size2-Regular-",
-  "KaTeX_Size4-Regular-",
+// Formulas are drawn by the shared layout engine in its own fonts: Computer
+// Modern/AMS (data/fonts) and each font profile's (data/profiles/<name>/fonts,
+// e.g. newtx for "Times New Roman"). Every face their fonts.css declare must be bundled.
+const layoutData = new URL("../../shared/tex-layout/data/", import.meta.url);
+const profileNames = await readdir(new URL("profiles/", layoutData)).catch(() => []);
+const formulaFontFaces = [
+  new URL("fonts/fonts.css", layoutData),
+  ...profileNames.map((name) => new URL(`profiles/${name}/fonts/fonts.css`, layoutData)),
 ];
-const missingFormulaFontFamilies = requiredFormulaFontFamilies.filter(
+const requiredFormulaFonts = [];
+for (const faces of formulaFontFaces) {
+  for (const match of (await readFile(faces, "utf8")).matchAll(/url\(["']?\.\/([^"')]+)\.otf["']?\)/gu)) {
+    requiredFormulaFonts.push(`${match[1]}-`);
+  }
+}
+const formulaFontAssets = (await readdir(assetRoot))
+  .filter((name) => /^vtx-.+\.otf$/u.test(name))
+  .sort();
+const missingFormulaFonts = requiredFormulaFonts.filter(
   (prefix) => !formulaFontAssets.some((name) => name.startsWith(prefix)),
 );
-if (formulaFontAssets.length !== 19 || missingFormulaFontFamilies.length > 0) {
+if (
+  requiredFormulaFonts.length === 0 ||
+  formulaFontAssets.length !== requiredFormulaFonts.length ||
+  missingFormulaFonts.length > 0
+) {
   throw new Error(
-    `Expected the 19 bundled MathLive/KaTeX WOFF2 assets; found ${formulaFontAssets.length}. Missing required families: ${missingFormulaFontFamilies.join(", ") || "none"}. Assets: ${formulaFontAssets.join(", ")}`,
+    `Expected the ${requiredFormulaFonts.length} layout engine OTF fonts declared in apps/shared/tex-layout/data/fonts/fonts.css and data/profiles/*/fonts/fonts.css; found ${formulaFontAssets.length}. Missing: ${missingFormulaFonts.join(", ") || "none"}. Assets: ${formulaFontAssets.join(", ")}`,
   );
 }
 const requiredMarkers = ["index.html", ...assets, ...formulaFontAssets.map((name) => `assets/${name}`)];

@@ -3,9 +3,10 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import {
-  mathLiveBrowserEntry,
-  visualTexMathLiveContourIntegralCompatibility,
-} from "./vite.mathliveIntegralCompatibility";
+  visualTexKernelEntry,
+  visualTexKernelHost,
+  visualTexKernelSsrEntry,
+} from "./vite.visualtexKernelHost";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 
@@ -28,20 +29,22 @@ const rejectLegacyOfficeJsImports = {
 
 export default defineConfig({
   plugins: [
-    visualTexMathLiveContourIntegralCompatibility(),
+    visualTexKernelHost(),
     react(),
     rejectLegacyOfficeJsImports,
   ],
   resolve: {
     alias: [
+      // the editing kernel (apps/shared/visualtex-core/src/kernel)
       {
         find: /^mathlive$/,
-        replacement: mathLiveBrowserEntry,
+        replacement: visualTexKernelEntry,
+      },
+      {
+        find: /^mathlive\/ssr$/,
+        replacement: visualTexKernelSsrEntry,
       },
     ],
-  },
-  optimizeDeps: {
-    exclude: ["mathlive"],
   },
   base: "/",
   publicDir: false,

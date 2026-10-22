@@ -361,7 +361,7 @@ public sealed class VisualTeXSessionClient : IDisposable
         using var response = await SendTrackedAsync(() => _http.PostAsync(
             "/api/v1/sessions",
             new StringContent(json, Encoding.UTF8, "application/json"),
-            cancellationToken)).ConfigureAwait(false);
+            cancellationToken), "POST /api/v1/sessions", cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response).ConfigureAwait(false);
         return await DeserializeAsync<OfficeSessionDocument>(response).ConfigureAwait(false);
     }
@@ -376,7 +376,7 @@ public sealed class VisualTeXSessionClient : IDisposable
         using var response = await SendTrackedAsync(() => _http.PostAsync(
             $"/api/v1/app/sessions/{Uri.EscapeDataString(sessionId)}/open",
             new StringContent("{}", Encoding.UTF8, "application/json"),
-            cancellationToken)).ConfigureAwait(false);
+            cancellationToken), $"POST /api/v1/app/sessions/{Uri.EscapeDataString(sessionId)}/open", cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response).ConfigureAwait(false);
     }
 
@@ -391,7 +391,7 @@ public sealed class VisualTeXSessionClient : IDisposable
             using var response = await SendTrackedAsync(() => _http.PostAsync(
                 "/api/v1/app/editor/prewarm",
                 new StringContent("{}", Encoding.UTF8, "application/json"),
-                cancellationToken)).ConfigureAwait(false);
+                cancellationToken), "POST /api/v1/app/editor/prewarm", cancellationToken).ConfigureAwait(false);
             await EnsureSuccessAsync(response).ConfigureAwait(false);
             _editorPrewarmed = true;
         }
@@ -409,10 +409,13 @@ public sealed class VisualTeXSessionClient : IDisposable
         {
             if (_converterPrewarmed) return;
             EnsureAuthorizationHeader();
-            using var response = await SendTrackedAsync(() => _http.PostAsync(
-                "/api/v1/app/converter/prewarm",
-                new StringContent("{}", Encoding.UTF8, "application/json"),
-                cancellationToken)).ConfigureAwait(false);
+            // creating the conversion window can take longer than an ordinary request
+            using var prewarm = new HttpRequestMessage(HttpMethod.Post, "/api/v1/app/converter/prewarm")
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json"),
+            };
+            using var response = await SendLimitedAsync(prewarm, ConverterStartTimeout, cancellationToken)
+                .ConfigureAwait(false);
             await EnsureSuccessAsync(response).ConfigureAwait(false);
             // WebView creation returns before React and MathJax finish loading.
             // Pay this one-time warm-up cost at add-in startup so the first
@@ -436,7 +439,7 @@ public sealed class VisualTeXSessionClient : IDisposable
         using var response = await SendTrackedAsync(() => _http.PostAsync(
             $"/api/v1/app/sessions/{Uri.EscapeDataString(sessionId)}/convert",
             new StringContent("{}", Encoding.UTF8, "application/json"),
-            cancellationToken)).ConfigureAwait(false);
+            cancellationToken), $"POST /api/v1/app/sessions/{Uri.EscapeDataString(sessionId)}/convert", cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response).ConfigureAwait(false);
     }
 
@@ -472,7 +475,7 @@ public sealed class VisualTeXSessionClient : IDisposable
             using var response = await SendTrackedAsync(() => _http.PostAsync(
                 "/api/v1/app/converter/convert-batch",
                 new StringContent(json, Encoding.UTF8, "application/json"),
-                cancellationToken)).ConfigureAwait(false);
+                cancellationToken), "POST /api/v1/app/converter/convert-batch", cancellationToken).ConfigureAwait(false);
             await EnsureSuccessAsync(response).ConfigureAwait(false);
         }
     }
@@ -494,8 +497,13 @@ public sealed class VisualTeXSessionClient : IDisposable
             (request, isResultWait, token) =>
             {
                 EnsureAuthorizationHeader();
-                return SendTrackedAsync(() =>
-                    (isResultWait ? _renderBatchHttp : _http).SendAsync(request, token));
+                var operation = $"{request.Method} {request.RequestUri}";
+                if (isResultWait)
+                    return SendTrackedAsync(() => _renderBatchHttp.SendAsync(request, token), operation, token);
+                // submitting may open the conversion window first
+                if (request.Method == HttpMethod.Post)
+                    return SendLimitedAsync(request, ConverterStartTimeout, token);
+                return SendTrackedAsync(() => _http.SendAsync(request, token), operation, token);
             });
 
     // The injected sender keeps wire/lifetime tests independent of registry, TLS,
@@ -563,8 +571,15 @@ public sealed class VisualTeXSessionClient : IDisposable
                 throw new InvalidDataException("VisualTeX render batch response id did not match the submitted job.");
             if (!string.IsNullOrWhiteSpace(result.Error))
             {
-                var error = new InvalidOperationException($"VisualTeX render batch failed: {result.Error}");
+                var error = VisualTeXServiceErrors.With(
+                    new InvalidOperationException($"VisualTeX render batch failed: {result.Error}"),
+                    VisualTeXServiceErrors.FailureBatchFailed,
+                    "render batch");
                 error.Data["RenderBatchResult"] = result;
+                error.Data[VisualTeXServiceErrors.ServerErrorKey] = result.Error;
+                error.Data[VisualTeXServiceErrors.FormulaCountKey] = submitted.Length;
+                if (!string.IsNullOrWhiteSpace(result.ErrorCode))
+                    error.Data[VisualTeXServiceErrors.BatchErrorCodeKey] = result.ErrorCode;
                 throw error;
             }
 
@@ -595,7 +610,15 @@ public sealed class VisualTeXSessionClient : IDisposable
         catch (OperationCanceledException error)
             when (!cancellationToken.IsCancellationRequested && operation.IsCancellationRequested)
         {
-            primaryFailure = new TimeoutException("VisualTeX render batch timed out.", error);
+            var timedOut = VisualTeXServiceErrors.With(
+                new TimeoutException(
+                    $"VisualTeX did not finish rendering {submitted.Length} formula(s) within {timeout.TotalSeconds:0} s (render batch {batchId}).",
+                    error),
+                VisualTeXServiceErrors.FailureBatchTimedOut,
+                "render batch");
+            timedOut.Data[VisualTeXServiceErrors.LimitSecondsKey] = timeout.TotalSeconds;
+            timedOut.Data[VisualTeXServiceErrors.FormulaCountKey] = submitted.Length;
+            primaryFailure = timedOut;
             throw primaryFailure;
         }
         catch (Exception error)
@@ -619,11 +642,16 @@ public sealed class VisualTeXSessionClient : IDisposable
             }
             catch (Exception cleanupFailure)
             {
+                // the batch's own failure is what the user needs to know; a release
+                // that also failed is added to it, never put in its place
                 if (primaryFailure != null)
                     throw new AggregateException(
-                        $"VisualTeX render batch '{batchId}' failed and could not be released.",
+                        $"{primaryFailure.Message} (Releasing render batch {batchId} also failed: {cleanupFailure.Message})",
                         primaryFailure, cleanupFailure);
-                throw;
+                // a release that only ran out of time after a complete result does
+                // not discard it (the companion drops finished jobs itself)
+                if (!(result != null && cleanupFailure is TimeoutException))
+                    throw;
             }
         }
     }
@@ -638,7 +666,7 @@ public sealed class VisualTeXSessionClient : IDisposable
         using var response = await SendTrackedAsync(() => _http.PostAsync(
             $"/api/v1/app/sessions/{Uri.EscapeDataString(sessionId)}/bulk-import",
             new StringContent("{}", Encoding.UTF8, "application/json"),
-            cancellationToken)).ConfigureAwait(false);
+            cancellationToken), $"POST /api/v1/app/sessions/{Uri.EscapeDataString(sessionId)}/bulk-import", cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response).ConfigureAwait(false);
     }
 
@@ -652,7 +680,7 @@ public sealed class VisualTeXSessionClient : IDisposable
         using var response = await SendTrackedAsync(() => _http.PostAsync(
             $"/api/v1/app/sessions/{Uri.EscapeDataString(sessionId)}/close",
             new StringContent("{}", Encoding.UTF8, "application/json"),
-            cancellationToken)).ConfigureAwait(false);
+            cancellationToken), $"POST /api/v1/app/sessions/{Uri.EscapeDataString(sessionId)}/close", cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response).ConfigureAwait(false);
     }
 
@@ -690,7 +718,7 @@ public sealed class VisualTeXSessionClient : IDisposable
         EnsureAuthorizationHeader();
         using var response = await SendTrackedAsync(() => _http.GetAsync(
             $"/api/v1/sessions/{Uri.EscapeDataString(sessionId)}",
-            cancellationToken)).ConfigureAwait(false);
+            cancellationToken), $"GET /api/v1/sessions/{Uri.EscapeDataString(sessionId)}", cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response).ConfigureAwait(false);
         return await DeserializeAsync<OfficeSessionDocument>(response).ConfigureAwait(false);
     }
@@ -718,7 +746,7 @@ public sealed class VisualTeXSessionClient : IDisposable
         using var response = await SendTrackedAsync(() => _http.PostAsync(
             "/api/v1/sessions/batch-delete",
             new StringContent(json, Encoding.UTF8, "application/json"),
-            cancellationToken)).ConfigureAwait(false);
+            cancellationToken), "POST /api/v1/sessions/batch-delete", cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response).ConfigureAwait(false);
     }
 
@@ -736,7 +764,7 @@ public sealed class VisualTeXSessionClient : IDisposable
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };
         using var response = await SendTrackedAsync(() =>
-            _http.SendAsync(request, cancellationToken)).ConfigureAwait(false);
+            _http.SendAsync(request, cancellationToken), $"PATCH {request.RequestUri}", cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response).ConfigureAwait(false);
         return await DeserializeAsync<OfficeSessionDocument>(response).ConfigureAwait(false);
     }
@@ -1574,15 +1602,39 @@ public sealed class VisualTeXSessionClient : IDisposable
     private void InvalidateHealth() =>
         Interlocked.Exchange(ref _lastHealthyUtcTicks, 0);
 
+    /// <summary>The ordinary API request time limit (the HttpClient's own timeout).</summary>
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+    /// <summary>Requests that may open the conversion window (it can take a while the first time).</summary>
+    private static readonly TimeSpan ConverterStartTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Sends one request. A request that runs out of time is a TimeoutException
+    /// naming the request (not a cancellation: the user did not stop anything),
+    /// and an unreachable companion an HttpRequestException with the socket or
+    /// TLS cause (VisualTeXServiceErrors).
+    /// </summary>
     private async Task<HttpResponseMessage> SendTrackedAsync(
-        Func<Task<HttpResponseMessage>> operation)
+        Func<Task<HttpResponseMessage>> send,
+        string operation,
+        CancellationToken callerToken,
+        TimeSpan? limit = null)
     {
         try
         {
-            var response = await operation().ConfigureAwait(false);
+            var response = await send().ConfigureAwait(false);
             if (response.IsSuccessStatusCode) MarkHealthy();
             else InvalidateHealth();
             return response;
+        }
+        catch (OperationCanceledException error) when (!callerToken.IsCancellationRequested)
+        {
+            InvalidateHealth();
+            throw VisualTeXServiceErrors.RequestTimedOut(operation, limit ?? RequestTimeout, error);
+        }
+        catch (HttpRequestException error) when (VisualTeXServiceErrors.Get(error, VisualTeXServiceErrors.FailureKey) is null)
+        {
+            InvalidateHealth();
+            throw VisualTeXServiceErrors.Unreachable(operation, error);
         }
         catch
         {
@@ -1591,12 +1643,38 @@ public sealed class VisualTeXSessionClient : IDisposable
         }
     }
 
+    /// <summary>Sends on the client without its own timeout, limited to <paramref name="limit"/>.</summary>
+    private async Task<HttpResponseMessage> SendLimitedAsync(
+        HttpRequestMessage request,
+        TimeSpan limit,
+        CancellationToken callerToken)
+    {
+        using var limited = CancellationTokenSource.CreateLinkedTokenSource(callerToken);
+        limited.CancelAfter(limit);
+        return await SendTrackedAsync(
+            () => _renderBatchHttp.SendAsync(request, limited.Token),
+            $"{request.Method} {request.RequestUri}",
+            callerToken,
+            limit).ConfigureAwait(false);
+    }
+
     private static async Task EnsureSuccessAsync(HttpResponseMessage response)
     {
         if (response.IsSuccessStatusCode) return;
-        var detail = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        throw new HttpRequestException(
-            $"VisualTeX Session request failed ({(int)response.StatusCode}): {detail}");
+        var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        var serverError = VisualTeXServiceErrors.ServerErrorText(body);
+        var operation = response.RequestMessage is { } request
+            ? $"{request.Method} {request.RequestUri}"
+            : null;
+        var error = VisualTeXServiceErrors.With(
+            new HttpRequestException(
+                $"VisualTeX request {(operation is null ? "" : $"'{operation}' ")}failed (HTTP {(int)response.StatusCode} {response.ReasonPhrase}): "
+                + (serverError ?? "no details were given")),
+            VisualTeXServiceErrors.FailureHttpStatus,
+            operation);
+        error.Data[VisualTeXServiceErrors.StatusCodeKey] = (int)response.StatusCode;
+        if (serverError != null) error.Data[VisualTeXServiceErrors.ServerErrorKey] = serverError;
+        throw error;
     }
 
     private static async Task<T> DeserializeAsync<T>(HttpResponseMessage response)

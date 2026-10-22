@@ -38,7 +38,9 @@ internal static class PowerPointTextEditTransaction
         RequireActive(application, presentation);
         var originalXml = PowerPointNativeOmmlPackage.ReadTextShapeXml(presentation, slideId, shapeId);
         if (!string.Equals(Fingerprint(originalXml), expectedSource, StringComparison.Ordinal))
-            throw new InvalidOperationException("文本框内容或格式在编辑器打开后已改变，请重新选择插入位置；未写入公式。");
+            throw new InvalidOperationException(VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text(
+                "文本框内容或格式在编辑器打开后已改变，请重新选择插入位置；未写入公式。",
+                "The text box's content or formatting changed after the editor opened. Choose the insertion point again; the formula was not written."));
         application.StartNewUndoEntry(); // Failure here must precede any mutation.
         var originalHistory = ReadHistory(application);
         try
@@ -69,7 +71,10 @@ internal static class PowerPointTextEditTransaction
             }
             catch (Exception recovery)
             {
-                throw new AggregateException("PowerPoint 公式写入失败，且无法确认原内容已完整恢复；请保留文档并检查。", primary, recovery);
+                throw new AggregateException(VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text(
+                    "PowerPoint 公式写入失败，且无法确认原内容已完整恢复；请保留文档并检查。",
+                    "Writing the PowerPoint formula failed, and VisualTeX could not confirm that the original content was fully restored. Keep the presentation and check it."),
+                    primary, recovery);
             }
             throw;
         }

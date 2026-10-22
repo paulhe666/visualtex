@@ -72,7 +72,8 @@ for (const command of ["\\c", "\\quad", "\\qquad"]) {
 }
 
 // One scalar can have distinct named atom classes. Check the shared registry,
-// both actual MathJax configurations, actual MathLive expansion, and source copy.
+// both actual MathJax configurations, the kernel's expansion as the editor draws
+// it, and source copy.
 const slantedSymbols = [
   ["varparallel", "\\mathrel{⫽}", TEXCLASS.REL],
   ["parallelslant", "\\mathrel{⫽}", TEXCLASS.REL],
@@ -87,7 +88,7 @@ for (const [name, replacement] of slantedSymbols) {
   for (const source of ["a\\" + name + " b", "x^{a\\" + name + " b}_{i}"]) {
     const markup = convertLatexToMarkup(source, { macros: VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS });
     assert.doesNotMatch(markup, /ML__error/);
-    assert.match(markup, /⫽/, "MathLive must render the double solidus, not upright parallel");
+    assert.match(markup, /⫽|&#x2afd;/i, "The editor must draw the double solidus, not upright parallel");
     assert.equal(formatLatex(source, "raw"), source);
     assert.equal(parseLatexSourceDraft(source, "raw").valid, true);
     assert.ok(normalizePackageLatexCommands(source).includes(replacement));
@@ -158,8 +159,8 @@ for (const command of ["mathrel", "mathbin"]) {
 }
 
 // AMS alternates are native commands, not compatibility macro approximations.
-for (const [name, scalar, mathLiveScalar] of [
-  ["shortparallel", "2225", "∥"], ["nshortparallel", "2226", "\uE007"],
+for (const [name, scalar] of [
+  ["shortparallel", "2225"], ["nshortparallel", "2226"],
 ]) {
   const command = "\\" + name;
   assert.ok(registryCommands.has(command));
@@ -171,8 +172,8 @@ for (const [name, scalar, mathLiveScalar] of [
     assert.equal(formatLatex(source, "raw"), source);
     const markup = convertLatexToMarkup(source, { macros: VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS });
     assert.doesNotMatch(markup, /ML__error/);
-    assert.ok(markup.includes(mathLiveScalar), "MathLive alternate glyph slot lost");
-    assert.match(markup, /ML__ams/);
+    // the editor draws AMS alternates from the AMS symbol font
+    assert.match(markup, /'VTX AMS Symbols B \d+'/, "AMS alternate glyph lost");
     for (const displayMode of [false, true]) {
       const mathMl = await latexToMathMl(source, displayMode);
       assert.match(mathMl, /data-mjx-alternate="1"/);

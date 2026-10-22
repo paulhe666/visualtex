@@ -33,7 +33,8 @@ internal sealed class WordOperationProgress : IDisposable
         internal Snapshot(string message, int completed, int total)
         { Message = message; Completed = completed; Total = total; }
     }
-    private Snapshot _snapshot = new("正在准备…", 0, 0);
+    private Snapshot _snapshot = new(
+        VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text("正在准备…", "Preparing…"), 0, 0);
     private readonly Stopwatch _elapsed = Stopwatch.StartNew();
     private readonly Action _onDispose;
     private readonly IntPtr _owner;
@@ -111,6 +112,9 @@ internal sealed class WordOperationProgress : IDisposable
             var message = new Label { Left = 18, Top = 16, Width = 464, Height = 40 };
             var bar = new ProgressBar { Left = 18, Top = 62, Width = 464, Height = 18 };
             var elapsed = new Label { Left = 18, Top = 91, Width = 464, Height = 24 };
+            // The language is read once per window: it cannot change mid-operation.
+            var elapsedFormat = VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text(
+                "已用时 {0}", "Elapsed {0}");
             form.Controls.AddRange(new Control[] { message, bar, elapsed });
             using var timer = new System.Windows.Forms.Timer { Interval = 150 };
             timer.Tick += (_, _) =>
@@ -126,7 +130,9 @@ internal sealed class WordOperationProgress : IDisposable
                     bar.Value = Math.Max(0, Math.Min(state.Completed, state.Total));
                 }
                 elapsed.Text = (determinate ? $"{state.Completed}/{state.Total}    " : "")
-                    + $"已用时 {_elapsed.Elapsed:mm\\:ss}";
+                    + string.Format(
+                        elapsedFormat,
+                        _elapsed.Elapsed.ToString(@"mm\:ss"));
             };
             timer.Start();
             // A modeless owned window stays above its Word window without
@@ -161,8 +167,10 @@ public sealed partial class ThisAddIn
 {
     private WordOperationProgress? _operationProgress;
     private WordOperationProgress BeginOperationProgress(string title, WordFormulaService service,
-        string initialStage = "正在读取公式范围…")
+        string? initialStage = null)
     {
+        initialStage ??= VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text(
+            "正在读取公式范围…", "Reading the formula range…");
         var window = _application!.ActiveWindow;
         IntPtr owner;
         try { owner = new IntPtr(window.Hwnd); }

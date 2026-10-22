@@ -8,6 +8,7 @@ import type {
   PreparedPowerPointCommit,
 } from "./sessionClient";
 import { isVisualTeXFormulaMetadata } from "./formulaMetadata";
+import { normalizeFormulaLetterFont } from "../../editor/formulaFontPreferences";
 
 const SESSION_MODES = ["create", "edit"] as const;
 const OFFICE_HOSTS = ["word", "powerpoint"] as const;
@@ -27,6 +28,7 @@ const SESSION_STATUSES = [
   "cancelled",
   "failed",
 ] as const;
+// the current fonts and those of earlier versions (normalized when read)
 const LETTER_FONTS = [
   "katex",
   "times",
@@ -157,6 +159,10 @@ function validateExportResult(value: unknown, path: string): OfficeExportResult 
     finiteNumber(result.baseline, `${path}.baseline`);
   }
   optionalEnum(result.formulaLetterFont, `${path}.formulaLetterFont`, LETTER_FONTS);
+  // fonts of earlier versions (Cambria, STIX, ...) are shown in KaTeX now
+  if (result.formulaLetterFont !== undefined && result.formulaLetterFont !== null) {
+    result.formulaLetterFont = normalizeFormulaLetterFont(result.formulaLetterFont);
+  }
   optionalEnum(
     result.formulaChineseFont,
     `${path}.formulaChineseFont`,

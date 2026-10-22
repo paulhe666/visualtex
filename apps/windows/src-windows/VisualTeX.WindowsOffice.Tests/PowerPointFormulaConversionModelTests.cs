@@ -170,19 +170,28 @@ public sealed class PowerPointFormulaConversionModelTests
     }
 
     [Fact]
-    public void SkipReportGroupsByReasonWithTheFirstDetail()
+    public void SkipReportListsEveryFailedFormulaWithSlideAndReason()
     {
         var text = PowerPointConversionRules.DescribeSkips(new[]
         {
             new PowerPointConversionSkip(PowerPointConversionSkipReason.InGroup, 1, 2),
-            new PowerPointConversionSkip(PowerPointConversionSkipReason.Failed, 2, 1, "first reason"),
+            new PowerPointConversionSkip(PowerPointConversionSkipReason.Failed, 2, 1, "first reason", "\\frac{a}{b}"),
             new PowerPointConversionSkip(PowerPointConversionSkipReason.InGroup, 3, 1),
             new PowerPointConversionSkip(PowerPointConversionSkipReason.Failed, 4, 1, "second reason"),
         }, english: true);
         var lines = text.Split(new[] { "\r\n" }, StringSplitOptions.None);
-        Assert.Equal(2, lines.Length);
+        Assert.Equal(4, lines.Length);
         Assert.Contains("3 equation(s) are inside groups", lines[0], StringComparison.Ordinal);
-        Assert.Contains("2 equation(s) failed to convert: first reason", lines[1], StringComparison.Ordinal);
+        Assert.Contains("(slides 1, 3)", lines[0], StringComparison.Ordinal);
+        Assert.Contains("2 equation(s) failed to convert", lines[1], StringComparison.Ordinal);
+        Assert.Contains("Slide 2 · \\frac{a}{b}: first reason", lines[2], StringComparison.Ordinal);
+        Assert.Contains("Slide 4: second reason", lines[3], StringComparison.Ordinal);
+        var many = Enumerable.Range(1, PowerPointConversionRules.DescribedSkipLimit + 3)
+            .Select(index => new PowerPointConversionSkip(PowerPointConversionSkipReason.Failed, index, 1, "reason " + index))
+            .ToArray();
+        var capped = PowerPointConversionRules.DescribeSkips(many, english: true).Split(new[] { "\r\n" }, StringSplitOptions.None);
+        Assert.Equal(PowerPointConversionRules.DescribedSkipLimit + 2, capped.Length);
+        Assert.Contains("and 3 more", capped[capped.Length - 1], StringComparison.Ordinal);
         Assert.Equal(5, PowerPointConversionRules.CountSkips(new[]
         {
             new PowerPointConversionSkip(PowerPointConversionSkipReason.InTable, 1, 3),

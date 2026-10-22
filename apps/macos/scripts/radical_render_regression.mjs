@@ -165,7 +165,23 @@ async function main() {
         silenceNotifications: true,
       });
       field.blur();
-      requestAnimationFrame(() => requestAnimationFrame(() => {
+      // Measure once the editor has finished resizing the row for the new
+      // formula (its height settles a frame or two after the render).
+      let lastHeight = -1;
+      let stableFrames = 0;
+      let waitedFrames = 0;
+      const settle = () => {
+        const height = field.getBoundingClientRect().height;
+        stableFrames = height === lastHeight ? stableFrames + 1 : 0;
+        lastHeight = height;
+        if (stableFrames < 2 && ++waitedFrames < 30) {
+          requestAnimationFrame(settle);
+          return;
+        }
+        inspect();
+      };
+      requestAnimationFrame(settle);
+      const inspect = () => {
         const root = field.shadowRoot;
         const sign = root?.querySelector(".ML__sqrt-sign");
         const line = root?.querySelector(".ML__sqrt-line");
@@ -219,8 +235,11 @@ async function main() {
           sign: readNode(sign),
           line: readNode(line),
           lineBefore: readPseudo(line, "::before"),
+          // the VisualTeX layout engine draws the roof itself; its
+          // ML__sqrt-line element only marks the roof's box
+          layoutEngine: Boolean(field.shadowRoot?.querySelector(".ML__vtx")),
         });
-      }));
+      };
     })`);
 
     const clip = {
@@ -324,15 +343,17 @@ async function main() {
     assert.ok(inspection.sign, "MathLive did not render a radical sign");
     assert.ok(inspection.line, "MathLive did not render a radical line node");
     assert.ok(inspection.line.box.width > 1, JSON.stringify(inspection, null, 2));
-    assert.notEqual(
-      inspection.lineBefore?.background,
-      "rgba(0, 0, 0, 0)",
-      JSON.stringify(inspection, null, 2),
-    );
-    assert.ok(
-      Number.parseFloat(inspection.lineBefore?.minHeight ?? "0") >= 1,
-      JSON.stringify(inspection, null, 2),
-    );
+    if (!inspection.layoutEngine) {
+      assert.notEqual(
+        inspection.lineBefore?.background,
+        "rgba(0, 0, 0, 0)",
+        JSON.stringify(inspection, null, 2),
+      );
+      assert.ok(
+        Number.parseFloat(inspection.lineBefore?.minHeight ?? "0") >= 1,
+        JSON.stringify(inspection, null, 2),
+      );
+    }
     assert.ok(
       visualCheck.coverage >= 0.9,
       `Radical roof is not visually continuous in the screenshot: ${JSON.stringify(

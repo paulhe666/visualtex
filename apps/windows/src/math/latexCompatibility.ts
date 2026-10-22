@@ -771,8 +771,20 @@ export function formulaExportErrorMessage(cause: unknown, isEn: boolean) {
 export function assertResolvedPresentationMathMl(mathMl: string) {
   // runtime.ts disables noerrors/noundefined for both export producers. This
   // guard covers serialized error nodes without reinterpreting mtext as TeX.
-  if (/<(?:[A-Za-z_][\w.-]*:)?merror(?=[\s/>])/i.test(mathMl)) {
-    throw new Error("MathJax produced an error node instead of semantic MathML.");
+  const error = mathMl.match(/<(?:[A-Za-z_][\w.-]*:)?merror(?=[\s/>])[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?merror>/i);
+  if (error || /<(?:[A-Za-z_][\w.-]*:)?merror(?=[\s/>])/i.test(mathMl)) {
+    // say what MathJax could not parse (its error node holds the TeX message)
+    const text = stripXmlMarkup(error?.[1] ?? "")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&amp;/gi, "&")
+      .replace(/\s+/g, " ")
+      .trim();
+    throw new Error(
+      text
+        ? `MathJax produced an error node: ${text}`
+        : "MathJax produced an error node instead of semantic MathML.",
+    );
   }
 }
 

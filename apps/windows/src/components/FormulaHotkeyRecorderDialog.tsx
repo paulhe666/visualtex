@@ -14,6 +14,7 @@ import {
 } from "../shortcuts/formulaHotkeys";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { useEditorStore } from "../stores/editorStore";
+import { buttonShortcutLabel, buttonShortcutWithChord } from "../shortcuts/buttonShortcuts";
 import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
 import {
   formulaRowHotkeyAction,
@@ -35,6 +36,8 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
     (state) => state.removeBinding,
   );
   const language = useEditorStore((state) => state.language);
+  const buttonShortcuts = useEditorStore((state) => state.buttonShortcuts);
+  const setButtonShortcut = useEditorStore((state) => state.setButtonShortcut);
   const isEn = language === "en";
   const existingBinding = target
     ? bindings.find((binding) => binding.target.id === target.id) ?? null
@@ -105,6 +108,7 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
   }, [capturedChord, rowBindings, target]);
 
   if (!target) return null;
+  const buttonConflict = capturedChord ? buttonShortcutWithChord(buttonShortcuts, capturedChord) : null;
 
   const protectedAction = capturedChord
     ? protectedFormulaHotkeyAction(capturedChord, language)
@@ -121,10 +125,14 @@ export function FormulaHotkeyRecorderDialog({ target, onClose }: Props) {
       )
     : conflict
       ? formulaHotkeyTargetLabel(conflict.target, language)
-      : null;
+      : buttonConflict
+        ? buttonShortcutLabel(buttonConflict, language)
+        : null;
 
   const saveBinding = () => {
     if (!capturedChord || !canSave) return;
+    // a button shortcut is matched first: it gives the chord up
+    if (buttonConflict) setButtonShortcut(buttonConflict, null);
     if (rowConflict) removeRowBinding(rowConflict.actionId);
     setBinding(target, capturedChord);
     onClose();

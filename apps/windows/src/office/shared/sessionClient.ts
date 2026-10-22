@@ -1,4 +1,5 @@
 import { readResponseErrorMessage } from "../../errors/readErrorMessage";
+import { useEditorStore } from "../../stores/editorStore";
 import type { FormulaDocument } from "../../types/formula";
 import type {
   FormulaChineseFont,
@@ -192,8 +193,11 @@ async function requestJson<T>(
     return decode ? decode(payload) : (payload as T);
   } catch (reason) {
     if (timeoutController.signal.aborted && !init.signal?.aborted) {
+      const method = (init.method ?? "GET").toUpperCase();
       throw new Error(
-        "VisualTeX Office Session 请求超时。请重试；若仍失败，请重启 VisualTeX。",
+        useEditorStore.getState().language === "en"
+          ? `VisualTeX did not answer ${method} ${path} within 12 s. Try again; if it keeps failing, restart VisualTeX.`
+          : `VisualTeX 没有在 12 秒内响应请求（${method} ${path}）。请重试；若仍失败，请重启 VisualTeX。`,
       );
     }
     throw reason;
@@ -242,6 +246,13 @@ export function takeOfficeRenderBatch() {
 }
 export function getOfficeRenderBatch(id: string) {
   return requestJson(`/api/v1/app/converter/render-batches/${encodeURIComponent(id)}`, {}, decodeOfficeRenderBatch);
+}
+/** This window cannot render the batch: the waiting add-in gets the reason. */
+export function failOfficeRenderBatch(id: string, error: string) {
+  return requestJson<void>(
+    `/api/v1/app/converter/render-batches/${encodeURIComponent(id)}/fail`,
+    { method: "POST", body: JSON.stringify({ error }) },
+  );
 }
 export function completeOfficeRenderBatch(id: string, items: OfficeRenderBatchOutput[]) {
   return requestJson<void>(

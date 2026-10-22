@@ -10,7 +10,8 @@
     "src/office/api/**/*.ts",
     "src/office/shared/**/*.ts",
     "src/workspace/**/*.ts",
-    "src/workspace/**/*.tsx"
+    "src/workspace/**/*.tsx",
+    "../shared/visualtex-core/src/kernel/*.d.ts"
   ],
   "references": []
 }

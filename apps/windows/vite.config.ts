@@ -1,24 +1,28 @@
-import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 import react from "@vitejs/plugin-react";
 import {
-  mathLiveBrowserEntry,
-  visualTexMathLiveContourIntegralCompatibility,
-} from "./vite.mathliveIntegralCompatibility";
+  visualTexKernelEntry,
+  visualTexKernelHost,
+  visualTexKernelSsrEntry,
+} from "./vite.visualtexKernelHost";
 
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
-  plugins: [visualTexMathLiveContourIntegralCompatibility(), react()],
+  plugins: [visualTexKernelHost(), react()],
   resolve: {
     alias: [
+      // the editing kernel (apps/shared/visualtex-core/src/kernel)
       {
         find: /^mathlive$/,
-        replacement: mathLiveBrowserEntry,
+        replacement: visualTexKernelEntry,
+      },
+      {
+        find: /^mathlive\/ssr$/,
+        replacement: visualTexKernelSsrEntry,
       },
     ],
-  },
-  optimizeDeps: {
-    exclude: ["mathlive"],
   },
   clearScreen: false,
   server: {
@@ -28,6 +32,13 @@ export default defineConfig({
     hmr: host
       ? { protocol: "ws", host, port: 1421 }
       : undefined,
+    // The formula layout engine and its fonts live in apps/shared.
+    fs: {
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        fileURLToPath(new URL("../shared", import.meta.url)),
+      ],
+    },
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
   build: {

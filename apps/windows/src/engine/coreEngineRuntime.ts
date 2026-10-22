@@ -433,20 +433,9 @@ export async function resolveCoreFontPreferences(
       // Rare characters absent from the 20 KaTeX faces have an explicit,
       // verified bundled mathematical supplement; no operating-system fallback.
       layout.mathFallbacks = [(await stix()).id];
-    } else if (letterFont === "stix" || letterFont === "cambria") {
-      const native = letterFont === "cambria" ? await resolveSystemFont(context, ["Cambria Math"], true) : null;
-      const math = native ?? await stix();
-      layout.mathFont = math.id;
-      layout.mathFallbacks = [context.mathFont.id];
-      actualLetterFamily = native ? "Cambria Math" : "STIX Two Math";
-      letterSource = native ? "system" : "bundled";
-      exactLetterFamily = letterFont === "stix" || Boolean(native);
-      if (!exactLetterFamily) notices.push("Cambria Math 不可用，当前使用随软件提供的 STIX Two Math；未改写保存的字体偏好。");
     } else {
       const profiles = {
         times: { families: ["Times New Roman"], bundled: "termes", name: "TeX Gyre Termes" },
-        palatino: { families: ["Palatino Linotype", "Palatino"], bundled: "pagella", name: "TeX Gyre Pagella" },
-        helvetica: { families: ["Arial", "Helvetica Neue", "Helvetica"], bundled: "heros", name: "TeX Gyre Heros" },
       } as const;
       const profile = profiles[letterFont];
       const native = await resolveRealTextFamily(context, profile.families);

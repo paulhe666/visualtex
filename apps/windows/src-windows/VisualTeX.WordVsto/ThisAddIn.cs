@@ -2807,7 +2807,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var dispatcher = _dispatcher ?? throw new InvalidOperationException("Word dispatcher is unavailable.");
             var service = _formulaService ?? throw new InvalidOperationException("Word formula service is unavailable.");
             var client = _sessionClient ?? throw new InvalidOperationException("VisualTeX Session client is unavailable.");
-            SetStatus("正在连接 VisualTeX 本地服务…");
+            SetStatus(T("正在连接 VisualTeX 本地服务…", "Connecting to the local VisualTeX service…"));
             await client.EnsureHealthyAsync(cancellationToken).ConfigureAwait(false);
             TraceOpenPerformance("health");
             var selection = capturedSelection
@@ -2890,7 +2890,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 await client.OpenConverterAsync(session.Id, cancellationToken)
                     .ConfigureAwait(false);
-                SetStatus("正在直接转换 Word 公式格式…");
+                SetStatus(T("正在直接转换 Word 公式格式…", "Converting the Word equation format directly…"));
             }
             else
             {
@@ -2898,7 +2898,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 await client.OpenEditorAsync(session.Id, cancellationToken)
                     .ConfigureAwait(false);
                 TraceOpenPerformance("open-editor-window");
-                SetStatus("VisualTeX 编辑器已打开。");
+                SetStatus(T("VisualTeX 编辑器已打开。", "The VisualTeX editor is open."));
             }
             session = await client.WaitForCommitAsync(
                 session.Id,
@@ -2927,19 +2927,23 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     session.MathTypeNumberPosition);
             if (session.Status == "cancelled" || session.ExplicitCancel)
             {
-                SetStatus("已取消，Word 文档未修改。");
+                SetStatus(T("已取消，Word 文档未修改。", "Cancelled. The Word document was not changed."));
                 return;
             }
             if (session.Status == "failed")
-                throw new InvalidOperationException(session.Error ?? "VisualTeX Session 失败。");
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(session.Error)
+                        ? T("VisualTeX 报告该公式失败，但没有说明原因。",
+                            "VisualTeX reported that this formula failed but gave no reason.")
+                        : OfficeErrorText.DescribeItemError(session.Error));
             if (session.Mode == "edit"
                 && !session.Dirty
                 && (!requiresObjectModeChange || session.ExportResult is null))
             {
                 await client.CompleteAsync(session.Id, cancellationToken).ConfigureAwait(false);
                 SetStatus(requiresObjectModeChange
-                    ? "未执行对象格式转换。"
-                    : "公式内容未变化。");
+                    ? T("未执行对象格式转换。", "The object format was not converted.")
+                    : T("公式内容未变化。", "The formula did not change."));
                 return;
             }
 
@@ -3129,32 +3133,40 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     FormulaOleContract.MathTypeOleMode,
                     StringComparison.Ordinal))
                 SetStatus(session.Mode == "edit"
-                    ? "MathType OLE 公式已原位更新，仍可继续用 MathType 编辑。"
-                    : "MathType OLE 公式已插入，可继续用 MathType 或 VisualTeX 编辑。");
+                    ? T("MathType OLE 公式已原位更新，仍可继续用 MathType 编辑。",
+                        "The MathType OLE equation was updated in place and can still be edited with MathType.")
+                    : T("MathType OLE 公式已插入，可继续用 MathType 或 VisualTeX 编辑。",
+                        "The MathType OLE equation was inserted and can be edited with MathType or VisualTeX."));
             else if (requiresObjectModeChange
                 && string.Equals(
                     session.ObjectMode,
                     FormulaOleContract.WordOmmlMode,
                     StringComparison.Ordinal))
-                SetStatus("已转换为 Word 原生 OMML：可在 Word 中直接编辑，也可继续用 VisualTeX 编辑。");
+                SetStatus(T("已转换为 Word 原生 OMML：可在 Word 中直接编辑，也可继续用 VisualTeX 编辑。",
+                    "Converted to a native Word OMML equation: edit it directly in Word or with VisualTeX."));
             else if (requiresObjectModeChange
                 && string.Equals(
                     session.ObjectMode,
                     FormulaOleContract.NativeOleMode,
                     StringComparison.Ordinal))
-                SetStatus("已转换为原生 OLE：可双击使用 VisualTeX 编辑，并随 Word 文档保存。");
+                SetStatus(T("已转换为原生 OLE：可双击使用 VisualTeX 编辑，并随 Word 文档保存。",
+                    "Converted to a native OLE object: double-click to edit it with VisualTeX; it is saved with the Word document."));
             else
-                SetStatus(session.Mode == "edit" ? "Word 公式已更新。" : "Word 公式已插入。");
+                SetStatus(session.Mode == "edit"
+                    ? T("Word 公式已更新。", "The Word formula was updated.")
+                    : T("Word 公式已插入。", "The Word formula was inserted."));
         }
         catch (OperationCanceledException)
+            when (lifetimeCancellationToken.IsCancellationRequested
+                || operationCancellation.IsCancellationRequested)
         {
+            // Only Word closing or this operation's own cancellation is
+            // "cancelled"; any other OperationCanceledException is an error.
             if (lifetimeCancellationToken.IsCancellationRequested)
-                SetStatus("VisualTeX 操作已取消。");
-            else if (operationCancellation.IsCancellationRequested)
+                SetStatus(T("VisualTeX 操作已取消。", "The VisualTeX operation was cancelled."));
+            else
                 WordDoubleClickHook.TraceMessage(
                     $"ribbon-stale-session-local-waiter-cancelled sessionId={sessionId ?? "<pending>"}");
-            else
-                SetStatus("VisualTeX 操作已取消。");
         }
         catch (Exception error)
         {
@@ -3266,12 +3278,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 TimeSpan.FromSeconds(2),
                 lifetime.Token).ConfigureAwait(false))
         {
-            SetStatus("VisualTeX 正在执行其他 Word 操作，请稍候再试。");
+            SetStatus(T("VisualTeX 正在执行其他 Word 操作，请稍候再试。",
+                "VisualTeX is busy with another Word operation. Try again in a moment."));
             return;
         }
 
         var progress = await dispatcher.InvokeAsync(
-            () => BeginOperationProgress("VisualTeX LaTeX 重绘", service)).ConfigureAwait(false);
+            () => BeginOperationProgress(RedrawTitle, service)).ConfigureAwait(false);
 
         var rendered = new Dictionary<string, RenderedWordBulkFormulaTemplate>(
             StringComparer.Ordinal);
@@ -3288,6 +3301,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         var converterSessionIds = new List<string>();
         var renderFailures = new Dictionary<string, string>(StringComparer.Ordinal);
         var skippedTargets = new List<(WordLatexRedrawTarget Target, string Error)>();
+        // A render batch that failed as a whole is reported once, with its
+        // reason and the number of formulas it covered, not copied onto each.
+        var batchFailures = new List<(string Reason, int FormulaCount)>();
+        var batchFailedKeys = new HashSet<string>(StringComparer.Ordinal);
+        var batchFailedTargetIds = new HashSet<string>(StringComparer.Ordinal);
+        var batchFailureGate = new object();
+        WordLatexRedrawPlan? redrawPlan = null;
         var maxRenderMilliseconds = 0L;
         var totalRenderMilliseconds = 0L;
         var redrawPhaseWatch = Stopwatch.StartNew();
@@ -3297,6 +3317,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var plan = await dispatcher.InvokeAsync(
                     () => service.CaptureLatexRedrawPlan(wholeDocument))
                 .ConfigureAwait(false);
+            redrawPlan = plan;
             WriteRedrawAcceptanceLog(
                 $"redraw-phase captureMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
                 + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds} "
@@ -3353,13 +3374,16 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 {
                     SetStatus(
                         wholeDocument
-                            ? "已取消全文 LaTeX 重绘，Word 文档未修改。"
-                            : "已取消所选 LaTeX 重绘，Word 文档未修改。");
+                            ? T("已取消全文 LaTeX 重绘，Word 文档未修改。",
+                                "LaTeX redraw of the whole document was cancelled. The Word document was not changed.")
+                            : T("已取消所选 LaTeX 重绘，Word 文档未修改。",
+                                "LaTeX redraw of the selection was cancelled. The Word document was not changed."));
                     return;
                 }
                 numberDisplayFormulas = options.NumberDisplayFormulas;
                 progress = await dispatcher.InvokeAsync(
-                    () => BeginOperationProgress("VisualTeX LaTeX 重绘", service, "正在准备重绘…")).ConfigureAwait(false);
+                    () => BeginOperationProgress(RedrawTitle, service,
+                        T("正在准备重绘…", "Preparing the redraw…"))).ConfigureAwait(false);
             }
             plan.NumberDisplayFormulas = allowRedrawNumbering && numberDisplayFormulas;
             var mathTypeNumberPosition = string.Equals(
@@ -3375,11 +3399,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 $"redraw-start scope={(wholeDocument ? "document" : "selection")} "
                 + $"mode={objectMode} formulas={plan.Targets.Count} "
                 + $"numberDisplayFormulas={plan.NumberDisplayFormulas}");
-            SetStatus($"正在准备重绘 {plan.Targets.Count} 个 LaTeX 公式为 {modeLabel}…");
+            SetStatus(T($"正在准备重绘 {plan.Targets.Count} 个 LaTeX 公式为 {modeLabel}…",
+                $"Preparing to redraw {plan.Targets.Count} LaTeX formula(s) as {modeLabel}…"));
             phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
-            progress.Report("正在连接公式转换服务…");
+            progress.Report(T("正在连接 VisualTeX…", "Connecting to VisualTeX…"));
             await client.EnsureHealthyAsync(lifetime.Token).ConfigureAwait(false);
-            progress.Report("正在准备公式渲染器…");
+            progress.Report(T("正在准备公式渲染器…", "Preparing the formula renderer…"));
             await client.PrewarmConverterAsync(lifetime.Token).ConfigureAwait(false);
             WriteRedrawAcceptanceLog(
                 $"redraw-phase healthPrewarmMs={redrawPhaseWatch.ElapsedMilliseconds - phaseStartMilliseconds} "
@@ -3502,10 +3527,12 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 WriteRedrawAcceptanceLog(
                     $"render-stream-start unique={pendingRenders.Count} total={plan.Targets.Count}");
-                SetStatus($"正在渲染并写入 {plan.Targets.Count} 个公式…");
+                SetStatus(T($"正在渲染并写入 {plan.Targets.Count} 个公式…",
+                    $"Rendering and writing {plan.Targets.Count} formula(s)…"));
                 var streamWatch = Stopwatch.StartNew();
                 streamProducer = Task.Run(async () =>
                 {
+                    Exception? producerFailure = null;
                     try
                     {
                         const int StreamChunkSize = 20;
@@ -3534,46 +3561,70 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                                 .ToArray();
                             var chunkWait = Stopwatch.StartNew();
                             RenderBatchResult? batch = null;
-                            string? chunkFailure = null;
+                            Exception? chunkFailure = null;
                             try
                             {
                                 batch = await nextStreamChunk!.ConfigureAwait(false);
                             }
-                            catch (OperationCanceledException)
+                            catch (Exception) when (streamCancel.IsCancellationRequested)
                             {
+                                // The user cancelled, or the writer has finished
+                                // or stopped: nobody takes these formulas any more.
                                 throw;
                             }
                             catch (Exception error)
                             {
-                                chunkFailure = string.IsNullOrWhiteSpace(error.Message)
-                                    ? error.GetType().Name
-                                    : error.Message.Trim();
+                                // A timed-out, refused or released batch is an
+                                // error of this batch, never a cancellation.
+                                chunkFailure = error;
                             }
                             chunkWait.Stop();
                             nextStreamChunk = SubmitStreamChunk(offset + StreamChunkSize);
                             WriteRedrawAcceptanceLog(
                                 $"render-chunk offset={offset} items={chunk.Length} waitMs={chunkWait.ElapsedMilliseconds}"
-                                + (chunkFailure is null ? string.Empty : $" error={chunkFailure}"));
+                                + (chunkFailure is null ? string.Empty : $" error={chunkFailure.GetType().Name}: {chunkFailure.Message}"));
 
-                            var materialized = chunkFailure is null
-                                ? MaterializeBulkFormulaTemplates(
-                                    client,
-                                    chunk
-                                        .Select((item, position) => (item.Run, batch!.Items[position].Session))
-                                        .ToList(),
-                                    objectMode)
-                                : null;
+                            if (chunkFailure is not null)
+                            {
+                                // One report line for the whole batch, with the
+                                // number of formulas it covered.
+                                var batchReason = OfficeErrorText.Describe(chunkFailure);
+                                var affected = 0;
+                                foreach (var pending in chunk)
+                                {
+                                    WriteRedrawAcceptanceLog(
+                                        $"render-skipped index={pending.Index + 1} elapsedMs=0 "
+                                        + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
+                                        + $"latex={pending.Target.Latex} error=batch: {batchReason}");
+                                    foreach (var target in targetsByKey[pending.Key])
+                                    {
+                                        lock (batchFailureGate)
+                                            batchFailedTargetIds.Add(target.Id);
+                                        stream.Fail(target.Id, batchReason);
+                                        affected++;
+                                    }
+                                }
+                                lock (batchFailureGate)
+                                    batchFailures.Add((batchReason, affected));
+                                continue;
+                            }
+
+                            var materialized = MaterializeBulkFormulaTemplates(
+                                client,
+                                chunk
+                                    .Select((item, position) => (item.Run, batch!.Items[position].Session))
+                                    .ToList(),
+                                objectMode);
                             for (var position = 0; position < chunk.Length; position++)
                             {
                                 var pending = chunk[position];
-                                var itemMilliseconds = materialized?[position].Milliseconds ?? 0L;
-                                var error = materialized?[position].Error;
-                                var detail = chunkFailure
-                                    ?? (error is null
-                                        ? null
-                                        : string.IsNullOrWhiteSpace(error.Message)
-                                            ? error.GetType().Name
-                                            : error.Message.Trim());
+                                var itemMilliseconds = materialized[position].Milliseconds;
+                                var error = materialized[position].Error;
+                                var detail = error is null
+                                    ? null
+                                    : error is WordFormulaRenderException renderError
+                                        ? renderError.Reason
+                                        : OfficeErrorText.Describe(error);
                                 if (detail is not null)
                                 {
                                     WriteRedrawAcceptanceLog(
@@ -3584,7 +3635,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                                         stream.Fail(target.Id, detail);
                                     continue;
                                 }
-                                var template = materialized![position].Template!;
+                                var template = materialized[position].Template!;
                                 // Only this producer writes these until the writer
                                 // has finished and the producer has been awaited.
                                 rendered[pending.Key] = template;
@@ -3604,12 +3655,35 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             $"redraw-phase renderStreamMs={streamWatch.ElapsedMilliseconds} "
                             + $"elapsedMs={redrawPhaseWatch.ElapsedMilliseconds}");
                     }
+                    catch (Exception error) when (!streamCancel.IsCancellationRequested)
+                    {
+                        // Keep the real reason for the formulas not yet rendered.
+                        producerFailure = error;
+                        WriteRedrawAcceptanceLog($"render-stream-failed error={error}");
+                    }
                     finally
                     {
-                        // A target the producer never reached (cancellation or an
-                        // unexpected failure) is skipped by the writer, never awaited.
-                        stream.FailRemaining(
-                            streamCancel.IsCancellationRequested ? "已取消。" : "公式渲染未完成。");
+                        // A target the producer never reached is skipped by the
+                        // writer, never awaited. Only the user's own cancellation
+                        // is worded as cancelled.
+                        var remainingReason = lifetime.IsCancellationRequested
+                            ? T("重绘已取消，该公式没有渲染。",
+                                "The redraw was cancelled before this formula was rendered.")
+                            : producerFailure is not null
+                                ? T("渲染因错误停止：", "Rendering stopped because of an error: ")
+                                    + OfficeErrorText.Describe(producerFailure)
+                                : T("重绘已停止，该公式没有渲染。",
+                                    "The redraw stopped before this formula was rendered.");
+                        var remaining = stream.FailRemaining(remainingReason);
+                        if (producerFailure is not null && remaining.Count > 0)
+                        {
+                            lock (batchFailureGate)
+                            {
+                                foreach (var id in remaining)
+                                    batchFailedTargetIds.Add(id);
+                                batchFailures.Add((remainingReason, remaining.Count));
+                            }
+                        }
                     }
                 });
             }
@@ -3619,7 +3693,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
                 WriteRedrawAcceptanceLog(
                     $"render-batch-start unique={pendingRenders.Count} total={plan.Targets.Count}");
-                SetStatus($"正在批量渲染 {pendingRenders.Count} 个独立公式…");
+                SetStatus(T($"正在批量渲染 {pendingRenders.Count} 个不同的公式…",
+                    $"Rendering {pendingRenders.Count} distinct formula(s)…"));
 
                 // Render through ephemeral batch jobs, as format conversion does:
                 // no Session file per formula, no fsync per save and no 16 ms
@@ -3646,7 +3721,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             lifetime.Token);
 
                 var renderCompleted = 0;
-                progress.Report("正在渲染公式…", 0, pendingRenders.Count);
+                progress.Report(T("正在渲染公式…", "Rendering formulas…"), 0, pendingRenders.Count);
                 var nextChunk = SubmitChunk(0);
                 for (var offset = 0; offset < pendingRenders.Count; offset += RenderChunkSize)
                 {
@@ -3657,44 +3732,60 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         .ToArray();
                     var chunkWait = Stopwatch.StartNew();
                     RenderBatchResult? batch = null;
-                    string? chunkFailure = null;
+                    Exception? chunkFailure = null;
                     try
                     {
                         batch = await nextChunk!.ConfigureAwait(false);
                     }
-                    catch (OperationCanceledException)
+                    catch (Exception error) when (!IsUserCancellation(error, lifetime.Token))
                     {
-                        throw;
-                    }
-                    catch (Exception error)
-                    {
-                        chunkFailure = string.IsNullOrWhiteSpace(error.Message)
-                            ? error.GetType().Name
-                            : error.Message.Trim();
+                        // A timed-out, refused or released batch is an error of
+                        // this batch, never a cancellation.
+                        chunkFailure = error;
                     }
                     chunkWait.Stop();
                     nextChunk = SubmitChunk(offset + RenderChunkSize);
                     WriteRedrawAcceptanceLog(
                         $"render-chunk offset={offset} items={chunk.Length} waitMs={chunkWait.ElapsedMilliseconds}"
-                        + (chunkFailure is null ? string.Empty : $" error={chunkFailure}"));
+                        + (chunkFailure is null ? string.Empty : $" error={chunkFailure.GetType().Name}: {chunkFailure.Message}"));
 
-                    var materialized = chunkFailure is null
-                        ? MaterializeBulkFormulaTemplates(
-                            client,
-                            chunk
-                                .Select((item, position) => (item.Run, batch!.Items[position].Session))
-                                .ToList(),
-                            objectMode)
-                        : null;
+                    if (chunkFailure is not null)
+                    {
+                        // One report line for the whole batch, with the number
+                        // of formulas it covered (identical formulas included).
+                        var batchReason = OfficeErrorText.Describe(chunkFailure);
+                        var chunkKeys = new HashSet<string>(
+                            chunk.Select(item => item.Key),
+                            StringComparer.Ordinal);
+                        foreach (var pending in chunk)
+                        {
+                            batchFailedKeys.Add(pending.Key);
+                            WriteRedrawAcceptanceLog(
+                                $"render-skipped index={pending.Index + 1} elapsedMs=0 "
+                                + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
+                                + $"latex={pending.Target.Latex} error=batch: {batchReason}");
+                        }
+                        batchFailures.Add((
+                            batchReason,
+                            plan.Targets.Count(target => chunkKeys.Contains(formulaKeys[target.Id]))));
+                        renderCompleted += chunk.Length;
+                        progress.Report(T("正在渲染公式…", "Rendering formulas…"), renderCompleted, pendingRenders.Count);
+                        continue;
+                    }
+
+                    var materialized = MaterializeBulkFormulaTemplates(
+                        client,
+                        chunk
+                            .Select((item, position) => (item.Run, batch!.Items[position].Session))
+                            .ToList(),
+                        objectMode);
                     for (var position = 0; position < chunk.Length; position++)
                     {
                         var pending = chunk[position];
-                        var itemMilliseconds = materialized?[position].Milliseconds ?? 0L;
+                        var itemMilliseconds = materialized[position].Milliseconds;
                         try
                         {
-                            if (chunkFailure is not null)
-                                throw new InvalidOperationException(chunkFailure);
-                            if (materialized![position].Error is { } materializeError)
+                            if (materialized[position].Error is { } materializeError)
                                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(materializeError).Throw();
                             var template = materialized[position].Template!;
                             totalRenderMilliseconds += itemMilliseconds;
@@ -3709,8 +3800,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             {
                                 var preflightKey = pending.Key;
                                 var preflightMathMl = template.MathMl
-                                    ?? throw new InvalidDataException(
-                                        $"MathType 重绘模板 {pending.Key} 缺少 MathML。");
+                                    ?? throw new InvalidDataException(T(
+                                        "VisualTeX 为该公式生成的结果缺少 MathML。",
+                                        "VisualTeX's result for this formula has no MathML."));
                                 var preflightInline = string.Equals(
                                     template.Session.DisplayMode,
                                     "inline",
@@ -3734,11 +3826,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                                         }
                                         catch (Exception error)
                                         {
-                                            var detail = string.IsNullOrWhiteSpace(error.Message)
-                                                ? error.GetType().Name
-                                                : error.Message.Trim();
                                             mathTypePreflightFailures[preflightKey] =
-                                                (preflightLatex, detail);
+                                                (preflightLatex,
+                                                 T("无法编码为 MathType 公式：", "Could not encode it as a MathType equation: ")
+                                                    + OfficeErrorText.Describe(error));
                                         }
                                         finally
                                         {
@@ -3752,22 +3843,22 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                                 + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
                                 + $"latex={pending.Target.Latex}");
                         }
-                        catch (OperationCanceledException)
+                        catch (Exception error) when (IsUserCancellation(error, lifetime.Token))
                         {
                             throw;
                         }
                         catch (Exception error)
                         {
-                            var detail = string.IsNullOrWhiteSpace(error.Message)
-                                ? error.GetType().Name
-                                : error.Message.Trim();
+                            var detail = error is WordFormulaRenderException renderError
+                                ? renderError.Reason
+                                : OfficeErrorText.Describe(error);
                             renderFailures[pending.Key] = detail;
                             WriteRedrawAcceptanceLog(
                                 $"render-skipped index={pending.Index + 1} elapsedMs={itemMilliseconds} "
                                 + $"fontSizePt={pending.Target.FontSizePt:0.##} display={pending.Target.DisplayMode} "
                                 + $"latex={pending.Target.Latex} error={detail}");
                         }
-                        progress.Report("正在渲染公式…", ++renderCompleted, pendingRenders.Count);
+                        progress.Report(T("正在渲染公式…", "Rendering formulas…"), ++renderCompleted, pendingRenders.Count);
                     }
                 }
                 WriteRedrawAcceptanceLog(
@@ -3787,7 +3878,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 // the rule that every formula is fully validated before Word is
                 // mutated.
                 var preflightAwaitStart = redrawPhaseWatch.ElapsedMilliseconds;
-                progress.Report("正在生成并校验 MathType 数据…");
+                progress.Report(T("正在生成并校验 MathType 数据…", "Generating and checking MathType data…"));
                 await Task.WhenAll(mathTypePreflightTasks)
                     .ConfigureAwait(false);
                 WriteRedrawAcceptanceLog(
@@ -3821,7 +3912,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 else if (mathTypeStandalone.Count > 0)
                 {
-                    SetStatus($"正在批量生成 {mathTypeStandalone.Count} 个 MathType 原生预览…");
+                    SetStatus(T($"正在批量生成 {mathTypeStandalone.Count} 个 MathType 原生预览…",
+                        $"Generating {mathTypeStandalone.Count} native MathType previews…"));
                     var nativePreviewInputs =
                         mathTypeStandalone.ToDictionary(
                             item => item.Key,
@@ -3874,6 +3966,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 var target = plan.Targets[index];
                 var key = formulaKeys[target.Id];
+                if (batchFailedKeys.Contains(key))
+                {
+                    // Counted once in batchFailures, with the batch's reason.
+                    WriteRedrawAcceptanceLog(
+                        $"render-skip-batch-failed index={index + 1} display={target.DisplayMode} "
+                        + $"latex={target.Latex}");
+                    continue;
+                }
                 if (renderFailures.TryGetValue(key, out var failure))
                 {
                     skippedTargets.Add((target, failure));
@@ -3883,7 +3983,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     continue;
                 }
                 if (!rendered.TryGetValue(key, out var template))
-                    throw new InvalidDataException($"缺少公式 {target.Id} 的批量渲染结果。");
+                    throw new InvalidDataException(T(
+                        $"公式“{WordFormulaRenderException.Excerpt(target.Latex, 120)}”缺少批量渲染结果。",
+                        $"The formula “{WordFormulaRenderException.Excerpt(target.Latex, 120)}” is missing its batch render result."));
 
                 var run = new WordBulkRun
                 {
@@ -3935,15 +4037,18 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
 
             if (streamed is null && prepared.Count == 0)
             {
+                var notRedrawn = skippedTargets.Count + batchFailures.Sum(item => item.FormulaCount);
                 WriteRedrawAcceptanceLog(
-                    $"redraw-complete formulas=0 unique=0 skipped={skippedTargets.Count} "
+                    $"redraw-complete formulas=0 unique=0 skipped={notRedrawn} "
                     + "renderAverageMs=0 renderMaxMs=0 insertTotalMs=0 insertMaxMs=0");
-                SetStatus(
-                    $"LaTeX 重绘未转换任何公式：{skippedTargets.Count} 个公式无法重绘，均已保留原代码。");
+                SetStatus(T(
+                    $"LaTeX 重绘未转换任何公式：{notRedrawn} 个公式无法重绘，均已保留原 LaTeX。",
+                    $"LaTeX redraw converted no formulas: {notRedrawn} formula(s) could not be redrawn and keep their original LaTeX."));
                 progress.Dispose();
                 await ShowLatexRedrawFailuresAsync(
                         dispatcher,
-                        skippedTargets)
+                        skippedTargets,
+                        batchFailures)
                     .ConfigureAwait(false);
                 _ = CleanupConverterSessionsBestEffortAsync(
                     client,
@@ -3957,7 +4062,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 plan.Targets = plan.Targets
                     .Where(target => prepared.ContainsKey(target.Id))
                     .ToList();
-                SetStatus("公式渲染完成，正在原位写入 Word…");
+                SetStatus(T("公式渲染完成，正在原位写入 Word…",
+                    "Formulas rendered. Writing them into Word in place…"));
             }
             BeginFormulaFormatMutation();
             phaseStartMilliseconds = redrawPhaseWatch.ElapsedMilliseconds;
@@ -3985,7 +4091,9 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     }
                     catch (Exception error) when (error is not OperationCanceledException)
                     {
-                        WriteRedrawAcceptanceLog($"render-stream-failed error={error.GetType().Name}: {error.Message}");
+                        // The producer records its own failure for the formulas
+                        // it did not reach; this only observes the task.
+                        WriteRedrawAcceptanceLog($"render-stream-observed error={error.GetType().Name}: {error.Message}");
                     }
                     catch (OperationCanceledException)
                     {
@@ -4000,7 +4108,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                         target.Id,
                         failure.TargetId,
                         StringComparison.Ordinal));
-                if (failedTarget is not null)
+                // A formula of a failed render batch is counted once, in
+                // batchFailures, instead of repeating the batch's reason.
+                if (failedTarget is not null
+                    && !batchFailedTargetIds.Contains(failure.TargetId))
                     skippedTargets.Add((failedTarget, failure.Error));
                 WriteRedrawAcceptanceLog(
                     $"apply-skipped targetId={failure.TargetId} "
@@ -4059,36 +4170,82 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 + $"insertTotalMs={result.TotalInsertMilliseconds} insertMaxMs={result.MaxInsertMilliseconds} "
                 + $"sourceMutationTotalMs={result.TotalSourceMutationMilliseconds} "
                 + $"sourceMutationMaxMs={(result.SourceMutationMilliseconds.Count == 0 ? 0 : result.SourceMutationMilliseconds.Max())}");
+            var notRedrawnCount = skippedTargets.Count + batchFailures.Sum(item => item.FormulaCount);
             var performanceSuffix = maxRenderMilliseconds <= 250
-                ? $"渲染最大 {maxRenderMilliseconds} ms/公式"
-                : $"渲染最大 {maxRenderMilliseconds} ms/公式（本机超过 250 ms 目标）";
-            var skippedSuffix = skippedTargets.Count == 0
+                ? T($"渲染最大 {maxRenderMilliseconds} ms/公式",
+                    $"slowest render {maxRenderMilliseconds} ms/formula")
+                : T($"渲染最大 {maxRenderMilliseconds} ms/公式（本机超过 250 ms 目标）",
+                    $"slowest render {maxRenderMilliseconds} ms/formula (above the 250 ms target on this PC)");
+            var skippedSuffix = notRedrawnCount == 0
                 ? string.Empty
-                : $"；{skippedTargets.Count} 个无法重绘的公式已保留原 LaTeX";
+                : T($"；{notRedrawnCount} 个无法重绘的公式已保留原 LaTeX",
+                    $"; {notRedrawnCount} formula(s) could not be redrawn and keep their original LaTeX");
             var warningSuffix = result.Warnings.Count == 0
                 ? string.Empty
-                : $"；另有 {result.Warnings.Count} 个收尾警告";
-            SetStatus(
-                $"LaTeX 重绘完成：{result.FormulaCount} 个公式已转换为 {modeLabel}{skippedSuffix}{warningSuffix}；{performanceSuffix}。");
+                : T($"；另有 {result.Warnings.Count} 个收尾警告",
+                    $"; {result.Warnings.Count} finalization warning(s)");
+            SetStatus(T(
+                $"LaTeX 重绘完成：{result.FormulaCount} 个公式已转换为 {modeLabel}{skippedSuffix}{warningSuffix}；{performanceSuffix}。",
+                $"LaTeX redraw finished: {result.FormulaCount} formula(s) converted to {modeLabel}{skippedSuffix}{warningSuffix}; {performanceSuffix}."));
             progress.Dispose();
             await ShowLatexRedrawFailuresAsync(
                     dispatcher,
                     skippedTargets,
+                    batchFailures,
                     result.Warnings)
                 .ConfigureAwait(false);
         }
-        catch (OperationCanceledException error)
+        catch (Exception error) when (IsUserCancellation(error, lifetime.Token))
         {
+            // Only the operation's own token is a cancellation.
             WriteRedrawAcceptanceLog("redraw-cancelled " + error);
-            SetStatus("VisualTeX LaTeX 重绘已取消。");
+            SetStatus(T("VisualTeX LaTeX 重绘已取消。", "VisualTeX LaTeX redraw was cancelled."));
         }
         catch (Exception error)
         {
             WriteRedrawAcceptanceLog("redraw-failed " + error);
+            // A stop part-way reports its cause plus what was already done.
+            var aborted = error as WordLatexRedrawAbortedException;
             var failureMessage = OfficePluginLanguage.FormatOperationError(
-                error,
+                aborted?.InnerException ?? error,
                 "VisualTeX LaTeX 重绘失败",
                 "VisualTeX LaTeX redraw failed");
+            var report = new StringBuilder(failureMessage);
+            var statusMessage = failureMessage;
+            IReadOnlyList<string> abortWarnings = Array.Empty<string>();
+            if (aborted is not null)
+            {
+                report.Append("\r\n\r\n");
+                report.Append(T(
+                    $"重绘在这个公式处停止：{WordFormulaRenderException.Excerpt(aborted.StoppedAt.Latex, 160)}",
+                    $"The redraw stopped at this formula: {WordFormulaRenderException.Excerpt(aborted.StoppedAt.Latex, 160)}"));
+                report.Append("\r\n");
+                report.Append(T(
+                    $"停止前已有 {aborted.Partial.FormulaCount} 个公式重绘完成，并保留在文档中；{aborted.NotAttempted} 个公式没有处理，保留原 LaTeX。",
+                    $"{aborted.Partial.FormulaCount} formula(s) had already been redrawn and remain in the document; {aborted.NotAttempted} formula(s) were not processed and keep their original LaTeX."));
+                statusMessage += T(
+                    $"（停止前已重绘 {aborted.Partial.FormulaCount} 个公式）",
+                    $" ({aborted.Partial.FormulaCount} formula(s) had already been redrawn)");
+                foreach (var failure in aborted.Partial.Failures)
+                {
+                    var failedTarget = redrawPlan?.Targets.FirstOrDefault(target =>
+                        string.Equals(target.Id, failure.TargetId, StringComparison.Ordinal));
+                    if (failedTarget is not null
+                        && !batchFailedTargetIds.Contains(failure.TargetId))
+                        skippedTargets.Add((failedTarget, failure.Error));
+                }
+                abortWarnings = aborted.Partial.Warnings;
+            }
+            var skippedText = BuildLatexRedrawFailureText(
+                skippedTargets,
+                batchFailures,
+                abortWarnings,
+                stopped: true);
+            if (!string.IsNullOrEmpty(skippedText))
+            {
+                report.Append("\r\n\r\n");
+                report.Append(skippedText);
+            }
             foreach (var sessionId in converterSessionIds)
             {
                 try
@@ -4098,20 +4255,21 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 catch { }
             }
-            SetStatus(failureMessage);
+            SetStatus(statusMessage);
             if (!string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                     "1",
                     StringComparison.Ordinal))
             {
                 progress.Dispose();
+                var reportText = report.ToString();
                 try
                 {
                     await dispatcher.InvokeAsync(() =>
                     {
                         System.Windows.Forms.MessageBox.Show(
-                            failureMessage,
-                            T("VisualTeX LaTeX 重绘", "VisualTeX LaTeX Redraw"),
+                            reportText,
+                            RedrawTitle,
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);
                         return true;
@@ -4135,88 +4293,34 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         }
     }
 
+    private static string RedrawTitle => T("VisualTeX LaTeX 重绘", "VisualTeX LaTeX Redraw");
+
     private async Task ShowLatexRedrawFailuresAsync(
         OfficeUiDispatcher dispatcher,
         IReadOnlyList<(WordLatexRedrawTarget Target, string Error)> failures,
+        IReadOnlyList<(string Reason, int FormulaCount)> batchFailures,
         IReadOnlyList<string>? warnings = null)
     {
         warnings ??= Array.Empty<string>();
-        if ((failures.Count == 0 && warnings.Count == 0)
+        if ((failures.Count == 0 && batchFailures.Count == 0 && warnings.Count == 0)
             || string.Equals(
                 Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                 "1",
                 StringComparison.Ordinal))
             return;
 
-        static string Clip(string value, int maximum)
-        {
-            var normalized = (value ?? string.Empty)
-                .Replace("\r", " ")
-                .Replace("\n", " ")
-                .Trim();
-            return normalized.Length <= maximum
-                ? normalized
-                : normalized.Substring(0, maximum) + "…";
-        }
-
-        const int maximumFailures = 12;
-        const int maximumWarnings = 6;
-        var failureLines = failures
-            .Take(maximumFailures)
-            .Select((failure, index) =>
-                $"{index + 1}. {Clip(failure.Target.Latex, 160)}\r\n"
-                + $"   {Clip(failure.Error, 320)}")
-            .ToArray();
-        var warningLines = warnings
-            .Take(maximumWarnings)
-            .Select((warning, index) =>
-                $"{index + 1}. {Clip(warning, 320)}")
-            .ToArray();
-
-        var chineseParts = new List<string>();
-        var englishParts = new List<string>();
-        if (failureLines.Length > 0)
-        {
-            chineseParts.Add(
-                $"以下 {failures.Count} 个公式无法重绘，原 LaTeX 已保留；其余公式已继续处理：\r\n\r\n"
-                + string.Join("\r\n\r\n", failureLines)
-                + (failures.Count > maximumFailures
-                    ? $"\r\n\r\n……另有 {failures.Count - maximumFailures} 个失败公式未展开。"
-                    : string.Empty));
-            englishParts.Add(
-                $"{failures.Count} formula(s) could not be redrawn. Their original LaTeX was preserved and the remaining formulas continued:\r\n\r\n"
-                + string.Join("\r\n\r\n", failureLines)
-                + (failures.Count > maximumFailures
-                    ? $"\r\n\r\n…plus {failures.Count - maximumFailures} additional failed formula(s)."
-                    : string.Empty));
-        }
-
-        if (warningLines.Length > 0)
-        {
-            chineseParts.Add(
-                $"收尾警告：\r\n\r\n"
-                + string.Join("\r\n", warningLines)
-                + (warnings.Count > maximumWarnings
-                    ? $"\r\n……另有 {warnings.Count - maximumWarnings} 条警告未展开。"
-                    : string.Empty));
-            englishParts.Add(
-                $"Finalization warning(s):\r\n\r\n"
-                + string.Join("\r\n", warningLines)
-                + (warnings.Count > maximumWarnings
-                    ? $"\r\n…plus {warnings.Count - maximumWarnings} additional warning(s)."
-                    : string.Empty));
-        }
-
-        var message = T(
-            string.Join("\r\n\r\n", chineseParts),
-            string.Join("\r\n\r\n", englishParts));
+        var message = BuildLatexRedrawFailureText(
+            failures,
+            batchFailures,
+            warnings,
+            stopped: false);
         try
         {
             await dispatcher.InvokeAsync(() =>
             {
                 System.Windows.Forms.MessageBox.Show(
                     message,
-                    T("VisualTeX LaTeX 重绘", "VisualTeX LaTeX Redraw"),
+                    RedrawTitle,
                     System.Windows.Forms.MessageBoxButtons.OK,
                     System.Windows.Forms.MessageBoxIcon.Warning);
                 return true;
@@ -4227,6 +4331,92 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             // Redraw has already finished. A transient UI notification failure
             // must not turn successful document mutations into an operation error.
         }
+    }
+
+    /// <summary>
+    /// The formulas a redraw could not process, each with its own reason (shown
+    /// first and in full, the LaTeX shortened beneath it), failed render batches
+    /// once each with the number of formulas they covered, and warnings. Empty
+    /// when there is nothing to report.
+    /// </summary>
+    private static string BuildLatexRedrawFailureText(
+        IReadOnlyList<(WordLatexRedrawTarget Target, string Error)> failures,
+        IReadOnlyList<(string Reason, int FormulaCount)> batchFailures,
+        IReadOnlyList<string> warnings,
+        bool stopped)
+    {
+        static string OneLine(string? value, int maximum)
+        {
+            var normalized = (value ?? string.Empty)
+                .Replace("\r\n", " ")
+                .Replace("\r", " ")
+                .Replace("\n", " ")
+                .Trim();
+            return normalized.Length <= maximum
+                ? normalized
+                : normalized.Substring(0, maximum) + "…";
+        }
+
+        const int maximumFailures = 12;
+        const int maximumWarnings = 6;
+        var parts = new List<string>();
+
+        // Batches with the same reason (e.g. VisualTeX stopped answering) are
+        // one line with the total number of formulas they covered.
+        var batchGroups = batchFailures
+            .Where(item => item.FormulaCount > 0)
+            .GroupBy(item => item.Reason, StringComparer.Ordinal)
+            .Select(group => (Reason: group.Key, Count: group.Sum(item => item.FormulaCount)))
+            .ToArray();
+        if (batchGroups.Length > 0)
+        {
+            parts.Add(string.Join(
+                "\r\n\r\n",
+                batchGroups.Select(group => T(
+                    $"{group.Count} 个公式因所在的整批渲染失败而没有重绘，原 LaTeX 已保留。原因：{group.Reason}",
+                    $"{group.Count} formula(s) were not redrawn because their render batch failed; their original LaTeX was kept. Reason: {group.Reason}"))));
+        }
+
+        if (failures.Count > 0)
+        {
+            var lines = failures
+                .Take(maximumFailures)
+                .Select((failure, index) =>
+                    $"{index + 1}. {OneLine(failure.Error, 600)}\r\n"
+                    + $"   LaTeX: {OneLine(failure.Target.Latex, 100)}");
+            var header = stopped
+                ? T($"以下 {failures.Count} 个公式在停止前已被跳过，原 LaTeX 已保留：",
+                    $"{failures.Count} formula(s) had been skipped before the stop; their original LaTeX was kept:")
+                : T($"以下 {failures.Count} 个公式无法重绘，原 LaTeX 已保留；其余公式已继续处理：",
+                    $"{failures.Count} formula(s) could not be redrawn; their original LaTeX was kept and the remaining formulas continued:");
+            parts.Add(
+                header
+                + "\r\n\r\n"
+                + string.Join("\r\n\r\n", lines)
+                + (failures.Count > maximumFailures
+                    ? "\r\n\r\n" + T(
+                        $"……另有 {failures.Count - maximumFailures} 个失败的公式未列出。",
+                        $"…and {failures.Count - maximumFailures} more failed formula(s) not listed.")
+                    : string.Empty));
+        }
+
+        if (warnings.Count > 0)
+        {
+            var lines = warnings
+                .Take(maximumWarnings)
+                .Select((warning, index) => $"{index + 1}. {OneLine(warning, 600)}");
+            parts.Add(
+                T("收尾警告：", "Finalization warning(s):")
+                + "\r\n\r\n"
+                + string.Join("\r\n", lines)
+                + (warnings.Count > maximumWarnings
+                    ? "\r\n" + T(
+                        $"……另有 {warnings.Count - maximumWarnings} 条警告未列出。",
+                        $"…and {warnings.Count - maximumWarnings} more warning(s) not listed.")
+                    : string.Empty));
+        }
+
+        return string.Join("\r\n\r\n", parts);
     }
 
     private async Task ConvertFormulaObjectsToLatexAsync(
@@ -4246,12 +4436,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 TimeSpan.FromSeconds(2),
                 lifetime.Token).ConfigureAwait(false))
         {
-            SetStatus("VisualTeX 正在执行其他 Word 操作，请稍候再试。");
+            SetStatus(T("VisualTeX 正在执行其他 Word 操作，请稍候再试。",
+                "VisualTeX is busy with another Word operation. Try again in a moment."));
             return;
         }
 
         var progress = await dispatcher.InvokeAsync(
-            () => BeginOperationProgress("VisualTeX 公式转为 LaTeX", service)).ConfigureAwait(false);
+            () => BeginOperationProgress(
+                T("VisualTeX 公式转为 LaTeX", "VisualTeX Equation to LaTeX"), service)).ConfigureAwait(false);
 
         var modeLabel = string.Equals(
             objectMode,
@@ -4274,8 +4466,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (count == 0)
                 throw new InvalidDataException(
                     wholeDocument
-                        ? $"当前 Word 文档中没有找到 {modeLabel} 公式。"
-                        : $"所选内容中没有找到 {modeLabel} 公式。");
+                        ? T($"当前 Word 文档中没有找到 {modeLabel} 公式。",
+                            $"No {modeLabel} equations were found in the current Word document.")
+                        : T($"所选内容中没有找到 {modeLabel} 公式。",
+                            $"No {modeLabel} equations were found in the current selection."));
 
             if (wholeDocument
                 && !string.Equals(
@@ -4297,17 +4491,22 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     == System.Windows.Forms.DialogResult.Yes).ConfigureAwait(false);
                 if (!confirmed)
                 {
-                    SetStatus($"已取消全文 {modeLabel} 公式转为 LaTeX，Word 文档未修改。");
+                    SetStatus(T($"已取消全文 {modeLabel} 公式转为 LaTeX，Word 文档未修改。",
+                        $"Converting all {modeLabel} equations to LaTeX was cancelled. The Word document was not changed."));
                     return;
                 }
                 progress = await dispatcher.InvokeAsync(
-                    () => BeginOperationProgress("VisualTeX 公式转为 LaTeX", service, "正在准备恢复 LaTeX…")).ConfigureAwait(false);
+                    () => BeginOperationProgress(
+                        T("VisualTeX 公式转为 LaTeX", "VisualTeX Equation to LaTeX"),
+                        service,
+                        T("正在准备恢复 LaTeX…", "Preparing to restore LaTeX…"))).ConfigureAwait(false);
             }
 
             WriteRedrawAcceptanceLog(
                 $"formula-to-latex-start scope={(wholeDocument ? "document" : "selection")} "
                 + $"mode={objectMode} formulas={count}");
-            SetStatus($"正在把 {count} 个 {modeLabel} 公式恢复为 LaTeX 代码…");
+            SetStatus(T($"正在把 {count} 个 {modeLabel} 公式恢复为 LaTeX 代码…",
+                $"Restoring {count} {modeLabel} equation(s) to LaTeX source…"));
             var result = await dispatcher.InvokeAsync(
                     () => service.ConvertFormulaObjectsToLatex(
                         wholeDocument,
@@ -4316,13 +4515,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             WriteRedrawAcceptanceLog(
                 $"formula-to-latex-complete scope={(wholeDocument ? "document" : "selection")} "
                 + $"mode={objectMode} formulas={result.FormulaCount}");
-            SetStatus(
-                $"公式转为 LaTeX 完成：{result.FormulaCount} 个 {modeLabel} 公式已恢复为源码。");
+            SetStatus(T(
+                $"公式转为 LaTeX 完成：{result.FormulaCount} 个 {modeLabel} 公式已恢复为源码。",
+                $"Equation to LaTeX finished: {result.FormulaCount} {modeLabel} equation(s) were restored to source."));
         }
-        catch (OperationCanceledException error)
+        catch (Exception error) when (IsUserCancellation(error, lifetime.Token))
         {
             WriteRedrawAcceptanceLog("formula-to-latex-cancelled " + error);
-            SetStatus("VisualTeX 公式转为 LaTeX 已取消。");
+            SetStatus(T("VisualTeX 公式转为 LaTeX 已取消。", "VisualTeX equation-to-LaTeX conversion was cancelled."));
         }
         catch (Exception error)
         {
@@ -4375,12 +4575,13 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 TimeSpan.FromSeconds(2),
                 lifetime.Token).ConfigureAwait(false))
         {
-            SetStatus("VisualTeX 正在执行其他 Word 操作，请稍候再试。");
+            SetStatus(T("VisualTeX 正在执行其他 Word 操作，请稍候再试。",
+                "VisualTeX is busy with another Word operation. Try again in a moment."));
             return;
         }
 
         using var progress = await dispatcher.InvokeAsync(
-            () => BeginOperationProgress("VisualTeX 批量导入", service)).ConfigureAwait(false);
+            () => BeginOperationProgress(T("VisualTeX 批量导入", "VisualTeX Bulk Import"), service)).ConfigureAwait(false);
 
         var rendered = new Dictionary<string, RenderedWordBulkFormulaTemplate>(
             StringComparer.Ordinal);
@@ -4411,7 +4612,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             var selection = await dispatcher.InvokeAsync(service.ReadSelection)
                 .ConfigureAwait(false);
             if (selection.ReadOnly)
-                throw new UnauthorizedAccessException("当前 Word 文档为只读状态。");
+                throw new UnauthorizedAccessException(T("当前 Word 文档为只读状态。", "The current Word document is read-only."));
             var sourceDocumentId = selection.DocumentId;
             var fontSizePt = FormulaFontSize.Normalize(
                 await dispatcher.InvokeAsync(service.ReadCurrentTypingFontSize)
@@ -4428,7 +4629,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             if (document is null)
             {
                 WriteBulkAcceptanceLog("bulk-import-cancelled-no-document");
-                SetStatus("已取消批量导入，Word 文档未修改。");
+                SetStatus(T("已取消批量导入，Word 文档未修改。", "Bulk import was cancelled. The Word document was not changed."));
                 return;
             }
 
@@ -4436,7 +4637,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 $"parsed blocks={document.Blocks.Count} formulas={document.FormulaCount} "
                 + $"mode={document.FormulaObjectMode} fontSizePt={fontSizePt:0.##}");
             SetStatus(
-                $"正在准备批量导入：{document.Blocks.Count} 个块，{document.FormulaCount} 个公式…");
+                T($"正在准备批量导入：{document.Blocks.Count} 个块，{document.FormulaCount} 个公式…",
+                    $"Preparing bulk import: {document.Blocks.Count} block(s), {document.FormulaCount} formula(s)…"));
             await client.EnsureHealthyAsync(lifetime.Token).ConfigureAwait(false);
             await client.PrewarmConverterAsync(lifetime.Token).ConfigureAwait(false);
             var formulaRuns = document.Blocks
@@ -4496,7 +4698,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             {
                 WriteBulkAcceptanceLog(
                     $"render-batch-start unique={pendingTemplates.Count} total={formulaRuns.Count}");
-                SetStatus($"正在批量渲染 {pendingTemplates.Count} 个独立公式…");
+                SetStatus(T($"正在批量渲染 {pendingTemplates.Count} 个不同的公式…",
+                    $"Rendering {pendingTemplates.Count} distinct formula(s)…"));
                 var renderStopwatch = Stopwatch.StartNew();
                 // Ephemeral render jobs (as format conversion uses): no Session
                 // file, fsync or 16 ms poll per formula. The next chunk renders in
@@ -4545,7 +4748,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                             $"render-batch-item itemId={pending.Run.Id} "
                             + $"status={completedSession.Status} display={pending.Run.DisplayMode}");
                     }
-                    SetStatus($"正在批量渲染公式 {Math.Min(offset + RenderChunkSize, pendingTemplates.Count)}/{pendingTemplates.Count}…");
+                    SetStatus(T($"正在批量渲染公式 {Math.Min(offset + RenderChunkSize, pendingTemplates.Count)}/{pendingTemplates.Count}…",
+                        $"Rendering formulas {Math.Min(offset + RenderChunkSize, pendingTemplates.Count)}/{pendingTemplates.Count}…"));
                 }
                 renderStopwatch.Stop();
                 WriteBulkAcceptanceLog(
@@ -4565,7 +4769,8 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 }
                 else
                 {
-                    SetStatus($"正在批量生成 {formulaRuns.Count} 个 MathType 原生预览…");
+                    SetStatus(T($"正在批量生成 {formulaRuns.Count} 个 MathType 原生预览…",
+                        $"Generating {formulaRuns.Count} native MathType previews…"));
                     var nativePreviewInputs =
                         new Dictionary<string, byte[]>(StringComparer.Ordinal);
                     foreach (var item in rendered)
@@ -4666,7 +4871,7 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 });
             }
 
-            SetStatus("公式渲染完成，正在写入 Word…");
+            SetStatus(T("公式渲染完成，正在写入 Word…", "Formulas rendered. Writing into Word…"));
             var insertStopwatch = Stopwatch.StartNew();
             // Like redraw/conversion/insert: the import's own typing and caret moves
             // are not user selections. Without the guard every TypeText ran the
@@ -4697,8 +4902,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 $"bulk-import-complete blocks={result.BlockCount} formulas={result.FormulaCount} "
                 + $"elapsedMs={operationStopwatch.ElapsedMilliseconds}");
             SetStatus(
-                $"批量导入完成：{result.BlockCount} 个内容块，{result.FormulaCount} 个独立公式；"
-                + $"耗时 {operationStopwatch.Elapsed.TotalSeconds:0.0} 秒。");
+                T($"批量导入完成：{result.BlockCount} 个内容块，{result.FormulaCount} 个独立公式；"
+                    + $"耗时 {operationStopwatch.Elapsed.TotalSeconds:0.0} 秒。",
+                  $"Bulk import finished: {result.BlockCount} block(s), {result.FormulaCount} formula(s); "
+                    + $"took {operationStopwatch.Elapsed.TotalSeconds:0.0} s."));
 
             // Session finalization and temporary-file cleanup are companion-side
             // bookkeeping. They must never keep Word's single-operation gate
@@ -4713,25 +4920,37 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             }
             catch (Exception completionError)
             {
-                var message = $"Word 批量导入已完成，但会话完成状态未能记录：{completionError.Message}";
+                var message = OfficePluginLanguage.FormatOperationError(
+                    completionError,
+                    "Word 批量导入已完成，但未能向 VisualTeX 记录会话完成状态",
+                    "Word bulk import finished, but its completion could not be recorded in VisualTeX");
                 WriteBulkAcceptanceLog("bulk-import-session-finalization-failed " + completionError);
                 SetStatus(message);
                 await ShowBulkImportMessageAsync(dispatcher, message, warning: true).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException error)
+        catch (Exception error) when (IsUserCancellation(error, lifetime.Token))
         {
             var reported = await RecordSessionFailureAsync(client, ownedSessionIds, error).ConfigureAwait(false);
             WriteBulkAcceptanceLog("bulk-import-cancelled " + reported);
-            SetStatus(ReferenceEquals(reported, error) ? "VisualTeX 批量导入已取消。" : reported.Message);
+            SetStatus(ReferenceEquals(reported, error)
+                ? T("VisualTeX 批量导入已取消。", "VisualTeX bulk import was cancelled.")
+                : OfficePluginLanguage.FormatOperationError(
+                    reported,
+                    "VisualTeX 批量导入已取消",
+                    "VisualTeX bulk import was cancelled"));
         }
         catch (Exception error)
         {
             var reported = await RecordSessionFailureAsync(client, ownedSessionIds, error).ConfigureAwait(false);
             WriteBulkAcceptanceLog("bulk-import-failed " + reported);
-            SetStatus($"VisualTeX 批量导入失败：{reported.Message}");
+            var failureMessage = OfficePluginLanguage.FormatOperationError(
+                reported,
+                "VisualTeX 批量导入失败",
+                "VisualTeX bulk import failed");
+            SetStatus(failureMessage);
             ReleaseOperationGate();
-            await ShowBulkImportMessageAsync(dispatcher, reported.Message, warning: false).ConfigureAwait(false);
+            await ShowBulkImportMessageAsync(dispatcher, failureMessage, warning: false).ConfigureAwait(false);
         }
         finally
         {
@@ -4890,10 +5109,14 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             return (null, session.Id);
         if (session.Status == "failed")
             throw new InvalidOperationException(
-                session.Error ?? "VisualTeX 文档导入窗口返回失败状态。");
+                string.IsNullOrWhiteSpace(session.Error)
+                    ? T("VisualTeX 文档导入窗口返回了失败状态，但没有说明原因。",
+                        "The VisualTeX document-import window returned a failed state without a reason.")
+                    : session.Error);
         if (session.Status is not ("committing" or "completed"))
             throw new InvalidOperationException(
-                $"VisualTeX 文档导入窗口返回了意外状态：{session.Status}。");
+                T($"VisualTeX 文档导入窗口返回了意外状态：{session.Status}。",
+                    $"The VisualTeX document-import window returned an unexpected state: {session.Status}."));
 
         var source = string.Join("\n", session.Lines.Select(item => item.Latex));
         var objectMode = string.Equals(
@@ -5024,26 +5247,36 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
         OfficeSessionDocument session,
         bool materializePreview = true)
     {
+        // The converter words each formula's failure in the VisualTeX language;
+        // VisualTeX's own result checks are translated by DescribeItemError.
         if (session.Status == "failed")
-        {
-            var detail = string.IsNullOrWhiteSpace(session.Error)
-                || string.Equals(session.Error, "[object Object]", StringComparison.Ordinal)
-                ? "MathJax 无法解析该公式，转换窗口没有返回有效错误文本。"
-                : session.Error!.Trim();
-            var formula = run.Latex.Length <= 500
-                ? run.Latex
-                : run.Latex.Substring(0, 500) + "…";
-            throw new InvalidOperationException(
-                $"公式渲染失败：{formula}\r\n原因：{detail}");
-        }
+            throw new WordFormulaRenderException(
+                run.Latex,
+                OfficeErrorText.DescribeItemError(session.Error));
+        // An item VisualTeX released before rendering it is a failure of that
+        // formula, not the user's cancellation (only the operation token is).
         if (session.Status == "cancelled" || session.ExplicitCancel)
-            throw new OperationCanceledException("批量公式渲染已取消。" );
+            throw new WordFormulaRenderException(
+                run.Latex,
+                string.IsNullOrWhiteSpace(session.Error)
+                    ? T("VisualTeX 在完成渲染前停止了该公式（转换任务被取消）。",
+                        "VisualTeX stopped rendering this formula before it finished (the conversion job was cancelled).")
+                    : OfficeErrorText.DescribeItemError(session.Error));
+        if (session.Status != "completed" && session.ExportResult is null)
+            throw new WordFormulaRenderException(
+                run.Latex,
+                T($"VisualTeX 返回了未完成的公式结果（状态：{session.Status}）。",
+                    $"VisualTeX returned an unfinished result for this formula (status: {session.Status})."));
         var export = session.ExportResult
-            ?? throw new InvalidOperationException(
-                $"公式 {run.Latex} 没有生成导出结果。" );
+            ?? throw new WordFormulaRenderException(
+                run.Latex,
+                T("VisualTeX 没有为该公式生成导出结果。",
+                    "VisualTeX produced no export result for this formula."));
         if (string.IsNullOrWhiteSpace(export.MathMl))
-            throw new InvalidDataException(
-                $"公式 {run.Latex} 没有生成 MathML。" );
+            throw new WordFormulaRenderException(
+                run.Latex,
+                T("VisualTeX 为该公式生成的结果缺少 MathML。",
+                    "VisualTeX's result for this formula has no MathML."));
 
         var template = new RenderedWordBulkFormulaTemplate
         {
@@ -5106,14 +5339,10 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
             }
             catch (Exception error)
             {
-                var formula = run.Latex
-                    .Replace("\r", " ")
-                    .Replace("\n", " ")
-                    .Trim();
-                if (formula.Length > 240)
-                    formula = formula.Substring(0, 237) + "...";
-                throw new InvalidDataException(
-                    $"OLE 公式预览生成失败：{formula}\r\n原因：{error.Message}",
+                throw new WordFormulaRenderException(
+                    run.Latex,
+                    T("无法生成该公式的 Word 预览图：", "Could not build this formula's Word preview image: ")
+                        + OfficeErrorText.Describe(error),
                     error);
             }
         }

@@ -1,3 +1,5 @@
+import type { QuickOcrCapture } from "../../ocr/quickOcr";
+import { decodeQuickOcrCapture } from "../../ocr/quickOcrPayloadValidation";
 import { formatOcrError, type OcrTransport } from "../../ocr/ocrService";
 
 export interface TransportEvent<T> {
@@ -294,6 +296,22 @@ export async function listen<T>(
     stopped = true;
     window.clearTimeout(timer);
   };
+}
+
+/**
+ * Quick OCR from the Office editor window: the companion hides the window,
+ * takes a screenshot with the main app's chosen source and brings the window
+ * back. Null when the screenshot was cancelled.
+ */
+export async function captureOfficeQuickOcrScreenshot(): Promise<QuickOcrCapture | null> {
+  const response = await fetch("/api/v1/ocr/capture", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: authenticatedHeaders({ "Content-Type": "application/json" }),
+    body: "{}",
+  });
+  const value = await readJson<unknown>(response);
+  return value === undefined ? null : decodeQuickOcrCapture(value);
 }
 
 export const officeOcrTransport: OcrTransport = {

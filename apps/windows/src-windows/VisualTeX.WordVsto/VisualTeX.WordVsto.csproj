@@ -23,6 +23,7 @@
     <Reference Include="System.Management" />
     <Reference Include="Microsoft.CSharp" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficePluginLanguage.cs" Link="OfficePluginLanguage.cs" />
+    <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeErrorText.cs" Link="OfficeErrorText.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeFormulaShortcutKeyboardHook.cs" Link="OfficeFormulaShortcutKeyboardHook.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\VstoDependencyResolver.cs" Link="VstoDependencyResolver.cs" />
     <Compile Include="..\VisualTeX.WindowsOffice.VstoShared\OfficeOlePreview.cs" Link="OfficeOlePreview.cs" />

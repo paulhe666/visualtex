@@ -17,6 +17,8 @@ const checks = [
     command: [
       "--import",
       "tsx",
+      "--import",
+      "./scripts/kernel-node.mts",
       "scripts/core_latex_command_compatibility_regression.mts",
     ],
   },
@@ -33,6 +35,8 @@ const checks = [
     command: [
       "--import",
       "tsx",
+      "--import",
+      "./scripts/kernel-node.mts",
       "scripts/physics_kernel_compatibility_regression.mts",
     ],
   },

@@ -25,6 +25,38 @@ internal sealed class PreparedWordBulkFormula
     internal string? MathTypeStandaloneSemanticSignature { get; set; }
 }
 
+/// <summary>
+/// One formula that VisualTeX could not render or whose preview could not be
+/// built: the formula and the specific reason are kept apart, so a batch report
+/// can list each formula with its own reason.
+/// </summary>
+internal sealed class WordFormulaRenderException : InvalidOperationException
+{
+    internal WordFormulaRenderException(string latex, string reason, Exception? inner = null)
+        : base(
+            OfficePluginLanguage.Text(
+                $"公式渲染失败：{Excerpt(latex, 240)}\r\n原因：{reason}",
+                $"Formula rendering failed: {Excerpt(latex, 240)}\r\nReason: {reason}"),
+            inner)
+    {
+        Latex = latex ?? string.Empty;
+        Reason = reason;
+    }
+
+    internal string Latex { get; }
+    internal string Reason { get; }
+
+    /// <summary>One line of LaTeX, shortened to <paramref name="maximum"/> characters.</summary>
+    internal static string Excerpt(string? latex, int maximum)
+    {
+        var text = (latex ?? string.Empty)
+            .Replace("\r", " ")
+            .Replace("\n", " ")
+            .Trim();
+        return text.Length <= maximum ? text : text.Substring(0, maximum) + "…";
+    }
+}
+
 internal sealed class RenderedWordBulkFormulaTemplate
 {
     internal OfficeSessionDocument Session { get; set; } = new();
@@ -116,11 +148,18 @@ internal sealed class StreamingLatexRedrawFormulas : IDisposable
         _progress.Set();
     }
 
-    internal void FailRemaining(string error)
+    // Returns the targets this call failed (those not already completed), so
+    // the caller can report how many formulas one stop affected.
+    internal IReadOnlyList<string> FailRemaining(string error)
     {
-        foreach (var item in _targets.Values)
-            item.TrySetResult((null, error));
+        var failed = new List<string>();
+        foreach (var item in _targets)
+        {
+            if (item.Value.TrySetResult((null, error)))
+                failed.Add(item.Key);
+        }
         _progress.Set();
+        return failed;
     }
 
     internal bool TryTake(
@@ -140,7 +179,16 @@ internal sealed class StreamingLatexRedrawFormulas : IDisposable
             if (!task.IsCompleted)
             {
                 formula = null;
-                error = "公式渲染超时。";
+                var limit = timeout.TotalMinutes >= 1
+                    ? OfficePluginLanguage.Text(
+                        $"{timeout.TotalMinutes:0.#} 分钟",
+                        $"{timeout.TotalMinutes:0.#} minute(s)")
+                    : OfficePluginLanguage.Text(
+                        $"{timeout.TotalSeconds:0} 秒",
+                        $"{timeout.TotalSeconds:0} s");
+                error = OfficePluginLanguage.Text(
+                    $"等待 {limit} 后仍没有收到该公式的渲染结果（VisualTeX 的转换窗口可能已停止响应）。",
+                    $"No render result arrived for this formula within {limit} (VisualTeX's conversion window may have stopped responding).");
                 return false;
             }
         }
@@ -182,6 +230,31 @@ internal sealed class WordLatexRedrawResult
     internal List<(string TargetId, string Latex, string Error)> Failures { get; } =
         new();
     internal List<string> Warnings { get; } = new();
+}
+
+/// <summary>
+/// A redraw that stopped part-way: the cause (InnerException), the formula it
+/// stopped at, what was already done (formulas redrawn, each committed in its
+/// own undo record, and formulas skipped with their reasons) and how many
+/// formulas were not attempted.
+/// </summary>
+internal sealed class WordLatexRedrawAbortedException : Exception
+{
+    internal WordLatexRedrawAbortedException(
+        WordLatexRedrawResult partial,
+        WordLatexRedrawTarget stoppedAt,
+        int notAttempted,
+        Exception cause)
+        : base(cause.Message, cause)
+    {
+        Partial = partial;
+        StoppedAt = stoppedAt;
+        NotAttempted = Math.Max(0, notAttempted);
+    }
+
+    internal WordLatexRedrawResult Partial { get; }
+    internal WordLatexRedrawTarget StoppedAt { get; }
+    internal int NotAttempted { get; }
 }
 
 internal sealed class WordFormulaToLatexResult

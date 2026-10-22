@@ -1,6 +1,6 @@
+import "../../editor/visualTexLayoutRuntime";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "mathlive/static.css";
 import "../../styles.css";
 import "../../styles-macos-main.css";
 import "../../styles-editor-parity.css";

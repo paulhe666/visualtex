@@ -1,0 +1,184 @@
+{
+ "bold": {
+  "0": 7,
+  "1": 8,
+  "2": 9
+ },
+ "boldmath": {
+  "0": [
+   "cmbx10",
+   "cmbx7",
+   "cmbx5"
+  ],
+  "1": [
+   "cmmib10",
+   "cmmib7",
+   "cmmib5"
+  ],
+  "2": [
+   "cmbsy10",
+   "cmbsy7",
+   "cmbsy5"
+  ]
+ },
+ "fams": {
+  "0": [
+   "cmr10",
+   "cmr7",
+   "cmr5"
+  ],
+  "1": [
+   "cmmi10",
+   "cmmi7",
+   "cmmi5"
+  ],
+  "10": [
+   "cmss10",
+   "cmss8 at 7.0pt",
+   "cmss8 at 5.0pt"
+  ],
+  "11": [
+   "cmtt10",
+   "cmtt8 at 7.0pt",
+   "cmtt8 at 5.0pt"
+  ],
+  "12": [
+   "cmti10",
+   "cmti7",
+   "cmti7 at 5.0pt"
+  ],
+  "13": [
+   "eufm10",
+   "eufm7",
+   "eufm5"
+  ],
+  "14": [
+   "esint10",
+   "esint10 at 7.0pt",
+   "esint10 at 5.0pt"
+  ],
+  "2": [
+   "cmsy10",
+   "cmsy7",
+   "cmsy5"
+  ],
+  "3": [
+   "cmex10",
+   "cmex7",
+   "cmex7 at 5.0pt"
+  ],
+  "4": [
+   "msam10",
+   "msam7",
+   "msam5"
+  ],
+  "5": [
+   "msbm10",
+   "msbm7",
+   "msbm5"
+  ],
+  "6": [
+   "rsfs10",
+   "rsfs7",
+   "rsfs5"
+  ],
+  "7": [
+   "cmbx10",
+   "cmbx7",
+   "cmbx5"
+  ],
+  "8": [
+   "cmmib10",
+   "cmmib7",
+   "cmmib5"
+  ],
+  "9": [
+   "cmbsy10",
+   "cmbsy7",
+   "cmbsy5"
+  ]
+ },
+ "math": {
+  "binoppenalty": "700",
+  "delimiterfactor": "901",
+  "delimitershortfall": "5.0pt",
+  "medmuskip": "4.0mu plus 2.0mu minus 4.0mu",
+  "nulldelimiterspace": "1.2pt",
+  "relpenalty": "500",
+  "scriptspace": "0.5pt",
+  "thickmuskip": "5.0mu plus 5.0mu",
+  "thinmuskip": "3.0mu"
+ },
+ "params": {},
+ "profile": "cm",
+ "roles": {
+  "bb": 5,
+  "bf": 7,
+  "bm": 8,
+  "bmsy": 9,
+  "cal": 2,
+  "esint": 14,
+  "ex": 3,
+  "frak": 13,
+  "it": 12,
+  "mi": 1,
+  "rm": 0,
+  "scr": 6,
+  "sf": 10,
+  "sy": 2,
+  "tt": 11
+ },
+ "skewchar": {
+  "cmbsy10": 48,
+  "cmbsy5": 48,
+  "cmbsy7": 48,
+  "cmbx10": -1,
+  "cmbx5": -1,
+  "cmbx7": -1,
+  "cmex10": -1,
+  "cmex7": -1,
+  "cmmi10": 127,
+  "cmmi5": 127,
+  "cmmi7": 127,
+  "cmmib10": 127,
+  "cmmib5": 127,
+  "cmmib7": 127,
+  "cmr10": -1,
+  "cmr5": -1,
+  "cmr7": -1,
+  "cmss10": -1,
+  "cmss8": -1,
+  "cmsy10": 48,
+  "cmsy5": 48,
+  "cmsy7": 48,
+  "cmti10": -1,
+  "cmti7": -1,
+  "cmtt10": -1,
+  "cmtt8": -1,
+  "esint10": -1,
+  "eufm10": -1,
+  "eufm5": -1,
+  "eufm7": -1,
+  "msam10": -1,
+  "msam5": -1,
+  "msam7": -1,
+  "msbm10": -1,
+  "msbm5": -1,
+  "msbm7": -1,
+  "rsfs10": 127,
+  "rsfs5": 127,
+  "rsfs7": 127
+ },
+ "text": {
+  "bf": "b",
+  "encoding": "OT1",
+  "rm": "cmr",
+  "sf": "cmss",
+  "sizes": [
+   "10",
+   "7",
+   "5"
+  ],
+  "tt": "cmtt"
+ }
+}

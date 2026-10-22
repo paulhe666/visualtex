@@ -179,7 +179,9 @@ public sealed partial class PowerPointFormulaService
             }
             if (MathTypeMtefCodec.SemanticSignature(mathMl!) !=
                 MathTypeMtefCodec.SemanticSignature(MathTypeOleStorage.ReadMathMl(result.CompoundFile)))
-                throw new InvalidDataException("The equation cannot be saved to MathType without changing its content.");
+                throw new InvalidDataException(Text(
+                    "该公式无法在不改变内容的情况下保存为 MathType。",
+                    "The equation cannot be saved to MathType without changing its content."));
             var previewsToRender = new Dictionary<string, byte[]> { ["target"] = mtef };
             if (result.SourceCompoundFile is not null)
                 previewsToRender["source"] = MathTypeMtefCodec.ExtractNativeMtef(
@@ -191,10 +193,14 @@ public sealed partial class PowerPointFormulaService
                     || (result.SourceCompoundFile is not null && !previews.ContainsKey("source")))
                     throw new InvalidOperationException(MathTypeNativePreviewRenderer.LastFailureWasFonts
                         ? MathTypeNativePreviewRenderer.FontsUnavailableMessage
-                        : "MathType's native preview could not be rendered. The original equation has not been changed."
-                            + (MathTypeNativePreviewRenderer.LastFailures.Values.FirstOrDefault() is { } reason
-                                ? " (" + reason + ")"
-                                : string.Empty));
+                        : Text("无法生成 MathType 排版预览，原公式未修改。", "MathType's native preview could not be rendered. The original equation has not been changed.")
+                            // every failed preview with its own reason
+                            + string.Concat(MathTypeNativePreviewRenderer.LastFailures.Select(failure =>
+                                (failure.Key == "source"
+                                    ? Text("（原公式：", " (original equation: ")
+                                    : Text("（新公式：", " (new equation: "))
+                                + VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.SafeErrorMessage(failure.Value)
+                                + Text("）", ")"))));
                 if (previews.TryGetValue("source", out var sourcePreview))
                 {
                     result.SourceWidth = sourcePreview.WidthPt;

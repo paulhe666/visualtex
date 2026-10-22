@@ -2978,9 +2978,9 @@ async function main() {
       await setFormattingValue('E=mc^2');
       await key('ArrowLeft', 'ArrowLeft', 37);
       await key('End', 'End', 35);
-      for (let index = 0; index < 3; index += 1) {
-        await key('ArrowLeft', 'ArrowLeft', 37, 8);
-      }
+      // Shift+ArrowLeft from the end selects the superscript (every press
+      // changes the selection: the next one would take the base too).
+      await key('ArrowLeft', 'ArrowLeft', 37, 8);
       const scriptSelected = await evaluate(`(() => {
         const field = document.querySelector('math-field');
         const [start, end] = field.selection.ranges[0];
@@ -7065,7 +7065,9 @@ async function main() {
           if (!(node instanceof HTMLElement)) return [];
           if (
             node.classList.contains("visualtex-structural-placeholder") ||
-            node.classList.contains("visualtex-structural-placeholder-caret")
+            node.classList.contains("visualtex-structural-placeholder-caret") ||
+            // an empty slot's marker, drawn by the layout engine
+            node.classList.contains("ML__vtx-marker")
           ) {
             return [];
           }
@@ -7202,17 +7204,11 @@ async function main() {
                 !node.querySelector("[data-atom-id]") &&
                 !node.classList.contains("visualtex-structural-placeholder"),
             );
-          const styles = placeholders.map((node) => {
-            const style = getComputedStyle(node);
-            const marker = getComputedStyle(node, "::before");
-            return {
-              className: node.className,
-              backgroundColor: style.backgroundColor,
-              markerBackgroundColor: marker.backgroundColor,
-              color: style.color,
-              borderTopWidth: style.borderTopWidth,
-            };
-          });
+          // The layout engine draws each empty slot as a marker element.
+          const styles = [...(root?.querySelectorAll(".ML__vtx-marker") ?? [])].map((node) => ({
+            className: node.className,
+            markerBackgroundColor: getComputedStyle(node).backgroundColor,
+          }));
           const backgrounds = new Set([
             "rgb(217, 237, 249)",
             "rgb(207, 232, 247)",
@@ -7224,14 +7220,9 @@ async function main() {
                 field?.value ?? "",
               ) &&
               placeholders.length === ${"__EXPECTED__"} &&
+              styles.length === ${"__EXPECTED__"} &&
               rawLeaves.length === 0 &&
-              styles.every(
-                (item) =>
-                  backgrounds.has(item.markerBackgroundColor) &&
-                  item.backgroundColor === "rgba(0, 0, 0, 0)" &&
-                  item.color === "rgba(0, 0, 0, 0)" &&
-                  item.borderTopWidth === "0px",
-              ),
+              styles.every((item) => backgrounds.has(item.markerBackgroundColor)),
             value: field?.value ?? "",
             placeholderCount: placeholders.length,
             rawPlaceholderCount: rawLeaves.length,
@@ -7239,7 +7230,7 @@ async function main() {
           };
         })()`
           .replace("__COMMAND__", testCase.command)
-          .replace("__EXPECTED__", String(testCase.expected)),
+          .replaceAll("__EXPECTED__", String(testCase.expected)),
           `typing ${testCase.input} creates VisualTeX placeholder blocks`,
         );
         results.push({ ...testCase, state });
@@ -7312,15 +7303,11 @@ async function main() {
               !node.querySelector("[data-atom-id]") &&
               !node.classList.contains("visualtex-structural-placeholder"),
           );
-        const styles = placeholders.map((node) => {
-          const style = getComputedStyle(node);
-          return {
-            className: node.className,
-            backgroundColor: style.backgroundColor,
-            color: style.color,
-            borderTopWidth: style.borderTopWidth,
-          };
-        });
+        // The layout engine draws each empty slot as a marker element.
+        const styles = [...(root?.querySelectorAll(".ML__vtx-marker") ?? [])].map((node) => ({
+          className: node.className,
+          backgroundColor: getComputedStyle(node).backgroundColor,
+        }));
         const backgrounds = new Set([
           "rgb(217, 237, 249)",
           "rgb(207, 232, 247)",
@@ -7332,13 +7319,9 @@ async function main() {
               field?.value ?? "",
             ) &&
             placeholders.length === 2 &&
+            styles.length === 2 &&
             rawLeaves.length === 0 &&
-            styles.every(
-              (item) =>
-                backgrounds.has(item.backgroundColor) &&
-                item.color === "rgba(0, 0, 0, 0)" &&
-                item.borderTopWidth === "0px",
-            ),
+            styles.every((item) => backgrounds.has(item.backgroundColor)),
           value: field?.value ?? "",
           placeholderCount: placeholders.length,
           rawPlaceholderCount: rawLeaves.length,
@@ -8455,25 +8438,12 @@ async function main() {
         const field = document.querySelector("math-field");
         const sink = field?.shadowRoot?.querySelector('[part="keyboard-sink"]');
         const inspect = (phase) => {
-          const selected = field?.shadowRoot?.querySelector(
-            ".visualtex-structural-placeholder.ML__selected, .ML__selected .visualtex-structural-placeholder",
-          );
-          const caret = selected?.querySelector(
-            ":scope > .visualtex-structural-placeholder-caret",
-          );
-          const selectedRect = selected?.getBoundingClientRect() ?? null;
+          // The layout engine draws the empty slot: its selected marker and
+          // the caret bar standing against the marker's left edge.
+          const marker = field?.shadowRoot?.querySelector(".ML__vtx-marker--selected");
+          const caret = marker ? field.shadowRoot.querySelector(".ML__caret.ML__vtx-caret--before") : null;
           const caretRect = caret?.getBoundingClientRect() ?? null;
-          const markerStyle = selected ? getComputedStyle(selected, "::before") : null;
-          const markerTransform =
-            markerStyle?.transform && markerStyle.transform !== "none"
-              ? new DOMMatrixReadOnly(markerStyle.transform)
-              : null;
-          const markerLeft =
-            selectedRect && markerStyle
-              ? selectedRect.left +
-                (Number.parseFloat(markerStyle.left) || 0) +
-                (markerTransform?.m41 ?? 0)
-              : null;
+          const markerLeft = marker?.getBoundingClientRect().left ?? null;
           const caretPseudoStyle = caret ? getComputedStyle(caret, "::after") : null;
           return {
             phase,
@@ -8481,7 +8451,7 @@ async function main() {
             placeholderCount:
               field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
             caretPresent: Boolean(caret),
-            caretIsFirstChild: Boolean(selected && caret && selected.firstElementChild === caret),
+            caretTouchesMarker: Boolean(caretRect && markerLeft !== null && Math.abs(caretRect.right - markerLeft) <= 0.75),
             caretX: caretRect?.left ?? null,
             markerLeft,
             caretAnimation: caretPseudoStyle?.animationName ?? "",
@@ -8565,12 +8535,9 @@ async function main() {
       await sleep(80);
       const integrand = await evaluate(`(() => {
         const field = document.querySelector("math-field");
-        const selected = field?.shadowRoot?.querySelector(
-          ".visualtex-structural-placeholder.ML__selected, .ML__selected .visualtex-structural-placeholder",
-        );
-        const caret = selected?.querySelector(
-          ":scope > .visualtex-structural-placeholder-caret",
-        );
+        const caret = field?.shadowRoot?.querySelector(".ML__vtx-marker--selected")
+          ? field.shadowRoot.querySelector(".ML__caret.ML__vtx-caret--before")
+          : null;
         return {
           value: field?.value ?? "",
           placeholderCount:
@@ -8636,7 +8603,10 @@ async function main() {
           y: rect?.y ?? 0,
           width: rect?.width ?? 0,
           height: rect?.height ?? 0,
-          caret: Boolean(selected?.querySelector(":scope > .visualtex-structural-placeholder-caret")),
+          caret: Boolean(
+            field?.shadowRoot?.querySelector(".ML__vtx-marker--selected") &&
+            field.shadowRoot.querySelector(".ML__caret.ML__vtx-caret--before"),
+          ),
         };
       })()`);
       const geometryDelta = {
@@ -8715,17 +8685,15 @@ async function main() {
           placeholderCount:
             field?.shadowRoot?.querySelectorAll(".visualtex-structural-placeholder").length ?? -1,
           caretPresent: Boolean(
-            field?.shadowRoot?.querySelector(
-              ".visualtex-structural-placeholder.ML__selected .visualtex-structural-placeholder-caret, " +
-              ".ML__selected .visualtex-structural-placeholder .visualtex-structural-placeholder-caret",
-            ),
+            field?.shadowRoot?.querySelector(".ML__vtx-marker--selected") &&
+            field.shadowRoot.querySelector(".ML__caret.ML__vtx-caret--before"),
           ),
         };
       })()`);
 
       if (
         !state.fraction.caretPresent ||
-        !state.fraction.caretIsFirstChild ||
+        !state.fraction.caretTouchesMarker ||
         state.fraction.caretX == null ||
         state.fraction.markerLeft == null ||
         state.fraction.caretX > state.fraction.markerLeft + 0.75 ||
@@ -11230,6 +11198,15 @@ async function main() {
         popupText: document.querySelector(".suggestion-popup")?.textContent ?? "",
       }))()`, "dismissed formula-line command candidate stays closed");
 
+      // No command candidate shows on the row any more (the Windows app has no
+      // "other command suggestions" setting): that Escape opened the empty
+      // LaTeX box, and a second one closes it. (This used to pass only when a
+      // stray 80 ms refocus after ArrowUp happened to close the box.)
+      await key("Escape", "Escape", 27);
+      await waitForEvaluation(`(() => ({
+        ready: document.querySelectorAll("math-field")[0]?.mode === "math",
+      }))()`, "second Escape closes the LaTeX box");
+
       await key("ArrowDown", "ArrowDown", 40);
       const returnedState = await waitForEvaluation(`(() => {
         const rows = [...document.querySelectorAll(".formula-line")];
@@ -11688,15 +11665,13 @@ async function main() {
       await typeText("\\mat");
       const beforeDelete = await waitForEvaluation(`(() => {
         const field = document.querySelectorAll("math-field")[1];
-        const caret = field.shadowRoot?.querySelector(".ML__raw-latex.ML__latex-caret");
-        const nodes = caret?.parentElement
-          ? [...caret.parentElement.querySelectorAll(":scope > .ML__raw-latex")]
-          : [];
-        const caretIndex = nodes.indexOf(caret);
-        const typedRaw = nodes
-          .slice(0, caretIndex >= 0 ? caretIndex + 1 : nodes.length)
-          .map((node) => node.textContent ?? "")
-          .join("");
+        // the raw LaTeX typed before the caret (the kernel's latex atoms)
+        const model = field._mathfield?.model;
+        let typedRaw = "";
+        for (let offset = 1; model && offset <= field.position; offset++) {
+          const atom = model.at(offset);
+          if (atom?.type === "latex" && !atom.isSuggestion) typedRaw += atom.value;
+        }
         const renderedRaw = [...(field.shadowRoot?.querySelectorAll(".ML__raw-latex") ?? [])]
           .map((node) => node.textContent ?? "")
           .join("");
@@ -11711,15 +11686,13 @@ async function main() {
       await key("Backspace", "Backspace", 8);
       const firstDelete = await waitForEvaluation(`(() => {
         const field = document.querySelectorAll("math-field")[1];
-        const caret = field.shadowRoot?.querySelector(".ML__raw-latex.ML__latex-caret");
-        const nodes = caret?.parentElement
-          ? [...caret.parentElement.querySelectorAll(":scope > .ML__raw-latex")]
-          : [];
-        const caretIndex = nodes.indexOf(caret);
-        const typedRaw = nodes
-          .slice(0, caretIndex >= 0 ? caretIndex + 1 : nodes.length)
-          .map((node) => node.textContent ?? "")
-          .join("");
+        // the raw LaTeX typed before the caret (the kernel's latex atoms)
+        const model = field._mathfield?.model;
+        let typedRaw = "";
+        for (let offset = 1; model && offset <= field.position; offset++) {
+          const atom = model.at(offset);
+          if (atom?.type === "latex" && !atom.isSuggestion) typedRaw += atom.value;
+        }
         return {
           ready: typedRaw === "\\\\ma" && document.querySelectorAll("math-field").length === 2,
           typedRaw,
@@ -11730,15 +11703,13 @@ async function main() {
       await key("Backspace", "Backspace", 8);
       const secondDelete = await waitForEvaluation(`(() => {
         const field = document.querySelectorAll("math-field")[1];
-        const caret = field.shadowRoot?.querySelector(".ML__raw-latex.ML__latex-caret");
-        const nodes = caret?.parentElement
-          ? [...caret.parentElement.querySelectorAll(":scope > .ML__raw-latex")]
-          : [];
-        const caretIndex = nodes.indexOf(caret);
-        const typedRaw = nodes
-          .slice(0, caretIndex >= 0 ? caretIndex + 1 : nodes.length)
-          .map((node) => node.textContent ?? "")
-          .join("");
+        // the raw LaTeX typed before the caret (the kernel's latex atoms)
+        const model = field._mathfield?.model;
+        let typedRaw = "";
+        for (let offset = 1; model && offset <= field.position; offset++) {
+          const atom = model.at(offset);
+          if (atom?.type === "latex" && !atom.isSuggestion) typedRaw += atom.value;
+        }
         return {
           ready: typedRaw === "\\\\m" && document.querySelectorAll("math-field").length === 2,
           typedRaw,
@@ -11749,15 +11720,13 @@ async function main() {
       await key("Backspace", "Backspace", 8);
       await waitForEvaluation(`(() => {
         const field = document.querySelectorAll("math-field")[1];
-        const caret = field.shadowRoot?.querySelector(".ML__raw-latex.ML__latex-caret");
-        const nodes = caret?.parentElement
-          ? [...caret.parentElement.querySelectorAll(":scope > .ML__raw-latex")]
-          : [];
-        const caretIndex = nodes.indexOf(caret);
-        const typedRaw = nodes
-          .slice(0, caretIndex >= 0 ? caretIndex + 1 : nodes.length)
-          .map((node) => node.textContent ?? "")
-          .join("");
+        // the raw LaTeX typed before the caret (the kernel's latex atoms)
+        const model = field._mathfield?.model;
+        let typedRaw = "";
+        for (let offset = 1; model && offset <= field.position; offset++) {
+          const atom = model.at(offset);
+          if (atom?.type === "latex" && !atom.isSuggestion) typedRaw += atom.value;
+        }
         return { ready: typedRaw === "\\\\", typedRaw };
       })()`, "raw command reduced to backslash");
       await key("Backspace", "Backspace", 8);

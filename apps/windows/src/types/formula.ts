@@ -133,6 +133,10 @@ export interface FormulaDocument {
       | "palatino"
       | "helvetica";
     formulaChineseFont?: "system" | "pingfang" | "songti" | "kaiti" | "heiti";
+    /** spacing configurations per formula font (editor/formulaSpacingPreferences.ts); normalized when read */
+    formulaSpacing?: unknown;
+    /** chords of common buttons (shortcuts/buttonShortcuts.ts); normalized when read */
+    buttonShortcuts?: unknown;
     inputBehavior?: InputBehaviorSettings;
     personalize?: boolean;
     suggestionCount?: number;

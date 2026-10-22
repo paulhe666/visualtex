@@ -4,6 +4,7 @@ import { MathPreview } from "./MathPreview";
 import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
 import { FormulaRowHotkeyRecorderDialog } from "./FormulaRowHotkeyRecorderDialog";
 import { OfficeFormulaShortcutSettingsSection } from "./OfficeFormulaShortcutSettings";
+import { ButtonShortcutSettingsSection } from "./ButtonShortcutSettings";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyTargetKindLabel,
@@ -101,6 +102,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
           </header>
 
           <div className="shortcut-manager-scroll">
+            <ButtonShortcutSettingsSection />
             <OfficeFormulaShortcutSettingsSection />
 
             <section className="shortcut-settings-group" data-formula-row-hotkeys>

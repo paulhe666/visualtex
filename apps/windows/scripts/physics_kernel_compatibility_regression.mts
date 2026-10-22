@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { convertLatexToMarkup, validateLatex } from "mathlive/ssr";
 import { VISUALTEX_CORE_MATHLIVE_MACROS } from "../src/math/coreLatexAliases.ts";
 import { VISUALTEX_MATHLIVE_COMPATIBILITY_MACROS } from "../src/math/mathLiveCompatibilityMacros.ts";
@@ -8,7 +7,7 @@ import { VISUALTEX_PHYSICS_KERNEL_MACROS } from "../src/math/physicsKernelMacros
 import { physicsToolbarCommands } from "../src/autocomplete/physicsToolbarCommands.ts";
 import { commandRegistry } from "../src/autocomplete/commandRegistry.ts";
 import { parseLatexSourceDraft } from "../src/clipboard/LatexCopyService.ts";
-import { patchVisualTexMathLiveCoreCompatibility } from "../vite.mathliveCoreCompatibility.ts";
+import { kernelHostModuleSource } from "../vite.visualtexKernelHost.ts";
 
 const forbidden = new Set([
   "div", "qty", "Re", "Im", "real", "sin", "cos", "tan", "exp",
@@ -133,12 +132,12 @@ assert.equal(
   "Matrix validation masked an unknown command inside a cell",
 );
 
-const originalKernel = readFileSync("node_modules/mathlive/mathlive.mjs", "utf8");
-const patchedKernel = patchVisualTexMathLiveCoreCompatibility(originalKernel);
-const macroStart = patchedKernel.indexOf("var DEFAULT_MACROS = {");
-const addedMacros = patchedKernel.slice(
-  macroStart + "var DEFAULT_MACROS = {".length,
-  patchedKernel.indexOf("\n  \"strut\":", macroStart),
+// the default macros the kernel's host module gives the parser (generated from the registries)
+const host = kernelHostModuleSource();
+const macroStart = host.indexOf("export const visualTexDefaultMacros = {");
+const addedMacros = host.slice(
+  macroStart + "export const visualTexDefaultMacros = {".length,
+  host.indexOf("\n};", macroStart),
 );
 for (const macro of VISUALTEX_PHYSICS_KERNEL_MACROS) {
   assert.ok(

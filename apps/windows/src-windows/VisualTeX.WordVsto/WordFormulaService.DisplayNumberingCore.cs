@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -307,7 +308,7 @@ internal sealed partial class WordFormulaService
                             semantic[host.Range.Start] = WordNativeOmmlNumbering.ReadSemanticOmml(exact);
                         }
                         finally { Release(exact); }
-                        ReportOperationProgress("正在读取公式…", semantic.Count, plan.Count);
+                        ReportOperationProgress(OfficePluginLanguage.Text("正在读取公式…", "Reading equations…"), semantic.Count, plan.Count);
                     }
                 }
                 nativeNumbers = WordNativeNumberingAdoptionPlan.PrepareBatchInsertion(
@@ -389,7 +390,7 @@ internal sealed partial class WordFormulaService
                             EnsureMathTypeNativeStyles(document, mathTypeBodyFormatting);
                     foreach (var host in targets)
                     {
-                        ReportOperationProgress("正在添加公式编号…", written.Count, plan.Count);
+                        ReportOperationProgress(OfficePluginLanguage.Text("正在添加公式编号…", "Adding equation numbers…"), written.Count, plan.Count);
                         switch (host.Kind)
                         {
                             case WordFormulaHostKind.Omml:
@@ -444,7 +445,7 @@ internal sealed partial class WordFormulaService
                             }
                         }
                     }
-                    ReportOperationProgress("正在更新编号…", written.Count, plan.Count);
+                    ReportOperationProgress(OfficePluginLanguage.Text("正在更新编号…", "Updating numbers…"), written.Count, plan.Count);
 
                     // ---- One renumbering pass per family, in document order. ----
                     if (native is not null)

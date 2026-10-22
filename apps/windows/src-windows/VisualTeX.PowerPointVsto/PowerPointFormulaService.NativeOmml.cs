@@ -103,7 +103,9 @@ public sealed partial class PowerPointFormulaService
                 finally { Release(zone); }
             }
             if (matches.Count != 1)
-                throw new InvalidOperationException("请把光标放入要编辑的一个原生公式中，或只选择该公式。");
+                throw new InvalidOperationException(Text(
+                    "请把光标放入要编辑的一个原生公式中，或只选择该公式。",
+                    "Place the caret inside the one native equation to edit, or select only that equation."));
             return matches[0];
         }
         finally { Release(zones); Release(range); Release(frame); }

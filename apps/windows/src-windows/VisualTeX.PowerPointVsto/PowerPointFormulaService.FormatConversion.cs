@@ -297,7 +297,8 @@ public sealed partial class PowerPointFormulaService
         try { slideXml = PowerPointNativeOmmlPackage.ReadSlide(archive, slideId); }
         catch (Exception error)
         {
-            plan.Skips.Add(new PowerPointConversionSkip(PowerPointConversionSkipReason.Unreadable, slideIndex, 1, error.Message));
+            plan.Skips.Add(new PowerPointConversionSkip(PowerPointConversionSkipReason.Unreadable, slideIndex, 1,
+                Text("无法读取该幻灯片的已保存内容：", "The slide's saved content could not be read: ") + Describe(error)));
             return;
         }
         var index = PowerPointSlideXml.IndexTopLevelShapes(slideXml);
@@ -492,7 +493,8 @@ public sealed partial class PowerPointFormulaService
         }
         catch (Exception error)
         {
-            plan.Skips.Add(new PowerPointConversionSkip(PowerPointConversionSkipReason.Unreadable, slideIndex, 1, error.Message));
+            plan.Skips.Add(new PowerPointConversionSkip(PowerPointConversionSkipReason.Unreadable, slideIndex, 1,
+                Text("读取 MathType 公式失败：", "Reading the MathType equation failed: ") + Describe(error)));
         }
     }
 
@@ -571,7 +573,8 @@ public sealed partial class PowerPointFormulaService
         }
         catch (Exception error)
         {
-            plan.Skips.Add(new PowerPointConversionSkip(PowerPointConversionSkipReason.Unreadable, slideIndex, count, error.Message));
+            plan.Skips.Add(new PowerPointConversionSkip(PowerPointConversionSkipReason.Unreadable, slideIndex, count,
+                Text("读取原生公式失败：", "Reading the native equation failed: ") + Describe(error)));
         }
     }
 
@@ -772,40 +775,69 @@ public sealed partial class PowerPointFormulaService
             presentation.SaveCopyAs(snapshot, PpSaveAsFileType.ppSaveAsOpenXMLPresentation);
             using var stream = File.OpenRead(snapshot);
             using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
-            var slides = new Dictionary<int, XDocument?>();
-            XDocument? SlideXml(int slideId)
+            // A slide that cannot be read keeps its exception, so every formula
+            // on it reports why instead of looking "changed".
+            var slides = new Dictionary<int, (XDocument? Xml, Exception? Error)>();
+            (XDocument? Xml, Exception? Error) SlideXml(int slideId)
             {
                 if (slides.TryGetValue(slideId, out var cached)) return cached;
-                XDocument? loaded;
-                try { loaded = PowerPointNativeOmmlPackage.ReadSlide(archive, slideId); }
-                catch { loaded = null; }
+                (XDocument? Xml, Exception? Error) loaded;
+                try { loaded = (PowerPointNativeOmmlPackage.ReadSlide(archive, slideId), null); }
+                catch (Exception error) { loaded = (null, error); }
                 slides[slideId] = loaded;
                 return loaded;
             }
             foreach (var unit in plan.Units.ToArray())
             {
-                bool unchanged;
+                var unchanged = true;
+                string? readFailure = null;
                 try
                 {
-                    unchanged = unit.SourceKind switch
+                    switch (unit.SourceKind)
                     {
-                        PowerPointFormulaKind.MathType => MathTypeMtefCodec.EquationNativeContentEquals(
-                            MathTypeOleStorage.ReadEquationNative(
-                                PowerPointMathTypePackage.Read(archive, unit.SlideId, unit.ShapeId).CompoundFile),
-                            unit.EquationNative!),
-                        PowerPointFormulaKind.Omml => SlideXml(unit.SlideId) is { } slideXml
-                            && string.Equals(
+                        case PowerPointFormulaKind.MathType:
+                            unchanged = MathTypeMtefCodec.EquationNativeContentEquals(
+                                MathTypeOleStorage.ReadEquationNative(
+                                    PowerPointMathTypePackage.Read(archive, unit.SlideId, unit.ShapeId).CompoundFile),
+                                unit.EquationNative!);
+                            break;
+                        case PowerPointFormulaKind.Omml:
+                        {
+                            var slideXml = SlideXml(unit.SlideId);
+                            if (slideXml.Xml is null)
+                            {
+                                unchanged = false;
+                                readFailure = Text("无法重新读取该幻灯片的已保存内容：", "The slide's saved content could not be read again: ")
+                                    + Describe(slideXml.Error);
+                                break;
+                            }
+                            unchanged = string.Equals(
                                 PowerPointTextEditTransaction.Fingerprint(
-                                    PowerPointNativeOmmlPackage.SelectTextShape(slideXml, unit.ShapeId).ToString(SaveOptions.DisableFormatting)),
+                                    PowerPointNativeOmmlPackage.SelectTextShape(slideXml.Xml, unit.ShapeId).ToString(SaveOptions.DisableFormatting)),
                                 unit.TextFingerprint,
-                                StringComparison.Ordinal),
-                        _ => true,
-                    };
+                                StringComparison.Ordinal);
+                            break;
+                        }
+                    }
                 }
-                catch { unchanged = false; }
+                catch (Exception error)
+                {
+                    unchanged = false;
+                    readFailure = Text($"转换前重新读取{ShapeLabel(unit)}失败：", $"Re-reading {ShapeLabel(unit)} before writing failed: ")
+                        + Describe(error);
+                }
                 if (unchanged) continue;
                 plan.Units.Remove(unit);
-                plan.Skips.Add(new PowerPointConversionSkip(PowerPointConversionSkipReason.Changed, unit.SlideIndex, unit.Items.Count));
+                plan.Skips.Add(readFailure is not null
+                    ? new PowerPointConversionSkip(PowerPointConversionSkipReason.Unreadable, unit.SlideIndex, unit.Items.Count,
+                        readFailure, UnitLatex(unit))
+                    : new PowerPointConversionSkip(PowerPointConversionSkipReason.Changed, unit.SlideIndex, unit.Items.Count,
+                        unit.SourceKind == PowerPointFormulaKind.MathType
+                            ? Text($"扫描后{ShapeLabel(unit)}中的 MathType 公式内容已改变。",
+                                $"The MathType equation in {ShapeLabel(unit)} changed after it was scanned.")
+                            : Text($"扫描后{ShapeLabel(unit)}的文本内容或格式已改变。",
+                                $"The text or formatting of {ShapeLabel(unit)} changed after it was scanned."),
+                        UnitLatex(unit)));
             }
         }
         finally
@@ -837,10 +869,12 @@ public sealed partial class PowerPointFormulaService
             EnsureNotSlideShow();
             presentation = _application.ActivePresentation;
             EnsureSourceDocument(presentation, plan.DocumentId);
-            (slide, source) = FindConversionSource(presentation, unit);
+            string? missing;
+            (slide, source, missing) = FindConversionSource(presentation, unit);
             if (slide is null || source is null)
             {
                 result.Reason = PowerPointConversionSkipReason.Changed;
+                result.Detail = missing;
                 return result;
             }
             StartNewUndoEntry();
@@ -883,7 +917,7 @@ public sealed partial class PowerPointFormulaService
             foreach (var replacement in created) TryDelete(replacement);
             result.Converted = false;
             result.Reason = PowerPointConversionSkipReason.Failed;
-            result.Detail = error.Message;
+            result.Detail = ApplyFailure(unit, error, Text("写入替换对象", "writing the replacement"));
             return result;
         }
         finally
@@ -903,7 +937,7 @@ public sealed partial class PowerPointFormulaService
         PreparedPowerPointConversion formula,
         List<(string FormulaId, int ShapeId, float Width, float Height, float Left, float Top)> restores)
     {
-        var metadata = (formula.Session ?? throw new InvalidDataException("Missing VisualTeX render result.")).ToMetadata();
+        var metadata = (formula.Session ?? throw new InvalidDataException(Text("缺少 VisualTeX 渲染结果。", "Missing VisualTeX render result."))).ToMetadata();
         metadata.Validate();
         var (left, top) = PowerPointConversionRules.CenteredAt(item.CenterX, item.CenterY, formula.WidthPt, formula.HeightPt);
         var shape = AddOleObjectOffscreen(slide, formula.WidthPt, formula.HeightPt);
@@ -911,8 +945,8 @@ public sealed partial class PowerPointFormulaService
         {
             shape.Visible = MsoTriState.msoFalse;
             InitializeOle(shape, metadata,
-                formula.EmfPath ?? throw new InvalidDataException("Missing OLE preview."),
-                formula.PngPath ?? throw new InvalidDataException("Missing OLE picture."));
+                formula.EmfPath ?? throw new InvalidDataException(Text("缺少 OLE 对象的预览图。", "Missing OLE preview.")),
+                formula.PngPath ?? throw new InvalidDataException(Text("缺少 OLE 对象的图片。", "Missing OLE picture.")));
             Configure(shape, metadata);
             // Host geometry is the very last write: PowerPoint can rebuild the
             // OLE presentation while metadata and container state settle.
@@ -935,11 +969,11 @@ public sealed partial class PowerPointFormulaService
         PowerPointConversionItem item,
         PreparedPowerPointConversion formula)
     {
-        var metadata = (formula.Session ?? throw new InvalidDataException("Missing VisualTeX render result.")).ToMetadata();
+        var metadata = (formula.Session ?? throw new InvalidDataException(Text("缺少 VisualTeX 渲染结果。", "Missing VisualTeX render result."))).ToMetadata();
         metadata.Validate();
         var (left, top) = PowerPointConversionRules.CenteredAt(item.CenterX, item.CenterY, formula.WidthPt, formula.HeightPt);
         var shape = slide.Shapes.AddPicture(
-            formula.SvgPath ?? throw new InvalidDataException("Missing SVG picture."),
+            formula.SvgPath ?? throw new InvalidDataException(Text("缺少 SVG 图片。", "Missing SVG picture.")),
             MsoTriState.msoFalse,
             MsoTriState.msoTrue,
             left,
@@ -973,7 +1007,7 @@ public sealed partial class PowerPointFormulaService
         PowerPointConversionItem item,
         PreparedPowerPointConversion formula)
     {
-        var mathMl = formula.MathMl ?? throw new InvalidDataException("Missing MathML for the native equation.");
+        var mathMl = formula.MathMl ?? throw new InvalidDataException(Text("缺少用于原生公式的 MathML。", "Missing MathML for the native equation."));
         var fontSize = FormulaFontSize.Normalize(item.EffectiveFontSizePt);
         var metadata = new FormulaMetadata
         {
@@ -1075,7 +1109,8 @@ public sealed partial class PowerPointFormulaService
         placeholder?.RemoveRecreatedEmptyPlaceholder(slide);
     }
 
-    private (Slide? Slide, Shape? Shape) FindConversionSource(Presentation presentation, PowerPointConversionUnit unit)
+    // The source shape, or (null, null, why it can no longer be converted).
+    private (Slide? Slide, Shape? Shape, string? Missing) FindConversionSource(Presentation presentation, PowerPointConversionUnit unit)
     {
         Slides? slides = null;
         Slide? slide = null;
@@ -1083,7 +1118,12 @@ public sealed partial class PowerPointFormulaService
         try
         {
             slides = presentation.Slides;
-            try { slide = slides.FindBySlideID(unit.SlideId); } catch { return (null, null); }
+            try { slide = slides.FindBySlideID(unit.SlideId); }
+            catch (Exception error)
+            {
+                return (null, null, Text("该公式所在的幻灯片已被删除或无法访问：", "The slide holding this equation was deleted or cannot be accessed: ")
+                    + Describe(error));
+            }
             shapes = slide.Shapes;
             for (var index = 1; index <= shapes.Count; index++)
             {
@@ -1091,15 +1131,17 @@ public sealed partial class PowerPointFormulaService
                 try
                 {
                     if (shape.Id != unit.ShapeId) continue;
-                    if (!ConversionSourceStillMatches(shape, unit)) return (null, null);
-                    var found = (slide, shape);
+                    var mismatch = ConversionSourceMismatch(shape, unit);
+                    if (mismatch is not null) return (null, null, mismatch);
+                    var found = (slide, shape, (string?)null);
                     slide = null;
                     shape = null;
                     return found;
                 }
                 finally { Release(shape); }
             }
-            return (null, null);
+            return (null, null, Text($"{ShapeLabel(unit)}已不在该幻灯片上（扫描后被删除）。",
+                $"{CapitalizedShapeLabel(unit)} is no longer on the slide (it was deleted after the scan)."));
         }
         finally
         {
@@ -1109,11 +1151,12 @@ public sealed partial class PowerPointFormulaService
         }
     }
 
-    private static bool ConversionSourceStillMatches(Shape shape, PowerPointConversionUnit unit)
+    // Null when the shape is still the scanned formula, otherwise why not.
+    private static string? ConversionSourceMismatch(Shape shape, PowerPointConversionUnit unit)
     {
         try
         {
-            return unit.SourceKind switch
+            var matches = unit.SourceKind switch
             {
                 PowerPointFormulaKind.MathType => IsMathTypeShape(shape),
                 PowerPointFormulaKind.Omml => shape.HasTextFrame == MsoTriState.msoTrue,
@@ -1122,8 +1165,16 @@ public sealed partial class PowerPointFormulaService
                 _ => !IsNativeOle(shape)
                     && string.Equals(ReadEncodedMetadata(shape), unit.MetadataFingerprint, StringComparison.Ordinal),
             };
+            return matches
+                ? null
+                : Text($"扫描后{ShapeLabel(unit)}已被修改，不再是原来的公式。",
+                    $"{CapitalizedShapeLabel(unit)} was modified after the scan and is no longer the same equation.");
         }
-        catch { return false; }
+        catch (Exception error)
+        {
+            return Text($"检查{ShapeLabel(unit)}是否仍是原公式时出错：", $"Checking whether {ShapeLabel(unit)} is still the same equation failed: ")
+                + Describe(error);
+        }
     }
 
     // ---- Writing: MathType targets -------------------------------------------
@@ -1166,8 +1217,8 @@ public sealed partial class PowerPointFormulaService
                 staged.Add(new PowerPointMathTypePackage.StagedEquation(
                     BatchStagingPlaceholderPrefix + index,
                     frameName,
-                    formula.MathTypeCompoundFile ?? throw new InvalidDataException("Missing MathType storage."),
-                    formula.MathTypePreviewEmf ?? throw new InvalidDataException("Missing MathType preview."),
+                    formula.MathTypeCompoundFile ?? throw new InvalidDataException(Text("缺少 MathType 公式数据。", "Missing MathType storage.")),
+                    formula.MathTypePreviewEmf ?? throw new InvalidDataException(Text("缺少 MathType 预览图。", "Missing MathType preview.")),
                     formula.MathTypeNaturalWidthPt,
                     formula.MathTypeNaturalHeightPt));
             }
@@ -1244,10 +1295,11 @@ public sealed partial class PowerPointFormulaService
                 {
                     var result = new PowerPointConversionUnitResult { SlideId = unit.SlideId, FormulaCount = unit.Items.Count };
                     results.Add(result);
-                    var (slide, source) = FindConversionSource(presentation, unit);
+                    var (slide, source, missing) = FindConversionSource(presentation, unit);
                     if (slide is null || source is null)
                     {
                         result.Reason = PowerPointConversionSkipReason.Changed;
+                        result.Detail = missing;
                         continue;
                     }
                     var created = new List<(Shape Shape, PowerPointConversionItem Item)>();
@@ -1268,11 +1320,11 @@ public sealed partial class PowerPointFormulaService
                                     staged = stagingShapes[staging.FrameNames[item.Id]];
                                     pasted = CopyShapeInto(staged, targetShapes);
                                     if (pasted.Count != 1)
-                                        throw new InvalidDataException("PowerPoint did not paste exactly one MathType object.");
+                                        throw new InvalidDataException(Text("PowerPoint 没有恰好粘贴出一个 MathType 对象。", "PowerPoint did not paste exactly one MathType object."));
                                     var replacement = pasted[1];
                                     created.Add((replacement, item));
                                     if (!IsMathTypeShape(replacement))
-                                        throw new InvalidDataException("PowerPoint did not create a MathType OLE object.");
+                                        throw new InvalidDataException(Text("PowerPoint 没有创建 MathType OLE 对象。", "PowerPoint did not create a MathType OLE object."));
                                     var (left, top) = PowerPointConversionRules.CenteredAt(item.CenterX, item.CenterY, formula.WidthPt, formula.HeightPt);
                                     replacement.LockAspectRatio = MsoTriState.msoFalse;
                                     replacement.Width = formula.WidthPt;
@@ -1295,7 +1347,7 @@ public sealed partial class PowerPointFormulaService
                         Release(source);
                         Release(slide);
                         result.Reason = PowerPointConversionSkipReason.Failed;
-                        result.Detail = error.Message;
+                        result.Detail = ApplyFailure(unit, error, Text("粘贴 MathType 对象", "pasting the MathType object"));
                     }
                 }
             }
@@ -1317,7 +1369,7 @@ public sealed partial class PowerPointFormulaService
                             if (!MathTypeMtefCodec.EquationNativeContentEquals(
                                     MathTypeOleStorage.ReadEquationNative(saved.CompoundFile),
                                     prepared[item.Id].MathTypeEquationNative!))
-                                throw new InvalidDataException("PowerPoint did not preserve the MathType equation storage.");
+                                throw new InvalidDataException(Text("PowerPoint 保存后 MathType 公式数据与写入的不一致。", "PowerPoint did not preserve the MathType equation storage."));
                         }
                         var shapes = entry.Created.Select(created => created.Shape).ToList();
                         if (shapes.Count == 1)
@@ -1352,7 +1404,7 @@ public sealed partial class PowerPointFormulaService
                         if (sourceRetired) { entry.Result.Converted = true; continue; }
                         foreach (var (shape, _) in entry.Created) TryDelete(shape);
                         entry.Result.Reason = PowerPointConversionSkipReason.Failed;
-                        entry.Result.Detail = error.Message;
+                        entry.Result.Detail = ApplyFailure(entry.Unit, error, Text("校验并完成 MathType 替换", "verifying and finishing the MathType replacement"));
                     }
                     finally
                     {
@@ -1471,6 +1523,30 @@ public sealed partial class PowerPointFormulaService
 
     private static string Text(string chinese, string english) =>
         VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text(chinese, english);
+
+    // The specific, localized reason for an exception (COM code, every cause).
+    private static string Describe(Exception? error) =>
+        VisualTeX.WindowsOffice.VstoShared.OfficeErrorText.Describe(error);
+
+    // "形状“Equation 3”（ID 12）" / "shape \"Equation 3\" (ID 12)": which object failed.
+    private static string ShapeLabel(PowerPointConversionUnit unit) =>
+        string.IsNullOrWhiteSpace(unit.ShapeName)
+            ? Text($"形状（ID {unit.ShapeId}）", $"shape ID {unit.ShapeId}")
+            : Text($"形状“{unit.ShapeName}”（ID {unit.ShapeId}）", $"shape \"{unit.ShapeName}\" (ID {unit.ShapeId})");
+
+    private static string CapitalizedShapeLabel(PowerPointConversionUnit unit)
+    {
+        var label = ShapeLabel(unit);
+        return label.Length > 0 && char.IsLower(label[0]) ? char.ToUpperInvariant(label[0]) + label.Substring(1) : label;
+    }
+
+    private static string ApplyFailure(PowerPointConversionUnit unit, Exception error, string stage) =>
+        Text($"{ShapeLabel(unit)}：{stage}失败：", $"{CapitalizedShapeLabel(unit)}: {stage} failed: ") + Describe(error);
+
+    // The LaTeX shown for a unit's report line (one formula only; a multi-
+    // formula text box is identified by its shape and count instead).
+    internal static string? UnitLatex(PowerPointConversionUnit unit) =>
+        unit.Items.Count == 1 ? unit.Items[0].Latex : null;
 
     // Deleting a filled content placeholder makes PowerPoint put an empty
     // "Click to add text" placeholder back. After a conversion the formula

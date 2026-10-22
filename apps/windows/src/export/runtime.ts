@@ -19,6 +19,7 @@ import {
   expandCustomSymbolsForSvg,
 } from "../math/customSymbolRendering.ts";
 import { readErrorMessage } from "../errors/readErrorMessage.ts";
+import { splitFormulaEquationTag } from "../office/shared/formulaEquationTag.ts";
 import {
   assertNoUnfilledStructuralPlaceholders,
   assertResolvedMathJaxSvg,
@@ -41,6 +42,7 @@ import {
   formulaLetterFontFamilies,
   normalizeFormulaChineseFont,
   normalizeFormulaLetterFont,
+  readPersistedFormulaFontPreferences,
 } from "../editor/formulaFontPreferences.ts";
 
 const DEFAULT_OPTIONS: SvgExportOptions = {
@@ -123,6 +125,28 @@ function isSingleCompleteEnvironment(source: string) {
   return outerEnd >= 0 && source.slice(outerEnd).trim().length === 0;
 }
 
+/** Characters of an equation number as \\text{...} content. */
+function escapeTextModeLatex(value: string) {
+  return value.replace(/[\\{}#$%&_^~]/g, (c) =>
+    c === "\\" ? "\\textbackslash{}" : c === "^" ? "\\textasciicircum{}" : c === "~" ? "\\textasciitilde{}" : `\\${c}`,
+  );
+}
+
+/** Formula rows (one per line) as one image: rows anchored on their left edge, as the editor stacks them. */
+function joinFormulaRows(normalized: string) {
+  const lines = normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length <= 1) return normalized;
+  // Preserve a source string that is itself one complete TeX environment.
+  // A document with multiple VisualTeX formula rows may still contain an
+  // inner matrix/cases environment on one row; that must not make all rows
+  // collapse into a single horizontal TeX expression.
+  if (isSingleCompleteEnvironment(normalized)) return normalized;
+  return `\\begin{aligned}${lines.map((line) => `&${line}`).join("\\\\")}\\end{aligned}`;
+}
+
 function prepareLatex(latex: string) {
   const normalized = normalizeMathLiveCanonicalUprightCommands(
     normalizeExtendedIntegralLatexCommands(
@@ -131,24 +155,11 @@ function prepareLatex(latex: string) {
   ).trim();
   if (!normalized) throw new Error("Cannot export an empty formula.");
   assertNoUnfilledStructuralPlaceholders(normalized);
-
-  const lines = normalized
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  if (lines.length <= 1) return normalized;
-
-  // Preserve a source string that is itself one complete TeX environment.
-  // A document with multiple VisualTeX formula rows may still contain an
-  // inner matrix/cases environment on one row; that must not make all rows
-  // collapse into a single horizontal TeX expression.
-  if (isSingleCompleteEnvironment(normalized)) return normalized;
-
   // `aligned` uses a right/left pair around every alignment marker. Without
   // an explicit marker MathJax right-aligns rows of different widths. Keep
   // the whole document as one image, but anchor every formula row on its left
   // edge and preserve the editor's vertical ordering.
-  return `\\begin{aligned}${lines.map((line) => `&${line}`).join("\\\\")}\\end{aligned}`;
+  return joinFormulaRows(normalized);
 }
 
 function extractSvg(markup: string) {
@@ -435,6 +446,100 @@ export async function latexToSvg(
   latex: string,
   options: SvgExportOptions = DEFAULT_OPTIONS,
 ): Promise<SvgExportResult> {
+  return options.renderer === "mathjax"
+    ? latexToMathJaxSvg(latex, options)
+    : latexToEngineSvg(latex, options);
+}
+
+/**
+ * The image drawn by the editor's layout engine: the formula exactly as the
+ * editor shows it (font, spacing configuration, custom symbols), its glyphs
+ * as outlines, so it looks the same in every program and on every computer.
+ */
+async function latexToEngineSvg(
+  latex: string,
+  options: SvgExportOptions,
+): Promise<SvgExportResult> {
+  const normalized = latex.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) throw new Error("Cannot export an empty formula.");
+  assertNoUnfilledStructuralPlaceholders(normalized);
+  const fontSizePt = positiveFinite(options.fontSizePt, DEFAULT_OPTIONS.fontSizePt);
+  const paddingPx = nonNegativeFinite(options.paddingPx, DEFAULT_OPTIONS.paddingPx);
+  const paddingXPx = nonNegativeFinite(options.paddingXPx ?? paddingPx, paddingPx);
+  const paddingYPx = nonNegativeFinite(options.paddingYPx ?? paddingPx, paddingPx);
+  // loaded when an image is first drawn: MathML callers (and node scripts) never need the editor engine
+  const { renderEngineSvg } = await import("./engineSvg.ts");
+  const fontSizePx = fontSizePt * (96 / 72);
+  // a formula saved with its own fonts is drawn in them, with that letter
+  // font's active spacing configuration (absent: the editor's chosen fonts)
+  const fonts = options.formulaLetterFont || options.formulaChineseFont
+    ? {
+        letter: normalizeFormulaLetterFont(options.formulaLetterFont ?? readPersistedFormulaFontPreferences().formulaLetterFont ?? DEFAULT_FORMULA_LETTER_FONT),
+        chinese: normalizeFormulaChineseFont(options.formulaChineseFont ?? readPersistedFormulaFontPreferences().formulaChineseFont ?? DEFAULT_FORMULA_CHINESE_FONT),
+      }
+    : undefined;
+  // An equation number (\tag{...}, as numbered Office equations carry it) is
+  // set apart from the formula as MathJax drew it (the same image size): the
+  // number at the right, its baseline on the formula's.
+  const split = splitFormulaEquationTag(normalized);
+  const tagged = split.equationTag !== null && split.latex.length > 0;
+  const body = tagged ? split.latex : normalized;
+  let formula = await renderEngineSvg(joinFormulaRows(body), {
+    displayMode: options.displayMode,
+    fontSizePx,
+    color: "#111111",
+    fonts,
+  });
+  if (tagged) {
+    const starred = /^\\tag\s*\*/.test(normalized.slice(split.latex.length).trim());
+    const text = escapeTextModeLatex(split.equationTag ?? "");
+    const label = await renderEngineSvg(starred ? `\\text{${text}}` : `\\text{(${text})}`, {
+      displayMode: options.displayMode,
+      fontSizePx,
+      color: "#111111",
+      idPrefix: "vtx-tag-",
+      fonts,
+    });
+    // MathJax's geometry: the formula centred, 0.8em and the number's width on either side
+    const gap = 0.8 * fontSizePx;
+    const side = gap + label.left + label.right;
+    const labelX = formula.right + gap + label.left;
+    formula = {
+      ...formula,
+      body: `${formula.body}<g transform="translate(${labelX} 0)">${label.body}</g>`,
+      left: formula.left + side,
+      right: formula.right + side,
+      ascent: Math.max(formula.ascent, label.ascent),
+      descent: Math.max(formula.descent, label.descent),
+    };
+  }
+  const width = Math.max(1, formula.left + formula.right + 2 * paddingXPx);
+  const height = Math.max(1, formula.ascent + formula.descent + 2 * paddingYPx);
+  const x = -formula.left - paddingXPx;
+  const y = -formula.ascent - paddingYPx;
+  // PowerPoint otherwise hit-tests only the painted glyph paths of a
+  // transparent SVG. A practically invisible filled rectangle makes the
+  // entire formula bounds selectable and double-clickable at normal zoom.
+  const backdrop = options.background === "white"
+    ? `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="#ffffff"/>`
+    : `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="#000000" fill-opacity="0.001"/>`;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" ` +
+    `role="img" focusable="false" viewBox="${x} ${y} ${width} ${height}">${backdrop}${formula.body}</svg>`;
+  assertSelfContained(svg);
+  return {
+    svg,
+    base64: svgToBase64(svg),
+    width,
+    height,
+    baseline: Math.max(0, Math.min(height, paddingYPx + formula.ascent)),
+  };
+}
+
+async function latexToMathJaxSvg(
+  latex: string,
+  options: SvgExportOptions,
+): Promise<SvgExportResult> {
   const source = expandCustomSymbolsForSvg(prepareLatex(latex));
   const fontSizePt = positiveFinite(options.fontSizePt, DEFAULT_OPTIONS.fontSizePt);
   const paddingPx = nonNegativeFinite(options.paddingPx, DEFAULT_OPTIONS.paddingPx);
@@ -538,6 +643,10 @@ export async function svgToPng(
   // waits for a one-second idle-task timeout in a hidden converter WebView.
   const dataUrl = canvas.toDataURL("image/png");
   const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+  if (!base64) {
+    // a canvas larger than the browser allows encodes as "data:,"
+    throw new Error(`The PNG of this formula is empty (canvas ${width}×${height} px).`);
+  }
   const blob = new Blob(
     [Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))],
     { type: "image/png" },

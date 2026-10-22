@@ -41,7 +41,9 @@ internal static class PowerPointNativeOmmlPackage
         var hasExtraText = shape.Descendants(A + "t").Any();
         if (equations.Length != 1 || surroundingText || hasOtherContent || hasExtraText
             || paragraphs.Length != 1 || !paragraphs[0].Descendants(M + "oMath").Any())
-            throw new InvalidOperationException("请选择只包含一个原生公式的独立文本框；混排文字或多个公式不能作为整个对象替换。");
+            throw new InvalidOperationException(VisualTeX.WindowsOffice.VstoShared.OfficePluginLanguage.Text(
+                "请选择只包含一个原生公式的独立文本框；混排文字或多个公式不能作为整个对象替换。",
+                "Select a text box that holds exactly one native equation; a box with other text or several equations cannot be replaced as a whole object."));
         return equations[0].ToString(SaveOptions.DisableFormatting);
     }
 

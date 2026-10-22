@@ -1,7 +1,7 @@
+import "./editor/visualTexLayoutRuntime";
 import { installBrowserCompatibility } from "./runtime/browserCompatibility";
 import { prepareEditorCrashSafeRestart } from "./runtime/editorCrashRecovery";
 import { installFloatingLayerAutoAvoidance } from "./runtime/floatingLayerAutoAvoidance";
-import "mathlive/static.css";
 import "./styles.css";
 import "./styles-macos-main.css";
 import "./styles-editor-parity.css";

@@ -3063,8 +3063,12 @@ internal sealed partial class WordFormulaService
                         : "Word OMML";
                 throw new InvalidDataException(
                     wholeDocument
-                        ? $"当前 Word 文档中没有找到可转换的 {modeLabel} 公式。"
-                        : $"所选内容中没有找到可转换的 {modeLabel} 公式。");
+                        ? OfficePluginLanguage.Text(
+                            $"当前 Word 文档中没有找到可转换的 {modeLabel} 公式。",
+                            $"No convertible {modeLabel} equations were found in the current Word document.")
+                        : OfficePluginLanguage.Text(
+                            $"所选内容中没有找到可转换的 {modeLabel} 公式。",
+                            $"No convertible {modeLabel} equations were found in the current selection."));
             }
 
             // Preflight every source before opening a destructive Word undo record.
@@ -3089,10 +3093,13 @@ internal sealed partial class WordFormulaService
                         target.Metadata.FormulaId)));
 
             viewState = CaptureViewState();
-            undoRecord = BeginUndoRecord("VisualTeX 公式转为 LaTeX 代码");
+            undoRecord = BeginUndoRecord(OfficePluginLanguage.Text(
+                "VisualTeX 公式转为 LaTeX 代码",
+                "VisualTeX Equation to LaTeX"));
             if (undoRecord is null)
-                throw new InvalidOperationException(
-                    "Word 无法建立公式转 LaTeX 的撤销事务。为避免公式丢失，本次转换未开始。");
+                throw new InvalidOperationException(OfficePluginLanguage.Text(
+                    "Word 无法建立公式转 LaTeX 的撤销事务。为避免公式丢失，本次转换未开始。",
+                    "Word could not create the undo transaction for equation-to-LaTeX conversion. The conversion was not started to avoid losing the equation."));
 
             var undoRecordEnded = false;
             var documentMutationStarted = false;
@@ -3124,7 +3131,9 @@ internal sealed partial class WordFormulaService
                     catch (Exception recoveryError)
                     {
                         throw new AggregateException(
-                            "公式转 LaTeX 失败，而且 Word 无法完整恢复转换前的文档结构。请保留当前文档以便排查。",
+                            OfficePluginLanguage.Text(
+                                "公式转 LaTeX 失败，而且 Word 无法完整恢复转换前的文档结构。请保留当前文档以便排查。",
+                                "Equation-to-LaTeX conversion failed, and Word could not fully restore the pre-conversion document structure. Keep the current document for diagnosis."),
                             conversionError,
                             recoveryError);
                     }
@@ -3312,11 +3321,13 @@ internal sealed partial class WordFormulaService
         var metadata = target.Metadata;
         var latexSource = target.LatexSource;
         if (string.IsNullOrWhiteSpace(latexSource))
-            throw new InvalidDataException(
-                $"公式 {metadata.FormulaId} 没有可安全恢复的 LaTeX 源码。");
+            throw new InvalidDataException(OfficePluginLanguage.Text(
+                $"公式 {metadata.FormulaId} 没有可安全恢复的 LaTeX 源码。",
+                $"Equation {metadata.FormulaId} has no LaTeX source that can be restored safely."));
         if (target.OleShape is null)
-            throw new InvalidDataException(
-                "MathType 公式转 LaTeX 时无法定位源 Equation.DSMT4 对象。");
+            throw new InvalidDataException(OfficePluginLanguage.Text(
+                "MathType 公式转 LaTeX 时无法定位源 Equation.DSMT4 对象。",
+                "The source Equation.DSMT4 object could not be located while converting the MathType equation to LaTeX."));
 
         Range? liveSourceRange = null;
         Range? insertion = null;
@@ -3435,8 +3446,9 @@ internal sealed partial class WordFormulaService
                 {
                     frame = remaining[index];
                     if (frame.Width <= 1f && frame.Height <= 1f)
-                        throw new InvalidDataException(
-                            $"公式 {metadata.FormulaId} 的 LaTeX 源码仍位于隐藏编号框架中。为避免源码不可见，转换已回滚。");
+                        throw new InvalidDataException(OfficePluginLanguage.Text(
+                            $"公式 {metadata.FormulaId} 的 LaTeX 源码仍位于隐藏编号框架中。为避免源码不可见，转换已回滚。",
+                            $"Equation {metadata.FormulaId} still has LaTeX source inside a hidden numbering frame. The conversion was rolled back to avoid invisible source."));
                 }
                 finally { Release(frame); }
             }
@@ -3454,8 +3466,9 @@ internal sealed partial class WordFormulaService
             .Replace('\r', '\n')
             .Trim();
         if (string.IsNullOrWhiteSpace(latex))
-            throw new InvalidDataException(
-                $"公式 {metadata.FormulaId} 的 LaTeX 元数据为空。为避免删除原公式，转换已中止。");
+            throw new InvalidDataException(OfficePluginLanguage.Text(
+                $"公式 {metadata.FormulaId} 的 LaTeX 元数据为空。为避免删除原公式，转换已中止。",
+                $"Equation {metadata.FormulaId} has empty LaTeX metadata. Conversion was stopped to avoid deleting the original equation."));
         if (string.Equals(
                 metadata.DisplayMode,
                 "block",
@@ -3600,8 +3613,9 @@ internal sealed partial class WordFormulaService
                 normalizedExpected.Take(128).Select(ch => $"U+{(int)ch:X4}"));
             WordDoubleClickHook.TraceMessage(
                 $"formula-to-latex-verify-mismatch formulaId={formulaId} range={inserted.Start}:{inserted.End} actualLength={actual.Length} expectedLength={normalizedExpected.Length} actualCodes={actualCodes} expectedCodes={expectedCodes}");
-            throw new InvalidDataException(
-                $"公式 {formulaId} 的 LaTeX 写回校验失败。Word 实际写入内容与预期源码不一致。");
+            throw new InvalidDataException(OfficePluginLanguage.Text(
+                $"公式 {formulaId} 的 LaTeX 写回校验失败。Word 实际写入内容与预期源码不一致。",
+                $"Verifying the LaTeX written back for equation {formulaId} failed: the text Word wrote differs from the expected source."));
         }
 
         Frames? frames = null;
@@ -3609,8 +3623,9 @@ internal sealed partial class WordFormulaService
         {
             frames = inserted.Frames;
             if (frames.Count > 0)
-                throw new InvalidDataException(
-                    $"公式 {formulaId} 的 LaTeX 源码被 Word Frame 包围。为避免源码不可见，本次转换已撤销。");
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    $"公式 {formulaId} 的 LaTeX 源码被 Word Frame 包围。为避免源码不可见，本次转换已撤销。",
+                    $"The LaTeX source of equation {formulaId} ended up inside a Word frame. The conversion was undone so the source does not become invisible."));
         }
         finally { Release(frames); }
     }

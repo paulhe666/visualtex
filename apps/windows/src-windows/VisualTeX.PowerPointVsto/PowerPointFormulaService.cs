@@ -180,8 +180,9 @@ public sealed partial class PowerPointFormulaService : IDisposable
 
     public OfficeSelection CaptureTextInsertionTarget() =>
         CaptureTextInsertionTargetCore(requireTextSelection: true)
-        ?? throw new InvalidOperationException(
-            "请先把文本光标或文本选区放到一个现有文本框中。");
+        ?? throw new InvalidOperationException(Text(
+            "请先把文本光标或文本选区放到一个现有文本框中。",
+            "Place the text caret or a text selection inside an existing text box first."));
 
     public OfficeSelection? TryCaptureTextInsertionTarget() =>
         CaptureTextInsertionTargetCore(requireTextSelection: false);
@@ -211,23 +212,27 @@ public sealed partial class PowerPointFormulaService : IDisposable
             if (selection.Type != PpSelectionType.ppSelectionText)
             {
                 if (!requireTextSelection) return null;
-                throw new InvalidOperationException(
-                    "请先把文本光标或文本选区放到一个现有文本框中。");
+                throw new InvalidOperationException(Text(
+                    "请先把文本光标或文本选区放到一个现有文本框中。",
+                    "Place the text caret or a text selection inside an existing text box first."));
             }
 
             range = selection.ShapeRange;
             if (range.Count != 1)
-                throw new InvalidOperationException("请只在一个文本框中插入 OMML 公式。");
+                throw new InvalidOperationException(Text(
+                    "请只在一个文本框中插入 OMML 公式。", "Insert the OMML equation into only one text box at a time."));
             shape = range[1];
             if (shape.HasTextFrame != MsoTriState.msoTrue)
-                throw new InvalidOperationException("当前选择不是可编辑文本框。");
+                throw new InvalidOperationException(Text(
+                    "当前选择不是可编辑文本框。", "The current selection is not an editable text box."));
 
             dynamic selected = selection;
             textRange = selected.TextRange2;
             var start = Convert.ToInt32(((dynamic)textRange).Start);
             var length = Convert.ToInt32(((dynamic)textRange).Length);
             if (start < 1 || length < 0)
-                throw new InvalidOperationException("PowerPoint 没有返回有效的文本插入位置。");
+                throw new InvalidOperationException(Text(
+                    "PowerPoint 没有返回有效的文本插入位置。", "PowerPoint did not return a valid text insertion position."));
 
             return new OfficeSelection
             {
@@ -418,7 +423,8 @@ public sealed partial class PowerPointFormulaService : IDisposable
             if (SetSelectedMathZoneFontSize(target)) return target;
             if (IsNativeOmmlReference(selected.ObjectId)
                 && NativeShapeFontSize(selected, target).HasValue) return target;
-            throw new InvalidOperationException("请先选择一个 VisualTeX 公式或 PowerPoint 原生公式。");
+            throw new InvalidOperationException(Text(
+                "请先选择一个 VisualTeX 公式或 PowerPoint 原生公式。", "Select a VisualTeX formula or a native PowerPoint equation first."));
         }
 
         Presentation? presentation = null;

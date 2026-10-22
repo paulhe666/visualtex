@@ -87,6 +87,8 @@ internal sealed class WordFormulaFormatConversionTarget
 internal sealed class WordFormulaFormatConversionResult
 {
     internal int FormulaCount { get; set; }
+    // Conversion is all-or-nothing (one undo record, rolled back on any
+    // failure), so these stay 0/empty; acceptance suites still assert on them.
     internal int FailedFormulaCount { get; set; }
     internal List<string> Failures { get; set; } = new();
 }

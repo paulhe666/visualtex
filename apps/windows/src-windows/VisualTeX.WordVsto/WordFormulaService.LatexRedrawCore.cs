@@ -20,8 +20,7 @@ internal sealed partial class WordFormulaService
         try
         {
             document = _application.ActiveDocument
-                ?? throw new InvalidOperationException(
-                    "No active Word document.");
+                ?? throw new InvalidOperationException(NoActiveDocumentMessage);
             EnsureWritable(document);
 
             selection = _application.Selection;
@@ -29,19 +28,24 @@ internal sealed partial class WordFormulaService
                 ? document.Content.Duplicate
                 : selection.Range.Duplicate;
             if (!wholeDocument && scope.Start == scope.End)
-                throw new InvalidOperationException(
-                    "请先选择包含 LaTeX 代码的 Word 内容。");
+                throw new InvalidOperationException(OfficePluginLanguage.Text(
+                    "请先选择包含 LaTeX 代码的 Word 内容。",
+                    "Select the Word content that contains the LaTeX code first."));
 
-            ReportOperationProgress("正在读取 Word 文本…", 0, 0);
+            ReportOperationProgress(OfficePluginLanguage.Text("正在读取 Word 文本…", "Reading the Word text…"), 0, 0);
             var sourceText = scope.Text ?? string.Empty;
-            ReportOperationProgress("正在扫描 LaTeX 公式…", 0, 0);
+            ReportOperationProgress(OfficePluginLanguage.Text("正在扫描 LaTeX 公式…", "Scanning for LaTeX formulas…"), 0, 0);
             var spans = WordBulkImportParser.FindFormulaSpans(
                 sourceText);
             if (spans.Count == 0)
                 throw new InvalidDataException(
                     wholeDocument
-                        ? "当前 Word 文档中没有找到可重绘的 LaTeX 公式。"
-                        : "所选内容中没有找到可重绘的 LaTeX 公式。");
+                        ? OfficePluginLanguage.Text(
+                            "当前 Word 文档中没有找到可重绘的 LaTeX 公式。",
+                            "No LaTeX formulas to redraw were found in the current Word document.")
+                        : OfficePluginLanguage.Text(
+                            "所选内容中没有找到可重绘的 LaTeX 公式。",
+                            "No LaTeX formulas to redraw were found in the current selection."));
 
             var plan = new WordLatexRedrawPlan
             {
@@ -71,7 +75,7 @@ internal sealed partial class WordFormulaService
                 captureWatch.ElapsedMilliseconds - captureStageStart;
 
             captureStageStart = captureWatch.ElapsedMilliseconds;
-            ReportOperationProgress("正在分析公式上下文…", 0, 0);
+            ReportOperationProgress(OfficePluginLanguage.Text("正在分析公式上下文…", "Analyzing formula context…"), 0, 0);
             var contexts =
                 BuildLatexRedrawSourceContexts(
                     sourceText,
@@ -80,7 +84,7 @@ internal sealed partial class WordFormulaService
                 captureWatch.ElapsedMilliseconds - captureStageStart;
 
             captureStageStart = captureWatch.ElapsedMilliseconds;
-            ReportOperationProgress("正在读取正文和公式字号…", 0, 0);
+            ReportOperationProgress(OfficePluginLanguage.Text("正在读取正文和公式字号…", "Reading text and formula font sizes…"), 0, 0);
             // Most ordinary Word redraw scopes use one body font size. Prove that
             // cheaply once through Range.Font before asking Word to serialize the
             // complete scope as Flat OPC merely to recover per-character sizes.
@@ -119,7 +123,7 @@ internal sealed partial class WordFormulaService
             var fontFallbackCount = 0L;
             var fontFallbackMilliseconds = 0L;
             var fontTargetsCompleted = 0;
-            ReportOperationProgress("正在读取公式字号…", 0, plan.Targets.Count);
+            ReportOperationProgress(ReadFontSizesStage, 0, plan.Targets.Count);
             foreach (var target in plan.Targets
                          .OrderBy(item => item.RelativeStart))
             {
@@ -128,8 +132,9 @@ internal sealed partial class WordFormulaService
                     + target.SourceLength;
                 if (target.RelativeStart < 0
                     || relativeEnd > sourceText.Length)
-                    throw new InvalidDataException(
-                        "LaTeX formula span escaped the captured Word scope.");
+                    throw new InvalidDataException(OfficePluginLanguage.Text(
+                        $"LaTeX 公式“{WordFormulaRenderException.Excerpt(target.Latex, 80)}”超出了读取的 Word 范围。",
+                        $"The LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}” lies outside the Word range that was read."));
 
                 var context =
                     contexts[target.Id];
@@ -201,14 +206,14 @@ internal sealed partial class WordFormulaService
                         Release(exact);
                     }
                 }
-                ReportOperationProgress("正在读取公式字号…", ++fontTargetsCompleted, plan.Targets.Count);
+                ReportOperationProgress(ReadFontSizesStage, ++fontTargetsCompleted, plan.Targets.Count);
             }
             plan.CaptureTimings["targets"] =
                 captureWatch.ElapsedMilliseconds - captureStageStart;
             plan.CaptureTimings["fontFallbackCount"] = fontFallbackCount;
             plan.CaptureTimings["fontFallback"] = fontFallbackMilliseconds;
             plan.CaptureTimings["total"] = captureWatch.ElapsedMilliseconds;
-            ReportOperationProgress($"已找到 {plan.Targets.Count} 个 LaTeX 公式", plan.Targets.Count, plan.Targets.Count);
+            ReportOperationProgress(OfficePluginLanguage.Text($"已找到 {plan.Targets.Count} 个 LaTeX 公式", $"Found {plan.Targets.Count} LaTeX formula(s)"), plan.Targets.Count, plan.Targets.Count);
 
             return plan;
         }
@@ -234,15 +239,16 @@ internal sealed partial class WordFormulaService
         WordLatexRedrawPlan plan,
         bool allowStoredCoordinates)
     {
-        ReportOperationProgress("正在定位公式范围…", 0, plan.Targets.Count);
+        ReportOperationProgress(LocateFormulasStage, 0, plan.Targets.Count);
         var liveText =
             scope.Text ?? string.Empty;
         if (!string.Equals(
                 liveText,
                 plan.SourceText,
                 StringComparison.Ordinal))
-            throw new InvalidOperationException(
-                "The Word text changed after the LaTeX redraw plan was captured.");
+            throw new InvalidOperationException(OfficePluginLanguage.Text(
+                "读取 LaTeX 公式后，Word 文本发生了变化。请重新运行重绘。",
+                "The Word text changed after the LaTeX formulas were read. Run the redraw again."));
 
         if (allowStoredCoordinates
             && TryValidateLatexRedrawCoordinateChain(
@@ -283,8 +289,9 @@ internal sealed partial class WordFormulaService
                     scope.Characters;
                 if (characters.Count
                     != logicalCharacterCount)
-                    throw new InvalidDataException(
-                        "Word logical-character indexing does not match the captured redraw text.");
+                    throw new InvalidDataException(OfficePluginLanguage.Text(
+                        "Word 的字符位置与读取的 LaTeX 文本不一致（该范围可能包含域、隐藏文字或其他特殊内容）。",
+                        "Word's character positions do not match the LaTeX text that was read (the range may contain fields, hidden text or other special content)."));
             }
 
             foreach (var target in plan.Targets
@@ -298,8 +305,9 @@ internal sealed partial class WordFormulaService
                     || target.SourceLength <= 0
                     || relativeEnd
                         > plan.SourceText.Length)
-                    throw new InvalidDataException(
-                        "LaTeX formula span escaped the captured Word scope.");
+                    throw new InvalidDataException(OfficePluginLanguage.Text(
+                        $"LaTeX 公式“{WordFormulaRenderException.Excerpt(target.Latex, 80)}”超出了读取的 Word 范围。",
+                        $"The LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}” lies outside the Word range that was read."));
 
                 var logicalStart =
                     logicalOffsets[
@@ -308,8 +316,9 @@ internal sealed partial class WordFormulaService
                     logicalOffsets[
                         relativeEnd];
                 if (logicalEnd <= logicalStart)
-                    throw new InvalidDataException(
-                        "LaTeX formula span has no Word logical-character extent.");
+                    throw new InvalidDataException(OfficePluginLanguage.Text(
+                        $"无法在 Word 中定位 LaTeX 公式“{WordFormulaRenderException.Excerpt(target.Latex, 80)}”的字符范围。",
+                        $"Word could not locate the characters of the LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}”."));
 
                 int sourceStart;
                 int sourceEnd;
@@ -349,15 +358,16 @@ internal sealed partial class WordFormulaService
                 if (sourceStart < scope.Start
                     || sourceEnd <= sourceStart
                     || sourceEnd > scope.End)
-                    throw new InvalidDataException(
-                        "Word returned an invalid range for a captured LaTeX formula.");
+                    throw new InvalidDataException(OfficePluginLanguage.Text(
+                        $"Word 为 LaTeX 公式“{WordFormulaRenderException.Excerpt(target.Latex, 80)}”返回了无效的范围。",
+                        $"Word returned an invalid range for the LaTeX formula “{WordFormulaRenderException.Excerpt(target.Latex, 80)}”."));
 
                 mapped.Add(
                     (
                         Target: target,
                         Start: sourceStart,
                         End: sourceEnd));
-                ReportOperationProgress("正在定位公式范围…", mapped.Count, plan.Targets.Count);
+                ReportOperationProgress(LocateFormulasStage, mapped.Count, plan.Targets.Count);
             }
 
             if (!TryValidateLatexRedrawCoordinateChain(
@@ -365,8 +375,9 @@ internal sealed partial class WordFormulaService
                     scope,
                     plan,
                     mapped))
-                throw new InvalidDataException(
-                    "Word logical-character mapping did not reproduce the captured LaTeX source sequence exactly.");
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    "Word 的字符位置无法与读取的 LaTeX 文本逐字对应（该范围可能包含域、隐藏文字或其他特殊内容）。",
+                    "Word's character positions do not reproduce the LaTeX text that was read exactly (the range may contain fields, hidden text or other special content)."));
 
             foreach (var item in mapped)
             {
@@ -402,7 +413,7 @@ internal sealed partial class WordFormulaService
         Range? source = null;
         Range? tail = null;
         var verified = 0;
-        ReportOperationProgress("正在核对公式位置…", 0, mapped.Count);
+        ReportOperationProgress(VerifyPositionsStage, 0, mapped.Count);
         try
         {
             foreach (var item in mapped
@@ -460,7 +471,7 @@ internal sealed partial class WordFormulaService
                     relativeEnd;
                 wordCursor =
                     item.End;
-                ReportOperationProgress("正在核对公式位置…", ++verified, mapped.Count);
+                ReportOperationProgress(VerifyPositionsStage, ++verified, mapped.Count);
             }
 
             tail = document.Range(
@@ -508,8 +519,7 @@ internal sealed partial class WordFormulaService
         try
         {
             document = _application.ActiveDocument
-                ?? throw new InvalidOperationException(
-                    "No active Word document.");
+                ?? throw new InvalidOperationException(NoActiveDocumentMessage);
             EnsureWritable(document);
             EnsureSourceDocument(
                 document,
@@ -523,8 +533,9 @@ internal sealed partial class WordFormulaService
                     validation.Text ?? string.Empty,
                     plan.SourceText,
                     StringComparison.Ordinal))
-                throw new InvalidOperationException(
-                    "渲染期间 Word 内容发生了变化。为避免替换错误位置，本次重绘已停止。");
+                throw new InvalidOperationException(OfficePluginLanguage.Text(
+                    "渲染期间 Word 内容发生了变化。为避免替换错误位置，本次重绘已停止，没有公式被修改。",
+                    "The Word content changed while the formulas were rendering. To avoid replacing the wrong text, the redraw was stopped before any formula was changed."));
             batchTimings["snapshotValidation"] =
                 applyWatch.ElapsedMilliseconds - applyStageStart;
 
@@ -542,11 +553,11 @@ internal sealed partial class WordFormulaService
                 .Where(target => streamed is null
                     ? !prepared.ContainsKey(target.Id)
                     : !streamed.Contains(target.Id))
-                .Select(target => target.Id)
                 .ToArray();
             if (missing.Length > 0)
-                throw new InvalidDataException(
-                    "LaTeX 重绘缺少一个或多个已渲染目标。");
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    $"{missing.Length} 个公式缺少渲染结果，重绘没有开始（第一个：{WordFormulaRenderException.Excerpt(missing[0].Latex, 80)}）。",
+                    $"{missing.Length} formula(s) have no render result, so the redraw did not start (first: {WordFormulaRenderException.Excerpt(missing[0].Latex, 80)})."));
 
             // MathType's native materialization can temporarily activate helper
             // documents, so retain its existing screen-update guard. VisualTeX
@@ -620,6 +631,18 @@ internal sealed partial class WordFormulaService
             Release(document);
         }
     }
+
+    private static string ReadFontSizesStage =>
+        OfficePluginLanguage.Text("正在读取公式字号…", "Reading formula font sizes…");
+
+    private static string LocateFormulasStage =>
+        OfficePluginLanguage.Text("正在定位公式范围…", "Locating formula ranges…");
+
+    private static string VerifyPositionsStage =>
+        OfficePluginLanguage.Text("正在核对公式位置…", "Verifying formula positions…");
+
+    private static string WriteRedrawStage =>
+        OfficePluginLanguage.Text("正在原位写入重绘公式…", "Writing redrawn formulas in place…");
 
     private static void PrepareLatexRedrawTargetSession(
         WordLatexRedrawPlan plan,
@@ -729,10 +752,16 @@ internal sealed partial class WordFormulaService
         // transaction. A failed target is rolled back to its exact source and does
         // not alter accumulated batch state; a successful target contributes its
         // result only after Word has committed the custom undo record.
+        // A stop part-way keeps what is already known: the formulas already
+        // redrawn (each committed in its own undo record) and those skipped.
+        WordLatexRedrawTarget? currentTarget = null;
+        try
+        {
         foreach (var target in plan.Targets
                      .OrderBy(item => item.AbsoluteStart))
         {
-            ReportOperationProgress("正在原位写入重绘公式…", result.FormulaCount, plan.Targets.Count);
+            currentTarget = target;
+            ReportOperationProgress(WriteRedrawStage, result.FormulaCount, plan.Targets.Count);
             PreparedWordBulkFormula formula;
             if (streamed is null)
             {
@@ -749,7 +778,11 @@ internal sealed partial class WordFormulaService
                     result.Failures.Add((
                         target.Id,
                         target.Latex,
-                        string.IsNullOrWhiteSpace(renderError) ? "公式渲染失败。" : renderError!.Trim()));
+                        string.IsNullOrWhiteSpace(renderError)
+                            ? OfficePluginLanguage.Text(
+                                "VisualTeX 没有返回该公式的渲染结果，也没有说明原因。",
+                                "VisualTeX returned no render result for this formula and gave no reason.")
+                            : renderError!.Trim()));
                     continue;
                 }
                 formula = taken;
@@ -801,11 +834,9 @@ internal sealed partial class WordFormulaService
                     previousMainStoryEnd,
                     error);
 
-                var detail = string.IsNullOrWhiteSpace(error.Message)
-                    ? error.GetType().Name
-                    : error.Message.Trim();
+                // Keep COM HRESULTs and every cause of an aggregated failure.
                 result.Failures.Add(
-                    (target.Id, target.Latex, detail));
+                    (target.Id, target.Latex, OfficeErrorText.Describe(error)));
                 continue;
             }
 
@@ -834,7 +865,7 @@ internal sealed partial class WordFormulaService
             result.FormulaIds.Add(
                 targetResult.FormulaId);
             result.FormulaCount++;
-            ReportOperationProgress("正在原位写入重绘公式…", result.FormulaCount, plan.Targets.Count);
+            ReportOperationProgress(WriteRedrawStage, result.FormulaCount, plan.Targets.Count);
             successfulTargetIds.Add(target.Id);
             if (nativeNumberRefresh is not null
                 && targetResult.InsertedHost is { Kind: WordFormulaHostKind.Omml } insertedNative
@@ -854,6 +885,15 @@ internal sealed partial class WordFormulaService
                 targetResult.MathTypeInlineBoundaryMergeMilliseconds;
             mathTypeInlineTypingResetTotal +=
                 targetResult.MathTypeInlineTypingResetMilliseconds;
+        }
+        }
+        catch (Exception error) when (currentTarget is not null && error is not OperationCanceledException)
+        {
+            throw new WordLatexRedrawAbortedException(
+                result,
+                currentTarget!,
+                plan.Targets.Count - result.FormulaCount - result.Failures.Count,
+                error);
         }
 
         if (mathTypeInlineFinalizationTotal > 0)
@@ -965,11 +1005,9 @@ internal sealed partial class WordFormulaService
             }
             catch (Exception error)
             {
-                var detail = string.IsNullOrWhiteSpace(error.Message)
-                    ? error.GetType().Name
-                    : error.Message.Trim();
-                result.Warnings.Add(
-                    $"Equation numbering finalization failed and was rolled back: {detail}");
+                result.Warnings.Add(OfficePluginLanguage.Text(
+                    $"公式编号收尾失败，编号更改已回滚（公式本身已重绘）：{OfficeErrorText.Describe(error)}",
+                    $"Equation numbering finalization failed and was rolled back (the formulas themselves were redrawn): {OfficeErrorText.Describe(error)}"));
             }
             finally
             {
@@ -1178,8 +1216,9 @@ internal sealed partial class WordFormulaService
             else if (targetKind == WordFormulaHostKind.MathType)
             {
                 var mathMl = formula.MathMl
-                    ?? throw new InvalidDataException(
-                        $"MathType redraw target '{target.Latex}' has no MathML.");
+                    ?? throw new InvalidDataException(OfficePluginLanguage.Text(
+                        "该公式没有可写入 MathType 的 MathML。",
+                        "This formula has no MathML to write as MathType."));
                 var session = formula.Session;
                 var oldSourceObjectId =
                     session.SourceObjectId;
@@ -1339,8 +1378,9 @@ internal sealed partial class WordFormulaService
                     source.Text ?? string.Empty,
                     expected,
                     StringComparison.Ordinal))
-                throw new InvalidDataException(
-                    $"LaTeX source changed before redraw: {target.Latex}");
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    "重绘前，这个公式的 LaTeX 源码在 Word 中被修改了。为避免替换错误位置，重绘已停止。",
+                    "This formula's LaTeX source changed in Word before it was redrawn. To avoid replacing the wrong text, the redraw was stopped."));
         }
         finally
         {
@@ -1362,8 +1402,9 @@ internal sealed partial class WordFormulaService
             var restoredMainStoryEnd =
                 ReadMainStoryEnd(document);
             if (restoredMainStoryEnd != expectedMainStoryEnd)
-                throw new InvalidDataException(
-                    $"Failed LaTeX redraw rollback changed the Word story length for '{target.Latex}'.");
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    "撤销失败的重绘后，Word 文档长度与重绘前不一致。",
+                    "After the failed redraw was undone, the Word document length differs from before."));
 
             var adjustedStart = checked(
                 target.AbsoluteStart
@@ -1381,13 +1422,16 @@ internal sealed partial class WordFormulaService
                     restoredSource.Text ?? string.Empty,
                     expected,
                     StringComparison.Ordinal))
-                throw new InvalidDataException(
-                    $"Failed LaTeX redraw rollback did not restore the exact source for '{target.Latex}'.");
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    "撤销失败的重绘后，没有恢复出完全相同的 LaTeX 源码。",
+                    "Undoing the failed redraw did not restore the exact LaTeX source."));
         }
         catch (Exception verificationError)
         {
             throw new AggregateException(
-                $"LaTeX redraw failed for '{target.Latex}', and its rollback could not be verified. The batch was stopped to protect later formula positions.",
+                OfficePluginLanguage.Text(
+                    "该公式重绘失败，而且无法确认它已被完整撤销。为保护后续公式的位置，重绘已停止。",
+                    "Redrawing this formula failed, and its undo could not be verified. The redraw was stopped to protect the positions of later formulas."),
                 primaryError,
                 verificationError);
         }

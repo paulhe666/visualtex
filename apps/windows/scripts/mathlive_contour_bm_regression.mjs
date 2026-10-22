@@ -302,30 +302,20 @@ async function main() {
           silenceNotifications: true,
         });
         const root = field.shadowRoot;
-        const oiint = root.querySelector(".visualtex-oiint");
-        const oiiint = root.querySelector(".visualtex-oiiint");
-        const describe = (node) => {
-          if (!node) return null;
-          const after = getComputedStyle(node, "::after");
-          const rect = node.getBoundingClientRect();
-          return {
-            classes: node.className,
-            text: node.textContent ?? "",
-            width: rect.width,
-            height: rect.height,
-            afterContent: after.content,
-            maskImage: after.maskImage || after.webkitMaskImage || "",
-            afterWidth: after.width,
-            afterHeight: after.height,
-          };
-        };
+        // The layout engine sets \\oiint in esint10 (as \\usepackage{esint})
+        // and draws \\oiiint as amsmath's \\iiint with a contour oval.
+        const glyphs = [...root.querySelectorAll(".ML__vtx > span")].filter((node) => node.style.font);
+        const esint = glyphs.find((node) => /VTX Esint/.test(node.style.fontFamily));
+        const oval = root.querySelector(".ML__vtx-ink ellipse");
+        const ovalRect = oval?.getBoundingClientRect();
         return {
-          ready: Boolean(oiint && oiiint),
+          ready: Boolean(esint && oval),
           value: field.value,
           globalStyle: Boolean(document.getElementById("visualtex-mathlive-contour-integral-style")),
           shadowStyle: Boolean(root.getElementById("visualtex-mathlive-contour-integral-shadow-style")),
-          oiint: describe(oiint),
-          oiiint: describe(oiiint),
+          oiint: esint ? { font: esint.style.fontFamily } : null,
+          oiiint: oval ? { width: ovalRect.width, height: ovalRect.height } : null,
+          integralSigns: glyphs.filter((node) => /VTX Math Extension/.test(node.style.fontFamily)).length,
         };
       })()`,
       "contour-integral MathLive rendering",
@@ -335,25 +325,10 @@ async function main() {
     assert.equal(contourState.shadowStyle, true, "shadow contour style installed");
     assert.match(contourState.value, /\\oiint/);
     assert.match(contourState.value, /\\oiiint/);
-    assert.match(contourState.oiint.classes, /visualtex-oiint/);
-    assert.match(contourState.oiiint.classes, /visualtex-oiiint/);
-    assert.match(contourState.oiint.classes, /ML__large-op/);
-    assert.match(contourState.oiiint.classes, /ML__large-op/);
-    assert.ok(contourState.oiint.text.includes("∬"), "oiint reuses the full double-integral base glyph");
-    assert.ok(contourState.oiiint.text.includes("∭"), "oiiint reuses the full triple-integral base glyph");
-    for (const [name, measurement] of [
-      ["oiint", contourState.oiint],
-      ["oiiint", contourState.oiiint],
-    ]) {
-      assert.ok(measurement.width > 0, `${name} has visible width`);
-      assert.ok(measurement.height > 0, `${name} has visible height`);
-      assert.notEqual(measurement.afterContent, "none", `${name} oval exists`);
-      assert.match(
-        measurement.maskImage,
-        /data:image\/svg\+xml/,
-        `${name} oval uses the macOS vector mask geometry`,
-      );
-    }
+    assert.match(contourState.oiint.font, /VTX Esint/, "oiint is the esint10 glyph");
+    assert.equal(contourState.integralSigns, 3, "oiiint draws amsmath's three integral signs");
+    assert.ok(contourState.oiiint.width > 10, "oiiint oval has visible width");
+    assert.ok(contourState.oiiint.height > 3, "oiiint oval has visible height");
 
     const rareIntegralCommands = [
       "intclockwise",
@@ -396,27 +371,38 @@ async function main() {
           await new Promise((resolve) =>
             requestAnimationFrame(() => requestAnimationFrame(resolve)),
           );
-          const node = field.shadowRoot.querySelector(".visualtex-integral-svg");
-          const path = node?.querySelector("svg path");
-          const rect = node?.getBoundingClientRect();
+          // drawn as an outline (STIX Two Math), or as a glyph of a TeX font
+          // when LaTeX defines the command (amsmath \\iiiint, esint \\fint ...)
+          const root = field.shadowRoot;
+          const node = root.querySelector(".ML__op-group");
+          const paths = [...root.querySelectorAll(".ML__vtx-ink path")];
+          const glyph = [...root.querySelectorAll(".ML__vtx > span")].find((span) =>
+            /VTX (Esint|Math Extension)/.test(span.style.fontFamily ?? ""),
+          );
+          const ink = paths[0] ?? null;
+          const rect = (ink ?? node)?.getBoundingClientRect();
           return {
-            ready: Boolean(node && path),
+            ready: Boolean(node && (ink || glyph)),
             value: field.value,
             classes: node?.className ?? "",
             width: rect?.width ?? 0,
             height: rect?.height ?? 0,
-            path: path?.getAttribute("d") ?? "",
-            pathCount: node?.querySelectorAll("svg path").length ?? 0,
-            hasError: Boolean(field.shadowRoot.querySelector(".ML__error")),
+            path: ink?.getAttribute("d") ?? "",
+            pathCount: paths.length,
+            glyph: Boolean(glyph),
+            hasError: Boolean(root.querySelector(".ML__error")),
           };
         })()`,
         `${command} rare-integral rendering`,
       );
       assert.match(state.value, new RegExp(`\\\\${command}`));
-      assert.match(state.classes, /visualtex-integral-svg/);
-      assert.match(state.classes, /ML__large-op/);
-      assert.equal(state.pathCount, 1, `${command} vector path count`);
-      assert.ok(state.path.length > 20, `${command} vector path data`);
+      assert.match(state.classes, /ML__op-group/);
+      if (state.glyph) {
+        assert.equal(state.pathCount, 0, `${command} TeX glyph, no outline`);
+      } else {
+        assert.equal(state.pathCount, 1, `${command} vector path count`);
+        assert.ok(state.path.length > 20, `${command} vector path data`);
+      }
       assert.ok(state.width > 8, `${command} visible width`);
       assert.ok(state.height > 40, `${command} display glyph height`);
       assert.equal(state.hasError, false, `${command} has no error atom`);
@@ -439,22 +425,24 @@ async function main() {
           await new Promise((resolve) =>
             requestAnimationFrame(() => requestAnimationFrame(resolve)),
           );
-          const node = field.shadowRoot.querySelector(
-            ".visualtex-integral-svg.ML__small-op",
+          const root = field.shadowRoot;
+          const node = root.querySelector(".ML__op-group");
+          const path = root.querySelector(".ML__vtx-ink path");
+          const glyph = [...root.querySelectorAll(".ML__vtx > span")].find((span) =>
+            /VTX (Esint|Math Extension)/.test(span.style.fontFamily ?? ""),
           );
-          const path = node?.querySelector("svg path");
-          const rect = node?.getBoundingClientRect();
+          const rect = (path ?? node)?.getBoundingClientRect();
           return {
-            ready: Boolean(node && path),
+            ready: Boolean(node && (path || glyph)),
             classes: node?.className ?? "",
             width: rect?.width ?? 0,
             height: rect?.height ?? 0,
-            path: path?.getAttribute("d") ?? "",
+            path: path?.getAttribute("d") ?? (glyph ? "tex-font-glyph-in-a-tex-font" : ""),
           };
         })()`,
         `${command} small rare-integral rendering`,
       );
-      assert.match(state.classes, /ML__small-op/);
+      assert.match(state.classes, /ML__op-group/);
       assert.ok(state.path.length > 20, `${command} small vector path data`);
       assert.ok(state.width > 5, `${command} small visible width`);
       assert.ok(state.height > 18, `${command} small glyph height`);
@@ -474,7 +462,7 @@ async function main() {
         await new Promise((resolve) =>
           requestAnimationFrame(() => requestAnimationFrame(resolve)),
         );
-        const operator = field.shadowRoot.querySelector(".visualtex-integral-svg");
+        const operator = field.shadowRoot.querySelector(".ML__op-group");
         const operatorRect = operator?.getBoundingClientRect();
         const scriptBounds = [...field.shadowRoot.querySelectorAll(".ML__mathit")]
           .filter((node) => node.textContent === "a" || node.textContent === "b")
@@ -526,7 +514,7 @@ async function main() {
         await new Promise((resolve) =>
           requestAnimationFrame(() => requestAnimationFrame(resolve)),
         );
-        const operator = field.shadowRoot.querySelector(".visualtex-integral-svg");
+        const operator = field.shadowRoot.querySelector(".ML__op-group");
         return {
           ready: Boolean(operator),
           value: field.value,

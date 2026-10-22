@@ -378,7 +378,7 @@ export function configureMathLiveCompletion(field: MathfieldElement, preferences
   scheduleStableNativeInputPopoverSync();
 }
 
-// These commands are registered by vite.mathliveEditingKernel.ts inside MathLive.
+// These commands are registered inside VisualTeX's editing kernel (apps/shared/visualtex-core/src/kernel).
 // Keep the extension cast here; callers cannot pass arbitrary command names.
 export function toggleMathLiveSelectionStyle(
   field: MathfieldElement,
@@ -401,6 +401,20 @@ export function moveMathLiveToEmptySiblingScript(field: MathfieldElement) {
 
 export function insertMathLiveAlignmentPoint(field: MathfieldElement) {
   return field.executeCommand("visualTexInsertAlignmentPoint" as Selector);
+}
+
+/**
+ * After the formula was replaced: the caret where its atom went, or after the
+ * rewrite that replaced it (the editing core's restore; take the snapshot with
+ * visualTexEditingCore.captureCaret before replacing).
+ */
+export function restoreMathLiveCaret(field: MathfieldElement, snapshot: unknown) {
+  return field.executeCommand(["visualTexRestoreCaret", snapshot] as unknown as Selector);
+}
+
+/** Escape with a selection: collapse it to its end (the editing core). */
+export function collapseMathLiveSelectionToEnd(field: MathfieldElement) {
+  return field.executeCommand("visualTexCollapseToEnd" as Selector);
 }
 
 /** & in a matrix cell: the cell on the right, or a new column at row end. */

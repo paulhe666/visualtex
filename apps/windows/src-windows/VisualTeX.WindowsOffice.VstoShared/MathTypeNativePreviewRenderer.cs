@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Globalization;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 
 namespace VisualTeX.WordVsto;
 
@@ -8,12 +10,35 @@ namespace VisualTeX.WordVsto;
 // or process cleanup in this adapter. Those lifetimes belong to the private service.
 internal static class MathTypeNativePreviewRenderer
 {
-    internal const string UnavailableMessage =
-        "VisualTeX 原生公式排版服务不可用，请修复安装后重试。";
-    internal const string IncompleteMessage =
-        "原生公式排版未完整完成，文档尚未修改；请重试或检查 VisualTeX 排版服务。";
-    internal const string FontsUnavailableMessage =
-        "VisualTeX 排版服务找不到 MathType 字体，为避免公式显示错误，文档尚未修改。请在 VisualTeX 设置中点击“修复 Office 集成”后重试；如仍失败，请重启电脑。";
+    // Evaluated at use time so the current VisualTeX language applies.
+    private static string T(string chinese, string english) => OfficePluginLanguage.Text(chinese, english);
+
+    internal static string UnavailableMessage => T(
+        "VisualTeX 原生公式排版服务（VisualTeX.NativeRender）没有运行或未安装，请在 VisualTeX 设置中修复 Office 集成后重试。",
+        "VisualTeX's native equation renderer (the VisualTeX.NativeRender service) is not running or not installed. Repair the Office integration in VisualTeX settings and try again.");
+    internal static string IncompleteMessage => T(
+        "原生公式排版未完整完成，文档尚未修改；请重试或检查 VisualTeX 排版服务。",
+        "Native equation rendering did not complete, so the document was not changed. Try again or check VisualTeX's renderer service.");
+    internal static string FontsUnavailableMessage => T(
+        "VisualTeX 排版服务找不到 MathType 字体，为避免公式显示错误，文档尚未修改。请在 VisualTeX 设置中点击“修复 Office 集成”后重试；如仍失败，请重启电脑。",
+        "VisualTeX's renderer cannot find MathType's fonts, so the document was not changed (its symbols would display wrongly). In VisualTeX settings, click “Repair integration” and try again; if it still fails, restart Windows.");
+    // The service answered but listed neither an output nor a reason for the item.
+    internal static string NoResultMessage => T(
+        "排版服务没有返回该公式的结果，也没有说明原因。",
+        "The renderer returned no result for this equation and gave no reason.");
+    private static string EmptyMtefMessage => T(
+        "该公式的 MathType 数据（MTEF）为空，无法排版。",
+        "This equation's MathType data (MTEF) is empty, so it cannot be rendered.");
+    private static string MissingIdMessage => T(
+        "内部错误：该公式没有标识，无法发送给排版服务。",
+        "Internal error: the equation has no identifier, so it cannot be sent to the renderer.");
+    private static string TooLargeMessage(int bytes) => T(
+        $"该公式的 MathType 数据（MTEF）有 {bytes.ToString("N0", CultureInfo.InvariantCulture)} 字节，超过排版服务允许的上限 {NativeRenderProtocol.MaxMtefBytes.ToString("N0", CultureInfo.InvariantCulture)} 字节。",
+        $"This equation's MathType data (MTEF) is {bytes.ToString("N0", CultureInfo.InvariantCulture)} bytes, more than the renderer's limit of {NativeRenderProtocol.MaxMtefBytes.ToString("N0", CultureInfo.InvariantCulture)} bytes.");
+    private static string TimeoutMessage => T(
+        $"排版服务没有在 {NativeRenderProtocol.RequestTimeoutMs / 1000} 秒内完成这一组公式（排版进程可能已停止响应）。",
+        $"The renderer did not finish this group of equations within {NativeRenderProtocol.RequestTimeoutMs / 1000} s (its process may have stopped responding).");
+    private const int DescribedFailureLimit = 15;
 
     // The renderer refuses (rather than saving placeholder glyphs) when it
     // cannot find MathType's fonts; callers report that case specifically.
@@ -36,22 +61,31 @@ internal static class MathTypeNativePreviewRenderer
         if (lastFailureWasFonts) return FontsUnavailableMessage;
         var failures = LastFailures;
         if (failures.Count == 0) return IncompleteMessage;
-        var lines = failures.Take(3).Select(failure =>
+        var reasonLabel = T("原因：", "Reason: ");
+        var lines = failures.Take(DescribedFailureLimit).Select(failure =>
         {
             var name = label(failure.Key);
             if (!string.IsNullOrWhiteSpace(name))
             {
-                name = name!.Trim();
+                name = name!.Replace("\r", " ").Replace("\n", " ").Trim();
                 if (name.Length > 80) name = name.Substring(0, 80) + "…";
             }
+            var reason = OfficePluginLanguage.SafeErrorMessage(failure.Value);
             return string.IsNullOrWhiteSpace(name)
-                ? $"原因：{failure.Value}"
-                : $"{name}\r\n  原因：{failure.Value}";
+                ? reasonLabel + reason
+                : $"{name}\r\n  {reasonLabel}{reason}";
         });
-        var more = failures.Count > 3 ? $"\r\n（另有 {failures.Count - 3} 个公式失败）" : string.Empty;
-        return $"原生公式排版未完整完成，文档尚未修改。{failures.Count} 个公式无法排版：\r\n"
-            + string.Join("\r\n", lines) + more
-            + "\r\n请重试；如仍失败，请检查这些公式或 VisualTeX 排版服务。";
+        var hidden = failures.Count - DescribedFailureLimit;
+        var more = hidden > 0
+            ? "\r\n" + T($"（另有 {hidden} 个公式失败）", $"(and {hidden} more equation(s) failed)")
+            : string.Empty;
+        return T(
+                $"原生公式排版未完整完成，文档尚未修改。{failures.Count} 个公式无法排版：",
+                $"Native equation rendering did not complete, so the document was not changed. {failures.Count} equation(s) could not be rendered:")
+            + "\r\n" + string.Join("\r\n", lines) + more
+            + "\r\n" + T(
+                "请重试；如仍失败，请检查这些公式或 VisualTeX 排版服务。",
+                "Try again; if it still fails, check these equations or VisualTeX's renderer service.");
     }
 
     internal sealed class Result : IDisposable
@@ -81,25 +115,31 @@ internal static class MathTypeNativePreviewRenderer
         var rendered = new Dictionary<string, Result>(StringComparer.Ordinal);
         results = rendered;
         lastFailureWasFonts = false;
-        lastFailures = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (!CanRender(mtefs)) return false;
+        var failures = new Dictionary<string, string>(StringComparer.Ordinal);
+        lastFailures = failures;
+        // An equation the renderer would reject gets its own reason; the others
+        // are still rendered.
+        var renderable = Renderable(mtefs, failures);
+        if (renderable.Count == 0) return false;
         try
         {
             Directory.CreateDirectory(outputDirectory);
-            lastFailures = RenderAll(mtefs, outputDirectory, rendered);
-            RedrawOversizedPreviews(mtefs, outputDirectory, rendered, lastFailures);
-            if (lastFailures.Count != 0)
-                Trace.WriteLine("mathtype-private-render-incomplete items=" + lastFailures.Count + " reasons="
-                    + string.Join(" | ", lastFailures.Values.Distinct()));
-            return lastFailures.Count == 0 && rendered.Count == mtefs.Count;
+            foreach (var failure in RenderAll(renderable, outputDirectory, rendered))
+                failures[failure.Key] = failure.Value;
+            RedrawOversizedPreviews(renderable, outputDirectory, rendered, failures);
+            if (failures.Count != 0)
+                Trace.WriteLine("mathtype-private-render-incomplete items=" + failures.Count + " reasons="
+                    + string.Join(" | ", failures.Values.Distinct()));
+            return failures.Count == 0 && rendered.Count == mtefs.Count;
         }
         catch (Exception error)
         {
             Trace.WriteLine("mathtype-private-render-failed " + error.GetType().Name + ": " + error.Message);
             // The caller owns any completed results and decides its document
             // transaction. Never silently replace native layout with another engine.
-            foreach (var key in mtefs.Keys.Where(key => !rendered.ContainsKey(key)))
-                lastFailures[key] = error.Message;
+            var reason = OfficeErrorText.Describe(error);
+            foreach (var key in renderable.Keys.Where(key => !rendered.ContainsKey(key)))
+                failures[key] = reason;
             return false;
         }
     }
@@ -117,17 +157,19 @@ internal static class MathTypeNativePreviewRenderer
         var rendered = new Dictionary<string, Result>(StringComparer.Ordinal);
         results = rendered;
         lastFailureWasFonts = false;
-        lastFailures = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (!CanRender(mtefs)) return false;
+        var rejected = new Dictionary<string, string>(StringComparer.Ordinal);
+        lastFailures = rejected;
+        var renderable = Renderable(mtefs, rejected);
+        if (renderable.Count == 0) return false;
         var reasons = new Dictionary<string, string>(StringComparer.Ordinal);
         var fonts = false;
         var pass = 0;
         NativePreviewRetry.Render<Result>(
-            mtefs.Keys.ToList(),
+            renderable.Keys.ToList(),
             group =>
             {
                 TryRenderBatch(
-                    group.ToDictionary(id => id, id => mtefs[id], StringComparer.Ordinal),
+                    group.ToDictionary(id => id, id => renderable[id], StringComparer.Ordinal),
                     outputDirectory,
                     out var groupResults);
                 fonts |= lastFailureWasFonts;
@@ -151,19 +193,34 @@ internal static class MathTypeNativePreviewRenderer
                 },
             });
         lastFailureWasFonts = fonts;
-        lastFailures = mtefs.Keys.Where(key => !rendered.ContainsKey(key))
-            .ToDictionary(key => key, key => reasons.TryGetValue(key, out var reason) ? reason : "排版服务没有返回结果。",
+        var missing = renderable.Keys.Where(key => !rendered.ContainsKey(key))
+            .ToDictionary(key => key, key => reasons.TryGetValue(key, out var reason) ? reason : NoResultMessage,
                 StringComparer.Ordinal);
+        foreach (var rejection in rejected) missing[rejection.Key] = rejection.Value;
+        lastFailures = missing;
         if (pass > 0)
             Trace.WriteLine($"mathtype-private-render-retried passes={pass} missing={lastFailures.Count}");
         return lastFailures.Count == 0;
     }
 
-    private static bool CanRender(IReadOnlyDictionary<string, byte[]> mtefs) =>
-        mtefs is not null && mtefs.Count != 0 && IsAvailable
-        && !mtefs.Any(pair => string.IsNullOrEmpty(pair.Key)
-            || pair.Value is null || pair.Value.Length == 0
-            || pair.Value.Length > NativeRenderProtocol.MaxMtefBytes);
+    // The equations the renderer accepts; every other one is recorded in
+    // failures with its specific reason (empty, too large, service missing).
+    private static Dictionary<string, byte[]> Renderable(
+        IReadOnlyDictionary<string, byte[]>? mtefs, Dictionary<string, string> failures)
+    {
+        var renderable = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        if (mtefs is null || mtefs.Count == 0) return renderable;
+        var available = IsAvailable;
+        foreach (var pair in mtefs)
+        {
+            if (string.IsNullOrEmpty(pair.Key)) failures[pair.Key ?? string.Empty] = MissingIdMessage;
+            else if (pair.Value is null || pair.Value.Length == 0) failures[pair.Key] = EmptyMtefMessage;
+            else if (pair.Value.Length > NativeRenderProtocol.MaxMtefBytes) failures[pair.Key] = TooLargeMessage(pair.Value.Length);
+            else if (!available) failures[pair.Key] = UnavailableMessage;
+            else renderable[pair.Key] = pair.Value;
+        }
+        return renderable;
+    }
 
     // MathPage writes 16-bit WMF coordinates at 32 units per point, so a preview
     // wider or taller than 1023 pt wraps around (MathType has the same limit),
@@ -187,7 +244,12 @@ internal static class MathTypeNativePreviewRenderer
             pair.Value.Dispose();
             var factor = MaxPreviewPoints * 0.9 / Math.Max(pair.Value.WidthPt, pair.Value.HeightPt);
             try { scaled[pair.Key] = MathTypeMtefCodec.ScaleMtefPreferenceSizes(mtefs[pair.Key], factor); }
-            catch (InvalidDataException error) { failures[pair.Key] = error.Message; }
+            catch (InvalidDataException error)
+            {
+                failures[pair.Key] = T(
+                    $"该公式超过 {MaxPreviewPoints:0} 磅，缩小后重新排版失败：{OfficeErrorText.Describe(error)}",
+                    $"The equation is larger than {MaxPreviewPoints:0} pt and could not be scaled down for rendering: {OfficeErrorText.Describe(error)}");
+            }
         }
         var redrawn = new Dictionary<string, Result>(StringComparer.Ordinal);
         foreach (var failure in RenderAll(scaled, outputDirectory, redrawn))
@@ -251,7 +313,10 @@ internal static class MathTypeNativePreviewRenderer
         {
             // A lost connection or rejected frame fails this chunk only; the
             // caller's retry sends it again on a fresh connection.
-            foreach (var item in request.Items) failures[keys[item.Id]] = error.Message;
+            var reason = error is TimeoutException or OperationCanceledException
+                ? TimeoutMessage
+                : T("与排版服务通信失败：", "Communication with the renderer failed: ") + OfficeErrorText.Describe(error);
+            foreach (var item in request.Items) failures[keys[item.Id]] = reason;
             return;
         }
         if (response.Error == NativeRenderProtocol.FontsUnavailableError)
@@ -284,7 +349,7 @@ internal static class MathTypeNativePreviewRenderer
             if (returned.Contains(item.Id)) continue;
             failures[keys[item.Id]] = reasons.TryGetValue(item.Id, out var reason)
                 ? reason
-                : string.IsNullOrWhiteSpace(response.Error) ? "排版服务没有返回结果。" : response.Error;
+                : string.IsNullOrWhiteSpace(response.Error) ? NoResultMessage : response.Error;
         }
     }
 

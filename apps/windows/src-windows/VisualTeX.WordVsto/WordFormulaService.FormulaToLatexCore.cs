@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 using Range = Microsoft.Office.Interop.Word.Range;
 
 namespace VisualTeX.WordVsto;
@@ -81,8 +82,10 @@ internal sealed partial class WordFormulaService
             if (targets.Count == 0)
                 throw new InvalidDataException(
                     wholeDocument
-                        ? "当前 Word 文档中没有找到可转换的公式。"
-                        : "所选内容中没有找到可转换的公式。");
+                        ? OfficePluginLanguage.Text("当前 Word 文档中没有找到可转换的公式。",
+                            "No convertible equations were found in the current Word document.")
+                        : OfficePluginLanguage.Text("所选内容中没有找到可转换的公式。",
+                            "No convertible equations were found in the current selection."));
 
             var sourceKind =
                 ObjectModeToHostKind(
@@ -163,7 +166,7 @@ internal sealed partial class WordFormulaService
                                     });
 
                             converted.FormulaCount++;
-                            ReportOperationProgress("正在恢复 LaTeX 源码…", converted.FormulaCount, targets.Count);
+                            ReportOperationProgress(OfficePluginLanguage.Text("正在恢复 LaTeX 源码…", "Restoring LaTeX source…"), converted.FormulaCount, targets.Count);
                             converted.FormulaIds.Add(
                                 target.Metadata.FormulaId);
                         }
@@ -259,8 +262,9 @@ internal sealed partial class WordFormulaService
                     host);
             if (host.Numbering.ContainerKind ==
                 WordFormulaNumberingContainerKind.Legacy)
-                throw new InvalidDataException(
-                    "所选公式仍使用旧版编号宿主，必须先迁移为标准编号结构后再转为 LaTeX。");
+                throw new InvalidDataException(OfficePluginLanguage.Text(
+                    "所选公式仍使用旧版编号宿主，必须先迁移为标准编号结构后再转为 LaTeX。",
+                    "The selected equation still uses the legacy numbering host. Migrate it to the standard numbering structure before converting it to LaTeX."));
 
             FormulaMetadata metadata;
             if (sourceKind ==
@@ -273,8 +277,9 @@ internal sealed partial class WordFormulaService
                 metadata =
                     CloneCoreMetadata(
                         payload.Metadata
-                        ?? throw new InvalidDataException(
-                            "VisualTeX OLE 没有可读取的内嵌公式元数据。"));
+                        ?? throw new InvalidDataException(OfficePluginLanguage.Text(
+                            "VisualTeX OLE 没有可读取的内嵌公式元数据。",
+                            "The VisualTeX OLE object contains no readable embedded equation metadata.")));
                 metadata.Numbered =
                     host.Numbering.Numbered;
                 metadata.DisplayMode =

@@ -9226,6 +9226,17 @@ html body #visualtex-native-input-suggestion-popover .ML__popover__keybinding {
   grid-template-columns: minmax(0, 1fr) 132px 66px;
 }
 
+/* Buttons (button shortcuts): compact rows, two columns when there is room */
+[data-button-shortcuts] .office-formula-shortcut-list {
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 6px;
+}
+
+[data-button-shortcuts] .office-formula-shortcut-row {
+  min-height: 44px;
+  padding: 5px 8px;
+}
+
 .office-formula-shortcut-copy {
   display: grid;
   gap: 3px;

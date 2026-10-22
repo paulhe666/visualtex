@@ -1387,7 +1387,7 @@ async fn close_desktop_session(
             })
             .unwrap_or(false);
         let Some(app) = context.companion.app.clone() else {
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            return desktop_app_unavailable();
         };
         let suffix = session_id.replace('-', "");
         let disposable_labels = [format!("office-import-{suffix}")];
@@ -1525,7 +1525,7 @@ async fn prewarm_desktop_editor(State(context): State<ServerContext>) -> Respons
     #[cfg(target_os = "windows")]
     {
         let Some(app) = context.companion.app.clone() else {
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            return desktop_app_unavailable();
         };
         match prewarm_desktop_editor_window_on_main_thread(app).await {
             Ok(()) => StatusCode::NO_CONTENT.into_response(),
@@ -1538,6 +1538,21 @@ async fn prewarm_desktop_editor(State(context): State<ServerContext>) -> Respons
     }
 }
 
+/// Seconds a render batch may wait for the converter window to take it.
+const RENDER_BATCH_START_SECONDS: u64 = 20;
+
+/// The companion runs without the VisualTeX desktop app (it cannot open windows): 503 with the reason.
+#[allow(dead_code)]
+fn desktop_app_unavailable() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({
+            "error": "The VisualTeX desktop app is not running, so no VisualTeX window (editor or conversion) can be opened"
+        })),
+    )
+        .into_response()
+}
+
 async fn prewarm_desktop_conversion(State(context): State<ServerContext>) -> Response {
     #[cfg(not(target_os = "windows"))]
     {
@@ -1547,7 +1562,7 @@ async fn prewarm_desktop_conversion(State(context): State<ServerContext>) -> Res
     #[cfg(target_os = "windows")]
     {
         let Some(app) = context.companion.app.clone() else {
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            return desktop_app_unavailable();
         };
         match tokio::task::spawn_blocking(move || prewarm_desktop_conversion_window(app)).await {
             Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
@@ -1577,26 +1592,28 @@ async fn create_render_batch(
     #[cfg(target_os = "windows")]
     {
         let Some(app) = context.companion.app.clone() else {
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            return desktop_app_unavailable();
         };
         let id = match crate::office::render_batches::create(request) {
             Ok(id) => id, Err(error) => return session_error_response(error),
         };
         let wake = tokio::task::spawn_blocking(move || {
             let window = ensure_desktop_conversion_window(&app)?;
-            // The in-memory queue owns the work; the event is only a wake-up.
-            let _ = window.eval(
-                "window.dispatchEvent(new CustomEvent('visualtex-office-render-batch'));");
+            // The in-memory queue owns the work; the event is only a wake-up
+            // (the window also polls, so a failed wake-up only costs time).
+            if let Err(error) = window.eval(
+                "window.dispatchEvent(new CustomEvent('visualtex-office-render-batch'));") {
+                eprintln!("VisualTeX: render batch wake-up failed: {error}");
+            }
             Ok::<(), String>(())
         }).await;
-        match wake {
-            Ok(Ok(())) => (StatusCode::CREATED, Json(serde_json::json!({ "id": id }))).into_response(),
-            failure => {
-                let _ = crate::office::render_batches::release(&id);
-                (StatusCode::INTERNAL_SERVER_ERROR,
-                 Json(serde_json::json!({ "error": format!("Unable to start render batch: {failure:?}") }))).into_response()
-            }
-        }
+        let failure = match wake {
+            Ok(Ok(())) => return (StatusCode::CREATED, Json(serde_json::json!({ "id": id }))).into_response(),
+            Ok(Err(error)) => format!("Unable to open the VisualTeX conversion window: {error}"),
+            Err(error) => format!("The task that opens the VisualTeX conversion window failed: {error}"),
+        };
+        let _ = crate::office::render_batches::release(&id);
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": failure }))).into_response()
     }
 }
 async fn take_render_batch() -> Response {
@@ -1625,14 +1642,39 @@ async fn wait_render_batch(AxumPath(id): AxumPath<String>) -> Response {
         Ok(receiver) => receiver,
         Err(error) => return session_error_response(error),
     };
+    // a batch the converter window never takes ends with a clear error
+    // instead of the add-in's long timeout
+    let watchdog_id = id.clone();
+    let watchdog = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(RENDER_BATCH_START_SECONDS)).await;
+        let _ = crate::office::render_batches::expire_untaken(&watchdog_id, RENDER_BATCH_START_SECONDS);
+    });
     let wait = async {
         loop {
             if let Some(result) = receiver.borrow_and_update().clone() { return Ok(result); }
             receiver.changed().await.map_err(|_| SessionError::NotFound)?;
         }
     };
-    match wait.await {
+    let outcome = wait.await;
+    watchdog.abort();
+    match outcome {
         Ok(result) => Json(result).into_response(),
+        Err(error) => session_error_response(error),
+    }
+}
+#[derive(Debug, Deserialize)]
+struct RenderBatchFailure {
+    #[serde(default)]
+    error: String,
+}
+/// The converter window could not render a batch (transport, decoding or a
+/// rejected completion): the waiting add-in gets its reason at once.
+async fn fail_render_batch(
+    AxumPath(id): AxumPath<String>,
+    Json(failure): Json<RenderBatchFailure>,
+) -> Response {
+    match crate::office::render_batches::fail(&id, &failure.error) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => session_error_response(error),
     }
 }
@@ -1691,7 +1733,7 @@ async fn open_desktop_batch_conversion(
     #[cfg(target_os = "windows")]
     {
         let Some(app) = context.companion.app.clone() else {
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            return desktop_app_unavailable();
         };
         match tokio::task::spawn_blocking(move || {
             queue_desktop_batch_conversion(app, request.session_ids)
@@ -1987,6 +2029,67 @@ async fn recognize_ocr(
         Ok(result) => Json(result).into_response(),
         Err(error) => ocr_error_response(error),
     }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OcrCaptureRequest {
+    #[serde(default)]
+    capture_mode: Option<String>,
+}
+
+/// Quick OCR from the Office editor: the editor window steps aside while the
+/// user takes a screenshot (with the main app's chosen screenshot source),
+/// then comes back to the front. 204 when the screenshot was cancelled.
+#[cfg(target_os = "windows")]
+async fn capture_ocr_screenshot(
+    State(context): State<ServerContext>,
+    Json(request): Json<OcrCaptureRequest>,
+) -> Response {
+    let app = match ocr_app(&context) {
+        Ok(app) => app,
+        Err(response) => return *response,
+    };
+    let requested = request
+        .capture_mode
+        .filter(|mode| !mode.trim().is_empty())
+        .unwrap_or_else(crate::windows_silent_ocr_hotkey::configured_capture_mode);
+    let capture_mode = match crate::windows_quick_ocr::normalize_capture_mode(&requested) {
+        Ok(mode) => mode.to_string(),
+        Err(error) => return ocr_error_response(error),
+    };
+    let editor = app.get_webview_window(OFFICE_EDITOR_WINDOW_LABEL);
+    if let Some(window) = editor.as_ref() {
+        let _ = window.minimize();
+        // let WebView2/DWM leave the capture surface first (as the main app's quick OCR)
+        tokio::time::sleep(std::time::Duration::from_millis(180)).await;
+    }
+    let capture = tauri::async_runtime::spawn_blocking(move || {
+        crate::windows_quick_ocr::capture_windows_clipboard_image(&capture_mode, 60_000)
+    })
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(140)).await;
+    if let Some(window) = editor.as_ref() {
+        let _ = bring_session_window_to_front(window, None);
+    }
+    match capture {
+        Err(error) => ocr_error_response(format!("Windows screenshot bridge task failed: {error}")),
+        Ok(Err(error)) => ocr_error_response(error),
+        Ok(Ok(None)) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Ok(Some(capture))) => Json(capture).into_response(),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn capture_ocr_screenshot(
+    State(_context): State<ServerContext>,
+    Json(_request): Json<OcrCaptureRequest>,
+) -> Response {
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(serde_json::json!({ "error": "Quick OCR screenshots are available on Windows only" })),
+    )
+        .into_response()
 }
 
 async fn cancel_ocr(State(context): State<ServerContext>) -> Response {
@@ -2968,6 +3071,7 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         .route("/app/converter/render-batches/{id}",
             get(get_render_batch).delete(delete_render_batch))
         .route("/app/converter/render-batches/{id}/complete", post(complete_render_batch))
+        .route("/app/converter/render-batches/{id}/fail", post(fail_render_batch))
         .route("/app/converter/render-batches/{id}/result", get(wait_render_batch))
         .route("/sessions", post(create_session))
         .route("/sessions/batch-delete", post(delete_sessions_batch))
@@ -3030,6 +3134,7 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         .route("/ocr/install/logs/open", post(open_ocr_install_logs))
         .route("/ocr/recognize", post(recognize_ocr))
         .route("/ocr/cancel", post(cancel_ocr))
+        .route("/ocr/capture", post(capture_ocr_screenshot))
         .route("/ocr/restart", post(restart_ocr))
         .route("/ocr/warmup", post(warmup_ocr))
         .route("/ocr/reset", post(reset_ocr))
@@ -3044,6 +3149,9 @@ pub(crate) fn build_router(companion: OfficeCompanionState) -> Router {
         .nest_service("/assets", ServeDir::new(ui_root.join("assets")))
         .fallback(not_found)
         .layer(RequestBodyLimitLayer::new(MAX_OFFICE_REQUEST_BYTES))
+        // axum's extractors (Json, Bytes) keep their own 2 MB default unless told:
+        // a converter's completion of 20 OLE formulas can exceed it
+        .layer(axum::extract::DefaultBodyLimit::max(MAX_OFFICE_REQUEST_BYTES))
         .layer(middleware::from_fn_with_state(
             context.clone(),
             security_and_auth,

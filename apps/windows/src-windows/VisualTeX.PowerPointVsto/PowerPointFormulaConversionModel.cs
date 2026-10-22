@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using VisualTeX.WindowsOffice.Contracts;
+using VisualTeX.WindowsOffice.VstoShared;
 
 namespace VisualTeX.PowerPointVsto;
 
@@ -41,18 +42,27 @@ internal enum PowerPointConversionSkipReason
 
 internal sealed class PowerPointConversionSkip
 {
-    internal PowerPointConversionSkip(PowerPointConversionSkipReason reason, int slideIndex, int count = 1, string? detail = null)
+    internal PowerPointConversionSkip(
+        PowerPointConversionSkipReason reason,
+        int slideIndex,
+        int count = 1,
+        string? detail = null,
+        string? latex = null)
     {
         Reason = reason;
         SlideIndex = slideIndex;
         Count = Math.Max(1, count);
         Detail = detail;
+        Latex = latex;
     }
 
     internal PowerPointConversionSkipReason Reason { get; }
     internal int SlideIndex { get; }
     internal int Count { get; }
+    // The specific reason for this formula (already worded for the user).
     internal string? Detail { get; }
+    // The formula's LaTeX when it is known, so the user can find it.
+    internal string? Latex { get; }
 }
 
 internal sealed class PowerPointConversionRequest
@@ -232,24 +242,64 @@ internal static class PowerPointConversionRules
             : $"{count} 个公式转换失败",
     };
 
-    // One line per reason, most common first; the first failure detail is kept
-    // because it usually explains the rest.
+    internal const int DescribedSkipLimit = 15;
+
+    // A headline per reason (most common first, with the slides involved),
+    // then every formula that has its own reason on its own line: slide,
+    // LaTeX excerpt and the specific reason. Capped at DescribedSkipLimit
+    // lines plus "and N more".
     internal static string DescribeSkips(IReadOnlyCollection<PowerPointConversionSkip> skips, bool english)
     {
         if (skips.Count == 0) return string.Empty;
-        var lines = skips
+        var lines = new List<string>();
+        var groups = skips
             .GroupBy(skip => skip.Reason)
-            .Select(group => (Reason: group.Key, Count: group.Sum(skip => skip.Count),
-                Detail: group.Select(skip => skip.Detail).FirstOrDefault(detail => !string.IsNullOrWhiteSpace(detail))))
+            .Select(group => (Reason: group.Key, Count: group.Sum(skip => skip.Count), Skips: group.ToList()))
             .OrderByDescending(entry => entry.Count)
-            .Select(entry =>
-            {
-                var text = "• " + SkipReasonText(entry.Reason, entry.Count, english);
-                if (!string.IsNullOrWhiteSpace(entry.Detail))
-                    text += (english ? ": " : "：") + Truncate(entry.Detail!, 300);
-                return text;
-            });
+            .ToList();
+        foreach (var group in groups)
+        {
+            var headline = "• " + SkipReasonText(group.Reason, group.Count, english);
+            if (!group.Skips.Any(HasOwnLine))
+                headline += SlideList(group.Skips, english);
+            lines.Add(headline);
+        }
+        var detailed = groups.SelectMany(group => group.Skips.Where(HasOwnLine)).ToList();
+        foreach (var skip in detailed.Take(DescribedSkipLimit))
+            lines.Add("  – " + FailureLine(skip, english));
+        var hidden = detailed.Count - DescribedSkipLimit;
+        if (hidden > 0)
+            lines.Add(english
+                ? $"  … and {hidden} more equation(s) not listed here"
+                : $"  …… 另有 {hidden} 处公式未在此列出");
         return string.Join("\r\n", lines);
+    }
+
+    // "Slide 3 · \frac{a}{b}: reason" (or "第 3 张幻灯片 · \frac{a}{b}：原因").
+    internal static string FailureLine(PowerPointConversionSkip skip, bool english)
+    {
+        var where = english ? $"Slide {skip.SlideIndex}" : $"第 {skip.SlideIndex} 张幻灯片";
+        if (skip.SlideIndex <= 0) where = english ? "Slide ?" : "幻灯片未知";
+        if (skip.Count > 1) where += english ? $" ({skip.Count} equations)" : $"（{skip.Count} 个公式）";
+        if (!string.IsNullOrWhiteSpace(skip.Latex)) where += " · " + Truncate(skip.Latex!, 80);
+        var reason = string.IsNullOrWhiteSpace(skip.Detail)
+            ? SkipReasonText(skip.Reason, skip.Count, english)
+            : Truncate(OfficePluginLanguage.SafeErrorMessage(skip.Detail), 400);
+        return where + (english ? ": " : "：") + reason;
+    }
+
+    private static bool HasOwnLine(PowerPointConversionSkip skip) =>
+        !string.IsNullOrWhiteSpace(skip.Detail) || !string.IsNullOrWhiteSpace(skip.Latex);
+
+    private static string SlideList(IEnumerable<PowerPointConversionSkip> skips, bool english)
+    {
+        var slides = skips.Select(skip => skip.SlideIndex).Where(index => index > 0).Distinct().OrderBy(index => index).ToList();
+        if (slides.Count == 0) return string.Empty;
+        var shown = string.Join(english ? ", " : "、", slides.Take(20).Select(index => index.ToString(CultureInfo.InvariantCulture)));
+        if (slides.Count > 20) shown += ", …";
+        return english
+            ? $" (slide{(slides.Count == 1 ? "" : "s")} {shown})"
+            : $"（第 {shown} 张幻灯片）";
     }
 
     internal static int CountSkips(IEnumerable<PowerPointConversionSkip> skips) => skips.Sum(skip => skip.Count);

@@ -68,7 +68,7 @@ public sealed class OfficePluginLanguageTests
                 "调用 Word COM 接口失败，参数无效。 HRESULT=0x800A16DC"));
 
         Assert.StartsWith(
-            "The VisualTeX Office operation failed. Localized host detail:",
+            "The VisualTeX Office operation failed. Untranslated detail:",
             message,
             StringComparison.Ordinal);
         Assert.Contains("HRESULT=0x800A16DC", message, StringComparison.Ordinal);
@@ -93,7 +93,8 @@ public sealed class OfficePluginLanguageTests
             "The active Word document changed, so the formula was not written.",
             message,
             StringComparison.Ordinal);
-        Assert.Contains("[InvalidOperationException, HRESULT=0x", message, StringComparison.Ordinal);
+        // the reason, not the exception type, is what the user reads
+        Assert.DoesNotContain("[InvalidOperationException", message, StringComparison.Ordinal);
         Assert.DoesNotContain("VisualTeX Office operation failed. See", message, StringComparison.Ordinal);
     }
 
@@ -143,10 +144,6 @@ public sealed class OfficePluginLanguageTests
             "No convertible equations were found in the current Word document.",
             message,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "[InvalidDataException, HRESULT=0x",
-            message,
-            StringComparison.Ordinal);
         Assert.False(
             OfficePluginLanguage.ContainsCjk(message),
             $"Known equation-to-LaTeX error still contains CJK text: {message}");
@@ -188,5 +185,84 @@ public sealed class OfficePluginLanguageTests
             "VisualTeX PowerPoint formula write failed: The shape collection rejected the replacement.",
             message);
         Assert.NotEqual("VisualTeX Office operation failed.", message);
+    }
+
+    private static T InLanguage<T>(string language, Func<T> callback)
+    {
+        lock (LanguageLock)
+        {
+            var previous = Environment.GetEnvironmentVariable("VISUALTEX_OFFICE_LANGUAGE");
+            try
+            {
+                Environment.SetEnvironmentVariable("VISUALTEX_OFFICE_LANGUAGE", language);
+                return callback();
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("VISUALTEX_OFFICE_LANGUAGE", previous);
+            }
+        }
+    }
+
+    private static T Tagged<T>(T error, string failure, string operation) where T : Exception
+    {
+        error.Data[VisualTeX.WindowsOffice.Contracts.VisualTeXServiceErrors.FailureKey] = failure;
+        error.Data[VisualTeX.WindowsOffice.Contracts.VisualTeXServiceErrors.OperationKey] = operation;
+        return error;
+    }
+
+    [Fact]
+    public void OfficeErrorText_RequestTimeoutNamesRequestAndLimitInBothLanguages()
+    {
+        var error = Tagged(new TimeoutException("x"),
+            VisualTeX.WindowsOffice.Contracts.VisualTeXServiceErrors.FailureRequestTimedOut,
+            "POST /api/v1/app/converter/render-batches");
+        error.Data[VisualTeX.WindowsOffice.Contracts.VisualTeXServiceErrors.LimitSecondsKey] = 30.0;
+        var english = InLanguage("en", () => OfficeErrorText.Describe(error));
+        var chinese = InLanguage("cn", () => OfficeErrorText.Describe(error));
+        Assert.Contains("within 30 s", english, StringComparison.Ordinal);
+        Assert.Contains("POST /api/v1/app/converter/render-batches", english, StringComparison.Ordinal);
+        Assert.False(OfficePluginLanguage.ContainsCjk(english), english);
+        Assert.Contains("30 秒", chinese, StringComparison.Ordinal);
+        Assert.DoesNotContain("cancel", english, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void OfficeErrorText_BatchFailureCodesHaveTheirOwnSentences()
+    {
+        string Describe(string code)
+        {
+            var error = Tagged(new InvalidOperationException("VisualTeX render batch failed: detail"),
+                VisualTeX.WindowsOffice.Contracts.VisualTeXServiceErrors.FailureBatchFailed, "render batch");
+            error.Data[VisualTeX.WindowsOffice.Contracts.VisualTeXServiceErrors.BatchErrorCodeKey] = code;
+            error.Data[VisualTeX.WindowsOffice.Contracts.VisualTeXServiceErrors.ServerErrorKey] = "detail";
+            error.Data[VisualTeX.WindowsOffice.Contracts.VisualTeXServiceErrors.FormulaCountKey] = 3;
+            return InLanguage("en", () => OfficeErrorText.Describe(error));
+        }
+        var texts = new[] { Describe("converter-not-started"), Describe("converter-failed"), Describe("cancelled") };
+        Assert.Equal(3, texts.Distinct().Count());
+        Assert.Contains("did not start", texts[0], StringComparison.Ordinal);
+        Assert.Contains("detail", texts[1], StringComparison.Ordinal);
+        Assert.Contains("released", texts[2], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OfficeErrorText_AggregateKeepsEveryCause()
+    {
+        var error = new AggregateException("The formula mutation failed and could not be rolled back.",
+            new InvalidOperationException("InsertXML rejected the payload."),
+            new System.Runtime.InteropServices.COMException("x", unchecked((int)0x800A16C1)));
+        var message = InLanguage("en", () => OfficeErrorText.Describe(error));
+        Assert.Contains("InsertXML rejected the payload.", message, StringComparison.Ordinal);
+        Assert.Contains("HRESULT=0x800A16C1", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OfficeErrorText_ItemResultChecksAreTranslated()
+    {
+        var chinese = InLanguage("cn", () => OfficeErrorText.DescribeItemError("VisualTeX's result for this formula has no MathML."));
+        Assert.True(OfficePluginLanguage.ContainsCjk(chinese));
+        var empty = InLanguage("en", () => OfficeErrorText.DescribeItemError("[object Object]"));
+        Assert.Contains("gave no reason", empty, StringComparison.Ordinal);
     }
 }

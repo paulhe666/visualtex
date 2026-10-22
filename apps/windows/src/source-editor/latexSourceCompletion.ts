@@ -1,4 +1,3 @@
-/// <reference path="../types/mathliveKernel.d.ts" />
 import {
   acceptCompletion,
   autocompletion,

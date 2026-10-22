@@ -40,6 +40,10 @@ public sealed class RenderBatchResult
 
     [JsonPropertyName("error")]
     public string? Error { get; set; }
+
+    /// <summary>Why the whole batch failed: "cancelled", "converter-not-started" or "converter-failed".</summary>
+    [JsonPropertyName("errorCode")]
+    public string? ErrorCode { get; set; }
 }
 
 internal sealed class CreateRenderBatchResponse

@@ -37,6 +37,7 @@ const DEFAULT_SILENT_OCR_CAPTURE_MODE: &str = "windows";
 const SILENT_OCR_CAPTURE_TIMEOUT_MS: u64 = 60_000;
 const ALLOWED_SILENT_OCR_COPY_FORMATS: &[&str] = &[
     "raw",
+    "mixed-inline-display",
     "inline-dollar",
     "inline-text-double-dollar",
     "inline-paren",
@@ -149,6 +150,15 @@ static HUD_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 fn configuration_store() -> &'static Mutex<SilentOcrConfiguration> {
     CONFIGURATION.get_or_init(|| Mutex::new(SilentOcrConfiguration::default()))
+}
+
+/// The screenshot source chosen in the main app (it configures silent OCR with
+/// its quick-OCR capture mode); the Office editor's quick OCR uses it too.
+pub(crate) fn configured_capture_mode() -> String {
+    configuration_store()
+        .lock()
+        .map(|configuration| configuration.capture_mode.clone())
+        .unwrap_or_else(|_| default_silent_ocr_capture_mode())
 }
 
 fn hud_status_store() -> &'static Mutex<SilentOcrHudPayload> {
@@ -603,6 +613,12 @@ fn format_silent_ocr_latex(lines: &[String], format: &str) -> String {
     }
     match format {
         "raw" => lines.join("\n"),
+        // recognized rows are display rows of the mixed format (LatexCopyService)
+        "mixed-inline-display" => lines
+            .iter()
+            .map(|line| format!("$${line}$$"))
+            .collect::<Vec<_>>()
+            .join("\n"),
         "inline-dollar" => lines
             .iter()
             .map(|line| format!("${line}$"))
@@ -896,6 +912,10 @@ mod tests {
         assert_eq!(
             format_silent_ocr_latex(&lines, "inline-dollar"),
             "$x=y$\n$a>b$"
+        );
+        assert_eq!(
+            format_silent_ocr_latex(&lines, "mixed-inline-display"),
+            "$$x=y$$\n$$a>b$$"
         );
         assert_eq!(
             format_silent_ocr_latex(&lines, "display-bracket"),

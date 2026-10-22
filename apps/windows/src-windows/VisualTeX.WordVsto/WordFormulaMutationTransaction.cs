@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Word;
+using VisualTeX.WindowsOffice.VstoShared;
 using WordApplication = Microsoft.Office.Interop.Word.Application;
 
 namespace VisualTeX.WordVsto;
@@ -69,7 +70,9 @@ internal static class WordFormulaMutationTransaction
                     catch (Exception endError)
                     {
                         throw new AggregateException(
-                            "The formula mutation failed and Word could not close its undo record.",
+                            OfficePluginLanguage.Text(
+                                "公式修改失败，而且 Word 无法关闭它的撤销记录。",
+                                "The formula change failed, and Word could not close its undo record."),
                             primary,
                             endError);
                     }
@@ -84,7 +87,9 @@ internal static class WordFormulaMutationTransaction
                     catch (Exception recoveryError)
                     {
                         throw new AggregateException(
-                            "The formula mutation failed and the verified Word rollback snapshot could not restore the complete batch.",
+                            OfficePluginLanguage.Text(
+                                "公式修改失败，而且无法用回滚快照完整恢复本批修改前的文档。",
+                                "The formula change failed, and the rollback snapshot could not restore the complete batch."),
                             primary,
                             recoveryError);
                     }
@@ -92,11 +97,14 @@ internal static class WordFormulaMutationTransaction
                 else if (!TryUndoExactlyOne(document, out var undoError))
                 {
                     throw new AggregateException(
-                        "The formula mutation failed and its exact Word undo record could not be rolled back.",
+                        OfficePluginLanguage.Text(
+                            "公式修改失败，而且无法撤销它的 Word 撤销记录（文档可能处于部分修改状态）。",
+                            "The formula change failed, and its Word undo record could not be rolled back (the document may be partly changed)."),
                         primary,
                         undoError
-                            ?? new InvalidOperationException(
-                                "Word returned false while undoing the failed formula mutation."));
+                            ?? new InvalidOperationException(OfficePluginLanguage.Text(
+                                "Word 撤销失败的公式修改时返回了失败。",
+                                "Word reported failure while undoing the failed formula change.")));
                 }
 
                 if (verifyRollback is not null)
@@ -105,7 +113,9 @@ internal static class WordFormulaMutationTransaction
                     catch (Exception verificationError)
                     {
                         throw new AggregateException(
-                            "The failed formula mutation did not restore its exact local source evidence.",
+                            OfficePluginLanguage.Text(
+                                "撤销失败的公式修改后，原公式没有被完全恢复。",
+                                "Undoing the failed formula change did not fully restore the original formula."),
                             primary, verificationError);
                     }
                 }

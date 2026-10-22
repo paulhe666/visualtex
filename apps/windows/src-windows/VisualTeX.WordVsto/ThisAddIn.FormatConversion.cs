@@ -99,7 +99,8 @@ public sealed partial class ThisAddIn
         {
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-gate-timeout sourceMode={sourceMode} targetMode={targetMode} wholeDocument={wholeDocument}");
-            SetStatus("VisualTeX 正在执行其他 Word 操作，请稍候再试。");
+            SetStatus(T("VisualTeX 正在执行其他 Word 操作，请稍候再试。",
+                "VisualTeX is busy with another Word operation. Try again in a moment."));
             return;
         }
         WordDoubleClickHook.TraceMessage(
@@ -107,9 +108,12 @@ public sealed partial class ThisAddIn
 
         var rendered = new Dictionary<string, RenderedWordBulkFormulaTemplate>(StringComparer.Ordinal);
         var progress = await dispatcher.InvokeAsync(
-            () => BeginOperationProgress("VisualTeX 公式格式转换", service)).ConfigureAwait(false);
+            () => BeginOperationProgress(ConversionTitle, service)).ConfigureAwait(false);
         var prepared = new Dictionary<string, PreparedWordBulkFormula>(StringComparer.Ordinal);
         WordFormulaService.WordViewState? originalViewState = null;
+        // Word is mutated only inside ApplyFormulaFormatConversionPlan, whose
+        // undo record rolls the whole batch back; before it nothing changed.
+        var applyStarted = false;
         try
         {
             // Snapshot selection and viewport before even capturing the source
@@ -136,8 +140,10 @@ public sealed partial class ThisAddIn
                 var sourceLabel = FormatConversionModeLabel(sourceMode);
                 throw new InvalidDataException(
                     wholeDocument
-                        ? $"当前 Word 文档中没有找到可转换的 {sourceLabel} 公式。"
-                        : $"所选范围中没有找到可转换的 {sourceLabel} 公式。");
+                        ? T($"当前 Word 文档中没有找到可转换的 {sourceLabel} 公式。",
+                            $"No convertible {sourceLabel} equations were found in the current Word document.")
+                        : T($"所选范围中没有找到可转换的 {sourceLabel} 公式。",
+                            $"No convertible {sourceLabel} equations were found in the current selection."));
             }
 
             var sourceName = FormatConversionModeLabel(sourceMode);
@@ -160,21 +166,34 @@ public sealed partial class ThisAddIn
                         T(
                             $"将把全文 {plan.Targets.Count} 个 {sourceName} 公式重新绘制为 {targetName}。\r\n\r\n旧公式宿主和旧编号会直接删除，目标编号将按当前 Word 编号设置重新创建。是否继续？",
                             $"Redraw all {plan.Targets.Count} {sourceName} equations in the document as {targetName}?\r\n\r\nThe old equation hosts and numbering will be removed, and target numbering will be recreated using the current Word numbering settings."),
-                        T("VisualTeX 公式格式转换", "VisualTeX Equation Format Conversion"),
+                        ConversionTitle,
                         System.Windows.Forms.MessageBoxButtons.YesNo,
                         System.Windows.Forms.MessageBoxIcon.Question,
                         System.Windows.Forms.MessageBoxDefaultButton.Button2)
                     == System.Windows.Forms.DialogResult.Yes).ConfigureAwait(false);
                 if (!confirmed)
                 {
-                    SetStatus("已取消公式格式转换，Word 文档未修改。");
+                    SetStatus(T("已取消公式格式转换，Word 文档未修改。",
+                        "Equation format conversion was cancelled. The Word document was not changed."));
                     return;
                 }
                 progress = await dispatcher.InvokeAsync(
-                    () => BeginOperationProgress("VisualTeX 公式格式转换", service, "正在准备公式转换…")).ConfigureAwait(false);
+                    () => BeginOperationProgress(ConversionTitle, service,
+                        T("正在准备公式转换…", "Preparing the equation conversion…"))).ConfigureAwait(false);
             }
 
-            SetStatus($"正在准备 {plan.Targets.Count} 个公式的 {targetName} 重绘结果…");
+            // Document-order ordinal of every target ("Equation 3"): plan targets
+            // are captured in document order within the converted scope.
+            var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (var index = 0; index < plan.Targets.Count; index++)
+                ordinals[plan.Targets[index].Id] = index + 1;
+            // Every formula that could not be prepared, with its own reason. The
+            // conversion is all-or-nothing, so all of them are reported together
+            // before Word is touched.
+            var conversionFailures = new List<(int Ordinal, string Latex, string Reason)>();
+
+            SetStatus(T($"正在准备 {plan.Targets.Count} 个公式的 {targetName} 重绘结果…",
+                $"Preparing {targetName} output for {plan.Targets.Count} equations…"));
             var targetAcceptsDirectSourceMathMl = string.Equals(
                     targetMode,
                     FormulaOleContract.WordOmmlMode,
@@ -245,12 +264,46 @@ public sealed partial class ThisAddIn
                             pending.Skip(offset).Take(20).Select(item => new RenderBatchItemRequest
                             { Id = item.Run.Id, Request = item.Request }).ToList(),
                             TimeSpan.FromMinutes(3), lifetime.Token);
+                // Identical formulas share one render; a failure names each of them.
+                var targetsByKey = plan.Targets
+                    .Where(target => !(targetAcceptsDirectSourceMathMl
+                        && !string.IsNullOrWhiteSpace(target.SourceMathMl)))
+                    .GroupBy(target => targetKeys[target.Id], StringComparer.Ordinal)
+                    .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
                 var nextChunk = SubmitChunk(0);
                 for (var offset = 0; offset < pending.Count; offset += 20)
                 {
-                    progress.Report("正在渲染公式…", offset, pending.Count);
+                    progress.Report(T("正在渲染公式…", "Rendering equations…"), offset, pending.Count);
                     var chunk = pending.Skip(offset).Take(20).ToArray();
-                    var batch = await nextChunk!.ConfigureAwait(false);
+                    RenderBatchResult batch;
+                    try
+                    {
+                        batch = await nextChunk!.ConfigureAwait(false);
+                    }
+                    catch (Exception error) when (!IsUserCancellation(error, lifetime.Token))
+                    {
+                        // The whole batch failed (VisualTeX unreachable, timed
+                        // out, converter not started...): every later batch
+                        // would wait for the same cause, so stop here and report
+                        // it once, with the formulas it covered and every
+                        // formula that already failed on its own.
+                        WordDoubleClickHook.TraceMessage(
+                            $"format-conversion-render-batch-failed offset={offset} items={chunk.Length} error={error}");
+                        var covered = chunk
+                            .SelectMany(item => targetsByKey[item.Key])
+                            .Select(target => ordinals[target.Id])
+                            .OrderBy(ordinal => ordinal)
+                            .ToArray();
+                        throw new FormatConversionReport(
+                            T($"公式格式转换失败：VisualTeX 无法渲染第 {covered.First()}–{covered.Last()} 个公式所在的一批公式，Word 文档未修改。",
+                                $"Equation format conversion failed: VisualTeX could not render the batch containing equations {covered.First()}–{covered.Last()}. The Word document was not changed."),
+                            BuildFormatConversionFailureReport(
+                                conversionFailures,
+                                plan.Targets.Count,
+                                T($"VisualTeX 无法渲染第 {covered.First()}–{covered.Last()} 个公式所在的一批公式（{covered.Length} 个公式）：",
+                                    $"VisualTeX could not render the batch containing equations {covered.First()}–{covered.Last()} ({covered.Length} equations): ")
+                                    + OfficeErrorText.Describe(error)));
+                    }
                     nextChunk = SubmitChunk(offset + 20);
                     var materialized = MaterializeBulkFormulaTemplates(
                         client,
@@ -262,14 +315,29 @@ public sealed partial class ThisAddIn
                         var item = chunk[index];
                         var completed = batch.Items[index].Session;
                         if (materialized[index].Error is { } materializeError)
-                            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(materializeError).Throw();
+                        {
+                            var reason = materializeError is WordFormulaRenderException renderError
+                                ? renderError.Reason
+                                : OfficeErrorText.Describe(materializeError);
+                            foreach (var target in targetsByKey[item.Key])
+                                conversionFailures.Add((ordinals[target.Id], target.Latex, reason));
+                            WordDoubleClickHook.TraceMessage(
+                                $"format-conversion-render-failed sourceMode={sourceMode} targetMode={targetMode} itemId={item.Run.Id} status={completed.Status} error={materializeError}");
+                            continue;
+                        }
                         rendered[item.Key] = materialized[index].Template!;
                         WordDoubleClickHook.TraceMessage(
                             $"format-conversion-rendered sourceMode={sourceMode} targetMode={targetMode} itemId={item.Run.Id} status={completed.Status}");
                     }
-                    progress.Report("公式渲染进度", offset + chunk.Length, pending.Count);
+                    progress.Report(T("正在渲染公式…", "Rendering equations…"), offset + chunk.Length, pending.Count);
                 }
             }
+
+            if (conversionFailures.Count > 0)
+                throw new FormatConversionReport(
+                    T($"公式格式转换失败：{conversionFailures.Count} 个公式无法转换，Word 文档未修改。",
+                        $"Equation format conversion failed: {conversionFailures.Count} equation(s) could not be converted. The Word document was not changed."),
+                    BuildFormatConversionFailureReport(conversionFailures, plan.Targets.Count, null));
 
             foreach (var target in plan.Targets)
             {
@@ -303,8 +371,9 @@ public sealed partial class ThisAddIn
                 }
 
                 if (!rendered.TryGetValue(key, out var template))
-                    throw new InvalidDataException(
-                        $"缺少公式“{target.Latex}”的重绘结果。");
+                    throw new InvalidDataException(T(
+                        $"第 {ordinals[target.Id]} 个公式（{WordFormulaRenderException.Excerpt(target.Latex, 120)}）缺少渲染结果。",
+                        $"Equation {ordinals[target.Id]} ({WordFormulaRenderException.Excerpt(target.Latex, 120)}) has no render result."));
                 var session = CloneBulkFormulaSession(
                     template.Session,
                     run,
@@ -341,27 +410,49 @@ public sealed partial class ThisAddIn
                 }
                 else
                 {
-                    SetStatus($"正在批量生成 {plan.Targets.Count} 个 MathType 原生预览…");
+                    SetStatus(T($"正在批量生成 {plan.Targets.Count} 个 MathType 原生预览…",
+                        $"Generating {plan.Targets.Count} native MathType previews…"));
                     var nativePreviewInputs =
                         new Dictionary<string, byte[]>(StringComparer.Ordinal);
+                    var encodingAttempts = 0;
                     foreach (var target in plan.Targets)
                     {
-                        progress.Report("正在编码 MathType 公式…", nativePreviewInputs.Count, plan.Targets.Count);
+                        progress.Report(T("正在编码 MathType 公式…", "Encoding MathType equations…"), encodingAttempts++, plan.Targets.Count);
                         var formula = prepared[target.Id];
-                        var mathMl = formula.MathMl
-                            ?? throw new InvalidDataException(
-                                $"缺少公式“{target.Latex}”的 MathType MathML。");
-                        var inline = string.Equals(
-                            target.DisplayMode,
-                            "inline",
-                            StringComparison.OrdinalIgnoreCase);
-                        var standalone = WordFormulaService.PrepareStandaloneMathTypeOleData(
-                            mathMl, inline, formula.Session.FontSizePt, target.Latex);
-                        formula.MathTypeStandaloneGenerated = standalone.Generated;
-                        formula.MathTypeStandaloneCompoundFile = standalone.CompoundFile;
-                        formula.MathTypeStandaloneSemanticSignature = standalone.SemanticSignature;
-                        nativePreviewInputs[target.Id] = standalone.Generated.Mtef;
+                        try
+                        {
+                            var mathMl = formula.MathMl
+                                ?? throw new InvalidDataException(T(
+                                    "该公式没有可写入 MathType 的 MathML。",
+                                    "This equation has no MathML to write as MathType."));
+                            var inline = string.Equals(
+                                target.DisplayMode,
+                                "inline",
+                                StringComparison.OrdinalIgnoreCase);
+                            var standalone = WordFormulaService.PrepareStandaloneMathTypeOleData(
+                                mathMl, inline, formula.Session.FontSizePt, target.Latex);
+                            formula.MathTypeStandaloneGenerated = standalone.Generated;
+                            formula.MathTypeStandaloneCompoundFile = standalone.CompoundFile;
+                            formula.MathTypeStandaloneSemanticSignature = standalone.SemanticSignature;
+                            nativePreviewInputs[target.Id] = standalone.Generated.Mtef;
+                        }
+                        catch (Exception error) when (!IsUserCancellation(error, lifetime.Token))
+                        {
+                            // Encode every formula first: all failures are listed.
+                            WordDoubleClickHook.TraceMessage(
+                                $"format-conversion-mathtype-encode-failed ordinal={ordinals[target.Id]} error={error}");
+                            conversionFailures.Add((
+                                ordinals[target.Id],
+                                target.Latex,
+                                T("无法编码为 MathType 公式：", "Could not encode it as a MathType equation: ")
+                                    + OfficeErrorText.Describe(error)));
+                        }
                     }
+                    if (conversionFailures.Count > 0)
+                        throw new FormatConversionReport(
+                            T($"公式格式转换失败：{conversionFailures.Count} 个公式无法编码为 MathType，Word 文档未修改。",
+                                $"Equation format conversion failed: {conversionFailures.Count} equation(s) could not be encoded as MathType. The Word document was not changed."),
+                            BuildFormatConversionFailureReport(conversionFailures, plan.Targets.Count, null));
 
                     var nativePreviewRoot = prepared.Values
                         .Select(formula => string.IsNullOrWhiteSpace(formula.EmfPath)
@@ -370,13 +461,13 @@ public sealed partial class ThisAddIn
                         .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
                         ?? Path.GetTempPath();
                     var nativePreviewWatch = System.Diagnostics.Stopwatch.StartNew();
-                    progress.Report("正在生成 MathType 原生预览…", 0, plan.Targets.Count);
+                    progress.Report(T("正在生成 MathType 原生预览…", "Generating native MathType previews…"), 0, plan.Targets.Count);
                     var renderedAllNativePreviews =
                         MathTypeNativePreviewRenderer.TryRenderBatchWithRetry(
                             nativePreviewInputs,
                             nativePreviewRoot,
                             out var nativePreviews);
-                    progress.Report("MathType 原生预览已生成", nativePreviews.Count, plan.Targets.Count);
+                    progress.Report(T("MathType 原生预览已生成", "Native MathType previews generated"), nativePreviews.Count, plan.Targets.Count);
                     var missingNativePreviewIds = plan.Targets
                         .Where(target => !nativePreviews.ContainsKey(target.Id))
                         .Select(target => target.Id)
@@ -387,16 +478,10 @@ public sealed partial class ThisAddIn
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
-                        string? OrdinalOf(string id)
-                        {
-                            var ordinal = 0;
-                            foreach (var target in plan.Targets)
-                            {
-                                ordinal++;
-                                if (target.Id == id) return $"第 {ordinal} 个公式";
-                            }
-                            return null;
-                        }
+                        string? OrdinalOf(string id) =>
+                            ordinals.TryGetValue(id, out var ordinal)
+                                ? T($"第 {ordinal} 个公式", $"Equation {ordinal}")
+                                : null;
                         throw new InvalidOperationException(
                             MathTypeNativePreviewRenderer.DescribeFailures(OrdinalOf));
                     }
@@ -412,9 +497,11 @@ public sealed partial class ThisAddIn
                 }
             }
 
-            SetStatus("公式已全部渲染，正在用正常新建公式路径原位重绘…");
+            SetStatus(T("公式已全部渲染，正在原位写入 Word…",
+                "All equations are rendered. Writing them into Word in place…"));
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-word-apply-start sourceMode={sourceMode} targetMode={targetMode} targets={plan.Targets.Count}");
+            applyStarted = true;
             BeginFormulaFormatMutation();
             WordFormulaFormatConversionResult result;
             try
@@ -430,55 +517,47 @@ public sealed partial class ThisAddIn
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-word-apply-finished sourceMode={sourceMode} targetMode={targetMode} converted={result.FormulaCount} failed={result.FailedFormulaCount}");
 
-            if (result.FailedFormulaCount == 0)
-            {
-                WordDoubleClickHook.TraceMessage(
-                    $"format-conversion-complete source={sourceName} target={targetName} converted={result.FormulaCount} failed=0");
-                SetStatus(
-                    $"公式格式转换完成：{result.FormulaCount} 个公式已重新绘制为 {targetName}。");
-            }
-            else
-            {
-                var detail = result.Failures.FirstOrDefault() ?? "未知 Word 写入错误。";
-                WordDoubleClickHook.TraceMessage(
-                    $"format-conversion-stopped source={sourceName} target={targetName} converted={result.FormulaCount} failed={result.FailedFormulaCount} detail={detail}");
-                SetStatus(
-                    $"已转换 {result.FormulaCount} 个公式，随后停止：{detail}");
-                if (!string.Equals(
-                        Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
-                        "1",
-                        StringComparison.Ordinal))
-                {
-                    await dispatcher.InvokeAsync(() =>
-                    {
-                        System.Windows.Forms.MessageBox.Show(
-                            T(
-                                $"已成功转换 {result.FormulaCount} 个公式，随后停止。\r\n\r\n{detail}",
-                                $"Successfully converted {result.FormulaCount} equations, then stopped.\r\n\r\n{OfficePluginLanguage.SafeErrorMessage(detail)}"),
-                            T("VisualTeX 公式格式转换", "VisualTeX Equation Format Conversion"),
-                            System.Windows.Forms.MessageBoxButtons.OK,
-                            System.Windows.Forms.MessageBoxIcon.Warning);
-                        return true;
-                    }).ConfigureAwait(false);
-                }
-            }
+            // The conversion applies all-or-nothing: Apply either converts
+            // every target or throws after rolling the batch back, so there is
+            // no partial-success result to report here.
+            WordDoubleClickHook.TraceMessage(
+                $"format-conversion-complete source={sourceName} target={targetName} converted={result.FormulaCount} failed=0");
+            SetStatus(T(
+                $"公式格式转换完成：{result.FormulaCount} 个公式已重新绘制为 {targetName}。",
+                $"Equation format conversion finished: {result.FormulaCount} equation(s) were redrawn as {targetName}."));
         }
-        catch (OperationCanceledException error)
+        catch (Exception error) when (IsUserCancellation(error, lifetime.Token))
         {
-            var reported = error;
-            WordDoubleClickHook.TraceMessage($"format-conversion-cancelled error={reported}");
-            SetStatus(ReferenceEquals(reported, error) ? "公式格式转换已取消。" : reported.Message);
+            // Only the operation's own token is a cancellation; a timed-out or
+            // released render batch is an error reported below.
+            WordDoubleClickHook.TraceMessage($"format-conversion-cancelled error={error}");
+            SetStatus(T("公式格式转换已取消，Word 文档未修改。",
+                "Equation format conversion was cancelled. The Word document was not changed."));
         }
         catch (Exception error)
         {
-            var reported = error;
             WordDoubleClickHook.TraceMessage(
-                $"format-conversion-failed sourceMode={sourceMode} targetMode={targetMode} error={reported}");
-            var failureMessage = OfficePluginLanguage.FormatOperationError(
-                reported,
-                "公式格式转换失败",
-                "Equation format conversion failed");
-            SetStatus(failureMessage);
+                $"format-conversion-failed sourceMode={sourceMode} targetMode={targetMode} applyStarted={applyStarted} error={error}");
+            string statusMessage;
+            string failureMessage;
+            if (error is FormatConversionReport report)
+            {
+                statusMessage = report.Status;
+                failureMessage = report.Message;
+            }
+            else
+            {
+                failureMessage = OfficePluginLanguage.FormatOperationError(
+                    error,
+                    "公式格式转换失败",
+                    "Equation format conversion failed");
+                // Before Apply nothing was written; Apply rolls its one undo
+                // record back and reports a failed rollback as an aggregate.
+                if (!applyStarted || error is not AggregateException)
+                    failureMessage += T("\r\n\r\nWord 文档未修改。", "\r\n\r\nThe Word document was not changed.");
+                statusMessage = failureMessage;
+            }
+            SetStatus(statusMessage);
             if (!string.Equals(
                     Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"),
                     "1",
@@ -491,7 +570,7 @@ public sealed partial class ThisAddIn
                     {
                         System.Windows.Forms.MessageBox.Show(
                             failureMessage,
-                            T("VisualTeX 公式格式转换", "VisualTeX Equation Format Conversion"),
+                            ConversionTitle,
                             System.Windows.Forms.MessageBoxButtons.OK,
                             System.Windows.Forms.MessageBoxIcon.Error);
                         return true;
@@ -550,7 +629,11 @@ public sealed partial class ThisAddIn
         }
         catch (Exception recordingError)
         {
-            return new AggregateException("Word 操作失败，且未能记录运行时失败状态。", error, recordingError);
+            return new AggregateException(
+                T("Word 操作失败，且未能向 VisualTeX 记录失败状态。",
+                    "The Word operation failed, and its failure could not be recorded in VisualTeX."),
+                error,
+                recordingError);
         }
     }
 
@@ -578,6 +661,79 @@ public sealed partial class ThisAddIn
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-session-cleanup-skipped sessions={sessionIds.Count} error={cleanupError.GetType().Name}");
         }
+    }
+
+    private static string ConversionTitle =>
+        T("VisualTeX 公式格式转换", "VisualTeX Equation Format Conversion");
+
+    /// <summary>
+    /// The user's own cancellation: an OperationCanceledException while the
+    /// operation's token is cancelled. VisualTeX request timeouts are
+    /// TimeoutException and a batch VisualTeX released is an error, so neither
+    /// is ever shown as "cancelled".
+    /// </summary>
+    private static bool IsUserCancellation(Exception error, CancellationToken operationToken) =>
+        operationToken.IsCancellationRequested
+        && (error is OperationCanceledException
+            || (error is AggregateException aggregate
+                && aggregate.Flatten().InnerExceptions.Any(inner => inner is OperationCanceledException)));
+
+    /// <summary>
+    /// A conversion stopped before Word was changed, with its complete report
+    /// (every failed formula and its own reason) already worded for the user.
+    /// </summary>
+    private sealed class FormatConversionReport : Exception
+    {
+        internal FormatConversionReport(string status, string message)
+            : base(message)
+        {
+            Status = status;
+        }
+
+        internal string Status { get; }
+    }
+
+    private const int MaximumListedConversionFailures = 15;
+
+    private static string BuildFormatConversionFailureReport(
+        IReadOnlyList<(int Ordinal, string Latex, string Reason)> failures,
+        int totalFormulas,
+        string? batchFailure)
+    {
+        var builder = new System.Text.StringBuilder();
+        if (failures.Count > 0)
+        {
+            builder.Append(T(
+                $"共 {totalFormulas} 个公式，其中 {failures.Count} 个无法转换：",
+                $"{failures.Count} of {totalFormulas} equation(s) could not be converted:"));
+            builder.Append("\r\n");
+            foreach (var failure in failures
+                         .OrderBy(item => item.Ordinal)
+                         .Take(MaximumListedConversionFailures))
+            {
+                builder.Append("\r\n");
+                builder.Append(T(
+                    $"第 {failure.Ordinal} 个公式：{WordFormulaRenderException.Excerpt(failure.Latex, 120)}\r\n   原因：{failure.Reason}",
+                    $"Equation {failure.Ordinal}: {WordFormulaRenderException.Excerpt(failure.Latex, 120)}\r\n   Reason: {failure.Reason}"));
+            }
+            if (failures.Count > MaximumListedConversionFailures)
+            {
+                builder.Append("\r\n\r\n");
+                builder.Append(T(
+                    $"……另有 {failures.Count - MaximumListedConversionFailures} 个失败的公式未列出。",
+                    $"…and {failures.Count - MaximumListedConversionFailures} more failed equation(s) not listed."));
+            }
+            builder.Append("\r\n\r\n");
+        }
+        if (!string.IsNullOrWhiteSpace(batchFailure))
+        {
+            builder.Append(batchFailure);
+            builder.Append("\r\n\r\n");
+        }
+        builder.Append(T(
+            "格式转换只会整体执行：只要有一个公式失败，就不会转换任何公式。Word 文档未修改。",
+            "Format conversion is all-or-nothing: when any equation fails, none is converted. The Word document was not changed."));
+        return builder.ToString();
     }
 
     private static string FormatConversionModeLabel(string mode)

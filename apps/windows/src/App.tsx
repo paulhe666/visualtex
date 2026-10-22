@@ -118,6 +118,7 @@ import {
   SILENT_OCR_STORAGE_KEY,
   type QuickOcrCaptureMode,
 } from "./ocr/quickOcr";
+import { installButtonShortcuts, onButtonShortcut } from "./shortcuts/buttonShortcuts";
 
 type InlineOcrStatus = "running" | "cancelling" | "success" | "error" | "cancelled";
 
@@ -939,6 +940,48 @@ function App() {
       window.removeEventListener("visualtex-quick-ocr", runQuick);
     };
   });
+
+  // the chords the user gave the main window's buttons (Settings > Keyboard shortcuts)
+  useEffect(
+    () => installButtonShortcuts("main", () => useEditorStore.getState().buttonShortcuts),
+    [],
+  );
+  useEffect(() =>
+    onButtonShortcut((action) => {
+      switch (action) {
+        case "quick-ocr":
+          void handleQuickOcr();
+          break;
+        case "ocr":
+          setOcrOpen(true);
+          break;
+        case "copy-latex":
+          void handleCopy();
+          break;
+        case "copy-image":
+          void handleCopyPng();
+          break;
+        case "export":
+          setExportOpen(true);
+          break;
+        case "history":
+          setHistoryOpen(true);
+          break;
+        case "toggle-tiles":
+          setSidebarOpen((open) => !open);
+          break;
+        case "silent-ocr":
+          handleSilentOcrEnabledChange(!silentOcrEnabled);
+          break;
+        case "settings":
+          setSettingsOpen(true);
+          break;
+        case "help":
+          setHelpOpen(true);
+          break;
+      }
+    }),
+  );
 
   const updateLatexFormatProfile = (
     patch: Partial<LatexFormatProfile>,

@@ -177,7 +177,7 @@ exit 2
     )
 }
 
-fn capture_windows_clipboard_image(
+pub(crate) fn capture_windows_clipboard_image(
     capture_mode: &str,
     timeout_ms: u64,
 ) -> Result<Option<WindowsQuickOcrCapture>, String> {
