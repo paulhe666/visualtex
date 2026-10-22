@@ -76,6 +76,7 @@ internal static class WordOleToOmmlReplacement
                 _applied = true;
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-before-scaffold");
                 _numberScaffold?.Remove();
+                if (_display && _numberScaffold is null) RemoveDisplayLayoutWhitespace(selected);
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-after-scaffold");
                 _owner.CaptureReplacementBoundary(selected);
                 WordFormulaMutationTransaction.TraceBoundary(_document.Application, "exact-ole-before-import");
@@ -132,6 +133,39 @@ internal static class WordOleToOmmlReplacement
             Release(_source); _source = null;
         }
     }
+
+    // MathType lays out an unnumbered display equation as TAB + object in its
+    // own paragraph (the numbered layout is the NumberedScaffold). Beside
+    // display OMML that tab makes Word move the equation after a manual line
+    // break, leaving an empty first line. Only tabs/spaces sharing the paragraph
+    // with the object alone are layout; any other text keeps the paragraph as is.
+    private static void RemoveDisplayLayoutWhitespace(Range selected)
+    {
+        Paragraphs? paragraphs = null;
+        Paragraph? paragraph = null;
+        Range? owner = null;
+        Range? left = null;
+        Range? right = null;
+        try
+        {
+            paragraphs = selected.Paragraphs;
+            if (paragraphs.Count != 1) return;
+            paragraph = paragraphs[1];
+            owner = paragraph.Range;
+            left = selected.Duplicate;
+            left.SetRange(owner.Start, selected.Start);
+            right = selected.Duplicate;
+            right.SetRange(selected.End, Math.Max(selected.End, owner.End - 1));
+            if (!IsLayoutWhitespace(left.Text) || !IsLayoutWhitespace(right.Text)) return;
+            if (right.End > right.Start) right.Text = string.Empty;
+            if (left.End > left.Start) left.Text = string.Empty;
+            WordFormulaMutationTransaction.TraceBoundary(selected.Application, "exact-ole-display-layout-removed");
+        }
+        finally { Release(right); Release(left); Release(owner); Release(paragraph); Release(paragraphs); }
+    }
+
+    private static bool IsLayoutWhitespace(string? text) =>
+        (text ?? string.Empty).All(character => character is '\t' or ' ');
 
     internal static Prepared? Prepare(Document document, Range selected, string omml, bool display,
         string? retiredIdentityBookmark = null, bool replaceMathTypeNumber = false)
