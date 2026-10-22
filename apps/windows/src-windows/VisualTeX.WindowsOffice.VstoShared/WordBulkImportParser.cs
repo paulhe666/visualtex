@@ -336,6 +336,13 @@ internal static class WordBulkImportParser
                 if (index + 1 < searchEnd && source[index + 1] == '$')
                 {
                     var end = FindUnescapedSequence(source, "$$", index + 2, searchEnd);
+                    if (end >= index + 2 && ContainsBlankParagraph(source, index + 2, end))
+                    {
+                        // TeX ends display math at a blank line: an unclosed $$
+                        // must not swallow the following paragraphs.
+                        index += 2;
+                        continue;
+                    }
                     if (end >= index + 2)
                     {
                         AddFormulaSpan(
@@ -353,7 +360,7 @@ internal static class WordBulkImportParser
                 }
                 else
                 {
-                    var end = FindUnescaped(source, '$', index + 1, searchEnd);
+                    var end = FindInlineDollarClose(source, index, searchEnd);
                     if (end > index + 1)
                     {
                         AddFormulaSpan(
@@ -378,7 +385,11 @@ internal static class WordBulkImportParser
             {
                 var display = source[index + 1] == '[';
                 var endToken = display ? "\\]" : "\\)";
-                var end = FindUnescapedSequence(source, endToken, index + 2, searchEnd);
+                // Inline math ends with its paragraph; display math with a blank line.
+                var end = FindUnescapedSequence(
+                    source, endToken, index + 2, display ? searchEnd : ParagraphEnd(source, index, searchEnd));
+                if (end > index + 2 && display && ContainsBlankParagraph(source, index + 2, end))
+                    end = -1;
                 if (end > index + 2)
                 {
                     AddFormulaSpan(
@@ -434,6 +445,85 @@ internal static class WordBulkImportParser
         if (spans.Count > 1_000)
             throw new InvalidDataException("LaTeX 重绘包含过多公式（上限 1000）。");
         return spans;
+    }
+
+    // Pairs an inline $...$ the way Markdown math does (Pandoc): the opening $
+    // is followed by a non-space, the closing $ preceded by one and not followed
+    // by a digit. A spaced body ("$ x $") still counts when it reads as
+    // mathematics, unless the opening $ starts a price ("$5 and $"). The first
+    // $ after the opening one must close it; otherwise the opening $ is literal
+    // text, so one price or stray $ never shifts which later text pairs up.
+    // Inline math ends with its paragraph (a Word soft line break may occur).
+    // Returns the closing index or -1.
+    internal static int FindInlineDollarClose(string text, int open, int searchEnd)
+    {
+        var end = open + 1;
+        for (; end < searchEnd; end++)
+        {
+            var character = text[end];
+            if (character is '\r' or '\n' or '\a') return -1;
+            if (character == '$' && !IsEscaped(text, end)) break;
+        }
+        if (end >= searchEnd || end == open + 1) return -1;
+        if (end + 1 < text.Length && char.IsDigit(text[end + 1])) return -1;
+        var spacedOpen = char.IsWhiteSpace(text[open + 1]);
+        var spacedClose = char.IsWhiteSpace(text[end - 1]);
+        if (!spacedOpen && !spacedClose) return end;
+        if (!spacedOpen && char.IsDigit(text[open + 1])) return -1;
+        return ReadsAsMathematics(text.Substring(open + 1, end - open - 1)) ? end : -1;
+    }
+
+    // A spaced $...$ body is mathematics when it has TeX/operator syntax or is a
+    // short symbol such as x, x1 or 5; prose (words, CJK text) is not.
+    private static bool ReadsAsMathematics(string body)
+    {
+        var trimmed = body.Trim();
+        if (trimmed.Length == 0) return false;
+        if (trimmed.Any(character => character >= 0x2E80 && character <= 0x9FFF
+                || character >= 0xAC00 && character <= 0xD7AF
+                || character >= 0xF900 && character <= 0xFAFF
+                || character >= 0xFF00 && character <= 0xFFEF))
+            return false;
+        if (trimmed.IndexOfAny(new[] { '\\', '^', '_', '{', '}', '=', '<', '>', '+' }) >= 0) return true;
+        return trimmed.Length <= 4 && !trimmed.Any(char.IsWhiteSpace);
+    }
+
+    private static int ParagraphEnd(string text, int start, int searchEnd)
+    {
+        var end = text.IndexOfAny(new[] { '\r', '\n' }, start);
+        return end >= 0 && end < searchEnd ? end : searchEnd;
+    }
+
+    // Two paragraph marks with only spaces between them: TeX ends display math there.
+    private static bool ContainsBlankParagraph(string text, int start, int end)
+    {
+        var previousMark = -1;
+        for (var index = start; index < end; index++)
+        {
+            var character = text[index];
+            if (character == '\n' && index > 0 && text[index - 1] == '\r') continue;
+            if (character is '\r' or '\n')
+            {
+                if (previousMark >= 0) return true;
+                previousMark = index;
+            }
+            else if (character is not (' ' or '\t')) previousMark = -1;
+        }
+        return false;
+    }
+
+    // The first $$ that starts a display formula, past any inline $...$ pairs:
+    // the $$ in "$a$$b$" closes one inline formula and opens the next.
+    private static int FindDisplayDollarStart(string text)
+    {
+        for (var index = 0; index < text.Length;)
+        {
+            if (text[index] != '$' || IsEscaped(text, index)) { index++; continue; }
+            if (index + 1 < text.Length && text[index + 1] == '$') return index;
+            var close = FindInlineDollarClose(text, index, text.Length);
+            index = close > index ? close + 1 : index + 1;
+        }
+        return -1;
     }
 
     private static void AddFormulaSpan(
@@ -1067,7 +1157,7 @@ internal static class WordBulkImportParser
 
         var raw = lines[index];
         var starts = new List<(int Position, string StartToken, string EndToken, string? Environment)>();
-        var dollars = FindUnescapedSequence(raw, "$$", 0);
+        var dollars = FindDisplayDollarStart(raw);
         if (dollars >= 0)
             starts.Add((dollars, "$$", "$$", null));
         var bracket = FindUnescapedSequence(raw, "\\[", 0);
@@ -1312,7 +1402,7 @@ internal static class WordBulkImportParser
         {
             if (text[index] == '$' && !IsEscaped(text, index))
             {
-                var end = FindUnescaped(text, '$', index + 1);
+                var end = FindInlineDollarClose(text, index, text.Length);
                 if (end > index + 1)
                 {
                     Flush();

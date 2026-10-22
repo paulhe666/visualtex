@@ -191,6 +191,27 @@ public sealed partial class ThisAddIn
             // conversion is all-or-nothing, so all of them are reported together
             // before Word is touched.
             var conversionFailures = new List<(int Ordinal, string Latex, string Reason)>();
+            // A formula that fails before Word is written keeps its original
+            // format; the others are still converted and the skipped ones are
+            // listed afterwards. Returns how many targets were left out.
+            var skipped = new List<(int Ordinal, string Latex, string Reason)>();
+            var totalTargets = plan.Targets.Count;
+            int SkipFailedTargets()
+            {
+                if (conversionFailures.Count == 0) return 0;
+                var failed = new HashSet<int>(conversionFailures.Select(failure => failure.Ordinal));
+                skipped.AddRange(conversionFailures);
+                conversionFailures.Clear();
+                var removed = plan.Targets.RemoveAll(target => failed.Contains(ordinals[target.Id]));
+                WordDoubleClickHook.TraceMessage(
+                    $"format-conversion-skipped formulas={removed} remaining={plan.Targets.Count}");
+                if (plan.Targets.Count == 0)
+                    throw new FormatConversionReport(
+                        T("公式格式转换失败：没有可以转换的公式，Word 文档未修改。",
+                            "Equation format conversion failed: no equation could be converted. The Word document was not changed."),
+                        BuildFormatConversionFailureReport(skipped, totalTargets, null));
+                return removed;
+            }
 
             SetStatus(T($"正在准备 {plan.Targets.Count} 个公式的 {targetName} 重绘结果…",
                 $"Preparing {targetName} output for {plan.Targets.Count} equations…"));
@@ -333,11 +354,7 @@ public sealed partial class ThisAddIn
                 }
             }
 
-            if (conversionFailures.Count > 0)
-                throw new FormatConversionReport(
-                    T($"公式格式转换失败：{conversionFailures.Count} 个公式无法转换，Word 文档未修改。",
-                        $"Equation format conversion failed: {conversionFailures.Count} equation(s) could not be converted. The Word document was not changed."),
-                    BuildFormatConversionFailureReport(conversionFailures, plan.Targets.Count, null));
+            SkipFailedTargets();
 
             foreach (var target in plan.Targets)
             {
@@ -448,11 +465,7 @@ public sealed partial class ThisAddIn
                                     + OfficeErrorText.Describe(error)));
                         }
                     }
-                    if (conversionFailures.Count > 0)
-                        throw new FormatConversionReport(
-                            T($"公式格式转换失败：{conversionFailures.Count} 个公式无法编码为 MathType，Word 文档未修改。",
-                                $"Equation format conversion failed: {conversionFailures.Count} equation(s) could not be encoded as MathType. The Word document was not changed."),
-                            BuildFormatConversionFailureReport(conversionFailures, plan.Targets.Count, null));
+                    SkipFailedTargets();
 
                     var nativePreviewRoot = prepared.Values
                         .Select(formula => string.IsNullOrWhiteSpace(formula.EmfPath)
@@ -468,13 +481,14 @@ public sealed partial class ThisAddIn
                             nativePreviewRoot,
                             out var nativePreviews);
                     progress.Report(T("MathType 原生预览已生成", "Native MathType previews generated"), nativePreviews.Count, plan.Targets.Count);
-                    var missingNativePreviewIds = plan.Targets
+                    var missingNativePreviews = plan.Targets
                         .Where(target => !nativePreviews.ContainsKey(target.Id))
-                        .Select(target => target.Id)
                         .ToArray();
-                    if (!renderedAllNativePreviews
-                        || missingNativePreviewIds.Length > 0)
+                    if (missingNativePreviews.Length > 0
+                        && (MathTypeNativePreviewRenderer.LastFailureWasFonts || nativePreviews.Count == 0))
                     {
+                        // The renderer itself is unusable (no MathType fonts, nothing
+                        // rendered): no formula can be converted.
                         foreach (var preview in nativePreviews.Values)
                             preview.Dispose();
                         nativePreviewWatch.Stop();
@@ -485,15 +499,22 @@ public sealed partial class ThisAddIn
                         throw new InvalidOperationException(
                             MathTypeNativePreviewRenderer.DescribeFailures(OrdinalOf));
                     }
-                    else
-                    {
-                        foreach (var target in plan.Targets)
-                            prepared[target.Id].MathTypeNativePreview =
-                                nativePreviews[target.Id];
-                        nativePreviewWatch.Stop();
-                        WordDoubleClickHook.TraceMessage(
-                            $"format-conversion-native-preview-batch-complete formulas={nativePreviews.Count} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
-                    }
+                    // A formula the renderer could not draw keeps its source format.
+                    var previewFailures = MathTypeNativePreviewRenderer.LastFailures;
+                    foreach (var target in missingNativePreviews)
+                        conversionFailures.Add((
+                            ordinals[target.Id],
+                            target.Latex,
+                            previewFailures.TryGetValue(target.Id, out var previewReason)
+                                ? OfficePluginLanguage.SafeErrorMessage(previewReason)
+                                : MathTypeNativePreviewRenderer.NoResultMessage));
+                    SkipFailedTargets();
+                    foreach (var target in plan.Targets)
+                        prepared[target.Id].MathTypeNativePreview =
+                            nativePreviews[target.Id];
+                    nativePreviewWatch.Stop();
+                    WordDoubleClickHook.TraceMessage(
+                        $"format-conversion-native-preview-batch-complete formulas={nativePreviews.Count} all={renderedAllNativePreviews} elapsedMs={nativePreviewWatch.ElapsedMilliseconds}");
                 }
             }
 
@@ -502,17 +523,33 @@ public sealed partial class ThisAddIn
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-word-apply-start sourceMode={sourceMode} targetMode={targetMode} targets={plan.Targets.Count}");
             applyStarted = true;
-            BeginFormulaFormatMutation();
             WordFormulaFormatConversionResult result;
-            try
+            while (true)
             {
-                result = await dispatcher.InvokeAsync(
-                        () => service.ApplyFormulaFormatConversionPlan(plan, prepared))
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                EndFormulaFormatMutation();
+                BeginFormulaFormatMutation();
+                try
+                {
+                    result = await dispatcher.InvokeAsync(
+                            () => service.ApplyFormulaFormatConversionPlan(plan, prepared))
+                        .ConfigureAwait(false);
+                    break;
+                }
+                catch (Exception error) when (FindPreflightFailure(error) is not null)
+                {
+                    // Nothing was written: leave these formulas in their source
+                    // format and convert the others in a new pass.
+                    foreach (var failure in FindPreflightFailure(error)!.Failures)
+                    {
+                        var failedTarget = plan.Targets.FirstOrDefault(item => item.Id == failure.TargetId);
+                        if (failedTarget is not null)
+                            conversionFailures.Add((ordinals[failedTarget.Id], failedTarget.Latex, failure.Reason));
+                    }
+                    if (SkipFailedTargets() == 0) throw;
+                }
+                finally
+                {
+                    EndFormulaFormatMutation();
+                }
             }
             WordDoubleClickHook.TraceMessage(
                 $"format-conversion-word-apply-finished sourceMode={sourceMode} targetMode={targetMode} converted={result.FormulaCount} failed={result.FailedFormulaCount}");
@@ -521,10 +558,33 @@ public sealed partial class ThisAddIn
             // every target or throws after rolling the batch back, so there is
             // no partial-success result to report here.
             WordDoubleClickHook.TraceMessage(
-                $"format-conversion-complete source={sourceName} target={targetName} converted={result.FormulaCount} failed=0");
-            SetStatus(T(
-                $"公式格式转换完成：{result.FormulaCount} 个公式已重新绘制为 {targetName}。",
-                $"Equation format conversion finished: {result.FormulaCount} equation(s) were redrawn as {targetName}."));
+                $"format-conversion-complete source={sourceName} target={targetName} converted={result.FormulaCount} skipped={skipped.Count}");
+            if (skipped.Count == 0)
+            {
+                SetStatus(T(
+                    $"公式格式转换完成：{result.FormulaCount} 个公式已重新绘制为 {targetName}。",
+                    $"Equation format conversion finished: {result.FormulaCount} equation(s) were redrawn as {targetName}."));
+            }
+            else
+            {
+                SetStatus(T(
+                    $"公式格式转换完成：{result.FormulaCount} 个公式已重新绘制为 {targetName}，{skipped.Count} 个公式无法转换，保持原格式。",
+                    $"Equation format conversion finished: {result.FormulaCount} equation(s) were redrawn as {targetName}; {skipped.Count} could not be converted and keep their original format."));
+                progress.Dispose();
+                if (!IsConversionAcceptanceRun)
+                {
+                    var report = BuildFormatConversionFailureReport(skipped, totalTargets, null, documentChanged: true);
+                    await dispatcher.InvokeAsync(() =>
+                    {
+                        System.Windows.Forms.MessageBox.Show(
+                            report,
+                            ConversionTitle,
+                            System.Windows.Forms.MessageBoxButtons.OK,
+                            System.Windows.Forms.MessageBoxIcon.Warning);
+                        return true;
+                    }).ConfigureAwait(false);
+                }
+            }
         }
         catch (Exception error) when (IsUserCancellation(error, lifetime.Token))
         {
@@ -695,10 +755,25 @@ public sealed partial class ThisAddIn
 
     private const int MaximumListedConversionFailures = 15;
 
+    private static bool IsConversionAcceptanceRun =>
+        string.Equals(Environment.GetEnvironmentVariable("VISUALTEX_VSTO_ACCEPTANCE"), "1", StringComparison.Ordinal)
+        || string.Equals(Environment.GetEnvironmentVariable("VISUALTEX_FORMAT_CONVERSION_ACCEPTANCE"), "1", StringComparison.Ordinal);
+
+    // The sources of a conversion's write step are prepared in one call on the
+    // Word thread; its failure arrives through the dispatcher, possibly wrapped.
+    private static WordFormulaFormatConversionPreflightException? FindPreflightFailure(Exception? error)
+    {
+        for (; error is not null; error = error.InnerException)
+            if (error is WordFormulaFormatConversionPreflightException preflight)
+                return preflight;
+        return null;
+    }
+
     private static string BuildFormatConversionFailureReport(
         IReadOnlyList<(int Ordinal, string Latex, string Reason)> failures,
         int totalFormulas,
-        string? batchFailure)
+        string? batchFailure,
+        bool documentChanged = false)
     {
         var builder = new System.Text.StringBuilder();
         if (failures.Count > 0)
@@ -730,9 +805,10 @@ public sealed partial class ThisAddIn
             builder.Append(batchFailure);
             builder.Append("\r\n\r\n");
         }
-        builder.Append(T(
-            "格式转换只会整体执行：只要有一个公式失败，就不会转换任何公式。Word 文档未修改。",
-            "Format conversion is all-or-nothing: when any equation fails, none is converted. The Word document was not changed."));
+        builder.Append(documentChanged
+            ? T("其余公式已转换；上述公式保持原格式，可修改后再单独转换。",
+                "The other equations were converted; the equations above keep their original format and can be converted separately after correcting them.")
+            : T("Word 文档未修改。", "The Word document was not changed."));
         return builder.ToString();
     }
 

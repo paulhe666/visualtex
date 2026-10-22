@@ -87,8 +87,25 @@ internal sealed class WordFormulaFormatConversionTarget
 internal sealed class WordFormulaFormatConversionResult
 {
     internal int FormulaCount { get; set; }
-    // Conversion is all-or-nothing (one undo record, rolled back on any
-    // failure), so these stay 0/empty; acceptance suites still assert on them.
+    // Writing is all-or-nothing (one undo record, rolled back on any failure);
+    // formulas that fail before it are left out of the plan by the caller. So
+    // these stay 0/empty; acceptance suites still assert on them.
     internal int FailedFormulaCount { get; set; }
     internal List<string> Failures { get; set; } = new();
+}
+
+/// <summary>
+/// The sources of these targets could not be prepared for writing. Nothing was
+/// written, so the conversion can run again without them.
+/// </summary>
+internal sealed class WordFormulaFormatConversionPreflightException : InvalidOperationException
+{
+    internal WordFormulaFormatConversionPreflightException(
+        IReadOnlyList<(string TargetId, string Reason)> failures)
+        : base(string.Join("; ", failures.Select(failure => failure.Reason)))
+    {
+        Failures = failures;
+    }
+
+    internal IReadOnlyList<(string TargetId, string Reason)> Failures { get; }
 }

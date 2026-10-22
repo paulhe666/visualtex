@@ -7554,9 +7554,15 @@ internal sealed partial class WordFormulaService
         var actualMathMl = MathTypeOleStorage.ReadMathMl(compoundFile);
         var expected = MathTypeMtefCodec.SemanticSignature(mathMl);
         if (!MathTypeMathMlRoundTripMatches(expected, actualMathMl))
-            throw new InvalidDataException(
-                $"VisualTeX generated invalid standalone MathType MTEF for '{latex}'. "
+        {
+            // The user sees what happened; the exact difference goes to the trace.
+            WordDoubleClickHook.TraceMessage(
+                $"mathtype-roundtrip-mismatch latex={latex} "
                 + DescribeSemanticSignatureDifference(expected, MathTypeMtefCodec.SemanticSignature(actualMathMl)));
+            throw new InvalidDataException(OfficePluginLanguage.Text(
+                "转换会丢失或改变公式中的内容（例如 MathType 不能拉伸的括号）。",
+                "Converting would lose or change part of the equation (for example a bracket MathType cannot stretch)."));
+        }
         return (generated, compoundFile, expected);
     }
 
