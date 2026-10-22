@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import {
   macOfficeAutoInstallErrorText,
+  macOfficeFolderAccessDenied,
+  macOfficeFullDiskAccessSteps,
+  macOfficeTextIsFolderAccessDenied,
   macPowerPointRegistrationNeeded,
   resolveMacOfficeAutoInstall,
   resolveMacOfficeOnboarding,
@@ -76,5 +79,21 @@ assert.equal(macPowerPointRegistrationNeeded(status(absentHost, running(staleAdd
 assert.match(macOfficeAutoInstallErrorText(new Error("Unable to create x: Operation not permitted (os error 1)"), true), /denied access/, "permission errors are explained");
 assert.match(macOfficeAutoInstallErrorText("The Office add-in operation timed out: macOS ...", true), /click Allow/, "timeouts are explained");
 assert.match(macOfficeAutoInstallErrorText(new Error("disk full"), true), /disk full/, "other errors are shown as they are");
+
+// A refused Office folder (OFFICE_FOLDER_ACCESS_DENIED in the installer).
+const denied = "macOS denied VisualTeX access to the Office folders: Operation not permitted (os error 1)";
+assert.equal(macOfficeFolderAccessDenied(new Error(denied)), true, "a refused Office folder is recognised");
+assert.equal(macOfficeFolderAccessDenied("Operation not permitted (os error 1)"), false, "other permission errors are not a refused folder");
+for (const isEn of [true, false]) {
+  const text = macOfficeAutoInstallErrorText(denied, isEn);
+  assert.equal(macOfficeTextIsFolderAccessDenied(text), true, "a refused folder shows the Full Disk Access steps");
+  assert.doesNotMatch(text, /click Allow|点「允许」/, "never asks the user to click a prompt macOS 27 does not show");
+}
+const steps27 = macOfficeFullDiskAccessSteps(true, 27, false).join(" ");
+assert.match(steps27, /Files & Folders/, "macOS 27 keeps Full Disk Access under Files & Folders");
+assert.doesNotMatch(steps27, /earlier VisualTeX/, "a new user has no old entry to remove");
+assert.match(macOfficeFullDiskAccessSteps(true, 26, false).join(" "), /> Full Disk Access\./, "earlier macOS has its own Full Disk Access list");
+assert.match(macOfficeFullDiskAccessSteps(true, 27, true).join(" "), /remove it first/, "an updating user removes the earlier entry first");
+assert.match(macOfficeFullDiskAccessSteps(false, 27, true).join(" "), /先删除/, "the Chinese steps include the removal too");
 
 console.log("macOS Office onboarding decisions passed.");

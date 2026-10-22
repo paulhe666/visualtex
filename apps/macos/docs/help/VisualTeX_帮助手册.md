@@ -883,7 +883,8 @@ VisualTeX 会自动安装和更新 Office 插件：
 
 - 首次启动或升级 VisualTeX 后，如果 Word 和 PowerPoint 都没有运行，VisualTeX 直接安装或更新插件；如果正在运行，会在两者都退出后自动完成（已加载的插件无法在 Office 运行时替换）。
 - PowerPoint 没有自动加载目录。安装后第一次打开 PowerPoint 时，VisualTeX 通过 PowerPoint 自带的脚本命令登记并加载 `VisualTeX.ppam`，手动添加的其他 VisualTeX 加载项会被停用。macOS 可能询问是否允许 VisualTeX 控制 PowerPoint，PowerPoint 可能询问是否启用宏。
-- macOS 询问「VisualTeX 想访问其他 App 的数据」时请点「允许」。安装、修复和卸载最多等待 90 秒，超时后可以重试，界面不会卡住。
+- Word 和 PowerPoint 的插件目录属于 Microsoft。macOS 27 不再询问是否允许访问其他开发者的这类目录，而是直接阻止，只显示一条数据访问被阻止的通知。这时 VisualTeX 会提示为它打开「完全磁盘访问权限」：点「打开设置」（系统设置 > 隐私与安全性 > 文件与文件夹），为 VisualTeX 打开「完全磁盘访问权限」，然后退出并重新打开 VisualTeX，插件会自动安装。从旧版本升级时，如果列表里已有旧版 VisualTeX，先将其删除再重新添加：旧版的权限不适用于新版本。之后的版本使用同一个签名，升级后权限保持有效。
+- macOS 27 之前的系统会询问「VisualTeX 想访问其他 App 的数据」，请点「允许」；也可以改为在 系统设置 > 隐私与安全性 > 完全磁盘访问权限 中打开 VisualTeX。安装、修复和卸载最多等待 90 秒，超时后可以重试，界面不会卡住。
 - 在设置中卸载插件后，VisualTeX 不再自动安装，直到再次点击安装或修复。
 
 手动安装、修复或卸载前，先使用 `⌘Q` 完全退出 Word 和 PowerPoint。

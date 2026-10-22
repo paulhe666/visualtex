@@ -2173,7 +2173,9 @@ pub fn run() {
             office::macos_offline_installer::request_quit_macos_office_hosts_for_addin_update,
             office::macos_offline_installer::open_macos_office_addin_maintenance_log,
             office::macos_offline_installer::reveal_macos_powerpoint_addin,
-            office::macos_offline_installer::open_macos_powerpoint_addin_tutorial
+            office::macos_offline_installer::open_macos_powerpoint_addin_tutorial,
+            office::macos_offline_installer::get_macos_major_version,
+            office::macos_offline_installer::open_macos_full_disk_access_settings
         ])
         .build(tauri::generate_context!());
     let app = match app {

@@ -6628,6 +6628,28 @@ html body #mathlive-suggestion-popover .ML__popover__keybinding {
   gap: 5px;
 }
 
+/* Full Disk Access steps under a refused Office folder. */
+.office-full-disk-access-help {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.office-full-disk-access-help ol {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.office-full-disk-access-help button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .office-settings-warning strong {
   font-size: 10px;
   line-height: 1.5;

@@ -13,8 +13,14 @@ import {
   Wrench,
 } from "lucide-react";
 import { useEditorStore } from "../stores/editorStore";
-import { writeLocalStorage } from "../runtime/safeStorage";
-import { MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY } from "./macOfficeOnboarding";
+import { readLocalStorage, writeLocalStorage } from "../runtime/safeStorage";
+import {
+  MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY,
+  MAC_OFFICE_FIRST_RUN_STORAGE_KEY,
+  macOfficeFolderAccessDenied,
+  macOfficeFolderAccessDeniedText,
+} from "./macOfficeOnboarding";
+import { MacOfficeFullDiskAccessHelp } from "./MacOfficeFullDiskAccessHelp";
 import { PowerPointAddinGuide } from "./PowerPointAddinGuide";
 import {
   decodeMacOfflineOfficeStatus,
@@ -57,6 +63,7 @@ async function invokeWithTimeout<T>(command: string, timeoutMs = 6_000): Promise
 }
 
 function officeErrorSummary(raw: string, isEn: boolean) {
+  if (macOfficeFolderAccessDenied(raw)) return macOfficeFolderAccessDeniedText(isEn);
   if (/add-in operation timed out/i.test(raw)) {
     return isEn
       ? "macOS did not let VisualTeX change the Office folders in time. If macOS asks whether VisualTeX may access data from other apps, click Allow, then try again."
@@ -358,6 +365,12 @@ export function MacOfficeIntegrationSettings() {
           <ShieldAlert size={15} />
           <span>
             <strong>{officeErrorSummary(detailedError, isEn)}</strong>
+            {macOfficeFolderAccessDenied(detailedError) && (
+              <MacOfficeFullDiskAccessHelp
+                isEn={isEn}
+                updating={readLocalStorage(MAC_OFFICE_FIRST_RUN_STORAGE_KEY) === "true"}
+              />
+            )}
             <details open>
               <summary>{isEn ? "Error details" : "错误详情"}</summary>
               <code>{detailedError}</code>

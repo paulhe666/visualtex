@@ -41,6 +41,7 @@ import {
 } from "./components/macOfficeStatusValidation";
 import {
   MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY,
+  MAC_OFFICE_FIRST_RUN_STORAGE_KEY,
   macOfficeAutoInstallErrorText,
   MAC_POWERPOINT_REGISTRATION_RETRIES,
   MAC_POWERPOINT_REGISTRATION_STORAGE_KEY,
@@ -128,8 +129,6 @@ interface InlineOcrState {
 }
 
 const OCR_MODEL_STORAGE_KEY = "visualtex.ocr.model";
-const MAC_OFFICE_FIRST_RUN_STORAGE_KEY =
-  "visualtex.office.macos.native-first-run.v1.2.0.completed";
 const MAC_OFFICE_STATUS_CHECK_ATTEMPTS = 4;
 const MAC_OFFICE_STATUS_RETRY_MS = 15_000;
 const MAC_OFFICE_QUIT_POLL_MS = 5_000;

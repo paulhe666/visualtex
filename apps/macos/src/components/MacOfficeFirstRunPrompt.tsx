@@ -12,7 +12,13 @@ import {
 } from "lucide-react";
 import type { Language } from "../stores/editorStore";
 import { writeLocalStorage } from "../runtime/safeStorage";
-import { MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY } from "./macOfficeOnboarding";
+import {
+  MAC_OFFICE_AUTO_INSTALL_DISABLED_STORAGE_KEY,
+  macOfficeFolderAccessDenied,
+  macOfficeFolderAccessDeniedText,
+  macOfficeTextIsFolderAccessDenied,
+} from "./macOfficeOnboarding";
+import { MacOfficeFullDiskAccessHelp } from "./MacOfficeFullDiskAccessHelp";
 import { PowerPointAddinGuide } from "./PowerPointAddinGuide";
 import {
   decodeMacOfflineOfficeStatus,
@@ -35,6 +41,13 @@ function messageFrom(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error.trim()) return error;
   return fallback;
+}
+
+/** An install error in the prompt's words; a folder refusal gets its steps below. */
+function installErrorText(error: unknown, isEn: boolean, fallback: string) {
+  return macOfficeFolderAccessDenied(error)
+    ? macOfficeFolderAccessDeniedText(isEn)
+    : messageFrom(error, fallback);
 }
 
 function wait(milliseconds: number) {
@@ -148,8 +161,9 @@ export function MacOfficeFirstRunPrompt({
       }
     } catch (reason) {
       setError(
-        messageFrom(
+        installErrorText(
           reason,
+          isEn,
           isEn
             ? "VisualTeX could not install the native Word and PowerPoint add-ins."
             : "VisualTeX 无法安装 Word 和 PowerPoint 原生加载项。",
@@ -190,8 +204,9 @@ export function MacOfficeFirstRunPrompt({
       );
     } catch (reason) {
       setError(
-        messageFrom(
+        installErrorText(
           reason,
+          isEn,
           isEn
             ? "VisualTeX could not finish the Office add-in update."
             : "VisualTeX 无法完成 Office 插件更新。",
@@ -406,6 +421,9 @@ export function MacOfficeFirstRunPrompt({
               </p>
             )}
             {error && <p className="is-warning" role="alert">{error}</p>}
+            {error && macOfficeTextIsFolderAccessDenied(error) && (
+              <MacOfficeFullDiskAccessHelp isEn={isEn} updating={mode !== "setup"} />
+            )}
           </div>
         )}
 

@@ -85,6 +85,13 @@ The add-in filenames never contain a version. Updates replace the same path atom
 - A commit is transactional: the previous Office object is retained until the candidate has valid geometry and metadata.
 - Cancellation never modifies an existing formula; it removes only a create placeholder.
 
+## Office folder access and release signing
+
+- Word's Startup folder and the PPAM folder are inside Microsoft's group container `UBF8T346G9.Office`. macOS 27 never prompts for another team's container (tccd: "does not allow prompting for unentitled binaries"); it denies the access and shows a Data Access Blocked notification. Earlier releases ask once whether VisualTeX may access data from other apps.
+- The installer's first step there writes one probe file (`office-folder-access`). A refusal reports `macOS denied VisualTeX access to the Office folders`, and the app shows the Full Disk Access steps for the running macOS release with an Open Settings button (macOS 27: Privacy & Security > Files & Folders; earlier: Full Disk Access). After Quit & Reopen the automatic install completes.
+- macOS keeps such a grant for the app's designated requirement. Releases are signed with VisualTeX's own self-signed identity "VisualTeX Code Signing" (`scripts/create_macos_signing_identity.sh`, kept outside git in `~/.config/visualtex/macos-signing`), so the requirement is `identifier "com.visualtex.studio" and certificate root = H"44b5c7ca…"` for every release and the grant survives updates. An ad-hoc signature's requirement is the exact build: every update lost the grant. `tauri_build.mjs` refuses to build an ad-hoc release unless `VISUALTEX_MACOS_ADHOC_SIGNING=1`, and `verify_macos_dmg.sh` rejects one.
+- A grant made for an ad-hoc build does not match a signed build, so a user updating from one removes the old VisualTeX entry and turns Full Disk Access on again once.
+
 ## Add-in build boundary
 
 VBA source, Ribbon XML, AppleScript source, installer logic, and automated source-level tests are versioned. Macro-enabled Office binaries contain a compiled `vbaProject.bin`; they must be produced on a controlled Office build machine from the reviewed source and then copied to the fixed resource names:

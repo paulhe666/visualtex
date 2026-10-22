@@ -225,6 +225,16 @@ fi
 SIGNATURE_KIND="developer-id"
 if grep -q '^Signature=adhoc$' <<<"$SIGNATURE_DETAILS"; then
   SIGNATURE_KIND="ad-hoc"
+elif grep -q '^Authority=VisualTeX Code Signing$' <<<"$SIGNATURE_DETAILS"; then
+  SIGNATURE_KIND="visualtex-self-signed"
+fi
+DESIGNATED_REQUIREMENT="$(codesign -d -r- "$APP_PATH" 2>&1 | sed -n 's/^designated => //p')"
+
+# An ad-hoc release's designated requirement is its own build, so macOS denies
+# every updating user the Office folders without asking.
+if [[ "$SIGNATURE_KIND" == "ad-hoc" && "${VISUALTEX_MACOS_ADHOC_SIGNING:-0}" != "1" ]]; then
+  echo "The app has only an ad-hoc signature; sign releases with the VisualTeX identity (scripts/tauri_build.mjs)." >&2
+  exit 1
 fi
 
 if [[ "${REQUIRE_NOTARIZATION:-0}" == "1" ]]; then
@@ -251,6 +261,7 @@ echo "Bundle identifier: $IDENTIFIER"
 echo "Bundle version: $BUNDLE_VERSION"
 echo "Executable architectures: $ARCHITECTURES"
 echo "Signature: $SIGNATURE_KIND"
+echo "Designated requirement: $DESIGNATED_REQUIREMENT"
 echo "CodeResources: present"
 echo "Dock icon visibility: verified at 32x32"
 echo "Office files: $OFFICE_FILES"
@@ -258,6 +269,6 @@ echo "Resources bytes: $RESOURCE_BYTES"
 echo "Offline OCR bytes: $OCR_BYTES"
 echo "SHA-256: $SHA256"
 
-if [[ "$SIGNATURE_KIND" == "ad-hoc" ]]; then
-  echo "Warning: ad-hoc signing preserves bundle integrity but cannot replace Apple Developer ID signing and notarization." >&2
+if [[ "$SIGNATURE_KIND" != "developer-id" ]]; then
+  echo "Warning: without Apple Developer ID signing and notarization, Gatekeeper asks users to open the app from Privacy & Security once." >&2
 fi

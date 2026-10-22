@@ -1585,6 +1585,33 @@ fn status_snapshot(root: &Path) -> Result<MacOfflineOfficeInstallStatus, String>
     })
 }
 
+/// Start of the error when macOS refuses VisualTeX Microsoft's group
+/// container. macOS 27 never asks for another developer's container (it shows
+/// "Data Access Blocked"); earlier releases ask once whether VisualTeX may
+/// access data from other apps. Either way Full Disk Access lets it in.
+pub const OFFICE_FOLDER_ACCESS_DENIED: &str = "macOS denied VisualTeX access to the Office folders";
+
+/// Writes and removes one file in VisualTeX's folder in Microsoft's group
+/// container before anything else there, so that a refusal is reported as
+/// such instead of as whichever file the install touched first.
+fn probe_office_folder_access() -> Result<(), String> {
+    let folder = offline_root()?;
+    let probe = folder.join(".visualtex-access-probe");
+    let result = fs::create_dir_all(&folder)
+        .and_then(|()| fs::write(&probe, b""))
+        .and_then(|()| fs::remove_file(&probe));
+    match result {
+        Ok(()) => Ok(()),
+        Err(error)
+            if error.raw_os_error() == Some(1)
+                || error.kind() == std::io::ErrorKind::PermissionDenied =>
+        {
+            Err(format!("{OFFICE_FOLDER_ACCESS_DENIED}: {error}"))
+        }
+        Err(error) => Err(format!("Unable to write in {}: {error}", folder.display())),
+    }
+}
+
 fn install_impl(
     root: &Path,
     operation: &str,
@@ -1598,6 +1625,7 @@ fn install_impl(
         || validate_compiled_artifacts(root),
     )?;
     maintenance_step(operation, "office-process-check", ensure_office_hosts_stopped)?;
+    maintenance_step(operation, "office-folder-access", probe_office_folder_access)?;
     maintenance_step(operation, "backup-packaged-addins", || {
         backup_compiled_artifacts_to_scratch(&word_source, &powerpoint_source)
     })?;
@@ -1749,6 +1777,7 @@ fn uninstall_impl() -> Result<(), String> {
         return Err("The native offline Office add-ins are available only on macOS".to_string());
     }
     maintenance_step("uninstall", "office-process-check", ensure_office_hosts_stopped)?;
+    maintenance_step("uninstall", "office-folder-access", probe_office_folder_access)?;
     // Uninstall success must not depend on a second status probe. On machines
     // with a wedged Office container, cleanup can succeed even though probing
     // that container is temporarily unavailable.
@@ -2273,6 +2302,50 @@ pub async fn uninstall_macos_offline_office_addins(
     run_maintenance_command(app, "uninstall").await
 }
 
+/// The macOS major version (27 for macOS 27), from sw_vers.
+fn macos_major_version() -> Option<u32> {
+    let output = Command::new("/usr/bin/sw_vers")
+        .arg("-productVersion")
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .split('.')
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// macOS 27 lists Full Disk Access per app under Files & Folders; earlier
+/// releases have a Full Disk Access list of its own.
+fn full_disk_access_settings_url(macos_major: Option<u32>) -> &'static str {
+    if macos_major.is_some_and(|major| major >= 27) {
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders"
+    } else {
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+    }
+}
+
+#[tauri::command]
+pub fn get_macos_major_version() -> Option<u32> {
+    macos_major_version()
+}
+
+#[tauri::command]
+pub fn open_macos_full_disk_access_settings() -> Result<(), String> {
+    let url = full_disk_access_settings_url(macos_major_version());
+    let status = Command::new("/usr/bin/open")
+        .arg(url)
+        .status()
+        .map_err(|error| format!("Unable to open System Settings: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("Unable to open System Settings ({status})"))
+    }
+}
+
 #[tauri::command]
 pub fn request_quit_macos_office_hosts_for_addin_update() -> Result<(), String> {
     request_office_hosts_quit_for_update()
@@ -2544,6 +2617,13 @@ mod tests {
         );
         let _ = fs::remove_dir_all(executable.parent().unwrap());
         let _ = fs::remove_dir_all(failing.parent().unwrap());
+    }
+
+    #[test]
+    fn full_disk_access_settings_follow_the_macos_layout() {
+        assert!(full_disk_access_settings_url(Some(27)).ends_with("?Privacy_FilesAndFolders"));
+        assert!(full_disk_access_settings_url(Some(26)).ends_with("?Privacy_AllFiles"));
+        assert!(full_disk_access_settings_url(None).ends_with("?Privacy_AllFiles"));
     }
 
     #[test]
