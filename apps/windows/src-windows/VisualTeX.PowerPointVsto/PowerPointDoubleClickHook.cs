@@ -108,9 +108,7 @@ internal sealed class PowerPointDoubleClickHook : IDisposable
             && OfficeDocumentSurface.IsPage(
                 input.Window,
                 OfficeDocumentSurface.PowerPointPageClasses,
-                OwnerProcessId,
-                input.Pt.X,
-                input.Pt.Y);
+                OwnerProcessId);
         bool isDouble;
         if (message == WmLButtonDblClk)
         {

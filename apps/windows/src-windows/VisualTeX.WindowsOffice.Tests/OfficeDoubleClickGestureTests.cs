@@ -171,43 +171,135 @@ public sealed class OfficeDoubleClickGestureTests
 
             var owner = Process.GetCurrentProcess().Id;
             var pageClasses = new[] { "Static" };
-            var insideX = left + 60;
-            var insideY = top + 50;
 
-            Assert.True(OfficeDocumentSurface.IsPage(page, pageClasses, owner, insideX, insideY));
-            // A point outside the page's client area.
-            Assert.False(OfficeDocumentSurface.IsPage(page, pageClasses, owner, left + 5, top + 5));
+            Assert.True(OfficeDocumentSurface.IsPage(page, pageClasses, owner));
             // Dialogs, galleries and panes have other window classes.
-            Assert.False(OfficeDocumentSurface.IsPage(
-                page,
-                OfficeDocumentSurface.WordPageClasses,
-                owner,
-                insideX,
-                insideY));
-            Assert.False(OfficeDocumentSurface.IsPage(
-                page,
-                OfficeDocumentSurface.PowerPointPageClasses,
-                owner,
-                insideX,
-                insideY));
+            Assert.False(OfficeDocumentSurface.IsPage(page, OfficeDocumentSurface.WordPageClasses, owner));
+            Assert.False(OfficeDocumentSurface.IsPage(page, OfficeDocumentSurface.PowerPointPageClasses, owner));
             // Another process's window.
-            Assert.False(OfficeDocumentSurface.IsPage(page, pageClasses, owner + 1, insideX, insideY));
-            Assert.False(OfficeDocumentSurface.IsPage(IntPtr.Zero, pageClasses, owner, insideX, insideY));
+            Assert.False(OfficeDocumentSurface.IsPage(page, pageClasses, owner + 1));
+            Assert.False(OfficeDocumentSurface.IsPage(IntPtr.Zero, pageClasses, owner));
 
             // A modal dialog disables the document's frame.
             EnableWindow(frame, false);
-            Assert.False(OfficeDocumentSurface.IsPage(page, pageClasses, owner, insideX, insideY));
+            Assert.False(OfficeDocumentSurface.IsPage(page, pageClasses, owner));
             EnableWindow(frame, true);
-            Assert.True(OfficeDocumentSurface.IsPage(page, pageClasses, owner, insideX, insideY));
+            Assert.True(OfficeDocumentSurface.IsPage(page, pageClasses, owner));
 
             ShowWindow(page, SwHide);
-            Assert.False(OfficeDocumentSurface.IsPage(page, pageClasses, owner, insideX, insideY));
+            Assert.False(OfficeDocumentSurface.IsPage(page, pageClasses, owner));
         }
         finally
         {
             DestroyWindow(frame);
         }
     }
+
+    [Fact]
+    public void APressReachesThePageDirectlyOrThroughAClickThroughWindow()
+    {
+        // Real windows, far off-screen and never activated: a frame (Button)
+        // holding a page (Static), with popups (Edit) lying over it.
+        const int left = -24000;
+        const int top = -24000;
+        var frame = CreateWindowEx(WsExToolWindow | WsExNoActivate, "BUTTON", "VisualTeX press test frame",
+            WsPopup, left, top, 400, 300, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        Assert.NotEqual(IntPtr.Zero, frame);
+        var dialog = IntPtr.Zero;
+        var clickThrough = IntPtr.Zero;
+        try
+        {
+            var page = CreateWindowEx(0, "STATIC", string.Empty, WsChild | WsVisible,
+                50, 40, 200, 100, frame, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            Assert.NotEqual(IntPtr.Zero, page);
+            ShowWindow(frame, SwShowNoActivate);
+            dialog = CreateWindowEx(WsExToolWindow | WsExNoActivate, "EDIT", "dialog",
+                WsPopup, left, top, 400, 300, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            clickThrough = CreateWindowEx(
+                WsExToolWindow | WsExNoActivate | WsExLayered | WsExTransparent, "EDIT", "overlay",
+                WsPopup, left, top, 400, 300, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            Assert.NotEqual(IntPtr.Zero, dialog);
+            Assert.NotEqual(IntPtr.Zero, clickThrough);
+
+            var owner = Process.GetCurrentProcess().Id;
+            var pageClasses = new[] { "Static" };
+            const int onPageX = left + 60;
+            const int onPageY = top + 50;
+            const int offPageX = left + 5;
+            const int offPageY = top + 5;
+
+            var direct = OfficeDocumentSurface.ResolvePress(page, pageClasses, owner, onPageX, onPageY);
+            Assert.True(direct.OnPage, direct.Detail);
+            Assert.Equal(page, direct.Page);
+
+            // A dialog over the page takes the press itself.
+            Raise(dialog);
+            var onDialog = OfficeDocumentSurface.ResolvePress(dialog, pageClasses, owner, onPageX, onPageY);
+            Assert.False(onDialog.OnPage);
+            Assert.Contains("class=Edit", onDialog.Detail);
+            ShowWindow(dialog, SwHide);
+
+            // A click-through window passes the press to the page below it.
+            Raise(clickThrough);
+            var through = OfficeDocumentSurface.ResolvePress(clickThrough, pageClasses, owner, onPageX, onPageY);
+            Assert.True(through.OnPage, through.Detail);
+            Assert.Equal(page, through.Page);
+            Assert.Contains("through=Edit", through.Detail);
+            // ...and to the frame where there is no page.
+            var throughToFrame = OfficeDocumentSurface.ResolvePress(clickThrough, pageClasses, owner, offPageX, offPageY);
+            Assert.False(throughToFrame.OnPage);
+            Assert.Contains("class=Button", throughToFrame.Detail);
+            // The dialog stacked between them still takes the press.
+            Raise(dialog);
+            Raise(clickThrough);
+            Assert.False(OfficeDocumentSurface.ResolvePress(clickThrough, pageClasses, owner, onPageX, onPageY).OnPage);
+            ShowWindow(dialog, SwHide);
+
+            // Another program's window takes the press itself.
+            var foreign = OfficeDocumentSurface.ResolvePress(page, pageClasses, owner + 1, onPageX, onPageY);
+            Assert.False(foreign.OnPage);
+            Assert.Contains("other-process", foreign.Detail);
+            Assert.False(OfficeDocumentSurface.ResolvePress(IntPtr.Zero, pageClasses, owner, onPageX, onPageY).OnPage);
+
+            // A modal dialog disables the frame.
+            EnableWindow(frame, false);
+            var disabled = OfficeDocumentSurface.ResolvePress(page, pageClasses, owner, onPageX, onPageY);
+            Assert.False(disabled.OnPage);
+            Assert.Contains("page-unavailable", disabled.Detail);
+            EnableWindow(frame, true);
+        }
+        finally
+        {
+            if (clickThrough != IntPtr.Zero) DestroyWindow(clickThrough);
+            if (dialog != IntPtr.Zero) DestroyWindow(dialog);
+            DestroyWindow(frame);
+        }
+    }
+
+    [Fact]
+    public void TheHookThreadUsesPhysicalCoordinates()
+    {
+        var aware = false;
+        var thread = new Thread(() => aware = OfficeDocumentSurface.UsePhysicalCoordinatesOnThisThread());
+        thread.Start();
+        thread.Join();
+        Assert.True(aware);
+    }
+
+    private static void Raise(IntPtr window)
+    {
+        ShowWindow(window, SwShowNoActivate);
+        SetWindowPos(window, IntPtr.Zero, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+    }
+
+    private const uint WsExLayered = 0x00080000;
+    private const uint WsExTransparent = 0x00000020;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoActivate = 0x0010;
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
 
     private const uint WsPopup = 0x80000000;
     private const uint WsChild = 0x40000000;

@@ -186,6 +186,15 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AllowSetForegroundWindow(int processId);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PhysicalPoint { public int X; public int Y; }
+
+    // Physical coordinates, like the low-level mouse hook and Window.GetPoint,
+    // whatever DPI awareness Office gives the add-in's thread.
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetPhysicalCursorPos(out PhysicalPoint point);
+
     static ThisAddIn() => VstoDependencyResolver.Install();
 
     private static void GrantVisualTeXForegroundActivation()
@@ -2197,25 +2206,43 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                     $"window-before-double-click-mathtype-visualtex started={started} hookPresent={_doubleClickHook is not null}");
                 return;
             }
-            var selected = _formulaService?.ReadSelection(selection);
-            if (selected?.Metadata is null || string.IsNullOrWhiteSpace(selected.FormulaId))
-                return;
-
-            var shouldOpenVisualTeX = WordDoubleClickRouting.ShouldOpenVisualTeX(selected);
+            // The hook records the point of every double-click it pairs. When it
+            // recorded none, it judged a press to be off the page; Word raising
+            // this event proves both presses reached the document, so the
+            // pointer position Word is handling now stands in for it.
             var hasMousePoint = TryGetRecentMouseDoubleClickPoint(
                 out var screenX,
                 out var screenY);
-            var pointHitsFormula = !hasMousePoint
-                ? _doubleClickHook is null
-                : _formulaService?.IsFormulaAtScreenPoint(
-                    selected,
-                    screenX,
-                    screenY) == true;
+            var hookMissed = !hasMousePoint && _doubleClickHook is not null;
+            var hasCursorPoint = GetPhysicalCursorPos(out var cursor);
+            var selected = _formulaService?.ReadSelection(selection);
+            if (selected?.Metadata is null || string.IsNullOrWhiteSpace(selected.FormulaId))
+            {
+                if (hookMissed && hasCursorPoint)
+                {
+                    // A native OMML equation is found from the point once Word
+                    // has handled the double-click, as the hook callback does.
+                    WordDoubleClickHook.TraceMessage(
+                        $"window-before-double-click-hook-missed x={cursor.X} y={cursor.Y}");
+                    QueueCoordinateDoubleClick(cursor.X, cursor.Y);
+                }
+                return;
+            }
+
+            var shouldOpenVisualTeX = WordDoubleClickRouting.ShouldOpenVisualTeX(selected);
+            // A remembered hook point can belong to an earlier gesture; then the
+            // current pointer position decides.
+            var pointHitsFormula = _doubleClickHook is null
+                || hasMousePoint
+                    && _formulaService?.IsFormulaAtScreenPoint(selected, screenX, screenY) == true
+                || hasCursorPoint
+                    && _formulaService?.IsFormulaAtScreenPoint(selected, cursor.X, cursor.Y) == true;
             WordDoubleClickHook.TraceMessage(
                 $"window-before-double-click formulaId={selected.FormulaId} "
                 + $"objectMode={selected.ObjectMode ?? "<null>"} "
                 + $"shouldOpenVisualTeX={shouldOpenVisualTeX} "
-                + $"hasMousePoint={hasMousePoint} pointHitsFormula={pointHitsFormula}");
+                + $"hasMousePoint={hasMousePoint} hookMissed={hookMissed} "
+                + $"pointHitsFormula={pointHitsFormula}");
             if (!shouldOpenVisualTeX || !pointHitsFormula) return;
 
             cancel = true;
@@ -2381,6 +2408,17 @@ public sealed partial class ThisAddIn : IDTExtensibility2, Office.IRibbonExtensi
                 SetStatus($"VisualTeX Word 双击检测失败：{error.Message}");
                 return false;
             }
+        });
+    }
+
+    // Same delay as the hook callback for OMML: let Word finish the double-click
+    // before the equation is looked up from the point.
+    private void QueueCoordinateDoubleClick(int screenX, int screenY)
+    {
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            Thread.Sleep(90);
+            OnNativeWordDoubleClick(false, screenX, screenY);
         });
     }
 

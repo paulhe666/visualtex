@@ -53,6 +53,13 @@ internal sealed class WordDoubleClickHook : IDisposable
     private IntPtr _hook;
     private uint _threadId;
     private int _ownerProcessId = Process.GetCurrentProcess().Id;
+    private bool _classifyPresses = true;
+    // Acceptance only: judge every press off the page, so that Word's own
+    // WindowBeforeDoubleClick is the only route that can open a formula.
+    private readonly bool _testRejectPresses = string.Equals(
+        Environment.GetEnvironmentVariable("VISUALTEX_WORD_HOOK_TEST_REJECT_PRESSES"),
+        "1",
+        StringComparison.Ordinal);
 
     public WordDoubleClickHook(
         Func<int, int, NativeOleDecision> shouldHandle,
@@ -86,7 +93,7 @@ internal sealed class WordDoubleClickHook : IDisposable
             throw new Win32Exception(
                 Marshal.GetLastWin32Error(),
                 "Word double-click hook could not be installed.");
-        TraceMessage($"hook-started handle=0x{_hook.ToInt64():X}");
+        TraceMessage($"hook-started handle=0x{_hook.ToInt64():X} classifyPresses={_classifyPresses} testRejectPresses={_testRejectPresses}");
     }
 
     internal static void TraceMessage(string message)
@@ -108,7 +115,7 @@ internal sealed class WordDoubleClickHook : IDisposable
     private void Run()
     {
         _threadId = GetCurrentThreadId();
-        OfficeDocumentSurface.UsePhysicalCoordinatesOnThisThread();
+        _classifyPresses = OfficeDocumentSurface.UsePhysicalCoordinatesOnThisThread();
         _hookCallback = HookCallback;
         _hook = SetWindowsHookEx(WhMouseLl, _hookCallback, IntPtr.Zero, 0);
         _ready.Set();
@@ -133,22 +140,26 @@ internal sealed class WordDoubleClickHook : IDisposable
         var wordForeground = IsWordForeground();
         // Word's own dialogs, galleries, menus and task panes belong to the same
         // process and may lie over a formula. Only presses that reach the page
-        // window itself can form a formula double-click.
-        var target = wordForeground
-            ? OfficeDocumentSurface.WindowAt(input.Pt.X, input.Pt.Y)
-            : IntPtr.Zero;
-        var onPage = wordForeground && OfficeDocumentSurface.IsPage(
-            target,
-            OfficeDocumentSurface.WordPageClasses,
-            Volatile.Read(ref _ownerProcessId),
-            input.Pt.X,
-            input.Pt.Y);
+        // window itself can form a formula double-click. Should this judgement
+        // ever be wrong, WindowBeforeDoubleClick still opens the formula.
+        var press = !wordForeground
+            ? OfficePagePress.Off("word-not-foreground")
+            : _testRejectPresses
+                ? OfficePagePress.Off("rejected-by-test")
+            : !_classifyPresses
+                ? OfficePagePress.Unclassified
+                : OfficeDocumentSurface.ResolvePress(
+                    OfficeDocumentSurface.WindowAt(input.Pt.X, input.Pt.Y),
+                    OfficeDocumentSurface.WordPageClasses,
+                    Volatile.Read(ref _ownerProcessId),
+                    input.Pt.X,
+                    input.Pt.Y);
         TraceMessage(
             $"left-down x={input.Pt.X} y={input.Pt.Y} wordForeground={wordForeground} "
-            + $"onPage={onPage} target=0x{target.ToInt64():X}");
+            + $"onPage={press.OnPage} page=0x{press.Page.ToInt64():X} {press.Detail}");
         var paired = _pairing.Register(
-            target,
-            onPage,
+            press.Page,
+            press.OnPage,
             input.Pt.X,
             input.Pt.Y,
             OfficeDoubleClickPairing.NowMilliseconds(),

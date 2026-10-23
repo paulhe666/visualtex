@@ -396,6 +396,8 @@ internal static partial class Program
         if (string.Equals(mode, "word-owned-six-way-performance", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, "word-owned-ribbon-scope", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, "word-owned-double-click-overlay", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-double-click-inline", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "word-owned-double-click-backup", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, "word-owned-installed-outgoing", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, "word-owned-progress-focus", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, "word-owned-mathtype-outgoing", StringComparison.OrdinalIgnoreCase)
@@ -467,6 +469,15 @@ internal static partial class Program
                 if (string.Equals(mode, "word-owned-double-click-overlay", StringComparison.OrdinalIgnoreCase))
                 {
                     RunWordOwnedDoubleClickOverlayAcceptance(client, artifactRoot);
+                    return 0;
+                }
+                if (string.Equals(mode, "word-owned-double-click-inline", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(mode, "word-owned-double-click-backup", StringComparison.OrdinalIgnoreCase))
+                {
+                    RunWordOwnedInlineDoubleClickAcceptance(
+                        client,
+                        artifactRoot,
+                        hookRejectsEveryPress: mode.EndsWith("-backup", StringComparison.OrdinalIgnoreCase));
                     return 0;
                 }
                 if (string.Equals(mode, "word-owned-feedback", StringComparison.OrdinalIgnoreCase))

@@ -138,6 +138,197 @@ internal static partial class Program
         Console.WriteLine("PASS Word double-click overlay acceptance");
     }
 
+    // Reported: an inline formula with body text before it on its line did not
+    // open on double-click, while one at the start of its line did. Real mouse
+    // input in an owned, visible Word, for an inline OMML and an inline VisualTeX
+    // OLE formula, each after body text, with the caret elsewhere beforehand:
+    //   page   - a double-click on the formula opens VisualTeX;
+    //   prose  - a double-click on the word just before it opens nothing;
+    //   dialog - a double-click on the Paragraph dialog over it opens nothing.
+    // hookRejectsEveryPress makes the mouse hook judge every press off the page,
+    // which leaves Word's own WindowBeforeDoubleClick as the only route.
+    private static void RunWordOwnedInlineDoubleClickAcceptance(
+        VisualTeXSessionClient client,
+        string root,
+        bool hookRejectsEveryPress)
+    {
+        var label = hookRejectsEveryPress ? "backup" : "inline";
+        var tracePath = Path.Combine(root, $"double-click-{label}-trace.log");
+        Environment.SetEnvironmentVariable("VISUALTEX_PERF_VISIBLE", "1");
+        Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TRACE_PATH", tracePath);
+        Environment.SetEnvironmentVariable(
+            "VISUALTEX_WORD_HOOK_TEST_REJECT_PRESSES",
+            hookRejectsEveryPress ? "1" : null);
+        var consoleWindow = GetConsoleWindow();
+        if (consoleWindow != IntPtr.Zero) ShowWindow(consoleWindow, 0);
+        var results = new List<object>();
+        var failures = new List<string>();
+        try
+        {
+            using var host = new WordPerformanceHost(null);
+            var application = host.Application;
+            var document = host.Document;
+            application.WindowState = Word.WdWindowState.wdWindowStateMaximize;
+            document.Content.Text = "Inline double-click\rBody text before $\\frac{a+b}{c}$ and after.\r";
+            host.AddIn.OnRedrawDocumentToOle(new object());
+            WaitForAddInIdleFast(host.AddIn, TimeSpan.FromMinutes(3));
+            document.Content.InsertAfter("More body text before $m+n=k$ and after.\r");
+            host.AddIn.OnRedrawDocumentToOmml(new object());
+            WaitForAddInIdleFast(host.AddIn, TimeSpan.FromMinutes(3));
+            AssertEqual(1, document.InlineShapes.Count, "VisualTeX OLE seed count");
+            AssertEqual(1, document.OMaths.Count, "OMML seed count");
+
+            var window = application.ActiveWindow;
+            var frame = new IntPtr(window.Hwnd);
+            GetWindowThreadProcessId(frame, out var wordProcessId);
+            const uint noMoveNoSizeShow = 0x0001 | 0x0002 | 0x0040;
+            SetWindowPos(frame, new IntPtr(-1), 0, 0, 0, 0, noMoveNoSizeShow);
+            SetForegroundWindow(frame);
+            if (GetWindowRect(frame, out var frameRect))
+            {
+                ClickAt(frameRect.Left + Math.Max(40, (frameRect.Right - frameRect.Left) / 2), frameRect.Top + 18);
+                Thread.Sleep(700);
+            }
+
+            var cases = new (string Name, Func<Word.Range> Range, string Mode)[]
+            {
+                ("omml", () => document.OMaths[1].Range, FormulaOleContract.WordOmmlMode),
+                ("ole", () => document.InlineShapes[1].Range, FormulaOleContract.NativeOleMode),
+            };
+            foreach (var (name, rangeOf, mode) in cases)
+            {
+                var range = rangeOf();
+                var word = document.Range(range.Start - 7, range.Start - 1);
+                try
+                {
+                    AssertEqual("before", word.Text, $"{name}: body text before the formula");
+                    window.GetPoint(out _, out var formulaTop, out _, out var formulaHeight, range);
+                    window.GetPoint(out _, out var wordTop, out _, out var wordHeight, word);
+                    AssertTrue(
+                        wordTop < formulaTop + formulaHeight && wordTop + wordHeight > formulaTop,
+                        $"{name}: the formula is not on the same line as the body text before it.");
+
+                    var (x, y) = LocateWithCaretElsewhere(document, window, range);
+                    Console.WriteLine($"[INLINE-{label}] {name}: formula center {x},{y}");
+                    var before = SnapshotSessionIds();
+                    DoubleClickAt(x, y);
+                    var pageSession = TryWaitForNewSession(before, TimeSpan.FromSeconds(20));
+                    string? pageMode = null;
+                    if (pageSession is null)
+                    {
+                        failures.Add($"{name}: a double-click on the inline formula did not open VisualTeX.");
+                    }
+                    else
+                    {
+                        var ready = WaitForUnchangedEditorReady(client, pageSession, TimeSpan.FromSeconds(20));
+                        pageMode = ready.ObjectMode;
+                        if (!string.Equals(ready.ObjectMode, mode, StringComparison.Ordinal))
+                            failures.Add($"{name}: the formula double-click opened {ready.ObjectMode}, expected {mode}.");
+                        CancelSession(client, host.AddIn, pageSession);
+                    }
+
+                    var (wordX, wordY) = LocateWithCaretElsewhere(document, window, word);
+                    var proseBefore = SnapshotSessionIds();
+                    DoubleClickAt(wordX, wordY);
+                    var proseSession = TakeNewSession(client, host.AddIn, proseBefore);
+                    if (proseSession is not null)
+                        failures.Add($"{name}: a double-click on the word before the formula opened VisualTeX ({proseSession}).");
+
+                    (x, y) = LocateWithCaretElsewhere(document, window, range);
+                    var dialogOutcome = DoubleClickThroughParagraphDialog(
+                        application, wordProcessId, x, y, OverlayNative.HtCaption);
+                    var dialogSession = TakeNewSession(client, host.AddIn, dialogOutcome.SessionsBefore);
+                    if (dialogSession is not null)
+                        failures.Add($"{name}: a double-click on the Paragraph dialog over the formula opened VisualTeX ({dialogSession}).");
+                    if (!dialogOutcome.Covered)
+                        failures.Add($"{name}: the Paragraph dialog could not be placed over the formula ({dialogOutcome.Note}).");
+
+                    results.Add(new
+                    {
+                        formula = name,
+                        pageDoubleClickOpened = pageSession is not null,
+                        pageMode,
+                        proseDoubleClickOpened = proseSession is not null,
+                        dialogCovered = dialogOutcome.Covered,
+                        dialogDoubleClickOpened = dialogSession is not null,
+                    });
+                    Console.WriteLine(
+                        $"[INLINE-{label}] {name}: page={(pageSession is null ? "NO EDITOR" : "editor")} "
+                        + $"prose={(proseSession is null ? "no editor" : "EDITOR")} "
+                        + $"dialog={(dialogSession is null ? "no editor" : "EDITOR")}");
+                }
+                finally
+                {
+                    Release(word);
+                    Release(range);
+                }
+            }
+            Release(window);
+        }
+        finally
+        {
+            if (consoleWindow != IntPtr.Zero) ShowWindow(consoleWindow, 5);
+            Environment.SetEnvironmentVariable("VISUALTEX_WORD_HOOK_TEST_REJECT_PRESSES", null);
+        }
+
+        // Which route opened the formulas, from the hook trace.
+        var trace = File.Exists(tracePath) ? ReadSharedText(tracePath) : string.Empty;
+        var hookPaired = trace.Contains("double-click nativeOleTarget=");
+        var backupUsed = trace.Contains("hookMissed=True")
+            || trace.Contains("window-before-double-click-hook-missed");
+        if (hookRejectsEveryPress)
+        {
+            if (!trace.Contains("rejected-by-test"))
+                failures.Add("The hook trace shows no press rejected by the test switch.");
+            if (hookPaired)
+                failures.Add("The hook paired a double-click although it was told to reject every press.");
+            if (!backupUsed)
+                failures.Add("The hook trace shows no double-click handled by WindowBeforeDoubleClick.");
+        }
+        else if (!hookPaired)
+        {
+            failures.Add("The hook never paired a double-click on the inline formulas.");
+        }
+        File.WriteAllText(
+            Path.Combine(root, $"double-click-{label}-result.json"),
+            JsonSerializer.Serialize(
+                new
+                {
+                    status = failures.Count == 0 ? "Passed" : "Failed",
+                    hookRejectsEveryPress,
+                    hookPaired,
+                    backupUsed,
+                    failures,
+                    results,
+                },
+                new JsonSerializerOptions { WriteIndented = true }));
+        if (failures.Count > 0)
+            throw new InvalidOperationException(string.Join(Environment.NewLine, failures));
+        Console.WriteLine($"PASS Word inline double-click acceptance ({label})");
+    }
+
+    // The caret is put at the start of the document first, so the first press of
+    // the double-click is what lands on the target, as for a user.
+    private static (int X, int Y) LocateWithCaretElsewhere(Word.Document document, Word.Window window, Word.Range target)
+    {
+        var start = document.Range(0, 0);
+        try { start.Select(); }
+        finally { Release(start); }
+        WinForms.Application.DoEvents();
+        Thread.Sleep(250);
+        window.GetPoint(out var left, out var top, out var width, out var height, target);
+        AssertTrue(width > 0 && height > 0, "Word returned no screen rectangle for the target.");
+        Thread.Sleep(Math.Max(600, (int)OverlayNative.GetDoubleClickTime() + 100));
+        return (left + width / 2, top + height / 2);
+    }
+
+    private static string ReadSharedText(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
     private sealed class OverlayOutcome
     {
         internal HashSet<string> SessionsBefore { get; set; } = new(StringComparer.OrdinalIgnoreCase);
