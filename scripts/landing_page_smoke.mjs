@@ -31,7 +31,7 @@ const checks = [
   [entry.includes("<LandingPage />"), "The landing page is not rendered at the root route"],
   [entry.includes("applyLandingDocumentMeta(detectLandingLang())"), "Landing document metadata is not language-aware"],
   [page.includes('href="/editor"'), "The web editor call-to-action is missing"],
-  [version === "1.2.8", "The current desktop version is not configured"],
+  [version === "1.2.9", "The current desktop version is not configured"],
   [page.includes("_aarch64.dmg") && page.includes("_x64-setup.exe"), "A full desktop installer is missing"],
   [page.includes("_aarch64-no-ocr.dmg") && page.includes("_x64-no-ocr-setup.exe") && page.includes("href={download.secondaryHref}"), "A lightweight installer is missing"],
   [page.includes("https://download.visualtex.pauljianliao.com/visualtex-downloads/releases/v${VERSION}"), "The R2 download base is not configured"],
