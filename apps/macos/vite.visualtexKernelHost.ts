@@ -105,7 +105,7 @@ function completionCatalog() {
 /** The host module's source. */
 export function kernelHostModuleSource(): string {
   return [
-    `export { VISUALTEX_SYMBOL_SEQUENCES, applyInputJudgment } from ${JSON.stringify(inputJudgmentModule)};`,
+    `export { VISUALTEX_SYMBOL_SEQUENCES, applyInputJudgment, escapeWordAtEnd } from ${JSON.stringify(inputJudgmentModule)};`,
     // the parser's default macros start with these (a later built-in of the same name wins, as before)
     `export const visualTexDefaultMacros = {\n${defaultMacros()}\n};`,
     `export const visualTexCompletionCatalogData = ${completionCatalog()};`,

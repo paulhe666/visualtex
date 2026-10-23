@@ -57,6 +57,8 @@ import {
 import { formatLatexSourceForEditor } from "../source-editor/latexSourceEditorSupport";
 import { useFormulaHotkeyStore } from "../stores/formulaHotkeyStore";
 import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import { useConfirmEscapeKeyStore } from "../stores/confirmEscapeKeyStore";
+import { confirmEscapeKernelKey } from "../shortcuts/confirmEscapeKey";
 import {
   formatFormulaHotkeyChord,
   matchFormulaHotkey,
@@ -904,16 +906,22 @@ function installVisualTexStructuralPlaceholderStyle(field: MathfieldElement) {
   }
 }
 
-// The kernel's input judgment (part-021) reads the editor's two switches.
+// The kernel's input judgment (part-021) reads the editor's two switches and
+// the key that confirms a quick escape.
 function applyInputJudgmentSettings(
   field: MathfieldElement,
   behavior: InputBehaviorSettings,
 ) {
   (field as unknown as {
-    visualTexJudgmentSettings?: { upright: boolean; escapes: boolean };
+    visualTexJudgmentSettings?: {
+      upright: boolean;
+      escapes: boolean;
+      escapeKey: ReturnType<typeof confirmEscapeKernelKey>;
+    };
   }).visualTexJudgmentSettings = {
     upright: behavior.autoUprightTypography,
     escapes: behavior.autoEscapeShortcuts,
+    escapeKey: confirmEscapeKernelKey(useConfirmEscapeKeyStore.getState().chord),
   };
 }
 
@@ -1898,6 +1906,7 @@ function FormulaField(props: FormulaFieldProps) {
     if (fieldRef.current) fieldRef.current.readOnly = props.readOnly;
   }, [props.readOnly]);
 
+  const confirmEscapeChord = useConfirmEscapeKeyStore((state) => state.chord);
   useEffect(() => {
     const field = fieldRef.current;
     const defaults = defaultInlineShortcutsRef.current;
@@ -1910,6 +1919,7 @@ function FormulaField(props: FormulaFieldProps) {
   }, [
     props.inputBehavior.autoEscapeShortcuts,
     props.inputBehavior.autoUprightTypography,
+    confirmEscapeChord,
   ]);
 
   useEffect(() => {

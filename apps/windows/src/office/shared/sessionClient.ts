@@ -72,6 +72,8 @@ export interface OfficePreferences {
   editorPreferences?: {
     settings?: Partial<FormulaDocument["settings"]>;
     customTheme?: CustomThemeState;
+    /** the main app's confirm-escape key (a chord, or null: off); normalized when read */
+    confirmEscapeKey?: unknown;
   };
 }
 

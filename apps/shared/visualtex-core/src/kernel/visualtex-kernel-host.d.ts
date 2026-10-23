@@ -25,4 +25,5 @@ declare module 'virtual:visualtex-kernel-host' {
   export const visualTexNativePreviewsData: Record<string, string>;
   export const VISUALTEX_SYMBOL_SEQUENCES: Record<string, any>;
   export function applyInputJudgment(before: string, judgment: any): any;
+  export function escapeWordAtEnd(letters: string, afterNumber?: boolean): { length: number; latex: string } | null;
 }

@@ -158,6 +158,16 @@ export class _Mathfield implements Mathfield, KeyboardDelegateInterface {
 
   /** VisualTeX: the last input judgment, undone by an immediate Backspace */
   visualTexLastJudgment?: { after: string; revert: string; position: number };
+  // The last quick escape (confirm-escape key), for the Backspace that
+  // restores its letters: the state right after it and the replaced range.
+  visualTexLastEscape?: {
+    value: string;
+    position: number;
+    anchor: number;
+    from: number;
+    length: number;
+    typed: string;
+  };
   /** VisualTeX: scripts that already auto-exited once (`branch:id`) */
   visualTexConsumedScriptAutoExitKeys?: Set<string>;
 

@@ -9,6 +9,8 @@ import {
   joinFormulaLines,
   useEditorStore,
 } from "../../stores/editorStore";
+import { useConfirmEscapeKeyStore } from "../../stores/confirmEscapeKeyStore";
+import { CONFIRM_ESCAPE_KEY_STORAGE_KEY } from "../../shortcuts/confirmEscapeKey";
 import {
   copyFormulaLinesUniversal,
   isLatexCodeFormat,
@@ -548,13 +550,20 @@ export function OfficeDialogApp() {
       const editor = useEditorStore.getState();
       if (JSON.stringify(spacing) !== JSON.stringify(editor.formulaSpacing)) editor.setFormulaSpacing(spacing);
     };
+    // the key the main app confirms quick escapes with (Settings > Keyboard shortcuts)
+    const syncEscapeKey = () => void useConfirmEscapeKeyStore.persist.rehydrate();
     const handleStorage = (event: StorageEvent) => {
       if (event.key === EDITOR_PERSISTENCE_STORAGE_KEY) sync(event.newValue);
-      else if (event.key === null || event.key === "visualtex.formula-spacing") syncSpacing();
+      else if (event.key === CONFIRM_ESCAPE_KEY_STORAGE_KEY) syncEscapeKey();
+      else if (event.key === null || event.key === "visualtex.formula-spacing") {
+        syncSpacing();
+        if (event.key === null) syncEscapeKey();
+      }
     };
     const handleFocus = () => {
       sync();
       syncSpacing();
+      syncEscapeKey();
     };
     window.addEventListener("storage", handleStorage);
     window.addEventListener("focus", handleFocus);

@@ -20,6 +20,11 @@ import {
 import { captureOfficeQuickOcrScreenshot } from "../api/ocrHttpTransport";
 import { quickOcrCaptureToFile } from "../../ocr/quickOcr";
 import { installButtonShortcuts, onButtonShortcut } from "../../shortcuts/buttonShortcuts";
+import { sameConfirmEscapeChord } from "../../shortcuts/confirmEscapeKey";
+import {
+  normalizeConfirmEscapeChord,
+  useConfirmEscapeKeyStore,
+} from "../../stores/confirmEscapeKeyStore";
 import { copyFormulaDocumentPngToClipboard } from "../../export/pngClipboard";
 import { EditorWorkspace } from "../../workspace/EditorWorkspace";
 import {
@@ -276,6 +281,12 @@ function applyOfficeEditorPreferences(
   const payload = preferences.editorPreferences;
   if (!payload) return;
   if (payload.customTheme) saveCustomTheme(payload.customTheme);
+  if (payload.confirmEscapeKey !== undefined) {
+    // the key the main app confirms quick escapes with (Settings > Keyboard shortcuts)
+    const chord = normalizeConfirmEscapeChord(payload.confirmEscapeKey);
+    const escapeKey = useConfirmEscapeKeyStore.getState();
+    if (!sameConfirmEscapeChord(escapeKey.chord, chord)) escapeKey.setChord(chord);
+  }
   const settings = payload.settings;
   if (!settings) return;
 

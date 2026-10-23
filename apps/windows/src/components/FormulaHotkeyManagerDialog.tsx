@@ -5,6 +5,7 @@ import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
 import { FormulaRowHotkeyRecorderDialog } from "./FormulaRowHotkeyRecorderDialog";
 import { OfficeFormulaShortcutSettingsSection } from "./OfficeFormulaShortcutSettings";
 import { ButtonShortcutSettingsSection } from "./ButtonShortcutSettings";
+import { ConfirmEscapeKeySettingsSection } from "./ConfirmEscapeKeySettings";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyTargetKindLabel,
@@ -198,6 +199,8 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
                 })}
               </div>
             </section>
+
+            <ConfirmEscapeKeySettingsSection />
 
             <section className="shortcut-settings-group" data-editor-formula-hotkeys>
               <div className="settings-section-title">

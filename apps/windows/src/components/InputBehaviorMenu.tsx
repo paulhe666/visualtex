@@ -37,8 +37,8 @@ const AUTO_ESCAPE_OPTIONS: InputBehaviorOption[] = [
     key: "autoEscapeShortcuts",
     titleZh: "常用数学快捷转义",
     titleEn: "Common math shortcuts",
-    descriptionZh: "输入完一个词后转换：alpha→α、frac→分式、sintheta→sin θ；>=、-> 等符号组合即时转换。词中间的字母不会被转换（spin、point 保持原样）",
-    descriptionEn: "Converts a word once finished: alpha → α, frac → fraction, sintheta → sin θ; symbol sequences such as >= and -> convert as typed. Letters inside a word never convert (spin, point stay as typed)",
+    descriptionZh: "按确认转义键（默认 Space，可在快捷键设置中修改）只转换光标前的命令名：alpha→α、frac→分式，thetaalpha 只转换 alpha；紧接着按 Backspace 撤销。Tab、运算符和方向键不会转义；>=、-> 等符号组合即时转换",
+    descriptionEn: "The confirm-escape key (Space by default, changeable in the shortcut settings) converts only the name right before the caret: alpha → α, frac → fraction, and thetaalpha converts only alpha; Backspace right after undoes it. Tab, operators and arrows never escape; symbol sequences such as >= and -> convert as typed",
   },
   {
     key: "autoUprightTypography",

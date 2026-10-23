@@ -674,6 +674,30 @@ export function applyInputJudgment(
   }
 }
 
+/**
+ * The quick escape of the confirm-escape key (Space by default): the longest
+ * name the typed letters before the caret end with, and only that name
+ * (thetaalpha -> theta\alpha). A function name wins over a shorter escape it
+ * ends with (sin is not s\in): automatic upright typography sets it. deg is a
+ * degree sign only right after a number (30 deg); otherwise it is the
+ * function. Returns how many trailing letters it replaces, or null.
+ */
+export function escapeWordAtEnd(
+  letters: string,
+  afterNumber = false,
+): { length: number; latex: string } | null {
+  for (let start = 0; start < letters.length; start += 1) {
+    const word = letters.slice(start);
+    if (start === 0 && afterNumber && AFTER_NUMBER_WORDS[word]) {
+      return { length: word.length, latex: AFTER_NUMBER_WORDS[word] };
+    }
+    const escape = GREEK_WORDS[word] ?? SYMBOL_WORDS[word] ?? TEMPLATE_WORDS[word];
+    if (escape) return { length: word.length, latex: escape };
+    if (FIXED_FUNCTIONS.has(word)) return null;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Differential d (operator kind): derivative fractions, quotients and
 // integral measures. Moved from normalizeChineseLatex.ts.

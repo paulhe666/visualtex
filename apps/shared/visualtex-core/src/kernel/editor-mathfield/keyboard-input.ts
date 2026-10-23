@@ -51,6 +51,7 @@ import {
 } from '../editor-model/commands-move';
 import {
   applyInputJudgment as visualTexApplyInputJudgment,
+  escapeWordAtEnd as visualTexEscapeWordAtEnd,
   visualTexSourceWrapperKindsData,
   visualTexSourceWrapperCanonicalTargetsData,
 } from 'virtual:visualtex-kernel-host';
@@ -653,23 +654,44 @@ export function onInput(
 }
 
 // VisualTeX kernel: the input judgment. One routine and one dictionary
-// (src/editor/inputJudgment.ts) decide what a typed word turns into (quick
-// escapes: alpha -> \alpha, sintheta -> \sin\theta) and what is set upright
-// (units, function names, constants, labels, the differential d). A word is
-// judged once finished: by a key that is not a letter, a caret move, or
-// leaving the field. The host sets visualTexJudgmentSettings = { upright,
-// escapes } from the editor's two switches.
-/** The editor element: the host gives the judgment's two switches */
+// (src/editor/inputJudgment.ts) decide what is set upright (units, function
+// names, constants, labels, the differential d), automatically, once a word
+// is finished: by a key that is not a letter, a caret move, or leaving the
+// field. Quick escapes (alpha -> \alpha) happen only on the confirm-escape
+// key (Space by default) and only for the name right before the caret. The
+// host sets visualTexJudgmentSettings = { upright, escapes, escapeKey } from
+// the editor's two switches and its shortcut settings.
+/** The key that confirms a quick escape; null turns quick escapes off */
+export type VisualTexEscapeKey = {
+  code: string;
+  ctrlKey?: boolean;
+  altKey?: boolean;
+  shiftKey?: boolean;
+  metaKey?: boolean;
+} | null;
+/** The editor element: the host gives the judgment's switches */
 type VisualTexJudgingHost = HTMLElement & {
-  visualTexJudgmentSettings?: { upright?: boolean; escapes?: boolean };
+  visualTexJudgmentSettings?: { upright?: boolean; escapes?: boolean; escapeKey?: VisualTexEscapeKey };
 };
-export function visualTexJudgmentSettings(mathfield: _Mathfield): { upright: boolean; escapes: boolean } {
+const VISUALTEX_DEFAULT_ESCAPE_KEY: VisualTexEscapeKey = { code: "Space" };
+export function visualTexJudgmentSettings(mathfield: _Mathfield): {
+  upright: boolean;
+  escapes: boolean;
+  escapeKey: VisualTexEscapeKey;
+} {
   const settings = (mathfield.host as VisualTexJudgingHost | undefined)
     ?.visualTexJudgmentSettings;
   return {
     upright: (settings?.upright) !== false,
-    escapes: (settings?.escapes) !== false
+    escapes: (settings?.escapes) !== false,
+    escapeKey: settings?.escapeKey === undefined ? VISUALTEX_DEFAULT_ESCAPE_KEY : settings.escapeKey
   };
+}
+function visualTexIsEscapeKey(mathfield: _Mathfield, evt: KeyboardEvent): boolean {
+  const key = visualTexJudgmentSettings(mathfield).escapeKey;
+  return Boolean(key) && evt.code === key!.code &&
+    Boolean(evt.ctrlKey) === Boolean(key!.ctrlKey) && Boolean(evt.altKey) === Boolean(key!.altKey) &&
+    Boolean(evt.shiftKey) === Boolean(key!.shiftKey) && Boolean(evt.metaKey) === Boolean(key!.metaKey);
 }
 // A Latin letter typed in the default math style. Letters typed after the
 // first carry variant "normal", which is still the default (italic);
@@ -712,9 +734,11 @@ export function visualTexSetJudgedValue(mathfield: _Mathfield, latex: string): v
   visualTexEditingCore.restoreCaret(model, caret);
 }
 /**
- * Applies the input judgment to the whole formula. `finishing`: the word at
- * the caret is finished too. `typed: false` judges like stored LaTeX: upright
- * typography only, no quick escapes. Returns whether the formula changed.
+ * Applies the automatic input judgment (upright typography) to the whole
+ * formula. `finishing`: the word at the caret is finished too. `typed: false`
+ * judges like stored LaTeX. Quick escapes never happen here: only the
+ * confirm-escape key does them (visualTexEscapeAtCaret). Returns whether the
+ * formula changed.
  */
 export function visualTexJudgeInput(
   mathfield: _Mathfield,
@@ -726,7 +750,7 @@ export function visualTexJudgeInput(
   const typed = (options?.typed) !== false;
   const judgment = {
     upright: settings.upright,
-    escapes: typed && settings.escapes,
+    escapes: false,
     typed,
     deferLetterRuns: !(options?.finishing) && visualTexWordBeforeCaret(model) !== ""
   };
@@ -753,10 +777,81 @@ export function visualTexRevertLastJudgment(mathfield: _Mathfield): boolean {
   visualTexSetJudgedValue(mathfield, last.revert);
   return true;
 }
+// The atom is a digit, or a space right after one (30 deg).
+function visualTexFollowsNumber(atom: Atom | undefined): boolean {
+  const isDigit = (candidate: Atom | undefined) =>
+    Boolean(candidate) && candidate!.mode === "math" && /^[0-9]$/.test(candidate!.value || "");
+  if (isDigit(atom)) return true;
+  const isSpace = Boolean(atom) && (atom!.type === "space" || atom!.value === " " || atom!.command === "\\ ");
+  return isSpace && isDigit(atom!.leftSibling);
+}
+/**
+ * The confirm-escape key: the name the plain letters right before the caret
+ * end with becomes its command, and nothing else changes (thetaalpha ->
+ * theta\alpha; sin stays for automatic upright typography). Works the same
+ * in any structure: only those letter atoms are replaced. A template (frac)
+ * leaves the caret in its first slot. Returns whether it escaped something.
+ */
+export function visualTexEscapeAtCaret(mathfield: _Mathfield): boolean {
+  const model = mathfield.model;
+  if (model.mode !== "math" || !model.selectionIsCollapsed || !mathfield.isSelectionEditable) return false;
+  if (!visualTexJudgmentSettings(mathfield).escapes) return false;
+  const letters = visualTexWordBeforeCaret(model);
+  if (!letters) return false;
+  const end = model.position;
+  const beforeWord = model.at(end - letters.length);
+  const escape = visualTexEscapeWordAtEnd(letters, visualTexFollowsNumber(beforeWord));
+  if (!escape || escape.length < 1 || escape.length > letters.length) return false;
+  const from = end - escape.length;
+  const typed = letters.slice(letters.length - escape.length);
+  const lastOffsetBefore = model.lastOffset;
+  model.setSelection(from, end);
+  ModeEditor.insert(model, escape.latex, {
+    format: "latex",
+    mode: "math",
+    insertionMode: "replaceSelection",
+    selectionMode: /\\placeholder/.test(escape.latex) ? "placeholder" : "after",
+    visualTexPreserveStyle: true
+  });
+  mathfield.snapshot("insert-shortcut");
+  mathfield.visualTexLastEscape = {
+    value: model.getValue(),
+    position: model.position,
+    anchor: model.anchor,
+    from,
+    length: model.lastOffset - lastOffsetBefore + escape.length,
+    typed
+  };
+  mathfield.dirty = true;
+  mathfield.scrollIntoView();
+  return true;
+}
+// Backspace right after a quick escape restores the letters it replaced, in
+// whatever structure it happened, as long as nothing changed since.
+export function visualTexRevertLastEscape(mathfield: _Mathfield): boolean {
+  const last = mathfield.visualTexLastEscape;
+  mathfield.visualTexLastEscape = void 0;
+  const model = mathfield.model;
+  if (!last || model.getValue() !== last.value || model.position !== last.position || model.anchor !== last.anchor)
+    return false;
+  model.setSelection(last.from, last.from + last.length);
+  ModeEditor.insert(model, last.typed, {
+    format: "latex",
+    mode: "math",
+    insertionMode: "replaceSelection",
+    selectionMode: "after",
+    visualTexPreserveStyle: true
+  });
+  mathfield.snapshot("delete");
+  mathfield.dirty = true;
+  mathfield.scrollIntoView();
+  return true;
+}
 /**
  * Called for every keystroke before MathLive handles it. Returns true when
- * the keystroke was used up: the Space that finished a converted word, or
- * the Backspace that reverted a conversion.
+ * the keystroke was used up: the confirm-escape key that escaped a name, or
+ * the Backspace that reverted an escape or an upright conversion. Any other
+ * key that finishes a word runs the automatic upright typography and goes on.
  */
 export function visualTexJudgeKeystroke(
   mathfield: _Mathfield,
@@ -765,21 +860,20 @@ export function visualTexJudgeKeystroke(
 ): boolean {
   const model = mathfield.model;
   if (model.mode !== "math" || evt.isComposing) return false;
-  if (keystroke === "[Backspace]") return visualTexRevertLastJudgment(mathfield);
-  mathfield.visualTexLastJudgment = void 0;
-  if (evt.ctrlKey || evt.metaKey || evt.altKey) return false;
+  if (keystroke === "[Backspace]")
+    return visualTexRevertLastEscape(mathfield) || visualTexRevertLastJudgment(mathfield);
   const key = evt.key ?? "";
-  if (/^[A-Za-z]$/.test(key) || /^(?:Shift|Control|Alt|Meta|CapsLock|Delete|Process|Dead|Unidentified)$/.test(key))
-    return false;
+  if (/^(?:Shift|Control|Alt|Meta|CapsLock|Process|Dead|Unidentified)$/.test(key)) return false;
+  mathfield.visualTexLastJudgment = void 0;
+  mathfield.visualTexLastEscape = void 0;
+  if (visualTexIsEscapeKey(mathfield, evt) && visualTexEscapeAtCaret(mathfield)) return true;
+  if (evt.ctrlKey || evt.metaKey || evt.altKey) return false;
+  if (/^[A-Za-z]$/.test(key) || key === "Delete") return false;
   const wordBefore = visualTexWordBeforeCaret(model);
   if (!visualTexJudgeInput(mathfield, { finishing: true })) return false;
-  // The word at the caret became something else (not just upright, as a
-  // unit stays the same letters): step into a template's first slot, and
-  // the Space that finished it is not inserted.
+  // The word became a function name (sin x): the Space that finished it is
+  // not inserted. A unit keeps its letters (3 km h) and its Space.
   if (!wordBefore || visualTexLettersBeforeCaret(model).endsWith(wordBefore)) return false;
-  const left = model.at(model.position);
-  const slot = left ? visualTexEditingCore.firstEmptySlotStop(model, [left]) : void 0;
-  if (slot !== void 0) visualTexEditingCore.goToStop(model, slot);
   return keystroke === "[Space]";
 }
 

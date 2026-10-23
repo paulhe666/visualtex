@@ -15,6 +15,7 @@ import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
 import { OfficeHotkeyRecorderDialog } from "./OfficeHotkeyRecorderDialog";
 import { FormulaRowHotkeyRecorderDialog } from "./FormulaRowHotkeyRecorderDialog";
 import { ButtonShortcutSettingsSection } from "./ButtonShortcutSettings";
+import { ConfirmEscapeKeySettingsSection } from "./ConfirmEscapeKeySettings";
 import {
   formatFormulaHotkeyChord,
   formulaHotkeyTargetKindLabel,
@@ -334,6 +335,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
             {renderOfficeGroup("word", "Microsoft Word")}
             {renderOfficeGroup("powerpoint", "Microsoft PowerPoint")}
             {renderRowGroup()}
+            <ConfirmEscapeKeySettingsSection />
             <section className="formula-editor-hotkey-group">
               <header className="formula-hotkey-section-heading">
                 <Keyboard size={16} />

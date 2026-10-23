@@ -1,6 +1,7 @@
 // Real-browser regression for the input judgment (src/editor/inputJudgment.ts,
-// kernel part-021): typed words, quick escapes and upright typography decided
-// by one routine once a word is finished, and the two switches.
+// kernel part-021): quick escapes confirmed by a key (Space by default) for the
+// name right before the caret, Backspace undoing them, automatic upright
+// typography, the two switches and the confirm-escape key setting.
 //
 //   npm run build:desktop && node scripts/input_judgment_regression.mjs [--verbose]
 //
@@ -20,73 +21,75 @@ const debugPort = 24500 + offset;
 const baseUrl = `http://127.0.0.1:${previewPort}`;
 const verbose = process.argv.includes("--verbose");
 
-// Typed keys -> LaTeX after leaving the field. <Space>, <Tab>, <Backspace>
-// are keys; everything else is typed character by character.
+// Typed keys -> LaTeX after leaving the field. <Space>, <Tab>, <Backspace>,
+// <F2> are keys; everything else is typed character by character. Words
+// become symbols only with the confirm-escape key (Space by default), and
+// only the name right before the caret; upright typography is automatic.
 const BOTH_ON = [
-  // Names chained from the start of a word, plus an argument.
-  ["sintheta", String.raw`\sin\theta`],
-  ["sinx", String.raw`\sin x`],
-  ["sin2x", String.raw`\sin2x`],
-  ["cosalpha", String.raw`\cos\alpha`],
-  ["sinhx", String.raw`\sinh x`],
-  ["lnx", String.raw`\ln x`],
-  ["2pir^2", String.raw`2\pi r^2`],
-  ["alphabeta", String.raw`\alpha\beta`],
-  ["taux", String.raw`\tau x`],
-  ["sint", String.raw`\sin t`],
-  ["intx", String.raw`\int x`],
-  // A name inside other letters is never recognized.
+  // The confirm-escape key escapes the name right before the caret only.
+  ["alpha<Space>", String.raw`\alpha`],
+  ["thetaalpha<Space>", String.raw`theta\alpha`],
+  ["alphabeta<Space>", String.raw`alpha\beta`],
+  ["theta<Space>alpha<Space>", String.raw`\theta\alpha`],
+  ["sintheta<Space>", String.raw`\sin\theta`],
+  ["2pi<Space>r^2", String.raw`2\pi r^2`],
+  ["pi<Space>r", String.raw`\pi r`],
+  ["x in<Space>", String.raw`x\ \in`],
+  ["infty<Space>", String.raw`\infty`],
+  ["5 deg<Space>", String.raw`5\ \degree`],
+  ["int<Space>", String.raw`\int`],
+  ["int<Space>xdx", String.raw`\int x\mathrm{d}x`],
+  ["sum<Space>_i", String.raw`\sum_{i}`],
+  // Without the key nothing escapes; other keys never escape.
+  ["alpha", "alpha"],
+  ["alpha+", "alpha+"],
+  ["thetaalpha", "thetaalpha"],
+  ["frac<Space>alpha<Tab>b", String.raw`\frac{alpha}{b}`],
+  ["frac<Space>alpha<Space><Tab>b", String.raw`\frac{\alpha}{b}`],
   ["spin", "spin"],
   ["point", "point"],
-  ["print", "print"],
-  ["number", "number"],
-  ["meta", "meta"],
-  ["xsinx", "xsinx"],
-  ["hnu", "hnu"],
-  // Removed shortcuts (products of variables, English words).
-  ["for", "for"], ["or", "or"], ["and", "and"], ["not", "not"], ["proof", "proof"],
-  ["nn", "nn"], ["uu", "uu"], ["vv", "vv"], ["AA", "AA"], ["ch", "ch"],
-  ["ge", "ge"], ["le", "le"], ["ne", "ne"], ["pp", "pp"], ["ss", "ss"], ["dd", "dd"],
-  ["lt", "lt"], ["gt", "gt"], ["sub", "sub"], ["del", "del"], ["mean", "mean"],
-  // sup is the supremum, not a superset.
+  ["for", "for"],
+  // Function names are set upright, not escaped; a Space after one is used up.
+  ["sin<Space>x", String.raw`\sin x`],
+  ["sinx", String.raw`\sin x`],
+  ["lnx", String.raw`\ln x`],
   ["sup", String.raw`\sup`],
-  // Whole words that are names.
-  ["in", String.raw`\in`],
-  ["x in", String.raw`x\ \in`],
-  ["infty", String.raw`\infty`],
-  ["5 deg", String.raw`5\ \degree`],
-  ["ii", String.raw`\mathrm{i}`],
-  // Big operators insert bare; limits are typed with _ and ^.
-  ["int", String.raw`\int`],
-  ["sum_i", String.raw`\sum_{i}`],
-  // The differential d.
-  ["dx", String.raw`\mathrm{d}x`],
-  ["int<Space>xdx", String.raw`\int x\mathrm{d}x`],
   ["int<Space>sinxdx", String.raw`\int \sin x\mathrm{d}x`],
-  // Units and constants (the upright rule).
+  // Templates: the caret goes into the first slot.
+  ["frac<Space>a<Tab>b", String.raw`\frac{a}{b}`],
+  ["sqrt<Space>x", String.raw`\sqrt{x}`],
+  ["hat<Space>v", String.raw`\hat{v}`],
+  // Backspace right after an escape restores the typed letters, in any structure.
+  ["pi<Space><Backspace>", "pi"],
+  ["pi<Space><Backspace>+1", "pi+1"],
+  ["theta<Space>alpha<Space><Backspace>", String.raw`\theta alpha`],
+  ["frac<Space><Backspace>", "frac"],
+  ["frac<Space>alpha<Space><Backspace><Tab>b", String.raw`\frac{alpha}{b}`],
+  ["sqrt<Space>mu<Space><Backspace>", String.raw`\sqrt{mu}`],
+  ["pi<Space>+<Backspace>", String.raw`\pi`],
+  // The differential d, units and constants (the upright rule).
+  ["dx", String.raw`\mathrm{d}x`],
   ["km/h", String.raw`\mathrm{km}/\mathrm{h}`],
   ["m/s", String.raw`\mathrm{m}/\mathrm{s}`],
   ["v=72 km/h", String.raw`v=72\ \mathrm{km}/\mathrm{h}`],
+  ["3 km<Space>", String.raw`3\ \mathrm{km}\ `],
   ["F=mg", "F=mg"],
   ["l=lg", "l=lg"],
   ["lg(x)", String.raw`\lg\left(x\right)`],
   ["q=e^2", "q=e^2"],
+  ["ii", String.raw`\mathrm{i}`],
   // Physics products stay italic.
   ["mgh", "mgh"], ["nRT", "nRT"], ["pV", "pV"], ["kT", "kT"], ["hc", "hc"],
   // Symbol sequences convert as typed.
   ["x>=y", String.raw`x\ge y`],
   ["a->b", String.raw`a\to b`],
-  // Space finishes a converted word and is used up; a unit keeps it.
-  ["pi<Space>r", String.raw`\pi r`],
-  ["sin<Space>x", String.raw`\sin x`],
-  ["3 km<Space>", String.raw`3\ \mathrm{km}\ `],
-  // Templates: the caret goes into the first slot.
-  ["frac<Space>a<Tab>b", String.raw`\frac{a}{b}`],
-  ["sqrt<Space>x", String.raw`\sqrt{x}`],
-  ["hat<Space>v", String.raw`\hat{v}`],
-  // Backspace right after a conversion restores the typed word, for good.
-  ["pi<Space><Backspace>", String.raw`\mathit{pi}`],
-  ["pi<Space><Backspace>+1", String.raw`\mathit{pi}+1`],
+];
+
+// Subscripts kept open: the escape and its undo inside a subscript.
+const SUBSCRIPTS = [
+  ["x_alpha<Space>", String.raw`x_{\alpha}`],
+  ["x_alpha<Space><Backspace>", String.raw`x_{alpha}`],
+  ["x_thetaalpha<Space>", String.raw`x_{theta\alpha}`],
 ];
 
 const UPRIGHT_OFF = [
@@ -94,12 +97,14 @@ const UPRIGHT_OFF = [
   ["km/h+", "km/h+"],
   ["int<Space>xdx", String.raw`\int xdx`],
   ["dx", "dx"],
-  ["pi+", String.raw`\pi+`],
+  ["pi<Space>+", String.raw`\pi+`],
+  ["pi+", "pi+"],
   ["x>=y", String.raw`x\ge y`],
 ];
 
 const ESCAPES_OFF = [
   ["pi+", "pi+"],
+  ["pi<Space>+", String.raw`pi\ +`],
   ["x>=y", "x>=y"],
   ["sinx+", String.raw`\sin x+`],
   ["km/h+", String.raw`\mathrm{km}/\mathrm{h}+`],
@@ -110,13 +115,28 @@ const BOTH_OFF = [
   ["sinx+pi+km/h+dx", "sinx+pi+km/h+dx"],
 ];
 
+// The confirm-escape key changed to F2: Space is a plain key again.
+const F2_KEY = [
+  ["alpha<F2>", String.raw`\alpha`],
+  ["alpha<Space>x", String.raw`alpha\ x`],
+  ["thetaalpha<F2>", String.raw`theta\alpha`],
+  ["pi<F2><Backspace>", "pi"],
+];
+
+// The confirm-escape key turned off.
+const KEY_OFF = [
+  ["alpha<Space>", String.raw`alpha\ `],
+  ["x>=y", String.raw`x\ge y`],
+];
+
 const PRINTABLE = {
   "^": ["^", "Digit6", 54, 8], "_": ["_", "Minus", 189, 8], "(": ["(", "Digit9", 57, 8],
   ")": [")", "Digit0", 48, 8], "+": ["+", "Equal", 187, 8], " ": [" ", "Space", 32, 0],
   "/": ["/", "Slash", 191, 0], "=": ["=", "Equal", 187, 0], ">": [">", "Period", 190, 8],
   "-": ["-", "Minus", 189, 0],
 };
-const NAMED = { Tab: 9, Backspace: 8 };
+const SPACE_CHORD = { code: "Space", key: " ", ctrlKey: false, altKey: false, shiftKey: false, metaKey: false };
+const NAMED = { Tab: 9, Backspace: 8, F2: 113 };
 
 class CdpClient {
   constructor(url) {
@@ -213,7 +233,7 @@ try {
   };
   const FIELD = `document.querySelector("math-field.visual-mathfield")`;
 
-  const load = async (behavior) => {
+  const load = async (behavior, escapeChord) => {
     await client.send("Page.navigate", { url: baseUrl });
     for (let i = 0; i < 100; i++) {
       try {
@@ -230,6 +250,7 @@ try {
       persisted.state = { ...(persisted.state || {}), lines: [{ id, latex: "" }], activeLineId: id, sourceOpen: false,
         inputBehavior: { ...((persisted.state || {}).inputBehavior || {}), ...${JSON.stringify(behavior)} } };
       localStorage.setItem("visualtex-editor", JSON.stringify(persisted));
+      localStorage.setItem("visualtex-confirm-escape-key", JSON.stringify({ state: { chord: ${JSON.stringify(escapeChord === undefined ? SPACE_CHORD : escapeChord)} }, version: 1 }));
     })()`);
     await client.send("Page.reload", { ignoreCache: true });
     for (let i = 0; i < 300; i++) {
@@ -251,8 +272,8 @@ try {
       f.focus(); f.shadowRoot?.querySelector('[part="keyboard-sink"]')?.focus({ preventScroll: true });
       return true; })()`);
     await sleep(120);
-    for (const part of keys.split(/(<[A-Za-z]+>)/).filter(Boolean)) {
-      const named = /^<([A-Za-z]+)>$/.exec(part);
+    for (const part of keys.split(/(<[A-Za-z0-9]+>)/).filter(Boolean)) {
+      const named = /^<([A-Za-z0-9]+)>$/.exec(part);
       if (named) {
         await press(named[1] === "Space" ? " " : named[1]);
         await sleep(120);
@@ -266,13 +287,17 @@ try {
     return evaluate(`${FIELD}.value`);
   };
 
-  for (const [label, behavior, cases] of [
-    ["both on", { autoUprightTypography: true, autoEscapeShortcuts: true }, BOTH_ON],
+  const ON = { autoUprightTypography: true, autoEscapeShortcuts: true };
+  for (const [label, behavior, cases, escapeChord] of [
+    ["both on", ON, BOTH_ON],
+    ["subscripts kept open", { ...ON, autoExitSubscript: false }, SUBSCRIPTS],
     ["upright off", { autoUprightTypography: false, autoEscapeShortcuts: true }, UPRIGHT_OFF],
     ["quick escapes off", { autoUprightTypography: true, autoEscapeShortcuts: false }, ESCAPES_OFF],
     ["both off", { autoUprightTypography: false, autoEscapeShortcuts: false }, BOTH_OFF],
+    ["confirm-escape key F2", ON, F2_KEY, { ...SPACE_CHORD, code: "F2", key: "F2" }],
+    ["confirm-escape key off", ON, KEY_OFF, null],
   ]) {
-    await load(behavior);
+    await load(behavior, escapeChord);
     console.log(`--- ${label}`);
     for (const [keys, expected] of cases) {
       total += 1;

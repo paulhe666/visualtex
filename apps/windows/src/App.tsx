@@ -50,6 +50,7 @@ import {
   joinFormulaLines,
   useEditorStore,
 } from "./stores/editorStore";
+import { useConfirmEscapeKeyStore } from "./stores/confirmEscapeKeyStore";
 import {
   historyManager,
   useHistorySnapshot,
@@ -405,17 +406,21 @@ function App() {
           preferences: {
             settings,
             customTheme: readCustomTheme(),
+            // the Office editor confirms quick escapes with the same key
+            confirmEscapeKey: useConfirmEscapeKeyStore.getState().chord,
           },
         }).catch(() => undefined);
       }, 24);
     };
     publishPreferences();
     const unsubscribeStore = useEditorStore.subscribe(publishPreferences);
+    const unsubscribeEscapeKey = useConfirmEscapeKeyStore.subscribe(publishPreferences);
     window.addEventListener(CUSTOM_THEME_CHANGED_EVENT, publishPreferences);
     return () => {
       disposed = true;
       window.clearTimeout(timer);
       unsubscribeStore();
+      unsubscribeEscapeKey();
       window.removeEventListener(CUSTOM_THEME_CHANGED_EVENT, publishPreferences);
     };
   }, []);
