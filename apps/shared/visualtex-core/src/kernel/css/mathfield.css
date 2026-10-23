@@ -239,16 +239,24 @@
   background: transparent;
 }
 /* When using smartFence, the anticipated closing fence is displayed
-with this style */
+with this style. It fades through its text colour, not opacity: WebKit clips
+an opacity layer to the glyph's line box, and a tall delimiter (newtx in the
+Times profile) hangs far below it, so only its top end showed. currentColor is
+the glyph's own colour, the caret highlight included. */
 .ML__smart-fence__close {
-  opacity: var(--_smart-fence-opacity);
   color: var(--_smart-fence-color);
+  -webkit-text-fill-color: color-mix(
+    in srgb,
+    currentColor calc(var(--_smart-fence-opacity) * 100%),
+    transparent
+  );
 }
 .ML__focused .ML__selected,
 .ML__focused .ML__selected .ML__contains-caret,
 .ML__focused .ML__selected .ML__smart-fence__close,
 .ML__focused .ML__selected .ML__placeholder {
   color: var(--_selection-color);
+  -webkit-text-fill-color: currentColor;
   opacity: 1;
 }
 .ML__empty-line-anchor::after {

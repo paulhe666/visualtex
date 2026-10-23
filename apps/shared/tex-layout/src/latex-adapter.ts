@@ -651,6 +651,11 @@ export class LatexAdapter {
       case "mop":
         out.push(...this.symbol(a, ctx));
         break;
+      case "composition":
+        // text an input method is composing (pinyin letters): all of it, as
+        // typed; the atom's command still holds the first letter
+        if (a.value) out.push(...this.unknownSymbol(a, ctx));
+        break;
       default:
         out.push(...this.fallback(a, ctx));
         break;

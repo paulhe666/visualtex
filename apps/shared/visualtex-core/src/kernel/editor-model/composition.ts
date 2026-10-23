@@ -16,8 +16,10 @@ export function updateComposition(model: _Model, s: string): void {
 
   // We're creating or updating a composition
   if (cursor.type === 'composition') {
-    // Composition already in progress, update it
+    // Composition already in progress, update it. The command was taken from
+    // the first composed letter; keep it in step for renderers that read it.
     cursor.value = s;
+    cursor.command = s;
   } else {
     // No composition yet, create one
 
