@@ -52,6 +52,18 @@ assert.throws(
   /fontSizePt/,
 );
 
+// Word's global conversion sizes for inline and display formulas.
+const sized = { ...request, inlineFontSizePt: 10.5, displayFontSizePt: 16 };
+assert.equal(decodeMacosDocumentImportRequest(sized), sized);
+assert.throws(
+  () => decodeMacosDocumentImportRequest({ ...request, inlineFontSizePt: 2 }),
+  /inlineFontSizePt/,
+);
+assert.throws(
+  () => decodeMacosDocumentImportRequest({ ...request, displayFontSizePt: "16" }),
+  /displayFontSizePt/,
+);
+
 assert.deepEqual(decodeMacosLatexRedrawFontSizes([10, 12.5, 20]), [10, 12.5, 20]);
 assert.throws(() => decodeMacosLatexRedrawFontSizes([12, "14"]), /\[1\]/);
 

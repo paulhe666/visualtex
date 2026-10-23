@@ -93,6 +93,12 @@ export function decodeMacosDocumentImportRequest(
   stringValue(request.sourceDocumentId, "documentImportRequest.sourceDocumentId");
   nonEmptyString(request.bookmarkName, "documentImportRequest.bookmarkName");
   fontSize(request.defaultFontSizePt, "documentImportRequest.defaultFontSizePt");
+  if (request.inlineFontSizePt !== undefined) {
+    fontSize(request.inlineFontSizePt, "documentImportRequest.inlineFontSizePt");
+  }
+  if (request.displayFontSizePt !== undefined) {
+    fontSize(request.displayFontSizePt, "documentImportRequest.displayFontSizePt");
+  }
   if (
     request.operation !== "documentImport" &&
     request.operation !== "latexRedraw" &&

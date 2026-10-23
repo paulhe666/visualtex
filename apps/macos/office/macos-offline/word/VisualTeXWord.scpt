@@ -8,6 +8,7 @@ property runtimeSuffix : "Library/Application Scripts/com.microsoft.Word/VisualT
 property maximumRelativePathLength : 1024
 property expectedHost : "word"
 property numberingPreferenceFileName : "VisualTeXNumberingPreference.txt"
+property conversionFontSizesFileName : "VisualTeXConversionFontSizes.txt"
 property maximumFastOpenRequestBytes : 65536
 property cachedVisualTeXExecutable : ""
 
@@ -206,6 +207,40 @@ on ReadVisualTeXNumberingPreference(ignoredValue)
     end try
 end ReadVisualTeXNumberingPreference
 
+on WriteVisualTeXConversionFontSizes(encodedData)
+    try
+        set targetPath to my conversionFontSizesPath()
+        my writeEncodedFileAtomically(targetPath, encodedData as text)
+        return "ok|1"
+    on error errorMessage number errorNumber
+        return my errorResponse(errorNumber, errorMessage)
+    end try
+end WriteVisualTeXConversionFontSizes
+
+on ReadVisualTeXConversionFontSizes(ignoredValue)
+    try
+        set targetPath to my conversionFontSizesPath()
+        set fileManager to current application's NSFileManager's defaultManager()
+        if not ((fileManager's fileExistsAtPath:targetPath) as boolean) then return "ok|"
+        set preferenceData to current application's NSData's dataWithContentsOfFile:targetPath
+        if preferenceData is missing value then error "VisualTeX could not read the conversion font sizes" number 7132
+        if (preferenceData's |length|() as integer) > 256 then error "VisualTeX conversion font sizes are too large" number 7133
+        set encodedPreference to (preferenceData's base64EncodedStringWithOptions:0) as text
+        set encodedPreference to my replaceText(encodedPreference, "+", "-")
+        set encodedPreference to my replaceText(encodedPreference, "/", "_")
+        repeat while encodedPreference ends with "="
+            if (count characters of encodedPreference) is 1 then
+                set encodedPreference to ""
+            else
+                set encodedPreference to text 1 thru -2 of encodedPreference
+            end if
+        end repeat
+        return "ok|" & encodedPreference
+    on error errorMessage number errorNumber
+        return my errorResponse(errorNumber, errorMessage)
+    end try
+end ReadVisualTeXConversionFontSizes
+
 on ReadVisualTeXImageInkCenter(formulaId)
     try
         set formulaId to formulaId as text
@@ -297,6 +332,11 @@ on numberingPreferencePath()
     set homePath to POSIX path of (path to home folder)
     return homePath & "Library/Application Scripts/com.microsoft.Word/" & numberingPreferenceFileName
 end numberingPreferencePath
+
+on conversionFontSizesPath()
+    set homePath to POSIX path of (path to home folder)
+    return homePath & "Library/Application Scripts/com.microsoft.Word/" & conversionFontSizesFileName
+end conversionFontSizesPath
 
 on ensureDirectory(targetPath)
     do shell script "/bin/mkdir -p " & quoted form of targetPath & " && /bin/chmod 700 " & quoted form of targetPath

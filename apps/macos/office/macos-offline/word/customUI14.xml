@@ -195,6 +195,24 @@
                     onAction="VTWordRibbonApplyImageFontSizePreset"
                     screentip="选择图片公式字号"
                     supertip="先选中一个或多个 VisualTeX 图片公式，再从中文字号和磅值列表中选择；选择后立即应用。"/>
+          <dropDown id="VisualTeX.Mac.Word.InlineConversionFontSize"
+                    label="行内转换"
+                    sizeString="自定义（512 pt）"
+                    getItemCount="VTWordRibbonGetConversionFontSizeItemCount"
+                    getItemLabel="VTWordRibbonGetConversionFontSizeItemLabel"
+                    getSelectedItemIndex="VTWordRibbonGetConversionFontSizeSelectedIndex"
+                    onAction="VTWordRibbonApplyConversionFontSize"
+                    screentip="行内公式字号"
+                    supertip="选择字号后，当前文档中所有行内公式（VisualTeX 图片公式和 Word 公式）立即改为这个字号，可以撤销。之后 LaTeX 重绘、批量导入和格式转换生成的行内公式也使用这个字号。选“跟随正文”不改动现有公式。"/>
+          <dropDown id="VisualTeX.Mac.Word.DisplayConversionFontSize"
+                    label="行间转换"
+                    sizeString="自定义（512 pt）"
+                    getItemCount="VTWordRibbonGetConversionFontSizeItemCount"
+                    getItemLabel="VTWordRibbonGetConversionFontSizeItemLabel"
+                    getSelectedItemIndex="VTWordRibbonGetConversionFontSizeSelectedIndex"
+                    onAction="VTWordRibbonApplyConversionFontSize"
+                    screentip="行间公式字号"
+                    supertip="选择字号后，当前文档中所有行间公式（VisualTeX 图片公式和 Word 公式）立即改为这个字号，可以撤销。之后 LaTeX 重绘、批量导入和格式转换生成的行间公式也使用这个字号。选“跟随正文”不改动现有公式。"/>
         </group>
       </tab>
     </tabs>

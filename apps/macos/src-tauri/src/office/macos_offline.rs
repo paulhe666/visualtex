@@ -204,6 +204,12 @@ struct MacOfflineNativeTextTarget {
 struct MacOfflineDocumentImportRequest {
     bookmark_name: String,
     default_font_size_pt: f64,
+    // Word's global conversion sizes for inline and display formulas; absent
+    // when formulas of that kind follow the text.
+    #[serde(default)]
+    inline_font_size_pt: Option<f64>,
+    #[serde(default)]
+    display_font_size_pt: Option<f64>,
     #[serde(default)]
     redraw_scope: Option<String>,
     #[serde(default)]
@@ -284,6 +290,10 @@ pub struct MacOfflineDocumentImportPublicRequest {
     source_document_id: String,
     bookmark_name: String,
     default_font_size_pt: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inline_font_size_pt: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_font_size_pt: Option<f64>,
     operation: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     redraw_scope: Option<String>,
@@ -1518,6 +1528,17 @@ fn validate_request(request: &MacOfflineSessionRequest, session_id: &str) -> Res
             return Err(
                 "Document import default font size is outside the supported range".to_string(),
             );
+        }
+        for size in [document_import.inline_font_size_pt, document_import.display_font_size_pt]
+            .into_iter()
+            .flatten()
+        {
+            if !size.is_finite() || !(MIN_WORD_FONT_SIZE_PT..=MAX_WORD_FONT_SIZE_PT).contains(&size) {
+                return Err(
+                    "Document import conversion font size is outside the supported range"
+                        .to_string(),
+                );
+            }
         }
         if operation == "latexRedraw" {
             if !matches!(
@@ -6195,6 +6216,8 @@ fn document_import_request_data(
         })?,
         bookmark_name: document_import.bookmark_name.clone(),
         default_font_size_pt: document_import.default_font_size_pt,
+        inline_font_size_pt: document_import.inline_font_size_pt,
+        display_font_size_pt: document_import.display_font_size_pt,
         operation: operation.to_string(),
         redraw_scope: document_import.redraw_scope.clone(),
         output_kind: document_import.output_kind.clone(),
@@ -8490,6 +8513,8 @@ mod tests {
             document_import: Some(MacOfflineDocumentImportRequest {
                 bookmark_name: "VT_D_323456781234423492341234".to_string(),
                 default_font_size_pt: 12.0,
+                inline_font_size_pt: None,
+                display_font_size_pt: None,
                 redraw_scope: Some("page".to_string()),
                 output_kind: Some("image".to_string()),
                 source_kind: None,
@@ -8509,6 +8534,19 @@ mod tests {
         request.operation = Some("documentImport".to_string());
         let document_import = request.document_import.as_mut().unwrap();
         document_import.output_kind = Some("image".to_string());
+        assert!(validate_request(&request, &session_id)
+            .unwrap_err()
+            .contains("formula transform fields"));
+
+        // Conversion sizes are checked like the default size.
+        let document_import = request.document_import.as_mut().unwrap();
+        document_import.display_font_size_pt = Some(600.0);
+        assert!(validate_request(&request, &session_id)
+            .unwrap_err()
+            .contains("conversion font size"));
+        let document_import = request.document_import.as_mut().unwrap();
+        document_import.inline_font_size_pt = Some(10.5);
+        document_import.display_font_size_pt = Some(16.0);
         assert!(validate_request(&request, &session_id)
             .unwrap_err()
             .contains("formula transform fields"));

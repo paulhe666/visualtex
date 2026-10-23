@@ -219,13 +219,26 @@ export function OfficeDocumentImportApp() {
   const language = useEditorStore((state) => state.language);
   const isEn = language === "en";
   const explicitFontSizeIds = useRef(new Set<string>());
-  // Formulas follow the text size at the Word insertion point unless the user
-  // set a size for that formula here.
+  // Formulas take the size set in Word for converting their kind (inline or
+  // display), otherwise the text size at the Word insertion point, unless the
+  // user set a size for that formula here.
   const defaultFontSizePt = request?.defaultFontSizePt ?? 12;
+  const inlineFontSizePt = request?.inlineFontSizePt ?? defaultFontSizePt;
+  const displayFontSizePt = request?.displayFontSizePt ?? defaultFontSizePt;
+  const conversionFontSize = useCallback(
+    (displayMode: DocumentFormulaBlock["displayMode"]) =>
+      displayMode === "block" ? displayFontSizePt : inlineFontSizePt,
+    [displayFontSizePt, inlineFontSizePt],
+  );
+  const withConversionSizes = useCallback(
+    (current: DocumentImportBlock[]) => current.map(block =>
+      block.kind === "formula" && !explicitFontSizeIds.current.has(block.id)
+        ? { ...block, fontSizePt: conversionFontSize(block.displayMode) } : block),
+    [conversionFontSize],
+  );
   useEffect(() => {
-    setBlocks(current => current.map(block => block.kind === "formula" && !explicitFontSizeIds.current.has(block.id)
-      ? { ...block, fontSizePt: defaultFontSizePt } : block));
-  }, [defaultFontSizePt]);
+    setBlocks(withConversionSizes);
+  }, [withConversionSizes]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
   const allowNativeCloseRef = useRef(false);
@@ -258,9 +271,9 @@ export function OfficeDocumentImportApp() {
         nextKind,
         defaultFontSizePt,
       );
-      setBlocks((previous) => mergeDocumentImportBlocks(previous, parsed));
+      setBlocks((previous) => withConversionSizes(mergeDocumentImportBlocks(previous, parsed)));
     },
-    [defaultFontSizePt, sourceKind],
+    [defaultFontSizePt, sourceKind, withConversionSizes],
   );
 
   const updateFormula = useCallback(
@@ -270,6 +283,14 @@ export function OfficeDocumentImportApp() {
         current.map((block) => {
           if (block.kind !== "formula" || block.id !== id) return block;
           const updated = { ...block, ...update };
+          // A formula switched between inline and display takes that kind's size.
+          if (
+            "displayMode" in update &&
+            update.displayMode !== block.displayMode &&
+            !explicitFontSizeIds.current.has(id)
+          ) {
+            updated.fontSizePt = conversionFontSize(updated.displayMode);
+          }
           if (
             ("latex" in update && update.latex !== block.latex) ||
             ("displayMode" in update && update.displayMode !== block.displayMode)
@@ -280,7 +301,7 @@ export function OfficeDocumentImportApp() {
         }),
       );
     },
-    [],
+    [conversionFontSize],
   );
 
   const setAllDisplayFormulaNumbering = useCallback((numbered: boolean) => {
@@ -321,7 +342,7 @@ export function OfficeDocumentImportApp() {
         imported.format,
         defaultFontSizePt,
       );
-      setBlocks((previous) => mergeDocumentImportBlocks(previous, parsed));
+      setBlocks((previous) => withConversionSizes(mergeDocumentImportBlocks(previous, parsed)));
       setToast(
         t(
           `已加载 ${imported.name} · ${imported.encoding} · ${formatFileSize(imported.size)}`,
@@ -349,7 +370,7 @@ export function OfficeDocumentImportApp() {
       value,
       defaultFontSizePt,
     );
-    setBlocks((previous) => mergeDocumentImportBlocks(previous, parsed));
+    setBlocks((previous) => withConversionSizes(mergeDocumentImportBlocks(previous, parsed)));
   };
 
   const cancel = async () => {

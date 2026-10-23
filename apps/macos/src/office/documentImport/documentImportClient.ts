@@ -34,6 +34,10 @@ export interface MacosDocumentImportRequest {
   sourceDocumentId: string;
   bookmarkName: string;
   defaultFontSizePt: number;
+  /** Word's global conversion size for inline formulas; absent = follow the text. */
+  inlineFontSizePt?: number;
+  /** Word's global conversion size for display formulas; absent = follow the text. */
+  displayFontSizePt?: number;
   operation: "documentImport" | "latexRedraw" | "formulaRestore";
   redrawScope?: "selection" | "document";
   outputKind?: DocumentFormulaOutputKind | "latex";

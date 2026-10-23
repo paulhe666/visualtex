@@ -1140,13 +1140,14 @@ function verifyBuiltVba(path) {
     "App_WindowBeforeDoubleClick",
     "App_WindowSelectionChange",
     "VTWordRibbonApplyImageFontSizePreset",
+    "VTWordRibbonApplyConversionFontSize",
     "VTRefreshNumberedImageFormulaFontLayout",
     "VisualTeX_EditImageField",
     "VisualTeX_EditSelectedImageFromNativeMonitor",
     "VisualTeX_WriteSelectedDoubleClickTargetScreenBounds",
     "VTEnsureVisualTeXImageMacroButton",
     "VTNativeMathFastSignature",
-    "word-office-performance-20260801-r129",
+    "word-office-performance-20260801-r130",
     "1.2.8",
   ];
   for (const value of required) {

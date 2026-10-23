@@ -6,7 +6,7 @@ Option Explicit
 Private Const VT_WORD_HOST As String = "word"
 Private Const VT_WORD_STATUS_FILE As String = "/OfficePluginStatus/word.json"
 Private Const VT_WORD_SOURCE_REVISION As String = _
-    "word-office-performance-20260801-r129"
+    "word-office-performance-20260801-r130"
 Private Const VT_WORD_IDLE_WATCH_SECONDS As Long = 5
 ' A change in Word's font size box reaches a selected image formula this soon.
 Private Const VT_WORD_SELECTED_IMAGE_WATCH_SECONDS As Long = 1
@@ -59,6 +59,10 @@ Private Const VT_WORD_IMAGE_FONT_CONTROL_ID As String = _
     "VisualTeX.Mac.Word.ImageFontSize"
 Private Const VT_WORD_NUMBERING_FORMAT_CONTROL_ID As String = _
     "VisualTeX.Mac.Word.NumberingFormat"
+Private Const VT_WORD_INLINE_CONVERSION_FONT_CONTROL_ID As String = _
+    "VisualTeX.Mac.Word.InlineConversionFontSize"
+Private Const VT_WORD_DISPLAY_CONVERSION_FONT_CONTROL_ID As String = _
+    "VisualTeX.Mac.Word.DisplayConversionFontSize"
 Private Const VT_WORD_IMAGE_EDIT_MACRO As String = _
     "VisualTeX_EditImageField"
 Private Const VT_WORD_IMAGE_MACRO_SCHEMA_VARIABLE As String = _
@@ -173,6 +177,11 @@ Private VT_WORD_NUMBERING_PREFERENCE_CACHE_LOADED As Boolean
 Private VT_WORD_NUMBERING_PREFERENCE_CACHE_AVAILABLE As Boolean
 Private VT_WORD_NUMBERING_PREFERENCE_CACHE_MODE As String
 Private VT_WORD_NUMBERING_PREFERENCE_CACHE_SEPARATOR As String
+' The global sizes conversions give inline and display formulas. 0 keeps the
+' size the conversion would otherwise use (body text or the formula's own).
+Private VT_WORD_CONVERSION_FONT_SIZES_LOADED As Boolean
+Private VT_WORD_INLINE_CONVERSION_FONT_SIZE_PT As Double
+Private VT_WORD_DISPLAY_CONVERSION_FONT_SIZE_PT As Double
 Private VT_WORD_REFERENCE_MENU_DOCUMENT As Document
 Private VT_WORD_REFERENCE_MENU_INSERTION_RANGE As Range
 Private VT_WORD_NATIVE_ROLLBACK_DOCUMENT As Document
@@ -3183,7 +3192,8 @@ Private Function VTFormulaRestoreManifest( _
     ByVal bookmarkName As String, _
     ByVal targetRange As Range, _
     ByVal sourceKind As String, _
-    ByVal targets As Collection) As String
+    ByVal targets As Collection, _
+    ByVal outputKind As String) As String
 
     Dim manifest As String
     Dim prefix As String
@@ -3283,6 +3293,10 @@ Private Function VTFormulaRestoreManifest( _
                     formulaShape.Range.Duplicate)
             End If
             payload = encodedMetadata
+        End If
+        ' Format conversion gives the formula the global size for its kind.
+        If outputKind <> "latex" Then
+            fontSizePt = VTConversionFontSize(displayMode, fontSizePt)
         End If
         manifest = manifest & _
             prefix & "sourceStart=" & _
@@ -3750,7 +3764,7 @@ Private Sub VTStartWordFormulaRestore( _
     VTWordPerformanceMark "request-serialized"
     manifest = VTFormulaRestoreManifest( _
         sessionId, sourceDocumentId, bookmarkName, targetRange, _
-        sourceKind, targets)
+        sourceKind, targets, outputKind)
     VTWordPerformanceMark "manifest-serialized"
     If sourceKind = "omml" And outputKind = "latex" Then
         operationStage = "convert-omml-batch"
@@ -4559,6 +4573,7 @@ Public Sub VisualTeX_InsertLatexMarkdownDocument()
     operationStage = "serialize-request"
     requestJson = VTDocumentImportRequestJson( _
         sessionId, sourceDocumentId, bookmarkName, defaultFontSizePt)
+    requestJson = VTWithConversionFontSizes(requestJson)
     requestJson = VTV2WithDocumentMathFont(requestJson, ActiveDocument)
     operationStage = "write-and-launch"
     launchTiming = _
@@ -7092,6 +7107,7 @@ Private Sub VTWordOpenResolvedInlineShape( _
         VTReadWordImageConversionState _
             selectedShape, formulaId, fontSizePt, referenceWidthPt, _
             referenceHeightPt, referenceBaselinePt, observedWordFontSizePt
+        fontSizePt = VTConversionFontSize(displayMode, fontSizePt)
     Else
         VTPrepareWordImageFormulaState _
             selectedShape, formulaId, displayMode, numbered, fontSizePt, _
@@ -7269,6 +7285,8 @@ Private Function VTWordOpenCopiedNativeSession( _
     displayMode = "inline"
     If nativeMath.Type = wdOMathDisplay Or numbered Then displayMode = "block"
     fontSizePt = VTPreferredWordFormulaFontSize(nativeMath.Range)
+    If operationName = "nativeToImage" Then _
+        fontSizePt = VTConversionFontSize(displayMode, fontSizePt)
     wordMathFontName = VTWordMathFontNameFromRange(nativeMath.Range)
     formulaLetterFont = _
         VTVisualTeXLetterFontFromWordFontName(wordMathFontName)
@@ -7444,6 +7462,8 @@ Private Sub VTWordOpenNativeSession( _
     If Not VTValidWordFormulaFontSize(fontSizePt) Then
         fontSizePt = VTPreferredWordFormulaFontSize(nativeBookmark.Range)
     End If
+    If operationName = "nativeToImage" Then _
+        fontSizePt = VTConversionFontSize(displayMode, fontSizePt)
     wordMathFontName = VTWordMathFontNameFromRange(nativeMath.Range)
     formulaLetterFont = _
         VTVisualTeXLetterFontFromWordFontName(wordMathFontName)
@@ -7746,6 +7766,16 @@ Private Function VTWordConvertNativeBookmarkToImageFast( _
             VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
         referenceBaselinePt = baselinePoints * _
             VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT / fontSizePt
+    End If
+    ' The reference geometry is size independent; draw at the global size.
+    If Abs(VTConversionFontSize(displayMode, fontSizePt) - fontSizePt) > 0.001 Then
+        fontSizePt = VTConversionFontSize(displayMode, fontSizePt)
+        widthPoints = referenceWidthPt * fontSizePt / _
+            VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
+        heightPoints = referenceHeightPt * fontSizePt / _
+            VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
+        baselinePoints = referenceBaselinePt * fontSizePt / _
+            VT_WORD_IMAGE_REFERENCE_FONT_SIZE_PT
     End If
     stagingSeconds = VTTimerElapsedSeconds(phaseStartedAt, Timer)
     phaseStartedAt = Timer
@@ -9310,6 +9340,8 @@ Private Function VTInheritedLatexRedrawFontSize( _
     Dim hasVisibleTextBesideSource As Boolean
 
     If sourceRange Is Nothing Then Exit Function
+    VTInheritedLatexRedrawFontSize = VTConversionFontSizeSetting(displayMode)
+    If VTValidWordFormulaFontSize(VTInheritedLatexRedrawFontSize) Then Exit Function
     Set documentObject = sourceRange.Document
     Set paragraphRange = sourceRange.Paragraphs(1).Range.Duplicate
     paragraphStart = paragraphRange.Start
@@ -19528,6 +19560,7 @@ Private Function VTWordConvertInlineShapeToNativeFast( _
     VTReadWordImageConversionState _
         target, formulaId, sourceFontSizePt, referenceWidthPt, _
         referenceHeightPt, referenceBaselinePt, observedWordFontSizePt
+    sourceFontSizePt = VTConversionFontSize(displayMode, sourceFontSizePt)
     sourceHeightPoints = VTWordImageGlyphHeight(target)
     captionText = "VisualTeX formula"
     If numbered Then
@@ -19837,6 +19870,7 @@ Private Sub VTWordConvertInlineShapeToNativeEquation( _
         target, formulaId, displayMode, numbered, sourceFontSizePt, _
         referenceWidthPt, referenceHeightPt, referenceBaselinePt, _
         observedWordFontSizePt
+    sourceFontSizePt = VTConversionFontSize(displayMode, sourceFontSizePt)
     encodedMetadata = target.AlternativeText
     If VTTryReadWordLatexPayload(targetDocument, formulaId, latexBase64) Then
         captionText = VTEquationCrossReferenceText(latexBase64)
@@ -20568,6 +20602,250 @@ PreferenceWriteFailed:
     Err.Raise errorNumber, "VisualTeX numbering preference", _
         "Unable to persist the Equation numbering format: " & _
         errorDescription
+End Sub
+
+' Conversion font sizes live beside the numbering preference, so they apply
+' to every document. Reading is cached; a missing or unreadable file (or an
+' older file bridge) means both sizes follow the body text.
+Private Sub VTLoadConversionFontSizes()
+    Dim encodedSizes As String
+    Dim sizesLine As String
+    Dim fields As Variant
+    Dim sizeField As Variant
+    Dim separatorAt As Long
+    Dim sizeName As String
+    Dim sizeValue As Double
+
+    If VT_WORD_CONVERSION_FONT_SIZES_LOADED Then Exit Sub
+    VT_WORD_CONVERSION_FONT_SIZES_LOADED = True
+    VT_WORD_INLINE_CONVERSION_FONT_SIZE_PT = 0#
+    VT_WORD_DISPLAY_CONVERSION_FONT_SIZE_PT = 0#
+
+    On Error GoTo SizesUnavailable
+    encodedSizes = VTFileBridgeCall( _
+        "ReadVisualTeXConversionFontSizes", "")
+    If Len(encodedSizes) = 0 Then Exit Sub
+    sizesLine = VTBase64UrlDecodeUtf8(encodedSizes)
+    If Len(sizesLine) = 0 Or Len(sizesLine) > 256 Then Exit Sub
+    fields = Split(Trim$(sizesLine), "|")
+    For Each sizeField In fields
+        separatorAt = InStr(1, CStr(sizeField), "=", vbBinaryCompare)
+        If separatorAt > 1 Then
+            sizeName = LCase$(Trim$(Left$(CStr(sizeField), separatorAt - 1)))
+            ' Val reads "." as the decimal point whatever the locale.
+            sizeValue = Val(Trim$(Mid$(CStr(sizeField), separatorAt + 1)))
+            If Not VTValidWordFormulaFontSize(sizeValue) Then sizeValue = 0#
+            If sizeName = "inline" Then
+                VT_WORD_INLINE_CONVERSION_FONT_SIZE_PT = sizeValue
+            ElseIf sizeName = "display" Then
+                VT_WORD_DISPLAY_CONVERSION_FONT_SIZE_PT = sizeValue
+            End If
+        End If
+    Next sizeField
+    Exit Sub
+
+SizesUnavailable:
+    VT_WORD_INLINE_CONVERSION_FONT_SIZE_PT = 0#
+    VT_WORD_DISPLAY_CONVERSION_FONT_SIZE_PT = 0#
+    Err.Clear
+End Sub
+
+Private Sub VTWriteConversionFontSizes( _
+    ByVal inlineFontSizePt As Double, _
+    ByVal displayFontSizePt As Double)
+
+    Dim ignoredResponse As String
+    Dim errorNumber As Long
+    Dim errorDescription As String
+
+    If Not VTValidWordFormulaFontSize(inlineFontSizePt) Then inlineFontSizePt = 0#
+    If Not VTValidWordFormulaFontSize(displayFontSizePt) Then displayFontSizePt = 0#
+    On Error GoTo SizesWriteFailed
+    ignoredResponse = VTFileBridgeCall( _
+        "WriteVisualTeXConversionFontSizes", _
+        VTBase64UrlEncodeUtf8( _
+            "inline=" & VTJsonNumber(inlineFontSizePt) & _
+            "|display=" & VTJsonNumber(displayFontSizePt)))
+    VT_WORD_CONVERSION_FONT_SIZES_LOADED = True
+    VT_WORD_INLINE_CONVERSION_FONT_SIZE_PT = inlineFontSizePt
+    VT_WORD_DISPLAY_CONVERSION_FONT_SIZE_PT = displayFontSizePt
+    Exit Sub
+
+SizesWriteFailed:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    Err.Clear
+    Err.Raise errorNumber, "VisualTeX conversion font size", _
+        "Unable to save the conversion font size: " & errorDescription
+End Sub
+
+' The size set for converting formulas of this display mode ("inline" or
+' "block"), or 0 when conversions keep their usual size.
+Private Function VTConversionFontSizeSetting( _
+    ByVal displayMode As String) As Double
+
+    VTLoadConversionFontSizes
+    If displayMode = "block" Then
+        VTConversionFontSizeSetting = VT_WORD_DISPLAY_CONVERSION_FONT_SIZE_PT
+    Else
+        VTConversionFontSizeSetting = VT_WORD_INLINE_CONVERSION_FONT_SIZE_PT
+    End If
+End Function
+
+' The size a conversion gives a formula: the global setting for its display
+' mode when one is set, otherwise the size the conversion found.
+Private Function VTConversionFontSize( _
+    ByVal displayMode As String, _
+    ByVal foundFontSizePt As Double) As Double
+
+    Dim settingPt As Double
+    settingPt = VTConversionFontSizeSetting(displayMode)
+    If VTValidWordFormulaFontSize(settingPt) Then
+        VTConversionFontSize = settingPt
+    Else
+        VTConversionFontSize = foundFontSizePt
+    End If
+End Function
+
+' Adds the conversion sizes to a document-import request so the import window
+' can size its inline and display formulas. Absent sizes follow the text.
+Private Function VTWithConversionFontSizes(ByVal requestJson As String) As String
+    Dim inlineSettingPt As Double
+    Dim displaySettingPt As Double
+    Dim extraFields As String
+
+    inlineSettingPt = VTConversionFontSizeSetting("inline")
+    displaySettingPt = VTConversionFontSizeSetting("block")
+    If VTValidWordFormulaFontSize(inlineSettingPt) Then
+        extraFields = extraFields & ",""inlineFontSizePt"":" & VTJsonNumber(inlineSettingPt)
+    End If
+    If VTValidWordFormulaFontSize(displaySettingPt) Then
+        extraFields = extraFields & ",""displayFontSizePt"":" & VTJsonNumber(displaySettingPt)
+    End If
+    If Len(extraFields) = 0 Or Right$(requestJson, 2) <> "}}" Then
+        VTWithConversionFontSizes = requestJson
+        Exit Function
+    End If
+    ' The request ends with its documentImport object.
+    VTWithConversionFontSizes = _
+        Left$(requestJson, Len(requestJson) - 2) & extraFields & "}}"
+End Function
+
+' Gives every formula of one kind ("inline" or "block") in the active
+' document the chosen size, VisualTeX image formulas and Word equations alike,
+' as one Undo step. A numbered equation is a display formula. Returns how many
+' formulas were resized.
+Private Function VTApplyFontSizeToDocumentFormulas( _
+    ByVal wantedDisplayMode As String, _
+    ByVal fontSizePt As Double) As Long
+
+    Dim documentObject As Document
+    Dim imageFormulas As New Collection
+    Dim candidate As InlineShape
+    Dim imageFormula As Variant
+    Dim formulaMath As OMath
+    Dim formulaId As String
+    Dim displayMode As String
+    Dim numbered As Boolean
+    Dim undoRecord As Object
+    Dim undoRecordStarted As Boolean
+    Dim internalMutationStarted As Boolean
+    Dim previousScreenUpdating As Boolean
+    Dim resized As Long
+    Dim errorNumber As Long
+    Dim errorDescription As String
+
+    If Not VTValidWordFormulaFontSize(fontSizePt) Then Exit Function
+    If Documents.Count = 0 Then Exit Function
+    Set documentObject = ActiveDocument
+    For Each candidate In documentObject.InlineShapes
+        If VTTryWordImageTypographyReference( _
+           candidate, formulaId, displayMode, numbered) Then
+            If displayMode = wantedDisplayMode Then imageFormulas.Add candidate
+        End If
+    Next candidate
+
+    previousScreenUpdating = Application.ScreenUpdating
+    On Error GoTo Failed
+    Application.ScreenUpdating = False
+    Set undoRecord = CallByName(Application, "UndoRecord", VbGet)
+    undoRecord.StartCustomRecord "VisualTeX Formula Font Size"
+    undoRecordStarted = True
+    VTBeginWordInternalMutation
+    internalMutationStarted = True
+
+    If imageFormulas.Count > 0 Then
+        ' One request for the letter fonts their numbers take.
+        VTEnsureWordImageLetterFonts documentObject, imageFormulas
+        For Each imageFormula In imageFormulas
+            VTApplyWordImageFormulaFontSize imageFormula, fontSizePt
+            resized = resized + 1
+        Next imageFormula
+    End If
+
+    For Each formulaMath In documentObject.OMaths
+        If formulaMath.Type = wdOMathDisplay Then
+            displayMode = "block"
+        Else
+            displayMode = "inline"
+        End If
+        If Not VTPureNativeNumberField(formulaMath.Range) Is Nothing Then _
+            displayMode = "block"
+        If displayMode = wantedDisplayMode Then
+            VTV2ApplyEquationTypography formulaMath.Range, fontSizePt
+            VTRememberNativeFormulaFontSize documentObject, formulaMath, fontSizePt
+            resized = resized + 1
+        End If
+    Next formulaMath
+
+    VTEndWordInternalMutation
+    internalMutationStarted = False
+    undoRecord.EndCustomRecord
+    undoRecordStarted = False
+    Application.ScreenUpdating = previousScreenUpdating
+    VTApplyFontSizeToDocumentFormulas = resized
+    Exit Function
+
+Failed:
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    On Error Resume Next
+    If internalMutationStarted Then VTEndWordInternalMutation
+    If undoRecordStarted Then undoRecord.EndCustomRecord
+    Application.ScreenUpdating = previousScreenUpdating
+    On Error GoTo 0
+    Err.Raise errorNumber, "VisualTeX formula font size", errorDescription
+End Function
+
+' A VisualTeX equation keeps the size its image is drawn at for a later
+' conversion back to an image: store the new size there too.
+Private Sub VTRememberNativeFormulaFontSize( _
+    ByVal documentObject As Document, _
+    ByVal formulaMath As OMath, _
+    ByVal fontSizePt As Double)
+
+    Dim nativeBookmark As Bookmark
+    Dim formulaId As String
+    Dim storedFontSizePt As Double
+    Dim referenceWidthPt As Double
+    Dim referenceHeightPt As Double
+    Dim referenceBaselinePt As Double
+    Dim observedWordFontSizePt As Double
+
+    On Error GoTo Finished
+    If Not VTTryFindNativeFormulaBookmarkLocally( _
+       formulaMath.Range.Duplicate, nativeBookmark) Then Exit Sub
+    If Not VTTryFormulaIdFromNativeBookmark( _
+       nativeBookmark.Name, formulaId) Then Exit Sub
+    If Not VTTryReadWordImageScaleState( _
+       documentObject, formulaId, storedFontSizePt, referenceWidthPt, _
+       referenceHeightPt, referenceBaselinePt, observedWordFontSizePt) Then Exit Sub
+    VTSetWordImageScaleState _
+        documentObject, formulaId, fontSizePt, referenceWidthPt, _
+        referenceHeightPt, referenceBaselinePt, fontSizePt
+
+Finished:
+    Err.Clear
 End Sub
 
 Private Function VTEquationNumberingMode( _
@@ -23337,6 +23615,95 @@ Public Sub VTWordRibbonApplyImageFontSizePreset( _
 
 Failed:
     VTShowError "Word image formula font size", Err.Number, Err.Description
+End Sub
+
+Private Function VTConversionFontSizeControlMode( _
+    ByVal control As IRibbonControl) As String
+
+    If control.Id = VT_WORD_DISPLAY_CONVERSION_FONT_CONTROL_ID Then
+        VTConversionFontSizeControlMode = "block"
+    Else
+        VTConversionFontSizeControlMode = "inline"
+    End If
+End Function
+
+Public Sub VTWordRibbonGetConversionFontSizeItemCount( _
+    ByVal control As IRibbonControl, _
+    ByRef returnedValue)
+
+    returnedValue = VTFormulaFontPresetCount() + 1
+End Sub
+
+Public Sub VTWordRibbonGetConversionFontSizeItemLabel( _
+    ByVal control As IRibbonControl, _
+    ByVal itemIndex As Integer, _
+    ByRef returnedValue)
+
+    On Error GoTo LabelFailed
+    If itemIndex = 0 Then
+        ' "Follow body text"
+        returnedValue = VTUnicodeText(36319, 38543, 27491, 25991)
+    Else
+        returnedValue = VTFormulaFontPresetLabel(itemIndex - 1)
+    End If
+    Exit Sub
+
+LabelFailed:
+    returnedValue = VTUnicodeText(23383, 21495)
+    Err.Clear
+End Sub
+
+Public Sub VTWordRibbonGetConversionFontSizeSelectedIndex( _
+    ByVal control As IRibbonControl, _
+    ByRef returnedValue)
+
+    Dim settingPt As Double
+    Dim presetIndex As Long
+
+    returnedValue = 0
+    On Error GoTo SelectedFinished
+    settingPt = VTConversionFontSizeSetting( _
+        VTConversionFontSizeControlMode(control))
+    If Not VTValidWordFormulaFontSize(settingPt) Then Exit Sub
+    presetIndex = VTFormulaFontPresetIndex(settingPt)
+    If presetIndex >= 0 Then returnedValue = presetIndex + 1
+
+SelectedFinished:
+End Sub
+
+Public Sub VTWordRibbonApplyConversionFontSize( _
+    ByVal control As IRibbonControl, _
+    ByVal selectedId As String, _
+    ByVal selectedIndex As Integer)
+
+    Dim requestedPt As Double
+    Dim inlinePt As Double
+    Dim displayPt As Double
+
+    On Error GoTo Failed
+    If selectedIndex > 0 Then requestedPt = VTFormulaFontPresetSize(selectedIndex - 1)
+    ' A size (not "follow body text") resizes every formula of this kind
+    ' already in the document first; saving the setting goes through the file
+    ' bridge (about 0.3 s) and follows.
+    If VTValidWordFormulaFontSize(requestedPt) And Documents.Count > 0 Then
+        VTRequireWritableWordDocument
+        VTApplyFontSizeToDocumentFormulas _
+            VTConversionFontSizeControlMode(control), requestedPt
+        VTInvalidateWordImageFontSizeControl
+    End If
+    inlinePt = VTConversionFontSizeSetting("inline")
+    displayPt = VTConversionFontSizeSetting("block")
+    If VTConversionFontSizeControlMode(control) = "block" Then
+        displayPt = requestedPt
+    Else
+        inlinePt = requestedPt
+    End If
+    VTWriteConversionFontSizes inlinePt, displayPt
+    If Not VT_WORD_RIBBON Is Nothing Then VT_WORD_RIBBON.InvalidateControl control.Id
+    Exit Sub
+
+Failed:
+    VTShowError "Word conversion font size", Err.Number, Err.Description
 End Sub
 
 Private Function VTTryParseWordFormulaFontSize( _

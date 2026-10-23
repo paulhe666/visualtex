@@ -29,7 +29,7 @@ const LEGACY_WORD_MANIFEST_ID: &str = "d6fcb260-4c37-4f73-a173-cf24674f81f2";
 const LEGACY_POWERPOINT_MANIFEST_ID: &str = "a6d13cf2-54e8-4dfa-a20c-15de864ab3c5";
 const WORD_VBA_ENTRY: &str = "word/vbaProject.bin";
 const POWERPOINT_VBA_ENTRY: &str = "ppt/vbaProject.bin";
-const WORD_VBA_SOURCE_REVISION: &str = "word-office-performance-20260801-r129";
+const WORD_VBA_SOURCE_REVISION: &str = "word-office-performance-20260801-r130";
 const POWERPOINT_VBA_SOURCE_REVISION: &str = "powerpoint-native-omml-edit-20260926-r1";
 const CUSTOM_UI_ENTRY: &str = "customUI/customUI14.xml";
 const CONTENT_TYPES_ENTRY: &str = "[Content_Types].xml";
@@ -1261,6 +1261,7 @@ fn validate_compiled_addin(
             "VisualTeX_InitializeWordHost",
             "App_WindowBeforeDoubleClick",
             "VTWordRibbonApplyImageFontSizePreset",
+            "VTWordRibbonApplyConversionFontSize",
             env!("CARGO_PKG_VERSION"),
             WORD_VBA_SOURCE_REVISION,
         ],

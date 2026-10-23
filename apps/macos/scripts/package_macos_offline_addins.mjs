@@ -144,7 +144,7 @@ function validateMacroContainer(path, kind, options = {}) {
       packageVersion,
       ...(kind === "Word"
         ? [
-            "word-office-performance-20260801-r129",
+            "word-office-performance-20260801-r130",
             "VTNativeMathRoot",
             "VTJoinNativeMathAtBoundary",
             "VTRetireLegacyNativeBoundary",
@@ -157,6 +157,7 @@ function validateMacroContainer(path, kind, options = {}) {
             "App_WindowSelectionChange",
             "VisualTeX_StabilizeImageEquationNumberSelection",
             "VTWordRibbonApplyImageFontSizePreset",
+            "VTWordRibbonApplyConversionFontSize",
             "VTWordRibbonNumberDisplayFormulasDocument",
             "VisualTeX_EditImageField",
             "VisualTeX_EditSelectedImageFromNativeMonitor",
