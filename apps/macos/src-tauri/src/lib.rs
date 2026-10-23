@@ -1951,7 +1951,34 @@ fn report_office_open_failure(app: &AppHandle, error: &str) {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// macOS press-and-hold: holding a letter asks for the accent menu instead of
+/// repeating the key. The formula editor shows no such menu, so a held letter
+/// was typed once. Register the key as off for VisualTeX only, as code editors
+/// do: the registration domain is not saved, and a value the user set wins.
+#[cfg(target_os = "macos")]
+fn prefer_key_repeat_over_accent_menu() {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSString;
+    let key = NSString::from_str("ApplePressAndHoldEnabled");
+    unsafe {
+        let off: *mut AnyObject = msg_send![class!(NSNumber), numberWithBool: false];
+        let defaults: *mut AnyObject = msg_send![class!(NSUserDefaults), standardUserDefaults];
+        if off.is_null() || defaults.is_null() {
+            return;
+        }
+        let registration: *mut AnyObject =
+            msg_send![class!(NSDictionary), dictionaryWithObject: off, forKey: &*key];
+        if registration.is_null() {
+            return;
+        }
+        let _: () = msg_send![defaults, registerDefaults: registration];
+    }
+}
+
 pub fn run() {
+    #[cfg(target_os = "macos")]
+    prefer_key_repeat_over_accent_menu();
     if let Some(status) = office::omml_batch::run_cli_if_requested() {
         std::process::exit(status);
     }

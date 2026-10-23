@@ -74,7 +74,12 @@ export function placeCaretAtPoint(field: HTMLElement, clientX: number, clientY: 
   const mathfield = (field as unknown as { _mathfield?: CoreMathfield })._mathfield;
   if (!mathfield) return false;
   const stop = visualTexEditingCore.hitTest(mathfield, clientX, clientY);
-  return stop !== null && visualTexEditingCore.goToStop(mathfield.model, stop);
+  if (stop === null || !visualTexEditingCore.goToStop(mathfield.model, stop)) return false;
+  // goToStop moves the model only. A click beside the formula then left the
+  // caret painted where it was (WebKit no longer refocuses, which used to
+  // repaint): the element's position setter requests the render.
+  (field as unknown as { position: number }).position = mathfield.model.position;
+  return true;
 }
 
 type Profile = "cm" | "ntx";

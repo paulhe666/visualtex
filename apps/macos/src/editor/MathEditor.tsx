@@ -356,6 +356,8 @@ interface PointerSelectionSession {
   startY: number;
   anchor: MultiLineSelectionPoint;
   active: boolean;
+  /** Pressed in the row space beside the formula: a drag within the row selects too. */
+  allowSameLine: boolean;
 }
 
 
@@ -1609,6 +1611,15 @@ function FormulaField(props: FormulaFieldProps) {
         ?.focus({ preventScroll: true });
       propsRef.current.onFocus(propsRef.current.index, field);
     };
+    // WebKit still runs the default action of the mouse press that follows a
+    // cancelled pointerdown: it moves focus to the row, which is not
+    // focusable, so the field just focused lost it and the caret placed at the
+    // formula's end vanished. Chromium (Windows) suppresses it.
+    const handleMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0 || event.ctrlKey) return;
+      if (event.composedPath().includes(field)) return;
+      event.preventDefault();
+    };
     host.replaceChildren(field);
     // WebView2 exposes a richer mounted macro dictionary than MathLive's
     // deferred pre-mount options (for example, it includes native \\bmod).
@@ -1726,6 +1737,7 @@ function FormulaField(props: FormulaFieldProps) {
     );
     host.addEventListener("contextmenu", suppressMathLiveContextMenu, true);
     host.addEventListener("pointerdown", handlePointerDown, true);
+    host.addEventListener("mousedown", handleMouseDown, true);
     const content = field.shadowRoot?.querySelector<HTMLElement>('[part="content"]');
     const resizeObserver = content
       ? new ResizeObserver(() => {
@@ -1793,6 +1805,7 @@ function FormulaField(props: FormulaFieldProps) {
       );
       host.removeEventListener("contextmenu", suppressMathLiveContextMenu, true);
       host.removeEventListener("pointerdown", handlePointerDown, true);
+      host.removeEventListener("mousedown", handleMouseDown, true);
       visualTexPointerSelectingFields.delete(field);
       field.classList.remove(visualTexPointerSelectingClass);
       host.closest<HTMLElement>(".formula-line")?.style.removeProperty(
@@ -4354,6 +4367,16 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         }
 
         clearDocumentSelection();
+        // A press in the row space beside the formula never reaches the
+        // field's own drag tracker, so this session selects within the row too.
+        const contentBounds = entry[1].shadowRoot
+          ?.querySelector<HTMLElement>('[part="content"]')
+          ?.getBoundingClientRect();
+        const startedOutsideFormula = Boolean(
+          contentBounds &&
+            (event.clientX < contentBounds.left - 6 ||
+              event.clientX > contentBounds.right + 6),
+        );
         const anchor = resolveMultiLineSelectionPoint(
           event.clientX,
           event.clientY,
@@ -4366,7 +4389,21 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
           startY: event.clientY,
           anchor,
           active: false,
+          allowSameLine: startedOutsideFormula,
         };
+      };
+
+      // Within one row the field's own selection; across rows the document's.
+      const selectBetween = (
+        anchor: MultiLineSelectionPoint,
+        focus: MultiLineSelectionPoint,
+      ) => {
+        if (focus.lineId !== anchor.lineId) {
+          applyDocumentSelection(anchor, focus);
+          return;
+        }
+        clearDocumentSelection();
+        fieldRefs.current.get(anchor.lineId)?.visualTexSelectRange(anchor.offset, focus.offset);
       };
 
       const handleWindowPointerMove = (event: PointerEvent) => {
@@ -4386,7 +4423,8 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         if (!focus) return;
         if (
           !session.active &&
-          focus.lineId === session.anchor.lineId
+          focus.lineId === session.anchor.lineId &&
+          !session.allowSameLine
         ) {
           return;
         }
@@ -4394,7 +4432,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         session.active = true;
         event.preventDefault();
         event.stopImmediatePropagation();
-        applyDocumentSelection(session.anchor, focus);
+        selectBetween(session.anchor, focus);
       };
 
       const handleWindowPointerEnd = (event: PointerEvent) => {
@@ -4407,7 +4445,7 @@ export const MathEditor = forwardRef<MathEditorHandle, Props>(
         const field = fieldRefs.current.get(focus.lineId);
         field?.focus();
         setActiveLine(focus.lineId);
-        applyDocumentSelection(session.anchor, focus);
+        selectBetween(session.anchor, focus);
         for (const mounted of fieldRefs.current.values()) {
           visualTexPointerSelectingFields.delete(mounted);
           mounted.classList.remove(visualTexPointerSelectingClass);

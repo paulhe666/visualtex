@@ -19,6 +19,17 @@
   top: 8px;
 }
 
+/* That button (34 px, 8 px from the edge) lies over the right end of the first
+   formula line. Keep the line clear of it, plus a 6 px gap, whatever right
+   inset the user chose: the line's scroll area then ends before the button, so
+   the end of a long formula and the caret kept in view are never under it. */
+.workspace.is-classic-layout:has(> .classic-tile-expand-button)
+  .multi-line-editor
+  > .mathfield-stack
+  > .formula-line:first-child {
+  padding-right: max(0px, calc(48px - var(--formula-area-inset-right, 34px)));
+}
+
 /* Keypad mode removes the macOS top toolbar, so the editor header becomes the
    only home for its format selector and exit control. The shared classic
    layout normally hides this header because those controls are portalled into
