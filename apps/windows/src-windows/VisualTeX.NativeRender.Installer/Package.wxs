@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="VisualTeX Native Rendering" Manufacturer="VisualTeX" Version="1.2.8"
+  <Package Name="VisualTeX Native Rendering" Manufacturer="VisualTeX" Version="1.2.9"
            UpgradeCode="D51CF2F8-0CF2-4A79-BA25-80E7A77FD548" Scope="perMachine" InstallerVersion="500">
     <MajorUpgrade AllowSameVersionUpgrades="yes" Schedule="afterInstallInitialize"
                   DowngradeErrorMessage="A newer VisualTeX native renderer is installed." />

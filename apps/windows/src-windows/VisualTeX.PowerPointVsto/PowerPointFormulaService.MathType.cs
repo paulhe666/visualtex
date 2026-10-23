@@ -127,8 +127,8 @@ public sealed partial class PowerPointFormulaService
                 RenderFontSizePt = size,
                 RenderWidthPx = equation.WidthPt > 0 ? equation.WidthPt / 0.75 : shape.Width / 0.75,
                 RenderHeightPx = equation.HeightPt > 0 ? equation.HeightPt / 0.75 : shape.Height / 0.75,
-                CreatedWithVersion = "1.2.8",
-                UpdatedWithVersion = "1.2.8",
+                CreatedWithVersion = "1.2.9",
+                UpdatedWithVersion = "1.2.9",
                 CreatedAt = now,
                 UpdatedAt = now,
             };

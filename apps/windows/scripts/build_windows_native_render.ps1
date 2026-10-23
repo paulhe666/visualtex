@@ -83,7 +83,7 @@ Copy-Item -LiteralPath $msi -Destination $resources -Force
 $files=@(Get-ChildItem -LiteralPath $payload -Recurse -File | ForEach-Object {
     [ordered]@{path=$_.FullName.Substring($payload.Length+1);sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
 })
-$manifest=[ordered]@{schema=1;version='1.2.8';service='VisualTeX.NativeRender';package=[ordered]@{name=[IO.Path]::GetFileName($msi);sha256=(Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash};files=$files}
+$manifest=[ordered]@{schema=1;version='1.2.9';service='VisualTeX.NativeRender';package=[ordered]@{name=[IO.Path]::GetFileName($msi);sha256=(Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash};files=$files}
 $manifestPath=Join-Path $resources 'VisualTeX-NativeRender-x64.sha256.json'
 [IO.File]::WriteAllText($manifestPath,($manifest | ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))
 Write-Output "Native-render MSI: $msi"
