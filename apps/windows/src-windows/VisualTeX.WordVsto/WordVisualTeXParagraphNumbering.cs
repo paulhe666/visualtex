@@ -862,6 +862,10 @@ internal static partial class WordVisualTeXParagraphNumbering
         ResolvedNumberPlan plan,
         CreatedBodyFields? createdFields = null)
     {
+        // WPS gives a MACROBUTTON added by Fields.Add a separator and an empty result,
+        // which it then shows instead of the number (renumbering rebuilds come here too).
+        if (OfficeHostEnvironment.IsWps)
+            return CreatePlaceRefWps(document, position, plan, createdFields);
         Range? insertion = null;
         Range? outerCode = null;
         Fields? nestedFields = null;

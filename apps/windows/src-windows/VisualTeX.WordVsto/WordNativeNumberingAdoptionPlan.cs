@@ -34,6 +34,7 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         internal NumberStyle Style = null!;
         internal int? Restart;
         internal Range? PreparedNumber;
+        internal string? PreparedEquationXml;
         internal Range? PreparedPrefix;
         internal readonly List<(string Name, int Kind, int Start, int End)> Aliases = new();
     }
@@ -206,6 +207,9 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
                     exact = math.Range;
                     number = WordNativeOmmlNumbering.ResolveNumberContentRange(exact);
                     change.PreparedNumber = number.Duplicate;
+                    // WPS takes the whole prepared equation (see RewriteWithPreparedNumberInWps).
+                    if (OfficeHostEnvironment.IsWps)
+                        change.PreparedEquationXml = WordOmmlConverter.ReadLocalEquationXml(exact);
                 }
                 finally
                 {
@@ -502,11 +506,14 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
             }
             if (change.Kind == ChangeKind.Format)
             {
-                ReplaceNumberFieldsFromPrepared(
-                    host,
-                    number,
-                    change.PreparedNumber
-                    ?? throw new InvalidDataException("The prepared native number-format owner is missing."));
+                if (OfficeHostEnvironment.IsWps)
+                    host = RewriteWithPreparedNumberInWps(change, exact);
+                else
+                    ReplaceNumberFieldsFromPrepared(
+                        host,
+                        number,
+                        change.PreparedNumber
+                        ?? throw new InvalidDataException("The prepared native number-format owner is missing."));
             }
             else if (change.Kind == ChangeKind.AdoptNumeral)
             {
@@ -565,6 +572,57 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         Range number,
         Range preparedNumber)
     {
+        // The complete native field topology, including literal m:nor runs,
+        // was materialized in a hidden Word document BEFORE the target undo
+        // record. Copying its exact number argument is one target-document
+        // write: no field is incrementally rebuilt while Word's math parser
+        // can reclassify adjacent punctuation, and no foreign document is
+        // mutated inside Undo.
+        number.FormattedText = preparedNumber.FormattedText;
+        UpdatePreparedNumberFields(host);
+    }
+
+    // WPS wraps formatted text pasted into a math argument in a nested equation, which
+    // leaves the number without its #(...) host. There the whole equation is written
+    // again, as an edit writes it: its own body with the number prepared in the staging
+    // document. The rewritten equation becomes the entry's host.
+    private OMath RewriteWithPreparedNumberInWps(Change change, Range exact)
+    {
+        var prepared = change.PreparedEquationXml
+            ?? throw new InvalidDataException("The prepared native number-format equation is missing.");
+        Range? replacement = null;
+        OMaths? maths = null;
+        try
+        {
+            var size = exact.Font.Size;
+            var rewritten = WordOmmlConverter.ReplaceWordNativeEquationNumberHostBody(
+                prepared,
+                WordOmmlConverter.StripWordNativeEquationNumberHost(
+                    WordOmmlConverter.ReadLocalEquationXml(exact)));
+            replacement = WordOmmlConverter.ReplaceWithPreparedOmmlDirect(
+                _document,
+                exact,
+                rewritten,
+                display: true,
+                mathFontName: _document.OMathFontName);
+            // The number takes the formula's size, as Word sizes a whole equation.
+            if (size > 0 && size < 1638)
+                WordFormulaHostLayout.ApplyOmmlLocalTypography(replacement, size);
+            WordFormulaHostLayout.ConfigureDisplayParagraph(replacement);
+            maths = replacement.OMaths;
+            if (maths.Count != 1)
+                throw new InvalidDataException("The rewritten numbered equation did not materialize one OMath.");
+            var host = maths[1];
+            Release(change.Entry.Host);
+            change.Entry.Host = host;
+            UpdatePreparedNumberFields(host);
+            return host;
+        }
+        finally { Release(maths); Release(replacement); }
+    }
+
+    private static void UpdatePreparedNumberFields(OMath host)
+    {
         Range? liveHost = null;
         Range? liveNumber = null;
         Fields? fields = null;
@@ -573,14 +631,6 @@ internal sealed partial class WordNativeNumberingAdoptionPlan : IDisposable
         Field? styleRef = null;
         try
         {
-            // The complete native field topology, including literal m:nor runs,
-            // was materialized in a hidden Word document BEFORE the target undo
-            // record. Copying its exact number argument is one target-document
-            // write: no field is incrementally rebuilt while Word's math parser
-            // can reclassify adjacent punctuation, and no foreign document is
-            // mutated inside Undo.
-            number.FormattedText = preparedNumber.FormattedText;
-
             liveHost = host.Range;
             liveNumber = WordNativeOmmlNumbering.ResolveNumberContentRange(liveHost);
             fields = liveNumber.Fields;

@@ -724,9 +724,22 @@ internal static class WordNativeOmmlNumbering
     // (equation array), the formula, "#", "\r" (delimiter), the number argument (a literal
     // prefix and the STYLEREF/SEQ fields), "\r" (delimiter end), "\r" (array end). The argument
     // runs from after the "#\r" before the equation's first field to the end of its last field.
-    // No field precedes the first one, so text offsets there are character positions.
+    // No field precedes the first one, so text offsets there are character positions. A
+    // literal number (typed, or WPS's own # numbering) has no field: its argument runs from
+    // after the last "#\r" to the delimiter and array ends that close the equation.
     private static Range? TryResolveWpsNumberContentRange(Range equation)
     {
+        Fields? probe = null;
+        try
+        {
+            probe = equation.Fields;
+            if (probe.Count == 0) return TryResolveWpsLiteralNumberContentRange(equation);
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        finally { Release(probe); }
         Fields? fields = null;
         Field? first = null;
         Field? last = null;
@@ -765,6 +778,27 @@ internal static class WordNativeOmmlNumbering
         {
             Release(after); Release(before); Release(lastResult); Release(firstCode);
             Release(last); Release(first); Release(fields);
+        }
+    }
+
+    private static Range? TryResolveWpsLiteralNumberContentRange(Range equation)
+    {
+        try
+        {
+            var text = equation.Text ?? string.Empty;
+            // Without fields every position is one character of the text.
+            if (text.Length != equation.End - equation.Start
+                || !text.EndsWith("\r\r", StringComparison.Ordinal))
+                return null;
+            var separator = text.LastIndexOf("#\r", StringComparison.Ordinal);
+            if (separator < 1 || separator + 2 > text.Length - 2) return null;
+            var number = equation.Duplicate;
+            number.SetRange(equation.Start + separator + 2, equation.End - 2);
+            return number;
+        }
+        catch (COMException)
+        {
+            return null;
         }
     }
 
