@@ -4984,6 +4984,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "png 0.17.16",
  "rcgen",
  "reqwest",
  "rustls",
@@ -5004,6 +5005,7 @@ dependencies = [
  "tower-http 0.7.0",
  "ttf-parser",
  "uuid",
+ "windows",
  "x509-parser",
  "zip",
 ]

@@ -16,6 +16,7 @@ use std::os::windows::process::CommandExt;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+mod anywhere;
 mod app_lifecycle;
 mod ocr_install;
 mod ocr_provider;
@@ -4058,6 +4059,16 @@ pub fn run() {
                 std::io::Error::other(error)
             })?; }
 
+            // VisualTeX Anywhere: formulas typed in any application through VisualTeX's
+            // input method (its shortcut, its link, VisualTeX Input).
+            if !isolated {
+                if let Err(error) = anywhere::initialize(app.handle()) {
+                    app_lifecycle::append_lifecycle_log(format!(
+                        "VisualTeX Anywhere initialization failed: {error}"
+                    ));
+                }
+            }
+
             if !isolated && run_mode.schedules_ocr_warmup() {
                 // Preserve OCR model prewarming. It is independent from the main
                 // embedded index.html and from the removed Office editor WebView prewarm.
@@ -4108,6 +4119,18 @@ pub fn run() {
             cancel_ocr_model_download,
             configure_silent_ocr,
             windows_silent_ocr_hotkey::get_silent_ocr_hud_status,
+            anywhere::anywhere_ready,
+            anywhere::anywhere_layout,
+            anywhere::anywhere_commit,
+            anywhere::anywhere_commit_image,
+            anywhere::anywhere_dismiss,
+            anywhere::anywhere_marked,
+            anywhere::anywhere_mode,
+            anywhere::anywhere_log,
+            anywhere::anywhere_capture_screenshot,
+            anywhere::anywhere_read_clipboard,
+            anywhere::anywhere_configure_hotkey,
+            anywhere::anywhere_status,
             windows_quick_ocr::capture_windows_quick_ocr,
             windows_quick_ocr::minimize_visualtex_main_window,
             windows_quick_ocr::write_windows_ocr_clipboard_text,

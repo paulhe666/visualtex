@@ -487,7 +487,7 @@ async function latexToEngineSvg(
   let formula = await renderEngineSvg(joinFormulaRows(body), {
     displayMode: options.displayMode,
     fontSizePx,
-    color: "#111111",
+    color: inkColor(options),
     fonts,
   });
   if (tagged) {
@@ -496,7 +496,7 @@ async function latexToEngineSvg(
     const label = await renderEngineSvg(starred ? `\\text{${text}}` : `\\text{(${text})}`, {
       displayMode: options.displayMode,
       fontSizePx,
-      color: "#111111",
+      color: inkColor(options),
       idPrefix: "vtx-tag-",
       fonts,
     });
@@ -534,6 +534,11 @@ async function latexToEngineSvg(
     height,
     baseline: Math.max(0, Math.min(height, paddingYPx + formula.ascent)),
   };
+}
+
+/** The formula's ink: the caller's colour (#rrggbb), else near-black. */
+function inkColor(options: SvgExportOptions) {
+  return options.color && /^#[0-9a-f]{6}$/i.test(options.color) ? options.color : "#111111";
 }
 
 async function latexToMathJaxSvg(
@@ -579,7 +584,7 @@ async function latexToMathJaxSvg(
     : Math.max(0, Math.min(height, paddingYPx + rootGeometry.baselinePx));
 
   svg = rewriteRootSvgOpening(svg, width, height, padded)
-    .replaceAll("currentColor", "#111111");
+    .replaceAll("currentColor", inkColor(options));
 
   const openingEnd = svg.indexOf(">");
   if (options.background === "white") {

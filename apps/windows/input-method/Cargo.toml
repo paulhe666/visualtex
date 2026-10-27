@@ -1,0 +1,21 @@
+# VisualTeX's Windows input method (see README.md):
+# - tip: the TSF text input processor, loaded into every application that types with it;
+# - server: VisualTeXInput.exe, one per user session, with RIME (pinyin) and the candidate window.
+[workspace]
+resolver = "2"
+members = ["tip", "server"]
+
+[workspace.package]
+version = "1.2.10"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+windows-core = "0.61"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = "s"

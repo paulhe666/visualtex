@@ -1,0 +1,1071 @@
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { formatFormulaLinesUniversal } from "../clipboard/LatexCopyService";
+import { MathEditor, type MathEditorHandle, type MathEditorInsertionTarget } from "../editor/MathEditor";
+import { editingModelOf, visualTexEditingCore } from "../editor/visualTexLayoutRuntime";
+import { historyManager } from "../history/HistoryManager";
+import { applyHistoryEntryToEditor, getEditorDocumentSnapshot } from "../history/documentHistory";
+import type { DocumentSnapshot } from "../history/historyTypes";
+import { useEditorStore } from "../stores/editorStore";
+import { applyDocumentTheme } from "../themeSync";
+import { useAnywhereHotkeyStore } from "../stores/anywhereHotkeyStore";
+import { useFormulaRowHotkeyStore } from "../stores/formulaRowHotkeyStore";
+import {
+  anywhereHotkeyLabel,
+  matchAnywhereHotkey,
+  type AnywhereHotkeyAction,
+} from "../shortcuts/anywhereHotkeys";
+import {
+  formulaMarkdown,
+  formulaPng,
+  formulaUnicode,
+  nextOutputMode,
+  opaqueHex,
+  OUTPUT_MODE_LABELS,
+  rememberedOutputMode,
+  rememberOutputMode,
+  warmOutputMode,
+  type AnywhereOutputMode,
+} from "./outputModes";
+import {
+  ANYWHERE_ACTIVATE_EVENT,
+  ANYWHERE_COMPOSE_EVENT,
+  ANYWHERE_KEY_EVENT,
+  ANYWHERE_STYLE_EVENT,
+  ANYWHERE_SUSPEND_EVENT,
+  captureAnywhereScreenshot,
+  readAnywhereClipboard,
+  commitAnywhere,
+  commitAnywhereImage,
+  dismissAnywhere,
+  isAnywhereActivation,
+  isAnywhereCompose,
+  isAnywhereKey,
+  isAnywhereStyle,
+  isAnywhereSuspension,
+  listenAnywhere,
+  logAnywhere,
+  reportAnywhereLayout,
+  reportAnywhereMarked,
+  reportAnywhereMode,
+  reportAnywhereReady,
+  type AnywhereActivation,
+  type AnywhereKey,
+  type AnywhereLayout,
+} from "./anywhereBridge";
+
+/** MathEditor's formula font size at zoom 1 (BASE_FORMULA_FONT_SIZE). */
+const EDITOR_BASE_FONT_PX = 54;
+/** Room around the strip for its shadow (anywhere.css: .anywhere-strip). */
+const PANEL_MARGIN = 8;
+/** The candidate table: under the formula, its left edge where the command
+ * being typed starts (anywhere.css lays it out, at the formula's size); the
+ * panel grows to hold it and its shadow. */
+const CANDIDATE_GAP = 5;
+const CANDIDATE_INSET = 1;
+const CANDIDATE_MARGIN = 14;
+const COPIED_NOTICE_MS = 1800;
+/** How long the output mode shows under the formula when it opens or changes. */
+const MODE_TAG_MS = 1600;
+/** The output mode's preview, cut to this many characters. */
+const MODE_PREVIEW_CHARS = 48;
+
+const NOTICE = {
+  accessibility: "输入法未连接 · ↩ 复制",
+  copied: "已复制 · Ctrl+V 粘贴",
+} as const;
+
+type CoreMathfield = Parameters<typeof visualTexEditingCore.caretRect>[0];
+
+/** x-height over font size of the formula's fonts (TeX's Computer Modern
+ * and Latin Modern; the Times profiles are a little larger). */
+const FORMULA_X_HEIGHT = 0.431;
+/** The field's font when it does not tell (system UI fonts). */
+const FIELD_X_HEIGHT = 0.52;
+
+/** The formula reads as part of the host's text: at the field's font size
+ * when it tells it (the formula is drawn in its line), scaled so that its
+ * letters are as tall as the field's (TeX's fonts have a smaller x-height
+ * than UI fonts at the same size); else from its line height. */
+function formulaZoom(caretHeight: number, fontSize?: number | null, xHeight?: number | null) {
+  if (fontSize && Number.isFinite(fontSize) && fontSize > 0) {
+    const fieldX = xHeight && Number.isFinite(xHeight) && xHeight > 0 ? xHeight : FIELD_X_HEIGHT;
+    const scale = Math.min(1.35, Math.max(1, fieldX / FORMULA_X_HEIGHT));
+    return Math.min(56, Math.max(9, fontSize * scale)) / EDITOR_BASE_FONT_PX;
+  }
+  const height = Number.isFinite(caretHeight) && caretHeight > 0 ? caretHeight : 18;
+  const fontPx = Math.min(40, Math.max(12, height * 0.92));
+  return fontPx / EDITOR_BASE_FONT_PX;
+}
+
+/** The text colour of the system's appearance, for a field that does not
+ * tell its own (Chrome, Electron). */
+function systemTextColor() {
+  const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+  return dark ? "rgba(255, 255, 255, 0.92)" : "rgba(0, 0, 0, 0.9)";
+}
+
+/** #rrggbbaa as a CSS colour. */
+function cssColor(color?: string | null) {
+  if (!color || !/^#[0-9a-f]{8}$/i.test(color)) return null;
+  const channel = (index: number) => parseInt(color.slice(index, index + 2), 16);
+  return `rgba(${channel(1)}, ${channel(3)}, ${channel(5)}, ${(channel(7) / 255).toFixed(3)})`;
+}
+
+/**
+ * The drawn formula in the strip's field: its origin (where its ink starts),
+ * its baseline (the bottom of the layout's strut, whose top is the box's
+ * top) and the width its ink takes.
+ */
+function formulaBox() {
+  const latex = firstField()?.shadowRoot?.querySelector<HTMLElement>(".ML__latex");
+  if (!latex) return null;
+  const rect = latex.getBoundingClientRect();
+  const style = getComputedStyle(latex);
+  const inkLeft = parseFloat(style.marginLeft) || 0;
+  const inkRight = parseFloat(style.marginRight) || 0;
+  const strut = latex.querySelector<HTMLElement>(":scope > .ML__strut");
+  const baseline = strut ? strut.getBoundingClientRect().bottom : rect.top + rect.height * 0.75;
+  return { left: rect.left - inkLeft, baseline, width: rect.width + inkLeft + inkRight };
+}
+
+/**
+ * The strip's one formula row keeps this id across sessions: the editor's
+ * resident field reports its edits under the id it was mounted with (a new
+ * id would need a remount, see OfficeDialogApp's refreshLayout).
+ */
+const FORMULA_LINE_ID = "anywhere-formula";
+
+function freshDocument() {
+  useEditorStore.getState().replaceDocumentState({
+    title: "",
+    lines: [{ id: FORMULA_LINE_ID, latex: "", mode: "inline" }],
+    activeLineId: FORMULA_LINE_ID,
+    formulaAlignment: "left",
+    selectionByLineId: {},
+  });
+}
+
+function currentDocument(): DocumentSnapshot {
+  const { title, lines, activeLineId, formulaAlignment } = useEditorStore.getState();
+  return { title, lines, activeLineId, formulaAlignment, selectionByLineId: {} };
+}
+
+function hasFormula() {
+  return useEditorStore.getState().lines.some((line) => line.latex.trim());
+}
+
+/** The strip's input follows the system's light or dark appearance, as an
+ * input method's composition window does, not the app's theme. */
+function applySystemAppearance() {
+  const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+  applyDocumentTheme(dark ? "dark" : "light");
+}
+
+function stripFields(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>(".anywhere-strip math-field"));
+}
+
+/** The first row's field: it sits on the host's line (the panel's anchor). */
+function firstField(): HTMLElement | null {
+  return stripFields()[0] ?? null;
+}
+
+/** The field being edited (the formula may have several rows): the focused
+ *  one, else the one the kernel draws as focused, else the first. */
+function stripField(): HTMLElement | null {
+  const fields = stripFields();
+  if (fields.length <= 1) return fields[0] ?? null;
+  const focused = fields.find((field) => field === document.activeElement || field.contains(document.activeElement));
+  return focused ?? fields.find((field) => field.shadowRoot?.querySelector(".ML__focused")) ?? fields[0];
+}
+
+/** What the strip shows: the editor's row, or the field itself if the row
+ * has not caught up (it never should). */
+function composedFormulaLines() {
+  const lines = useEditorStore.getState().lines.filter((line) => line.latex.trim());
+  if (lines.length) return lines;
+  const live = (stripField() as unknown as { value?: unknown } | null)?.value;
+  if (typeof live !== "string" || !live.trim()) return [];
+  void logAnywhere("commit read the field: the editor row was empty");
+  return [{ id: FORMULA_LINE_ID, latex: live, mode: "inline" as const }];
+}
+
+function suggestionsVisible() {
+  return Boolean(
+    document.getElementById("mathlive-suggestion-popover")?.classList.contains("is-visible"),
+  );
+}
+
+/** Places the candidate bar under the formula (anywhere.css reads the
+ * position; the kernel's own, centred on the caret, is for a list) and
+ * returns where its far edges are, for the panel's size. */
+function placeCandidateBar(strip: DOMRect) {
+  const popover = document.getElementById("mathlive-suggestion-popover");
+  if (!popover) return null;
+  const root = stripField()?.shadowRoot;
+  const typed = root?.querySelector(".ML__raw-latex")?.getBoundingClientRect();
+  // Right under the formula's ink (its depth included), not the strip's
+  // line box, as an input method's bar sits under the line.
+  const drawn = root?.querySelector(".ML__latex")?.getBoundingClientRect();
+  let left = Math.max(0, Math.round((typed && typed.height > 0 ? typed.left : strip.left) - CANDIDATE_INSET));
+  const top = Math.round((drawn && drawn.height > 0 ? drawn.bottom : strip.bottom) + CANDIDATE_GAP);
+  popover.style.setProperty("--anywhere-candidates-left", `${left}px`);
+  popover.style.setProperty("--anywhere-candidates-top", `${top}px`);
+  const box = popover.getBoundingClientRect();
+  // Kept on the screen when the formula is near its right edge.
+  const screenLeft = (window.screen as Screen & { availLeft?: number }).availLeft ?? 0;
+  const roomRight = screenLeft + window.screen.availWidth - window.screenX - CANDIDATE_MARGIN;
+  if (left + box.width > roomRight && roomRight > box.width) {
+    left = Math.round(roomRight - box.width);
+    popover.style.setProperty("--anywhere-candidates-left", `${left}px`);
+  }
+  return { right: left + box.width, bottom: top + box.height };
+}
+
+/** The row being edited, as the main window's $ / $$ marker says it. */
+function activeRowLabel() {
+  const { lines, activeLineId } = useEditorStore.getState();
+  const line = lines.find((item) => item.id === activeLineId) ?? lines[0];
+  const rows = lines.length > 1 ? ` ${lines.indexOf(line) + 1}/${lines.length}` : "";
+  return `${line?.mode === "inline" ? "行内" : "独立"}${rows}`;
+}
+
+/** What Return would insert in `mode`, for the mode's tag. */
+async function outputPreview(mode: AnywhereOutputMode, lines: ReturnType<typeof composedFormulaLines>) {
+  let text: string;
+  if (mode === "image") return "PNG";
+  if (mode === "unicode") text = (await formulaUnicode(lines.map((line) => line.latex))).text;
+  else if (mode === "markdown") text = formulaMarkdown(lines);
+  else {
+    text = formatFormulaLinesUniversal(lines, useEditorStore.getState().latexFormatProfile);
+  }
+  const chars = Array.from(text);
+  return chars.length > MODE_PREVIEW_CHARS ? `${chars.slice(0, MODE_PREVIEW_CHARS - 1).join("")}…` : text;
+}
+
+/** The shortcut (Settings > Keyboard shortcuts) a key is while a formula
+ *  is open, if any. */
+function formulaShortcut(key: { code: string; ctrl?: boolean; alt?: boolean; shift?: boolean; meta?: boolean }) {
+  return matchAnywhereHotkey(useAnywhereHotkeyStore.getState().bindings, key);
+}
+
+const OUTPUT_SHORTCUTS: Partial<Record<AnywhereHotkeyAction, AnywhereOutputMode>> = {
+  "anywhere-output-source": "source",
+  "anywhere-output-markdown": "markdown",
+  "anywhere-output-unicode": "unicode",
+  "anywhere-output-image": "image",
+};
+
+/** The output mode's tag: under the formula's start, while the candidates
+ *  are not up; returns its far edges for the panel's size. */
+function placeModeTag(strip: DOMRect) {
+  const tag = document.querySelector<HTMLElement>(".anywhere-mode-tag");
+  if (!tag) return null;
+  // under the last row, at the formula's start
+  const first = firstField()?.shadowRoot?.querySelector(".ML__latex")?.getBoundingClientRect();
+  const drawn = stripFields().at(-1)?.shadowRoot?.querySelector(".ML__latex")?.getBoundingClientRect();
+  const left = Math.max(0, Math.round((first && first.height > 0 ? first.left : strip.left) - 1));
+  const top = Math.round((drawn && drawn.height > 0 ? drawn.bottom : strip.bottom) + CANDIDATE_GAP);
+  tag.style.left = `${left}px`;
+  tag.style.top = `${top}px`;
+  const box = tag.getBoundingClientRect();
+  return { right: left + box.width, bottom: top + box.height };
+}
+
+/** A dropped composition takes its candidate list with it (as the kernel's
+ * hideSuggestionPopover does). */
+function hideSuggestions() {
+  const popover = document.getElementById("mathlive-suggestion-popover");
+  popover?.classList.remove("is-visible");
+  popover?.setAttribute("aria-hidden", "true");
+}
+
+/** A command is being typed in the LaTeX box: Enter completes it. */
+function hasRawLatexInput(field: HTMLElement) {
+  return Boolean(field.shadowRoot?.querySelector(".ML__raw-latex"));
+}
+
+/** Nothing typed yet, a half-typed command included (the editor's row only
+ * hears of a command once it is complete). */
+function fieldIsEmpty(field: HTMLElement) {
+  const value = (field as unknown as { value?: unknown }).value;
+  return (typeof value !== "string" || value.trim() === "") && !hasRawLatexInput(field);
+}
+
+/** The text the host field gets for the formula (the copy format's inline
+ * delimiters), empty while there is no formula. */
+function formulaText(latexFormatProfile: Parameters<typeof formatFormulaLinesUniversal>[1]) {
+  const lines = useEditorStore.getState().lines.filter((line) => line.latex.trim());
+  if (!lines.length) return "";
+  return formatFormulaLinesUniversal(lines, latexFormatProfile);
+}
+
+/**
+ * A key the input method took from the host field, typed into the formula
+ * the way the keyboard types into it: keydown, then keypress, beforeinput
+ * and input for a character, then keyup, all at the field's keyboard sink,
+ * so the editor's own handling (and this page's Enter and Escape) apply.
+ */
+function typeKey(key: AnywhereKey) {
+  const field = stripField();
+  const sink = field?.shadowRoot?.querySelector<HTMLElement>('[part="keyboard-sink"]') ?? field;
+  if (!sink) return;
+  const init: KeyboardEventInit = {
+    key: key.key,
+    code: key.code,
+    shiftKey: key.shift,
+    altKey: key.alt,
+    ctrlKey: key.ctrl,
+    metaKey: key.meta,
+    repeat: key.repeat,
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+  };
+  const down = new KeyboardEvent("keydown", init);
+  sink.dispatchEvent(down);
+  if (key.text && !down.defaultPrevented) {
+    const press = new KeyboardEvent("keypress", { ...init, charCode: key.text.codePointAt(0) ?? 0 });
+    sink.dispatchEvent(press);
+    if (!press.defaultPrevented) {
+      const before = new InputEvent("beforeinput", {
+        data: key.text,
+        inputType: "insertText",
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+      });
+      if (sink.dispatchEvent(before)) {
+        sink.dispatchEvent(
+          new InputEvent("input", { data: key.text, inputType: "insertText", bubbles: true, composed: true }),
+        );
+      }
+    }
+  }
+  sink.dispatchEvent(new KeyboardEvent("keyup", init));
+}
+
+/**
+ * The input method's pinyin in the formula's text, as the keyboard's input
+ * method would give it to the field: compositionstart once, compositionupdate
+ * with the spelling, compositionend with the chosen characters (or nothing).
+ */
+function compose(phase: "update" | "end", text: string, composing: { current: boolean }) {
+  const field = stripField();
+  const sink = field?.shadowRoot?.querySelector<HTMLElement>('[part="keyboard-sink"]') ?? field;
+  if (!sink) return;
+  const event = (type: string, data: string) =>
+    sink.dispatchEvent(new CompositionEvent(type, { data, bubbles: true, cancelable: true, composed: true }));
+  if (!composing.current && (phase === "update" || text)) {
+    event("compositionstart", "");
+    composing.current = true;
+  }
+  if (phase === "update") {
+    event("compositionupdate", text);
+  } else if (composing.current) {
+    event("compositionend", text);
+    composing.current = false;
+  }
+}
+
+/** The editor's caret is in text (\text{}), not in math. */
+function caretInText() {
+  const field = stripField() as unknown as { mode?: unknown } | null;
+  return field?.mode === "text";
+}
+
+/** The editor's caret from the drawn formula's start, in CSS pixels. */
+function caretOffset(box: { left: number } | null) {
+  const field = stripField();
+  const mathfield = (field as unknown as { _mathfield?: CoreMathfield } | null)?._mathfield;
+  const caret = mathfield ? visualTexEditingCore.caretRect(mathfield) : null;
+  if (!box || !caret || !Number.isFinite(caret.left)) return 0;
+  return Math.max(0, caret.left - box.left);
+}
+
+function sameLayout(a: AnywhereLayout | null, b: AnywhereLayout) {
+  return (
+    a !== null &&
+    Math.abs(a.width - b.width) < 0.5 &&
+    Math.abs(a.height - b.height) < 0.5 &&
+    Math.abs(a.anchorX - b.anchorX) < 0.5 &&
+    Math.abs(a.anchorY - b.anchorY) < 0.5
+  );
+}
+
+/**
+ * VisualTeX Anywhere's composition strip: the formula being typed at the
+ * host application's caret, with VisualTeX's candidates below it. Enter
+ * types it into the host, Escape drops it.
+ */
+export function AnywhereApp() {
+  const editorRef = useRef<MathEditorHandle>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const lines = useEditorStore((state) => state.lines);
+  const activeLineId = useEditorStore((state) => state.activeLineId);
+  const latexCodeFormat = useEditorStore((state) => state.latexCodeFormat);
+  const [zoom, setZoom] = useState(() => formulaZoom(18));
+  const [notice, setNotice] = useState<string | null>(null);
+  const [outputMode, setOutputMode] = useState<AnywhereOutputMode>("source");
+  /** The output mode's tag under the formula (with a preview of the output),
+   *  shown for a moment when the formula opens or the mode changes. */
+  const [modeTag, setModeTag] = useState<
+    { mode: AnywhereOutputMode; row: string; preview: string; status?: string } | null
+  >(null);
+  const outputModeRef = useRef<AnywhereOutputMode>("source");
+  const appNameRef = useRef("");
+  const modeTagTimerRef = useRef(0);
+  const [session, setSession] = useState(0);
+  /** VisualTeX's input method types this session's formula: keys from the
+   * input method, the formula drawn in the field's line over the space the
+   * field holds for it. */
+  const [inputMethod, setInputMethod] = useState(false);
+  const [textColor, setTextColor] = useState<string | null>(null);
+  const inputMethodRef = useRef(false);
+  const lastMarkedRef = useRef<string | null>(null);
+  const lastModeRef = useRef<boolean | null>(null);
+  const composingRef = useRef(false);
+  const generationRef = useRef(0);
+  const committingRef = useRef(false);
+  const lastLayoutRef = useRef<AnywhereLayout | null>(null);
+  /** The field's text and background colours (#rrggbb) when known: the
+   *  Image output is drawn in them. */
+  const fieldInkRef = useRef<string | null>(null);
+  const fieldBackgroundRef = useRef<string | null>(null);
+  /** Where the formula starts inside the panel: the empty formula's caret. */
+  const formulaStartRef = useRef<number | null>(null);
+
+  /** Shows the output mode under the formula for a moment, with what Return
+   *  would insert. */
+  const showModeTag = useCallback((mode: AnywhereOutputMode) => {
+    window.clearTimeout(modeTagTimerRef.current);
+    const generation = generationRef.current;
+    const lines = composedFormulaLines();
+    const row = activeRowLabel();
+    setModeTag({ mode, row, preview: "" });
+    modeTagTimerRef.current = window.setTimeout(() => setModeTag(null), MODE_TAG_MS);
+    if (!lines.length) return;
+    void outputPreview(mode, lines)
+      .then((preview) => {
+        if (generationRef.current !== generation || outputModeRef.current !== mode) return;
+        setModeTag((tag) => (tag && tag.mode === mode ? { ...tag, preview } : tag));
+      })
+      .catch(() => undefined);
+  }, []);
+  const showModeTagRef = useRef(showModeTag);
+  showModeTagRef.current = showModeTag;
+
+  /** An output mode (its shortcut, or the next one), remembered for this
+   *  application. */
+  const selectOutputMode = useCallback((mode: AnywhereOutputMode) => {
+    outputModeRef.current = mode;
+    setOutputMode(mode);
+    rememberOutputMode(appNameRef.current, mode);
+    warmOutputMode(mode);
+    showModeTag(mode);
+    void logAnywhere(`output mode ${mode} app=${appNameRef.current}`);
+  }, [showModeTag]);
+
+  /** Screenshot OCR: the area the user selects, recognized with the main
+   *  window's OCR settings, goes in at the formula's caret. */
+  const ocrBusyRef = useRef(false);
+  const ocrStatus = useCallback((text: string | null) => {
+    window.clearTimeout(modeTagTimerRef.current);
+    setModeTag(text ? { mode: outputModeRef.current, row: "", preview: "", status: text } : null);
+  }, []);
+
+  /** Recognizes an image (a screenshot, a pasted image) with the main
+   *  window's OCR settings and puts the formula at `target`. */
+  const recognizeIntoFormula = useCallback(
+    async (image: File, target: MathEditorInsertionTarget, generation: number) => {
+      ocrStatus("正在识别公式…");
+      const { fileToOcrRequest, recognizeFormulaImage, normalizeOcrFormulaLines, DEFAULT_OCR_MODEL, OCR_MODELS } =
+        await import("../ocr/ocrService");
+      let model = DEFAULT_OCR_MODEL;
+      try {
+        const stored = window.localStorage.getItem("visualtex.ocr.model");
+        if (OCR_MODELS.some((item) => item.id === stored)) model = stored as typeof model;
+      } catch {
+        // the default model
+      }
+      const result = await recognizeFormulaImage(await fileToOcrRequest(image, model));
+      if (generationRef.current !== generation) return;
+      const latex = normalizeOcrFormulaLines(result.formulas).join("\n");
+      if (!latex || !editorRef.current?.insertLatexAt(target, latex, "ocr")) {
+        throw new Error("OCR 没有返回可用公式");
+      }
+      void logAnywhere(`ocr inserted chars=${latex.length}`);
+      ocrStatus(null);
+    },
+    [ocrStatus],
+  );
+
+  /** Runs `work` as the formula's one OCR at a time, its failure shown in the tag. */
+  const withOcr = useCallback(
+    async (work: (target: MathEditorInsertionTarget, generation: number) => Promise<void>) => {
+      const generation = generationRef.current;
+      if (!generation || ocrBusyRef.current) return;
+      const target = editorRef.current?.captureInsertionTarget();
+      if (!target) {
+        void logAnywhere("ocr: no insertion target");
+        return;
+      }
+      ocrBusyRef.current = true;
+      try {
+        await work(target, generation);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        void logAnywhere(`ocr failed: ${message}`);
+        ocrStatus(`OCR 失败：${message}`);
+        modeTagTimerRef.current = window.setTimeout(() => setModeTag(null), 3000);
+      } finally {
+        ocrBusyRef.current = false;
+      }
+    },
+    [ocrStatus],
+  );
+
+  /** Screenshot OCR: the area the user selects. */
+  const runOcr = useCallback(
+    () =>
+      withOcr(async (target, generation) => {
+        ocrStatus("请框选要识别的公式区域（Esc 取消）");
+        const data = await captureAnywhereScreenshot();
+        if (!data || generationRef.current !== generation) {
+          ocrStatus(null);
+          return;
+        }
+        const { quickOcrCaptureToFile } = await import("../ocr/quickOcr");
+        await recognizeIntoFormula(quickOcrCaptureToFile({ dataBase64: data, extension: "png" }), target, generation);
+      }),
+    [withOcr, ocrStatus, recognizeIntoFormula],
+  );
+
+  /** Ctrl+V with the input method: an image on the clipboard is recognized
+   *  into the formula, text goes in as the main window pastes it. */
+  const pasteIntoFormula = useCallback(async () => {
+    const generation = generationRef.current;
+    if (!generation) return;
+    let clipboard;
+    try {
+      clipboard = await readAnywhereClipboard();
+    } catch (error) {
+      void logAnywhere(`paste failed: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    if (generationRef.current !== generation) return;
+    if (clipboard.kind === "text") {
+      const target = editorRef.current?.captureInsertionTarget();
+      if (target) editorRef.current?.insertLatexAt(target, clipboard.text, "paste");
+      void logAnywhere(`paste text chars=${clipboard.text.length}`);
+      return;
+    }
+    if (clipboard.kind !== "image") return;
+    const { dataBase64, extension } = clipboard;
+    void logAnywhere(`paste image ${extension}`);
+    await withOcr(async (target, inGeneration) => {
+      const { quickOcrCaptureToFile } = await import("../ocr/quickOcr");
+      await recognizeIntoFormula(quickOcrCaptureToFile({ dataBase64, extension }), target, inGeneration);
+    });
+  }, [withOcr, recognizeIntoFormula]);
+
+  /** An image pasted into the strip (no input method): recognized likewise. */
+  const pastedImage = useCallback(
+    (file: File) => {
+      void withOcr((target, generation) => recognizeIntoFormula(file, target, generation));
+    },
+    [withOcr, recognizeIntoFormula],
+  );
+
+  /** A formula shortcut: an output mode, the next one, or OCR. */
+  const runFormulaShortcut = useCallback(
+    (action: AnywhereHotkeyAction) => {
+      void logAnywhere(`shortcut ${action}`);
+      if (action === "anywhere-next-output") selectOutputMode(nextOutputMode(outputModeRef.current));
+      else if (action === "anywhere-row-display" || action === "anywhere-row-inline" || action === "anywhere-row-toggle") {
+        const mode = action === "anywhere-row-display" ? "display" : action === "anywhere-row-inline" ? "inline" : "toggle";
+        if (editorRef.current?.setActiveLineMode(mode)) {
+          // the tag says what the row now is (the row-shape effect)
+        } else {
+          ocrStatus("多行公式保持独立公式");
+          modeTagTimerRef.current = window.setTimeout(() => setModeTag(null), MODE_TAG_MS);
+        }
+      }
+      else if (action === "anywhere-ocr") void runOcr();
+      else if (OUTPUT_SHORTCUTS[action]) selectOutputMode(OUTPUT_SHORTCUTS[action]!);
+    },
+    [selectOutputMode, runOcr, ocrStatus],
+  );
+
+  const startNewFormula = useCallback(() => {
+    hideSuggestions();
+    // A half-typed command lives in the field only (the row is still empty),
+    // so emptying the row would leave it there: remount the field instead.
+    const live = (firstField() as unknown as { value?: unknown } | null)?.value;
+    const leftover = stripFields().some((field) => field.shadowRoot?.querySelector(".ML__raw-latex")) ||
+      (typeof live === "string" && live.trim() !== "");
+    freshDocument();
+    historyManager.clear();
+    if (leftover) editorRef.current?.refreshLayout();
+  }, []);
+
+  /** The input method keeps the formula's text (for a field that ends the
+   *  composition itself) and its caret (pinyin candidates go under it). */
+  const reportInline = useCallback(() => {
+    const generation = generationRef.current;
+    if (!generation || !inputMethodRef.current) return;
+    const box = formulaBox();
+    const width = box ? Math.ceil(box.width + 1) : 0;
+    const caretX = Math.round(caretOffset(box));
+    const text = formulaText(useEditorStore.getState().latexFormatProfile);
+    const key = `${width}\u0000${caretX}\u0000${text}`;
+    if (key !== lastMarkedRef.current) {
+      lastMarkedRef.current = key;
+      void reportAnywhereMarked(generation, text, width, caretX).catch((error) =>
+        console.error("Unable to hold the formula's space in the field", error),
+      );
+    }
+    const inText = caretInText();
+    if (inText !== lastModeRef.current) {
+      lastModeRef.current = inText;
+      void reportAnywhereMode(generation, inText).catch(() => undefined);
+    }
+  }, []);
+
+  const measure = useCallback(() => {
+    const generation = generationRef.current;
+    const strip = stripRef.current;
+    if (!generation || !strip) return;
+    const rect = strip.getBoundingClientRect();
+    // The layout is the page's answer to an activation: a strip not laid out
+    // yet still answers (the native side drops a session that gets none).
+    if (rect.width <= 0 && rect.height <= 0) void logAnywhere("measure: the strip has no size yet");
+    const field = firstField();
+    if (field && fieldIsEmpty(field) && stripFields().length === 1) {
+      const mathfield = (field as unknown as { _mathfield?: CoreMathfield })._mathfield;
+      const caret = mathfield ? visualTexEditingCore.caretRect(mathfield) : null;
+      if (caret && Number.isFinite(caret.left)) formulaStartRef.current = caret.left;
+    }
+    const candidates = suggestionsVisible() ? placeCandidateBar(rect) : null;
+    const tag = candidates ? null : placeModeTag(rect);
+    // In the field's line the formula's origin sits at the space the field
+    // holds for it, on the line's baseline; on the caret line (pasting) the
+    // strip's middle sits on the line.
+    const box = inputMethodRef.current ? formulaBox() : null;
+    const layout: AnywhereLayout = {
+      width: Math.ceil(
+        Math.max(
+          rect.right + PANEL_MARGIN,
+          candidates ? candidates.right + CANDIDATE_MARGIN : 0,
+          tag ? tag.right + CANDIDATE_MARGIN : 0,
+        ),
+      ),
+      height: Math.ceil(
+        Math.max(
+          rect.bottom + PANEL_MARGIN,
+          candidates ? candidates.bottom + CANDIDATE_MARGIN : 0,
+          tag ? tag.bottom + CANDIDATE_MARGIN : 0,
+        ),
+      ),
+      anchorX: box ? box.left : formulaStartRef.current ?? rect.left + 1,
+      anchorY: box ? box.baseline : rect.top + rect.height / 2,
+    };
+    if (inputMethodRef.current) reportInline();
+    if (sameLayout(lastLayoutRef.current, layout)) return;
+    lastLayoutRef.current = layout;
+    void reportAnywhereLayout(generation, layout).catch((error) =>
+      console.error("Unable to place VisualTeX Anywhere", error),
+    );
+  }, [reportInline]);
+
+  const activate = useCallback(
+    async (activation: AnywhereActivation) => {
+      generationRef.current = activation.generation;
+      committingRef.current = false;
+      lastLayoutRef.current = null;
+      lastMarkedRef.current = null;
+      lastModeRef.current = null;
+      composingRef.current = false;
+      inputMethodRef.current = Boolean(activation.inputMethod);
+      setInputMethod(Boolean(activation.inputMethod));
+      applySystemAppearance();
+      const kept = activation.resume && hasFormula() ? currentDocument() : null;
+      // The main window's settings (fonts, symbols, copy format) as of now;
+      // this window keeps its own formula (editorPersistenceStorage).
+      const started = performance.now();
+      void logAnywhere(`activate gen=${activation.generation}`);
+      try {
+        await Promise.all([
+          useEditorStore.persist.rehydrate(),
+          useAnywhereHotkeyStore.persist.rehydrate(),
+          useFormulaRowHotkeyStore.persist.rehydrate(),
+        ]);
+        void logAnywhere(`activate gen=${activation.generation} settings read ms=${Math.round(performance.now() - started)}`);
+      } catch (error) {
+        console.error("Unable to read VisualTeX settings", error);
+      }
+      if (kept) useEditorStore.getState().replaceDocumentState(kept);
+      else startNewFormula();
+      setZoom(formulaZoom(
+        activation.caretHeight,
+        activation.inputMethod ? activation.fontSize : null,
+        activation.xHeight,
+      ));
+      fieldInkRef.current = activation.inputMethod ? opaqueHex(activation.textColor) : null;
+      fieldBackgroundRef.current = activation.inputMethod ? opaqueHex(activation.backgroundColor) : null;
+      setTextColor(activation.inputMethod ? cssColor(activation.textColor) ?? systemTextColor() : null);
+      setNotice(activation.accessibilityTrusted ? null : NOTICE.accessibility);
+      appNameRef.current = activation.appName;
+      const mode = rememberedOutputMode(activation.appName);
+      outputModeRef.current = mode;
+      setOutputMode(mode);
+      warmOutputMode(mode);
+      showModeTagRef.current(mode);
+      setSession(activation.generation);
+    },
+    [startNewFormula],
+  );
+
+  const cancel = useCallback(() => {
+    const generation = generationRef.current;
+    if (!generation) return;
+    startNewFormula();
+    void dismissAnywhere(generation, false).catch((error) =>
+      console.error("Unable to close VisualTeX Anywhere", error),
+    );
+  }, [startNewFormula]);
+
+  const commit = useCallback(async () => {
+    const generation = generationRef.current;
+    if (!generation || committingRef.current) return;
+    editorRef.current?.commitPendingTransaction();
+    const { latexFormatProfile } = useEditorStore.getState();
+    const formula = composedFormulaLines();
+    if (!formula.length) {
+      cancel();
+      return;
+    }
+    const mode = outputModeRef.current;
+    // each row as it is: inline ($…$) or display ($$…$$ or the user's form)
+    const source = formatFormulaLinesUniversal(formula, latexFormatProfile);
+    committingRef.current = true;
+    try {
+      let outcome;
+      if (mode === "image") {
+        const ink = fieldInkRef.current;
+        const background = fieldBackgroundRef.current;
+        const png = await formulaPng(
+          formula.map((line) => line.latex),
+          ink && background ? { ink, background } : null,
+        );
+        outcome = await commitAnywhereImage(generation, png);
+      } else {
+        let text = mode === "markdown" ? formulaMarkdown(formula) : source;
+        if (mode === "unicode") {
+          try {
+            const converted = await formulaUnicode(formula.map((line) => line.latex));
+            if (converted.text) text = converted.text;
+            if (converted.notes.length) void logAnywhere(`unicode notes: ${converted.notes.join(" | ")}`);
+          } catch (error) {
+            // A formula the export path cannot read still goes in, as LaTeX.
+            void logAnywhere(`unicode failed, LaTeX instead: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+        outcome = await commitAnywhere(generation, text);
+      }
+      void logAnywhere(`commit gen=${generation} mode=${mode} outcome=${outcome}`);
+      if (outcome === "inserted") {
+        startNewFormula();
+      } else if (outcome === "copied") {
+        setNotice(NOTICE.copied);
+        window.setTimeout(() => {
+          if (generationRef.current === generation) cancel();
+        }, COPIED_NOTICE_MS);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      void logAnywhere(`commit gen=${generation} failed: ${message}`);
+      setNotice(message);
+    } finally {
+      committingRef.current = false;
+    }
+  }, [cancel, startNewFormula]);
+
+  // Activations and suspensions from the native panel.
+  useEffect(() => {
+    const disposers = [
+      listenAnywhere(ANYWHERE_ACTIVATE_EVENT, isAnywhereActivation, (activation) => {
+        void activate(activation);
+      }),
+      listenAnywhere(ANYWHERE_SUSPEND_EVENT, isAnywhereSuspension, (suspension) => {
+        if (suspension.generation === generationRef.current && !suspension.keepDraft) {
+          startNewFormula();
+        }
+      }),
+      listenAnywhere(ANYWHERE_KEY_EVENT, isAnywhereKey, (key) => {
+        if (key.generation !== generationRef.current || !inputMethodRef.current) return;
+        if (key.ctrl && key.code === "KeyV" && !key.meta && !key.alt) {
+          void pasteIntoFormula();
+          return;
+        }
+        const shortcut = formulaShortcut(key);
+        if (shortcut) runFormulaShortcut(shortcut);
+        else typeKey(key);
+      }),
+      listenAnywhere(ANYWHERE_COMPOSE_EVENT, isAnywhereCompose, (message) => {
+        if (message.generation === generationRef.current && inputMethodRef.current) {
+          compose(message.phase, message.text, composingRef);
+        }
+      }),
+      listenAnywhere(ANYWHERE_STYLE_EVENT, isAnywhereStyle, (style) => {
+        if (style.generation !== generationRef.current || !inputMethodRef.current) return;
+        if (style.fontSize) setZoom(formulaZoom(0, style.fontSize, style.xHeight));
+        if (style.textColor) {
+          setTextColor(cssColor(style.textColor));
+          fieldInkRef.current = opaqueHex(style.textColor) ?? fieldInkRef.current;
+        }
+        if (style.backgroundColor) fieldBackgroundRef.current = opaqueHex(style.backgroundColor);
+      }),
+    ];
+    return () => {
+      for (const disposer of disposers) void disposer.then((unlisten) => unlisten());
+    };
+  }, [activate, startNewFormula, runFormulaShortcut, pasteIntoFormula]);
+
+  // Undo and redo (Ctrl+Z, Ctrl+Y) replay the formula's history in this
+  // window's editor, as in the main window.
+  useEffect(() => {
+    historyManager.configure({
+      getDocumentSnapshot: () =>
+        getEditorDocumentSnapshot(editorRef.current?.getSelectionMap() ?? {}),
+      applyEntry: async (entry, direction) => {
+        const target = applyHistoryEntryToEditor(entry, direction);
+        if (!target) return;
+        if (
+          entry.type === "add-line" ||
+          entry.type === "remove-line" ||
+          entry.type === "replace-document"
+        ) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        }
+        await editorRef.current?.restoreSelection(target.lineId, target.latex, target.selection);
+      },
+    });
+    return () => historyManager.configure(null);
+  }, []);
+
+  // Ready once the editor has mounted its field: the native side then sends
+  // activations here instead of holding them.
+  useEffect(() => {
+    let disposed = false;
+    let timer = 0;
+    const probe = () => {
+      if (disposed) return;
+      if (firstField()) {
+        void reportAnywhereReady().catch((error) =>
+          console.error("Unable to report VisualTeX Anywhere ready", error),
+        );
+        return;
+      }
+      timer = window.setTimeout(probe, 30);
+    };
+    startNewFormula();
+    // The field mounted with the store's first row; remount it on the
+    // strip's own row (FORMULA_LINE_ID) once React has rendered that row.
+    timer = window.setTimeout(() => {
+      if (disposed) return;
+      editorRef.current?.refreshLayout();
+      probe();
+    }, 0);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, [startNewFormula]);
+
+  // A new session: put the caret in the formula and place the panel. The
+  // layout report is the page's answer to the activation (the native side
+  // shows the panel on it), so it goes out with this commit: the parked,
+  // hidden page gets no animation frames until it is shown.
+  useLayoutEffect(() => {
+    if (!session) return;
+    // The candidate table is drawn at the formula's size.
+    document.documentElement.style.setProperty(
+      "--anywhere-candidate-size",
+      `${(EDITOR_BASE_FONT_PX * zoom).toFixed(2)}px`,
+    );
+    editorRef.current?.focus({ target: "first", moveToEnd: true });
+    measure();
+    const frame = window.requestAnimationFrame(() => {
+      editorRef.current?.focus({ target: "first", moveToEnd: true });
+      measure();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [session, zoom, measure]);
+
+  // The strip follows the formula's size; the panel grows while candidates
+  // are open so the bar has room below the formula, and follows the bar as
+  // its candidates change.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const resize = new ResizeObserver(() => measure());
+    resize.observe(strip);
+    let candidates = suggestionsVisible();
+    const popover = new MutationObserver(() => {
+      const visible = suggestionsVisible();
+      if (visible === candidates && !visible) return;
+      candidates = visible;
+      measure();
+    });
+    popover.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => {
+      resize.disconnect();
+      popover.disconnect();
+    };
+  }, [measure]);
+
+  // The field holds the formula's width as it changes (the formula is
+  // drawn over that space); the input method follows the caret (its
+  // candidates, pinyin in text).
+  useEffect(() => {
+    if (!session || !inputMethod) return;
+    reportInline();
+    const follow = () => window.requestAnimationFrame(() => reportInline());
+    document.addEventListener("selection-change", follow, true);
+    document.addEventListener("mode-change", follow, true);
+    return () => {
+      document.removeEventListener("selection-change", follow, true);
+      document.removeEventListener("mode-change", follow, true);
+    };
+  }, [session, inputMethod, lines, zoom, reportInline]);
+
+  // The panel became key: the keyboard goes to the formula.
+  useEffect(() => {
+    const focusFormula = () => {
+      if (generationRef.current) editorRef.current?.focus({ target: "active" });
+    };
+    window.addEventListener("focus", focusFormula);
+    return () => window.removeEventListener("focus", focusFormula);
+  }, []);
+
+  // Input method composition first, then the candidate list, then the
+  // editor's own Enter and Escape; what remains commits or cancels.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!generationRef.current || event.isComposing || event.keyCode === 229) return;
+      const shortcut = inputMethodRef.current
+        ? null
+        : formulaShortcut({ code: event.code, ctrl: event.ctrlKey, alt: event.altKey, shift: event.shiftKey, meta: event.metaKey });
+      if (shortcut) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        runFormulaShortcut(shortcut);
+        return;
+      }
+      if (event.key !== "Enter" && event.key !== "Escape") return;
+      if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return;
+      const candidates = suggestionsVisible();
+      const field = stripField();
+      const model = field ? editingModelOf(field) : null;
+      if (event.key === "Escape") {
+        // An input method's Escape drops the composition, a half-typed
+        // command and its candidates included; only a selection collapses
+        // first (the editor's own Escape).
+        if (!candidates && model &&
+            visualTexEditingCore.escapeAction(model, event, false) === "collapse") return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        cancel();
+        return;
+      }
+      // Enter takes the highlighted candidate.
+      if (candidates) return;
+      // Enter completes a command being typed, and adds a row in cases.
+      if (field && hasRawLatexInput(field)) return;
+      const action = model ? visualTexEditingCore.enterAction(model, event, false) : "split-row";
+      if (action !== "split-row") {
+        void logAnywhere(`enter left to the editor: ${action}`);
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void commit();
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [cancel, commit, runFormulaShortcut]);
+
+  // A new row (Ctrl/Alt+Enter) or a row switched between inline and display
+  // (the row hotkeys): the tag says what the row now is.
+  const activeRowMode = useEditorStore(
+    (state) => (state.lines.find((line) => line.id === state.activeLineId) ?? state.lines[0])?.mode ?? "display",
+  );
+  const rowShapeRef = useRef<string | null>(null);
+  useEffect(() => {
+    const shape = `${session}:${lines.length}:${activeLineId}:${activeRowMode}`;
+    const previous = rowShapeRef.current;
+    rowShapeRef.current = shape;
+    if (!session || !previous || !previous.startsWith(`${session}:`) || previous === shape) return;
+    if (previous.split(":")[1] === String(lines.length) && previous.split(":")[3] === activeRowMode) return;
+    showModeTag(outputModeRef.current);
+  }, [session, lines.length, activeLineId, activeRowMode, showModeTag]);
+
+  // The panel makes room for the mode's tag while it shows.
+  useLayoutEffect(() => {
+    if (session) measure();
+  }, [modeTag, session, measure]);
+
+  return (
+    <>
+    <div
+      ref={stripRef}
+      className={inputMethod ? "anywhere-strip is-input-method" : "anywhere-strip"}
+      data-session={session || undefined}
+      data-output-mode={outputMode}
+      style={textColor ? ({ "--anywhere-text-color": textColor } as CSSProperties) : undefined}
+    >
+      <div className="anywhere-formula">
+        <MathEditor
+          ref={editorRef}
+          lines={lines}
+          activeLineId={activeLineId}
+          formulaAlignment="left"
+          latexCodeFormat={latexCodeFormat}
+          zoom={zoom}
+          reuseLineSlots
+          showLineModeControls={false}
+          rowModeHotkeys
+          onPasteImage={pastedImage}
+        />
+      </div>
+      {notice ? (
+        <div className="anywhere-notice" role="status">
+          {notice}
+        </div>
+      ) : null}
+    </div>
+    {modeTag && session ? (
+      <div className="anywhere-mode-tag" role="status" data-mode={modeTag.mode}>
+        {modeTag.status ? (
+          <span className="anywhere-mode-tag__status">{modeTag.status}</span>
+        ) : (
+          <>
+            <span className="anywhere-mode-tag__name">{OUTPUT_MODE_LABELS[modeTag.mode]}</span>
+            <span className="anywhere-mode-tag__row">{modeTag.row}</span>
+          </>
+        )}
+        {modeTag.preview && !modeTag.status ? <span className="anywhere-mode-tag__preview">{modeTag.preview}</span> : null}
+        {modeTag.status ? null : (
+          <span className="anywhere-mode-tag__key">{anywhereHotkeyLabel(useAnywhereHotkeyStore.getState().bindings["anywhere-next-output"])}</span>
+        )}
+      </div>
+    ) : null}
+    </>
+  );
+}

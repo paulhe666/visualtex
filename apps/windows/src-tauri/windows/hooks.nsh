@@ -455,6 +455,20 @@ visualtex_office_missing:
   Goto visualtex_office_done
 
 visualtex_office_done:
+  ; VisualTeX's input method (VisualTeX Anywhere: pinyin, English and formulas in any
+  ; application) is a machine-wide text service: registering it may show one UAC prompt.
+  ; The script leaves a current registration alone. Acceptance installs skip it.
+  ${If} $VisualTeXAcceptanceMode != "1"
+    IfFileExists "$INSTDIR\input-method\visualtex_tip.dll" 0 visualtex_input_method_done
+    IfFileExists "$INSTDIR\scripts\install_windows_input_method.ps1" 0 visualtex_input_method_done
+    DetailPrint "Installing the VisualTeX input method (pinyin, English and formulas in any application). A UAC prompt may appear."
+    nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_input_method.ps1" -SourceDirectory "$INSTDIR\input-method"`
+    Pop $0
+    ${If} $0 != "0"
+      DetailPrint "The VisualTeX input method was not installed (ExitCode=$0). VisualTeX works without it; typing formulas in other applications needs it."
+    ${EndIf}
+  ${EndIf}
+visualtex_input_method_done:
   ${If} $VisualTeXAcceptanceMode == "1"
     DetailPrint "Installed-release acceptance mode: legacy install roots are untouched."
     Goto visualtex_postinstall_cleanup_done
@@ -506,6 +520,11 @@ visualtex_postinstall_cleanup_done:
     SetDetailsView show
     Abort "Unable to repair a legacy VisualTeX-owned MathType registration. ExitCode=$0 Output=$1"
   ${EndIf}
+  ; VisualTeX's input method: off the user's keyboards, unregistered (one UAC prompt).
+  IfFileExists "$INSTDIR\scripts\install_windows_input_method.ps1" 0 visualtex_input_method_uninstall_done
+  nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install_windows_input_method.ps1" -Uninstall`
+  Pop $0
+visualtex_input_method_uninstall_done:
   IfFileExists "$INSTDIR\scripts\uninstall_windows_vsto.ps1" 0 visualtex_preuninstall_done
   nsExec::ExecToStack `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\uninstall_windows_vsto.ps1"`
   Pop $0

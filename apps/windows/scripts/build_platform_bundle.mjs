@@ -93,4 +93,7 @@ if (process.platform === "win32") {
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
     "scripts/verify_windows_native_render_package.ps1",
   ], powershellEnvironment);
+  // VisualTeX's input method (VisualTeX Anywhere: pinyin, English and formulas in any
+  // application), bundled as input-method/ and registered by the installer.
+  run(process.execPath, ["scripts/build_windows_input_method.mjs"]);
 }

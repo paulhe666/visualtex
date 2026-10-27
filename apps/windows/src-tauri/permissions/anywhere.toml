@@ -1,0 +1,17 @@
+[[permission]]
+identifier = "allow-anywhere"
+description = "Allow VisualTeX Anywhere's formula window to run its session with VisualTeX's input method, and the main window to configure its shortcut."
+commands.allow = [
+  "anywhere_ready",
+  "anywhere_layout",
+  "anywhere_commit",
+  "anywhere_commit_image",
+  "anywhere_dismiss",
+  "anywhere_marked",
+  "anywhere_mode",
+  "anywhere_log",
+  "anywhere_capture_screenshot",
+  "anywhere_read_clipboard",
+  "anywhere_configure_hotkey",
+  "anywhere_status"
+]

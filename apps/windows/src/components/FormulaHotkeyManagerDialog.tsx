@@ -5,6 +5,7 @@ import { FormulaHotkeyRecorderDialog } from "./FormulaHotkeyRecorderDialog";
 import { FormulaRowHotkeyRecorderDialog } from "./FormulaRowHotkeyRecorderDialog";
 import { OfficeFormulaShortcutSettingsSection } from "./OfficeFormulaShortcutSettings";
 import { ButtonShortcutSettingsSection } from "./ButtonShortcutSettings";
+import { AnywhereHotkeySettingsSection } from "./AnywhereHotkeySettings";
 import { ConfirmEscapeKeySettingsSection } from "./ConfirmEscapeKeySettings";
 import {
   formatFormulaHotkeyChord,
@@ -104,6 +105,7 @@ export function FormulaHotkeyManagerDialog({ open, onClose }: Props) {
 
           <div className="shortcut-manager-scroll">
             <ButtonShortcutSettingsSection />
+            <AnywhereHotkeySettingsSection />
             <OfficeFormulaShortcutSettingsSection />
 
             <section className="shortcut-settings-group" data-formula-row-hotkeys>

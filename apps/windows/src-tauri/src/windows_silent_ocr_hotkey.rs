@@ -850,6 +850,17 @@ pub(crate) fn initialize(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// While a formula is open (VisualTeX Anywhere) its keys are the formula's: the silent OCR
+/// hotkey (Ctrl+Alt+O, also the formula's "next output format") steps aside until it closes.
+pub(crate) fn suspend_for_formula(suspended: bool) {
+    if !current_configuration().enabled || COMMAND_SENDER.get().is_none() {
+        return;
+    }
+    if let Err(error) = set_registered(!suspended) {
+        eprintln!("Unable to {} the silent OCR hotkey: {error}", if suspended { "suspend" } else { "restore" });
+    }
+}
+
 fn set_registered(enabled: bool) -> Result<String, String> {
     let sender = COMMAND_SENDER
         .get()
