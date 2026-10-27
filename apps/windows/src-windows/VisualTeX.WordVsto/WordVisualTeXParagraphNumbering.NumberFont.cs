@@ -3,14 +3,18 @@ namespace VisualTeX.WordVsto;
 internal static partial class WordVisualTeXParagraphNumbering
 {
     // The Word font for a number whose formula uses this letter font: the
-    // first installed face of the editor's font stack for it. KaTeX and Cambria
-    // formulas use Cambria, whose digits and brackets are Cambria Math's;
-    // Cambria Math itself gives a text line its very tall math line height.
-    // A formula from before letter fonts were recorded keeps the body font.
+    // first installed face of the editor's font stack for it. KaTeX (Computer
+    // Modern) has no text face installed with Windows; Times New Roman is the
+    // nearest one and keeps its round brackets (Cambria's straight brackets
+    // looked boxy next to them). Cambria formulas use Cambria, whose digits and
+    // brackets are Cambria Math's; Cambria Math itself gives a text line its very
+    // tall math line height. A formula from before letter fonts were recorded
+    // keeps the body font.
     internal static string? NumberFontName(string? letterFont) =>
         letterFont switch
         {
-            "katex" or "cambria" => "Cambria",
+            "katex" => "Times New Roman",
+            "cambria" => "Cambria",
             "times" => "Times New Roman",
             "stix" => FirstInstalledFont("STIX Two Text", "STIX Two Math") ?? "Times New Roman",
             "palatino" => FirstInstalledFont("Palatino", "Palatino Linotype", "Book Antiqua") ?? "Palatino Linotype",

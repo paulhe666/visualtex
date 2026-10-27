@@ -7,7 +7,7 @@ namespace VisualTeX.WindowsOffice.Tests;
 public sealed class VisualTeXNumberFontTests
 {
     [Theory]
-    [InlineData("katex", "Cambria")]
+    [InlineData("katex", "Times New Roman")]
     [InlineData("cambria", "Cambria")]
     [InlineData("times", "Times New Roman")]
     public void FixedLetterFontsMapToOneWordFont(string letterFont, string expected) =>
