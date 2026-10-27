@@ -142,6 +142,9 @@ struct Activation {
     /// VisualTeX's input method types the formula: the editor takes its keys
     /// from the input method, and the formula is drawn in the field's line.
     input_method: bool,
+    /// The display shortcut opened the formula: its row is a display row
+    /// (else a new formula starts inline).
+    display: bool,
     /// The field's font size in points, when the field tells it.
     font_size: Option<f64>,
     /// The field's text colour (#rrggbbaa), when the field tells it.
@@ -213,6 +216,8 @@ struct Session {
     /// The input source the field goes back to after the formula (the
     /// shortcut switched it to the input method).
     return_to: Option<String>,
+    /// The display shortcut opened this session.
+    display: bool,
     /// The generation whose shortcut switched the field to the input method
     /// and waits for its "activate".
     awaiting_input_method: u64,
@@ -265,6 +270,7 @@ static SESSION: Mutex<Session> = Mutex::new(Session {
     reloaded_for: 0,
     delivery: Delivery::Paste,
     return_to: None,
+    display: false,
     awaiting_input_method: 0,
     pending_keys: Vec::new(),
     field_text: FieldText {
@@ -350,23 +356,24 @@ pub(crate) fn initialize(app: &AppHandle) -> Result<(), String> {
     }
 }
 
-/// The shortcut: show the strip at the caret, or hide it (keeping its
-/// formula) when it is up, as switching an input method off keeps nothing
-/// half-typed in the document.
+/// A shortcut: show the strip at the caret (`display`: the formula's row is
+/// a display row), or hide it (keeping its formula) when it is up, as
+/// switching an input method off keeps nothing half-typed in the document.
 #[cfg(target_os = "macos")]
-fn toggle(app: &AppHandle) {
+fn toggle(app: &AppHandle, display: bool) {
     if session().map(|session| session.phase != Phase::Hidden).unwrap_or(false) {
         hide(app, true, "shortcut");
         return;
     }
+    log(&format!("shortcut display={display}"));
     let app = app.clone();
     let spawned = std::thread::Builder::new()
         .name("visualtex-anywhere-activate".to_string())
         .spawn(move || {
             if ime::is_enabled(&app) {
-                begin_input_method(&app);
+                begin_input_method(&app, display);
             } else {
-                activate(&app);
+                activate(&app, display);
             }
         });
     if let Err(error) = spawned {
@@ -375,7 +382,7 @@ fn toggle(app: &AppHandle) {
 }
 
 #[cfg(target_os = "macos")]
-fn activate(app: &AppHandle) {
+fn activate(app: &AppHandle, display: bool) {
     let started = std::time::Instant::now();
     let trusted = ax::is_trusted();
     if !trusted {
@@ -405,6 +412,7 @@ fn activate(app: &AppHandle) {
         session.target = Some(target.clone());
         session.delivery = Delivery::Paste;
         session.return_to = None;
+        session.display = display;
         session.awaiting_input_method = 0;
         session.pending_keys.clear();
         session.field_text = FieldText::default();
@@ -430,6 +438,7 @@ fn pending_activation(session: &Session, trusted: bool) -> Option<Activation> {
         accessibility_trusted: trusted,
         resume: session.draft,
         input_method: session.delivery == Delivery::InputMethod,
+        display: session.display,
         font_size: session.field_text.font_size,
         text_color: session.field_text.text_color.clone(),
         x_height: session.field_text.x_height,
@@ -442,7 +451,7 @@ fn pending_activation(session: &Session, trusted: bool) -> Option<Activation> {
 /// The shortcut with the input method enabled: switch the field to it; its
 /// "activate" (input_method_message) opens the formula there.
 #[cfg(target_os = "macos")]
-fn begin_input_method(app: &AppHandle) {
+fn begin_input_method(app: &AppHandle, display: bool) {
     let started = std::time::Instant::now();
     let previous = ime::current_source(app);
     let already = previous.as_deref() == Some(ime::SOURCE_ID);
@@ -453,6 +462,7 @@ fn begin_input_method(app: &AppHandle) {
         session.target = None;
         session.delivery = Delivery::InputMethod;
         session.return_to = previous.clone().filter(|_| !already);
+        session.display = display;
         session.awaiting_input_method = session.generation;
         session.pending_keys.clear();
         session.field_text = FieldText::default();
@@ -489,7 +499,7 @@ fn begin_input_method(app: &AppHandle) {
         started.elapsed().as_millis()
     ));
     if !switched {
-        fall_back_to_paste(app, generation, false);
+        fall_back_to_paste(app, generation, false, display);
         return;
     }
     let app = app.clone();
@@ -502,7 +512,7 @@ fn begin_input_method(app: &AppHandle) {
                 .unwrap_or(false);
             if waiting {
                 log(&format!("input method did not take the field gen={generation}"));
-                fall_back_to_paste(&app, generation, !already);
+                fall_back_to_paste(&app, generation, !already, display);
             }
         });
 }
@@ -510,7 +520,7 @@ fn begin_input_method(app: &AppHandle) {
 /// The field did not take the input method: back to the input source it
 /// had, and the pasting strip instead.
 #[cfg(target_os = "macos")]
-fn fall_back_to_paste(app: &AppHandle, generation: u64, switch_back: bool) {
+fn fall_back_to_paste(app: &AppHandle, generation: u64, switch_back: bool, display: bool) {
     {
         let Ok(mut session) = session() else { return };
         if session.generation != generation {
@@ -524,7 +534,7 @@ fn fall_back_to_paste(app: &AppHandle, generation: u64, switch_back: bool) {
     if switch_back {
         ime::switch_back();
     }
-    activate(app);
+    activate(app, display);
 }
 
 /// The input method's report of the field: where the formula goes (the
@@ -824,6 +834,7 @@ fn input_method_started(app: &AppHandle, message: &serde_json::Value) {
         session.phase = Phase::Activating;
         session.delivery = Delivery::InputMethod;
         session.return_to = None;
+        session.display = false;
         session.awaiting_input_method = 0;
         session.pending_keys.clear();
         session.field_text = geometry.as_ref().map(|geometry| geometry.text.clone()).unwrap_or_default();
@@ -1364,18 +1375,28 @@ pub(crate) async fn anywhere_read_clipboard(app: AppHandle) -> Result<AnywhereCl
     }
 }
 
-/// Settings > Shortcuts: the global shortcut that opens and closes a formula.
+/// Settings > Shortcuts: a global shortcut that opens and closes a formula
+/// (`action`: "anywhere-toggle", the default, or "anywhere-open-display";
+/// a null chord removes the display one).
 #[tauri::command]
-pub(crate) async fn anywhere_configure_hotkey(app: AppHandle, chord: serde_json::Value) -> Result<String, String> {
+pub(crate) async fn anywhere_configure_hotkey(
+    app: AppHandle,
+    chord: serde_json::Value,
+    action: Option<String>,
+) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
-        let chord: hotkey::AnywhereChord =
+        let slot = match action.as_deref() {
+            None => hotkey::Slot::Toggle,
+            Some(action) => hotkey::Slot::from_action(action).ok_or_else(|| format!("Unknown shortcut {action}"))?,
+        };
+        let chord: Option<hotkey::AnywhereChord> =
             serde_json::from_value(chord).map_err(|error| format!("Unreadable shortcut: {error}"))?;
-        hotkey::configure(&app, chord)
+        hotkey::configure(&app, slot, chord)
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (app, chord);
+        let _ = (app, chord, action);
         Err("VisualTeX Anywhere is available on macOS only".to_string())
     }
 }

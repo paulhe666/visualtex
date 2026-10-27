@@ -134,10 +134,10 @@ function formulaBox() {
  */
 const FORMULA_LINE_ID = "anywhere-formula";
 
-function freshDocument() {
+function freshDocument(mode: "inline" | "display" = "inline") {
   useEditorStore.getState().replaceDocumentState({
     title: "",
-    lines: [{ id: FORMULA_LINE_ID, latex: "", mode: "inline" }],
+    lines: [{ id: FORMULA_LINE_ID, latex: "", mode }],
     activeLineId: FORMULA_LINE_ID,
     formulaAlignment: "left",
     selectionByLineId: {},
@@ -597,14 +597,14 @@ export function AnywhereApp() {
     [selectOutputMode, runOcr, ocrStatus],
   );
 
-  const startNewFormula = useCallback(() => {
+  const startNewFormula = useCallback((mode: "inline" | "display" = "inline") => {
     hideSuggestions();
     // A half-typed command lives in the field only (the row is still empty),
     // so emptying the row would leave it there: remount the field instead.
     const live = (firstField() as unknown as { value?: unknown } | null)?.value;
     const leftover = stripFields().some((field) => field.shadowRoot?.querySelector(".ML__raw-latex")) ||
       (typeof live === "string" && live.trim() !== "");
-    freshDocument();
+    freshDocument(mode);
     historyManager.clear();
     if (leftover) editorRef.current?.refreshLayout();
   }, [historyManager]);
@@ -704,8 +704,19 @@ export function AnywhereApp() {
       } catch (error) {
         console.error("Unable to read VisualTeX settings", error);
       }
-      if (kept) useEditorStore.getState().replaceDocumentState(kept);
-      else startNewFormula();
+      if (kept) {
+        // The display shortcut makes the kept formula's row a display row.
+        useEditorStore.getState().replaceDocumentState(
+          activation.display
+            ? {
+                ...kept,
+                lines: kept.lines.map((line) =>
+                  line.id === kept.activeLineId || kept.lines.length === 1 ? { ...line, mode: "display" as const } : line,
+                ),
+              }
+            : kept,
+        );
+      } else startNewFormula(activation.display ? "display" : "inline");
       setZoom(formulaZoom(
         activation.caretHeight,
         activation.inputMethod ? activation.fontSize : null,

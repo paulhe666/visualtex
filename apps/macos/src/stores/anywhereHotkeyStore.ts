@@ -60,17 +60,23 @@ export const useAnywhereHotkeyStore = create<AnywhereHotkeyState>()(
   ),
 );
 
-/** Registers the system-wide shortcut with macOS (it stays registered across
- *  restarts); throws macOS's refusal. */
-export async function configureAnywhereToggleHotkey(chord: FormulaHotkeyChord): Promise<string> {
+/** Registers a system-wide shortcut with macOS (it stays registered across
+ *  restarts), or removes the display one (null); throws macOS's refusal. */
+export async function configureAnywhereGlobalHotkey(
+  action: AnywhereHotkeyAction,
+  chord: FormulaHotkeyChord | null,
+): Promise<string> {
   if (!isTauri()) return "";
   return invoke<string>("anywhere_configure_hotkey", {
-    chord: {
-      code: chord.code,
-      ctrlKey: chord.ctrlKey,
-      altKey: chord.altKey,
-      shiftKey: chord.shiftKey,
-      metaKey: chord.metaKey,
-    },
+    action,
+    chord: chord
+      ? {
+          code: chord.code,
+          ctrlKey: chord.ctrlKey,
+          altKey: chord.altKey,
+          shiftKey: chord.shiftKey,
+          metaKey: chord.metaKey,
+        }
+      : null,
   });
 }

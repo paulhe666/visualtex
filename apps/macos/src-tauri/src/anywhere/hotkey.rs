@@ -1,11 +1,13 @@
-//! The Anywhere shortcut, registered with Carbon like the Office hotkeys
-//! (office/hotkeys.rs) under its own signature. A registered hotkey needs no
+//! The Anywhere shortcuts, registered with Carbon like the Office hotkeys
+//! (office/hotkeys.rs) under their own signature. A registered hotkey needs no
 //! permission and takes the key combination before the frontmost application.
+//! One opens and closes a formula (an inline row), the other does the same
+//! with a display row.
 //!
-//! The user sets it in Settings > Shortcuts (default Control-Option-M); the
-//! main window or the Anywhere page sends it here (configure_anywhere_hotkey)
-//! and it is kept in the application data folder so the next start registers
-//! it before any page has loaded.
+//! The user sets them in Settings > Shortcuts (default Control-Option-M and
+//! Control-Option-Shift-M); the main window sends them here
+//! (configure_anywhere_hotkey) and they are kept in the application data
+//! folder so the next start registers them before any page has loaded.
 
 use serde::{Deserialize, Serialize};
 use std::ffi::c_void;
@@ -73,12 +75,63 @@ const EVENT_PARAM_DIRECT_OBJECT: u32 = u32::from_be_bytes(*b"----");
 const TYPE_EVENT_HOT_KEY_ID: u32 = u32::from_be_bytes(*b"hkid");
 const EVENT_NOT_HANDLED: OSStatus = -9874;
 const HOTKEY_SIGNATURE: u32 = u32::from_be_bytes(*b"VTAW");
-const HOTKEY_ID: u32 = 1;
 const CMD_KEY: u32 = 1 << 8;
 const SHIFT_KEY: u32 = 1 << 9;
 const OPTION_KEY: u32 = 1 << 11;
 const CONTROL_KEY: u32 = 1 << 12;
-const CHORD_FILE: &str = "anywhere-hotkey.json";
+
+/// The system-wide shortcuts: each opens and closes a formula, starting it
+/// as an inline or as a display row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Slot {
+    Toggle,
+    Display,
+}
+
+impl Slot {
+    const ALL: [Slot; 2] = [Slot::Toggle, Slot::Display];
+
+    /// Settings' action id (src/shortcuts/anywhereHotkeys.ts).
+    pub(crate) fn from_action(action: &str) -> Option<Self> {
+        match action {
+            "anywhere-toggle" => Some(Slot::Toggle),
+            "anywhere-open-display" => Some(Slot::Display),
+            _ => None,
+        }
+    }
+
+    fn index(self) -> usize {
+        self as usize
+    }
+
+    fn hotkey_id(self) -> u32 {
+        self.index() as u32 + 1
+    }
+
+    fn chord_file(self) -> &'static str {
+        match self {
+            Slot::Toggle => "anywhere-hotkey.json",
+            Slot::Display => "anywhere-display-hotkey.json",
+        }
+    }
+
+    /// Control-Option-M ("math"): macOS and common applications leave it
+    /// free, unlike Control-Space (input sources) or Option-Space (launchers).
+    /// Shift with it opens a display formula ($ and $$).
+    fn default_chord(self) -> AnywhereChord {
+        AnywhereChord {
+            code: "KeyM".to_string(),
+            ctrl_key: true,
+            alt_key: true,
+            shift_key: self == Slot::Display,
+            meta_key: false,
+        }
+    }
+
+    fn display(self) -> bool {
+        self == Slot::Display
+    }
+}
 
 /// A key combination as Settings records it (KeyboardEvent.code and its
 /// modifiers).
@@ -97,18 +150,6 @@ pub(crate) struct AnywhereChord {
 }
 
 impl AnywhereChord {
-    /// Control-Option-M ("math"): macOS and common applications leave it
-    /// free, unlike Control-Space (input sources) or Option-Space (launchers).
-    fn default_chord() -> Self {
-        Self {
-            code: "KeyM".to_string(),
-            ctrl_key: true,
-            alt_key: true,
-            shift_key: false,
-            meta_key: false,
-        }
-    }
-
     fn modifiers(&self) -> u32 {
         (if self.meta_key { CMD_KEY } else { 0 })
             | (if self.shift_key { SHIFT_KEY } else { 0 })
@@ -142,8 +183,8 @@ impl AnywhereChord {
 }
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
-/// The registered combination and its Carbon reference (as an address).
-static REGISTERED: Mutex<Option<(AnywhereChord, usize)>> = Mutex::new(None);
+/// Each slot's registered combination and its Carbon reference (as an address).
+static REGISTERED: Mutex<[Option<(AnywhereChord, usize)>; 2]> = Mutex::new([None, None]);
 
 unsafe extern "C" fn hotkey_handler(_call: EventHandlerCallRef, event: EventRef, _user_data: *mut c_void) -> OSStatus {
     let mut hotkey_id = EventHotKeyId { signature: 0, id: 0 };
@@ -158,28 +199,36 @@ unsafe extern "C" fn hotkey_handler(_call: EventHandlerCallRef, event: EventRef,
             (&mut hotkey_id as *mut EventHotKeyId).cast(),
         )
     };
-    if status != 0 || hotkey_id.signature != HOTKEY_SIGNATURE || hotkey_id.id != HOTKEY_ID {
+    if status != 0 || hotkey_id.signature != HOTKEY_SIGNATURE {
         return EVENT_NOT_HANDLED;
     }
+    let Some(slot) = Slot::ALL.into_iter().find(|slot| slot.hotkey_id() == hotkey_id.id) else {
+        return EVENT_NOT_HANDLED;
+    };
     if let Some(app) = APP.get() {
-        super::toggle(app);
+        super::toggle(app, slot.display());
     }
     0
 }
 
-fn chord_file(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_data_dir().ok().map(|directory| directory.join(CHORD_FILE))
+fn chord_file(app: &AppHandle, slot: Slot) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|directory| directory.join(slot.chord_file()))
 }
 
-fn saved_chord(app: &AppHandle) -> AnywhereChord {
-    chord_file(app)
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .and_then(|text| serde_json::from_str::<AnywhereChord>(&text).ok())
-        .filter(|chord| crate::office::hotkeys::carbon_key_code(&chord.code).is_some())
-        .unwrap_or_else(AnywhereChord::default_chord)
+/// The slot's saved combination: the default when none was saved (or it is
+/// unreadable), none when the user cleared it ("null").
+fn saved_chord(app: &AppHandle, slot: Slot) -> Option<AnywhereChord> {
+    let Some(text) = chord_file(app, slot).and_then(|path| std::fs::read_to_string(path).ok()) else {
+        return Some(slot.default_chord());
+    };
+    match serde_json::from_str::<Option<AnywhereChord>>(&text) {
+        Ok(None) if slot != Slot::Toggle => None,
+        Ok(Some(chord)) if crate::office::hotkeys::carbon_key_code(&chord.code).is_some() => Some(chord),
+        _ => Some(slot.default_chord()),
+    }
 }
 
-/// Main thread, once at startup: the handler, and the saved combination.
+/// Main thread, once at startup: the handler, and the saved combinations.
 pub(super) fn register(app: &AppHandle) -> Result<(), String> {
     if APP.set(app.clone()).is_err() {
         return Ok(());
@@ -202,20 +251,31 @@ pub(super) fn register(app: &AppHandle) -> Result<(), String> {
     if status != 0 {
         return Err(format!("Unable to install the VisualTeX Anywhere shortcut handler: {status}"));
     }
-    let chord = saved_chord(app);
-    set_chord(&chord).or_else(|error| {
-        // A saved combination macOS no longer accepts: the default instead.
-        let fallback = AnywhereChord::default_chord();
-        if chord != fallback {
-            super::log(&format!("{error}; using {}", fallback.label()));
-            set_chord(&fallback)
-        } else {
-            Err(error)
+    let mut result = Ok(());
+    for slot in Slot::ALL {
+        let Some(chord) = saved_chord(app, slot) else { continue };
+        let registered = set_chord(slot, Some(&chord)).or_else(|error| {
+            // A saved combination macOS no longer accepts: the default instead.
+            let fallback = slot.default_chord();
+            if chord != fallback {
+                super::log(&format!("{error}; using {}", fallback.label()));
+                set_chord(slot, Some(&fallback))
+            } else {
+                Err(error)
+            }
+        });
+        if let Err(error) = registered {
+            if slot == Slot::Toggle {
+                result = Err(error);
+            } else {
+                super::log(&error);
+            }
         }
-    })
+    }
+    result
 }
 
-fn register_chord(chord: &AnywhereChord) -> Result<usize, String> {
+fn register_chord(slot: Slot, chord: &AnywhereChord) -> Result<usize, String> {
     let key_code = crate::office::hotkeys::carbon_key_code(&chord.code)
         .ok_or_else(|| format!("The key {} cannot be a global shortcut", chord.code))?;
     if chord.modifiers() & (CONTROL_KEY | OPTION_KEY | CMD_KEY) == 0 {
@@ -228,7 +288,7 @@ fn register_chord(chord: &AnywhereChord) -> Result<usize, String> {
             chord.modifiers(),
             EventHotKeyId {
                 signature: HOTKEY_SIGNATURE,
-                id: HOTKEY_ID,
+                id: slot.hotkey_id(),
             },
             GetApplicationEventTarget(),
             0,
@@ -244,25 +304,29 @@ fn register_chord(chord: &AnywhereChord) -> Result<usize, String> {
     Ok(reference as usize)
 }
 
-/// Main thread: replaces the registered combination (the previous one stays
-/// when macOS refuses the new one).
-fn set_chord(chord: &AnywhereChord) -> Result<(), String> {
+/// Main thread: replaces the slot's registered combination, or removes it
+/// (None); the previous one stays when macOS refuses the new one.
+fn set_chord(slot: Slot, chord: Option<&AnywhereChord>) -> Result<(), String> {
     let mut registered = REGISTERED.lock().map_err(|_| "The shortcut state is unavailable".to_string())?;
-    if registered.as_ref().map(|(current, _)| current == chord).unwrap_or(false) {
+    let registered = &mut registered[slot.index()];
+    if registered.as_ref().map(|(current, _)| current) == chord {
         return Ok(());
     }
     let previous = registered.take();
     if let Some((_, reference)) = &previous {
         unsafe { UnregisterEventHotKey(*reference as EventHotKeyRef) };
     }
-    match register_chord(chord) {
+    let Some(chord) = chord else {
+        return Ok(());
+    };
+    match register_chord(slot, chord) {
         Ok(reference) => {
             *registered = Some((chord.clone(), reference));
             Ok(())
         }
         Err(error) => {
             if let Some((previous_chord, _)) = previous {
-                if let Ok(reference) = register_chord(&previous_chord) {
+                if let Ok(reference) = register_chord(slot, &previous_chord) {
                     *registered = Some((previous_chord, reference));
                 }
             }
@@ -271,32 +335,37 @@ fn set_chord(chord: &AnywhereChord) -> Result<(), String> {
     }
 }
 
-/// The registered combination's label (⌃⌥M).
+/// The label of the combination that opens an inline formula (⌃⌥M).
 pub(super) fn shortcut_label() -> String {
     REGISTERED
         .lock()
         .ok()
-        .and_then(|registered| registered.as_ref().map(|(chord, _)| chord.label()))
-        .unwrap_or_else(|| AnywhereChord::default_chord().label())
+        .and_then(|registered| registered[Slot::Toggle.index()].as_ref().map(|(chord, _)| chord.label()))
+        .unwrap_or_else(|| Slot::Toggle.default_chord().label())
 }
 
-/// Settings > Shortcuts: registers `chord` (main thread) and keeps it for
-/// the next start; returns its label.
-pub(crate) fn configure(app: &AppHandle, chord: AnywhereChord) -> Result<String, String> {
+/// Settings > Shortcuts: registers the slot's `chord` (main thread), or
+/// removes it (None, not for the inline one), and keeps it for the next
+/// start; returns its label.
+pub(crate) fn configure(app: &AppHandle, slot: Slot, chord: Option<AnywhereChord>) -> Result<String, String> {
+    if chord.is_none() && slot == Slot::Toggle {
+        return Err("The shortcut that opens formulas cannot be removed".to_string());
+    }
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     let wanted = chord.clone();
     app.run_on_main_thread(move || {
-        let _ = sender.send(set_chord(&wanted));
+        let _ = sender.send(set_chord(slot, wanted.as_ref()));
     })
     .map_err(|error| format!("Unable to reach the main thread: {error}"))?;
     receiver
         .recv_timeout(std::time::Duration::from_secs(3))
         .map_err(|_| "macOS did not answer the shortcut registration".to_string())??;
-    if let Some(path) = chord_file(app) {
+    if let Some(path) = chord_file(app, slot) {
         if let Ok(text) = serde_json::to_string(&chord) {
             let _ = std::fs::write(path, text);
         }
     }
-    super::log(&format!("shortcut set to {}", chord.label()));
-    Ok(chord.label())
+    let label = chord.as_ref().map(AnywhereChord::label).unwrap_or_default();
+    super::log(&format!("shortcut {slot:?} set to {}", if label.is_empty() { "none" } else { &label }));
+    Ok(label)
 }
