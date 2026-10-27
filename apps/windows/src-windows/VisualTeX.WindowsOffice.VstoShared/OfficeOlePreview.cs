@@ -228,9 +228,10 @@ internal static class OfficeOlePreview
     private static extern int ReleaseDC(IntPtr window, IntPtr deviceContext);
     private static readonly HashSet<uint> BitmapEmfRecords = new()
     {
-        76,  // EMR_STRETCHBLT
-        77,  // EMR_MASKBLT
-        78,  // EMR_PLGBLT
+        76,  // EMR_BITBLT
+        77,  // EMR_STRETCHBLT
+        78,  // EMR_MASKBLT
+        79,  // EMR_PLGBLT
         80,  // EMR_SETDIBITSTODEVICE
         81,  // EMR_STRETCHDIBITS
         114, // EMR_ALPHABLEND
@@ -709,6 +710,45 @@ internal static class OfficeOlePreview
         }
     }
 
+    // GDI+ writes one no-op BitBlt (no source bitmap, ROP "keep destination") into the
+    // GDI part of an EMF+ dual file. It draws nothing, but the OLE server and
+    // ValidateVectorEmf refuse every BitBlt record, so it is dropped.
+    private static void RemoveNoOpBitBlts(string emfPath)
+    {
+        var bytes = File.ReadAllBytes(emfPath);
+        using var output = new MemoryStream(bytes.Length);
+        var removed = 0u;
+        for (var offset = 0; offset + 8 <= bytes.Length;)
+        {
+            var type = ReadUInt32(bytes, offset);
+            var size = checked((int)ReadUInt32(bytes, offset + 4));
+            if (size < 8 || size > bytes.Length - offset)
+                throw new InvalidDataException("EMF preview contains an invalid record size.");
+            var noOpBitBlt = type == 76 // EMR_BITBLT
+                && size >= 100
+                && ReadUInt32(bytes, offset + 40) == 0x00AA0029 // dwRop
+                && ReadUInt32(bytes, offset + 88) == 0 // cbBmiSrc
+                && ReadUInt32(bytes, offset + 96) == 0; // cbBitsSrc
+            if (noOpBitBlt) removed++;
+            else output.Write(bytes, offset, size);
+            offset += size;
+            if (type == 14) break; // EMR_EOF
+        }
+        if (removed == 0) return;
+        var result = output.ToArray();
+        WriteUInt32(result, 48, (uint)result.Length); // ENHMETAHEADER.nBytes
+        WriteUInt32(result, 52, ReadUInt32(result, 52) - removed); // ENHMETAHEADER.nRecords
+        File.WriteAllBytes(emfPath, result);
+    }
+
+    private static void WriteUInt32(byte[] bytes, int offset, uint value)
+    {
+        bytes[offset] = (byte)value;
+        bytes[offset + 1] = (byte)(value >> 8);
+        bytes[offset + 2] = (byte)(value >> 16);
+        bytes[offset + 3] = (byte)(value >> 24);
+    }
+
     private static ushort ReadUInt16(byte[] bytes, int offset) =>
         (ushort)(bytes[offset] | (bytes[offset + 1] << 8));
 
@@ -816,12 +856,16 @@ internal static class OfficeOlePreview
                 var frameUnit = usePowerPointStablePhysicalFrame
                     ? MetafileFrameUnit.Millimeter
                     : MetafileFrameUnit.Pixel;
+                // EMF+ with anti-aliasing, plus the plain GDI records as the fallback
+                // (WMF conversion, GDI-only players). WPS draws GDI path records without
+                // anti-aliasing, so glyph strokes thinner than a pixel broke up there;
+                // it draws the EMF+ records smoothly, as Office does.
                 using var metafile = new Metafile(
                     emfPath,
                     referenceHdc,
                     frameRectangle,
                     frameUnit,
-                    EmfType.EmfOnly,
+                    EmfType.EmfPlusDual,
                     "VisualTeX vector formula preview");
                 using var graphics = Graphics.FromImage(metafile);
                 // A Metafile recording Graphics defaults to GraphicsUnit.Display
@@ -833,9 +877,11 @@ internal static class OfficeOlePreview
                 graphics.PageUnit = GraphicsUnit.Pixel;
                 graphics.PageScale = 1f;
                 graphics.ResetTransform();
-                graphics.SmoothingMode = SmoothingMode.None;
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 graphics.PixelOffsetMode = PixelOffsetMode.None;
-                graphics.CompositingMode = CompositingMode.SourceCopy;
+                // Blend: with anti-aliased edges, copying would punch the partly covered
+                // edge pixels of one shape into the shape it touches.
+                graphics.CompositingMode = CompositingMode.SourceOver;
                 graphics.CompositingQuality = CompositingQuality.Default;
 
                 // On a scaled Windows desktop, Graphics.FromImage(metafile)
@@ -924,6 +970,7 @@ internal static class OfficeOlePreview
 
             if (!File.Exists(emfPath) || new FileInfo(emfPath).Length == 0)
                 throw new InvalidDataException("Vector EMF generation produced an empty file.");
+            RemoveNoOpBitBlts(emfPath);
         }
 
         public SvgRenderGeometry ResolveInkSafeGeometry(

@@ -42,6 +42,48 @@ public sealed class OfficeOlePreviewTests
             $"Vector EMF appears blank: {visiblePixels} visible samples. {OfficeOlePreview.LastRecordingDiagnostics}");
     }
 
+    // WPS plays the GDI records of an EMF without anti-aliasing (thin strokes break up),
+    // but the EMF+ records smoothly, like Office. The GDI records stay as the fallback.
+    [Fact]
+    public void VectorPreviewCarriesAntiAliasedEmfPlusWithAGdiFallback()
+    {
+        using var temp = new TemporaryDirectory();
+        var svgPath = Path.Combine(temp.Path, "formula.svg");
+        File.WriteAllText(svgPath, MathJaxStyleSvg, new UTF8Encoding(false));
+
+        var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(svgPath, 420, 130);
+        OfficeOlePreview.ValidateVectorEmf(emfPath);
+
+        var bytes = File.ReadAllBytes(emfPath);
+        var gdiFills = 0;
+        var bitBlts = 0;
+        var plusTypes = new List<(ushort Type, ushort Flags)>();
+        for (var offset = 0; offset + 8 <= bytes.Length;)
+        {
+            var type = BitConverter.ToUInt32(bytes, offset);
+            var size = (int)BitConverter.ToUInt32(bytes, offset + 4);
+            if (type is 62 or 63) gdiFills++; // EMR_FILLPATH, EMR_STROKEANDFILLPATH
+            if (type == 76) bitBlts++; // EMR_BITBLT: GDI+'s no-op one is removed (the OLE server refuses it)
+            if (type == 70 && size >= 16 && Encoding.ASCII.GetString(bytes, offset + 12, 4) == "EMF+")
+            {
+                var end = offset + 12 + (int)BitConverter.ToUInt32(bytes, offset + 8);
+                for (var cursor = offset + 16; cursor + 12 <= end;)
+                {
+                    plusTypes.Add((BitConverter.ToUInt16(bytes, cursor), BitConverter.ToUInt16(bytes, cursor + 2)));
+                    cursor += (int)BitConverter.ToUInt32(bytes, cursor + 4);
+                }
+            }
+            offset += size;
+            if (type == 14) break; // EMR_EOF
+        }
+
+        Assert.Contains(plusTypes, record => record.Type == 0x4001); // EmfPlusHeader
+        Assert.Contains(plusTypes, record => record.Type == 0x401E && (record.Flags & 1) == 1); // anti-alias on
+        Assert.Contains(plusTypes, record => record.Type == 0x4014); // EmfPlusFillPath
+        Assert.True(gdiFills > 0, "The GDI fallback records draw nothing.");
+        Assert.Equal(0, bitBlts);
+    }
+
     [Fact]
     public void FullViewBoxRectangleFillsTheEmfPixelFrame()
     {
@@ -104,6 +146,34 @@ public sealed class OfficeOlePreviewTests
         Assert.True(
             bounds.Width >= 394 && bounds.Height >= 194 && bounds.Right <= 400 && bounds.Bottom <= 200,
             $"PowerPoint frame replayed the full SVG as {bounds.Width}x{bounds.Height} at {bounds.X},{bounds.Y} of 400x200. {OfficeOlePreview.LastRecordingDiagnostics}");
+    }
+
+    // The EMF+ records (what Office and WPS draw) must fill the PowerPoint frame exactly as
+    // the GDI records do.
+    [Fact]
+    public void FullViewBoxRectangleFillsThePowerPointPhysicalFrameThroughEmfPlus()
+    {
+        using var temp = new TemporaryDirectory();
+        var svgPath = Path.Combine(temp.Path, "full-frame.svg");
+        File.WriteAllText(
+            svgPath,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 50\"><rect x=\"0\" y=\"0\" width=\"100\" height=\"50\" fill=\"#111111\"/></svg>",
+            new UTF8Encoding(false));
+
+        var emfPath = OfficeOlePreview.CreateVectorEmfFromSvg(
+            svgPath, 100, 50, usePowerPointStablePhysicalFrame: true);
+        using var metafile = new Metafile(emfPath);
+        using var bitmap = new Bitmap(400, 200, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(Color.White);
+            graphics.DrawImage(metafile, new Rectangle(0, 0, bitmap.Width, bitmap.Height));
+        }
+
+        var bounds = FindDarkBounds(bitmap);
+        Assert.True(
+            bounds.Width >= 394 && bounds.Height >= 194 && bounds.Right <= 400 && bounds.Bottom <= 200,
+            $"EMF+ replayed the full SVG as {bounds.Width}x{bounds.Height} at {bounds.X},{bounds.Y} of 400x200. {OfficeOlePreview.LastRecordingDiagnostics}");
     }
 
     [StructLayout(LayoutKind.Sequential)]
